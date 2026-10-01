@@ -141,14 +141,15 @@ const PASSWORD_ENV = 'DURU_TEST_APP_PASSWORD';
 const ADMIN_PASSWORD_ENV = 'DURU_TEST_ADMIN_PASSWORD';
 const AUDITOR_PASSWORD_ENV = 'DURU_TEST_AUDITOR_PASSWORD';
 const ACCOUNTS = {
-  'duru-admin': { password: 's3cret', token: 't-123', name: '두루 관리자' },
-  'duru-boss': { password: 'b0ss', token: 't-boss', name: '두루 대표' },
-  'duru-auditor': { password: 'aud1t', token: 't-audit', name: '두루 감사' },
+  'duru-admin': { password: 's3cret', token: 't-123', name: '두루 관리자', documents: [{ id: 17 }, { id: 18 }] },
+  'duru-boss': { password: 'b0ss', token: 't-boss', name: '두루 대표', documents: [{ id: 27 }] },
+  'duru-auditor': { password: 'aud1t', token: 't-audit', name: '두루 감사', documents: [{ id: 37 }] },
 };
 
 async function withFakeApi(fn) {
   const presses = [];
   const logins = [];
+  const listCalls = [];
   const json = (res, status, body) => {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(body));
@@ -165,6 +166,20 @@ async function withFakeApi(fn) {
     const me = Object.values(ACCOUNTS).find((a) => req.headers.authorization === `Bearer ${a.token}`);
     if (!me) return json(res, 401, { message: 'no token' });
     if (req.method === 'GET' && req.url === '/api/v1/me') return json(res, 200, { name: me.name });
+    if (req.url.startsWith('/api/v1/documents')) {
+      listCalls.push(`${req.method} ${req.url}`);
+      if (req.method === 'GET' && req.url === '/api/v1/documents') return json(res, 200, { contents: { list: me.documents } });
+      if (req.method === 'POST' && req.url === '/api/v1/documents/search') return json(res, 200, [{ code: `${JSON.parse(body).status} 1/2` }]);
+      if (req.method === 'GET' && req.url === '/api/v1/documents/empty') return json(res, 200, { contents: { list: [] } });
+      if (req.method === 'GET' && req.url === '/api/v1/documents/broken') return json(res, 500, { message: 'broken' });
+      if (req.method === 'GET' && req.url === '/api/v1/documents/flaky') {
+        return listCalls.filter((c) => c.endsWith('/flaky')).length === 1 ? json(res, 503, { message: 'busy' }) : json(res, 200, { contents: { list: [{ id: 'done' }] } });
+      }
+      if (req.method === 'GET' && req.url === '/api/v1/documents/text') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        return res.end('not json');
+      }
+    }
     if (req.method === 'POST' && req.url === '/api/v1/press') {
       presses.push(req.url);
       res.writeHead(200, { 'content-type': 'text/plain' });
@@ -174,7 +189,7 @@ async function withFakeApi(fn) {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
-    return await fn(`http://127.0.0.1:${server.address().port}`, presses, logins);
+    return await fn(`http://127.0.0.1:${server.address().port}`, presses, logins, listCalls);
   } finally {
     server.closeAllConnections();
     server.close();
@@ -195,6 +210,9 @@ const appSettings = (server) => ({
     account: { id: 'duru-admin', passwordEnv: PASSWORD_ENV },
   },
 });
+
+const LIST_API = { api: '/api/v1/documents', list: 'contents.list', value: 'id' };
+const loginWithHeader = { ...appSettings('http://127.0.0.1:1').app.login, header: { Authorization: 'Bearer {token}' } };
 
 const roleSettings = (server, roles = { ADMIN: 'duru-boss', AUDITOR: 'duru-auditor' }) => ({
   app: {
@@ -446,6 +464,111 @@ test('a role whose password variable is missing gets its own error while the oth
   );
 });
 
+const pathValueSettings = (api, pathValues) => ({ app: { ...appSettings(api).app, login: loginWithHeader, pathValues } });
+
+const preparedFor = (config, pathValues, id) =>
+  withServer({ ...config, app: { ...config.app, pathValues } }, 'reviewer', async (base) => {
+    const res = await fetch(`${base}/api/path-values?screen=${encodeURIComponent(id)}`);
+    return res.status === 200 ? res.json() : res.status;
+  });
+
+test('the path values of a screen come from its fixed values and from list APIs called with the login token, with the list screen to fall back to', async () => {
+  const pathValues = { '/document/:tab(draft|done)': { tab: 'draft' }, '/document/:id': { id: LIST_API } };
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(pathValueSettings(api, pathValues), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const prepared = async (id) => (await fetch(`${base}/api/path-values?screen=${encodeURIComponent(id)}`)).json();
+          assert.deepEqual(await prepared('/document/:tab_draft_done_#DocumentList'), {
+            parts: ['/document', { name: 'tab', prefix: '/', optional: false, pattern: 'draft|done' }],
+            values: { tab: 'draft' },
+            errors: [],
+            path: '/document/draft',
+            fallback: '/home#Home', fallbackPath: '/home',
+          });
+          const detail = await prepared('/document/:id#DocumentDetail');
+          assert.deepEqual(detail, {
+            parts: ['/document', { name: 'id', prefix: '/', optional: false, pattern: null }],
+            values: { id: '17' },
+            errors: [],
+            path: '/document/17',
+            fallback: '/document/:tab_draft_done_#DocumentList', fallbackPath: '/document/draft',
+          });
+          assert.deepEqual(await prepared('/home#Home'), { parts: ['/home'], values: {}, errors: [], path: '/home', fallback: null, fallbackPath: null });
+          const unknown = await fetch(`${base}/api/path-values?screen=${encodeURIComponent('/nowhere#Nowhere')}`);
+          assert.equal(unknown.status, 404);
+
+          const data = await (await fetch(`${base}/api/data`)).json();
+          assert.deepEqual(data.app.unknownPathValues, []);
+          assert.equal(data.appLinks['/document/:id#DocumentDetail'], null);
+          for (const text of [JSON.stringify(data), JSON.stringify(detail)]) assert.ok(!text.includes('t-123'));
+        }),
+      ),
+    ),
+  );
+});
+
+test('the path values of a screen asked for with a role come from list APIs called with that role\'s token', async () => {
+  const pathValues = { '/document/:id': { id: LIST_API } };
+  await withFakeApi((api) =>
+    withPasswords(ALL_PASSWORDS, () =>
+      withRebuiltFixture({ app: { ...roleSettings(api).app, login: loginWithHeader, pathValues } }, (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const prepared = (query) => fetch(`${base}/api/path-values?screen=${encodeURIComponent('/document/:id#DocumentDetail')}${query}`);
+          assert.deepEqual((await (await prepared('')).json()).values, { id: '17' });
+          assert.deepEqual((await (await prepared('&role=ADMIN')).json()).values, { id: '27' });
+          assert.deepEqual((await (await prepared('&role=AUDITOR')).json()).values, { id: '37' });
+          assert.equal((await prepared('&role=OWNER')).status, 404);
+        }),
+      ),
+    ),
+  );
+});
+
+test('a list API that is empty, fails or answers in another shape is reported, and the screen falls back to its list screen', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(pathValueSettings(api, {}), async (config) => {
+        const detail = (id) => preparedFor(config, { '/document/:id': { id } }, '/document/:id#DocumentDetail');
+        const searched = await detail({ api: '/api/v1/documents/search', method: 'POST', body: { status: 'done' }, list: '', value: 'code' });
+        assert.deepEqual([searched.values, searched.errors, searched.path], [{ id: 'done 1/2' }, [], '/document/done%201%2F2']);
+        for (const [given, error] of [
+          [{ ...LIST_API, api: '/api/v1/documents/empty' }, /^id: 목록 API GET \/api\/v1\/documents\/empty 가 빈 목록을 돌려주었습니다$/],
+          [{ ...LIST_API, api: '/api/v1/documents/broken' }, /500 로 실패/],
+          [{ ...LIST_API, api: '/api/v1/documents/text' }, /JSON 이 아닙니다/],
+          [{ ...LIST_API, list: 'contents.items' }, /contents\.items 에 목록이 없습니다/],
+          [{ ...LIST_API, value: 'uuid' }, /첫 항목에 uuid 값이 없습니다/],
+        ]) {
+          const result = await detail(given);
+          assert.deepEqual([result.values, result.path, result.fallback], [{}, null, '/home#Home'], given.api);
+          assert.equal(result.errors.length, 1);
+          assert.match(result.errors[0], error);
+        }
+        assert.deepEqual(await preparedFor(config, {}, '/document/:id#DocumentDetail'), {
+          parts: ['/document', { name: 'id', prefix: '/', optional: false, pattern: null }], values: {}, errors: [], path: null, fallback: '/home#Home', fallbackPath: '/home',
+        });
+        await withPassword('wrong', async () => {
+          const result = await detail(LIST_API);
+          assert.match(result.errors[0], /로그인하지 못해/);
+        });
+      }),
+    ),
+  );
+});
+
+test('pathValues entries that match no screen path, and variables their path does not have, are listed for the page', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(pathValueSettings(api, { '/document/:id': { id: '1', docId: '2' }, '/docs/:id': { id: '3' } }), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          assert.deepEqual(app.unknownPathValues, ['/document/:id 의 docId', '/docs/:id']);
+        }),
+      ),
+    ),
+  );
+});
+
 for (const signedOutPaths of [[], ['/signin']]) {
   test(`the app server closes with the review server, with signedOutPaths ${JSON.stringify(signedOutPaths)}`, async () => {
     await withFakeApi((api) =>
@@ -480,6 +603,18 @@ for (const [name, broken, message] of [
   ['roles that is a list', { roles: [{ id: 'duru-boss', passwordEnv: ADMIN_PASSWORD_ENV }] }, /app\.roles must be/],
   ['a role without passwordEnv', { roles: { ADMIN: { id: 'duru-boss' } } }, /app\.roles\.ADMIN must be/],
   ['the password itself in a role', { roles: { ADMIN: { id: 'duru-boss', passwordEnv: ADMIN_PASSWORD_ENV, password: 's3cret' } } }, /app\.roles\.ADMIN must be/],
+  ['pathValues that is not a map of route paths', { pathValues: ['/document/:id'] }, /app\.pathValues must/],
+  ['a pathValues key that is not a route path', { pathValues: { 'document/:id': { id: '1' } } }, /app\.pathValues key "document\/:id" must be a route path/],
+  ['a path variable given a number', { pathValues: { '/document/:id': { id: 17 } } }, /app\.pathValues\["\/document\/:id"\]\.id must/],
+  ...[
+    ['without the value to take', { value: undefined }],
+    ['whose address is not a path', { api: 'http://127.0.0.1:1/api/v1/documents' }],
+    ['with a list that is not a dotted path', { list: 7 }],
+    ['with a body but no method', { body: { status: 'draft' } }],
+    ['with a key it does not know', { headers: {} }],
+  ].map(([name, change]) => [`a list API ${name}`, { login: loginWithHeader, pathValues: { '/document/:id': { id: { ...LIST_API, ...change } } } }, /app\.pathValues\["\/document\/:id"\]\.id must/]),
+  ['a list API without login.header', { pathValues: { '/document/:id': { id: LIST_API } } }, /app\.login\.header/],
+  ['a login header that is not a map of header names', { login: { ...loginWithHeader, header: ['Bearer s3cret'] } }, /app\.login\.header/],
 ]) {
   test(`app settings with ${name} are rejected`, () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
@@ -493,6 +628,18 @@ for (const [name, broken, message] of [
     }
   });
 }
+
+test('a list API answering with bare values is accepted', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    const file = path.join(dir, 'config.json');
+    const app = { ...appSettings('http://127.0.0.1:1').app, login: loginWithHeader, pathValues: { '/document/:id': { id: { ...LIST_API, list: '', value: '' } } } };
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8')), app }));
+    assert.equal(loadConfig(file).app.pathValues['/document/:id'].id.value, '');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('the page reports a missing map instead of serving empty data', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
@@ -1118,10 +1265,220 @@ test('in a browser, the chosen screen shows the logged-in app in a frame above i
               location.reload();
             });
             await signedOutFrame.locator('#who:has-text("두루 관리자")').waitFor();
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a screen with path variables opens filled with its fixed value or the first value of its list API, and an edited value reopens it', { skip: browserMissing }, async () => {
+  const pathValues = { '/document/:tab(draft|done)': { tab: 'draft' }, '/document/:id': { id: LIST_API } };
+  await withFakeApi((api, presses, logins, listCalls) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...pathValueSettings(api, pathValues).app, signedOutPaths: ['/document/:tab(draft|done)'] } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const bar = p.locator('#center .frame-bar');
+            const frame = p.frameLocator('#center iframe.app');
+            const newWindow = () => bar.locator('a:has-text("새 창")').getAttribute('href');
+            await p.waitForSelector('#screen-list li');
+
+            await p.click('#screen-list li:has-text("/document/:tab")');
+            await frame.locator('#path:has-text("/document/draft")').waitFor();
+            assert.equal(await frame.locator('#who').textContent(), '로그인 전');
+            assert.equal(await bar.locator('.mono').textContent(), `${app.signedOutUrl}/document/draft`);
+            assert.match(await bar.textContent(), /로그아웃 상태/);
+            assert.equal(await newWindow(), `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent('/document/draft')}`);
+            assert.equal(await bar.locator('input[name=tab]').inputValue(), 'draft');
 
             await p.click('#screen-list li:has-text("/document/:id")');
-            assert.match(await p.textContent('#center'), /주소에 값이 필요한 화면/);
-            assert.equal(await p.locator('#center iframe').count(), 0);
+            await frame.locator('#path:has-text("/document/17")').waitFor();
+            await frame.locator('#who:has-text("두루 관리자")').waitFor();
+            assert.equal(await bar.locator('input[name=id]').inputValue(), '17');
+            assert.equal(await newWindow(), `${app.url}/document/17`);
+            assert.doesNotMatch(await bar.textContent(), /목록에서 골라/);
+            assert.deepEqual(listCalls, ['GET /api/v1/documents']);
+
+            await bar.locator('input[name=id]').fill('42');
+            await bar.locator('input[name=id]').press('Enter');
+            await frame.locator('#path:has-text("/document/42")').waitFor();
+            assert.equal(await bar.locator('.mono').textContent(), `${app.url}/document/42`);
+            assert.equal(await newWindow(), `${app.url}/document/42`);
+
+            await frame.locator('#press').click();
+            await frame.locator('#pressed:has-text("pressed")').waitFor();
+            await p.click('#center tr:has-text("API")');
+            await p.click('#right .statuses button:has-text("없음")');
+            await p.click('#right button.save');
+            await p.waitForSelector('#center tr.selected .chip.missing');
+            assert.equal(await frame.locator('#pressed').textContent(), 'pressed');
+
+            await bar.locator('input[name=id]').fill('43');
+            await p.click('#screen-list li:has-text("/home")');
+            await frame.locator('#path:has-text("/home")').waitFor();
+            await p.click('#screen-list li:has-text("/document/:id")');
+            await frame.locator('#path:has-text("/document/42")').waitFor();
+            assert.equal(await bar.locator('input[name=id]').inputValue(), '43');
+            await bar.locator('button:has-text("다시 띄우기")').click();
+            await frame.locator('#path:has-text("/document/43")').waitFor();
+            assert.deepEqual(listCalls, ['GET /api/v1/documents']);
+            assert.equal(presses.length, 1);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a screen without its values opens its list screen with a notice, and a failing list API is shown before the same fallback', { skip: browserMissing }, async () => {
+  const pathValues = { '/document/:tab(draft|done)': { tab: { ...LIST_API, api: '/api/v1/documents/broken' } }, '/docs/:id': { id: '1' } };
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(pathValueSettings(api, pathValues), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const bar = p.locator('#center .frame-bar');
+            const frame = p.frameLocator('#center iframe.app');
+            await p.waitForSelector('#screen-list li');
+
+            await p.click('#screen-list li:has-text("/document/:id")');
+            await frame.locator('#path:has-text("/home")').waitFor();
+            assert.equal(await bar.locator('.mono').textContent(), `${app.url}/home`);
+            assert.match(await bar.textContent(), /목록에서 골라 들어가세요/);
+            assert.match(await bar.textContent(), /맵에 없는 pathValues: \/docs\/:id/);
+            assert.equal(await bar.locator('.path-values .error').count(), 0);
+            assert.equal(await bar.locator('input[name=id]').inputValue(), '');
+
+            await bar.locator('input[name=id]').fill('42');
+            await bar.locator('input[name=id]').press('Enter');
+            await frame.locator('#path:has-text("/document/42")').waitFor();
+            assert.doesNotMatch(await bar.textContent(), /목록에서 골라/);
+
+            await p.click('#screen-list li:has-text("/document/:tab")');
+            await frame.locator('#path:has-text("/home")').waitFor();
+            assert.match(await bar.textContent(), /목록에서 골라 들어가세요/);
+            assert.match(await bar.locator('.path-values .error').textContent(), /^tab: 목록 API GET \/api\/v1\/documents\/broken 요청이 500 로 실패했습니다$/);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a screen without its values falls back to a list screen opened with its fixed values', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(pathValueSettings(api, { '/document/:tab(draft|done)': { tab: 'draft' } }), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const bar = p.locator('#center .frame-bar');
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/document/:id")');
+            await p.frameLocator('#center iframe.app').locator('#path:has-text("/document/draft")').waitFor();
+            assert.equal(await bar.locator('.mono').textContent(), `${app.url}/document/draft`);
+            assert.match(await bar.textContent(), /목록에서 골라 들어가세요/);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a screen without its values falls back to a linking list screen the frame account can open before one that needs another role', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPasswords(ALL_PASSWORDS, () =>
+      withRebuiltFixture({ app: { ...roleSettings(api).app, login: loginWithHeader, pathValues: {} } }, async (config, copy) => {
+        const member = path.join(copy, 'client/src/components/AdminMember.js');
+        fs.writeFileSync(member, fs.readFileSync(member, 'utf8').replace('Audit log</Link>', 'Audit log</Link>\n      <Link to={`${Option.ROUTE_PATH.DOCUMENT}/7`}>Document</Link>'));
+        execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const bar = p.locator('#center .frame-bar');
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/document/:id")');
+            await bar.locator('text=목록에서 골라 들어가세요').waitFor();
+            assert.equal(await p.locator('#center iframe.app').getAttribute('src'), `${app.url}/home`);
+            await frameWho(p, '두루 관리자');
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, a value the reviewer clears does not fall back to a list screen, and the frame says the value is missing', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(pathValueSettings(api, { '/document/:id': { id: '42' } }), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const bar = p.locator('#center .frame-bar');
+            const frame = p.frameLocator('#center iframe.app');
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/document/:id")');
+            await frame.locator('#path:has-text("/document/42")').waitFor();
+
+            await bar.locator('input[name=id]').fill('');
+            await bar.locator('input[name=id]').press('Enter');
+            await p.locator('#center .frame-note:has-text("id 값이 없어 이 화면을 띄울 수 없습니다")').waitFor();
+            assert.equal(await p.locator('#center iframe.app').count(), 0);
+            assert.doesNotMatch(await bar.textContent(), /목록에서 골라/);
+
+            await bar.locator('input[name=id]').fill('43');
+            await bar.locator('input[name=id]').press('Enter');
+            await frame.locator('#path:has-text("/document/43")').waitFor();
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a screen with a list API opens with the value the list gives to the account the frame logs in as', { skip: browserMissing }, async () => {
+  const pathValues = { '/document/:id': { id: LIST_API } };
+  await withFakeApi((api) =>
+    withPasswords(ALL_PASSWORDS, () =>
+      withRebuiltFixture({ app: { ...roleSettings(api).app, login: loginWithHeader, pathValues } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const frame = p.frameLocator('#center iframe.app');
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/document/:id")');
+            await frame.locator('#path:has-text("/document/17")').waitFor();
+            await p.selectOption('#center select.role', 'role:ADMIN');
+            await frame.locator('#path:has-text("/document/27")').waitFor();
+            assert.equal(await p.locator('#center .frame-bar input[name=id]').inputValue(), '27');
+            await p.selectOption('#center select.role', 'auto');
+            await frame.locator('#path:has-text("/document/17")').waitFor();
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a list API that failed is called again when its screen is chosen again', { skip: browserMissing }, async () => {
+  const pathValues = { '/document/:tab(draft|done)': { tab: { ...LIST_API, api: '/api/v1/documents/flaky' } } };
+  await withFakeApi((api, presses, logins, listCalls) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(pathValueSettings(api, pathValues), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const bar = p.locator('#center .frame-bar');
+            const frame = p.frameLocator('#center iframe.app');
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/document/:tab")');
+            await bar.locator('.path-values .error:has-text("503")').waitFor();
+            await p.click('#screen-list li:has-text("/home")');
+            await p.click('#screen-list li:has-text("/document/:tab")');
+            await frame.locator('#path:has-text("/document/done")').waitFor();
+            assert.equal(await bar.locator('.path-values .error').count(), 0);
+            assert.equal(listCalls.filter((c) => c.endsWith('/flaky')).length, 2);
           }),
         ),
       ),

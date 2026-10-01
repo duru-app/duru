@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.mjs';
-import { UNKNOWN } from './client.mjs';
 import { buildFlow } from './flow.mjs';
 import { addMark, classifyMarks, loadMarks } from './marks.mjs';
+import { fillPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.mjs';
 import { DEPTHS } from './test-links.mjs';
 
 const PAGE = path.join(import.meta.dirname, 'review-page.html');
@@ -25,8 +25,8 @@ function readJson(file) {
 }
 
 function appLink(appUrl, routePath) {
-  if (!appUrl || /[:*]/.test(routePath) || routePath.includes(UNKNOWN)) return null;
-  return appUrl.replace(/\/+$/, '') + routePath;
+  if (!appUrl || !opensAsIs(routePath)) return null;
+  return appUrl.replace(/\/+$/, '') + fillPath(routePath, {});
 }
 
 function screenCallOptions(screen, callsById) {
@@ -56,7 +56,9 @@ export function reviewData(config, author, app = null) {
       url: app.url,
       signedOutUrl: app.signedOutUrl,
       signOutPath: SIGN_OUT_PATH,
+      signedOutPaths: config.app.signedOutPaths,
       unknownSignedOutPaths: config.app.signedOutPaths.filter((p) => !map.screens.some((s) => s.path === p)),
+      unknownPathValues: unknownPathValues(map, config.app.pathValues),
       account: app.account,
       roles: app.roles,
       error: app.error,
@@ -115,6 +117,16 @@ export async function startReviewServer(config, { port = 0, author = null, onDon
         const from = url.searchParams.get('from');
         if (!map.screens.some((s) => s.id === from)) return send(res, 404, 'text/plain', `unknown screen "${from}"`);
         return send(res, 200, 'application/json', JSON.stringify(buildFlow(map, readJson(path.join(config.outDir, 'tests.json')), { from })));
+      }
+      if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {
+        const map = readJson(path.join(config.outDir, 'map.json'));
+        const id = url.searchParams.get('screen');
+        const screen = map.screens.find((s) => s.id === id);
+        if (!screen) return send(res, 404, 'text/plain', `unknown screen "${id}"`);
+        const role = url.searchParams.get('role');
+        const fetchApi = role ? app?.fetchApiAs(role) : app?.fetchApi;
+        if (fetchApi === undefined && role) return send(res, 404, 'text/plain', `unknown role "${role}"`);
+        return send(res, 200, 'application/json', JSON.stringify(await preparePathValues(map, screen, config.app?.pathValues ?? {}, fetchApi ?? null, role)));
       }
       if (req.method === 'POST' && req.url === '/api/marks') {
         if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');

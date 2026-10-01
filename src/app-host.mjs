@@ -54,7 +54,7 @@ async function logIn(app, account) {
   const token = app.login.token.split('.').reduce((o, k) => o?.[k], await res.json().catch(() => null));
   if (typeof token !== 'string') return { error: `로그인 응답의 ${app.login.token} 에 토큰이 없습니다` };
   const value = fillIn(app.login.storage.value, { token });
-  return { storage: { key: app.login.storage.key, value: typeof value === 'string' ? value : JSON.stringify(value) } };
+  return { token, storage: { key: app.login.storage.key, value: typeof value === 'string' ? value : JSON.stringify(value) } };
 }
 
 const literal = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
@@ -184,12 +184,24 @@ export async function startAppHost(app, { port = 0 } = {}) {
   const signedOutServer = app.signedOutPaths.length ? await open(0, null) : null;
   const roleServers = [];
   for (const login of roleLogins) roleServers.push(await open(0, login));
+  const apiCaller = ({ token }) => (token
+    ? (apiPath, { method = 'GET', body, signal } = {}) => fetch(join(app.server, apiPath), {
+      method,
+      headers: { ...fillIn(app.login.header ?? {}, { token }), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
+    })
+    : null);
+  const fetchApi = apiCaller(main);
+  const roleIndex = new Map(roles.map(([role], i) => [role, i]));
   return {
     url: urlOf(signedInServer),
     signedOutUrl: signedOutServer && urlOf(signedOutServer),
     account: app.account.id,
     error: main.error ?? null,
     roles: roles.map(([role, account], i) => ({ role, account: account.id, url: urlOf(roleServers[i]), error: roleLogins[i].error ?? null })),
+    fetchApi,
+    fetchApiAs: (role) => (roleIndex.has(role) ? apiCaller(roleLogins[roleIndex.get(role)]) : undefined),
     close() {
       servers.forEach(close);
     },
