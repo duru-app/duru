@@ -315,7 +315,10 @@ test('in a browser, the setting and role filters keep the screens that open only
         await p.click('#screen-list li:has-text("/admin/member")');
         assert.match(await access.locator('.route').innerText(), /isAdminRole\(memberRole\)\s*역할/);
         await p.click('#screen-list li:has-text("/lab/result")');
-        assert.match(await access.locator('li:has-text("/lab#Lab")').innerText(), /설정 · 역할 조건 없음\s*링크를 건 화면이 설정이나 역할에서만 열림/);
+        assert.match(await access.locator('li:has-text("/lab#Lab")').innerText(), /설정 · 역할 조건 없음\s*링크를 건 화면에 필요한 것\s*설정/);
+        assert.deepEqual(await access.locator('li:has-text("/lab#Lab") .from-kinds .chip').allTextContents(), ['설정']);
+        await p.click('#screen-list li:has-text("/admin/audit")');
+        assert.deepEqual(await access.locator('li:has-text("/admin/member#AdminMember") .from-kinds .chip').allTextContents(), ['역할']);
         await p.click('#screen-list li:has-text("/help")');
         assert.match(await access.locator('li:has-text("/signin#SignIn")').innerText(), /globalSettings\.SYSTEM\.HELP_LINK_ENABLED \(openHelp 로 물려받음\)\s*설정/);
         await p.click('#screen-list li:has-text("/signin")');
@@ -636,5 +639,34 @@ test('in a browser, 「리뷰 끝」 after the review already ended elsewhere sa
       await browser.close();
       server.close();
     }
+  });
+});
+
+test('in a browser, a link from a screen that needs both a setting and a role shows both marks', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config, copy) => {
+    fs.writeFileSync(path.join(copy, 'client/src/components/AdminReport.js'), `import { Link } from 'react-router-dom';
+import Option from '_define/Option';
+import ExportDialog from './ExportDialog';
+
+export default function AdminReport() {
+  return (
+    <section>
+      Reports
+      <ExportDialog />
+      <Link to={Option.ROUTE_PATH.HELP}>Help</Link>
+    </section>
+  );
+}
+`);
+    execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        const link = p.locator('#right .access li:has-text("/admin/report#AdminReport")');
+        assert.match(await link.innerText(), /링크를 건 화면에 필요한 것/);
+        assert.deepEqual(await link.locator('.from-kinds .chip').allTextContents(), ['역할', '설정']);
+      }),
+    );
   });
 });

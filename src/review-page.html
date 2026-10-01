@@ -460,7 +460,7 @@ function accessDetails({ access }) {
     h('ul', { class: 'plain' }, access.links.map((l) => h('li', {},
       h('code', {}, l.from), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`),
       l.guards.length ? l.guards.map(accessGuard) : h('div', { class: 'muted' }, '설정 · 역할 조건 없음'),
-      l.fromRestricted ? h('div', { class: 'muted' }, '링크를 건 화면이 설정이나 역할에서만 열림') : null))));
+      l.fromKinds.length ? h('div', { class: 'from-kinds muted' }, '링크를 건 화면에 필요한 것 ', l.fromKinds.map(kindChip)) : null))));
 }
 
 function screenDetails(s) {

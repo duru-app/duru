@@ -82,7 +82,7 @@ Source files are under \`client/src\`.
   - missing, whole screen (Kim Min, 2026-09-30)
 - component: components/LabResult.js, route at Routes.js:45
 - access: needs a setting
-  - link from /lab#Lab at components/Lab.js:14, no guard — /lab#Lab itself opens only under a setting or a role
+  - link from /lab#Lab at components/Lab.js:14, no guard — /lab#Lab itself needs a setting
 - calls: none
 - tests: none
 
@@ -197,7 +197,7 @@ test('a guarded link from a screen that opens only under a setting says so after
     addMark(loadConfig(configFile).marksDir, { target: { node: '/admin/report#AdminReport' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
     const report = cli('tasks').split('## /admin/report#AdminReport\n')[1].split('\n## ')[0];
     const fromHome = report.split('\n').find((l) => l.startsWith('  - link from /home#Home'));
-    assert.match(fromHome, /, guard `[^`]+` \(setting\); `[^`]+` \(role\); `MENUS\.ADMIN` \(setting\) — \/home#Home itself opens only under a setting or a role$/);
+    assert.match(fromHome, /, guard `[^`]+` \(setting\); `[^`]+` \(role\); `MENUS\.ADMIN` \(setting\) — \/home#Home itself needs a setting$/);
   });
 });
 
@@ -247,6 +247,38 @@ test('screens that share an ID each keep the options they send themselves', () =
     assert.equal(sections.length, 2);
     assert.match(sections[0], /^ {2}- POST:\/api\/v1\/report\/export — tests: ui pass 4, ui fail 1 — options: withAttachments, withHistory$/m);
     assert.match(sections[1], /^- calls:\n {2}- POST:\/api\/v1\/report\/export — tests: ui pass 4, ui fail 1\n- tests: none$/m);
+  });
+});
+
+test('a link from a screen that opens only under a role says so', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    addMark(loadConfig(configFile).marksDir, { target: { node: '/admin/audit#AdminAudit' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
+    const audit = cli('tasks').split('## /admin/audit#AdminAudit\n')[1].split('\n## ')[0];
+    assert.match(audit, /^ {2}- link from \/admin\/member#AdminMember at components\/AdminMember\.js:14, no guard — \/admin\/member#AdminMember itself needs a role$/m);
+  });
+});
+
+test('a link from a screen that needs both a setting and a role names both', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.writeFileSync(path.join(copy, 'client/src/components/AdminReport.js'), `import { Link } from 'react-router-dom';
+import Option from '_define/Option';
+import ExportDialog from './ExportDialog';
+
+export default function AdminReport() {
+  return (
+    <section>
+      Reports
+      <ExportDialog />
+      <Link to={Option.ROUTE_PATH.HELP}>Help</Link>
+    </section>
+  );
+}
+`);
+    cli('rebuild');
+    addMark(loadConfig(configFile).marksDir, { target: { node: '/help#Help' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
+    const help = cli('tasks').split('## /help#Help\n')[1].split('\n## ')[0];
+    assert.match(help, /^ {2}- link from \/admin\/report#AdminReport at components\/AdminReport\.js:10, no guard — \/admin\/report#AdminReport itself needs a role and a setting$/m);
   });
 });
 
