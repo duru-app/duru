@@ -20,7 +20,11 @@ export const ajaxDocumentArchive = async (ids) => Ajax.request({ info: Option.RE
 
 export const ajaxDownload = async (url) => Ajax.request({ info: { METHOD: 'GET', URL: url } });
 
-export const ajaxMemberList = async () => Ajax.request({ info: Option.REST_API.MEMBER.LIST });
+export const ajaxMemberList = async ({ page, showError = true }) => {
+  const res = await Ajax.request({ info: Option.REST_API.MEMBER.LIST, params: { page } });
+  if (res.failed && showError) window.alert(res.error);
+  return res;
+};
 
 export const ajaxLabExperiment = async () => Ajax.request({ info: Option.REST_API.LAB.EXPERIMENT });
 

@@ -42,6 +42,7 @@ function buildCalls(apiFunctions, screens, apiPathPrefix, bodyOptions) {
         if (!e.callId) continue;
         const node = calls.get(e.callId);
         node.screens.add(s.id);
+        if (e.method === 'GET') continue;
         for (const o of c.options) {
           const option = optionOf(node, o.key);
           option.sources.add('source');
