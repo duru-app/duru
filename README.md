@@ -85,6 +85,9 @@ relative to the config file, except the files inside the client source (`routesF
       "storage": { "key": "auth", "value": { "accessToken": "{token}" } }
     },
     "account": { "id": "duru-reviewer", "passwordEnv": "DURU_REVIEWER_PASSWORD" },
+    "roles": {
+      "ADMIN": { "id": "duru-admin", "passwordEnv": "DURU_ADMIN_PASSWORD" }
+    },
     "signedOutPaths": ["/signin"]
   }
   ```
@@ -96,6 +99,12 @@ relative to the config file, except the files inside the client source (`routesF
   the app's localStorage (an object value is stored as JSON). The password is read from the environment
   variable named by `account.passwordEnv` and never written to the config, the map or any page. Give duru an
   account of its own: an app that allows one login per account logs out whoever else uses it.
+  `roles` (optional) gives an account per role, keyed by the role value the app compares the role with
+  (`"ADMIN"` for `memberRole === 'ADMIN'`), each written like `account`. `account` stays the account for
+  screens without a role condition. duru logs in once per account when the review starts, all at the same
+  time and once for an account several roles share, and keeps each token for the whole review; each role is served on a port of `127.0.0.1` of its own
+  with its token, since localStorage is kept per port. A role whose login fails keeps its own error and the
+  other accounts are not affected.
   `signedOutPaths` (optional) lists route paths to show signed out, such as a sign-in screen that an app
   leaves for its main screen when someone is logged in: those screens open on a second port of `127.0.0.1`
   that never gets the token. Opening such a screen from the review page first clears `login.storage.key` on
@@ -175,6 +184,19 @@ lists `kinds` (`setting`, `role`), the blocking `route` guards, and every incomi
 screen it comes `from`, its source location, its blocking `guards` (`via` names the handler an inherited
 guard came from) and `fromKinds`, the `kinds` of the screen it comes from (empty when that screen is open).
 
+Each `role` guard also has `roles`: the role values that pass it, read from the guard and the consts it uses,
+or `null` when they cannot be read or no value passes. duru reads a comparison of a `roleIdentifiers` entry with a string
+(`memberRole === 'ADMIN'`, `==`, either side) or with a constant from `constants` (`Enum.ROLE.ADMIN`), a list
+lookup (`['ADMIN', 'OWNER'].indexOf(role) > -1`, `>= 0`, `!== -1`, `!= -1`, or `.includes(role)`), and `&&` / `||`
+of those. Anything else that reads the role is unreadable: a function call such as `isAdminRole(memberRole)`,
+`!==`, a negation, a comparison with a value that is not a string or constant, or `||` with a guard that does
+not read the role. A screen whose `kinds` include `role` gets `roleValues`, the values that can open it: those
+every readable route guard allows, and of those, the ones some blocked incoming link allows (the link's
+readable `role` guards, or, for a link with no `role` guard from a screen that needs a role, that screen's
+`roleValues`); when one of those links cannot be read, the links are left out, since it may let any role in.
+Guards are read in full, though the map shows a long guard cut short. Unreadable guards are left out when something else is readable; when nothing is, or no
+value is left, `roleValues` is `null`. `unreadableRoleGuards` lists the guards left out.
+
 A test declares the node it covers by putting `@screen:<id>` or `@call:<id>` in its title — for JUnit, in
 the test's or the test class's display name (`@DisplayName`), since `@Tag` annotations do not reach the
 result XML; for Vitest, in the test title, a `describe` title or the test's `tags` option. A test takes the
@@ -218,9 +240,18 @@ screens" filter, which keeps the screens that call an API missing on the server,
 setting" and "opens only under a role" filters read from `access.kinds`; a screen that needs both shows under
 either. With `app` set, the middle starts with the chosen screen's app in a frame, served by duru on an address of
 its own and already logged in, so the reviewer can use it while marking; the line above the frame shows its
-address, the account (or why the login failed, or 「로그아웃 상태」 for a screen in `signedOutPaths`), in red
-any `signedOutPaths` entry that matches no screen path in the map, and a link that opens it in a new window. Marking does not
-reload the frame. A screen with path variables shows 「주소에 값이 필요한 화면」 instead of the frame. Below
+address, a role picker, who the frame is logged in as (「ADMIN 역할 duru-admin 로 로그인」, or why that login
+failed, or 「로그아웃 상태」 for a screen in `signedOutPaths`, which has no picker), in red any
+`signedOutPaths` entry that matches no screen path in the map, and a link that opens it in a new window. The
+picker starts at 「화면에 맞춰」: a screen without a role condition opens as `account`, and one with
+`roleValues` as the first role in `roles` whose value is in them, preferring one whose login worked. When no role in `roles` meets them, the
+screen opens as `account` and the line says 「조건을 채우는 역할(…)에 계정이 없습니다」; when `roleValues` is
+`null`, it opens as `account` and the line lists the unreadable guards; when it is not, any unreadable
+guards are still named, in grey. The picker also offers `account`,
+each role in `roles`, and, unselectable, each value in some screen's `roleValues` with no account (「계정
+없음」). A role picked there stays picked on other screens until 「화면에 맞춰」 is picked again, and the line
+says when it does not meet the screen's `roleValues`; the screen still opens as that role. Picking a role
+reloads the frame on that role's address with the same path. Marking does not reload the frame. A screen with path variables shows 「주소에 값이 필요한 화면」 instead of the frame. Below
 that, the middle shows the chosen screen's tests grouped by depth and, below them, its API calls: one row
 per call with its server match (on the server with its labels, method mismatch, not on the server, or
 unresolved) and one cell per depth counting the call's tests. Under a call with on/off options, each option

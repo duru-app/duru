@@ -138,9 +138,17 @@ test('with an app address, only screens without path variables get a link to the
 });
 
 const PASSWORD_ENV = 'DURU_TEST_APP_PASSWORD';
+const ADMIN_PASSWORD_ENV = 'DURU_TEST_ADMIN_PASSWORD';
+const AUDITOR_PASSWORD_ENV = 'DURU_TEST_AUDITOR_PASSWORD';
+const ACCOUNTS = {
+  'duru-admin': { password: 's3cret', token: 't-123', name: '두루 관리자' },
+  'duru-boss': { password: 'b0ss', token: 't-boss', name: '두루 대표' },
+  'duru-auditor': { password: 'aud1t', token: 't-audit', name: '두루 감사' },
+};
 
 async function withFakeApi(fn) {
   const presses = [];
+  const logins = [];
   const json = (res, status, body) => {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(body));
@@ -150,10 +158,13 @@ async function withFakeApi(fn) {
     for await (const chunk of req) body += chunk;
     if (req.method === 'POST' && req.url === '/auth/login') {
       const { loginId, pw } = JSON.parse(body);
-      return loginId === 'duru-admin' && pw === 's3cret' ? json(res, 200, { result: { token: 't-123' } }) : json(res, 401, { message: 'bad login' });
+      logins.push(loginId);
+      const account = ACCOUNTS[loginId];
+      return account?.password === pw ? json(res, 200, { result: { token: account.token } }) : json(res, 401, { message: 'bad login' });
     }
-    if (req.headers.authorization !== 'Bearer t-123') return json(res, 401, { message: 'no token' });
-    if (req.method === 'GET' && req.url === '/api/v1/me') return json(res, 200, { name: '두루 관리자' });
+    const me = Object.values(ACCOUNTS).find((a) => req.headers.authorization === `Bearer ${a.token}`);
+    if (!me) return json(res, 401, { message: 'no token' });
+    if (req.method === 'GET' && req.url === '/api/v1/me') return json(res, 200, { name: me.name });
     if (req.method === 'POST' && req.url === '/api/v1/press') {
       presses.push(req.url);
       res.writeHead(200, { 'content-type': 'text/plain' });
@@ -163,7 +174,7 @@ async function withFakeApi(fn) {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
-    return await fn(`http://127.0.0.1:${server.address().port}`, presses);
+    return await fn(`http://127.0.0.1:${server.address().port}`, presses, logins);
   } finally {
     server.closeAllConnections();
     server.close();
@@ -185,15 +196,27 @@ const appSettings = (server) => ({
   },
 });
 
-async function withPassword(value, fn) {
-  if (value === undefined) delete process.env[PASSWORD_ENV];
-  else process.env[PASSWORD_ENV] = value;
+const roleSettings = (server, roles = { ADMIN: 'duru-boss', AUDITOR: 'duru-auditor' }) => ({
+  app: {
+    ...appSettings(server).app,
+    roles: Object.fromEntries(Object.entries(roles).map(([role, id]) => [role, { id, passwordEnv: id === 'duru-boss' ? ADMIN_PASSWORD_ENV : AUDITOR_PASSWORD_ENV }])),
+  },
+});
+
+async function withPasswords(values, fn) {
+  for (const [env, value] of Object.entries(values)) {
+    if (value === undefined) delete process.env[env];
+    else process.env[env] = value;
+  }
   try {
     return await fn();
   } finally {
-    delete process.env[PASSWORD_ENV];
+    for (const env of Object.keys(values)) delete process.env[env];
   }
 }
+
+const withPassword = (value, fn) => withPasswords({ [PASSWORD_ENV]: value }, fn);
+const ALL_PASSWORDS = { [PASSWORD_ENV]: 's3cret', [ADMIN_PASSWORD_ENV]: 'b0ss', [AUDITOR_PASSWORD_ENV]: 'aud1t' };
 
 test('with app settings, the app is served logged in on its own address and its API requests go to the test server', async () => {
   await withFakeApi((api) =>
@@ -355,11 +378,79 @@ test('app files taken from a deployed address are served without the headers tha
   }
 });
 
+test('each configured role is served logged in as its own account on an address of its own, logging in once however many pages load', async () => {
+  await withFakeApi((api, presses, logins) =>
+    withPasswords(ALL_PASSWORDS, () =>
+      withRebuiltFixture({ app: { ...roleSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          assert.deepEqual(app.roles.map(({ url, ...r }) => r), [
+            { role: 'ADMIN', account: 'duru-boss', error: null },
+            { role: 'AUDITOR', account: 'duru-auditor', error: null },
+          ]);
+          const urls = [app.url, app.signedOutUrl, ...app.roles.map((r) => r.url)];
+          for (const url of urls) assert.match(url, /^http:\/\/127\.0\.0\.1:\d+$/);
+          assert.equal(new Set(urls).size, urls.length);
+
+          for (const [url, token] of [[app.url, 't-123'], [app.roles[0].url, 't-boss'], [app.roles[1].url, 't-audit']]) {
+            for (let i = 0; i < 3; i += 1) {
+              const html = await (await fetch(`${url}/admin/member`)).text();
+              assert.match(html, new RegExp(token));
+              assert.equal(Object.values(ACCOUNTS).filter((a) => html.includes(a.token)).length, 1);
+            }
+            const me = await fetch(`${url}/api/v1/me`, { headers: { authorization: `Bearer ${token}` } });
+            assert.equal(me.status, 200);
+          }
+          assert.deepEqual(logins.sort(), ['duru-admin', 'duru-auditor', 'duru-boss']);
+        }),
+      ),
+    ),
+  );
+});
+
+test('an account shared by the default and roles, or by several roles, logs in once', async () => {
+  await withFakeApi((api, presses, logins) =>
+    withPasswords(ALL_PASSWORDS, () => {
+      const roles = {
+        ADMIN: { id: 'duru-admin', passwordEnv: PASSWORD_ENV },
+        OWNER: { id: 'duru-boss', passwordEnv: ADMIN_PASSWORD_ENV },
+        MANAGER: { id: 'duru-boss', passwordEnv: ADMIN_PASSWORD_ENV },
+      };
+      return withRebuiltFixture({ app: { ...appSettings(api).app, roles } }, (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          assert.deepEqual(logins.sort(), ['duru-admin', 'duru-boss']);
+          for (const [url, token] of [[app.roles[0].url, 't-123'], [app.roles[1].url, 't-boss'], [app.roles[2].url, 't-boss']]) {
+            assert.match(await (await fetch(`${url}/home`)).text(), new RegExp(token));
+          }
+        }),
+      );
+    }),
+  );
+});
+
+test('a role whose password variable is missing gets its own error while the other accounts log in', async () => {
+  await withFakeApi((api) =>
+    withPasswords({ ...ALL_PASSWORDS, [AUDITOR_PASSWORD_ENV]: undefined }, () =>
+      withRebuiltFixture(roleSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          assert.equal(app.error, null);
+          assert.equal(app.roles[0].error, null);
+          assert.match(app.roles[1].error, new RegExp(AUDITOR_PASSWORD_ENV));
+          assert.match(await (await fetch(`${app.roles[0].url}/home`)).text(), /t-boss/);
+          assert.doesNotMatch(await (await fetch(`${app.roles[1].url}/home`)).text(), /FAKE_AUTH/);
+        }),
+      ),
+    ),
+  );
+});
+
 for (const signedOutPaths of [[], ['/signin']]) {
   test(`the app server closes with the review server, with signedOutPaths ${JSON.stringify(signedOutPaths)}`, async () => {
     await withFakeApi((api) =>
       withPassword('s3cret', () =>
-        withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths } }, async (config) => {
+        withRebuiltFixture({ app: { ...roleSettings(api).app, signedOutPaths } }, async (config) => {
           const server = await startReviewServer(config, { author: 'reviewer' });
           let app;
           try {
@@ -371,6 +462,8 @@ for (const signedOutPaths of [[], ['/signin']]) {
           const refused = (err) => err.cause?.code === 'ECONNREFUSED';
           await assert.rejects(fetch(`${app.url}/home`), refused);
           if (app.signedOutUrl) await assert.rejects(fetch(`${app.signedOutUrl}/signin`), refused);
+          assert.equal(app.roles.length, 2);
+          for (const r of app.roles) await assert.rejects(fetch(`${r.url}/home`), refused);
         }),
       ),
     );
@@ -384,6 +477,9 @@ for (const [name, broken, message] of [
   ['a login without body, token and storage', { login: { path: '/auth/login' } }, /app\.login/],
   ['the password itself in the account', { account: { id: 'duru-admin', password: 's3cret' } }, /app\.account/],
   ['signedOutPaths that is not a list of paths', { signedOutPaths: 'signin' }, /app\.signedOutPaths/],
+  ['roles that is a list', { roles: [{ id: 'duru-boss', passwordEnv: ADMIN_PASSWORD_ENV }] }, /app\.roles must be/],
+  ['a role without passwordEnv', { roles: { ADMIN: { id: 'duru-boss' } } }, /app\.roles\.ADMIN must be/],
+  ['the password itself in a role', { roles: { ADMIN: { id: 'duru-boss', passwordEnv: ADMIN_PASSWORD_ENV, password: 's3cret' } } }, /app\.roles\.ADMIN must be/],
 ]) {
   test(`app settings with ${name} are rejected`, () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
@@ -1045,6 +1141,132 @@ test('in a browser, the sign-out path lands on the signed-out address whatever p
               await p.waitForURL((u) => u.pathname !== app.signOutPath);
               assert.equal(p.url(), `${app.signedOutUrl}${landing}`, to);
             }
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+const frameWho = (p, name) => p.frameLocator('#center iframe.app').locator(`#who:has-text("${name}")`).waitFor();
+
+test('in a browser, a screen under a role condition opens as the first configured role that meets it, and a role picked in the bar reloads the frame and stays picked on other screens', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPasswords(ALL_PASSWORDS, () =>
+      withRebuiltFixture(roleSettings(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const [admin, auditor] = app.roles;
+            const bar = p.locator('#center .frame-bar');
+            const picker = bar.locator('select');
+            const frameSrc = () => p.locator('#center iframe.app').getAttribute('src');
+            await p.waitForSelector('#screen-list li');
+
+            await p.click('#screen-list li:has-text("/admin/member")');
+            assert.deepEqual(await picker.locator('option').allTextContents(),
+              ['화면에 맞춰', '기본 계정 (duru-admin)', 'ADMIN (duru-boss)', 'AUDITOR (duru-auditor)', 'OWNER — 계정 없음']);
+            assert.equal(await picker.locator('option:has-text("OWNER")').isDisabled(), true);
+            assert.equal(await picker.inputValue(), 'auto');
+            assert.match(await bar.textContent(), /ADMIN 역할 duru-boss 로 로그인/);
+            assert.equal(await frameSrc(), `${admin.url}/admin/member`);
+            assert.equal(await bar.locator('a:has-text("새 창")').getAttribute('href'), `${admin.url}/admin/member`);
+            await frameWho(p, '두루 대표');
+
+            await picker.selectOption({ label: 'AUDITOR (duru-auditor)' });
+            await frameWho(p, '두루 감사');
+            assert.equal(await frameSrc(), `${auditor.url}/admin/member`);
+            assert.equal(await bar.locator('a:has-text("새 창")').getAttribute('href'), `${auditor.url}/admin/member`);
+            assert.match(await bar.textContent(), /AUDITOR 역할 duru-auditor 로 로그인/);
+            assert.match(await bar.locator('.error').allTextContents().then((t) => t.join('\n')), /이 역할은 화면 조건\(ADMIN\)을 채우지 못합니다/);
+
+            await p.click('#screen-list li:has-text("/admin/report")');
+            assert.equal(await picker.inputValue(), 'role:AUDITOR');
+            assert.equal(await frameSrc(), `${auditor.url}/admin/report`);
+            assert.match(await bar.textContent(), /이 역할은 화면 조건\(ADMIN, OWNER\)을 채우지 못합니다/);
+
+            await p.click('#screen-list li:has-text("/admin/audit")');
+            assert.equal(await frameSrc(), `${auditor.url}/admin/audit`);
+            assert.doesNotMatch(await bar.textContent(), /채우지 못합니다/);
+
+            await picker.selectOption({ label: '기본 계정 (duru-admin)' });
+            await frameWho(p, '두루 관리자');
+            assert.equal(await frameSrc(), `${app.url}/admin/audit`);
+            assert.match(await bar.textContent(), /duru-admin 로 로그인/);
+
+            await picker.selectOption({ label: '화면에 맞춰' });
+            await frameWho(p, '두루 대표');
+            assert.equal(await frameSrc(), `${admin.url}/admin/audit`);
+
+            await p.click('#screen-list li:has-text("/home")');
+            assert.equal(await frameSrc(), `${app.url}/home`);
+            assert.match(await bar.textContent(), /duru-admin 로 로그인/);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a screen whose role has no account or cannot be read from the map opens as the default account and the bar says why, and signed-out screens have no role picker', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPasswords({ ...ALL_PASSWORDS, [AUDITOR_PASSWORD_ENV]: undefined }, () =>
+      withRebuiltFixture({ app: { ...roleSettings(api, { AUDITOR: 'duru-auditor' }).app, signedOutPaths: ['/signin'] } }, async (config, copy) => {
+        const home = path.join(copy, 'client/src/components/Home.js');
+        fs.writeFileSync(home, fs.readFileSync(home, 'utf8').replace("const isAdmin = memberRole === 'ADMIN';", "const isAdmin = memberRole !== 'MEMBER';"));
+        execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const bar = p.locator('#center .frame-bar');
+            await p.waitForSelector('#screen-list li');
+
+            await p.click('#screen-list li:has-text("/admin/member")');
+            assert.deepEqual(await bar.locator('select option[disabled]').allTextContents(), ['ADMIN — 계정 없음', 'OWNER — 계정 없음']);
+            assert.match(await bar.locator('.error').textContent(), /조건을 채우는 역할\(ADMIN\)에 계정이 없습니다/);
+            assert.match(await bar.textContent(), /duru-admin 로 로그인/);
+            assert.equal(await p.locator('#center iframe.app').getAttribute('src'), `${app.url}/admin/member`);
+
+            await p.click('#screen-list li:has-text("/admin/group")');
+            assert.match(await bar.locator('.error').textContent(), /어느 역할이 조건을 채우는지 맵에서 정할 수 없습니다: isAdmin/);
+            assert.equal(await p.locator('#center iframe.app').getAttribute('src'), `${app.url}/admin/group`);
+
+            await bar.locator('select').selectOption({ label: 'AUDITOR (duru-auditor)' });
+            assert.match(await bar.locator('.error').first().textContent(), new RegExp(AUDITOR_PASSWORD_ENV));
+            assert.doesNotMatch(await bar.textContent(), /AUDITOR 역할 duru-auditor 로 로그인/);
+
+            await p.click('#screen-list li:has-text("/signin")');
+            assert.match(await bar.textContent(), /로그아웃 상태/);
+            assert.equal(await bar.locator('select').count(), 0);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, a screen opens as a role that logged in before one whose login failed, and guards left unread are named even when the values are known', { skip: browserMissing }, async () => {
+  const roles = {
+    ADMIN: { id: 'duru-auditor', passwordEnv: AUDITOR_PASSWORD_ENV },
+    OWNER: { id: 'duru-boss', passwordEnv: ADMIN_PASSWORD_ENV },
+  };
+  await withFakeApi((api) =>
+    withPasswords({ ...ALL_PASSWORDS, [AUDITOR_PASSWORD_ENV]: undefined }, () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, roles } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const bar = p.locator('#center .frame-bar');
+            await p.waitForSelector('#screen-list li');
+
+            await p.click('#screen-list li:has-text("/admin/report")');
+            await frameWho(p, '두루 대표');
+            assert.equal(await p.locator('#center iframe.app').getAttribute('src'), `${app.roles[1].url}/admin/report`);
+            assert.match(await bar.textContent(), /OWNER 역할 duru-boss 로 로그인/);
+
+            await p.click('#screen-list li:has-text("/admin/member")');
+            assert.match(await bar.locator('.error').first().textContent(), new RegExp(AUDITOR_PASSWORD_ENV));
+            assert.match(await bar.textContent(), /읽지 못한 역할 조건도 있습니다: isAdminRole\(memberRole\)/);
           }),
         ),
       ),

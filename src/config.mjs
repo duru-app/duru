@@ -18,10 +18,13 @@ const isText = (v) => typeof v === 'string' && v.length > 0;
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isWebAddress = (v) => isText(v) && /^https?:\/\/[^/]/.test(v);
 
+const isAccount = (v) => isPlainObject(v) && isText(v.id) && isText(v.passwordEnv) && !('password' in v);
+const ACCOUNT = '{ "id", "passwordEnv" } with the name of an environment variable that holds the password, never the password itself';
+
 function appSettings(app, at) {
-  // login · account 에는 비밀번호가 잘못 들어 있을 수 있어 값을 메시지에 싣지 않는다.
+  // login · account · roles 에는 비밀번호가 잘못 들어 있을 수 있어 값을 메시지에 싣지 않는다.
   const fail = (key, expected) => {
-    const shown = ['login', 'account'].includes(key) ? '' : `, not ${JSON.stringify(app[key])}`;
+    const shown = ['login', 'account', 'roles'].includes(key.split('.')[0]) ? '' : `, not ${JSON.stringify(app[key])}`;
     throw new Error(`app.${key} must be ${expected}${shown}`);
   };
   if (!isPlainObject(app)) throw new Error(`app must be an object, not ${JSON.stringify(app)}`);
@@ -35,14 +38,17 @@ function appSettings(app, at) {
     || !isPlainObject(login.storage) || !isText(login.storage.key) || !(isText(login.storage.value) || isPlainObject(login.storage.value))) {
     fail('login', '{ "path", "body", "token", "storage": { "key", "value" } }, such as { "path": "/auth/login", "body": { "id": "{id}", "password": "{password}" }, "token": "accessToken", "storage": { "key": "auth", "value": "{token}" } }');
   }
-  if (!isPlainObject(account) || !isText(account.id) || !isText(account.passwordEnv) || 'password' in account) {
-    fail('account', '{ "id", "passwordEnv" } with the name of an environment variable that holds the password, never the password itself');
+  if (!isAccount(account)) fail('account', ACCOUNT);
+  const roles = app.roles ?? {};
+  if (!isPlainObject(roles)) fail('roles', 'an object from each role value the app compares to that role\'s account, such as { "ADMIN": { "id": "duru-admin", "passwordEnv": "DURU_ADMIN_PASSWORD" } }');
+  for (const [role, roleAccount] of Object.entries(roles)) {
+    if (!isText(role) || !isAccount(roleAccount)) fail(`roles.${role}`, ACCOUNT);
   }
   const signedOutPaths = app.signedOutPaths ?? [];
   if (!Array.isArray(signedOutPaths) || !signedOutPaths.every((p) => isText(p) && p.startsWith('/'))) {
     fail('signedOutPaths', 'a list of route paths shown signed out, such as ["/signin"]');
   }
-  return { ...app, signedOutPaths, files: isWebAddress(app.files) ? app.files : at(app.files) };
+  return { ...app, roles, signedOutPaths, files: isWebAddress(app.files) ? app.files : at(app.files) };
 }
 
 export function loadConfig(configPath) {

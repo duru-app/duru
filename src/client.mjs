@@ -15,7 +15,7 @@ function parseFile(file) {
   return { src, ast: parse(src, { sourceType: 'module', plugins: PARSER_PLUGINS, errorRecovery: true }) };
 }
 
-function memberChain(node) {
+export function memberChain(node) {
   const names = [];
   let cur = node;
   while (cur.type === 'MemberExpression' || cur.type === 'OptionalMemberExpression') {
@@ -33,11 +33,21 @@ function sliceText(src, node) {
   return text.length > GUARD_TEXT_LIMIT ? text.slice(0, GUARD_TEXT_LIMIT) + '…' : text;
 }
 
+export function lookupConstant(constants, chain) {
+  if (!chain || !Object.hasOwn(constants, chain[0])) return undefined;
+  let value = constants[chain[0]];
+  for (const key of chain.slice(1)) {
+    if (value == null) return undefined;
+    value = value[key];
+  }
+  return value;
+}
+
 const initCache = new WeakMap();
 
 function constInits(exprPath, src) {
   if (initCache.has(exprPath.node)) return initCache.get(exprPath.node);
-  const texts = [];
+  const found = [];
   const seen = new Set();
   const follow = (p) => {
     const ids = p.isIdentifier() ? [p] : [];
@@ -48,32 +58,39 @@ function constInits(exprPath, src) {
       seen.add(binding);
       const init = binding.path.isVariableDeclarator() && binding.path.get('init');
       if (!init?.node) continue;
-      texts.push(src.slice(init.node.start, init.node.end));
+      const declared = binding.path.node.id;
+      found.push({ name: declared.type === 'Identifier' ? declared.name : null, init: src.slice(init.node.start, init.node.end) });
       follow(init);
     }
   };
   follow(exprPath);
-  initCache.set(exprPath.node, texts);
-  return texts;
+  initCache.set(exprPath.node, found);
+  return found;
 }
 
 // 이 노드가 렌더되거나 실행되려면 참이어야 하는 조건들을 파일 안에서 거슬러 올라가며 모은다.
 function guardsOf(nodePath, src, inits) {
   const guards = [];
-  const add = (text, exprPath) => {
+  // source 는 줄이지 않은 조건이다. 다른 조건이 같은 글자로 줄어들면 어느 것인지 모르므로 비운다.
+  const add = (text, exprPath, source) => {
     guards.push(text);
     const found = constInits(exprPath, src);
-    if (found.length) inits.set(text, [...new Set([...(inits.get(text) ?? []), ...found])]);
+    const known = inits.get(text);
+    if (!known) return void inits.set(text, { source, inits: [...found] });
+    if (known.source !== source) known.source = null;
+    known.inits.push(...found.filter((f) => !known.inits.some((k) => k.name === f.name && k.init === f.init)));
   };
   let child = nodePath;
   let parent = nodePath.parentPath;
   while (parent) {
     const p = parent.node;
     if (p.type === 'LogicalExpression' && p.operator === '&&' && child.key === 'right') {
-      add(sliceText(src, p.left), parent.get('left'));
+      add(sliceText(src, p.left), parent.get('left'), src.slice(p.left.start, p.left.end));
     } else if ((p.type === 'ConditionalExpression' || p.type === 'IfStatement') && child.key !== 'test') {
       const t = sliceText(src, p.test);
-      add(child.key === 'consequent' ? t : `!(${t})`, parent.get('test'));
+      const s = src.slice(p.test.start, p.test.end);
+      if (child.key === 'consequent') add(t, parent.get('test'), s);
+      else add(`!(${t})`, parent.get('test'), `!(${s})`);
     }
     child = parent;
     parent = parent.parentPath;
@@ -94,7 +111,6 @@ function enclosingFunctionName(nodePath) {
 // 화면마다 라우트 조건 · import 로 이어지는 파일의 API 호출 · 설정값 읽기 · 링크를 모으고, API 모듈의 함수별 endpoint 를 함께 돌려준다.
 export async function extractClient(config) {
   const constants = await loadConstants(config);
-  const constantNames = new Set(Object.keys(constants));
   const apiModuleFiles = new Set(config.apiModules.map((rel) => path.join(config.srcRoot, rel)));
   const constantFiles = new Set(Object.values(config.constants).map((rel) => path.join(config.srcRoot, rel)));
   const settingsRoots = new Set(config.settingsRoots);
@@ -104,16 +120,6 @@ export async function extractClient(config) {
     if (!guardInits.has(file)) guardInits.set(file, new Map());
     return guardInits.get(file);
   };
-
-  function lookupConstant(chain) {
-    if (!chain || !constantNames.has(chain[0])) return undefined;
-    let value = constants[chain[0]];
-    for (const key of chain.slice(1)) {
-      if (value == null) return undefined;
-      value = value[key];
-    }
-    return value;
-  }
 
   // 상수·템플릿·문자열 결합·지역 const 까지만 따라가 값을 만든다. 모르는 조각은 UNKNOWN 으로 남긴다.
   function evaluate(nodePath) {
@@ -143,7 +149,7 @@ export async function extractClient(config) {
       case 'MemberExpression':
       case 'OptionalMemberExpression': {
         const chain = memberChain(node);
-        const direct = lookupConstant(chain);
+        const direct = lookupConstant(constants, chain);
         if (direct !== undefined) return direct;
         if (chain && chain.length > 1) {
           const base = evaluateIdentifier(nodePath.scope, chain[0]);
@@ -322,7 +328,7 @@ export async function extractClient(config) {
             },
             MemberExpression(m) {
               if (m.parentPath.isMemberExpression({ object: m.node })) return;
-              const value = lookupConstant(memberChain(m.node));
+              const value = lookupConstant(constants, memberChain(m.node));
               if (value && typeof value === 'object' && 'URL' in value) {
                 endpoints.push({ method: value.METHOD ?? null, url: value.URL, line: m.node.loc.start.line });
               }
@@ -525,7 +531,7 @@ export async function extractClient(config) {
   const apiFunctions = {};
   for (const f of apiModuleFiles) Object.assign(apiFunctions, extractApiModule(f));
 
-  const routeValues = lookupConstant(config.routeConstant.split('.')) ?? {};
+  const routeValues = lookupConstant(constants, config.routeConstant.split('.')) ?? {};
   const rel = (f) => (f ? path.relative(config.srcRoot, f) : null);
 
   const screens = extractScreens(path.join(config.srcRoot, config.routesFile)).map(({ wrapperFiles, ...s }) => {
@@ -542,5 +548,5 @@ export async function extractClient(config) {
     return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, apiCalls, settingReads, links };
   });
 
-  return { screens, apiFunctions, redirects, guardInits };
+  return { screens, apiFunctions, redirects, guardInits, constants };
 }

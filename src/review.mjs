@@ -58,6 +58,7 @@ export function reviewData(config, author, app = null) {
       signOutPath: SIGN_OUT_PATH,
       unknownSignedOutPaths: config.app.signedOutPaths.filter((p) => !map.screens.some((s) => s.path === p)),
       account: app.account,
+      roles: app.roles,
       error: app.error,
     },
     appLinks: Object.fromEntries(map.screens.map((s) => {
