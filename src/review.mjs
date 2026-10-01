@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { SIGN_OUT_PATH, startAppHost } from './app-host.mjs';
 import { UNKNOWN } from './client.mjs';
 import { buildFlow } from './flow.mjs';
 import { addMark, classifyMarks, loadMarks } from './marks.mjs';
@@ -40,7 +41,7 @@ function screenCallOptions(screen, callsById) {
   return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id).options.filter((o) => keys.has(o.key) || o.sources.includes('config'))]));
 }
 
-export function reviewData(config, author) {
+export function reviewData(config, author, app = null) {
   const map = readJson(path.join(config.outDir, 'map.json'));
   const tests = readJson(path.join(config.outDir, 'tests.json'));
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
@@ -51,7 +52,18 @@ export function reviewData(config, author) {
     marks: classifyMarks(loadMarks(config.marksDir), map),
     flow: buildFlow(map, tests),
     appUrl: config.appUrl ?? null,
-    appLinks: Object.fromEntries(map.screens.map((s) => [s.id, appLink(config.appUrl, s.path)])),
+    app: app && {
+      url: app.url,
+      signedOutUrl: app.signedOutUrl,
+      signOutPath: SIGN_OUT_PATH,
+      unknownSignedOutPaths: config.app.signedOutPaths.filter((p) => !map.screens.some((s) => s.path === p)),
+      account: app.account,
+      error: app.error,
+    },
+    appLinks: Object.fromEntries(map.screens.map((s) => {
+      const signedOut = app && config.app.signedOutPaths.includes(s.path);
+      return [s.id, appLink(signedOut ? app.signedOutUrl : (app?.url ?? config.appUrl), s.path)];
+    })),
     routesFile: config.routesFile,
     depths: DEPTHS,
     author,
@@ -79,7 +91,8 @@ function readBody(req) {
   });
 }
 
-export function startReviewServer(config, { port = 0, author = null, onDone = () => {} } = {}) {
+export async function startReviewServer(config, { port = 0, author = null, onDone = () => {} } = {}) {
+  const app = config.app && (await startAppHost(config.app));
   // 다른 사이트가 사용자의 브라우저로 표시를 써 넣거나 리뷰를 끝내거나(JSON 이 아닌 요청), 자기 도메인을 이 주소로 돌려 맵을 읽어 가는 것(다른 Host)을 막는다.
   const ownHosts = () => [`127.0.0.1:${server.address().port}`, `localhost:${server.address().port}`];
   const isJson = (req) => req.headers['content-type']?.startsWith('application/json');
@@ -94,7 +107,7 @@ export function startReviewServer(config, { port = 0, author = null, onDone = ()
         return send(res, 200, 'text/plain', 'review ended');
       }
       if (req.method === 'GET' && req.url === '/') return send(res, 200, 'text/html', fs.readFileSync(PAGE, 'utf8'));
-      if (req.method === 'GET' && req.url === '/api/data') return send(res, 200, 'application/json', JSON.stringify(reviewData(config, author)));
+      if (req.method === 'GET' && req.url === '/api/data') return send(res, 200, 'application/json', JSON.stringify(reviewData(config, author, app)));
       const url = new URL(req.url, 'http://host');
       if (req.method === 'GET' && url.pathname === '/api/flow' && url.searchParams.has('from')) {
         const map = readJson(path.join(config.outDir, 'map.json'));
@@ -122,8 +135,12 @@ export function startReviewServer(config, { port = 0, author = null, onDone = ()
       send(res, 500, 'text/plain', err.message);
     }
   });
+  if (app) server.on('close', () => app.close());
   return new Promise((resolve, reject) => {
-    server.once('error', reject);
+    server.once('error', (err) => {
+      app?.close();
+      reject(err);
+    });
     server.listen(port, '127.0.0.1', () => resolve(server));
   });
 }

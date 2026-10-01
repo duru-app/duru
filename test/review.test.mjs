@@ -132,9 +132,271 @@ test('with an app address, only screens without path variables get a link to the
     withServer(config, 'reviewer', async (base) => {
       const data = await (await fetch(`${base}/api/data`)).json();
       assert.ok(Object.values(data.appLinks).every((l) => l === null));
+      assert.equal(data.app, null);
     }),
   );
 });
+
+const PASSWORD_ENV = 'DURU_TEST_APP_PASSWORD';
+
+async function withFakeApi(fn) {
+  const presses = [];
+  const json = (res, status, body) => {
+    res.writeHead(status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(body));
+  };
+  const server = http.createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    if (req.method === 'POST' && req.url === '/auth/login') {
+      const { loginId, pw } = JSON.parse(body);
+      return loginId === 'duru-admin' && pw === 's3cret' ? json(res, 200, { result: { token: 't-123' } }) : json(res, 401, { message: 'bad login' });
+    }
+    if (req.headers.authorization !== 'Bearer t-123') return json(res, 401, { message: 'no token' });
+    if (req.method === 'GET' && req.url === '/api/v1/me') return json(res, 200, { name: '두루 관리자' });
+    if (req.method === 'POST' && req.url === '/api/v1/press') {
+      presses.push(req.url);
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      return res.end('pressed');
+    }
+    json(res, 404, {});
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    return await fn(`http://127.0.0.1:${server.address().port}`, presses);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+}
+
+const appSettings = (server) => ({
+  app: {
+    files: 'build',
+    server,
+    apiPaths: ['/api/'],
+    login: {
+      path: '/auth/login',
+      body: { loginId: '{id}', pw: '{password}' },
+      token: 'result.token',
+      storage: { key: 'FAKE_AUTH', value: { accessToken: '{token}' } },
+    },
+    account: { id: 'duru-admin', passwordEnv: PASSWORD_ENV },
+  },
+});
+
+async function withPassword(value, fn) {
+  if (value === undefined) delete process.env[PASSWORD_ENV];
+  else process.env[PASSWORD_ENV] = value;
+  try {
+    return await fn();
+  } finally {
+    delete process.env[PASSWORD_ENV];
+  }
+}
+
+test('with app settings, the app is served logged in on its own address and its API requests go to the test server', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const data = await (await fetch(`${base}/api/data`)).json();
+          assert.match(data.app.url, /^http:\/\/127\.0\.0\.1:\d+$/);
+          assert.notEqual(data.app.url, base);
+          assert.equal(data.app.account, 'duru-admin');
+          assert.equal(data.app.error, null);
+          assert.equal(data.appLinks['/home#Home'], `${data.app.url}/home`);
+          assert.equal(data.appLinks['/document/:id#DocumentDetail'], null);
+
+          const html = await (await fetch(`${data.app.url}/home`)).text();
+          assert.equal(await (await fetch(`${data.app.url}/app.js/nested`)).text(), html);
+          assert.match(html, /<title>가짜 앱<\/title>/);
+          assert.match(html, /FAKE_AUTH/);
+          assert.match(html, /t-123/);
+          const script = await fetch(`${data.app.url}/app.js`);
+          assert.match(script.headers.get('content-type'), /javascript/);
+          assert.match(await script.text(), /FAKE_AUTH/);
+
+          const me = await fetch(`${data.app.url}/api/v1/me`, { headers: { authorization: 'Bearer t-123' } });
+          assert.equal(me.status, 200);
+          assert.deepEqual(await me.json(), { name: '두루 관리자' });
+
+          const other = await new Promise((resolve) => {
+            const { port } = new URL(data.app.url);
+            http.get({ host: '127.0.0.1', port, path: '/home', headers: { host: 'evil.example.test' } }, (res) => resolve(res.statusCode));
+          });
+          assert.equal(other, 403);
+
+          const page = await (await fetch(`${base}/`)).text();
+          const map = fs.readFileSync(path.join(config.outDir, 'map.json'), 'utf8');
+          for (const text of [JSON.stringify(data), html, page, map]) assert.ok(!text.includes('s3cret'));
+        }),
+      ),
+    ),
+  );
+});
+
+test('screens listed as signed out open on a second app address that never gets the token and clears it once on the sign-out path', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app, appLinks } = await (await fetch(`${base}/api/data`)).json();
+          const signedOut = new URL(app.signedOutUrl);
+          assert.equal(signedOut.hostname, '127.0.0.1');
+          assert.notEqual(signedOut.port, new URL(app.url).port);
+          assert.equal(appLinks['/signin#SignIn'], `${app.signedOutUrl}/signin`);
+          assert.equal(appLinks['/home#Home'], `${app.url}/home`);
+
+          const html = await (await fetch(`${app.signedOutUrl}/signin`)).text();
+          assert.match(html, /<title>가짜 앱<\/title>/);
+          assert.doesNotMatch(html, /t-123/);
+          assert.doesNotMatch(html, /removeItem/);
+
+          const signOut = await (await fetch(`${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent('/signin')}`)).text();
+          assert.match(signOut, /localStorage\.removeItem\("FAKE_AUTH"\)/);
+          assert.match(signOut, /location\.replace\(location\.origin \+ "\/signin"\)/);
+          for (const to of ['//evil.example.test', '/\\evil.example.test', 'javascript:alert(1)', 'http://[', '/.//evil.example.test', '/x/..//evil.example.test', '/%2e//evil.example.test']) {
+            const offSite = await (await fetch(`${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent(to)}`)).text();
+            assert.match(offSite, /location\.replace\(location\.origin \+ "\/"\)/, to);
+          }
+
+          const me = await fetch(`${app.signedOutUrl}/api/v1/me`, { headers: { authorization: 'Bearer t-123' } });
+          assert.equal(me.status, 200);
+        }),
+      ),
+    ),
+  );
+});
+
+test('without signedOutPaths there is no signed-out address', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          assert.equal(app.signedOutUrl, null);
+          assert.deepEqual(app.unknownSignedOutPaths, []);
+        }),
+      ),
+    ),
+  );
+});
+
+test('signedOutPaths that match no screen path in the map are listed for the page', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin', '/signin/', '/login'] } }, (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          assert.deepEqual(app.unknownSignedOutPaths, ['/signin/', '/login']);
+        }),
+      ),
+    ),
+  );
+});
+
+test('when the password variable is missing or the login is refused, the page says why and the app is served without a token', async () => {
+  await withFakeApi(async (api) => {
+    await withPassword(undefined, () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const data = await (await fetch(`${base}/api/data`)).json();
+          assert.match(data.app.error, new RegExp(PASSWORD_ENV));
+          assert.doesNotMatch(await (await fetch(`${data.app.url}/home`)).text(), /FAKE_AUTH/);
+        }),
+      ),
+    );
+    await withPassword('wrong', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const data = await (await fetch(`${base}/api/data`)).json();
+          assert.match(data.app.error, /401/);
+          assert.ok(!data.app.error.includes('wrong'));
+        }),
+      ),
+    );
+  });
+});
+
+test('app files taken from a deployed address are served without the headers that forbid framing, with the token put in', async () => {
+  const build = path.join(FIXTURE, 'build');
+  const deployed = http.createServer((req, res) => {
+    const file = path.join(build, req.url === '/app.js' ? 'app.js' : 'index.html');
+    res.writeHead(200, {
+      'content-type': file.endsWith('.js') ? 'application/javascript' : 'text/html; charset=utf-8',
+      'x-frame-options': 'DENY',
+      'content-security-policy': "frame-ancestors 'none'",
+    });
+    res.end(fs.readFileSync(file));
+  });
+  await new Promise((resolve) => deployed.listen(0, '127.0.0.1', resolve));
+  try {
+    const files = `http://127.0.0.1:${deployed.address().port}`;
+    await withFakeApi((api) =>
+      withPassword('s3cret', () =>
+        withRebuiltFixture({ app: { ...appSettings(api).app, files } }, (config) =>
+          withServer(config, 'reviewer', async (base) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const page = await fetch(`${app.url}/home`);
+            assert.equal(page.headers.get('x-frame-options'), null);
+            assert.equal(page.headers.get('content-security-policy'), null);
+            assert.match(await page.text(), /FAKE_AUTH/);
+            const script = await fetch(`${app.url}/app.js`);
+            assert.match(script.headers.get('content-type'), /javascript/);
+            assert.doesNotMatch(await script.text(), /t-123/);
+          }),
+        ),
+      ),
+    );
+  } finally {
+    deployed.closeAllConnections();
+    deployed.close();
+  }
+});
+
+for (const signedOutPaths of [[], ['/signin']]) {
+  test(`the app server closes with the review server, with signedOutPaths ${JSON.stringify(signedOutPaths)}`, async () => {
+    await withFakeApi((api) =>
+      withPassword('s3cret', () =>
+        withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths } }, async (config) => {
+          const server = await startReviewServer(config, { author: 'reviewer' });
+          let app;
+          try {
+            ({ app } = await (await fetch(`http://127.0.0.1:${server.address().port}/api/data`)).json());
+          } finally {
+            await new Promise((resolve) => server.close(resolve));
+          }
+          assert.equal(Boolean(app.signedOutUrl), signedOutPaths.length > 0);
+          const refused = (err) => err.cause?.code === 'ECONNREFUSED';
+          await assert.rejects(fetch(`${app.url}/home`), refused);
+          if (app.signedOutUrl) await assert.rejects(fetch(`${app.signedOutUrl}/signin`), refused);
+        }),
+      ),
+    );
+  });
+}
+
+for (const [name, broken, message] of [
+  ['no files', { files: undefined }, /app\.files/],
+  ['a server that is not an address', { server: 'not a url' }, /app\.server/],
+  ['apiPaths that is not a list', { apiPaths: '/api/' }, /app\.apiPaths/],
+  ['a login without body, token and storage', { login: { path: '/auth/login' } }, /app\.login/],
+  ['the password itself in the account', { account: { id: 'duru-admin', password: 's3cret' } }, /app\.account/],
+  ['signedOutPaths that is not a list of paths', { signedOutPaths: 'signin' }, /app\.signedOutPaths/],
+]) {
+  test(`app settings with ${name} are rejected`, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+    try {
+      const file = path.join(dir, 'config.json');
+      const app = { ...appSettings('http://127.0.0.1:1').app, ...broken };
+      fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8')), app }));
+      assert.throws(() => loadConfig(file), (err) => message.test(err.message) && !err.message.includes('s3cret'));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
 
 test('the page reports a missing map instead of serving empty data', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
@@ -709,4 +971,97 @@ export default function AdminReport() {
       }),
     );
   });
+});
+
+test('in a browser, the chosen screen shows the logged-in app in a frame above its tests, with the address, the account and a new-window link, and a press inside reaches the test server', { skip: browserMissing }, async () => {
+  await withFakeApi((api, presses) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin', '/login'] } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/home")');
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            const bar = p.locator('#center .frame-bar');
+            assert.match(await bar.textContent(), new RegExp(`${app.url}/home`));
+            assert.match(await bar.textContent(), /duru-admin/);
+            assert.match(await bar.textContent(), /맵에 없는 signedOutPaths: \/login/);
+            assert.equal(await bar.locator('a:has-text("새 창")').getAttribute('href'), `${app.url}/home`);
+            assert.equal(await bar.locator('a:has-text("새 창")').getAttribute('target'), '_blank');
+
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#who:has-text("두루 관리자")').waitFor();
+            assert.equal(await frame.locator('#path').textContent(), '/home');
+            await frame.locator('#press').click();
+            await frame.locator('#pressed:has-text("pressed")').waitFor();
+            assert.equal(presses.length, 1);
+
+            await p.click('#center tr:has-text("API")');
+            await p.click('#right .statuses button:has-text("없음")');
+            await p.click('#right button.save');
+            await p.waitForSelector('#center tr.selected .chip.missing');
+            assert.equal(await frame.locator('#pressed').textContent(), 'pressed');
+
+            const frameBox = await p.locator('#center iframe.app').boundingBox();
+            const tableBox = await p.locator('#center table').first().boundingBox();
+            assert.ok(tableBox.y > frameBox.y + frameBox.height - 1);
+            assert.ok(await p.locator('#right').isVisible());
+
+            await p.click('#screen-list li:has-text("/signin")');
+            assert.match(await bar.textContent(), /로그아웃 상태/);
+            assert.doesNotMatch(await bar.textContent(), /duru-admin/);
+            await p.frameLocator('#center iframe.app').locator('#path:has-text("/signin")').waitFor();
+            const signedOutFrame = p.frameLocator('#center iframe.app');
+            assert.equal(await signedOutFrame.locator('#who').textContent(), '로그인 전');
+            assert.equal(await bar.locator('a:has-text("새 창")').getAttribute('href'),
+              `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent('/signin')}`);
+
+            const appFrameHandle = p.frames().find((f) => f.url().startsWith(`${app.signedOutUrl}/signin`));
+            await appFrameHandle.evaluate(() => {
+              localStorage.setItem('FAKE_AUTH', JSON.stringify({ accessToken: 't-123' }));
+              location.reload();
+            });
+            await signedOutFrame.locator('#who:has-text("두루 관리자")').waitFor();
+
+            await p.click('#screen-list li:has-text("/document/:id")');
+            assert.match(await p.textContent('#center'), /주소에 값이 필요한 화면/);
+            assert.equal(await p.locator('#center iframe').count(), 0);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, the sign-out path lands on the signed-out address whatever path it is given', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            for (const [to, landing] of [['/signin', '/signin'], ['/.//evil.example.test', '/'], ['/%2e//evil.example.test', '/'], ['/.\\/evil.example.test', '/']]) {
+              await p.goto(`${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent(to)}`);
+              await p.waitForURL((u) => u.pathname !== app.signOutPath);
+              assert.equal(p.url(), `${app.signedOutUrl}${landing}`, to);
+            }
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, without app settings the center column has no frame', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/home")');
+        await p.waitForSelector('#center table');
+        assert.equal(await p.locator('#center iframe').count(), 0);
+        assert.equal(await p.locator('#center .frame-bar').count(), 0);
+      }),
+    ),
+  );
 });
