@@ -586,6 +586,33 @@ test('a call node lists the on/off keys the screens put in its request body, wit
   assert.deepEqual(optionsOf(map, 'POST:/api/v1/archive/document'), []);
 });
 
+test('a GET call carries no body, so an on/off key a screen passes to its API function is not an option of it', async () => {
+  const map = await buildFixture();
+  assert.deepEqual(optionsOf(map, 'GET:/api/v1/member/list'), []);
+});
+
+test('when one call site reaches both a GET and a POST call, only the POST call takes the options found there', async () => {
+  const map = await buildCopy((rewrite) =>
+    rewrite('client/src/_ajax/AjaxFunc.js', (src) =>
+      src.replace('info: Option.REST_API.MEMBER.LIST,', "info: page ? Option.REST_API.MEMBER.LIST : { METHOD: 'POST', URL: '/api/v1/member/list' },"),
+    ),
+  );
+  assert.deepEqual(optionsOf(map, 'GET:/api/v1/member/list'), []);
+  assert.deepEqual(optionsOf(map, 'POST:/api/v1/member/list'), [
+    { key: 'showError', values: [true, false], sources: ['source'], sites: [{ screen: '/admin/member#AdminMember', file: 'components/AdminMember.js', line: 6 }] },
+  ]);
+});
+
+test('an option written in bodyOptions for a GET call is kept', async () => {
+  const map = await buildCopy((rewrite) =>
+    rewrite('config.json', (src) => {
+      const config = JSON.parse(src);
+      return JSON.stringify({ ...config, bodyOptions: { ...config.bodyOptions, 'GET:/api/v1/member/list': ['showError'] } });
+    }),
+  );
+  assert.deepEqual(optionsOf(map, 'GET:/api/v1/member/list'), [{ key: 'showError', values: [true, false], sources: ['config'], sites: [] }]);
+});
+
 test('an option written in bodyOptions is added to its call with the config as its source, even when the body comes from another file', async () => {
   const map = await buildFixture();
   assert.deepEqual(optionsOf(map, 'POST:/api/v1/report/schedule'), [{ key: 'weekly', values: [true, false], sources: ['config'], sites: [] }]);

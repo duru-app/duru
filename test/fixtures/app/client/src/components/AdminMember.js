@@ -3,7 +3,7 @@ import { ajaxMemberList } from '_ajax/AjaxFunc';
 
 export default function AdminMember() {
   useEffect(() => {
-    ajaxMemberList();
+    ajaxMemberList({ page: 1, showError: false });
   }, []);
 
   return <section>Members</section>;

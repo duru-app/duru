@@ -111,6 +111,8 @@ Each call node also lists the on/off `options` of its request body, read where a
 function. The body is an object written into the call's arguments, or the object under a `bodyArgKeys`
 property of one; either may be a const of the same file. A body key is an option when its value is `true` or
 `false`, a const initialised to one of them, or the first value of `useState(true)` or `useState(false)`.
+A GET call carries no body, so it takes no options found in the code, only those written in `bodyOptions`;
+when the API function makes both a GET and another call, the keys found go to the other call alone.
 Each option has its `key`, the `values` to test it with (always `[true, false]`, whatever the screen sends),
 `sources` (`source` for one found in the code, `config` for one written in `bodyOptions`, both when it is
 both) and the `sites` it was found at (`screen`, `file`, `line` of the key; none for an option only in the
