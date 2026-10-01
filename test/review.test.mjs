@@ -358,6 +358,75 @@ test('in a browser, the chosen screen shows its calls with the server match and 
   );
 });
 
+test('in a browser, each call shows on and off rows for its options and a no-option row, with empty option rows standing out', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        const label = (row) => row.locator('td.call > div:first-child').innerText();
+        const rows = p.locator('table.calls tbody tr');
+        const labels = [];
+        for (let i = 0; i < (await rows.count()); i++) labels.push(await label(rows.nth(i)));
+        assert.deepEqual(labels, [
+          'POST:/api/v1/report/export',
+          'withAttachments 켬', 'withAttachments 끔', 'withHistory 켬', 'withHistory 끔', '옵션 지정 없음',
+          'POST:/api/v1/report/archive',
+          'signedOnly 켬', 'signedOnly 끔', 'withHistory 켬', 'withHistory 끔', '옵션 지정 없음',
+          'POST:/api/v1/report/schedule',
+          'weekly 켬', 'weekly 끔', '옵션 지정 없음',
+        ]);
+        const gaps = [];
+        for (const row of await p.locator('table.calls tr.option.gap').all()) gaps.push(await label(row));
+        assert.deepEqual(gaps, ['withAttachments 끔', 'signedOnly 끔', 'withHistory 끔', 'weekly 켬', 'weekly 끔']);
+        assert.equal(await p.locator('table.calls tr.option.gap td.cell').first().innerText(), '테스트 없음');
+        assert.deepEqual(await p.locator('table.calls tr.option:has-text("weekly") .chip').allTextContents(), ['설정', '설정']);
+
+        const exportRows = (text) => p.locator('table.calls tr.option').filter({ hasText: text }).first();
+        assert.deepEqual(await exportRows('withHistory 켬').locator('td.cell').allInnerTexts(), ['✓2', '✓2', '—', '—', '—', '—', '—']);
+        const none = exportRows('옵션 지정 없음');
+        assert.equal(await none.locator('td.cell').count(), 0);
+        assert.deepEqual(await none.locator('td.count').allInnerTexts(), ['✓2', '✓2', '—', '—', '—', '—', '—']);
+
+        await exportRows('withHistory 켬').locator('td.cell').nth(1).click();
+        assert.match(await p.textContent('#right h2'), /withHistory 켬 · UI\/E2E 깊이/);
+        assert.equal(await p.locator('#right .test').count(), 2);
+        assert.match(await p.locator('#right .option-sites').innerText(), /components\/ExportDialog\.js:18/);
+
+        await exportRows('withHistory 켬').locator('td.cell').nth(6).click();
+        assert.match(await p.textContent('#right h2'), /withHistory 켬 · 산출물 깊이/);
+        assert.equal(await p.locator('#right .test').count(), 0);
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.fill('#right textarea', 'Open the exported file.');
+        await p.click('#right button.save');
+        await p.waitForSelector('table.calls td.cell.selected .chip.missing');
+
+        await exportRows('withAttachments 끔').locator('td.cell').first().click();
+        assert.match(await p.textContent('#right h2'), /withAttachments 끔$/);
+        await p.click('#right .statuses button:has-text("더 필요")');
+        await p.click('#right button.save');
+        await p.waitForSelector('table.calls td.cell.selected .chip.needs-more');
+
+        await p.locator('table.calls tr.option').filter({ hasText: 'weekly 켬' }).locator('td.cell').first().click();
+        assert.match(await p.locator('#right .option-sites').innerText(), /설정에 적음/);
+
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]).sort((a, b) => a[1].localeCompare(b[1])), [
+          [{ node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true }, depth: 'output' }, 'missing'],
+          [{ node: 'POST:/api/v1/report/export', option: { key: 'withAttachments', value: false } }, 'needs-more'],
+        ]);
+        const tasks = taskList(config);
+        assert.match(tasks, /^ {2}- missing, withHistory=true at output depth — "Open the exported file\." \(reviewer, \d{4}-\d\d-\d\d\)$/m);
+        assert.match(tasks, /^ {4}- withAttachments=false: no tests$/m);
+
+        assert.equal((await postMark(base, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withComments', value: true } }, status: 'missing' })).status, 201);
+        await p.reload();
+        await p.waitForSelector('#screen-list li');
+        assert.match(await p.locator('#left ul.plain').innerText(), /POST:\/api\/v1\/report\/export withComments=true/);
+      }),
+    ),
+  );
+});
+
 test('in a browser, reloading a map with no screens while a call is chosen leaves the page empty instead of failing', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>

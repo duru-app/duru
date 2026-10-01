@@ -184,14 +184,21 @@ screens" filter, which keeps the screens that call an API missing on the server,
 setting" and "opens only under a role" filters read from `access.kinds`; a screen that needs both shows under
 either. The middle shows the chosen screen's tests grouped by depth and, below them, its API calls: one row
 per call with its server match (on the server with its labels, method mismatch, not on the server, or
-unresolved) and one cell per depth counting the call's tests. A call whose address could not be worked out
+unresolved) and one cell per depth counting the call's tests. Under a call with on/off options, each option
+has an on row and an off row, holding the tests that set it to that value, and one more row counts the tests
+with no option tag. The options are the same as in the task list: those this screen sends in the source and
+those added to the call in `bodyOptions`, the latter tagged 「설정」. An on or off row with no tests at all
+stands out in red; the no-option row takes no marks. A call whose address could not be worked out
 from the source has no node, so it shows without cells. The right holds the mark form and, for a screen, why
 it opens only under a setting or a role (the blocking route guards and every link into it with its guards,
 their kinds and whether the screen it comes from opens only under one itself), its source location, route
-guards, links and settings reads, or, for a call, its server match, its tests, where the screen calls it and
+guards, links and settings reads, or, for a call, where an option value's option was found (file and line
+per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it.
 
-A mark targets a screen or an API call, or one depth of either, and records a status (`needs-more`, `missing`,
+A mark targets a screen or an API call, or one depth of either, or one value of a call's option, or one depth
+of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "withHistory", "value": true },
+"depth": "output" }`), and records a status (`needs-more`, `missing`,
 `fine`), a note, the author and the date. The author is `git config user.name` on the machine serving the
 page; when it is not set, the page asks for a name. Marks are never overwritten: marking a target again
 adds to its history, and the latest mark is its current state.
@@ -201,8 +208,8 @@ creates a new file. Marks added on two machines therefore never touch the same f
 a conflict, and the file list of a pull request reads as which screens and calls were marked, by whom and when.
 The folder is the screen or call ID with characters that file names cannot hold replaced by `_`; which node a
 mark belongs to is read from the `target` inside the file, not from the folder. `rebuild` never touches the
-marks folder. A mark whose screen or call is gone from a rebuilt map stays where it is and shows up under
-"detached" until someone deals with it.
+marks folder. A mark whose screen or call is gone from a rebuilt map, or whose option is no longer among the
+call's options, stays where it is and shows up under "detached" until someone deals with it.
 
 `review` prints the page address and the marks folder on standard error and keeps running until the review
 ends. Pressing 「리뷰 끝」 on the page, or Ctrl+C in the terminal, closes the server, prints the task list on
@@ -215,16 +222,18 @@ same browser cannot end it.
 
 ## Task list
 
-`tasks` prints, as Markdown on standard output, every screen whose current mark on the whole screen or on one
-depth is `needs-more` or `missing`. Marks whose current state is `fine` and detached marks are left out. Each
+`tasks` prints, as Markdown on standard output, every screen and API call whose current mark on the whole
+node, on one depth or on an option value is `needs-more` or `missing`. Marks whose current state is `fine` and detached marks are left out. Each
 screen comes with its open marks and notes, the component file and route line, the app address when `appUrl`
 is set, the settings and roles it needs and where they are checked (with each link in, its guards and whether
 the screen it comes from opens only under a setting or a role itself), the API calls it makes with their tests
-and the on/off options this screen sends, and the tests already attached with their depth and status. Under a
+and their on/off options (those this screen sends in the source and those added in `bodyOptions`), and the tests already attached with their depth and status. Under a
 call with options, one line per option value (`withHistory=true`, `withHistory=false`) and one for tests with
 no option tag (`no option tag`) count the tests by depth and status. API calls with an open mark follow under
 `# API calls`, each once however many screens call it, with its marks, the screens calling it, its server
-match and the tests already attached. The list starts with how to tag new tests so that they attach after a
+match and the tests already attached. A mark on an option value reads `withHistory=true` or
+`withHistory=true at output depth`; under `marked options`, each marked option says where it was found
+(file and line with the screens, or set in the config), and each marked cell lists the tests already in it. The list starts with how to tag new tests so that they attach after a
 `rebuild`. Adding tests does not take a screen or call off the list; a reviewer marking it `fine` does.
 `test/fixtures/app/example-marks` holds example marks for the fake client.
 

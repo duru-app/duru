@@ -31,7 +31,8 @@ and you write the tests.
 3. **Write the tests.** In the target project, write tests for each screen and API call in the task list,
    following its marks and notes. The top of the list says how to tag a test so that it attaches to a screen or call
    (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. A test of a
-   call that sets an on/off option listed under it also carries `@option:<key>=true|false`. Do not edit
+   call that sets an on/off option listed under it also carries `@option:<key>=true|false`; a mark on an
+   option value (`withHistory=true at output depth`) asks for a test with that option tag at that depth. Do not edit
    or add marks: they are the reviewer's.
 4. **Confirm the tests attached.** Run the new tests so that their results are written where the config's
    `tests` entries point, then run `duru rebuild <config>` again. Check the summary: the screens with tests

@@ -35,11 +35,19 @@ function saveMark(dir, mark) {
 export function addMark(dir, { target, status, note, author }, now = new Date()) {
   if (typeof target?.node !== 'string' || !target.node) throw new Error('mark target needs a node ID');
   if (target.depth !== undefined && !DEPTHS.includes(target.depth)) throw new Error(`unknown depth "${target.depth}"`);
+  const { option } = target;
+  if (option !== undefined && (typeof option?.key !== 'string' || !option.key || typeof option.value !== 'boolean')) {
+    throw new Error('mark option needs a key and a value of true or false');
+  }
   if (!MARK_STATUSES.includes(status)) throw new Error(`unknown mark status "${status}" (expected one of ${MARK_STATUSES.join(', ')})`);
   if (typeof author !== 'string' || !author.trim()) throw new Error('mark needs an author');
   const mark = {
     id: crypto.randomUUID(),
-    target: target.depth === undefined ? { node: target.node } : { node: target.node, depth: target.depth },
+    target: {
+      node: target.node,
+      ...(option !== undefined && { option: { key: option.key, value: option.value } }),
+      ...(target.depth !== undefined && { depth: target.depth }),
+    },
     status,
     note: typeof note === 'string' ? note : '',
     author: author.trim(),
@@ -49,10 +57,14 @@ export function addMark(dir, { target, status, note, author }, now = new Date())
   return mark;
 }
 
-const targetKey = (t) => (t.depth === undefined ? t.node : `${t.node} ${t.depth}`);
+const targetKey = (t) => [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth].filter(Boolean).join(' ');
 
 export function classifyMarks(marks, map) {
-  const nodes = new Set([...map.screens.map((s) => s.id), ...(map.calls ?? []).map((c) => c.id)]);
+  const nodes = new Map([
+    ...map.screens.map((s) => [s.id, new Set()]),
+    ...(map.calls ?? []).map((c) => [c.id, new Set((c.options ?? []).map((o) => o.key))]),
+  ]);
+  const onMap = (t) => nodes.has(t.node) && (!t.option || nodes.get(t.node).has(t.option.key));
   const byTarget = new Map();
   const ordered = [...marks].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   for (const m of ordered) {
@@ -65,7 +77,7 @@ export function classifyMarks(marks, map) {
   for (const key of [...byTarget.keys()].sort()) {
     const history = byTarget.get(key);
     const entry = { key, target: history[0].target, current: history[0], history };
-    (nodes.has(entry.target.node) ? attached : detached).push(entry);
+    (onMap(entry.target) ? attached : detached).push(entry);
   }
   return { attached, detached };
 }

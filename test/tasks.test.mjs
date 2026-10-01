@@ -201,7 +201,7 @@ test('a guarded link from a screen that opens only under a setting says so after
   });
 });
 
-test('a call line in the task list names the on/off options of its request body, with the tests of each option value by depth', () => {
+test('a call line in the task list names the on/off options of its request body, including those set in the config, with the tests of each option value by depth', () => {
   withFixtureCopy(({ configFile, cli }) => {
     cli('rebuild');
     addMark(loadConfig(configFile).marksDir, { target: { node: '/admin/report#AdminReport' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
@@ -222,7 +222,10 @@ test('a call line in the task list names the on/off options of its request body,
         '    - withHistory=true — tests: ui pass 1',
         '    - withHistory=false — no tests',
         '    - no option tag — no tests',
-        '  - POST:/api/v1/report/schedule — no tests',
+        '  - POST:/api/v1/report/schedule — no tests — options: weekly',
+        '    - weekly=true — no tests',
+        '    - weekly=false — no tests',
+        '    - no option tag — no tests',
         '- tests: none',
         '',
       ].join('\n'),
@@ -230,7 +233,24 @@ test('a call line in the task list names the on/off options of its request body,
   });
 });
 
-test('a call line names only the options its own screen sends', () => {
+test('screens that share an ID each keep the options they send themselves', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    cli('rebuild');
+    const mapFile = path.join(copy, 'out/map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    const report = map.screens.find((s) => s.id === '/admin/report#AdminReport');
+    const plainExport = { ...report.apiCalls.find((c) => c.fn === 'ajaxReportExport'), options: [] };
+    map.screens.push({ ...report, line: 99, apiCalls: [plainExport] });
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+    addMark(loadConfig(configFile).marksDir, { target: { node: '/admin/report#AdminReport' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
+    const sections = cli('tasks').split('## /admin/report#AdminReport\n').slice(1).map((s) => s.split('\n## ')[0]);
+    assert.equal(sections.length, 2);
+    assert.match(sections[0], /^ {2}- POST:\/api\/v1\/report\/export — tests: ui pass 4, ui fail 1 — options: withAttachments, withHistory$/m);
+    assert.match(sections[1], /^- calls:\n {2}- POST:\/api\/v1\/report\/export — tests: ui pass 4, ui fail 1\n- tests: none$/m);
+  });
+});
+
+test('a call line names only the options its own screen sends in the source', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     fs.writeFileSync(
       path.join(copy, 'client/src/components/AdminAudit.js'),
@@ -264,6 +284,69 @@ test('a test whose option tags name only options this screen does not send count
         '',
       ].join('\n'),
     );
+  });
+});
+
+test('a mark on an option value of a call is listed with the option key, value and depth, where the option was found, and the tests of that cell', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    const at = new Date('2026-10-01T05:00:00Z');
+    addMark(marksDir, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true } }, status: 'needs-more', note: 'Only the UI is tested.', author: 'a' }, at);
+    addMark(marksDir, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true }, depth: 'output' }, status: 'missing', note: 'Open the exported file.', author: 'a' }, at);
+    addMark(marksDir, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withAttachments', value: false }, depth: 'ui' }, status: 'fine', author: 'a' }, at);
+    addMark(marksDir, { target: { node: 'POST:/api/v1/report/schedule', option: { key: 'weekly', value: true } }, status: 'missing', author: 'a' }, at);
+
+    const tasks = cli('tasks');
+    assert.match(tasks, /^# Test tasks — 4 screens, 3 calls, 8 open marks$/m);
+    const section = (id) => tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0];
+    assert.equal(
+      section('POST:/api/v1/report/export'),
+      [
+        '',
+        '- marks:',
+        '  - needs-more, withHistory=true — "Only the UI is tested." (a, 2026-10-01)',
+        '  - missing, withHistory=true at output depth — "Open the exported file." (a, 2026-10-01)',
+        '- called from: /admin/audit#AdminAudit, /admin/report#AdminReport',
+        '- server: on the server (core)',
+        '- marked options:',
+        '  - withHistory — found at components/ExportDialog.js:18 (/admin/audit#AdminAudit, /admin/report#AdminReport)',
+        '    - withHistory=true:',
+        '      - ui pass — exports with history @call:POST:/api/v1/report/export @option:withHistory=true — export.spec.ts:3 (chromium)',
+        '      - ui pass — archives signed reports with history, then exports them @call:POST:/api/v1/report/archive @call:POST:/api/v1/report/export @option:signedOnly=true @option:withHistory=true — export.spec.ts:24 (chromium)',
+        '    - withHistory=true at output depth: no tests',
+        '- tests:',
+        '  - ui pass — exports with history @call:POST:/api/v1/report/export @option:withHistory=true — export.spec.ts:3 (chromium)',
+        '  - ui fail — exports a package with attachments and without history @call:POST:/api/v1/report/export @option:withAttachments=true @option:withHistory=false — export.spec.ts:10 (chromium)',
+        '  - ui pass — exports the selected reports @call:POST:/api/v1/report/export — export.spec.ts:17 (chromium)',
+        '  - ui pass — archives signed reports with history, then exports them @call:POST:/api/v1/report/archive @call:POST:/api/v1/report/export @option:signedOnly=true @option:withHistory=true — export.spec.ts:24 (chromium)',
+        '  - ui pass — exports signed reports only @call:POST:/api/v1/report/export @option:signedOnly=true @option:withHistory=yes — export.spec.ts:31 (chromium)',
+        '',
+      ].join('\n'),
+    );
+    assert.equal(
+      section('POST:/api/v1/report/schedule'),
+      [
+        '',
+        '- marks:',
+        '  - missing, weekly=true (a, 2026-10-01)',
+        '- called from: /admin/audit#AdminAudit, /admin/report#AdminReport',
+        '- server: on the server (core)',
+        '- marked options:',
+        '  - weekly — set in the config, not found in the source',
+        '    - weekly=true: no tests',
+        '- tests: none',
+        '',
+      ].join('\n'),
+    );
+  });
+});
+
+test('an option mark whose option is gone from the map stays out of the task list', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    addMark(loadConfig(configFile).marksDir, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withComments', value: true } }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
+    assert.equal(cli('tasks'), EXPECTED);
   });
 });
 

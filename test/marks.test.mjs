@@ -103,9 +103,63 @@ test('a mark on an API call or on one depth of it is attached while the call is 
   });
 });
 
+const OPTION_MAP = {
+  screens: [{ id: '/admin/report#AdminReport' }],
+  calls: [{ id: 'POST:/api/v1/report/export', options: [{ key: 'withHistory' }] }],
+};
+
+test('a mark on an option value, or on one depth of it, is written with the option in its target and stays in the call\'s folder', () => {
+  withMarksDir((dir) => {
+    const call = 'POST:/api/v1/report/export';
+    const value = addMark(dir, { target: { node: call, option: { key: 'withHistory', value: true } }, status: 'missing', author: 'a' }, new Date('2026-10-01T01:00:00Z'));
+    const depth = addMark(dir, { target: { depth: 'output', option: { value: false, key: 'withHistory' }, node: call }, status: 'needs-more', author: 'a' }, new Date('2026-10-01T02:00:00Z'));
+    assert.deepEqual(value.target, { node: call, option: { key: 'withHistory', value: true } });
+    assert.deepEqual(Object.keys(depth.target), ['node', 'option', 'depth']);
+    assert.deepEqual(Object.keys(depth.target.option), ['key', 'value']);
+    assert.deepEqual(fs.readdirSync(dir), ['POST__api_v1_report_export']);
+    assert.deepEqual(loadMarks(dir).map((m) => m.target).sort((a, b) => (a.depth ?? '').localeCompare(b.depth ?? '')), [value.target, depth.target]);
+  });
+});
+
+test('marks on a call, its depth, its option values and their depths are kept apart, each with its own history', () => {
+  withMarksDir((dir) => {
+    const node = 'POST:/api/v1/report/export';
+    addMark(dir, { target: { node }, status: 'fine', author: 'a' });
+    addMark(dir, { target: { node, depth: 'ui' }, status: 'fine', author: 'a' });
+    addMark(dir, { target: { node, option: { key: 'withHistory', value: true } }, status: 'missing', author: 'a' }, new Date('2026-10-01T01:00:00Z'));
+    addMark(dir, { target: { node, option: { key: 'withHistory', value: true } }, status: 'needs-more', author: 'b' }, new Date('2026-10-01T02:00:00Z'));
+    addMark(dir, { target: { node, option: { key: 'withHistory', value: false } }, status: 'missing', author: 'a' });
+    addMark(dir, { target: { node, option: { key: 'withHistory', value: true }, depth: 'ui' }, status: 'missing', author: 'a' });
+    const { attached, detached } = classifyMarks(loadMarks(dir), OPTION_MAP);
+    assert.deepEqual(detached, []);
+    assert.deepEqual(attached.map((m) => [m.key, m.current.status, m.history.length]), [
+      [node, 'fine', 1],
+      [`${node} ui`, 'fine', 1],
+      [`${node} withHistory=false`, 'missing', 1],
+      [`${node} withHistory=true`, 'needs-more', 2],
+      [`${node} withHistory=true ui`, 'missing', 1],
+    ]);
+  });
+});
+
+test('a mark on an option the map no longer has is detached while the call stays, and so is an option mark on a screen', () => {
+  withMarksDir((dir) => {
+    const node = 'POST:/api/v1/report/export';
+    addMark(dir, { target: { node, option: { key: 'withHistory', value: true } }, status: 'missing', author: 'a' });
+    addMark(dir, { target: { node, option: { key: 'withAttachments', value: true }, depth: 'output' }, status: 'missing', author: 'a' });
+    addMark(dir, { target: { node: '/admin/report#AdminReport', option: { key: 'withHistory', value: true } }, status: 'missing', author: 'a' });
+    const { attached, detached } = classifyMarks(loadMarks(dir), OPTION_MAP);
+    assert.deepEqual(attached.map((m) => m.key), [`${node} withHistory=true`]);
+    assert.deepEqual(detached.map((m) => m.key), ['/admin/report#AdminReport withHistory=true', `${node} withAttachments=true output`]);
+  });
+});
+
 for (const [name, input] of [
   ['an unknown status', { target: { node: '/home#Home' }, status: 'done', author: 'a' }],
   ['an unknown depth', { target: { node: '/home#Home', depth: 'e2e' }, status: 'fine', author: 'a' }],
+  ['an option with no key', { target: { node: '/home#Home', option: { value: true } }, status: 'fine', author: 'a' }],
+  ['an option value that is not true or false', { target: { node: '/home#Home', option: { key: 'withHistory', value: 'yes' } }, status: 'fine', author: 'a' }],
+  ['an option that is not an object', { target: { node: '/home#Home', option: 'withHistory=true' }, status: 'fine', author: 'a' }],
   ['no target node', { target: {}, status: 'fine', author: 'a' }],
   ['no author', { target: { node: '/home#Home' }, status: 'fine', author: ' ' }],
 ]) {

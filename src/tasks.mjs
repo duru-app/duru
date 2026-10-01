@@ -9,8 +9,15 @@ const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const guardText = (g) => `\`${g.guard}\`${g.via ? ` through ${g.via}` : ''} (${g.kinds.join(', ')})`;
 
+const optionText = (o) => `${o.key}=${o.value}`;
+
+function cellText({ option, depth }, whole) {
+  if (!option) return depth ? `${depth} depth` : whole;
+  return depth ? `${optionText(option)} at ${depth} depth` : optionText(option);
+}
+
 function markLine(mark, whole) {
-  const where = mark.target.depth ? `${mark.target.depth} depth` : whole;
+  const where = cellText(mark.target, whole);
   const note = mark.note ? ` — "${mark.note.replace(/\r?\n/g, '\n    ')}"` : '';
   return `  - ${mark.status}, ${where}${note} (${mark.author}, ${mark.date.slice(0, 10)})`;
 }
@@ -37,23 +44,15 @@ function testSummary(tests) {
   return 'tests: ' + [...counts].map(([k, n]) => `${k} ${n}`).join(', ');
 }
 
+const withOption = (tests, { key, value }) => (tests ?? []).filter((t) => t.options?.some((o) => o.key === key && o.value === value));
+
 function optionLines(keys, tests) {
-  const rows = keys.flatMap((key) =>
-    [true, false].map((value) => [`${key}=${value}`, tests.filter((t) => t.options?.some((o) => o.key === key && o.value === value))]),
-  );
+  const rows = keys.flatMap((key) => [true, false].map((value) => [optionText({ key, value }), withOption(tests, { key, value })]));
   rows.push(['no option tag', tests.filter((t) => !t.options?.length)]);
   return rows.map(([label, matching]) => `    - ${label} — ${testSummary(matching)}`);
 }
 
 function callLines(screen, tests) {
-  const optionKeys = new Map();
-  for (const call of screen.apiCalls) {
-    for (const e of call.endpoints ?? []) {
-      if (!e.callId) continue;
-      if (!optionKeys.has(e.callId)) optionKeys.set(e.callId, new Set());
-      for (const o of call.options ?? []) optionKeys.get(e.callId).add(o.key);
-    }
-  }
   const seen = new Set();
   const lines = [];
   for (const call of screen.apiCalls) {
@@ -69,7 +68,7 @@ function callLines(screen, tests) {
       if (seen.has(e.callId)) continue;
       seen.add(e.callId);
       const server = e.server.status === 'none' ? 'not on the server, ' : '';
-      const options = [...optionKeys.get(e.callId)].sort();
+      const options = screen.callOptions[e.callId].map((o) => o.key);
       lines.push(`  - ${e.callId} — ${server}${testSummary(tests[e.callId])}${options.length ? ` — options: ${options.join(', ')}` : ''}`);
       if (options.length) lines.push(...optionLines(options, tests[e.callId] ?? []));
     }
@@ -77,16 +76,46 @@ function callLines(screen, tests) {
   return lines.length ? ['- calls:', ...lines] : ['- calls: none'];
 }
 
+function testLine(t) {
+  const at = t.line ? `${t.file}:${t.line}` : t.file;
+  const detail = t.detail ? ` — ${t.detail}` : '';
+  return `- ${t.depth} ${t.status} — ${t.title} — ${at}${t.project ? ` (${t.project})` : ''}${detail}`;
+}
+
 function testLines(tests) {
   if (!tests?.length) return ['- tests: none'];
-  return [
-    '- tests:',
-    ...byDepth(tests).map((t) => {
-      const at = t.line ? `${t.file}:${t.line}` : t.file;
-      const detail = t.detail ? ` — ${t.detail}` : '';
-      return `  - ${t.depth} ${t.status} — ${t.title} — ${at}${t.project ? ` (${t.project})` : ''}${detail}`;
-    }),
-  ];
+  return ['- tests:', ...byDepth(tests).map((t) => `  ${testLine(t)}`)];
+}
+
+function optionSource(option) {
+  const sites = new Map();
+  for (const s of option.sites) {
+    const at = `${s.file}:${s.line}`;
+    sites.set(at, [...(sites.get(at) ?? []), s.screen]);
+  }
+  const found = [...sites].map(([at, screens]) => `${at} (${screens.join(', ')})`).join('; ');
+  const config = option.sources.includes('config');
+  if (!found) return 'set in the config, not found in the source';
+  return `found at ${found}${config ? '; also set in the config' : ''}`;
+}
+
+function markedOptionLines(call, marks, tests) {
+  const targets = marks.map((m) => m.target).filter((t) => t.option);
+  if (!targets.length) return [];
+  const lines = ['- marked options:'];
+  for (const option of call.options) {
+    const cells = targets
+      .filter((t) => t.option.key === option.key)
+      .sort((a, b) => Number(b.option.value) - Number(a.option.value) || DEPTHS.indexOf(a.depth) - DEPTHS.indexOf(b.depth));
+    if (!cells.length) continue;
+    lines.push(`  - ${option.key} — ${optionSource(option)}`);
+    for (const t of cells) {
+      const matching = withOption(tests, t.option).filter((x) => !t.depth || x.depth === t.depth);
+      const label = `    - ${cellText(t)}:`;
+      lines.push(...(matching.length ? [label, ...byDepth(matching).map((x) => `      ${testLine(x)}`)] : [`${label} no tests`]));
+    }
+  }
+  return lines;
 }
 
 function serverText(server) {
@@ -126,14 +155,16 @@ export function taskList(config) {
   }
   if (calls.length) out.push('', '# API calls');
   for (const c of calls) {
+    const marks = open.filter((m) => m.target.node === c.id);
     out.push(
       '',
       `## ${c.id}`,
       '',
       '- marks:',
-      ...open.filter((m) => m.target.node === c.id).map((m) => markLine(m.current, 'whole call')),
+      ...marks.map((m) => markLine(m.current, 'whole call')),
       `- called from: ${c.screens.length ? c.screens.join(', ') : 'no screen'}`,
       `- server: ${serverText(c.server)}`,
+      ...markedOptionLines(c, marks, tests.nodes[c.id]),
       ...testLines(tests.nodes[c.id]),
     );
   }
