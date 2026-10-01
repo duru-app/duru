@@ -61,6 +61,12 @@
   table.calls td.cell.selected { background: var(--selected); box-shadow: inset 0 0 0 1.5px var(--accent); }
   table.calls td.cell .chip { margin-top: 2px; }
   table.calls td.call { overflow-wrap: anywhere; }
+  table.calls tr.option td { padding-top: 4px; padding-bottom: 4px; }
+  table.calls tr.option td.call { padding-left: 24px; font-size: 12px; }
+  table.calls tr.option td.call .chip { margin-left: 6px; }
+  table.calls td.count { white-space: nowrap; font-size: 12px; }
+  table.calls tr.option.gap td.call > div:first-child, table.calls td.cell .none { color: var(--fail); font-weight: 600; }
+  .chip.config { color: var(--accent); }
   .ok { color: var(--pass); } .ng { color: var(--fail); } .wait { color: var(--pending); }
   .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved { color: var(--muted); }
   .test { margin-bottom: 6px; }
@@ -131,6 +137,7 @@ const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류' };
 const MARK_STATUS = { 'needs-more': '더 필요', missing: '없음', fine: '충분' };
 const SERVER_STATUS = { match: '서버에 있음', 'method-mismatch': '메서드 불일치', none: '서버에 없음', unresolved: '판정 불가' };
 const KIND_LABEL = { setting: '설정', role: '역할' };
+const VALUE_LABEL = { true: '켬', false: '끔' };
 const SCREEN_FILTERS = [
   { key: 'no-tests', label: '테스트 없음만', keep: (s) => testsOf(s.id).length === 0 },
   { key: 'dead', label: '죽은 화면', keep: (s) => s.dead },
@@ -160,13 +167,16 @@ function fill(el, ...children) {
   el.replaceChildren(...children.flat().filter((c) => c != null && c !== false));
 }
 
-const keyOf = (t) => (t.depth ? `${t.node} ${t.depth}` : t.node);
+const keyOf = (t) => [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth].filter(Boolean).join(' ');
+const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
 const testsOf = (id) => state.data.tests.nodes[id] ?? [];
 const markOf = (t) => state.data.marks.attached.find((m) => m.key === keyOf(t));
 const fmtDate = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 const markChip = (m) => (m ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status]) : null);
 const callOf = (id) => state.data.map.calls.find((c) => c.id === id);
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];
+const hasOption = (tests, key, value) => tests.filter((t) => t.options?.some((o) => o.key === key && o.value === value));
+const optionsOf = (s, callId) => s.callOptions[callId] ?? [];
 
 async function load() {
   const res = await fetch('/api/data');
@@ -175,7 +185,9 @@ async function load() {
   const { screens } = state.data.map;
   const screen = screens.find((s) => s.id === state.selected) ?? screens[0];
   state.selected = screen?.id ?? null;
-  const targetKept = state.target && screen && (state.target.node === screen.id || callIdsOf(screen).includes(state.target.node));
+  const t = state.target;
+  const targetKept = t && screen && (t.node === screen.id
+    || (callIdsOf(screen).includes(t.node) && (!t.option || optionsOf(screen, t.node).some((o) => o.key === t.option.key))));
   if (!targetKept) {
     state.target = screen ? { node: screen.id } : null;
     state.draft = null;
@@ -317,15 +329,42 @@ function callRows(s) {
   return rows;
 }
 
-function cell(target, tests) {
+function countsOf(tests) {
   const counts = { pass: 0, fail: 0, pending: 0 };
   for (const t of tests) counts[t.status] += 1;
+  return tests.length ? countText(counts) : h('span', { class: 'muted' }, '—');
+}
+
+function cell(target, tests, empty) {
   return h('td', {
     class: `cell${keyOf(target) === keyOf(state.target) ? ' selected' : ''}`,
     onclick: () => selectTarget(target),
   },
-    h('div', {}, tests.length ? countText(counts) : h('span', { class: 'muted' }, '—')),
+    h('div', {}, !tests.length && empty ? h('span', { class: 'none' }, empty) : countsOf(tests)),
     markChip(markOf(target)));
+}
+
+// 「옵션 지정 없음」 줄은 표시 대상이 아니라서 칸을 눌러도 고를 수 없다.
+function optionRows(s, call, depths) {
+  const options = optionsOf(s, call.id);
+  if (!options.length) return [];
+  const tests = testsOf(call.id);
+  const byDepth = (list) => depths.map((d) => list.filter((t) => t.depth === d));
+  const rows = options.flatMap((o) => [true, false].map((value) => {
+    const target = { node: call.id, option: { key: o.key, value } };
+    const matching = hasOption(tests, o.key, value);
+    const split = byDepth(matching);
+    return h('tr', { class: `option${matching.length ? '' : ' gap'}` },
+      h('td', { class: 'call' }, h('div', {}, optionLabel(target.option)),
+        o.sources.includes('config') ? h('span', { class: 'chip config', title: '설정 bodyOptions 에 적은 옵션' }, '설정') : null),
+      cell(target, matching, '테스트 없음'),
+      depths.map((d, i) => cell({ ...target, depth: d }, split[i])));
+  }));
+  const unspecified = tests.filter((t) => !t.options?.length);
+  rows.push(h('tr', { class: 'option' },
+    h('td', { class: 'call', title: '옵션 태그를 달지 않은 테스트' }, h('div', {}, '옵션 지정 없음')),
+    [unspecified, ...byDepth(unspecified)].map((list) => h('td', { class: 'count' }, h('div', {}, countsOf(list))))));
+  return rows;
 }
 
 function callTable(s) {
@@ -336,17 +375,18 @@ function callTable(s) {
     h('h2', {}, `API 호출 ${rows.length}`),
     h('table', { class: 'calls' },
       h('thead', {}, h('tr', {}, h('th', {}, '호출'), h('th', {}, '전체'), depths.map((d) => h('th', {}, DEPTH_LABELS[d])))),
-      h('tbody', {}, rows.map((r) => {
+      h('tbody', {}, rows.flatMap((r) => {
         if (!r.call) {
           return h('tr', {},
             h('td', { class: 'call' }, h('div', { class: 'mono' }, r.problem), r.server ? verdictChip(r.server) : null, h('div', { class: 'muted mono' }, r.site)),
             h('td', { class: 'muted', colspan: depths.length + 1 }, '호출 노드가 없어 테스트를 붙이거나 표시할 수 없습니다'));
         }
         const tests = testsOf(r.call.id);
-        return h('tr', {},
+        return [h('tr', {},
           h('td', { class: 'call' }, h('div', { class: 'mono' }, r.call.id), verdictChip(r.call.server)),
           cell({ node: r.call.id }, tests),
-          depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d))));
+          depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d)))),
+          ...optionRows(s, r.call, depths)];
       }))),
   ];
 }
@@ -366,7 +406,8 @@ function renderRight() {
   const mark = markOf(state.target);
   const call = state.target.node === s.id ? null : callOf(state.target.node);
   state.draft ??= { status: mark?.current.status ?? null, note: '' };
-  const targetLabel = state.target.depth ? `${DEPTH_LABELS[state.target.depth]} 깊이` : call ? '호출 전체' : '화면 전체';
+  const { option, depth } = state.target;
+  const targetLabel = [option && optionLabel(option), depth && `${DEPTH_LABELS[depth]} 깊이`].filter(Boolean).join(' · ') || (call ? '호출 전체' : '화면 전체');
   const needsName = !state.data.author;
   fill(right,
     h('h2', {}, '표시 — ', targetLabel),
@@ -385,9 +426,15 @@ function renderRight() {
 }
 
 function callDetails(call, s) {
-  const tests = testsOf(call.id).filter((t) => !state.target.depth || t.depth === state.target.depth);
+  const { option: picked, depth } = state.target;
+  const tests = (picked ? hasOption(testsOf(call.id), picked.key, picked.value) : testsOf(call.id)).filter((t) => !depth || t.depth === depth);
   const sites = s.apiCalls.filter((c) => (c.endpoints ?? []).some((e) => e.callId === call.id));
+  const option = picked && call.options.find((o) => o.key === picked.key);
   return [
+    option ? h('h2', {}, '옵션을 찾은 자리') : null,
+    option ? h('ul', { class: 'plain option-sites' },
+      option.sites.map((site) => h('li', {}, h('code', {}, `${site.file}:${site.line}`), ' ', h('span', { class: 'muted mono' }, site.screen))),
+      option.sources.includes('config') ? h('li', {}, '설정에 적음 ', h('span', { class: 'muted mono' }, 'bodyOptions')) : null) : null,
     h('h2', {}, '서버 대조'),
     h('div', {}, verdictChip(call.server), ' ', call.server.path ? h('code', {}, call.server.path) : null),
     call.server.candidates ? h('ul', { class: 'plain' }, call.server.candidates.map((c) => h('li', {}, '서버에는 ', h('code', {}, c)))) : null,

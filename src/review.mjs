@@ -28,9 +28,23 @@ function appLink(appUrl, routePath) {
   return appUrl.replace(/\/+$/, '') + routePath;
 }
 
+function screenCallOptions(screen, callsById) {
+  const sent = new Map();
+  for (const c of screen.apiCalls) {
+    for (const e of c.endpoints ?? []) {
+      if (!e.callId) continue;
+      if (!sent.has(e.callId)) sent.set(e.callId, new Set());
+      for (const o of c.options ?? []) sent.get(e.callId).add(o.key);
+    }
+  }
+  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id).options.filter((o) => keys.has(o.key) || o.sources.includes('config'))]));
+}
+
 export function reviewData(config, author) {
   const map = readJson(path.join(config.outDir, 'map.json'));
   const tests = readJson(path.join(config.outDir, 'tests.json'));
+  const callsById = new Map(map.calls.map((c) => [c.id, c]));
+  for (const s of map.screens) s.callOptions = screenCallOptions(s, callsById);
   return {
     map,
     tests,
