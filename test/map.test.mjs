@@ -255,7 +255,7 @@ test('each restricted screen keeps the route guard and the links that decided it
     restricted: true,
     kinds: ['role'],
     route: [{ guard: 'isAdminRole(memberRole)', kinds: ['role'] }],
-    links: [{ from: '/home#Home', file: 'components/Home.js', line: 17, guards: [{ guard: "memberRole === 'ADMIN'", kinds: ['role'] }], fromRestricted: false }],
+    links: [{ from: '/home#Home', file: 'components/Home.js', line: 17, guards: [{ guard: "memberRole === 'ADMIN'", kinds: ['role'] }], fromKinds: [] }],
   });
   assert.deepEqual(screen(map, '/help#Help').access.links, [
     {
@@ -263,21 +263,21 @@ test('each restricted screen keeps the route guard and the links that decided it
       file: 'components/DocumentDetail.js',
       line: 20,
       guards: [{ guard: 'helpEnabled', kinds: ['setting'] }],
-      fromRestricted: false,
+      fromKinds: [],
     },
     {
       from: '/signin#SignIn',
       file: 'components/SignIn.js',
       line: 8,
       guards: [{ guard: 'globalSettings.SYSTEM.HELP_LINK_ENABLED', kinds: ['setting'], via: 'openHelp' }],
-      fromRestricted: false,
+      fromKinds: [],
     },
   ]);
   assert.deepEqual(screen(map, '/lab/result#LabResult').access, {
     restricted: true,
     kinds: ['setting'],
     route: [],
-    links: [{ from: '/lab#Lab', file: 'components/Lab.js', line: 14, guards: [], fromRestricted: true }],
+    links: [{ from: '/lab#Lab', file: 'components/Lab.js', line: 14, guards: [], fromKinds: ['setting'] }],
   });
 });
 
@@ -288,7 +288,7 @@ test('a role check held in a local const hides the route and the link, and the s
     restricted: true,
     kinds: ['role'],
     route: [{ guard: 'isAdmin', kinds: ['role'] }],
-    links: [{ from: '/home#Home', file: 'components/Home.js', line: 18, guards: [{ guard: 'isAdmin', kinds: ['role'] }], fromRestricted: false }],
+    links: [{ from: '/home#Home', file: 'components/Home.js', line: 18, guards: [{ guard: 'isAdmin', kinds: ['role'] }], fromKinds: [] }],
   });
 });
 
@@ -317,12 +317,13 @@ test('a role read from one member of a store object hides a link as a role condi
     kinds: ['role'],
     route: [],
     links: [
+      { from: '/admin/member#AdminMember', file: 'components/AdminMember.js', line: 14, guards: [], fromKinds: ['role'] },
       {
         from: '/home#Home',
         file: 'components/Home.js',
         line: 20,
         guards: [{ guard: "session['member.role'] === 'AUDITOR'", kinds: ['role'] }],
-        fromRestricted: false,
+        fromKinds: [],
       },
     ],
   });
@@ -331,7 +332,7 @@ test('a role read from one member of a store object hides a link as a role condi
 test('a guard on another member of the same store object does not block', async () => {
   const map = await buildEditedCopy([['client/src/components/Home.js', "session['member.role'] === 'AUDITOR'", "session['member.id'] === 'AUDITOR'"]]);
   assert.equal(screen(map, '/admin/audit#AdminAudit').access.restricted, false);
-  assert.deepEqual(screen(map, '/admin/audit#AdminAudit').access.links.map((l) => l.guards), [[]]);
+  assert.deepEqual(screen(map, '/admin/audit#AdminAudit').access.links.map((l) => l.guards), [[], []]);
 });
 
 for (const [name, edits] of [
@@ -361,7 +362,7 @@ for (const [name, edits] of [
 ]) {
   test(`a member role read ${name} is a role condition`, async () => {
     const map = await buildEditedCopy(edits);
-    assert.deepEqual(screen(map, '/admin/audit#AdminAudit').access.links.map((l) => l.guards.map((g) => g.kinds)), [[['role']]]);
+    assert.deepEqual(screen(map, '/admin/audit#AdminAudit').access.links.map((l) => l.guards.map((g) => g.kinds)), [[], [['role']]]);
     assert.deepEqual(screen(map, '/admin/audit#AdminAudit').access.kinds, ['role']);
   });
 }
@@ -387,7 +388,7 @@ test('a menu built from a settings list links to each listed screen, under the l
             { guard: "['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1", kinds: ['role'] },
             { guard: 'MENUS.ADMIN', kinds: ['setting'] },
       ],
-      fromRestricted: false,
+      fromKinds: [],
     })),
   });
   assert.deepEqual(screen(map, '/home#Home').links.filter((l) => l.file === 'components/SideMenu.js').map((l) => l.to), ['/admin/report']);
@@ -471,10 +472,10 @@ test('a guard around the wrapping component guards every screen inside it, so th
   ]);
   for (const id of wrapped) assert.deepEqual(screen(map, id).routeGuards, ['globalSettings.SYSTEM.NAV_ENABLED'], id);
   const report = screen(map, '/admin/report#AdminReport').access;
-  assert.deepEqual(report.links.map((l) => [l.from, l.guards.length, l.fromRestricted]), [
-    ['/document/:id#DocumentDetail', 3, true],
-    ['/document/:tab_draft_done_#DocumentList', 3, true],
-    ['/home#Home', 3, true],
+  assert.deepEqual(report.links.map((l) => [l.from, l.guards.length, l.fromKinds]), [
+    ['/document/:id#DocumentDetail', 3, ['setting']],
+    ['/document/:tab_draft_done_#DocumentList', 3, ['setting']],
+    ['/home#Home', 3, ['setting']],
   ]);
   assert.deepEqual(report.kinds, ['role', 'setting']);
 });
@@ -599,7 +600,7 @@ test('when one call site reaches both a GET and a POST call, only the POST call 
   );
   assert.deepEqual(optionsOf(map, 'GET:/api/v1/member/list'), []);
   assert.deepEqual(optionsOf(map, 'POST:/api/v1/member/list'), [
-    { key: 'showError', values: [true, false], sources: ['source'], sites: [{ screen: '/admin/member#AdminMember', file: 'components/AdminMember.js', line: 6 }] },
+    { key: 'showError', values: [true, false], sources: ['source'], sites: [{ screen: '/admin/member#AdminMember', file: 'components/AdminMember.js', line: 8 }] },
   ]);
 });
 

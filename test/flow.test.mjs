@@ -21,7 +21,7 @@ test('the flow starts at the entry screens and places each screen once, with the
     '  /home',
     '    /document/:tab(draft|done) → /document/:id → /admin/report',
     '    /document/:id → /help → /admin/report',
-    "    /admin/member [memberRole === 'ADMIN']",
+    "    /admin/member [memberRole === 'ADMIN'] → /admin/audit",
     '    /admin/group [isAdmin]',
     '    /lab [globalSettings.SYSTEM.LAB_ENABLED]',
     '      /lab/result',

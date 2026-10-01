@@ -141,7 +141,7 @@ same path, or, when there is none, every route that only adds parameter segments
 `/document/:id`); links to a partly unknown path, and a screen's links to itself, are left out. `access`
 lists `kinds` (`setting`, `role`), the blocking `route` guards, and every incoming link in `links` with the
 screen it comes `from`, its source location, its blocking `guards` (`via` names the handler an inherited
-guard came from) and `fromRestricted`.
+guard came from) and `fromKinds`, the `kinds` of the screen it comes from (empty when that screen is open).
 
 A test declares the node it covers by putting `@screen:<id>` or `@call:<id>` in its title — for JUnit, in
 the test's or the test class's display name (`@DisplayName`), since `@Tag` annotations do not reach the
@@ -193,7 +193,7 @@ those added to the call in `bodyOptions`, the latter tagged 「설정」. An on 
 stands out in red; the no-option row takes no marks. A call whose address could not be worked out
 from the source has no node, so it shows without cells. The right holds the mark form and, for a screen, why
 it opens only under a setting or a role (the blocking route guards and every link into it with its guards,
-their kinds and whether the screen it comes from opens only under one itself), its source location, route
+their kinds and, when the screen it comes from is restricted itself, what that screen needs, marked 「설정」 and 「역할」 like the guards), its source location, route
 guards, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it.
@@ -227,8 +227,8 @@ same browser cannot end it.
 `tasks` prints, as Markdown on standard output, every screen and API call whose current mark on the whole
 node, on one depth or on an option value is `needs-more` or `missing`. Marks whose current state is `fine` and detached marks are left out. Each
 screen comes with its open marks and notes, the component file and route line, the app address when `appUrl`
-is set, the settings and roles it needs and where they are checked (with each link in, its guards and whether
-the screen it comes from opens only under a setting or a role itself), the API calls it makes with their tests
+is set, the settings and roles it needs and where they are checked (with each link in, its guards and what
+the screen it comes from needs itself when it is restricted), the API calls it makes with their tests
 and their on/off options (those this screen sends in the source and those added in `bodyOptions`), and the tests already attached with their depth and status. Under a
 call with options, one line per option value (`withHistory=true`, `withHistory=false`) and one for tests with
 no option tag (`no option tag`) count the tests by depth and status. API calls with an open mark follow under

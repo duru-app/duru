@@ -118,12 +118,13 @@ export function screenAccess(screens, redirects, config, guardInits) {
   }
 
   const byPlace = (a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
+  const shownKinds = indices.map((i) => (restricted[i] ? [...kinds[i]].sort() : []));
   const access = screens.map((_, i) => ({
     restricted: restricted[i],
-    kinds: restricted[i] ? [...kinds[i]].sort() : [],
+    kinds: shownKinds[i],
     route: route[i],
     links: incoming[i]
-      .map((l) => ({ from: screens[l.from].id, file: l.file, line: l.line, guards: l.guards, fromRestricted: restricted[l.from] }))
+      .map((l) => ({ from: screens[l.from].id, file: l.file, line: l.line, guards: l.guards, fromKinds: shownKinds[l.from] }))
       .sort(byPlace),
   }));
   const entries = starts.map((i) => ({ screen: screens[i].id, reasons: reasons[i] }));

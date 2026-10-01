@@ -22,15 +22,17 @@ function markLine(mark, whole) {
   return `  - ${mark.status}, ${where}${note} (${mark.author}, ${mark.date.slice(0, 10)})`;
 }
 
+const kindsText = (kinds) => kinds.map((k) => KIND_NAMES[k]).join(' and ');
+
 function accessLines(access) {
   if (!access.restricted) return ['- access: opens without a setting or role'];
   return [
-    `- access: needs ${access.kinds.map((k) => KIND_NAMES[k]).join(' and ')}`,
+    `- access: needs ${kindsText(access.kinds)}`,
     ...access.route.map((g) => `  - route guard ${guardText(g)}`),
     ...access.links.map((l) => {
       const from = `  - link from ${l.from} at ${l.file}:${l.line}`;
       const guards = l.guards.length ? `guard ${l.guards.map(guardText).join('; ')}` : 'no guard';
-      return `${from}, ${guards}${l.fromRestricted ? ` — ${l.from} itself opens only under a setting or a role` : ''}`;
+      return `${from}, ${guards}${l.fromKinds.length ? ` — ${l.from} itself needs ${kindsText(l.fromKinds)}` : ''}`;
     }),
   ];
 }
