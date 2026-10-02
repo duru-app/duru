@@ -282,6 +282,23 @@ export default function AdminReport() {
   });
 });
 
+test('a screen whose links ask for different kinds, and a link from it, say it differs by link', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    const home = path.join(copy, 'client/src/components/Home.js');
+    const src = fs.readFileSync(home, 'utf8');
+    fs.writeFileSync(home, src.replace("      {session['member.role']", "      {memberRole === 'ADMIN' && <Link to={Option.ROUTE_PATH.HELP}>Help</Link>}\n      {session['member.role']"));
+    fs.writeFileSync(path.join(copy, 'client/src/components/Help.js'), "import { Link } from 'react-router-dom';\nimport Option from '_define/Option';\n\nexport default function Help() {\n  return <article><Link to={Option.ROUTE_PATH.LAB_RESULT}>Results</Link></article>;\n}\n");
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    for (const node of ['/help#Help', '/lab/result#LabResult']) addMark(marksDir, { target: { node }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
+    const section = (id) => cli('tasks').split(`## ${id}\n`)[1].split('\n## ')[0];
+    const help = section('/help#Help');
+    assert.match(help, /^- access: differs by link, see each link below$/m);
+    assert.match(help, /^ {2}- link from \/home#Home at components\/Home\.js:\d+, guard `memberRole === 'ADMIN'` \(role\)$/m);
+    assert.match(section('/lab/result#LabResult'), /^ {2}- link from \/help#Help at components\/Help\.js:5, no guard — \/help#Help itself differs by link$/m);
+  });
+});
+
 test('a call line names only the options its own screen sends in the source', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     fs.writeFileSync(

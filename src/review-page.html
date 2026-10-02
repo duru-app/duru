@@ -94,7 +94,7 @@
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
   .guard { display: block; }
-  .chip.kind-setting, .chip.kind-role { color: var(--accent); margin-left: 4px; }
+  .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
   .access h3 { font-size: 13px; margin: 10px 0 4px; }
   ul.plain { list-style: none; padding: 0; margin: 0; }
   ul.plain li { margin-bottom: 6px; }
@@ -159,12 +159,14 @@ const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류' };
 const MARK_STATUS = { 'needs-more': '더 필요', missing: '없음', fine: '충분' };
 const SERVER_STATUS = { match: '서버에 있음', 'method-mismatch': '메서드 불일치', none: '서버에 없음', unresolved: '판정 불가' };
 const KIND_LABEL = { setting: '설정', role: '역할' };
+const MIXED_KINDS = '링크마다 다름';
 const VALUE_LABEL = { true: '켬', false: '끔' };
 const SCREEN_FILTERS = [
   { key: 'no-tests', label: '테스트 없음만', keep: (s) => testsOf(s.id).length === 0 },
   { key: 'dead', label: '죽은 화면', keep: (s) => s.dead },
   { key: 'setting', label: '특정 설정에서만 열림', keep: (s) => s.access.kinds.includes('setting') },
   { key: 'role', label: '특정 역할에서만 열림', keep: (s) => s.access.kinds.includes('role') },
+  { key: 'mixed', label: MIXED_KINDS, keep: (s) => s.access.restricted && !s.access.kinds.length },
 ];
 
 const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null };
@@ -816,19 +818,24 @@ function callDetails(call, s) {
 }
 
 const kindChip = (k) => h('span', { class: `chip kind-${k}` }, KIND_LABEL[k]);
+const mixedChip = () => h('span', { class: 'chip kind-mixed' }, MIXED_KINDS);
+const isRestricted = (id) => Boolean(state.data.map.screens.find((x) => x.id === id)?.access.restricted);
 const accessGuard = (g) => h('div', { class: 'guard' },
   h('code', {}, g.via ? inheritedText(g.guard, g.via) : g.guard), ' ', g.kinds.map(kindChip));
 
 function accessDetails({ access }) {
   if (!access.restricted) return h('div', { class: 'access' }, h('p', { class: 'muted' }, '설정이나 역할 없이 열립니다.'));
   return h('div', { class: 'access' },
-    h('div', { class: 'needs' }, '필요한 것 ', access.kinds.map(kindChip)),
+    h('div', { class: 'needs' }, '필요한 것 ', access.kinds.length ? access.kinds.map(kindChip)
+      : mixedChip()),
     access.route.length ? h('div', { class: 'route' }, h('h3', {}, '라우트에서 막는 조건'), access.route.map(accessGuard)) : null,
     h('h3', {}, `들어오는 링크 ${access.links.length}`),
     h('ul', { class: 'plain' }, access.links.map((l) => h('li', {},
       h('code', {}, l.from), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`),
       l.guards.length ? l.guards.map(accessGuard) : h('div', { class: 'muted' }, '설정 · 역할 조건 없음'),
-      l.fromKinds.length ? h('div', { class: 'from-kinds muted' }, '링크를 건 화면에 필요한 것 ', l.fromKinds.map(kindChip)) : null))));
+      l.fromKinds.length || isRestricted(l.from)
+        ? h('div', { class: 'from-kinds muted' }, '링크를 건 화면에 필요한 것 ', l.fromKinds.length ? l.fromKinds.map(kindChip) : mixedChip())
+        : null))));
 }
 
 function screenDetails(s) {
@@ -987,7 +994,7 @@ function screenBox(b) {
   const showCalls = n.calls.length > 0 && !b.collapsed;
   const guardLabel = n.guards.length ? guardText(n.guards) : null;
   const l3text = [guardLabel ? `조건 ${guardLabel}` : null, ...n.jumps.map((j) => `→ ${j.label}`)].filter(Boolean).join(' · ');
-  const badges = [n.dead ? '죽은 화면' : null, n.kinds.length ? `${n.kinds.map((k) => KIND_LABEL[k]).join('·')} 필요` : null].filter(Boolean).join(' · ');
+  const badges = [n.dead ? '죽은 화면' : null, n.kinds.length ? `${n.kinds.map((k) => KIND_LABEL[k]).join('·')} 필요` : n.restricted ? MIXED_KINDS : null].filter(Boolean).join(' · ');
   return h('div', {
     class: `box screen ${statusOf(counts)}`, style: `left:${b.x}px;top:${b.y}px;width:${BOX_W}px;height:${SCREEN_H}px`,
     title: [n.id, guardLabel ? `이 링크의 조건: ${guardLabel}` : '', ...n.jumps.map((j) => `→ ${j.label}${j.guards.length ? ` (${guardText(j.guards)})` : ''}`)].filter(Boolean).join('\n'),

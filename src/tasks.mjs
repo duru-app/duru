@@ -4,6 +4,7 @@ import { DEPTHS } from './test-links.mjs';
 
 const OPEN = ['needs-more', 'missing'];
 const KIND_NAMES = { setting: 'a setting', role: 'a role' };
+const MIXED_KINDS = 'differs by link';
 
 const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -24,15 +25,16 @@ function markLine(mark, whole) {
 
 const kindsText = (kinds) => kinds.map((k) => KIND_NAMES[k]).join(' and ');
 
-function accessLines(access) {
+function accessLines(access, restricted) {
   if (!access.restricted) return ['- access: opens without a setting or role'];
   return [
-    `- access: needs ${kindsText(access.kinds)}`,
+    `- access: ${access.kinds.length ? `needs ${kindsText(access.kinds)}` : `${MIXED_KINDS}, see each link below`}`,
     ...access.route.map((g) => `  - route guard ${guardText(g)}`),
     ...access.links.map((l) => {
       const from = `  - link from ${l.from} at ${l.file}:${l.line}`;
       const guards = l.guards.length ? `guard ${l.guards.map(guardText).join('; ')}` : 'no guard';
-      return `${from}, ${guards}${l.fromKinds.length ? ` — ${l.from} itself needs ${kindsText(l.fromKinds)}` : ''}`;
+      const fromNeeds = l.fromKinds.length ? ` — ${l.from} itself needs ${kindsText(l.fromKinds)}` : restricted.has(l.from) ? ` — ${l.from} itself ${MIXED_KINDS}` : '';
+      return `${from}, ${guards}${fromNeeds}`;
     }),
   ];
 }
@@ -132,6 +134,7 @@ export function taskList(config) {
   const marked = (node) => open.some((m) => m.target.node === node.id);
   const screens = map.screens.filter(marked).sort((a, b) => a.id.localeCompare(b.id));
   const calls = map.calls.filter(marked);
+  const restricted = new Set(map.screens.filter((s) => s.access.restricted).map((s) => s.id));
 
   const out = [
     `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(open.length, 'open mark')}`,
@@ -150,7 +153,7 @@ export function taskList(config) {
       ...open.filter((m) => m.target.node === s.id).map((m) => markLine(m.current, 'whole screen')),
       `- component: ${s.componentFile}, route at ${config.routesFile}:${s.line}`,
       ...(appLinks[s.id] ? [`- app: ${appLinks[s.id]}`] : []),
-      ...accessLines(s.access),
+      ...accessLines(s.access, restricted),
       ...callLines(s, tests.nodes),
       ...testLines(tests.nodes[s.id]),
     );

@@ -218,7 +218,14 @@ same path, or, when there is none, every route that only adds parameter segments
 `/document/:id`); links to a partly unknown path, and a screen's links to itself, are left out. `access`
 lists `kinds` (`setting`, `role`), the blocking `route` guards, and every incoming link in `links` with the
 screen it comes `from`, its source location, its blocking `guards` (`via` names the handler an inherited
-guard came from) and `fromKinds`, the `kinds` of the screen it comes from (empty when that screen is open).
+guard came from) and `fromKinds`, the `kinds` of the screen it comes from (empty when that screen is open or its own links ask for different
+kinds).
+A restricted screen's `kinds` are those of its route guards and, when it is not an entry screen and every link
+into it is blocked, each kind that every one of those links asks for: a link asks for a kind when one of its guards has it, or when the
+screen it comes from is restricted and needs it. A kind only some links ask for is left out, since another
+link opens the screen without it, so a screen whose links ask for different kinds (a role on one, a setting on
+another) is restricted with empty `kinds`. An entry screen opens without a link, so the links into it add
+nothing to its `kinds`, `roleValues` or `settings`.
 
 Each `role` guard also has `roles`: the role values that pass it, read from the guard and the consts it uses,
 or `null` when they cannot be read or no value passes. duru reads a comparison of a `roleIdentifiers` entry with a string
@@ -242,8 +249,8 @@ read whose default is not `true` or `false` (such as an object). Reads joined by
 parts that read no setting (a role check) are left out. `default` is the value in `settingsDefaults`, when
 known. Any other form (a function call, `!==`, `||`, a comparison with a non-literal or by size, a negated
 `&&`) gives `settings: null` and a Korean `settingsReason`. A screen whose `kinds` include `setting` also has
-`access.settings`: one entry for its route guards (`from: "route"`) and one per link into it that carries a
-setting guard (`from` the screen, `file`, `line`), each with the `needs` of its readable guards and the
+`access.settings`: one entry for its route guards (`from: "route"`) and, when its links count as above, one per
+link into it that carries a setting guard (`from` the screen, `file`, `line`), each with the `needs` of its readable guards and the
 `unreadable` guards with their `reason`. The evaluated `settingsDefaults` are written to `map.json` too, with
 `settingsDefaultsIncomplete`, which lists per root the places the source does not show in full: `[section,
 key]` for a key whose value holds something duru cannot read (such as `window.X || [...]`, a call, a spread,
@@ -291,7 +298,7 @@ tags go at the end of the line.
 writes only into the marks folder. The left column lists the screens with a "no tests" filter, a "dead
 screens" filter, which keeps the screens that call an API missing on the server, and "opens only under a
 setting" and "opens only under a role" filters read from `access.kinds`; a screen that needs both shows under
-either. With `app` set, the middle starts with the chosen screen's app in a frame, served by duru on an address of
+either, and a restricted screen with empty `kinds` shows under 「링크마다 다름」 instead. With `app` set, the middle starts with the chosen screen's app in a frame, served by duru on an address of
 its own and already logged in, so the reviewer can use it while marking; the line above the frame shows its
 address, a role picker, who the frame is logged in as (「ADMIN 역할 duru-admin 로 로그인」, or why that login
 failed, or 「로그아웃 상태」 for a screen in `signedOutPaths`, which has no picker), in red any
@@ -341,7 +348,8 @@ those added to the call in `bodyOptions`, the latter tagged 「설정」. An on 
 stands out in red; the no-option row takes no marks. A call whose address could not be worked out
 from the source has no node, so it shows without cells. The right holds the mark form and, for a screen, why
 it opens only under a setting or a role (the blocking route guards and every link into it with its guards,
-their kinds and, when the screen it comes from is restricted itself, what that screen needs, marked 「설정」 and 「역할」 like the guards), its source location, route
+their kinds and, when the screen it comes from is restricted itself, what that screen needs, marked 「설정」 and 「역할」 like the guards; a screen whose links ask for different kinds
+shows 「링크마다 다름」 here, on the links it makes and on its box in the flow view), its source location, route
 guards, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it.
@@ -376,7 +384,8 @@ same browser cannot end it.
 node, on one depth or on an option value is `needs-more` or `missing`. Marks whose current state is `fine` and detached marks are left out. Each
 screen comes with its open marks and notes, the component file and route line, the app address when `appUrl`
 is set, the settings and roles it needs and where they are checked (with each link in, its guards and what
-the screen it comes from needs itself when it is restricted), the API calls it makes with their tests
+the screen it comes from needs itself when it is restricted; `differs by link` for a screen, or the screen a link comes from, whose links
+ask for different kinds), the API calls it makes with their tests
 and their on/off options (those this screen sends in the source and those added in `bodyOptions`), and the tests already attached with their depth and status. Under a
 call with options, one line per option value (`withHistory=true`, `withHistory=false`) and one for tests with
 no option tag (`no option tag`) count the tests by depth and status. API calls with an open mark follow under
