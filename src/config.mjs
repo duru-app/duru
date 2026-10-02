@@ -17,6 +17,32 @@ export function parseRoleEntry(entry) {
 const isText = (v) => typeof v === 'string' && v.length > 0;
 const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isWebAddress = (v) => isText(v) && /^https?:\/\/[^/]/.test(v);
+const LIST_API_KEYS = ['api', 'list', 'value', 'method', 'body'];
+const HEADER_EXAMPLE = '{ "Authorization": "Bearer {token}" }';
+
+const isListApi = (v) => isPlainObject(v) && Object.keys(v).every((k) => LIST_API_KEYS.includes(k))
+  && isText(v.api) && v.api.startsWith('/') && typeof v.list === 'string' && typeof v.value === 'string'
+  && (v.method === undefined || /^[A-Z]+$/.test(v.method))
+  && (v.body === undefined || (v.method ?? 'GET') !== 'GET');
+
+function pathValuesSettings(pathValues) {
+  if (!isPlainObject(pathValues)) {
+    throw new Error(`app.pathValues must map route paths to their path variables, such as { "/document/:tab": { "tab": "draft" } }, not ${JSON.stringify(pathValues)}`);
+  }
+  for (const [routePath, variables] of Object.entries(pathValues)) {
+    const at = `app.pathValues[${JSON.stringify(routePath)}]`;
+    if (!routePath.startsWith('/')) throw new Error(`app.pathValues key ${JSON.stringify(routePath)} must be a route path as in the map, starting with "/"`);
+    if (!isPlainObject(variables)) {
+      throw new Error(`${at} must map variable names to values, such as { "tab": "draft" }, not ${JSON.stringify(variables)}`);
+    }
+    for (const [name, value] of Object.entries(variables)) {
+      if (isText(value) || isListApi(value)) continue;
+      throw new Error(`${at}.${name} must be a fixed value such as "draft", or a list API such as { "api": "/api/v1/documents", "list": "contents.list", "value": "id" } `
+        + `with an optional "method" and, for a method other than GET, a JSON "body", not ${JSON.stringify(value)}`);
+    }
+  }
+  return pathValues;
+}
 
 const isAccount = (v) => isPlainObject(v) && isText(v.id) && isText(v.passwordEnv) && !('password' in v);
 const ACCOUNT = '{ "id", "passwordEnv" } with the name of an environment variable that holds the password, never the password itself';
@@ -38,6 +64,9 @@ function appSettings(app, at) {
     || !isPlainObject(login.storage) || !isText(login.storage.key) || !(isText(login.storage.value) || isPlainObject(login.storage.value))) {
     fail('login', '{ "path", "body", "token", "storage": { "key", "value" } }, such as { "path": "/auth/login", "body": { "id": "{id}", "password": "{password}" }, "token": "accessToken", "storage": { "key": "auth", "value": "{token}" } }');
   }
+  if (login.header !== undefined && !(isPlainObject(login.header) && Object.values(login.header).every(isText))) {
+    throw new Error(`app.login.header must map header names to values with {token} in them, such as ${HEADER_EXAMPLE}`);
+  }
   if (!isAccount(account)) fail('account', ACCOUNT);
   const roles = app.roles ?? {};
   if (!isPlainObject(roles)) fail('roles', 'an object from each role value the app compares to that role\'s account, such as { "ADMIN": { "id": "duru-admin", "passwordEnv": "DURU_ADMIN_PASSWORD" } }');
@@ -48,7 +77,11 @@ function appSettings(app, at) {
   if (!Array.isArray(signedOutPaths) || !signedOutPaths.every((p) => isText(p) && p.startsWith('/'))) {
     fail('signedOutPaths', 'a list of route paths shown signed out, such as ["/signin"]');
   }
-  return { ...app, roles, signedOutPaths, files: isWebAddress(app.files) ? app.files : at(app.files) };
+  const pathValues = pathValuesSettings(app.pathValues ?? {});
+  if (!login.header && Object.values(pathValues).some((variables) => Object.values(variables).some(isListApi))) {
+    throw new Error(`app.login.header is needed to call the list APIs in app.pathValues with the login token, such as ${HEADER_EXAMPLE}`);
+  }
+  return { ...app, roles, signedOutPaths, pathValues, files: isWebAddress(app.files) ? app.files : at(app.files) };
 }
 
 export function loadConfig(configPath) {

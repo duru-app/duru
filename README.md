@@ -82,13 +82,18 @@ relative to the config file, except the files inside the client source (`routesF
       "path": "/auth/login",
       "body": { "loginId": "{id}", "password": "{password}" },
       "token": "result.accessToken",
-      "storage": { "key": "auth", "value": { "accessToken": "{token}" } }
+      "storage": { "key": "auth", "value": { "accessToken": "{token}" } },
+      "header": { "Authorization": "Bearer {token}" }
     },
     "account": { "id": "duru-reviewer", "passwordEnv": "DURU_REVIEWER_PASSWORD" },
     "roles": {
       "ADMIN": { "id": "duru-admin", "passwordEnv": "DURU_ADMIN_PASSWORD" }
     },
-    "signedOutPaths": ["/signin"]
+    "signedOutPaths": ["/signin"],
+    "pathValues": {
+      "/document/:tab(draft|done)": { "tab": "draft" },
+      "/document/:id": { "id": { "api": "/api/v1/documents", "list": "contents.list", "value": "id" } }
+    }
   }
   ```
 
@@ -111,6 +116,16 @@ relative to the config file, except the files inside the client source (`routesF
   that port, so a login left there earlier is gone, while the app can still log in and reload in the frame. An
   app that keeps the login in a cookie instead of localStorage stays logged in on that port too. A path that
   matches no screen path in the map exactly is listed in red above the frame.
+  `pathValues` (optional) fills the path variables of a screen, keyed by its route path exactly as in the map.
+  Each variable takes either a fixed value or a list API: duru calls `server` + `api` (with `method`, GET by
+  default, and a JSON `body` for any other method), finds the list at the dotted `list` path of the JSON reply
+  (`""` when the reply is the list itself) and takes the dotted `value` path of its first item (`""` for the
+  item itself, such as a list of bare ids). A list API is
+  called with the token of the account the frame opens the screen as (`account`, or the role picked for it) in
+  `login.header` (`{token}` filled in), which is then required. An optional
+  variable (`:tab?`) without a value is left out of the address, and a variable that spans several segments
+  (`*`, `:path+`) keeps the `/` in its value. An entry or a variable that matches no screen
+  path or no variable of that path is listed in red above the frame.
 
 `map.json` lists screens with their route guards, the API calls reachable from each screen with the
 server match, the settings each screen reads, and links to other screens with the conditions guarding
@@ -251,7 +266,21 @@ guards are still named, in grey. The picker also offers `account`,
 each role in `roles`, and, unselectable, each value in some screen's `roleValues` with no account (「계정
 없음」). A role picked there stays picked on other screens until 「자동」 is picked again, and the line
 says when it does not meet the screen's `roleValues`; the screen still opens as that role. Picking a role
-reloads the frame on that role's address with the same path. Marking does not reload the frame. A screen with path variables shows 「주소에 값이 필요한 화면」 instead of the frame. Below
+reloads the frame on that role's address with the same path. Marking does not reload the frame. A screen with
+path variables opens with its `pathValues` filled in; the line above the frame
+shows each variable in a box that the reviewer can change and reopen with Enter or 「다시 띄우기」, and what was
+filled or typed stays with the screen and the account it opened as while the page is open; a screen whose list API failed calls it again
+when it is chosen again, unless the reviewer has opened it with a typed value. When a required variable has no value, because
+none was given or the list API failed or was empty, the frame opens a screen linking to it whose
+address its fixed `pathValues` can fill (one without path variables needs none): the first one the account opening the
+screen can open (no role condition, or one its role meets), else the first one, as the account the picker gives that screen, with 「목록에서 골라 들어가세요」 and the list API's error; with no such screen it shows
+「주소에 값이 필요한 화면」 instead of the frame. A required variable the reviewer clears and reopens does not fall
+back: the frame says 「<variable> 값이 없어 이 화면을 띄울 수 없습니다」. The page reads these from `GET /api/path-values?screen=<id>`,
+with `&role=<role>` when the frame opens the screen as one of `roles`,
+which answers `{ "parts", "values", "errors", "path", "fallback", "fallbackPath" }`: the route path split into text and
+variables (`{ "name", "prefix", "optional", "pattern" }`, with `"repeat": true` for `+` and `*`), the value found for each variable, why a value could
+not be found, the filled path (`null` while a required variable has no value) and the screen to open instead with its
+filled path (both `null` when there is none); an unknown screen or role is 404. Below
 that, the middle shows the chosen screen's tests grouped by depth and, below them, its API calls: one row
 per call with its server match (on the server with its labels, method mismatch, not on the server, or
 unresolved) and one cell per depth counting the call's tests. Under a call with on/off options, each option

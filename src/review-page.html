@@ -51,6 +51,11 @@
   .frame-bar .mono { flex: 1 1 24em; min-width: 0; overflow-wrap: anywhere; }
   .frame-bar .error { color: var(--fail); }
   .frame-bar select { max-width: 100%; font: inherit; padding: 1px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
+  .frame-bar .path-values { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+  .frame-bar .path-values input[type=text] { width: 12em; padding: 2px 6px; }
+  .frame-bar .path-values button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--accent); background: var(--panel); color: var(--accent); font: inherit; cursor: pointer; }
+  .frame-bar .fallback { font-weight: 600; }
+  .frame-bar + .frame-note { margin-top: 0; border-radius: 0 0 6px 6px; }
   iframe.app { display: block; width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 0 0 6px 6px; background: #fff; }
   .frame-note { margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 6px; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; }
@@ -151,7 +156,7 @@ const SCREEN_FILTERS = [
   { key: 'role', label: '특정 역할에서만 열림', keep: (s) => s.access.kinds.includes('role') },
 ];
 
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, roleChoice: 'auto' };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, roleChoice: 'auto', pathValues: new Map() };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -201,6 +206,9 @@ async function load() {
 }
 
 function select(id) {
+  for (const [key, kept] of state.pathValues) {
+    if (key.startsWith(`${id}\n`) && !kept.pending && kept.errors.length && !kept.opened) state.pathValues.delete(key);
+  }
   state.selected = id;
   state.target = { node: id };
   state.draft = null;
@@ -316,11 +324,87 @@ function rolePicker() {
     missing.map((v) => h('option', { disabled: true }, `${v} — 계정 없음`)));
 }
 
-function appFrame(s, link) {
+function filledPath(parts, values) {
+  let out = '';
+  for (const p of parts) {
+    if (typeof p === 'string') out += p;
+    else if (values[p.name]) out += p.prefix + (p.repeat || p.pattern === '.*' ? values[p.name].split('/').map(encodeURIComponent).join('/') : encodeURIComponent(values[p.name]));
+    else if (!p.optional) return null;
+  }
+  return out || '/';
+}
+
+const pathValueKey = (id, role) => `${id}\n${role ?? ''}`;
+
+async function loadPathValues(id, role) {
+  const entry = { pending: true };
+  state.pathValues.set(pathValueKey(id, role), entry);
+  try {
+    const res = await fetch(`/api/path-values?screen=${encodeURIComponent(id)}${role ? `&role=${encodeURIComponent(role)}` : ''}`);
+    if (!res.ok) throw new Error(await res.text());
+    Object.assign(entry, await res.json());
+  } catch (err) {
+    Object.assign(entry, { parts: null, values: {}, errors: [`경로 변수 값을 가져오지 못했습니다: ${err.message}`], fallback: null });
+  }
+  Object.assign(entry, { pending: false, draft: { ...entry.values }, opened: 0 });
+  if (state.selected === id && state.view === 'list') renderCenterHead(state.data.map.screens.find((x) => x.id === id));
+}
+
+function pathValuesOf(s, role) {
+  const key = pathValueKey(s.id, role);
+  if (!state.pathValues.has(key)) loadPathValues(s.id, role);
+  return state.pathValues.get(key);
+}
+
+function frameTarget(s, entry) {
+  const { app, appLinks, map } = state.data;
+  const at = (routePath, path) => (app.signedOutPaths.includes(routePath) ? app.signedOutUrl : app.url) + path;
+  if (!entry) return { link: appLinks[s.id] };
+  if (entry.pending) return {};
+  const path = entry.parts && filledPath(entry.parts, entry.values);
+  if (path) return { link: at(s.path, path) };
+  if (entry.opened) return { fallback: false, missing: entry.parts.filter((p) => typeof p !== 'string' && !p.optional && !entry.values[p.name]).map((p) => p.name) };
+  if (!entry.fallback) return { fallback: false };
+  const opens = map.screens.find((x) => x.id === entry.fallback);
+  return { link: at(opens.path, entry.fallbackPath), fallback: true, opens };
+}
+
+function pathValueBar(s, entry, fallback) {
+  const variables = (entry.parts ?? []).filter((p) => typeof p !== 'string');
+  if (!variables.length && !fallback && !entry.errors.length) return null;
+  const reopen = () => {
+    entry.values = { ...entry.draft };
+    entry.opened += 1;
+    renderCenterHead(s);
+  };
+  return h('div', { class: 'path-values' },
+    variables.map((v) => h('label', { title: v.optional ? '비워 두면 이 자리를 빼고 엽니다' : null }, v.optional ? `${v.name}?` : v.name, ' ',
+      h('input', {
+        type: 'text', name: v.name, value: entry.draft[v.name] ?? '', placeholder: '값',
+        oninput: (e) => { entry.draft[v.name] = e.target.value; },
+        onkeydown: (e) => { if (e.key === 'Enter' && !e.isComposing) reopen(); },
+      }))),
+    variables.length ? h('button', { onclick: reopen }, '다시 띄우기') : null,
+    fallback ? h('span', { class: 'fallback' }, '목록에서 골라 들어가세요') : null,
+    entry.errors.map((e) => h('span', { class: 'error' }, e)));
+}
+
+function appFrame(s, { link, fallback, opens, missing }, entry) {
   const { app } = state.data;
-  if (!link) return h('div', { class: 'frame-note muted' }, '주소에 값이 필요한 화면이라 앱을 띄우지 않았습니다.');
+  if (entry?.pending) return h('div', { class: 'frame-note muted' }, '경로 변수 값을 준비하고 있습니다.');
+  const unknown = [
+    app.unknownSignedOutPaths.length > 0 && h('span', { class: 'error' }, `맵에 없는 signedOutPaths: ${app.unknownSignedOutPaths.join(', ')}`),
+    app.unknownPathValues.length > 0 && h('span', { class: 'error' }, `맵에 없는 pathValues: ${app.unknownPathValues.join(', ')}`),
+  ];
+  const values = entry && pathValueBar(s, entry, fallback);
+  if (!link) {
+    return [
+      values && h('div', { class: 'frame-bar' }, unknown, values),
+      h('div', { class: 'frame-note muted' }, missing ? `${missing.join(', ')} 값이 없어 이 화면을 띄울 수 없습니다.` : '주소에 값이 필요한 화면이라 앱을 띄우지 않았습니다.'),
+    ];
+  }
   const signedOut = Boolean(app.signedOutUrl) && link.startsWith(`${app.signedOutUrl}/`);
-  const who = signedOut ? null : frameAccount(s);
+  const who = signedOut ? null : frameAccount(opens ?? s);
   const shown = who ? who.url + link.slice(app.url.length) : link;
   const opened = signedOut
     ? `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent(link.slice(app.signedOutUrl.length))}`
@@ -334,30 +418,33 @@ function appFrame(s, link) {
         ...who.notes.map((n) => h('span', { class: 'error' }, n)),
         who.hint && h('span', { class: 'muted' }, who.hint),
       ],
-      app.unknownSignedOutPaths.length > 0
-        && h('span', { class: 'error' }, `맵에 없는 signedOutPaths: ${app.unknownSignedOutPaths.join(', ')}`),
-      h('a', { href: opened, target: '_blank', rel: 'noopener' }, '새 창으로 열기 ↗')),
+      unknown,
+      h('a', { href: opened, target: '_blank', rel: 'noopener' }, '새 창으로 열기 ↗'),
+      values),
     h('iframe', { class: 'app', src: opened, title: '앱 화면' }),
   ];
 }
 
 function renderCenterHead(s) {
   const head = document.getElementById('center-head');
-  // 앱을 조작하던 중에 표시를 남겨도 프레임이 다시 로드되지 않게, 고른 화면이 바뀔 때만 다시 그린다.
-  const key = s ? `${s.id} ${state.data.app?.url} ${state.roleChoice}` : '';
+  const { app, appLinks } = state.data;
+  const entry = s && app && !appLinks[s.id] ? pathValuesOf(s, frameAccount(s).role) : null;
+  const target = s && app ? frameTarget(s, entry) : null;
+  // 앱을 조작하던 중에 표시를 남겨도 프레임이 다시 로드되지 않게, 고른 화면이나 띄울 주소가 바뀔 때만 다시 그린다.
+  const key = s ? [s.id, app?.url, state.roleChoice, target?.link, entry?.pending, entry?.opened].join(' ') : '';
   if (head.dataset.key === key) return;
   head.dataset.key = key;
   if (!s) return fill(head);
-  const link = state.data.appLinks[s.id];
+  const link = appLinks[s.id];
   fill(head,
     h('div', { class: 'title-row' },
       h('h3', {}, s.path),
       h('span', { class: 'muted' }, s.component),
-      state.data.app ? null
+      app ? null
         : link ? h('a', { href: link, target: '_blank', rel: 'noopener' }, '실제 앱에서 열기 ↗')
           : state.data.appUrl ? h('span', { class: 'muted' }, '경로 변수가 있어 실제 앱 링크를 만들 수 없음') : null),
     h('div', { class: 'muted mono' }, s.id),
-    state.data.app ? appFrame(s, link) : null);
+    app ? appFrame(s, target, entry) : null);
 }
 
 function renderCenter() {
