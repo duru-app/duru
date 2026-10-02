@@ -527,6 +527,41 @@ test('in a browser, the flow graph opens calls and branches, folds them, and a b
   );
 });
 
+test('in a browser, "back to start" returns one branch to how the page first drew it and leaves the rest alone', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+        const reset = async (id) => (await screenBox(p, id)).locator('button[title="처음 상태로"]').click();
+        await (await screenBox(p, '/signin#SignIn')).locator('.calls').click();
+        const signinCalls = (await boxCount(p)).calls;
+        assert.ok(signinCalls > 0);
+        await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: '−' }).click();
+        await (await screenBox(p, '/home#Home')).locator('button[title^="이 가지 전부"]').click();
+        assert.ok((await boxCount(p)).calls > signinCalls);
+
+        await reset('/home#Home');
+        assert.deepEqual(await boxCount(p), { screens: 11, calls: signinCalls });
+        assert.equal(await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: '−' }).count(), 1);
+
+        await (await screenBox(p, '/home#Home')).locator('button[title="이 가지만 보기"]').click();
+        await p.waitForSelector('.flowbar .focusing');
+        await (await screenBox(p, '/home#Home')).locator('button[title^="이 가지 전부"]').click();
+        assert.ok((await boxCount(p)).calls > 0);
+        await reset('/home#Home');
+        assert.deepEqual(await boxCount(p), { screens: 10, calls: 0 });
+        const bare = await p.evaluate(() => {
+          const walk = (ns) => ns.flatMap((n) => [n, ...walk(n.children)]);
+          return walk(state.focus.roots).find((n) => !n.children.length && !n.calls.length)?.id;
+        });
+        assert.ok(bare);
+        assert.equal(await (await screenBox(p, bare)).locator('button[title="처음 상태로"]').count(), 0);
+      }),
+    ),
+  );
+});
+
 test('in a browser, "gaps only" folds exactly the branches with no untested or failing box', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
