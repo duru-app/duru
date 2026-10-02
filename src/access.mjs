@@ -1,4 +1,5 @@
-import { UNKNOWN } from './client.mjs';
+import { parseExpression } from '@babel/parser';
+import { lookupConstant, memberChain, UNKNOWN } from './client.mjs';
 import { parseRoleEntry } from './config.mjs';
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -12,16 +13,135 @@ function rolePattern(entry) {
   return /^[A-Za-z_$][\w$]*$/.test(key) ? `${bracket}|${obj}\\s*\\??\\.\\s*${k}` : bracket;
 }
 
+const rolesSource = (config) => (config.roleIdentifiers ?? []).map(rolePattern).join('|');
+
 function guardKinds(config, guardInits) {
   const alt = (names) => names.map(escapeRegExp).join('|');
   const rules = [];
-  const roles = config.roleIdentifiers ?? [];
-  if (roles.length) rules.push(['role', new RegExp(`(?<![\\w$])(?:${roles.map(rolePattern).join('|')})(?![\\w$])`)]);
+  if (config.roleIdentifiers?.length) rules.push(['role', new RegExp(`(?<![\\w$])(?:${rolesSource(config)})(?![\\w$])`)]);
   const settings = config.settingsRoots ?? [];
   if (settings.length) rules.push(['setting', new RegExp(`(?<![\\w$])(?:${alt(settings)})\\s*\\??\\.`)]);
   return (guard, file) => {
-    const texts = [guard, ...(guardInits.get(file)?.get(guard) ?? [])];
+    const entry = guardInits.get(file)?.get(guard);
+    const texts = [entry?.source ?? guard, ...(entry?.inits ?? []).map((i) => i.init)];
     return rules.filter(([, re]) => texts.some((t) => re.test(t))).map(([kind]) => kind);
+  };
+}
+
+const NODE_META = new Set(['type', 'start', 'end', 'loc', 'extra', 'comments', 'errors', 'leadingComments', 'trailingComments', 'innerComments']);
+
+function childNodes(node) {
+  if (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') return node.computed ? [node.object, node.property] : [node.object];
+  if (node.type === 'ObjectProperty') return node.computed ? [node.key, node.value] : [node.value];
+  return Object.entries(node)
+    .filter(([k]) => !NODE_META.has(k))
+    .flatMap(([, v]) => (Array.isArray(v) ? v : [v]))
+    .filter((v) => typeof v?.type === 'string');
+}
+
+const numberOf = (node) =>
+  node.type === 'NumericLiteral' ? node.value
+    : node.type === 'UnaryExpression' && node.operator === '-' && node.argument.type === 'NumericLiteral' ? -node.argument.value : undefined;
+// indexOf 결과를 이렇게 비교하면 목록에 들어 있다는 뜻이다.
+const FOUND = { '>': -1, '>=': 0, '!==': -1, '!=': -1 };
+const intersect = (sets) => sets.reduce((a, b) => new Set([...a].filter((v) => b.has(v))));
+
+// 역할 조건이 역할을 어떤 값과 견주는지 읽는다. 값을 읽을 수 없으면 null 이다.
+function roleReader(config, guardInits, constants) {
+  const isRole = new RegExp(`^(?:${rolesSource(config)})$`);
+  const roleNames = new Set((config.roleIdentifiers ?? []).map((e) => parseRoleEntry(e).name).filter(Boolean));
+  const isMember = (node) => (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') && !node.computed;
+  const isProps = (node) =>
+    (node.type === 'Identifier' && node.name === 'props') || (isMember(node) && node.object.type === 'ThisExpression' && node.property.name === 'props');
+  const isPropsMember = (node) => isMember(node) && roleNames.has(node.property.name) && isProps(node.object);
+  const parsed = new Map();
+  const parse = (text) => {
+    if (!parsed.has(text)) {
+      try {
+        parsed.set(text, parseExpression(text, { plugins: ['jsx'] }));
+      } catch {
+        parsed.set(text, null);
+      }
+    }
+    return parsed.get(text) && { node: parsed.get(text), text };
+  };
+
+  return (guard, file) => {
+    const entry = guardInits.get(file)?.get(guard);
+    const inits = entry?.inits ?? [];
+    const initOf = ({ node }, seen) => {
+      if (node.type !== 'Identifier' || seen.has(node.name)) return null;
+      const found = inits.filter((i) => i.name === node.name);
+      return found.length === 1 ? parse(found[0].init) : null;
+    };
+    const at = (expr, node) => ({ node, text: expr.text });
+    const follow = (expr, seen) => [initOf(expr, seen), new Set([...seen, expr.node.name])];
+
+    const isRoleRead = (expr, seen) => {
+      if (isRole.test(expr.text.slice(expr.node.start, expr.node.end))) return true;
+      if (isPropsMember(expr.node)) return true;
+      const [init, next] = follow(expr, seen);
+      return Boolean(init) && isRoleRead(init, next);
+    };
+    const mentionsRole = (expr, seen) => {
+      if (isRoleRead(expr, seen)) return true;
+      const [init, next] = follow(expr, seen);
+      if (init) return mentionsRole(init, next);
+      return childNodes(expr.node).some((n) => mentionsRole(at(expr, n), seen));
+    };
+    const valueOf = (expr, seen) => {
+      const { node } = expr;
+      if (node.type === 'StringLiteral') return node.value;
+      if (node.type === 'ArrayExpression') {
+        const values = node.elements.map((e) => e && valueOf(at(expr, e), seen));
+        return values.every((v) => typeof v === 'string') ? values : undefined;
+      }
+      if (node.type === 'MemberExpression') return lookupConstant(constants, memberChain(node));
+      const [init, next] = follow(expr, seen);
+      return init ? valueOf(init, next) : undefined;
+    };
+    const listed = (expr, method, seen) => {
+      const { node } = expr;
+      if (node.type !== 'CallExpression' || node.arguments.length !== 1) return undefined;
+      const { callee } = node;
+      if (callee.type !== 'MemberExpression' || callee.computed || callee.property.name !== method) return undefined;
+      if (!isRoleRead(at(expr, node.arguments[0]), seen)) return undefined;
+      const values = valueOf(at(expr, callee.object), seen);
+      return Array.isArray(values) && values.every((v) => typeof v === 'string') ? new Set(values) : undefined;
+    };
+    const compared = (expr, seen) => {
+      const { node } = expr;
+      if (node.type === 'CallExpression') return listed(expr, 'includes', seen);
+      if (node.type !== 'BinaryExpression') return undefined;
+      const [left, right] = [at(expr, node.left), at(expr, node.right)];
+      if (node.operator === '===' || node.operator === '==') {
+        const value = isRoleRead(left, seen) ? valueOf(right, seen) : isRoleRead(right, seen) ? valueOf(left, seen) : undefined;
+        return typeof value === 'string' ? new Set([value]) : undefined;
+      }
+      return node.operator in FOUND && numberOf(node.right) === FOUND[node.operator] ? listed(left, 'indexOf', seen) : undefined;
+    };
+
+    // 역할을 읽지 않는 식은 undefined, 역할을 읽지만 값을 알 수 없는 식은 null 이다.
+    const read = (expr, seen) => {
+      if (isRoleRead(expr, seen)) return null;
+      const { node } = expr;
+      if (node.type === 'Identifier') {
+        const [init, next] = follow(expr, seen);
+        return init ? read(init, next) : undefined;
+      }
+      if (node.type === 'LogicalExpression' && (node.operator === '&&' || node.operator === '||')) {
+        const l = read(at(expr, node.left), seen);
+        const r = read(at(expr, node.right), seen);
+        if (l === undefined && r === undefined) return undefined;
+        if (node.operator === '&&') return l === undefined ? r : r === undefined ? l : l && r && intersect([l, r]);
+        return l && r && new Set([...l, ...r]);
+      }
+      return compared(expr, seen) ?? (mentionsRole(expr, seen) ? null : undefined);
+    };
+
+    const expr = parse(entry?.source ?? guard);
+    const values = expr && read(expr, new Set());
+    return values?.size ? [...values].sort() : null;
   };
 }
 
@@ -39,12 +159,14 @@ function linkTargets(screens) {
   };
 }
 
-export function screenAccess(screens, redirects, config, guardInits) {
+export function screenAccess(screens, redirects, config, guardInits, constants) {
   const kindsOf = guardKinds(config, guardInits);
+  const rolesOf = roleReader(config, guardInits, constants);
   const blocking = (guards, file, via) =>
     guards.flatMap((guard) => {
       const kinds = kindsOf(guard, file);
-      return kinds.length ? [{ guard, kinds, ...(via ? { via } : {}) }] : [];
+      if (!kinds.length) return [];
+      return [{ guard, kinds, ...(kinds.includes('role') ? { roles: rolesOf(guard, file) } : {}), ...(via ? { via } : {}) }];
     });
 
   const route = screens.map((s) => blocking(s.routeGuards, config.routesFile));
@@ -117,6 +239,42 @@ export function screenAccess(screens, redirects, config, guardInits) {
     }
   }
 
+  const roleGuards = (guards) => guards.filter((g) => g.kinds.includes('role'));
+  const readSets = (guards) => roleGuards(guards).filter((g) => g.roles).map((g) => new Set(g.roles));
+  const values = screens.map(() => null);
+  // 역할을 묻지 않는 링크는 undefined, 읽지 못한 링크는 null 이다.
+  const linkValues = (l) => {
+    if (roleGuards(l.guards).length) {
+      const sets = readSets(l.guards);
+      return sets.length ? intersect(sets) : null;
+    }
+    return restricted[l.from] && kinds[l.from].has('role') ? values[l.from] && new Set(values[l.from]) : undefined;
+  };
+  const valuesOf = (i) => {
+    const sets = readSets(route[i]);
+    const ways = allLinksBlocked(i) ? incoming[i].map(linkValues) : [undefined];
+    if (ways.every(Boolean)) sets.push(new Set(ways.flatMap((w) => [...w])));
+    const both = sets.length ? intersect(sets) : new Set();
+    return both.size ? [...both].sort() : null;
+  };
+  const roleScreens = indices.filter((i) => restricted[i] && kinds[i].has('role'));
+  // 역할을 묻는 화면끼리 링크가 돌 때 값이 계속 바뀌지 않도록 도는 횟수를 화면 수로 막는다.
+  for (let changed = true, round = 0; changed && round <= roleScreens.length; round += 1) {
+    changed = false;
+    for (const i of roleScreens) {
+      const v = valuesOf(i);
+      if (JSON.stringify(v) === JSON.stringify(values[i])) continue;
+      values[i] = v;
+      changed = true;
+    }
+  }
+  const roleAccess = (i) => {
+    if (!restricted[i] || !kinds[i].has('role')) return {};
+    const guards = [...route[i], ...(allLinksBlocked(i) ? incoming[i].flatMap((l) => l.guards) : [])];
+    const unreadable = roleGuards(guards).filter((g) => !g.roles).map((g) => g.guard);
+    return { roleValues: values[i], unreadableRoleGuards: [...new Set(unreadable)].sort() };
+  };
+
   const byPlace = (a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
   const shownKinds = indices.map((i) => (restricted[i] ? [...kinds[i]].sort() : []));
   const access = screens.map((_, i) => ({
@@ -126,6 +284,7 @@ export function screenAccess(screens, redirects, config, guardInits) {
     links: incoming[i]
       .map((l) => ({ from: screens[l.from].id, file: l.file, line: l.line, guards: l.guards, fromKinds: shownKinds[l.from] }))
       .sort(byPlace),
+    ...roleAccess(i),
   }));
   const entries = starts.map((i) => ({ screen: screens[i].id, reasons: reasons[i] }));
   return { access, entries, unknownEntryPaths };

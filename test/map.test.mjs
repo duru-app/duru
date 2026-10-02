@@ -254,8 +254,10 @@ test('each restricted screen keeps the route guard and the links that decided it
   assert.deepEqual(screen(map, '/admin/member#AdminMember').access, {
     restricted: true,
     kinds: ['role'],
-    route: [{ guard: 'isAdminRole(memberRole)', kinds: ['role'] }],
-    links: [{ from: '/home#Home', file: 'components/Home.js', line: 17, guards: [{ guard: "memberRole === 'ADMIN'", kinds: ['role'] }], fromKinds: [] }],
+    route: [{ guard: 'isAdminRole(memberRole)', kinds: ['role'], roles: null }],
+    links: [{ from: '/home#Home', file: 'components/Home.js', line: 17, guards: [{ guard: "memberRole === 'ADMIN'", kinds: ['role'], roles: ['ADMIN'] }], fromKinds: [] }],
+    roleValues: ['ADMIN'],
+    unreadableRoleGuards: ['isAdminRole(memberRole)'],
   });
   assert.deepEqual(screen(map, '/help#Help').access.links, [
     {
@@ -287,9 +289,128 @@ test('a role check held in a local const hides the route and the link, and the s
   assert.deepEqual(screen(map, '/admin/group#AdminGroup').access, {
     restricted: true,
     kinds: ['role'],
-    route: [{ guard: 'isAdmin', kinds: ['role'] }],
-    links: [{ from: '/home#Home', file: 'components/Home.js', line: 18, guards: [{ guard: 'isAdmin', kinds: ['role'] }], fromKinds: [] }],
+    route: [{ guard: 'isAdmin', kinds: ['role'], roles: null }],
+    links: [{ from: '/home#Home', file: 'components/Home.js', line: 18, guards: [{ guard: 'isAdmin', kinds: ['role'], roles: ['ADMIN'] }], fromKinds: [] }],
+    roleValues: ['ADMIN'],
+    unreadableRoleGuards: ['isAdmin'],
   });
+});
+
+const roleValues = (map) => Object.fromEntries(map.screens.filter((s) => 'roleValues' in s.access).map((s) => [s.id, s.access.roleValues]));
+const roleGuards = (access) => [...access.route, ...access.links.flatMap((l) => l.guards)].filter((g) => g.kinds.includes('role')).map((g) => [g.guard, g.roles]);
+
+test('the role values a role guard compares with are read, and a screen keeps the values every way into it allows', async () => {
+  const map = await buildFixture();
+  assert.deepEqual(roleValues(map), {
+    '/admin/member#AdminMember': ['ADMIN'],
+    '/admin/group#AdminGroup': ['ADMIN'],
+    '/admin/audit#AdminAudit': ['ADMIN', 'AUDITOR'],
+    '/admin/report#AdminReport': ['ADMIN', 'OWNER'],
+  });
+  const audit = screen(map, '/admin/audit#AdminAudit').access;
+  assert.deepEqual(roleGuards(audit), [["session['member.role'] === 'AUDITOR'", ['AUDITOR']]]);
+  assert.deepEqual(audit.unreadableRoleGuards, []);
+  const report = screen(map, '/admin/report#AdminReport').access;
+  assert.deepEqual([...new Set(roleGuards(report).map((g) => JSON.stringify(g)))].map((g) => JSON.parse(g)), [["['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1", ['ADMIN', 'OWNER']]]);
+  assert.ok(report.links.flatMap((l) => l.guards).filter((g) => !g.kinds.includes('role')).every((g) => !('roles' in g)));
+  assert.ok(!('roleValues' in screen(map, '/lab#Lab').access));
+  assert.ok(!('unreadableRoleGuards' in screen(map, '/lab#Lab').access));
+});
+
+test('a screen whose role guards are all unreadable has no role values and lists the guards', async () => {
+  const map = await buildEditedCopy([['client/src/components/Home.js', "const isAdmin = memberRole === 'ADMIN';", "const isAdmin = memberRole !== 'MEMBER';"]]);
+  const group = screen(map, '/admin/group#AdminGroup').access;
+  assert.equal(group.roleValues, null);
+  assert.deepEqual(group.unreadableRoleGuards, ['isAdmin']);
+});
+
+test('a role identifier read as a member of another object, such as props.memberRole, is still read for its value', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/components/Home.js', 'export default function Home({ memberRole, globalSettings, session }) {', 'export default function Home(props) {\n  const { globalSettings, session } = props;'],
+    ['client/src/components/Home.js', "const isAdmin = memberRole === 'ADMIN';", "const isAdmin = props.memberRole === 'ADMIN';"],
+    ['client/src/components/Home.js', "{memberRole === 'ADMIN' && <Link", "{props.memberRole === 'ADMIN' && <Link"],
+  ]);
+  const group = screen(map, '/admin/group#AdminGroup').access;
+  assert.deepEqual(group.roleValues, ['ADMIN']);
+  const fromHome = group.links.find((l) => l.from === '/home#Home');
+  assert.deepEqual(fromHome.guards.map((g) => [g.guard, g.roles]), [['isAdmin', ['ADMIN']]]);
+});
+
+test('a guard keeps its own const declarations when another component in the file uses the same guard text', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/components/Home.js', 'export default function Home(', 'function Banner({ isAdmin }) {\n  return isAdmin ? <Link to={Option.ROUTE_PATH.LAB}>Lab</Link> : <Link to={Option.ROUTE_PATH.HELP}>Help</Link>;\n}\n\nexport default function Home('],
+  ]);
+  const help = screen(map, '/help#Help').access;
+  const fromBanner = help.links.filter((l) => l.from === '/home#Home' && l.file.endsWith('Home.js'));
+  assert.ok(fromBanner.length > 0);
+  assert.deepEqual(fromBanner.flatMap((l) => l.guards), []);
+});
+
+test('a screen whose route and links allow no role in common has no role values', async () => {
+  const map = await buildEditedCopy([['client/src/Routes.js', '{isAdminRole(memberRole) && <Route path={Option.ROUTE_PATH.ADMIN_MEMBER}', "{memberRole === 'OWNER' && <Route path={Option.ROUTE_PATH.ADMIN_MEMBER}"]]);
+  const member = screen(map, '/admin/member#AdminMember').access;
+  assert.equal(member.roleValues, null);
+  assert.deepEqual(member.unreadableRoleGuards, []);
+});
+
+const SIDE_MENU_ROLE ="['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1";
+for (const [guard, roles] of [
+  ["['ADMIN', 'OWNER'].includes(session['member.role'])", ['ADMIN', 'OWNER']],
+  ["['OWNER', 'ADMIN'].indexOf(session['member.role']) !== -1", ['ADMIN', 'OWNER']],
+  ["['ADMIN', 'OWNER'].indexOf(session['member.role']) >= 0", ['ADMIN', 'OWNER']],
+  ["'OWNER' == session['member.role'] || session['member.role'] === 'ADMIN'", ['ADMIN', 'OWNER']],
+  ["session['member.role'] === 'OWNER' && MENUS.ADMIN", ['OWNER']],
+  ["session['member.role'] !== 'MEMBER'", null],
+  ["!(session['member.role'] === 'MEMBER')", null],
+  ["['ADMIN', 'OWNER'].indexOf(session['member.role']) > 0", null],
+  ["session['member.role'] === MENUS.ROLE", null],
+  ["session['member.role'] === 'OWNER' || MENUS.OPEN", null],
+  ["(MENUS.OPEN || session['member.role'] === 'OWNER') && session['member.role'] === 'ADMIN'", ['ADMIN']],
+  ["session['member.role'] === 'OWNER' && session['member.role'] === 'ADMIN'", null],
+  ["this.props.memberRole === 'OWNER'", ['OWNER']],
+  ["props.memberRole === 'OWNER'", ['OWNER']],
+  ["row.memberRole === 'OWNER'", null],
+]) {
+  test(`the role guard ${guard} allows ${JSON.stringify(roles)}`, async () => {
+    const map = await buildEditedCopy([['client/src/components/SideMenu.js', SIDE_MENU_ROLE, guard]]);
+    const report = screen(map, '/admin/report#AdminReport').access;
+    assert.deepEqual(report.links[0].guards.find((g) => g.kinds.includes('role')).roles, roles);
+    assert.deepEqual(report.roleValues, roles);
+    assert.deepEqual(report.unreadableRoleGuards, roles ? [] : [guard]);
+  });
+}
+
+test('a role guard longer than its shown text is read in full', async () => {
+  const roles = Array.from({ length: 12 }, (_, i) => `ROLE_NUMBER_${i}`);
+  const guard = `[${roles.map((r) => `'${r}'`).join(', ')}].indexOf(session['member.role']) > -1`;
+  const map = await buildEditedCopy([['client/src/components/SideMenu.js', SIDE_MENU_ROLE, guard]]);
+  const report = screen(map, '/admin/report#AdminReport').access;
+  assert.match(report.links[0].guards.find((g) => g.kinds.includes('role')).guard, /…$/);
+  assert.deepEqual(report.roleValues, roles.sort());
+});
+
+test('a list of constants that are not strings gives no role values', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/_define/Enum.js', "ROLE: { ADMIN: 'ADMIN', MEMBER: 'MEMBER' },", "ROLE: { ADMIN: 'ADMIN', MEMBER: 'MEMBER' },\n  ADMIN_ROLES: [1, 2],"],
+    ['client/src/components/SideMenu.js', "import Option from '_define/Option';\n", "import Option from '_define/Option';\nimport Enum from '_define/Enum';\n"],
+    ['client/src/components/SideMenu.js', SIDE_MENU_ROLE, "Enum.ADMIN_ROLES.indexOf(session['member.role']) > -1"],
+  ]);
+  assert.equal(screen(map, '/admin/report#AdminReport').access.roleValues, null);
+});
+
+test('a screen reached through a link whose role guard cannot be read has no role values', async () => {
+  const map = await buildEditedCopy([['client/src/components/Home.js', "session['member.role'] === 'AUDITOR'", "session['member.role'] !== 'MEMBER'"]]);
+  const audit = screen(map, '/admin/audit#AdminAudit').access;
+  assert.equal(audit.roleValues, null);
+  assert.deepEqual(audit.unreadableRoleGuards, ["session['member.role'] !== 'MEMBER'"]);
+});
+
+test('a role compared with a constant from the constants modules is read as its value', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/components/Home.js', "import Option from '_define/Option';\n", "import Option from '_define/Option';\nimport Enum from '_define/Enum';\n"],
+    ['client/src/components/Home.js', "{memberRole === 'ADMIN' &&", '{memberRole === Enum.ROLE.ADMIN &&'],
+  ]);
+  assert.deepEqual(roleGuards(screen(map, '/admin/member#AdminMember').access).at(-1), ['memberRole === Enum.ROLE.ADMIN', ['ADMIN']]);
 });
 
 test('a setting held in a local const, even through another const, hides a link as a setting condition', async () => {
@@ -322,10 +443,12 @@ test('a role read from one member of a store object hides a link as a role condi
         from: '/home#Home',
         file: 'components/Home.js',
         line: 20,
-        guards: [{ guard: "session['member.role'] === 'AUDITOR'", kinds: ['role'] }],
+        guards: [{ guard: "session['member.role'] === 'AUDITOR'", kinds: ['role'], roles: ['AUDITOR'] }],
         fromKinds: [],
       },
     ],
+    roleValues: ['ADMIN', 'AUDITOR'],
+    unreadableRoleGuards: [],
   });
 });
 
@@ -364,6 +487,7 @@ for (const [name, edits] of [
     const map = await buildEditedCopy(edits);
     assert.deepEqual(screen(map, '/admin/audit#AdminAudit').access.links.map((l) => l.guards.map((g) => g.kinds)), [[], [['role']]]);
     assert.deepEqual(screen(map, '/admin/audit#AdminAudit').access.kinds, ['role']);
+    assert.deepEqual(screen(map, '/admin/audit#AdminAudit').access.roleValues, ['ADMIN', 'AUDITOR']);
   });
 }
 
@@ -385,11 +509,13 @@ test('a menu built from a settings list links to each listed screen, under the l
       line: 11,
       guards: [
             { guard: "globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'", kinds: ['setting'] },
-            { guard: "['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1", kinds: ['role'] },
+            { guard: "['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1", kinds: ['role'], roles: ['ADMIN', 'OWNER'] },
             { guard: 'MENUS.ADMIN', kinds: ['setting'] },
       ],
       fromKinds: [],
     })),
+    roleValues: ['ADMIN', 'OWNER'],
+    unreadableRoleGuards: [],
   });
   assert.deepEqual(screen(map, '/home#Home').links.filter((l) => l.file === 'components/SideMenu.js').map((l) => l.to), ['/admin/report']);
 });

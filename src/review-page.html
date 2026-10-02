@@ -50,6 +50,7 @@
   .frame-bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 6px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--bg); font-size: 13px; }
   .frame-bar .mono { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .frame-bar .error { color: var(--fail); }
+  .frame-bar select { font: inherit; padding: 1px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
   iframe.app { display: block; width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 0 0 6px 6px; background: #fff; }
   .frame-note { margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 6px; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; }
@@ -150,7 +151,7 @@ const SCREEN_FILTERS = [
   { key: 'role', label: '특정 역할에서만 열림', keep: (s) => s.access.kinds.includes('role') },
 ];
 
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, roleChoice: 'auto' };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -278,18 +279,61 @@ function testItem(t) {
     t.detail && t.status !== 'pass' ? h('div', { class: 'detail' }, t.detail) : null);
 }
 
-function appFrame(link) {
+function frameAccount(s) {
+  const { app } = state.data;
+  const account = { url: app.url, label: `${app.account} 로 로그인`, error: app.error };
+  const asRole = (r) => ({ url: r.url, label: `${r.role} 역할 ${r.account} 로 로그인`, error: r.error, role: r.role });
+  const wanted = s.access.roleValues;
+  const unread = s.access.unreadableRoleGuards ?? [];
+  const hint = wanted && unread.length ? `읽지 못한 역할 조건도 있습니다: ${unread.join(', ')}` : null;
+  return { hint, ...pickAccount(account, asRole, wanted, unread) };
+}
+
+function pickAccount(account, asRole, wanted, unread) {
+  const { app } = state.data;
+  if (state.roleChoice === 'auto') {
+    if (wanted === undefined) return { ...account, notes: [] };
+    if (wanted === null) {
+      return { ...account, notes: [`어느 역할이 조건을 채우는지 맵에서 정할 수 없습니다${unread.length ? `: ${unread.join(', ')}` : ''}`] };
+    }
+    const meets = app.roles.filter((r) => wanted.includes(r.role));
+    const role = meets.find((r) => !r.error) ?? meets[0];
+    return role ? { ...asRole(role), notes: [] } : { ...account, notes: [`조건을 채우는 역할(${wanted.join(', ')})에 계정이 없습니다`] };
+  }
+  const role = app.roles.find((r) => `role:${r.role}` === state.roleChoice);
+  if (!role) return { ...account, notes: [] };
+  return { ...asRole(role), notes: wanted && !wanted.includes(role.role) ? [`이 역할은 화면 조건(${wanted.join(', ')})을 채우지 못합니다`] : [] };
+}
+
+function rolePicker() {
+  const { app, map } = state.data;
+  const missing = [...new Set(map.screens.flatMap((s) => s.access.roleValues ?? []))].filter((v) => !app.roles.some((r) => r.role === v)).sort();
+  const option = (value, label) => h('option', { value, selected: state.roleChoice === value }, label);
+  return h('select', { class: 'role', title: '앱을 띄울 계정', onchange: (e) => { state.roleChoice = e.target.value; render(); } },
+    option('auto', '화면에 맞춰'),
+    option('account', `기본 계정 (${app.account})`),
+    app.roles.map((r) => option(`role:${r.role}`, `${r.role} (${r.account})`)),
+    missing.map((v) => h('option', { disabled: true }, `${v} — 계정 없음`)));
+}
+
+function appFrame(s, link) {
   const { app } = state.data;
   if (!link) return h('div', { class: 'frame-note muted' }, '주소에 값이 필요한 화면이라 앱을 띄우지 않았습니다.');
   const signedOut = Boolean(app.signedOutUrl) && link.startsWith(`${app.signedOutUrl}/`);
+  const who = signedOut ? null : frameAccount(s);
+  const shown = who ? who.url + link.slice(app.url.length) : link;
   const opened = signedOut
     ? `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent(link.slice(app.signedOutUrl.length))}`
-    : link;
+    : shown;
   return [
     h('div', { class: 'frame-bar' },
-      h('span', { class: 'mono' }, link),
-      signedOut ? h('span', {}, '로그아웃 상태')
-        : app.error ? h('span', { class: 'error' }, app.error) : h('span', {}, `${app.account} 로 로그인`),
+      h('span', { class: 'mono' }, shown),
+      signedOut ? h('span', {}, '로그아웃 상태') : [
+        rolePicker(),
+        who.error ? h('span', { class: 'error' }, who.error) : h('span', {}, who.label),
+        ...who.notes.map((n) => h('span', { class: 'error' }, n)),
+        who.hint && h('span', { class: 'muted' }, who.hint),
+      ],
       app.unknownSignedOutPaths.length > 0
         && h('span', { class: 'error' }, `맵에 없는 signedOutPaths: ${app.unknownSignedOutPaths.join(', ')}`),
       h('a', { href: opened, target: '_blank', rel: 'noopener' }, '새 창으로 열기 ↗')),
@@ -300,7 +344,7 @@ function appFrame(link) {
 function renderCenterHead(s) {
   const head = document.getElementById('center-head');
   // 앱을 조작하던 중에 표시를 남겨도 프레임이 다시 로드되지 않게, 고른 화면이 바뀔 때만 다시 그린다.
-  const key = s ? `${s.id} ${state.data.app?.url}` : '';
+  const key = s ? `${s.id} ${state.data.app?.url} ${state.roleChoice}` : '';
   if (head.dataset.key === key) return;
   head.dataset.key = key;
   if (!s) return fill(head);
@@ -313,7 +357,7 @@ function renderCenterHead(s) {
         : link ? h('a', { href: link, target: '_blank', rel: 'noopener' }, '실제 앱에서 열기 ↗')
           : state.data.appUrl ? h('span', { class: 'muted' }, '경로 변수가 있어 실제 앱 링크를 만들 수 없음') : null),
     h('div', { class: 'muted mono' }, s.id),
-    state.data.app ? appFrame(link) : null);
+    state.data.app ? appFrame(s, link) : null);
 }
 
 function renderCenter() {
