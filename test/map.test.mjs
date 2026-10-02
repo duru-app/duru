@@ -231,6 +231,10 @@ async function buildEditedCopy(edits) {
   }
 }
 
+const setting = (path, need, extra = {}) => ({ root: 'globalSettings', path: path.split('.'), need, ...extra });
+const HELP_ON = setting('SYSTEM.HELP_LINK_ENABLED', 'on');
+const helpGuard = { guard: 'helpEnabled', kinds: ['setting'], settings: [HELP_ON] };
+const MENU_LIST = ['ADMIN_REPORT', 'ADMIN_ARCHIVE'];
 const restrictedKinds = (map) => Object.fromEntries(map.screens.filter((s) => s.access.restricted).map((s) => [s.id, s.access.kinds]));
 
 test('a screen opens only under a setting or a role when its route is guarded or every link into it is', async () => {
@@ -264,14 +268,14 @@ test('each restricted screen keeps the route guard and the links that decided it
       from: '/document/:id#DocumentDetail',
       file: 'components/DocumentDetail.js',
       line: 20,
-      guards: [{ guard: 'helpEnabled', kinds: ['setting'] }],
+      guards: [helpGuard],
       fromKinds: [],
     },
     {
       from: '/signin#SignIn',
       file: 'components/SignIn.js',
       line: 8,
-      guards: [{ guard: 'globalSettings.SYSTEM.HELP_LINK_ENABLED', kinds: ['setting'], via: 'openHelp' }],
+      guards: [{ guard: 'globalSettings.SYSTEM.HELP_LINK_ENABLED', kinds: ['setting'], via: 'openHelp', settings: [HELP_ON] }],
       fromKinds: [],
     },
   ]);
@@ -280,6 +284,7 @@ test('each restricted screen keeps the route guard and the links that decided it
     kinds: ['setting'],
     route: [],
     links: [{ from: '/lab#Lab', file: 'components/Lab.js', line: 14, guards: [], fromKinds: ['setting'] }],
+    settings: [],
   });
 });
 
@@ -416,7 +421,7 @@ test('a role compared with a constant from the constants modules is read as its 
 test('a setting held in a local const, even through another const, hides a link as a setting condition', async () => {
   const map = await buildFixture();
   const link = screen(map, '/help#Help').access.links.find((l) => l.from === '/document/:id#DocumentDetail');
-  assert.deepEqual(link.guards, [{ guard: 'helpEnabled', kinds: ['setting'] }]);
+  assert.deepEqual(link.guards, [helpGuard]);
 });
 
 test('a let is not followed, and a const that refers back to itself is followed once', async () => {
@@ -428,7 +433,9 @@ test('a let is not followed, and a const that refers back to itself is followed 
     ['client/src/components/DocumentDetail.js', 'const helpEnabled = system.HELP_LINK_ENABLED;', 'const helpEnabled = () => system.HELP_LINK_ENABLED || helpEnabled();'],
     ['client/src/components/DocumentDetail.js', '{helpEnabled && <Link', '{helpEnabled() && <Link'],
   ]);
-  assert.deepEqual(fromDetail(looping).guards, [{ guard: 'helpEnabled()', kinds: ['setting'] }]);
+  assert.deepEqual(fromDetail(looping).guards, [
+    { guard: 'helpEnabled()', kinds: ['setting'], settings: null, settingsReason: '함수를 불러 정하는 조건이라 켤 값을 정할 수 없습니다' },
+  ]);
 });
 
 test('a role read from one member of a store object hides a link as a role condition', async () => {
@@ -499,6 +506,8 @@ test('a roleIdentifiers entry that is neither an identifier nor one member of an
 
 test('a menu built from a settings list links to each listed screen, under the list and the guards around it', async () => {
   const map = await buildFixture();
+  const menuIncludes = setting('SYSTEM.MAIN_MENU.ADMIN.LIST', 'includes', { value: 'ADMIN_REPORT', default: MENU_LIST });
+  const adminMenu = setting('SYSTEM.MAIN_MENU.ADMIN', 'present', { default: { LIST: MENU_LIST } });
   assert.deepEqual(screen(map, '/admin/report#AdminReport').access, {
     restricted: true,
     kinds: ['role', 'setting'],
@@ -508,16 +517,107 @@ test('a menu built from a settings list links to each listed screen, under the l
       file: 'components/SideMenu.js',
       line: 11,
       guards: [
-            { guard: "globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'", kinds: ['setting'] },
-            { guard: "['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1", kinds: ['role'], roles: ['ADMIN', 'OWNER'] },
-            { guard: 'MENUS.ADMIN', kinds: ['setting'] },
+        { guard: "globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'", kinds: ['setting'], settings: [menuIncludes] },
+        { guard: "['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1", kinds: ['role'], roles: ['ADMIN', 'OWNER'] },
+        { guard: 'MENUS.ADMIN', kinds: ['setting'], settings: [adminMenu] },
       ],
       fromKinds: [],
     })),
     roleValues: ['ADMIN', 'OWNER'],
     unreadableRoleGuards: [],
+    settings: ['/document/:id#DocumentDetail', '/document/:tab_draft_done_#DocumentList', '/home#Home'].map((from) => ({
+      from,
+      file: 'components/SideMenu.js',
+      line: 11,
+      needs: [menuIncludes, adminMenu],
+      unreadable: [],
+    })),
   });
   assert.deepEqual(screen(map, '/home#Home').links.filter((l) => l.file === 'components/SideMenu.js').map((l) => l.to), ['/admin/report']);
+});
+
+test('a setting-guarded screen lists the setting values its route and each guarded link into it need, with the defaults', async () => {
+  const map = await buildFixture();
+  const labOn = setting('SYSTEM.LAB_ENABLED', 'on', { default: false });
+  assert.deepEqual(screen(map, '/lab#Lab').access.settings, [
+    { from: 'route', needs: [labOn], unreadable: [] },
+    { from: '/home#Home', file: 'components/Home.js', line: 19, needs: [labOn], unreadable: [] },
+  ]);
+  assert.deepEqual(screen(map, '/help#Help').access.settings, [
+    { from: '/document/:id#DocumentDetail', file: 'components/DocumentDetail.js', line: 20, needs: [HELP_ON], unreadable: [] },
+    { from: '/signin#SignIn', file: 'components/SignIn.js', line: 8, needs: [HELP_ON], unreadable: [] },
+  ]);
+  assert.equal(screen(map, '/admin/member#AdminMember').access.settings, undefined);
+  assert.equal(screen(map, '/home#Home').access.settings, undefined);
+  assert.deepEqual(map.settingsDefaults, { globalSettings: { SYSTEM: { LAB_ENABLED: false, MAIN_MENU: { ADMIN: { LIST: MENU_LIST } } } } });
+  assert.deepEqual(map.settingsDefaultsIncomplete, { globalSettings: [] });
+});
+
+test('defaults that the source does not show in full are listed by section and key, or by section when its keys are unknown', async () => {
+  const map = await buildEditedCopy([
+    [
+      'client/src/store/settings.js',
+      "    LAB_ENABLED: false,\n",
+      "    LAB_ENABLED: false,\n    FIELDS: window.INTO_SETTINGS?.SYSTEM?.FIELDS || ['NAME'],\n    THEME: { ...base, DARK: true },\n    LABEL: `${'Lab'}`,\n    NAMES: [NAME, 'B'],\n",
+    ],
+    ['client/src/store/settings.js', 'const defaults = {', "const base = makeTheme();\nconst NAME = 'A';\nconst defaults = {\n  CUSTOM: { [key]: 1 },\n  DISPLAY: makeDisplay(),"],
+  ]);
+  assert.deepEqual(map.settingsDefaultsIncomplete, { globalSettings: [['CUSTOM'], ['DISPLAY'], ['SYSTEM', 'FIELDS'], ['SYSTEM', 'THEME']] });
+  assert.deepEqual(map.settingsDefaults.globalSettings.SYSTEM.NAMES, ['A', 'B']);
+});
+
+const LAB_ROUTE = '{globalSettings.SYSTEM.LAB_ENABLED ? <Route path={Option.ROUTE_PATH.LAB} component={waitFor(Lab)} exact /> : null}';
+const labRouteUnder = (guard) => LAB_ROUTE.replace('globalSettings.SYSTEM.LAB_ENABLED', guard);
+
+for (const [guard, needs] of [
+  ['!globalSettings.SYSTEM.LAB_ENABLED', [setting('SYSTEM.LAB_ENABLED', 'off', { default: false })]],
+  ["globalSettings.SYSTEM.THEME === 'dark'", [setting('SYSTEM.THEME', 'equals', { value: 'dark' })]],
+  ["'dark' == globalSettings?.SYSTEM?.['THEME']", [setting('SYSTEM.THEME', 'equals', { value: 'dark' })]],
+  ['globalSettings.SYSTEM.LEVEL === 2', [setting('SYSTEM.LEVEL', 'equals', { value: 2 })]],
+  ['globalSettings.SYSTEM.LAB_ENABLED === false', [setting('SYSTEM.LAB_ENABLED', 'off', { default: false })]],
+  [
+    'memberRole && globalSettings.SYSTEM.LAB_ENABLED && !globalSettings.SYSTEM.HELP_LINK_ENABLED',
+    [setting('SYSTEM.LAB_ENABLED', 'on', { default: false }), setting('SYSTEM.HELP_LINK_ENABLED', 'off')],
+  ],
+]) {
+  test(`a route guard ${guard} needs ${needs.map((n) => `${n.path.join('.')} ${n.need}`).join(', ')}`, async () => {
+    const map = await buildEditedCopy([['client/src/Routes.js', LAB_ROUTE, labRouteUnder(guard)]]);
+    assert.deepEqual(screen(map, '/lab#Lab').access.route.find((g) => g.kinds.includes('setting')).settings, needs);
+  });
+}
+
+test('the guard of an else branch needs the opposite of its test', async () => {
+  const map = await buildEditedCopy([['client/src/Routes.js', LAB_ROUTE, '{globalSettings.SYSTEM.LAB_ENABLED ? null : <Route path={Option.ROUTE_PATH.LAB} component={waitFor(Lab)} exact />}']]);
+  assert.deepEqual(screen(map, '/lab#Lab').access.route, [
+    { guard: '!(globalSettings.SYSTEM.LAB_ENABLED)', kinds: ['setting'], settings: [setting('SYSTEM.LAB_ENABLED', 'off', { default: false })] },
+  ]);
+});
+
+for (const [guard, reason] of [
+  ['globalSettings.SYSTEM.LAB_ENABLED !== false', /같지 않음/],
+  ['globalSettings.SYSTEM.LAB_ENABLED || memberRole', /또는/],
+  ['globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST.includes(memberRole)', /함수를 불러/],
+  ['globalSettings.SYSTEM.THEME === memberRole', /고정된 값이 아닌 것과 비교/],
+  ['globalSettings.SYSTEM.LEVEL > 1', /크기를 비교/],
+  ['!(globalSettings.SYSTEM.LAB_ENABLED && globalSettings.SYSTEM.HELP_LINK_ENABLED)', /부정한 조건/],
+  ['!(memberRole && globalSettings.SYSTEM.LAB_ENABLED)', /부정한 조건/],
+]) {
+  test(`a route guard ${guard} cannot be read, and the screen says why`, async () => {
+    const map = await buildEditedCopy([['client/src/Routes.js', LAB_ROUTE, labRouteUnder(guard)]]);
+    const { route, settings } = screen(map, '/lab#Lab').access;
+    const [read] = route.filter((g) => g.kinds.includes('setting'));
+    assert.equal(read.settings, null);
+    assert.match(read.settingsReason, reason);
+    assert.deepEqual(settings[0], { from: 'route', needs: [], unreadable: [{ guard: read.guard, reason: read.settingsReason }] });
+  });
+}
+
+test('a long guard is read from its source, not from the shortened text shown for it', async () => {
+  const long = `globalSettings.SYSTEM.LAB_ENABLED && globalSettings.SYSTEM.${'VERY_LONG_SETTING_NAME_'.repeat(6)}ON`;
+  const map = await buildEditedCopy([['client/src/Routes.js', LAB_ROUTE, labRouteUnder(long)]]);
+  const [guard] = screen(map, '/lab#Lab').access.route;
+  assert.match(guard.guard, /…$/);
+  assert.deepEqual(guard.settings.map((n) => n.path.join('.')), ['SYSTEM.LAB_ENABLED', `SYSTEM.${'VERY_LONG_SETTING_NAME_'.repeat(6)}ON`]);
 });
 
 test('a menu rendered with map over the settings list links the same way', async () => {
@@ -620,7 +720,7 @@ test('a guard that reads neither a setting nor a configured role identifier does
   ]);
   assert.deepEqual(restrictedKinds(map), { '/lab#Lab': ['setting'], '/lab/result#LabResult': ['setting'], '/admin/report#AdminReport': ['setting'] });
   assert.deepEqual(screen(map, '/admin/member#AdminMember').access.route, []);
-  assert.deepEqual(screen(map, '/help#Help').access.links.map((l) => l.guards), [[{ guard: 'helpEnabled', kinds: ['setting'] }], []]);
+  assert.deepEqual(screen(map, '/help#Help').access.links.map((l) => l.guards), [[helpGuard], []]);
 });
 
 test('screens that link only to each other stay open', async () => {
@@ -671,7 +771,7 @@ for (const [name, use] of [
   test(`a handler also used ${name} leaves its link open`, async () => {
     const map = await buildEditedCopy([['client/src/components/SignIn.js', '    </form>', `      ${use}\n    </form>`]]);
     assert.equal(screen(map, '/help#Help').access.restricted, false);
-    assert.deepEqual(screen(map, '/help#Help').access.links.map((l) => l.guards), [[{ guard: 'helpEnabled', kinds: ['setting'] }], []]);
+    assert.deepEqual(screen(map, '/help#Help').access.links.map((l) => l.guards), [[helpGuard], []]);
   });
 }
 

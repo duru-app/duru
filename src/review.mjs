@@ -41,7 +41,7 @@ function screenCallOptions(screen, callsById) {
   return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id).options.filter((o) => keys.has(o.key) || o.sources.includes('config'))]));
 }
 
-export function reviewData(config, author, app = null) {
+export function reviewData(config, author, app = null, fileSettings = null) {
   const map = readJson(path.join(config.outDir, 'map.json'));
   const tests = readJson(path.join(config.outDir, 'tests.json'));
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
@@ -62,6 +62,7 @@ export function reviewData(config, author, app = null) {
       account: app.account,
       roles: app.roles,
       error: app.error,
+      settings: config.app.settingsFile && { root: config.app.settingsFile.root, merged: config.app.settingsFile.merged, overrides: app.overrides, ...fileSettings },
     },
     appLinks: Object.fromEntries(map.screens.map((s) => {
       const signedOut = app && config.app.signedOutPaths.includes(s.path);
@@ -95,7 +96,13 @@ function readBody(req) {
 }
 
 export async function startReviewServer(config, { port = 0, author = null, onDone = () => {} } = {}) {
-  const app = config.app && (await startAppHost(config.app));
+  const mapFile = path.join(config.outDir, 'map.json');
+  const rootDefaults = () => {
+    const map = readJson(mapFile);
+    const root = config.app.settingsFile?.root;
+    return { values: map.settingsDefaults?.[root] ?? {}, incomplete: map.settingsDefaultsIncomplete?.[root] ?? [] };
+  };
+  const app = config.app && (await startAppHost(config.app, { rootDefaults }));
   // 다른 사이트가 사용자의 브라우저로 표시를 써 넣거나 리뷰를 끝내거나(JSON 이 아닌 요청), 자기 도메인을 이 주소로 돌려 맵을 읽어 가는 것(다른 Host)을 막는다.
   const ownHosts = () => [`127.0.0.1:${server.address().port}`, `localhost:${server.address().port}`];
   const isJson = (req) => req.headers['content-type']?.startsWith('application/json');
@@ -110,10 +117,13 @@ export async function startReviewServer(config, { port = 0, author = null, onDon
         return send(res, 200, 'text/plain', 'review ended');
       }
       if (req.method === 'GET' && req.url === '/') return send(res, 200, 'text/html', fs.readFileSync(PAGE, 'utf8'));
-      if (req.method === 'GET' && req.url === '/api/data') return send(res, 200, 'application/json', JSON.stringify(reviewData(config, author, app)));
+      if (req.method === 'GET' && req.url === '/api/data') {
+        const fileSettings = app && config.app.settingsFile ? await app.fileSettings() : null;
+        return send(res, 200, 'application/json', JSON.stringify(reviewData(config, author, app, fileSettings)));
+      }
       const url = new URL(req.url, 'http://host');
       if (req.method === 'GET' && url.pathname === '/api/flow' && url.searchParams.has('from')) {
-        const map = readJson(path.join(config.outDir, 'map.json'));
+        const map = readJson(mapFile);
         const from = url.searchParams.get('from');
         if (!map.screens.some((s) => s.id === from)) return send(res, 404, 'text/plain', `unknown screen "${from}"`);
         return send(res, 200, 'application/json', JSON.stringify(buildFlow(map, readJson(path.join(config.outDir, 'tests.json')), { from })));
@@ -127,6 +137,16 @@ export async function startReviewServer(config, { port = 0, author = null, onDon
         const fetchApi = role ? app?.fetchApiAs(role) : app?.fetchApi;
         if (fetchApi === undefined && role) return send(res, 404, 'text/plain', `unknown role "${role}"`);
         return send(res, 200, 'application/json', JSON.stringify(await preparePathValues(map, screen, config.app?.pathValues ?? {}, fetchApi ?? null, role)));
+      }
+      if (req.method === 'POST' && req.url === '/api/settings') {
+        if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
+        if (!app) return send(res, 404, 'text/plain', 'no app is served');
+        try {
+          const overrides = await app.setOverrides(JSON.parse(await readBody(req))?.overrides);
+          return send(res, 200, 'application/json', JSON.stringify({ overrides }));
+        } catch (err) {
+          return send(res, 400, 'text/plain', err.message);
+        }
       }
       if (req.method === 'POST' && req.url === '/api/marks') {
         if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');

@@ -159,14 +159,35 @@ function linkTargets(screens) {
   };
 }
 
-export function screenAccess(screens, redirects, config, guardInits, constants) {
+const NO_SETTING_READ = '조건에서 설정을 읽는 곳을 찾지 못했습니다';
+
+function settingsOf(guardSettings, guard, file) {
+  const read = guardSettings.get(file)?.get(guard);
+  return read?.settings ? { settings: read.settings } : { settings: null, settingsReason: read?.reason ?? NO_SETTING_READ };
+}
+
+function settingSources(route, links) {
+  const sources = [];
+  const add = (from, guards) => {
+    const setting = guards.filter((g) => g.kinds.includes('setting'));
+    if (!setting.length) return;
+    const needs = [...new Map(setting.flatMap((g) => g.settings ?? []).map((n) => [JSON.stringify(n), n])).values()];
+    const unreadable = setting.filter((g) => !g.settings).map((g) => ({ guard: g.guard, reason: g.settingsReason }));
+    sources.push({ ...from, needs, unreadable });
+  };
+  add({ from: 'route' }, route);
+  for (const l of links) add({ from: l.from, file: l.file, line: l.line }, l.guards);
+  return sources;
+}
+
+export function screenAccess(screens, redirects, config, guardInits, constants, guardSettings) {
   const kindsOf = guardKinds(config, guardInits);
   const rolesOf = roleReader(config, guardInits, constants);
   const blocking = (guards, file, via) =>
     guards.flatMap((guard) => {
       const kinds = kindsOf(guard, file);
       if (!kinds.length) return [];
-      return [{ guard, kinds, ...(kinds.includes('role') ? { roles: rolesOf(guard, file) } : {}), ...(via ? { via } : {}) }];
+      return [{ guard, kinds, ...(kinds.includes('role') ? { roles: rolesOf(guard, file) } : {}), ...(via ? { via } : {}), ...(kinds.includes('setting') ? settingsOf(guardSettings, guard, file) : {}) }];
     });
 
   const route = screens.map((s) => blocking(s.routeGuards, config.routesFile));
@@ -277,15 +298,13 @@ export function screenAccess(screens, redirects, config, guardInits, constants) 
 
   const byPlace = (a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);
   const shownKinds = indices.map((i) => (restricted[i] ? [...kinds[i]].sort() : []));
-  const access = screens.map((_, i) => ({
-    restricted: restricted[i],
-    kinds: shownKinds[i],
-    route: route[i],
-    links: incoming[i]
+  const access = screens.map((_, i) => {
+    const links = incoming[i]
       .map((l) => ({ from: screens[l.from].id, file: l.file, line: l.line, guards: l.guards, fromKinds: shownKinds[l.from] }))
-      .sort(byPlace),
-    ...roleAccess(i),
-  }));
+      .sort(byPlace);
+    const settings = shownKinds[i].includes('setting') ? { settings: settingSources(route[i], links) } : {};
+    return { restricted: restricted[i], kinds: shownKinds[i], route: route[i], links, ...roleAccess(i), ...settings };
+  });
   const entries = starts.map((i) => ({ screen: screens[i].id, reasons: reasons[i] }));
   return { access, entries, unknownEntryPaths };
 }

@@ -4,11 +4,11 @@ import { DEPTHS, READERS } from './test-links.mjs';
 
 const TEST_FORMATS = Object.keys(READERS);
 const NAME = '[A-Za-z_$][\\w$]*';
-const ROLE_NAME = new RegExp(`^${NAME}$`);
+const IDENTIFIER = new RegExp(`^${NAME}$`);
 const ROLE_MEMBER = new RegExp(`^(${NAME})(?:\\[(?:'([^']*)'|"([^"]*)")\\]|\\.(${NAME}))$`);
 
 export function parseRoleEntry(entry) {
-  if (typeof entry === 'string' && ROLE_NAME.test(entry)) return { name: entry };
+  if (typeof entry === 'string' && IDENTIFIER.test(entry)) return { name: entry };
   const m = typeof entry === 'string' && entry.match(ROLE_MEMBER);
   if (m) return { object: m[1], key: m[2] ?? m[3] ?? m[4] };
   throw new Error(`roleIdentifiers entry ${JSON.stringify(entry)} is neither an identifier (memberRole) nor one member of an object (workspace['member.role'])`);
@@ -47,7 +47,23 @@ function pathValuesSettings(pathValues) {
 const isAccount = (v) => isPlainObject(v) && isText(v.id) && isText(v.passwordEnv) && !('password' in v);
 const ACCOUNT = '{ "id", "passwordEnv" } with the name of an environment variable that holds the password, never the password itself';
 
-function appSettings(app, at) {
+const DOTTED_NAME = new RegExp(`^${NAME}(?:\\.${NAME})*$`);
+
+function settingsFileOf(file, raw) {
+  if (file === undefined) return null;
+  const { path: filePath, global, root, merged } = isPlainObject(file) ? file : {};
+  if (!isText(filePath) || !filePath.startsWith('/') || !isText(global) || !DOTTED_NAME.test(global) || !isText(root)
+    || !Array.isArray(merged) || !merged.length || !merged.every((m) => isText(m) && IDENTIFIER.test(m))) {
+    throw new Error(`app.settingsFile must be { "path", "global", "root", "merged" }, such as { "path": "/settings.js", "global": "window.INTO_SETTINGS", "root": "globalSettings", "merged": ["SYSTEM", "CUSTOM"] }, not ${JSON.stringify(file)}`);
+  }
+  if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`app.settingsFile.root "${root}" is not listed in settingsRoots`);
+  if (!raw.settingsDefaults?.[root]) {
+    throw new Error(`app.settingsFile.root "${root}" has no settingsDefaults entry, so the defaults the app merges the file over are unknown`);
+  }
+  return { path: filePath, global, root, merged };
+}
+
+function appSettings(app, at, raw) {
   // login · account · roles 에는 비밀번호가 잘못 들어 있을 수 있어 값을 메시지에 싣지 않는다.
   const fail = (key, expected) => {
     const shown = ['login', 'account', 'roles'].includes(key.split('.')[0]) ? '' : `, not ${JSON.stringify(app[key])}`;
@@ -81,7 +97,7 @@ function appSettings(app, at) {
   if (!login.header && Object.values(pathValues).some((variables) => Object.values(variables).some(isListApi))) {
     throw new Error(`app.login.header is needed to call the list APIs in app.pathValues with the login token, such as ${HEADER_EXAMPLE}`);
   }
-  return { ...app, roles, signedOutPaths, pathValues, files: isWebAddress(app.files) ? app.files : at(app.files) };
+  return { ...app, roles, signedOutPaths, pathValues, settingsFile: settingsFileOf(app.settingsFile, raw), files: isWebAddress(app.files) ? app.files : at(app.files) };
 }
 
 export function loadConfig(configPath) {
@@ -108,7 +124,7 @@ export function loadConfig(configPath) {
     if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
     if (typeof entry?.file !== 'string' || typeof entry?.const !== 'string') throw new Error(`settingsDefaults.${root} needs "file" and "const"`);
   }
-  const app = raw.app === undefined ? null : appSettings(raw.app, at);
+  const app = raw.app === undefined ? null : appSettings(raw.app, at, raw);
   const outDir = at(raw.outDir ?? '.');
   return {
     ...raw,

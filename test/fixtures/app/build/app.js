@@ -1,4 +1,9 @@
-const saved = JSON.parse(localStorage.getItem('FAKE_AUTH') ?? 'null');
+const settings = { SYSTEM: { LAB_ENABLED: false, MAIN_MENU: { ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] } } } };
+settings.SYSTEM = { ...settings.SYSTEM, ...window.FAKE_SETTINGS?.SYSTEM };
+document.getElementById('lab').textContent = String(settings.SYSTEM.LAB_ENABLED);
+document.getElementById('menu').textContent = (settings.SYSTEM.MAIN_MENU?.ADMIN?.LIST ?? []).join(',');
+document.getElementById('help').textContent = String(settings.SYSTEM.HELP_LINK_ENABLED);
+const saved =JSON.parse(localStorage.getItem('FAKE_AUTH') ?? 'null');
 const headers = saved ? { authorization: `Bearer ${saved.accessToken}` } : {};
 document.getElementById('path').textContent = location.pathname;
 if (saved) {
