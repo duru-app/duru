@@ -14,6 +14,37 @@ export function parseRoleEntry(entry) {
   throw new Error(`roleIdentifiers entry ${JSON.stringify(entry)} is neither an identifier (memberRole) nor one member of an object (workspace['member.role'])`);
 }
 
+const isText = (v) => typeof v === 'string' && v.length > 0;
+const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isWebAddress = (v) => isText(v) && /^https?:\/\/[^/]/.test(v);
+
+function appSettings(app, at) {
+  // login · account 에는 비밀번호가 잘못 들어 있을 수 있어 값을 메시지에 싣지 않는다.
+  const fail = (key, expected) => {
+    const shown = ['login', 'account'].includes(key) ? '' : `, not ${JSON.stringify(app[key])}`;
+    throw new Error(`app.${key} must be ${expected}${shown}`);
+  };
+  if (!isPlainObject(app)) throw new Error(`app must be an object, not ${JSON.stringify(app)}`);
+  if (!isText(app.files)) fail('files', "the app's build folder or the address it is deployed at");
+  if (!isWebAddress(app.server)) fail('server', `the address of the server the app's API requests go to, such as "http://localhost:8080"`);
+  if (!Array.isArray(app.apiPaths) || !app.apiPaths.length || !app.apiPaths.every((p) => isText(p) && p.startsWith('/'))) {
+    fail('apiPaths', 'a list of path prefixes sent to the server, such as ["/api/"]');
+  }
+  const { login, account } = app;
+  if (!isPlainObject(login) || !isText(login.path) || !isPlainObject(login.body) || !isText(login.token)
+    || !isPlainObject(login.storage) || !isText(login.storage.key) || !(isText(login.storage.value) || isPlainObject(login.storage.value))) {
+    fail('login', '{ "path", "body", "token", "storage": { "key", "value" } }, such as { "path": "/auth/login", "body": { "id": "{id}", "password": "{password}" }, "token": "accessToken", "storage": { "key": "auth", "value": "{token}" } }');
+  }
+  if (!isPlainObject(account) || !isText(account.id) || !isText(account.passwordEnv) || 'password' in account) {
+    fail('account', '{ "id", "passwordEnv" } with the name of an environment variable that holds the password, never the password itself');
+  }
+  const signedOutPaths = app.signedOutPaths ?? [];
+  if (!Array.isArray(signedOutPaths) || !signedOutPaths.every((p) => isText(p) && p.startsWith('/'))) {
+    fail('signedOutPaths', 'a list of route paths shown signed out, such as ["/signin"]');
+  }
+  return { ...app, signedOutPaths, files: isWebAddress(app.files) ? app.files : at(app.files) };
+}
+
 export function loadConfig(configPath) {
   const configDir = path.dirname(path.resolve(configPath));
   const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -38,6 +69,7 @@ export function loadConfig(configPath) {
     if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
     if (typeof entry?.file !== 'string' || typeof entry?.const !== 'string') throw new Error(`settingsDefaults.${root} needs "file" and "const"`);
   }
+  const app = raw.app === undefined ? null : appSettings(raw.app, at);
   const outDir = at(raw.outDir ?? '.');
   return {
     ...raw,
@@ -53,5 +85,6 @@ export function loadConfig(configPath) {
     outDir,
     marksDir: raw.marksDir ? at(raw.marksDir) : path.join(outDir, 'marks'),
     tests,
+    app,
   };
 }

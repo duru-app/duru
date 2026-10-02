@@ -70,6 +70,38 @@ relative to the config file, except the files inside the client source (`routesF
 - `marksDir` — folder where review marks are kept (default: `marks` in `outDir`)
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
   variables to it
+- `app` — what the review page needs to show the app itself, logged in, in a frame (optional; replaces the
+  `appUrl` link on the page):
+
+  ```json
+  "app": {
+    "files": "../client/build",
+    "server": "http://localhost:8080",
+    "apiPaths": ["/api/"],
+    "login": {
+      "path": "/auth/login",
+      "body": { "loginId": "{id}", "password": "{password}" },
+      "token": "result.accessToken",
+      "storage": { "key": "auth", "value": { "accessToken": "{token}" } }
+    },
+    "account": { "id": "duru-reviewer", "passwordEnv": "DURU_REVIEWER_PASSWORD" },
+    "signedOutPaths": ["/signin"]
+  }
+  ```
+
+  `files` is the app's build folder (relative to the config file) or the address it is deployed at; requests
+  whose path starts with one of `apiPaths` go to `server`. When the review starts, duru posts `login.body` to
+  `server` + `login.path` with `{id}` and `{password}` filled in, reads the token at the dotted `login.token`
+  path of the JSON reply, and puts `login.storage.value` with `{token}` filled in under `login.storage.key` in
+  the app's localStorage (an object value is stored as JSON). The password is read from the environment
+  variable named by `account.passwordEnv` and never written to the config, the map or any page. Give duru an
+  account of its own: an app that allows one login per account logs out whoever else uses it.
+  `signedOutPaths` (optional) lists route paths to show signed out, such as a sign-in screen that an app
+  leaves for its main screen when someone is logged in: those screens open on a second port of `127.0.0.1`
+  that never gets the token. Opening such a screen from the review page first clears `login.storage.key` on
+  that port, so a login left there earlier is gone, while the app can still log in and reload in the frame. An
+  app that keeps the login in a cookie instead of localStorage stays logged in on that port too. A path that
+  matches no screen path in the map exactly is listed in red above the frame.
 
 `map.json` lists screens with their route guards, the API calls reachable from each screen with the
 server match, the settings each screen reads, and links to other screens with the conditions guarding
@@ -184,7 +216,12 @@ tags go at the end of the line.
 writes only into the marks folder. The left column lists the screens with a "no tests" filter, a "dead
 screens" filter, which keeps the screens that call an API missing on the server, and "opens only under a
 setting" and "opens only under a role" filters read from `access.kinds`; a screen that needs both shows under
-either. The middle shows the chosen screen's tests grouped by depth and, below them, its API calls: one row
+either. With `app` set, the middle starts with the chosen screen's app in a frame, served by duru on an address of
+its own and already logged in, so the reviewer can use it while marking; the line above the frame shows its
+address, the account (or why the login failed, or 「로그아웃 상태」 for a screen in `signedOutPaths`), in red
+any `signedOutPaths` entry that matches no screen path in the map, and a link that opens it in a new window. Marking does not
+reload the frame. A screen with path variables shows 「주소에 값이 필요한 화면」 instead of the frame. Below
+that, the middle shows the chosen screen's tests grouped by depth and, below them, its API calls: one row
 per call with its server match (on the server with its labels, method mismatch, not on the server, or
 unresolved) and one cell per depth counting the call's tests. Under a call with on/off options, each option
 has an on row and an off row, holding the tests that set it to that value, and one more row counts the tests

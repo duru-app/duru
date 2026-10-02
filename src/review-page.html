@@ -47,6 +47,11 @@
   .chip.needs-more { color: var(--more); } .chip.missing { color: var(--missing); } .chip.fine { color: var(--fine); }
   .title-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .title-row h3 { margin: 0; font-size: 18px; }
+  .frame-bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 6px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--bg); font-size: 13px; }
+  .frame-bar .mono { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .frame-bar .error { color: var(--fail); }
+  iframe.app { display: block; width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 0 0 6px 6px; background: #fff; }
+  .frame-note { margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 6px; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; }
   th, td { text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid var(--line); }
   th { font-size: 12px; color: var(--muted); font-weight: 600; }
@@ -127,7 +132,7 @@
 </header>
 <main>
   <section id="left"></section>
-  <section id="center"></section>
+  <section id="center"><div id="center-head"></div><div id="center-body"></div></section>
   <section id="right"></section>
 </main>
 <div id="flow" hidden></div>
@@ -273,21 +278,53 @@ function testItem(t) {
     t.detail && t.status !== 'pass' ? h('div', { class: 'detail' }, t.detail) : null);
 }
 
-function renderCenter() {
-  const center = document.getElementById('center');
-  const s = state.data.map.screens.find((x) => x.id === state.selected);
-  if (!s) return fill(center, h('p', { class: 'muted' }, '화면이 없습니다.'));
+function appFrame(link) {
+  const { app } = state.data;
+  if (!link) return h('div', { class: 'frame-note muted' }, '주소에 값이 필요한 화면이라 앱을 띄우지 않았습니다.');
+  const signedOut = Boolean(app.signedOutUrl) && link.startsWith(`${app.signedOutUrl}/`);
+  const opened = signedOut
+    ? `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent(link.slice(app.signedOutUrl.length))}`
+    : link;
+  return [
+    h('div', { class: 'frame-bar' },
+      h('span', { class: 'mono' }, link),
+      signedOut ? h('span', {}, '로그아웃 상태')
+        : app.error ? h('span', { class: 'error' }, app.error) : h('span', {}, `${app.account} 로 로그인`),
+      app.unknownSignedOutPaths.length > 0
+        && h('span', { class: 'error' }, `맵에 없는 signedOutPaths: ${app.unknownSignedOutPaths.join(', ')}`),
+      h('a', { href: opened, target: '_blank', rel: 'noopener' }, '새 창으로 열기 ↗')),
+    h('iframe', { class: 'app', src: opened, title: '앱 화면' }),
+  ];
+}
+
+function renderCenterHead(s) {
+  const head = document.getElementById('center-head');
+  // 앱을 조작하던 중에 표시를 남겨도 프레임이 다시 로드되지 않게, 고른 화면이 바뀔 때만 다시 그린다.
+  const key = s ? `${s.id} ${state.data.app?.url}` : '';
+  if (head.dataset.key === key) return;
+  head.dataset.key = key;
+  if (!s) return fill(head);
   const link = state.data.appLinks[s.id];
+  fill(head,
+    h('div', { class: 'title-row' },
+      h('h3', {}, s.path),
+      h('span', { class: 'muted' }, s.component),
+      state.data.app ? null
+        : link ? h('a', { href: link, target: '_blank', rel: 'noopener' }, '실제 앱에서 열기 ↗')
+          : state.data.appUrl ? h('span', { class: 'muted' }, '경로 변수가 있어 실제 앱 링크를 만들 수 없음') : null),
+    h('div', { class: 'muted mono' }, s.id),
+    state.data.app ? appFrame(link) : null);
+}
+
+function renderCenter() {
+  const center = document.getElementById('center-body');
+  const s = state.data.map.screens.find((x) => x.id === state.selected);
+  renderCenterHead(s);
+  if (!s) return fill(center, h('p', { class: 'muted' }, '화면이 없습니다.'));
   const tests = testsOf(s.id);
   const rows = [{ label: '화면 전체', target: { node: s.id }, tests: [] }]
     .concat(state.data.depths.map((d) => ({ label: DEPTH_LABELS[d], target: { node: s.id, depth: d }, tests: tests.filter((t) => t.depth === d) })));
   fill(center,
-    h('div', { class: 'title-row' },
-      h('h3', {}, s.path),
-      h('span', { class: 'muted' }, s.component),
-      link ? h('a', { href: link, target: '_blank', rel: 'noopener' }, '실제 앱에서 열기 ↗')
-        : state.data.appUrl ? h('span', { class: 'muted' }, '경로 변수가 있어 실제 앱 링크를 만들 수 없음') : null),
-    h('div', { class: 'muted mono' }, s.id),
     h('table', {},
       h('thead', {}, h('tr', {}, h('th', {}, '깊이'), h('th', {}, '테스트'), h('th', {}, '표시'))),
       h('tbody', {}, rows.map((r) => h('tr', {
