@@ -240,13 +240,66 @@
           "column": 1
         }
       ]
+    },
+    {
+      "title": "stories.spec.ts",
+      "file": "stories.spec.ts",
+      "line": 0,
+      "column": 0,
+      "specs": [
+        {
+          "title": "signs in and opens a document @story:open-document @screen:/document/:id#DocumentDetail",
+          "ok": true,
+          "tags": [
+            "story:open-document",
+            "screen:/document/:id#DocumentDetail"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "expected"
+            }
+          ],
+          "id": "stories.spec.ts-3",
+          "file": "stories.spec.ts",
+          "line": 3,
+          "column": 1
+        },
+        {
+          "title": "prints a document @story:print-document",
+          "ok": true,
+          "tags": [
+            "story:print-document"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "expected"
+            }
+          ],
+          "id": "stories.spec.ts-12",
+          "file": "stories.spec.ts",
+          "line": 12,
+          "column": 1
+        }
+      ]
     }
   ],
   "errors": [],
   "stats": {
     "startTime": "2026-09-30T00:00:00.000Z",
     "duration": 1200,
-    "expected": 5,
+    "expected": 7,
     "skipped": 1,
     "unexpected": 2,
     "flaky": 1

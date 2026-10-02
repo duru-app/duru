@@ -35,6 +35,8 @@
   code, .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
   .muted { color: var(--muted); }
   .filters label { display: flex; align-items: center; gap: 6px; }
+  .filters fieldset { margin: 0 0 6px; padding: 0; border: 0; min-width: 0; }
+  .filters legend { padding: 0; font-size: 12px; color: var(--muted); }
   .screens { list-style: none; margin: 8px 0 0; padding: 0; }
   .screens li { padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
   .screens li:hover { background: var(--bg); }
@@ -44,6 +46,7 @@
   .screens .count.none { color: var(--fail); }
   .chip { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; border: 1px solid currentColor; white-space: nowrap; }
   .chip.pass { color: var(--pass); } .chip.fail { color: var(--fail); } .chip.pending { color: var(--pending); }
+  .chip.partial { color: var(--more); } .chip.untested { color: var(--fail); border-style: dashed; }
   .chip.needs-more { color: var(--more); } .chip.missing { color: var(--missing); } .chip.fine { color: var(--fine); }
   .title-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .title-row h3 { margin: 0; font-size: 18px; }
@@ -147,6 +150,11 @@
   .story-path .step.off-map { border-style: dashed; border-color: var(--more); }
   .story-path .step .no { flex: none; width: 1.6em; font-weight: 600; color: var(--muted); }
   .story-path .step .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #story-list .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  #story-list .chips:not(:empty) { margin-top: 2px; }
+  .step-tests { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; }
+  .step-tests .none { color: var(--fail); }
+  .test .depth { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 4px; }
   .story-path .link { margin: 0 0 0 18px; padding: 6px 0 6px 18px; border-left: 2px solid var(--line); font-size: 13px; }
   .story-path .link.l-conditioned { border-left: 2px dashed var(--accent); }
   .story-path .link.l-broken { border-left: 2px dotted var(--fail); }
@@ -190,7 +198,19 @@ const SCREEN_FILTERS = [
   { key: 'mixed', label: MIXED_KINDS, keep: (s) => s.access.restricted && !s.access.kinds.length },
 ];
 
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null };
+const STORY_STATUS = {
+  pass: { label: '통과', title: '스토리 테스트가 모두 통과했습니다' },
+  fail: { label: '실패', title: '실패한 스토리 테스트가 있습니다' },
+  pending: { label: '보류', title: '실패한 스토리 테스트는 없고 보류한 것이 있습니다' },
+  partial: { label: '일부 화면만 테스트', title: '스토리 테스트는 없고, 경로의 화면 가운데 테스트가 붙은 화면이 있습니다' },
+  untested: { label: '테스트 없음', title: '스토리 테스트도, 경로의 화면에 붙은 테스트도 없습니다' },
+};
+// 상태는 고른 것 가운데 하나만 맞아도 남기고, 「링크 없음」은 그 결과를 한 번 더 거른다.
+const STORY_FILTERS = [
+  ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
+  { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
+];
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set() };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -214,7 +234,8 @@ function fill(el, ...children) {
 
 const keyOf = (t) => [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth].filter(Boolean).join(' ');
 const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
-const testsOf = (id) => state.data.tests.nodes[id] ?? [];
+const ownTests = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
+const testsOf = (id) => ownTests(state.data.tests.nodes, id);
 const markOf = (t) => state.data.marks.attached.find((m) => m.key === keyOf(t));
 const fmtDate = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 const markChip = (m) => (m ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status]) : null);
@@ -338,23 +359,47 @@ const LINK_VERDICT = { open: '이어짐', conditioned: '조건', broken: '링크
 const storyOf = () => state.data.stories.list.find((st) => st.id === state.story);
 const screenOf = (id) => state.data.map.screens.find((s) => s.id === id);
 const screenLabel = (id) => screenOf(id)?.path ?? id;
+const statusChip = (st) => h('span', { class: `chip ${st.status}`, title: STORY_STATUS[st.status].title }, STORY_STATUS[st.status].label);
 const storyChips = (st) => [
   st.broken ? h('span', { class: 'chip l-broken', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있습니다' }, '링크 없음') : null,
   st.detached ? h('span', { class: 'chip l-off-map', title: `맵에서 찾을 수 없는 화면: ${st.steps.filter((s) => !s.onMap).map((s) => s.screen).join(', ')}` }, '화면 없음') : null,
   st.unjudged ? h('span', { class: 'chip l-unknown', title: '주소를 읽지 못한 링크 때문에 판정하지 못한 자리가 있습니다' }, '판정 못 함') : null,
 ];
 
+function visibleStories() {
+  const on = STORY_FILTERS.filter((f) => state.storyFilters.has(f.key));
+  const statuses = on.filter((f) => f.status);
+  return state.data.stories.list.filter((st) => (!statuses.length || statuses.some((f) => f.keep(st))) && on.every((f) => f.status || f.keep(st)));
+}
+
+const storyFilterBox = (f) => h('label', { title: f.title }, h('input', { type: 'checkbox', name: f.key, checked: state.storyFilters.has(f.key), onchange: (e) => {
+  if (e.target.checked) state.storyFilters.add(f.key); else state.storyFilters.delete(f.key);
+  renderLeft();
+} }), f.label);
+
+function storyItems() {
+  const visible = visibleStories();
+  return [
+    h('div', { class: 'filters' },
+      h('fieldset', {}, h('legend', {}, '상태 · 하나라도 맞으면'), STORY_FILTERS.filter((f) => f.status).map(storyFilterBox)),
+      h('fieldset', {}, h('legend', {}, '그리고'), STORY_FILTERS.filter((f) => !f.status).map(storyFilterBox))),
+    h('ul', { class: 'screens', id: 'story-list' }, visible.length
+      ? visible.map((st) => h('li', { class: st.id === state.story ? 'selected' : '', onclick: () => selectStory(st.id) },
+          h('span', { class: 'name' }, h('span', {}, st.name), h('div', { class: 'muted mono' }, st.id),
+            h('div', { class: 'chips' }, st.status === 'pass' ? null : statusChip(st), storyChips(st))),
+          h('span', { class: 'count' }, `화면 ${st.steps.length}`)))
+      : h('li', { class: 'muted' }, '해당하는 스토리가 없습니다.')),
+  ];
+}
+
 function storyList() {
   const { list, notices, stale } = state.data.stories;
   return [
-    stale
-      ? h('p', { class: 'error' }, stale)
+    ...(stale
+      ? [h('p', { class: 'error' }, stale)]
       : list.length
-      ? h('ul', { class: 'screens', id: 'story-list' }, list.map((st) => h('li', { class: st.id === state.story ? 'selected' : '', onclick: () => selectStory(st.id) },
-          h('span', { class: 'name' }, h('span', {}, st.name), h('div', { class: 'muted mono' }, st.id)),
-          storyChips(st),
-          h('span', { class: 'count' }, `화면 ${st.steps.length}`))))
-      : h('p', { class: 'muted' }, '스토리 파일이 없습니다. 스토리 하나를 파일 하나로 ', h('code', {}, state.data.storiesDir), ' 에 둡니다.'),
+      ? storyItems()
+      : [h('p', { class: 'muted' }, '스토리 파일이 없습니다. 스토리 하나를 파일 하나로 ', h('code', {}, state.data.storiesDir), ' 에 둡니다.')]),
     h('h2', {}, `읽지 못한 스토리 파일 ${notices.length}`),
     notices.length
       ? h('ul', { class: 'plain notices' }, notices.map((n) => h('li', {}, h('code', {}, n.file), h('div', { class: 'error' }, n.reason))))
@@ -362,8 +407,9 @@ function storyList() {
   ];
 }
 
-function testItem(t) {
+function testItem(t, { depth = false } = {}) {
   return h('div', { class: 'test' },
+    depth ? h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]) : null,
     h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', t.title, ' ',
     h('span', { class: 'muted mono' }, `${t.file}:${t.line ?? '?'}`),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
@@ -729,7 +775,16 @@ function stepItem(step, i) {
   const s = screenOf(step.screen);
   return h('div', { class: 'step on-map', title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
     h('span', { class: 'no' }, i + 1),
-    h('span', { class: 'name' }, h('span', {}, s.path), ' ', h('span', { class: 'muted' }, s.component), h('div', { class: 'muted mono' }, step.screen)));
+    h('span', { class: 'name' }, h('span', {}, s.path), ' ', h('span', { class: 'muted' }, s.component), h('div', { class: 'muted mono' }, step.screen), stepTests(s.id)));
+}
+
+function stepTests(id) {
+  const tests = testsOf(id);
+  if (!tests.length) return h('div', { class: 'step-tests' }, h('span', { class: 'none' }, '화면 테스트 없음'));
+  return h('div', { class: 'step-tests' }, state.data.depths.map((d) => {
+    const at = tests.filter((t) => t.depth === d);
+    return at.length ? h('span', { title: at.map((t) => `${TEST_STATUS[t.status]} ${t.title}`).join('\n') }, DEPTH_LABELS[d], ' ', countsOf(at)) : null;
+  }));
 }
 
 const wayItem = (w) => h('li', {}, h('code', {}, `${w.file}:${w.line}`),
@@ -754,11 +809,14 @@ function renderStoryCenter() {
   const center = document.getElementById('center-body');
   const st = storyOf();
   if (!st) return fill(center, h('p', { class: 'muted' }, '스토리가 없습니다.'));
+  const storyTests = ownTests(state.data.tests.stories, st.id);
   fill(center,
-    h('div', { class: 'title-row' }, h('h3', {}, st.name), storyChips(st)),
+    h('div', { class: 'title-row' }, h('h3', {}, st.name), statusChip(st), storyChips(st)),
     h('div', { class: 'muted mono' }, `${st.id} · ${st.file}`),
     h('div', { class: 'muted' }, `${st.author} · ${st.date}`),
     st.memo ? h('p', { class: 'memo' }, st.memo) : null,
+    h('div', { class: 'story-tests' }, h('h2', {}, `스토리 테스트 ${storyTests.length}`),
+      storyTests.length ? storyTests.map((t) => testItem(t, { depth: true })) : h('p', { class: 'muted' }, '없음')),
     h('h2', {}, `화면 순서 ${st.steps.length}`),
     h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1]) : null, stepItem(step, i)])));
 }

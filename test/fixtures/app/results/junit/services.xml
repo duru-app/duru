@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="services" tests="4" failures="0" errors="1" skipped="0" time="0.4">
+<testsuites name="services" tests="5" failures="1" errors="1" skipped="0" time="0.4">
   <testsuite name="Document service" tests="2" skipped="0" failures="0" errors="0" time="0.2">
     <properties/>
     <testcase name="opens a document @screen:/document/:id#DocumentDetail" classname="com.example.document.DocumentServiceTest" time="0.12"/>
@@ -12,6 +12,13 @@
       <error message="connection refused" type="java.net.ConnectException">java.net.ConnectException: connection refused</error>
     </testcase>
     <testcase name="links the member page @screen:/admin/member#AdminMember" classname="com.example.help.HelpServiceTest" time="0.0"/>
+    <system-out><![CDATA[]]></system-out>
+  </testsuite>
+  <testsuite name="Lab flow" tests="1" skipped="0" failures="1" errors="0" time="0.3">
+    <properties/>
+    <testcase name="runs the lab and reads the result @story:run-lab" classname="com.example.lab.LabFlowTest" time="0.3">
+      <failure message="result page is empty" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: result page is empty</failure>
+    </testcase>
     <system-out><![CDATA[]]></system-out>
   </testsuite>
 </testsuites>

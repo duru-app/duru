@@ -9,6 +9,7 @@ import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
 import { loadStories } from '../src/stories.mjs';
 import { checkStories, checkStoryFiles } from '../src/story-paths.mjs';
+import { linkTests } from '../src/test-links.mjs';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const EXAMPLES = path.join(FIXTURE, 'example-stories');
@@ -41,7 +42,7 @@ test('the story folder defaults to stories in the output folder', () => {
 });
 
 test('each story file becomes a story whose ID is its file name, sorted by ID', () => {
-  assert.deepEqual(examples.stories.map((s) => s.id), ['change-settings', 'help-from-home', 'open-document', 'run-lab']);
+  assert.deepEqual(examples.stories.map((s) => s.id), ['change-settings', 'help-from-home', 'open-document', 'read-reports', 'run-lab']);
   assert.deepEqual(examples.stories.find((s) => s.id === 'run-lab'), {
     id: 'run-lab',
     name: '실험실을 열어 결과를 본다',
@@ -230,7 +231,7 @@ test('a map built before links carried their conditions checks no story and says
     assert.deepEqual(notices.map((n) => n.file), ['bad.json']);
     assert.match(stale, /^out\/map\.json 은 .* duru rebuild 로 맵을 다시 만드세요$/);
   });
-  assert.deepEqual(checkStoryFiles(old, path.join(os.tmpdir(), 'duru-no-such-folder'), 'out/map.json'), { list: [], notices: [] });
+  assert.deepEqual(checkStoryFiles(old, path.join(os.tmpdir(), 'duru-no-such-folder'), 'out/map.json'), { list: [], notices: [], unknownTags: [] });
   assert.equal(checkStoryFiles(map, EXAMPLES, 'out/map.json').stale, undefined);
 });
 
@@ -324,5 +325,72 @@ test('a story date may carry the time, and the memo may be left out', () => {
     const { stories, notices } = loadStories(dir);
     assert.deepEqual(notices, []);
     assert.deepEqual([stories[0].memo, stories[0].date], ['', '2026-10-02T09:30:00.000Z']);
+  });
+});
+
+const NO_TESTS = { nodes: {}, stories: {} };
+const statuses = (dir, tests) => checkStoryFiles(map, dir, 'out/map.json', tests).list.map((s) => [s.id, s.status]);
+
+test('each example story takes its status from the example results: its story tests when it has any, else the tests of the screens on its path', () => {
+  const tests = linkTests(config, map);
+  assert.deepEqual(statuses(EXAMPLES, tests), [
+    ['change-settings', 'partial'],
+    ['help-from-home', 'pending'],
+    ['open-document', 'pass'],
+    ['read-reports', 'untested'],
+    ['run-lab', 'fail'],
+  ]);
+});
+
+test('a story fails when one story test fails whatever the others did, waits when one is pending and none fails, and passes when every one passes, whatever the tests of its screens did', () => {
+  const t = (status) => ({ title: status, status });
+  const tests = {
+    nodes: { '/home#Home': [t('fail')] },
+    stories: { failing: [t('pass'), t('pending'), t('fail')], waiting: [t('pass'), t('pending')], passing: [t('pass'), t('pass')] },
+  };
+  withStoriesDir({ 'failing.json': STORY, 'waiting.json': STORY, 'passing.json': STORY }, (dir) => {
+    assert.deepEqual(statuses(dir, tests), [['failing', 'fail'], ['passing', 'pass'], ['waiting', 'pending']]);
+  });
+});
+
+test('without story tests a story is partly covered when any screen on its path has a test of any status, and has no tests when none has, even with tests on other stories or screens', () => {
+  const failing = [{ title: 'x', status: 'fail' }];
+  withStoriesDir({ 'lab.json': STORY, 'gone.json': { ...STORY, screens: ['/settings#Settings', '/admin/report#AdminReport'] } }, (dir) => {
+    assert.deepEqual(statuses(dir, { nodes: { '/lab#Lab': failing }, stories: { gone: [] } }), [['gone', 'untested'], ['lab', 'partial']]);
+    assert.deepEqual(statuses(dir, { nodes: { '/help#Help': failing }, stories: { other: failing } }), [['gone', 'untested'], ['lab', 'untested']]);
+    assert.deepEqual(statuses(dir, NO_TESTS), [['gone', 'untested'], ['lab', 'untested']]);
+  });
+});
+
+test('story tags are matched against the story files read now: a tag pointing at no story file is listed with its test, and one whose story file is written later attaches then', () => {
+  const tests = linkTests(config, map);
+  const { unknownTags } = checkStoryFiles(map, EXAMPLES, 'out/map.json', tests);
+  assert.deepEqual(unknownTags, [{ tag: 'story:print-document', test: { title: 'prints a document @story:print-document', file: 'stories.spec.ts', line: 12 } }]);
+  withStoriesDir({ 'print-document.json': STORY }, (dir) => {
+    const now = checkStoryFiles(map, dir, 'out/map.json', tests);
+    assert.deepEqual(now.list.map((s) => [s.id, s.status]), [['print-document', 'pass']]);
+    assert.deepEqual(now.unknownTags.map((u) => u.tag), ['story:help-from-home', 'story:open-document', 'story:run-lab', 'story:run-lab']);
+  });
+});
+
+test('a story tag on a test that runs in two projects is listed once', () => {
+  const t = { title: 'x @story:gone', file: 'a.spec.ts', line: 1, source: 'r/e2e.json', status: 'pass' };
+  const { unknownTags } = checkStoryFiles(map, EXAMPLES, 'out/map.json', { nodes: {}, stories: { gone: [{ ...t, project: 'chromium' }, { ...t, project: 'firefox' }] } });
+  assert.deepEqual(unknownTags, [{ tag: 'story:gone', test: { title: 'x @story:gone', file: 'a.spec.ts', line: 1 } }]);
+});
+
+test('without tests every story has no tests', () => {
+  assert.deepEqual(checkStoryFiles(map, EXAMPLES, 'out/map.json').list.map((s) => s.status), ['untested', 'untested', 'untested', 'untested', 'untested']);
+});
+
+test('story IDs and screen IDs that are names of object members take their status like any other', () => {
+  const read = (tests) => JSON.parse(JSON.stringify(tests));
+  const files = { 'constructor.json': { ...STORY, screens: ['constructor', 'toString'] }, '__proto__.json': { ...STORY, screens: ['hasOwnProperty', 'valueOf'] } };
+  withStoriesDir(files, (dir) => {
+    assert.deepEqual(statuses(dir, read(NO_TESTS)), [['__proto__', 'untested'], ['constructor', 'untested']]);
+    const pass = [{ title: 'x', status: 'pass' }];
+    const tests = read({ nodes: {}, stories: Object.fromEntries([['constructor', pass], ['__proto__', pass]]) });
+    assert.deepEqual(statuses(dir, tests), [['__proto__', 'pass'], ['constructor', 'pass']]);
+    assert.deepEqual(checkStoryFiles(map, dir, 'out/map.json', tests).unknownTags, []);
   });
 });

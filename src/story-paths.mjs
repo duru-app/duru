@@ -54,10 +54,34 @@ export function checkStories(map, stories) {
   });
 }
 
-export function checkStoryFiles(map, dir, mapFile) {
+const NO_TESTS = { nodes: {}, stories: {} };
+// 스토리 파일에 적힌 ID 가 constructor 같은 이름이어도 Object 의 기본 속성을 읽지 않게 자기 키만 본다.
+const testsAt = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
+
+function statusOf(story, tests) {
+  const own = testsAt(tests.stories, story.id);
+  if (own.length) return own.some((t) => t.status === 'fail') ? 'fail' : own.some((t) => t.status === 'pending') ? 'pending' : 'pass';
+  return story.screens.some((id) => testsAt(tests.nodes, id).length) ? 'partial' : 'untested';
+}
+
+function unknownStoryTags(stories, tests) {
+  const ids = new Set(stories.map((s) => s.id));
+  return Object.keys(tests.stories ?? {}).filter((id) => !ids.has(id)).sort(compare).flatMap((id) => {
+    const seen = new Set();
+    return tests.stories[id].flatMap((t) => {
+      const key = `${t.source} ${t.file}:${t.line} ${t.title}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [{ tag: `story:${id}`, test: { title: t.title, file: t.file, line: t.line } }];
+    });
+  });
+}
+
+export function checkStoryFiles(map, dir, mapFile, tests = NO_TESTS) {
   const { stories, notices } = loadStories(dir);
+  const unknownTags = unknownStoryTags(stories, tests);
   if (stories.length && map.screens.some((s) => s.links.some((l) => !Array.isArray(l.conditions)))) {
-    return { list: [], notices, stale: `${mapFile} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 스토리를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요` };
+    return { list: [], notices, unknownTags, stale: `${mapFile} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 스토리를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요` };
   }
-  return { list: checkStories(map, stories), notices };
+  return { list: checkStories(map, stories).map((s) => ({ ...s, status: statusOf(s, tests) })), notices, unknownTags };
 }

@@ -292,10 +292,17 @@ turns on two options carries two option tags and counts under both. Under each c
 `options` it attaches to that call as `{ key, value }`, sorted by key; an empty list means the test names no
 option for that call. Screens take no option values.
 
-`tests.json` lists the tests per node ID, each with its own depth and status (pass, fail,
-pending; skipped and todo count as pending), the tags that point at IDs not on the map, name an unknown
-depth, or are option tags with no call of the test to attach to or a value other than `true` or `false`,
-how many tests carry no node tag, and configured result paths that do not exist yet.
+A test that walks a whole story declares it with `@story:<story ID>` (see [Stories](#stories)), in the
+same places as the node tags. A test may carry `@story:` together with `@screen:` and `@call:` tags; it
+then counts for the story and for each node. A story tag takes the test's depth too.
+
+`tests.json` lists the tests per node ID and, under `stories`, per story ID as the tag writes it, each with
+its own depth and status (pass, fail, pending; skipped and todo count as pending), the tags that point at IDs
+not on the map, name an unknown depth, or are option tags with no call of the test to attach to or a value
+other than `true` or `false`, how many tests carry neither a node tag nor a story tag, and configured result
+paths that do not exist yet. A test lists under a story once however many times its tags name it. Story
+tags are matched against the story files whenever the stories are read, not when `tests.json` is written:
+`rebuild` prints a story tag that no story file has with the other tags pointing outside the map.
 `test/fixtures/app` holds a small fake client with example results and a config.
 
 A check script that is not a test framework reports through verdict lines in its output, one test per line;
@@ -310,7 +317,7 @@ The name runs up to the first `: ` and may contain spaces. The word right after 
 `INCONCLUSIVE`, `KNOWN_DROP`, `ENTRY_HEALTHY`, `PARTIAL` and any other word are pending. The text after
 `— ` (an em dash; a plain hyphen does not count) is kept as `detail` so the reason for a failure or a
 pending result can be shown; for a word outside the table, `detail` is everything after the colon. Node
-tags go at the end of the line.
+and story tags go at the end of the line.
 
 ## Stories
 
@@ -351,8 +358,8 @@ kind, has another key, has a name outside the ID rule, or has an ID that a file 
 uses, whether or not that file could be read, is skipped and noted with its path and why. So is a symbolic
 link named `*.json` that points nowhere or cannot be followed, and so is a story folder that cannot be listed
 (one note on the folder). `rebuild` prints
-the notes with a count of stories, broken paths, detached stories and `unknown` steps, and the review page
-lists them under the stories. The other stories are read as usual.
+the notes with a count of stories, broken paths, detached stories and `unknown` steps and a count of stories
+in each status, and the review page lists them under the stories. The other stories are read as usual.
 
 Each story is checked against the map, with the same result every time for the same story files and map:
 
@@ -375,13 +382,21 @@ Each story is checked against the map, with the same result every time for the s
   of the links into it when they are `conditioned` (with the step's `unknownLinks`, if any), and the setting
   and role guards of its route with the route's line in `routesFile`.
 
+Each story also gets a `status` from the tests in `tests.json`, apart from the link verdicts above. A
+story with tests tagged `@story:<its ID>` fails when one of them fails, is `pending` when none fails and
+one is pending, and passes when all pass. A story without such tests is `partial` (「일부 화면만 테스트」) when a
+screen on its path has a test of any status, and `untested` (「테스트 없음」) when none has. A screen not
+on the map has no tests. A story file written after `rebuild` takes the tests already tagged with its ID.
+
 A `map.json` written by a duru whose links did not carry `conditions` yet cannot be checked: while there are
 stories, the review data lists no story and carries one message asking to run `rebuild` as `stories.stale`,
 apart from the notes on story files; the rest of the review page and `tasks` work as usual.
 
 `test/fixtures/app/example-stories` holds example stories for the fake client: one that connects end to end,
 one through a link guarded by a setting, one with no link between two of its screens, one with a screen that
-is not on the map, and one malformed file.
+is not on the map, one of a single screen, and one malformed file. With the example results they pass,
+fail, are pending, are partly covered and have no tests, and one result carries a story tag that points at
+no story file.
 
 ## Review page
 
@@ -446,11 +461,16 @@ per screen, and whether it is set in the config), its server match, its tests, w
 the screens using it.
 
 Next to the screen list, the left column has a tab with the stories: each with its name, ID and number of
-screens, 「링크 없음」 when two neighbouring screens have no link between them, 「화면 없음」 when a screen is not on the
-map and 「판정 못 함」 when a step is `unknown`, and below the list the story files that could not be read, with
-why. When `stories.stale` is set, the request to run `rebuild` replaces the empty-list text and is not counted
-as a story file that could not be read. Choosing a story shows in the middle its name, ID, file, author, date and memo, then its screens in order
-with the verdict of the link between each two: 「이어짐」, 「조건」 or 「링크 없음」, or 「판정 못 함」 next to a screen the map does
+screens, its status unless it passes (「실패」, 「보류」, 「일부 화면만 테스트」, 「테스트 없음」), 「링크 없음」 when two
+neighbouring screens have no link between them, 「화면 없음」 when a screen is not on the map and 「판정 못 함」
+when a step is `unknown`, and below the list the story files that could not be read, with why. The list is
+filtered by 「테스트 없음」, 「일부 화면만 테스트」 and 「실패」 under 「상태 · 하나라도 맞으면」, keeping a story in any of the
+checked statuses, and by 「링크 없음」 under 「그리고」, which keeps only the stories with a `broken` step on top of that. When `stories.stale` is set,
+the request to run `rebuild` replaces the empty-list text and is not counted as a story file that could not
+be read. Choosing a story shows in the middle its name with its status (「통과」 too), ID, file, author, date
+and memo, its story tests with their depth and status, then its screens in order, each with the number of
+its tests per depth and status (the titles show on hover) or 「화면 테스트 없음」, and the verdict of the link
+between each two: 「이어짐」, 「조건」 or 「링크 없음」, or 「판정 못 함」 next to a screen the map does
 not have or where no link joins the two but the first screen has links to a path duru cannot read (listed
 with their source locations and paths), with the source location and conditions of every link; a `conditioned`
 step also lists, as left out of the verdict, the first screen's links to a path duru cannot read. Pressing a
@@ -461,7 +481,8 @@ screen on the map opens it in the screen list. The right shows first the verdict
 with 「링크 N개 중 하나」 over a step that several links reach.
 Stories are read again whenever the page loads its data, so a story file written during the review shows after
 a reload.
-`/api/data` carries the checked stories as `stories.list` and the notes as `stories.notices`.
+`/api/data` carries the checked stories, each with its `status`, as `stories.list`, the notes as
+`stories.notices` and the story tags that no story file has as `stories.unknownTags`.
 
 A mark targets a screen or an API call, or one depth of either, or one value of a call's option, or one depth
 of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "withHistory", "value": true },

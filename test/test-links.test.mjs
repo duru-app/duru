@@ -333,3 +333,49 @@ test('a test lists its option values for a call by key, whatever order its title
     ]);
   });
 });
+
+const storySummary = (id) => (links.stories[id] ?? []).map((t) => [t.format, t.project, t.depth, t.status].filter(Boolean).join(' '));
+
+test('a test tagged with @story: is kept under that story ID with its depth and status, from every result format, whether or not a story file has the ID', () => {
+  assert.deepEqual(Object.keys(links.stories).sort(), ['help-from-home', 'open-document', 'print-document', 'run-lab']);
+  assert.deepEqual(storySummary('open-document'), ['playwright chromium ui pass']);
+  assert.deepEqual(storySummary('run-lab'), ['junit api fail', 'verdict api pass']);
+  assert.deepEqual(storySummary('help-from-home'), ['vitest code pending']);
+  assert.deepEqual(storySummary('print-document'), ['playwright chromium ui pass']);
+  const [open] = links.stories['open-document'];
+  assert.equal(open.title, 'signs in and opens a document @story:open-document @screen:/document/:id#DocumentDetail');
+  assert.equal(open.file, 'stories.spec.ts');
+  assert.equal(open.line, 3);
+  assert.equal(open.source, 'results/playwright/e2e.json');
+});
+
+test('a test tagged with a story and a screen counts on both sides', () => {
+  const [open] = links.stories['open-document'];
+  assert.ok(links.nodes['/document/:id#DocumentDetail'].some((t) => t.title === open.title && t.status === 'pass'));
+});
+
+test('a test whose tags only point at stories is not counted as untagged, and its story tags are not reported as tags outside the map', () => {
+  const vitest = (title) => vitestReportOf([{ ancestorTitles: [], title, status: 'passed', tags: [] }]);
+  withResults({ 'unit.json': vitest('goes on @story:open-document'), 'other.json': vitest('goes away @story:gone') }, (own) => {
+    const result = linkTests(own, { screens: [] });
+    assert.deepEqual(Object.keys(result.stories).sort(), ['gone', 'open-document']);
+    assert.deepEqual(result.unknownTags, []);
+    assert.equal(result.untaggedCount, 0);
+    assert.deepEqual(result.nodes, {});
+  }, ['vitest']);
+});
+
+test('story IDs that are names of object members are kept like any other story ID', () => {
+  withResults({ 'checks.log': 'VERDICT odd ids: UPHOLDS — ok @story:constructor @story:__proto__ @story:toString @story:hasOwnProperty\n' }, (own) => {
+    const result = linkTests(own, { screens: [] });
+    assert.deepEqual(Object.keys(result.stories).sort(), ['__proto__', 'constructor', 'hasOwnProperty', 'toString']);
+    assert.deepEqual(Object.values(result.stories).map((tests) => tests.map((t) => t.title)), [['odd ids'], ['odd ids'], ['odd ids'], ['odd ids']]);
+    assert.equal(JSON.parse(JSON.stringify(result)).stories.constructor.length, 1);
+  }, ['verdict']);
+});
+
+test('a story tag repeated in one test attaches that test to the story once', () => {
+  withResults({ 'checks.log': 'VERDICT twice: UPHOLDS — ok @story:open-document @story:open-document\n' }, (own) => {
+    assert.deepEqual(linkTests(own, { screens: [] }).stories['open-document'].map((t) => t.title), ['twice']);
+  }, ['verdict']);
+});

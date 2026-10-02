@@ -10,6 +10,7 @@ VERDICT sort by date: VIOLATES — sorting ignores the time of day @screen:/docu
 VERDICT attachment preview: REGRESSED — the preview opens blank @screen:/document/:id#DocumentDetail
 VERDICT export: BROKEN — the exported file is empty @screen:/document/:tab_draft_done_#DocumentList
 VERDICT BATCH: part-a REPRODUCES(quadratic) · part-b linear @screen:/document/:tab_draft_done_#DocumentList
+VERDICT lab result: UPHOLDS — the last run shows on the result page @story:run-lab
 VERDICT cleanup: HEALTHY — removed 40 drafts
 VERDICT teardown: FIXED — no leftover uploads
 [checks] done in 3.2s
