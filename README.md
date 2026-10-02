@@ -243,13 +243,13 @@ its own and already logged in, so the reviewer can use it while marking; the lin
 address, a role picker, who the frame is logged in as (「ADMIN 역할 duru-admin 로 로그인」, or why that login
 failed, or 「로그아웃 상태」 for a screen in `signedOutPaths`, which has no picker), in red any
 `signedOutPaths` entry that matches no screen path in the map, and a link that opens it in a new window. The
-picker starts at 「화면에 맞춰」: a screen without a role condition opens as `account`, and one with
+picker starts at 「자동」: a screen without a role condition opens as `account`, and one with
 `roleValues` as the first role in `roles` whose value is in them, preferring one whose login worked. When no role in `roles` meets them, the
 screen opens as `account` and the line says 「조건을 채우는 역할(…)에 계정이 없습니다」; when `roleValues` is
 `null`, it opens as `account` and the line lists the unreadable guards; when it is not, any unreadable
 guards are still named, in grey. The picker also offers `account`,
 each role in `roles`, and, unselectable, each value in some screen's `roleValues` with no account (「계정
-없음」). A role picked there stays picked on other screens until 「화면에 맞춰」 is picked again, and the line
+없음」). A role picked there stays picked on other screens until 「자동」 is picked again, and the line
 says when it does not meet the screen's `roleValues`; the screen still opens as that role. Picking a role
 reloads the frame on that role's address with the same path. Marking does not reload the frame. A screen with path variables shows 「주소에 값이 필요한 화면」 instead of the frame. Below
 that, the middle shows the chosen screen's tests grouped by depth and, below them, its API calls: one row

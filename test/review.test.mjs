@@ -1165,7 +1165,7 @@ test('in a browser, a screen under a role condition opens as the first configure
 
             await p.click('#screen-list li:has-text("/admin/member")');
             assert.deepEqual(await picker.locator('option').allTextContents(),
-              ['화면에 맞춰', '기본 계정 (duru-admin)', 'ADMIN (duru-boss)', 'AUDITOR (duru-auditor)', 'OWNER — 계정 없음']);
+              ['자동', '기본 계정 (duru-admin)', 'ADMIN (duru-boss)', 'AUDITOR (duru-auditor)', 'OWNER — 계정 없음']);
             assert.equal(await picker.locator('option:has-text("OWNER")').isDisabled(), true);
             assert.equal(await picker.inputValue(), 'auto');
             assert.match(await bar.textContent(), /ADMIN 역할 duru-boss 로 로그인/);
@@ -1194,7 +1194,7 @@ test('in a browser, a screen under a role condition opens as the first configure
             assert.equal(await frameSrc(), `${app.url}/admin/audit`);
             assert.match(await bar.textContent(), /duru-admin 로 로그인/);
 
-            await picker.selectOption({ label: '화면에 맞춰' });
+            await picker.selectOption({ label: '자동' });
             await frameWho(p, '두루 대표');
             assert.equal(await frameSrc(), `${admin.url}/admin/audit`);
 

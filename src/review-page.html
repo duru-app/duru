@@ -310,7 +310,7 @@ function rolePicker() {
   const missing = [...new Set(map.screens.flatMap((s) => s.access.roleValues ?? []))].filter((v) => !app.roles.some((r) => r.role === v)).sort();
   const option = (value, label) => h('option', { value, selected: state.roleChoice === value }, label);
   return h('select', { class: 'role', title: '앱을 띄울 계정', onchange: (e) => { state.roleChoice = e.target.value; render(); } },
-    option('auto', '화면에 맞춰'),
+    option('auto', '자동'),
     option('account', `기본 계정 (${app.account})`),
     app.roles.map((r) => option(`role:${r.role}`, `${r.role} (${r.account})`)),
     missing.map((v) => h('option', { disabled: true }, `${v} — 계정 없음`)));
