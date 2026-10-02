@@ -5,9 +5,11 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 import { loadConfig } from '../src/config.mjs';
 import { chromium } from 'playwright-core';
 import { loadMarks } from '../src/marks.mjs';
+import { applyOverrides } from '../src/app-host.mjs';
 import { startReviewServer } from '../src/review.mjs';
 import { taskList } from '../src/tasks.mjs';
 
@@ -150,6 +152,7 @@ async function withFakeApi(fn) {
   const presses = [];
   const logins = [];
   const listCalls = [];
+  const requests = [];
   const json = (res, status, body) => {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(body));
@@ -157,6 +160,7 @@ async function withFakeApi(fn) {
   const server = http.createServer(async (req, res) => {
     let body = '';
     for await (const chunk of req) body += chunk;
+    requests.push(`${req.method} ${req.url}`);
     if (req.method === 'POST' && req.url === '/auth/login') {
       const { loginId, pw } = JSON.parse(body);
       logins.push(loginId);
@@ -189,7 +193,7 @@ async function withFakeApi(fn) {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
-    return await fn(`http://127.0.0.1:${server.address().port}`, presses, logins, listCalls);
+    return await fn(`http://127.0.0.1:${server.address().port}`, presses, logins, listCalls, requests);
   } finally {
     server.closeAllConnections();
     server.close();
@@ -210,6 +214,27 @@ const appSettings = (server) => ({
     account: { id: 'duru-admin', passwordEnv: PASSWORD_ENV },
   },
 });
+
+const SETTINGS_FILE = { path: '/settings.js', global: 'window.FAKE_SETTINGS', root: 'globalSettings', merged: ['SYSTEM', 'CUSTOM'] };
+const withSettingsFile = (api, extra = {}) => ({ app: { ...appSettings(api).app, settingsFile: SETTINGS_FILE, ...extra } });
+const postSettings = (base, overrides) =>
+  fetch(`${base}/api/settings`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ overrides }) });
+
+function runSettingsFile(code) {
+  const context = vm.createContext({});
+  vm.runInContext('var window = globalThis;', context);
+  vm.runInContext(code, context);
+  return JSON.parse(vm.runInContext('JSON.stringify({ settings: window.FAKE_SETTINGS, kept: window.KEPT })', context));
+}
+
+function rewrite(copy, rel, from, to) {
+  const file = path.join(copy, rel);
+  const src = fs.readFileSync(file, 'utf8');
+  assert.ok(src.includes(from), `${rel} has no ${from}`);
+  fs.writeFileSync(file, src.replace(from, to));
+}
+
+const rebuild = (copy) => execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
 
 const LIST_API = { api: '/api/v1/documents', list: 'contents.list', value: 'id' };
 const loginWithHeader = { ...appSettings('http://127.0.0.1:1').app.login, header: { Authorization: 'Bearer {token}' } };
@@ -360,10 +385,10 @@ test('when the password variable is missing or the login is refused, the page sa
   });
 });
 
-test('app files taken from a deployed address are served without the headers that forbid framing, with the token put in', async () => {
+test('app files taken from a deployed address are served without the headers that forbid framing, with the token and the settings overrides put in', async () => {
   const build = path.join(FIXTURE, 'build');
   const deployed = http.createServer((req, res) => {
-    const file = path.join(build, req.url === '/app.js' ? 'app.js' : 'index.html');
+    const file = path.join(build, ['/app.js', '/settings.js'].includes(req.url) ? req.url.slice(1) : 'index.html');
     res.writeHead(200, {
       'content-type': file.endsWith('.js') ? 'application/javascript' : 'text/html; charset=utf-8',
       'x-frame-options': 'DENY',
@@ -376,7 +401,7 @@ test('app files taken from a deployed address are served without the headers tha
     const files = `http://127.0.0.1:${deployed.address().port}`;
     await withFakeApi((api) =>
       withPassword('s3cret', () =>
-        withRebuiltFixture({ app: { ...appSettings(api).app, files } }, (config) =>
+        withRebuiltFixture(withSettingsFile(api, { files }), (config) =>
           withServer(config, 'reviewer', async (base) => {
             const { app } = await (await fetch(`${base}/api/data`)).json();
             const page = await fetch(`${app.url}/home`);
@@ -386,6 +411,11 @@ test('app files taken from a deployed address are served without the headers tha
             const script = await fetch(`${app.url}/app.js`);
             assert.match(script.headers.get('content-type'), /javascript/);
             assert.doesNotMatch(await script.text(), /t-123/);
+
+            await postSettings(base, [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
+            const settings = await (await fetch(`${app.url}/settings.js`)).text();
+            assert.ok(settings.startsWith(fs.readFileSync(path.join(build, 'settings.js'), 'utf8')));
+            assert.deepEqual(runSettingsFile(settings).settings, { SYSTEM: { HELP_LINK_ENABLED: true, LAB_ENABLED: true } });
           }),
         ),
       ),
@@ -569,6 +599,196 @@ test('pathValues entries that match no screen path, and variables their path doe
   );
 });
 
+test('the settings file is served with the posted overrides applied the way the app merges it, on every app address, and nothing else changes', async () => {
+  await withFakeApi((api, presses, logins, listCalls, requests) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api, { signedOutPaths: ['/signin'] }), async (config, copy) => {
+        rewrite(copy, 'client/src/store/settings.js', "ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] },", "ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'], TITLE: 'Admin' },\n      USER: { LIST: ['DOCS'] },");
+        rebuild(copy);
+        await withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          assert.deepEqual(app.settings, { root: 'globalSettings', merged: ['SYSTEM', 'CUSTOM'], overrides: [], file: { SYSTEM: { HELP_LINK_ENABLED: true } }, fileError: null });
+          const fileText = fs.readFileSync(path.join(copy, 'build/settings.js'), 'utf8');
+          assert.equal(await (await fetch(`${app.url}/settings.js`)).text(), fileText);
+
+          const overrides = [
+            { path: ['SYSTEM', 'MAIN_MENU', 'ADMIN', 'LIST'], value: ['ADMIN_ARCHIVE'] },
+            { path: ['SYSTEM', 'LAB_ENABLED'], value: true },
+            { path: ['SYSTEM', 'HELP_LINK_ENABLED'], value: false },
+            { path: ['CUSTOM', 'THEME'], value: 'dark' },
+          ];
+          const res = await postSettings(base, overrides);
+          assert.equal(res.status, 200);
+          assert.deepEqual((await res.json()).overrides, overrides);
+          assert.deepEqual((await (await fetch(`${base}/api/data`)).json()).app.settings.overrides, overrides);
+
+          for (const url of [app.url, app.signedOutUrl]) {
+            const served = await fetch(`${url}/settings.js`);
+            assert.match(served.headers.get('content-type'), /javascript/);
+            const text = await served.text();
+            assert.ok(text.startsWith(fileText));
+            assert.deepEqual(runSettingsFile(text).settings, {
+              SYSTEM: {
+                HELP_LINK_ENABLED: false,
+                LAB_ENABLED: true,
+                MAIN_MENU: { ADMIN: { LIST: ['ADMIN_ARCHIVE'], TITLE: 'Admin' }, USER: { LIST: ['DOCS'] } },
+              },
+              CUSTOM: { THEME: 'dark' },
+            });
+          }
+          assert.equal(await (await fetch(`${app.url}/app.js`)).text(), fs.readFileSync(path.join(copy, 'build/app.js'), 'utf8'));
+          assert.doesNotMatch(await (await fetch(`${app.url}/home`)).text(), /ADMIN_ARCHIVE/);
+
+          fs.writeFileSync(path.join(copy, 'build/settings.js'), "window.FAKE_SETTINGS = { SYSTEM: { MAIN_MENU: { ADMIN: { LIST: ['FROM_FILE'] } } } };\nwindow.KEPT = window.FAKE_SETTINGS.SYSTEM.MAIN_MENU;\n");
+          const list = ['SYSTEM', 'MAIN_MENU', 'ADMIN', 'LIST'];
+          await postSettings(base, [{ path: list, item: 'ADMIN_REPORT', value: true }, { path: list, item: 'FROM_FILE', value: false }, { path: list, item: 'ADMIN_ARCHIVE', value: true }]);
+          const fromFile = runSettingsFile(await (await fetch(`${app.url}/settings.js`)).text());
+          assert.deepEqual(fromFile.settings.SYSTEM.MAIN_MENU, { ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] } });
+          assert.deepEqual(fromFile.kept, { ADMIN: { LIST: ['FROM_FILE'] } });
+
+          fs.rmSync(path.join(copy, 'build/settings.js'));
+          await postSettings(base, [{ path: ['SYSTEM', 'MAIN_MENU', 'USER', 'LIST'], item: 'REPORTS', value: true }]);
+          assert.deepEqual(runSettingsFile(await (await fetch(`${app.url}/settings.js`)).text()).settings, {
+            SYSTEM: { MAIN_MENU: { ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'], TITLE: 'Admin' }, USER: { LIST: ['DOCS', 'REPORTS'] } } },
+          });
+
+          await postSettings(base, []);
+          assert.equal(await (await fetch(`${app.url}/settings.js`)).text(), '');
+          assert.deepEqual(requests, ['POST /auth/login']);
+        });
+      }),
+    ),
+  );
+});
+
+test('settings overrides that are not JSON, not a list, or reach outside the sections the app merges are refused and change nothing', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', async () => {
+      await withRebuiltFixture(withSettingsFile(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const notJson = await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{"overrides":[]}' });
+          assert.equal(notJson.status, 415);
+          for (const [overrides, message] of [
+            ['SYSTEM.LAB_ENABLED', /not a list/],
+            [[{ path: ['DISPLAY', 'PAGE_SIZE'], value: 50 }], /section DISPLAY/],
+            [[{ path: ['SYSTEM'], value: {} }], /section and a key/],
+            [[{ path: ['SYSTEM', 'LAB_ENABLED'] }], /LAB_ENABLED/],
+            [[{ path: ['SYSTEM', 'MAIN_MENU', 'ADMIN', 'LIST'], item: 'ADMIN_REPORT', value: 'yes' }], /list item/],
+            [[{ path: ['SYSTEM', 'LAB_ENABLED'], value: true, root: 'globalSettings' }], /LAB_ENABLED/],
+            [[{ path: ['SYSTEM', '__proto__', 'polluted'], value: true }], /__proto__/],
+            [[{ path: ['SYSTEM', 'constructor', 'prototype', 'polluted'], value: true }], /constructor/],
+            [[{ path: ['SYSTEM', 'MAIN_MENU', 'prototype'], value: true }], /prototype/],
+          ]) {
+            const res = await postSettings(base, overrides);
+            assert.equal(res.status, 400, JSON.stringify(overrides));
+            assert.match(await res.text(), message);
+          }
+          assert.deepEqual((await (await fetch(`${base}/api/data`)).json()).app.settings.overrides, []);
+        }),
+      );
+      await withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          assert.equal((await (await fetch(`${base}/api/data`)).json()).app.settings, null);
+          const res = await postSettings(base, [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
+          assert.equal(res.status, 400);
+          assert.match(await res.text(), /app\.settingsFile is not set/);
+        }),
+      );
+    }),
+  );
+});
+
+test('a settingsFile root without settingsDefaults is rejected, since the defaults the file is merged over are unknown', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    const file = path.join(dir, 'config.json');
+    const config = JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8'));
+    const app = { ...appSettings('http://127.0.0.1:1').app, settingsFile: { ...SETTINGS_FILE, root: 'appSettings' } };
+    fs.writeFileSync(file, JSON.stringify({ ...config, settingsRoots: ['globalSettings', 'appSettings'], app }));
+    assert.throws(() => loadConfig(file), /app\.settingsFile\.root "appSettings" has no settingsDefaults entry/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the page gets what the settings file sets in the merged sections, without the overrides, or why the file could not be run', async () => {
+  await withFakeApi((api, presses, logins, listCalls, requests) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), (config, copy) =>
+        withServer(config, 'reviewer', async (base) => {
+          const settingsOf = async () => (await (await fetch(`${base}/api/data`)).json()).app.settings;
+          const writeFile = (text) => fs.writeFileSync(path.join(copy, 'build/settings.js'), text);
+          await postSettings(base, [{ path: ['SYSTEM', 'HELP_LINK_ENABLED'], value: false }]);
+          assert.deepEqual(await settingsOf(), {
+            root: 'globalSettings',
+            merged: ['SYSTEM', 'CUSTOM'],
+            overrides: [{ path: ['SYSTEM', 'HELP_LINK_ENABLED'], value: false }],
+            file: { SYSTEM: { HELP_LINK_ENABLED: true } },
+            fileError: null,
+          });
+
+          writeFile("window.FAKE_SETTINGS = { SYSTEM: { A: 1, F: () => 1 }, CUSTOM: { B: 'x' }, DISPLAY: { C: 2 } };\nwindow.OTHER = 1;\n");
+          assert.deepEqual((await settingsOf()).file, { SYSTEM: { A: 1 }, CUSTOM: { B: 'x' } });
+
+          writeFile("throw new Error('boom');\n");
+          const thrown = await settingsOf();
+          assert.equal(thrown.file, null);
+          assert.match(thrown.fileError, /설정 파일.*boom/);
+
+          writeFile('while (true) {}\n');
+          const endless = await settingsOf();
+          assert.equal(endless.file, null);
+          assert.match(endless.fileError, /설정 파일/);
+
+          fs.rmSync(path.join(copy, 'build/settings.js'));
+          assert.deepEqual((await settingsOf()).file, {});
+          assert.deepEqual(requests, ['POST /auth/login']);
+        }),
+      ),
+    ),
+  );
+});
+
+test('a change inside a default the source does not show in full is refused unless the settings file sets that key, while replacing the whole key is allowed', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), async (config, copy) => {
+        rewrite(copy, 'client/src/store/settings.js', "ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] },", "ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] },\n      USER: window.INTO_USER_MENU || {},");
+        rebuild(copy);
+        await withServer(config, 'reviewer', async (base) => {
+          const list = ['SYSTEM', 'MAIN_MENU', 'ADMIN', 'LIST'];
+          for (const overrides of [[{ path: list, item: 'ADMIN_REPORT', value: false }], [{ path: list, value: [] }]]) {
+            const res = await postSettings(base, overrides);
+            assert.equal(res.status, 400);
+            assert.match(await res.text(), /SYSTEM\.MAIN_MENU.*not read in full/);
+          }
+          assert.equal((await postSettings(base, [{ path: ['SYSTEM', 'MAIN_MENU'], value: { ADMIN: { LIST: [] } } }])).status, 200);
+          assert.equal((await postSettings(base, [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }])).status, 200);
+
+          fs.writeFileSync(path.join(copy, 'build/settings.js'), "window.FAKE_SETTINGS = { SYSTEM: { MAIN_MENU: { ADMIN: { LIST: ['ADMIN_REPORT'] } } } };\n");
+          assert.equal((await postSettings(base, [{ path: list, item: 'ADMIN_REPORT', value: false }])).status, 200);
+        });
+      }),
+    ),
+  );
+});
+
+test('the code put after the settings file never writes through __proto__, constructor or prototype', () => {
+  const context = vm.createContext({});
+  vm.runInContext('var window = globalThis;', context);
+  const overrides = [
+    { path: ['SYSTEM', '__proto__', 'polluted'], value: true },
+    { path: ['__proto__', 'polluted'], value: true },
+    { path: ['SYSTEM', 'constructor', 'prototype', 'polluted'], value: true },
+    { path: ['SYSTEM', 'LAB_ENABLED'], value: true },
+  ];
+  vm.runInContext(`(${applyOverrides})(['__proto__', 'FAKE_SETTINGS'], {}, ${JSON.stringify(overrides)});`, context);
+  vm.runInContext(`(${applyOverrides})(['FAKE_SETTINGS'], {}, ${JSON.stringify(overrides)});`, context);
+  assert.equal(vm.runInContext('({}).polluted', context), undefined);
+  assert.equal(vm.runInContext('Object.prototype.polluted', context), undefined);
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(window.FAKE_SETTINGS)', context)), { SYSTEM: { LAB_ENABLED: true } });
+});
+
 for (const signedOutPaths of [[], ['/signin']]) {
   test(`the app server closes with the review server, with signedOutPaths ${JSON.stringify(signedOutPaths)}`, async () => {
     await withFakeApi((api) =>
@@ -615,6 +835,10 @@ for (const [name, broken, message] of [
   ].map(([name, change]) => [`a list API ${name}`, { login: loginWithHeader, pathValues: { '/document/:id': { id: { ...LIST_API, ...change } } } }, /app\.pathValues\["\/document\/:id"\]\.id must/]),
   ['a list API without login.header', { pathValues: { '/document/:id': { id: LIST_API } } }, /app\.login\.header/],
   ['a login header that is not a map of header names', { login: { ...loginWithHeader, header: ['Bearer s3cret'] } }, /app\.login\.header/],
+  ['a settingsFile without merged sections', { settingsFile: { ...SETTINGS_FILE, merged: [] } }, /app\.settingsFile must be/],
+  ['a settingsFile path that is not absolute', { settingsFile: { ...SETTINGS_FILE, path: 'settings.js' } }, /app\.settingsFile must be/],
+  ['a settingsFile global that is not a dotted name', { settingsFile: { ...SETTINGS_FILE, global: "window['FAKE_SETTINGS']" } }, /app\.settingsFile must be/],
+  ['a settingsFile root that is not a settings root', { settingsFile: { ...SETTINGS_FILE, root: 'appSettings' } }, /app\.settingsFile\.root "appSettings" is not listed in settingsRoots/],
 ]) {
   test(`app settings with ${name} are rejected`, () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
@@ -1645,6 +1869,461 @@ test('in a browser, a screen opens as a role that logged in before one whose log
             await p.click('#screen-list li:has-text("/admin/member")');
             assert.match(await bar.locator('.error').first().textContent(), new RegExp(AUDITOR_PASSWORD_ENV));
             assert.match(await bar.textContent(), /읽지 못한 역할 조건도 있습니다: isAdminRole\(memberRole\)/);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+const chooseScreen = (p, routePath) =>
+  p.locator('#screen-list li').filter({ has: p.locator('.name > span:first-child', { hasText: new RegExp(`^${routePath}$`) }) }).click();
+const overridesOf = async (base) => (await (await fetch(`${base}/api/data`)).json()).app.settings.overrides;
+const settingRow = (p, name) => p.locator('#settings-bar .setting', { has: p.locator('code', { hasText: new RegExp(`^${name}$`) }) });
+
+test('in a browser, choosing a screen behind a setting opens the frame with the setting on, a toggle reloads it with the new value, and 「기본값으로」 puts every setting back', { skip: browserMissing }, async () => {
+  await withFakeApi((api, presses, logins, listCalls, requests) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/home');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#path:has-text("/home")').waitFor();
+            assert.equal(await frame.locator('#lab').textContent(), 'false');
+            assert.equal(await frame.locator('#help').textContent(), 'true');
+            assert.equal(await p.locator('#settings-bar').isHidden(), true);
+
+            await chooseScreen(p, '/lab');
+            await frame.locator('#path:has-text("/lab")').waitFor();
+            await frame.locator('#lab:has-text("true")').waitFor();
+            assert.equal(await frame.locator('#help').textContent(), 'true');
+            assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
+            const bar = p.locator('#settings-bar');
+            assert.match(await bar.getAttribute('class'), /overridden/);
+            const lab = settingRow(p, 'SYSTEM.LAB_ENABLED');
+            assert.equal(await lab.count(), 1);
+            assert.match(await lab.getAttribute('class'), /changed/);
+            assert.match(await lab.locator('button.on').textContent(), /켜기/);
+            assert.match(await lab.getAttribute('title'), /라우트 · \/home#Home 에서 오는 링크/);
+
+            await lab.locator('button:has-text("끄기")').click();
+            await frame.locator('#lab:has-text("false")').waitFor();
+            assert.deepEqual(await overridesOf(base), []);
+            assert.doesNotMatch(await bar.getAttribute('class'), /overridden/);
+            assert.doesNotMatch(await lab.getAttribute('class'), /changed/);
+            assert.match(await lab.locator('button.on').textContent(), /끄기/);
+
+            await lab.locator('button:has-text("켜기")').click();
+            await frame.locator('#lab:has-text("true")').waitFor();
+            await chooseScreen(p, '/home');
+            await frame.locator('#path:has-text("/home")').waitFor();
+            assert.equal(await frame.locator('#lab').textContent(), 'true');
+            assert.equal(await bar.isVisible(), true);
+            assert.match(await bar.locator('.others').textContent(), /SYSTEM\.LAB_ENABLED = true/);
+
+            await bar.locator('button:has-text("기본값으로")').click();
+            await frame.locator('#lab:has-text("false")').waitFor();
+            assert.deepEqual(await overridesOf(base), []);
+            assert.equal(await bar.isHidden(), true);
+            assert.ok(requests.every((r) => !r.includes('settings')));
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a setting whose default the source does not show in full is written as the screen needs, even when the reviewer changed it and came back', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), async (config, copy) => {
+        rewrite(copy, 'client/src/store/settings.js', '    LAB_ENABLED: false,', '    LAB_ENABLED: window.LAB_DEFAULT ?? true,');
+        rewrite(copy, 'client/src/Routes.js', '{globalSettings.SYSTEM.LAB_ENABLED ? <Route path={Option.ROUTE_PATH.LAB} component={waitFor(Lab)} exact /> : null}',
+          '{globalSettings.SYSTEM.LAB_ENABLED ? null : <Route path={Option.ROUTE_PATH.LAB} component={waitFor(Lab)} exact />}');
+        rewrite(copy, 'client/src/components/Home.js', '{globalSettings.SYSTEM.LAB_ENABLED && <Link', '{<Link');
+        rewrite(copy, 'build/app.js', 'LAB_ENABLED: false,', 'LAB_ENABLED: true,');
+        rebuild(copy);
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/lab');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#lab:has-text("false")').waitFor();
+            const off = [{ path: ['SYSTEM', 'LAB_ENABLED'], value: false }];
+            assert.deepEqual(await overridesOf(base), off);
+
+            await settingRow(p, 'SYSTEM.LAB_ENABLED').locator('button:has-text("켜기")').click();
+            await frame.locator('#lab:has-text("true")').waitFor();
+            await chooseScreen(p, '/home');
+            await frame.locator('#path:has-text("/home")').waitFor();
+            await chooseScreen(p, '/lab');
+            await frame.locator('#path:has-text("/lab")').waitFor();
+            await frame.locator('#lab:has-text("false")').waitFor();
+            assert.deepEqual(await overridesOf(base), off);
+
+            const lab = settingRow(p, 'SYSTEM.LAB_ENABLED');
+            await lab.locator('button:has-text("켜기")').click();
+            await frame.locator('#lab:has-text("true")').waitFor();
+            await lab.locator('button:has-text("끄기")').click();
+            await frame.locator('#lab:has-text("false")').waitFor();
+            assert.deepEqual(await overridesOf(base), off);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, picking in the select the value a setting seems to have keeps it written when its section is not shown in full', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), async (config, copy) => {
+        rewrite(copy, 'client/src/store/settings.js', '    LAB_ENABLED: false,', "    LAB_ENABLED: false,\n    MODE: 'a',\n    ...window.EXTRA,");
+        rewrite(copy, 'client/src/Routes.js', '{globalSettings.SYSTEM.LAB_ENABLED ? <Route', "{globalSettings.SYSTEM.MODE === 'a' ? <Route");
+        rewrite(copy, 'client/src/components/Home.js', '{globalSettings.SYSTEM.LAB_ENABLED && <Link', '{<Link');
+        rebuild(copy);
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/lab');
+            const modeA = [{ path: ['SYSTEM', 'MODE'], value: 'a' }];
+            await p.waitForFunction(() => document.querySelector('#settings-bar .setting.changed'));
+            assert.deepEqual(await overridesOf(base), modeA);
+            const select = settingRow(p, 'SYSTEM.MODE').locator('select');
+            assert.doesNotMatch(await select.locator('option').first().textContent(), /"a"/);
+
+            await select.selectOption({ index: 0 });
+            await p.waitForFunction(() => !document.querySelector('#settings-bar .setting.changed'));
+            await select.selectOption('"a"');
+            await p.waitForFunction(() => document.querySelector('#settings-bar .setting.changed'));
+            assert.deepEqual(await overridesOf(base), modeA);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, coming back to a screen whose setting the reviewer took away puts the unchanged value back instead of recording a change', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/admin/report');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#menu:has-text("ADMIN_REPORT")').waitFor();
+            const entry = settingRow(p, 'SYSTEM.MAIN_MENU.ADMIN.LIST');
+            await entry.locator('input').uncheck();
+            await frame.locator('#menu', { hasText: /^ADMIN_ARCHIVE$/ }).waitFor();
+
+            await chooseScreen(p, '/home');
+            await frame.locator('#path:has-text("/home")').waitFor();
+            await chooseScreen(p, '/admin/report');
+            await frame.locator('#menu:has-text("ADMIN_REPORT")').waitFor();
+            assert.deepEqual(await overridesOf(base), []);
+            assert.doesNotMatch(await p.locator('#settings-bar').getAttribute('class'), /overridden/);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a setting the reviewer changed stays changed when the frame reopens the same screen as another account', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/lab');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#lab:has-text("true")').waitFor();
+            await settingRow(p, 'SYSTEM.LAB_ENABLED').locator('button:has-text("끄기")').click();
+            await frame.locator('#lab:has-text("false")').waitFor();
+
+            await p.locator('#center .frame-bar select').selectOption('account');
+            await frame.locator('#path:has-text("/lab")').waitFor();
+            await p.waitForFunction(() => document.querySelector('#center iframe.app')?.getAttribute('src'));
+            assert.equal(await frame.locator('#lab').textContent(), 'false');
+            assert.deepEqual(await overridesOf(base), []);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a setting the reviewer changed on a screen with path variables stays changed when another role\'s values are loaded', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPasswords(ALL_PASSWORDS, () =>
+      withRebuiltFixture({ app: { ...roleSettings(api).app, login: loginWithHeader, settingsFile: SETTINGS_FILE, pathValues: { '/document/:id': { id: LIST_API } } } }, async (config, copy) => {
+        rewrite(copy, 'client/src/Routes.js', '<Route path={`${Option.ROUTE_PATH.DOCUMENT}/:id`} component={waitFor(DocumentDetail)} exact />',
+          '{globalSettings.SYSTEM.LAB_ENABLED && <Route path={`${Option.ROUTE_PATH.DOCUMENT}/:id`} component={waitFor(DocumentDetail)} exact />}');
+        rebuild(copy);
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/document/:id');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#path:has-text("/document/17")').waitFor();
+            await frame.locator('#lab:has-text("true")').waitFor();
+            await settingRow(p, 'SYSTEM.LAB_ENABLED').locator('button:has-text("끄기")').click();
+            await frame.locator('#lab:has-text("false")').waitFor();
+
+            await p.locator('#center .frame-bar select').selectOption('role:ADMIN');
+            await frame.locator('#path:has-text("/document/27")').waitFor();
+            assert.equal(await frame.locator('#lab').textContent(), 'false');
+            assert.deepEqual(await overridesOf(base), []);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, a screen that falls back to its list screen sets what the list screen needs', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api, { pathValues: { '/document/:tab(draft|done)': { tab: 'draft' } } }), async (config, copy) => {
+        rewrite(copy, 'client/src/Routes.js', '<Route path={`${Option.ROUTE_PATH.DOCUMENT}/:tab(draft|done)`} component={waitFor(DocumentList)} exact />',
+          '{globalSettings.SYSTEM.LAB_ENABLED && <Route path={`${Option.ROUTE_PATH.DOCUMENT}/:tab(draft|done)`} component={waitFor(DocumentList)} exact />}');
+        rebuild(copy);
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/document/:id');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#path:has-text("/document/draft")').waitFor();
+            await frame.locator('#lab:has-text("true")').waitFor();
+            assert.match(await p.locator('#center .frame-bar').textContent(), /목록에서 골라 들어가세요/);
+            assert.match(await settingRow(p, 'SYSTEM.LAB_ENABLED').getAttribute('class'), /changed/);
+            assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, a screen reached through a menu built from a settings list takes the menu entry out and back with 「목록에 넣기」', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/admin/report');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#path:has-text("/admin/report")').waitFor();
+            assert.equal(await frame.locator('#menu').textContent(), 'ADMIN_REPORT,ADMIN_ARCHIVE');
+            assert.deepEqual(await overridesOf(base), []);
+
+            const entry = settingRow(p, 'SYSTEM.MAIN_MENU.ADMIN.LIST');
+            assert.match(await entry.textContent(), /"ADMIN_REPORT".*목록에 넣기/);
+            assert.equal(await entry.locator('input[type=checkbox]').isChecked(), true);
+            assert.match(await settingRow(p, 'SYSTEM.MAIN_MENU.ADMIN').textContent(), /기본값에 있음/);
+
+            await entry.locator('input[type=checkbox]').uncheck();
+            await frame.locator('#menu:has-text("ADMIN_ARCHIVE")').waitFor();
+            await p.waitForFunction(() => document.querySelector('#settings-bar .setting.changed'));
+            assert.equal(await frame.locator('#menu').textContent(), 'ADMIN_ARCHIVE');
+            assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'MAIN_MENU', 'ADMIN', 'LIST'], item: 'ADMIN_REPORT', value: false }]);
+            assert.match(await entry.getAttribute('class'), /changed/);
+
+            await entry.locator('input[type=checkbox]').check();
+            await frame.locator('#menu:has-text("ADMIN_REPORT,ADMIN_ARCHIVE")').waitFor();
+            assert.deepEqual(await overridesOf(base), []);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a setting in a section the app does not take from the settings file cannot be changed and says why', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, settingsFile: { ...SETTINGS_FILE, merged: ['CUSTOM'] } } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/lab');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#path:has-text("/lab")').waitFor();
+            const lab = settingRow(p, 'SYSTEM.LAB_ENABLED');
+            assert.match(await lab.locator('.reason').textContent(), /SYSTEM 섹션을 읽지 않아 바꿀 수 없습니다/);
+            assert.equal(await lab.locator('button:has-text("켜기")').isDisabled(), true);
+            assert.equal(await frame.locator('#lab').textContent(), 'false');
+            assert.deepEqual(await overridesOf(base), []);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a setting read through another settings root and a guard whose value cannot be worked out show why they cannot be changed, and the first link that can be satisfied is', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ settingsRoots: ['globalSettings', 'appSettings'], ...withSettingsFile(api) }, async (config, copy) => {
+        rewrite(copy, 'client/src/components/Home.js', '{globalSettings.SYSTEM.LAB_ENABLED && <Link', '{appSettings.SYSTEM.LAB_ENABLED && <Link');
+        rewrite(copy, 'client/src/components/DocumentDetail.js', '{helpEnabled && <Link', '{helpEnabled !== false && <Link');
+        fs.writeFileSync(path.join(copy, 'build/settings.js'), 'window.FAKE_SETTINGS = {};\n');
+        rebuild(copy);
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/lab');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#lab:has-text("true")').waitFor();
+            const rows = settingRow(p, 'SYSTEM.LAB_ENABLED');
+            assert.equal(await rows.count(), 2);
+            assert.equal(await rows.nth(0).locator('button:has-text("끄기")').isDisabled(), false);
+            assert.match(await rows.nth(1).locator('.reason').textContent(), /appSettings 로 읽는 설정이라/);
+            assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
+
+            await chooseScreen(p, '/help');
+            await p.waitForFunction(() => document.querySelectorAll('#settings-bar > .setting.changed').length === 1 && document.querySelector('#settings-bar .others'));
+            const unreadable = settingRow(p, 'helpEnabled !== false');
+            assert.match(await unreadable.locator('.reason').textContent(), /같지 않음/);
+            assert.match(await unreadable.getAttribute('title'), /\/document\/:id#DocumentDetail/);
+            assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }, { path: ['SYSTEM', 'HELP_LINK_ENABLED'], value: true }]);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, a setting the settings file already turns on shows as on, a need for it off writes false, and setting it back to the file value drops the change', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), async (config, copy) => {
+        rewrite(copy, 'client/src/components/DocumentDetail.js', '{helpEnabled && <Link', '{!helpEnabled && <Link');
+        rebuild(copy);
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/help');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#help:has-text("false")').waitFor();
+            assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'HELP_LINK_ENABLED'], value: false }]);
+            const help = settingRow(p, 'SYSTEM.HELP_LINK_ENABLED');
+            assert.match(await help.getAttribute('class'), /changed/);
+            assert.match(await help.locator('button.on').textContent(), /끄기/);
+
+            await help.locator('button:has-text("켜기")').click();
+            await frame.locator('#help:has-text("true")').waitFor();
+            await p.waitForFunction(() => !document.querySelector('#settings-bar .setting.changed'));
+            assert.deepEqual(await overridesOf(base), []);
+            assert.match(await help.locator('button.on').textContent(), /켜기/);
+
+            fs.writeFileSync(path.join(copy, 'build/settings.js'), 'window.FAKE_SETTINGS = { SYSTEM: { HELP_LINK_ENABLED: document.title !== null } };\n');
+            await p.reload();
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/lab');
+            await p.waitForSelector('#settings-bar .file-error');
+            assert.match(await p.locator('#settings-bar .file-error').textContent(), /맵의 기본값으로 판단합니다.*document/);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, a list inside a default the source does not show in full cannot be changed unless the settings file sets it, and says why', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), async (config, copy) => {
+        rewrite(copy, 'client/src/store/settings.js', "ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] },", "ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] },\n      USER: window.INTO_USER_MENU || {},");
+        rebuild(copy);
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/admin/report');
+            const entry = settingRow(p, 'SYSTEM.MAIN_MENU.ADMIN.LIST');
+            await entry.waitFor();
+            assert.match(await entry.locator('.reason').textContent(), /SYSTEM\.MAIN_MENU 기본값을 소스에서 다 읽지 못해/);
+            assert.equal(await entry.locator('input[type=checkbox]').isDisabled(), true);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, a setting that only has to be present is not met by an empty default', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), async (config, copy) => {
+        rewrite(copy, 'client/src/store/settings.js', '    LAB_ENABLED: false,\n', "    LAB_ENABLED: false,\n    BANNER: '',\n");
+        rewrite(copy, 'client/src/Routes.js', '{globalSettings.SYSTEM.LAB_ENABLED ? <Route', '{globalSettings.SYSTEM.BANNER ? <Route');
+        rebuild(copy);
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/lab');
+            const banner = settingRow(p, 'SYSTEM.BANNER');
+            await banner.waitFor();
+            assert.doesNotMatch(await banner.textContent(), /기본값에 있음/);
+            assert.match(await banner.locator('.reason').textContent(), /넣을 수 없습니다/);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, a failed settings change is shown until another screen is chosen', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await p.route('**/api/settings', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: 'settings store down' }));
+            await chooseScreen(p, '/lab');
+            await p.waitForSelector('#settings-bar .error:has-text("설정을 바꾸지 못했습니다")');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#path:has-text("/lab")').waitFor();
+            await p.unroute('**/api/settings');
+
+            await chooseScreen(p, '/admin/report');
+            await frame.locator('#path:has-text("/admin/report")').waitFor();
+            await settingRow(p, 'SYSTEM.MAIN_MENU.ADMIN.LIST').waitFor();
+            assert.equal(await p.locator('#settings-bar .error').count(), 0);
+            assert.deepEqual(await overridesOf(base), []);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a settings change that throws is shown and does not stop the changes after it', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/admin/report');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#path:has-text("/admin/report")').waitFor();
+
+            await p.evaluate(() => updateSettings(() => {
+              throw new Error('change failed');
+            }));
+            await p.waitForSelector('#settings-bar .error:has-text("change failed")');
+            await p.evaluate(() => updateSettings((list) => [...list, { path: ['SYSTEM', 'LAB_ENABLED'], value: true }]));
+            await frame.locator('#lab:has-text("true")').waitFor();
+            assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
+            assert.equal(await p.locator('#settings-bar .error').count(), 0);
           }),
         ),
       ),

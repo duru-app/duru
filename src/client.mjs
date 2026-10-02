@@ -4,6 +4,7 @@ import { parse } from '@babel/parser';
 import _traverse from '@babel/traverse';
 import { loadConstants } from './constants.mjs';
 import { resolveImport } from './resolve.mjs';
+import { settingNeeds } from './setting-needs.mjs';
 
 const traverse = _traverse.default ?? _traverse;
 const PARSER_PLUGINS = ['jsx', 'classProperties', 'optionalChaining', 'nullishCoalescingOperator', 'dynamicImport'];
@@ -69,28 +70,23 @@ function constInits(exprPath, src) {
 }
 
 // 이 노드가 렌더되거나 실행되려면 참이어야 하는 조건들을 파일 안에서 거슬러 올라가며 모은다.
-function guardsOf(nodePath, src, inits) {
+function guardsOf(nodePath, src, note) {
   const guards = [];
-  // source 는 줄이지 않은 조건이다. 다른 조건이 같은 글자로 줄어들면 어느 것인지 모르므로 비운다.
-  const add = (text, exprPath, source) => {
+  const add = (text, exprPath, negated, source) => {
     guards.push(text);
-    const found = constInits(exprPath, src);
-    const known = inits.get(text);
-    if (!known) return void inits.set(text, { source, inits: [...found] });
-    if (known.source !== source) known.source = null;
-    known.inits.push(...found.filter((f) => !known.inits.some((k) => k.name === f.name && k.init === f.init)));
+    note(text, exprPath, negated, source);
   };
   let child = nodePath;
   let parent = nodePath.parentPath;
   while (parent) {
     const p = parent.node;
     if (p.type === 'LogicalExpression' && p.operator === '&&' && child.key === 'right') {
-      add(sliceText(src, p.left), parent.get('left'), src.slice(p.left.start, p.left.end));
+      add(sliceText(src, p.left), parent.get('left'), false, src.slice(p.left.start, p.left.end));
     } else if ((p.type === 'ConditionalExpression' || p.type === 'IfStatement') && child.key !== 'test') {
       const t = sliceText(src, p.test);
       const s = src.slice(p.test.start, p.test.end);
-      if (child.key === 'consequent') add(t, parent.get('test'), s);
-      else add(`!(${t})`, parent.get('test'), `!(${s})`);
+      const negated = child.key !== 'consequent';
+      add(negated ? `!(${t})` : t, parent.get('test'), negated, negated ? `!(${s})` : s);
     }
     child = parent;
     parent = parent.parentPath;
@@ -116,11 +112,13 @@ export async function extractClient(config) {
   const settingsRoots = new Set(config.settingsRoots);
   const [routeRoot, ...routeRest] = config.routeConstant.split('.');
   const guardInits = new Map();
-  const initsOf = (file) => {
-    if (!guardInits.has(file)) guardInits.set(file, new Map());
-    return guardInits.get(file);
+  const guardSettings = new Map();
+  const mapOf = (maps, file) => {
+    if (!maps.has(file)) maps.set(file, new Map());
+    return maps.get(file);
   };
 
+  const textOf = (v) => (typeof v === 'string' || typeof v === 'number' ? String(v) : UNKNOWN);
   // 상수·템플릿·문자열 결합·지역 const 까지만 따라가 값을 만든다. 모르는 조각은 UNKNOWN 으로 남긴다.
   function evaluate(nodePath) {
     const node = nodePath.node;
@@ -128,14 +126,17 @@ export async function extractClient(config) {
       case 'StringLiteral':
         return node.value;
       case 'NumericLiteral':
-        return String(node.value);
+      case 'BooleanLiteral':
+        return node.value;
+      case 'NullLiteral':
+        return null;
       case 'TemplateLiteral': {
         let out = '';
         node.quasis.forEach((q, i) => {
           out += q.value.cooked;
           if (i < node.expressions.length) {
             const v = evaluate(nodePath.get(`expressions.${i}`));
-            out += typeof v === 'string' ? v : UNKNOWN;
+            out += textOf(v);
           }
         });
         return out;
@@ -144,7 +145,7 @@ export async function extractClient(config) {
         if (node.operator !== '+') return undefined;
         const l = evaluate(nodePath.get('left'));
         const r = evaluate(nodePath.get('right'));
-        return (typeof l === 'string' ? l : UNKNOWN) + (typeof r === 'string' ? r : UNKNOWN);
+        return textOf(l) + textOf(r);
       }
       case 'MemberExpression':
       case 'OptionalMemberExpression': {
@@ -197,8 +198,65 @@ export async function extractClient(config) {
     return init.node ? evaluate(init) : undefined;
   }
 
+  const isJsonValue = (v) =>
+    v === null || ['string', 'boolean'].includes(typeof v) || Number.isFinite(v)
+    || (Array.isArray(v) ? v.every(isJsonValue) : typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype && Object.values(v).every(isJsonValue));
+
+  // evaluate 는 모르는 조각을 빼거나 UNKNOWN 으로 바꾸므로, 값이 소스 그대로 다 읽히는지는 따로 본다.
+  function lossless(p, seen = new Set()) {
+    switch (p.node.type) {
+      case 'StringLiteral':
+      case 'NumericLiteral':
+      case 'BooleanLiteral':
+      case 'NullLiteral':
+        return true;
+      case 'TemplateLiteral':
+        return p.get('expressions').every((e) => lossless(e, seen) && ['string', 'number'].includes(typeof evaluate(e)));
+      case 'ArrayExpression':
+        return p.get('elements').every((e) => e.node && !e.isSpreadElement() && lossless(e, seen));
+      case 'ObjectExpression':
+        return p.get('properties').every((prop) => prop.isObjectProperty() && !prop.node.computed && lossless(prop.get('value'), seen));
+      case 'Identifier': {
+        const init = constInit(p, p.node.name, seen);
+        return Boolean(init) && lossless(init, seen);
+      }
+      case 'MemberExpression':
+      case 'OptionalMemberExpression': {
+        const value = lookupConstant(constants, memberChain(p.node));
+        return value !== undefined && isJsonValue(value);
+      }
+      case 'CallExpression':
+        return p.node.callee.type === 'Identifier' && (config.passThroughCalls ?? []).includes(p.node.callee.name) && Boolean(p.node.arguments[0]) && lossless(p.get('arguments.0'), seen);
+      default:
+        return false;
+    }
+  }
+
+  // [] 는 섹션을 다 알 수 없다는 뜻, [섹션] 은 그 섹션의 키를 다 알 수 없다는 뜻, [섹션, 키] 는 그 키의 값을 다 읽지 못했다는 뜻이다.
+  function incompleteDefaults(init) {
+    const found = [];
+    const add = (at) => {
+      if (!found.some((f) => f.join('.') === at.join('.'))) found.push(at);
+    };
+    const name = (prop) => String(prop.node.key.name ?? prop.node.key.value);
+    for (const section of init.get('properties')) {
+      if (!section.isObjectProperty() || section.node.computed) return [[]];
+      const obj = objectLiteral(section.get('value'));
+      if (!obj) {
+        add([name(section)]);
+        continue;
+      }
+      for (const prop of obj.get('properties')) {
+        if (!prop.isObjectProperty() || prop.node.computed) add([name(section)]);
+        else if (!lossless(prop.get('value'))) add([name(section), name(prop)]);
+      }
+    }
+    return found;
+  }
+
   function loadSettingsDefaults() {
     const values = {};
+    const incomplete = {};
     for (const [root, { file, const: name }] of Object.entries(config.settingsDefaults ?? {})) {
       const { ast } = parseFile(path.join(config.srcRoot, file));
       let init = null;
@@ -211,11 +269,35 @@ export async function extractClient(config) {
       });
       if (!init) throw new Error(`settingsDefaults.${root}: ${file} has no top-level const ${name} holding an object`);
       values[root] = evaluate(init);
+      incomplete[root] = incompleteDefaults(init);
     }
-    return values;
+    return { values, incomplete };
   }
 
-  const settingsDefaults = loadSettingsDefaults();
+  const { values: settingsDefaults, incomplete: settingsDefaultsIncomplete } = loadSettingsDefaults();
+  const needs = settingNeeds(config.settingsRoots ?? [], settingsDefaults);
+  const CONFLICT = { reason: '같은 파일에 글자는 같고 읽는 설정이 다른 조건이 있어 켤 값을 정할 수 없습니다' };
+
+  function noteSettings(file, text, result) {
+    const known = mapOf(guardSettings, file);
+    if (!known.has(text)) known.set(text, result);
+    else if (JSON.stringify(known.get(text)) !== JSON.stringify(result)) known.set(text, CONFLICT);
+  }
+
+  function guardNote(file, src) {
+    const inits = mapOf(guardInits, file);
+    // source 는 줄이지 않은 조건이다. 다른 조건이 같은 글자로 줄어들면 어느 것인지 모르므로 비운다.
+    return (text, exprPath, negated, source) => {
+      const found = constInits(exprPath, src);
+      const known = inits.get(text);
+      if (!known) inits.set(text, { source, inits: [...found] });
+      else {
+        if (known.source !== source) known.source = null;
+        known.inits.push(...found.filter((f) => !known.inits.some((k) => k.name === f.name && k.init === f.init)));
+      }
+      noteSettings(file, text, negated ? needs.readNegated(exprPath) : needs.read(exprPath));
+    };
+  }
 
   function constInit(nodePath, name, seen) {
     const binding = nodePath.scope.getBinding(name);
@@ -303,7 +385,7 @@ export async function extractClient(config) {
     if (!Array.isArray(list)) return [];
     return [...new Set(list)]
       .filter((entry) => typeof entry === 'string' && Object.hasOwn(routeValues, entry))
-      .map((entry) => ({ route: entry, guard: `${chain.join('.')} includes '${entry}'` }));
+      .map((entry) => ({ route: entry, guard: `${chain.join('.')} includes '${entry}'`, settings: needs.includes(chain, entry) }));
   }
 
   // ---------- API 모듈: 내보낸 함수마다 호출하는 endpoint ----------
@@ -368,10 +450,11 @@ export async function extractClient(config) {
     const apiNamed = new Map();
     const apiNamespaces = new Set();
     const localFnRefs = new Map();
-    const inits = initsOf(path.relative(config.srcRoot, file));
+    const relFile = path.relative(config.srcRoot, file);
+    const note = guardNote(relFile, src);
 
     function record(kind, entry, nodePath, ownGuards = []) {
-      const guards = [...ownGuards, ...guardsOf(nodePath, src, inits)];
+      const guards = [...ownGuards, ...guardsOf(nodePath, src, note)];
       const owner = enclosingFunctionName(nodePath);
       const item = { ...entry, line: nodePath.node.loc.start.line, guards };
       facts[kind].push(item);
@@ -416,7 +499,11 @@ export async function extractClient(config) {
         if ((parent.isMemberExpression() || parent.isOptionalMemberExpression()) && parent.node.object === p.node) return;
         const chain = memberChain(p.node);
         if (!chain) {
-          if (p.node.computed) for (const r of listedRoutes(p)) record('routeRefs', { route: r.route }, p, [r.guard]);
+          if (!p.node.computed) return;
+          for (const r of listedRoutes(p)) {
+            noteSettings(relFile, r.guard, r.settings);
+            record('routeRefs', { route: r.route }, p, [r.guard]);
+          }
           return;
         }
         if (settingsRoots.has(chain[0]) && chain.length >= 3) {
@@ -433,7 +520,7 @@ export async function extractClient(config) {
         const target = localFnRefs.get(p.node.name);
         if (!target || !p.isReferencedIdentifier()) return;
         if (p.findParent((a) => a === target.fnPath)) return;
-        const outer = guardsOf(p, src, inits);
+        const outer = guardsOf(p, src, note);
         for (const item of target.items) {
           item.inheritedGuards ??= [];
           item.inheritedGuards.push({ via: p.node.name, line: p.node.loc.start.line, guards: outer });
@@ -465,7 +552,7 @@ export async function extractClient(config) {
 
   function extractScreens(routesFile) {
     const { src, ast } = parseFile(routesFile);
-    const inits = initsOf(config.routesFile);
+    const note = guardNote(config.routesFile, src);
     const screens = [];
     traverse(ast, {
       JSXElement(p) {
@@ -475,7 +562,7 @@ export async function extractClient(config) {
         if (config.redirectElements.includes(opening.name.name)) {
           const toValue = attr('to')?.get('value');
           const to = toValue && evaluate(toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue);
-          redirects.push({ to: typeof to === 'string' ? to : UNKNOWN, line: p.node.loc.start.line, guards: guardsOf(p, src, inits) });
+          redirects.push({ to: typeof to === 'string' ? to : UNKNOWN, line: p.node.loc.start.line, guards: guardsOf(p, src, note) });
           return;
         }
         if (!config.routeElements.includes(opening.name.name)) return;
@@ -491,7 +578,7 @@ export async function extractClient(config) {
           component: compName,
           componentFile: resolveComponent(p.scope, compName, routesFile),
           wrapperFiles: wrappersOf(p, routesFile),
-          routeGuards: guardsOf(p, src, inits),
+          routeGuards: guardsOf(p, src, note),
           line: p.node.loc.start.line,
         });
       },
@@ -548,5 +635,5 @@ export async function extractClient(config) {
     return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, apiCalls, settingReads, links };
   });
 
-  return { screens, apiFunctions, redirects, guardInits, constants };
+  return { screens, apiFunctions, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete };
 }

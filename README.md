@@ -93,7 +93,8 @@ relative to the config file, except the files inside the client source (`routesF
     "pathValues": {
       "/document/:tab(draft|done)": { "tab": "draft" },
       "/document/:id": { "id": { "api": "/api/v1/documents", "list": "contents.list", "value": "id" } }
-    }
+    },
+    "settingsFile": { "path": "/settings.js", "global": "window.INTO_SETTINGS", "root": "globalSettings", "merged": ["SYSTEM", "CUSTOM"] }
   }
   ```
 
@@ -126,6 +127,26 @@ relative to the config file, except the files inside the client source (`routesF
   variable (`:tab?`) without a value is left out of the address, and a variable that spans several segments
   (`*`, `:path+`) keeps the `/` in its value. An entry or a variable that matches no screen
   path or no variable of that path is listed in red above the frame.
+  `settingsFile` (optional) is the static settings file the app downloads, which duru rewrites to show a
+  screen under other settings without touching the test server: `path` is where the app requests it, `global`
+  the object the file assigns (`window.INTO_SETTINGS = { ... }`), `root` the `settingsRoots` entry it feeds
+  (it needs a `settingsDefaults` entry too), and `merged` the top-level sections the app merges one level deep
+  over its defaults (`{ ...defaults.SYSTEM, ...window.INTO_SETTINGS.SYSTEM }`). duru serves that file, from the
+  build folder or the deployed address, with code appended that writes the settings changed on the review page.
+  Because the app merges only one level, changing `SYSTEM.MAIN_MENU.ADMIN.LIST` writes all of
+  `SYSTEM.MAIN_MENU`: a copy of the file's own value when it has one, else the default, with only the list
+  changed. Changes last until the review ends, apply to every app address duru serves, and are never sent to
+  the test server. Only settings in a `merged` section read through `root` can be changed. A change inside a
+  key (a longer path, or a list entry) whose default the map lists under `settingsDefaultsIncomplete` is
+  refused unless the settings file sets that key itself, since the copy of the default would lose what the
+  source does not show; replacing the whole key is still allowed. Path keys `__proto__`, `constructor` and
+  `prototype` are refused. To show the values the page starts from, duru also runs the file as served,
+  without the changes, in a `node:vm` context with `window` as its global and a one-second limit, and
+  keeps the JSON values of the `merged` sections of `global`. This is not a sandbox: it runs the app's own
+  file, the same one the browser runs. The review page reads `app.settings` from `/api/data` as `{ root,
+  merged, overrides, file, fileError }` (`file` is `null` and `fileError` says why when the file could not be
+  run) and posts its changes to `/api/settings` as `{ "overrides": [{ "path": [section, key, ...], "value" }
+  or { "path", "item", "value": true|false }] }`, which replaces the whole list.
 
 `map.json` lists screens with their route guards, the API calls reachable from each screen with the
 server match, the settings each screen reads, and links to other screens with the conditions guarding
@@ -211,6 +232,23 @@ readable `role` guards, or, for a link with no `role` guard from a screen that n
 `roleValues`); when one of those links cannot be read, the links are left out, since it may let any role in.
 Guards are read in full, though the map shows a long guard cut short. Unreadable guards are left out when something else is readable; when nothing is, or no
 value is left, `roleValues` is `null`. `unreadableRoleGuards` lists the guards left out.
+A `setting` guard also says which setting values it needs, read from the guard's source and through the
+consts it uses (`helpEnabled` after `const system = globalSettings.SYSTEM; const helpEnabled =
+system.HELP_LINK_ENABLED` needs `SYSTEM.HELP_LINK_ENABLED` on). `settings` lists one entry per setting:
+`{ "root", "path", "need", "value", "default" }`, where `need` is `on` for a bare read (or `=== true`), `off`
+for `!read` (or `=== false`, or the else branch of a bare read), `equals` with `value` for `=== 'V'` or `==` with
+a string or number, `includes` with `value` for the menu guard `<list> includes 'V'`, and `present` for a bare
+read whose default is not `true` or `false` (such as an object). Reads joined by `&&` give one entry each, and
+parts that read no setting (a role check) are left out. `default` is the value in `settingsDefaults`, when
+known. Any other form (a function call, `!==`, `||`, a comparison with a non-literal or by size, a negated
+`&&`) gives `settings: null` and a Korean `settingsReason`. A screen whose `kinds` include `setting` also has
+`access.settings`: one entry for its route guards (`from: "route"`) and one per link into it that carries a
+setting guard (`from` the screen, `file`, `line`), each with the `needs` of its readable guards and the
+`unreadable` guards with their `reason`. The evaluated `settingsDefaults` are written to `map.json` too, with
+`settingsDefaultsIncomplete`, which lists per root the places the source does not show in full: `[section,
+key]` for a key whose value holds something duru cannot read (such as `window.X || [...]`, a call, a spread,
+a computed key, or a constant that is not configured), `[section]` for a section whose keys cannot all be
+known, and `[]` when the sections themselves cannot.
 
 A test declares the node it covers by putting `@screen:<id>` or `@call:<id>` in its title — for JUnit, in
 the test's or the test class's display name (`@DisplayName`), since `@Tag` annotations do not reach the
@@ -280,7 +318,20 @@ with `&role=<role>` when the frame opens the screen as one of `roles`,
 which answers `{ "parts", "values", "errors", "path", "fallback", "fallbackPath" }`: the route path split into text and
 variables (`{ "name", "prefix", "optional", "pattern" }`, with `"repeat": true` for `+` and `*`), the value found for each variable, why a value could
 not be found, the filled path (`null` while a required variable has no value) and the screen to open instead with its
-filled path (both `null` when there is none); an unknown screen or role is 404. Below
+filled path (both `null` when there is none); an unknown screen or role is 404.
+For a screen with setting conditions (the screen opened instead, when the frame falls back to one), a second
+line shows the settings named in its route and link conditions, and only those: 「켜기」 and 「끄기」 for one that needs on or off, a select for one that
+needs a value, 「목록에 넣기」 for a menu list entry, and 「기본값에 있음」 for one that only has to be present.
+Choosing the screen sets what its route guards and the first link into it whose conditions can all be met
+need; changing a setting reloads the frame with it. A changed setting and the whole line turn purple, settings
+changed on other screens stay changed and are listed there, and 「기본값으로」 puts them all back. A setting
+read through another settings root, in a section that is not `merged`, without `app.settingsFile`, or from a
+guard whose value cannot be worked out is shown greyed with the reason, and so is a change inside a default
+listed under `settingsDefaultsIncomplete` that the settings file does not set. A setting is shown with the
+value the app would read without the changes: the settings file's value of the section's key when the file
+sets it, else the default in the map, then down the rest of the path. A setting set back to that value is no
+longer counted as changed. A setting that only has to be present is met by a truthy value. When the
+settings file could not be run, the line says so and the page uses the map's defaults. Below
 that, the middle shows the chosen screen's tests grouped by depth and, below them, its API calls: one row
 per call with its server match (on the server with its labels, method mismatch, not on the server, or
 unresolved) and one cell per depth counting the call's tests. Under a call with on/off options, each option

@@ -1,0 +1,1 @@
+window.FAKE_SETTINGS = { SYSTEM: { HELP_LINK_ENABLED: true } };
