@@ -32,6 +32,11 @@ export function buildFlow(map, tests, { from } = {}) {
   };
   const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))].sort();
 
+  const accessOf = ({ roleValues, unreadableRoleGuards, settings }) => ({
+    ...(roleValues !== undefined ? { roleValues, unreadableRoleGuards } : {}),
+    ...(settings ? { settings } : {}),
+  });
+
   const placed = new Set();
   const screenNode = (id, guards) => {
     const s = byId.get(id);
@@ -44,6 +49,7 @@ export function buildFlow(map, tests, { from } = {}) {
       dead: Boolean(s.dead),
       restricted: s.access.restricted,
       kinds: s.access.kinds,
+      access: accessOf(s.access),
       guards,
       children: [],
       calls: callIdsOf(s).map(callNode),
