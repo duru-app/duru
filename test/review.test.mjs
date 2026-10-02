@@ -1208,6 +1208,27 @@ test('in a browser, a screen under a role condition opens as the first configure
   );
 });
 
+test('in a browser, a narrow center column puts the address above the role picker instead of squeezing it', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPasswords(ALL_PASSWORDS, () =>
+      withRebuiltFixture(roleSettings(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.setViewportSize({ width: 1000, height: 900 });
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/admin/member")');
+            const bar = await p.locator('#center .frame-bar').boundingBox();
+            const address = await p.locator('#center .frame-bar .mono').boundingBox();
+            const picker = await p.locator('#center .frame-bar select').boundingBox();
+            assert.ok(address.width > bar.width * 0.8, `address ${address.width}px in a ${bar.width}px bar`);
+            assert.ok(picker.x + picker.width <= bar.x + bar.width, 'the role picker fits in the bar');
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
 test('in a browser, a screen whose role has no account or cannot be read from the map opens as the default account and the bar says why, and signed-out screens have no role picker', { skip: browserMissing }, async () => {
   await withFakeApi((api) =>
     withPasswords({ ...ALL_PASSWORDS, [AUDITOR_PASSWORD_ENV]: undefined }, () =>
