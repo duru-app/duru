@@ -154,6 +154,48 @@ test('a mark on an option the map no longer has is detached while the call stays
   });
 });
 
+test('a mark on a story is written with only the story in its target, in that story\'s folder under stories, and keeps its history', () => {
+  withMarksDir((dir) => {
+    const first = addMark(dir, { target: { story: 'run-lab' }, status: 'missing', note: 'first', author: 'Kim Min' }, new Date('2026-10-01T01:00:00Z'));
+    const second = addMark(dir, { target: { story: 'run-lab' }, status: 'needs-more', note: 'second', author: 'b' }, new Date('2026-10-02T01:00:00Z'));
+    assert.deepEqual(first.target, { story: 'run-lab' });
+    assert.deepEqual(fs.readdirSync(dir), ['stories']);
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'stories', 'run-lab')).sort(), [
+      `2026-10-01-Kim_Min-${first.id.slice(0, 8)}.json`,
+      `2026-10-02-b-${second.id.slice(0, 8)}.json`,
+    ]);
+    const { attached, detached } = classifyMarks(loadMarks(dir), MAP, ['run-lab']);
+    assert.deepEqual(detached, []);
+    assert.deepEqual(attached.map((m) => [m.key, m.target, m.current.status, m.history.map((h) => h.note)]), [
+      ['story(run-lab)', { story: 'run-lab' }, 'needs-more', ['second', 'first']],
+    ]);
+  });
+});
+
+test('a mark on a story with no story file is detached, while marks on screens stay as they are', () => {
+  withMarksDir((dir) => {
+    addMark(dir, { target: { story: 'old-story' }, status: 'missing', note: 'gone?', author: 'a' });
+    addMark(dir, { target: { story: 'run-lab' }, status: 'fine', author: 'a' });
+    addMark(dir, { target: { node: '/home#Home' }, status: 'missing', author: 'a' });
+    const { attached, detached } = classifyMarks(loadMarks(dir), MAP, ['run-lab']);
+    assert.deepEqual(attached.map((m) => m.key), ['/home#Home', 'story(run-lab)']);
+    assert.deepEqual(detached.map((m) => [m.key, m.current.note]), [['story(old-story)', 'gone?']]);
+  });
+});
+
+test('a mark on a story never shares its history with a mark on a call, whatever the call\'s method', () => {
+  withMarksDir((dir) => {
+    const map = { screens: [], calls: [{ id: 'story:run-lab' }] };
+    addMark(dir, { target: { story: 'run-lab' }, status: 'missing', author: 'a' }, new Date('2026-10-01T01:00:00Z'));
+    addMark(dir, { target: { node: 'story:run-lab' }, status: 'fine', author: 'a' }, new Date('2026-10-02T01:00:00Z'));
+    const { attached } = classifyMarks(loadMarks(dir), map, ['run-lab']);
+    assert.deepEqual(attached.map((m) => [m.target, m.current.status, m.history.length]), [
+      [{ story: 'run-lab' }, 'missing', 1],
+      [{ node: 'story:run-lab' }, 'fine', 1],
+    ]);
+  });
+});
+
 for (const [name, input] of [
   ['an unknown status', { target: { node: '/home#Home' }, status: 'done', author: 'a' }],
   ['an unknown depth', { target: { node: '/home#Home', depth: 'e2e' }, status: 'fine', author: 'a' }],
@@ -161,6 +203,11 @@ for (const [name, input] of [
   ['an option value that is not true or false', { target: { node: '/home#Home', option: { key: 'withHistory', value: 'yes' } }, status: 'fine', author: 'a' }],
   ['an option that is not an object', { target: { node: '/home#Home', option: 'withHistory=true' }, status: 'fine', author: 'a' }],
   ['no target node', { target: {}, status: 'fine', author: 'a' }],
+  ['a story and a node', { target: { story: 'run-lab', node: '/home#Home' }, status: 'fine', author: 'a' }],
+  ['a story and a depth', { target: { story: 'run-lab', depth: 'ui' }, status: 'fine', author: 'a' }],
+  ['a story and an option', { target: { story: 'run-lab', option: { key: 'withHistory', value: true } }, status: 'fine', author: 'a' }],
+  ['a story ID outside the ID rule', { target: { story: '../run-lab' }, status: 'fine', author: 'a' }],
+  ['a story ID that is not text', { target: { story: 7 }, status: 'fine', author: 'a' }],
   ['no author', { target: { node: '/home#Home' }, status: 'fine', author: ' ' }],
 ]) {
   test(`a mark with ${name} is refused and nothing is written`, () => {

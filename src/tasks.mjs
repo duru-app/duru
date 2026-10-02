@@ -1,14 +1,23 @@
 import path from 'node:path';
 import { reviewData } from './review.mjs';
+import { testsAt } from './story-paths.mjs';
 import { DEPTHS } from './test-links.mjs';
 
 const OPEN = ['needs-more', 'missing'];
 const KIND_NAMES = { setting: 'a setting', role: 'a role' };
 const MIXED_KINDS = 'differs by link';
 
-const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const STORY_STATUS = {
+  pass: 'pass — every story test passes',
+  fail: 'fail — a story test fails',
+  pending: 'pending — no story test fails and one is pending',
+  partial: 'partial — no story test, and a screen on the path has tests',
+  untested: 'untested — no story test, and no screen on the path has a test',
+};
 
-const guardText = (g) => `\`${g.guard}\`${g.via ? ` through ${g.via}` : ''} (${g.kinds.join(', ')})`;
+const count = (n, word, plural = `${word}s`) => `${n} ${n === 1 ? word : plural}`;
+
+const guardText = (g) => `\`${g.guard}\`${g.via ? ` through ${g.via}` : ''}${g.kinds.length ? ` (${g.kinds.join(', ')})` : ''}`;
 
 const optionText = (o) => `${o.key}=${o.value}`;
 
@@ -17,26 +26,30 @@ function cellText({ option, depth }, whole) {
   return depth ? `${optionText(option)} at ${depth} depth` : optionText(option);
 }
 
-function markLine(mark, whole) {
-  const where = cellText(mark.target, whole);
-  const note = mark.note ? ` — "${mark.note.replace(/\r?\n/g, '\n    ')}"` : '';
-  return `  - ${mark.status}, ${where}${note} (${mark.author}, ${mark.date.slice(0, 10)})`;
+// 여러 줄인 글의 뒷줄을 들여 써서 항목 밖으로 나가 새 제목이나 항목이 되지 않게 한다.
+const within = (text, indent) => text.replace(/\r\n?|\n/g, `\n${indent}`);
+
+function markLine(mark, where) {
+  const note = mark.note ? ` — "${within(mark.note, '    ')}"` : '';
+  return `  - ${mark.status}${where ? `, ${where}` : ''}${note} (${within(mark.author, '    ')}, ${mark.date.slice(0, 10)})`;
 }
 
 const kindsText = (kinds) => kinds.map((k) => KIND_NAMES[k]).join(' and ');
 
+const needsText = (kinds) => (kinds.length ? `needs ${kindsText(kinds)}` : `${MIXED_KINDS}, see each link below`);
+
+function linkInLines(links, restricted) {
+  return links.map((l) => {
+    const from = `  - link from ${l.from} at ${l.file}:${l.line}`;
+    const guards = l.guards.length ? `guard ${l.guards.map(guardText).join('; ')}` : 'no guard';
+    const fromNeeds = l.fromKinds.length ? ` — ${l.from} itself needs ${kindsText(l.fromKinds)}` : restricted.has(l.from) ? ` — ${l.from} itself ${MIXED_KINDS}` : '';
+    return `${from}, ${guards}${fromNeeds}`;
+  });
+}
+
 function accessLines(access, restricted) {
   if (!access.restricted) return ['- access: opens without a setting or role'];
-  return [
-    `- access: ${access.kinds.length ? `needs ${kindsText(access.kinds)}` : `${MIXED_KINDS}, see each link below`}`,
-    ...access.route.map((g) => `  - route guard ${guardText(g)}`),
-    ...access.links.map((l) => {
-      const from = `  - link from ${l.from} at ${l.file}:${l.line}`;
-      const guards = l.guards.length ? `guard ${l.guards.map(guardText).join('; ')}` : 'no guard';
-      const fromNeeds = l.fromKinds.length ? ` — ${l.from} itself needs ${kindsText(l.fromKinds)}` : restricted.has(l.from) ? ` — ${l.from} itself ${MIXED_KINDS}` : '';
-      return `${from}, ${guards}${fromNeeds}`;
-    }),
-  ];
+  return [`- access: ${needsText(access.kinds)}`, ...access.route.map((g) => `  - route guard ${guardText(g)}`), ...linkInLines(access.links, restricted)];
 }
 
 const byDepth = (tests) => [...tests].sort((a, b) => DEPTHS.indexOf(a.depth) - DEPTHS.indexOf(b.depth));
@@ -86,9 +99,9 @@ function testLine(t) {
   return `- ${t.depth} ${t.status} — ${t.title} — ${at}${t.project ? ` (${t.project})` : ''}${detail}`;
 }
 
-function testLines(tests) {
-  if (!tests?.length) return ['- tests: none'];
-  return ['- tests:', ...byDepth(tests).map((t) => `  ${testLine(t)}`)];
+function testLines(tests, label = 'tests') {
+  if (!tests?.length) return [`- ${label}: none`];
+  return [`- ${label}:`, ...byDepth(tests).map((t) => `  ${testLine(t)}`)];
 }
 
 function optionSource(option) {
@@ -128,20 +141,87 @@ function serverText(server) {
   return 'not on the server';
 }
 
+const place = (p) => `${p.file}:${p.line}`;
+const unreadText = (links) => links.map((l) => `${place(l)} \`${l.to}\``).join(', ');
+
+function linkText(link) {
+  if (link.verdict === 'broken') return 'no link';
+  if (link.verdict === 'off-map') return 'not judged, a screen is not on the map';
+  if (link.verdict === 'unknown') return `not judged, links to a path duru cannot read: ${unreadText(link.unknownLinks)}`;
+  return `${link.verdict} at ${link.ways.map(place).join(', ')}`;
+}
+
+function stepLines(story, tests) {
+  return story.steps.flatMap((step, i) => {
+    const no = `${i + 1}. `;
+    const indent = ' '.repeat(2 + no.length);
+    const line = `  ${no}${within(step.screen, indent)} — ${step.onMap ? testSummary(testsAt(tests.nodes, step.screen)) : 'not on the map'}`;
+    const link = story.links[i];
+    return link ? [line, `${indent}- to ${within(link.to, `${indent}  `)}: ${linkText(link)}`] : [line];
+  });
+}
+
+function reachProblems(story) {
+  const broken = story.links.filter((l) => l.verdict === 'broken').length;
+  return [
+    broken && `unreachable, no link at ${count(broken, 'step')}`,
+    story.detached && 'not judged, a screen is not on the map',
+    story.unjudged && 'not judged, a link to a path duru cannot read',
+  ].filter(Boolean);
+}
+
+function preconditionLines(r, { screensById, routesFile, restricted }) {
+  if (r.kind === 'start') {
+    const roles = r.roleValues ? `; roles that open it: ${r.roleValues.join(', ')}` : r.roleValues === null ? '; the roles that open it could not be read' : '';
+    return [`  - ${r.screen}, the first screen, ${needsText(r.kinds)}${roles}`, ...linkInLines(screensById.get(r.screen).access.links, restricted).map((l) => `  ${l}`)];
+  }
+  if (r.kind === 'route') return [`  - ${r.screen} route at ${routesFile}:${r.line}, guard ${r.guards.map(guardText).join('; ')}`];
+  const way = (w) => `${place(w)}, guard ${w.conditions.map(guardText).join('; ')}`;
+  const head = `  - link ${r.from} → ${r.to}`;
+  return [
+    ...(r.ways.length === 1 ? [`${head} at ${way(r.ways[0])}`] : [`${head}, one of ${r.ways.length}:`, ...r.ways.map((w) => `    - at ${way(w)}`)]),
+    ...(r.unknownLinks ? [`    - judged without links to a path duru cannot read: ${unreadText(r.unknownLinks)}`] : []),
+  ];
+}
+
+function storyLines(story, marks, tests, mapInfo) {
+  const problems = reachProblems(story);
+  return [
+    '',
+    `## ${story.id}`,
+    '',
+    `- name: ${within(story.name, '  ')}`,
+    '- marks:',
+    ...marks.map((m) => markLine(m.current)),
+    `- story file: ${story.file} (${within(story.author, '  ')}, ${story.date.slice(0, 10)})`,
+    ...(story.memo ? [`- memo: ${within(story.memo, '  ')}`] : []),
+    `- status: ${STORY_STATUS[story.status]}`,
+    ...testLines(testsAt(tests.stories, story.id), 'story tests'),
+    '- screens:',
+    ...stepLines(story, tests),
+    `- reach: ${problems.length ? problems.join('; ') : 'reachable'}`,
+    ...(story.reach.length
+      ? ['- preconditions:', ...story.reach.flatMap((r) => preconditionLines(r, mapInfo))]
+      : [`- preconditions: ${problems.length ? 'none where links were found' : 'none'}`]),
+  ];
+}
+
 export function taskList(config) {
-  const { map, tests, marks, appLinks } = reviewData(config, null);
+  const { map, tests, marks, appLinks, stories } = reviewData(config, null);
   const open = marks.attached.filter((m) => OPEN.includes(m.current.status));
   const marked = (node) => open.some((m) => m.target.node === node.id);
   const screens = map.screens.filter(marked).sort((a, b) => a.id.localeCompare(b.id));
   const calls = map.calls.filter(marked);
+  const storyMarks = open.filter((m) => m.target.story !== undefined);
   const restricted = new Set(map.screens.filter((s) => s.access.restricted).map((s) => s.id));
+  const relative = (p) => path.relative(config.configDir, p).split(path.sep).join('/');
 
   const out = [
-    `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(open.length, 'open mark')}`,
+    `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}`,
     '',
-    `A reviewer marked these screens and API calls as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. A screen or call stays here until a reviewer marks it \`fine\`.`,
+    `A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
     '',
-    `Source files are under \`${path.relative(config.configDir, config.srcRoot).split(path.sep).join('/')}\`.`,
+    `Source files are under \`${relative(config.srcRoot)}\`.`,
   ];
   if (!open.length) out.push('', 'No open marks.');
   for (const s of screens) {
@@ -150,7 +230,7 @@ export function taskList(config) {
       `## ${s.id}`,
       '',
       '- marks:',
-      ...open.filter((m) => m.target.node === s.id).map((m) => markLine(m.current, 'whole screen')),
+      ...open.filter((m) => m.target.node === s.id).map((m) => markLine(m.current, cellText(m.target, 'whole screen'))),
       `- component: ${s.componentFile}, route at ${config.routesFile}:${s.line}`,
       ...(appLinks[s.id] ? [`- app: ${appLinks[s.id]}`] : []),
       ...accessLines(s.access, restricted),
@@ -166,12 +246,24 @@ export function taskList(config) {
       `## ${c.id}`,
       '',
       '- marks:',
-      ...marks.map((m) => markLine(m.current, 'whole call')),
+      ...marks.map((m) => markLine(m.current, cellText(m.target, 'whole call'))),
       `- called from: ${c.screens.length ? c.screens.join(', ') : 'no screen'}`,
       `- server: ${serverText(c.server)}`,
       ...markedOptionLines(c, marks, tests.nodes[c.id]),
       ...testLines(tests.nodes[c.id]),
     );
+  }
+  if (storyMarks.length) out.push('', '# Stories', '', `Story files are in \`${relative(config.storiesDir)}\`.`);
+  if (storyMarks.length && stories.stale) {
+    out.push('', 'The map was built by a duru older than stories, so these stories are not checked against it. Run `duru rebuild` and read this list again.');
+    for (const m of storyMarks) out.push('', `## ${m.target.story}`, '', '- marks:', markLine(m.current));
+  }
+  const mapInfo = { screensById: new Map(map.screens.map((s) => [s.id, s])), routesFile: config.routesFile, restricted };
+  for (const id of [...new Set(storyMarks.map((m) => m.target.story))]) {
+    const own = storyMarks.filter((m) => m.target.story === id);
+    const story = stories.list.find((s) => s.id === id);
+    if (story) out.push(...storyLines(story, own, tests, mapInfo));
+    else if (!stories.stale) out.push('', `## ${id}`, '', '- marks:', ...own.map((m) => markLine(m.current)), '- story file: could not be read; `duru rebuild` prints why');
   }
   return out.join('\n') + '\n';
 }

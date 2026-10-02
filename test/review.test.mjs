@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import { UNKNOWN } from '../src/client.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { chromium } from 'playwright-core';
-import { loadMarks } from '../src/marks.mjs';
+import { addMark, loadMarks } from '../src/marks.mjs';
 import { applyOverrides } from '../src/app-host.mjs';
 import { startReviewServer } from '../src/review.mjs';
 import { taskList } from '../src/tasks.mjs';
@@ -1040,12 +1040,13 @@ for (const host of ['127.0.0.1', 'localhost']) {
   });
 }
 
-test('a map.json built before links carried their conditions leaves the stories out with a message asking to rebuild apart from the story file notes, and the rest of the data and the task list still work', async () => {
+test('a map.json built before links carried their conditions leaves the stories out with a message asking to rebuild apart from the story file notes, keeps the marks on stories attached, and the rest of the data and the task list still work', async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, async (config) => {
     const mapFile = path.join(config.outDir, 'map.json');
     const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
     for (const s of map.screens) for (const l of s.links) delete l.conditions;
     fs.writeFileSync(mapFile, JSON.stringify(map));
+    addMark(config.marksDir, { target: { story: 'run-lab' }, status: 'missing', author: 'a' }, new Date('2026-10-03T01:00:00Z'));
     await withServer(config, 'reviewer', async (base) => {
       const res = await fetch(`${base}/api/data`);
       assert.equal(res.status, 200);
@@ -1055,9 +1056,38 @@ test('a map.json built before links carried their conditions leaves the stories 
       assert.ok(data.stories.stale.startsWith(`${mapFile} 은 `));
       assert.match(data.stories.stale, /duru rebuild 로 맵을 다시 만드세요$/);
       assert.equal(data.map.screens.length, map.screens.length);
+      assert.deepEqual([data.marks.attached.map((m) => m.key), data.marks.detached], [['story(run-lab)'], []]);
     });
-    assert.match(taskList(config), /^# Test tasks/);
+    const tasks = taskList(config);
+    assert.match(tasks, /^# Test tasks — 0 screens, 0 calls, 1 story, 1 open mark\n/);
+    assert.equal(tasks.slice(tasks.indexOf('\n# Stories\n')), [
+      '',
+      '# Stories',
+      '',
+      'Story files are in `example-stories`.',
+      '',
+      'The map was built by a duru older than stories, so these stories are not checked against it. Run `duru rebuild` and read this list again.',
+      '',
+      '## run-lab',
+      '',
+      '- marks:',
+      '  - missing (a, 2026-10-03)',
+      '',
+    ].join('\n'));
   });
+});
+
+test('a mark on a story is saved through the page, and one on a story ID outside the ID rule is refused', async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postMark(base, { target: { story: 'run-lab' }, status: 'missing', note: 'walk it' })).status, 201);
+      const refused = await postMark(base, { target: { story: '../run-lab' }, status: 'missing' });
+      assert.equal(refused.status, 400);
+      assert.equal((await postMark(base, { target: { story: 'run-lab', depth: 'ui' }, status: 'missing' })).status, 400);
+      const data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.marks.attached.map((m) => [m.key, m.target, m.current.note, m.current.author]), [['story(run-lab)', { story: 'run-lab' }, 'walk it', 'reviewer']]);
+    }),
+  );
 });
 
 test('in a browser, a map.json built before links carried their conditions shows the request to rebuild instead of the empty story list, and does not count it as an unreadable story file', { skip: browserMissing }, async () => {
@@ -1189,6 +1219,138 @@ test('in a browser, the story list shows only the statuses that need a look, fil
         assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['테스트 없음']);
         assert.equal(await p.textContent('#center .story-tests h2'), '스토리 테스트 0');
         assert.deepEqual(await stepTests(), [['화면 테스트 없음']]);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a chosen story takes marks that are saved as files and kept as its history, and once its story file is gone the mark shows as detached under the stories', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '표시 — 스토리']);
+        assert.equal(await p.isDisabled('#right button.save'), true);
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.fill('#right textarea', 'no test walks the lab');
+        await p.click('#right button.save');
+        await p.waitForSelector('#right .history li:has-text("no test walks the lab")');
+        await p.click('#right .statuses button:has-text("더 필요")');
+        await p.fill('#right textarea', 'the story test fails');
+        await p.click('#right button.save');
+        await p.waitForSelector('#right .history li:has-text("the story test fails")');
+        assert.deepEqual(await p.locator('#right .history li .chip').allTextContents(), ['더 필요', '없음']);
+        assert.equal(await p.textContent('#story-list li.selected .chip.needs-more'), '더 필요');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note, m.author]).sort((a, b) => a[1].localeCompare(b[1])), [
+          [{ story: 'run-lab' }, 'missing', 'no test walks the lab', 'reviewer'],
+          [{ story: 'run-lab' }, 'needs-more', 'the story test fails', 'reviewer'],
+        ]);
+        assert.equal(fs.readdirSync(path.join(config.marksDir, 'stories', 'run-lab')).length, 2);
+
+        await p.click('#story-list li:has-text("보고서")');
+        assert.equal(await p.locator('#right .history li').count(), 0);
+        assert.equal(await p.locator('#right .statuses button.on').count(), 0);
+        await p.click('#left .views.side button:has-text("화면")');
+        assert.match(await p.textContent('#right h2'), /^표시 — 화면 전체$/);
+        assert.equal(await p.locator('#right .history li').count(), 0);
+        assert.match(await p.textContent('#left'), /떨어져 나감 0/);
+
+        fs.rmSync(path.join(config.storiesDir, 'run-lab.json'));
+        await p.reload();
+        await p.waitForSelector('#screen-list li');
+        assert.match(await p.textContent('#left'), /떨어져 나감 0/);
+        await p.click('#left .views.side button:has-text("스토리")');
+        assert.equal(await p.locator('#story-list li:has-text("실험실을 열어")').count(), 0);
+        assert.match(await p.textContent('#left'), /떨어져 나감 1/);
+        const detached = p.locator('#left .detached li');
+        assert.equal(await detached.count(), 1);
+        assert.equal(await detached.locator('.chip').textContent(), '더 필요');
+        assert.equal(await detached.locator('code').textContent(), 'run-lab');
+        assert.match(await detached.textContent(), /reviewer · .*the story test fails/);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a failed save stays with the form that tried it and is gone after choosing another story or switching tabs', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, null, (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.deepEqual(await p.locator('#right h2:last-of-type + p.error').allTextContents(), ['작성자 이름을 위쪽에 적어 주세요. git user.name 이 설정되지 않았습니다.']);
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        assert.match(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        await p.click('#story-list li:has-text("보고서")');
+        assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        await p.click('#left .views.side button:has-text("화면")');
+        assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        assert.match(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        await p.click('#center .story-path .step:has-text("/lab/result")');
+        assert.equal(await p.textContent('#center h3'), '/lab/result');
+        assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a mark on a story whose file is there but cannot be read shows on the stories tab and can be marked again', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, async (config) => {
+    fs.writeFileSync(path.join(config.storiesDir, 'run-lab.json'), '{');
+    addMark(config.marksDir, { target: { story: 'run-lab' }, status: 'missing', note: 'walk it', author: 'a' }, new Date('2026-09-30T01:00:00Z'));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        assert.match(await p.textContent('#left'), /떨어져 나감 0/);
+        const unread = p.locator('#left .unread-marks li');
+        assert.equal(await unread.count(), 1);
+        assert.equal(await unread.locator('.chip').textContent(), '없음');
+        assert.equal(await unread.locator('code').textContent(), 'run-lab');
+        await unread.click();
+        assert.equal(await p.textContent('#center h3'), 'run-lab');
+        assert.equal(await p.textContent('#right h2'), '표시 — 스토리');
+        assert.match(await p.textContent('#right .history'), /walk it/);
+        await p.click('#right .statuses button:has-text("충분")');
+        await p.click('#right button.save');
+        await p.waitForSelector('#right .history li:nth-child(2)');
+        assert.equal(await p.textContent('#right .history li:first-child .chip'), '충분');
+        assert.equal(await p.textContent('#left .unread-marks li .chip'), '충분');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]).sort((a, b) => a[1].localeCompare(b[1])), [
+          [{ story: 'run-lab' }, 'fine'], [{ story: 'run-lab' }, 'missing'],
+        ]);
+      }),
+    );
+  });
+});
+
+test('in a browser, a failed save does not follow the reviewer to another screen or another cell', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, null, (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const failSave = async () => {
+          await p.click('#right .statuses button:has-text("없음")');
+          await p.click('#right button.save');
+          assert.match(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        };
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await failSave();
+        await p.click('#center tr:has-text("API")');
+        assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        await failSave();
+        await p.click('#screen-list li:has-text("/lab/result")');
+        assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
       }),
     ),
   );

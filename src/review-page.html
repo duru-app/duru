@@ -210,7 +210,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set() };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -232,7 +232,7 @@ function fill(el, ...children) {
   el.replaceChildren(...children.flat().filter((c) => c != null && c !== false));
 }
 
-const keyOf = (t) => [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth].filter(Boolean).join(' ');
+const keyOf = (t) => (t.story !== undefined ? `story(${t.story})` : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth].filter(Boolean).join(' '));
 const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
 const ownTests = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
 const testsOf = (id) => ownTests(state.data.tests.nodes, id);
@@ -259,7 +259,10 @@ async function load() {
     state.draft = null;
   }
   const stories = state.data.stories.list;
-  if (!stories.some((st) => st.id === state.story)) state.story = stories[0]?.id ?? null;
+  if (!stories.some((st) => st.id === state.story) && !unlistedMarks().some((m) => m.target.story === state.story)) {
+    state.story = stories[0]?.id ?? null;
+    state.storyDraft = null;
+  }
 }
 
 function select(id) {
@@ -269,16 +272,20 @@ function select(id) {
   state.selected = id;
   state.target = { node: id };
   state.draft = null;
+  state.error = null;
   render();
 }
 
 function selectStory(id) {
   state.story = id;
+  state.storyDraft = null;
+  state.error = null;
   render();
 }
 
 function setSide(side) {
   state.side = side;
+  state.error = null;
   render();
 }
 
@@ -290,6 +297,7 @@ function openScreen(id) {
 function selectTarget(t) {
   state.target = t;
   state.draft = null;
+  state.error = null;
   render();
 }
 
@@ -331,14 +339,20 @@ function renderLeft() {
       } }), f.label)),
     ),
     h('ul', { class: 'screens', id: 'screen-list' }),
-    h('h2', {}, `떨어져 나감 ${marks.detached.length}`),
-    marks.detached.length
-      ? h('ul', { class: 'plain' }, marks.detached.map((m) => h('li', {},
-          markChip(m), ' ', h('code', {}, m.key), h('br'),
-          h('span', { class: 'muted' }, `${m.current.author} · ${fmtDate(m.current.date)}`), m.current.note ? h('div', {}, m.current.note) : null)))
-      : h('p', { class: 'muted' }, '맵에서 사라진 노드에 달린 표시가 여기 남습니다.'),
+    markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined), (m) => m.key, h('p', { class: 'muted' }, '맵에서 사라진 노드에 달린 표시가 여기 남습니다.')),
   );
   renderLeftList();
+}
+
+function markList(title, cls, marks, label, empty, pick = null) {
+  return [
+    h('h2', {}, `${title} ${marks.length}`),
+    marks.length
+      ? h('ul', { class: `plain ${cls}` }, marks.map((m) => h('li', pick ? { class: label(m) === state.story ? 'selected' : '', onclick: () => pick(label(m)) } : {},
+          markChip(m), ' ', h('code', {}, label(m)), h('br'),
+          h('span', { class: 'muted' }, `${m.current.author} · ${fmtDate(m.current.date)}`), m.current.note ? h('div', {}, m.current.note) : null)))
+      : empty,
+  ];
 }
 
 function renderLeftList() {
@@ -357,6 +371,7 @@ function renderLeftList() {
 
 const LINK_VERDICT = { open: '이어짐', conditioned: '조건', broken: '링크 없음', 'off-map': '판정 못 함', unknown: '판정 못 함' };
 const storyOf = () => state.data.stories.list.find((st) => st.id === state.story);
+const unlistedMarks = () => state.data.marks.attached.filter((m) => m.target.story !== undefined && !state.data.stories.list.some((st) => st.id === m.target.story));
 const screenOf = (id) => state.data.map.screens.find((s) => s.id === id);
 const screenLabel = (id) => screenOf(id)?.path ?? id;
 const statusChip = (st) => h('span', { class: `chip ${st.status}`, title: STORY_STATUS[st.status].title }, STORY_STATUS[st.status].label);
@@ -387,6 +402,7 @@ function storyItems() {
       ? visible.map((st) => h('li', { class: st.id === state.story ? 'selected' : '', onclick: () => selectStory(st.id) },
           h('span', { class: 'name' }, h('span', {}, st.name), h('div', { class: 'muted mono' }, st.id),
             h('div', { class: 'chips' }, st.status === 'pass' ? null : statusChip(st), storyChips(st))),
+          markChip(markOf({ story: st.id })),
           h('span', { class: 'count' }, `화면 ${st.steps.length}`)))
       : h('li', { class: 'muted' }, '해당하는 스토리가 없습니다.')),
   ];
@@ -400,10 +416,16 @@ function storyList() {
       : list.length
       ? storyItems()
       : [h('p', { class: 'muted' }, '스토리 파일이 없습니다. 스토리 하나를 파일 하나로 ', h('code', {}, state.data.storiesDir), ' 에 둡니다.')]),
+    ...markList('떨어져 나감', 'detached', state.data.marks.detached.filter((m) => m.target.story !== undefined), (m) => m.target.story,
+      h('p', { class: 'muted', title: '스토리 파일이 사라진 스토리에 남긴 표시' }, '없음')),
     h('h2', {}, `읽지 못한 스토리 파일 ${notices.length}`),
     notices.length
       ? h('ul', { class: 'plain notices' }, notices.map((n) => h('li', {}, h('code', {}, n.file), h('div', { class: 'error' }, n.reason))))
       : h('p', { class: 'muted' }, '형식이 틀렸거나 ID 가 겹쳐 건너뛴 파일이 여기 남습니다.'),
+    unlistedMarks().length
+      ? h('div', { title: '파일을 읽지 못했거나 맵이 오래되어 목록에 없는 스토리에 남은 표시' },
+          markList('목록 밖 스토리 표시', 'unread-marks', unlistedMarks(), (m) => m.target.story, null, selectStory))
+      : null,
   ];
 }
 
@@ -808,6 +830,7 @@ function renderStoryCenter() {
   fill(head);
   const center = document.getElementById('center-body');
   const st = storyOf();
+  if (!st && state.story) return fill(center, h('h3', {}, state.story), h('p', { class: 'muted', title: '스토리 파일을 읽지 못했거나 맵이 오래되어 경로를 맞춰 보지 못했습니다' }, '경로 판정 없음'));
   if (!st) return fill(center, h('p', { class: 'muted' }, '스토리가 없습니다.'));
   const storyTests = ownTests(state.data.tests.stories, st.id);
   fill(center,
@@ -850,7 +873,7 @@ function storyProblems(st) {
 function renderStoryRight() {
   const right = document.getElementById('right');
   const st = storyOf();
-  if (!st) return fill(right);
+  if (!st) return fill(right, state.story ? markForm({ story: state.story }, 'storyDraft', '스토리') : null);
   const problems = storyProblems(st);
   fill(right,
     (problems.length ? problems : [['reachable', '도달 가능']]).map(([cls, text]) => h('p', { class: `verdict ${cls}` }, text)),
@@ -858,7 +881,8 @@ function renderStoryRight() {
     h('h2', {}, '사전 조건'),
     st.reach.length
       ? h('ul', { class: 'plain reach' }, st.reach.map((r) => h('li', { class: `reach-${r.kind}` }, reachItem(r))))
-      : h('p', { class: 'muted' }, problems.length ? '판정한 구간에 조건 없음' : '조건 없음'));
+      : h('p', { class: 'muted' }, problems.length ? '판정한 구간에 조건 없음' : '조건 없음'),
+    markForm({ story: st.id }, 'storyDraft', '스토리'));
 }
 
 function renderCenter() {
@@ -987,26 +1011,32 @@ function renderRight() {
   const right = document.getElementById('right');
   const s = state.data.map.screens.find((x) => x.id === state.selected);
   if (!s) return fill(right);
-  const mark = markOf(state.target);
   const call = state.target.node === s.id ? null : callOf(state.target.node);
-  state.draft ??= { status: mark?.current.status ?? null, note: '' };
   const { option, depth } = state.target;
   const targetLabel = [option && optionLabel(option), depth && `${DEPTH_LABELS[depth]} 깊이`].filter(Boolean).join(' · ') || (call ? '호출 전체' : '화면 전체');
-  const needsName = !state.data.author;
   fill(right,
-    h('h2', {}, '표시 — ', targetLabel),
-    call ? h('div', { class: 'mono' }, call.id) : null,
-    h('div', { class: 'statuses' }, Object.entries(MARK_STATUS).map(([k, label]) =>
-      h('button', { class: state.draft.status === k ? 'on' : '', onclick: () => { state.draft.status = k; renderRight(); } }, label))),
-    h('textarea', { placeholder: '메모', oninput: (e) => { state.draft.note = e.target.value; } }, state.draft.note),
-    h('button', { class: 'save', disabled: !state.draft.status, onclick: saveMark }, '표시 남기기'),
+    markForm(state.target, 'draft', targetLabel, call ? h('div', { class: 'mono' }, call.id) : null),
+    call ? callDetails(call, s) : screenDetails(s),
+  );
+}
+
+function markForm(target, draftKey, label, sub = null) {
+  const mark = markOf(target);
+  state[draftKey] ??= { status: mark?.current.status ?? null, note: '' };
+  const draft = state[draftKey];
+  return [
+    h('h2', {}, '표시 — ', label),
+    !state.data.author && !authorStore.get() ? h('p', { class: 'error' }, '작성자 이름을 위쪽에 적어 주세요. git user.name 이 설정되지 않았습니다.') : null,
+    sub,
+    h('div', { class: 'statuses' }, Object.entries(MARK_STATUS).map(([k, text]) =>
+      h('button', { class: draft.status === k ? 'on' : '', onclick: () => { draft.status = k; renderRight(); } }, text))),
+    h('textarea', { placeholder: '메모', oninput: (e) => { draft.note = e.target.value; } }, draft.note),
+    h('button', { class: 'save', disabled: !draft.status, onclick: () => saveMark(target, draftKey) }, '표시 남기기'),
     state.error ? h('p', { class: 'error' }, state.error) : null,
     mark ? h('ul', { class: 'plain history' }, mark.history.map((m) => h('li', {},
       h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]), ' ', h('span', { class: 'muted' }, `${m.author} · ${fmtDate(m.date)}`),
       m.note ? h('div', {}, m.note) : null))) : null,
-    call ? callDetails(call, s) : screenDetails(s),
-  );
-  if (needsName && !authorStore.get()) right.prepend(h('p', { class: 'error' }, '작성자 이름을 위쪽에 적어 주세요. git user.name 이 설정되지 않았습니다.'));
+  ];
 }
 
 function callDetails(call, s) {
@@ -1071,7 +1101,7 @@ function screenDetails(s) {
   ];
 }
 
-async function saveMark() {
+async function saveMark(target, draftKey) {
   const author = state.data.author ?? authorStore.get();
   state.error = null;
   if (!author.trim()) {
@@ -1082,14 +1112,14 @@ async function saveMark() {
     const res = await fetch('/api/marks', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ target: state.target, status: state.draft.status, note: state.draft.note, author }),
+      body: JSON.stringify({ target, status: state[draftKey].status, note: state[draftKey].note, author }),
     });
     if (!res.ok) throw new Error(await res.text());
   } catch (err) {
     state.error = `저장하지 못했습니다: ${err.message}`;
     return renderRight();
   }
-  state.draft = null;
+  state[draftKey] = null;
   try {
     await load();
   } catch (err) {
@@ -1366,9 +1396,10 @@ function render() {
   renderRight();
 }
 
+const unsaved = (target, d) => !!d && (d.status !== (markOf(target)?.current.status ?? null) || d.note.trim() !== '');
+
 function hasUnsavedMark() {
-  const d = state.draft;
-  return !!d && (d.status !== (markOf(state.target)?.current.status ?? null) || d.note.trim() !== '');
+  return unsaved(state.target, state.draft) || unsaved({ story: state.story }, state.storyDraft);
 }
 
 function showEnded(message) {

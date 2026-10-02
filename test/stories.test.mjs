@@ -223,16 +223,25 @@ test('when two screens have no link between them and every link of the first has
   assert.equal(story.unjudged, false);
 });
 
-test('a map built before links carried their conditions checks no story and says to rebuild apart from the story file notes, unless there is no story to check', () => {
+test('a map built before links carried their conditions checks no story and says to rebuild apart from the story file notes, still naming the stories read, unless there is no story to check', () => {
   const old = { screens: map.screens.map((s) => ({ ...s, links: s.links.map(({ conditions, ...l }) => l) })) };
   withStoriesDir({ 'ok.json': STORY, 'bad.json': '{' }, (dir) => {
-    const { list, notices, stale } = checkStoryFiles(old, dir, 'out/map.json');
-    assert.deepEqual(list, []);
+    const { ids, list, notices, stale } = checkStoryFiles(old, dir, 'out/map.json');
+    assert.deepEqual([ids, list], [['bad', 'ok'], []]);
     assert.deepEqual(notices.map((n) => n.file), ['bad.json']);
     assert.match(stale, /^out\/map\.json 은 .* duru rebuild 로 맵을 다시 만드세요$/);
   });
-  assert.deepEqual(checkStoryFiles(old, path.join(os.tmpdir(), 'duru-no-such-folder'), 'out/map.json'), { list: [], notices: [], unknownTags: [] });
+  assert.deepEqual(checkStoryFiles(old, path.join(os.tmpdir(), 'duru-no-such-folder'), 'out/map.json'), { ids: [], list: [], notices: [], unknownTags: [] });
   assert.equal(checkStoryFiles(map, EXAMPLES, 'out/map.json').stale, undefined);
+});
+
+test('the story IDs named are those of every story file in the folder, read or not, and not of files whose name breaks the ID rule', () => {
+  withStoriesDir({ 'ok.json': STORY, 'broken.json': '{', 'no-name.json': { ...STORY, name: '' }, 'sub/ok.json': STORY, 'Bad Name.json': STORY }, (dir) => {
+    const { ids, list, notices } = checkStoryFiles(map, dir, 'out/map.json');
+    assert.deepEqual(list.map((s) => s.id), ['ok']);
+    assert.deepEqual(notices.map((n) => n.file), ['Bad Name.json', 'broken.json', 'no-name.json', 'sub/ok.json']);
+    assert.deepEqual(ids, ['broken', 'no-name', 'ok']);
+  });
 });
 
 test('the map carries every link with all of its conditions, and no redirects', () => {

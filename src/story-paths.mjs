@@ -1,6 +1,7 @@
 import { linkTargets, unreadableTarget } from './access.mjs';
 import { compare } from './config.mjs';
-import { loadStories } from './stories.mjs';
+import path from 'node:path';
+import { loadStories, STORY_ID } from './stories.mjs';
 
 const byPlace = (a, b) => compare(a.file, b.file) || a.line - b.line;
 
@@ -56,7 +57,7 @@ export function checkStories(map, stories) {
 
 const NO_TESTS = { nodes: {}, stories: {} };
 // 스토리 파일에 적힌 ID 가 constructor 같은 이름이어도 Object 의 기본 속성을 읽지 않게 자기 키만 본다.
-const testsAt = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
+export const testsAt = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
 
 function statusOf(story, tests) {
   const own = testsAt(tests.stories, story.id);
@@ -77,11 +78,17 @@ function unknownStoryTags(stories, tests) {
   });
 }
 
+function idsInFolder(stories, notices) {
+  const unread = notices.filter((n) => n.file.endsWith('.json')).map((n) => path.basename(n.file, '.json')).filter((id) => STORY_ID.test(id));
+  return [...new Set([...stories.map((s) => s.id), ...unread])].sort(compare);
+}
+
 export function checkStoryFiles(map, dir, mapFile, tests = NO_TESTS) {
   const { stories, notices } = loadStories(dir);
   const unknownTags = unknownStoryTags(stories, tests);
+  const ids = idsInFolder(stories, notices);
   if (stories.length && map.screens.some((s) => s.links.some((l) => !Array.isArray(l.conditions)))) {
-    return { list: [], notices, unknownTags, stale: `${mapFile} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 스토리를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요` };
+    return { ids, list: [], notices, unknownTags, stale: `${mapFile} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 스토리를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요` };
   }
-  return { list: checkStories(map, stories).map((s) => ({ ...s, status: statusOf(s, tests) })), notices, unknownTags };
+  return { ids, list: checkStories(map, stories).map((s) => ({ ...s, status: statusOf(s, tests) })), notices, unknownTags };
 }

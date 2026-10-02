@@ -11,12 +11,12 @@ import { reviewData } from '../src/review.mjs';
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
 
-function withFixtureCopy(fn) {
+function withFixtureCopy(fn, configPatch = {}) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const configFile = path.join(copy, 'config.json');
-    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), marksDir: 'example-marks' }));
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), marksDir: 'example-marks', ...configPatch }));
     const cli = (...args) => execFileSync(process.execPath, [CLI, ...args, configFile], { encoding: 'utf8' });
     return fn({ copy, configFile, cli });
   } finally {
@@ -24,9 +24,9 @@ function withFixtureCopy(fn) {
   }
 }
 
-const EXPECTED = `# Test tasks — 4 screens, 1 call, 5 open marks
+const EXPECTED = `# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks
 
-A reviewer marked these screens and API calls as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. A screen or call stays here until a reviewer marks it \`fine\`.
+A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. A screen, call or story stays here until a reviewer marks it \`fine\`.
 
 Source files are under \`client/src\`.
 
@@ -104,6 +104,143 @@ test('the task list holds the needs-more and missing marks of the fake client, l
   });
 });
 
+const HOME_TESTS = 'tests: ui pass 2, api pass 1, api pending 1, render fail 1, code pass 1, data fail 1';
+
+const EXPECTED_STORIES = `
+# Stories
+
+Story files are in \`example-stories\`.
+
+## change-settings
+
+- name: 홈에서 개인 설정을 바꾼다
+- marks:
+  - needs-more — "The settings screen may have been renamed." (reviewer, 2026-10-03)
+- story file: change-settings.json (Kim Min, 2026-09-30)
+- memo: 개인 설정 화면은 이름이 바뀌었을 수 있다.
+- status: partial — no story test, and a screen on the path has tests
+- story tests: none
+- screens:
+  1. /home#Home — ${HOME_TESTS}
+     - to /settings#Settings: not judged, a screen is not on the map
+  2. /settings#Settings — not on the map
+- reach: not judged, a screen is not on the map
+- preconditions: none where links were found
+
+## help-from-home
+
+- name: 홈에서 바로 도움말을 연다
+- marks:
+  - missing — "Home has no help link; check the way through the document page." (reviewer, 2026-10-03)
+- story file: help-from-home.json (reviewer, 2026-10-02)
+- memo: 홈에는 도움말 링크가 없다.
+- status: pending — no story test fails and one is pending
+- story tests:
+  - code pending — goes from home to help @story:help-from-home — /work/app/src/home/home.test.js:19
+- screens:
+  1. /signin#SignIn — tests: ui pass 1, code pass 1
+     - to /home#Home: open at components/SignIn.js:12
+  2. /home#Home — ${HOME_TESTS}
+     - to /help#Help: no link
+  3. /help#Help — tests: ui pass 1, api fail 1, code pending 1
+- reach: unreachable, no link at 1 step
+- preconditions: none where links were found
+
+## run-lab
+
+- name: 실험실을 열어 결과를 본다
+- marks:
+  - needs-more — "The story test fails before the result page; add a UI test that walks it." (Kim Min, 2026-10-03)
+- story file: run-lab.json (Kim Min, 2026-10-01)
+- memo: 실험실은 고객사 설정에서 켜야 보인다.
+- status: fail — a story test fails
+- story tests:
+  - api fail — Lab flow › runs the lab and reads the result @story:run-lab — com.example.lab.LabFlowTest
+  - api pass — lab result — document-checks.log:13 — the last run shows on the result page
+- screens:
+  1. /home#Home — ${HOME_TESTS}
+     - to /lab#Lab: conditioned at components/Home.js:19
+  2. /lab#Lab — tests: ui pending 1, code pending 1
+     - to /lab/result#LabResult: open at components/Lab.js:14
+  3. /lab/result#LabResult — no tests
+- reach: reachable
+- preconditions:
+  - link /home#Home → /lab#Lab at components/Home.js:19, guard \`globalSettings.SYSTEM.LAB_ENABLED\` (setting)
+  - /lab#Lab route at Routes.js:44, guard \`globalSettings.SYSTEM.LAB_ENABLED\` (setting)
+`;
+
+test('the task list carries the stories whose current mark is needs-more or missing as a group of their own, leaving out stories marked fine, stories with no mark however untested, and marks whose story file is gone', () => {
+  withFixtureCopy(({ cli }) => {
+    cli('rebuild');
+    const tasks = cli('tasks');
+    assert.match(tasks, /^# Test tasks — 4 screens, 1 call, 3 stories, 8 open marks\n/);
+    assert.equal(tasks.slice(0, tasks.indexOf('\n# Stories\n')), EXPECTED.replace('0 stories, 5 open marks', '3 stories, 8 open marks'));
+    assert.equal(tasks.slice(tasks.indexOf('\n# Stories\n')), EXPECTED_STORIES);
+  }, { storiesDir: 'example-stories' });
+});
+
+test('a marked story whose first screen opens only under a setting or a role lists what it needs, the roles that open it and each link into it', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    addMark(loadConfig(configFile).marksDir, { target: { story: 'read-reports' }, status: 'missing', note: 'Line one.\nLine two.', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
+    const story = cli('tasks').split('\n## read-reports\n')[1].split('\n## ')[0];
+    const guards = "guard `globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'` (setting); `['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1` (role); `MENUS.ADMIN` (setting)";
+    assert.equal(story, [
+      '',
+      '- name: 관리자가 보고서를 본다',
+      '- marks:',
+      '  - missing — "Line one.',
+      '    Line two." (a, 2026-10-03)',
+      '- story file: read-reports.json (reviewer, 2026-10-03)',
+      '- status: untested — no story test, and no screen on the path has a test',
+      '- story tests: none',
+      '- screens:',
+      '  1. /admin/report#AdminReport — no tests',
+      '- reach: reachable',
+      '- preconditions:',
+      '  - /admin/report#AdminReport, the first screen, needs a role and a setting; roles that open it: ADMIN, OWNER',
+      `    - link from /document/:id#DocumentDetail at components/SideMenu.js:11, ${guards}`,
+      `    - link from /document/:tab_draft_done_#DocumentList at components/SideMenu.js:11, ${guards}`,
+      `    - link from /home#Home at components/SideMenu.js:11, ${guards}`,
+      '',
+    ].join('\n'));
+  }, { storiesDir: 'example-stories' });
+});
+
+test('a marked story whose file is still in the folder but cannot be read keeps its marks in the task list, under a note that the file could not be read', () => {
+  withFixtureCopy(({ copy, cli }) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/run-lab.json'), '{');
+    cli('rebuild');
+    const tasks = cli('tasks');
+    assert.match(tasks, /^# Test tasks — 4 screens, 1 call, 3 stories, 8 open marks\n/);
+    assert.equal(tasks.split('\n## run-lab\n')[1], [
+      '',
+      '- marks:',
+      '  - needs-more — "The story test fails before the result page; add a UI test that walks it." (Kim Min, 2026-10-03)',
+      '- story file: could not be read; `duru rebuild` prints why',
+      '',
+    ].join('\n'));
+  }, { storiesDir: 'example-stories' });
+});
+
+test('a story name, author or screen over several lines stays inside its item, whatever the line ending', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/read-reports.json'), JSON.stringify({
+      name: 'Read reports\r## /fake#Fake',
+      screens: ['/admin/report#AdminReport', 'gone\n## /step#Step'],
+      author: 'b\r\n## /forged#Forged',
+      date: '2026-10-03',
+    }));
+    cli('rebuild');
+    addMark(loadConfig(configFile).marksDir, { target: { story: 'read-reports' }, status: 'missing', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
+    const tasks = cli('tasks');
+    assert.doesNotMatch(tasks, /^## \/(fake|forged|step)/m);
+    assert.match(tasks, /^- name: Read reports\n {2}## \/fake#Fake\n/m);
+    assert.match(tasks, /^- story file: read-reports\.json \(b\n {2}## \/forged#Forged, 2026-10-03\)$/m);
+    assert.match(tasks, /^ {5}- to gone\n {7}## \/step#Step: not judged, a screen is not on the map\n {2}2\. gone\n {5}## \/step#Step — not on the map$/m);
+  }, { storiesDir: 'example-stories' });
+});
+
 test('a tagged Playwright test added for a listed screen shows on the page and in the task list after a rebuild', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     fs.writeFileSync(
@@ -142,7 +279,7 @@ test('with no open marks the task list says so', () => {
   withFixtureCopy(({ copy, cli }) => {
     fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
     cli('rebuild');
-    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 open marks\n[\s\S]*\nNo open marks\.\n$/);
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks\.\n$/);
   });
 });
 
@@ -347,7 +484,7 @@ test('a mark on an option value of a call is listed with the option key, value a
     addMark(marksDir, { target: { node: 'POST:/api/v1/report/schedule', option: { key: 'weekly', value: true } }, status: 'missing', author: 'a' }, at);
 
     const tasks = cli('tasks');
-    assert.match(tasks, /^# Test tasks — 4 screens, 3 calls, 8 open marks$/m);
+    assert.match(tasks, /^# Test tasks — 4 screens, 3 calls, 0 stories, 8 open marks$/m);
     const section = (id) => tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0];
     assert.equal(
       section('POST:/api/v1/report/export'),
@@ -409,7 +546,7 @@ test('an API call with an open mark is listed once under API calls with its scre
     addMark(marksDir, { target: { node: 'GET:/api/v1/member/list' }, status: 'fine', author: 'a' }, new Date('2026-10-01T06:00:00Z'));
 
     const tasks = cli('tasks');
-    assert.match(tasks, /^# Test tasks — 4 screens, 3 calls, 7 open marks$/m);
+    assert.match(tasks, /^# Test tasks — 4 screens, 3 calls, 0 stories, 7 open marks$/m);
     assert.equal(
       tasks.slice(tasks.indexOf('\n# API calls\n')),
       [
