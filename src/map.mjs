@@ -1,6 +1,7 @@
 import { extractClient, UNKNOWN } from './client.mjs';
 import { clientPath, loadServerEndpoints, matchEndpoint } from './server.mjs';
 import { screenAccess } from './access.mjs';
+import { compare } from './config.mjs';
 
 // JUnit 태그에 쓸 수 없는 문자. 이 문자만 없으면 Playwright · Vitest 제목에서도 그대로 태그로 쓸 수 있다.
 const TAG_FORBIDDEN = /[\s,()&|!]+/g;
@@ -16,7 +17,6 @@ function callOf(e, apiPathPrefix) {
   return { id: `${method}:${p}`.replace(TAG_FORBIDDEN, '_'), method, path: p };
 }
 
-const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const bySite = (a, b) => compare(a.screen, b.screen) || compare(a.file, b.file) || a.line - b.line;
 const OPTION_SOURCES = ['source', 'config'];
 
@@ -87,8 +87,11 @@ export async function buildMap(config) {
     ...s,
     apiCalls: s.apiCalls.map((c) => ({ ...c, endpoints: apiFunctions[c.fn]?.endpoints ?? null })),
   }));
-  const { access, entries, unknownEntryPaths } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
-  mapped.forEach((s, i) => (s.access = access[i]));
+  const { access, entries, unknownEntryPaths, linkConditions } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
+  mapped.forEach((s, i) => {
+    s.access = access[i];
+    s.links = s.links.map((l, j) => ({ ...l, conditions: linkConditions[i][j] }));
+  });
 
   const linesById = new Map();
   for (const s of mapped) linesById.set(s.id, [...(linesById.get(s.id) ?? []), s.line]);

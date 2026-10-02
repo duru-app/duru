@@ -137,6 +137,25 @@
   .flowbar { position: sticky; top: -16px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -16px -16px 10px; padding: 12px 16px 8px; background: var(--bg); border-bottom: 1px solid var(--line); }
   .flowbar button { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
   .flowbar .focusing { margin-left: 8px; font-size: 12px; }
+  .views.side { margin-bottom: 10px; }
+  .views.side button { flex: 1; }
+  .chip.l-open { color: var(--pass); } .chip.l-conditioned { color: var(--accent); } .chip.l-broken { color: var(--fail); } .chip.l-off-map, .chip.l-unknown { color: var(--more); }
+  .story-path { margin-top: 8px; }
+  .story-path .step { display: flex; gap: 10px; align-items: baseline; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+  .story-path .step.on-map { cursor: pointer; }
+  .story-path .step.on-map:hover { border-color: var(--accent); }
+  .story-path .step.off-map { border-style: dashed; border-color: var(--more); }
+  .story-path .step .no { flex: none; width: 1.6em; font-weight: 600; color: var(--muted); }
+  .story-path .step .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .story-path .link { margin: 0 0 0 18px; padding: 6px 0 6px 18px; border-left: 2px solid var(--line); font-size: 13px; }
+  .story-path .link.l-conditioned { border-left: 2px dashed var(--accent); }
+  .story-path .link.l-broken { border-left: 2px dotted var(--fail); }
+  .story-path .link.l-off-map, .story-path .link.l-unknown { border-left: 2px dotted var(--more); }
+  .verdict { margin: 2px 0; } .verdict.unreachable { color: var(--fail); } .verdict.reachable { color: var(--pass); } .verdict.unjudged { color: var(--more); }
+  .ways li { margin: 4px 0 0; }
+  .memo { white-space: pre-wrap; }
+  .reach > li { margin-bottom: 12px; overflow-wrap: anywhere; }
+  .reach h3 { font-size: 13px; margin: 0 0 4px; }
   .box .toggle { flex: none; width: 20px; height: 16px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 14px; font-weight: normal; line-height: 1; cursor: pointer; }
 </style>
 </head>
@@ -171,7 +190,7 @@ const SCREEN_FILTERS = [
   { key: 'mixed', label: MIXED_KINDS, keep: (s) => s.access.restricted && !s.access.kinds.length },
 ];
 
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'list', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -218,6 +237,8 @@ async function load() {
     state.target = screen ? { node: screen.id } : null;
     state.draft = null;
   }
+  const stories = state.data.stories.list;
+  if (!stories.some((st) => st.id === state.story)) state.story = stories[0]?.id ?? null;
 }
 
 function select(id) {
@@ -228,6 +249,21 @@ function select(id) {
   state.target = { node: id };
   state.draft = null;
   render();
+}
+
+function selectStory(id) {
+  state.story = id;
+  render();
+}
+
+function setSide(side) {
+  state.side = side;
+  render();
+}
+
+function openScreen(id) {
+  state.side = 'screens';
+  select(id);
 }
 
 function selectTarget(t) {
@@ -259,9 +295,13 @@ function visibleScreens() {
 }
 
 function renderLeft() {
-  const { marks } = state.data;
+  const { marks, map, stories } = state.data;
   const left = document.getElementById('left');
+  const side = (key, label) => h('button', { class: state.side === key ? 'on' : '', onclick: () => setSide(key) }, label);
+  const tabs = h('div', { class: 'views side' }, side('screens', `화면 ${map.screens.length}`), side('stories', `스토리 ${stories.list.length}`));
+  if (state.side === 'stories') return fill(left, tabs, storyList());
   fill(left,
+    tabs,
     h('div', { class: 'filters' },
       h('input', { type: 'search', placeholder: '화면 찾기', value: state.query, oninput: (e) => { state.query = e.target.value; renderLeftList(); } }),
       SCREEN_FILTERS.map((f) => h('label', {}, h('input', { type: 'checkbox', name: f.key, checked: state.filters.has(f.key), onchange: (e) => {
@@ -292,6 +332,34 @@ function renderLeftList() {
       h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'));
   }));
   if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 화면이 없습니다.'));
+}
+
+const LINK_VERDICT = { open: '이어짐', conditioned: '조건', broken: '링크 없음', 'off-map': '판정 못 함', unknown: '판정 못 함' };
+const storyOf = () => state.data.stories.list.find((st) => st.id === state.story);
+const screenOf = (id) => state.data.map.screens.find((s) => s.id === id);
+const screenLabel = (id) => screenOf(id)?.path ?? id;
+const storyChips = (st) => [
+  st.broken ? h('span', { class: 'chip l-broken', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있습니다' }, '링크 없음') : null,
+  st.detached ? h('span', { class: 'chip l-off-map', title: `맵에서 찾을 수 없는 화면: ${st.steps.filter((s) => !s.onMap).map((s) => s.screen).join(', ')}` }, '화면 없음') : null,
+  st.unjudged ? h('span', { class: 'chip l-unknown', title: '주소를 읽지 못한 링크 때문에 판정하지 못한 자리가 있습니다' }, '판정 못 함') : null,
+];
+
+function storyList() {
+  const { list, notices, stale } = state.data.stories;
+  return [
+    stale
+      ? h('p', { class: 'error' }, stale)
+      : list.length
+      ? h('ul', { class: 'screens', id: 'story-list' }, list.map((st) => h('li', { class: st.id === state.story ? 'selected' : '', onclick: () => selectStory(st.id) },
+          h('span', { class: 'name' }, h('span', {}, st.name), h('div', { class: 'muted mono' }, st.id)),
+          storyChips(st),
+          h('span', { class: 'count' }, `화면 ${st.steps.length}`))))
+      : h('p', { class: 'muted' }, '스토리 파일이 없습니다. 스토리 하나를 파일 하나로 ', h('code', {}, state.data.storiesDir), ' 에 둡니다.'),
+    h('h2', {}, `읽지 못한 스토리 파일 ${notices.length}`),
+    notices.length
+      ? h('ul', { class: 'plain notices' }, notices.map((n) => h('li', {}, h('code', {}, n.file), h('div', { class: 'error' }, n.reason))))
+      : h('p', { class: 'muted' }, '형식이 틀렸거나 ID 가 겹쳐 건너뛴 파일이 여기 남습니다.'),
+  ];
 }
 
 function testItem(t) {
@@ -362,7 +430,7 @@ async function loadPathValues(id, role) {
     Object.assign(entry, { parts: null, values: {}, errors: [`경로 변수 값을 가져오지 못했습니다: ${err.message}`], fallback: null });
   }
   Object.assign(entry, { pending: false, draft: { ...entry.values }, opened: 0 });
-  if (state.selected === id && state.view === 'list') renderCenterHead(state.data.map.screens.find((x) => x.id === id));
+  if (state.side === 'screens' && state.selected === id && state.view === 'list') renderCenterHead(state.data.map.screens.find((x) => x.id === id));
 }
 
 function pathValuesOf(s, role) {
@@ -651,7 +719,92 @@ function renderCenterHead(s) {
   updateSettings(moved ? (list) => autoOverrides(shown, list) : () => null);
 }
 
+function stepItem(step, i) {
+  if (!step.onMap) {
+    return h('div', { class: 'step off-map' },
+      h('span', { class: 'no' }, i + 1),
+      h('span', { class: 'name' }, h('div', { class: 'muted mono' }, step.screen)),
+      h('span', { class: 'chip l-off-map' }, '맵에 없는 화면'));
+  }
+  const s = screenOf(step.screen);
+  return h('div', { class: 'step on-map', title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
+    h('span', { class: 'no' }, i + 1),
+    h('span', { class: 'name' }, h('span', {}, s.path), ' ', h('span', { class: 'muted' }, s.component), h('div', { class: 'muted mono' }, step.screen)));
+}
+
+const wayItem = (w) => h('li', {}, h('code', {}, `${w.file}:${w.line}`),
+  w.conditions.length ? w.conditions.map(accessGuard) : h('span', { class: 'muted' }, ' 조건 없음'));
+
+const unknownList = (links) => h('ul', { class: 'plain ways unknown-links' }, links.map((u) => h('li', {}, h('code', {}, `${u.file}:${u.line}`), ' → ', h('code', {}, u.to))));
+const skippedLinks = (links) => [h('div', { class: 'muted skipped' }, '판정에서 뺀 링크'), unknownList(links)];
+
+function linkItem(l) {
+  return h('div', { class: `link l-${l.verdict}` },
+    h('span', { class: `chip l-${l.verdict}` }, LINK_VERDICT[l.verdict]),
+    l.verdict === 'off-map' ? h('span', { class: 'muted' }, ' 화면 없음') : null,
+    l.verdict === 'unknown' ? [h('span', { class: 'muted' }, ' 주소 못 읽은 링크'), unknownList(l.unknownLinks)] : null,
+    l.ways.length ? h('ul', { class: 'plain ways' }, l.ways.map(wayItem)) : null,
+    l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null);
+}
+
+function renderStoryCenter() {
+  const head = document.getElementById('center-head');
+  head.dataset.key = '';
+  fill(head);
+  const center = document.getElementById('center-body');
+  const st = storyOf();
+  if (!st) return fill(center, h('p', { class: 'muted' }, '스토리가 없습니다.'));
+  fill(center,
+    h('div', { class: 'title-row' }, h('h3', {}, st.name), storyChips(st)),
+    h('div', { class: 'muted mono' }, `${st.id} · ${st.file}`),
+    h('div', { class: 'muted' }, `${st.author} · ${st.date}`),
+    st.memo ? h('p', { class: 'memo' }, st.memo) : null,
+    h('h2', {}, `화면 순서 ${st.steps.length}`),
+    h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1]) : null, stepItem(step, i)])));
+}
+
+function reachItem(r) {
+  if (r.kind === 'start') {
+    return [h('h3', {}, `첫 화면 ${screenLabel(r.screen)}`),
+      h('div', {}, '열리려면 필요한 것 ', r.kinds.map(kindChip)),
+      r.roleValues ? h('div', {}, `열 수 있는 역할 ${r.roleValues.join(', ')}`)
+        : r.roleValues === null ? h('div', { class: 'muted' }, '역할 미확인') : null,
+      h('div', { class: 'muted' }, '들어오는 링크: 화면 목록에서')];
+  }
+  if (r.kind === 'route') {
+    return [h('h3', {}, `${screenLabel(r.screen)} 라우트`), h('code', {}, `${state.data.routesFile}:${r.line}`), ...r.guards.map(accessGuard)];
+  }
+  return [h('h3', {}, `${screenLabel(r.from)} → ${screenLabel(r.to)}`),
+    r.ways.length > 1 ? h('div', { class: 'muted' }, `링크 ${r.ways.length}개 중 하나`) : null,
+    h('ul', { class: 'plain ways' }, r.ways.map(wayItem)),
+    ...(r.unknownLinks ? skippedLinks(r.unknownLinks) : [])];
+}
+
+function storyProblems(st) {
+  const broken = st.links.filter((l) => l.verdict === 'broken').length;
+  return [
+    broken ? ['unreachable', `도달 불가 · 링크 없음 ${broken}곳`] : null,
+    st.detached ? ['unjudged', '판정 못 함 · 화면 없음'] : null,
+    st.unjudged ? ['unjudged', '판정 못 함 · 주소 못 읽은 링크'] : null,
+  ].filter(Boolean);
+}
+
+function renderStoryRight() {
+  const right = document.getElementById('right');
+  const st = storyOf();
+  if (!st) return fill(right);
+  const problems = storyProblems(st);
+  fill(right,
+    (problems.length ? problems : [['reachable', '도달 가능']]).map(([cls, text]) => h('p', { class: `verdict ${cls}` }, text)),
+    st.links.some((l) => l.ways.length && l.unknownLinks) ? h('p', { class: 'muted skipped' }, '주소 못 읽은 링크 빼고 판정') : null,
+    h('h2', {}, '사전 조건'),
+    st.reach.length
+      ? h('ul', { class: 'plain reach' }, st.reach.map((r) => h('li', { class: `reach-${r.kind}` }, reachItem(r))))
+      : h('p', { class: 'muted' }, problems.length ? '판정한 구간에 조건 없음' : '조건 없음'));
+}
+
 function renderCenter() {
+  if (state.side === 'stories') return renderStoryCenter();
   const center = document.getElementById('center-body');
   const s = state.data.map.screens.find((x) => x.id === state.selected);
   renderCenterHead(s);
@@ -772,6 +925,7 @@ function guardList(item) {
 }
 
 function renderRight() {
+  if (state.side === 'stories') return renderStoryRight();
   const right = document.getElementById('right');
   const s = state.data.map.screens.find((x) => x.id === state.selected);
   if (!s) return fill(right);
@@ -1057,7 +1211,7 @@ function screenBox(b) {
   return h('div', {
     class: `box screen ${statusOf(counts)}`, style: `left:${b.x}px;top:${b.y}px;width:${BOX_W}px;height:${b.height}px`,
     title: [n.id, guardLabel ? `이 링크의 조건: ${guardLabel}` : '', ...needs.tips, ...n.jumps.map((j) => `→ ${j.label}${j.guards.length ? ` (${guardText(j.guards)})` : ''}`)].filter(Boolean).join('\n'),
-    onclick: () => { state.view = 'list'; select(n.id); },
+    onclick: () => { state.view = 'list'; openScreen(n.id); },
   },
     h('div', { class: 'l1' },
       h('span', { class: 'text' }, n.label, ' ', h('span', { class: 'muted' }, n.component)),

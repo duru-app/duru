@@ -166,9 +166,11 @@ function roleReader(config, guardInits, constants) {
   };
 }
 
-function linkTargets(screens) {
+export const unreadableTarget = (to) => typeof to !== 'string' || to.includes(UNKNOWN);
+
+export function linkTargets(screens) {
   return (to) => {
-    if (typeof to !== 'string' || to.includes(UNKNOWN)) return [];
+    if (unreadableTarget(to)) return [];
     const indices = screens.map((_, i) => i);
     const exact = indices.filter((i) => screens[i].path === to);
     if (exact.length) return exact;
@@ -224,22 +226,27 @@ function settle(targets, values, compute) {
 export function screenAccess(screens, redirects, config, guardInits, constants, guardSettings) {
   const kindsOf = guardKinds(config, guardInits);
   const rolesOf = roleReader(config, guardInits, constants);
-  const blocking = (guards, file, via) =>
-    guards.flatMap((guard) => {
+  const describe = (guards, file, via) =>
+    guards.map((guard) => {
       const kinds = kindsOf(guard, file);
-      if (!kinds.length) return [];
-      return [{ guard, kinds, ...(kinds.includes('role') ? { roles: rolesOf(guard, file) } : {}), ...(via ? { via } : {}), ...(kinds.includes('setting') ? settingsOf(guardSettings, guard, file) : {}) }];
+      return { guard, kinds, ...(kinds.includes('role') ? { roles: rolesOf(guard, file) } : {}), ...(via ? { via } : {}), ...(kinds.includes('setting') ? settingsOf(guardSettings, guard, file) : {}) };
     });
+  const blocks = (guards) => guards.filter((g) => g.kinds.length);
+  const blocking = (guards, file, via) => blocks(describe(guards, file, via));
+  // 핸들러에서 물려받은 조건은 그 핸들러를 쓰는 곳이 모두 조건 아래 있을 때만 센다.
+  const held = (own, uses) => (own.length || (uses.length && uses.every((u) => u.length)) ? [...own, ...uses.flat()] : []);
 
   const route = screens.map((s) => blocking(s.routeGuards, config.routesFile));
   const incoming = screens.map(() => []);
   const outgoing = screens.map(() => []);
   const targetsOf = linkTargets(screens);
+  const linkConditions = screens.map(() => []);
   screens.forEach((s, from) => {
     for (const l of s.links) {
-      const own = blocking(l.guards, l.file);
-      const uses = (l.inheritedGuards ?? []).map((h) => blocking(h.guards, l.file, h.via));
-      const guards = own.length || (uses.length && uses.every((u) => u.length)) ? [...own, ...uses.flat()] : [];
+      const own = describe(l.guards, l.file);
+      const uses = (l.inheritedGuards ?? []).map((h) => describe(h.guards, l.file, h.via));
+      linkConditions[from].push(held(own, uses));
+      const guards = held(blocks(own), uses.map(blocks));
       for (const to of targetsOf(l.to)) {
         if (to === from) continue;
         const link = { from, to, file: l.file, line: l.line, guards };
@@ -375,5 +382,5 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
     return { restricted: restricted[i], kinds: shownKinds[i], route: route[i], links, ...roleAccess(i), ...settings };
   });
   const entries = starts.map((i) => ({ screen: screens[i].id, reasons: reasons[i] }));
-  return { access, entries, unknownEntryPaths };
+  return { access, entries, unknownEntryPaths, linkConditions };
 }

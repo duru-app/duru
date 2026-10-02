@@ -1,0 +1,7 @@
+{
+  "name": "홈에서 바로 도움말을 연다",
+  "screens": ["/signin#SignIn", "/home#Home", "/help#Help"],
+  "memo": "홈에는 도움말 링크가 없다.",
+  "author": "reviewer",
+  "date": "2026-10-02"
+}

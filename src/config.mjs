@@ -15,7 +15,8 @@ export function parseRoleEntry(entry) {
 }
 
 const isText = (v) => typeof v === 'string' && v.length > 0;
-const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+export const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+export const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const isWebAddress = (v) => isText(v) && /^https?:\/\/[^/]/.test(v);
 const LIST_API_KEYS = ['api', 'list', 'value', 'method', 'body'];
 const HEADER_EXAMPLE = '{ "Authorization": "Bearer {token}" }';
@@ -139,6 +140,7 @@ export function loadConfig(configPath) {
     serverEndpoints: [raw.serverEndpoints].flat().map(at),
     outDir,
     marksDir: raw.marksDir ? at(raw.marksDir) : path.join(outDir, 'marks'),
+    storiesDir: raw.storiesDir ? at(raw.storiesDir) : path.join(outDir, 'stories'),
     tests,
     app,
   };

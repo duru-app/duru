@@ -1,0 +1,7 @@
+{
+  "name": "실험실을 열어 결과를 본다",
+  "screens": ["/home#Home", "/lab#Lab", "/lab/result#LabResult"],
+  "memo": "실험실은 고객사 설정에서 켜야 보인다.",
+  "author": "Kim Min",
+  "date": "2026-10-01"
+}

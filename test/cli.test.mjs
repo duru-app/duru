@@ -55,6 +55,26 @@ test('rebuild warns about each call ID in bodyOptions that is not on the map', (
   }
 });
 
+test('rebuild counts the stories with broken paths or screens gone from the map and the steps it could not judge, and names each story file it skipped and why', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const plain = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(plain, /^stories 0 \| broken paths 0 \| detached 0 \| unjudged steps 0 \| story files skipped 0$/m);
+
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), storiesDir: 'example-stories' }));
+    const lab = path.join(copy, 'client/src/components/Lab.js');
+    fs.writeFileSync(lab, fs.readFileSync(lab, 'utf8').replace('</section>', '  <Link to={Option.ROUTE_PATH.NOPE}>Nope</Link>\n    </section>'));
+    fs.writeFileSync(path.join(copy, 'example-stories/lab-to-sign-in.json'), JSON.stringify({ name: 'n', screens: ['/lab#Lab', '/signin#SignIn'], author: 'a', date: '2026-10-02' }));
+    const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(stdout, /^stories 5 \| broken paths 1 \| detached 1 \| unjudged steps 1 \| story files skipped 1$/m);
+    assert.match(stdout, /^ {2}story file lab-shortcut\.json: screens 는 /m);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc']]) {
   test(`"${args.join(' ')}" prints usage and exits with 2`, () => {
     assert.throws(

@@ -6,6 +6,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
+import { UNKNOWN } from '../src/client.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { chromium } from 'playwright-core';
 import { loadMarks } from '../src/marks.mjs';
@@ -62,6 +63,33 @@ test('the page and its data are served, with the map, the tests per screen and t
       assert.deepEqual(data.marks, { attached: [], detached: [] });
       assert.deepEqual(data.depths, ['ui', 'api', 'render', 'code', 'data', 'output']);
       assert.equal(data.author, 'reviewer');
+    }),
+  );
+});
+
+test('the data carries each story checked against the map and the story files that could not be read, read again on every request', async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.stories, { list: [], notices: [] });
+      assert.equal(data.storiesDir, path.join(config.outDir, 'stories'));
+    }),
+  );
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.stories.list.map((s) => [s.id, s.links.map((l) => l.verdict), s.broken, s.detached]), [
+        ['change-settings', ['off-map'], false, true],
+        ['help-from-home', ['open', 'broken'], true, false],
+        ['open-document', ['open', 'open', 'open'], false, false],
+        ['run-lab', ['conditioned', 'open'], false, false],
+      ]);
+      assert.deepEqual(data.stories.notices.map((n) => n.file), ['lab-shortcut.json']);
+
+      fs.writeFileSync(path.join(config.storiesDir, 'lab-shortcut.json'), JSON.stringify({ name: '실험실 결과', screens: ['/lab#Lab', '/lab/result#LabResult'], author: 'a', date: '2026-10-02' }));
+      const again = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(again.stories.notices, []);
+      assert.equal(again.stories.list.find((s) => s.id === 'lab-shortcut').reach[0].kind, 'start');
     }),
   );
 });
@@ -1002,6 +1030,170 @@ for (const host of ['127.0.0.1', 'localhost']) {
     );
   });
 }
+
+test('a map.json built before links carried their conditions leaves the stories out with a message asking to rebuild apart from the story file notes, and the rest of the data and the task list still work', async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, async (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    for (const s of map.screens) for (const l of s.links) delete l.conditions;
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+    await withServer(config, 'reviewer', async (base) => {
+      const res = await fetch(`${base}/api/data`);
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.stories.list.length, 0);
+      assert.deepEqual(data.stories.notices.map((n) => n.file), ['lab-shortcut.json']);
+      assert.ok(data.stories.stale.startsWith(`${mapFile} 은 `));
+      assert.match(data.stories.stale, /duru rebuild 로 맵을 다시 만드세요$/);
+      assert.equal(data.map.screens.length, map.screens.length);
+    });
+    assert.match(taskList(config), /^# Test tasks/);
+  });
+});
+
+test('in a browser, a map.json built before links carried their conditions shows the request to rebuild instead of the empty story list, and does not count it as an unreadable story file', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, async (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    for (const s of map.screens) for (const l of s.links) delete l.conditions;
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        assert.match(await p.textContent('#left'), /duru rebuild 로 맵을 다시 만드세요/);
+        assert.doesNotMatch(await p.textContent('#left'), /스토리 파일이 없습니다/);
+        assert.equal(await p.locator('#story-list li').count(), 0);
+        assert.equal(await p.locator('#left .notices li').count(), 1);
+        assert.equal(await p.textContent('#left .notices li code'), 'lab-shortcut.json');
+        assert.match(await p.textContent('#left'), /읽지 못한 스토리 파일 1/);
+      }),
+    );
+  });
+});
+
+test('in a browser, the story list sits next to the screen list, and a chosen story shows its screens in order with each link\'s verdict and what it takes to get to the end', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        assert.deepEqual(await p.locator('#left .views.side button').allTextContents(), ['화면 11', '스토리 4']);
+        await p.click('#left .views.side button:has-text("스토리")');
+        assert.deepEqual(await p.locator('#story-list li .name > span:first-child').allTextContents(), [
+          '홈에서 개인 설정을 바꾼다', '홈에서 바로 도움말을 연다', '로그인해 문서 목록에서 문서를 연다', '실험실을 열어 결과를 본다',
+        ]);
+        assert.deepEqual(await p.locator('#story-list li').evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent))), [
+          ['화면 없음'], ['링크 없음'], [], [],
+        ]);
+        assert.equal(await p.locator('#story-list li:has-text("개인 설정") .chip').getAttribute('title'), '맵에서 찾을 수 없는 화면: /settings#Settings');
+        assert.match(await p.textContent('#left .notices'), /lab-shortcut\.json.*screens 는/);
+
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.equal(await p.textContent('#center h3'), '실험실을 열어 결과를 본다');
+        assert.match(await p.textContent('#center .memo'), /고객사 설정/);
+        assert.deepEqual(await p.locator('#center .story-path .step .name > span:first-child').allTextContents(), ['/home', '/lab', '/lab/result']);
+        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['조건', '이어짐']);
+        assert.match(await p.textContent('#center .story-path .link.l-conditioned'), /components\/Home\.js:19\s*globalSettings\.SYSTEM\.LAB_ENABLED\s*설정/);
+        assert.deepEqual(await p.locator('#right > *').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['도달 가능', '사전 조건']);
+        assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트']);
+        assert.match(await p.textContent('#right .reach-link'), /components\/Home\.js:19/);
+        assert.match(await p.textContent('#right .reach-route'), /Routes\.js:44.*globalSettings\.SYSTEM\.LAB_ENABLED/);
+        assert.equal(await p.locator('#center iframe').count(), 0);
+
+        await p.click('#story-list li:has-text("도움말")');
+        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['이어짐', '링크 없음']);
+        assert.equal(await p.textContent('#center .story-path .link.l-broken'), '링크 없음');
+        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
+
+        await p.click('#story-list li:has-text("개인 설정")');
+        assert.equal(await p.textContent('#center .story-path .step.off-map .chip'), '맵에 없는 화면');
+        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['판정 못 함']);
+        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
+
+        await p.click('#story-list li:has-text("문서를 연다")');
+        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 가능']);
+        assert.equal(await p.textContent('#right > p.muted'), '조건 없음');
+        await p.click('#center .story-path .step:has-text("/document/:id")');
+        assert.equal(await p.getAttribute('#left .views.side button.on', 'class'), 'on');
+        assert.equal(await p.textContent('#left .views.side button.on'), '화면 11');
+        assert.equal(await p.textContent('#center h3'), '/document/:id');
+        assert.match(await p.textContent('#screen-list li.selected'), /\/document\/:id/);
+
+        await p.click('#left .views.side button:has-text("스토리")');
+        assert.equal(await p.textContent('#story-list li.selected .name > span:first-child'), '로그인해 문서 목록에서 문서를 연다');
+
+        await p.click('#view-flow');
+        await (await screenBox(p, '/lab/result#LabResult')).click();
+        await p.waitForSelector('main:not([hidden])');
+        assert.equal(await p.textContent('#left .views.side button.on'), '화면 11');
+        assert.equal(await p.textContent('#center h3'), '/lab/result');
+      }),
+    ),
+  );
+});
+
+test('in a browser, a step whose first screen has no link to the next but has links to a path duru cannot read is not judged, and those links are listed, also next to a conditioned step judged without them but not next to an open one', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config, copy) => {
+    rewrite(copy, 'client/src/_define/Option.js', "SIGN_IN: this.CONTEXT_PATH + 'signin',", "ROOT: this.CONTEXT_PATH,\n      SIGN_IN: this.CONTEXT_PATH + 'signin',");
+    rewrite(copy, 'client/src/components/Lab.js', '<Link to={Option.ROUTE_PATH.LAB_RESULT}>Results</Link>',
+      '<Link to={Option.ROUTE_PATH.LAB_RESULT}>Results</Link>\n      <Link to={Option.ROUTE_PATH.ROOT}>Start</Link>\n      <Link to={Option.ROUTE_PATH.NOPE}>Nope</Link>');
+    rewrite(copy, 'client/src/components/Home.js', '<Link to={Option.ROUTE_PATH.LAB}>Lab</Link>}', '<Link to={Option.ROUTE_PATH.LAB}>Lab</Link>}\n      <Link to={Option.ROUTE_PATH.NOPE}>Nope</Link>');
+    rebuild(copy);
+    fs.mkdirSync(config.storiesDir, { recursive: true });
+    const story = (name, screens) => JSON.stringify({ name, screens, author: 'a', date: '2026-10-02' });
+    fs.writeFileSync(path.join(config.storiesDir, 'lab-to-start.json'), story('실험실에서 처음으로', ['/lab#Lab', '/signin#SignIn']));
+    fs.writeFileSync(path.join(config.storiesDir, 'home-to-lab-result.json'), story('홈에서 실험 결과로', ['/home#Home', '/lab#Lab', '/lab/result#LabResult']));
+    fs.writeFileSync(path.join(config.storiesDir, 'lab-result.json'), story('실험실에서 결과로', ['/lab#Lab', '/lab/result#LabResult']));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        assert.deepEqual(await p.locator('#story-list li').evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent))), [[], [], ['판정 못 함']]);
+
+        await p.click('#story-list li:has-text("처음으로")');
+        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['판정 못 함']);
+        assert.deepEqual(await p.locator('#center .story-path .link.l-unknown li').allTextContents(), [`components/Lab.js:16 → ${UNKNOWN}`]);
+        assert.doesNotMatch(await p.textContent('#center .story-path'), /리다이렉트/);
+        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 주소 못 읽은 링크']);
+        assert.equal(await p.locator('#right .skipped').count(), 0);
+
+        await p.click('#story-list li:has-text("실험 결과로")');
+        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['조건', '이어짐']);
+        const skipped = (link) => p.locator(`#center .story-path .link.${link} .unknown-links li`).allTextContents();
+        assert.deepEqual(await skipped('l-conditioned'), [`components/Home.js:20 → ${UNKNOWN}`]);
+        assert.match(await p.textContent('#center .story-path .link.l-conditioned .skipped'), /판정에서 뺀 링크/);
+        assert.deepEqual(await skipped('l-open'), []);
+        assert.equal(await p.locator('#center .story-path .link.l-open .skipped').count(), 0);
+        assert.match(await p.textContent('#right > p.skipped'), /주소 못 읽은 링크 빼고 판정/);
+        assert.deepEqual(await p.locator('#right .reach-link .unknown-links li').allTextContents(), [`components/Home.js:20 → ${UNKNOWN}`]);
+
+        await p.click('#story-list li:has-text("실험실에서 결과로")');
+        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['이어짐']);
+        assert.equal(await p.locator('#center .skipped').count(), 0);
+        assert.equal(await p.locator('#right .skipped').count(), 0);
+      }),
+    );
+  });
+});
+
+test('in a browser, the right of a story gives a verdict line for missing links and one for a screen off the map, counting the missing links', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    fs.mkdirSync(config.storiesDir, { recursive: true });
+    fs.writeFileSync(path.join(config.storiesDir, 'back-and-forth.json'), JSON.stringify({
+      name: '도움말을 오간다', screens: ['/home#Home', '/help#Help', '/home#Home', '/help#Help', '/settings#Settings'], author: 'a', date: '2026-10-03',
+    }));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("도움말을 오간다")');
+        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 3곳', '판정 못 함 · 화면 없음']);
+        assert.deepEqual(await p.locator('#right .verdict').evaluateAll((els) => els.map((e) => e.className)), ['verdict unreachable', 'verdict unjudged']);
+        assert.equal(await p.textContent('#right > p.muted:not(.skipped)'), '판정한 구간에 조건 없음');
+      }),
+    );
+  });
+});
 
 test('in a browser, the dead screen filter keeps the screens that call an API missing on the server', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -2269,6 +2461,45 @@ test('in a browser, a screen that falls back to its list screen sets what the li
             await frame.locator('#lab:has-text("true")').waitFor();
             assert.match(await p.locator('#center .frame-bar').textContent(), /목록에서 골라 들어가세요/);
             assert.match(await settingRow(p, 'SYSTEM.LAB_ENABLED').getAttribute('class'), /changed/);
+            assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+test('in a browser, path values that arrive after the reviewer moved to the story list neither draw the screen over the story nor change settings', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ ...withSettingsFile(api, { pathValues: { '/document/:tab(draft|done)': { tab: 'draft' } } }), storiesDir: 'example-stories' }, async (config, copy) => {
+        rewrite(copy, 'client/src/Routes.js', '<Route path={`${Option.ROUTE_PATH.DOCUMENT}/:tab(draft|done)`} component={waitFor(DocumentList)} exact />',
+          '{globalSettings.SYSTEM.LAB_ENABLED && <Route path={`${Option.ROUTE_PATH.DOCUMENT}/:tab(draft|done)`} component={waitFor(DocumentList)} exact />}');
+        rebuild(copy);
+        await withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            let release;
+            const held = new Promise((resolve) => (release = resolve));
+            await p.route('**/api/path-values?*', async (route) => {
+              await held;
+              await route.continue();
+            });
+            await p.waitForSelector('#screen-list li');
+            await chooseScreen(p, '/document/:id');
+            await p.click('#left .views.side button:has-text("스토리")');
+            release();
+            await p.waitForFunction(() => state.pathValues.get(pathValueKey('/document/:id#DocumentDetail', null))?.pending === false);
+            const arrived = await p.evaluate(() => state.pathValues.get(pathValueKey('/document/:id#DocumentDetail', null)));
+            assert.deepEqual([arrived.errors, arrived.fallbackPath], [[], '/document/draft']);
+            await p.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))));
+            assert.equal(await p.textContent('#center h3'), '홈에서 개인 설정을 바꾼다');
+            assert.equal(await p.locator('#center iframe').count(), 0);
+            assert.deepEqual(await overridesOf(base), []);
+
+            await p.click('#left .views.side button:has-text("화면")');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#path:has-text("/document/draft")').waitFor();
+            await frame.locator('#lab:has-text("true")').waitFor();
             assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
           }),
         );
