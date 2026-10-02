@@ -313,10 +313,10 @@ test('each restricted screen keeps the route guard and the links that decided it
   assert.deepEqual(screen(map, '/admin/member#AdminMember').access, {
     restricted: true,
     kinds: ['role'],
-    route: [{ guard: 'isAdminRole(memberRole)', kinds: ['role'], roles: null }],
+    route: [{ guard: 'isAdminRole(memberRole)', kinds: ['role'], roles: ['ADMIN'] }],
     links: [{ from: '/home#Home', file: 'components/Home.js', line: 17, guards: [{ guard: "memberRole === 'ADMIN'", kinds: ['role'], roles: ['ADMIN'] }], fromKinds: [] }],
     roleValues: ['ADMIN'],
-    unreadableRoleGuards: ['isAdminRole(memberRole)'],
+    unreadableRoleGuards: [],
   });
   assert.deepEqual(screen(map, '/help#Help').access.links, [
     {
@@ -439,6 +439,139 @@ for (const [guard, roles] of [
     assert.deepEqual(report.unreadableRoleGuards, roles ? [] : [guard]);
   });
 }
+
+const SIDE_MENU_IMPORT = "import Option from '_define/Option';\n";
+const ENUM_IMPORT = "import Enum from '_define/Enum';\n";
+const ROLE_ARG = "session['member.role']";
+for (const [helpers, guard, roles] of [
+  ["const isBoss = (role) => ['ADMIN', 'OWNER'].includes(role);", `isBoss(${ROLE_ARG})`, ['ADMIN', 'OWNER']],
+  [`${ENUM_IMPORT}const isBoss = (role) => {\n  return [Enum.ROLE.ADMIN, Enum.ROLE.MEMBER].includes(role);\n};`, `isBoss(${ROLE_ARG})`, ['ADMIN', 'MEMBER']],
+  ["const isBoss = function (role) {\n  return role === 'OWNER' || role === 'ADMIN';\n};", `isBoss(${ROLE_ARG})`, ['ADMIN', 'OWNER']],
+  ['const isIn = (list, role) => list.indexOf(role) > -1;', `isIn(['ADMIN', 'OWNER'], ${ROLE_ARG})`, ['ADMIN', 'OWNER']],
+  ["const isOwner = (role) => role === 'OWNER';", 'isOwner(this.props.memberRole)', ['OWNER']],
+  ["const isOwner = (role) => role === 'OWNER';", `MENUS.OPEN && isOwner(${ROLE_ARG})`, ['OWNER']],
+  ["const isOwner = (memberRole) => memberRole === 'OWNER';", 'isOwner(row.memberRole)', null],
+  ["function isBoss(role) {\n  return role === 'OWNER' || role === 'ADMIN';\n}", `isBoss(${ROLE_ARG})`, null],
+  ["const isBoss = (role) => {\n  const boss = role === 'OWNER';\n  return boss;\n};", `isBoss(${ROLE_ARG})`, null],
+  ["const isOwner = (role) => role === 'OWNER';\nconst isBoss = (role) => isOwner(role) || role === 'ADMIN';", `isBoss(${ROLE_ARG})`, null],
+  ["let WANT = 'OWNER';\nconst isWanted = (role) => role === WANT;", `isWanted(${ROLE_ARG})`, null],
+  ["const Enum = { ROLE: { ADMIN: 'OWNER' } };\nconst isBoss = (role) => role === Enum.ROLE.ADMIN;", `isBoss(${ROLE_ARG})`, null],
+  ["const isBoss = (role = 'OWNER') => role === 'OWNER';", `isBoss(${ROLE_ARG})`, null],
+  ["const isBoss = (...roles) => roles.includes('OWNER');", `isBoss(${ROLE_ARG})`, null],
+  ["const isBoss = ({ role }) => role === 'OWNER';", `isBoss({ role: ${ROLE_ARG} })`, null],
+  ["const isBoss = async (role) => role === 'OWNER';", `isBoss(${ROLE_ARG})`, null],
+  ["const isBoss = function* (role) {\n  return role === 'OWNER';\n};", `isBoss(${ROLE_ARG})`, null],
+  ["const isBoss = (role) => ['OWNER'].some((r) => r === role);", `isBoss(${ROLE_ARG})`, null],
+  ["const Gate = () => null;\nconst isBoss = (role) => <Gate /> && role === 'OWNER';", `isBoss(${ROLE_ARG})`, null],
+  ["const isBoss = function (role) {\n  return new.target && role === 'OWNER';\n};", `isBoss(${ROLE_ARG})`, null],
+  ["const isBoss = () => this.props.memberRole === 'OWNER';", 'isBoss()', null],
+  ["const isBoss = function (role) {\n  return arguments[0] === 'OWNER';\n};", `isBoss(${ROLE_ARG})`, null],
+  ['const isIn = (list, role) => list.includes(role);', `isIn(${ROLE_ARG})`, null],
+  ["const isOwner = (role) => role === 'OWNER';", `isOwner(...[${ROLE_ARG}])`, null],
+  ["const isOwner = (role) => role === 'OWNER';", `isOwner(${ROLE_ARG}) === true`, null],
+  ['const roleTabs = (role) => [role];', `roleTabs(${ROLE_ARG}).length > 0`, null],
+  ["const isBoss = (role) => role === 'OWNER' || isBoss(role);", `isBoss(${ROLE_ARG})`, null],
+  ['const isBoss = (role) => isOwner(role);\nconst isOwner = (role) => isBoss(role);', `isBoss(${ROLE_ARG})`, null],
+]) {
+  test(`the role guard ${guard} calling ${helpers.replace(ENUM_IMPORT, '').split('\n')[0]} allows ${JSON.stringify(roles)}`, async () => {
+    const map = await buildEditedCopy([
+      ['client/src/components/SideMenu.js', SIDE_MENU_IMPORT, `${SIDE_MENU_IMPORT}\n${helpers}\n`],
+      ['client/src/components/SideMenu.js', SIDE_MENU_ROLE, guard],
+    ]);
+    const report = screen(map, '/admin/report#AdminReport').access;
+    const read = report.links[0].guards.find((g) => g.kinds.includes('role'));
+    assert.deepEqual([read.guard, read.roles], [guard, roles]);
+    assert.deepEqual(report.unreadableRoleGuards, roles ? [] : [guard]);
+  });
+}
+
+test('a role guard calling a function imported from another file stays unreadable', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/_define/Enum.js', 'export default {', "export const isOwner = (role) => role === 'OWNER';\n\nexport default {"],
+    ['client/src/components/SideMenu.js', SIDE_MENU_IMPORT, `${SIDE_MENU_IMPORT}import { isOwner } from '_define/Enum';\n`],
+    ['client/src/components/SideMenu.js', SIDE_MENU_ROLE, `isOwner(${ROLE_ARG})`],
+  ]);
+  const report = screen(map, '/admin/report#AdminReport').access;
+  assert.equal(report.roleValues, null);
+  assert.deepEqual(report.unreadableRoleGuards, [`isOwner(${ROLE_ARG})`]);
+});
+
+test('a role guard calling a function declared inside the component stays unreadable', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/components/SideMenu.js', 'const items = [];', "const items = [];\n  const isOwner = (role) => role === 'OWNER';"],
+    ['client/src/components/SideMenu.js', SIDE_MENU_ROLE, `isOwner(${ROLE_ARG})`],
+  ]);
+  const report = screen(map, '/admin/report#AdminReport').access;
+  assert.equal(report.roleValues, null);
+  assert.deepEqual(report.unreadableRoleGuards, [`isOwner(${ROLE_ARG})`]);
+});
+
+test('a role check held in a local const that calls a function of the same file is read through the function', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/Routes.js', 'const isAdminRole = (role) => role === Enum.ROLE.ADMIN;', 'const isAdminRole = (role) => {\n  return [Enum.ROLE.ADMIN, Enum.ROLE.MEMBER].includes(role);\n};'],
+    ['client/src/Routes.js', 'const isAdmin = canManageGroups(memberRole);', 'const isAdmin = isAdminRole(memberRole);'],
+  ]);
+  const group = screen(map, '/admin/group#AdminGroup').access;
+  assert.deepEqual(group.route, [{ guard: 'isAdmin', kinds: ['role'], roles: ['ADMIN', 'MEMBER'] }]);
+  assert.deepEqual(group.unreadableRoleGuards, []);
+});
+
+test("a const inside a function of the file does not hide the guard's own const of the same name", async () => {
+  const map = await buildEditedCopy([
+    ['client/src/components/SideMenu.js', SIDE_MENU_IMPORT, `${SIDE_MENU_IMPORT}\nconst isAdmin = (role) => role === 'ADMIN';\nfunction audit() {\n  const isBoss = true;\n  return isBoss;\n}\n`],
+    ['client/src/components/SideMenu.js', 'const items = [];', `const items = [];\n  const isBoss = ${ROLE_ARG} === 'OWNER';`],
+    ['client/src/components/SideMenu.js', SIDE_MENU_ROLE, `isBoss && isAdmin(${ROLE_ARG}) && audit()`],
+  ]);
+  const report = screen(map, '/admin/report#AdminReport').access;
+  assert.equal(report.roleValues, null);
+  assert.deepEqual(report.unreadableRoleGuards, [`isBoss && isAdmin(${ROLE_ARG}) && audit()`]);
+});
+
+test('a guard calling a function declaration that reads a setting is not a setting condition', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/components/SideMenu.js', SIDE_MENU_IMPORT, `${SIDE_MENU_IMPORT}\nfunction labOn() {\n  return globalSettings.SYSTEM.LAB_ENABLED;\n}\n`],
+    ['client/src/components/SideMenu.js', SIDE_MENU_ROLE, 'labOn()'],
+  ]);
+  const report = screen(map, '/admin/report#AdminReport').access;
+  assert.deepEqual(report.links[0].guards.map((g) => g.guard), ["globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'", 'MENUS.ADMIN']);
+});
+
+test("a name the called function reads is not taken from the caller's const of the same name", async () => {
+  const map = await buildEditedCopy([
+    ['client/src/components/SideMenu.js', SIDE_MENU_IMPORT, `${SIDE_MENU_IMPORT}\nlet WANT = 'OWNER';\nconst isWanted = (role) => role === WANT;\n`],
+    ['client/src/components/SideMenu.js', 'const items = [];', "const items = [];\n  const WANT = 'ADMIN';"],
+    ['client/src/components/SideMenu.js', SIDE_MENU_ROLE, `WANT && isWanted(${ROLE_ARG})`],
+  ]);
+  const report = screen(map, '/admin/report#AdminReport').access;
+  assert.equal(report.roleValues, null);
+  assert.deepEqual(report.unreadableRoleGuards, [`WANT && isWanted(${ROLE_ARG})`]);
+});
+
+test('a call whose name means another function at another place with the same guard text stays unreadable', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/components/SideMenu.js', SIDE_MENU_IMPORT, `${SIDE_MENU_IMPORT}\nconst isOwner = (role) => role === 'OWNER';\nexport const ownerHelp = (session) => isOwner(${ROLE_ARG}) && Option.ROUTE_PATH.HELP;\n`],
+    ['client/src/components/SideMenu.js', 'SideMenu({ session, globalSettings })', 'SideMenu({ session, globalSettings, isOwner })'],
+    ['client/src/components/SideMenu.js', SIDE_MENU_ROLE, `isOwner(${ROLE_ARG})`],
+  ]);
+  const report = screen(map, '/admin/report#AdminReport').access;
+  assert.equal(report.roleValues, null);
+  assert.deepEqual(report.unreadableRoleGuards, [`isOwner(${ROLE_ARG})`]);
+});
+
+test('a route guard keeps its role values when a component imports the file that holds the route', async () => {
+  const map = await buildEditedCopy([['client/src/components/AdminMember.js', "import Option from '_define/Option';\n", "import Option from '_define/Option';\nimport Routes from '../Routes';\n"]]);
+  assert.deepEqual(screen(map, '/admin/member#AdminMember').access.route, [{ guard: 'isAdminRole(memberRole)', kinds: ['role'], roles: ['ADMIN'] }]);
+});
+
+test('a helper reading Enum from a module other than the constants file stays unreadable', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/components/SideMenu.js', SIDE_MENU_IMPORT, `${SIDE_MENU_IMPORT}import Enum from './other/Enum';\n\nconst isOwner = (role) => role === Enum.ROLE.ADMIN;\n`],
+    ['client/src/components/SideMenu.js', SIDE_MENU_ROLE, `isOwner(${ROLE_ARG})`],
+  ]);
+  const report = screen(map, '/admin/report#AdminReport').access;
+  assert.equal(report.roleValues, null);
+  assert.deepEqual(report.unreadableRoleGuards, [`isOwner(${ROLE_ARG})`]);
+});
 
 test('a role guard longer than its shown text is read in full', async () => {
   const roles = Array.from({ length: 12 }, (_, i) => `ROLE_NUMBER_${i}`);

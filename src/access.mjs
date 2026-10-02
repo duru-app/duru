@@ -46,6 +46,11 @@ const numberOf = (node) =>
 const FOUND = { '>': -1, '>=': 0, '!==': -1, '!=': -1 };
 const intersect = (sets) => sets.reduce((a, b) => new Set([...a].filter((v) => b.has(v))));
 
+function nameReads(node, names) {
+  if (node.type === 'Identifier') return names.includes(node.name) ? [node] : [];
+  return childNodes(node).flatMap((child) => nameReads(child, names));
+}
+
 // 역할 조건이 역할을 어떤 값과 견주는지 읽는다. 값을 읽을 수 없으면 null 이다.
 function roleReader(config, guardInits, constants) {
   const isRole = new RegExp(`^(?:${rolesSource(config)})$`);
@@ -69,6 +74,7 @@ function roleReader(config, guardInits, constants) {
   return (guard, file) => {
     const entry = guardInits.get(file)?.get(guard);
     const inits = entry?.inits ?? [];
+    const helpers = entry?.helpers ?? new Map();
     const initOf = ({ node }, seen) => {
       if (node.type !== 'Identifier' || seen.has(node.name)) return null;
       const found = inits.filter((i) => i.name === node.name);
@@ -76,6 +82,19 @@ function roleReader(config, guardInits, constants) {
     };
     const at = (expr, node) => ({ node, text: expr.text });
     const follow = (expr, seen) => [initOf(expr, seen), new Set([...seen, expr.node.name])];
+    const inlined = (expr, seen) => {
+      const { node } = expr;
+      if (node.type !== 'CallExpression' || node.callee.type !== 'Identifier' || seen.has(node.callee.name)) return [null, seen];
+      const fn = helpers.get(node.callee.name);
+      const body = fn && node.arguments.length === fn.params.length && !node.arguments.some((a) => a.type === 'SpreadElement') && parse(fn.body);
+      if (!body) return [null, seen];
+      let { text } = body;
+      for (const ref of nameReads(body.node, fn.params).sort((a, b) => b.start - a.start)) {
+        const arg = node.arguments[fn.params.indexOf(ref.name)];
+        text = `${text.slice(0, ref.start)}(${expr.text.slice(arg.start, arg.end)})${text.slice(ref.end)}`;
+      }
+      return [parse(text), new Set([...seen, node.callee.name])];
+    };
 
     const isRoleRead = (expr, seen) => {
       if (isRole.test(expr.text.slice(expr.node.start, expr.node.end))) return true;
@@ -129,6 +148,8 @@ function roleReader(config, guardInits, constants) {
         const [init, next] = follow(expr, seen);
         return init ? read(init, next) : undefined;
       }
+      const [body, next] = inlined(expr, seen);
+      if (body) return read(body, next);
       if (node.type === 'LogicalExpression' && (node.operator === '&&' || node.operator === '||')) {
         const l = read(at(expr, node.left), seen);
         const r = read(at(expr, node.right), seen);

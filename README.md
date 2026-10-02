@@ -231,9 +231,22 @@ Each `role` guard also has `roles`: the role values that pass it, read from the 
 or `null` when they cannot be read or no value passes. duru reads a comparison of a `roleIdentifiers` entry with a string
 (`memberRole === 'ADMIN'`, `==`, either side) or with a constant from `constants` (`Enum.ROLE.ADMIN`), a list
 lookup (`['ADMIN', 'OWNER'].indexOf(role) > -1`, `>= 0`, `!== -1`, `!= -1`, or `.includes(role)`), and `&&` / `||`
-of those. Anything else that reads the role is unreadable: a function call such as `isAdminRole(memberRole)`,
-`!==`, a negation, a comparison with a value that is not a string or constant, or `||` with a guard that does
-not read the role. A screen whose `kinds` include `role` gets `roleValues`, the values that can open it: those
+of those. A call to a function held in a `const` at the top level of the same file is read as the expression
+the function returns, with the call's arguments in place of the parameters, when the function is an arrow
+function or a function expression whose parameters are plain names, whose body is that expression or a lone
+`return` of it, and when that expression reads nothing but the parameters and the default import of a
+`constants` module under its configured name: after `const isAdminRole = (role) => { return [Enum.ROLE.ADMIN,
+Enum.ROLE.OWNER].includes(role); }`, `isAdminRole(this.props.memberRole)` allows `ADMIN` and `OWNER`. A guard that reads the role only inside a function declaration or another file is not seen as a role
+condition at all, because those functions are not followed. Anything else
+that reads the role is unreadable: a call that passes the role to a function declaration, an imported function or
+a function declared inside another function, a function with more than a `return` in its body, one whose expression reads
+any other name (another function, a variable of the file, a local that hides the `constants` import, a default
+import from another module under the same name) or uses `this`, `arguments`, `new.target`, JSX, `import()`
+or a function of its own, an `async` or generator one, one with default, rest or destructured parameters, one
+called with a different number of arguments or with a spread, a call whose name means different things at
+different places with the same guard text in one file, or a call inside a larger expression
+(`roleTabs(memberRole).length > 0`); `!==`, a negation, a comparison with a value that is not a string or
+constant, or `||` with a guard that does not read the role. A screen whose `kinds` include `role` gets `roleValues`, the values that can open it: those
 every readable route guard allows, and of those, the ones some blocked incoming link allows (the link's
 readable `role` guards, or, for a link with no `role` guard from a screen that needs a role, that screen's
 `roleValues`); when one of those links cannot be read, the links are left out, since it may let any role in.
