@@ -613,7 +613,7 @@ function screenBox(b) {
   const showCalls = n.calls.length > 0 && !b.collapsed;
   const guardLabel = n.guards.length ? guardText(n.guards) : null;
   const l3text = [guardLabel ? `조건 ${guardLabel}` : null, ...n.jumps.map((j) => `→ ${j.label}`)].filter(Boolean).join(' · ');
-  const badges = [n.dead ? '죽은 화면' : null, ...n.kinds.map((k) => `${KIND_LABEL[k]}에서만`)].filter(Boolean).join(' · ');
+  const badges = [n.dead ? '죽은 화면' : null, n.kinds.length ? `${n.kinds.map((k) => KIND_LABEL[k]).join('·')} 필요` : null].filter(Boolean).join(' · ');
   return h('div', {
     class: `box screen ${statusOf(counts)}`, style: `left:${b.x}px;top:${b.y}px;width:${BOX_W}px;height:${SCREEN_H}px`,
     title: [n.id, guardLabel ? `이 링크의 조건: ${guardLabel}` : '', ...n.jumps.map((j) => `→ ${j.label}${j.guards.length ? ` (${guardText(j.guards)})` : ''}`)].filter(Boolean).join('\n'),

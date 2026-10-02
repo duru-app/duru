@@ -323,6 +323,11 @@ test('in a browser, the setting and role filters keep the screens that open only
         assert.match(await access.locator('li:has-text("/signin#SignIn")').innerText(), /globalSettings\.SYSTEM\.HELP_LINK_ENABLED \(openHelp 로 물려받음\)\s*설정/);
         await p.click('#screen-list li:has-text("/signin")');
         assert.equal(await access.locator('p').innerText(), '설정이나 역할 없이 열립니다.');
+
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+        assert.match(await (await screenBox(p, '/admin/report#AdminReport')).locator('.l2').textContent(), / · 역할·설정 필요$/);
+        assert.doesNotMatch(await (await screenBox(p, '/signin#SignIn')).locator('.l2').textContent(), /필요/);
       }),
     ),
   );
