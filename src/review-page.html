@@ -48,9 +48,9 @@
   .title-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .title-row h3 { margin: 0; font-size: 18px; }
   .frame-bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 6px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--bg); font-size: 13px; }
-  .frame-bar .mono { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .frame-bar .mono { flex: 1 1 24em; min-width: 0; overflow-wrap: anywhere; }
   .frame-bar .error { color: var(--fail); }
-  .frame-bar select { font: inherit; padding: 1px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
+  .frame-bar select { max-width: 100%; font: inherit; padding: 1px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
   iframe.app { display: block; width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 0 0 6px 6px; background: #fff; }
   .frame-note { margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 6px; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; }
@@ -310,7 +310,7 @@ function rolePicker() {
   const missing = [...new Set(map.screens.flatMap((s) => s.access.roleValues ?? []))].filter((v) => !app.roles.some((r) => r.role === v)).sort();
   const option = (value, label) => h('option', { value, selected: state.roleChoice === value }, label);
   return h('select', { class: 'role', title: '앱을 띄울 계정', onchange: (e) => { state.roleChoice = e.target.value; render(); } },
-    option('auto', '화면에 맞춰'),
+    option('auto', '자동'),
     option('account', `기본 계정 (${app.account})`),
     app.roles.map((r) => option(`role:${r.role}`, `${r.role} (${r.account})`)),
     missing.map((v) => h('option', { disabled: true }, `${v} — 계정 없음`)));
