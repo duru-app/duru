@@ -133,6 +133,10 @@ export function loadConfig(configPath) {
     if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
     if (typeof entry?.file !== 'string' || typeof entry?.const !== 'string') throw new Error(`settingsDefaults.${root} needs "file" and "const"`);
   }
+  const visitRecords = raw.visitRecords ?? [];
+  if (!Array.isArray(visitRecords) || !visitRecords.every(isText)) {
+    throw new Error(`visitRecords must be a list of record files or folders, such as ["qa/records"], not ${JSON.stringify(raw.visitRecords)}`);
+  }
   if (raw.author !== undefined && !(typeof raw.author === 'string' && raw.author.trim())) {
     throw new Error(`author must be the name to sign review marks and judgments with, such as "Kim Min", not ${JSON.stringify(raw.author)}`);
   }
@@ -155,6 +159,7 @@ export function loadConfig(configPath) {
     marksDir: raw.marksDir ? at(raw.marksDir) : path.join(outDir, 'marks'),
     judgmentsDir: raw.judgmentsDir ? at(raw.judgmentsDir) : path.join(outDir, 'judgments'),
     storiesDir: raw.storiesDir ? at(raw.storiesDir) : path.join(outDir, 'stories'),
+    visitRecords: visitRecords.map(at),
     tests,
     app,
   };

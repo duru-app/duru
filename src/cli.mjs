@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { storyCandidates } from './candidates.mjs';
 import { loadConfig } from './config.mjs';
 import { buildMap } from './map.mjs';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.mjs';
@@ -103,5 +104,8 @@ if (command === 'tasks') {
     console.log(`stories passing ${inStatus('pass')} | failing ${inStatus('fail')} | pending ${inStatus('pending')} | partly covered ${inStatus('partial')} | no tests ${inStatus('untested')}`);
     for (const n of notices) console.log(`  story file ${n.file}: ${n.reason}`);
     if (stale) console.log(`  ${stale}`);
+    const candidates = storyCandidates(config, map, path.join(config.outDir, 'map.json'));
+    console.log(`story candidates ${candidates.list.length} | files skipped ${candidates.notices.length}`);
+    for (const n of candidates.notices) console.log(`  ${n.file}: ${n.reason}`);
   }
 }

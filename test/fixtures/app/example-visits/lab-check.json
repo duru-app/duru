@@ -1,0 +1,8 @@
+{
+  "steps": [
+    { "url": "/home" },
+    { "url": "/lab" },
+    { "url": "/lab?run=1" },
+    { "url": "/lab/result?id=3" }
+  ]
+}

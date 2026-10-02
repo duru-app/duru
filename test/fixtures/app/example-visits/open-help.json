@@ -1,0 +1,7 @@
+[
+  { "url": "http://localhost:3000/signin" },
+  { "url": "http://localhost:3000/home" },
+  { "url": "http://localhost:3000/beta/inbox" },
+  { "url": "http://localhost:3000/beta/inbox?page=2" },
+  { "url": "http://localhost:3000/help" }
+]

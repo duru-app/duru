@@ -1,0 +1,11 @@
+{
+  "name": "publish a draft",
+  "steps": [
+    { "action": "open", "url": "/home" },
+    { "action": "click recent tab", "url": "/home?tab=recent" },
+    { "action": "open drafts", "url": "/document/draft" },
+    { "action": "open the first draft", "url": "/document/42?mode=edit#participants" },
+    { "action": "publish", "url": "/document/42" },
+    { "action": "open help", "url": "/help" }
+  ]
+}
