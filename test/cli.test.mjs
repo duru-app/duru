@@ -4,6 +4,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { addJudgment } from '../src/judgments.mjs';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
@@ -128,6 +129,68 @@ test('rebuild leaves discarded pairs out of the links made by imports, and names
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
+});
+
+const HELP_UNIT = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js' };
+
+function rebuildWithHandOvers(handOvers, check) {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const judgmentsDir = path.join(copy, 'out/judgments');
+    const judgments = handOvers.map(({ node, title, file = HELP_UNIT.file }) => addJudgment(
+      judgmentsDir,
+      { test: { ...HELP_UNIT, file, title }, node, kind: 'hand-over', reason: '', author: 'a' },
+      new Date('2026-10-04T01:00:00Z'),
+    ));
+    const stdout = execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
+    check({ stdout, lines: stdout.split('\n'), judgments, judgmentsDir });
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+}
+
+test('rebuild prints how many handed-over pairs wait for their tag and how many handed-over pairs are no longer found among the tests of the screen', () => {
+  rebuildWithHandOvers([
+    { node: '/help#Help', title: 'renders the help text' },
+    { node: '/help#Help', title: 'shows the day the help was last updated' },
+    { node: '/help#Help', title: 'a test that was renamed' },
+  ], ({ stdout }) => {
+    assert.match(stdout, /^links from unit tests to screens by the files they import 3 \| test files not read 2$/m);
+    assert.match(stdout, /^pairs discarded by reviewers 0 \| judgment files skipped 0$/m);
+    assert.match(stdout, /^pairs handed over for tagging waiting for the tag 2 \| handed over but no longer found among the tests importing or tagged with the screen 1$/m);
+  });
+});
+
+test('rebuild counts a hand-over on the map apart from one whose screen is not on the map, and names the latter by node, test and judgment file', () => {
+  rebuildWithHandOvers([
+    { node: '/help#Help', title: 'renders the help text' },
+    { node: '/help#Help', title: 'a test that was renamed' },
+    { node: '/gone#Gone', title: 'renders the removed screen' },
+  ], ({ lines, judgments, judgmentsDir }) => {
+    const at = lines.findIndex((l) => l.startsWith('pairs handed over for tagging'));
+    const file = path.join(judgmentsDir, '_gone#Gone', `2026-10-04-a-${judgments[2].id.slice(0, 8)}.json`);
+    assert.ok(fs.existsSync(file));
+    assert.deepEqual(lines.slice(at, at + 2), [
+      'pairs handed over for tagging waiting for the tag 1 | handed over but no longer found among the tests importing or tagged with the screen 1',
+      `  handed over for /gone#Gone, which is not on the map ← components/Help.spec.js renders the removed screen (delete ${file} to clear it)`,
+    ]);
+  });
+});
+
+test('rebuild counts a detached hand-over for an API call, which is on the map, and does not call it off the map', () => {
+  rebuildWithHandOvers([{ node: 'POST:/api/v1/report/archive', title: 'a test that was renamed' }], ({ lines }) => {
+    const at = lines.findIndex((l) => l.startsWith('pairs handed over for tagging'));
+    assert.equal(lines[at], 'pairs handed over for tagging waiting for the tag 0 | handed over but no longer found among the tests importing or tagged with the screen 1');
+    assert.ok(!lines.some((l) => l.includes('not on the map')));
+  });
+});
+
+test('rebuild names an off-map hand-over by its title alone when the test has no file', () => {
+  rebuildWithHandOvers([{ node: '/gone#Gone', title: 'a check without a file', file: null }], ({ lines }) => {
+    const line = lines.find((l) => l.includes('which is not on the map'));
+    assert.match(line, /^  handed over for \/gone#Gone, which is not on the map ← a check without a file \(delete /);
+  });
 });
 
 for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc']]) {

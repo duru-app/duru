@@ -9,10 +9,11 @@ export const MARK_STATUSES = ['needs-more', 'missing', 'fine'];
 // 끝의 `.` 을 바꾸는 것은 Windows 가 그런 이름을 받지 않고, 화면 ID 가 `..` 이면 표시 폴더 밖을 가리키기 때문이다.
 export const fileSafe = (s) => s.replace(/[<>:"/\\|?*\x00-\x1f\s]/g, '_').replace(/\.$/, '_');
 
-export function writeNewRecord(folder, record) {
-  fs.mkdirSync(folder, { recursive: true });
-  const name = `${record.date.slice(0, 10)}-${fileSafe(record.author)}-${record.id.slice(0, 8)}.json`;
-  fs.writeFileSync(path.join(folder, name), JSON.stringify(record, null, 2) + '\n', { flag: 'wx' });
+export const recordName = (record) => `${record.date.slice(0, 10)}-${fileSafe(record.author)}-${record.id.slice(0, 8)}.json`;
+
+export function writeNewRecord(file, record) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(record, null, 2) + '\n', { flag: 'wx' });
 }
 
 export function loadMarks(dir) {
@@ -34,7 +35,7 @@ export function loadMarks(dir) {
 // 어느 화면의 표시인지는 폴더 이름이 아니라 파일 안의 target 으로 정한다.
 function saveMark(dir, mark) {
   const { story, node } = mark.target;
-  writeNewRecord(story ? path.join(dir, 'stories', story) : path.join(dir, fileSafe(node)), mark);
+  writeNewRecord(path.join(story ? path.join(dir, 'stories', story) : path.join(dir, fileSafe(node)), recordName(mark)), mark);
 }
 
 function storyTarget(target) {

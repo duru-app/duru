@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import { UNKNOWN } from '../src/client.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { chromium } from 'playwright-core';
-import { loadJudgments } from '../src/judgments.mjs';
+import { addJudgment, loadJudgments } from '../src/judgments.mjs';
 import { addMark, loadMarks } from '../src/marks.mjs';
 import { applyOverrides } from '../src/app-host.mjs';
 import { startReviewServer } from '../src/review.mjs';
@@ -5769,4 +5769,65 @@ test('in a browser, a discard that fails to save after another screen was select
         await p.click('#screen-list li:has-text("/help")');
         assert.equal(await p.locator('#center .judgment-error').count(), 0);
       })));
+});
+
+test('in a browser, a pair handed over with a note waits for its tag apart from the importing tests, and comes back when undone', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        const first = p.locator('#center .importers .importer', { hasText: 'renders the help text' });
+        await first.locator('input.reason').fill('checks the help screen');
+        await first.locator('button.hand-over').click();
+        await p.waitForSelector('#center .awaiting-tag');
+
+        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => [j.test, j.node, j.kind, j.reason, j.author]), [
+          [HELP_TEST, '/help#Help', 'hand-over', 'checks the help screen', 'reviewer'],
+        ]);
+        assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 1');
+        assert.equal(await p.locator('#screen-list li:has-text("/help") .importer-count').textContent(), '불러옴 1');
+        assert.equal(await p.textContent('#center .awaiting-tag h2'), '태그 달기 대기 1');
+        assert.match(await p.textContent('#center .awaiting-tag .importer'), /renders the help text.*checks the help screen.*reviewer/s);
+        assert.equal(await p.locator('#center .discarded').count(), 0);
+
+        await p.click('#center .awaiting-tag button.undo');
+        await p.waitForSelector('#center .awaiting-tag', { state: 'detached' });
+        assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 2');
+        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => j.kind).sort(), ['hand-over', 'undo']);
+      })));
+});
+
+test('in a browser, a hand-over without a note is accepted', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await p.locator('#center .importers .importer', { hasText: 'renders the help text' }).locator('button.hand-over').click();
+        await p.waitForSelector('#center .awaiting-tag');
+        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => [j.kind, j.reason]), [['hand-over', '']]);
+        assert.equal(await p.locator('#center .judgment-error').count(), 0);
+      })));
+});
+
+test('in a browser, a hand-over whose test is no longer found shows apart and is closed by undoing it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const gone = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'a title that was renamed' };
+    addJudgment(config.judgmentsDir, { test: gone, node: '/help#Help', kind: 'hand-over', reason: 'was about the help text', author: 'someone' });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await p.textContent('#center .detached h2'), '떨어져 나감 1');
+        assert.match(await p.textContent('#center .detached p.muted'), /결과에서 찾을 수 없/);
+        assert.match(await p.textContent('#center .detached .importer'), /components\/Help\.spec\.js.*a title that was renamed.*was about the help text.*someone/s);
+        assert.equal(await p.locator('#center .awaiting-tag').count(), 0);
+        assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 2');
+
+        await p.click('#center .detached button.undo');
+        await p.waitForSelector('#center .detached', { state: 'detached' });
+        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => j.kind).sort(), ['hand-over', 'undo']);
+      }));
+  });
 });

@@ -68,6 +68,17 @@ Reason: putting case IDs in test titles is the most common traceability practice
 when tests are moved or renamed. A check script can print several verdicts, so the tag belongs to the
 verdict, not to the file. Recording which screens a test visited at run time can come later as a
 separate signal for "passed through but not asserted".
+The confirmed link between a test and a node lives only in the test code's tag. What a test merely passes
+through (today, the source files it imports) is recomputed on every rebuild and shown apart from the tests
+that carry the tag. duru stores only the reviewer's judgments on such a pair: hand it over for tagging,
+discard it, or undo either. A handed-over pair goes to the task list, and a coding agent adds the tag; once
+the tag is read the pair is an ordinary tagged test and the judgment closes by itself. duru never edits test
+files.
+Reason: one source of truth for the link. A stored link beside the tag could disagree with it, and one more
+place would have to be kept in step. Renaming or moving a test does not orphan a stored link, because none is
+stored: a judgment names the test by result source, file and title without tags, and one that no longer finds
+its test shows as detached instead of silently counting. Each judgment is its own file, so judgments from two
+reviewers merge without conflict.
 
 **The review page has its own layout; prior art supplies ideas only.**
 The data on this map (configuration conditions, dead screens, test depth) differs from what other tools

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { compare } from './config.mjs';
 import { reviewData } from './review.mjs';
 import { SERVER_NOT_COMPARED } from './server.mjs';
 import { testsAt } from './story-paths.mjs';
@@ -60,9 +61,12 @@ function emptyTestLines(formats, tagSets) {
 
 const cellTags = (kind, { node, option, depth }) => [`${kind}:${node}`, ...(option ? [`option:${optionText(option)}`] : []), ...(depth ? [`depth:${depth}`] : [])];
 
+const quotedNote = (note, indent) => (note?.trim() ? `"${within(note.trim(), indent)}"` : null);
+const byline = (author, date, indent) => `(${within(author, indent)}, ${date.slice(0, 10)})`;
+
 function markLine(mark, where) {
-  const note = mark.note ? ` — "${within(mark.note, '    ')}"` : '';
-  return `  - ${mark.status}${where ? `, ${where}` : ''}${note} (${within(mark.author, '    ')}, ${mark.date.slice(0, 10)})`;
+  const note = quotedNote(mark.note, '    ');
+  return `  - ${mark.status}${where ? `, ${where}` : ''}${note ? ` — ${note}` : ''} ${byline(mark.author, mark.date, '    ')}`;
 }
 
 const kindsText = (kinds) => kinds.map((k) => KIND_NAMES[k]).join(' and ');
@@ -240,6 +244,35 @@ function storyLines(story, marks, tests, mapInfo, formats) {
   ];
 }
 
+const TAG_PLACE = {
+  playwright: (tag) => `in the test's \`tag\` option (\`{ tag: '${tag}' }\`), leaving the title as it is`,
+  vitest: () => "at the end of the test's own title, not a `describe` title",
+  junit: () => "at the end of the test's `@DisplayName`",
+  verdict: () => 'at the end of its VERDICT line',
+};
+
+const TAGGING_INTRO = "A reviewer judged that each of these tests checks a screen or API call it carries no tag for. Add the tag where its format reads it (`where`), changing nothing else in the test, then run the test so its result file is written again and run `duru rebuild`, and read this list again: a test that carries the tag counts as a test of that screen or call, and its item leaves this list. The item also leaves, without being done, if the test's file changes or its title changes in any way other than the added tag. duru does not edit test files.";
+
+export function taggingLines(awaitingTag, callIds) {
+  const items = Object.entries(awaitingTag).flatMap(([node, tests]) => tests.map((t) => ({ node, t })));
+  if (!items.length) return [];
+  items.sort((a, b) =>
+    compare(a.t.ref.file, b.t.ref.file) || (a.t.line ?? 0) - (b.t.line ?? 0) || compare(a.t.ref.title, b.t.ref.title) || compare(a.t.ref.source, b.t.ref.source) || compare(a.node, b.node));
+  return ['', '# Tagging', '', TAGGING_INTRO].concat(items.flatMap(({ node, t }) => {
+    const tag = `@${callIds.has(node) ? 'call' : 'screen'}:${node}`;
+    const { reason, author, date } = t.judgment;
+    return [
+      '',
+      `## ${t.line ? `${t.ref.file}:${t.line}` : t.ref.file} → ${node}`,
+      '',
+      `- title: ${within(t.title, '  ')}`,
+      `- tag to add: \`${tag}\``,
+      `- where: ${TAG_PLACE[t.format](tag)}`,
+      `- note: ${quotedNote(reason, '  ') ?? 'none'} ${byline(author, date, '  ')}`,
+    ];
+  }));
+}
+
 export function taskList(config) {
   const { map, tests, marks, appLinks, stories } = reviewData(config, null);
   const open = marks.attached.filter((m) => OPEN.includes(m.current.status));
@@ -304,5 +337,6 @@ export function taskList(config) {
     if (story) out.push(...storyLines(story, own, tests, mapInfo, formats));
     else if (!stories.stale) out.push('', `## ${id}`, '', '- marks:', ...own.map((m) => markLine(m.current)), '- story file: could not be read; `duru rebuild` prints why');
   }
+  out.push(...taggingLines(tests.awaitingTag, new Set(map.calls.map((c) => c.id))));
   return out.join('\n') + '\n';
 }
