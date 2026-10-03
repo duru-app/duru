@@ -10,9 +10,10 @@ export function checkStories(map, stories) {
   const targetsOf = linkTargets(map.screens);
 
   const linkBetween = (fromId, toId) => {
-    const from = map.screens[indexOf.get(fromId)];
+    const fromIndex = indexOf.get(fromId);
+    const from = map.screens[fromIndex];
     const ways = from.links
-      .filter((l) => targetsOf(l.to).includes(indexOf.get(toId)))
+      .filter((l) => targetsOf(l.to, l.tail, fromIndex).includes(indexOf.get(toId)))
       .map((l) => ({ file: l.file, line: l.line, conditions: l.conditions }))
       .sort(byPlace);
     // 조건 없는 링크가 하나라도 있으면 빼 둔 링크가 판정을 바꾸지 못하므로 알리지 않는다.

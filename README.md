@@ -168,6 +168,29 @@ through local consts. Each of these links also carries the setting guard
 `globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'`. Entries that are not route names are
 skipped, and a route picked by any other computed key is left out.
 
+A route constant followed by more path is read as the address it spells, with `{*}` for each variable segment:
+`` `${Option.ROUTE_PATH.USER_SIGN}/${id}` ``, `Option.ROUTE_PATH.USER_SIGN + '/' + id` and
+`Option.ROUTE_PATH.USER_SIGN + '/ALL'` become links to `/user-sign/{*}` and `/user-sign/ALL`, so they enter
+`/user-sign/:type` and not the plain `/user-sign`. Nested concatenation is followed to the end
+(`` `${ROUTE + '/' + id}/edit` `` spells `/route/{*}/edit`), and a tab name taken from a const in the same file
+(`const TOPIC = 'faq'`) is fixed text; a tab name read from a member of an object in the screen's own files, even
+a const object literal in the same file (`LOCAL.RESULT`), is a variable segment, while a member of the
+configured constants files (`Enum.TAB.READY`) is fixed text. A variable segment fits only a route segment that is a
+parameter, optional and repeated ones included (`/help/{*}` fits `/help/:topic/:section?`); a fixed segment fits a
+parameter whose pattern (`:tab(draft|done)`) allows it, or the same fixed segment, both without letter case, as
+React Router compares them. Anything after `?` or `#` is ignored. An address whose tail is
+not made of whole segments is read as the bare constant, a link to the route without the parameter: a variable
+glued to the constant or to other text in one segment (`` `${ROUTE}${x}` ``, `ROUTE + location.search`,
+`` `${ROUTE}/page-${x}` ``, `` `${ROUTE}/${id}${location.search}` ``), a conditional tail
+(`ROUTE + (x ? '/' + x : '')`), and an address joined any other way (`[ROUTE, x].join('/')`). Only a constant whose
+value is a string takes a tail, and a variable segment never enters a route whose segment is fixed
+(`${ROUTE}/${x}` does not enter `/lab/result`; it falls back to `/lab`). A table of tab addresses counts only
+where it is written in a screen's own files, and only through the shapes above; the `ROUTE_PATH_GROUP`-style
+table that a constants file keeps for highlighting the active menu entry is not read, because that file is not a
+screen file. A menu list that is filtered or defaulted before it is looped over
+(`(MENUS.X?.LIST || []).filter(...).forEach(...)`) is not read as a menu, so the screens only that menu leads to
+keep no incoming link.
+
 Each screen has an ID made of its route path and component name (`/document/:id#DocumentDetail`),
 with spaces and `, ( ) & | !` replaced so it works as a JUnit tag too. Routes that end up with the same
 ID are listed under `duplicateIds`.
@@ -218,9 +241,15 @@ opened from an e-mail), and `entryPaths` (`config`; paths that match no route go
 A screen is open when an entry screen reaches it through links and routes without such a guard, and
 `restricted` otherwise; a screen no entry screen reaches at all stays open, since nothing shows what would
 block it. A link counts as guarded when it has such a guard itself, or when every place that uses the
-handler it sits in is guarded. A link enters the route with the
-same path, or, when there is none, every route that only adds parameter segments to it (`/document` enters
-`/document/:id`); links to a partly unknown path, and a screen's links to itself, are left out. `access`
+handler it sits in is guarded. A link enters the route with the same path. When there is none, a link with a tail
+after its route constant enters the routes that begin with the constant's own path and whose further segments fit
+the tail (`/document/{*}` and `/document/draft` enter `/document/:id`; a trailing slash in the route path does not
+count, and a route such as `*` or `/:section/:id` takes no tail link); when none fits, and for every other address,
+it enters every route that only adds parameter segments to it (`/document` enters `/document/:id`). A link with a
+tail that still reaches no route is read once more as its bare constant: it enters the route with that same path,
+or, when there is none, every route that only adds parameter segments to it (`/lab/{*}` enters `/lab`). When
+adding parameters or reading the bare constant reaches only the screen the link sits in, the next of these rules
+is tried. Links to a partly unknown path, and a screen's links to itself, are left out. `access`
 lists `kinds` (`setting`, `role`), the blocking `route` guards, and every incoming link in `links` with the
 screen it comes `from`, its source location, its blocking `guards` (`via` names the handler an inherited
 guard came from) and `fromKinds`, the `kinds` of the screen it comes from (empty when that screen is open or its own links ask for different

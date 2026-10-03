@@ -9,6 +9,8 @@ import { settingNeeds } from './setting-needs.mjs';
 const traverse = _traverse.default ?? _traverse;
 export const PARSER_PLUGINS = ['jsx', 'classProperties', 'optionalChaining', 'nullishCoalescingOperator', 'dynamicImport'];
 export const UNKNOWN = '{?}';
+export const VARIABLE_SEGMENT = '{*}';
+const UNREADABLE_PIECE = '\0';
 const GUARD_TEXT_LIMIT = 160;
 
 function parseFile(file) {
@@ -445,6 +447,33 @@ export async function extractClient(config) {
       .map((entry) => ({ route: entry, guard: `${chain.join('.')} includes '${entry}'`, settings: needs.includes(chain, entry) }));
   }
 
+  function tailText(p) {
+    if (p.isStringLiteral()) return p.node.value;
+    if (p.isTemplateLiteral()) return p.node.quasis.map((q, i) => (i ? tailText(p.get(`expressions.${i - 1}`)) : '') + q.value.cooked).join('');
+    if (p.isBinaryExpression({ operator: '+' })) return tailText(p.get('left')) + tailText(p.get('right'));
+    const value = lossless(p) ? evaluate(p) : undefined;
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : UNREADABLE_PIECE;
+  }
+
+  // 라우트 상수 뒤에 '/' 로 이어 붙은 주소. 조각마다 글자 그대로이거나 변수 하나일 때만 돌려주고, 아니면 '' 을 돌려준다.
+  function routeTail(p) {
+    let tail = '';
+    let whole = p;
+    for (;;) {
+      const parent = whole.parentPath;
+      if (parent.isTemplateLiteral() && parent.node.expressions[0] === whole.node && parent.node.quasis[0].value.cooked === '') {
+        tail += parent.node.quasis.slice(1).map((q, i) => (i ? tailText(parent.get(`expressions.${i}`)) : '') + q.value.cooked).join('');
+      } else if (parent.isBinaryExpression({ operator: '+' }) && parent.node.left === whole.node) {
+        tail += tailText(parent.get('right'));
+      } else break;
+      whole = parent;
+    }
+    const tailPath = tail.split(/[?#]/)[0].replace(/\/$/, '');
+    if (!tailPath.startsWith('/')) return '';
+    const segments = tailPath.slice(1).split('/').map((s) => (s === UNREADABLE_PIECE ? VARIABLE_SEGMENT : s));
+    return segments.every((s) => s && !s.includes(UNREADABLE_PIECE)) ? `/${segments.join('/')}` : '';
+  }
+
   // ---------- API 모듈: 내보낸 함수마다 호출하는 endpoint ----------
 
   function extractApiModule(file) {
@@ -569,7 +598,7 @@ export async function extractClient(config) {
         if (settingsRoots.has(chain[0]) && chain.length >= 3) {
           record('settingReads', { key: chain.slice(1).join('.') }, p);
         } else if (chain[0] === routeRoot && chain.length === routeRest.length + 2 && routeRest.every((k, i) => chain[i + 1] === k)) {
-          record('routeRefs', { route: chain[chain.length - 1] }, p);
+          record('routeRefs', { route: chain[chain.length - 1], tail: routeTail(p) }, p);
         }
       },
     });
@@ -690,7 +719,10 @@ export async function extractClient(config) {
       const facts = fileFacts(f);
       for (const c of facts.apiCalls) apiCalls.push({ ...c, file: rel(f) });
       for (const r of facts.settingReads) settingReads.push({ ...r, file: rel(f) });
-      for (const r of facts.routeRefs) links.push({ ...r, to: routeValues[r.route] ?? UNKNOWN, file: rel(f) });
+      for (const { tail, ...r } of facts.routeRefs) {
+        const value = routeValues[r.route];
+        links.push(typeof value === 'string' && tail ? { ...r, to: value + tail, tail, file: rel(f) } : { ...r, to: value ?? UNKNOWN, file: rel(f) });
+      }
     }
     return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls, settingReads, links };
   });

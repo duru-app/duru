@@ -6,6 +6,7 @@ import path from 'node:path';
 import { screenAccess } from '../src/access.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
+import { checkStories } from '../src/story-paths.mjs';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const buildFixture = (dir = FIXTURE) => buildMap(loadConfig(path.join(dir, 'config.json')));
@@ -30,7 +31,7 @@ test('links carry their own guard, and a handler used under a guard passes it to
     { to: '/admin/group', guards: ['isAdmin'] },
     { to: '/lab', guards: ['globalSettings.SYSTEM.LAB_ENABLED'] },
     { to: '/admin/audit', guards: ["session['member.role'] === 'AUDITOR'"] },
-    { to: '/document', guards: [] },
+    { to: '/document/{*}', guards: [] },
     {
       to: '/admin/report',
       guards: ["globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'", "['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1", 'MENUS.ADMIN'],
@@ -1225,3 +1226,254 @@ for (const bodyOptions of [5, ['weekly'], [['weekly']], { 'POST:/api/v1/report/s
     );
   });
 }
+
+const addRoutes = (rewrite, paths) =>
+  rewrite('client/src/Routes.js', (src) =>
+    src.replace(
+      '      <Route path={Option.ROUTE_PATH.HELP} component={Help} exact />\n',
+      `      <Route path={Option.ROUTE_PATH.HELP} component={Help} exact />\n${paths.map(([routePath, component]) => `      <Route path={${routePath}} component={${component}} exact />\n`).join('')}`,
+    ),
+  );
+
+const withHelpTopicRoute = (rewrite) => addRoutes(rewrite, [['`${Option.ROUTE_PATH.HELP}/:topic`', 'Help']]);
+
+const addToHome = (rewrite, lines) => rewrite('client/src/components/Home.js', (src) => src.replace('    </div>\n  );', `${lines}\n    </div>\n  );`));
+
+const linksAddedToHome = (map) => {
+  const links = screen(map, '/home#Home').links.filter((l) => l.file === 'components/Home.js');
+  const audit = links.find((l) => l.route === 'ADMIN_AUDIT').line;
+  return links.filter((l) => l.line > audit).map((l) => [l.to, l.guards]);
+};
+
+const linksTo = (map, id, file = 'components/Home.js') => screen(map, id).access.links.filter((l) => l.from === '/home#Home' && l.file === file);
+
+test('an address written as a route constant followed by a variable segment is an incoming link of the route with a parameter there', async () => {
+  const map = await buildCopy((rewrite) => {
+    withHelpTopicRoute(rewrite);
+    addToHome(
+      rewrite,
+      [
+        '      <Link to={`${Option.ROUTE_PATH.HELP}/${topic}`}>template</Link>',
+        "      <Link to={Option.ROUTE_PATH.HELP + '/' + topic}>plus</Link>",
+        "      <Link to={Option.ROUTE_PATH.HELP + '/faq'}>literal</Link>",
+        "      {isAdmin && <Link to={`${Option.ROUTE_PATH.HELP}/${topic}/edit`}>deeper</Link>}",
+      ].join('\n'),
+    );
+  });
+  assert.deepEqual(linksAddedToHome(map), [
+    ['/help/{*}', []],
+    ['/help/{*}', []],
+    ['/help/faq', []],
+    ['/help/{*}/edit', ['isAdmin']],
+  ]);
+  const topic = screen(map, '/help/:topic#Help');
+  assert.deepEqual(topic.access.links.map((l) => [l.from, l.guards.length]), [['/home#Home', 0], ['/home#Home', 0], ['/home#Home', 0]]);
+  assert.equal(map.entries.some((e) => e.screen === topic.id), false);
+});
+
+test('a concatenated link keeps the guard around it and does not count as a link to the plain route', async () => {
+  const map = await buildCopy((rewrite) => {
+    withHelpTopicRoute(rewrite);
+    addToHome(rewrite, '      {memberRole === \'ADMIN\' && <Link to={`${Option.ROUTE_PATH.HELP}/${topic}`}>topic</Link>}');
+  });
+  const [link] = screen(map, '/help/:topic#Help').access.links;
+  assert.deepEqual([link.from, link.guards.map((g) => g.guard)], ['/home#Home', ["memberRole === 'ADMIN'"]]);
+  assert.equal(screen(map, '/help#Help').access.links.some((l) => l.from === '/home#Home'), false);
+});
+
+test('a table of tab addresses written in a screen file links to the parameterised route', async () => {
+  const map = await buildCopy((rewrite) => {
+    withHelpTopicRoute(rewrite);
+    rewrite('client/src/components/Home.js', (src) =>
+      src.replace(
+        'export default function Home',
+        "const HELP_TABS = [Option.ROUTE_PATH.HELP + '/' + 'basics', Option.ROUTE_PATH.HELP + '/' + 'billing'];\n\nexport default function Home",
+      ),
+    );
+  });
+  const helpLinks = screen(map, '/home#Home').links.filter((l) => l.file === 'components/Home.js' && l.route === 'HELP');
+  assert.deepEqual(helpLinks.map((l) => [l.to, l.guards]), [['/help/basics', []], ['/help/billing', []]]);
+  assert.equal(screen(map, '/help/:topic#Help').access.links.length, 2);
+});
+
+test('an address whose tail cannot be read as whole segments is read as the bare route constant', async () => {
+  const map = await buildCopy((rewrite) => {
+    withHelpTopicRoute(rewrite);
+    addToHome(
+      rewrite,
+      [
+        '      <Link to={`${Option.ROUTE_PATH.HELP}${topic}`}>no slash</Link>',
+        '      <Link to={Option.ROUTE_PATH.HELP + topic}>plus without slash</Link>',
+        '      <Link to={Option.ROUTE_PATH.HELP + location.search}>query</Link>',
+        "      <Link to={Option.ROUTE_PATH.HELP + (topic ? '/' + topic : '')}>conditional</Link>",
+        "      <Link to={`${Option.ROUTE_PATH.HELP}/page-${topic}`}>mixed segment</Link>",
+        '      <Link to={`${Option.ROUTE_PATH.HELP}/${topic}${location.search}`}>variable glued to a variable</Link>',
+        "      <Link to={[Option.ROUTE_PATH.HELP, topic].join('/')}>join</Link>",
+      ].join('\n'),
+    );
+  });
+  assert.deepEqual(linksAddedToHome(map).map(([to]) => to), ['/help', '/help', '/help', '/help', '/help', '/help', '/help']);
+  assert.equal(linksTo(map, '/help#Help').length, 7);
+  const topic = screen(map, '/help/:topic#Help');
+  assert.deepEqual(topic.access.links, []);
+  assert.deepEqual(map.entries.find((e) => e.screen === topic.id).reasons, [{ kind: 'no-incoming-link' }]);
+});
+
+test('a tail that fits no route falls back to what the bare route constant reaches, and a tail that fits does not', async () => {
+  const map = await buildCopy((rewrite) => {
+    withHelpTopicRoute(rewrite);
+    addToHome(
+      rewrite,
+      [
+        '      <Link to={`${Option.ROUTE_PATH.LAB}/${topic}`}>variable under a route with only fixed children</Link>',
+        '      <Link to={`${Option.ROUTE_PATH.DOCUMENT}/${a}/${b}/${c}`}>deeper than any document route</Link>',
+        '      <Link to={`${Option.ROUTE_PATH.HELP}/${topic}`}>fits the topic route</Link>',
+      ].join('\n'),
+    );
+  });
+  assert.deepEqual(linksAddedToHome(map).map(([to]) => to), ['/lab/{*}', '/document/{*}/{*}/{*}', '/help/{*}']);
+  assert.equal(linksTo(map, '/lab#Lab').length, 2);
+  assert.deepEqual(linksTo(map, '/lab/result#LabResult'), []);
+  assert.equal(linksTo(map, '/document/:id#DocumentDetail').length, 1);
+  assert.equal(linksTo(map, '/document/:tab_draft_done_#DocumentList').length, 1);
+  assert.equal(linksTo(map, '/help/:topic#Help').length, 1);
+  assert.deepEqual(linksTo(map, '/help#Help'), []);
+});
+
+test('a fixed tail reaches a parameter only when it fits the pattern written in the route', async () => {
+  const map = await buildCopy((rewrite) =>
+    addToHome(rewrite, ["      <Link to={Option.ROUTE_PATH.DOCUMENT + '/draft'}>draft</Link>", "      <Link to={Option.ROUTE_PATH.DOCUMENT + '/other'}>other</Link>"].join('\n')),
+  );
+  const fromHome = (id) => screen(map, id).access.links.filter((l) => l.file === 'components/Home.js').length;
+  assert.equal(fromHome('/document/:tab_draft_done_#DocumentList'), 1);
+  assert.equal(fromHome('/document/:id#DocumentDetail'), 2);
+});
+
+test('a fixed tail is compared to the route without letter case, as React Router does', async () => {
+  const map = await buildCopy((rewrite) => {
+    addRoutes(rewrite, [['`${Option.ROUTE_PATH.LAB}/Result/:id`', 'LabResult']]);
+    addToHome(rewrite, ["      <Link to={Option.ROUTE_PATH.DOCUMENT + '/Draft'}>draft</Link>", "      <Link to={Option.ROUTE_PATH.LAB + '/result/' + id}>result</Link>"].join('\n'));
+  });
+  assert.equal(linksTo(map, '/document/:tab_draft_done_#DocumentList').length, 1);
+  assert.equal(linksTo(map, '/lab/Result/:id#LabResult').length, 1);
+});
+
+test('a variable tail fits optional and repeated parameters of the route', async () => {
+  const map = await buildCopy((rewrite) => {
+    addRoutes(rewrite, [
+      ['`${Option.ROUTE_PATH.HELP}/:topic/:section?`', 'Help'],
+      ['`${Option.ROUTE_PATH.LAB}/:path*`', 'LabResult'],
+      ['`${Option.ROUTE_PATH.DOCUMENT}/:id/:tab?`', 'DocumentDetail'],
+    ]);
+    addToHome(rewrite, ['      <Link to={`${Option.ROUTE_PATH.HELP}/${topic}`}>topic</Link>', '      <Link to={`${Option.ROUTE_PATH.LAB}/${folder}/${file}`}>file</Link>'].join('\n'));
+  });
+  assert.equal(linksTo(map, '/help/:topic/:section?#Help').length, 1);
+  assert.equal(linksTo(map, '/lab/:path*#LabResult').length, 1);
+  assert.equal(linksTo(map, '/document/:id/:tab?#DocumentDetail', 'components/DocumentTable.js').length, 1);
+  assert.equal(linksTo(map, '/document/:id#DocumentDetail', 'components/DocumentTable.js').length, 1);
+});
+
+test('a bare route constant with no route of its own enters the routes that only add parameters, not a route with a parameter in its place', async () => {
+  const map = await buildCopy((rewrite) => {
+    addRoutes(rewrite, [['"/:page"', 'Help']]);
+    addToHome(rewrite, '      <Link to={Option.ROUTE_PATH.DOCUMENT}>documents</Link>');
+  });
+  assert.deepEqual(linksAddedToHome(map), [['/document', []]]);
+  assert.deepEqual(linksTo(map, '/:page#Help'), []);
+  assert.equal(linksTo(map, '/document/:id#DocumentDetail').length, 1);
+  assert.equal(linksTo(map, '/document/:tab_draft_done_#DocumentList').length, 1);
+});
+
+test('the whole address is read when the route constant is nested in another concatenation', async () => {
+  const map = await buildCopy((rewrite) => {
+    withHelpTopicRoute(rewrite);
+    addRoutes(rewrite, [['`${Option.ROUTE_PATH.HELP}/:topic/edit`', 'Help']]);
+    addToHome(rewrite, ["      <Link to={`${Option.ROUTE_PATH.HELP + '/' + topic}/edit`}>edit</Link>", "      <Link to={`${Option.ROUTE_PATH.HELP}/${topic}` + '/edit'}>template then plus</Link>"].join('\n'));
+  });
+  assert.deepEqual(linksAddedToHome(map).map(([to]) => to), ['/help/{*}/edit', '/help/{*}/edit']);
+  assert.equal(linksTo(map, '/help/:topic/edit#Help').length, 2);
+});
+
+test('only a route constant whose value is a string takes the address after it', async () => {
+  const map = await buildCopy((rewrite) => {
+    rewrite('client/src/_define/Option.js', (src) => src.replace("      ADMIN_REPORT: this.CONTEXT_PATH + 'admin/report',\n", "      ADMIN_REPORT: this.CONTEXT_PATH + 'admin/report',\n      ADMIN: { GROUP: this.CONTEXT_PATH + 'admin/group' },\n"));
+    addToHome(rewrite, '      <Link to={`${Option.ROUTE_PATH.ADMIN}/${id}`}>group</Link>');
+  });
+  assert.deepEqual(linksAddedToHome(map), [[{ GROUP: '/admin/group' }, []]]);
+});
+
+test('a tab name read from a const in the same file is fixed text, and one read from a member of a const object there is a variable segment', async () => {
+  const map = await buildCopy((rewrite) => {
+    withHelpTopicRoute(rewrite);
+    rewrite('client/src/components/Home.js', (src) =>
+      src.replace('export default function Home', "const TOPIC = 'faq';\nconst LOCAL = { RESULT: 'result', NESTED: { TAB: 'faq' } };\n\nexport default function Home"),
+    );
+    addToHome(
+      rewrite,
+      ['      <Link to={`${Option.ROUTE_PATH.HELP}/${TOPIC}`}>const</Link>', "      <Link to={Option.ROUTE_PATH.HELP + '/' + LOCAL.RESULT}>member</Link>", '      <Link to={`${Option.ROUTE_PATH.HELP}/${LOCAL.NESTED.TAB}`}>nested member</Link>'].join('\n'),
+    );
+  });
+  assert.deepEqual(linksAddedToHome(map).map(([to]) => to), ['/help/faq', '/help/{*}', '/help/{*}']);
+});
+
+test('a settings default read from a member of a const object in the same file is listed as not read in full', async () => {
+  const map = await buildEditedCopy([
+    ['client/src/store/settings.js', 'const defaults = {', "const M = { A: 'x' };\nconst defaults = {"],
+    ['client/src/store/settings.js', '    LAB_ENABLED: false,\n', '    LAB_ENABLED: false,\n    PICK: M.A,\n'],
+  ]);
+  assert.deepEqual(map.settingsDefaultsIncomplete, { globalSettings: [['SYSTEM', 'PICK']] });
+});
+
+for (const [kind, generic] of [
+  ['a catch-all route', '*'],
+  ['a route made only of parameters', '/:section/:id'],
+]) {
+  test(`with ${kind} among the routes, a tail link enters only routes under its route constant`, async () => {
+    const map = await buildCopy((rewrite) => {
+      addRoutes(rewrite, [
+        ['`${Option.ROUTE_PATH.HELP}/:topic`', 'Help'],
+        [JSON.stringify(generic), 'AdminAudit'],
+      ]);
+      addToHome(rewrite, ['      <Link to={`${Option.ROUTE_PATH.HELP}/${topic}`}>topic</Link>', '      <Link to={`${Option.ROUTE_PATH.LAB}/${x}`}>lab</Link>'].join('\n'));
+    });
+    assert.deepEqual(linksTo(map, `${generic}#AdminAudit`), []);
+    assert.equal(linksTo(map, '/help/:topic#Help').length, 1);
+    assert.equal(linksTo(map, '/lab#Lab').length, 2);
+  });
+}
+
+test('a route written with a trailing slash takes a tail link that fits it', async () => {
+  const map = await buildCopy((rewrite) => {
+    addRoutes(rewrite, [['`${Option.ROUTE_PATH.HELP}/:topic/`', 'Help']]);
+    addToHome(rewrite, '      <Link to={`${Option.ROUTE_PATH.HELP}/${topic}`}>topic</Link>');
+  });
+  assert.equal(linksTo(map, '/help/:topic/#Help').length, 1);
+  assert.deepEqual(linksTo(map, '/help#Help'), []);
+});
+
+const helpLinks = (links) =>
+  "import { Link } from 'react-router-dom';\nimport Option from '_define/Option';\n\nexport default function Help({ topic }) {\n  return (\n    <article>\n" +
+  links.map((l) => `      ${l}\n`).join('') +
+  '    </article>\n  );\n}\n';
+
+const linesFrom = (map, id, fromId) => screen(map, id).access.links.filter((l) => l.from === fromId).map((l) => l.line);
+
+test('a tail link that only the screen it sits in would take by added parameters goes on to the bare route constant', async () => {
+  const map = await buildCopy((rewrite) => {
+    addRoutes(rewrite, [['`${Option.ROUTE_PATH.HELP}/s/:id`', 'Help']]);
+    rewrite('client/src/components/Help.js', () => helpLinks(['<Link to={`${Option.ROUTE_PATH.HELP}/s/`}>prefix</Link>']));
+  });
+  assert.deepEqual(linesFrom(map, '/help#Help', '/help/s/:id#Help'), [7]);
+  assert.deepEqual(linesFrom(map, '/help/s/:id#Help', '/help#Help'), [7]);
+  const [story] = checkStories(map, [{ id: 'prefix', screens: ['/help/s/:id#Help', '/help#Help'] }]);
+  assert.deepEqual([story.links[0].verdict, story.links[0].ways.map((w) => w.line)], ['open', [7]]);
+});
+
+test('a link whose address fits the screen it sits in stays a link to itself and does not go on to the bare route constant', async () => {
+  const map = await buildCopy((rewrite) => {
+    withHelpTopicRoute(rewrite);
+    rewrite('client/src/components/Help.js', () => helpLinks(['<Link to={`${Option.ROUTE_PATH.HELP}/${topic}`}>topic</Link>', '<Link to={Option.ROUTE_PATH.HELP}>plain</Link>']));
+  });
+  assert.deepEqual(linesFrom(map, '/help#Help', '/help/:topic#Help'), [8]);
+  assert.deepEqual(linesFrom(map, '/help/:topic#Help', '/help#Help'), [7]);
+});

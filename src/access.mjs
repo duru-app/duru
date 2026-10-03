@@ -1,6 +1,7 @@
 import { parseExpression } from '@babel/parser';
-import { lookupConstant, memberChain, UNKNOWN } from './client.mjs';
+import { lookupConstant, memberChain, UNKNOWN, VARIABLE_SEGMENT } from './client.mjs';
 import { parseRoleEntry } from './config.mjs';
+import { pathParts } from './path-values.mjs';
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -168,17 +169,71 @@ function roleReader(config, guardInits, constants) {
 
 export const unreadableTarget = (to) => typeof to !== 'string' || to.includes(UNKNOWN);
 
+const compiles = (pattern) => {
+  try {
+    return Boolean(new RegExp(pattern));
+  } catch {
+    return false;
+  }
+};
+
+// path-to-regexp 1.x 가 만드는 정규식을 따르되, 대소문자는 구분하지 않고 주소의 {*} 는 어떤 변수 자리와도 맞게 한다.
+function fittingPattern(parts) {
+  const source = parts
+    .map((part) => {
+      if (typeof part === 'string') return escapeRegExp(part);
+      const prefix = escapeRegExp(part.prefix);
+      const anyValue = `[^${escapeRegExp(part.prefix || '/')}]+?`;
+      let capture = `(?:(?:${part.pattern && compiles(part.pattern) ? part.pattern : anyValue})|${escapeRegExp(VARIABLE_SEGMENT)})`;
+      if (part.repeat) capture += `(?:${prefix}${capture})*`;
+      return part.optional ? `(?:${prefix}${capture})?` : prefix + capture;
+    })
+    .join('');
+  return new RegExp(`^${source}/?$`, 'i');
+}
+
 export function linkTargets(screens) {
-  return (to) => {
-    if (unreadableTarget(to)) return [];
-    const indices = screens.map((_, i) => i);
-    const exact = indices.filter((i) => screens[i].path === to);
-    if (exact.length) return exact;
+  const indices = screens.map((_, i) => i);
+  const routes = screens.map((s) => {
+    const parts = pathParts(s.path.replace(/\/$/, ''));
+    return { pattern: fittingPattern(parts), head: typeof parts[0] === 'string' ? parts[0].toLowerCase() : '' };
+  });
+  const samePath = (to) => indices.filter((i) => screens[i].path === to);
+  const addingParameters = (to) => {
     const prefix = to.replace(/\/$/, '') + '/';
     return indices.filter((i) => {
       const p = screens[i].path;
       return p.startsWith(prefix) && p.slice(prefix.length).split('/').every((seg) => seg.startsWith(':'));
     });
+  };
+  // 상수 경로로 시작하는 라우트만 맞춰 본다. 그러지 않으면 '*' 나 '/:section/:id' 같은 라우트가 상수 뒤에 주소를 이어 붙인 링크를 모두 가져간다.
+  const fittingRoutes = (to, bare) => {
+    const under = bare.replace(/\/$/, '').toLowerCase();
+    return indices.filter((i) => (routes[i].head === under || routes[i].head.startsWith(`${under}/`)) && routes[i].pattern.test(to));
+  };
+  // 짐작으로 찾는 단계(guess)가 링크가 있는 화면(from) 하나만 찾으면 다음 단계로 넘어간다.
+  const firstFound = (from, steps) => {
+    let first = [];
+    for (const { find, guess } of steps) {
+      const found = find();
+      if (found.length && !(guess && found.every((i) => i === from))) return found;
+      if (!first.length) first = found;
+    }
+    return first;
+  };
+  const exactly = (find) => ({ find, guess: false });
+  const guessing = (find) => ({ find, guess: true });
+  return (to, tail, from) => {
+    if (unreadableTarget(to)) return [];
+    if (!tail) return firstFound(from, [exactly(() => samePath(to)), guessing(() => addingParameters(to))]);
+    const bare = to.slice(0, -tail.length);
+    return firstFound(from, [
+      exactly(() => samePath(to)),
+      exactly(() => fittingRoutes(to, bare)),
+      guessing(() => addingParameters(to)),
+      guessing(() => samePath(bare)),
+      guessing(() => addingParameters(bare)),
+    ]);
   };
 }
 
@@ -247,7 +302,7 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
       const uses = (l.inheritedGuards ?? []).map((h) => describe(h.guards, l.file, h.via));
       linkConditions[from].push(held(own, uses));
       const guards = held(blocks(own), uses.map(blocks));
-      for (const to of targetsOf(l.to)) {
+      for (const to of targetsOf(l.to, l.tail, from)) {
         if (to === from) continue;
         const link = { from, to, file: l.file, line: l.line, guards };
         incoming[to].push(link);
