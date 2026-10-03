@@ -15,6 +15,15 @@ const STORY_STATUS = {
   untested: 'untested — no story test, and no screen on the path has a test',
 };
 
+const TITLE = '<what it checks>';
+const quoted = (tags) => JSON.stringify(`${TITLE} ${tags}`);
+const EMPTY_TEST = {
+  playwright: (tags) => `test.fixme(${quoted(tags)}, async ({ page }) => {});`,
+  junit: (tags, method) => `@Test @Disabled @DisplayName(${quoted(tags)}) void ${method}() {}`,
+  vitest: (tags) => `test.todo(${quoted(tags)});`,
+  verdict: (tags) => `VERDICT ${TITLE}: <verdict> — <what was seen> ${tags}`,
+};
+
 const count = (n, word, plural = `${word}s`) => `${n} ${n === 1 ? word : plural}`;
 
 const guardText = (g) => `\`${g.guard}\`${g.via ? ` through ${g.via}` : ''}${g.kinds.length ? ` (${g.kinds.join(', ')})` : ''}`;
@@ -28,6 +37,27 @@ function cellText({ option, depth }, whole) {
 
 // 여러 줄인 글의 뒷줄을 들여 써서 항목 밖으로 나가 새 제목이나 항목이 되지 않게 한다.
 const within = (text, indent) => text.replace(/\r\n?|\n/g, `\n${indent}`);
+
+// 스토리 경로의 화면 태그는 메서드 이름에 넣지 않는다.
+function methodName(tags, used) {
+  const base = tags.filter((t, i) => i === 0 || /^(option|depth):/.test(t)).join('_').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  let name = base;
+  for (let n = 2; used.has(name); n++) name = `${base}_${n}`;
+  used.add(name);
+  return name;
+}
+
+function emptyTestLines(formats, tagSets) {
+  if (!formats.length) return ['- empty tests: none, the config lists no test results'];
+  const used = new Set();
+  const lines = tagSets.flatMap((tags) => {
+    const method = methodName(tags, used);
+    return formats.map((f) => `  - ${f}: \`${EMPTY_TEST[f](tags.map((t) => `@${t}`).join(' '), method)}\``);
+  });
+  return ['- empty tests:', ...lines];
+}
+
+const cellTags = (kind, { node, option, depth }) => [`${kind}:${node}`, ...(option ? [`option:${optionText(option)}`] : []), ...(depth ? [`depth:${depth}`] : [])];
 
 function markLine(mark, where) {
   const note = mark.note ? ` — "${within(mark.note, '    ')}"` : '';
@@ -184,7 +214,7 @@ function preconditionLines(r, { screensById, routesFile, restricted }) {
   ];
 }
 
-function storyLines(story, marks, tests, mapInfo) {
+function storyLines(story, marks, tests, mapInfo, formats) {
   const problems = reachProblems(story);
   return [
     '',
@@ -203,6 +233,7 @@ function storyLines(story, marks, tests, mapInfo) {
     ...(story.reach.length
       ? ['- preconditions:', ...story.reach.flatMap((r) => preconditionLines(r, mapInfo))]
       : [`- preconditions: ${problems.length ? 'none where links were found' : 'none'}`]),
+    ...emptyTestLines(formats, [[`story:${story.id}`, ...new Set(story.steps.filter((s) => s.onMap).map((s) => `screen:${s.screen}`))]]),
   ];
 }
 
@@ -215,27 +246,30 @@ export function taskList(config) {
   const storyMarks = open.filter((m) => m.target.story !== undefined);
   const restricted = new Set(map.screens.filter((s) => s.access.restricted).map((s) => s.id));
   const relative = (p) => path.relative(config.configDir, p).split(path.sep).join('/');
+  const formats = [...new Set(config.tests.map((t) => t.format))];
 
   const out = [
     `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}`,
     '',
-    `A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
+    `A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. Under \`empty tests\`, a screen or call gets one set for each open mark and a story one set: an empty test for each test format in the config, with the tags already in its title and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
     '',
     `Source files are under \`${relative(config.srcRoot)}\`.`,
   ];
   if (!open.length) out.push('', 'No open marks.');
   for (const s of screens) {
+    const marks = open.filter((m) => m.target.node === s.id);
     out.push(
       '',
       `## ${s.id}`,
       '',
       '- marks:',
-      ...open.filter((m) => m.target.node === s.id).map((m) => markLine(m.current, cellText(m.target, 'whole screen'))),
+      ...marks.map((m) => markLine(m.current, cellText(m.target, 'whole screen'))),
       `- component: ${s.componentFile}, route at ${config.routesFile}:${s.line}`,
       ...(appLinks[s.id] ? [`- app: ${appLinks[s.id]}`] : []),
       ...accessLines(s.access, restricted),
       ...callLines(s, tests.nodes),
       ...testLines(tests.nodes[s.id]),
+      ...emptyTestLines(formats, marks.map((m) => cellTags('screen', m.target))),
     );
   }
   if (calls.length) out.push('', '# API calls');
@@ -251,6 +285,7 @@ export function taskList(config) {
       `- server: ${serverText(c.server)}`,
       ...markedOptionLines(c, marks, tests.nodes[c.id]),
       ...testLines(tests.nodes[c.id]),
+      ...emptyTestLines(formats, marks.map((m) => cellTags('call', m.target))),
     );
   }
   if (storyMarks.length) out.push('', '# Stories', '', `Story files are in \`${relative(config.storiesDir)}\`.`);
@@ -262,7 +297,7 @@ export function taskList(config) {
   for (const id of [...new Set(storyMarks.map((m) => m.target.story))]) {
     const own = storyMarks.filter((m) => m.target.story === id);
     const story = stories.list.find((s) => s.id === id);
-    if (story) out.push(...storyLines(story, own, tests, mapInfo));
+    if (story) out.push(...storyLines(story, own, tests, mapInfo, formats));
     else if (!stories.stale) out.push('', `## ${id}`, '', '- marks:', ...own.map((m) => markLine(m.current)), '- story file: could not be read; `duru rebuild` prints why');
   }
   return out.join('\n') + '\n';

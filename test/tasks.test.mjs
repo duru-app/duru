@@ -24,9 +24,17 @@ function withFixtureCopy(fn, configPatch = {}) {
   }
 }
 
+// 형식은 가짜 클라이언트 설정의 테스트 출처 순서(playwright, junit, vitest, verdict)로 나온다.
+const emptyTests = (...cells) => ['- empty tests:', ...cells.flatMap(([tags, method]) => [
+  `  - playwright: \`test.fixme("<what it checks> ${tags}", async ({ page }) => {});\``,
+  `  - junit: \`@Test @Disabled @DisplayName("<what it checks> ${tags}") void ${method}() {}\``,
+  `  - vitest: \`test.todo("<what it checks> ${tags}");\``,
+  `  - verdict: \`VERDICT <what it checks>: <verdict> — <what was seen> ${tags}\``,
+])].join('\n');
+
 const EXPECTED = `# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks
 
-A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. A screen, call or story stays here until a reviewer marks it \`fine\`.
+A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. Under \`empty tests\`, a screen or call gets one set for each open mark and a story one set: an empty test for each test format in the config, with the tags already in its title and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.
 
 Source files are under \`client/src\`.
 
@@ -43,6 +51,7 @@ Source files are under \`client/src\`.
 - tests:
   - ui fail — admin @screen:/admin/member#AdminMember › lists members — home.spec.ts:11 (chromium)
   - api pass — Help service › links the member page @screen:/admin/member#AdminMember — com.example.help.HelpServiceTest
+${emptyTests(['@screen:/admin/member#AdminMember', 'screen_admin_member_AdminMember'])}
 
 ## /help#Help
 
@@ -57,6 +66,7 @@ Source files are under \`client/src\`.
   - ui pass — help link opens help @screen:/signin#SignIn @screen:/help#Help — sign-in.spec.ts:5 (chromium)
   - api fail — Help service › loads the help index @screen:/help#Help @depth:e2e — com.example.help.HelpServiceTest
   - code pending — searches help @screen:/help#Help — /work/app/src/home/home.test.js:17
+${emptyTests(['@screen:/help#Help @depth:api', 'screen_help_Help_depth_api'])}
 
 ## /home#Home
 
@@ -75,6 +85,7 @@ Source files are under \`client/src\`.
   - render fail — Home @screen:/home#Home › filters › keeps the draft filter @depth:render — /work/app/src/home/home.test.js:9
   - code pass — Home @screen:/home#Home › renders the list — /work/app/src/home/home.test.js:4
   - data fail — Home service @screen:/home#Home › moves a draft & keeps the list order @depth:data — com.example.home.HomeServiceTest
+${emptyTests(['@screen:/home#Home @depth:data', 'screen_home_Home_depth_data'])}
 
 ## /lab/result#LabResult
 
@@ -85,6 +96,7 @@ Source files are under \`client/src\`.
   - link from /lab#Lab at components/Lab.js:14, no guard — /lab#Lab itself needs a setting
 - calls: none
 - tests: none
+${emptyTests(['@screen:/lab/result#LabResult', 'screen_lab_result_LabResult'])}
 
 # API calls
 
@@ -95,6 +107,7 @@ Source files are under \`client/src\`.
 - called from: /document/:tab_draft_done_#DocumentList, /home#Home
 - server: not on the server
 - tests: none
+${emptyTests(['@call:POST:/api/v1/archive/document @depth:api', 'call_POST_api_v1_archive_document_depth_api'])}
 `;
 
 test('the task list holds the needs-more and missing marks of the fake client, leaving out fine and detached ones', () => {
@@ -126,6 +139,7 @@ Story files are in \`example-stories\`.
   2. /settings#Settings — not on the map
 - reach: not judged, a screen is not on the map
 - preconditions: none where links were found
+${emptyTests(['@story:change-settings @screen:/home#Home', 'story_change_settings'])}
 
 ## help-from-home
 
@@ -145,6 +159,7 @@ Story files are in \`example-stories\`.
   3. /help#Help — tests: ui pass 1, api fail 1, code pending 1
 - reach: unreachable, no link at 1 step
 - preconditions: none where links were found
+${emptyTests(['@story:help-from-home @screen:/signin#SignIn @screen:/home#Home @screen:/help#Help', 'story_help_from_home'])}
 
 ## run-lab
 
@@ -167,6 +182,7 @@ Story files are in \`example-stories\`.
 - preconditions:
   - link /home#Home → /lab#Lab at components/Home.js:19, guard \`globalSettings.SYSTEM.LAB_ENABLED\` (setting)
   - /lab#Lab route at Routes.js:44, guard \`globalSettings.SYSTEM.LAB_ENABLED\` (setting)
+${emptyTests(['@story:run-lab @screen:/home#Home @screen:/lab#Lab @screen:/lab/result#LabResult', 'story_run_lab'])}
 `;
 
 test('the task list carries the stories whose current mark is needs-more or missing as a group of their own, leaving out stories marked fine, stories with no mark however untested, and marks whose story file is gone', () => {
@@ -202,6 +218,7 @@ test('a marked story whose first screen opens only under a setting or a role lis
       `    - link from /document/:id#DocumentDetail at components/SideMenu.js:11, ${guards}`,
       `    - link from /document/:tab_draft_done_#DocumentList at components/SideMenu.js:11, ${guards}`,
       `    - link from /home#Home at components/SideMenu.js:11, ${guards}`,
+      emptyTests(['@story:read-reports @screen:/admin/report#AdminReport', 'story_read_reports']),
       '',
     ].join('\n'));
   }, { storiesDir: 'example-stories' });
@@ -239,6 +256,126 @@ test('a story name, author or screen over several lines stays inside its item, w
     assert.match(tasks, /^- story file: read-reports\.json \(b\n {2}## \/forged#Forged, 2026-10-03\)$/m);
     assert.match(tasks, /^ {5}- to gone\n {7}## \/step#Step: not judged, a screen is not on the map\n {2}2\. gone\n {5}## \/step#Step — not on the map$/m);
   }, { storiesDir: 'example-stories' });
+});
+
+// 스킬이 시키는 대로 채운다: 제목 글과 판정 낱말을 바꾸고, 통과하지 않게 막아 둔 표시를 떼고, 몸체를 넣는다.
+const fillIn = (code) => code
+  .replace('<what it checks>', 'checks it')
+  .replace('<verdict>', 'UPHOLDS')
+  .replace('test.fixme(', 'test(')
+  .replace('@Disabled ', '')
+  .replace(/^test\.todo\((.*)\);$/, 'test($1, () => { expect(1).toBe(1); });');
+
+const xmlText = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+test('an empty test from the task list, filled in with its title tags kept, attaches to its screen, call cell or story after a rebuild in every configured format', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    cli('rebuild');
+    addMark(loadConfig(configFile).marksDir, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true }, depth: 'output' }, status: 'missing', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
+    const tasks = cli('tasks');
+    const copied = { playwright: [], junit: [], vitest: [], verdict: [] };
+    for (const id of ['/help#Help', 'POST:/api/v1/report/export', 'run-lab']) {
+      const section = tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0];
+      for (const [, format, code] of section.matchAll(/^ {2}- (playwright|junit|vitest|verdict): `(.*)`$/gm)) copied[format].push(fillIn(code));
+    }
+    assert.deepEqual(Object.values(copied).map((c) => c.length), [3, 3, 3, 3]);
+    assert.doesNotMatch(Object.values(copied).flat().join('\n'), /\.fixme|\.todo|@Disabled|<verdict>/);
+    const titles = (format) => copied[format].map((code) => JSON.parse(code.match(/"(?:[^"\\]|\\.)*"/)[0]));
+    fs.writeFileSync(path.join(copy, 'results/playwright/filled.json'), JSON.stringify({
+      suites: [{ title: 'filled.spec.ts', file: 'filled.spec.ts', specs: titles('playwright').map((title, i) => ({ title, file: 'filled.spec.ts', line: i + 1, tests: [{ status: 'expected', projectName: 'chromium' }] })) }],
+    }));
+    fs.writeFileSync(path.join(copy, 'results/junit/filled.xml'), `<testsuites><testsuite>${titles('junit').map((t) => `<testcase classname="Filled" name="${xmlText(t)}"/>`).join('')}</testsuite></testsuites>`);
+    fs.writeFileSync(path.join(copy, 'results/vitest/filled.json'), JSON.stringify({
+      testResults: [{ name: 'filled.test.js', assertionResults: titles('vitest').map((title) => ({ title, status: 'passed', ancestorTitles: [] })) }],
+    }));
+    fs.writeFileSync(path.join(copy, 'results/verdict/documents/filled.log'), copied.verdict.map((line) => `${line}\n`).join(''));
+    cli('rebuild');
+
+    const { nodes, stories } = JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8'));
+    const filled = (tests) => tests.filter((t) => t.source.includes('filled')).map((t) => [t.format, t.depth, ...(t.options ? [t.options] : [])]);
+    const formats = ['playwright', 'junit', 'vitest', 'verdict'];
+    assert.deepEqual(filled(nodes['/help#Help']), formats.map((f) => [f, 'api']));
+    assert.deepEqual(filled(nodes['POST:/api/v1/report/export']), formats.map((f) => [f, 'output', [{ key: 'withHistory', value: true }]]));
+    const storyDepths = [['playwright', 'ui'], ['junit', 'api'], ['vitest', 'code'], ['verdict', 'api']];
+    assert.deepEqual(filled(stories['run-lab']), storyDepths);
+    for (const screen of ['/home#Home', '/lab#Lab', '/lab/result#LabResult']) assert.deepEqual(filled(nodes[screen]), storyDepths);
+  }, { storiesDir: 'example-stories' });
+});
+
+test('an empty verdict line printed as the task list gives it, without a verdict word, attaches as pending rather than as a pass', () => {
+  withFixtureCopy(({ copy, cli }) => {
+    cli('rebuild');
+    const help = cli('tasks').split('\n## /help#Help\n')[1].split('\n## ')[0];
+    const line = help.match(/^ {2}- verdict: `(.*)`$/m)[1];
+    fs.writeFileSync(path.join(copy, 'results/verdict/documents/unfilled.log'), `${line}\n`);
+    cli('rebuild');
+    const { nodes } = JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8'));
+    assert.deepEqual(nodes['/help#Help'].filter((t) => t.source.includes('unfilled')).map((t) => [t.depth, t.status]), [['api', 'pending']]);
+  });
+});
+
+test('an empty Playwright, Vitest or JUnit test run as the task list gives it reports as skipped or todo and attaches as pending rather than as a pass', () => {
+  withFixtureCopy(({ copy, cli }) => {
+    cli('rebuild');
+    const help = cli('tasks').split('\n## /help#Help\n')[1].split('\n## ')[0];
+    const code = (format) => help.match(new RegExp(`^ {2}- ${format}: \`(.*)\`$`, 'm'))[1];
+    const title = (format) => JSON.parse(code(format).match(/"(?:[^"\\]|\\.)*"/)[0]);
+    fs.writeFileSync(path.join(copy, 'results/playwright/unfilled.json'), JSON.stringify({
+      suites: [{ title: 'unfilled.spec.ts', file: 'unfilled.spec.ts', specs: [{
+        title: title('playwright'), ok: true, tags: [], file: 'unfilled.spec.ts', line: 3, column: 5,
+        tests: [{ timeout: 30000, annotations: [{ type: 'fixme' }], expectedStatus: 'skipped', projectName: 'chromium', results: [{ status: 'skipped', duration: 0 }], status: 'skipped' }],
+      }] }],
+    }));
+    fs.writeFileSync(path.join(copy, 'results/vitest/unfilled.json'), JSON.stringify({
+      testResults: [{ name: '/work/app/src/unfilled.test.js', status: 'passed', assertionResults: [{ ancestorTitles: [], fullName: title('vitest'), status: 'todo', title: title('vitest'), failureMessages: [], meta: {} }] }],
+    }));
+    fs.writeFileSync(path.join(copy, 'results/junit/TEST-com.example.UnfilledTest.xml'), `<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.UnfilledTest" tests="1" errors="0" skipped="1" failures="0">
+  <testcase name="${xmlText(title('junit'))}" classname="com.example.UnfilledTest" time="0">
+    <skipped message="void com.example.UnfilledTest.screen_help_Help_depth_api() is @Disabled"/>
+  </testcase>
+</testsuite>
+`);
+    cli('rebuild');
+    const { nodes } = JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8'));
+    const unfilled = nodes['/help#Help'].filter((t) => /unfilled|Unfilled/.test(t.source)).map((t) => [t.format, t.title, t.status]);
+    assert.deepEqual(unfilled, [
+      ['playwright', '<what it checks> @screen:/help#Help @depth:api', 'pending'],
+      ['junit', 'com.example.UnfilledTest › <what it checks> @screen:/help#Help @depth:api', 'pending'],
+      ['vitest', '<what it checks> @screen:/help#Help @depth:api', 'pending'],
+    ]);
+  });
+});
+
+test('each JUnit empty test of an item has its own method name, even when two marked cells differ only in characters a Java name cannot hold', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    for (const key of ['weekly', 'weekly_']) addMark(marksDir, { target: { node: 'POST:/api/v1/report/schedule', option: { key, value: true } }, status: 'missing', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
+    const schedule = cli('tasks').split('\n## POST:/api/v1/report/schedule\n')[1].split('\n## ')[0];
+    assert.deepEqual([...schedule.matchAll(/^ {2}- junit: `.* void (\w+)\(\) \{\}`$/gm)].map((m) => m[1]), [
+      'call_POST_api_v1_report_schedule_option_weekly_true',
+      'call_POST_api_v1_report_schedule_option_weekly_true_2',
+    ]);
+  }, { bodyOptions: { 'POST:/api/v1/report/schedule': ['weekly', 'weekly_'] } });
+});
+
+test('the empty tests of a story name each screen on the map once, however often the story passes it', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/back-home.json'), JSON.stringify({ name: 'Back home', screens: ['/home#Home', '/lab#Lab', '/gone#Gone', '/home#Home'], author: 'b', date: '2026-10-03' }));
+    cli('rebuild');
+    addMark(loadConfig(configFile).marksDir, { target: { story: 'back-home' }, status: 'missing', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
+    const story = cli('tasks').split('\n## back-home\n')[1].split('\n## ')[0];
+    assert.equal(story.slice(story.indexOf('- empty tests:')), `${emptyTests(['@story:back-home @screen:/home#Home @screen:/lab#Lab', 'story_back_home'])}\n`);
+  }, { storiesDir: 'example-stories' });
+});
+
+test('with no test results in the config, each item says there is no format to give an empty test in', () => {
+  withFixtureCopy(({ cli }) => {
+    cli('rebuild');
+    const help = cli('tasks').split('\n## /help#Help\n')[1].split('\n## ')[0];
+    assert.match(help, /\n- empty tests: none, the config lists no test results\n$/);
+  }, { tests: [] });
 });
 
 test('a tagged Playwright test added for a listed screen shows on the page and in the task list after a rebuild', () => {
@@ -364,6 +501,7 @@ test('a call line in the task list names the on/off options of its request body,
         '    - weekly=false — no tests',
         '    - no option tag — no tests',
         '- tests: none',
+        emptyTests(['@screen:/admin/report#AdminReport', 'screen_admin_report_AdminReport']),
         '',
       ].join('\n'),
     );
@@ -467,6 +605,7 @@ test('a test whose option tags name only options this screen does not send count
         '    - withAttachments=false — no tests',
         '    - no option tag — tests: ui pass 2',
         '- tests: none',
+        emptyTests(['@screen:/admin/audit#AdminAudit', 'screen_admin_audit_AdminAudit']),
         '',
       ].join('\n'),
     );
@@ -507,6 +646,7 @@ test('a mark on an option value of a call is listed with the option key, value a
         '  - ui pass — exports the selected reports @call:POST:/api/v1/report/export — export.spec.ts:17 (chromium)',
         '  - ui pass — archives signed reports with history, then exports them @call:POST:/api/v1/report/archive @call:POST:/api/v1/report/export @option:signedOnly=true @option:withHistory=true — export.spec.ts:24 (chromium)',
         '  - ui pass — exports signed reports only @call:POST:/api/v1/report/export @option:signedOnly=true @option:withHistory=yes — export.spec.ts:31 (chromium)',
+        emptyTests(['@call:POST:/api/v1/report/export @option:withHistory=true', 'call_POST_api_v1_report_export_option_withHistory_true'], ['@call:POST:/api/v1/report/export @option:withHistory=true @depth:output', 'call_POST_api_v1_report_export_option_withHistory_true_depth_output']),
         '',
       ].join('\n'),
     );
@@ -522,6 +662,7 @@ test('a mark on an option value of a call is listed with the option key, value a
         '  - weekly — set in the config, not found in the source',
         '    - weekly=true: no tests',
         '- tests: none',
+        emptyTests(['@call:POST:/api/v1/report/schedule @option:weekly=true', 'call_POST_api_v1_report_schedule_option_weekly_true']),
         '',
       ].join('\n'),
     );
@@ -560,6 +701,7 @@ test('an API call with an open mark is listed once under API calls with its scre
         '- called from: /document/:tab_draft_done_#DocumentList, /home#Home',
         '- server: not on the server',
         '- tests: none',
+        emptyTests(['@call:POST:/api/v1/archive/document @depth:api', 'call_POST_api_v1_archive_document_depth_api']),
         '',
         '## POST:/api/v1/report/archive',
         '',
@@ -569,6 +711,7 @@ test('an API call with an open mark is listed once under API calls with its scre
         '- server: on the server (core)',
         '- tests:',
         '  - ui pass — archives signed reports with history, then exports them @call:POST:/api/v1/report/archive @call:POST:/api/v1/report/export @option:signedOnly=true @option:withHistory=true — export.spec.ts:24 (chromium)',
+        emptyTests(['@call:POST:/api/v1/report/archive @depth:ui', 'call_POST_api_v1_report_archive_depth_ui']),
         '',
         '## PUT:/api/v1/document/{documentId}/name',
         '',
@@ -578,6 +721,7 @@ test('an API call with an open mark is listed once under API calls with its scre
         '- server: method mismatch — the server has core POST /api/v1/document/{documentId}/name',
         '- tests:',
         '  - ui fail — rename is refused by the server @call:PUT:/api/v1/document/{documentId}/name — document.spec.ts:4 (chromium)',
+        emptyTests(['@call:PUT:/api/v1/document/{documentId}/name', 'call_PUT_api_v1_document_documentId_name']),
         '',
       ].join('\n'),
     );

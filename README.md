@@ -544,6 +544,23 @@ opens only under one, the route guards with their line, and the guards of `condi
 locations. A story whose file is there but cannot be read lists only its mark and says so; `rebuild` prints
 why. While `stories.stale` is set, each story lists only its mark, under a request to run `rebuild`.
 
+A screen, call or story ends with `empty tests`: for every test format in the config's `tests`, in the
+order the formats first appear there, one empty test with the item's tags already in its title, so the writer
+fills in only the data setup and the checks. A screen or call gets one set per open mark, with
+`@screen:<screen ID>` or `@call:<call ID>`, plus `@option:<key>=true|false` and `@depth:<depth>` when the mark
+is on an option value or a depth; a whole-node mark leaves the depth to the result source. A story gets one
+set with `@story:<story ID>` and the `@screen:` tag of each screen on its path that is on the map, once each.
+Each empty test is held back so that a copy run as it is does not pass: Playwright gets `test.fixme(...)`,
+Vitest `test.todo(...)` with no function, JUnit a `@Test @Disabled` method (which needs
+`import org.junit.jupiter.api.Disabled;`) with the title in `@DisplayName` and a name made from the item and
+the marked cell, and a check script one verdict line, `VERDICT <what it checks>: <verdict> — <what was seen>`
+with the tags at the end, whose `<verdict>` counts as pending. Filling one in means removing `.fixme` or
+`@Disabled`, or turning `test.todo` into `test` with a function, or writing one of the verdict words above in
+place of `<verdict>`; a verdict name ends at the first `: `, so the filled name must not hold one. A test that
+keeps those tags in its title attaches to the item after a `rebuild`. With no `tests` in the config, the item
+says so instead. A story listed only with its mark, because its file could not be read or the map is stale,
+gets no empty tests. duru writes only these empty tests, never their contents.
+
 The list starts with how to tag new tests so that they attach after a `rebuild`. Adding tests does not take a
 screen, call or story off the list; a reviewer marking it `fine` does.
 `test/fixtures/app/example-marks` holds example marks for the fake client, among them marks on the example
@@ -554,7 +571,8 @@ stories and one on a story that has no file.
 `skills/duru/SKILL.md` is a skill for a coding agent such as Claude Code. When the user asks for a duru review,
 it has the agent rebuild the map, launch `review` and hand the address to the user, write the tests in the
 target project from the task list it receives when the review ends (for a story, one test tagged
-`@story:<story ID>` that goes through its screens), and rebuild again to confirm they attach.
+`@story:<story ID>` that goes through its screens), starting from the item's empty test for its runner with
+the title tags kept, and rebuild again to confirm they attach.
 duru itself never calls a model. Install it by copying or symlinking the folder into the project's
 `.claude/skills` folder, or into `~/.claude/skills` for every project:
 
