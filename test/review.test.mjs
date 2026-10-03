@@ -1746,7 +1746,7 @@ test('in a browser, the flow graph opens calls and branches, folds them, and a b
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
         assert.equal(await p.isHidden('main'), true);
-        await (await screenBox(p, '/signin#SignIn')).locator('button[title^="이 가지의 화면은 모두"]').click();
+        await (await screenBox(p, '/signin#SignIn')).locator('button.toggle', { hasText: /^처음으로$/ }).click();
         assert.deepEqual(await boxCount(p), { screens: 11, calls: 0 });
 
         const home = await screenBox(p, '/home#Home');
@@ -1756,17 +1756,17 @@ test('in a browser, the flow graph opens calls and branches, folds them, and a b
         await home.locator('.calls').click();
 
         const signin = await screenBox(p, '/signin#SignIn');
-        await signin.locator('button.toggle', { hasText: '−' }).click();
+        await signin.locator('button.toggle', { hasText: /^접기$/ }).click();
         assert.deepEqual(await boxCount(p), { screens: 1, calls: 0 });
         const folded = await screenBox(p, '/signin#SignIn');
         assert.match(await folded.locator('.l2').textContent(), /하위 합/);
-        await folded.locator('button.toggle', { hasText: '+' }).click();
+        await folded.locator('button.toggle', { hasText: /^펼치기$/ }).click();
 
         await flowButton(p, '모두 펼치기').click();
         assert.deepEqual(await boxCount(p), { screens: 11, calls: 14 });
         const overlaps = await p.$$eval('#flow .box', (boxes) => boxes.flatMap((box) => {
           const outer = box.getBoundingClientRect();
-          return [...box.querySelectorAll('.l1, .l3')].flatMap((line) => [...line.querySelectorAll('button')].filter((b) => {
+          return [...box.querySelectorAll('.l1, .l3, .acts')].flatMap((line) => [...line.querySelectorAll('button')].filter((b) => {
             const r = b.getBoundingClientRect();
             const text = line.querySelector('.text')?.getBoundingClientRect();
             return r.right > outer.right + 0.5 || r.bottom > outer.bottom + 0.5 || (text && text.right > r.left + 0.5);
@@ -1776,7 +1776,7 @@ test('in a browser, the flow graph opens calls and branches, folds them, and a b
 
         await flowButton(p, '모두 접기').click();
         assert.deepEqual(await boxCount(p), { screens: 1, calls: 0 });
-        await (await screenBox(p, '/signin#SignIn')).locator('button[title^="이 가지 전부"]').click();
+        await (await screenBox(p, '/signin#SignIn')).locator('button.toggle', { hasText: /^전부 펼치기$/ }).click();
         assert.deepEqual(await boxCount(p), { screens: 11, calls: 14 });
 
         await (await screenBox(p, '/lab/result#LabResult')).click();
@@ -1900,23 +1900,23 @@ test('in a browser, "reset" opens one branch fully with its calls closed and lea
       withPage(base, async (p) => {
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        const reset = async (id) => (await screenBox(p, id)).locator('button[title^="이 가지의 화면은 모두"]').click();
+        const reset = async (id) => (await screenBox(p, id)).locator('button.toggle', { hasText: /^처음으로$/ }).click();
         await reset('/signin#SignIn');
         assert.deepEqual(await boxCount(p), { screens: 11, calls: 0 });
         await (await screenBox(p, '/signin#SignIn')).locator('.calls').click();
         const signinCalls = (await boxCount(p)).calls;
         assert.ok(signinCalls > 0);
-        await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: '−' }).click();
-        await (await screenBox(p, '/home#Home')).locator('button[title^="이 가지 전부"]').click();
+        await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^접기$/ }).click();
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^전부 펼치기$/ }).click();
         assert.ok((await boxCount(p)).calls > signinCalls);
 
         await reset('/home#Home');
         assert.deepEqual(await boxCount(p), { screens: 11, calls: signinCalls });
-        assert.equal(await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: '−' }).count(), 1);
+        assert.equal(await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
 
-        await (await screenBox(p, '/home#Home')).locator('button[title="이 가지만 보기"]').click();
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
         await p.waitForSelector('.flowbar .focusing');
-        await (await screenBox(p, '/home#Home')).locator('button[title^="이 가지 전부"]').click();
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^전부 펼치기$/ }).click();
         assert.ok((await boxCount(p)).calls > 0);
         await reset('/home#Home');
         assert.deepEqual(await boxCount(p), { screens: 10, calls: 0 });
@@ -1925,7 +1925,7 @@ test('in a browser, "reset" opens one branch fully with its calls closed and lea
           return walk(state.focus.roots).find((n) => !n.children.length && !n.calls.length)?.id;
         });
         assert.ok(bare);
-        assert.equal(await (await screenBox(p, bare)).locator('button[title^="이 가지의 화면은 모두"]').count(), 0);
+        assert.equal(await (await screenBox(p, bare)).locator('button.toggle', { hasText: /^처음으로$/ }).count(), 0);
       }),
     ),
   );
@@ -1944,9 +1944,9 @@ test('in a browser, "gaps only" folds exactly the branches with no untested or f
         });
         await flowButton(p, '빈틈만 펼치기').click();
         const lab = await screenBox(p, '/lab#Lab');
-        assert.equal(await lab.locator('button.toggle', { hasText: '+' }).count(), 1);
+        assert.equal(await lab.locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
         assert.match(await lab.getAttribute('class'), /s-pass/);
-        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: '−' }).count(), 1);
+        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
         assert.equal(await p.$$eval('#flow .box.screen', (els) => els.some((e) => e.title.startsWith('/lab/result#'))), false);
       }),
     ),
@@ -1984,25 +1984,25 @@ test('in a browser, the flow first opens only the way to untested or failing box
         await p.waitForSelector('#flow .box');
         assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 8/11 · 실패 5 · 태그 없는 테스트만 있는 화면 1');
         const lab = await screenBox(p, '/lab#Lab');
-        assert.equal(await lab.locator('button.toggle', { hasText: '+' }).count(), 1);
+        assert.equal(await lab.locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
         assert.match(await lab.getAttribute('class'), /s-pass/);
         assert.equal(await p.$$eval('#flow .box.screen', (els) => els.some((e) => e.title.startsWith('/lab/result#'))), false);
         const group = await screenBox(p, '/admin/group#AdminGroup');
         assert.match(await group.locator('.l2').textContent(), /^테스트 없음 · 불러옴 1/);
         assert.match(await group.getAttribute('class'), /s-none/);
         const home = await screenBox(p, '/home#Home');
-        assert.equal(await home.locator('button.toggle', { hasText: '−' }).count(), 1);
+        assert.equal(await home.locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
         assert.match(await home.locator('.calls').textContent(), /▾/);
 
-        await home.locator('button.toggle', { hasText: '−' }).click();
+        await home.locator('button.toggle', { hasText: /^접기$/ }).click();
         await p.click('#view-list');
         await p.waitForSelector('main:not([hidden])');
         await p.click('#view-flow');
-        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: '+' }).count(), 1);
-        await (await screenBox(p, '/signin#SignIn')).click();
+        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
+        await (await screenBox(p, '/signin#SignIn')).locator('.l2').click();
         await p.waitForSelector('main:not([hidden])');
         await p.click('#view-flow');
-        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: '+' }).count(), 1);
+        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
         assert.match(await (await screenBox(p, '/signin#SignIn')).locator('.calls').textContent(), /▾/);
       }, { view: 'flow' }),
     );
@@ -2081,12 +2081,12 @@ test('in a browser, a branch whose only gap is a screen with imported tests and 
         assert.match(await result.locator('.l2').textContent(), /^테스트 없음 · 불러옴 1/);
         const dead = await screenBox(p, '/document/:tab_draft_done_#DocumentList');
         assert.match(await dead.locator('.l2').textContent(), / · 불러옴 2 · 죽은 화면$/);
-        assert.equal(await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: '−' }).count(), 1);
+        assert.equal(await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
         const home = await screenBox(p, '/home#Home');
-        assert.equal(await home.locator('button.toggle', { hasText: '−' }).count(), 1);
+        assert.equal(await home.locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
         assert.doesNotMatch(await home.locator('.l2').textContent(), /불러옴/);
 
-        await home.locator('button.toggle', { hasText: '−' }).click();
+        await home.locator('button.toggle', { hasText: /^접기$/ }).click();
         const folded = await screenBox(p, '/home#Home');
         assert.match(await folded.locator('.l2').textContent(), /\(하위 합\) · 불러옴 3/);
       }, { view: 'flow' }),
@@ -2100,7 +2100,7 @@ test('in a browser, one branch is shown on its own, and a late answer for an ear
       withPage(base, async (p) => {
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        await (await screenBox(p, '/home#Home')).locator('button[title="이 가지만 보기"]').click();
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
         await p.waitForSelector('.flowbar .focusing');
         assert.match(await p.textContent('.flowbar .focusing'), /^\/home /);
         assert.equal((await boxCount(p)).screens, 10);
@@ -2111,8 +2111,8 @@ test('in a browser, one branch is shown on its own, and a late answer for an ear
           if (route.request().url().includes(encodeURIComponent('/signin#SignIn'))) await new Promise((r) => setTimeout(r, 500));
           await route.continue();
         });
-        await (await screenBox(p, '/signin#SignIn')).locator('button[title="이 가지만 보기"]').click();
-        await (await screenBox(p, '/lab#Lab')).locator('button[title="이 가지만 보기"]').click();
+        await (await screenBox(p, '/signin#SignIn')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
+        await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
         await p.waitForTimeout(800);
         assert.match(await p.textContent('.flowbar .focusing'), /^\/lab /);
       }),
@@ -2284,7 +2284,7 @@ test('in a browser, the flow is drawn again on a resize only when gathered entry
         await resize(p, 1000, 600);
         assert.ok(await perRow(p) < wide, 'a narrower window holds fewer cells in a row');
         assert.ok(!(await kept(p)), 'a change that alters the number of cells in a row draws the gathered entry screens again');
-        await (await screenBox(p, '/home#Home')).locator('button[title="이 가지만 보기"]').click();
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
         await p.waitForSelector('.flowbar .focusing');
         await mark(p);
         await resize(p, 800, 600);
@@ -2346,6 +2346,307 @@ test('in a browser, a flow box with a long route breaks it only before a slash, 
         assert.deepEqual(cut, []);
         assert.deepEqual(await textOutside(p), []);
       }, { view: 'flow', setup: changeData(withLongRoute) }),
+    ),
+  );
+});
+
+test('in a browser, the fold and branch buttons of a flow box carry a word and a longer explanation instead of a symbol', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        await flowButton(p, '모두 펼치기').click();
+        const labels = (box) => box.locator('button.toggle').evaluateAll((els) => els.map((e) => [e.textContent, e.title]));
+        const signin = await labels(await screenBox(p, '/signin#SignIn'));
+        assert.deepEqual(signin.map(([word]) => word), ['접기', '전부 펼치기', '처음으로', '이 가지만']);
+        assert.ok(signin.every(([word, title]) => title.length > word.length), 'each title explains more than the word');
+        assert.doesNotMatch(signin[0][1], /API/, 'the fold title names no API call: a screen with child screens may have none');
+        assert.match(signin[0][1], /딸린/);
+        await (await screenBox(p, '/signin#SignIn')).locator('button.toggle', { hasText: /^접기$/ }).click();
+        const folded = await labels(await screenBox(p, '/signin#SignIn'));
+        assert.deepEqual(folded.map(([word]) => word), ['펼치기', '전부 펼치기', '처음으로', '이 가지만']);
+        assert.doesNotMatch(folded[0][1], /API/);
+        assert.match(folded[0][1], /딸린/);
+        const symbols = await p.$$eval('#flow .box button', (els) => els.map((e) => e.textContent).filter((t) => /[−+»↺◎]/.test(t)));
+        assert.deepEqual(symbols, []);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, a flow box with buttons still shows its whole route and component name, with the buttons on a line of their own', { skip: browserMissing }, async () => {
+  const longName = (data) => {
+    const signin = walkFlow(data.flow.roots).find((n) => n.id === '/signin#SignIn');
+    signin.label = LONG_ROUTE;
+    signin.component = WIDE_COMPONENT;
+  };
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        await flowButton(p, '모두 펼치기').click();
+        assert.ok(await (await screenBox(p, '/signin#SignIn')).locator('button.toggle').count() >= 3);
+        assert.deepEqual(await textOutside(p), []);
+        const cut = await p.$$eval('#flow .box', (els) => els
+          .filter((box) => box.textContent.includes('…') || [box, ...box.querySelectorAll('*')].some((e) => getComputedStyle(e).textOverflow === 'ellipsis'))
+          .map((box) => box.title.split('\n')[0]));
+        assert.deepEqual(cut, []);
+        const lines = await (await screenBox(p, '/signin#SignIn')).evaluate((box) => {
+          const name = box.querySelector('.l1').getBoundingClientRect();
+          const acts = box.querySelector('.acts').getBoundingClientRect();
+          return { componentRects: box.querySelector('.component').getClientRects().length, below: acts.top >= name.bottom - 0.5, boxWidth: box.getBoundingClientRect().width, componentWidth: box.querySelector('.component').getBoundingClientRect().width };
+        });
+        assert.equal(lines.componentRects, 1);
+        assert.ok(lines.below, 'the buttons sit under the name line');
+        assert.ok(lines.componentWidth <= lines.boxWidth, 'the component name fits within the box');
+      }, { view: 'flow', setup: changeData(longName) }),
+    ),
+  );
+});
+
+test('in a browser, the explanation above the flow is hidden on opening and an info button shows it on hover, on click and from the keyboard', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        const info = p.locator('.flowbar button.flowinfo-button');
+        const legend = p.locator('#flowlegend');
+        assert.equal(await legend.count(), 1);
+        assert.equal(await legend.isVisible(), false);
+        assert.equal(await info.getAttribute('aria-expanded'), 'false');
+        assert.equal(await info.getAttribute('aria-controls'), 'flowlegend');
+
+        await info.hover();
+        assert.equal(await legend.isVisible(), true);
+        assert.match(await legend.textContent(), /전부 펼치기/);
+        await p.mouse.move(600, 600);
+        assert.equal(await legend.isVisible(), false);
+
+        await info.click();
+        await p.mouse.move(600, 600);
+        assert.equal(await legend.isVisible(), true);
+        assert.equal(await info.getAttribute('aria-expanded'), 'true');
+        await info.click();
+        await p.mouse.move(600, 600);
+        assert.equal(await legend.isVisible(), false);
+        assert.equal(await info.getAttribute('aria-expanded'), 'false');
+
+        await info.focus();
+        await p.keyboard.press('Enter');
+        assert.equal(await legend.isVisible(), true);
+        await p.keyboard.press('Escape');
+        assert.equal(await legend.isVisible(), false);
+        assert.equal(await info.getAttribute('aria-expanded'), 'false');
+        await p.keyboard.press('Space');
+        assert.equal(await legend.isVisible(), true);
+        await p.keyboard.press('Space');
+        assert.equal(await legend.isVisible(), false);
+
+        await flowButton(p, '빈틈만 펼치기').focus();
+        await p.keyboard.press('Tab');
+        assert.equal(await info.evaluate((e) => e === document.activeElement), true, 'Tab reaches the info button');
+        await p.keyboard.press('Enter');
+        assert.equal(await legend.isVisible(), true);
+        await flowButton(p, '모두 접기').click();
+        assert.equal(await legend.isVisible(), true, 'a redraw keeps the explanation open');
+        for (const word of ['전부 펼치기', '처음으로', '이 가지만']) assert.match(await legend.textContent(), new RegExp(`「${word}」`));
+        assert.doesNotMatch(await legend.textContent(), /[»↺◎]/);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, the explanation shows on hover after a keyboard close, never has a native tooltip, and describes the fold button without claiming API calls', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        const info = p.locator('.flowbar button.flowinfo-button');
+        const legend = p.locator('#flowlegend');
+        assert.equal(await info.getAttribute('title'), null);
+        assert.match(await legend.textContent(), /「접기」는 그 화면에 딸린 것을 숨기고/);
+        assert.doesNotMatch(await legend.textContent(), /「접기」는[^.]*API/);
+
+        await p.mouse.move(600, 600);
+        await info.focus();
+        await p.keyboard.press('Enter');
+        await p.keyboard.press('Escape');
+        assert.equal(await legend.isVisible(), false);
+        await info.hover();
+        assert.equal(await legend.isVisible(), true, 'hover shows it after a keyboard close');
+        assert.equal(await info.getAttribute('aria-expanded'), 'true', 'aria-expanded says what is displayed on hover');
+        await p.mouse.move(600, 600);
+        assert.equal(await legend.isVisible(), false);
+        assert.equal(await info.getAttribute('aria-expanded'), 'false');
+
+        await p.keyboard.press('Enter');
+        await p.keyboard.press('Enter');
+        await info.hover();
+        assert.equal(await legend.isVisible(), true, 'hover shows it after closing with Enter again');
+
+        await info.click();
+        assert.equal(await legend.isVisible(), true);
+        await info.click();
+        assert.equal(await legend.isVisible(), false, 'closing with the pointer on it keeps it closed');
+        assert.equal(await info.getAttribute('aria-expanded'), 'false');
+        await p.evaluate(() => { renderFlow(); return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); });
+        assert.equal(await legend.isVisible(), false, 'a redraw keeps the close while the pointer stays on it');
+        await p.mouse.move(600, 600);
+        await info.hover();
+        assert.equal(await legend.isVisible(), true);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, the explanation stays inside the flow area at a narrow window', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 800, height: 600 });
+        await p.waitForSelector('#flow .box');
+        await p.locator('.flowbar button.flowinfo-button').hover();
+        const edges = await p.evaluate(() => {
+          const flow = document.getElementById('flow').getBoundingClientRect();
+          const legend = document.getElementById('flowlegend').getBoundingClientRect();
+          return { left: legend.left - flow.left, right: legend.right - flow.left, width: document.getElementById('flow').clientWidth };
+        });
+        assert.ok(edges.left >= 0, `left edge ${edges.left}`);
+        assert.ok(edges.right <= edges.width, `right edge ${edges.right} within ${edges.width}`);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, Escape closes the explanation only while the flow view is showing', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        const info = p.locator('.flowbar button.flowinfo-button');
+        const legend = p.locator('#flowlegend');
+        await info.click();
+        await p.mouse.move(600, 600);
+        assert.equal(await legend.isVisible(), true);
+        await p.click('#view-list');
+        await p.keyboard.press('Escape');
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+        assert.equal(await legend.isVisible(), true, 'Escape in the list view leaves it pinned');
+        assert.equal(await info.getAttribute('aria-expanded'), 'true');
+
+        await p.evaluate(() => document.addEventListener('keydown', (e) => e.preventDefault(), { once: true, capture: true }));
+        await p.keyboard.press('Escape');
+        assert.equal(await legend.isVisible(), true, 'an Escape already handled elsewhere does not close it');
+        await p.keyboard.press('Escape');
+        assert.equal(await legend.isVisible(), false);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, pressing Escape after the review ended throws nothing', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const server = await startReviewServer(config, { author: 'reviewer', onDone: () => {} });
+    try {
+      await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
+        await p.waitForSelector('#flow .box');
+        await p.click('header button:has-text("리뷰 끝")');
+        await p.waitForSelector('#ended');
+        await p.keyboard.press('Escape');
+        await p.keyboard.press('Escape');
+      }, { view: 'flow' });
+    } finally {
+      server.close();
+    }
+  });
+});
+
+test('in a browser, the explanation stays inside the visible part of the flow area when the flow is scrolled sideways', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 700, height: 600 });
+        await p.waitForSelector('#flow .box');
+        await flowButton(p, '모두 펼치기').click();
+        const info = p.locator('.flowbar button.flowinfo-button');
+        const frames = () => p.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+        const edges = () => p.evaluate(() => {
+          const flow = document.getElementById('flow');
+          const box = flow.getBoundingClientRect();
+          const legend = document.getElementById('flowlegend').getBoundingClientRect();
+          return { left: legend.left - box.left, right: legend.right - box.left, visible: flow.clientWidth, scrolled: flow.scrollLeft };
+        });
+        const within = (e) => {
+          assert.ok(e.scrolled > 0, `the flow is scrolled sideways (${e.scrolled})`);
+          assert.ok(e.left >= 0, `left edge ${e.left}`);
+          assert.ok(e.right <= e.visible, `right edge ${e.right} within ${e.visible}`);
+        };
+
+        await info.click();
+        await p.mouse.move(600, 500);
+        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 150; });
+        await frames();
+        assert.equal(await p.locator('#flowlegend').isVisible(), true);
+        within(await edges());
+
+        await info.click();
+        await p.mouse.move(600, 500);
+        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 150; });
+        await frames();
+        await info.hover();
+        await frames();
+        assert.equal(await p.locator('#flowlegend').isVisible(), true);
+        within(await edges());
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, the pointer can travel from the info button down into the explanation without it disappearing', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        const info = p.locator('.flowbar button.flowinfo-button');
+        const legend = p.locator('#flowlegend');
+        await info.hover();
+        assert.equal(await legend.isVisible(), true);
+        const button = await info.boundingBox();
+        const text = await legend.boundingBox();
+        const x = button.x + button.width / 2;
+        const from = button.y + button.height - 2;
+        const to = text.y + 20;
+        assert.ok(to > from);
+        for (let y = from; y <= to; y += 1) {
+          await p.mouse.move(x, y);
+          assert.equal(await legend.isVisible(), true, `the explanation is gone with the pointer at y=${y} (button bottom ${button.y + button.height}, explanation top ${text.y})`);
+        }
+        assert.equal(await p.evaluate(() => document.getElementById('flowlegend').matches(':hover')), true, 'the pointer is on the explanation');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, the buttons of a flow box never wrap onto a second row, at any window width', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        await flowButton(p, '모두 펼치기').click();
+        for (const width of [500, 900, 1440]) {
+          await p.setViewportSize({ width, height: 700 });
+          await p.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+          const rows = await p.$$eval('#flow .box .acts', (acts) => acts.map((row) => {
+            const buttons = [...row.querySelectorAll('button')].map((b) => b.getBoundingClientRect());
+            const box = row.closest('.box').getBoundingClientRect();
+            return { rows: new Set(buttons.map((b) => Math.round(b.top))).size, over: Math.max(...buttons.map((b) => b.right)) - box.right, widest: Math.max(...buttons.map((b) => b.right)) - Math.min(...buttons.map((b) => b.left)) };
+          }));
+          assert.ok(rows.length > 0);
+          assert.deepEqual(rows.filter((r) => r.rows !== 1 || r.over > 0), [], `at ${width}px`);
+          assert.ok(Math.max(...rows.map((r) => r.widest)) < 300, `the longest button row is ${Math.max(...rows.map((r) => r.widest))}px`);
+        }
+      }, { view: 'flow' }),
     ),
   );
 });
@@ -2458,7 +2759,7 @@ test('in a browser, one branch shown on its own has no gathered entry screens, a
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .group-head');
-        await (await screenBox(p, '/home#Home')).locator('button[title="이 가지만 보기"]').click();
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
         await p.waitForSelector('.flowbar .focusing');
         assert.equal(await p.locator('#flow .group-head').count(), 0);
         assert.equal(await p.locator('#flow .box.grouped').count(), 0);

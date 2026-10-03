@@ -464,8 +464,15 @@ but with tests linked by import (`flow.summary` in `/api/data`); a box adds 「�
 each flow node) right after its test counts, which neither its border nor 「빈틈만 펼치기」 counts. A box is sized
 to what it says: its route breaks only before a `/`, its component name is never split and no line is cut. Boxes
 stand in columns by how many links they are from an entry screen, each column as wide as its widest box. A box
-wraps its route once the box's content would pass 360px, and is wider than that when its component name (with the
-buttons beside it) or one route segment needs more room. Entry screens that lead to no other screen are gathered under
+wraps its route once the box's content would pass 360px, and is wider than that when its component name or one
+route segment needs more room. A box with something to open or fold puts its buttons on a line of their own under the
+name, written as words (「접기」/「펼치기」 to hide what hangs below the screen and bring it back as it was, 「전부 펼치기」 for the
+branch and its API calls, 「처음으로」 for the branch's screens opened and its API calls closed, 「이 가지만」 to show
+only that branch); the row takes part in the box's measured width, so a box is never narrower than its buttons
+(the longest row, four buttons, is about 240px, well inside the 360px cap). The two lines explaining
+how to read the picture stay hidden until the 「읽는 법」 button in the bar above it is hovered or pressed; it is a
+real button (`aria-expanded`, `aria-controls`) that Tab reaches, Enter or Space opens and closes, and Escape closes while the flow view is showing. The explanation stays inside the visible part of the flow view when it is scrolled sideways, and the pointer can move from the button down into it without it closing.
+Entry screens that lead to no other screen are gathered under
 「더 뻗지 않는 진입 화면 N」 below the branching ones, in as many columns as the window holds, each as wide as the
 widest gathered screen, so opening a box's API calls keeps every cell's width and column but pushes the rows below it
 down; the calls stack under the box, indented within the column, and every line of a call breaks even inside a word
