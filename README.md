@@ -69,6 +69,7 @@ relative to the config file, except the files inside the client source (`routesF
   files (verdict); files in another format are skipped
 - `outDir` — where `map.json` and `tests.json` are written (default: the config's folder)
 - `marksDir` — folder where review marks are kept (default: `marks` in `outDir`)
+- `judgmentsDir` — folder where the review page keeps judgments on pairs of a test and a screen, such as a discarded test importing the screen (default: `judgments` in `outDir`)
 - `storiesDir` — folder of story files, or a single story file (default: `stories` in `outDir`); see
   [Stories](#stories)
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
@@ -566,6 +567,18 @@ block opening the screen. A guard longer than 80 characters is folded to its sta
 Then come the screen's source location, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.
+Each of them has 「버리기」 with a field for the reason: a reviewer who finds that the test only passes through the
+screen discards the pair, and it leaves 「불러오는 테스트」 and the 「불러옴 N」 counts (in the list and on the flow boxes, a
+branch shown on its own included) for 「버린 짝」 below, which shows the
+reason, author and date with 「되돌리기」 to bring the pair back. A judgment names its test by result source, test file
+(its path under `srcRoot`) and title with the tags taken out, never by line or Playwright project, so a discarded pair
+stays discarded after a rebuild when lines are added above the test, the title gains a tag or the results come from
+another computer; a discarded pair whose test is no longer in the results shows nowhere. Like a mark, each judgment is a new file, `<judgmentsDir>/<node>/<date>-<author>-<short ID>.json`
+holding `test` (`source`, `file`, `title`), `node`, `kind` (`discard` or `undo`), `reason`, `author` and `date`;
+saving never changes an existing file, and the newest judgment of a pair wins. Judgments are applied whenever the
+page loads its data and when `rebuild` counts the links made by imports, never to `tests.json` itself; `/api/data`
+carries the discarded pairs as `tests.discarded`, each with its `judgment`. `rebuild` prints how many pairs are
+discarded and names each judgment file it could not read with the reason, without stopping.
 The right is split in two. Everything above is in its upper part, the only part that scrolls; the mark form is docked
 below it, always in view, for a screen, a call, an option, a depth and a story alike. On a window too short for the
 form and a few lines of the upper part, the whole right scrolls instead, so the form can still be reached. The form

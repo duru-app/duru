@@ -17,7 +17,7 @@ const STATUS = {
 };
 const PREFIX = 'VERDICT ';
 const isTag = (token) => /^@\S/.test(token);
-const withoutTags = (text) => text.split(/\s+/).filter((t) => t && !isTag(t)).join(' ');
+export const withoutTags = (text) => text.split(/\s+/).filter((t) => t && !isTag(t)).join(' ');
 
 // 판정 줄: `VERDICT <이름>: <판정> — <설명> @screen:<id>`
 export function readVerdicts(file) {

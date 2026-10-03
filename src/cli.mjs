@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './config.mjs';
 import { buildMap } from './map.mjs';
+import { applyJudgments, loadJudgments } from './judgments.mjs';
 import { gitUserName, startReviewServer } from './review.mjs';
 import { SERVER_NOT_COMPARED } from './server.mjs';
 import { checkStoryFiles } from './story-paths.mjs';
@@ -74,8 +75,12 @@ if (command === 'tasks') {
     const covered = map.screens.filter((s) => links.nodes[s.id]).length;
     console.log(`screens with tests ${covered}/${map.screens.length} | tags pointing outside the map ${unknownTags.length} | tests without a node or story tag ${links.untaggedCount}`);
     console.log(`calls with tests ${map.calls.filter((c) => links.nodes[c.id]).length}/${map.calls.length}`);
-    const importLinks = Object.values(links.importers).reduce((n, tests) => n + tests.length, 0);
-    console.log(`links from unit tests to screens by the files they import ${importLinks} | test files not read ${links.importNotices.length}`);
+    const { judgments, notices: judgmentNotices } = loadJudgments(config.judgmentsDir);
+    const judged = applyJudgments(links, judgments);
+    const pairs = (byScreen) => Object.values(byScreen).reduce((n, tests) => n + tests.length, 0);
+    console.log(`links from unit tests to screens by the files they import ${pairs(judged.importers)} | test files not read ${links.importNotices.length}`);
+    console.log(`pairs discarded by reviewers ${pairs(judged.discarded)} | judgment files skipped ${judgmentNotices.length}`);
+    for (const n of judgmentNotices) console.log(`  judgment file ${n.file}: ${n.reason}`);
     for (const m of links.missingSources) console.log(`  missing test results ${m}`);
     for (const u of unknownTags) console.log(`  unknown ${u.tag} ← ${u.test.file}:${u.test.line} ${u.test.title}`);
 
