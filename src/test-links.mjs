@@ -13,6 +13,7 @@ export const READERS = {
 };
 export const DEPTHS = ['ui', 'api', 'render', 'code', 'data', 'output'];
 const NODE_TAG = /^(screen|call):(.+)$/;
+const STORY_TAG = /^story:(.+)$/;
 const DEPTH_TAG = /^depth:(.*)$/;
 const OPTION_TAG = /^option:(.*)$/;
 const OPTION_VALUE = /^([^=]+)=(true|false)$/;
@@ -31,6 +32,7 @@ export function linkTests(config, map) {
   const known = new Set([...map.screens.map((s) => `screen:${s.id}`), ...(map.calls ?? []).map((c) => `call:${c.id}`)]);
   const callOptions = new Map((map.calls ?? []).map((c) => [c.id, new Set((c.options ?? []).map((o) => o.key))]));
   const nodes = {};
+  const stories = Object.create(null);
   const unknownTags = [];
   const untagged = new Set();
   const missingSources = [];
@@ -70,7 +72,8 @@ export function linkTests(config, map) {
           else reportUnknown(tag, t, testKey);
         }
         options.sort(byKey);
-        if (nodeTags.length === 0) {
+        const storyTags = [...new Set(t.tags.filter((tag) => STORY_TAG.test(tag)))];
+        if (nodeTags.length === 0 && storyTags.length === 0) {
           untagged.add(testKey);
           continue;
         }
@@ -85,9 +88,10 @@ export function linkTests(config, map) {
           const own = kind === 'call' ? { ...entry, options: options.filter((o) => callOptions.get(id).has(o.key)) } : entry;
           (nodes[id] ??= []).push(own);
         }
+        for (const tag of storyTags) (stories[tag.match(STORY_TAG)[1]] ??= []).push(entry);
       }
     }
   }
 
-  return { meta: { generatedAt: new Date().toISOString() }, nodes, unknownTags, untaggedCount: untagged.size, missingSources };
+  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, unknownTags, untaggedCount: untagged.size, missingSources };
 }

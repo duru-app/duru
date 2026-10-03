@@ -52,7 +52,7 @@ export function reviewData(config, author, app = null, fileSettings = null) {
     map,
     tests,
     marks: classifyMarks(loadMarks(config.marksDir), map),
-    stories: checkStoryFiles(map, config.storiesDir, mapFile),
+    stories: checkStoryFiles(map, config.storiesDir, mapFile, tests),
     storiesDir: config.storiesDir,
     flow: buildFlow(map, tests),
     appUrl: config.appUrl ?? null,

@@ -31,7 +31,7 @@ test('rebuild writes map.json and tests.json to the configured output folder and
     ]);
     assert.match(stdout, /^screens 11 \|/m);
     assert.match(stdout, /^calls 10 \| dead screens 2$/m);
-    assert.match(stdout, /^screens with tests 7\/11 \| tags pointing outside the map 5 \| tests without a node tag 6$/m);
+    assert.match(stdout, /^screens with tests 7\/11 \| tags pointing outside the map 10 \| tests without a node or story tag 6$/m);
     assert.match(stdout, /^calls with tests 3\/10$/m);
     assert.doesNotMatch(stdout, /bodyOptions/);
   } finally {
@@ -55,20 +55,25 @@ test('rebuild warns about each call ID in bodyOptions that is not on the map', (
   }
 });
 
-test('rebuild counts the stories with broken paths or screens gone from the map and the steps it could not judge, and names each story file it skipped and why', () => {
+test('rebuild counts the stories with broken paths or screens gone from the map, the steps it could not judge and the stories in each status, and names each story file it skipped and why', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const configFile = path.join(copy, 'config.json');
     const plain = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     assert.match(plain, /^stories 0 \| broken paths 0 \| detached 0 \| unjudged steps 0 \| story files skipped 0$/m);
+    assert.match(plain, /^stories passing 0 \| failing 0 \| pending 0 \| partly covered 0 \| no tests 0$/m);
+    assert.match(plain, /^ {2}unknown story:run-lab ← com\.example\.lab\.LabFlowTest:null /m);
 
     fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), storiesDir: 'example-stories' }));
     const lab = path.join(copy, 'client/src/components/Lab.js');
     fs.writeFileSync(lab, fs.readFileSync(lab, 'utf8').replace('</section>', '  <Link to={Option.ROUTE_PATH.NOPE}>Nope</Link>\n    </section>'));
     fs.writeFileSync(path.join(copy, 'example-stories/lab-to-sign-in.json'), JSON.stringify({ name: 'n', screens: ['/lab#Lab', '/signin#SignIn'], author: 'a', date: '2026-10-02' }));
     const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
-    assert.match(stdout, /^stories 5 \| broken paths 1 \| detached 1 \| unjudged steps 1 \| story files skipped 1$/m);
+    assert.match(stdout, /^stories 6 \| broken paths 1 \| detached 1 \| unjudged steps 1 \| story files skipped 1$/m);
+    assert.match(stdout, /^stories passing 1 \| failing 1 \| pending 1 \| partly covered 2 \| no tests 1$/m);
+    assert.match(stdout, /^ {2}unknown story:print-document ← stories\.spec\.ts:12 prints a document @story:print-document$/m);
+    assert.doesNotMatch(stdout, /unknown story:run-lab/);
     assert.match(stdout, /^ {2}story file lab-shortcut\.json: screens 는 /m);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });

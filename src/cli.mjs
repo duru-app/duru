@@ -67,15 +67,18 @@ if (command === 'tasks') {
   if (command === 'rebuild') {
     const links = linkTests(config, map);
     console.log(`wrote ${write('tests.json', links)}`);
+    const { list, notices, stale, unknownTags: unknownStories } = checkStoryFiles(map, config.storiesDir, path.join(config.outDir, 'map.json'), links);
+    const unknownTags = [...links.unknownTags, ...unknownStories];
     const covered = map.screens.filter((s) => links.nodes[s.id]).length;
-    console.log(`screens with tests ${covered}/${map.screens.length} | tags pointing outside the map ${links.unknownTags.length} | tests without a node tag ${links.untaggedCount}`);
+    console.log(`screens with tests ${covered}/${map.screens.length} | tags pointing outside the map ${unknownTags.length} | tests without a node or story tag ${links.untaggedCount}`);
     console.log(`calls with tests ${map.calls.filter((c) => links.nodes[c.id]).length}/${map.calls.length}`);
     for (const m of links.missingSources) console.log(`  missing test results ${m}`);
-    for (const u of links.unknownTags) console.log(`  unknown ${u.tag} ← ${u.test.file}:${u.test.line} ${u.test.title}`);
+    for (const u of unknownTags) console.log(`  unknown ${u.tag} ← ${u.test.file}:${u.test.line} ${u.test.title}`);
 
-    const { list, notices, stale } = checkStoryFiles(map, config.storiesDir, path.join(config.outDir, 'map.json'));
     const unjudged = list.flatMap((s) => s.links).filter((l) => l.verdict === 'unknown').length;
     console.log(`stories ${list.length} | broken paths ${list.filter((s) => s.broken).length} | detached ${list.filter((s) => s.detached).length} | unjudged steps ${unjudged} | story files skipped ${notices.length}`);
+    const inStatus = (status) => list.filter((s) => s.status === status).length;
+    console.log(`stories passing ${inStatus('pass')} | failing ${inStatus('fail')} | pending ${inStatus('pending')} | partly covered ${inStatus('partial')} | no tests ${inStatus('untested')}`);
     for (const n of notices) console.log(`  story file ${n.file}: ${n.reason}`);
     if (stale) console.log(`  ${stale}`);
   }

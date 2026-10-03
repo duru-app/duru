@@ -1,0 +1,7 @@
+{
+  "name": "관리자가 보고서를 본다",
+  "screens": ["/admin/report#AdminReport"],
+  "memo": "",
+  "author": "reviewer",
+  "date": "2026-10-03"
+}
