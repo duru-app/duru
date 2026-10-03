@@ -15,3 +15,4 @@ export default function AdminMember() {
     </section>
   );
 }
+import { formatDate } from './formatDate';

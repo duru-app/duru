@@ -303,6 +303,27 @@ other than `true` or `false`, how many tests carry neither a node tag nor a stor
 paths that do not exist yet. A test lists under a story once however many times its tags name it. Story
 tags are matched against the story files whenever the stories are read, not when `tests.json` is written:
 `rebuild` prints a story tag that no story file has with the other tags pointing outside the map.
+A unit test that carries no tag for a screen is still shown next to it when its test file imports one of
+the screen's source files. Each screen in `map.json` lists its `sourceFiles`: the files reached by imports
+from its component and from the components wrapped around its route, leaving out the API modules and the
+constants files. For every test of a `vitest` result source (a Jest JSON report has the same shape and is
+read the same way), duru finds the test file under `srcRoot`, also when the report was written on another
+computer, and reads the files it imports (`import`, `import()` and
+`require()`; a file named only to mock it, as in `jest.mock()` or `vi.mock(import())`, does not count).
+`tests.json` lists the test under `importers` for each screen
+that has one of those files among its `sourceFiles`, with the test file's path under `srcRoot` in `testFile`
+and the files it came through in `via`. A source file
+that more than three screens share is not taken as a link, and a test already tagged with the screen is
+left out there. These tests do not count as tests of the screen: `nodes`, the story statuses and the counts
+of screens with tests stay as the tags make them. A test file that is not found under `srcRoot` is listed
+once in `importNotices` with the reason; `rebuild` prints how many links from a test to a screen it made
+this way and how many test files it could not read. An absolute report path that exists on this computer is
+taken only when it lies under `srcRoot`; any other path is looked up under `srcRoot` by its longest trailing
+part that names a file there, and by the bare file name only when the folder before it is named like
+`srcRoot` or the report gives nothing but the file name. A
+report from another computer that names a file of another package can still match a file with the same
+trailing path under `srcRoot`.
+
 `test/fixtures/app` holds a small fake client with example results and a config.
 
 A check script that is not a test framework reports through verdict lines in its output, one test per line;
@@ -458,7 +479,7 @@ their kinds and, when the screen it comes from is restricted itself, what that s
 shows 「링크마다 다름」 here, on the links it makes and on its box in the flow view), its source location, route
 guards, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
-the screens using it.
+the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.
 
 Next to the screen list, the left column has a tab with the stories: each with its name, ID and number of
 screens, its status unless it passes (「실패」, 「보류」, 「일부 화면만 테스트」, 「테스트 없음」), 「링크 없음」 when two

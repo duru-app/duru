@@ -43,7 +43,7 @@ test('tags pointing outside the map and tests without a node tag are reported se
       'depth:e2e com.example.help.HelpServiceTest:null',
     ],
   );
-  assert.equal(links.untaggedCount, 6);
+  assert.equal(links.untaggedCount, 13);
   assert.equal(Object.keys(links.nodes).includes('/settings#Settings'), false);
   assert.deepEqual(links.missingSources, []);
 });

@@ -7,7 +7,7 @@ import { resolveImport } from './resolve.mjs';
 import { settingNeeds } from './setting-needs.mjs';
 
 const traverse = _traverse.default ?? _traverse;
-const PARSER_PLUGINS = ['jsx', 'classProperties', 'optionalChaining', 'nullishCoalescingOperator', 'dynamicImport'];
+export const PARSER_PLUGINS = ['jsx', 'classProperties', 'optionalChaining', 'nullishCoalescingOperator', 'dynamicImport'];
 export const UNKNOWN = '{?}';
 const GUARD_TEXT_LIMIT = 160;
 
@@ -689,7 +689,7 @@ export async function extractClient(config) {
       for (const r of facts.settingReads) settingReads.push({ ...r, file: rel(f) });
       for (const r of facts.routeRefs) links.push({ ...r, to: routeValues[r.route] ?? UNKNOWN, file: rel(f) });
     }
-    return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, apiCalls, settingReads, links };
+    return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls, settingReads, links };
   });
 
   return { screens, apiFunctions, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete };

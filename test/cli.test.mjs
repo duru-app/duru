@@ -31,7 +31,8 @@ test('rebuild writes map.json and tests.json to the configured output folder and
     ]);
     assert.match(stdout, /^screens 11 \|/m);
     assert.match(stdout, /^calls 10 \| dead screens 2$/m);
-    assert.match(stdout, /^screens with tests 7\/11 \| tags pointing outside the map 10 \| tests without a node or story tag 6$/m);
+    assert.match(stdout, /^screens with tests 7\/11 \| tags pointing outside the map 10 \| tests without a node or story tag 13$/m);
+    assert.match(stdout, /^links from unit tests to screens by the files they import 5 \| test files not read 2$/m);
     assert.match(stdout, /^calls with tests 3\/10$/m);
     assert.doesNotMatch(stdout, /bodyOptions/);
   } finally {

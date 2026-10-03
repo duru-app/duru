@@ -1,0 +1,44 @@
+{
+  "numTotalTestSuites": 6,
+  "numTotalTests": 7,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        { "ancestorTitles": [], "title": "renders the help text", "status": "passed", "location": { "line": 4, "column": 1 } },
+        { "ancestorTitles": [], "title": "shows the day the help was last updated", "status": "passed", "location": { "line": 8, "column": 1 } }
+      ],
+      "name": "/builds/client/src/components/Help.spec.js"
+    },
+    {
+      "assertionResults": [
+        { "ancestorTitles": ["DocumentTable"], "title": "lists the documents it is given", "status": "failed", "location": { "line": 6, "column": 3 } }
+      ],
+      "name": "/builds/client/src/components/DocumentTable.spec.js"
+    },
+    {
+      "assertionResults": [
+        { "ancestorTitles": [], "title": "loads the detail screen only when it is needed", "status": "passed", "location": { "line": 1, "column": 1 } }
+      ],
+      "name": "/builds/client/src/components/DocumentDetail.spec.js"
+    },
+    {
+      "assertionResults": [
+        { "ancestorTitles": [], "title": "formats a date as year-month-day", "status": "passed", "location": { "line": 3, "column": 1 } }
+      ],
+      "name": "/builds/client/src/components/formatDate.spec.js"
+    },
+    {
+      "assertionResults": [
+        { "ancestorTitles": [], "title": "the lab is off by default", "status": "passed", "location": { "line": 3, "column": 1 } }
+      ],
+      "name": "/builds/client/src/store/settings.spec.js"
+    },
+    {
+      "assertionResults": [
+        { "ancestorTitles": [], "title": "keeps the old menu", "status": "passed", "location": { "line": 2, "column": 1 } }
+      ],
+      "name": "/builds/client/src/components/Gone.spec.js"
+    }
+  ]
+}
