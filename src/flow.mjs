@@ -42,6 +42,7 @@ export function buildFlow(map, tests, { from } = {}) {
       component: s.component,
       counts: countOf(tests.nodes[id]),
       dead: Boolean(s.dead),
+      restricted: s.access.restricted,
       kinds: s.access.kinds,
       guards,
       children: [],

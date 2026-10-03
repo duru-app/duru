@@ -1062,6 +1062,31 @@ test('in a browser, the setting and role filters keep the screens that open only
   );
 });
 
+test('in a browser, a screen whose links ask for different kinds has its own filter and says so in its access panel, on links from it and in its flow box', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config, copy) => {
+    rewrite(copy, 'client/src/components/Home.js', "      {session['member.role']", "      {memberRole === 'ADMIN' && <Link to={Option.ROUTE_PATH.HELP}>Help</Link>}\n      {session['member.role']");
+    fs.writeFileSync(path.join(copy, 'client/src/components/Help.js'), "import { Link } from 'react-router-dom';\nimport Option from '_define/Option';\n\nexport default function Help() {\n  return <article><Link to={Option.ROUTE_PATH.LAB_RESULT}>Results</Link></article>;\n}\n");
+    rebuild(copy);
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.check('#left input[name=mixed]');
+        assert.deepEqual(await p.locator('#screen-list li .name > span:first-child').allTextContents(), ['/help', '/lab/result']);
+        await p.uncheck('#left input[name=mixed]');
+        const access = p.locator('#right .access');
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await access.locator('.needs').innerText(), '필요한 것 링크마다 다름');
+        await p.click('#screen-list li:has-text("/lab/result")');
+        assert.deepEqual(await access.locator('li:has-text("/help#Help") .from-kinds .chip').allTextContents(), ['링크마다 다름']);
+
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+        assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), / · 링크마다 다름$/);
+      }),
+    );
+  });
+});
+
 test('in a browser, the chosen screen shows its calls with the server match and tests by depth, and a mark on a call depth reaches the task list', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>

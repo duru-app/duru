@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { screenAccess } from '../src/access.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
 
@@ -251,6 +252,60 @@ test('a screen opens only under a setting or a role when its route is guarded or
   const open = map.screens.filter((s) => !s.access.restricted);
   assert.deepEqual(open.map((s) => s.id), ['/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail']);
   for (const s of open) assert.deepEqual([s.access.kinds, s.access.route], [[], []], s.id);
+});
+
+const MENU_X = 'globalSettings.MENU.X';
+const IS_ADMIN = "memberRole === 'ADMIN'";
+const tinyAccess = (screens, entryPaths = []) => {
+  const config = { routesFile: 'Routes.js', entryPaths, roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
+  const full = screens.map(([path, routeGuards, links]) => ({ id: path, path, routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
+  const { access } = screenAccess(full, [], config, new Map(), {}, new Map());
+  return Object.fromEntries(full.map((s, i) => [s.id, access[i]]));
+};
+
+test('a kind a screen does not guard itself is needed only when every link into it asks for it', () => {
+  const byRoleScreen = tinyAccess([
+    ['/start', [], [['/user', []], ['/admin', []]]],
+    ['/user', [], [['/x', [MENU_X]]]],
+    ['/admin', [IS_ADMIN], [['/x', [MENU_X]]]],
+    ['/x', [], []],
+  ]);
+  assert.deepEqual(byRoleScreen['/x'].kinds, ['setting']);
+  assert.ok(!('roleValues' in byRoleScreen['/x']));
+
+  const eitherKind = tinyAccess([
+    ['/start', [], [['/user', []], ['/x', [IS_ADMIN]]]],
+    ['/user', [], [['/x', [MENU_X]]]],
+    ['/x', [], []],
+  ]);
+  assert.equal(eitherKind['/x'].restricted, true);
+  assert.deepEqual(eitherKind['/x'].kinds, []);
+  assert.ok(!('roleValues' in eitherKind['/x']));
+});
+
+test('an entry screen needs only what its route guards ask, whatever the links into it ask', () => {
+  const access = tinyAccess([
+    ['/start', [], [['/x', [MENU_X, "memberRole === 'OWNER'"]]]],
+    ['/x', [IS_ADMIN], []],
+  ], ['/x']);
+  assert.deepEqual(access['/x'].kinds, ['role']);
+  assert.deepEqual([access['/x'].roleValues, access['/x'].unreadableRoleGuards], [['ADMIN'], []]);
+  assert.ok(!('settings' in access['/x']));
+
+  const bySetting = tinyAccess([
+    ['/start', [], [['/y', ['globalSettings.MENU.Y']]]],
+    ['/y', [MENU_X], []],
+  ], ['/y']);
+  assert.deepEqual(bySetting['/y'].settings.map((x) => x.from), ['route']);
+});
+
+test('two restricted screens that link to each other keep the kind of the only link into them from outside', () => {
+  const access = tinyAccess([
+    ['/start', [], [['/a', [MENU_X]]]],
+    ['/a', [], [['/b', []]]],
+    ['/b', [], [['/a', []]]],
+  ]);
+  assert.deepEqual([access['/a'].kinds, access['/b'].kinds], [['setting'], ['setting']]);
 });
 
 test('each restricted screen keeps the route guard and the links that decided it', async () => {

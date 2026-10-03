@@ -244,18 +244,31 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
   );
   const restricted = indices.map((i) => !open.has(i));
 
-  const kinds = screens.map((_, i) => new Set(route[i].flatMap((g) => g.kinds)));
-  const allLinksBlocked = (i) => incoming[i].length > 0 && incoming[i].every((l) => l.guards.length > 0 || restricted[l.from]);
+  const routeKinds = screens.map((_, i) => new Set(route[i].flatMap((g) => g.kinds)));
+  const kinds = routeKinds.map((own) => new Set(own));
+  const started = new Set(starts);
+  const onlyBlockedLinks = (i) => !started.has(i) && incoming[i].length > 0 && incoming[i].every((l) => l.guards.length > 0 || restricted[l.from]);
+  const linkKinds = (l) => [...l.guards.flatMap((g) => g.kinds), ...(restricted[l.from] ? kinds[l.from] : [])];
   for (let changed = true; changed; ) {
     changed = false;
     for (const i of indices) {
-      if (!restricted[i] || !allLinksBlocked(i)) continue;
-      for (const l of incoming[i]) {
-        for (const k of [...l.guards.flatMap((g) => g.kinds), ...(restricted[l.from] ? kinds[l.from] : [])]) {
-          if (kinds[i].has(k)) continue;
-          kinds[i].add(k);
-          changed = true;
-        }
+      if (!restricted[i] || !onlyBlockedLinks(i)) continue;
+      for (const k of incoming[i].flatMap(linkKinds)) {
+        if (kinds[i].has(k)) continue;
+        kinds[i].add(k);
+        changed = true;
+      }
+    }
+  }
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const i of indices) {
+      if (!restricted[i] || !onlyBlockedLinks(i)) continue;
+      const every = intersect(incoming[i].map((l) => new Set(linkKinds(l))));
+      for (const k of kinds[i]) {
+        if (routeKinds[i].has(k) || every.has(k)) continue;
+        kinds[i].delete(k);
+        changed = true;
       }
     }
   }
@@ -273,7 +286,7 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
   };
   const valuesOf = (i) => {
     const sets = readSets(route[i]);
-    const ways = allLinksBlocked(i) ? incoming[i].map(linkValues) : [undefined];
+    const ways = onlyBlockedLinks(i) ? incoming[i].map(linkValues) : [undefined];
     if (ways.every(Boolean)) sets.push(new Set(ways.flatMap((w) => [...w])));
     const both = sets.length ? intersect(sets) : new Set();
     return both.size ? [...both].sort() : null;
@@ -291,7 +304,7 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
   }
   const roleAccess = (i) => {
     if (!restricted[i] || !kinds[i].has('role')) return {};
-    const guards = [...route[i], ...(allLinksBlocked(i) ? incoming[i].flatMap((l) => l.guards) : [])];
+    const guards = [...route[i], ...(onlyBlockedLinks(i) ? incoming[i].flatMap((l) => l.guards) : [])];
     const unreadable = roleGuards(guards).filter((g) => !g.roles).map((g) => g.guard);
     return { roleValues: values[i], unreadableRoleGuards: [...new Set(unreadable)].sort() };
   };
@@ -302,7 +315,7 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
     const links = incoming[i]
       .map((l) => ({ from: screens[l.from].id, file: l.file, line: l.line, guards: l.guards, fromKinds: shownKinds[l.from] }))
       .sort(byPlace);
-    const settings = shownKinds[i].includes('setting') ? { settings: settingSources(route[i], links) } : {};
+    const settings = shownKinds[i].includes('setting') ? { settings: settingSources(route[i], onlyBlockedLinks(i) ? links : []) } : {};
     return { restricted: restricted[i], kinds: shownKinds[i], route: route[i], links, ...roleAccess(i), ...settings };
   });
   const entries = starts.map((i) => ({ screen: screens[i].id, reasons: reasons[i] }));
