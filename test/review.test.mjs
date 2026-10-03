@@ -1392,6 +1392,23 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
   );
 });
 
+test('in a browser, a step that a move in the config joins shows as 설정에 적은 이동 with its reason, and the story is reachable', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories', moves: [{ from: '/signin', to: '/lab/result', reason: '로그인 뒤' }] }, (config, copy) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/signin-lab.json'), JSON.stringify({ name: '로그인해서 실험 결과를 본다', screens: ['/signin#SignIn', '/lab/result#LabResult'], author: 'a', date: '2026-10-03' }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험 결과를 본다")');
+        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['설정에 적은 이동']);
+        assert.equal(await p.textContent('#center .story-path .link.l-configured'), '설정에 적은 이동 로그인 뒤');
+        assert.match(await p.getAttribute('#center .story-path .link.l-configured > .chip', 'title'), /moves/);
+        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 가능']);
+      }),
+    );
+  });
+});
+
 test('in a browser, the story list shows only the statuses that need a look, filters by 테스트 없음, 일부 화면만 테스트, 실패 and 링크 없음, and a chosen story shows its status, its story tests and the tests on each screen by depth and status', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>

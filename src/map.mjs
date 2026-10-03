@@ -1,6 +1,6 @@
 import { extractClient, UNKNOWN } from './client.mjs';
 import { clientPath, loadServerEndpoints, matchEndpoint } from './server.mjs';
-import { screenAccess } from './access.mjs';
+import { linkTargets, screenAccess } from './access.mjs';
 import { compare } from './config.mjs';
 
 // JUnit 태그에 쓸 수 없는 문자. 이 문자만 없으면 Playwright · Vitest 제목에서도 그대로 태그로 쓸 수 있다.
@@ -15,6 +15,26 @@ function callOf(e, apiPathPrefix) {
   const method = e.method ?? UNKNOWN;
   const p = e.server.path ?? clientPath(e.url, apiPathPrefix);
   return { id: `${method}:${p}`.replace(TAG_FORBIDDEN, '_'), method, path: p };
+}
+
+function configuredMoves(screens, moves) {
+  const targetsOf = linkTargets(screens);
+  const joined = new Map();
+  const unknownPaths = new Set();
+  for (const { from, to, reason } of moves) {
+    const [froms, tos] = [from, to].map((p) => {
+      const found = targetsOf(p);
+      if (!found.length) unknownPaths.add(p);
+      return found;
+    });
+    for (const i of froms) {
+      for (const j of tos) {
+        const move = { from: screens[i].id, to: screens[j].id, reason };
+        joined.set(JSON.stringify(move), move);
+      }
+    }
+  }
+  return { moves: [...joined.values()], unknownMovePaths: [...unknownPaths] };
 }
 
 const bySite = (a, b) => compare(a.screen, b.screen) || compare(a.file, b.file) || a.line - b.line;
@@ -121,6 +141,7 @@ export async function buildMap(config) {
     ...(server.length === 0 && { serverNotCompared: true }),
     entries,
     unknownEntryPaths,
+    ...configuredMoves(mapped, config.moves ?? []),
     settingsDefaults,
     settingsDefaultsIncomplete,
   };

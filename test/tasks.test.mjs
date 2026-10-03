@@ -279,6 +279,17 @@ test('a marked story whose first screen opens only under a setting or a role lis
   }, { storiesDir: 'example-stories' });
 });
 
+test('a marked story step that a move in the config joins reads as that move with its reason, and the story is reachable', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/signin-lab.json'), JSON.stringify({ name: '로그인해서 실험 결과를 본다', screens: ['/signin#SignIn', '/lab/result#LabResult'], author: 'a', date: '2026-10-03' }));
+    cli('rebuild');
+    addMark(loadConfig(configFile).marksDir, { target: { story: 'signin-lab' }, status: 'missing', note: 'No test.', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
+    const story = cli('tasks').split('\n## signin-lab\n')[1].split('\n## ')[0];
+    assert.match(story, /^ {5}- to \/lab\/result#LabResult: a move in the config \(로그인 뒤\)$/m);
+    assert.match(story, /^- reach: reachable$/m);
+  }, { storiesDir: 'example-stories', moves: [{ from: '/signin', to: '/lab/result', reason: '로그인 뒤' }] });
+});
+
 test('a marked story whose file is still in the folder but cannot be read keeps its marks in the task list, under a note that the file could not be read', () => {
   withFixtureCopy(({ copy, cli }) => {
     fs.writeFileSync(path.join(copy, 'example-stories/run-lab.json'), '{');

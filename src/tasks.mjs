@@ -184,6 +184,7 @@ const unreadText = (links) => links.map((l) => `${place(l)} \`${l.to}\``).join('
 function linkText(link) {
   if (link.verdict === 'broken') return 'no link';
   if (link.verdict === 'off-map') return 'not judged, a screen is not on the map';
+  if (link.verdict === 'configured') return `a move in the config (${link.reasons.join(', ')})`;
   if (link.verdict === 'unknown') return `not judged, links to a path duru cannot read: ${unreadText(link.unknownLinks)}`;
   return `${link.verdict} at ${link.ways.map(place).join(', ')}`;
 }

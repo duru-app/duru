@@ -8,6 +8,11 @@ const byPlace = (a, b) => compare(a.file, b.file) || a.line - b.line;
 export function checkStories(map, stories) {
   const indexOf = new Map(map.screens.map((s, i) => [s.id, i]));
   const targetsOf = linkTargets(map.screens);
+  const movesBetween = new Map();
+  for (const m of map.moves ?? []) {
+    const key = `${m.from} ${m.to}`;
+    movesBetween.set(key, [...(movesBetween.get(key) ?? []), m.reason]);
+  }
 
   const linkBetween = (fromId, toId) => {
     const fromIndex = indexOf.get(fromId);
@@ -18,6 +23,8 @@ export function checkStories(map, stories) {
       .sort(byPlace);
     // 조건 없는 링크가 하나라도 있으면 빼 둔 링크가 판정을 바꾸지 못하므로 알리지 않는다.
     if (ways.some((w) => !w.conditions.length)) return { verdict: 'open', ways };
+    const reasons = movesBetween.get(`${fromId} ${toId}`);
+    if (reasons) return { verdict: 'configured', reasons, ways: [] };
     const unknownLinks = from.links.filter((l) => unreadableTarget(l.to)).map((l) => ({ file: l.file, line: l.line, to: l.to })).sort(byPlace);
     const skipped = unknownLinks.length ? { unknownLinks } : {};
     if (ways.length) return { verdict: 'conditioned', ways, ...skipped };
