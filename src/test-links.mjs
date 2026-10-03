@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { compare } from './config.mjs';
 import { importLinker } from './import-links.mjs';
 import { readJunit } from './junit.mjs';
 import { readPlaywright } from './playwright.mjs';
@@ -19,6 +20,9 @@ const DEPTH_TAG = /^depth:(.*)$/;
 const OPTION_TAG = /^option:(.*)$/;
 const OPTION_VALUE = /^([^=]+)=(true|false)$/;
 const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+const shownFile = (t) => t.testFile ?? t.file ?? '';
+const byTest = (a, b) => compare(shownFile(a), shownFile(b)) || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.source, b.source);
+const STATUS_RANK = { pass: 0, pending: 1, fail: 2 };
 
 function resultFiles(p, extensions) {
   if (!fs.statSync(p).isDirectory()) return [p];
@@ -35,7 +39,7 @@ export function linkTests(config, map) {
   const nodes = {};
   const stories = Object.create(null);
   const unknownTags = [];
-  const untagged = new Set();
+  const untagged = new Map();
   const missingSources = [];
   const seenUnknown = new Set();
   const linkByImports = importLinker(config.srcRoot, map);
@@ -86,7 +90,9 @@ export function linkTests(config, map) {
           }
         }
         if (nodeTags.length === 0 && storyTags.length === 0) {
-          untagged.add(testKey);
+          const seen = untagged.get(testKey);
+          if (!seen) untagged.set(testKey, { title: t.title, file: t.file, line: t.line, source: resultPath, format: source.format, status: t.status, ...(link?.file && { testFile: link.file }) });
+          else if (STATUS_RANK[t.status] > STATUS_RANK[seen.status]) seen.status = t.status;
           continue;
         }
         const test = { title: t.title, file: t.file, line: t.line, project: t.project };
@@ -105,5 +111,5 @@ export function linkTests(config, map) {
     }
   }
 
-  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, unknownTags, untaggedCount: untagged.size, missingSources };
+  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, unknownTags, untagged: [...untagged.values()].sort(byTest), untaggedCount: untagged.size, missingSources };
 }

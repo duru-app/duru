@@ -231,6 +231,15 @@ test('each test importing a screen carries the reference a judgment names it by'
   });
 });
 
+test('a tests.json written before the untagged list existed stays without one, so the count is not shown against an empty list', () => {
+  withResults((rebuild) => {
+    const { untagged, ...old } = rebuild(4);
+    const judged = applyJudgments({ ...old, untaggedCount: 4 }, []);
+    assert.equal('untagged' in judged, false);
+    assert.equal(judged.untaggedCount, 4);
+  });
+});
+
 test('the judgments folder defaults to judgments in outDir and can be set in the config', () => {
   assert.equal(config.judgmentsDir, path.join(config.outDir, 'judgments'));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-config-'));

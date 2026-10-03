@@ -204,7 +204,7 @@
   .flowbar .focusing { margin-left: 8px; font-size: 12px; }
   .flowbar .flowsummary { flex-basis: 100%; font-size: 13px; }
   .views.side { margin-bottom: 10px; }
-  .views.side button { flex: 1; }
+  .views.side button { flex: 1 1 auto; padding: 4px 8px; }
   .chip.l-open { color: var(--pass); } .chip.l-conditioned { color: var(--accent); } .chip.l-broken { color: var(--fail); } .chip.l-off-map, .chip.l-unknown { color: var(--more); }
   .story-path { margin-top: 8px; }
   .story-path .step { display: flex; gap: 10px; align-items: baseline; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
@@ -217,6 +217,12 @@
   #story-list .chips:not(:empty) { margin-top: 2px; }
   .step-tests { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; }
   .step-tests .none { color: var(--fail); }
+  #untagged-list li { align-items: flex-start; }
+  #untagged-list .chip { flex: none; }
+  .test-pairs .pair { margin-bottom: 6px; }
+  .test-pairs .pair .detail { font-size: 12px; color: var(--muted); }
+  .test-pairs .pair .chip { flex: none; }
+  .test-pairs .no-screens { margin: 0; }
   .test .depth { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 4px; }
   .story-path .link { margin: 0 0 0 18px; padding: 6px 0 6px 18px; border-left: 2px solid var(--line); font-size: 13px; }
   .story-path .link.l-conditioned { border-left: 2px dashed var(--accent); }
@@ -262,6 +268,7 @@ const MIXED_KINDS = '링크마다 다름';
 const VALUE_LABEL = { true: '켬', false: '끔' };
 const SCREEN_FILTERS = [
   { key: 'no-tests', label: '테스트 없음만', keep: (s) => testsOf(s.id).length === 0 },
+  { key: 'imported-only', label: '지나간 테스트만 있음', title: '화면 테스트는 없고, 이 화면의 소스 파일을 불러오는 테스트만 있는 화면. 태그 달기를 기다리는 짝은 세고, 버린 짝은 세지 않습니다', keep: (s) => testsOf(s.id).length === 0 && importersOf(s.id).length + awaitingTagOf(s.id).length > 0 },
   { key: 'dead', label: '죽은 화면', keep: (s) => s.dead, needsServerList: true },
   { key: 'setting', label: '특정 설정에서만 열림', keep: (s) => s.access.kinds.includes('setting') },
   { key: 'role', label: '특정 역할에서만 열림', keep: (s) => s.access.kinds.includes('role') },
@@ -280,7 +287,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, judgmentNotes: new Map() };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, judgmentNotes: new Map(), untaggedTest: null, untaggedQuery: '' };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -313,6 +320,10 @@ const importersOf = (id) => ownTests(state.data.tests.importers, id);
 const discardedOf = (id) => ownTests(state.data.tests.discarded, id);
 const awaitingTagOf = (id) => ownTests(state.data.tests.awaitingTag, id);
 const detachedOf = (id) => ownTests(state.data.tests.detachedHandOvers, id);
+const untaggedTests = () => state.data.tests.untagged ?? [];
+const untaggedListMissing = () => !state.data.tests.untagged && state.data.tests.untaggedCount > 0;
+const untaggedCount = () => state.data.tests.untagged?.length ?? state.data.tests.untaggedCount ?? 0;
+const untaggedKey = (t) => JSON.stringify([t.source, t.file, t.line, t.title]);
 const markOf = (t) => state.data.marks.attached.find((m) => m.key === keyOf(t));
 const fmtDate = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 const markChip = (m) => (m ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status]) : null);
@@ -340,6 +351,7 @@ async function load() {
     state.target = screen ? { node: screen.id } : null;
     state.draft = null;
   }
+  if (!untaggedTests().some((t) => untaggedKey(t) === state.untaggedTest)) state.untaggedTest = untaggedTests().length ? untaggedKey(untaggedTests()[0]) : null;
   const stories = state.data.stories.list;
   if (!stories.some((st) => st.id === state.story) && !unlistedMarks().some((m) => m.target.story === state.story)) {
     state.story = stories[0]?.id ?? null;
@@ -367,6 +379,13 @@ function selectStory(id) {
   if (id !== state.story) state.storyOpen.clear();
   state.story = id;
   state.storyDraft = null;
+  state.error = null;
+  state.judgmentError = null;
+  render();
+}
+
+function selectUntaggedTest(key) {
+  state.untaggedTest = key;
   state.error = null;
   state.judgmentError = null;
   render();
@@ -441,13 +460,21 @@ function renderLeft() {
   const { marks, map, stories } = state.data;
   const left = document.getElementById('left');
   const side = (key, label) => h('button', { class: state.side === key ? 'on' : '', onclick: () => setSide(key) }, label);
-  const tabs = h('div', { class: 'views side' }, side('screens', `화면 ${map.screens.length}`), side('stories', `스토리 ${stories.list.length}`));
+  const tabs = h('div', { class: 'views side' }, side('screens', `화면 ${map.screens.length}`), side('stories', `스토리 ${stories.list.length}`), side('untagged', `태그 없는 테스트 ${untaggedCount()}`));
   if (state.side === 'stories') return fill(left, tabs, storyList());
+  if (state.side === 'untagged') {
+    fill(left,
+      tabs,
+      h('div', { class: 'filters' },
+        h('input', { type: 'search', placeholder: '테스트 찾기', value: state.untaggedQuery, oninput: (e) => { state.untaggedQuery = e.target.value; renderUntaggedList(); } })),
+      h('ul', { class: 'screens', id: 'untagged-list' }));
+    return renderUntaggedList();
+  }
   fill(left,
     tabs,
     h('div', { class: 'filters' },
       h('input', { type: 'search', placeholder: '화면 찾기', value: state.query, oninput: (e) => { state.query = e.target.value; renderLeftList(); } }),
-      activeScreenFilters().map((f) => h('label', {}, h('input', { type: 'checkbox', name: f.key, checked: state.filters.has(f.key), onchange: (e) => {
+      activeScreenFilters().map((f) => h('label', { title: f.title }, h('input', { type: 'checkbox', name: f.key, checked: state.filters.has(f.key), onchange: (e) => {
         if (e.target.checked) state.filters.add(f.key); else state.filters.delete(f.key);
         renderLeftList();
       } }), f.label)),
@@ -476,15 +503,28 @@ function renderLeftList() {
   const list = document.getElementById('screen-list');
   fill(list, ...visible.map((s) => {
     const n = testsOf(s.id).length;
+    const waiting = awaitingTagOf(s.id).length;
     return h('li', { class: s.id === state.selected ? 'selected' : '', title: `${s.path} ${s.component}`, onclick: () => select(s.id) },
       h('span', { class: 'name' }, h('span', {}, routeSegments(s.path)), ' ', h('span', { class: 'muted component' }, s.component)),
       h('span', { class: 'badges' },
         s.dead ? h('span', { class: 'chip dead', title: '서버에 없는 호출이 있습니다' }, '죽은 화면') : null,
         markChip(markOf({ node: s.id })),
         h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'),
-        importersOf(s.id).length ? h('span', { class: 'count importer-count', title: '이 화면의 소스 파일을 불러오는 단위 테스트' }, `불러옴 ${importersOf(s.id).length}`) : null));
+        importersOf(s.id).length ? h('span', { class: 'count importer-count', title: '이 화면의 소스 파일을 불러오는 단위 테스트' }, `불러옴 ${importersOf(s.id).length}`) : null,
+        waiting ? h('span', { class: 'count awaiting-count', title: '이 화면의 태그를 달도록 넘긴 테스트' }, `태그 대기 ${waiting}`) : null));
   }));
   if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 화면이 없습니다.'));
+}
+
+function renderUntaggedList() {
+  const list = document.getElementById('untagged-list');
+  if (untaggedListMissing()) return fill(list, h('li', { class: 'muted' }, '목록이 없습니다.'));
+  const q = state.untaggedQuery.trim().toLowerCase();
+  const visible = untaggedTests().filter((t) => !q || t.title.toLowerCase().includes(q) || testPlace(t).toLowerCase().includes(q));
+  fill(list, ...visible.map((t) => h('li', { class: untaggedKey(t) === state.untaggedTest ? 'selected' : '', onclick: () => selectUntaggedTest(untaggedKey(t)) },
+    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]),
+    h('span', { class: 'name' }, h('span', { class: 'title' }, t.title), ' ', h('span', { class: 'muted mono' }, testPlace(t))))));
+  if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 테스트가 없습니다.'));
 }
 
 const LINK_VERDICT = { open: '이어짐', conditioned: '조건', broken: '링크 없음', 'off-map': '판정 못 함', unknown: '판정 못 함' };
@@ -547,11 +587,16 @@ function storyList() {
   ];
 }
 
+const filePlace = (file, line) => `${file}:${line ?? '?'}`;
+const testPlace = (t) => filePlace(t.testFile ?? t.file, t.line);
+const viaRow = (via) => h('div', { class: 'detail' }, '불러오는 파일 ', h('span', { class: 'mono via' }, via.join(', ')));
+const screenHead = (s) => [h('span', { class: 'screen-path' }, s.path), ' ', h('span', { class: 'muted' }, s.component), h('div', { class: 'muted mono' }, s.id)];
+
 function testItem(t, { depth = false } = {}) {
   return h('div', { class: 'test' },
     depth ? h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]) : null,
     h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', t.title, ' ',
-    h('span', { class: 'muted mono' }, `${t.file}:${t.line ?? '?'}`),
+    h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
     t.detail && t.status !== 'pass' ? h('div', { class: 'detail' }, t.detail) : null);
 }
@@ -560,8 +605,8 @@ function importerItem(t) {
   return h('div', { class: 'test' },
     h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]),
     h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', t.title, ' ',
-    h('span', { class: 'muted mono' }, `${t.testFile}:${t.line ?? '?'}`),
-    h('div', { class: 'detail' }, '불러오는 파일 ', h('span', { class: 'mono' }, t.via.join(', '))));
+    h('span', { class: 'muted mono' }, filePlace(t.testFile, t.line)),
+    viaRow(t.via));
 }
 
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
@@ -973,7 +1018,7 @@ function stepItem(step, i) {
   const s = screenOf(step.screen);
   return h('div', { class: 'step on-map', title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
     h('span', { class: 'no' }, i + 1),
-    h('span', { class: 'name' }, h('span', {}, s.path), ' ', h('span', { class: 'muted' }, s.component), h('div', { class: 'muted mono' }, step.screen), stepTests(s.id)));
+    h('span', { class: 'name' }, screenHead(s), stepTests(s.id)));
 }
 
 function stepTests(id) {
@@ -1000,10 +1045,71 @@ function linkItem(l) {
     l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null);
 }
 
-function renderStoryCenter() {
+function clearCenterHead() {
   const head = document.getElementById('center-head');
   head.dataset.key = '';
   fill(head);
+}
+
+const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+const PAIR_STATES = [
+  { list: 'importers', label: '불러옴', cls: 'config' },
+  { list: 'awaitingTag', label: '태그 달기 대기', cls: 'wait', noteLabel: '메모' },
+  { list: 'detachedHandOvers', label: '떨어져 나감', cls: 'wait', noteLabel: '메모' },
+  { list: 'discarded', label: '버린 짝', cls: 'muted', noteLabel: '까닭' },
+];
+
+function pairsOf(t) {
+  const ref = JSON.stringify(t.ref);
+  const pairs = [];
+  for (const { list, ...rest } of PAIR_STATES) {
+    for (const [id, entries] of Object.entries(state.data.tests[list] ?? {})) {
+      const entry = entries.find((e) => JSON.stringify(e.ref) === ref);
+      if (entry) pairs.push({ id, entry, ...rest });
+    }
+  }
+  return pairs.sort((a, b) => compareText(screenLabel(a.id), screenLabel(b.id)) || compareText(a.id, b.id));
+}
+
+function pairItem({ id, entry, label, cls, noteLabel }) {
+  const s = screenOf(id);
+  const body = h('span', { class: 'name' },
+    s ? screenHead(s) : h('div', { class: 'muted mono' }, id),
+    entry.via ? viaRow(entry.via) : null,
+    entry.judgment ? judgmentMeta(entry.judgment, noteLabel) : null);
+  const stateChip = h('span', { class: `chip pair-state ${cls}` }, label);
+  if (!s) return h('div', { class: 'step off-map pair' }, body, h('span', { class: 'chip l-off-map' }, '맵에 없는 화면'), stateChip);
+  return h('div', { class: 'step on-map pair', title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(id) }, body, stateChip);
+}
+
+function noScreensText(t) {
+  if (t.testFile) return '이 테스트가 불러오는 파일로 이어진 화면이 없습니다. 화면 넷 이상이 함께 쓰는 파일과 찾지 못한 파일로는 잇지 않습니다.';
+  if (t.format !== 'vitest') return `이 결과 형식(${t.format})에는 테스트가 불러오는 파일이 적혀 있지 않아, 어느 화면에 이어지는지 읽지 못했습니다.`;
+  const reason = (state.data.tests.importNotices ?? []).find((n) => n.file === t.file)?.reason;
+  return `테스트가 불러오는 파일을 읽지 못했습니다.${reason ? ` ${reason}.` : ''}`;
+}
+
+function renderUntaggedCenter() {
+  clearCenterHead();
+  const center = document.getElementById('center-body');
+  if (untaggedListMissing()) return fill(center, h('p', { class: 'muted' }, '이 tests.json 에는 태그 없는 테스트 목록이 없습니다. duru rebuild 를 다시 실행하세요.'));
+  const t = untaggedTests().find((x) => untaggedKey(x) === state.untaggedTest);
+  if (!t) return fill(center, h('p', { class: 'muted' }, '태그 없는 테스트가 없습니다.'));
+  const pairs = pairsOf(t);
+  fill(center,
+    h('div', { class: 'title-row' }, h('h3', {}, t.title), h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status])),
+    h('div', { class: 'muted mono' }, testPlace(t)),
+    h('div', { class: 'muted' }, `${t.format} · ${t.source}`),
+    h('div', { class: 'test-pairs' },
+      h('h2', {}, `이 테스트와 화면의 짝 ${pairs.length}`),
+      pairs.length
+        ? h('div', { class: 'story-path' }, pairs.map(pairItem))
+        : h('p', { class: 'muted no-screens' }, noScreensText(t))));
+}
+
+function renderStoryCenter() {
+  clearCenterHead();
   const center = document.getElementById('center-body');
   const st = storyOf();
   if (!st && state.story) return fill(center, h('h3', {}, state.story), h('p', { class: 'muted', title: '스토리 파일을 읽지 못했거나 맵이 오래되어 경로를 맞춰 보지 못했습니다' }, '경로 판정 없음'));
@@ -1076,6 +1182,7 @@ function renderStoryRight(info, dock) {
 
 function renderCenter() {
   if (state.side === 'stories') return renderStoryCenter();
+  if (state.side === 'untagged') return renderUntaggedCenter();
   const center = document.getElementById('center-body');
   const s = state.data.map.screens.find((x) => x.id === state.selected);
   renderCenterHead(s);
@@ -1199,6 +1306,10 @@ function guardList(item) {
 function renderRight() {
   const info = document.getElementById('right-info');
   const dock = document.getElementById('right-dock');
+  if (state.side === 'untagged') {
+    fill(info);
+    return fill(dock);
+  }
   const view = state.side === 'stories' ? `story(${state.story})` : `${state.selected}\n${state.target?.node}`;
   const shown = shownTarget();
   const dockKey = shown ? keyOf(shown) : null;

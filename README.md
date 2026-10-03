@@ -343,7 +343,11 @@ then counts for the story and for each node. A story tag takes the test's depth 
 `tests.json` lists the tests per node ID and, under `stories`, per story ID as the tag writes it, each with
 its own depth and status (pass, fail, pending; skipped and todo count as pending), the tags that point at IDs
 not on the map, name an unknown depth, or are option tags with no call of the test to attach to or a value
-other than `true` or `false`, how many tests carry neither a node tag nor a story tag, and configured result
+other than `true` or `false`, the tests that carry neither a node tag nor a story tag, as `untagged` (each with
+`title`, `file`, `line`, `source`, `format`, `status` and, for a Vitest test found under `srcRoot`, `testFile`;
+a test that ran in several projects is listed once with the worst of their statuses, fail before pending before
+pass; sorted by `testFile` or else `file`, then line, title and result source) with their number in
+`untaggedCount`, and configured result
 paths that do not exist yet. A test lists under a story once however many times its tags name it. Story
 tags are matched against the story files whenever the stories are read, not when `tests.json` is written:
 `rebuild` prints a story tag that no story file has with the other tags pointing outside the map.
@@ -506,7 +510,11 @@ screens" filter, which keeps the screens that call an API missing on the server 
 server list, which also adds a 「서버 대조 안 함」 chip to the header line, with the reason in a popover on
 hover or keyboard focus, and shows the calls as 「대조 안 함」), and "opens only under a
 setting" and "opens only under a role" filters read from `access.kinds`; a screen that needs both shows under
-either, and a restricted screen with empty `kinds` shows under 「링크마다 다름」 instead. With `app` set, the middle starts with the chosen screen's app in a frame, served by duru on an address of
+either, and a restricted screen with empty `kinds` shows under 「링크마다 다름」 instead. A 「지나간 테스트만 있음」
+filter keeps the screens that have no test tagged with the screen but at least one test importing their source
+files: a pair waiting for the tag counts as importing, a discarded pair does not. The screen's row shows
+「불러옴 N」 for the importing tests and 「태그 대기 N」 for the pairs waiting for the tag. (API calls have no importing tests, so the
+filter applies to the screen list only.) With `app` set, the middle starts with the chosen screen's app in a frame, served by duru on an address of
 its own and already logged in, so the reviewer can use it while marking; the line above the frame shows its
 address, a role picker, who the frame is logged in as (「ADMIN 역할 duru-admin 로 로그인」, or why that login
 failed, or 「로그아웃 상태」 for a screen in `signedOutPaths`, which has no picker), in red any
@@ -656,6 +664,22 @@ Stories are read again whenever the page loads its data, so a story file written
 a reload.
 `/api/data` carries the checked stories, each with its `status`, as `stories.list`, the notes as
 `stories.notices` and the story tags that no story file has as `stories.unknownTags`.
+
+The left column has a third tab, 「태그 없는 테스트 N」, listing the tests that carry no node tag and no story tag
+(`untagged` in `tests.json`) with their status and test file and line, and a search box over their titles and
+files. Choosing a test shows in the middle its title, status, test file and line, result source and format, then
+its pairs with screens (the screens it reaches through the files it imports, and the screens it was judged
+against), each with the source files it came through and the state of the pair: 「불러옴」 for a plain importing test, 「태그 달기 대기」 for a pair handed over for tagging (with its note,
+author and date), 「떨어져 나감」 for a hand-over of a test that no longer imports the screen (with its note, author
+and date) and 「버린 짝」 for a discarded one (with its reason, author and date). Pressing a screen opens it
+in the screen list; a screen no longer on the map shows as 「맵에 없는 화면」 and cannot be opened. A test whose
+imports were read and lead to no screen says so, adding that a file shared by more than three screens and an
+import that was not found link nothing. A test whose imports were not read, because its result format
+(JUnit, Playwright, verdict) carries no imports or because its test file was not found under `srcRoot`, says
+that instead. A `tests.json` from before the list existed has the count but no list: the tab shows the count and
+the middle asks for `duru rebuild`. The pairs cannot be judged from this
+tab; judge them on the screen. `/api/data` carries the list as `tests.untagged`, each entry with its `ref`, the
+same reference a judgment names the test by.
 
 A mark targets a screen or an API call, or one depth of either, or one value of a call's option, or one depth
 of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "withHistory", "value": true },

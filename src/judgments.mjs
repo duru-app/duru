@@ -112,5 +112,6 @@ export function applyJudgments(tests, judgments) {
     if (!found.has(key)) (detachedHandOvers[judgment.node] ??= []).push({ ref: judgment.test, judgment });
   }
   for (const list of Object.values(detachedHandOvers)) list.sort((a, b) => compare(a.ref.file, b.ref.file) || compare(a.ref.title, b.ref.title) || compare(a.ref.source, b.ref.source));
-  return { ...tests, importers, discarded, awaitingTag, detachedHandOvers };
+  const untagged = tests.untagged?.map((t) => ({ ...t, ref: testRef(t) }));
+  return { ...tests, ...(untagged && { untagged }), importers, discarded, awaitingTag, detachedHandOvers };
 }
