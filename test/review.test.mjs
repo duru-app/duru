@@ -2984,3 +2984,27 @@ test('in a browser, without app settings the center column has no frame', { skip
     ),
   );
 });
+
+test('in a browser, a screen shows the unit tests that import its source files apart from its own tests', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const help = p.locator('#screen-list li:has-text("/help")');
+        assert.equal(await help.locator('.importer-count').textContent(), '불러옴 2');
+        assert.deepEqual(await p.locator('#screen-list li:has-text("/document/:id") .count').allTextContents(), ['테스트 11', '불러옴 1']);
+
+        await help.click();
+        const ownCount = await p.textContent('#center tbody tr:first-child td:nth-child(2)');
+        assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 2');
+        assert.deepEqual(await p.locator('#center .importers .test').allTextContents(), [
+          '코드통과 renders the help text components/Help.spec.js:4불러오는 파일 components/Help.js',
+          '코드통과 shows the day the help was last updated components/Help.spec.js:8불러오는 파일 components/Help.js',
+        ]);
+        assert.match(ownCount, /^테스트 \d+개$/);
+        assert.doesNotMatch(await p.textContent('#center table'), /renders the help text/);
+
+        await p.click('#screen-list li:has-text("/admin/member")');
+        assert.equal(await p.locator('#center .importers').count(), 0);
+      })));
+});

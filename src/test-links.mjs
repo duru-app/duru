@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { importLinker } from './import-links.mjs';
 import { readJunit } from './junit.mjs';
 import { readPlaywright } from './playwright.mjs';
 import { readVerdicts } from './verdict.mjs';
@@ -37,6 +38,9 @@ export function linkTests(config, map) {
   const untagged = new Set();
   const missingSources = [];
   const seenUnknown = new Set();
+  const linkByImports = importLinker(config.srcRoot, map);
+  const importers = {};
+  const importNotices = [];
   const reportUnknown = (tag, t, testKey) => {
     if (seenUnknown.has(`${tag} ${testKey}`)) return;
     seenUnknown.add(`${tag} ${testKey}`);
@@ -73,6 +77,14 @@ export function linkTests(config, map) {
         }
         options.sort(byKey);
         const storyTags = [...new Set(t.tags.filter((tag) => STORY_TAG.test(tag)))];
+        if (source.format === 'vitest') {
+          const link = linkByImports(t.file);
+          if (link.reason && !importNotices.some((n) => n.file === t.file)) importNotices.push({ file: t.file, reason: link.reason });
+          for (const [id, via] of link.screens ?? []) {
+            if (t.tags.includes(`screen:${id}`)) continue;
+            (importers[id] ??= []).push({ title: t.title, file: t.file, line: t.line, source: resultPath, format: source.format, depth, status: t.status, testFile: link.file, via });
+          }
+        }
         if (nodeTags.length === 0 && storyTags.length === 0) {
           untagged.add(testKey);
           continue;
@@ -93,5 +105,5 @@ export function linkTests(config, map) {
     }
   }
 
-  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, unknownTags, untaggedCount: untagged.size, missingSources };
+  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, unknownTags, untaggedCount: untagged.size, missingSources };
 }

@@ -96,6 +96,8 @@
   .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved { color: var(--muted); }
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .importers p { font-size: 12px; margin: 0 0 8px; }
+  .counts { display: flex; flex-direction: column; align-items: flex-end; }
   .guard { display: block; }
   .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
   .access h3 { font-size: 13px; margin: 10px 0 4px; }
@@ -236,6 +238,7 @@ const keyOf = (t) => (t.story !== undefined ? `story(${t.story})` : [t.node, t.o
 const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
 const ownTests = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
 const testsOf = (id) => ownTests(state.data.tests.nodes, id);
+const importersOf = (id) => ownTests(state.data.tests.importers, id);
 const markOf = (t) => state.data.marks.attached.find((m) => m.key === keyOf(t));
 const fmtDate = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 const markChip = (m) => (m ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status]) : null);
@@ -364,7 +367,9 @@ function renderLeftList() {
       h('span', { class: 'name' }, h('span', {}, s.path), ' ', h('span', { class: 'muted' }, s.component)),
       s.dead ? h('span', { class: 'chip dead', title: '서버에 없는 호출이 있습니다' }, '죽은 화면') : null,
       markChip(markOf({ node: s.id })),
-      h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'));
+      h('span', { class: 'counts' },
+        h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'),
+        importersOf(s.id).length ? h('span', { class: 'count importer-count', title: '이 화면의 소스 파일을 불러오는 단위 테스트' }, `불러옴 ${importersOf(s.id).length}`) : null));
   }));
   if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 화면이 없습니다.'));
 }
@@ -436,6 +441,23 @@ function testItem(t, { depth = false } = {}) {
     h('span', { class: 'muted mono' }, `${t.file}:${t.line ?? '?'}`),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
     t.detail && t.status !== 'pass' ? h('div', { class: 'detail' }, t.detail) : null);
+}
+
+function importerItem(t) {
+  return h('div', { class: 'test' },
+    h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]),
+    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', t.title, ' ',
+    h('span', { class: 'muted mono' }, `${t.testFile}:${t.line ?? '?'}`),
+    h('div', { class: 'detail' }, '불러오는 파일 ', h('span', { class: 'mono' }, t.via.join(', '))));
+}
+
+function importerTests(s) {
+  const importers = importersOf(s.id);
+  if (!importers.length) return null;
+  return h('div', { class: 'importers' },
+    h('h2', {}, `불러오는 테스트 ${importers.length}`),
+    h('p', { class: 'muted' }, '이 화면에 딸린 소스 파일을 불러오는 단위 테스트입니다. 이 화면의 태그가 없어서 이 화면의 테스트로 세지 않습니다.'),
+    importers.map(importerItem));
 }
 
 function frameAccount(s) {
@@ -904,6 +926,7 @@ function renderCenter() {
         h('td', { class: 'depth' }, r.label),
         h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map(testItem) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
         h('td', { class: 'mark' }, markChip(markOf(r.target)) ?? h('span', { class: 'muted' }, '—')))))),
+    importerTests(s),
     callTable(s),
   );
 }

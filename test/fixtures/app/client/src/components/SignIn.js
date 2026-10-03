@@ -22,3 +22,4 @@ export default function SignIn({ globalSettings }) {
     </form>
   );
 }
+import { formatDate } from './formatDate';
