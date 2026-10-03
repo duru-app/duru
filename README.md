@@ -154,7 +154,10 @@ relative to the config file, except the files inside the client source (`routesF
 server match, the settings each screen reads, and links to other screens with the conditions guarding
 them. A screen reaches the files its route component imports, directly or in turn, and the files of every
 component that wraps its route in the routes file, such as a layout with a side menu around a group of
-routes. The wrapper's API calls, settings reads and links therefore belong to each screen it wraps. A guard
+routes. The wrapper's API calls, settings reads and links therefore belong to each screen it wraps. Files
+are followed whole, not name by name: a screen that imports one name from a barrel file reaches every file
+that barrel re-exports, and their API calls, settings reads and links belong to the screen too. An API
+function that a file imports through a barrel instead of from the API module is not read as an API call. A guard
 around the wrapper is a route guard of every screen inside it, so the wrapper's links count as coming from
 restricted screens and do not repeat that guard.
 
@@ -304,8 +307,9 @@ paths that do not exist yet. A test lists under a story once however many times 
 tags are matched against the story files whenever the stories are read, not when `tests.json` is written:
 `rebuild` prints a story tag that no story file has with the other tags pointing outside the map.
 A unit test that carries no tag for a screen is still shown next to it when its test file imports one of
-the screen's source files. Each screen in `map.json` lists its `sourceFiles`: the files reached by imports
-from its component and from the components wrapped around its route, leaving out the API modules and the
+the screen's source files. Each screen in `map.json` lists its `sourceFiles`: the files reached by `import`,
+`import()` and re-exports (`export ... from`, so a file used through a barrel file counts; `require()` is not
+followed) from its component and from the components wrapped around its route, leaving out the API modules and the
 constants files. For every test of a `vitest` result source (a Jest JSON report has the same shape and is
 read the same way), duru finds the test file under `srcRoot`, also when the report was written on another
 computer, and reads the files it imports (`import`, `import()` and
@@ -313,7 +317,8 @@ computer, and reads the files it imports (`import`, `import()` and
 `tests.json` lists the test under `importers` for each screen
 that has one of those files among its `sourceFiles`, with the test file's path under `srcRoot` in `testFile`
 and the files it came through in `via`. A source file
-that more than three screens share is not taken as a link, and a test already tagged with the screen is
+that more than three screens share is not taken as a link (every file a barrel re-exports is shared by all
+the screens that import from that barrel), and a test already tagged with the screen is
 left out there. These tests do not count as tests of the screen: `nodes`, the story statuses and the counts
 of screens with tests stay as the tags make them. A test file that is not found under `srcRoot` is listed
 once in `importNotices` with the reason; `rebuild` prints how many links from a test to a screen it made
