@@ -461,7 +461,16 @@ missing or failing opened (as 「빈틈만 펼치기」 does) on first load; aft
 leaves them, also across visits to the list. A line on top reads 「테스트 있는 화면 n/전체 · 실패 n · 태그 없는
 테스트만 있는 화면 n」: screens with a tagged test, screens with a failing one, and screens with no tagged test
 but with tests linked by import (`flow.summary` in `/api/data`); a box adds 「불러옴 N」 for those (`imported` on
-each flow node), which neither its border nor 「빈틈만 펼치기」 counts. 「목록」 switches to the list described
+each flow node) right after its test counts, which neither its border nor 「빈틈만 펼치기」 counts. A box is sized
+to what it says: its route breaks only before a `/`, its component name is never split and no line is cut. Boxes
+stand in columns by how many links they are from an entry screen, each column as wide as its widest box. A box
+wraps its route once the box's content would pass 360px, and is wider than that when its component name (with the
+buttons beside it) or one route segment needs more room. Entry screens that lead to no other screen are gathered under
+「더 뻗지 않는 진입 화면 N」 below the branching ones, in as many columns as the window holds, each as wide as the
+widest gathered screen, so opening a box's API calls keeps every cell's width and column but pushes the rows below it
+down; the calls stack under the box, indented within the column, and every line of a call breaks even inside a word
+too long for it; when one branch is shown on its
+own, nothing is gathered. 「목록」 switches to the list described
 here. The left column lists the screens with a "no tests" filter, a "dead
 screens" filter, which keeps the screens that call an API missing on the server, and "opens only under a
 setting" and "opens only under a role" filters read from `access.kinds`; a screen that needs both shows under

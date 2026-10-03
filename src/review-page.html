@@ -116,23 +116,29 @@
   .views { display: flex; gap: 4px; }
   .views button { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
   .views button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
-  #flow { height: calc(100vh - 49px); overflow: auto; padding: 16px; }
+  /* 상자를 재는 순간에는 내용이 짧아 스크롤바가 없으므로, 그때 잰 폭이 다 그린 뒤와 같도록 스크롤바 자리를 늘 비워 둔다. */
+  #flow { height: calc(100vh - 49px); overflow: auto; scrollbar-gutter: stable; padding: 16px; }
   #flow h2 { margin: 20px 0 8px; }
   .flowlegend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
   .canvas { position: relative; }
   .canvas svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
   .canvas svg path { fill: none; stroke: var(--muted); stroke-width: 1.3; opacity: .7; }
   .canvas svg path.guarded { stroke: var(--accent); stroke-dasharray: 5 4; opacity: .9; }
-  .box { position: absolute; box-sizing: border-box; border: 1.5px solid var(--line); border-radius: 6px; background: var(--panel); padding: 4px 8px; font-size: 12px; line-height: 1.35; overflow: hidden; }
+  #flow .canvas .group-head { position: absolute; margin: 0; line-height: 28px; white-space: nowrap; }
+  .box { position: absolute; box-sizing: border-box; border: 1.5px solid var(--line); border-radius: 6px; background: var(--panel); padding: 4px 8px; font-size: 12px; line-height: 1.35; }
+  .box.measuring { left: 0; top: 0; width: max-content; max-width: 360px; min-width: min-content; visibility: hidden; }
   .box.screen { cursor: pointer; }
   .box.screen:hover { border-color: var(--accent); }
-  .box.call .l1, .box .l2, .box .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .box .seg, .box .component { white-space: nowrap; }
+  .box.call.grouped { overflow-wrap: anywhere; }
+  .box.call.grouped .seg { display: inline-block; max-width: 100%; white-space: normal; }
+  .box .need .text, .box .l3 .text { overflow-wrap: anywhere; }
   .box .l1 { font-weight: 600; }
   .box .l2, .box .l3, .box .need { color: var(--muted); }
-  .box .need { display: flex; align-items: center; gap: 6px; }
+  .box .need { display: flex; align-items: baseline; gap: 6px; }
   .box .need .flag { flex: none; color: var(--pending); }
-  .box.screen .l1, .box .l3 { display: flex; align-items: center; gap: 4px; }
-  .box .text { flex: 1; min-width: 0; }
+  .box.screen .l1, .box .l3 { display: flex; align-items: flex-start; gap: 4px; }
+  .box .text { flex: 1 1 auto; }
   .box.s-pass { border-color: var(--pass); }
   .box.s-fail { border-color: var(--fail); }
   .box.s-pending { border-color: var(--pending); }
@@ -1153,7 +1159,7 @@ async function saveMark(target, draftKey) {
   render();
 }
 
-const COL = 310, BOX_W = 260, GAP = 12, SCREEN_H = 60, CALL_H = 44, LINE_H = 17;
+const GAP = 12, COL_GAP = 50, CELL_GAP = 24, CALL_INDENT = 16, GROUP_SPACE = 24, GROUP_HEAD_H = 28;
 
 function svg(tag, attrs, ...children) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -1235,7 +1241,7 @@ const countText = (c) => (c.pass + c.fail + c.pending
   : '테스트 없음');
 const guardText = (alternatives) => alternatives.map((alt) => alt.map((g) => g.guard).join(' & ')).join(' 또는 ');
 
-// 노드에 쓰는 짧은 문구는 상자 끝에서 잘려도 값이 남도록 값을 앞에 두고 경로는 끝 두 마디만 적는다.
+// 전체 경로는 상자의 title 에 있다.
 const needText = (n, { short = false } = {}) => {
   const path = (short ? n.path.slice(-2) : n.path).join('.');
   if (n.need === 'includes') return short ? `${quoted(n.value)} (${path} 에)` : `${path} 에 ${quoted(n.value)}`;
@@ -1273,44 +1279,139 @@ function nodeNeeds(n) {
   return { lines, tips };
 }
 
-function layoutTree(roots) {
-  const boxes = [];
-  const edges = [];
-  let cursor = 0;
+const callKey = (screen, call) => `${screen.id}>${call.id}`;
+const isFolded = (node, collapsed) => node.kind === 'screen' && collapsed.has(node.id) && node.children.length > 0;
+function shownKids(node, collapsed, openCalls) {
+  if (node.kind !== 'screen' || isFolded(node, collapsed)) return [];
+  return [
+    ...node.children.map((n) => ({ key: n.id, node: n })),
+    ...(openCalls.has(node.id) ? node.calls.map((c) => ({ key: callKey(node, c), node: c })) : []),
+  ];
+}
+
+function flowBoxes(roots, { collapsed = [], openCalls = [] }) {
+  const folded = new Set(collapsed);
+  const open = new Set(openCalls);
+  const out = [];
+  const walk = (key, node) => {
+    out.push({ key, node, collapsed: isFolded(node, folded) });
+    for (const k of shownKids(node, folded, open)) walk(k.key, k.node);
+  };
+  for (const r of roots) walk(r.id, r);
+  return out;
+}
+
+// 칸 폭은 모은 화면 상자만으로 정하므로 API 호출을 펼쳐도 칸이 움직이지 않는다. 높이는 이 결과로 폭이 정해진 뒤에 재므로 sizes[key].height 는 아직 없어도 된다.
+const cellsPerRow = (count, cellW, width) => Math.max(1, Math.min(count, Math.floor((width + CELL_GAP) / (cellW + CELL_GAP))));
+
+function flowColumns(roots, sizes, { collapsed = [], openCalls = [], group = false, width = 0 } = {}) {
+  const folded = new Set(collapsed);
+  const open = new Set(openCalls);
+  const gathered = group ? roots.filter((r) => !r.children.length) : [];
+  const trees = group ? roots.filter((r) => r.children.length) : roots;
+  const depths = new Map();
+  const walk = (key, node, depth) => {
+    depths.set(key, depth);
+    for (const k of shownKids(node, folded, open)) walk(k.key, k.node, depth + 1);
+  };
+  for (const r of trees) walk(r.id, r, 0);
+  const colWidths = [];
+  for (const [key, d] of depths) colWidths[d] = Math.max(colWidths[d] ?? 0, sizes[key].width);
+  const xs = colWidths.map(() => 0);
+  for (let d = 1; d < colWidths.length; d += 1) xs[d] = xs[d - 1] + colWidths[d - 1] + COL_GAP;
+  const cellW = Math.max(0, ...gathered.map((r) => sizes[r.id].width));
+  const per = cellsPerRow(gathered.length, cellW, width);
+  const sized = {};
+  for (const [key, d] of depths) sized[key] = colWidths[d];
+  const grid = gathered.map((r) => ({ screen: r, calls: shownKids(r, folded, open) }));
+  for (const { screen, calls } of grid) {
+    sized[screen.id] = cellW;
+    for (const k of calls) sized[k.key] = cellW - CALL_INDENT;
+  }
+  return {
+    widths: sized,
+    grouped: new Set(grid.flatMap(({ screen, calls }) => [screen.id, ...calls.map((k) => k.key)])),
+    trees, depths, xs, grid, cellW, per,
+    span: colWidths.length ? xs[colWidths.length - 1] + colWidths[colWidths.length - 1] : 0,
+  };
+}
+
+// sizes[key] 는 { width: 본래 폭, height: flowColumns 가 정한 폭으로 그려 잰 높이 } 이다. cols 는 같은 sizes 와 view 로 이미 구한 flowColumns 결과다.
+// 모은 상자의 API 호출은 칸이 넓어지지 않도록 오른쪽이 아니라 상자 아래에 들여 쌓는다.
+function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, view)) {
+  const { collapsed = [], openCalls = [] } = view;
+  const folded = new Set(collapsed);
+  const open = new Set(openCalls);
   const middle = (b) => b.y + b.height / 2;
-  const lower = (fromBox, fromEdge, by) => {
-    for (const b of boxes.slice(fromBox)) b.y += by;
-    for (const e of edges.slice(fromEdge)) { e.y1 += by; e.y2 += by; }
+  const placed = [];
+  let cursor = 0;
+  const lower = (from, by) => {
+    for (const b of placed.slice(from)) b.y += by;
     cursor += by;
   };
-  const place = (node, depth) => {
-    const isScreen = node.kind === 'screen';
-    const collapsed = isScreen && state.collapsed.has(node.id) && node.children.length > 0;
-    const kids = !isScreen || collapsed ? [] : [...node.children, ...(state.openCalls.has(node.id) ? node.calls : [])];
-    const needs = isScreen ? nodeNeeds(node) : null;
-    const height = isScreen ? SCREEN_H + LINE_H * needs.lines.length : CALL_H;
+  const place = (key, node, parent) => {
+    const { height } = sizes[key];
     const top = cursor;
-    const fromBox = boxes.length;
-    const fromEdge = edges.length;
-    const placed = kids.map((k) => place(k, depth + 1));
+    const from = placed.length;
+    const kids = shownKids(node, folded, open).map((k) => place(k.key, k.node, key));
     let y = top;
-    if (placed.length) {
-      y = (middle(placed[0]) + middle(placed[placed.length - 1])) / 2 - height / 2;
-      // 부모가 자식들보다 커서 위로 넘치면 가지 전체를 내려 부모와 자식의 가운데를 맞춘다.
+    if (kids.length) {
+      y = (middle(kids[0]) + middle(kids[kids.length - 1])) / 2 - height / 2;
       if (y < top) {
-        lower(fromBox, fromEdge, top - y);
+        lower(from, top - y);
         y = top;
       }
     }
-    const self = { node, x: depth * COL, y, height, needs, collapsed };
-    boxes.push(self);
+    const self = { key, node, parent, x: cols.xs[cols.depths.get(key)], y, width: cols.widths[key], height, grouped: false };
+    placed.push(self);
     cursor = Math.max(cursor, y + height + GAP);
-    kids.forEach((k, i) => edges.push({ x1: depth * COL + BOX_W, y1: middle(self), x2: (depth + 1) * COL, y2: middle(placed[i]), guards: k.kind === 'screen' ? k.guards : [] }));
     return self;
   };
-  for (const r of roots) place(r, 0);
-  return { boxes, edges, height: cursor, width: Math.max(0, ...boxes.map((b) => b.x + BOX_W)) };
+  for (const r of cols.trees) place(r.id, r, null);
+  let height = cursor;
+  let span = cols.span;
+  let heading = null;
+  if (cols.grid.length) {
+    const { grid, cellW, per } = cols;
+    const top = cols.trees.length ? cursor + GROUP_SPACE : 0;
+    let rowY = top + GROUP_HEAD_H;
+    for (let i = 0; i < grid.length; i += per) {
+      let rowBottom = rowY;
+      grid.slice(i, i + per).forEach(({ screen, calls }, j) => {
+        const x = j * (cellW + CELL_GAP);
+        let y = rowY + sizes[screen.id].height;
+        placed.push({ key: screen.id, node: screen, parent: null, x, y: rowY, width: cellW, height: sizes[screen.id].height, grouped: true });
+        for (const k of calls) {
+          placed.push({ key: k.key, node: k.node, parent: screen.id, x: x + CALL_INDENT, y: y + GAP, width: cols.widths[k.key], height: sizes[k.key].height, grouped: true });
+          y += GAP + sizes[k.key].height;
+        }
+        rowBottom = Math.max(rowBottom, y);
+      });
+      rowY = rowBottom + GAP;
+    }
+    height = rowY;
+    span = Math.max(span, per * cellW + (per - 1) * CELL_GAP);
+    heading = { x: 0, y: top, height: GROUP_HEAD_H, count: grid.length };
+  }
+  const byKey = new Map(placed.map((b) => [b.key, b]));
+  const edges = placed.filter((b) => b.parent !== null).map((b) => {
+    const from = byKey.get(b.parent);
+    const guards = b.node.kind === 'screen' ? b.node.guards : [];
+    return b.grouped
+      ? { from: b.parent, to: b.key, x1: from.x + CALL_INDENT / 2, y1: from.y + from.height, x2: b.x, y2: middle(b), guards, grouped: true }
+      : { from: b.parent, to: b.key, x1: from.x + from.width, y1: middle(from), x2: b.x, y2: middle(b), guards, grouped: false };
+  });
+  return {
+    boxes: placed.map((b) => ({ key: b.key, x: b.x, y: b.y, width: b.width, height: b.height, grouped: b.grouped })),
+    edges,
+    group: heading,
+    width: span,
+    height,
+  };
 }
+
+// 주소는 「/」 앞에서만 줄이 바뀌도록 조각마다 묶는다.
+const pathText = (path) => path.split(/(?=\/)/).flatMap((seg, i) => [i ? h('wbr') : null, h('span', { class: 'seg' }, seg)]);
 
 function screenBox(b) {
   const n = b.node;
@@ -1321,16 +1422,16 @@ function screenBox(b) {
   const showCalls = n.calls.length > 0 && !b.collapsed;
   const guardLabel = n.guards.length ? guardText(n.guards) : null;
   const l3text = [guardLabel ? `조건 ${guardLabel}` : null, ...n.jumps.map((j) => `→ ${j.label}`)].filter(Boolean).join(' · ');
-  const { needs } = b;
+  const needs = nodeNeeds(n);
   const bareKinds = n.kinds.filter((k) => !needs.lines.some((l) => l.kind === k));
   const badges = [n.dead ? '죽은 화면' : null, bareKinds.length ? `${bareKinds.map((k) => KIND_LABEL[k]).join('·')} 필요` : !n.kinds.length && n.restricted ? MIXED_KINDS : null].filter(Boolean).join(' · ');
   return h('div', {
-    class: `box screen ${statusOf(counts)}`, style: `left:${b.x}px;top:${b.y}px;width:${BOX_W}px;height:${b.height}px`,
+    class: `box screen ${statusOf(counts)}`,
     title: [n.id, guardLabel ? `이 링크의 조건: ${guardLabel}` : '', ...needs.tips, ...n.jumps.map((j) => `→ ${j.label}${j.guards.length ? ` (${guardText(j.guards)})` : ''}`)].filter(Boolean).join('\n'),
     onclick: () => { state.view = 'list'; openScreen(n.id); },
   },
     h('div', { class: 'l1' },
-      h('span', { class: 'text' }, n.label, ' ', h('span', { class: 'muted' }, n.component)),
+      h('span', { class: 'text' }, pathText(n.label), ' ', h('span', { class: 'muted component' }, n.component)),
       hasKids ? h('button', { class: 'toggle', title: b.collapsed ? '펼치기' : '접기', onclick: (e) => {
         e.stopPropagation();
         if (state.collapsed.has(n.id)) state.collapsed.delete(n.id); else state.collapsed.add(n.id);
@@ -1350,7 +1451,7 @@ function screenBox(b) {
         e.stopPropagation();
         focusOn(n.id);
       } }, '◎') : null),
-    h('div', { class: 'l2' }, countText(counts), b.collapsed ? h('span', {}, ' (하위 합)') : null, badges ? ` · ${badges}` : '', imported ? ` · 불러옴 ${imported}` : ''),
+    h('div', { class: 'l2' }, countText(counts), b.collapsed ? h('span', {}, ' (하위 합)') : null, imported ? ` · 불러옴 ${imported}` : '', badges ? ` · ${badges}` : ''),
     needs.lines.map((l) => h('div', { class: 'need' }, h('span', { class: 'text' }, l.text), l.flag ? h('span', { class: 'flag' }, l.flag) : null)),
     l3text || showCalls
       ? h('div', { class: 'l3' },
@@ -1365,28 +1466,82 @@ function screenBox(b) {
 
 function callBox(b) {
   const c = b.node;
-  return h('div', { class: `box call ${statusOf(c.counts)}`, style: `left:${b.x}px;top:${b.y}px;width:${BOX_W}px;height:${b.height}px`, title: c.id },
-    h('div', { class: 'l1 mono' }, c.label),
+  return h('div', { class: `box call ${statusOf(c.counts)}`, title: c.id },
+    h('div', { class: 'l1 mono' }, pathText(c.label)),
     h('div', { class: 'l2' }, countText(c.counts), ` · ${serverText(c.server)}`));
 }
 
-function canvas(roots) {
-  const { boxes, edges, height, width } = layoutTree(roots);
-  const lines = svg('svg', { width, height });
-  for (const e of edges) {
-    const mx = (e.x1 + e.x2) / 2;
-    lines.append(svg('path', { d: `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${e.x2},${e.y2}`, class: e.guards.length ? 'guarded' : '' }));
+// 상자는 페이지에 붙은 뒤에야 잴 수 있으므로, 상자를 붙인 쪽이 measureWidths → fit → measureHeights → place 순서로 불러 위치를 정한다.
+function canvas(roots, { group = false } = {}) {
+  const shown = { collapsed: state.collapsed, openCalls: state.openCalls };
+  const view = { ...shown, group };
+  const els = new Map(flowBoxes(roots, shown).map((b) => [b.key, b.node.kind === 'screen' ? screenBox(b) : callBox(b)]));
+  for (const [key, box] of els) {
+    box.classList.add('measuring');
+    box.dataset.key = key;
   }
-  return h('div', { class: 'canvas', style: `width:${width}px;height:${height}px` }, lines,
-    boxes.map((b) => (b.node.kind === 'screen' ? screenBox(b) : callBox(b))));
+  const el = h('div', { class: 'canvas' }, [...els.values()]);
+  const sizes = {};
+  let cols;
+  return {
+    el,
+    measureWidths() {
+      for (const [key, box] of els) sizes[key] = { width: Math.ceil(box.getBoundingClientRect().width) };
+    },
+    fit(width) {
+      cols = flowColumns(roots, sizes, { ...view, width });
+      for (const [key, box] of els) {
+        box.classList.remove('measuring');
+        box.classList.toggle('grouped', cols.grouped.has(key));
+        box.style.width = `${cols.widths[key]}px`;
+      }
+    },
+    measureHeights() {
+      for (const [key, box] of els) sizes[key].height = box.getBoundingClientRect().height;
+    },
+    place() {
+      const out = layoutFlow(roots, sizes, view, cols);
+      for (const b of out.boxes) Object.assign(els.get(b.key).style, { left: `${b.x}px`, top: `${b.y}px` });
+      const lines = svg('svg', { width: out.width, height: out.height });
+      for (const e of out.edges) {
+        const mx = (e.x1 + e.x2) / 2;
+        const d = e.grouped ? `M${e.x1},${e.y1} V${e.y2} H${e.x2}` : `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${e.x2},${e.y2}`;
+        lines.append(svg('path', { d, class: e.guards.length ? 'guarded' : '', 'data-from': e.from, 'data-to': e.to }));
+      }
+      el.prepend(lines);
+      if (out.group) {
+        const { x, y, height, count } = out.group;
+        el.append(h('h2', { class: 'group-head', style: `left:${x}px;top:${y}px;height:${height}px` }, `더 뻗지 않는 진입 화면 ${count}`));
+      }
+      Object.assign(el.style, { width: `${out.width}px`, height: `${out.height}px` });
+      return out.group && { count: out.group.count, cellW: cols.cellW, per: cols.per };
+    },
+  };
 }
 
+const flowInnerWidth = (flow) => {
+  const pad = getComputedStyle(flow);
+  return flow.clientWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight);
+};
+// 모아 놓은 진입 화면을 그린 칸 수 정보. 없으면 null 이고, 창 크기가 바뀌어도 다시 그리지 않는다.
+// 폭은 한 줄에 놓이는 칸 수로만 배치에 들어가므로 그 수가 달라질 때만 다시 그린다.
+let drawnGrid = null;
+
 function renderFlow() {
-  if (state.ended) return;
+  const flow = document.getElementById('flow');
+  if (state.ended || flow.hidden) return;
+  // 상자를 재는 동안 캔버스 높이가 0 이 되어 스크롤이 맨 위로 밀리므로 위치를 정한 뒤 되돌린다.
+  const { scrollTop, scrollLeft } = flow;
+  const canvases = [];
+  const draw = (trees, options) => {
+    const c = canvas(trees, options);
+    canvases.push(c);
+    return c.el;
+  };
   const { roots, unreached, summary } = state.data.flow;
   const act = (fn) => () => { fn(flowTrees()); renderFlow(); };
   const focused = state.focus && screensIn(state.data.flow.roots.concat(unreached)).find((n) => n.id === state.focus.id);
-  fill(document.getElementById('flow'),
+  fill(flow,
     h('div', { class: 'flowbar' },
       h('strong', { class: 'flowsummary' }, `테스트 있는 화면 ${summary.tested}/${summary.screens} · 실패 ${summary.failing} · 태그 없는 테스트만 있는 화면 ${summary.importedOnly}`),
       h('button', { onclick: act(expandAll) }, '모두 펼치기'),
@@ -1400,10 +1555,17 @@ function renderFlow() {
     h('div', { class: 'flowlegend' },
       h('span', {}, '진입 화면에서 링크를 따라 화면 → API 호출로 뻗습니다. 화면마다 처음 닿은 자리에 한 번만 그리고, 다른 가지로 가는 링크는 상자 안에 → 로 적습니다. 상자의 「API」 단추로 그 화면의 호출을, 「»」로 그 가지 전부를 펼치고, 「↺」로 그 가지의 화면을 모두 펼치고 API 호출은 접고, 「◎」로 그 가지만 따로 봅니다.'),
       h('span', {}, '점선: 설정·역할 조건이 걸린 링크(조건은 상자 맨 아래 줄) · 상자 테두리: 붙은 테스트(초록 전부 통과 · 빨강 실패 있음 · 노랑 보류 있음 · 점선 테스트 없음) · 「불러옴 N」: 태그 없이 이 화면의 소스 파일을 불러오는 단위 테스트(테두리와 테스트 수에 넣지 않음) · 상자를 누르면 목록에서 그 화면을 엽니다')),
-    state.focus ? canvas(state.focus.roots)
-      : roots.length ? canvas(roots)
+    state.focus ? draw(state.focus.roots)
+      : roots.length ? draw(roots, { group: true })
         : h('p', { class: 'muted' }, summary.screens ? '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.' : '화면이 없습니다.'),
-    !state.focus && unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(unreached).length}`), canvas(unreached)] : null);
+    !state.focus && unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(unreached).length}`), draw(unreached)] : null);
+  // 단계마다 모든 캔버스를 다 읽은 뒤에 쓰므로, 한 캔버스에 쓴 것 때문에 다음 캔버스를 읽다가 레이아웃을 다시 계산하지 않는다.
+  const width = flowInnerWidth(flow);
+  for (const c of canvases) c.measureWidths();
+  for (const c of canvases) c.fit(width);
+  for (const c of canvases) c.measureHeights();
+  drawnGrid = canvases.map((c) => c.place()).find(Boolean) ?? null;
+  Object.assign(flow, { scrollTop, scrollLeft });
 }
 
 function setView(view) {
@@ -1460,6 +1622,16 @@ async function endReview() {
 document.getElementById('end-review').addEventListener('click', endReview);
 document.getElementById('view-list').addEventListener('click', () => setView('list'));
 document.getElementById('view-flow').addEventListener('click', () => setView('flow'));
+let resizeFrame = null;
+window.addEventListener('resize', () => {
+  if (resizeFrame !== null) return;
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null;
+    const flow = document.getElementById('flow');
+    if (state.ended || flow.hidden || drawnGrid === null) return;
+    if (cellsPerRow(drawnGrid.count, drawnGrid.cellW, flowInnerWidth(flow)) !== drawnGrid.per) renderFlow();
+  });
+});
 
 load().then(() => {
   openGapsOnly(flowTrees());
