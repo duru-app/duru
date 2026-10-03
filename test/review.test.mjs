@@ -1290,7 +1290,7 @@ test('in a browser, a failed save stays with the form that tried it and is gone 
         await p.waitForSelector('#screen-list li');
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.deepEqual(await p.locator('#right h2:last-of-type + p.error').allTextContents(), ['작성자 이름을 위쪽에 적어 주세요. git user.name 이 설정되지 않았습니다.']);
+        assert.equal(await p.locator('#right .error').count(), 0);
         await p.click('#right .statuses button:has-text("없음")');
         await p.click('#right button.save');
         assert.match(await p.textContent('#right'), /작성자 이름이 필요합니다/);
@@ -1360,6 +1360,23 @@ test('in a browser, a failed save does not follow the reviewer to another screen
         await failSave();
         await p.click('#screen-list li:has-text("/lab/result")');
         assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+
+        await p.setViewportSize({ width: 1440, height: 400 });
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.fill('#author input', 'reviewer');
+        await p.evaluate(() => {
+          const real = window.fetch;
+          window.fetch = (url, init) => (String(url).includes('/api/marks')
+            ? new Promise((resolve, reject) => { window.failSave = () => reject(new Error('disk full')); })
+            : real(url, init));
+        });
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        await p.locator('table.calls td.cell').first().click();
+        assert.equal(await p.evaluate(() => document.getElementById('right').scrollTop), 0);
+        await p.evaluate(() => window.failSave());
+        await p.waitForTimeout(200);
+        assert.equal(await p.evaluate(() => document.getElementById('right').scrollTop), 0);
       }),
     ),
   );
@@ -1709,6 +1726,311 @@ test('in a browser, the top of the right pane says what opens the chosen screen 
   );
 });
 
+test('in a browser, the mark form is the last block of the right pane, after the settings read, and also when a call is chosen', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:id")');
+        const headings = await p.locator('#right h2').allTextContents();
+        assert.match(headings[0], /^이 화면을 열려면$/);
+        assert.deepEqual(headings.slice(1).map((t) => t.replace(/ \d+$/, '')), ['들어오는 링크', '소스 위치', '나가는 링크', '읽는 설정값', '표시 — 화면 전체']);
+        assert.equal(await p.locator('#right > :last-child').evaluate((e) => e.className), 'mark-form');
+        assert.equal(await p.locator('#right > .mark-form').count(), 1);
+
+        await p.locator('table.calls td.cell').first().click();
+        assert.equal(await p.locator('#right > :last-child').evaluate((e) => e.className), 'mark-form');
+        assert.match(await p.locator('#right > :last-child h2').textContent(), /^표시 — /);
+        assert.match(await p.locator('#right h2').first().textContent(), /^서버 대조$/);
+      }),
+    ),
+  );
+});
+
+test('in a browser, the in-screen conditions come between the incoming links and the source location', { skip: browserMissing }, async () => {
+  await withLabLinks(async (p, open) => {
+    await open();
+    const headings = (await p.locator('#right h2').allTextContents()).map((t) => t.replace(/ \d+$/, '').replace(/^(화면 안 조건) — .*$/, '$1'));
+    assert.deepEqual(headings, ['이 화면을 열려면', '들어오는 링크', '화면 안 조건', '소스 위치', '나가는 링크', '읽는 설정값', '표시 — 화면 전체']);
+  });
+});
+
+test('in a browser, a missing author name is not warned about on opening and is warned about, next to the form, only when saving, which saves nothing', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, null, (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.locator('#right .error').count(), 0);
+        assert.doesNotMatch(await p.textContent('#right'), /작성자/);
+        await p.click('#right .statuses button:has-text("없음")');
+        assert.doesNotMatch(await p.textContent('#right'), /작성자/);
+        await p.click('#right button.save');
+        assert.match(await p.textContent('#right > .mark-form .error'), /작성자 이름이 필요합니다.*git user\.name/);
+        assert.equal(fs.existsSync(config.marksDir) ? loadMarks(config.marksDir).length : 0, 0);
+      }),
+    ),
+  );
+});
+
+const openDocumentScreenInShortViewport = async (p) => {
+  await p.setViewportSize({ width: 1440, height: 400 });
+  await p.waitForSelector('#screen-list li');
+  await p.click('#screen-list li:has-text("/document/:id")');
+};
+const scrollRightToBottom = (p) => p.locator('#right').evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
+const scrollRightTo = (p, top) => p.locator('#right').evaluate((el, y) => { el.scrollTop = y; return el.scrollTop; }, top);
+const rightScroll = (p) => p.locator('#right').evaluate((el) => el.scrollTop);
+
+test('in a browser, choosing another screen or call target opens the right pane at its top, and redrawing the same target keeps the scroll offset', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentScreenInShortViewport(p);
+        const firstCall = p.locator('table.calls tbody tr:not(.option)').nth(0).locator('td.cell');
+        const secondCall = p.locator('table.calls tbody tr:not(.option)').nth(1).locator('td.cell');
+
+        assert.ok((await scrollRightToBottom(p)) > 0);
+        await firstCall.first().click();
+        assert.equal(await rightScroll(p), 0);
+
+        assert.ok((await scrollRightToBottom(p)) > 0);
+        await secondCall.first().click();
+        assert.equal(await rightScroll(p), 0);
+
+        const kept = await scrollRightToBottom(p);
+        assert.ok(kept > 0);
+        await p.click('#right .statuses button:has-text("없음")');
+        assert.equal(await rightScroll(p), kept);
+        await p.click('#right button.save');
+        await p.waitForSelector('#right .history');
+        assert.equal(await rightScroll(p), kept);
+
+        await p.click('#screen-list li:has-text("/admin/report")');
+        assert.equal(await rightScroll(p), 0);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        assert.ok((await scrollRightToBottom(p)) > 0);
+        await p.click('#screen-list li:has-text("/admin/report")');
+        assert.equal(await rightScroll(p), 0);
+      }),
+    ),
+  );
+});
+
+test('in a browser, choosing another depth or option row of the same node keeps the right pane scroll offset, and choosing a call row resets it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentScreenInShortViewport(p);
+        const kept = await scrollRightTo(p, 100);
+        assert.equal(kept, 100);
+        await p.click('#center tr:has-text("API")');
+        assert.match(await p.textContent('#right .mark-form h2'), /API 깊이/);
+        assert.equal(await rightScroll(p), kept);
+        await p.click('#center tr:has-text("UI/E2E")');
+        assert.match(await p.textContent('#right .mark-form h2'), /UI\/E2E 깊이/);
+        assert.equal(await rightScroll(p), kept);
+
+        await p.locator('table.calls tbody tr:not(.option)').nth(0).locator('td.cell').first().click();
+        const call = await scrollRightTo(p, 100);
+        assert.equal(call, 100);
+        await p.locator('table.calls tbody tr:not(.option)').nth(0).locator('td.cell').nth(2).click();
+        assert.match(await p.textContent('#right .mark-form h2'), / 깊이$/);
+        assert.equal(await rightScroll(p), call);
+        await p.locator('table.calls tbody tr:not(.option)').nth(1).locator('td.cell').first().click();
+        assert.equal(await rightScroll(p), 0);
+
+        await p.click('#screen-list li:has-text("/admin/report")');
+        await p.locator('table.calls td.cell').first().click();
+        const exported = await scrollRightTo(p, 100);
+        assert.equal(exported, 100);
+        await p.locator('table.calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').first().click();
+        assert.match(await p.textContent('#right .mark-form h2'), /withAttachments 켬/);
+        assert.equal(await rightScroll(p), exported);
+      }),
+    ),
+  );
+});
+
+test('in a browser, selecting another story opens the right pane at its top', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.setViewportSize({ width: 1440, height: 250 });
+        await p.click('#left .views.side button:has-text("스토리")');
+        const stories = p.locator('#story-list li');
+        await stories.nth(0).click();
+        assert.ok((await scrollRightToBottom(p)) > 0);
+        await stories.nth(1).click();
+        assert.equal(await rightScroll(p), 0);
+        const kept = await scrollRightToBottom(p);
+        assert.ok(kept > 0);
+        await p.click('#right .statuses button:has-text("없음")');
+        assert.equal(await rightScroll(p), kept);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a save that is refused shows its message right above the save button, both inside the visible part of the pane', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, null, (base) =>
+      withPage(base, async (p) => {
+        await openDocumentScreenInShortViewport(p);
+        await p.click('#right .statuses button:has-text("없음")');
+        await scrollRightToBottom(p);
+        await p.click('#right button.save');
+        assert.equal(await p.locator('#right .error + button.save').count(), 1);
+        const inside = () => p.evaluate(() => {
+          const pane = document.getElementById('right').getBoundingClientRect();
+          return ['.error', 'button.save'].every((selector) => {
+            const box = document.querySelector(`#right .mark-form ${selector}`).getBoundingClientRect();
+            return box.top >= pane.top && box.bottom <= pane.bottom;
+          });
+        });
+        assert.match(await p.textContent('#right .error'), /작성자 이름이 필요합니다/);
+        assert.ok(await inside());
+
+        await p.evaluate(() => {
+          const real = window.fetch;
+          window.fetch = (url, init) => (String(url).includes('/api/marks') ? Promise.reject(new Error('disk full')) : real(url, init));
+        });
+        await p.fill('#author input', 'reviewer');
+        await scrollRightToBottom(p);
+        await p.click('#right button.save');
+        await p.waitForFunction(() => /저장하지 못했습니다/.test(document.querySelector('#right .error')?.textContent ?? ''));
+        assert.ok(await inside());
+      }),
+    ),
+  );
+});
+
+test('in a browser, a save whose reload fails after the review ended raises no page error', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        let reload;
+        const reloading = new Promise((resolve) => { reload = resolve; });
+        let release;
+        const gate = new Promise((resolve) => { release = resolve; });
+        await p.route('**/api/data', async (route) => {
+          reload();
+          await gate;
+          await route.fulfill({ status: 200, contentType: 'application/json', body: 'not json' });
+        });
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        await reloading;
+        await p.click('header button:has-text("리뷰 끝")');
+        await p.waitForSelector('#ended');
+        release();
+        await p.waitForTimeout(200);
+      }),
+    ),
+  );
+});
+
+test('in a browser, the author warning goes away when a name is typed in the header', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, null, (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        assert.equal(await p.locator('#right .error').count(), 1);
+        await p.fill('#author input', '   ');
+        assert.equal(await p.locator('#right .error').count(), 1);
+        await p.fill('#author input', 'reviewer');
+        assert.equal(await p.locator('#right .error').count(), 0);
+        assert.equal(await p.locator('#right .statuses button.on').innerText(), '없음');
+      }),
+    ),
+  );
+});
+
+test('in a browser, the right pane starts by naming the call and the option and depth that its details and form are for', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        await p.locator('table.calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').nth(1).click();
+        const first = p.locator('#right > :first-child');
+        assert.equal(await first.evaluate((e) => e.className), 'target-id');
+        assert.equal(await first.locator('.mono').textContent(), 'POST:/api/v1/report/export');
+        assert.match(await first.innerText(), /withAttachments 켬 · UI\/E2E 깊이/);
+        assert.match(await p.locator('#right > :last-child h2').textContent(), /^표시 — withAttachments 켬 · UI\/E2E 깊이$/);
+
+        await p.locator('table.calls td.cell').first().click();
+        assert.match(await p.locator('#right > :first-child').innerText(), /POST:\/api\/v1\/report\/export\s+호출 전체/);
+
+        await p.click('#screen-list li:has-text("/home")');
+        assert.equal(await p.locator('#right .target-id').count(), 0);
+        assert.equal(await p.locator('#right > :first-child h2').textContent(), '이 화면을 열려면');
+      }),
+    ),
+  );
+});
+
+const LONG_WORD = `a${'.verylongsegment'.repeat(14)}`;
+
+test('in a browser, long addresses and conditions wrap inside the right pane, which never scrolls sideways', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        assert.equal((await postMark(base, { target: { node: '/document/:id#DocumentDetail' }, status: 'fine', note: LONG_WORD, author: 'reviewer' })).status, 201);
+        const longId = `GET:/api/v1/${LONG_WORD}`;
+        const labels = Array.from({ length: 5 }, (_, i) => `${LONG_WORD}-${i}`);
+        await p.route('**/api/data', async (route) => {
+          const text = (await (await route.fetch()).text()).replaceAll('GET:/api/v1/document/{documentId}', longId);
+          const data = JSON.parse(text);
+          const screen = data.map.screens.find((s) => s.id === '/document/:id#DocumentDetail');
+          const file = `components/${LONG_WORD}.js`;
+          screen.componentFile = file;
+          screen.routeGuards = [LONG_WORD];
+          screen.access.links = [
+            { from: `/${LONG_WORD}#X`, file, line: 3, guards: [], fromKinds: [] },
+            { from: `/${LONG_WORD}#Y`, file, line: 4, guards: [{ guard: LONG_WORD, kinds: [] }], fromKinds: [] },
+          ];
+          screen.links = [{ route: 'X', line: 2, to: `/${LONG_WORD}`, file, guards: [LONG_WORD], inheritedGuards: [{ via: LONG_WORD, line: 1, guards: [LONG_WORD] }] }];
+          screen.settingReads = [{ key: LONG_WORD, line: 3, guards: [], file }];
+          for (const c of screen.apiCalls) Object.assign(c, { fn: LONG_WORD, file });
+          for (const c of data.map.calls) if (c.id === longId) c.server = { status: 'match', labels, path: `/api/v1/${LONG_WORD}` };
+          await route.fulfill({ json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        const widths = () => p.locator('#right').evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+        const block = (heading) => p.locator('#right h2', { hasText: heading }).locator('xpath=following-sibling::*[1]');
+        const mentions = async (heading, selector) => assert.ok((await block(heading).locator(selector, { hasText: LONG_WORD }).count()) > 0, `${heading} shows the long text in ${selector}`);
+
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.locator('#right details.link-group').evaluateAll((gs) => gs.forEach((g) => { g.open = true; }));
+        await p.locator('#right details.long-guard').evaluateAll((gs) => gs.forEach((g) => { g.open = true; }));
+        await mentions('들어오는 링크', 'code.from');
+        assert.ok((await p.locator('#right .access details.link-group code.full', { hasText: LONG_WORD }).count()) > 0, 'a long guard in an incoming link group');
+        await mentions('화면 안 조건', 'code.full');
+        await mentions('소스 위치', 'code');
+        await mentions('나가는 링크', 'code');
+        await mentions('나가는 링크', 'code.guard');
+        await mentions('읽는 설정값', 'code');
+        const screen = await widths();
+        assert.ok(screen.scrollWidth <= screen.clientWidth, `screen: ${screen.scrollWidth} of ${screen.clientWidth}`);
+
+        await p.locator('table.calls td.cell').first().click();
+        assert.match(await p.textContent('#right .target-id'), new RegExp(LONG_WORD.replaceAll('.', '\\.')));
+        await mentions('서버 대조', 'code');
+        assert.equal(await block('서버 대조').locator('.chip').innerText(), `서버에 있음 (${labels.join(', ')})`);
+        await mentions('이 화면에서 부르는 곳', 'code');
+        const call = await widths();
+        assert.ok(call.scrollWidth <= call.clientWidth, `call: ${call.scrollWidth} of ${call.clientWidth}`);
+      }),
+    ),
+  );
+});
+
 const LAB_SETTING = { guard: 'globalSettings.SYSTEM.LAB_ENABLED', kinds: ['setting'], settings: [{ root: 'globalSettings', path: ['SYSTEM', 'LAB_ENABLED'], need: 'on', default: false }] };
 const ADMIN_ROLE = { guard: "memberRole === 'ADMIN'", kinds: ['role'], roles: ['ADMIN'] };
 const LONG_GUARD = `globalSettings.SYSTEM.MAIN_MENU.LAB.LIST includes 'LAB_EXPERIMENTS_${'WITH_A_VERY_LONG_MENU_KEY_'.repeat(4)}END'`;
@@ -1883,12 +2205,12 @@ test('in a browser, the chosen screen shows its calls with the server match and 
         assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['서버에 있음 (core)', '메서드 불일치']);
         const rename = p.locator('table.calls tr', { hasText: 'PUT:/api/v1/document/{documentId}/name' });
         await rename.locator('td.cell').first().click();
-        assert.match(await p.textContent('#right h2'), /호출 전체/);
+        assert.match(await p.textContent('#right .mark-form h2'), /호출 전체/);
         assert.equal(await p.locator('#right .test').count(), 1);
         assert.match(await p.textContent('#right .test'), /rename is refused by the server/);
 
         await rename.locator('td.cell').nth(2).click();
-        assert.match(await p.textContent('#right h2'), /API 깊이/);
+        assert.match(await p.textContent('#right .mark-form h2'), /API 깊이/);
         assert.equal(await p.locator('#right .test').count(), 0);
         await p.click('#right .statuses button:has-text("없음")');
         await p.fill('#right textarea', 'no API test for the rename');
@@ -1934,12 +2256,12 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         assert.deepEqual(await none.locator('td.count').allInnerTexts(), ['✓2', '✓2', '—', '—', '—', '—', '—']);
 
         await exportRows('withHistory 켬').locator('td.cell').nth(1).click();
-        assert.match(await p.textContent('#right h2'), /withHistory 켬 · UI\/E2E 깊이/);
+        assert.match(await p.textContent('#right .mark-form h2'), /withHistory 켬 · UI\/E2E 깊이/);
         assert.equal(await p.locator('#right .test').count(), 2);
         assert.match(await p.locator('#right .option-sites').innerText(), /components\/ExportDialog\.js:18/);
 
         await exportRows('withHistory 켬').locator('td.cell').nth(6).click();
-        assert.match(await p.textContent('#right h2'), /withHistory 켬 · 산출물 깊이/);
+        assert.match(await p.textContent('#right .mark-form h2'), /withHistory 켬 · 산출물 깊이/);
         assert.equal(await p.locator('#right .test').count(), 0);
         await p.click('#right .statuses button:has-text("없음")');
         await p.fill('#right textarea', 'Open the exported file.');
@@ -1947,7 +2269,7 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         await p.waitForSelector('table.calls td.cell.selected .chip.missing');
 
         await exportRows('withAttachments 끔').locator('td.cell').first().click();
-        assert.match(await p.textContent('#right h2'), /withAttachments 끔$/);
+        assert.match(await p.textContent('#right .mark-form h2'), /withAttachments 끔$/);
         await p.click('#right .statuses button:has-text("더 필요")');
         await p.click('#right button.save');
         await p.waitForSelector('table.calls td.cell.selected .chip.needs-more');
@@ -3427,6 +3749,16 @@ test('in a browser, 「리뷰 끝」 asks before throwing away a mark that was p
         assert.equal(ends, 0);
         assert.equal(await p.locator('#ended').count(), 0);
         assert.equal(await p.inputValue('#right textarea'), 'draft note');
+
+        await p.locator('table.calls td.cell').first().click();
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.fill('#right textarea', 'call note');
+        p.once('dialog', (d) => { asked.push(d.message()); d.dismiss(); });
+        await p.click('header button:has-text("리뷰 끝")');
+        await p.waitForTimeout(200);
+        assert.equal(asked.length, 2);
+        assert.equal(ends, 0);
+        assert.equal(await p.inputValue('#right textarea'), 'call note');
 
         p.once('dialog', (d) => d.accept());
         await p.click('header button:has-text("리뷰 끝")');
