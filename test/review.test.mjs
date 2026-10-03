@@ -4797,3 +4797,362 @@ test('in a browser, a screen shows the unit tests that import its source files a
         assert.equal(await p.locator('#center .importers').count(), 0);
       })));
 });
+
+const HOME = '/home#Home';
+const LAB = '/lab#Lab';
+const LAB_RESULT = '/lab/result#LabResult';
+const OWNER_ROLE = { guard: "memberRole === 'OWNER'", kinds: ['role'], roles: ['OWNER'] };
+const UNREAD_ROLE = { guard: 'canManage(member)', kinds: ['role'], roles: null };
+const UNREAD_SETTING = { guard: 'settingOf(key)', kinds: ['setting'], settings: null, settingsReason: '설정 키를 읽지 못했습니다' };
+const settingGuard = (guard, path, need, value, root = 'globalSettings') => ({ guard, kinds: ['setting'], settings: [{ root, path, need, ...(value === undefined ? {} : { value }) }] });
+const LAB_OFF = settingGuard('!globalSettings.SYSTEM.LAB_ENABLED', ['SYSTEM', 'LAB_ENABLED'], 'off');
+const reachRoute = (guards, screen = LAB) => ({ kind: 'route', screen, line: 44, guards });
+const reachLink = (...ways) => ({ kind: 'link', from: HOME, to: LAB, ways: ways.map((conditions, i) => ({ file: 'components/Home.js', line: 19 + i, conditions })) });
+
+// 핸들러에서 물려받은 조건이 없는 길이면 맵은 길의 조건 중 설정이나 역할 조건만 도착 화면의 들어오는 링크에 적는다.
+async function withStoryReach(reach, fn, { access = {} } = {}) {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const data = await (await route.fetch()).json();
+          const screen = (id) => data.map.screens.find((s) => s.id === id);
+          data.stories.list.find((s) => s.id === 'run-lab').reach = reach;
+          for (const r of reach.filter((x) => x.kind === 'link')) {
+            assert.ok(r.ways.every((w) => w.conditions.every((g) => !g.via)), 'a link step with inherited conditions needs a rebuilt map');
+            const to = screen(r.to);
+            to.access.links = [...to.access.links.filter((l) => l.from !== r.from), ...r.ways.map((w) => ({ from: r.from, file: w.file, line: w.line, guards: w.conditions.filter((g) => g.kinds.length), fromKinds: [] }))];
+          }
+          for (const [id, patch] of Object.entries(access)) Object.assign(screen(id).access, patch);
+          await route.fulfill({ json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        await fn(p);
+      }),
+    ),
+  );
+}
+
+async function withStoryMap(edits, story, fn) {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click(`#story-list li:has-text("${story}")`);
+        await fn(p);
+      }),
+    ), edits);
+}
+
+const RUN_LAB = '실험실을 열어';
+const READ_REPORTS = '관리자가 보고서를 본다';
+const storyScreens = (screens) => ['example-stories/read-reports.json', '["/admin/report#AdminReport"]', JSON.stringify(screens)];
+const LAB_FILE = 'client/src/components/Lab.js';
+const resultHandler = (buttons, body = 'history.push(Option.ROUTE_PATH.LAB_RESULT)') => [
+  [LAB_FILE, "import { Link } from 'react-router-dom';", "import { useHistory } from 'react-router-dom';"],
+  [LAB_FILE, 'export default function Lab() {', `export default function Lab({ memberRole, globalSettings, loaded }) {\n  const history = useHistory();\n  const openResult = () => ${body};`],
+  [LAB_FILE, '<Link to={Option.ROUTE_PATH.LAB_RESULT}>Results</Link>', buttons.map((guard, i) => {
+    const button = `<button type="button" onClick={openResult}>Results ${i}</button>`;
+    return guard ? `{${guard} && ${button}}` : button;
+  }).join('\n      ')],
+];
+
+const readSummary = (p) => p.locator('#right .reach-summary').evaluate((el) => {
+  const text = (e) => [...e.childNodes].map((c) => c.textContent).join(' ');
+  return {
+    lines: [...el.querySelectorAll(':scope > .need, :scope > .step-roles > li, :scope > .none')].map(text),
+    leftOut: [...el.querySelectorAll(':scope > .left-out li')].map(text),
+  };
+});
+
+test('in a browser, a story that needs a setting and a role shows them as two summary lines under 사전 조건 in the wording of the screen summary, and the raw conditions only once the fold is opened', { skip: browserMissing }, async () => {
+  await withStoryReach([reachLink([LAB_SETTING]), reachRoute([LAB_SETTING, ADMIN_ROLE])], async (p) => {
+    assert.deepEqual(await p.locator('#right > *').evaluateAll((els) => els.slice(0, 3).map((e) => e.textContent.slice(0, 5))), ['도달 가능', '사전 조건', '역할 AD']);
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN', '설정 SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
+    assert.equal(await p.locator('#right details.reach-raw').evaluate((d) => d.open), false);
+    assert.equal(await p.locator('#right .reach-raw .reach').isVisible(), false);
+    assert.equal(await p.locator('#right .reach-summary .reach').count(), 0);
+    await p.click('#right .reach-raw > summary');
+    assert.equal(await p.locator('#right .reach-raw .reach').isVisible(), true);
+    assert.match(await p.textContent('#right .reach-link'), /components\/Home\.js:19.*globalSettings\.SYSTEM\.LAB_ENABLED/);
+    assert.match(await p.textContent('#right .reach-route'), /Routes\.js:44.*memberRole === 'ADMIN'/);
+    assert.equal(await p.locator('#right .mark-form').count(), 1);
+    assert.equal(await p.evaluate(() => document.getElementById('right').lastElementChild.className), 'mark-form');
+  });
+});
+
+test('in a browser, a condition that sits on several steps of a story is in the summary once', { skip: browserMissing }, async () => {
+  await withStoryMap([], RUN_LAB, async (p) => {
+    assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트']);
+    assert.deepEqual(await readSummary(p), { lines: ['설정 SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
+  });
+  await withStoryReach([reachLink([LAB_SETTING, ADMIN_ROLE]), reachRoute([LAB_SETTING, ADMIN_ROLE, UNREAD_ROLE]), reachRoute([UNREAD_ROLE, ADMIN_ROLE], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN 미확인 1', '설정 SYSTEM.LAB_ENABLED 켬'], leftOut: ['읽지 못한 역할 조건: canManage(member)'] });
+  });
+});
+
+test('in a browser, a condition inherited from a handler counts in the story summary when the link has no condition of its own and the handler is used in one place under that one condition', { skip: browserMissing }, async () => {
+  await withStoryMap(resultHandler(["memberRole === 'ADMIN'"]), RUN_LAB, async (p) => {
+    assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트', '/lab → /lab/result']);
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN', '설정 SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
+  });
+});
+
+test('in a browser, a link whose handler is also used without a role condition adds no role to the story summary, while the fold still shows the role condition as written', { skip: browserMissing }, async () => {
+  await withStoryMap(resultHandler(["memberRole === 'ADMIN'", 'loaded']), RUN_LAB, async (p) => {
+    assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트', '/lab → /lab/result']);
+    assert.match(await p.locator('#right .reach-link').nth(1).textContent(), /memberRole === 'ADMIN'/);
+    assert.deepEqual(await readSummary(p), { lines: ['설정 SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
+  });
+});
+
+test('in a browser, conditions inherited from a handler used in several places, or next to a condition of the link itself, are not counted as needed nor as contradicting, and are listed apart with the handler that carries them', { skip: browserMissing }, async () => {
+  await withStoryMap(resultHandler(["memberRole === 'ADMIN'", "memberRole === 'OWNER'"]), RUN_LAB, async (p) => {
+    assert.deepEqual(await readSummary(p), {
+      lines: ['설정 SYSTEM.LAB_ENABLED 켬'],
+      leftOut: ['역할 미확인 (/lab → /lab/result)', "openResult 를 쓰는 곳에 따라 다른 조건: memberRole === 'ADMIN', memberRole === 'OWNER'"],
+    });
+  });
+  await withStoryMap(resultHandler(['globalSettings.SYSTEM.LAB_ENABLED', '!globalSettings.SYSTEM.LAB_ENABLED']), RUN_LAB, async (p) => {
+    assert.deepEqual(await readSummary(p), {
+      lines: ['설정 SYSTEM.LAB_ENABLED 켬'],
+      leftOut: ['openResult 를 쓰는 곳에 따라 다른 조건: globalSettings.SYSTEM.LAB_ENABLED, !globalSettings.SYSTEM.LAB_ENABLED'],
+    });
+  });
+  await withStoryMap(resultHandler(["memberRole === 'ADMIN'", null], 'globalSettings.SYSTEM.LAB_ENABLED && history.push(Option.ROUTE_PATH.LAB_RESULT)'), RUN_LAB, async (p) => {
+    assert.deepEqual(await readSummary(p), {
+      lines: ['설정 SYSTEM.LAB_ENABLED 켬'],
+      leftOut: ['역할 미확인 (/lab → /lab/result)', "openResult 를 쓰는 곳에 따라 다른 조건: memberRole === 'ADMIN'"],
+    });
+  });
+});
+
+test('in a browser, a story whose only conditions are inherited from a handler used in several places does not say that nothing blocks it', { skip: browserMissing }, async () => {
+  const home = 'client/src/components/Home.js';
+  const edits = [
+    [home, "import { Link } from 'react-router-dom';", "import { Link, useHistory } from 'react-router-dom';"],
+    [home, "const isAdmin = memberRole === 'ADMIN';", "const isAdmin = memberRole === 'ADMIN';\n  const history = useHistory();\n  const openAudit = () => history.push(Option.ROUTE_PATH.ADMIN_AUDIT);"],
+    [home, "{session['member.role'] === 'AUDITOR' && <Link to={Option.ROUTE_PATH.ADMIN_AUDIT}>Audit</Link>}",
+      '{globalSettings.SYSTEM.MODE_ON && <button type="button" onClick={openAudit}>Audit</button>}\n      {!globalSettings.SYSTEM.MODE_ON && <button type="button" onClick={openAudit}>Log</button>}'],
+    storyScreens(['/home#Home', '/admin/audit#AdminAudit']),
+  ];
+  await withStoryMap(edits, READ_REPORTS, async (p) => {
+    assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /admin/audit']);
+    assert.deepEqual(await readSummary(p), { lines: [], leftOut: ['openAudit 를 쓰는 곳에 따라 다른 조건: globalSettings.SYSTEM.MODE_ON, !globalSettings.SYSTEM.MODE_ON'] });
+  });
+});
+
+test('in a browser, the first screen of a story needs from its incoming links only what every one of them needs, and is different per link when they need different settings', { skip: browserMissing }, async () => {
+  await withStoryMap([storyScreens(['/help#Help'])], READ_REPORTS, async (p) => {
+    assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['첫 화면 /help']);
+    assert.deepEqual(await readSummary(p), { lines: ['설정 SYSTEM.HELP_LINK_ENABLED 켬'], leftOut: [] });
+  });
+  const signIn = ['client/src/components/SignIn.js', 'globalSettings.SYSTEM.HELP_LINK_ENABLED &&', 'globalSettings.SYSTEM.LAB_ENABLED &&'];
+  await withStoryMap([signIn, storyScreens(['/help#Help'])], READ_REPORTS, async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['첫 화면 /help 링크마다 다름'], leftOut: [] });
+  });
+  const either = [
+    [LAB_FILE, 'export default function Lab() {', 'export default function Lab({ globalSettings }) {'],
+    [LAB_FILE, '<Link to={Option.ROUTE_PATH.LAB_RESULT}>Results</Link>',
+      '{globalSettings.SYSTEM.MODE_ON ? <Link to={Option.ROUTE_PATH.LAB_RESULT}>Results</Link> : <Link to={Option.ROUTE_PATH.LAB_RESULT}>Back</Link>}'],
+    storyScreens(['/lab/result#LabResult']),
+  ];
+  await withStoryMap(either, READ_REPORTS, async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['첫 화면 /lab/result 링크마다 다름'], leftOut: [] });
+  });
+});
+
+test('in a browser, the first screen of a story whose incoming link carries a role condition inherited from a handler that is also used without it does not present the roles of the map as complete', { skip: browserMissing }, async () => {
+  const edits = [...resultHandler(["memberRole === 'ADMIN'", null], 'globalSettings.SYSTEM.LAB_ENABLED && history.push(Option.ROUTE_PATH.LAB_RESULT)'), storyScreens(['/lab/result#LabResult'])];
+  await withStoryMap(edits, READ_REPORTS, async (p) => {
+    assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['첫 화면 /lab/result']);
+    assert.deepEqual(await readSummary(p), {
+      lines: ['역할 ADMIN 미확인 1', '설정 SYSTEM.LAB_ENABLED 켬'],
+      leftOut: ['역할 일부만 읽음 (첫 화면 /lab/result)', "openResult 를 쓰는 곳에 따라 다른 조건: memberRole === 'ADMIN'"],
+    });
+  });
+});
+
+test('in a browser, a story step that several links reach needs in the summary only what every link needs, and is different per link only when no link needs exactly that', { skip: browserMissing }, async () => {
+  await withStoryReach([reachLink([LAB_SETTING, ADMIN_ROLE], [LAB_SETTING])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['설정 SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
+  });
+  const isAdmin = { guard: 'isAdmin', kinds: ['role'], roles: ['ADMIN'] };
+  await withStoryReach([reachLink([ADMIN_ROLE], [isAdmin])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN'], leftOut: [] });
+  });
+  await withStoryReach([reachLink([LAB_SETTING, ADMIN_ROLE], [OWNER_ROLE, LAB_SETTING])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN 또는 OWNER', '설정 SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
+  });
+  await withStoryReach([reachLink([ADMIN_ROLE], [LAB_SETTING])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['/home → /lab 링크마다 다름'], leftOut: [] });
+  });
+  await withStoryReach([reachLink([LAB_SETTING, ADMIN_ROLE], [LAB_SETTING, LONG_SETTING]), reachRoute([LAB_SETTING])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['설정 SYSTEM.LAB_ENABLED 켬', '/home → /lab 링크마다 다름'], leftOut: [] });
+  });
+});
+
+test('in a browser, a story whose role was not read on one step does not present the role of the other steps as enough', { skip: browserMissing }, async () => {
+  await withStoryReach([reachRoute([UNREAD_ROLE]), reachRoute([ADMIN_ROLE], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN 미확인 1'], leftOut: ['읽지 못한 역할 조건: canManage(member)'] });
+  });
+  await withStoryReach([{ kind: 'start', screen: HOME, kinds: ['role'], roleValues: null }, reachRoute([ADMIN_ROLE], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN 미확인 1'], leftOut: ['역할 미확인 (첫 화면 /home)'] });
+  }, { access: { [HOME]: { restricted: true, kinds: ['role'], roleValues: null, unreadableRoleGuards: [] } } });
+});
+
+test('in a browser, a role condition that was not read on one of several links of a step neither hides what the other links prove nor shows as needed', { skip: browserMissing }, async () => {
+  await withStoryReach([reachLink([ADMIN_ROLE, UNREAD_ROLE], [ADMIN_ROLE])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN'], leftOut: [] });
+  });
+  await withStoryReach([reachLink([UNREAD_ROLE], [ADMIN_ROLE])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN 미확인 1'], leftOut: ['역할 일부만 읽음 (/home → /lab)'] });
+  });
+  await withStoryReach([reachLink([ADMIN_ROLE, UNREAD_ROLE], [OWNER_ROLE])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN 또는 OWNER 미확인 1'], leftOut: ['역할 일부만 읽음 (/home → /lab)'] });
+  });
+  await withStoryReach([reachLink([UNREAD_ROLE], [ADMIN_ROLE]), reachRoute([OWNER_ROLE])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['역할 OWNER 미확인 1'], leftOut: ['역할 일부만 읽음 (/home → /lab)'] });
+  });
+});
+
+test('in a browser, a story whose steps allow roles that do not overlap says that no role passes every step and lists the roles of each step', { skip: browserMissing }, async () => {
+  await withStoryReach([reachRoute([ADMIN_ROLE]), reachRoute([OWNER_ROLE], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['모든 단계를 지나는 역할 없음', '/lab 라우트: 역할 ADMIN', '/lab/result 라우트: 역할 OWNER'], leftOut: [] });
+  });
+});
+
+const MODE = ['SYSTEM', 'MODE'];
+const modeIs = (value) => settingGuard(`globalSettings.SYSTEM.MODE === ${JSON.stringify(value)}`, MODE, 'equals', value);
+
+test('in a browser, a story whose steps need the same setting both on and off, or with two different values, says those needs contradict each other instead of listing them as needed', { skip: browserMissing }, async () => {
+  await withStoryReach([reachRoute([LAB_SETTING, modeIs('A'), LONG_SETTING]), reachRoute([LAB_OFF, modeIs('B')], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: [
+      '설정 SYSTEM.MAIN_MENU.LAB.LIST 에 "LAB_EXPERIMENTS"',
+      '서로 어긋나는 설정: SYSTEM.LAB_ENABLED 켬 / SYSTEM.LAB_ENABLED 끔',
+      '서로 어긋나는 설정: SYSTEM.MODE = "A" / SYSTEM.MODE = "B"',
+    ], leftOut: [] });
+  });
+});
+
+test('in a browser, a setting needed off contradicts the same setting needed present, holding a value or equal to a true value, and only the needs that contradict leave the need lines', { skip: browserMissing }, async () => {
+  const modeOff = settingGuard('!globalSettings.SYSTEM.MODE', MODE, 'off');
+  const modeHas = settingGuard("globalSettings.SYSTEM.MODE includes 'A'", MODE, 'includes', 'A');
+  const modePresent = settingGuard('globalSettings.SYSTEM.MODE', MODE, 'present');
+  await withStoryReach([reachRoute([modeOff]), reachRoute([modeIs('A')], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['서로 어긋나는 설정: SYSTEM.MODE 끔 / SYSTEM.MODE = "A"'], leftOut: [] });
+  });
+  await withStoryReach([reachRoute([modeOff]), reachRoute([modeHas, modePresent], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['서로 어긋나는 설정: SYSTEM.MODE 끔 / SYSTEM.MODE 에 "A" / SYSTEM.MODE 있음'], leftOut: [] });
+  });
+  const modeOn = settingGuard('globalSettings.SYSTEM.MODE', MODE, 'on');
+  await withStoryReach([reachRoute([modeOn]), reachRoute([modeIs('A'), modeIs('B')], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['설정 SYSTEM.MODE 켬', '서로 어긋나는 설정: SYSTEM.MODE = "A" / SYSTEM.MODE = "B"'], leftOut: [] });
+  });
+});
+
+test('in a browser, setting needs that a loose comparison can satisfy together are not called a contradiction', { skip: browserMissing }, async () => {
+  const modeOn = settingGuard('globalSettings.SYSTEM.MODE', MODE, 'on');
+  await withStoryReach([reachRoute([modeOn]), reachRoute([modeIs(0)], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['설정 SYSTEM.MODE 켬', '설정 SYSTEM.MODE = 0'], leftOut: [] });
+  });
+  await withStoryReach([reachRoute([modeIs(1)]), reachRoute([modeIs('1')], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['설정 SYSTEM.MODE = 1', '설정 SYSTEM.MODE = "1"'], leftOut: [] });
+  });
+});
+
+test('in a browser, a story whose settings come from two settings roots names the root of each setting and keeps the same path of two roots apart', { skip: browserMissing }, async () => {
+  const appLab = (need) => settingGuard(`${need === 'off' ? '!' : ''}appSettings.SYSTEM.LAB_ENABLED`, ['SYSTEM', 'LAB_ENABLED'], need, undefined, 'appSettings');
+  await withStoryReach([reachRoute([appLab('on')]), reachRoute([LAB_SETTING], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['설정 appSettings.SYSTEM.LAB_ENABLED 켬', '설정 globalSettings.SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
+  });
+  await withStoryReach([reachRoute([appLab('on')]), reachRoute([LAB_OFF], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['설정 appSettings.SYSTEM.LAB_ENABLED 켬', '설정 globalSettings.SYSTEM.LAB_ENABLED 끔'], leftOut: [] });
+  });
+  await withStoryReach([reachRoute([appLab('on')]), reachRoute([appLab('off')], LAB_RESULT)], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['서로 어긋나는 설정: SYSTEM.LAB_ENABLED 켬 / SYSTEM.LAB_ENABLED 끔'], leftOut: [] });
+  });
+});
+
+test('in a browser, a story whose conditions are neither a setting nor a role says that no setting or role blocks it', { skip: browserMissing }, async () => {
+  const loaded = { guard: 'loaded', kinds: [] };
+  await withStoryReach([reachLink([loaded])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['설정이나 역할로 막는 조건 없음'], leftOut: [] });
+  });
+});
+
+test('in a browser, the story summary names every role and every setting in full', { skip: browserMissing }, async () => {
+  const adminOrOwner = { guard: "['ADMIN', 'OWNER'].includes(memberRole)", kinds: ['role'], roles: ['ADMIN', 'OWNER'] };
+  await withStoryReach([reachRoute([LAB_SETTING, LONG_SETTING, adminOrOwner])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN 또는 OWNER', '설정 SYSTEM.LAB_ENABLED 켬', '설정 SYSTEM.MAIN_MENU.LAB.LIST 에 "LAB_EXPERIMENTS"'], leftOut: [] });
+  });
+});
+
+test('in a browser, story conditions that the summary cannot state are listed apart from it under their own heading, outside the fold', { skip: browserMissing }, async () => {
+  await withStoryReach([reachRoute([LAB_SETTING, UNREAD_ROLE, UNREAD_SETTING])], async (p) => {
+    assert.deepEqual(await readSummary(p), {
+      lines: ['설정 SYSTEM.LAB_ENABLED 켬'],
+      leftOut: ['읽지 못한 역할 조건: canManage(member)', '정하지 못한 설정 조건: settingOf(key) (설정 키를 읽지 못했습니다)'],
+    });
+    const leftOut = p.locator('#right .reach-summary .left-out');
+    assert.equal(await leftOut.locator(':scope > :first-child').textContent(), '요약에 넣지 못한 조건');
+    assert.equal(await leftOut.locator('xpath=ancestor::details').count(), 0);
+    assert.equal(await leftOut.isVisible(), true);
+  });
+  await withStoryReach([reachRoute([UNREAD_ROLE])], async (p) => {
+    assert.deepEqual(await readSummary(p), { lines: [], leftOut: ['읽지 못한 역할 조건: canManage(member)'] });
+  });
+});
+
+test('in a browser, the fold of a story\'s raw conditions and its long conditions stay open when the right pane is redrawn, and close again on another story', { skip: browserMissing }, async () => {
+  await withStoryReach([reachLink([LONG_SETTING]), reachRoute([LONG_SETTING, LAB_SETTING])], async (p) => {
+    assert.equal(await p.locator('#right .reach-raw details.long-guard').count(), 2);
+    await p.click('#right .reach-raw > summary');
+    await p.locator('#right .reach-link .long-guard > summary').click();
+    const openState = () => p.locator('#right').evaluate((r) => ({
+      fold: r.querySelector('details.reach-raw').open,
+      long: [...r.querySelectorAll('details.long-guard')].map((g) => g.open),
+    }));
+    const expected = { fold: true, long: [true, false] };
+    assert.deepEqual(await openState(), expected);
+    await p.click('#right .statuses button:has-text("더 필요")');
+    assert.deepEqual(await openState(), expected);
+    await p.fill('#right textarea', 'redraw');
+    await p.click('#right button.save');
+    await p.waitForSelector('#right .history li:has-text("redraw")');
+    assert.deepEqual(await openState(), expected);
+    await p.click('#story-list li:has-text("보고서")');
+    await p.click('#story-list li:has-text("실험실을 열어")');
+    assert.deepEqual(await openState(), { fold: false, long: [false, false] });
+  });
+});
+
+test('in a browser, the story pane and the screen pane keep what is open apart: another story leaves a screen\'s link group open, and another screen leaves a story\'s fold open', { skip: browserMissing }, async () => {
+  await withStoryReach([reachLink([LONG_SETTING]), reachRoute([LAB_SETTING])], async (p) => {
+    const sideTab = (label) => p.click(`#left .views.side button:has-text("${label}")`);
+    await sideTab('화면');
+    await p.click('#screen-list li:has-text("/lab")');
+    await p.locator('#right details.link-group > summary').first().click();
+    await sideTab('스토리');
+    await p.click('#story-list li:has-text("보고서")');
+    await p.click('#story-list li:has-text("실험실을 열어")');
+    await sideTab('화면');
+    assert.equal(await p.locator('#right details.link-group').first().evaluate((d) => d.open), true);
+
+    await sideTab('스토리');
+    await p.click('#right .reach-raw > summary');
+    await p.locator('#right .reach-link .long-guard > summary').click();
+    const storyOpen = () => p.locator('#right').evaluate((r) => [r.querySelector('details.reach-raw').open, r.querySelector('.reach-link details.long-guard').open]);
+    for (const step of [0, 1]) {
+      await p.locator('#center .step.on-map').nth(step).click();
+      await p.waitForSelector('#screen-list li.selected');
+      await sideTab('스토리');
+      assert.deepEqual(await storyOpen(), [true, true]);
+    }
+  });
+});

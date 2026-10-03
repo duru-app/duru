@@ -105,7 +105,7 @@
   .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
   .access > h2:first-child, .in-screen > h2:first-child { margin-top: 16px; }
   .open-needs h3 { font-size: 13px; margin: 10px 0 4px; }
-  .open-needs .need { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+  .open-needs .need, .reach-summary .need { display: flex; align-items: center; gap: 6px; font-weight: 600; }
   .open-needs .need .flag { color: var(--pending); font-weight: normal; }
   .open-needs .tips { font-size: 12px; margin-top: 4px; }
   #right { overflow-wrap: anywhere; }
@@ -209,6 +209,12 @@
   .memo { white-space: pre-wrap; }
   .reach > li { margin-bottom: 12px; }
   .reach h3 { font-size: 13px; margin: 0 0 4px; }
+  .reach-summary .step-roles { margin: 2px 0 0 16px; }
+  .reach-summary .left-out { margin-top: 6px; color: var(--more); }
+  .reach-summary .left-out ul { margin: 2px 0 0 16px; }
+  .reach-raw { margin: 8px 0 12px; }
+  .reach-raw > summary { cursor: pointer; }
+  .reach-raw > .reach { margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -255,7 +261,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set() };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -327,6 +333,7 @@ function select(id) {
 }
 
 function selectStory(id) {
+  if (id !== state.story) state.storyOpen.clear();
   state.story = id;
   state.storyDraft = null;
   state.error = null;
@@ -886,8 +893,8 @@ function stepTests(id) {
   }));
 }
 
-const wayItem = (w) => h('li', {}, h('code', {}, `${w.file}:${w.line}`),
-  w.conditions.length ? w.conditions.map((g) => accessGuard(g)) : h('span', { class: 'muted' }, ' 조건 없음'));
+const wayItem = (w, scope = null) => h('li', {}, h('code', {}, `${w.file}:${w.line}`),
+  w.conditions.length ? w.conditions.map((g) => accessGuard(g, scope, state.storyOpen)) : h('span', { class: 'muted' }, ' 조건 없음'));
 
 const unknownList = (links) => h('ul', { class: 'plain ways unknown-links' }, links.map((u) => h('li', {}, h('code', {}, `${u.file}:${u.line}`), ' → ', h('code', {}, u.to))));
 const skippedLinks = (links) => [h('div', { class: 'muted skipped' }, '판정에서 뺀 링크'), unknownList(links)];
@@ -897,7 +904,7 @@ function linkItem(l) {
     h('span', { class: `chip l-${l.verdict}` }, LINK_VERDICT[l.verdict]),
     l.verdict === 'off-map' ? h('span', { class: 'muted' }, ' 화면 없음') : null,
     l.verdict === 'unknown' ? [h('span', { class: 'muted' }, ' 주소 못 읽은 링크'), unknownList(l.unknownLinks)] : null,
-    l.ways.length ? h('ul', { class: 'plain ways' }, l.ways.map(wayItem)) : null,
+    l.ways.length ? h('ul', { class: 'plain ways' }, l.ways.map((w) => wayItem(w))) : null,
     l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null);
 }
 
@@ -921,20 +928,23 @@ function renderStoryCenter() {
     h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1]) : null, stepItem(step, i)])));
 }
 
-function reachItem(r) {
+const stepLabel = (r) => (r.kind === 'start' ? `첫 화면 ${screenLabel(r.screen)}`
+  : r.kind === 'route' ? `${screenLabel(r.screen)} 라우트` : `${screenLabel(r.from)} → ${screenLabel(r.to)}`);
+
+function reachItem(r, scope) {
   if (r.kind === 'start') {
-    return [h('h3', {}, `첫 화면 ${screenLabel(r.screen)}`),
+    return [h('h3', {}, stepLabel(r)),
       h('div', {}, '열리려면 필요한 것 ', r.kinds.map(kindChip)),
       r.roleValues ? h('div', {}, `열 수 있는 역할 ${r.roleValues.join(', ')}`)
         : r.roleValues === null ? h('div', { class: 'muted' }, '역할 미확인') : null,
       h('div', { class: 'muted' }, '들어오는 링크: 화면 목록에서')];
   }
   if (r.kind === 'route') {
-    return [h('h3', {}, `${screenLabel(r.screen)} 라우트`), h('code', {}, `${state.data.routesFile}:${r.line}`), ...r.guards.map((g) => accessGuard(g))];
+    return [h('h3', {}, stepLabel(r)), h('code', {}, `${state.data.routesFile}:${r.line}`), ...r.guards.map((g) => accessGuard(g, scope, state.storyOpen))];
   }
-  return [h('h3', {}, `${screenLabel(r.from)} → ${screenLabel(r.to)}`),
+  return [h('h3', {}, stepLabel(r)),
     r.ways.length > 1 ? h('div', { class: 'muted' }, `링크 ${r.ways.length}개 중 하나`) : null,
-    h('ul', { class: 'plain ways' }, r.ways.map(wayItem)),
+    h('ul', { class: 'plain ways' }, r.ways.map((w, i) => wayItem(w, `${scope}\n${i}`))),
     ...(r.unknownLinks ? skippedLinks(r.unknownLinks) : [])];
 }
 
@@ -947,6 +957,16 @@ function storyProblems(st) {
   ].filter(Boolean);
 }
 
+function reachBlock(st) {
+  const key = `story\n${st.id}`;
+  return [
+    storySummary(st.reach),
+    h('details', { class: 'reach-raw', open: state.storyOpen.has(key), ontoggle: rememberOpen(state.storyOpen, key) },
+      h('summary', {}, '조건식과 위치'),
+      h('ul', { class: 'plain reach' }, st.reach.map((r, i) => h('li', { class: `reach-${r.kind}` }, reachItem(r, `${key}\n${i}`))))),
+  ];
+}
+
 function renderStoryRight(right) {
   const st = storyOf();
   if (!st) return fill(right, state.story ? markForm({ story: state.story }, 'storyDraft', '스토리') : null);
@@ -955,9 +975,7 @@ function renderStoryRight(right) {
     (problems.length ? problems : [['reachable', '도달 가능']]).map(([cls, text]) => h('p', { class: `verdict ${cls}` }, text)),
     st.links.some((l) => l.ways.length && l.unknownLinks) ? h('p', { class: 'muted skipped' }, '주소 못 읽은 링크 빼고 판정') : null,
     h('h2', {}, '사전 조건'),
-    st.reach.length
-      ? h('ul', { class: 'plain reach' }, st.reach.map((r) => h('li', { class: `reach-${r.kind}` }, reachItem(r))))
-      : h('p', { class: 'muted' }, problems.length ? '판정한 구간에 조건 없음' : '조건 없음'),
+    st.reach.length ? reachBlock(st) : h('p', { class: 'muted' }, problems.length ? '판정한 구간에 조건 없음' : '조건 없음'),
     markForm({ story: st.id }, 'storyDraft', '스토리'));
 }
 
@@ -1148,15 +1166,15 @@ const mixedChip = () => h('span', { class: 'chip kind-mixed' }, MIXED_KINDS);
 const isRestricted = (id) => Boolean(state.data.map.screens.find((x) => x.id === id)?.access.restricted);
 const LONG_GUARD = 80;
 const rememberOpen = (set, key) => (e) => { if (e.currentTarget.open) set.add(key); else set.delete(key); };
-const guardCode = (text, scope = null) => {
+const guardCode = (text, scope = null, opened = state.openLong) => {
   if (text.length <= LONG_GUARD) return h('code', {}, text);
   const key = `${scope}\n${text}`;
-  const kept = scope === null ? {} : { open: state.openLong.has(key), ontoggle: rememberOpen(state.openLong, key) };
+  const kept = scope === null ? {} : { open: opened.has(key), ontoggle: rememberOpen(opened, key) };
   return h('details', { class: 'long-guard', ...kept },
     h('summary', {}, h('code', { class: 'head' }, `${text.slice(0, LONG_GUARD)}…`)), h('code', { class: 'full' }, text));
 };
-const accessGuard = (g, scope) => h('div', { class: 'guard' },
-  guardCode(g.via ? inheritedText(g.guard, g.via) : g.guard, scope), ' ', g.kinds.map(kindChip));
+const accessGuard = (g, scope, opened = state.openLong) => h('div', { class: 'guard' },
+  guardCode(g.via ? inheritedText(g.guard, g.via) : g.guard, scope, opened), ' ', g.kinds.map(kindChip));
 
 // 맵에 링크가 어떤 순서로 적혀 있든 같은 순서로 나온다.
 // 같은 조건식도 파일마다 뜻이 다를 수 있어 묶는 기준에는 조건식이 풀린 결과를 함께 넣는다.
@@ -1191,7 +1209,7 @@ function openSummary(s) {
   const { lines, tips, bare } = openNeeds(s);
   return h('div', { class: 'open-needs' },
     h('h2', {}, '이 화면을 열려면'),
-    s.access.restricted ? [...lines.map(needLine), bare ? h('div', { class: 'need bare' }, bare) : null] : h('p', { class: 'muted' }, '설정이나 역할 없이 열립니다.'),
+    s.access.restricted ? [...lines.map(needLine), bare ? bareLine(bare) : null] : h('p', { class: 'muted' }, '설정이나 역할 없이 열립니다.'),
     tips.length ? h('ul', { class: 'plain tips muted' }, tips.map((t) => h('li', {}, t))) : null,
     s.access.route.length ? h('div', { class: 'route' }, h('h3', {}, '라우트에서 막는 조건'), s.access.route.map((g) => accessGuard(g, 'route'))) : null);
 }
@@ -1360,6 +1378,10 @@ const needText = (n, { short = false } = {}) => {
 };
 
 const withMore = (items) => (items.length > 1 ? `${items[0]} 외 ${items.length - 1}` : items[0]);
+const overlap = (lists) => lists.reduce((left, values) => left.filter((v) => values.includes(v)));
+const unreadText = (u) => `${u.guard} (${u.reason})`;
+const unreadRolesTip = (guards) => `읽지 못한 역할 조건: ${guards.join(', ')}`;
+const unsettledTip = (text) => `정하지 못한 설정 조건: ${text}`;
 
 // bare 는 문구 한 줄로 적지 못한 종류(「설정 필요」, 「링크마다 다름」)다.
 function openNeeds({ access }) {
@@ -1375,38 +1397,226 @@ function openNeeds({ access }) {
       lines.push({ kind: 'role', text: '역할 미확인' });
       tips.push('필요한 역할: 미확인');
     }
-    if (unread) tips.push(`읽지 못한 역할 조건: ${unreadableRoleGuards.join(', ')}`);
+    if (unread) tips.push(unreadRolesTip(unreadableRoleGuards));
   }
   if (settings) {
     const hasValue = (x) => x.need === 'includes' || x.need === 'equals';
     const needs = [...new Map(settings.flatMap((x) => x.needs).map((x) => [needText(x), x]))]
       .sort(([, a], [, b]) => hasValue(b) - hasValue(a));
-    const unread = [...new Set(settings.flatMap((x) => x.unreadable).map((u) => `${u.guard} (${u.reason})`))];
+    const unread = [...new Set(settings.flatMap((x) => x.unreadable).map(unreadText))];
     const flag = unread.length ? `미확인 ${unread.length}` : null;
     if (needs.length || unread.length) lines.push({ kind: 'setting', text: needs.length ? `설정 ${withMore(needs.map(([, x]) => needText(x, { short: true })))}` : '설정 미확인', flag });
     tips.push(...needs.map(([full]) => `필요한 설정: ${full}`));
-    tips.push(...unread.map((u) => `정하지 못한 설정 조건: ${u}`));
+    tips.push(...unread.map(unsettledTip));
   }
   const bareKinds = kinds.filter((k) => !lines.some((l) => l.kind === k));
   const bare = bareKinds.length ? `${bareKinds.map((k) => KIND_LABEL[k]).join('·')} 필요` : !kinds.length && restricted ? MIXED_KINDS : null;
   return { lines, tips, bare };
 }
 
-// 한 링크의 조건은 모두 맞아야 하므로 역할 값은 겹치는 것만 남는다.
-function linkAccess(guards) {
+// 한 링크나 라우트의 조건은 모두 맞아야 하므로 역할 값은 겹치는 것만 남는다. 겹치는 값이 없으면 빈 목록이다.
+function guardsAccess(guards) {
   const roleGuards = guards.filter((g) => g.kinds.includes('role'));
   const readable = roleGuards.filter((g) => g.roles);
-  const roleValues = readable.length ? readable.map((g) => g.roles).reduce((left, roles) => left.filter((v) => roles.includes(v))) : [];
   const settingGuards = guards.filter((g) => g.kinds.includes('setting'));
   return {
     restricted: guards.length > 0,
     kinds: ['setting', 'role'].filter((k) => guards.some((g) => g.kinds.includes(k))),
-    ...(roleGuards.length ? { roleValues: roleValues.length ? roleValues : null, unreadableRoleGuards: roleGuards.filter((g) => !g.roles).map((g) => g.guard) } : {}),
+    ...(roleGuards.length ? { roleValues: readable.length ? overlap(readable.map((g) => g.roles)) : null, unreadableRoleGuards: roleGuards.filter((g) => !g.roles).map((g) => g.guard) } : {}),
     ...(settingGuards.length ? { settings: [{ needs: settingGuards.flatMap((g) => g.settings ?? []), unreadable: settingGuards.filter((g) => !g.settings).map((g) => ({ guard: g.guard, reason: g.settingsReason })) }] } : {}),
   };
 }
 
+// 화면 칸은 맵처럼 겹치는 역할이 없는 링크도 「역할 미확인」으로 적는다.
+function linkAccess(guards) {
+  const access = guardsAccess(guards);
+  return access.roleValues?.length === 0 ? { ...access, roleValues: null } : access;
+}
+
+// 링크의 조건 목록에는 핸들러를 쓰는 곳마다의 조건(via)이 한데 섞여 와서, 어느 곳의 조건인지 알 수 없다.
+// 링크 자신의 조건이 없고 물려받은 조건이 하나뿐일 때만 핸들러를 쓰는 곳이 하나여서 그 조건이 꼭 필요하다. 그 밖의 물려받은 조건은 정할 수 없다.
+function heldGuards(guards) {
+  const own = guards.filter((g) => !g.via);
+  const inherited = guards.filter((g) => g.via);
+  return !own.length && inherited.length === 1 ? { sure: inherited, undecided: [] } : { sure: own, undecided: inherited };
+}
+
+// roles 는 역할을 묻지 않으면 undefined, 묻지만 값을 하나도 읽지 못했으면 null 이다.
+function wayNeeds(guards) {
+  const { sure, undecided } = heldGuards(guards);
+  const access = guardsAccess(sure);
+  const [setting = { needs: [], unreadable: [] }] = access.settings ?? [];
+  const roleDoubt = undecided.some((g) => g.kinds.includes('role'));
+  return {
+    roles: access.roleValues === undefined && roleDoubt ? null : access.roleValues,
+    unreadRoles: access.unreadableRoleGuards ?? [],
+    roleDoubt,
+    settings: setting.needs,
+    unsettled: setting.unreadable.map(unreadText),
+    undecided,
+  };
+}
+
+// 같은 줄에서 같은 화면으로 가는 링크가 여럿이면 맵에 적힌 순서대로 짝짓는다.
+function wayGuards(r) {
+  const rows = screenOf(r.to).access.links.filter((l) => l.from === r.from);
+  const taken = new Map();
+  return r.ways.map((w) => {
+    const place = `${w.file}:${w.line}`;
+    const nth = taken.get(place) ?? 0;
+    taken.set(place, nth + 1);
+    return rows.filter((l) => l.file === w.file && l.line === w.line)[nth]?.guards ?? [];
+  });
+}
+
+// 사용자의 역할은 하나뿐이라 어느 길이든 허락하면 지나가므로 역할은 길마다 허락하는 값을 합친다.
+// 합친 값은 모든 길의 역할을 읽었을 때만 지나는 역할을 빠짐없이 담고(bound), 그중 역할을 다 읽은 길이 허락하는 값만 확실하다.
+// 확실하지 않은 값이 모든 길에 걸린 읽지 못한 역할 조건 때문이 아니면 partial 이다.
+function wayRoles(ways) {
+  if (ways.some((w) => w.roles === undefined)) return { roles: undefined, unreadRoles: [], bound: false, partial: false };
+  const read = ways.filter((w) => w.roles);
+  const unreadRoles = ways[0].unreadRoles.filter((u) => ways.every((w) => w.unreadRoles.includes(u)));
+  const sure = new Set(read.filter((w) => !w.unreadRoles.length && !w.roleDoubt).flatMap((w) => w.roles));
+  const bound = read.length === ways.length;
+  const exact = bound && read.every((w) => w.roles.every((v) => sure.has(v)));
+  const explained = bound && ways.every((w) => !w.roleDoubt && w.unreadRoles.every((u) => unreadRoles.includes(u)));
+  return { roles: read.length ? [...new Set(read.flatMap((w) => w.roles))].sort() : null, unreadRoles, bound, partial: read.length > 0 && !exact && !explained };
+}
+
+const settingKey = (x) => `${x.root}\n${needText(x)}`;
+const roleKey = (roles) => (roles === undefined ? '' : roles === null ? '?' : `=${[...roles].sort().join(',')}`);
+const restKey = (n) => [...new Set([...n.settings.map(settingKey), ...n.unsettled])].sort().join('\n');
+const commonSettings = (ways) => ({
+  settings: ways[0].settings.filter((x) => ways.every((w) => w.settings.some((y) => settingKey(y) === settingKey(x)))),
+  unsettled: ways[0].unsettled.filter((u) => ways.every((w) => w.unsettled.includes(u))),
+});
+const NO_NEEDS = { roles: undefined, unreadRoles: [], bound: false, partial: false, settings: [], unsettled: [], undecided: [], bare: null };
+
+// 링크 단계는 링크 하나만 지나면 되므로 모든 링크가 함께 요구하는 것만 단계의 요구로 남긴다.
+// 함께 요구하는 것만으로 지나가는 링크가 없고 설정 요구가 링크마다 다르면 나머지는 「링크마다 다름」이다.
+// 정할 수 없는 물려받은 조건이나 읽지 못한 역할 조건이 걸린 링크는 더 요구할 수 있어, 함께 요구하는 것만으로 지나간다는 근거가 되지 못한다.
+function waysNeeds(ways) {
+  if (ways.some((w) => w.roles === undefined && !restKey(w) && !w.undecided.length)) return NO_NEEDS;
+  const common = { ...wayRoles(ways), ...commonSettings(ways), undecided: ways.flatMap((w) => w.undecided) };
+  const sameRest = (w) => restKey(w) === restKey(common);
+  const exact = ways.every(sameRest)
+    || ways.some((w) => sameRest(w) && !w.undecided.length && !w.unreadRoles.length && roleKey(w.roles) === roleKey(common.roles));
+  return { ...common, bare: exact ? null : MIXED_KINDS };
+}
+
+// 맵은 링크마다의 설정 요구를 들어오는 링크와 같은 순서로 적되, 설정 요구가 없는 링크는 건너뛴다.
+// 링크 자신에 설정 조건이 없으면 그 요구는 링크를 건 화면에서 물려받은 것이다.
+function inheritedSources(access) {
+  const sources = (access.settings ?? []).filter((x) => x.from !== 'route');
+  let next = 0;
+  return access.links.map((row) => {
+    const source = sources[next];
+    const own = row.guards.some((g) => g.kinds.includes('setting'));
+    if (!source || source.from !== row.from || source.file !== row.file || source.line !== row.line || !(own || source.inherited)) return null;
+    next += 1;
+    return own ? null : source;
+  });
+}
+
+// 역할은 맵이 같은 규칙으로 정한 값을 쓴다. 맵은 물려받은 조건을 모두 세므로, 정할 수 없는 물려받은 역할 조건이 있으면 그 값은 지나는 역할을 빠짐없이 담지 못한다.
+function startNeeds(r) {
+  const { id, access } = screenOf(r.screen);
+  const route = wayNeeds(access.route);
+  const blocked = !state.data.map.entries.some((e) => e.screen === id) && access.links.length > 0
+    && access.links.every((l) => l.guards.length || isRestricted(l.from));
+  const inherited = inheritedSources(access);
+  const ways = blocked ? access.links.map((row, i) => {
+    const way = wayNeeds(row.guards);
+    return inherited[i] ? { ...way, settings: inherited[i].needs, unsettled: inherited[i].unreadable.map(unreadText) } : way;
+  }) : [];
+  const links = ways.length ? commonSettings(ways) : { settings: [], unsettled: [] };
+  const undecided = ways.flatMap((w) => w.undecided);
+  const roleDoubt = ways.some((w) => w.roleDoubt);
+  const settings = [...new Map([...route.settings, ...links.settings].map((x) => [settingKey(x), x])).values()];
+  const unsettled = [...new Set([...route.unsettled, ...links.unsettled])];
+  const shown = {
+    setting: settings.length || unsettled.length || undecided.some((g) => g.kinds.includes('setting')),
+    role: access.roleValues !== undefined || roleDoubt,
+  };
+  const missing = access.kinds.filter((k) => !shown[k]);
+  const exact = access.kinds.length && ways.every((w) => restKey(w) === restKey(links));
+  return {
+    roles: access.roleValues,
+    unreadRoles: access.unreadableRoleGuards ?? [],
+    bound: Boolean(access.roleValues) && !roleDoubt,
+    partial: Boolean(access.roleValues) && roleDoubt,
+    settings,
+    unsettled,
+    undecided,
+    bare: !exact ? MIXED_KINDS : missing.length ? `${missing.map((k) => KIND_LABEL[k]).join('·')} 필요` : null,
+  };
+}
+
+function stepNeeds(r) {
+  if (r.kind === 'start') return startNeeds(r);
+  return waysNeeds(r.kind === 'route' ? [wayNeeds(r.guards)] : wayGuards(r).map(wayNeeds));
+}
+
+// 같음은 느슨한 비교(==)로 읽혔을 수도 있어 종류가 같은 두 값만 어긋난다고 보고, 켬과 거짓인 값의 같음도("0" == 0) 어긋난다고 보지 않는다.
+const offClash = (off, x) => off.need === 'off' && (['on', 'present', 'includes'].includes(x.need) || (x.need === 'equals' && Boolean(x.value)));
+const settingClash = (a, b) => offClash(a, b) || offClash(b, a)
+  || (a.need === 'equals' && b.need === 'equals' && typeof a.value === typeof b.value && a.value !== b.value);
+
+// 지나는 역할을 빠짐없이 담은 단계가 있으면 그 단계들로만 겹치는 값을 구해야, 겹치는 값이 없을 때 지나는 역할이 없다고 말할 수 있다.
+function storyNeeds(reach) {
+  const steps = reach.map((r) => ({ label: stepLabel(r), ...stepNeeds(r) }));
+  const read = steps.filter((s) => s.roles);
+  const bound = read.filter((s) => s.bound);
+  const roles = (bound.length ? bound : read).map((s) => s.roles);
+  const allowed = roles.length ? overlap(roles) : [];
+  const unreadRoles = [...new Set(steps.flatMap((s) => s.unreadRoles))];
+  const roleNotes = [
+    ...steps.filter((s) => s.roles === null && !s.unreadRoles.length).map((s) => `역할 미확인 (${s.label})`),
+    ...steps.filter((s) => s.partial).map((s) => `역할 일부만 읽음 (${s.label})`),
+  ];
+  const settings = [...new Map(steps.flatMap((s) => s.settings).map((x) => [settingKey(x), x])).values()];
+  const pathKey = (x) => JSON.stringify([x.root, x.path]);
+  const clashing = settings.filter((x) => settings.some((y) => pathKey(x) === pathKey(y) && settingClash(x, y)));
+  const handlers = new Map();
+  for (const g of steps.flatMap((s) => s.undecided)) handlers.set(g.via, [...new Set([...(handlers.get(g.via) ?? []), g.guard])]);
+  return {
+    roles: allowed.length || bound.length ? allowed : undefined,
+    roleSteps: bound,
+    roleFlag: unreadRoles.length + roleNotes.length,
+    settings: settings.filter((x) => !clashing.includes(x)),
+    clashes: [...new Set(clashing.map(pathKey))].map((key) => clashing.filter((x) => pathKey(x) === key)),
+    withRoot: new Set(settings.map((x) => x.root)).size > 1,
+    bare: steps.filter((s) => s.bare).map((s) => `${s.label} ${s.bare}`),
+    leftOut: [
+      ...roleNotes,
+      ...(unreadRoles.length ? [unreadRolesTip(unreadRoles)] : []),
+      ...[...new Set(steps.flatMap((s) => s.unsettled))].map(unsettledTip),
+      ...[...handlers].map(([via, guards]) => `${via} 를 쓰는 곳에 따라 다른 조건: ${guards.join(', ')}`),
+    ],
+  };
+}
+
+const rolesText = (roles) => (roles.length ? `역할 ${roles.join(' 또는 ')}` : '지나는 역할 없음');
+
+function storySummary(reach) {
+  const n = storyNeeds(reach);
+  const settingText = (x) => (n.withRoot ? `${x.root}.${needText(x)}` : needText(x));
+  const lines = [
+    n.roles === undefined ? null
+      : n.roles.length ? needLine({ text: rolesText(n.roles), flag: n.roleFlag ? `미확인 ${n.roleFlag}` : null })
+        : [bareLine('모든 단계를 지나는 역할 없음'), h('ul', { class: 'plain step-roles' }, n.roleSteps.map((s) => h('li', {}, `${s.label}: ${rolesText(s.roles)}`)))],
+    ...n.settings.map((x) => needLine({ text: `설정 ${settingText(x)}` })),
+    ...n.clashes.map((same) => bareLine(`서로 어긋나는 설정: ${same.map(settingText).join(' / ')}`)),
+    ...n.bare.map(bareLine),
+  ].flat().filter(Boolean);
+  return h('div', { class: 'reach-summary' },
+    lines,
+    !lines.length && !n.leftOut.length ? h('p', { class: 'muted none' }, '설정이나 역할로 막는 조건 없음') : null,
+    n.leftOut.length ? h('div', { class: 'left-out' }, h('div', {}, '요약에 넣지 못한 조건'), h('ul', { class: 'plain' }, n.leftOut.map((t) => h('li', {}, t)))) : null);
+}
+
 const needLine = (l) => h('div', { class: 'need' }, h('span', { class: 'text' }, l.text), l.flag ? h('span', { class: 'flag' }, l.flag) : null);
+const bareLine = (text) => h('div', { class: 'need bare' }, text);
 
 const callKey = (screen, call) => `${screen.id}>${call.id}`;
 const isFolded = (node, collapsed) => node.kind === 'screen' && collapsed.has(node.id) && node.children.length > 0;
