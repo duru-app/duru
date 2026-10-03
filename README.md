@@ -540,11 +540,17 @@ has an on row and an off row, holding the tests that set it to that value, and o
 with no option tag. The options are the same as in the task list: those this screen sends in the source and
 those added to the call in `bodyOptions`, the latter tagged 「설정」. An on or off row with no tests at all
 stands out in red; the no-option row takes no marks. A call whose address could not be worked out
-from the source has no node, so it shows without cells. The right holds the mark form and, for a screen, why
-it opens only under a setting or a role (the blocking route guards and every link into it with its guards,
-their kinds and, when the screen it comes from is restricted itself, what that screen needs, marked 「설정」 and 「역할」 like the guards; a screen whose links ask for different kinds
-shows 「링크마다 다름」 here, on the links it makes and on its box in the flow view), its source location, route
-guards, links and settings reads, or, for a call, where an option value's option was found (file and line
+from the source has no node, so it shows without cells. For a screen, the right starts with 「이 화면을 열려면」:
+the settings and roles it needs, in the same words as its box in the flow view (「설정이나 역할 없이 열립니다」 when
+it needs neither), every needed value in full, and the blocking route guards. The right then holds the mark form and, for a screen,
+the links into it grouped by the set of guards they carry: the group without guards first, then larger groups
+before smaller and, among groups of one size, by the guards' text. Each group shows what its guards need in those
+same words and its number of links, and opens to each link, ordered by the screen it comes from, file and line,
+with its source location, its guards with their kinds and, when the screen it comes from is restricted itself, what that screen needs, marked 「설정」 and 「역할」 like the guards; a screen whose links ask for different kinds
+shows 「링크마다 다름」 here, on the links it makes, in its 「이 화면을 열려면」 and on its box in the flow view.
+Route guards that are neither a setting nor a role follow under 「화면 안 조건」, whose heading says they do not
+block opening the screen. A guard longer than 80 characters is folded to its start and opens to its full text.
+Then come the screen's source location, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.
 

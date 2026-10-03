@@ -103,7 +103,18 @@
   .importers p { font-size: 12px; margin: 0 0 8px; }
   .guard { display: block; }
   .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
-  .access h3 { font-size: 13px; margin: 10px 0 4px; }
+  .access > h2:first-child, .in-screen > h2:first-child { margin-top: 16px; }
+  .open-needs h3 { font-size: 13px; margin: 10px 0 4px; }
+  .open-needs .need { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+  .open-needs .need .flag { color: var(--pending); font-weight: normal; }
+  .open-needs .tips { font-size: 12px; margin-top: 4px; }
+  .open-needs code, .access code { overflow-wrap: anywhere; }
+  .link-group { margin-bottom: 6px; }
+  .link-group > summary, .long-guard > summary { cursor: pointer; }
+  .link-group > ul { margin: 6px 0 8px 16px; }
+  .long-guard > summary::after { content: ' 펼치기'; color: var(--muted); font-size: 12px; }
+  .long-guard[open] > summary::after { content: '접기'; }
+  .long-guard[open] > summary .head { display: none; }
   ul.plain { list-style: none; padding: 0; margin: 0; }
   ul.plain li { margin-bottom: 6px; }
   .statuses { display: flex; gap: 6px; margin: 8px 0; }
@@ -241,7 +252,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set() };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -300,6 +311,10 @@ async function load() {
 function select(id) {
   for (const [key, kept] of state.pathValues) {
     if (key.startsWith(`${id}\n`) && !kept.pending && kept.errors.length && !kept.opened) state.pathValues.delete(key);
+  }
+  if (id !== state.selected) {
+    state.openGroups.clear();
+    state.openLong.clear();
   }
   state.selected = id;
   state.target = { node: id };
@@ -863,7 +878,7 @@ function stepTests(id) {
 }
 
 const wayItem = (w) => h('li', {}, h('code', {}, `${w.file}:${w.line}`),
-  w.conditions.length ? w.conditions.map(accessGuard) : h('span', { class: 'muted' }, ' 조건 없음'));
+  w.conditions.length ? w.conditions.map((g) => accessGuard(g)) : h('span', { class: 'muted' }, ' 조건 없음'));
 
 const unknownList = (links) => h('ul', { class: 'plain ways unknown-links' }, links.map((u) => h('li', {}, h('code', {}, `${u.file}:${u.line}`), ' → ', h('code', {}, u.to))));
 const skippedLinks = (links) => [h('div', { class: 'muted skipped' }, '판정에서 뺀 링크'), unknownList(links)];
@@ -906,7 +921,7 @@ function reachItem(r) {
       h('div', { class: 'muted' }, '들어오는 링크: 화면 목록에서')];
   }
   if (r.kind === 'route') {
-    return [h('h3', {}, `${screenLabel(r.screen)} 라우트`), h('code', {}, `${state.data.routesFile}:${r.line}`), ...r.guards.map(accessGuard)];
+    return [h('h3', {}, `${screenLabel(r.screen)} 라우트`), h('code', {}, `${state.data.routesFile}:${r.line}`), ...r.guards.map((g) => accessGuard(g))];
   }
   return [h('h3', {}, `${screenLabel(r.from)} → ${screenLabel(r.to)}`),
     r.ways.length > 1 ? h('div', { class: 'muted' }, `링크 ${r.ways.length}개 중 하나`) : null,
@@ -1069,6 +1084,7 @@ function renderRight() {
   const { option, depth } = state.target;
   const targetLabel = [option && optionLabel(option), depth && `${DEPTH_LABELS[depth]} 깊이`].filter(Boolean).join(' · ') || (call ? '호출 전체' : '화면 전체');
   fill(right,
+    call ? null : openSummary(s),
     markForm(state.target, 'draft', targetLabel, call ? h('div', { class: 'mono' }, call.id) : null),
     call ? callDetails(call, s) : screenDetails(s),
   );
@@ -1118,34 +1134,79 @@ function callDetails(call, s) {
 const kindChip = (k) => h('span', { class: `chip kind-${k}` }, KIND_LABEL[k]);
 const mixedChip = () => h('span', { class: 'chip kind-mixed' }, MIXED_KINDS);
 const isRestricted = (id) => Boolean(state.data.map.screens.find((x) => x.id === id)?.access.restricted);
-const accessGuard = (g) => h('div', { class: 'guard' },
-  h('code', {}, g.via ? inheritedText(g.guard, g.via) : g.guard), ' ', g.kinds.map(kindChip));
+const LONG_GUARD = 80;
+const rememberOpen = (set, key) => (e) => { if (e.currentTarget.open) set.add(key); else set.delete(key); };
+const guardCode = (text, scope = null) => {
+  if (text.length <= LONG_GUARD) return h('code', {}, text);
+  const key = `${scope}\n${text}`;
+  const kept = scope === null ? {} : { open: state.openLong.has(key), ontoggle: rememberOpen(state.openLong, key) };
+  return h('details', { class: 'long-guard', ...kept },
+    h('summary', {}, h('code', { class: 'head' }, `${text.slice(0, LONG_GUARD)}…`)), h('code', { class: 'full' }, text));
+};
+const accessGuard = (g, scope) => h('div', { class: 'guard' },
+  guardCode(g.via ? inheritedText(g.guard, g.via) : g.guard, scope), ' ', g.kinds.map(kindChip));
 
-function accessDetails({ access }) {
-  if (!access.restricted) return h('div', { class: 'access' }, h('p', { class: 'muted' }, '설정이나 역할 없이 열립니다.'));
-  return h('div', { class: 'access' },
-    h('div', { class: 'needs' }, '필요한 것 ', access.kinds.length ? access.kinds.map(kindChip)
-      : mixedChip()),
-    access.route.length ? h('div', { class: 'route' }, h('h3', {}, '라우트에서 막는 조건'), access.route.map(accessGuard)) : null,
-    h('h3', {}, `들어오는 링크 ${access.links.length}`),
-    h('ul', { class: 'plain' }, access.links.map((l) => h('li', {},
-      h('code', {}, l.from), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`),
-      l.guards.length ? l.guards.map(accessGuard) : h('div', { class: 'muted' }, '설정 · 역할 조건 없음'),
+// 맵에 링크가 어떤 순서로 적혀 있든 같은 순서로 나온다.
+// 같은 조건식도 파일마다 뜻이 다를 수 있어 묶는 기준에는 조건식이 풀린 결과를 함께 넣는다.
+function linkGroups(links) {
+  const byText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  const meaning = (g) => JSON.stringify([g.guard, g.kinds, g.roles ?? null, g.settings ?? null, g.settingsReason ?? null]);
+  const groups = new Map();
+  for (const l of links) {
+    const guards = [...new Map(l.guards.map((g) => [g.guard, g])).values()].sort((a, b) => byText(a.guard, b.guard));
+    const key = guards.map(meaning).join('\n');
+    if (!groups.has(key)) groups.set(key, { key, text: guards.map((g) => g.guard).join('\n'), guards, links: [] });
+    groups.get(key).links.push(l);
+  }
+  for (const g of groups.values()) g.links.sort((a, b) => byText(a.from, b.from) || byText(a.file, b.file) || a.line - b.line);
+  return [...groups.values()].sort((a, b) => (b.guards.length === 0) - (a.guards.length === 0) || b.links.length - a.links.length || byText(a.text, b.text) || byText(a.key, b.key));
+}
+
+function linkGroup({ key, guards, links }) {
+  const { lines, bare } = openNeeds({ access: linkAccess(guards) });
+  const words = [...lines.map((l) => (l.flag ? `${l.text} (${l.flag})` : l.text)), bare].filter(Boolean);
+  return h('details', { class: 'link-group', open: state.openGroups.has(key), ontoggle: rememberOpen(state.openGroups, key) },
+    h('summary', {}, h('span', { class: 'cond' }, guards.length ? words.join(' · ') : '조건 없음'), ' ', h('span', { class: 'count muted' }, `링크 ${links.length}`)),
+    h('ul', { class: 'plain' }, links.map((l) => h('li', {},
+      h('code', { class: 'from' }, l.from), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`),
+      l.guards.map((g) => accessGuard(g, `${key}\n${l.from} ${l.file}:${l.line}`)),
       l.fromKinds.length || isRestricted(l.from)
         ? h('div', { class: 'from-kinds muted' }, '링크를 건 화면에 필요한 것 ', l.fromKinds.length ? l.fromKinds.map(kindChip) : mixedChip())
         : null))));
 }
 
+function openSummary(s) {
+  const { lines, tips, bare } = openNeeds(s);
+  return h('div', { class: 'open-needs' },
+    h('h2', {}, '이 화면을 열려면'),
+    s.access.restricted ? [...lines.map(needLine), bare ? h('div', { class: 'need bare' }, bare) : null] : h('p', { class: 'muted' }, '설정이나 역할 없이 열립니다.'),
+    tips.length ? h('ul', { class: 'plain tips muted' }, tips.map((t) => h('li', {}, t))) : null,
+    s.access.route.length ? h('div', { class: 'route' }, h('h3', {}, '라우트에서 막는 조건'), s.access.route.map((g) => accessGuard(g, 'route'))) : null);
+}
+
+const inScreenGuards = ({ routeGuards, access }) => {
+  const blocking = new Set(access.route.map((g) => g.guard));
+  return routeGuards.filter((g) => !blocking.has(g));
+};
+
+function accessDetails(s) {
+  const { links } = s.access;
+  const inScreen = inScreenGuards(s);
+  return h('div', { class: 'access' },
+    h('h2', {}, `들어오는 링크 ${links.length}`),
+    links.length ? linkGroups(links).map(linkGroup) : h('p', { class: 'muted' }, '없음'),
+    inScreen.length ? h('div', { class: 'in-screen' },
+      h('h2', {}, '화면 안 조건 — 화면을 여는 것은 막지 않습니다'),
+      inScreen.map((g) => h('div', { class: 'guard' }, guardCode(g, 'in-screen')))) : null);
+}
+
 function screenDetails(s) {
   return [
-    h('h2', {}, '열리는 조건'),
     accessDetails(s),
     h('h2', {}, '소스 위치'),
     h('ul', { class: 'plain' },
       h('li', {}, '라우트 ', h('code', {}, `${state.data.routesFile}:${s.line}`)),
       h('li', {}, '컴포넌트 ', s.componentFile ? h('code', {}, s.componentFile) : h('span', { class: 'muted' }, '찾지 못함'))),
-    h('h2', {}, '라우트 조건'),
-    h('div', {}, guardList({ guards: s.routeGuards })),
     h('h2', {}, `나가는 링크 ${s.links.length}`),
     s.links.length ? h('ul', { class: 'plain' }, s.links.map((l) => h('li', {},
       h('code', {}, l.to), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`), h('div', {}, guardList(l))))) : h('p', { class: 'muted' }, '없음'),
@@ -1275,8 +1336,9 @@ const needText = (n, { short = false } = {}) => {
 
 const withMore = (items) => (items.length > 1 ? `${items[0]} 외 ${items.length - 1}` : items[0]);
 
-function nodeNeeds(n) {
-  const { roleValues, unreadableRoleGuards = [], settings } = n.access;
+// bare 는 문구 한 줄로 적지 못한 종류(「설정 필요」, 「링크마다 다름」)다.
+function openNeeds({ access }) {
+  const { roleValues, unreadableRoleGuards = [], settings, kinds = [], restricted = false } = access;
   const lines = [];
   const tips = [];
   if (roleValues !== undefined) {
@@ -1300,8 +1362,26 @@ function nodeNeeds(n) {
     tips.push(...needs.map(([full]) => `필요한 설정: ${full}`));
     tips.push(...unread.map((u) => `정하지 못한 설정 조건: ${u}`));
   }
-  return { lines, tips };
+  const bareKinds = kinds.filter((k) => !lines.some((l) => l.kind === k));
+  const bare = bareKinds.length ? `${bareKinds.map((k) => KIND_LABEL[k]).join('·')} 필요` : !kinds.length && restricted ? MIXED_KINDS : null;
+  return { lines, tips, bare };
 }
+
+// 한 링크의 조건은 모두 맞아야 하므로 역할 값은 겹치는 것만 남는다.
+function linkAccess(guards) {
+  const roleGuards = guards.filter((g) => g.kinds.includes('role'));
+  const readable = roleGuards.filter((g) => g.roles);
+  const roleValues = readable.length ? readable.map((g) => g.roles).reduce((left, roles) => left.filter((v) => roles.includes(v))) : [];
+  const settingGuards = guards.filter((g) => g.kinds.includes('setting'));
+  return {
+    restricted: guards.length > 0,
+    kinds: ['setting', 'role'].filter((k) => guards.some((g) => g.kinds.includes(k))),
+    ...(roleGuards.length ? { roleValues: roleValues.length ? roleValues : null, unreadableRoleGuards: roleGuards.filter((g) => !g.roles).map((g) => g.guard) } : {}),
+    ...(settingGuards.length ? { settings: [{ needs: settingGuards.flatMap((g) => g.settings ?? []), unreadable: settingGuards.filter((g) => !g.settings).map((g) => ({ guard: g.guard, reason: g.settingsReason })) }] } : {}),
+  };
+}
+
+const needLine = (l) => h('div', { class: 'need' }, h('span', { class: 'text' }, l.text), l.flag ? h('span', { class: 'flag' }, l.flag) : null);
 
 const callKey = (screen, call) => `${screen.id}>${call.id}`;
 const isFolded = (node, collapsed) => node.kind === 'screen' && collapsed.has(node.id) && node.children.length > 0;
@@ -1446,9 +1526,8 @@ function screenBox(b) {
   const showCalls = n.calls.length > 0 && !b.collapsed;
   const guardLabel = n.guards.length ? guardText(n.guards) : null;
   const l3text = [guardLabel ? `조건 ${guardLabel}` : null, ...n.jumps.map((j) => `→ ${j.label}`)].filter(Boolean).join(' · ');
-  const needs = nodeNeeds(n);
-  const bareKinds = n.kinds.filter((k) => !needs.lines.some((l) => l.kind === k));
-  const badges = [n.dead ? '죽은 화면' : null, bareKinds.length ? `${bareKinds.map((k) => KIND_LABEL[k]).join('·')} 필요` : !n.kinds.length && n.restricted ? MIXED_KINDS : null].filter(Boolean).join(' · ');
+  const needs = openNeeds({ access: { ...n.access, kinds: n.kinds, restricted: n.restricted } });
+  const badges = [n.dead ? '죽은 화면' : null, needs.bare].filter(Boolean).join(' · ');
   return h('div', {
     class: `box screen ${statusOf(counts)}`,
     title: [n.id, guardLabel ? `이 링크의 조건: ${guardLabel}` : '', ...needs.tips, ...n.jumps.map((j) => `→ ${j.label}${j.guards.length ? ` (${guardText(j.guards)})` : ''}`), '누르면 목록에서 이 화면을 엽니다'].filter(Boolean).join('\n'),
@@ -1477,7 +1556,7 @@ function screenBox(b) {
         focusOn(n.id);
       } }, '이 가지만') : null) : null,
     h('div', { class: 'l2' }, countText(counts), b.collapsed ? h('span', {}, ' (하위 합)') : null, imported ? ` · 불러옴 ${imported}` : '', badges ? ` · ${badges}` : ''),
-    needs.lines.map((l) => h('div', { class: 'need' }, h('span', { class: 'text' }, l.text), l.flag ? h('span', { class: 'flag' }, l.flag) : null)),
+    needs.lines.map(needLine),
     l3text || showCalls
       ? h('div', { class: 'l3' },
         h('span', { class: 'text' }, l3text),
