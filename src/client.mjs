@@ -49,12 +49,14 @@ const initCache = new WeakMap();
 function constInits(exprPath, src) {
   if (initCache.has(exprPath.node)) return initCache.get(exprPath.node);
   const found = [];
+  const calls = [];
   const seen = new Set();
   const follow = (p) => {
     const ids = p.isIdentifier() ? [p] : [];
     p.traverse({ Identifier: (id) => void ids.push(id) });
     for (const id of ids) {
       const binding = id.isReferencedIdentifier() && id.scope.getBinding(id.node.name);
+      if (id.parentPath.isCallExpression() && id.key === 'callee') calls.push([id.node.name, binding || null]);
       if (!binding || binding.kind !== 'const' || seen.has(binding)) continue;
       seen.add(binding);
       const init = binding.path.isVariableDeclarator() && binding.path.get('init');
@@ -65,8 +67,9 @@ function constInits(exprPath, src) {
     }
   };
   follow(exprPath);
-  initCache.set(exprPath.node, found);
-  return found;
+  const result = { inits: found, calls };
+  initCache.set(exprPath.node, result);
+  return result;
 }
 
 // 이 노드가 렌더되거나 실행되려면 참이어야 하는 조건들을 파일 안에서 거슬러 올라가며 모은다.
@@ -108,7 +111,8 @@ function enclosingFunctionName(nodePath) {
 export async function extractClient(config) {
   const constants = await loadConstants(config);
   const apiModuleFiles = new Set(config.apiModules.map((rel) => path.join(config.srcRoot, rel)));
-  const constantFiles = new Set(Object.values(config.constants).map((rel) => path.join(config.srcRoot, rel)));
+  const constantFileOf = new Map(Object.entries(config.constants).map(([name, rel]) => [name, path.join(config.srcRoot, rel)]));
+  const constantFiles = new Set(constantFileOf.values());
   const settingsRoots = new Set(config.settingsRoots);
   const [routeRoot, ...routeRest] = config.routeConstant.split('.');
   const guardInits = new Map();
@@ -284,17 +288,70 @@ export async function extractClient(config) {
     else if (JSON.stringify(known.get(text)) !== JSON.stringify(result)) known.set(text, CONFLICT);
   }
 
+  const importedFile = new WeakMap();
+  const constantRoot = (id, file) => {
+    const { name } = id.node;
+    const binding = id.scope.getBinding(name);
+    if (!constantFileOf.has(name) || !id.parentPath.isMemberExpression({ object: id.node }) || !binding?.path.isImportDefaultSpecifier()) return false;
+    const declaration = binding.path.parent;
+    if (!importedFile.has(declaration)) importedFile.set(declaration, resolveImport(config.srcRoot, file, declaration.source.value));
+    return importedFile.get(declaration) === constantFileOf.get(name);
+  };
+
+  const helperCache = new WeakMap();
+  // 파일 맨 위의 const 에 담긴 함수가 식 하나만 돌려주고 그 식이 매개변수와 상수 모듈만 읽으면 { params, body } 를, 아니면 null 을 준다.
+  function helperOf(binding, file, src) {
+    if (helperCache.has(binding)) return helperCache.get(binding);
+    const fn = binding.kind === 'const' && binding.scope.path.isProgram() && binding.path.isVariableDeclarator() ? binding.path.get('init') : null;
+    let body = null;
+    if ((fn?.isArrowFunctionExpression() || fn?.isFunctionExpression()) && !fn.node.async && !fn.node.generator && fn.node.params.every((p) => p.type === 'Identifier')) {
+      const block = fn.get('body');
+      const [only, ...rest] = block.isBlockStatement() ? block.node.body : [];
+      if (!block.isBlockStatement()) body = block;
+      else if (only?.type === 'ReturnStatement' && only.argument && !rest.length && !block.node.directives.length) body = block.get('body.0.argument');
+    }
+    const isParam = (id) => fn.node.params.includes(id.scope.getBinding(id.node.name)?.path.node);
+    const readable = (p) => !p.isThisExpression() && !p.isFunction() && !p.isClass() && !p.isJSX() && !p.isMetaProperty() && !p.isImport() && (!p.isIdentifier() || isParam(p) || constantRoot(p, file));
+    let ok = Boolean(body) && readable(body);
+    if (ok) body.traverse({
+      enter(p) {
+        if (p.isIdentifier() && !p.isReferencedIdentifier()) return;
+        if (readable(p)) return;
+        ok = false;
+        p.stop();
+      },
+    });
+    const helper = ok ? { params: fn.node.params.map((p) => p.name), body: src.slice(body.node.start, body.node.end) } : null;
+    helperCache.set(binding, helper);
+    return helper;
+  }
+
+  // 같은 글자의 조건이 부르는 이름이 자리마다 다른 선언을 가리키면 어느 함수인지 모르므로 그 이름은 읽지 않는다.
+  // 같은 파일을 다시 파싱하면 Binding 객체가 달라지므로 선언 위치로 견준다.
+  function noteHelpers(entry, calls, file, src) {
+    entry.callees ??= new Map();
+    entry.helpers ??= new Map();
+    for (const [name, binding] of calls) {
+      const key = binding && `${file}:${binding.identifier.start}`;
+      if (!entry.callees.has(name)) {
+        entry.callees.set(name, key);
+        entry.helpers.set(name, binding && helperOf(binding, file, src));
+      } else if (entry.callees.get(name) !== key) entry.helpers.set(name, null);
+    }
+  }
+
   function guardNote(file, src) {
     const inits = mapOf(guardInits, file);
     // source 는 줄이지 않은 조건이다. 다른 조건이 같은 글자로 줄어들면 어느 것인지 모르므로 비운다.
     return (text, exprPath, negated, source) => {
-      const found = constInits(exprPath, src);
+      const { inits: found, calls } = constInits(exprPath, src);
       const known = inits.get(text);
       if (!known) inits.set(text, { source, inits: [...found] });
       else {
         if (known.source !== source) known.source = null;
         known.inits.push(...found.filter((f) => !known.inits.some((k) => k.name === f.name && k.init === f.init)));
       }
+      noteHelpers(inits.get(text), calls, path.join(config.srcRoot, file), src);
       noteSettings(file, text, negated ? needs.readNegated(exprPath) : needs.read(exprPath));
     };
   }

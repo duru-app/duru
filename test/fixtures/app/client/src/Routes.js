@@ -24,7 +24,7 @@ const AdminAudit = lazy(() => import('./components/AdminAudit'));
 const AdminReport = lazy(() => import('./components/AdminReport'));
 
 export default function Routes({ memberRole, session, globalSettings }) {
-  const isAdmin = isAdminRole(memberRole);
+  const isAdmin = canManageGroups(memberRole);
 
   return (
     <Switch>
@@ -48,4 +48,9 @@ export default function Routes({ memberRole, session, globalSettings }) {
       <Redirect to={Option.ROUTE_PATH.SIGN_IN} />
     </Switch>
   );
+}
+
+function canManageGroups(role) {
+  if (!role) return false;
+  return isAdminRole(role);
 }

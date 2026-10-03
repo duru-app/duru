@@ -1891,9 +1891,9 @@ test('in a browser, a screen opens as a role that logged in before one whose log
             assert.equal(await p.locator('#center iframe.app').getAttribute('src'), `${app.roles[1].url}/admin/report`);
             assert.match(await bar.textContent(), /OWNER 역할 duru-boss 로 로그인/);
 
-            await p.click('#screen-list li:has-text("/admin/member")');
+            await p.click('#screen-list li:has-text("/admin/group")');
             assert.match(await bar.locator('.error').first().textContent(), new RegExp(AUDITOR_PASSWORD_ENV));
-            assert.match(await bar.textContent(), /읽지 못한 역할 조건도 있습니다: isAdminRole\(memberRole\)/);
+            assert.match(await bar.textContent(), /읽지 못한 역할 조건도 있습니다: isAdmin\b/);
           }),
         ),
       ),
