@@ -456,7 +456,13 @@ no story file.
 ## Review page
 
 `review` serves a local page that reads `map.json` and `tests.json` from `outDir` (run `rebuild` first) and
-writes only into the marks folder. The left column lists the screens with a "no tests" filter, a "dead
+writes only into the marks folder. It opens on the flow view, with only the way to boxes whose tests are
+missing or failing opened (as 「빈틈만 펼치기」 does) on first load; after that the branches stay as the reviewer
+leaves them, also across visits to the list. A line on top reads 「테스트 있는 화면 n/전체 · 실패 n · 태그 없는
+테스트만 있는 화면 n」: screens with a tagged test, screens with a failing one, and screens with no tagged test
+but with tests linked by import (`flow.summary` in `/api/data`); a box adds 「불러옴 N」 for those (`imported` on
+each flow node), which neither its border nor 「빈틈만 펼치기」 counts. 「목록」 switches to the list described
+here. The left column lists the screens with a "no tests" filter, a "dead
 screens" filter, which keeps the screens that call an API missing on the server, and "opens only under a
 setting" and "opens only under a role" filters read from `access.kinds`; a screen that needs both shows under
 either, and a restricted screen with empty `kinds` shows under 「링크마다 다름」 instead. With `app` set, the middle starts with the chosen screen's app in a frame, served by duru on an address of

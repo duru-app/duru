@@ -46,6 +46,7 @@ export function buildFlow(map, tests, { from } = {}) {
       label: s.path,
       component: s.component,
       counts: countOf(tests.nodes[id]),
+      imported: tests.importers?.[id]?.length ?? 0,
       dead: Boolean(s.dead),
       restricted: s.access.restricted,
       kinds: s.access.kinds,
@@ -88,5 +89,19 @@ export function buildFlow(map, tests, { from } = {}) {
   const roots = plant((map.entries ?? []).map((e) => e.screen));
   const unreached = [];
   for (const s of map.screens) if (!placed.has(s.id)) unreached.push(...plant([s.id]));
-  return { roots, unreached };
+  return { roots, unreached, summary: summarize([...roots, ...unreached]) };
+}
+
+// 「불러옴」은 태그로 확정한 연결이 아니므로 테스트 있는 화면과 실패한 화면을 셀 때 넣지 않는다.
+function summarize(trees) {
+  const screens = [];
+  const walk = (n) => { screens.push(n); n.children.forEach(walk); };
+  trees.forEach(walk);
+  const tagged = (n) => n.counts.pass + n.counts.fail + n.counts.pending > 0;
+  return {
+    screens: screens.length,
+    tested: screens.filter(tagged).length,
+    failing: screens.filter((n) => n.counts.fail > 0).length,
+    importedOnly: screens.filter((n) => !tagged(n) && n.imported > 0).length,
+  };
 }

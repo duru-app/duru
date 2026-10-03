@@ -81,3 +81,21 @@ test('links from one screen to another that carry different guards are alternati
   assert.deepEqual(guardsOf([{ from: 'a', guards: [guard('X')] }, { from: 'a', guards: [guard('Y')] }]), [[guard('X')], [guard('Y')]]);
   assert.deepEqual(guardsOf([{ from: 'a', guards: [guard('X')] }, { from: 'a', guards: [] }]), []);
 });
+
+test('the flow counts the screens with tagged tests, with a failing test and with only imported tests, and each box carries its imported tests', () => {
+  assert.deepEqual(flow.summary, { screens: 11, tested: 7, failing: 5, importedOnly: 0 });
+  const find = (nodes, id) => nodes.map((n) => (n.id === id ? n : find(n.children, id))).find(Boolean);
+  assert.equal(find(flow.roots, '/help#Help').imported, 2);
+  assert.equal(find(flow.roots, '/home#Home').imported, 1);
+  assert.equal(find(flow.roots, '/admin/group#AdminGroup').imported, 0);
+});
+
+test('a screen with only imported tests counts as such, and one that also has a tagged test does not', () => {
+  const screen = (id, links = []) => ({ id, path: id, component: id, apiCalls: [], access: { kinds: [], links } });
+  const tiny = { screens: [screen('a'), screen('b', [{ from: 'a', guards: [] }]), screen('c', [{ from: 'a', guards: [] }])], entries: [{ screen: 'a' }] };
+  const imported = { title: 'unit', status: 'pass' };
+  const tests = { nodes: { a: [{ status: 'fail' }], b: [{ status: 'pass' }] }, importers: { b: [imported], c: [imported, imported] } };
+  const built = buildFlow(tiny, tests);
+  assert.deepEqual(built.summary, { screens: 3, tested: 2, failing: 1, importedOnly: 1 });
+  assert.deepEqual(built.roots[0].children.map((n) => [n.id, n.imported, n.counts.pass]), [['b', 1, 1], ['c', 2, 0]]);
+});
