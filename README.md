@@ -68,6 +68,8 @@ relative to the config file, except the files inside the client source (`routesF
   files (verdict); files in another format are skipped
 - `outDir` — where `map.json` and `tests.json` are written (default: the config's folder)
 - `marksDir` — folder where review marks are kept (default: `marks` in `outDir`)
+- `storiesDir` — folder of story files, or a single story file (default: `stories` in `outDir`); see
+  [Stories](#stories)
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
   variables to it
 - `app` — what the review page needs to show the app itself, logged in, in a frame (optional; replaces the
@@ -226,6 +228,9 @@ screen it comes from is restricted and needs it. A kind only some links ask for 
 link opens the screen without it, so a screen whose links ask for different kinds (a role on one, a setting on
 another) is restricted with empty `kinds`. An entry screen opens without a link, so the links into it add
 nothing to its `kinds`, `roleValues` or `settings`.
+Every link in a screen's own `links` also has `conditions`: all the guards around it, counted by the same
+handler rule, each with `kinds`, `roles` and `settings` as in `access` and with empty `kinds` when it is
+neither a setting nor a role guard.
 
 Each `role` guard also has `roles`: the role values that pass it, read from the guard and the consts it uses,
 or `null` when they cannot be read or no value passes. duru reads a comparison of a `roleIdentifiers` entry with a string
@@ -307,6 +312,77 @@ The name runs up to the first `: ` and may contain spaces. The word right after 
 pending result can be shown; for a word outside the table, `detail` is everything after the colon. Node
 tags go at the end of the line.
 
+## Stories
+
+A story is something a user gets done, written as the screens they pass through in order. Stories are
+kept in `storiesDir`, one JSON file per story, apart from the tests, so a story nobody has tested yet is
+still listed. duru reads them and never writes them.
+
+The file name without `.json` is the story ID: `open-document.json` is the story `open-document`. An ID
+uses only lowercase letters, digits, `-` and `_`, so it can go into a test tag and a file name as it is.
+Files may sit in subfolders; the subfolder does not change the ID. Symbolic links to a story file or a folder
+are followed. When `storiesDir` is a file, that file is
+the only story.
+
+```json
+{
+  "name": "로그인해 문서 목록에서 문서를 연다",
+  "screens": ["/signin#SignIn", "/home#Home", "/document/:tab_draft_done_#DocumentList", "/document/:id#DocumentDetail"],
+  "memo": "초안 탭에 문서가 하나 이상 있어야 한다.",
+  "author": "Kim Min",
+  "date": "2026-10-02"
+}
+```
+
+- `name` — what the user gets done, in one short sentence
+- `screens` — the screen IDs of the steps, first step first: one entry per screen the user lands on, written
+  once however many things they do there, so the same screen never comes twice in a row. Screen IDs are the
+  `id` of `screens` in `map.json`, also shown under the title of the chosen screen on the review page
+- `memo` (optional) — what the steps do not say, such as the account or the data the flow needs
+- `author` — who wrote the story
+- `date` — when, as `2026-10-02` (a full ISO date and time such as `2026-10-02T09:30:00Z` is accepted too)
+
+No other keys are allowed, `id` included. To write a story from a flow someone describes: find each place
+they go in `map.json` by its route path (and component, when one path has several), list those screen IDs
+in order, and save the file under a new ID that says what the flow does.
+
+A file that is not valid JSON, leaves out `name`, `screens`, `author` or `date`, has a value of the wrong
+kind, has another key, has a name outside the ID rule, or has an ID that a file earlier in path order already
+uses, whether or not that file could be read, is skipped and noted with its path and why. So is a symbolic
+link named `*.json` that points nowhere or cannot be followed, and so is a story folder that cannot be listed
+(one note on the folder). `rebuild` prints
+the notes with a count of stories, broken paths, detached stories and `unknown` steps, and the review page
+lists them under the stories. The other stories are read as usual.
+
+Each story is checked against the map, with the same result every time for the same story files and map:
+
+- Each step's screen is looked up on the map. A story with a screen the map does not have is detached, and
+  the two links next to that screen are not judged (`off-map`).
+- Between two neighbouring steps, duru lists every map link from the first screen to the second with its
+  source location and conditions. The step is `open` when one of those links has no condition, `conditioned`
+  when every one has, and `broken` when there is no such link: duru found no link in the map that joins the two
+  screens. When there is none but the first screen has links to a path duru cannot read, duru cannot tell where
+  those lead, so the step is `unknown` instead, not broken, with those links' source locations and `to` in
+  `unknownLinks`. A story with such a step has `unjudged`. When links join the two and every one has a
+  condition, such links are left out of the verdict and still listed in `unknownLinks`; next to an `open` step
+  they could not change anything and are not listed. A link to a path duru can read but no screen has is not a
+  link to the next screen. Redirects in the routes file are not followed, so a step whose only way goes
+  through such a redirect shows as `broken` (「링크 없음」 on the review page).
+  Conditions here are the link's `conditions` on the map: all the guards around the link, not only setting
+  and role guards, so a guard such as `doc.type !== 'FLEX'` is a condition too, with empty `kinds`.
+- 「사전 조건」 (what it takes to get to the end) gathers, in step order: what the first screen needs when
+  it opens only under a setting or a role (its `kinds` and `roleValues`), then for each step the conditions
+  of the links into it when they are `conditioned` (with the step's `unknownLinks`, if any), and the setting
+  and role guards of its route with the route's line in `routesFile`.
+
+A `map.json` written by a duru whose links did not carry `conditions` yet cannot be checked: while there are
+stories, the review data lists no story and carries one message asking to run `rebuild` as `stories.stale`,
+apart from the notes on story files; the rest of the review page and `tasks` work as usual.
+
+`test/fixtures/app/example-stories` holds example stories for the fake client: one that connects end to end,
+one through a link guarded by a setting, one with no link between two of its screens, one with a screen that
+is not on the map, and one malformed file.
+
 ## Review page
 
 `review` serves a local page that reads `map.json` and `tests.json` from `outDir` (run `rebuild` first) and
@@ -368,6 +444,24 @@ shows 「링크마다 다름」 here, on the links it makes and on its box in th
 guards, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it.
+
+Next to the screen list, the left column has a tab with the stories: each with its name, ID and number of
+screens, 「링크 없음」 when two neighbouring screens have no link between them, 「화면 없음」 when a screen is not on the
+map and 「판정 못 함」 when a step is `unknown`, and below the list the story files that could not be read, with
+why. When `stories.stale` is set, the request to run `rebuild` replaces the empty-list text and is not counted
+as a story file that could not be read. Choosing a story shows in the middle its name, ID, file, author, date and memo, then its screens in order
+with the verdict of the link between each two: 「이어짐」, 「조건」 or 「링크 없음」, or 「판정 못 함」 next to a screen the map does
+not have or where no link joins the two but the first screen has links to a path duru cannot read (listed
+with their source locations and paths), with the source location and conditions of every link; a `conditioned`
+step also lists, as left out of the verdict, the first screen's links to a path duru cannot read. Pressing a
+screen on the map opens it in the screen list. The right shows first the verdict on every line that applies —
+「도달 불가 · 링크 없음 N곳」 with the number of `broken` steps, 「판정 못 함 · 화면 없음」 when a screen is not on the map,
+「판정 못 함 · 주소 못 읽은 링크」 when a step is `unknown`, or 「도달 가능」 when none of these is so — and says when a
+`conditioned` step was judged with such links left out, then under 「사전 조건」 the source location of each condition,
+with 「링크 N개 중 하나」 over a step that several links reach.
+Stories are read again whenever the page loads its data, so a story file written during the review shows after
+a reload.
+`/api/data` carries the checked stories as `stories.list` and the notes as `stories.notices`.
 
 A mark targets a screen or an API call, or one depth of either, or one value of a call's option, or one depth
 of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "withHistory", "value": true },

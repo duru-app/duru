@@ -1,0 +1,7 @@
+{
+  "name": "홈에서 개인 설정을 바꾼다",
+  "screens": ["/home#Home", "/settings#Settings"],
+  "memo": "개인 설정 화면은 이름이 바뀌었을 수 있다.",
+  "author": "Kim Min",
+  "date": "2026-09-30"
+}

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { loadConfig } from './config.mjs';
 import { buildMap } from './map.mjs';
 import { gitUserName, startReviewServer } from './review.mjs';
+import { checkStoryFiles } from './story-paths.mjs';
 import { taskList } from './tasks.mjs';
 import { linkTests } from './test-links.mjs';
 
@@ -42,7 +43,7 @@ if (command === 'tasks') {
   });
   // 표준 출력에는 작업 목록만 나가야 리뷰를 띄운 에이전트가 그대로 읽을 수 있다.
   console.error(`review page http://127.0.0.1:${server.address().port}/`);
-  console.error(`marks ${config.marksDir} | author ${author ?? '(git user.name not set — the page asks for a name)'}`);
+  console.error(`marks ${config.marksDir} | stories ${config.storiesDir} | author ${author ?? '(git user.name not set — the page asks for a name)'}`);
 } else {
   fs.mkdirSync(config.outDir, { recursive: true });
   const write = (name, data) => {
@@ -71,5 +72,11 @@ if (command === 'tasks') {
     console.log(`calls with tests ${map.calls.filter((c) => links.nodes[c.id]).length}/${map.calls.length}`);
     for (const m of links.missingSources) console.log(`  missing test results ${m}`);
     for (const u of links.unknownTags) console.log(`  unknown ${u.tag} ← ${u.test.file}:${u.test.line} ${u.test.title}`);
+
+    const { list, notices, stale } = checkStoryFiles(map, config.storiesDir, path.join(config.outDir, 'map.json'));
+    const unjudged = list.flatMap((s) => s.links).filter((l) => l.verdict === 'unknown').length;
+    console.log(`stories ${list.length} | broken paths ${list.filter((s) => s.broken).length} | detached ${list.filter((s) => s.detached).length} | unjudged steps ${unjudged} | story files skipped ${notices.length}`);
+    for (const n of notices) console.log(`  story file ${n.file}: ${n.reason}`);
+    if (stale) console.log(`  ${stale}`);
   }
 }

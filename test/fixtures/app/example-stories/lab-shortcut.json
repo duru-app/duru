@@ -1,0 +1,6 @@
+{
+  "name": "홈에서 실험실 결과로 바로 간다",
+  "screens": "/home#Home > /lab/result#LabResult",
+  "author": "reviewer",
+  "date": "2026-10-02"
+}

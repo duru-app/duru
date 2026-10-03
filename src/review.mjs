@@ -6,6 +6,7 @@ import { SIGN_OUT_PATH, startAppHost } from './app-host.mjs';
 import { buildFlow } from './flow.mjs';
 import { addMark, classifyMarks, loadMarks } from './marks.mjs';
 import { fillPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.mjs';
+import { checkStoryFiles } from './story-paths.mjs';
 import { DEPTHS } from './test-links.mjs';
 
 const PAGE = path.join(import.meta.dirname, 'review-page.html');
@@ -42,7 +43,8 @@ function screenCallOptions(screen, callsById) {
 }
 
 export function reviewData(config, author, app = null, fileSettings = null) {
-  const map = readJson(path.join(config.outDir, 'map.json'));
+  const mapFile = path.join(config.outDir, 'map.json');
+  const map = readJson(mapFile);
   const tests = readJson(path.join(config.outDir, 'tests.json'));
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
   for (const s of map.screens) s.callOptions = screenCallOptions(s, callsById);
@@ -50,6 +52,8 @@ export function reviewData(config, author, app = null, fileSettings = null) {
     map,
     tests,
     marks: classifyMarks(loadMarks(config.marksDir), map),
+    stories: checkStoryFiles(map, config.storiesDir, mapFile),
+    storiesDir: config.storiesDir,
     flow: buildFlow(map, tests),
     appUrl: config.appUrl ?? null,
     app: app && {
