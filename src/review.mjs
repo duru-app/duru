@@ -48,11 +48,12 @@ export function reviewData(config, author, app = null, fileSettings = null) {
   const tests = readJson(path.join(config.outDir, 'tests.json'));
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
   for (const s of map.screens) s.callOptions = screenCallOptions(s, callsById);
+  const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
   return {
     map,
     tests,
-    marks: classifyMarks(loadMarks(config.marksDir), map),
-    stories: checkStoryFiles(map, config.storiesDir, mapFile, tests),
+    marks: classifyMarks(loadMarks(config.marksDir), map, storyIds),
+    stories,
     storiesDir: config.storiesDir,
     flow: buildFlow(map, tests),
     appUrl: config.appUrl ?? null,

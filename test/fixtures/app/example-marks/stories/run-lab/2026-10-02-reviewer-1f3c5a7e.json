@@ -1,0 +1,10 @@
+{
+  "id": "1f3c5a7e-8b2d-4c61-9e05-7a3f1d6b8c42",
+  "target": {
+    "story": "run-lab"
+  },
+  "status": "missing",
+  "note": "No test walks the lab to its result.",
+  "author": "reviewer",
+  "date": "2026-10-02T01:00:00.000Z"
+}

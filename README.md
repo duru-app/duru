@@ -21,8 +21,8 @@ traffic to learn from and "every screen under any configuration" is exactly what
 Early. The extractor handles a React Router client whose routes, API calls and settings reads follow
 consistent patterns. API calls are nodes of their own next to screens. Playwright, JUnit XML and Vitest
 JSON results attach to screens and calls through tags in their test names, and check scripts attach
-through the verdict lines they print. A local review page lets a person mark gaps on screens, and a task list
-hands the marked screens to a coding agent.
+through the verdict lines they print. A local review page lets a person mark gaps on screens and stories, and
+a task list hands what was marked to a coding agent.
 
 ## Usage
 
@@ -478,7 +478,11 @@ screen on the map opens it in the screen list. The right shows first the verdict
 「도달 불가 · 링크 없음 N곳」 with the number of `broken` steps, 「판정 못 함 · 화면 없음」 when a screen is not on the map,
 「판정 못 함 · 주소 못 읽은 링크」 when a step is `unknown`, or 「도달 가능」 when none of these is so — and says when a
 `conditioned` step was judged with such links left out, then under 「사전 조건」 the source location of each condition,
-with 「링크 N개 중 하나」 over a step that several links reach.
+with 「링크 N개 중 하나」 over a step that several links reach. Below that, the right holds the mark form for the story, with its
+history; the story list shows each story's current mark, and under the list 「떨어져 나감」 holds the marks
+whose story file is gone (the screen list's 「떨어져 나감」 holds only marks on screens and calls). Marks on
+stories missing from the list because their file cannot be read, or while `stories.stale` is set, are listed
+under 「목록 밖 스토리 표시」 below the story files that could not be read; choosing one opens its mark form.
 Stories are read again whenever the page loads its data, so a story file written during the review shows after
 a reload.
 `/api/data` carries the checked stories, each with its `status`, as `stories.list`, the notes as
@@ -486,18 +490,23 @@ a reload.
 
 A mark targets a screen or an API call, or one depth of either, or one value of a call's option, or one depth
 of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "withHistory", "value": true },
-"depth": "output" }`), and records a status (`needs-more`, `missing`,
+"depth": "output" }`), or a story (`{ "story": "run-lab" }`, with no `node`, `option` or `depth`: a story has
+no cells), and records a status (`needs-more`, `missing`,
 `fine`), a note, the author and the date. The author is `git config user.name` on the machine serving the
 page; when it is not set, the page asks for a name. Marks are never overwritten: marking a target again
 adds to its history, and the latest mark is its current state.
 
-Each mark is its own file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, and saving a mark only
+Each mark is its own file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, or
+`<marksDir>/stories/<story ID>/<date>-<author>-<short ID>.json` for a story, and saving a mark only
 creates a new file. Marks added on two machines therefore never touch the same file and merge in git without
-a conflict, and the file list of a pull request reads as which screens and calls were marked, by whom and when.
+a conflict, and the file list of a pull request reads as which screens, calls and stories were marked, by whom
+and when.
 The folder is the screen or call ID with characters that file names cannot hold replaced by `_`; which node a
 mark belongs to is read from the `target` inside the file, not from the folder. `rebuild` never touches the
 marks folder. A mark whose screen or call is gone from a rebuilt map, or whose option is no longer among the
-call's options, stays where it is and shows up under "detached" until someone deals with it.
+call's options, stays where it is and shows up under "detached" until someone deals with it. A mark on a story
+is detached only when no file for that story ID is left in `storiesDir`: one whose file is there but cannot be
+read stays attached, and so do marks on stories while `stories.stale` is set.
 
 `review` prints the page address and the marks folder on standard error and keeps running until the review
 ends. Pressing 「리뷰 끝」 on the page, or Ctrl+C in the terminal, closes the server, prints the task list on
@@ -511,7 +520,7 @@ same browser cannot end it.
 ## Task list
 
 `tasks` prints, as Markdown on standard output, every screen and API call whose current mark on the whole
-node, on one depth or on an option value is `needs-more` or `missing`. Marks whose current state is `fine` and detached marks are left out. Each
+node, on one depth or on an option value is `needs-more` or `missing`, and every story whose current mark is. Marks whose current state is `fine` and detached marks are left out. Each
 screen comes with its open marks and notes, the component file and route line, the app address when `appUrl`
 is set, the settings and roles it needs and where they are checked (with each link in, its guards and what
 the screen it comes from needs itself when it is restricted; `differs by link` for a screen, or the screen a link comes from, whose links
@@ -522,15 +531,30 @@ no option tag (`no option tag`) count the tests by depth and status. API calls w
 `# API calls`, each once however many screens call it, with its marks, the screens calling it, its server
 match and the tests already attached. A mark on an option value reads `withHistory=true` or
 `withHistory=true at output depth`; under `marked options`, each marked option says where it was found
-(file and line with the screens, or set in the config), and each marked cell lists the tests already in it. The list starts with how to tag new tests so that they attach after a
-`rebuild`. Adding tests does not take a screen or call off the list; a reviewer marking it `fine` does.
-`test/fixtures/app/example-marks` holds example marks for the fake client.
+(file and line with the screens, or set in the config), and each marked cell lists the tests already in it.
+
+Stories with an open mark follow under `# Stories`, in ID order, below a line naming the story folder. A story
+is listed for its mark, never for having no tests. Each comes with its name, its open mark and note, its
+file with author and date, its memo, its status, its story tests with depth and status, its screens in order,
+each with its tests counted by depth and status (or `not on the map`) and the link to the next screen (`open`
+or `conditioned` with each link's source location, `no link`, or `not judged` with why), then `reach`
+(`reachable`, `unreachable, no link at N steps`, or `not judged` with why) and `preconditions`: the
+「사전 조건」 of the review page, with the setting and role guards and every link into the first screen when it
+opens only under one, the route guards with their line, and the guards of `conditioned` links with their source
+locations. A story whose file is there but cannot be read lists only its mark and says so; `rebuild` prints
+why. While `stories.stale` is set, each story lists only its mark, under a request to run `rebuild`.
+
+The list starts with how to tag new tests so that they attach after a `rebuild`. Adding tests does not take a
+screen, call or story off the list; a reviewer marking it `fine` does.
+`test/fixtures/app/example-marks` holds example marks for the fake client, among them marks on the example
+stories and one on a story that has no file.
 
 ## Agent skill
 
 `skills/duru/SKILL.md` is a skill for a coding agent such as Claude Code. When the user asks for a duru review,
 it has the agent rebuild the map, launch `review` and hand the address to the user, write the tests in the
-target project from the task list it receives when the review ends, and rebuild again to confirm they attach.
+target project from the task list it receives when the review ends (for a story, one test tagged
+`@story:<story ID>` that goes through its screens), and rebuild again to confirm they attach.
 duru itself never calls a model. Install it by copying or symlinking the folder into the project's
 `.claude/skills` folder, or into `~/.claude/skills` for every project:
 

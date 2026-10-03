@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { STORY_ID } from './stories.mjs';
 import { DEPTHS } from './test-links.mjs';
 
 export const MARK_STATUSES = ['needs-more', 'missing', 'fine'];
@@ -26,28 +27,40 @@ export function loadMarks(dir) {
 // 표시 하나를 파일 하나로 저장하고 기존 파일은 고치지 않으므로, 두 사람이 따로 남긴 표시도 git 에서 충돌 없이 합쳐진다.
 // 어느 화면의 표시인지는 폴더 이름이 아니라 파일 안의 target 으로 정한다.
 function saveMark(dir, mark) {
-  const folder = path.join(dir, fileSafe(mark.target.node));
+  const { story, node } = mark.target;
+  const folder = story ? path.join(dir, 'stories', story) : path.join(dir, fileSafe(node));
   fs.mkdirSync(folder, { recursive: true });
   const name = `${mark.date.slice(0, 10)}-${fileSafe(mark.author)}-${mark.id.slice(0, 8)}.json`;
   fs.writeFileSync(path.join(folder, name), JSON.stringify(mark, null, 2) + '\n', { flag: 'wx' });
 }
 
-export function addMark(dir, { target, status, note, author }, now = new Date()) {
-  if (typeof target?.node !== 'string' || !target.node) throw new Error('mark target needs a node ID');
+function storyTarget(target) {
+  if (typeof target.story !== 'string' || !STORY_ID.test(target.story)) throw new Error(`"${target.story}" is not a story ID`);
+  if (['node', 'option', 'depth'].some((k) => target[k] !== undefined)) throw new Error('a story mark takes no node, option or depth');
+  return { story: target.story };
+}
+
+function nodeTarget(target) {
+  if (typeof target?.node !== 'string' || !target.node) throw new Error('mark target needs a node ID or a story ID');
   if (target.depth !== undefined && !DEPTHS.includes(target.depth)) throw new Error(`unknown depth "${target.depth}"`);
   const { option } = target;
   if (option !== undefined && (typeof option?.key !== 'string' || !option.key || typeof option.value !== 'boolean')) {
     throw new Error('mark option needs a key and a value of true or false');
   }
+  return {
+    node: target.node,
+    ...(option !== undefined && { option: { key: option.key, value: option.value } }),
+    ...(target.depth !== undefined && { depth: target.depth }),
+  };
+}
+
+export function addMark(dir, { target, status, note, author }, now = new Date()) {
+  const checked = target?.story !== undefined ? storyTarget(target) : nodeTarget(target);
   if (!MARK_STATUSES.includes(status)) throw new Error(`unknown mark status "${status}" (expected one of ${MARK_STATUSES.join(', ')})`);
   if (typeof author !== 'string' || !author.trim()) throw new Error('mark needs an author');
   const mark = {
     id: crypto.randomUUID(),
-    target: {
-      node: target.node,
-      ...(option !== undefined && { option: { key: option.key, value: option.value } }),
-      ...(target.depth !== undefined && { depth: target.depth }),
-    },
+    target: checked,
     status,
     note: typeof note === 'string' ? note : '',
     author: author.trim(),
@@ -57,14 +70,16 @@ export function addMark(dir, { target, status, note, author }, now = new Date())
   return mark;
 }
 
-const targetKey = (t) => [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth].filter(Boolean).join(' ');
+// 화면 · 호출 ID 에는 괄호가 들어가지 않으므로(map.mjs 의 TAG_FORBIDDEN) story(<ID>) 는 노드의 키가 될 수 없다.
+const targetKey = (t) => (t.story !== undefined ? `story(${t.story})` : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth].filter(Boolean).join(' '));
 
-export function classifyMarks(marks, map) {
+export function classifyMarks(marks, map, storyIds = []) {
   const nodes = new Map([
     ...map.screens.map((s) => [s.id, new Set()]),
     ...(map.calls ?? []).map((c) => [c.id, new Set((c.options ?? []).map((o) => o.key))]),
   ]);
-  const onMap = (t) => nodes.has(t.node) && (!t.option || nodes.get(t.node).has(t.option.key));
+  const stories = new Set(storyIds);
+  const isAttached = (t) => (t.story !== undefined ? stories.has(t.story) : nodes.has(t.node) && (!t.option || nodes.get(t.node).has(t.option.key)));
   const byTarget = new Map();
   const ordered = [...marks].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   for (const m of ordered) {
@@ -77,7 +92,7 @@ export function classifyMarks(marks, map) {
   for (const key of [...byTarget.keys()].sort()) {
     const history = byTarget.get(key);
     const entry = { key, target: history[0].target, current: history[0], history };
-    (onMap(entry.target) ? attached : detached).push(entry);
+    (isAttached(entry.target) ? attached : detached).push(entry);
   }
   return { attached, detached };
 }

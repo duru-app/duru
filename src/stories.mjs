@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { compare, isPlainObject } from './config.mjs';
 
-const STORY_ID = /^[a-z0-9_-]+$/;
+export const STORY_ID = /^[a-z0-9_-]+$/;
 const KEYS = ['name', 'screens', 'memo', 'author', 'date'];
 const DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
