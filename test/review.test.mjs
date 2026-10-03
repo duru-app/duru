@@ -16,10 +16,16 @@ import { taskList } from '../src/tasks.mjs';
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
 
-async function withRebuiltFixture(configPatch, fn) {
+async function withRebuiltFixture(configPatch, fn, edits = []) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    for (const [file, from, to] of edits) {
+      const target = path.join(copy, file);
+      const text = fs.readFileSync(target, 'utf8');
+      assert.ok(text.includes(from), `${file} has ${from}`);
+      fs.writeFileSync(target, text.replace(from, to));
+    }
     const configFile = path.join(copy, 'config.json');
     fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), ...configPatch }));
     execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
@@ -1055,7 +1061,10 @@ test('in a browser, the setting and role filters keep the screens that open only
 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        assert.match(await (await screenBox(p, '/admin/report#AdminReport')).locator('.l2').textContent(), / · 역할·설정 필요$/);
+        assert.doesNotMatch(await (await screenBox(p, '/admin/report#AdminReport')).locator('.l2').textContent(), /필요/);
+        const labResult = await screenBox(p, '/lab/result#LabResult');
+        assert.doesNotMatch(await labResult.locator('.l2').textContent(), /필요/);
+        assert.deepEqual(await needLines(labResult), ['설정 SYSTEM.LAB_ENABLED 켬']);
         assert.doesNotMatch(await (await screenBox(p, '/signin#SignIn')).locator('.l2').textContent(), /필요/);
       }),
     ),
@@ -1279,6 +1288,135 @@ test('in a browser, the flow graph opens calls and branches, folds them, and a b
       }),
     ),
   );
+});
+
+const needLines = (box) => box.locator('.need').allTextContents();
+const tipLines = async (box) => (await box.getAttribute('title')).split('\n').slice(1);
+
+test('in a browser, a flow box writes the roles and settings its screen needs, abridged on the box with the value first and in full on hover', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+
+        const audit = await screenBox(p, '/admin/audit#AdminAudit');
+        assert.deepEqual(await needLines(audit), ['역할 ADMIN 외 1']);
+        assert.deepEqual((await tipLines(audit)).filter((t) => t.startsWith('필요한')), ['필요한 역할: ADMIN, AUDITOR']);
+
+        const group = await screenBox(p, '/admin/group#AdminGroup');
+        assert.deepEqual(await needLines(group), ['역할 ADMIN미확인 1']);
+        assert.deepEqual((await tipLines(group)).filter((t) => /역할/.test(t)), ['필요한 역할: ADMIN', '읽지 못한 역할 조건: isAdmin']);
+
+        const lab = await screenBox(p, '/lab#Lab');
+        assert.deepEqual(await needLines(lab), ['설정 SYSTEM.LAB_ENABLED 켬']);
+        assert.deepEqual((await tipLines(lab)).filter((t) => t.startsWith('필요한')), ['필요한 설정: SYSTEM.LAB_ENABLED 켬']);
+
+        const report = await screenBox(p, '/admin/report#AdminReport');
+        assert.deepEqual(await needLines(report), ['역할 ADMIN 외 1', '설정 "ADMIN_REPORT" (ADMIN.LIST 에) 외 1']);
+        const valueFits = await report.locator('.need .text', { hasText: '설정' }).evaluate((e) => {
+          const range = document.createRange();
+          range.setStart(e.firstChild, 0);
+          const end = e.textContent.indexOf(' (');
+          range.setEnd(e.firstChild, end < 0 ? e.textContent.length : end);
+          return range.getBoundingClientRect().right <= e.getBoundingClientRect().right;
+        });
+        assert.ok(valueFits, 'the value is never the part cut off');
+        assert.equal(await report.locator('.need .text', { hasText: '역할' }).evaluate((e) => e.scrollWidth > e.clientWidth), false);
+        assert.deepEqual(await p.evaluate(() => nodeNeeds({ access: { settings: [{ from: 'route', unreadable: [], needs: [
+          { path: ['SYSTEM', 'MENU'], need: 'present' },
+          { path: ['SYSTEM', 'MENU', 'LIST'], need: 'includes', value: 'X' },
+        ] }] } }).lines.map((l) => l.text)), ['설정 "X" (MENU.LIST 에) 외 1']);
+        assert.deepEqual(await p.evaluate(() => nodeNeeds({ access: { roleValues: null, unreadableRoleGuards: [] } })), {
+          lines: [{ kind: 'role', text: '역할 미확인' }], tips: ['필요한 역할: 미확인'],
+        });
+        assert.deepEqual((await tipLines(report)).filter((t) => t.startsWith('필요한')), [
+          '필요한 역할: ADMIN, OWNER',
+          '필요한 설정: SYSTEM.MAIN_MENU.ADMIN.LIST 에 "ADMIN_REPORT"',
+          '필요한 설정: SYSTEM.MAIN_MENU.ADMIN 있음',
+        ]);
+
+        const boxes = await p.$$eval('#flow .box', (els) => els.map((e) => ({ id: e.title.split('\n')[0], left: e.offsetLeft, top: e.offsetTop, h: e.offsetHeight, over: e.scrollHeight > e.clientHeight })));
+        assert.deepEqual(boxes.filter((b) => b.over).map((b) => b.id), []);
+        for (const a of boxes) for (const b of boxes) {
+          if (a !== b && a.left === b.left) assert.ok(a.top + a.h <= b.top || b.top + b.h <= a.top, `${a.id} and ${b.id} do not overlap`);
+        }
+      }),
+    ),
+  );
+});
+
+test('in a browser, a flow box without role or setting conditions has no extra line and keeps its size', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+        const home = await screenBox(p, '/home#Home');
+        assert.equal(await home.locator('.need').count(), 0);
+        assert.equal(await home.evaluate((e) => e.offsetHeight), 60);
+        assert.deepEqual(await tipLines(home), []);
+        assert.equal(await (await screenBox(p, '/admin/audit#AdminAudit')).evaluate((e) => e.offsetHeight), 77);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a flow box sits midway between its first and last child and stays inside the canvas apart from the boxes in its column, whatever the box heights', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const trees = await p.evaluate(() => {
+          const call = (id) => ({ kind: 'call', id });
+          const screen = (id, access, children = [], calls = []) => {
+            if (calls.length) state.openCalls.add(id);
+            return { kind: 'screen', id, access, children, calls };
+          };
+          const role = { roleValues: ['ADMIN'], unreadableRoleGuards: [] };
+          const both = { ...role, settings: [{ from: 'route', needs: [{ path: ['A'], need: 'on' }], unreadable: [] }] };
+          const shapes = {
+            plainOverCalls: [screen('root', {}, [screen('a', {}, [], [call('a1')]), screen('b', {}, [], [call('b1')])])],
+            tallOverOneCall: [screen('root', {}, [screen('tall', role, [], [call('t1')]), screen('next', {}, [screen('grandchild', {})])])],
+            tallOverScreens: [screen('root', {}, [screen('p', both, [screen('p1', {})]), screen('q', both, [screen('q1', {})])])],
+            tallLast: [screen('tall', both, [], [call('t1')])],
+            tallOverTallOverCall: [screen('root', {}, [screen('x', {}, [], [call('x1')]), screen('outer', both, [screen('inner', role, [], [call('i1')])])])],
+          };
+          return Object.fromEntries(Object.entries(shapes).map(([name, roots]) => {
+            const { boxes, edges, height } = layoutTree(roots);
+            return [name, { height, edges: edges.map((e) => [`${e.x1}:${e.y1}`, e.y1, e.y2]), boxes: boxes.map((b) => ({ id: b.node.id, x: b.x, y: b.y, bottom: b.y + b.height })) }];
+          }));
+        });
+        for (const [name, { height, edges, boxes }] of Object.entries(trees)) {
+          for (const parent of new Set(edges.map(([from]) => from))) {
+            const ends = edges.filter(([from]) => from === parent).map(([, , y2]) => y2);
+            const [, y1] = edges.find(([from]) => from === parent);
+            assert.equal(y1, (Math.min(...ends) + Math.max(...ends)) / 2, `${name}: the box at ${parent} sits midway between its children`);
+          }
+          for (const b of boxes) assert.ok(b.y >= 0 && b.bottom <= height, `${name}: ${b.id} is inside the canvas`);
+          for (const a of boxes) for (const b of boxes) {
+            if (a !== b && a.x === b.x) assert.ok(a.bottom + 12 <= b.y || b.bottom + 12 <= a.y, `${name}: ${a.id} and ${b.id} keep a gap between them`);
+          }
+        }
+      }),
+    ),
+  );
+});
+
+test('in a browser, a flow box says when a setting condition could not be turned into a value', { skip: browserMissing }, async () => {
+  const edits = [
+    ['client/src/components/DocumentDetail.js', 'const helpEnabled = system.HELP_LINK_ENABLED;', 'const helpEnabled = () => system.HELP_LINK_ENABLED;'],
+    ['client/src/components/DocumentDetail.js', '{helpEnabled && <Link', '{helpEnabled() && <Link'],
+  ];
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+        const help = await screenBox(p, '/help#Help');
+        assert.match((await needLines(help)).join('\n'), /미확인 1/);
+        assert.ok((await tipLines(help)).some((t) => t.startsWith('정하지 못한 설정 조건: helpEnabled()')));
+      }),
+    ), edits);
 });
 
 test('in a browser, "back to start" returns one branch to how the page first drew it and leaves the rest alone', { skip: browserMissing }, async () => {
@@ -1953,6 +2091,10 @@ test('in a browser, choosing a screen behind a setting opens the frame with the 
             assert.deepEqual(await overridesOf(base), []);
             assert.equal(await bar.isHidden(), true);
             assert.ok(requests.every((r) => !r.includes('settings')));
+
+            await chooseScreen(p, '/lab/result');
+            await frame.locator('#lab:has-text("true")').waitFor();
+            assert.equal(await settingRow(p, 'SYSTEM.LAB_ENABLED').getAttribute('title'), '/lab#Lab 에서 물려받음');
           }),
         ),
       ),

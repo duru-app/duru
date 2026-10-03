@@ -123,7 +123,9 @@
   .box.screen:hover { border-color: var(--accent); }
   .box.call .l1, .box .l2, .box .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .box .l1 { font-weight: 600; }
-  .box .l2, .box .l3 { color: var(--muted); }
+  .box .l2, .box .l3, .box .need { color: var(--muted); }
+  .box .need { display: flex; align-items: center; gap: 6px; }
+  .box .need .flag { flex: none; color: var(--pending); }
   .box.screen .l1, .box .l3 { display: flex; align-items: center; gap: 4px; }
   .box .text { flex: 1; min-width: 0; }
   .box.s-pass { border-color: var(--pass); }
@@ -445,7 +447,7 @@ const samePlace = (o, path, item) => o.path.join('.') === path.join('.') && o.it
 const overrideIn = (list, path, item) => list.find((o) => samePlace(o, path, item));
 const overrides = () => state.data.app?.settings?.overrides ?? [];
 const quoted = (v) => JSON.stringify(v);
-const sourceLabel = (from) => (from === 'route' ? '라우트' : `${from} 에서 오는 링크`);
+const sourceLabel = (source) => (source.from === 'route' ? '라우트' : source.inherited ? `${source.from} 에서 물려받음` : `${source.from} 에서 오는 링크`);
 const valueAt = (v, keys) => keys.reduce((o, k) => (o !== null && typeof o === 'object' ? o[k] : undefined), v);
 
 function fileDefines(section, key) {
@@ -545,7 +547,7 @@ function settingRows(s) {
       const key = quoted([n.root, n.path, kind, kind === 'includes' ? n.value : null]);
       if (!rows.has(key)) rows.set(key, { needs: [], from: new Set() });
       rows.get(key).needs.push(n);
-      rows.get(key).from.add(sourceLabel(source.from));
+      rows.get(key).from.add(sourceLabel(source));
     }
   }
   return [...rows.values()];
@@ -604,14 +606,14 @@ function renderSettingsBar() {
   if (!bar || !s) return;
   const list = overrides();
   const rows = settingRows(s);
-  const unreadable = (s.access.settings ?? []).flatMap((x) => x.unreadable.map((u) => ({ ...u, from: x.from })));
+  const unreadable = (s.access.settings ?? []).flatMap((x) => x.unreadable.map((u) => ({ ...u, source: x })));
   const others = list.filter((o) => !rows.some((r) => samePlace(o, r.needs[0].path, r.needs[0].need === 'includes' ? r.needs[0].value : undefined)));
   bar.hidden = !rows.length && !unreadable.length && !list.length && !state.settingsError;
   bar.classList.toggle('overridden', list.length > 0);
   fill(bar,
     h('span', { class: 'title' }, list.length ? `설정 ${list.length}개 바꿈` : '설정'),
     rows.map((r) => settingControl(r, list)),
-    unreadable.map((u) => h('span', { class: 'setting blocked', title: sourceLabel(u.from) }, h('code', {}, u.guard), h('span', { class: 'reason' }, u.reason))),
+    unreadable.map((u) => h('span', { class: 'setting blocked', title: sourceLabel(u.source) }, h('code', {}, u.guard), h('span', { class: 'reason' }, u.reason))),
     others.length ? h('span', { class: 'others' }, '다른 화면에서 바꾼 설정 ', others.map((o) => h('span', { class: 'setting changed' }, h('code', {}, overrideText(o))))) : null,
     list.length ? h('button', { class: 'reset', onclick: () => updateSettings(() => []) }, '기본값으로') : null,
     state.data.app.settings?.fileError ? h('span', { class: 'file-error' }, state.data.app.settings.fileError) : null,
@@ -884,7 +886,7 @@ async function saveMark() {
   render();
 }
 
-const COL = 310, BOX_W = 260, ROW = 72, SCREEN_H = 60, CALL_H = 44;
+const COL = 310, BOX_W = 260, GAP = 12, SCREEN_H = 60, CALL_H = 44, LINE_H = 17;
 
 function svg(tag, attrs, ...children) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -964,26 +966,81 @@ const countText = (c) => (c.pass + c.fail + c.pending
   : '테스트 없음');
 const guardText = (alternatives) => alternatives.map((alt) => alt.map((g) => g.guard).join(' & ')).join(' 또는 ');
 
+// 노드에 쓰는 짧은 문구는 상자 끝에서 잘려도 값이 남도록 값을 앞에 두고 경로는 끝 두 마디만 적는다.
+const needText = (n, { short = false } = {}) => {
+  const path = (short ? n.path.slice(-2) : n.path).join('.');
+  if (n.need === 'includes') return short ? `${quoted(n.value)} (${path} 에)` : `${path} 에 ${quoted(n.value)}`;
+  if (n.need === 'equals') return short ? `${quoted(n.value)} (${path})` : `${path} = ${quoted(n.value)}`;
+  return `${path} ${{ on: '켬', off: '끔', present: '있음' }[n.need]}`;
+};
+
+const withMore = (items) => (items.length > 1 ? `${items[0]} 외 ${items.length - 1}` : items[0]);
+
+function nodeNeeds(n) {
+  const { roleValues, unreadableRoleGuards = [], settings } = n.access;
+  const lines = [];
+  const tips = [];
+  if (roleValues !== undefined) {
+    const unread = unreadableRoleGuards.length ? `미확인 ${unreadableRoleGuards.length}` : null;
+    if (roleValues) {
+      lines.push({ kind: 'role', text: `역할 ${withMore(roleValues)}`, flag: unread });
+      tips.push(`필요한 역할: ${roleValues.join(', ')}`);
+    } else {
+      lines.push({ kind: 'role', text: '역할 미확인' });
+      tips.push('필요한 역할: 미확인');
+    }
+    if (unread) tips.push(`읽지 못한 역할 조건: ${unreadableRoleGuards.join(', ')}`);
+  }
+  if (settings) {
+    const hasValue = (x) => x.need === 'includes' || x.need === 'equals';
+    const needs = [...new Map(settings.flatMap((x) => x.needs).map((x) => [needText(x), x]))]
+      .sort(([, a], [, b]) => hasValue(b) - hasValue(a));
+    const unread = [...new Set(settings.flatMap((x) => x.unreadable).map((u) => `${u.guard} (${u.reason})`))];
+    const flag = unread.length ? `미확인 ${unread.length}` : null;
+    if (needs.length || unread.length) lines.push({ kind: 'setting', text: needs.length ? `설정 ${withMore(needs.map(([, x]) => needText(x, { short: true })))}` : '설정 미확인', flag });
+    tips.push(...needs.map(([full]) => `필요한 설정: ${full}`));
+    tips.push(...unread.map((u) => `정하지 못한 설정 조건: ${u}`));
+  }
+  return { lines, tips };
+}
+
 function layoutTree(roots) {
   const boxes = [];
   const edges = [];
-  let row = 0;
-  const place = (node, depth) => {
-    const collapsed = state.collapsed.has(node.id) && node.children.length > 0;
-    const kids = collapsed ? [] : [...node.children, ...(state.openCalls.has(node.id) ? node.calls : [])];
-    const ys = kids.map((k) => (k.kind === 'screen' ? place(k, depth + 1) : placeCall(k, depth + 1)));
-    const y = ys.length ? (ys[0] + ys[ys.length - 1]) / 2 : row++ * ROW;
-    boxes.push({ node, x: depth * COL, y, collapsed });
-    kids.forEach((k, i) => edges.push({ x1: depth * COL + BOX_W, y1: y + SCREEN_H / 2, x2: (depth + 1) * COL, y2: ys[i] + (k.kind === 'screen' ? SCREEN_H : CALL_H) / 2, guards: k.kind === 'screen' ? k.guards : [] }));
-    return y;
+  let cursor = 0;
+  const middle = (b) => b.y + b.height / 2;
+  const lower = (fromBox, fromEdge, by) => {
+    for (const b of boxes.slice(fromBox)) b.y += by;
+    for (const e of edges.slice(fromEdge)) { e.y1 += by; e.y2 += by; }
+    cursor += by;
   };
-  const placeCall = (call, depth) => {
-    const y = row++ * ROW;
-    boxes.push({ node: call, x: depth * COL, y });
-    return y;
+  const place = (node, depth) => {
+    const isScreen = node.kind === 'screen';
+    const collapsed = isScreen && state.collapsed.has(node.id) && node.children.length > 0;
+    const kids = !isScreen || collapsed ? [] : [...node.children, ...(state.openCalls.has(node.id) ? node.calls : [])];
+    const needs = isScreen ? nodeNeeds(node) : null;
+    const height = isScreen ? SCREEN_H + LINE_H * needs.lines.length : CALL_H;
+    const top = cursor;
+    const fromBox = boxes.length;
+    const fromEdge = edges.length;
+    const placed = kids.map((k) => place(k, depth + 1));
+    let y = top;
+    if (placed.length) {
+      y = (middle(placed[0]) + middle(placed[placed.length - 1])) / 2 - height / 2;
+      // 부모가 자식들보다 커서 위로 넘치면 가지 전체를 내려 부모와 자식의 가운데를 맞춘다.
+      if (y < top) {
+        lower(fromBox, fromEdge, top - y);
+        y = top;
+      }
+    }
+    const self = { node, x: depth * COL, y, height, needs, collapsed };
+    boxes.push(self);
+    cursor = Math.max(cursor, y + height + GAP);
+    kids.forEach((k, i) => edges.push({ x1: depth * COL + BOX_W, y1: middle(self), x2: (depth + 1) * COL, y2: middle(placed[i]), guards: k.kind === 'screen' ? k.guards : [] }));
+    return self;
   };
   for (const r of roots) place(r, 0);
-  return { boxes, edges, height: row * ROW, width: Math.max(0, ...boxes.map((b) => b.x + BOX_W)) };
+  return { boxes, edges, height: cursor, width: Math.max(0, ...boxes.map((b) => b.x + BOX_W)) };
 }
 
 function screenBox(b) {
@@ -994,10 +1051,12 @@ function screenBox(b) {
   const showCalls = n.calls.length > 0 && !b.collapsed;
   const guardLabel = n.guards.length ? guardText(n.guards) : null;
   const l3text = [guardLabel ? `조건 ${guardLabel}` : null, ...n.jumps.map((j) => `→ ${j.label}`)].filter(Boolean).join(' · ');
-  const badges = [n.dead ? '죽은 화면' : null, n.kinds.length ? `${n.kinds.map((k) => KIND_LABEL[k]).join('·')} 필요` : n.restricted ? MIXED_KINDS : null].filter(Boolean).join(' · ');
+  const { needs } = b;
+  const bareKinds = n.kinds.filter((k) => !needs.lines.some((l) => l.kind === k));
+  const badges = [n.dead ? '죽은 화면' : null, bareKinds.length ? `${bareKinds.map((k) => KIND_LABEL[k]).join('·')} 필요` : !n.kinds.length && n.restricted ? MIXED_KINDS : null].filter(Boolean).join(' · ');
   return h('div', {
-    class: `box screen ${statusOf(counts)}`, style: `left:${b.x}px;top:${b.y}px;width:${BOX_W}px;height:${SCREEN_H}px`,
-    title: [n.id, guardLabel ? `이 링크의 조건: ${guardLabel}` : '', ...n.jumps.map((j) => `→ ${j.label}${j.guards.length ? ` (${guardText(j.guards)})` : ''}`)].filter(Boolean).join('\n'),
+    class: `box screen ${statusOf(counts)}`, style: `left:${b.x}px;top:${b.y}px;width:${BOX_W}px;height:${b.height}px`,
+    title: [n.id, guardLabel ? `이 링크의 조건: ${guardLabel}` : '', ...needs.tips, ...n.jumps.map((j) => `→ ${j.label}${j.guards.length ? ` (${guardText(j.guards)})` : ''}`)].filter(Boolean).join('\n'),
     onclick: () => { state.view = 'list'; select(n.id); },
   },
     h('div', { class: 'l1' },
@@ -1022,6 +1081,7 @@ function screenBox(b) {
         focusOn(n.id);
       } }, '◎') : null),
     h('div', { class: 'l2' }, countText(counts), b.collapsed ? h('span', {}, ' (하위 합)') : null, badges ? ` · ${badges}` : ''),
+    needs.lines.map((l) => h('div', { class: 'need' }, h('span', { class: 'text' }, l.text), l.flag ? h('span', { class: 'flag' }, l.flag) : null)),
     l3text || showCalls
       ? h('div', { class: 'l3' },
         h('span', { class: 'text' }, l3text),
@@ -1035,7 +1095,7 @@ function screenBox(b) {
 
 function callBox(b) {
   const c = b.node;
-  return h('div', { class: `box call ${statusOf(c.counts)}`, style: `left:${b.x}px;top:${b.y}px;width:${BOX_W}px;height:${CALL_H}px`, title: c.id },
+  return h('div', { class: `box call ${statusOf(c.counts)}`, style: `left:${b.x}px;top:${b.y}px;width:${BOX_W}px;height:${b.height}px`, title: c.id },
     h('div', { class: 'l1 mono' }, c.label),
     h('div', { class: 'l2' }, countText(c.counts), ` · ${serverText(c.server)}`));
 }
@@ -1068,7 +1128,7 @@ function renderFlow() {
       state.flowError ? h('span', { class: 'error' }, state.flowError) : null),
     h('div', { class: 'flowlegend' },
       h('span', {}, '진입 화면에서 링크를 따라 화면 → API 호출로 뻗습니다. 화면마다 처음 닿은 자리에 한 번만 그리고, 다른 가지로 가는 링크는 상자 안에 → 로 적습니다. 상자의 「API」 단추로 그 화면의 호출을, 「»」로 그 가지 전부를 펼치고, 「↺」로 그 가지를 처음 모양으로 되돌리고, 「◎」로 그 가지만 따로 봅니다.'),
-      h('span', {}, '점선: 설정·역할 조건이 걸린 링크(조건은 상자 셋째 줄) · 상자 테두리: 붙은 테스트(초록 전부 통과 · 빨강 실패 있음 · 노랑 보류 있음 · 점선 테스트 없음) · 상자를 누르면 목록에서 그 화면을 엽니다')),
+      h('span', {}, '점선: 설정·역할 조건이 걸린 링크(조건은 상자 맨 아래 줄) · 상자 테두리: 붙은 테스트(초록 전부 통과 · 빨강 실패 있음 · 노랑 보류 있음 · 점선 테스트 없음) · 상자를 누르면 목록에서 그 화면을 엽니다')),
     state.focus ? canvas(state.focus.roots)
       : roots.length ? canvas(roots) : h('p', { class: 'muted' }, '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.'),
     !state.focus && unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(unreached).length}`), canvas(unreached)] : null);

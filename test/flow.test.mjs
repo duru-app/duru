@@ -45,6 +45,16 @@ test('each screen box carries its test counts, its calls and whether it is dead 
   assert.deepEqual(find(flow.roots, '/document/:id#DocumentDetail').calls.find((c) => c.id.startsWith('PUT:')).counts, { pass: 0, fail: 1, pending: 0 });
 });
 
+test('each screen box carries the roles and settings its screen needs, and an open screen carries none', () => {
+  const find = (nodes, id) => nodes.map((n) => (n.id === id ? n : find(n.children, id))).find(Boolean);
+  assert.deepEqual(find(flow.roots, '/home#Home').access, {});
+  assert.deepEqual(find(flow.roots, '/admin/audit#AdminAudit').access, { roleValues: ['ADMIN', 'AUDITOR'], unreadableRoleGuards: [] });
+  assert.deepEqual(find(flow.roots, '/admin/group#AdminGroup').access, { roleValues: ['ADMIN'], unreadableRoleGuards: ['isAdmin'] });
+  const report = find(flow.roots, '/admin/report#AdminReport').access;
+  assert.deepEqual(report.roleValues, ['ADMIN', 'OWNER']);
+  assert.deepEqual([...new Set(report.settings.flatMap((x) => x.needs.map((n) => n.path.join('.'))))].sort(), ['SYSTEM.MAIN_MENU.ADMIN', 'SYSTEM.MAIN_MENU.ADMIN.LIST']);
+});
+
 test('a flow grown from one screen reaches every screen below it, including ones the full flow placed under another branch', () => {
   const focused = buildFlow(map, linkTests(config, map), { from: '/document/:tab_draft_done_#DocumentList' });
   assert.deepEqual(focused.roots.flatMap((r) => outline(r)), [
