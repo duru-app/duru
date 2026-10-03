@@ -106,8 +106,8 @@
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
   .importers p, .detached p { font-size: 12px; margin: 0 0 8px; }
   .importer .judge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
-  .importer .judge-row input { flex: 1 1 140px; min-width: 0; padding: 2px 6px; font-size: 12px; }
-  .importer button.discard, .importer button.hand-over, .importer button.undo { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .importer .judge-row input, .bulk-bar input.reason { flex: 1 1 140px; min-width: 0; padding: 2px 6px; font-size: 12px; }
+  .importer button.discard, .importer button.hand-over, .importer button.undo, .bulk-bar button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
   .discarded .importer, .awaiting-tag .importer, .detached .importer { margin-bottom: 10px; font-size: 12px; }
   .guard { display: block; }
   .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
@@ -151,6 +151,7 @@
   .views { display: flex; gap: 4px; }
   .views button { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
   .views button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
+  .views button:disabled { cursor: default; opacity: .6; }
   /* 상자를 재는 순간에는 내용이 짧아 스크롤바가 없으므로, 그때 잰 폭이 다 그린 뒤와 같도록 스크롤바 자리를 늘 비워 둔다. */
   #flow { height: calc(100vh - 49px); overflow: auto; scrollbar-gutter: stable; padding: 16px; }
   #flow h2 { margin: 20px 0 8px; }
@@ -223,6 +224,16 @@
   .test-pairs .pair .detail { font-size: 12px; color: var(--muted); }
   .test-pairs .pair .chip { flex: none; }
   .test-pairs .no-screens { margin: 0; }
+  .pair-row { display: flex; gap: 8px; align-items: flex-start; }
+  .pair-row .pick, .pair-row .pick-space { flex: none; width: 16px; margin: 12px 0 0; }
+  .pair-row .pair { flex: 1; min-width: 0; }
+  .bulk-bar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 8px 0; }
+  .bulk-bar input.reason { flex-basis: 200px; }
+  .bulk-bar button:disabled { cursor: default; opacity: .5; }
+  .bulk-bar .bulk-error { flex: 1 1 100%; margin: 0; font-size: 12px; white-space: pre-line; }
+  .screens li.locked, .story-path .step.on-map.locked { cursor: default; opacity: .6; }
+  .screens li.locked:not(.selected):hover { background: none; }
+  .story-path .step.on-map.locked:hover { border-color: var(--line); }
   .test .depth { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 4px; }
   .story-path .link { margin: 0 0 0 18px; padding: 6px 0 6px 18px; border-left: 2px solid var(--line); font-size: 13px; }
   .story-path .link.l-conditioned { border-left: 2px dashed var(--accent); }
@@ -287,7 +298,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, judgmentNotes: new Map(), untaggedTest: null, untaggedQuery: '' };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, judgmentNotes: new Map(), untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -351,7 +362,7 @@ async function load() {
     state.target = screen ? { node: screen.id } : null;
     state.draft = null;
   }
-  if (!untaggedTests().some((t) => untaggedKey(t) === state.untaggedTest)) state.untaggedTest = untaggedTests().length ? untaggedKey(untaggedTests()[0]) : null;
+  if (!untaggedTests().some((t) => untaggedKey(t) === state.untaggedTest)) setUntaggedTest(untaggedTests().length ? untaggedKey(untaggedTests()[0]) : null);
   const stories = state.data.stories.list;
   if (!stories.some((st) => st.id === state.story) && !unlistedMarks().some((m) => m.target.story === state.story)) {
     state.story = stories[0]?.id ?? null;
@@ -384,8 +395,14 @@ function selectStory(id) {
   render();
 }
 
-function selectUntaggedTest(key) {
+function setUntaggedTest(key) {
   state.untaggedTest = key;
+  if (state.bulk?.testKey !== key) state.bulk = key === null ? null : { testKey: key, picked: new Set(), note: '', error: null };
+}
+
+function selectUntaggedTest(key) {
+  if (state.bulkBusy) return;
+  setUntaggedTest(key);
   state.error = null;
   state.judgmentError = null;
   render();
@@ -399,6 +416,7 @@ function setSide(side) {
 }
 
 function openScreen(id) {
+  if (state.bulkBusy) return;
   state.side = 'screens';
   select(id);
 }
@@ -459,7 +477,7 @@ function visibleScreens() {
 function renderLeft() {
   const { marks, map, stories } = state.data;
   const left = document.getElementById('left');
-  const side = (key, label) => h('button', { class: state.side === key ? 'on' : '', onclick: () => setSide(key) }, label);
+  const side = (key, label) => h('button', { class: state.side === key ? 'on' : '', disabled: state.bulkBusy, onclick: () => setSide(key) }, label);
   const tabs = h('div', { class: 'views side' }, side('screens', `화면 ${map.screens.length}`), side('stories', `스토리 ${stories.list.length}`), side('untagged', `태그 없는 테스트 ${untaggedCount()}`));
   if (state.side === 'stories') return fill(left, tabs, storyList());
   if (state.side === 'untagged') {
@@ -521,7 +539,7 @@ function renderUntaggedList() {
   if (untaggedListMissing()) return fill(list, h('li', { class: 'muted' }, '목록이 없습니다.'));
   const q = state.untaggedQuery.trim().toLowerCase();
   const visible = untaggedTests().filter((t) => !q || t.title.toLowerCase().includes(q) || testPlace(t).toLowerCase().includes(q));
-  fill(list, ...visible.map((t) => h('li', { class: untaggedKey(t) === state.untaggedTest ? 'selected' : '', onclick: () => selectUntaggedTest(untaggedKey(t)) },
+  fill(list, ...visible.map((t) => h('li', { class: `${untaggedKey(t) === state.untaggedTest ? 'selected' : ''}${state.bulkBusy ? ' locked' : ''}`, onclick: () => selectUntaggedTest(untaggedKey(t)) },
     h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]),
     h('span', { class: 'name' }, h('span', { class: 'title' }, t.title), ' ', h('span', { class: 'muted mono' }, testPlace(t))))));
   if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 테스트가 없습니다.'));
@@ -609,6 +627,7 @@ function importerItem(t) {
     viaRow(t.via));
 }
 
+const REASON_PLACEHOLDER = '까닭 (버릴 때는 꼭) · 메모 (넘길 때는 선택)';
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
 const judgmentErrorOf = (key) => (state.judgmentError?.key === key ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null);
 
@@ -616,7 +635,7 @@ function judgmentForm(t, node) {
   const key = judgmentKey(t, node);
   const note = () => state.judgmentNotes.get(key) ?? '';
   return h('div', { class: 'judge-row' },
-    h('input', { type: 'text', class: 'reason', placeholder: '까닭 (버릴 때는 꼭) · 메모 (넘길 때는 선택)', value: note(), oninput: (e) => state.judgmentNotes.set(key, e.target.value) }),
+    h('input', { type: 'text', class: 'reason', placeholder: REASON_PLACEHOLDER, value: note(), oninput: (e) => state.judgmentNotes.set(key, e.target.value) }),
     h('button', { class: 'discard', title: '이 테스트와 이 화면의 짝을 다시 보이지 않게 합니다', onclick: () => saveJudgment({ test: t.ref, node, kind: 'discard', reason: note() }, key) }, '버리기'),
     h('button', { class: 'hand-over', title: '이 테스트에 이 화면의 태그를 달도록 작업 목록에 올립니다', onclick: () => saveJudgment({ test: t.ref, node, kind: 'hand-over', reason: note() }, key) }, '태그 달기로 넘기기'));
 }
@@ -1080,7 +1099,7 @@ function pairItem({ id, entry, label, cls, noteLabel }) {
     entry.judgment ? judgmentMeta(entry.judgment, noteLabel) : null);
   const stateChip = h('span', { class: `chip pair-state ${cls}` }, label);
   if (!s) return h('div', { class: 'step off-map pair' }, body, h('span', { class: 'chip l-off-map' }, '맵에 없는 화면'), stateChip);
-  return h('div', { class: 'step on-map pair', title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(id) }, body, stateChip);
+  return h('div', { class: `step on-map pair${state.bulkBusy ? ' locked' : ''}`, title: state.bulkBusy ? null : '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(id) }, body, stateChip);
 }
 
 function noScreensText(t) {
@@ -1090,6 +1109,36 @@ function noScreensText(t) {
   return `테스트가 불러오는 파일을 읽지 못했습니다.${reason ? ` ${reason}.` : ''}`;
 }
 
+// 맵에 없는 화면의 짝은 판단해도 되돌릴 곳이 없어 고르지 못하게 한다.
+const isPickable = (p) => !p.entry.judgment && Boolean(screenOf(p.id));
+
+function redrawBulk(focusSelector) {
+  renderUntaggedCenter();
+  document.querySelector(`#center ${focusSelector}`)?.focus();
+}
+
+function focusBulk(kind) {
+  const bar = document.querySelector('#center .bulk-bar');
+  (bar?.querySelector(`button.${kind}:enabled`) ?? bar?.querySelector('input'))?.focus();
+}
+
+function setPick(bulk, id, on) {
+  if (on) bulk.picked.add(id); else bulk.picked.delete(id);
+  redrawBulk(`input.pick[data-pair="${CSS.escape(id)}"]`);
+}
+
+function bulkBar(t, pickable, bulk) {
+  const count = pickable.filter((p) => bulk.picked.has(p.id)).length;
+  const button = (kind, cls, title, text) => h('button', { class: cls, title, disabled: state.bulkBusy || state.ending || !count, onclick: () => saveBulk(t, bulk, kind) }, `${text} (${count})`);
+  return h('div', { class: 'bulk-bar' },
+    h('label', {}, h('input', { type: 'checkbox', class: 'pick-all', checked: count === pickable.length, disabled: state.bulkBusy,
+      onchange: (e) => { bulk.picked = new Set(e.target.checked ? pickable.map((p) => p.id) : []); redrawBulk('input.pick-all'); } }), ' 모두 고르기'),
+    h('input', { type: 'text', class: 'reason', placeholder: REASON_PLACEHOLDER, value: bulk.note, disabled: state.bulkBusy, oninput: (e) => { bulk.note = e.target.value; } }),
+    button('discard', 'discard', '고른 짝을 다시 보이지 않게 합니다', '버리기'),
+    button('hand-over', 'hand-over', '고른 짝에 태그를 달도록 작업 목록에 올립니다', '태그 달기로 넘기기'),
+    bulk.error ? h('p', { class: 'error bulk-error' }, bulk.error) : null);
+}
+
 function renderUntaggedCenter() {
   clearCenterHead();
   const center = document.getElementById('center-body');
@@ -1097,14 +1146,23 @@ function renderUntaggedCenter() {
   const t = untaggedTests().find((x) => untaggedKey(x) === state.untaggedTest);
   if (!t) return fill(center, h('p', { class: 'muted' }, '태그 없는 테스트가 없습니다.'));
   const pairs = pairsOf(t);
+  const pickable = pairs.filter(isPickable);
+  const bulk = state.bulk;
+  for (const id of bulk.picked) if (!pickable.some((p) => p.id === id)) bulk.picked.delete(id);
+  const pickRow = (p) => h('div', { class: 'pair-row' },
+    isPickable(p)
+      ? h('input', { type: 'checkbox', class: 'pick', 'data-pair': p.id, checked: bulk.picked.has(p.id), disabled: state.bulkBusy, onchange: (e) => setPick(bulk, p.id, e.target.checked) })
+      : h('span', { class: 'pick-space' }),
+    pairItem(p));
   fill(center,
     h('div', { class: 'title-row' }, h('h3', {}, t.title), h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status])),
     h('div', { class: 'muted mono' }, testPlace(t)),
     h('div', { class: 'muted' }, `${t.format} · ${t.source}`),
     h('div', { class: 'test-pairs' },
       h('h2', {}, `이 테스트와 화면의 짝 ${pairs.length}`),
+      pickable.length ? bulkBar(t, pickable, bulk) : null,
       pairs.length
-        ? h('div', { class: 'story-path' }, pairs.map(pairItem))
+        ? h('div', { class: 'story-path' }, pairs.map(pickRow))
         : h('p', { class: 'muted no-screens' }, noScreensText(t))));
 }
 
@@ -1525,21 +1583,33 @@ async function saveMark(target, draftKey) {
   render();
 }
 
+const judgmentAuthor = () => state.data.author ?? authorStore.get();
+
+function judgmentProblem(author, kind, reason) {
+  if (!author.trim()) return '작성자 이름이 필요합니다.';
+  if (kind === 'discard' && !reason.trim()) return '버리는 까닭을 적어 주세요.';
+  return null;
+}
+
+async function postJudgment(judgment, author) {
+  try {
+    const res = await fetch('/api/judgments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...judgment, author }) });
+    if (!res.ok) throw new Error(await res.text());
+  } catch (err) {
+    return `저장하지 못했습니다: ${err.message}`;
+  }
+  return null;
+}
+
 async function saveJudgment(judgment, key) {
-  const author = state.data.author ?? authorStore.get();
+  const author = judgmentAuthor();
   const fail = (message) => {
     state.judgmentError = { key, message };
     render();
   };
   state.judgmentError = null;
-  if (!author.trim()) return fail('작성자 이름이 필요합니다.');
-  if (judgment.kind === 'discard' && !judgment.reason.trim()) return fail('버리는 까닭을 적어 주세요.');
-  try {
-    const res = await fetch('/api/judgments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...judgment, author }) });
-    if (!res.ok) throw new Error(await res.text());
-  } catch (err) {
-    return fail(`저장하지 못했습니다: ${err.message}`);
-  }
+  const problem = judgmentProblem(author, judgment.kind, judgment.reason) ?? await postJudgment(judgment, author);
+  if (problem) return fail(problem);
   state.judgmentNotes.delete(key);
   try {
     await load();
@@ -1547,6 +1617,45 @@ async function saveJudgment(judgment, key) {
     state.judgmentError = { key, message: `저장했지만 다시 읽지 못했습니다: ${err.message}` };
   }
   render();
+}
+
+async function saveBulk(t, bulk, kind) {
+  const chosen = pairsOf(t).filter((p) => isPickable(p) && bulk.picked.has(p.id));
+  const reason = bulk.note;
+  const author = judgmentAuthor();
+  bulk.error = null;
+  const problem = judgmentProblem(author, kind, reason);
+  if (problem) {
+    bulk.error = problem;
+    render();
+    return focusBulk(kind);
+  }
+  state.bulkBusy = true;
+  render();
+  const names = (list) => list.map((p) => screenLabel(p.id)).join(', ');
+  const saved = [];
+  let failure = null;
+  for (const p of chosen) {
+    failure = await postJudgment({ test: t.ref, node: p.id, kind, reason }, author);
+    if (failure) break;
+    saved.push(p);
+    bulk.picked.delete(p.id);
+  }
+  let reloadError = null;
+  try {
+    await load();
+  } catch (err) {
+    reloadError = `${saved.length ? '저장했지만 ' : ''}다시 읽지 못했습니다: ${err.message}`;
+  }
+  state.bulkBusy = false;
+  if (failure) {
+    bulk.error = [failure, `저장한 짝 ${saved.length}: ${names(saved) || '없음'}. 저장하지 못한 짝 ${chosen.length - saved.length}: ${names(chosen.slice(saved.length))}.`, reloadError].filter(Boolean).join('\n');
+  } else {
+    bulk.note = '';
+    bulk.error = reloadError;
+  }
+  render();
+  focusBulk(kind);
 }
 
 const GAP = 12, COL_GAP = 50, CELL_GAP = 24, CALL_INDENT = 16, GROUP_SPACE = 24, GROUP_HEAD_H = 28;
@@ -2223,8 +2332,12 @@ function render() {
   const flow = state.view === 'flow';
   document.querySelector('main').hidden = flow;
   document.getElementById('flow').hidden = !flow;
-  document.getElementById('view-list').className = flow ? '' : 'on';
-  document.getElementById('view-flow').className = flow ? 'on' : '';
+  const viewList = document.getElementById('view-list');
+  const viewFlow = document.getElementById('view-flow');
+  viewList.className = flow ? '' : 'on';
+  viewFlow.className = flow ? 'on' : '';
+  viewList.disabled = viewFlow.disabled = state.bulkBusy;
+  document.getElementById('end-review').disabled = state.bulkBusy || state.ending;
   if (flow) return renderFlow();
   renderLeft();
   renderCenter();
@@ -2244,9 +2357,9 @@ function showEnded(message) {
 
 async function endReview() {
   if (hasUnsavedMark() && !confirm('「표시 남기기」를 누르지 않은 표시가 있습니다. 이 표시는 작업 목록에 들어가지 않습니다. 그래도 리뷰를 끝낼까요?')) return;
-  const button = document.getElementById('end-review');
   const error = document.getElementById('end-error');
-  button.disabled = true;
+  state.ending = true;
+  render();
   error.textContent = '';
   let res;
   try {
@@ -2255,7 +2368,8 @@ async function endReview() {
     return showEnded('리뷰 페이지 서버가 이미 닫혔습니다. 다른 창에서 리뷰를 끝냈거나 터미널에서 멈춘 것입니다. 이 창은 닫아도 됩니다.');
   }
   if (!res.ok) {
-    button.disabled = false;
+    state.ending = false;
+    render();
     error.textContent = `리뷰를 끝내지 못했습니다: ${await res.text()}`;
     return;
   }

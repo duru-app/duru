@@ -5736,7 +5736,7 @@ test('in a browser, choosing a story clears a discard error that failed to save 
         const first = p.locator('#center .importers .importer').first();
         await first.locator('input.reason').fill('only renders a shared header');
         await first.locator('button.discard').click();
-        while (!held) await new Promise((resolve) => setTimeout(resolve, 20));
+        await untilSet(() => held, 'the first judgment request');
         await p.click('#left .views.side button:has-text("스토리")');
         await held.fulfill({ status: 500, body: 'disk full' });
         await p.waitForFunction(() => state.judgmentError !== null);
@@ -5757,7 +5757,7 @@ test('in a browser, a discard that fails to save after another screen was select
         const first = p.locator('#center .importers .importer').first();
         await first.locator('input.reason').fill('only renders a shared header');
         await first.locator('button.discard').click();
-        while (!held) await new Promise((resolve) => setTimeout(resolve, 20));
+        await untilSet(() => held, 'the first judgment request');
         await p.click('#screen-list li:not(:has-text("/help"))');
         assert.equal(await p.locator('#center .judgment-error').count(), 0);
         await held.fulfill({ status: 500, body: 'disk full' });
@@ -5879,7 +5879,7 @@ test('in a browser, a chosen untagged test shows the screens it imports with the
         assert.deepEqual(await pairs.locator('.screen-path').allTextContents(), ['/document/:tab(draft|done)', '/home']);
         assert.deepEqual(await pairs.locator('.via').allTextContents(), ['components/DocumentTable.js', 'components/DocumentTable.js']);
         assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['불러옴', '불러옴']);
-        assert.equal(await p.locator('#center button').count(), 0);
+        assert.equal(await p.locator('#center .pair button').count(), 0);
 
         await pairs.filter({ hasText: '/home' }).click();
         assert.equal(await p.getAttribute('#left .views.side button.on', 'class'), 'on');
@@ -6039,5 +6039,565 @@ test('in a browser, the imported-only filter keeps the screens with importing te
         assert.equal(await counts('/help'), '테스트 없음불러옴 2');
         await p.uncheck('#left input[name="imported-only"]');
         assert.equal(await p.locator('#screen-list li').count(), 11);
+      })));
+});
+
+const LIST_NODE = '/document/:tab_draft_done_#DocumentList';
+const HOME_NODE = '/home#Home';
+const pick = '#center .pair-row input.pick';
+const bulk = '#center .bulk-bar';
+
+async function openDocumentTable(p) {
+  await p.waitForSelector('#screen-list li');
+  await p.click(untaggedTab);
+  await p.click('#untagged-list li:has-text("DocumentTable")');
+}
+
+const untilSet = async (get, what, ms = 10_000) => {
+  const deadline = Date.now() + ms;
+  while (!get()) {
+    if (Date.now() > deadline) throw new Error(`timed out after ${ms} ms waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return get();
+};
+
+const judgedBy = (config) => loadJudgments(config.judgmentsDir).judgments.map((j) => [j.node, j.kind, j.reason, j.author]).sort();
+
+test('in a browser, only the pairs that still import get a checkbox, the bulk buttons stay disabled until a pair is picked and say how many are', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: HOME_NODE, kind: 'discard', reason: 'only lists documents', author: 'reviewer' });
+        await p.reload();
+        await toList(p);
+        await openDocumentTable(p);
+        assert.equal(await p.locator('#center .pair').count(), 2);
+        assert.equal(await p.locator(pick).count(), 1);
+        assert.equal(await p.locator('#center .pair', { hasText: '/home' }).locator('input').count(), 0);
+        assert.equal(await p.locator('#center .pair', { hasText: '/home' }).locator('button').count(), 0);
+        assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), true);
+        assert.equal(await p.locator(`${bulk} button.discard`).isDisabled(), true);
+        assert.equal(await p.textContent(`${bulk} button.hand-over`), '태그 달기로 넘기기 (0)');
+        assert.equal(await p.locator(`${bulk} input.reason`).evaluate((el) => getComputedStyle(el).flexBasis), '200px');
+
+        await p.check(pick);
+        assert.equal(await p.textContent(`${bulk} button.hand-over`), '태그 달기로 넘기기 (1)');
+        assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (1)');
+        assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), false);
+        assert.equal(await p.locator('#left .views.side button.on').textContent(), '태그 없는 테스트 13');
+        assert.equal(await p.locator('#screen-list').count(), 0);
+        await p.uncheck(pick);
+        assert.equal(await p.locator(`${bulk} button.discard`).isDisabled(), true);
+      })));
+});
+
+test('in a browser, picking a pair does not open its screen, and the pick-all box picks every pair that can be judged', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        await p.check(pick.concat(' >> nth=0'));
+        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없는 테스트 13');
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
+        assert.equal(await p.locator(`${bulk} input.pick-all`).isChecked(), false);
+
+        await p.check(`${bulk} input.pick-all`);
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
+        assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (2)');
+        await p.uncheck(`${bulk} input.pick-all`);
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 0);
+        assert.equal(await p.locator(`${bulk} input.pick-all`).isChecked(), false);
+        assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), true);
+      })));
+});
+
+test('in a browser, a pair whose screen is not on the map has no checkbox and is not picked by the pick-all box', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const res = await route.fetch();
+          const data = await res.json();
+          data.map.screens = data.map.screens.filter((s) => s.id !== HOME_NODE);
+          await route.fulfill({ response: res, json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await openDocumentTable(p);
+        assert.equal(await p.locator('#center .pair').count(), 2);
+        assert.equal(await p.locator(pick).count(), 1);
+        assert.equal(await p.locator('#center .pair.off-map input').count(), 0);
+        await p.check(`${bulk} input.pick-all`);
+        assert.equal(await p.textContent(`${bulk} button.hand-over`), '태그 달기로 넘기기 (1)');
+      })));
+});
+
+test('in a browser, several pairs of one untagged test are handed over in one go with one note, each as its own judgment file', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        await p.check(`${bulk} input.pick-all`);
+        await p.fill(`${bulk} input.reason`, 'covers the list');
+        await p.click(`${bulk} button.hand-over`);
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
+
+        assert.deepEqual(judgedBy(config), [
+          [LIST_NODE, 'hand-over', 'covers the list', 'reviewer'],
+          [HOME_NODE, 'hand-over', 'covers the list', 'reviewer'],
+        ]);
+        const files = fs.readdirSync(config.judgmentsDir, { recursive: true }).filter((f) => f.endsWith('.json'));
+        assert.equal(files.length, 2);
+        assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['태그 달기 대기', '태그 달기 대기']);
+        assert.equal(await p.locator(pick).count(), 0);
+        assert.equal(await p.locator(bulk).count(), 0);
+
+        await p.locator('#center .pair', { hasText: '/home' }).click();
+        assert.match(await p.textContent('#center .awaiting-tag'), /DocumentTable › lists the documents it is given.*covers the list/s);
+        assert.doesNotMatch(await p.textContent('#center'), /불러오는 테스트/);
+      })));
+});
+
+test('in a browser, several pairs of one untagged test are discarded in one go with one reason, and a discard without a reason sends nothing', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        await p.check(`${bulk} input.pick-all`);
+        await p.click(`${bulk} button.discard`);
+        await p.locator(`${bulk} .bulk-error`).waitFor();
+        assert.equal(await p.textContent(`${bulk} .bulk-error`), '버리는 까닭을 적어 주세요.');
+        assert.equal(fs.existsSync(config.judgmentsDir), false);
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
+
+        await p.fill(`${bulk} input.reason`, 'only lists documents');
+        await p.click(`${bulk} button.discard`);
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.muted').length === 2);
+        assert.deepEqual(judgedBy(config), [
+          [LIST_NODE, 'discard', 'only lists documents', 'reviewer'],
+          [HOME_NODE, 'discard', 'only lists documents', 'reviewer'],
+        ]);
+        assert.equal(await p.locator(bulk).count(), 0);
+
+        await p.locator('#center .pair', { hasText: '/home' }).click();
+        assert.equal(await p.textContent('#center .discarded h2'), '버린 짝 1');
+        assert.equal(await p.locator('#center .importers').filter({ hasText: 'DocumentTable' }).count(), 0);
+      })));
+});
+
+test('in a browser, a hand-over without a note is accepted in bulk', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        await p.check(`${bulk} input.pick-all`);
+        await p.click(`${bulk} button.hand-over`);
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
+        assert.deepEqual(judgedBy(config).map((j) => j[2]), ['', '']);
+      })));
+});
+
+test('in a browser, every pair judged in bulk is undone one at a time from its screen', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        await p.check(`${bulk} input.pick-all`);
+        await p.click(`${bulk} button.hand-over`);
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
+
+        await p.locator('#center .pair', { hasText: '/home' }).click();
+        await p.click('#center .awaiting-tag button.undo');
+        await p.waitForSelector('#center .awaiting-tag', { state: 'detached' });
+        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => j.kind).sort(), ['hand-over', 'hand-over', 'undo']);
+
+        await p.click(untaggedTab);
+        await p.click('#untagged-list li:has-text("DocumentTable")');
+        assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['태그 달기 대기', '불러옴']);
+        assert.equal(await p.locator(pick).count(), 1);
+        assert.equal(await p.locator('#center .pair-row', { hasText: '/home' }).locator('input.pick').count(), 1);
+      })));
+});
+
+test('in a browser, the pick survives a redraw, goes when another test is chosen, and drops a pair that is judged elsewhere', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        await p.check(`${bulk} input.pick-all`);
+        await p.fill(`${bulk} input.reason`, 'typed note');
+        await p.evaluate(() => render());
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
+        assert.equal(await p.inputValue(`${bulk} input.reason`), 'typed note');
+
+        addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: HOME_NODE, kind: 'discard', reason: 'judged elsewhere', author: 'someone' });
+        await p.evaluate(async () => { await load(); render(); });
+        assert.equal(await p.locator(pick).count(), 1);
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
+        assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (1)');
+
+        await p.click('#untagged-list li:has-text("loads the detail screen only when it is needed")');
+        await p.click('#untagged-list li:has-text("DocumentTable")');
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 0);
+        assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (0)');
+      })));
+});
+
+test('in a browser, a bulk save that fails midway stops, keeps the unsaved pairs picked and says which pairs were saved and which were not', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openDocumentTable(p);
+        let calls = 0;
+        const refuse = async (route) => {
+          calls += 1;
+          if (calls === 2) await route.fulfill({ status: 500, body: 'disk full' });
+          else await route.continue();
+        };
+        await p.route('**/api/judgments', refuse);
+        await p.check(`${bulk} input.pick-all`);
+        await p.fill(`${bulk} input.reason`, 'covers the list');
+        await p.click(`${bulk} button.hand-over`);
+        await p.locator(`${bulk} .bulk-error`).waitFor();
+
+        assert.equal(calls, 2);
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+        assert.deepEqual(judgedBy(config), [[LIST_NODE, 'hand-over', 'covers the list', 'reviewer']]);
+        const message = await p.textContent(`${bulk} .bulk-error`);
+        assert.match(message, /^저장하지 못했습니다: disk full\n저장한 짝 1: /);
+        assert.match(message, /저장한 짝.*\/document\/:tab\(draft\|done\)/s);
+        assert.match(message, /저장하지 못한 짝.*\/home/s);
+        assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['태그 달기 대기', '불러옴']);
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
+        assert.equal(await p.locator('#center .pair-row', { hasText: '/home' }).locator('input.pick').isChecked(), true);
+        assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), false);
+        assert.equal(await p.inputValue(`${bulk} input.reason`), 'covers the list');
+
+        await p.unroute('**/api/judgments', refuse);
+        await p.click(`${bulk} button.hand-over`);
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
+        assert.equal(await p.locator(`${bulk} .bulk-error`).count(), 0);
+        assert.equal(judgedBy(config).length, 2);
+      })));
+});
+
+test('in a browser, the bulk controls stay disabled while the requests are in flight', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        let held;
+        let calls = 0;
+        await p.route('**/api/judgments', (route) => {
+          calls += 1;
+          if (calls === 1) held = route;
+          else route.continue();
+        });
+        await p.check(`${bulk} input.pick-all`);
+        await p.fill(`${bulk} input.reason`, 'only lists documents');
+        await p.click(`${bulk} button.discard`);
+        await untilSet(() => held, 'the first judgment request');
+        for (const sel of [`${bulk} button.discard`, `${bulk} button.hand-over`, `${bulk} input.pick-all`, `${bulk} input.reason`, pick]) {
+          assert.equal(await p.locator(sel).first().isDisabled(), true, sel);
+        }
+        await p.locator(`${bulk} button.discard`).click({ force: true });
+        assert.equal(calls, 1);
+        await held.continue();
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.muted').length === 2);
+        assert.equal(judgedBy(config).length, 2);
+      })));
+});
+
+test('in a browser, nothing leaves the test while a bulk is in flight, and the report of a bulk that fails midway is there when it ends', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openDocumentTable(p);
+        const ended = [];
+        p.on('request', (r) => r.url().endsWith('/api/end') && ended.push(r.url()));
+        let held;
+        let calls = 0;
+        await p.route('**/api/judgments', (route) => {
+          calls += 1;
+          if (calls === 1) held = route;
+          else route.fulfill({ status: 500, body: 'disk full' });
+        });
+        await p.check(`${bulk} input.pick-all`);
+        await p.fill(`${bulk} input.reason`, 'covers the list');
+        await p.click(`${bulk} button.hand-over`);
+        await untilSet(() => held, 'the first judgment request');
+
+        for (const sel of ['#left .views.side button', '#view-list', '#view-flow', '#end-review']) {
+          for (const el of await p.locator(sel).all()) assert.equal(await el.isDisabled(), true, sel);
+        }
+        const style = (sel, prop) => p.locator(sel).first().evaluate((el, name) => getComputedStyle(el)[name], prop);
+        const otherTest = '#untagged-list li:has-text("loads the detail screen only when it is needed")';
+        const homePair = '#center .pair:has-text("/home")';
+        for (const sel of [otherTest, homePair]) {
+          assert.equal(await style(sel, 'cursor'), 'default', sel);
+          assert.equal(await p.locator(sel).first().getAttribute('title'), null, sel);
+        }
+        const lineBefore = await style(homePair, 'borderColor');
+        await p.hover(homePair, { force: true });
+        assert.equal(await style(homePair, 'borderColor'), lineBefore);
+        await p.hover(otherTest, { force: true });
+        assert.equal(await style(otherTest, 'backgroundColor'), 'rgba(0, 0, 0, 0)');
+
+        await p.locator(otherTest).click({ force: true });
+        assert.equal(await p.textContent('#untagged-list li.selected .title'), DOCUMENT_TABLE.title);
+        assert.equal(await p.textContent('#center h3'), DOCUMENT_TABLE.title);
+        await p.locator(homePair).click({ force: true });
+        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없는 테스트 13');
+        assert.equal(await p.locator(`${bulk} button.hand-over`).count(), 1);
+        await p.locator('#left .views.side button:not(.on)').first().click({ force: true });
+        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없는 테스트 13');
+        await p.locator('#view-flow').click({ force: true });
+        assert.equal(await p.locator('main').isVisible(), true);
+        await p.locator('#end-review').click({ force: true });
+        assert.deepEqual(ended, []);
+
+        await held.continue();
+        await p.locator(`${bulk} .bulk-error`).waitFor();
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+        assert.match(await p.textContent(`${bulk} .bulk-error`), /저장한 짝 1.*\/document\/:tab\(draft\|done\).*저장하지 못한 짝 1.*\/home/s);
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
+        assert.equal(await p.locator('#end-review').isDisabled(), false);
+        assert.equal(await p.locator('#view-flow').isDisabled(), false);
+        assert.equal(await p.locator('#left .views.side button').first().isDisabled(), false);
+        assert.deepEqual(ended, []);
+      })));
+});
+
+test('in a browser, while the end request is pending a bulk cannot start and the end button cannot be pressed twice, and a refused end unlocks both', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openDocumentTable(p);
+        const ended = [];
+        p.on('request', (r) => r.url().endsWith('/api/end') && ended.push(r.url()));
+        const judged = [];
+        p.on('request', (r) => r.url().endsWith('/api/judgments') && judged.push(r.url()));
+        let held;
+        await p.route('**/api/end', (route) => { held = route; });
+        await p.check(`${bulk} input.pick-all`);
+        await p.fill(`${bulk} input.reason`, 'covers the list');
+        await p.click('#end-review');
+        await untilSet(() => held, 'the end request');
+
+        assert.equal(await p.locator('#end-review').isDisabled(), true);
+        for (const kind of ['hand-over', 'discard']) {
+          assert.equal(await p.locator(`${bulk} button.${kind}`).isDisabled(), true, kind);
+          await p.locator(`${bulk} button.${kind}`).click({ force: true });
+        }
+        await p.locator('#end-review').click({ force: true });
+        assert.deepEqual(judged, []);
+        assert.equal(ended.length, 1);
+
+        await held.fulfill({ status: 500, body: 'cannot end' });
+        await p.waitForFunction(() => !document.getElementById('end-review').disabled);
+        assert.match(await p.textContent('#end-error'), /cannot end/);
+        assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), false);
+        assert.equal(await p.locator(`${bulk} button.discard`).isDisabled(), false);
+        errors.splice(0);
+        await p.unroute('**/api/end');
+        await p.click(`${bulk} button.hand-over`);
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
+        assert.equal(judged.length, 2);
+      })));
+});
+
+test('in a browser, the page that was told the review ended shows the ended screen without errors when the end request was pending while the buttons were pressed', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        let held;
+        await p.route('**/api/end', (route) => { held = route; });
+        await p.check(`${bulk} input.pick-all`);
+        await p.fill(`${bulk} input.reason`, 'covers the list');
+        await p.click('#end-review');
+        await untilSet(() => held, 'the end request');
+        await p.locator(`${bulk} button.hand-over`).click({ force: true });
+        await held.continue();
+        await p.locator('#ended').waitFor();
+        assert.match(await p.textContent('#ended'), /리뷰를 끝냈습니다/);
+        assert.deepEqual(judgedBy(config), []);
+      })));
+});
+
+test('in a browser, the keyboard focus goes back to the bulk button that was pressed once the bulk ends, or to the first control of the bar when that button is off', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openDocumentTable(p);
+        const active = () => p.evaluate(() => document.activeElement.className);
+        const pressEnterOn = async (sel) => {
+          await p.focus(sel);
+          await p.keyboard.press('Enter');
+        };
+        await p.check(`${pick}[data-pair="${LIST_NODE}"]`);
+        await pressEnterOn(`${bulk} button.hand-over`);
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 1);
+        assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), true);
+        assert.equal(await active(), 'pick-all');
+
+        await p.check(`${pick}[data-pair="${HOME_NODE}"]`);
+        await pressEnterOn(`${bulk} button.discard`);
+        await p.locator(`${bulk} .bulk-error`).waitFor();
+        assert.equal(await active(), 'discard');
+
+        await p.route('**/api/judgments', (route) => route.fulfill({ status: 500, body: 'disk full' }));
+        await p.fill(`${bulk} input.reason`, 'only lists documents');
+        await pressEnterOn(`${bulk} button.discard`);
+        await p.waitForFunction(() => /disk full/.test(document.querySelector('#center .bulk-error')?.textContent ?? ''));
+        assert.equal(await active(), 'discard');
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+      })));
+});
+
+test('in a browser, a pair saved by a bulk is not picked any more even when reading the data again fails, so a retry sends only the unsaved pairs', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openDocumentTable(p);
+        let calls = 0;
+        const refuse = (route) => {
+          calls += 1;
+          if (calls === 2) route.fulfill({ status: 500, body: 'disk full' });
+          else route.continue();
+        };
+        const unreadable = (route) => route.fulfill({ status: 500, body: 'data gone' });
+        await p.route('**/api/judgments', refuse);
+        await p.route('**/api/data', unreadable);
+        await p.check(`${bulk} input.pick-all`);
+        await p.fill(`${bulk} input.reason`, 'covers the list');
+        await p.click(`${bulk} button.hand-over`);
+        await p.locator(`${bulk} .bulk-error`).waitFor();
+
+        assert.equal(errors.splice(0).length, 2);
+        const message = await p.textContent(`${bulk} .bulk-error`);
+        assert.match(message, /저장했지만 다시 읽지 못했습니다: data gone/);
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
+        assert.equal(await p.locator('#center .pair-row', { hasText: '/home' }).locator('input.pick').isChecked(), true);
+        assert.equal(await p.textContent(`${bulk} button.hand-over`), '태그 달기로 넘기기 (1)');
+
+        await p.unroute('**/api/judgments', refuse);
+        await p.unroute('**/api/data', unreadable);
+        const sent = [];
+        await p.route('**/api/judgments', (route) => {
+          sent.push(route.request().postDataJSON().node);
+          route.continue();
+        });
+        await p.click(`${bulk} button.hand-over`);
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
+        assert.deepEqual(sent, [HOME_NODE]);
+        assert.equal(judgedBy(config).length, 2);
+      })));
+});
+
+test('in a browser, the message of a failed bulk puts the report in its own line, and says "saved" only when a pair was saved', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openDocumentTable(p);
+        await p.route('**/api/judgments', (route) => route.fulfill({ status: 500, body: 'disk full' }));
+        await p.route('**/api/data', (route) => route.fulfill({ status: 500, body: 'data gone' }));
+        await p.check(`${bulk} input.pick-all`);
+        await p.click(`${bulk} button.hand-over`);
+        await p.locator(`${bulk} .bulk-error`).waitFor();
+
+        errors.splice(0);
+        const lines = (await p.textContent(`${bulk} .bulk-error`)).split('\n');
+        assert.equal(lines.length, 3);
+        assert.match(lines[0], /^저장하지 못했습니다: disk full$/);
+        assert.match(lines[1], /^저장한 짝 0: 없음\. 저장하지 못한 짝 2: /);
+        assert.equal(lines[2], '다시 읽지 못했습니다: data gone');
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
+      })));
+});
+
+test('in a browser, the failure report, the picks and the note of a bulk survive opening a pair\'s screen and coming back, and a click on the same test', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openDocumentTable(p);
+        let calls = 0;
+        await p.route('**/api/judgments', (route) => {
+          calls += 1;
+          if (calls === 2) route.fulfill({ status: 500, body: 'disk full' });
+          else route.continue();
+        });
+        await p.check(`${bulk} input.pick-all`);
+        await p.fill(`${bulk} input.reason`, 'covers the list');
+        await p.click(`${bulk} button.hand-over`);
+        await p.locator(`${bulk} .bulk-error`).waitFor();
+        errors.splice(0);
+        const message = await p.textContent(`${bulk} .bulk-error`);
+
+        const intact = async () => {
+          assert.equal(await p.textContent(`${bulk} .bulk-error`), message);
+          assert.equal(await p.inputValue(`${bulk} input.reason`), 'covers the list');
+          assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
+        };
+        await p.locator('#center .pair', { hasText: '/document/' }).click();
+        await p.waitForSelector('#screen-list li');
+        await p.click(untaggedTab);
+        await intact();
+        await p.click('#untagged-list li:has-text("DocumentTable")');
+        await intact();
+
+        await p.click('#untagged-list li:has-text("loads the detail screen only when it is needed")');
+        await p.click('#untagged-list li:has-text("DocumentTable")');
+        assert.equal(await p.locator(`${bulk} .bulk-error`).count(), 0);
+        assert.equal(await p.inputValue(`${bulk} input.reason`), '');
+      })));
+});
+
+test('in a browser, one bulk is signed with the author read when it started, however the name box changes meanwhile', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, null, (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.fill('#author input', 'alice');
+        await p.click(untaggedTab);
+        await p.click('#untagged-list li:has-text("DocumentTable")');
+        let held;
+        let calls = 0;
+        await p.route('**/api/judgments', (route) => {
+          calls += 1;
+          if (calls === 1) held = route;
+          else route.continue();
+        });
+        await p.check(`${bulk} input.pick-all`);
+        await p.click(`${bulk} button.hand-over`);
+        await untilSet(() => held, 'the first judgment request');
+        await p.fill('#author input', '');
+        await held.continue();
+        await p.waitForFunction(() => !document.querySelector('#center .bulk-bar button:disabled'));
+        assert.equal(await p.locator(`${bulk} .bulk-error`).count(), 0);
+        assert.deepEqual(judgedBy(config).map((j) => j[3]), ['alice', 'alice']);
+      })));
+});
+
+test('in a browser, picking a pair redraws only the middle and keeps the keyboard focus on the checkbox that was toggled', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        await p.evaluate(() => { document.querySelector('#untagged-list li').dataset.kept = 'yes'; });
+        await p.locator(pick).nth(1).focus();
+        await p.keyboard.press('Space');
+        assert.equal(await p.evaluate(() => {
+          const el = document.activeElement;
+          return el.matches('input.pick') && el.checked && [...document.querySelectorAll('input.pick')].indexOf(el);
+        }), 1);
+        assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (1)');
+        assert.equal(await p.evaluate(() => document.querySelector('#untagged-list li').dataset.kept), 'yes');
+
+        await p.locator(`${bulk} input.pick-all`).focus();
+        await p.keyboard.press('Space');
+        assert.equal(await p.evaluate(() => document.activeElement.matches('input.pick-all')), true);
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
       })));
 });
