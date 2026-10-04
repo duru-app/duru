@@ -76,7 +76,7 @@ relative to the config file, except the files inside the client source (`routesF
   files (verdict); files in another format are skipped
 - `outDir` — where `map.json` and `tests.json` are written (default: the config's folder)
 - `marksDir` — folder where review marks are kept (default: `marks` in `outDir`)
-- `judgmentsDir` — folder where the review page keeps judgments on pairs of a test and a screen, such as a test importing the screen that is discarded or handed over for tagging (default: `judgments` in `outDir`)
+- `judgmentsDir` — folder where the review page keeps judgments on pairs of a test and a screen or call, such as a test importing the screen or passing through it that is discarded or handed over for tagging (default: `judgments` in `outDir`)
 - `author` — the name review marks and judgments are signed with (optional; default `git config user.name` in the
   config's folder, else the computer's user name); everyone who reviews with the same config file signs with this
   one name, so leave it out of a config file a team shares; see [Review page](#review-page)
@@ -395,7 +395,10 @@ lists the test under `passed` for each screen it opened, with its `level`: `visi
 open, `interact` when it clicked, typed or otherwise acted there, `assert` when an `expect` ran there; the
 highest one counts. An action that ended in an error is not an interaction, and a failed `expect` is still an
 assertion. A test already tagged with the screen is left out there. Like the importing tests, these do not
-count as tests of the screen. A test whose trace is gone, cannot be opened, was recorded without snapshots or
+count as tests of the screen. A test whose trace was read also carries `unmatched`, in the `untagged` list and
+on its entries under `nodes` and `stories`: the addresses it opened that fit no screen, as the trace has them
+(an empty list when every address fit), which is how a client other than the one the map was built from shows
+up. A test without `unmatched` had no trace that could be read. A test whose trace is gone, cannot be opened, was recorded without snapshots or
 is in a trace format duru does not know (the notice names the version) is listed in `traceNotices` with the
 trace file and the reason. A browser test that ran with no trace at all is only counted (`untracedCount`; a
 skipped test is not), since Playwright can be set to keep traces for failed or retried tests alone. `rebuild`
@@ -630,10 +633,13 @@ Route guards that are neither a setting nor a role follow under 「화면 안 �
 block opening the screen. A guard longer than 80 characters is folded to its start and opens to its full text.
 Under the tests of a screen, 「지나간 테스트」 lists the browser tests that opened it without its tag (`passed` in
 `tests.json`), those that checked something there first, then those that acted, then those that only opened it,
-each with 「확인함」, 「조작함」 or 「지나감」, its status, title, file and line, project and result file. They have no
-buttons: a reviewer cannot discard or hand them over yet.
+each with 「확인함」, 「조작함」 or 「지나감」, its status, title, file and line, project and result file, and with
+the buttons 「제외」 and 「포함」 described below for the importing tests.
 A call shows the browser tests that sent it without its tag the same way: 「호출함 N」 in its row of the call
-table, and in its details, under its own tests, 「호출한 테스트」 with each test marked 「호출함」.
+table, and in its details, under its own tests, 「호출한 테스트」 with each test marked 「호출함」 and the same two
+buttons. The pairs of a call that wait for the tag, are no longer found or were discarded follow there too, as
+they do in the middle for a screen, and the window that asks why a pair is discarded names the call instead of
+a screen.
 Then come the screen's source location, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.
@@ -650,9 +656,13 @@ reviewer who finds that the test does check the screen presses 「포함」, whi
 once: it moves to 「태그 대기」, which shows the author and date (and the note, when the judgment file carries one) with 「되돌리기」, and goes to the
 task list under `# Tagging` for a coding agent to add the screen's tag to the test. Once the test carries the tag
 and `rebuild` has read it, the pair is closed: the test is an ordinary tagged test of the screen and nothing is
-shown for the judgment. A handed-over test that the results no longer hold (its file or title changed, or it no
-longer imports the screen's files) shows under 「떨어져 나감」 with its test file, title and note, and 「되돌리기」
-closes it. A judgment names its test by result source, test file
+shown for the judgment. A handed-over test that the results no longer hold (its file or title changed, it no
+longer imports the screen's files, or its trace no longer shows it opening the screen or sending the call) shows
+under 「떨어져 나감」 with its test file, title and note, and 「되돌리기」 closes it. A handed-over browser test
+that is still in the results but whose latest run left no trace that could be read (Playwright can keep
+traces for failed or retried tests alone) is not detached: it goes on waiting for the tag, marked 「확인 못 함」,
+and stays in the task list. A pair of a test that ran in several Playwright projects is one pair once it is
+judged; before that the test shows once per project. A judgment names its test by result source, test file
 (its path under `srcRoot`) and title with the tags taken out, never by line or Playwright project, so a discarded or
 handed-over pair stays so after a rebuild when lines are added above the test, the title gains a tag or the results
 come from another computer; a discarded pair whose test is no longer in the results shows nowhere. Like a mark, each judgment is a new file, `<judgmentsDir>/<node>/<date>-<author>-<short ID>.json`
@@ -661,11 +671,12 @@ hand-over, which may be empty), `author` and `date`;
 saving never changes an existing file, and the newest judgment of a pair wins. duru stores only these judgments:
 the link between a test and a screen is confirmed by the tag in the test code, and what a test passes through is
 recomputed on every rebuild. Judgments are applied whenever the
-page loads its data and when `rebuild` counts the links made by imports, never to `tests.json` itself; `/api/data`
+page loads its data and when `rebuild` counts the links made by imports and by traces, never to `tests.json` itself; `/api/data`
 carries the discarded pairs as `tests.discarded`, the handed-over pairs as `tests.awaitingTag` and the ones no longer
-found as `tests.detachedHandOvers`, each with its `judgment`. `rebuild` prints how many pairs are
-discarded, how many are waiting for the tag and how many handed over are no longer found among the tests importing
-or tagged with their screen. A hand-over whose screen is no longer on the map is not in that count; `rebuild` names
+found as `tests.detachedHandOvers`, each with its `judgment`, and leaves the judged pairs out of `tests.importers`
+and `tests.passed`. `rebuild` prints how many pairs are
+discarded, how many are waiting for the tag and how many handed over are no longer found among the tests importing,
+passing through or tagged with their screen or call. A hand-over whose screen is no longer on the map is not in that count; `rebuild` names
 its screen, test and judgment file on a line of its own, because the page has nowhere to show it and only deleting
 that file clears it. A hand-over for an API call counts, since calls are on the map. `rebuild` also names each
 judgment file it could not read with the reason, without stopping.
@@ -737,18 +748,22 @@ The left column has a third tab, labelled 「태그 없음」, listing the tests
 files. Each tab shows its count in a badge after its label, a label too long for the column is cut with an
 ellipsis instead of the row scrolling, and the tooltip of the third tab reads 「노드 태그도 스토리 태그도 없는 테스트」.
 Choosing a test shows in the middle its title, status, test file and line, result source and format, then
-its pairs with screens (the screens it reaches through the files it imports, and the screens it was judged
-against), each with the source files it came through and the state of the pair: 「불러옴」 for a plain importing test, 「태그 대기」 for a pair handed over for tagging (with its note,
-author and date), 「떨어져 나감」 for a hand-over of a test that no longer imports the screen (with its note, author
+its pairs with screens and calls (the screens it reaches through the files it imports, the screens it opened and
+the calls it sent while it ran, and the screens and calls it was judged
+against), each with the source files it came through and the state of the pair: 「불러옴」 for a plain importing test, 「확인함」, 「조작함」, 「지나감」 or 「호출함」 for a browser test linked by its trace, 「태그 대기」 for a pair handed over for tagging (with its note,
+author and date), 「떨어져 나감」 for a hand-over of a test that is no longer linked to the screen or call (with its note, author
 and date) and 「제외한 짝」 for a discarded one (with its reason, author and date). Pressing a screen opens it
-in the screen list; a screen no longer on the map shows as 「맵에 없는 화면」 and cannot be opened. A test whose
+in the screen list, and pressing a call opens the first screen that sends it with the call chosen; a screen or call no longer on the map shows as 「맵에 없음」 and cannot be opened, nor can a call that no screen sends. A browser test
+with no pair says why: its trace was read and it opened no screen of the map and sent no call of it, its trace
+could not be read (with the reason from `traceNotices`), it was skipped, or it ran without a trace. Under the pairs,
+「맵에 맞는 화면이 없는 주소」 lists the addresses the test opened that fit no screen (`unmatched`). A test whose
 imports were read and lead to no screen says so, adding that a file shared by more than three screens and an
 import that was not found link nothing. A test whose imports were not read, because its result format
-(JUnit, Playwright, verdict) carries no imports or because its test file was not found under `srcRoot`, says
+(JUnit, verdict) carries no imports or because its test file was not found under `srcRoot`, says
 that instead. A `tests.json` from before the list existed has the count but no list: the tab shows the count and
-the middle asks for `duru rebuild`. Every 「불러옴」 pair whose screen is on the map has a checkbox, and a 「모두 고르기」 box picks all of
+the middle asks for `duru rebuild`. Every pair not yet judged whose screen or call can be opened has a checkbox, and a 「모두 고르기」 box picks all of
 them; with pairs picked, the buttons 「제외」 and 「포함」 judge them all at once, each button showing how many pairs
-are picked. 「포함」 hands them over at once; 「제외」 opens the same window as on the screen, listing the picked screens
+are picked. 「포함」 hands them over at once; 「제외」 opens the same window as on the screen, listing the picked screens and calls
 and asking once for the reason they share, and sends nothing until the reason is given. The page sends one
 judgment per picked pair, one after another in the order shown, so the result is the same as judging them one by one
 on the screen, and each can be undone there with 「되돌리기」. While the pairs are being sent, the checkboxes, the buttons, the
@@ -759,7 +774,7 @@ search box, which the redraw keeps, stays there and goes on typing where it was.
 read again, the unsaved pairs stay picked, and the message beside the buttons names the pairs that were saved and
 those that were not; after a 「제외」 the window stays open with the same message, the reason and only the screens not
 saved. The picks and that message stay when the reviewer opens a pair's screen and comes back
-to the same test, and go when another test is chosen. A pair for a screen that is not on the map cannot be picked, as it cannot be judged on the screen
+to the same test, and go when another test is chosen. A pair for a screen or call that cannot be opened cannot be picked, as it cannot be judged there
 either. 「리뷰 끝」 works on a page whose data has not arrived or could not be read. `/api/data` carries the list as `tests.untagged`, each entry with its `ref`, the
 same reference a judgment names the test by.
 

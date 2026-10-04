@@ -332,3 +332,72 @@ test('a handed-over test whose title or file changed is shown as detached with i
     ]);
   });
 });
+
+const tracedLinks = linkTests({ ...config, tests: [{ format: 'playwright', path: path.join(config.configDir, 'results/playwright-traced'), depth: 'ui' }] }, map);
+const DETAIL = '/document/:id#DocumentDetail';
+const DETAIL_CALL = 'GET:/api/v1/document/{documentId}';
+
+test('a browser test that passed through a screen or sent a call is judged like an importing one: a discard takes the pair out, a hand-over makes it wait for the tag, and an undo brings each back', () => {
+  withJudgmentsDir((dir) => {
+    const before = applyJudgments(tracedLinks, []);
+    const [opened] = before.passed[DETAIL];
+    const [sent] = before.passed[DETAIL_CALL];
+    assert.deepEqual(opened.ref, { source: 'results/playwright-traced/visits.json', file: 'visits.spec.ts', title: 'checks the path of a document' });
+    assert.deepEqual(sent.ref, { source: 'results/playwright-traced/calls.json', file: 'calls.spec.ts', title: 'reads a document from the server' });
+
+    addJudgment(dir, { test: opened.ref, node: DETAIL, kind: 'discard', reason: 'only reads the address', author: 'a' }, new Date('2026-10-04T01:00:00Z'));
+    addJudgment(dir, { test: sent.ref, node: DETAIL_CALL, kind: 'hand-over', author: 'a' }, new Date('2026-10-04T01:00:00Z'));
+    const judged = applyJudgments(tracedLinks, loadJudgments(dir).judgments);
+    assert.equal(judged.passed[DETAIL], undefined);
+    assert.equal(judged.passed[DETAIL_CALL], undefined);
+    assert.deepEqual(judged.discarded[DETAIL].map((t) => [t.title, t.level, t.judgment.reason]), [['checks the path of a document', 'assert', 'only reads the address']]);
+    assert.deepEqual(judged.awaitingTag[DETAIL_CALL].map((t) => [t.title, t.level, t.ref]), [['reads a document from the server', 'call', sent.ref]]);
+    assert.ok(titles(judged.passed['/home#Home']).includes('reads a document from the server'));
+    assert.deepEqual(judged.detachedHandOvers, {});
+
+    addJudgment(dir, { test: opened.ref, node: DETAIL, kind: 'undo', author: 'a' }, new Date('2026-10-04T02:00:00Z'));
+    addJudgment(dir, { test: sent.ref, node: DETAIL_CALL, kind: 'undo', author: 'a' }, new Date('2026-10-04T02:00:00Z'));
+    const undone = applyJudgments(tracedLinks, loadJudgments(dir).judgments);
+    assert.deepEqual(undone.passed, before.passed);
+    assert.deepEqual([undone.discarded, undone.awaitingTag], [{}, {}]);
+  });
+});
+
+test('a handed-over browser test that no longer passes through the screen is shown as detached, and one that does is not', () => {
+  withJudgmentsDir((dir) => {
+    const [opened] = applyJudgments(tracedLinks, []).passed[DETAIL];
+    const gone = addJudgment(dir, { test: opened.ref, node: '/lab#Lab', kind: 'hand-over', author: 'a' }, new Date('2026-10-04T01:00:00Z'));
+    addJudgment(dir, { test: opened.ref, node: DETAIL, kind: 'hand-over', author: 'a' }, new Date('2026-10-04T01:00:00Z'));
+    const judged = applyJudgments(tracedLinks, loadJudgments(dir).judgments);
+    assert.deepEqual(judged.detachedHandOvers, { '/lab#Lab': [{ ref: opened.ref, judgment: { ...gone, test: opened.ref } }] });
+    assert.deepEqual(titles(judged.awaitingTag[DETAIL]), ['checks the path of a document']);
+  });
+});
+
+const browserTest = { title: 'opens help', file: 'help.spec.ts', line: 3, source: 'results/e2e.json', format: 'playwright', status: 'pass' };
+const handOver = (test, node) => ({ id: 'a', test: { source: test.source, file: test.file, title: test.title }, node, kind: 'hand-over', reason: '', author: 'a', date: '2026-10-04T01:00:00.000Z' });
+
+test('a handed-over browser test still in the results, whose trace was not read this time, goes on waiting for the tag instead of showing as detached', () => {
+  const judgments = [handOver(browserTest, '/help#Help')];
+  const awaiting = (tests) => {
+    const judged = applyJudgments({ passed: {}, nodes: {}, ...tests }, judgments);
+    return [(judged.awaitingTag['/help#Help'] ?? []).map((t) => [t.title, t.line, t.unconfirmed]), Object.keys(judged.detachedHandOvers)];
+  };
+  assert.deepEqual(awaiting({ untagged: [browserTest] }), [[['opens help', 3, true]], []]);
+  assert.deepEqual(awaiting({ untagged: [], nodes: { '/home#Home': [browserTest] } }), [[['opens help', 3, true]], []]);
+  assert.deepEqual(awaiting({ untagged: [{ ...browserTest, unmatched: [] }] }), [[], ['/help#Help']]);
+  assert.deepEqual(awaiting({ untagged: [browserTest, { ...browserTest, unmatched: [] }] }), [[], ['/help#Help']]);
+  assert.deepEqual(awaiting({ untagged: [{ ...browserTest, format: 'vitest' }] }), [[], ['/help#Help']]);
+  assert.deepEqual(awaiting({ untagged: [] }), [[], ['/help#Help']]);
+  assert.deepEqual(awaiting({ untagged: [browserTest], nodes: { '/help#Help': [browserTest] } }), [[], []]);
+});
+
+test('a judged pair of a test that ran in several Playwright projects is one pair, while the pair not yet judged shows once per project', () => {
+  const inProjects = ['chromium', 'firefox'].map((project) => ({ ...browserTest, project, level: 'visit' }));
+  const tests = { passed: { '/help#Help': inProjects, '/home#Home': inProjects }, nodes: {} };
+  const judged = applyJudgments(tests, [handOver(browserTest, '/help#Help'), { ...handOver(browserTest, '/lab#Lab'), kind: 'discard', reason: 'r' }]);
+  assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => t.project), ['chromium']);
+  assert.deepEqual(judged.passed['/home#Home'].map((t) => t.project), ['chromium', 'firefox']);
+  const discardedTwice = applyJudgments(tests, [{ ...handOver(browserTest, '/home#Home'), kind: 'discard', reason: 'r' }]);
+  assert.deepEqual(discardedTwice.discarded['/home#Home'].map((t) => t.project), ['chromium']);
+});

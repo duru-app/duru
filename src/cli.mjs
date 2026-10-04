@@ -81,7 +81,7 @@ if (command === 'tasks') {
     const judged = applyJudgments(links, judgments);
     const pairs = (byScreen) => Object.values(byScreen).reduce((n, tests) => n + tests.length, 0);
     console.log(`links from unit tests to screens by the files they import ${pairs(judged.importers)} | test files not read ${links.importNotices.length}`);
-    console.log(`links from browser tests to screens they passed through and calls they sent ${pairs(links.passed)} | traces not read ${links.traceNotices.length} | browser tests that ran without a trace ${links.untracedCount}`);
+    console.log(`links from browser tests to screens they passed through and calls they sent ${pairs(judged.passed)} | traces not read ${links.traceNotices.length} | browser tests that ran without a trace ${links.untracedCount}`);
     console.log(`pairs discarded by reviewers ${pairs(judged.discarded)} | judgment files skipped ${judgmentNotices.length}`);
     const onMap = new Set([...map.screens, ...map.calls].map((n) => n.id));
     let detachedOnMap = 0;
@@ -90,7 +90,7 @@ if (command === 'tasks') {
       if (onMap.has(node)) detachedOnMap += list.length;
       else for (const d of list) offMap.push(`  handed over for ${node}, which is not on the map ← ${[d.ref.file, d.ref.title].filter(Boolean).join(' ')} (delete ${path.join(config.judgmentsDir, judgmentFile(d.judgment))} to clear it)`);
     }
-    console.log(`pairs handed over for tagging waiting for the tag ${pairs(judged.awaitingTag)} | handed over but no longer found among the tests importing or tagged with the screen ${detachedOnMap}`);
+    console.log(`pairs handed over for tagging waiting for the tag ${pairs(judged.awaitingTag)} | handed over but no longer found among the tests importing, passing through or tagged with the screen or call ${detachedOnMap}`);
     for (const line of offMap) console.log(line);
     for (const n of judgmentNotices) console.log(`  judgment file ${n.file}: ${n.reason}`);
     for (const n of links.traceNotices) console.log(`  trace ${n.file} ← ${n.test.file}:${n.test.line} ${n.test.title}: ${n.reason}`);

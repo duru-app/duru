@@ -5876,7 +5876,7 @@ test('in a browser, a screen shows the untagged browser tests that passed throug
         assert.deepEqual(await p.locator('#center .passed .test').evaluateAll((list) => list.map((el) => el.querySelector('.chip').textContent)), ['확인함', '조작함', '조작함', '조작함', '조작함', '지나감']);
         const first = await p.textContent('#center .passed .test >> nth=0');
         assert.match(first, /확인함 통과 follows a link while waiting for the new address visits\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/visits\.json/);
-        assert.equal(await p.locator('#center .passed button').count(), 0);
+        assert.deepEqual(await p.locator('#center .passed .pair-test').first().locator('button').allTextContents(), ['제외', '포함']);
         assert.deepEqual(await p.$$eval('#center-body > table, #center .passed, #center .importers', (list) => list.map((el) => el.className || el.localName)), ['table', 'passed', 'importers']);
         assert.match(testedBefore, /테스트 있는 화면 7/);
 
@@ -5899,12 +5899,12 @@ test('in a browser, a call shows the untagged browser tests that sent it apart f
         await row('GET:/api/v1/document/list').locator('td.cell').first().click();
         const headings = await p.locator('#right-info h2').allTextContents();
         assert.deepEqual(headings.slice(headings.indexOf('테스트 1'), headings.indexOf('테스트 1') + 2), ['테스트 1', '호출한 테스트 1']);
-        assert.equal(await p.locator('#right-info .sent .test').count(), 1);
-        assert.match(await p.textContent('#right-info .sent .test'), /^호출함 통과 lists the documents calls\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/calls\.json$/);
-        assert.equal(await p.locator('#right-info .sent button').count(), 0);
+        assert.equal(await p.locator('#right-info .passed .test').count(), 1);
+        assert.match(await p.textContent('#right-info .passed .test'), /^호출함 통과 lists the documents calls\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/calls\.json$/);
+        assert.deepEqual(await p.locator('#right-info .passed button').allTextContents(), ['제외', '포함']);
 
         await row('POST:/api/v1/archive/document').locator('td.cell').first().click();
-        assert.equal(await p.locator('#right-info .sent').count(), 0);
+        assert.equal(await p.locator('#right-info .passed').count(), 0);
 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box.call');
@@ -6254,7 +6254,7 @@ test('in a browser, a chosen untagged test shows the screens it imports with the
         await p.click('#untagged-list li:has-text("DocumentTable")');
         assert.equal(await p.textContent('#center h3'), 'DocumentTable › lists the documents it is given');
         assert.equal(await p.locator('#untagged-list li.selected').count(), 1);
-        assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면의 짝 2');
+        assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면·호출의 짝 2');
         const pairs = p.locator('#center .test-pairs .pair');
         assert.deepEqual(await pairs.locator('.screen-path').allTextContents(), ['/document/:tab(draft|done)', '/home']);
         assert.deepEqual(await pairs.locator('.via').allTextContents(), ['components/DocumentTable.js', 'components/DocumentTable.js']);
@@ -6283,7 +6283,7 @@ test('in a browser, a discarded pair and a handed-over pair show their state und
         assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['태그 대기', '제외한 짝']);
         assert.match(await pairs.nth(0).textContent(), /covers the list · \d/s);
         assert.match(await pairs.nth(1).textContent(), /only lists documents · \d/s);
-        assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면의 짝 2');
+        assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면·호출의 짝 2');
       })));
 });
 
@@ -6311,7 +6311,7 @@ test('in a browser, an untagged test whose imports were not read says why instea
           return p.textContent('#center .no-screens');
         };
         assert.equal(await say('Document service › sends the share mail'), '이 결과 형식(junit)에는 테스트가 불러오는 파일이 적혀 있지 않아, 어느 화면에 이어지는지 읽지 못했습니다.');
-        assert.equal(await say('loads without errors'), '이 결과 형식(playwright)에는 테스트가 불러오는 파일이 적혀 있지 않아, 어느 화면에 이어지는지 읽지 못했습니다.');
+        assert.equal(await say('loads without errors'), '이 테스트는 trace 파일 없이 돌아, 어느 화면을 열고 어느 호출을 보냈는지 알 수 없습니다. Playwright 의 trace 옵션을 켜고 다시 돌리면 보입니다.');
         assert.equal(await say('cleanup'), '이 결과 형식(verdict)에는 테스트가 불러오는 파일이 적혀 있지 않아, 어느 화면에 이어지는지 읽지 못했습니다.');
         assert.equal(await say('keeps the old menu'), '테스트가 불러오는 파일을 읽지 못했습니다. 테스트 파일을 소스 폴더에서 찾지 못했습니다.');
       })));
@@ -6361,7 +6361,7 @@ test('in a browser, a pair for a screen that is no longer on the map shows as an
         assert.match(await off.getAttribute('class'), /off-map/);
         assert.doesNotMatch(await off.getAttribute('class'), /on-map/);
         assert.equal(await off.getAttribute('title'), null);
-        assert.match(await off.textContent(), /맵에 없는 화면/);
+        assert.match(await off.textContent(), /맵에 없음/);
         assert.match(await off.textContent(), /components\/DocumentTable\.js/);
         assert.match(await pairs.filter({ hasText: '/document/:tab' }).getAttribute('class'), /on-map/);
         await off.click();
@@ -6384,7 +6384,7 @@ test('in a browser, a hand-over of a test that no longer imports the screen show
         await p.click('#untagged-list li:has-text("formats a date as year-month-day")');
         const pairs = p.locator('#center .test-pairs .pair');
         assert.equal(await pairs.count(), 1);
-        assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면의 짝 1');
+        assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면·호출의 짝 1');
         assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['떨어져 나감']);
         assert.equal(await pairs.locator('.screen-path').textContent(), '/help');
         assert.match(await pairs.textContent(), /메모 was about the help date.*someone/s);
@@ -7528,3 +7528,171 @@ test('in a browser, the back button does not leave the test while a bulk is in f
       })));
 });
 
+
+test('in a browser, a browser test that passed through a screen is included with one press and waits for its tag, one excluded with a reason moves to the excluded pairs, and each comes back when undone', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(TRACED, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const help = p.locator('#screen-list li:has-text("/help")');
+        await help.click();
+        const row = (title) => p.locator('#center .passed .pair-test', { hasText: title });
+        await row('opens home and then help').locator('button.hand-over').click();
+        await p.waitForSelector('#center .awaiting-tag');
+        assert.equal(await p.textContent('#center .passed h2'), '지나간 테스트 5');
+        assert.equal(await help.locator('.passed-count').textContent(), '지나감 5');
+        assert.equal(await help.locator('.awaiting-count').textContent(), '태그 대기 1');
+        assert.match(await p.textContent('#center .awaiting-tag .pair-test'), /^지나감 통과 opens home and then help visits\.spec\.ts:\d+ · chromium/);
+
+        await excludeIn(row('hovers and uses the keyboard on help'), 'only hovers');
+        await p.waitForSelector('#center .discarded');
+        assert.equal(await p.textContent('#center .passed h2'), '지나간 테스트 4');
+        assert.match(await p.textContent('#center .discarded .pair-test'), /^조작함 통과 hovers and uses the keyboard on help.*only hovers · \d/s);
+        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => [j.test.source, j.test.file, j.test.title, j.node, j.kind, j.author]).sort(), [
+          ['results/playwright-traced/visits.json', 'visits.spec.ts', 'hovers and uses the keyboard on help', '/help#Help', 'discard', 'reviewer'],
+          ['results/playwright-traced/visits.json', 'visits.spec.ts', 'opens home and then help', '/help#Help', 'hand-over', 'reviewer'],
+        ]);
+
+        await p.click('#view-flow');
+        assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), /지나감 4/);
+        await p.click('#view-list');
+
+        await p.click('#center .awaiting-tag button.undo');
+        await p.waitForSelector('#center .awaiting-tag', { state: 'detached' });
+        await p.click('#center .discarded button.undo');
+        await p.waitForSelector('#center .discarded', { state: 'detached' });
+        assert.equal(await p.textContent('#center .passed h2'), '지나간 테스트 6');
+        assert.equal(await help.locator('.awaiting-count').count(), 0);
+      })));
+});
+
+const LIST_CALL = 'GET:/api/v1/document/list';
+const DETAIL_CALL = 'GET:/api/v1/document/{documentId}';
+
+test('in a browser, a browser test that sent a call is excluded and included in the details of the call, and the window asking why names the call', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(TRACED, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/home');
+        const callRow = p.locator('table.calls tbody tr:not(.option)', { hasText: LIST_CALL });
+        await callRow.locator('td.cell').first().click();
+        const sent = p.locator('#right-info .passed .pair-test', { hasText: 'lists the documents' });
+        assert.deepEqual(await sent.locator('button').allTextContents(), ['제외', '포함']);
+        assert.match(await sent.locator('button.discard').getAttribute('title'), /^이 테스트와 이 호출의 짝/);
+
+        await sent.locator('button.discard').click();
+        assert.match(await p.textContent(`${asked} .pairs`), /테스트lists the documents.*calls\.spec\.ts.*호출GET:\/api\/v1\/document\/list$/s);
+        await p.fill(why, 'only loads the page');
+        await p.click(`${asked} button.discard`);
+        await p.waitForSelector('#right-info .discarded');
+        assert.equal(await p.locator('#right-info .passed').count(), 0);
+        assert.equal(await callRow.locator('.sent-count').count(), 0);
+        assert.match(await p.textContent('#right-info .discarded .pair-test'), /^호출함 통과 lists the documents.*only loads the page · \d/s);
+        assert.deepEqual(judgedBy(config), [[LIST_CALL, 'discard', 'only loads the page', 'reviewer']]);
+        assert.equal(await p.locator('#center .judgment-error').count(), 0);
+
+        await p.click('#right-info .discarded button.undo');
+        await p.waitForSelector('#right-info .discarded', { state: 'detached' });
+        assert.equal(await callRow.locator('.sent-count').textContent(), '호출함 1');
+        await p.click('#right-info .passed .pair-test button.hand-over');
+        await p.waitForSelector('#right-info .awaiting-tag');
+        assert.equal(await p.textContent('#right-info .awaiting-tag h2'), '태그 대기 1');
+        assert.equal(await p.locator('#right-info .passed').count(), 0);
+        assert.match(await p.locator('#right-info .target-id').innerText(), /GET:\/api\/v1\/document\/list\s+호출 전체/);
+      })));
+});
+
+test('in a browser, a chosen untagged browser test shows the screens it opened and the calls it sent as pairs, judges them in one go, and a click on a call pair opens the call on a screen that sends it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(TRACED, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(untaggedTab);
+        await p.click('#untagged-list li:has-text("reads a document from the server")');
+        assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면·호출의 짝 2');
+        const pairs = p.locator('#center .test-pairs .pair');
+        assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['지나감', '호출함']);
+        assert.match(await pairs.nth(0).textContent(), /^\/home Home/);
+        assert.match(await pairs.nth(1).textContent(), /^GET:\/api\/v1\/document\/\{documentId\}/);
+        assert.equal(await p.locator('#center .unmatched').count(), 0);
+
+        await p.check(`${bulk} input.pick-all`);
+        await p.click(`${bulk} button.discard`);
+        assert.equal(await p.textContent(`${asked} h2`), '짝 2개를 제외합니다');
+        assert.match(await p.textContent(`${asked} .pairs`), /화면과 호출\/home Home.*GET:\/api\/v1\/document\/\{documentId\}$/s);
+        await p.click(`${asked} button.cancel`);
+        await p.click(`${bulk} button.hand-over`);
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
+        assert.deepEqual(judgedBy(config), [
+          ['/home#Home', 'hand-over', '', 'reviewer'],
+          [DETAIL_CALL, 'hand-over', '', 'reviewer'],
+        ]);
+
+        await pairs.nth(1).click();
+        assert.equal(await p.textContent('#screen-list li.selected .name'), '/document/:id DocumentDetail');
+        assert.match(await p.locator('#right-info .target-id').innerText(), /GET:\/api\/v1\/document\/\{documentId\}\s+호출 전체/);
+        assert.match(await p.textContent('#right-info .awaiting-tag'), /reads a document from the server/);
+      })));
+});
+
+test('in a browser, an untagged browser test lists the addresses it opened that fit no screen, and one with no pairs says whether its trace was read, could not be read or was never written', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(TRACED, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(untaggedTab);
+        const said = async (title) => {
+          await p.click(`#untagged-list li:has-text("${title}")`);
+          return p.textContent('#center .no-screens');
+        };
+        assert.equal(await said('wanders off the map'), '이 테스트는 도는 동안 맵에 있는 화면을 열지도, 맵에 있는 호출을 보내지도 않았습니다.');
+        assert.equal(await p.textContent('#center .unmatched h2'), '맵에 맞는 화면이 없는 주소 1');
+        assert.deepEqual(await p.locator('#center .unmatched li').allTextContents(), ['http://127.0.0.1:4598/nowhere']);
+
+        assert.equal(await said('opens help without a trace'), '이 테스트는 trace 파일 없이 돌아, 어느 화면을 열고 어느 호출을 보냈는지 알 수 없습니다. Playwright 의 trace 옵션을 켜고 다시 돌리면 보입니다.');
+        assert.equal(await p.locator('#center .unmatched').count(), 0);
+        assert.equal(await said('presses the button without snapshots'), '이 테스트의 trace 파일을 읽지 못해, 어느 화면을 열고 어느 호출을 보냈는지 알 수 없습니다. trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다.');
+
+        await p.click('#untagged-list li:has-text("opens home and then help")');
+        assert.deepEqual(await p.locator('#center .test-pairs .pair .pair-state').allTextContents(), ['지나감', '지나감']);
+        assert.equal(await p.locator('#center .no-screens').count(), 0);
+        assert.equal(await p.locator('#center .unmatched').count(), 0);
+      })));
+});
+
+test('in a browser, a browser test handed over for a screen goes on waiting for its tag when its latest run left no trace, marked as not confirmed this time', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(TRACED, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const untraced = { source: 'results/playwright-traced/visits.json', file: 'untraced.spec.ts', title: 'opens help without a trace' };
+        addJudgment(config.judgmentsDir, { test: untraced, node: '/help#Help', kind: 'hand-over', reason: '', author: 'reviewer' });
+        await p.reload();
+        await toList(p);
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await p.textContent('#center .awaiting-tag h2'), '태그 대기 1');
+        assert.match(await p.textContent('#center .awaiting-tag .pair-test'), /^확인 못 함 통과 opens help without a trace untraced\.spec\.ts:5결과 파일 results\/playwright-traced\/visits\.json/);
+        assert.equal(await p.locator('#center .detached').count(), 0);
+        await p.click('#center .awaiting-tag button.undo');
+        await p.waitForSelector('#center .awaiting-tag', { state: 'detached' });
+        assert.equal(await p.locator('#center .detached').count(), 0);
+      })));
+});
+
+test('in a browser, a skipped browser test with no pairs says that it did not run, not that it ran without a trace', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const res = await route.fetch();
+          const data = await res.json();
+          data.tests.untagged.find((t) => t.title.startsWith('loads without errors')).status = 'pending';
+          await route.fulfill({ response: res, json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.click(untaggedTab);
+        await p.click('#untagged-list li:has-text("loads without errors")');
+        assert.equal(await p.textContent('#center .no-screens'), '이 테스트는 건너뛰어 돌지 않았으므로, 어느 화면을 열고 어느 호출을 보내는지 알 수 없습니다.');
+      })));
+});

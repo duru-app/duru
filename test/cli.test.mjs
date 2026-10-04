@@ -64,6 +64,20 @@ test('rebuild counts the screens that untagged browser tests passed through and 
   assert.doesNotMatch(stdout, /untraced\.spec\.ts/);
 });
 
+test('rebuild leaves the pairs of browser tests that a reviewer discarded or handed over out of the links it counts', () => {
+  const stdout = rebuildTraced((results) => {
+    const judgmentsDir = path.resolve(results, '../../../out/judgments');
+    const opened = { source: 'results/playwright-traced/visits.json', file: 'visits.spec.ts', title: 'checks the path of a document' };
+    const sent = { source: 'results/playwright-traced/calls.json', file: 'calls.spec.ts', title: 'reads a document from the server' };
+    addJudgment(judgmentsDir, { test: opened, node: '/document/:id#DocumentDetail', kind: 'discard', reason: 'only reads the address', author: 'a' });
+    addJudgment(judgmentsDir, { test: sent, node: 'GET:/api/v1/document/{documentId}', kind: 'hand-over', author: 'a' });
+    addJudgment(judgmentsDir, { test: sent, node: '/lab#Lab', kind: 'hand-over', author: 'a' });
+  });
+  assert.match(stdout, /^links from browser tests to screens they passed through and calls they sent 32 \|/m);
+  assert.match(stdout, /^pairs discarded by reviewers 1 \|/m);
+  assert.match(stdout, /^pairs handed over for tagging waiting for the tag 1 \| handed over but no longer found among the tests importing, passing through or tagged with the screen or call 1$/m);
+});
+
 test('rebuild goes on past a trace that is gone and one that is broken, and names each with its reason', () => {
   const stdout = rebuildTraced((results) => {
     fs.rmSync(path.join(results, 'visits-opens-home-and-then-help-chromium/trace.zip'));
@@ -207,7 +221,7 @@ test('rebuild prints how many handed-over pairs wait for their tag and how many 
   ], ({ stdout }) => {
     assert.match(stdout, /^links from unit tests to screens by the files they import 3 \| test files not read 2$/m);
     assert.match(stdout, /^pairs discarded by reviewers 0 \| judgment files skipped 0$/m);
-    assert.match(stdout, /^pairs handed over for tagging waiting for the tag 2 \| handed over but no longer found among the tests importing or tagged with the screen 1$/m);
+    assert.match(stdout, /^pairs handed over for tagging waiting for the tag 2 \| handed over but no longer found among the tests importing, passing through or tagged with the screen or call 1$/m);
   });
 });
 
@@ -221,7 +235,7 @@ test('rebuild counts a hand-over on the map apart from one whose screen is not o
     const file = path.join(judgmentsDir, '_gone#Gone', `2026-10-04-a-${judgments[2].id.slice(0, 8)}.json`);
     assert.ok(fs.existsSync(file));
     assert.deepEqual(lines.slice(at, at + 2), [
-      'pairs handed over for tagging waiting for the tag 1 | handed over but no longer found among the tests importing or tagged with the screen 1',
+      'pairs handed over for tagging waiting for the tag 1 | handed over but no longer found among the tests importing, passing through or tagged with the screen or call 1',
       `  handed over for /gone#Gone, which is not on the map ← components/Help.spec.js renders the removed screen (delete ${file} to clear it)`,
     ]);
   });
@@ -230,7 +244,7 @@ test('rebuild counts a hand-over on the map apart from one whose screen is not o
 test('rebuild counts a detached hand-over for an API call, which is on the map, and does not call it off the map', () => {
   rebuildWithHandOvers([{ node: 'POST:/api/v1/report/archive', title: 'a test that was renamed' }], ({ lines }) => {
     const at = lines.findIndex((l) => l.startsWith('pairs handed over for tagging'));
-    assert.equal(lines[at], 'pairs handed over for tagging waiting for the tag 0 | handed over but no longer found among the tests importing or tagged with the screen 1');
+    assert.equal(lines[at], 'pairs handed over for tagging waiting for the tag 0 | handed over but no longer found among the tests importing, passing through or tagged with the screen or call 1');
     assert.ok(!lines.some((l) => l.includes('not on the map')));
   });
 });

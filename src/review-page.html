@@ -107,9 +107,9 @@
   .importers p, .detached p, .passed p { font-size: 12px; margin: 0 0 8px; }
   .chip.level-assert { color: var(--pass); } .chip.level-interact, .chip.level-call { color: var(--accent); } .chip.level-visit { color: var(--muted); }
   table.calls td.call .sent-count { font-size: 12px; color: var(--muted); white-space: nowrap; margin-left: 6px; }
-  .importer .judge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
-  .importer .judge-row button, .importer button.undo, .bulk-bar button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
-  .discarded .importer, .awaiting-tag .importer, .detached .importer { margin-bottom: 10px; font-size: 12px; }
+  .pair-test .judge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .pair-test .judge-row button, .pair-test button.undo, .bulk-bar button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .discarded .pair-test, .awaiting-tag .pair-test, .detached .pair-test { margin-bottom: 10px; font-size: 12px; }
   .guard { display: block; }
   .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
   .access > h2:first-child, .in-screen > h2:first-child { margin-top: 16px; }
@@ -228,6 +228,8 @@
   .test-pairs .pair .detail { font-size: 12px; color: var(--muted); }
   .test-pairs .pair .chip { flex: none; }
   .test-pairs .no-screens { margin: 0; }
+  .unmatched p { font-size: 12px; margin: 0 0 8px; }
+  .unmatched li { overflow-wrap: anywhere; }
   .pair-row { display: flex; gap: 8px; align-items: flex-start; }
   .pair-row .pick, .pair-row .pick-space { flex: none; width: 16px; margin: 12px 0 0; }
   .pair-row .pair { flex: 1; min-width: 0; }
@@ -369,6 +371,7 @@ function othersSigned() {
 const signedAt = (record) => (othersSigned() ? `${record.author} · ${fmtDate(record.date)}` : fmtDate(record.date));
 const markChip = (m) => (m ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status]) : null);
 const callOf = (id) => state.data.map.calls.find((c) => c.id === id);
+const nodeWord = (id) => (callOf(id) ? '호출' : '화면');
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];
 const hasOption = (tests, key, value) => tests.filter((t) => t.options?.some((o) => o.key === key && o.value === value));
 const optionsOf = (s, callId) => s.callOptions[callId] ?? [];
@@ -400,7 +403,7 @@ async function load() {
   }
 }
 
-function select(id) {
+function select(id, target = { node: id }) {
   for (const [key, kept] of state.pathValues) {
     if (key.startsWith(`${id}\n`) && !kept.pending && kept.errors.length && !kept.opened) state.pathValues.delete(key);
   }
@@ -409,7 +412,7 @@ function select(id) {
     state.openLong.clear();
   }
   state.selected = id;
-  state.target = { node: id };
+  state.target = target;
   state.draft = null;
   state.error = null;
   state.judgmentError = null;
@@ -449,6 +452,12 @@ function openScreen(id) {
   if (state.bulkBusy) return;
   state.side = 'screens';
   select(id);
+}
+
+function openCall(id) {
+  if (state.bulkBusy) return;
+  state.side = 'screens';
+  select(callOf(id).screens[0], { node: id });
 }
 
 function selectTarget(t) {
@@ -677,11 +686,11 @@ function importerItem(t) {
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
 const judgmentErrorOf = (key) => (state.judgmentError?.key === key ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null);
 
-const judgeRowControl = (key, selector) => document.querySelector(`#center .judge-row[data-pair="${CSS.escape(key)}"] ${selector}`);
+const judgeRowControl = (key, selector) => document.querySelector(`.judge-row[data-pair="${CSS.escape(key)}"] ${selector}`);
 
 function renderKeepingJudgeRowFocus() {
   const focused = document.activeElement;
-  const row = focused?.closest?.('#center .judge-row');
+  const row = focused?.closest?.('.judge-row');
   const place = row && { key: row.dataset.pair, selector: `${focused.localName}.${focused.className}` };
   render();
   if (place) judgeRowControl(place.key, place.selector)?.focus();
@@ -696,15 +705,15 @@ function syncExcludeConfirm() {
 }
 
 function drawExclude() {
-  const { test, screenIds, busy, error } = excludeJob;
-  const ids = screenIds();
+  const { test, nodeIds, busy, error } = excludeJob;
+  const ids = nodeIds();
   const many = ids.length > 1;
   excludePart('h2').textContent = many ? `짝 ${ids.length}개를 제외합니다` : '이 짝을 제외합니다';
   fill(excludePart('.pairs'),
     h('span', { class: 'label' }, '테스트'),
     h('div', {}, test.title, ' ', h('span', { class: 'muted mono' }, testPlace(test))),
-    h('span', { class: 'label' }, '화면'),
-    h('ul', { class: 'plain' }, ids.map((id) => h('li', {}, screenLabel(id), ' ', h('span', { class: 'muted' }, screenOf(id)?.component)))));
+    h('span', { class: 'label' }, ['화면', '호출'].filter((word) => ids.some((id) => nodeWord(id) === word)).join('과 ')),
+    h('ul', { class: 'plain' }, ids.map((id) => h('li', {}, callOf(id) ? h('span', { class: 'mono' }, id) : [screenLabel(id), ' ', h('span', { class: 'muted' }, screenOf(id)?.component)]))));
   excludePart('textarea').readOnly = busy;
   excludePart('button.cancel').disabled = busy;
   excludePart('button.discard').textContent = many ? `제외 (${ids.length})` : '제외';
@@ -762,7 +771,7 @@ function askExcludePair(t, node, key) {
   if (judgmentsInFlight.has(key)) return;
   askExclude({
     test: t,
-    screenIds: () => [node],
+    nodeIds: () => [node],
     save: async (reason) => {
       const { failure, reloadError } = await postAndReload({ test: t.ref, node, kind: 'discard', reason }, key);
       if (!failure) state.judgmentError = reloadError ? { key, message: reloadError } : null;
@@ -775,9 +784,10 @@ function askExcludePair(t, node, key) {
 
 function judgmentForm(t, node) {
   const key = judgmentKey(t, node);
+  const word = nodeWord(node);
   return h('div', { class: 'judge-row', 'data-pair': key },
-    h('button', { class: 'discard', title: '이 테스트와 이 화면의 짝을 다시 보이지 않게 합니다. 까닭을 적어야 합니다', onclick: () => askExcludePair(t, node, key) }, '제외'),
-    h('button', { class: 'hand-over', title: '이 화면의 테스트로 보고, 테스트에 이 화면의 태그를 달도록 작업 목록에 올립니다', onclick: () => saveJudgment({ test: t.ref, node, kind: 'hand-over', reason: '' }, key) }, '포함'));
+    h('button', { class: 'discard', title: `이 테스트와 이 ${word}의 짝을 다시 보이지 않게 합니다. 까닭을 적어야 합니다`, onclick: () => askExcludePair(t, node, key) }, '제외'),
+    h('button', { class: 'hand-over', title: `이 ${word}의 테스트로 보고, 테스트에 이 ${word}의 태그를 달도록 작업 목록에 올립니다`, onclick: () => saveJudgment({ test: t.ref, node, kind: 'hand-over', reason: '' }, key) }, '포함'));
 }
 
 const judgmentMeta = (j, label) => h('div', { class: 'detail' },
@@ -794,56 +804,73 @@ function detachedItem(t) {
 const PASS_LEVEL = { assert: '확인함', interact: '조작함', visit: '지나감', call: '호출함' };
 const PASS_LEVEL_TITLE = { assert: '이 화면이 열려 있을 때 확인문을 실행했습니다', interact: '이 화면이 열려 있을 때 누르거나 입력했습니다', visit: '이 화면을 열기만 했습니다', call: '도는 동안 이 호출의 메서드와 경로에 맞는 요청을 보냈습니다' };
 
+const UNCONFIRMED_TITLE = '이번 실행에서는 이 테스트의 trace 를 읽지 못해 이 짝을 다시 확인하지 못했습니다. 포함한 판단은 그대로입니다';
+
 function passedItem(t) {
   return h('div', { class: 'test' },
-    h('span', { class: `chip level-${t.level}`, title: PASS_LEVEL_TITLE[t.level] }, PASS_LEVEL[t.level]), ' ',
+    t.unconfirmed
+      ? h('span', { class: 'chip level-visit', title: UNCONFIRMED_TITLE }, '확인 못 함')
+      : h('span', { class: `chip level-${t.level}`, title: PASS_LEVEL_TITLE[t.level] }, PASS_LEVEL[t.level]), ' ',
     h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', t.title, ' ',
     h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
     h('div', { class: 'detail' }, '결과 파일 ', h('span', { class: 'mono' }, t.source)));
 }
 
-function passedTests(s) {
+const byTrace = (t) => Boolean(t.level || t.unconfirmed);
+const pairTestItem = (t) => (byTrace(t) ? passedItem(t) : importerItem(t));
+const pairKeys = (node) => [passedOf, importersOf, discardedOf, awaitingTagOf, detachedOf].flatMap((of) => of(node)).map((t) => judgmentKey(t, node));
+
+// 화면의 짝은 가운데 칸에, 고른 호출의 짝은 오른쪽 칸에 있다.
+function strayJudgmentError(s) {
+  const call = state.target.node === s.id ? [] : pairKeys(state.target.node);
+  const stray = state.judgmentError && ![...pairKeys(s.id), ...call].includes(state.judgmentError.key);
+  return stray ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null;
+}
+
+const PAIR_TEXT = {
+  화면: {
+    passed: (n) => `지나간 테스트 ${n}`,
+    passedNote: '도는 동안 이 화면을 연 브라우저 테스트입니다. 이 화면의 태그가 없어서 이 화면의 테스트로 세지 않습니다.',
+    detachedNote: '포함한 테스트를 결과에서 찾을 수 없습니다. 테스트의 파일이나 제목이 바뀌었거나, 이 화면의 파일을 더는 불러오지 않거나 이 화면을 더는 열지 않는 것으로 보입니다.',
+  },
+  호출: {
+    passed: (n) => `호출한 테스트 ${n}`,
+    passedNote: '도는 동안 이 호출을 보낸 브라우저 테스트입니다. 이 호출의 태그가 없어서 이 호출의 테스트로 세지 않습니다.',
+    detachedNote: '포함한 테스트를 결과에서 찾을 수 없습니다. 테스트의 파일이나 제목이 바뀌었거나, 이 호출을 더는 보내지 않는 것으로 보입니다.',
+  },
+};
+
+function untaggedPairs(node) {
+  const text = PAIR_TEXT[nodeWord(node)];
   const order = Object.keys(PASS_LEVEL);
-  const passed = [...passedOf(s.id)].sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level));
-  return passed.length ? h('div', { class: 'passed' },
-    h('h2', {}, `지나간 테스트 ${passed.length}`),
-    h('p', { class: 'muted' }, '도는 동안 이 화면을 연 브라우저 테스트입니다. 이 화면의 태그가 없어서 이 화면의 테스트로 세지 않습니다.'),
-    passed.map(passedItem)) : null;
-}
-
-function sentTests(call) {
-  const sent = passedOf(call.id);
-  return sent.length ? h('div', { class: 'passed sent' },
-    h('h2', {}, `호출한 테스트 ${sent.length}`),
-    h('p', { class: 'muted' }, '도는 동안 이 호출을 보낸 브라우저 테스트입니다. 이 호출의 태그가 없어서 이 호출의 테스트로 세지 않습니다.'),
-    sent.map(passedItem)) : null;
-}
-
-function importerTests(s) {
-  const importers = importersOf(s.id);
-  const discarded = discardedOf(s.id);
-  const awaiting = awaitingTagOf(s.id);
-  const detached = detachedOf(s.id);
-  const rowKeys = [...importers, ...discarded, ...awaiting, ...detached].map((t) => judgmentKey(t, s.id));
-  const stray = state.judgmentError && !rowKeys.includes(state.judgmentError.key);
-  const pairRow = (item, t, label) => h('div', { class: 'importer' }, item, judgmentMeta(t.judgment, label), undoButton(t, s.id), judgmentErrorOf(judgmentKey(t, s.id)));
+  const passed = [...passedOf(node)].sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level));
+  const importers = importersOf(node);
+  const discarded = discardedOf(node);
+  const awaiting = awaitingTagOf(node);
+  const detached = detachedOf(node);
+  const row = (t, ...rest) => h('div', { class: `pair-test ${byTrace(t) ? 'passer' : 'importer'}` }, ...rest, judgmentErrorOf(judgmentKey(t, node)));
+  const openRow = (t) => row(t, pairTestItem(t), judgmentForm(t, node));
+  const judgedRow = (item, t, label) => row(t, item, judgmentMeta(t.judgment, label), undoButton(t, node));
   return [
-    stray ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null,
+    passed.length ? h('div', { class: 'passed' },
+      h('h2', {}, text.passed(passed.length)),
+      h('p', { class: 'muted' }, text.passedNote),
+      passed.map(openRow)) : null,
     importers.length ? h('div', { class: 'importers' },
       h('h2', {}, `불러오는 테스트 ${importers.length}`),
       h('p', { class: 'muted' }, '이 화면에 딸린 소스 파일을 불러오는 단위 테스트입니다. 이 화면의 태그가 없어서 이 화면의 테스트로 세지 않습니다.'),
-      importers.map((t) => h('div', { class: 'importer' }, importerItem(t), judgmentForm(t, s.id), judgmentErrorOf(judgmentKey(t, s.id))))) : null,
+      importers.map(openRow)) : null,
     awaiting.length ? h('div', { class: 'awaiting-tag' },
       h('h2', {}, `태그 대기 ${awaiting.length}`),
-      awaiting.map((t) => pairRow(importerItem(t), t, '메모'))) : null,
+      awaiting.map((t) => judgedRow(pairTestItem(t), t, '메모'))) : null,
     detached.length ? h('div', { class: 'detached' },
       h('h2', {}, `떨어져 나감 ${detached.length}`),
-      h('p', { class: 'muted' }, '포함한 테스트를 결과에서 찾을 수 없습니다. 테스트의 파일이나 제목이 바뀌었거나, 이 화면의 파일을 더는 불러오지 않는 것으로 보입니다.'),
-      detached.map((t) => pairRow(detachedItem(t), t, '메모'))) : null,
+      h('p', { class: 'muted' }, text.detachedNote),
+      detached.map((t) => judgedRow(detachedItem(t), t, '메모'))) : null,
     discarded.length ? h('div', { class: 'discarded' },
       h('h2', {}, `제외한 짝 ${discarded.length}`),
-      discarded.map((t) => pairRow(importerItem(t), t, '까닭'))) : null,
+      discarded.map((t) => judgedRow(pairTestItem(t), t, '까닭'))) : null,
   ];
 }
 
@@ -1244,6 +1271,7 @@ const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 const PAIR_STATES = [
   { list: 'importers', label: '불러옴', cls: 'config' },
+  { list: 'passed', cls: 'config' },
   { list: 'awaitingTag', label: '태그 대기', cls: 'wait', noteLabel: '메모' },
   { list: 'detachedHandOvers', label: '떨어져 나감', cls: 'wait', noteLabel: '메모' },
   { list: 'discarded', label: '제외한 짝', cls: 'muted', noteLabel: '까닭' },
@@ -1255,32 +1283,45 @@ function pairsOf(t) {
   for (const { list, ...rest } of PAIR_STATES) {
     for (const [id, entries] of Object.entries(state.data.tests[list] ?? {})) {
       const entry = entries.find((e) => JSON.stringify(e.ref) === ref);
-      if (entry) pairs.push({ id, entry, ...rest });
+      if (entry) pairs.push({ id, entry, label: PASS_LEVEL[entry.level], ...rest });
     }
   }
   return pairs.sort((a, b) => compareText(screenLabel(a.id), screenLabel(b.id)) || compareText(a.id, b.id));
 }
 
+const opensOnPage = (id) => Boolean(screenOf(id) || callOf(id)?.screens.length);
+
 function pairItem({ id, entry, label, cls, noteLabel }) {
   const s = screenOf(id);
+  const call = !s && callOf(id);
   const body = h('span', { class: 'name' },
-    s ? screenHead(s) : h('div', { class: 'muted mono' }, id),
+    s ? screenHead(s) : h('div', { class: call ? 'mono' : 'muted mono' }, id),
     entry.via ? viaRow(entry.via) : null,
     entry.judgment ? judgmentMeta(entry.judgment, noteLabel) : null);
   const stateChip = h('span', { class: `chip pair-state ${cls}` }, label);
-  if (!s) return h('div', { class: 'step off-map pair' }, body, h('span', { class: 'chip l-off-map' }, '맵에 없는 화면'), stateChip);
-  return h('div', { class: `step on-map pair${state.bulkBusy ? ' locked' : ''}`, title: state.bulkBusy ? null : '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(id) }, body, stateChip);
+  if (!s && !call) return h('div', { class: 'step off-map pair' }, body, h('span', { class: 'chip l-off-map', title: '맵에 없는 화면이나 호출입니다' }, '맵에 없음'), stateChip);
+  if (!opensOnPage(id)) return h('div', { class: 'step off-map pair' }, body, stateChip);
+  const open = s
+    ? { title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(id) }
+    : { title: '이 호출을 부르는 화면을 열고 이 호출을 고릅니다', onclick: () => openCall(id) };
+  return h('div', { class: `step on-map pair${state.bulkBusy ? ' locked' : ''}`, title: state.bulkBusy ? null : open.title, onclick: open.onclick }, body, stateChip);
 }
 
 function noScreensText(t) {
+  if (t.format === 'playwright') {
+    if (t.unmatched) return '이 테스트는 도는 동안 맵에 있는 화면을 열지도, 맵에 있는 호출을 보내지도 않았습니다.';
+    const notice = (state.data.tests.traceNotices ?? []).find((n) => n.test.title === t.title && n.test.file === t.file && n.test.line === t.line);
+    if (notice) return `이 테스트의 trace 파일을 읽지 못해, 어느 화면을 열고 어느 호출을 보냈는지 알 수 없습니다. ${notice.reason}.`;
+    if (t.status === 'pending') return '이 테스트는 건너뛰어 돌지 않았으므로, 어느 화면을 열고 어느 호출을 보내는지 알 수 없습니다.';
+    return '이 테스트는 trace 파일 없이 돌아, 어느 화면을 열고 어느 호출을 보냈는지 알 수 없습니다. Playwright 의 trace 옵션을 켜고 다시 돌리면 보입니다.';
+  }
   if (t.testFile) return '이 테스트가 불러오는 파일로 이어진 화면이 없습니다. 화면 넷 이상이 함께 쓰는 파일과 찾지 못한 파일로는 잇지 않습니다.';
   if (t.format !== 'vitest') return `이 결과 형식(${t.format})에는 테스트가 불러오는 파일이 적혀 있지 않아, 어느 화면에 이어지는지 읽지 못했습니다.`;
   const reason = (state.data.tests.importNotices ?? []).find((n) => n.file === t.file)?.reason;
   return `테스트가 불러오는 파일을 읽지 못했습니다.${reason ? ` ${reason}.` : ''}`;
 }
 
-// 맵에 없는 화면의 짝은 판단해도 되돌릴 곳이 없어 고르지 못하게 한다.
-const isPickable = (p) => !p.entry.judgment && Boolean(screenOf(p.id));
+const isPickable = (p) => !p.entry.judgment && opensOnPage(p.id);
 
 function redrawBulk(focusSelector) {
   renderUntaggedCenter();
@@ -1312,7 +1353,7 @@ const pickedPairs = (t, bulk) => pairsOf(t).filter((p) => isPickable(p) && bulk.
 function askExcludePicked(t, bulk) {
   askExclude({
     test: t,
-    screenIds: () => pickedPairs(t, bulk).map((p) => p.id),
+    nodeIds: () => pickedPairs(t, bulk).map((p) => p.id),
     save: async (reason) => {
       const failure = await saveBulk(t, bulk, 'discard', reason);
       if (failure) render();
@@ -1330,7 +1371,7 @@ function bulkBar(t, pickable, bulk) {
     h('label', {}, h('input', { type: 'checkbox', class: 'pick-all', checked: count === pickable.length, disabled: state.bulkBusy,
       onchange: (e) => { bulk.picked = new Set(e.target.checked ? pickable.map((p) => p.id) : []); redrawBulk('input.pick-all'); } }), ' 모두 고르기'),
     h('button', { class: 'discard', title: '고른 짝을 다시 보이지 않게 합니다. 까닭을 적어야 합니다', disabled: off, onclick: () => askExcludePicked(t, bulk) }, `제외 (${count})`),
-    h('button', { class: 'hand-over', title: '고른 짝을 화면의 테스트로 보고, 태그를 달도록 작업 목록에 올립니다', disabled: off, onclick: async () => { await saveBulk(t, bulk, 'hand-over', ''); showBulkResult('hand-over'); } }, `포함 (${count})`),
+    h('button', { class: 'hand-over', title: '고른 짝을 그 화면이나 호출의 테스트로 보고, 태그를 달도록 작업 목록에 올립니다', disabled: off, onclick: async () => { await saveBulk(t, bulk, 'hand-over', ''); showBulkResult('hand-over'); } }, `포함 (${count})`),
     bulk.error ? h('p', { class: 'error bulk-error' }, bulk.error) : null);
 }
 
@@ -1354,11 +1395,15 @@ function renderUntaggedCenter() {
     h('div', { class: 'muted mono' }, testPlace(t)),
     h('div', { class: 'muted' }, `${t.format} · ${t.source}`),
     h('div', { class: 'test-pairs' },
-      h('h2', { tabindex: '-1' }, `이 테스트와 화면의 짝 ${pairs.length}`),
+      h('h2', { tabindex: '-1' }, `이 테스트와 화면·호출의 짝 ${pairs.length}`),
       pickable.length ? bulkBar(t, pickable, bulk) : null,
       pairs.length
         ? h('div', { class: 'story-path' }, pairs.map(pickRow))
-        : h('p', { class: 'muted no-screens' }, noScreensText(t))));
+        : h('p', { class: 'muted no-screens' }, noScreensText(t))),
+    t.unmatched?.length ? h('div', { class: 'unmatched' },
+      h('h2', {}, `맵에 맞는 화면이 없는 주소 ${t.unmatched.length}`),
+      h('p', { class: 'muted' }, '이 테스트가 도는 동안 열었지만 맵의 어느 화면에도 맞지 않은 주소입니다. 맵을 만든 클라이언트와 테스트가 돈 클라이언트가 다르면 여기에 쌓입니다.'),
+      h('ul', { class: 'plain' }, t.unmatched.map((url) => h('li', { class: 'mono' }, url)))) : null);
 }
 
 function renderStoryCenter() {
@@ -1453,8 +1498,8 @@ function renderCenter() {
         h('td', { class: 'depth' }, r.label),
         h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map(testItem) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
         h('td', { class: 'mark' }, markChip(markOf(r.target)) ?? h('span', { class: 'muted' }, '—')))))),
-    passedTests(s),
-    importerTests(s),
+    strayJudgmentError(s),
+    untaggedPairs(s.id),
     callTable(s),
   );
 }
@@ -1647,7 +1692,7 @@ function callDetails(call, s) {
     call.server.candidates ? h('ul', { class: 'plain' }, call.server.candidates.map((c) => h('li', {}, '서버에는 ', h('code', {}, c)))) : null,
     h('h2', {}, `테스트 ${tests.length}`),
     tests.length ? h('div', {}, tests.map(testItem)) : h('p', { class: 'muted' }, '없음'),
-    sentTests(call),
+    ...untaggedPairs(call.id),
     h('h2', {}, '이 화면에서 부르는 곳'),
     h('ul', { class: 'plain' }, sites.map((c) => h('li', {}, h('code', {}, c.fn), ' ', h('span', { class: 'muted mono' }, `${c.file}:${c.line}`)))),
     h('h2', {}, `이 호출을 쓰는 화면 ${call.screens.length}`),

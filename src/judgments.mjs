@@ -90,28 +90,46 @@ export function applyJudgments(tests, judgments) {
   const latest = new Map();
   const ordered = [...judgments].sort((a, b) => Date.parse(a.date) - Date.parse(b.date) || compare(a.id, b.id));
   for (const j of ordered) latest.set(pairKey(j.test, j.node), j);
-  const importers = {};
   const discarded = {};
   const awaitingTag = {};
   const found = new Set();
-  for (const [id, list] of Object.entries(tests.importers ?? {})) {
-    for (const t of list) {
-      const ref = testRef(t);
-      const key = pairKey(ref, id);
-      const judgment = latest.get(key);
-      if (judgment?.kind === 'discard') (discarded[id] ??= []).push({ ...t, ref, judgment });
-      else if (judgment?.kind === 'hand-over') (awaitingTag[id] ??= []).push({ ...t, ref, judgment });
-      else (importers[id] ??= []).push({ ...t, ref });
-      found.add(key);
+  const unjudged = (byNode) => {
+    const left = {};
+    for (const [id, list] of Object.entries(byNode ?? {})) {
+      for (const t of list) {
+        const ref = testRef(t);
+        const key = pairKey(ref, id);
+        const judgment = latest.get(key);
+        // 여러 Playwright 프로젝트에서 돈 테스트도 판단한 짝은 하나다.
+        if (judgment && found.has(key)) continue;
+        if (judgment?.kind === 'discard') (discarded[id] ??= []).push({ ...t, ref, judgment });
+        else if (judgment?.kind === 'hand-over') (awaitingTag[id] ??= []).push({ ...t, ref, judgment });
+        else (left[id] ??= []).push({ ...t, ref });
+        found.add(key);
+      }
     }
-  }
+    return left;
+  };
+  const importers = unjudged(tests.importers);
+  const passed = unjudged(tests.passed);
   const handOvers = [...latest].filter(([, judgment]) => judgment.kind === 'hand-over');
   if (handOvers.length) for (const [id, list] of Object.entries(tests.nodes ?? {})) for (const t of list) found.add(pairKey(testRef(t), id));
+  const inResults = new Map();
+  if (handOvers.length) {
+    for (const t of [...(tests.untagged ?? []), ...Object.values(tests.nodes ?? {}).flat(), ...Object.values(tests.stories ?? {}).flat()]) {
+      const key = JSON.stringify(testRef(t));
+      if (!inResults.has(key) || 'unmatched' in t) inResults.set(key, t);
+    }
+  }
   const detachedHandOvers = {};
   for (const [key, judgment] of handOvers) {
-    if (!found.has(key)) (detachedHandOvers[judgment.node] ??= []).push({ ref: judgment.test, judgment });
+    if (found.has(key)) continue;
+    const t = inResults.get(JSON.stringify(judgment.test));
+    // trace 를 읽지 못한 실행으로는 테스트가 그 화면을 열었는지 알 수 없으므로, 포함한 짝을 떨어져 나간 것으로 보지 않는다.
+    if (t?.format === 'playwright' && !('unmatched' in t)) (awaitingTag[judgment.node] ??= []).push({ ...t, ref: judgment.test, judgment, unconfirmed: true });
+    else (detachedHandOvers[judgment.node] ??= []).push({ ref: judgment.test, judgment });
   }
   for (const list of Object.values(detachedHandOvers)) list.sort((a, b) => compare(a.ref.file, b.ref.file) || compare(a.ref.title, b.ref.title) || compare(a.ref.source, b.ref.source));
   const untagged = tests.untagged?.map((t) => ({ ...t, ref: testRef(t) }));
-  return { ...tests, ...(untagged && { untagged }), importers, discarded, awaitingTag, detachedHandOvers };
+  return { ...tests, ...(untagged && { untagged }), importers, passed, discarded, awaitingTag, detachedHandOvers };
 }

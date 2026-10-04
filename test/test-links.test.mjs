@@ -541,6 +541,19 @@ test('a test already tagged with a call is not among the tests that sent it, sta
   assert.equal(tracedLinks.nodes['GET:/api/v1/member/list'], links.nodes['GET:/api/v1/member/list']);
 });
 
+test('a browser test whose trace was read carries the addresses it opened that fit no screen, tagged or not, and one whose trace was not read carries no such list', () => {
+  const untagged = (title) => tracedLinks.untagged.find((t) => t.title === title);
+  assert.deepEqual(untagged('wanders off the map').unmatched, ['http://127.0.0.1:4598/nowhere']);
+  assert.deepEqual(untagged('opens home and then help').unmatched, []);
+  assert.deepEqual(untagged('checks the path of a document').unmatched, []);
+  assert.match(untagged('opens the app from a file').unmatched.join(' '), /^file:\/\/\S+\/build\/index\.html$/);
+  assert.equal('unmatched' in untagged('presses the button without snapshots'), false);
+  assert.equal('unmatched' in untagged('opens help without a trace'), false);
+  assert.equal(links.untagged.some((t) => 'unmatched' in t), false);
+  assert.deepEqual(tracedLinks.nodes['/home#Home'].find((t) => t.title.startsWith('home shows its path')).unmatched, []);
+  assert.equal(links.nodes['/home#Home'].some((t) => 'unmatched' in t), false);
+});
+
 test('the tests that passed through the screens come out in the same order every time', async () => {
   const again = linkTests(traced, await buildMap(traced));
   assert.deepEqual(again.passed, tracedLinks.passed);

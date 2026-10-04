@@ -9,11 +9,13 @@ duru computes the screens of a web client, attaches test results to them, and se
 person marks the screens and the stories (a named order of screens a user goes through) that need more tests.
 duru never calls a model: the reviewer decides what is missing, and you write the tests.
 
-A screen's own tests are the tests that carry its tag. duru also finds *importing* (or *passed-through*) tests: a
+A screen's own tests are the tests that carry its tag. duru also finds *importing* tests: a
 test linked to a screen only by the source files it imports, shown on the review page under 「불러오는 테스트」. They
 are not counted as tests of the screen until they carry the screen's tag, and duru recomputes them on every
-rebuild. The reviewer can discard such a pair or hand it over for tagging; a handed-over pair appears in the task
-list under `# Tagging`.
+rebuild. The same holds for *passed-through* tests: a Playwright test whose trace shows that it opened a screen
+(「지나간 테스트」) or sent an API call (「호출한 테스트」) without carrying that tag. Opening a screen or sending a
+call is not checking it, so never report such a test as a test of the screen or call. The reviewer can discard
+such a pair or hand it over for tagging; a handed-over pair appears in the task list under `# Tagging`.
 
 ## Before you start
 
