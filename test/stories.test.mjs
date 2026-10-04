@@ -271,6 +271,8 @@ for (const [name, files, notices] of [
   ['no author', { 'a.json': { ...STORY, author: undefined } }, [{ file: 'a.json', reason: /^author / }]],
   ['a date that is not a date', { 'a.json': { ...STORY, date: '어제' } }, [{ file: 'a.json', reason: /^date / }]],
   ['a day the month does not have', { 'a.json': { ...STORY, date: '2026-02-30' } }, [{ file: 'a.json', reason: /^date / }]],
+  ['a source without its step range', { 'a.json': { ...STORY, source: { record: 'qa/a.json' } } }, [{ file: 'a.json', reason: /^source / }]],
+  ['a source whose last step comes before its first', { 'a.json': { ...STORY, source: { record: 'qa/a.json', steps: [3, 2] } } }, [{ file: 'a.json', reason: /^source / }]],
   ['an ID two files share', { 'docs/a.json': STORY, 'lab/a.json': STORY }, [{ file: 'lab/a.json', reason: '스토리 ID a 는 docs/a.json 에서 이미 썼습니다' }]],
   ['an ID that a malformed file earlier in path order has', { 'docs/a.json': '{', 'lab/a.json': STORY }, [
     { file: 'docs/a.json', reason: /^JSON 으로 읽지 못했습니다: / },

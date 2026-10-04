@@ -4,15 +4,19 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.mjs';
+import { acceptCandidate, discardCandidate, storyCandidates } from './candidates.mjs';
+import { isPlainObject } from './config.mjs';
 import { buildFlow } from './flow.mjs';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.mjs';
 import { addMark, classifyMarks, loadMarks } from './marks.mjs';
 import { fillPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.mjs';
+import { editStory } from './stories.mjs';
 import { checkStoryFiles } from './story-paths.mjs';
 import { DEPTHS } from './test-links.mjs';
 
 const PAGE = path.join(import.meta.dirname, 'review-page.html');
 const BODY_LIMIT = 64 * 1024;
+const STORY_WRITES = ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit'];
 
 function gitUserName(cwd) {
   try {
@@ -73,6 +77,7 @@ export function reviewData(config, author, app = null, fileSettings = null) {
     tests,
     marks: classifyMarks(loadMarks(config.marksDir), map, storyIds),
     stories,
+    candidates: storyCandidates(config, map, mapFile),
     storiesDir: config.storiesDir,
     flow: buildFlow(map, tests),
     appUrl: config.appUrl ?? null,
@@ -170,6 +175,33 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
         try {
           const overrides = await app.setOverrides(JSON.parse(await readBody(req))?.overrides);
           return send(res, 200, 'application/json', JSON.stringify({ overrides }));
+        } catch (err) {
+          return send(res, 400, 'text/plain', err.message);
+        }
+      }
+      if (req.method === 'POST' && STORY_WRITES.includes(req.url)) {
+        if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
+        let input;
+        try {
+          input = JSON.parse(await readBody(req));
+        } catch (err) {
+          return send(res, 400, 'text/plain', err.message);
+        }
+        if (!isPlainObject(input)) return send(res, 400, 'text/plain', 'expected a JSON object');
+        if (req.url === '/api/stories/edit') {
+          try {
+            return send(res, 200, 'application/json', JSON.stringify(editStory(config.storiesDir, input.id, input)));
+          } catch (err) {
+            return send(res, 400, 'text/plain', err.message);
+          }
+        }
+        const candidate = storyCandidates(config, readJson(mapFile), mapFile).list.find((c) => c.source.record === input.record);
+        if (!candidate) return send(res, 404, 'text/plain', `후보 ${input.record} 가 없습니다`);
+        try {
+          const written = req.url === '/api/candidates/accept'
+            ? acceptCandidate(config.storiesDir, candidate, { id: input.id, name: input.name, author: author.name })
+            : discardCandidate(config.storiesDir, candidate, { reason: input.reason, author: author.name });
+          return send(res, 201, 'application/json', JSON.stringify(written));
         } catch (err) {
           return send(res, 400, 'text/plain', err.message);
         }

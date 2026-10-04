@@ -142,6 +142,16 @@
   .save-row { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
   button.save { padding: 6px 14px; border-radius: 6px; border: 0; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
   button.save:disabled { opacity: .5; cursor: default; }
+  .story-form { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; margin: 0; padding: 0; border: 0; }
+  .story-form button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+  .story-form button.discard { background: var(--panel); color: var(--fail); border-color: var(--fail); }
+  .story-form .accepts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .story-form button.accept-edited { background: var(--panel); color: var(--text); border-color: var(--line); }
+  .story-form button:disabled { opacity: .5; cursor: default; }
+  :is(.story-form, #accept-ask) .field { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+  :is(.story-form, #accept-ask) .field > span { font-size: 12px; color: var(--muted); }
+  :is(.story-form, #accept-ask) .field .invalid { font-size: 12px; color: var(--fail); }
+  .story-path .step .records { flex: none; font-size: 12px; }
   .history li { font-size: 12px; }
   .history-toggle { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
   .history-toggle::after { content: ' ▸'; }
@@ -236,19 +246,23 @@
   .bulk-bar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 8px 0; }
   .bulk-bar button:disabled { cursor: default; opacity: .5; }
   .bulk-bar .bulk-error { flex: 1 1 100%; margin: 0; font-size: 12px; white-space: pre-line; }
-  #exclude { width: min(520px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
-  #exclude::backdrop { background: rgba(0, 0, 0, .35); }
-  #exclude h2 { margin: 0 0 10px; font-size: 15px; color: var(--text); }
+  :is(#exclude, #accept-ask) { width: min(520px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
+  :is(#exclude, #accept-ask)::backdrop { background: rgba(0, 0, 0, .35); }
+  :is(#exclude, #accept-ask) h2 { margin: 0 0 10px; font-size: 15px; color: var(--text); }
   #exclude .pairs { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 10px; margin-bottom: 12px; font-size: 13px; overflow-wrap: anywhere; }
   #exclude .pairs .label { font-size: 12px; font-weight: 600; color: var(--muted); }
   #exclude .pairs ul { max-height: 30vh; overflow: auto; }
   #exclude textarea { min-height: 84px; max-height: 40vh; }
-  #exclude .error { margin: 8px 0 0; font-size: 12px; white-space: pre-line; }
-  #exclude .actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  :is(#exclude, #accept-ask) .error { margin: 8px 0 0; font-size: 12px; white-space: pre-line; }
+  :is(#exclude, #accept-ask) .actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
   #exclude .actions .hint { margin-right: auto; font-size: 12px; }
-  #exclude button { padding: 4px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+  :is(#exclude, #accept-ask) button { padding: 4px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
   #exclude button.discard { border-color: var(--fail); color: var(--fail); font-weight: 600; }
-  #exclude button:disabled { cursor: default; opacity: .5; }
+  :is(#exclude, #accept-ask) button:disabled { cursor: default; opacity: .5; }
+  #accept-ask .candidate { margin: 0 0 12px; font-size: 13px; overflow-wrap: anywhere; }
+  #accept-ask .field + .field { margin-top: 8px; }
+  #accept-ask .actions { justify-content: flex-end; }
+  #accept-ask button.accept { border-color: var(--accent); background: var(--accent); color: #fff; font-weight: 600; }
   .screens li.locked, .story-path .step.on-map.locked { cursor: default; opacity: .6; }
   .screens li.locked:not(.selected):hover { background: none; }
   .story-path .step.on-map.locked:hover { border-color: var(--line); }
@@ -297,6 +311,17 @@
     <button class="discard"></button>
   </div>
 </dialog>
+<dialog id="accept-ask" closedby="none" aria-labelledby="accept-ask-title">
+  <h2 id="accept-ask-title">ID 와 이름을 정해 스토리로 받습니다</h2>
+  <p class="candidate"></p>
+  <label class="field"><span>ID</span><input type="text" id="accept-id"><small class="invalid" hidden></small></label>
+  <label class="field"><span>이름</span><input type="text" id="accept-name"></label>
+  <p class="error" hidden></p>
+  <div class="actions">
+    <button class="cancel">취소</button>
+    <button class="accept">스토리로 받기</button>
+  </div>
+</dialog>
 <script>
 const DEPTH_LABELS = { ui: 'UI/E2E', api: 'API', render: '렌더링만', code: '코드', data: '데이터', output: '산출물' };
 const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류' };
@@ -327,7 +352,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -401,6 +426,7 @@ async function load() {
     state.story = stories[0]?.id ?? null;
     state.storyDraft = null;
   }
+  if (!candidateOf()) state.candidate = null;
 }
 
 function select(id, target = { node: id }) {
@@ -422,8 +448,20 @@ function select(id, target = { node: id }) {
 function selectStory(id) {
   if (id !== state.story) state.storyOpen.clear();
   state.story = id;
+  state.candidate = null;
   state.storyDraft = null;
   state.error = null;
+  state.storyError = null;
+  state.judgmentError = null;
+  render();
+}
+
+function selectCandidate(record) {
+  if (record !== state.candidate) state.storyOpen.clear();
+  state.candidate = record;
+  state.candidateDraft = null;
+  state.error = null;
+  state.storyError = null;
   state.judgmentError = null;
   render();
 }
@@ -603,6 +641,10 @@ function renderUntaggedList() {
 const LINK_VERDICT = { open: '이어짐', configured: '설정에 적은 이동', conditioned: '조건', broken: '링크 없음', 'off-map': '판정 못 함', unknown: '판정 못 함' };
 const LINK_VERDICT_TITLE = { configured: '설정의 moves 에 적은 이동으로 이어집니다' };
 const storyOf = () => state.data.stories.list.find((st) => st.id === state.story);
+const candidateOf = () => state.data.candidates.list.find((c) => c.source.record === state.candidate);
+const stepsText = ([first, last]) => (first === last ? `단계 ${first}` : `단계 ${first}–${last}`);
+const sourceText = (source) => `${source.record} · ${stepsText(source.steps)}`;
+const storyDate = (date) => (date.length > 10 ? fmtDate(date) : date);
 const unlistedMarks = () => state.data.marks.attached.filter((m) => m.target.story !== undefined && !state.data.stories.list.some((st) => st.id === m.target.story));
 const screenOf = (id) => state.data.map.screens.find((s) => s.id === id);
 const screenLabel = (id) => screenOf(id)?.path ?? id;
@@ -631,12 +673,30 @@ function storyItems() {
       h('fieldset', {}, h('legend', {}, '상태 · 하나라도 맞으면'), STORY_FILTERS.filter((f) => f.status).map(storyFilterBox)),
       h('fieldset', {}, h('legend', {}, '그리고'), STORY_FILTERS.filter((f) => !f.status).map(storyFilterBox))),
     h('ul', { class: 'screens', id: 'story-list' }, visible.length
-      ? visible.map((st) => h('li', { class: st.id === state.story ? 'selected' : '', onclick: () => selectStory(st.id) },
+      ? visible.map((st) => h('li', { class: st.id === state.story && !state.candidate ? 'selected' : '', onclick: () => selectStory(st.id) },
           h('span', { class: 'name' }, h('span', {}, st.name), h('div', { class: 'muted mono' }, st.id),
             h('div', { class: 'chips' }, st.status === 'pass' ? null : statusChip(st), storyChips(st))),
           markChip(markOf({ story: st.id })),
           h('span', { class: 'count' }, `화면 ${st.steps.length}`)))
       : h('li', { class: 'muted' }, '해당하는 스토리가 없습니다.')),
+  ];
+}
+
+function candidateGroup() {
+  const { list, notices, stale } = state.data.candidates;
+  return [
+    h('h2', { title: '방문 기록에서 나온 화면 순서입니다. 받으면 스토리 파일이 되고, 버리면 다시 나오지 않습니다.' }, `후보 ${list.length}`),
+    stale
+      ? h('p', { class: 'error', id: 'candidates-stale' }, stale)
+      : list.length
+      ? h('ul', { class: 'screens', id: 'candidate-list' }, list.map((c) => h('li', { class: c.source.record === state.candidate ? 'selected' : '', onclick: () => selectCandidate(c.source.record) },
+          h('span', { class: 'name' }, h('span', {}, c.name), h('div', { class: 'muted mono' }, c.source.record), h('div', { class: 'chips' }, storyChips(c))),
+          h('span', { class: 'count' }, `화면 ${c.steps.length}`))))
+      : h('p', { class: 'muted', title: '설정의 visitRecords 에 적은 방문 기록에서 나온 후보가 여기 놓입니다.' }, '없음'),
+    ...(notices.length ? [
+      h('h2', { title: '형식이 틀려 건너뛴 방문 기록과 버린 후보 파일입니다.' }, `건너뛴 파일 ${notices.length}`),
+      h('ul', { class: 'plain notices', id: 'candidate-notices' }, notices.map((n) => h('li', {}, h('code', {}, n.file), h('div', { class: 'error' }, n.reason)))),
+    ] : []),
   ];
 }
 
@@ -648,6 +708,7 @@ function storyList() {
       : list.length
       ? storyItems()
       : [h('p', { class: 'muted' }, '스토리 파일이 없습니다. 스토리 하나를 파일 하나로 ', h('code', {}, state.data.storiesDir), ' 에 둡니다.')]),
+    ...candidateGroup(),
     ...markList('떨어져 나감', 'detached', state.data.marks.detached.filter((m) => m.target.story !== undefined), (m) => m.target.story,
       h('p', { class: 'muted', title: '스토리 파일이 사라진 스토리에 남긴 표시' }, '없음')),
     h('h2', {}, `읽지 못한 스토리 파일 ${notices.length}`),
@@ -1223,17 +1284,20 @@ function renderCenterHead(s) {
   updateSettings(moved ? (list) => autoOverrides(shown, list) : () => null);
 }
 
-function stepItem(step, i) {
+function stepItem(step, i, recordSteps) {
+  const records = recordSteps ? h('span', { class: 'records muted', title: '방문 기록에서 이 화면에 머문 단계' }, stepsText(recordSteps)) : null;
   if (!step.onMap) {
     return h('div', { class: 'step off-map' },
       h('span', { class: 'no' }, i + 1),
       h('span', { class: 'name' }, h('div', { class: 'muted mono' }, step.screen)),
+      records,
       h('span', { class: 'chip l-off-map' }, '맵에 없는 화면'));
   }
   const s = screenOf(step.screen);
   return h('div', { class: 'step on-map', title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
     h('span', { class: 'no' }, i + 1),
-    h('span', { class: 'name' }, screenHead(s), stepTests(s.id)));
+    h('span', { class: 'name' }, screenHead(s), stepTests(s.id)),
+    records);
 }
 
 function stepTests(id) {
@@ -1406,9 +1470,21 @@ function renderUntaggedCenter() {
       h('ul', { class: 'plain' }, t.unmatched.map((url) => h('li', { class: 'mono' }, url)))) : null);
 }
 
+const storyPath = (st, stepRanges) => [
+  h('h2', {}, `화면 순서 ${st.steps.length}`),
+  h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1]) : null, stepItem(step, i, stepRanges?.[i])])),
+];
+
 function renderStoryCenter() {
   clearCenterHead();
   const center = document.getElementById('center-body');
+  const c = candidateOf();
+  if (c) {
+    return fill(center,
+      h('div', { class: 'title-row' }, h('h3', {}, c.name), storyChips(c)),
+      h('div', { class: 'muted mono source', title: '후보가 나온 방문 기록과 단계' }, sourceText(c.source)),
+      storyPath(c, c.stepRanges));
+  }
   const st = storyOf();
   if (!st && state.story) return fill(center, h('h3', {}, state.story), h('p', { class: 'muted', title: '스토리 파일을 읽지 못했거나 맵이 오래되어 경로를 맞춰 보지 못했습니다' }, '경로 판정 없음'));
   if (!st) return fill(center, h('p', { class: 'muted' }, '스토리가 없습니다.'));
@@ -1416,12 +1492,12 @@ function renderStoryCenter() {
   fill(center,
     h('div', { class: 'title-row' }, h('h3', {}, st.name), statusChip(st), storyChips(st)),
     h('div', { class: 'muted mono' }, `${st.id} · ${st.file}`),
-    h('div', { class: 'muted' }, `${st.author} · ${st.date}`),
+    st.source ? h('div', { class: 'muted mono source', title: '받은 후보가 나온 방문 기록과 단계' }, sourceText(st.source)) : null,
+    h('div', { class: 'muted' }, `${st.author} · ${storyDate(st.date)}`),
     st.memo ? h('p', { class: 'memo' }, st.memo) : null,
     h('div', { class: 'story-tests' }, h('h2', {}, `스토리 테스트 ${storyTests.length}`),
       storyTests.length ? storyTests.map((t) => testItem(t, { depth: true })) : h('p', { class: 'muted' }, '없음')),
-    h('h2', {}, `화면 순서 ${st.steps.length}`),
-    h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1]) : null, stepItem(step, i)])));
+    storyPath(st));
 }
 
 const stepLabel = (r) => (r.kind === 'start' ? `첫 화면 ${screenLabel(r.screen)}`
@@ -1453,8 +1529,7 @@ function storyProblems(st) {
   ].filter(Boolean);
 }
 
-function reachBlock(st) {
-  const key = `story\n${st.id}`;
+function reachBlock(st, key) {
   return [
     storySummary(st.reach),
     h('details', { class: 'reach-raw', open: state.storyOpen.has(key), ontoggle: rememberOpen(state.storyOpen, key) },
@@ -1463,19 +1538,186 @@ function reachBlock(st) {
   ];
 }
 
-function renderStoryRight(info, dock) {
-  const st = storyOf();
-  if (!st) {
-    fill(info);
-    return fill(dock, state.story ? markForm({ story: state.story }, 'storyDraft', '스토리') : null);
+const STORY_ID = /^[a-z0-9_-]+$/;
+const slugOf = (name) => name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+const syncButton = (e, ready) => { e.target.closest('.story-form').querySelector('button').disabled = !ready(); };
+const storyForm = (...children) => h('fieldset', { class: 'story-form', disabled: state.storyWriting }, ...children);
+const field = (name, control, ...rest) => h('label', { class: 'field' }, h('span', {}, name), control, ...rest);
+const storyErrorLine = () => (state.storyError ? h('p', { class: 'error story-error' }, state.storyError) : null);
+
+function candidateActions(c) {
+  const d = (state.candidateDraft ??= { reason: '' });
+  const canDiscard = () => Boolean(d.reason.trim());
+  return [
+    h('h2', {}, '받기'),
+    storyForm(h('div', { class: 'accepts' },
+      h('button', { class: 'accept', title: '이 화면 순서로 스토리 파일을 씁니다.', onclick: acceptChosen }, '스토리로 받기'),
+      h('button', { class: 'accept-edited', title: 'ID 와 이름을 고친 뒤에 받습니다.', onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기'))),
+    h('h2', {}, '버리기'),
+    storyForm(
+      field('까닭', h('input', { type: 'text', id: 'discard-reason', value: d.reason, oninput: (e) => { d.reason = e.target.value; syncButton(e, canDiscard); } })),
+      h('button', { class: 'discard', disabled: !canDiscard(), title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다.', onclick: discardChosen }, '버리기')),
+    storyErrorLine(),
+  ];
+}
+
+function storyEdit(st) {
+  if (state.storyEdit?.id !== st.id) state.storyEdit = { id: st.id, name: st.name, memo: st.memo };
+  const d = state.storyEdit;
+  const canSave = () => Boolean(d.name.trim());
+  return [
+    h('h2', {}, '이름 · 메모'),
+    storyForm(
+      field('이름', h('input', { type: 'text', id: 'story-name', value: d.name, oninput: (e) => { d.name = e.target.value; syncButton(e, canSave); } })),
+      field('메모', h('textarea', { id: 'story-memo', oninput: (e) => { d.memo = e.target.value; } }, d.memo)),
+      h('button', { class: 'save-story', disabled: !canSave(), title: '스토리 파일의 이름과 메모를 고쳐 씁니다.', onclick: saveStoryEdit }, '저장')),
+    storyErrorLine(),
+  ];
+}
+
+async function writeStories(url, body) {
+  state.storyError = null;
+  state.storyWriting = true;
+  renderRight();
+  let written = false;
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(await res.text());
+    written = true;
+    await load();
+  } catch (err) {
+    state.storyError = written ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `저장하지 못했습니다: ${err.message}`;
+  } finally {
+    state.storyWriting = false;
   }
+  if (!written) renderRight();
+  return written;
+}
+
+const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === id) ? '같은 ID 의 스토리가 이미 있습니다.' : STORY_ID.test(id) ? null : '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.');
+
+async function acceptAs(c, id, name) {
+  if (!(await writeStories('/api/candidates/accept', { record: c.source.record, id, name }))) return false;
+  state.candidate = null;
+  state.candidateDraft = null;
+  state.story = id;
+  state.storyDraft = null;
+  state.error = null;
+  render();
+  return true;
+}
+
+function takeStoryError() {
+  const refused = state.storyError;
+  state.storyError = null;
+  renderRight();
+  return refused;
+}
+
+async function acceptChosen() {
+  const c = candidateOf();
+  if (!c) return;
+  if (storyIdProblem(slugOf(c.name))) return askAccept(c, 'button.accept', null);
+  if (await acceptAs(c, slugOf(c.name), c.name)) return;
+  if (state.candidate === c.source.record) askAccept(c, 'button.accept', takeStoryError());
+}
+
+const acceptDialog = document.getElementById('accept-ask');
+const acceptPart = (selector) => acceptDialog.querySelector(selector);
+let acceptJob = null;
+
+function drawAccept() {
+  const { busy, error } = acceptJob;
+  const problem = storyIdProblem(acceptPart('#accept-id').value);
+  acceptPart('#accept-id').readOnly = busy;
+  acceptPart('#accept-name').readOnly = busy;
+  acceptPart('.invalid').textContent = problem ?? '';
+  acceptPart('.invalid').hidden = !problem;
+  acceptPart('button.cancel').disabled = busy;
+  acceptPart('button.accept').disabled = busy || Boolean(problem) || !acceptPart('#accept-name').value.trim();
+  acceptPart('.error').textContent = error ?? '';
+  acceptPart('.error').hidden = !error;
+}
+
+function askAccept(candidate, opener, error) {
+  acceptJob = { candidate, opener, busy: false, error };
+  fill(acceptPart('.candidate'), h('span', { class: 'muted' }, '후보 '), candidate.name);
+  acceptPart('#accept-id').value = slugOf(candidate.name);
+  acceptPart('#accept-name').value = candidate.name;
+  drawAccept();
+  acceptDialog.showModal();
+  acceptPart('#accept-id').select();
+}
+
+function closeAccept() {
+  const { opener } = acceptJob;
+  acceptJob = null;
+  acceptDialog.close();
+  document.querySelector(`#right ${opener}`)?.focus();
+}
+
+async function confirmAccept() {
+  const job = acceptJob;
+  Object.assign(job, { busy: true, error: null });
+  drawAccept();
+  if (await acceptAs(job.candidate, acceptPart('#accept-id').value, acceptPart('#accept-name').value.trim())) return closeAccept();
+  Object.assign(job, { busy: false, error: takeStoryError() });
+  drawAccept();
+  acceptPart('#accept-id').focus();
+}
+
+acceptDialog.addEventListener('input', drawAccept);
+acceptPart('button.accept').addEventListener('click', confirmAccept);
+acceptPart('button.cancel').addEventListener('click', closeAccept);
+acceptDialog.addEventListener('keydown', (e) => {
+  const send = e.key === 'Enter' && e.target.matches('input');
+  if ((e.key !== 'Escape' && !send) || e.isComposing) return;
+  e.preventDefault();
+  if (e.repeat) return;
+  acceptPart(send ? 'button.accept' : 'button.cancel').click();
+});
+
+async function discardChosen() {
+  const c = candidateOf();
+  if (!c) return;
+  const at = state.data.candidates.list.indexOf(c);
+  if (!(await writeStories('/api/candidates/discard', { record: c.source.record, reason: state.candidateDraft.reason }))) return;
+  const { list } = state.data.candidates;
+  state.candidate = (list[at] ?? list[at - 1])?.source.record ?? null;
+  state.candidateDraft = null;
+  render();
+}
+
+async function saveStoryEdit() {
+  const st = storyOf();
+  if (!st || !(await writeStories('/api/stories/edit', { id: st.id, name: state.storyEdit.name, memo: state.storyEdit.memo }))) return;
+  state.storyEdit = null;
+  render();
+}
+
+function reachSection(st, key) {
   const problems = storyProblems(st);
-  fill(dock, markForm({ story: st.id }, 'storyDraft', '스토리'));
-  fill(info,
+  return [
     (problems.length ? problems : [['reachable', '도달 가능']]).map(([cls, text]) => h('p', { class: `verdict ${cls}` }, text)),
     st.links.some((l) => l.ways.length && l.unknownLinks) ? h('p', { class: 'muted skipped' }, '주소 못 읽은 링크 빼고 판정') : null,
     h('h2', {}, '사전 조건'),
-    st.reach.length ? reachBlock(st) : h('p', { class: 'muted' }, problems.length ? '판정한 구간에 조건 없음' : '조건 없음'));
+    st.reach.length ? reachBlock(st, key) : h('p', { class: 'muted' }, problems.length ? '판정한 구간에 조건 없음' : '조건 없음'),
+  ];
+}
+
+function renderStoryRight(info, dock) {
+  const c = candidateOf();
+  if (c) {
+    fill(dock);
+    return fill(info, ...reachSection(c, `candidate\n${c.source.record}`), ...candidateActions(c));
+  }
+  const st = storyOf();
+  if (!st) {
+    fill(info, storyErrorLine());
+    return fill(dock, state.story ? markForm({ story: state.story }, 'storyDraft', '스토리') : null);
+  }
+  fill(dock, markForm({ story: st.id }, 'storyDraft', '스토리'));
+  fill(info, ...reachSection(st, `story\n${st.id}`), ...storyEdit(st));
 }
 
 function renderCenter() {
@@ -1611,7 +1853,7 @@ function renderRight() {
     fill(info);
     return fill(dock);
   }
-  const view = state.side === 'stories' ? `story(${state.story})` : `${state.selected}\n${state.target?.node}`;
+  const view = state.side !== 'stories' ? `${state.selected}\n${state.target?.node}` : state.candidate ? `candidate(${state.candidate})` : `story(${state.story})`;
   const shown = shownTarget();
   const dockKey = shown ? keyOf(shown) : null;
   if (dockKey !== state.dockKey) state.historyOpen = false;
@@ -2585,7 +2827,8 @@ function placeHash() {
   if (state.view === 'flow') {
     if (state.focus) p.set('from', state.focus.id);
   } else if (state.side === 'stories') {
-    if (state.story !== null) p.set('story', state.story);
+    if (state.candidate !== null) p.set('candidate', state.candidate);
+    else if (state.story !== null) p.set('story', state.story);
   } else if (state.side === 'untagged') {
     if (state.untaggedTest !== null) p.set('test', state.untaggedTest);
   } else if (state.selected !== null) {
@@ -2634,9 +2877,14 @@ async function applyPlace() {
     state.side = head;
     const screen = p.get('screen');
     const story = p.get('story');
+    const candidate = p.get('candidate');
     const test = p.get('test');
+    const storyKnown = state.data.stories.list.some((st) => st.id === story) || unlistedMarks().some((m) => m.target.story === story);
     if (head === 'screens' && screen !== state.selected && screenOf(screen)) go = () => select(screen);
-    else if (head === 'stories' && story !== state.story && (state.data.stories.list.some((st) => st.id === story) || unlistedMarks().some((m) => m.target.story === story))) go = () => selectStory(story);
+    else if (head === 'stories' && candidate !== null) {
+      if (candidate !== state.candidate && state.data.candidates.list.some((c) => c.source.record === candidate)) go = () => selectCandidate(candidate);
+    } else if (head === 'stories' && state.candidate !== null) go = () => selectStory(storyKnown ? story : state.story);
+    else if (head === 'stories' && story !== state.story && storyKnown) go = () => selectStory(story);
     else if (head === 'untagged' && test !== state.untaggedTest && untaggedTests().some((t) => untaggedKey(t) === test)) go = () => selectUntaggedTest(test);
   }
   applyingPlace = true;

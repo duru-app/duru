@@ -1,0 +1,6 @@
+{
+  "steps": [
+    { "url": "/home" },
+    { "action": "click" }
+  ]
+}

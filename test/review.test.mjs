@@ -1162,7 +1162,7 @@ for (const host of ['127.0.0.1', 'localhost']) {
           assert.match(await p.locator('#right h2', { hasText: '표시 —' }).textContent(), /API 깊이/);
           assert.equal(await p.isDisabled('#right button.save'), true);
           await p.click('#right .statuses button:has-text("더 필요")');
-          await p.fill('#right textarea', 'no API test yet');
+          await p.fill('#right-dock textarea', 'no API test yet');
           await p.click('#right button.save');
           await openHistory(p);
           await p.waitForSelector('#right .history li:has-text("no API test yet")');
@@ -1518,15 +1518,15 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await p.waitForSelector('#screen-list li');
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '표시 — 스토리']);
+        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '표시 — 스토리']);
         assert.equal(await p.isDisabled('#right button.save'), true);
         await p.click('#right .statuses button:has-text("없음")');
-        await p.fill('#right textarea', 'no test walks the lab');
+        await p.fill('#right-dock textarea', 'no test walks the lab');
         await p.click('#right button.save');
         await openHistory(p);
         await p.waitForSelector('#right .history li:has-text("no test walks the lab")');
         await p.click('#right .statuses button:has-text("더 필요")');
-        await p.fill('#right textarea', 'the story test fails');
+        await p.fill('#right-dock textarea', 'the story test fails');
         await p.click('#right button.save');
         await p.waitForSelector('#right .history li:has-text("the story test fails")');
         assert.deepEqual(await p.locator('#right .history li .chip').allTextContents(), ['더 필요', '없음']);
@@ -2286,7 +2286,7 @@ test('in a browser, the dock keeps the info part at least 120px tall on a short 
           assert.ok(await insideRightPane(p, '#right button.save'));
           assert.ok(await p.locator('#right-info').evaluate((e) => e.scrollHeight > e.clientHeight), 'the info part scrolls');
         }
-        assert.ok((await p.locator('#right textarea').evaluate((e) => getComputedStyle(e).maxHeight)) !== 'none');
+        assert.ok((await p.locator('#right-dock textarea').evaluate((e) => getComputedStyle(e).maxHeight)) !== 'none');
       }),
     ),
   );
@@ -2330,10 +2330,10 @@ test('in a browser, a save that finishes after the reviewer moved to another scr
         const holdNextPost = () => new Promise((resolve) => { onPost = resolve; });
         const pick = async (status, note) => {
           await p.click(`#right .statuses button:has-text("${status}")`);
-          await p.fill('#right textarea', note);
+          await p.fill('#right-dock textarea', note);
         };
         const assertForm = async (status, note) => {
-          assert.equal(await p.inputValue('#right textarea'), note);
+          assert.equal(await p.inputValue('#right-dock textarea'), note);
           assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), [status]);
         };
 
@@ -2426,10 +2426,10 @@ test('in a browser, picking a status updates the form in place, keeping the memo
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/document/:id")');
         assert.equal(await p.locator('#right button.save').isEnabled(), false);
-        const memo = await p.$('#right textarea');
+        const memo = await p.$('#right-dock textarea');
         const dragged = await memo.evaluate((e) => { e.style.height = '150px'; return e.getBoundingClientRect().height; });
         await p.click('#right .statuses button:has-text("더 필요")');
-        assert.ok(await memo.evaluate((e) => e === document.querySelector('#right textarea')), 'the memo box is the same element');
+        assert.ok(await memo.evaluate((e) => e === document.querySelector('#right-dock textarea')), 'the memo box is the same element');
         assert.equal(await memo.evaluate((e) => e.getBoundingClientRect().height), dragged);
         assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), ['더 필요']);
         assert.equal(await p.locator('#right button.save').isEnabled(), true);
@@ -2720,7 +2720,7 @@ test('in a browser, opened link groups and opened long conditions stay open when
     assert.deepEqual(await openState(), expected);
     await p.click('#right .statuses button:has-text("더 필요")');
     assert.deepEqual(await openState(), expected);
-    await p.fill('#right textarea', 'redraw');
+    await p.fill('#right-dock textarea', 'redraw');
     await p.click('#right button.save');
     await p.waitForSelector('#center tr.selected td.mark:has-text("더 필요")');
     assert.deepEqual(await openState(), expected);
@@ -2762,7 +2762,7 @@ test('in a browser, the chosen screen shows its calls with the server match and 
         assert.match(await p.textContent('#right .mark-form h2'), /API 깊이/);
         assert.equal(await p.locator('#right .test').count(), 0);
         await p.click('#right .statuses button:has-text("없음")');
-        await p.fill('#right textarea', 'no API test for the rename');
+        await p.fill('#right-dock textarea', 'no API test for the rename');
         await p.click('#right button.save');
         await p.waitForSelector('table.calls td.cell.selected .chip.missing');
         assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.author]), [
@@ -2813,7 +2813,7 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         assert.match(await p.textContent('#right .mark-form h2'), /withHistory 켬 · 산출물 깊이/);
         assert.equal(await p.locator('#right .test').count(), 0);
         await p.click('#right .statuses button:has-text("없음")');
-        await p.fill('#right textarea', 'Open the exported file.');
+        await p.fill('#right-dock textarea', 'Open the exported file.');
         await p.click('#right button.save');
         await p.waitForSelector('table.calls td.cell.selected .chip.missing');
 
@@ -4288,7 +4288,7 @@ test('in a browser, 「리뷰 끝」 asks before throwing away a mark that was p
       await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#right .statuses button:has-text("없음")');
-        await p.fill('#right textarea', 'draft note');
+        await p.fill('#right-dock textarea', 'draft note');
 
         const asked = [];
         p.once('dialog', (d) => { asked.push(d.message()); d.dismiss(); });
@@ -4297,17 +4297,17 @@ test('in a browser, 「리뷰 끝」 asks before throwing away a mark that was p
         assert.equal(asked.length, 1);
         assert.equal(ends, 0);
         assert.equal(await p.locator('#ended').count(), 0);
-        assert.equal(await p.inputValue('#right textarea'), 'draft note');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'draft note');
 
         await p.locator('table.calls td.cell').first().click();
         await p.click('#right .statuses button:has-text("없음")');
-        await p.fill('#right textarea', 'call note');
+        await p.fill('#right-dock textarea', 'call note');
         p.once('dialog', (d) => { asked.push(d.message()); d.dismiss(); });
         await p.click('header button:has-text("리뷰 끝")');
         await p.waitForTimeout(200);
         assert.equal(asked.length, 2);
         assert.equal(ends, 0);
-        assert.equal(await p.inputValue('#right textarea'), 'call note');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'call note');
 
         p.once('dialog', (d) => d.accept());
         await p.click('header button:has-text("리뷰 끝")');
@@ -5671,7 +5671,7 @@ test('in a browser, the fold of a story\'s raw conditions and its long condition
     assert.deepEqual(await openState(), expected);
     await p.click('#right .statuses button:has-text("더 필요")');
     assert.deepEqual(await openState(), expected);
-    await p.fill('#right textarea', 'redraw');
+    await p.fill('#right-dock textarea', 'redraw');
     await p.click('#right button.save');
     await openHistory(p);
     await p.waitForSelector('#right .history li:has-text("redraw")');
@@ -7495,11 +7495,11 @@ test('in a browser, going back to a screen drops a mark that was not saved, as c
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
         await p.click('#screen-list li:has-text("/signin")');
-        await p.fill('#right textarea', 'not saved');
+        await p.fill('#right-dock textarea', 'not saved');
         await p.goBack();
         await p.goForward();
         assert.match(await p.textContent('#screen-list li.selected'), /\/signin/);
-        assert.equal(await p.inputValue('#right textarea'), '');
+        assert.equal(await p.inputValue('#right-dock textarea'), '');
       })));
 });
 
@@ -7695,4 +7695,411 @@ test('in a browser, a skipped browser test with no pairs says that it did not ru
         await p.click('#untagged-list li:has-text("loads without errors")');
         assert.equal(await p.textContent('#center .no-screens'), '이 테스트는 건너뛰어 돌지 않았으므로, 어느 화면을 열고 어느 호출을 보내는지 알 수 없습니다.');
       })));
+});
+
+const postJson = (base, url, body) => fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const CANDIDATES = { storiesDir: 'example-stories', visitRecords: ['example-visits'] };
+const HELP_RECORD = 'example-visits/open-help.json';
+
+test('the data carries the story candidates from the visit records, checked against the map, and the files that could not be read', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const { candidates } = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(candidates.list.map((c) => [c.name, c.source.record, c.screens.length, c.links.map((l) => l.verdict)]), [
+        ['open-help', HELP_RECORD, 4, ['open', 'off-map', 'off-map']],
+        ['publish-document', 'example-visits/publish-document.json', 4, ['open', 'open', 'conditioned']],
+      ]);
+      assert.deepEqual(candidates.notices, [{ file: 'example-visits/broken-record.json', reason: '2 번째 단계에 url 이 없습니다' }]);
+    }),
+  );
+});
+
+test('a candidate accepted through the page becomes a story file with the server-side author, and leaves the candidates', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const res = await postJson(base, '/api/candidates/accept', { record: HELP_RECORD, id: 'open-help', name: '홈에서 도움말을 연다', author: 'someone else' });
+      assert.equal(res.status, 201);
+      const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
+      assert.equal(saved.author, 'reviewer');
+      assert.deepEqual(saved.source, { record: HELP_RECORD, steps: [1, 5] });
+      const data = await (await fetch(`${base}/api/data`)).json();
+      assert.ok(data.stories.list.some((s) => s.id === 'open-help' && s.name === '홈에서 도움말을 연다'));
+      assert.deepEqual(data.candidates.list.map((c) => c.name), ['publish-document']);
+
+      assert.equal((await postJson(base, '/api/candidates/accept', { record: HELP_RECORD, id: 'again', name: 'x' })).status, 404);
+      const taken = await postJson(base, '/api/candidates/accept', { record: 'example-visits/publish-document.json', id: 'run-lab', name: 'x' });
+      assert.equal(taken.status, 400);
+      assert.match(await taken.text(), /run-lab\.json 이 이미 씁니다/);
+    }),
+  );
+});
+
+test('a candidate discarded through the page is kept in the discarded folder with the server-side author and does not come back after the map is rebuilt', async () => {
+  await withRebuiltFixture(CANDIDATES, async (config, copy) => {
+    await withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postJson(base, '/api/candidates/discard', { record: HELP_RECORD, reason: ' ' })).status, 400);
+      assert.equal((await postJson(base, '/api/candidates/discard', { record: HELP_RECORD, reason: '베타 화면', author: 'someone else' })).status, 201);
+    });
+    const [file] = fs.readdirSync(path.join(config.storiesDir, 'discarded'));
+    assert.match(file, /^\d{4}-\d{2}-\d{2}-reviewer-[0-9a-f]{8}\.json$/);
+    const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'discarded', file), 'utf8'));
+    assert.deepEqual([saved.reason, saved.author], ['베타 화면', 'reviewer']);
+    rebuild(copy);
+    await withServer(config, 'reviewer', async (base) => {
+      const data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.candidates.list.map((c) => c.name), ['publish-document']);
+      assert.ok(!data.stories.list.some((s) => s.name === 'open-help'));
+    });
+  });
+});
+
+test('a story name and memo edited through the page are written into its file', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const res = await postJson(base, '/api/stories/edit', { id: 'run-lab', name: '실험실 결과를 본다', memo: '실험실 설정을 켠다.' });
+      assert.equal(res.status, 200);
+      const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'));
+      assert.deepEqual([saved.name, saved.memo, saved.author], ['실험실 결과를 본다', '실험실 설정을 켠다.', 'Kim Min']);
+      assert.equal((await postJson(base, '/api/stories/edit', { id: 'run-lab', name: '' })).status, 400);
+      assert.equal((await postJson(base, '/api/stories/edit', { id: 'nope', name: 'x', memo: '' })).status, 400);
+    }),
+  );
+});
+
+test('story writes that are not JSON requests are refused', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit']) {
+        const res = await fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
+        assert.equal(res.status, 415, url);
+      }
+      assert.ok(!fs.existsSync(path.join(config.storiesDir, 'discarded')));
+    }),
+  );
+});
+
+const chipsIn = (p, list) => p.locator(`${list} li`).evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent)));
+const storiesTab = '#left .views.side button:has-text("스토리")';
+const BAD_REQUEST = 'Failed to load resource: the server responded with a status of 400 (Bad Request)';
+
+test('in a browser, the story list has a group of candidates, a chosen candidate shows its path like a story with the record steps behind each screen, and accepting it writes a story file under the name of the record, or under an ID and a name changed in a window, and moves it to the story list', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        assert.match(await p.textContent('#left'), /후보 2/);
+        assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['open-help', 'publish-document']);
+        assert.deepEqual(await chipsIn(p, '#candidate-list'), [['화면 없음'], []]);
+        assert.deepEqual(await p.locator('#candidate-notices li code').allTextContents(), ['example-visits/broken-record.json']);
+        assert.match(await p.textContent('#left'), /건너뛴 파일 1/);
+
+        await p.click('#candidate-list li:has-text("open-help")');
+        assert.equal(await p.locator('#story-list li.selected').count(), 0);
+        assert.equal(await p.textContent('#center h3'), 'open-help');
+        assert.equal(await p.textContent('#center .source'), 'example-visits/open-help.json · 단계 1–5');
+        assert.deepEqual(await p.locator('#center .story-path .step .records').allTextContents(), ['단계 1', '단계 2', '단계 3–4', '단계 5']);
+        assert.equal(await p.textContent('#center .story-path .step.off-map .mono'), '/beta/inbox');
+        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['이어짐', '판정 못 함', '판정 못 함']);
+        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
+        assert.deepEqual(await p.locator('#right-info > *').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['판정 못 함 · 화면 없음', '사전 조건']);
+        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '받기', '버리기']);
+        assert.equal(await p.locator('#right-dock').isVisible(), false);
+        assert.deepEqual(await p.locator('#right .story-form label > span:first-child').allTextContents(), ['까닭']);
+        assert.equal(await p.textContent('#right button.accept'), '스토리로 받기');
+
+        await p.click('#right button.accept');
+        await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['publish-document']);
+        assert.equal(await p.textContent('#center h3'), 'open-help');
+        assert.match(await p.textContent('#center .source'), /^example-visits\/open-help\.json · 단계 1–5$/);
+        const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
+        assert.deepEqual([saved.name, saved.author, saved.screens.length], ['open-help', 'reviewer', 4]);
+
+        await p.click('#candidate-list li:has-text("publish-document")');
+        assert.deepEqual(await p.locator('#right .accepts button').allTextContents(), ['스토리로 받기', '고쳐서 받기']);
+        await p.click('#right button.accept-edited');
+        await p.waitForSelector('#accept-ask[open]');
+        assert.deepEqual([await p.inputValue('#accept-id'), await p.inputValue('#accept-name')], ['publish-document', 'publish-document']);
+        assert.equal(await p.isVisible('#accept-ask .invalid'), false);
+        await p.keyboard.press('Escape');
+        assert.equal(await p.isVisible('#accept-ask'), false);
+        assert.equal(await p.evaluate(() => document.activeElement.className), 'accept-edited');
+
+        await p.click('#right button.accept-edited');
+        await p.fill('#accept-name', ' ');
+        assert.equal(await p.isDisabled('#accept-ask button.accept'), true);
+        await p.fill('#accept-id', 'publish');
+        await p.fill('#accept-name', '문서를 발행한다');
+        await p.keyboard.press('Enter');
+        await p.waitForSelector('#story-list li.selected:has-text("문서를 발행한다")');
+        assert.equal(await p.isVisible('#accept-ask'), false);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'publish.json'), 'utf8')).name, '문서를 발행한다');
+      }),
+    ),
+  );
+});
+
+test('in a browser, accepting a candidate asks for an ID in a window only when the name of the record is already the ID of a story or the server refuses it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) => {
+    fs.writeFileSync(path.join(config.storiesDir, 'open-help.json'), JSON.stringify({ name: '도움말', screens: ['/help#Help'], memo: '', author: 'Kim Min', date: '2026-10-01' }));
+    fs.writeFileSync(path.join(config.storiesDir, 'publish-document.json'), '{');
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        const ask = '#accept-ask';
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("open-help")');
+        assert.equal(await p.isVisible(ask), false);
+        await p.click('#right button.accept');
+        await p.waitForSelector(`${ask}[open]`);
+        assert.equal(await p.textContent(`${ask} .candidate`), '후보 open-help');
+        assert.equal(await p.inputValue('#accept-id'), 'open-help');
+        assert.equal(await p.textContent(`${ask} .invalid`), '같은 ID 의 스토리가 이미 있습니다.');
+        assert.equal(await p.isDisabled(`${ask} button.accept`), true);
+        await p.fill('#accept-id', 'Open Help');
+        assert.equal(await p.textContent(`${ask} .invalid`), '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.');
+        assert.equal(await p.isDisabled(`${ask} button.accept`), true);
+        await p.keyboard.press('Escape');
+        assert.equal(await p.isVisible(ask), false);
+        assert.equal(await p.evaluate(() => document.activeElement.className), 'accept');
+        assert.deepEqual(fs.readdirSync(config.storiesDir).filter((f) => f.startsWith('open-help')), ['open-help.json']);
+
+        await p.click('#right button.accept');
+        await p.fill('#accept-id', 'open-help-again');
+        assert.equal(await p.isVisible(`${ask} .invalid`), false);
+        await p.focus(`${ask} button.cancel`);
+        await p.keyboard.press('Enter');
+        assert.equal(await p.isVisible(ask), false);
+        assert.ok(!fs.existsSync(path.join(config.storiesDir, 'open-help-again.json')));
+
+        await p.click('#right button.accept');
+        await p.fill('#accept-id', 'open-help-again');
+        await p.keyboard.press('Enter');
+        await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        assert.equal(await p.isVisible(ask), false);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help-again.json'), 'utf8')).name, 'open-help');
+
+        await p.click('#candidate-list li:has-text("publish-document")');
+        const writes = holdRequests(p, '**/api/candidates/accept');
+        await p.click('#right button.accept');
+        await p.waitForFunction(() => document.querySelector('#right .story-form').disabled);
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        writes.release();
+        await p.waitForSelector('#right .story-error');
+        assert.match(await p.textContent('#right .story-error'), /저장하지 못했습니다: 스토리 ID publish-document 는 .+ 이미 씁니다/);
+        assert.equal(await p.isVisible(ask), false);
+        assert.deepEqual(errors.splice(0), [BAD_REQUEST]);
+        await p.unroute('**/api/candidates/accept');
+
+        await p.click('#candidate-list li:has-text("publish-document")');
+        await p.click('#right button.accept');
+        await p.waitForSelector(`${ask}[open]`);
+        assert.match(await p.textContent(`${ask} .error`), /저장하지 못했습니다: 스토리 ID publish-document 는 .+ 이미 씁니다/);
+        assert.equal(await p.locator('#right .story-error').count(), 0);
+        assert.equal(await p.inputValue('#accept-id'), 'publish-document');
+        await p.click(`${ask} button.accept`);
+        await p.waitForFunction(() => /저장하지 못했습니다/.test(document.querySelector('#accept-ask .error').textContent) && !document.querySelector('#accept-ask button.cancel').disabled);
+        assert.deepEqual(errors.splice(0), [BAD_REQUEST, BAD_REQUEST]);
+        await p.fill('#accept-id', 'publish-document-again');
+        await p.click(`${ask} button.accept`);
+        await p.waitForSelector('#story-list li.selected:has-text("publish-document")');
+        assert.equal(await p.isVisible(ask), false);
+        assert.ok(fs.existsSync(path.join(config.storiesDir, 'publish-document-again.json')));
+      }),
+    );
+  });
+});
+
+test('in a browser, discarding a candidate takes a reason, writes the discarded file, and moves on to the next candidate', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("open-help")');
+        assert.equal(await p.isDisabled('#right button.discard'), true);
+        assert.ok(!fs.existsSync(path.join(config.storiesDir, 'discarded')));
+
+        await p.fill('#discard-reason', '베타 화면');
+        await p.click('#right button.discard');
+        await p.waitForSelector('#candidate-list li:only-child');
+        assert.equal(await p.textContent('#candidate-list li.selected .name > span:first-child'), 'publish-document');
+        assert.equal(await p.textContent('#center h3'), 'publish-document');
+        assert.equal(await p.inputValue('#discard-reason'), '');
+        const [file] = fs.readdirSync(path.join(config.storiesDir, 'discarded'));
+        const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'discarded', file), 'utf8'));
+        assert.deepEqual([saved.name, saved.reason, saved.author], ['open-help', '베타 화면', 'reviewer']);
+
+        await p.fill('#discard-reason', '중복');
+        await p.click('#right button.discard');
+        await p.waitForSelector('#candidate-list', { state: 'detached' });
+        assert.match(await p.textContent('#left'), /후보 0/);
+        assert.equal(await p.locator('#story-list li.selected').count(), 1);
+      }),
+    ),
+  );
+});
+
+test('in a browser, after a candidate is accepted the name and memo form and the mark form hold the new story, not the story viewed before', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.equal(await p.inputValue('#story-name'), '실험실을 열어 결과를 본다');
+        await p.click('#right-dock .statuses button:has-text("없음")');
+        await p.fill('#right-dock textarea', '실험실 스토리에 쓰던 메모');
+        await p.click('#candidate-list li:has-text("open-help")');
+        await p.click('#right button.accept');
+        await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        assert.equal(await p.inputValue('#story-name'), 'open-help');
+        assert.equal(await p.inputValue('#story-memo'), '');
+        assert.equal(await p.locator('#right-dock .statuses button.on').count(), 0);
+        assert.equal(await p.inputValue('#right-dock textarea'), '');
+      }),
+    ),
+  );
+});
+
+const enabledControls = (p) => p.locator('#right-info input, #right-info textarea, #right-info button').evaluateAll((els) => els.filter((e) => !e.matches(':disabled')).map((e) => e.id || e.className));
+
+function holdRequests(p, pattern) {
+  const held = { sent: [], gates: [] };
+  held.done = p.route(pattern, async (route) => {
+    held.sent.push(new URL(route.request().url()).pathname);
+    await new Promise((resolve) => held.gates.push(resolve));
+    await route.continue();
+  });
+  held.release = () => held.gates.splice(0).forEach((open) => open());
+  return held;
+}
+
+test('in a browser, the whole 받기, 버리기 and 이름 · 메모 form stays disabled while its write and the reload after it are on their way', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("open-help")');
+        await p.fill('#discard-reason', '베타 화면');
+        const writes = holdRequests(p, '**/api/{candidates/*,stories/edit}');
+        await writes.done;
+        await p.click('#right button.accept');
+        await p.waitForFunction(() => document.querySelector('#right button.accept').matches(':disabled'));
+        assert.deepEqual(await enabledControls(p), []);
+        const reloads = holdRequests(p, '**/api/data');
+        await reloads.done;
+        writes.release();
+        await untilSet(() => reloads.sent.length === 1, 'the reload after the accept');
+        assert.deepEqual(await enabledControls(p), []);
+        reloads.release();
+        await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        assert.deepEqual(writes.sent, ['/api/candidates/accept']);
+        assert.ok((await enabledControls(p)).includes('story-name'));
+
+        await p.fill('#story-name', '도움말을 연다');
+        await p.click('#right button.save-story');
+        await p.waitForFunction(() => document.querySelector('#story-name').matches(':disabled'));
+        assert.deepEqual(await enabledControls(p), []);
+        await untilSet(() => writes.sent.length === 2, 'the edit request');
+        writes.release();
+        await untilSet(() => reloads.sent.length === 2, 'the reload after the edit');
+        assert.deepEqual(await enabledControls(p), []);
+        reloads.release();
+        await p.waitForSelector('#story-list li.selected:has-text("도움말을 연다")');
+        assert.deepEqual(writes.sent, ['/api/candidates/accept', '/api/stories/edit']);
+        assert.equal(await p.inputValue('#story-name'), '도움말을 연다');
+        assert.equal(await p.locator('#right .error').count(), 0);
+      }),
+    ),
+  );
+});
+
+test('in a browser, with visit records and a map built before links carried their conditions, the candidates group asks to rebuild instead of showing none', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ visitRecords: ['example-visits'] }, async (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    for (const s of map.screens) for (const l of s.links) delete l.conditions;
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+    await withServer(config, 'reviewer', async (base) => {
+      const { candidates } = await (await fetch(`${base}/api/data`)).json();
+      assert.match(candidates.stale, /후보를 맞춰 보지 못했습니다\. duru rebuild 로 맵을 다시 만드세요$/);
+      await withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        assert.match(await p.textContent('#candidates-stale'), /후보를 맞춰 보지 못했습니다/);
+        assert.equal(await p.locator('#candidate-list').count(), 0);
+      });
+    });
+  });
+});
+
+test('in a browser, a chosen story\'s name and memo can be changed on the right, and saving writes them into its file', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '표시 — 스토리']);
+        assert.equal(await p.inputValue('#story-name'), '실험실을 열어 결과를 본다');
+        assert.equal(await p.inputValue('#story-memo'), '실험실은 고객사 설정에서 켜야 보인다.');
+        assert.deepEqual(await p.locator('#right .story-form label > span:first-child').allTextContents(), ['이름', '메모']);
+        await p.fill('#story-name', '');
+        assert.equal(await p.isDisabled('#right button.save-story'), true);
+        await p.fill('#story-name', '실험실 결과를 본다');
+        await p.fill('#story-memo', '실험실 설정을 켠다.');
+        await p.click('#right button.save-story');
+        await p.waitForSelector('#story-list li.selected:has-text("실험실 결과를 본다")');
+        assert.equal(await p.textContent('#center h3'), '실험실 결과를 본다');
+        assert.equal(await p.textContent('#center .memo'), '실험실 설정을 켠다.');
+        const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'));
+        assert.deepEqual([saved.name, saved.memo, saved.author, saved.date], ['실험실 결과를 본다', '실험실 설정을 켠다.', 'Kim Min', '2026-10-01']);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a chosen candidate is a place in the address, and the back button returns to the story shown before it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.equal(await placeOf(p), '#stories?story=run-lab');
+        await p.click('#candidate-list li:has-text("open-help")');
+        assert.equal(await placeOf(p), `#stories?candidate=${HELP_RECORD}`);
+
+        await p.goBack();
+        await p.waitForSelector('#story-list li.selected:has-text("실험실을 열어")');
+        assert.equal(await p.locator('#candidate-list li.selected').count(), 0);
+        assert.equal(await p.textContent('#center h3'), '실험실을 열어 결과를 본다');
+
+        await p.goForward();
+        await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
+        assert.equal(await p.textContent('#center h3'), 'open-help');
+      }),
+    ),
+  );
+});
+
+test('in a browser, a candidate that was accepted but could not be read back says so on the right', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("open-help")');
+        await p.route('**/api/data', (route) => route.fulfill({ status: 500, contentType: 'text/plain', body: 'down' }));
+        await p.click('#right button.accept');
+        await p.waitForSelector('#right .story-error');
+        assert.equal(await p.textContent('#right .story-error'), '저장했지만 다시 읽지 못했습니다: down');
+        assert.ok(fs.existsSync(path.join(config.storiesDir, 'open-help.json')));
+        errors.length = 0;
+      }),
+    ),
+  );
 });

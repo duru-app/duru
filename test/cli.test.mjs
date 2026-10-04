@@ -256,6 +256,23 @@ test('rebuild names an off-map hand-over by its title alone when the test has no
   });
 });
 
+test('rebuild counts the story candidates from the visit records and names each record or discarded candidate file it skipped and why', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const plain = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(plain, /^story candidates 0 \| files skipped 0$/m);
+
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), storiesDir: 'example-stories', visitRecords: ['example-visits'] }));
+    const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(stdout, /^story candidates 2 \| files skipped 1$/m);
+    assert.match(stdout, /^ {2}example-visits\/broken-record\.json: 2 번째 단계에 url 이 없습니다$/m);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc']]) {
   test(`"${args.join(' ')}" prints usage and exits with 2`, () => {
     assert.throws(

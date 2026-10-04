@@ -82,6 +82,8 @@ relative to the config file, except the files inside the client source (`routesF
   one name, so leave it out of a config file a team shares; see [Review page](#review-page)
 - `storiesDir` — folder of story files, or a single story file (default: `stories` in `outDir`); see
   [Stories](#stories)
+- `visitRecords` — visit record files or folders that story candidates are made from (optional, default
+  none), as `["qa/records"]`; see [Story candidates](#story-candidates)
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
   variables to it
 - `app` — what the review page needs to show the app itself, logged in, in a frame (optional; replaces the
@@ -438,7 +440,9 @@ and story tags go at the end of the line.
 
 A story is something a user gets done, written as the screens they pass through in order. Stories are
 kept in `storiesDir`, one JSON file per story, apart from the tests, so a story nobody has tested yet is
-still listed. duru reads them and never writes them.
+still listed. Apart from the review page, which writes a story when a candidate is accepted and rewrites a
+story's name and memo (see [Story candidates](#story-candidates) and [Review page](#review-page)), duru
+reads them and never writes them.
 
 The file name without `.json` is the story ID: `open-document.json` is the story `open-document`. An ID
 uses only lowercase letters, digits, `-` and `_`, so it can go into a test tag and a file name as it is.
@@ -463,6 +467,8 @@ the only story.
 - `memo` (optional) — what the steps do not say, such as the account or the data the flow needs
 - `author` — who wrote the story
 - `date` — when, as `2026-10-02` (a full ISO date and time such as `2026-10-02T09:30:00Z` is accepted too)
+- `source` (optional) — for a story accepted from a candidate, the visit record it came from and the steps
+  of that record, first and last, as `{ "record": "qa/records/publish.json", "steps": [1, 21] }`
 
 No other keys are allowed, `id` included. To write a story from a flow someone describes: find each place
 they go in `map.json` by its route path (and component, when one path has several), list those screen IDs
@@ -515,11 +521,76 @@ is not on the map, one of a single screen, and one malformed file. With the exam
 fail, are pending, are partly covered and have no tests, and one result carries a story tag that points at
 no story file.
 
+## Story candidates
+
+A test that walks through the app can leave a visit record: one file per test run, listing the address of
+each step. duru reads the files named in `visitRecords` (a file, or a folder searched for `.json` files in its
+subfolders too) and turns each record into a story candidate that a reviewer accepts or discards on the
+review page.
+
+A visit record is a JSON file holding either a list of steps or an object with the list in `steps`. Each step
+is an object whose `url` is the address it was at, a full address or only the path. Other keys in the file
+and in each step are ignored:
+
+```json
+{
+  "steps": [
+    { "action": "open", "url": "http://localhost:3000/home" },
+    { "action": "open drafts", "url": "/document/draft?page=2" }
+  ]
+}
+```
+
+- The query and the hash are dropped, and so are the scheme and host of a full address. The path left over
+  goes to the first screen in map order whose route path matches the whole of it, as an `exact` route of
+  React Router v5 would: a variable (`:id`) matches one segment, or what its own pattern allows
+  (`:tab(draft|done)`), letter case does not matter, and one slash at the end is allowed. A path that no
+  screen matches stays in the candidate as it is, in place of a screen ID, so a record made on a client
+  other than the one the map was built from shows up.
+- Steps in a row on the same screen, or at the same unmatched path, become one step of the candidate.
+- A candidate whose screen order is the same as that of a story or of a discarded candidate is not offered,
+  and of two records with the same screen order only the first in path order is.
+- The candidate's name is the record's file name without `.json`. It carries its `source`: the record's path
+  relative to the config file and the record's first and last steps (`[1, 21]`), and for each of its steps
+  the record steps it covers (`stepRanges`).
+- A file that is not valid JSON, has no list of steps, has no steps, or has a step without a `url` or with
+  a full address that cannot be read, is skipped and noted with its path and why; so is a source that does
+  not exist. The other records are read as usual.
+
+Candidates are checked against the map like stories. An unmatched path is a screen the map does not have, so
+such a candidate is detached and the links next to that path are not judged. With a `map.json` whose links do
+not carry `conditions` yet, there is no candidate; while some visit record could be read, `candidates.stale`
+carries the same request to run `rebuild` as `stories.stale`, shown in place of the candidates on the review
+page.
+
+Accepting a candidate writes a story file `<id>.json` straight into `storiesDir` with the ID and name the
+request carries, the candidate's screens and `source`, an empty memo, the author and the date and time. The ID
+follows the story ID rule and must not be the file name of another story file anywhere in `storiesDir`. An
+unmatched path is written into `screens` as it is: the story is then detached like any story with a screen
+the map does not have, and keeps that screen order from coming back as a candidate. Fix the path in the file
+to a screen ID, or discard the candidate instead.
+
+Discarding a candidate takes a reason and writes a file of its own into the `discarded` folder in
+`storiesDir`, as `discarded/<date>-<author>-<short ID>.json` with the candidate's name, `screens`, `reason`,
+`author`, `date` and `source`. Like marks, a discarded candidate file is never overwritten, so two reviewers'
+files merge in git without a conflict. That folder is not read for stories. A file there that is not valid
+JSON or leaves out `screens`, `reason`, `author` or `date` is noted with its path and keeps nothing out, and
+so is a `discarded` that is a file or a folder that cannot be listed.
+When `storiesDir` is a single file, there is nowhere to write a story or a discarded candidate, so accepting
+and discarding are refused.
+
+`rebuild` prints the number of candidates and of skipped files, then each skipped record or discarded
+candidate file with its path relative to the config file and why.
+
+`test/fixtures/app/example-visits` holds example visit records for the fake client: one that stays on the same
+screen over several steps and has addresses with a query and a hash, one with full addresses and a path that
+is not on the map, one whose screen order is that of the example story `run-lab`, and one malformed file.
+
 ## Review page
 
 The page writes the place being looked at into its address, after the `#`: `#flow`, `#flow?from=<screen ID>`
-for a branch shown on its own, `#screens?screen=<screen ID>`, `#stories?story=<story ID>` and
-`#untagged?test=<test>`. Choosing another place adds a step to the browser history, so the back and forward
+for a branch shown on its own, `#screens?screen=<screen ID>`, `#stories?story=<story ID>`,
+`#stories?candidate=<visit record>` for a chosen story candidate and `#untagged?test=<test>`. Choosing another place adds a step to the browser history, so the back and forward
 buttons move through the places as they do through pages, and loading the page again or opening a copied
 address shows the same place. A place that is no longer there (a screen gone from the map) falls back to what
 the page would show without it, and the address is corrected. Going to a place by the address works like
@@ -530,7 +601,7 @@ Which branches of the flow are folded, filters, and scroll positions are not par
 the app shown in the middle are steps of the same history: the back button undoes those first.
 
 `review` serves a local page that reads `map.json` and `tests.json` from `outDir` (run `rebuild` first) and
-writes only into the marks folder. It opens on the flow view, with only the way to boxes whose tests are
+writes only into the marks folder and, for stories, into `storiesDir`. It opens on the flow view, with only the way to boxes whose tests are
 missing or failing opened (as 「빈틈만 펼치기」 does) on first load; after that the branches stay as the reviewer
 leaves them, also across visits to the list. A line on top reads 「테스트 있는 화면 n/전체 · 실패 n · 태그 없는
 테스트만 있는 화면 n」: screens with a tagged test, screens with a failing one, and screens with no tagged test
@@ -777,6 +848,26 @@ saved. The picks and that message stay when the reviewer opens a pair's screen a
 to the same test, and go when another test is chosen. A pair for a screen or call that cannot be opened cannot be picked, as it cannot be judged there
 either. 「리뷰 끝」 works on a page whose data has not arrived or could not be read. `/api/data` carries the list as `tests.untagged`, each entry with its `ref`, the
 same reference a judgment names the test by.
+
+Below the stories, 「후보 N」 lists the story candidates the same way, with the record each came from, and
+「건너뛴 파일 N」 the visit records and discarded candidate files that could not be read. Choosing a candidate
+shows it in the middle like a story, with its record and steps (「단계 1–21」) under its name and, next to each
+screen, the record steps it covers. The right holds the verdict and 「사전 조건」 as for a story, then 「받기」
+with 「스토리로 받기」 and 「고쳐서 받기」, then 「버리기」 with a reason. 「스토리로 받기」 writes the story at once,
+under the candidate's name and that name turned into an ID. 「고쳐서 받기」 opens a window to change the ID and
+the name first. The same window opens by itself when that ID cannot be used: the name leaves nothing within
+the story ID rule, a listed story has the ID, or the server refused the request, whose answer the window
+shows. Enter in one of its fields accepts and Escape cancels. An accepted candidate moves to the story list,
+chosen, where its name can still be changed; after a discard the next candidate is chosen. For a story, the
+right shows 「이름 · 메모」 below 「사전 조건」, and 「저장」 rewrites the name and memo in the story file, leaving
+its other keys as they were. A candidate has no mark form: a mark is left on a story, so accept the candidate
+first.
+The author is the same as for marks, and a name sent with a request is ignored.
+`/api/data` carries the checked candidates as `candidates.list` and the notes as `candidates.notices`.
+The page writes through `POST /api/candidates/accept` (`{ "record", "id", "name" }`),
+`POST /api/candidates/discard` (`{ "record", "reason" }`), where `record` is the candidate's `source.record`,
+and `POST /api/stories/edit` (`{ "id", "name", "memo" }`). Each takes JSON only, like saving a mark; an unknown
+candidate is 404 and an input that breaks a rule is 400 with why.
 
 A mark targets a screen or an API call, or one depth of either, or one value of a call's option, or one depth
 of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "withHistory", "value": true },
