@@ -1047,7 +1047,7 @@ test('the end request asks the caller to get ready, is answered, and then tells 
 const browserMissing = fs.existsSync(chromium.executablePath()) ? false : 'Chromium is not installed (npx playwright-core install chromium)';
 
 const toList = async (p) => {
-  await p.waitForSelector('#view-flow.on');
+  await p.waitForSelector('#view-flow.on, #view-list.on');
   await p.click('#view-list');
 };
 
@@ -7202,3 +7202,201 @@ test('in a browser, picking a pair redraws only the middle and keeps the keyboar
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
       })));
 });
+
+const placeOf = (p) => p.evaluate(() => decodeURIComponent(location.hash));
+const NOT_FOUND = 'Failed to load resource: the server responded with a status of 404 (Not Found)';
+
+test('in a browser, the first drawing writes the place into the address without adding a step to the history, and a redraw of the same place adds none', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        assert.equal(await placeOf(p), '#flow');
+        const steps = await p.evaluate(() => history.length);
+        await p.evaluate(() => render());
+        await flowButton(p, '모두 접기').click();
+        assert.equal(await p.evaluate(() => history.length), steps);
+
+        await p.click('#view-list');
+        assert.match(await placeOf(p), /^#screens\?screen=/);
+        assert.equal(await p.evaluate(() => history.length), steps + 1);
+        await p.check('#left input[name=no-tests]');
+        await p.uncheck('#left input[name=no-tests]');
+        assert.equal(await p.evaluate(() => history.length), steps + 1);
+      }, { view: 'flow' })));
+});
+
+test('in a browser, the back and forward buttons go through the screens that were chosen, the left tabs and the two views', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const chosen = () => p.evaluate(() => [state.view, state.side, state.selected, state.story, document.querySelector('#screen-list li.selected, #story-list li.selected, #untagged-list li.selected')?.textContent.slice(0, 12)]);
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await p.click('#screen-list li:has-text("/signin")');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li >> nth=1');
+        const story = await p.evaluate(() => state.story);
+        await p.click(untaggedTab);
+        await p.click('#view-flow');
+        assert.equal(await placeOf(p), '#flow');
+
+        await p.goBack();
+        assert.match(await placeOf(p), /^#untagged\?test=/);
+        assert.equal(await p.locator('#untagged-list li.selected').count(), 1);
+        await p.goBack();
+        assert.equal(await placeOf(p), `#stories?story=${story}`);
+        assert.equal(await p.locator('#story-list li.selected').count(), 1);
+        await p.goBack();
+        await p.goBack();
+        assert.equal(await placeOf(p), '#screens?screen=/signin#SignIn');
+        assert.match(await p.textContent('#screen-list li.selected'), /\/signin/);
+        await p.goBack();
+        assert.equal(await placeOf(p), '#screens?screen=/help#Help');
+        assert.match(await p.textContent('#screen-list li.selected'), /\/help/);
+        assert.match(await p.textContent('#center'), /\/help/);
+
+        await p.goForward();
+        assert.deepEqual((await chosen()).slice(0, 3), ['list', 'screens', '/signin#SignIn']);
+        await p.goForward();
+        await p.goForward();
+        await p.goForward();
+        await p.goForward();
+        assert.equal(await placeOf(p), '#flow');
+        assert.equal(await p.locator('#flow').isVisible(), true);
+      })));
+});
+
+test('in a browser, a branch shown on its own is a place: back shows the whole flow again and forward the branch', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        const whole = (await boxCount(p)).screens;
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
+        await p.waitForSelector('.flowbar .focusing');
+        assert.equal(await placeOf(p), '#flow?from=/home#Home');
+
+        await p.goBack();
+        await p.waitForSelector('.flowbar .focusing', { state: 'detached' });
+        assert.equal(await placeOf(p), '#flow');
+        assert.equal((await boxCount(p)).screens, whole);
+        await p.goForward();
+        await p.waitForSelector('.flowbar .focusing');
+        assert.equal(await placeOf(p), '#flow?from=/home#Home');
+
+        await p.click('.flowbar .focusing button');
+        assert.equal(await placeOf(p), '#flow');
+      }, { view: 'flow' })));
+});
+
+test('in a browser, while a branch named in the address is being read, a redraw adds no step, and a screen chosen meanwhile wins over the branch', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
+        await p.waitForSelector('.flowbar .focusing');
+        await p.goBack();
+        await p.waitForSelector('.flowbar .focusing', { state: 'detached' });
+        const steps = await p.evaluate(() => history.length);
+        let held;
+        await p.route('**/api/flow?from=*', (route) => { held = route; });
+
+        await p.goForward();
+        await untilSet(() => held, 'the branch request');
+        await flowButton(p, '모두 접기').click();
+        assert.equal(await p.evaluate(() => history.length), steps);
+        assert.equal(await placeOf(p), '#flow?from=/home#Home');
+        await held.continue();
+        await p.waitForSelector('.flowbar .focusing');
+        assert.equal(await p.evaluate(() => history.length), steps);
+
+        await p.click('.flowbar .focusing button');
+        await p.click('#view-list');
+        await p.click('#screen-list li:has-text("/help")');
+        held = null;
+        await p.goto(`${base}/#flow?from=${encodeURIComponent('/home#Home')}`);
+        await untilSet(() => held, 'the branch request');
+        assert.equal(await p.locator('main').isVisible(), true);
+        await p.click('#screen-list li:has-text("/signin")');
+        const answered = p.waitForResponse('**/api/flow?from=*');
+        await held.continue();
+        await answered;
+        await p.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
+        assert.equal(await placeOf(p), '#screens?screen=/signin#SignIn');
+        assert.equal(await p.locator('main').isVisible(), true);
+        assert.match(await p.textContent('#screen-list li.selected'), /\/signin/);
+      }, { view: 'flow' })));
+});
+
+test('in a browser, a page opened or loaded again with a place in its address shows that place, and a place that is gone falls back to what is there', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await p.reload();
+        await p.waitForSelector('#screen-list li.selected');
+        assert.match(await p.textContent('#screen-list li.selected'), /\/help/);
+        assert.equal(await p.locator('main').isVisible(), true);
+
+        await p.goto(`${base}/#flow?from=${encodeURIComponent('/home#Home')}`);
+        await p.reload();
+        await p.waitForSelector('.flowbar .focusing');
+        assert.match(await p.textContent('.flowbar .focusing'), /\/home/);
+
+        await p.goto(`${base}/#screens?screen=${encodeURIComponent('/gone#Gone')}`);
+        await p.reload();
+        await p.waitForSelector('#screen-list li.selected');
+        assert.equal(await placeOf(p), `#screens?screen=${await p.evaluate(() => state.selected)}`);
+        assert.notEqual(await p.evaluate(() => state.selected), '/gone#Gone');
+
+        await p.goto(`${base}/#flow?from=${encodeURIComponent('/gone#Gone')}`);
+        await p.reload();
+        await p.waitForSelector('#flow .box.screen');
+        assert.equal(await placeOf(p), '#flow');
+        assert.deepEqual(errors.splice(0), [NOT_FOUND, NOT_FOUND]);
+      })));
+});
+
+test('in a browser, going back to a screen drops a mark that was not saved, as choosing the screen does', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await p.click('#screen-list li:has-text("/signin")');
+        await p.fill('#right textarea', 'not saved');
+        await p.goBack();
+        await p.goForward();
+        assert.match(await p.textContent('#screen-list li.selected'), /\/signin/);
+        assert.equal(await p.inputValue('#right textarea'), '');
+      })));
+});
+
+test('in a browser, the back button does not leave the test while a bulk is in flight, and works again when it ends', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await openDocumentTable(p);
+        const place = await placeOf(p);
+        let held;
+        await p.route('**/api/judgments', (route) => { if (held) route.continue(); else held = route; });
+        await p.check(`${bulk} input.pick-all`);
+        await p.click(`${bulk} button.hand-over`);
+        await untilSet(() => held, 'the first judgment request');
+        await p.goBack();
+        assert.equal(await placeOf(p), place);
+        assert.equal(await p.textContent('#center h3'), DOCUMENT_TABLE.title);
+
+        await held.continue();
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
+        await p.goBack();
+        await p.waitForFunction((title) => document.querySelector('#center h3').textContent !== title, DOCUMENT_TABLE.title);
+        assert.match(await placeOf(p), /^#untagged\?test=/);
+      })));
+});
+
