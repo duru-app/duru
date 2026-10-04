@@ -12,8 +12,11 @@ import { chromium } from 'playwright-core';
 import { addJudgment, loadJudgments } from '../src/judgments.mjs';
 import { addMark, loadMarks } from '../src/marks.mjs';
 import { applyOverrides } from '../src/app-host.mjs';
-import { startReviewServer } from '../src/review.mjs';
+import { reviewAuthor, startReviewServer } from '../src/review.mjs';
 import { taskList } from '../src/tasks.mjs';
+
+// git exports these to hooks and to rebase --exec; with them set, git in a test folder reads and writes the repository they name.
+for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete process.env[key];
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
@@ -124,15 +127,81 @@ test('a mark posted from the page is saved with the server-side author and date 
   });
 });
 
-test('without a git user name the author typed on the page is used', async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, null, async (base) => {
-      assert.equal((await postMark(base, { target: { node: '/lab#Lab' }, status: 'fine' })).status, 400);
-      assert.equal((await postMark(base, { target: { node: '/lab#Lab' }, status: 'fine', author: 'typed name' })).status, 201);
-      const data = await (await fetch(`${base}/api/data`)).json();
-      assert.equal(data.marks.attached[0].current.author, 'typed name');
-    }),
-  );
+test('the author is the config author, else the git user name of the config folder, else the computer user name, and says where it came from', () => {
+  const config = { configDir: '/projects/app', author: null };
+  const asked = [];
+  const git = (name) => (dir) => { asked.push(dir); return name; };
+  const user = () => 'kim';
+  assert.deepEqual(reviewAuthor({ ...config, author: '설정 이름' }, { gitName: git('Git Name'), userName: user }), { name: '설정 이름', source: 'config' });
+  assert.deepEqual(reviewAuthor(config, { gitName: git('Git Name'), userName: user }), { name: 'Git Name', source: 'git' });
+  assert.deepEqual(reviewAuthor(config, { gitName: git(null), userName: user }), { name: 'kim', source: 'user' });
+  assert.deepEqual(asked, ['/projects/app', '/projects/app']);
+  const fallback = reviewAuthor(config, { gitName: git(null) });
+  assert.equal(fallback.source, 'user');
+  assert.ok(fallback.name.trim().length > 0);
+});
+
+const withConfigFile = (patch, fn) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    const file = path.join(dir, 'config.json');
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8')), ...patch }));
+    return fn(file);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+test('the config author is kept trimmed, and is null when the config has none', () => {
+  withConfigFile({ author: '  Kim Min ' }, (file) => assert.equal(loadConfig(file).author, 'Kim Min'));
+  withConfigFile({}, (file) => assert.equal(loadConfig(file).author, null));
+});
+
+for (const [name, author] of [['a number', 7], ['an empty string', ''], ['only spaces', '   ']]) {
+  test(`a config author that is ${name} is rejected with what it should be`, () => {
+    withConfigFile({ author }, (file) => assert.throws(() => loadConfig(file), (err) => /^author must be .*"Kim Min"/.test(err.message) && err.message.endsWith(`not ${JSON.stringify(author)}`)));
+  });
+}
+
+const signedWith = (config) => [...loadMarks(config.marksDir), ...loadJudgments(config.judgmentsDir).judgments].map((saved) => saved.author);
+
+async function assertNewSavesSignedAs(config, name) {
+  await withServer(config, undefined, async (base) => {
+    assert.equal((await (await fetch(`${base}/api/data`)).json()).author, name);
+    assert.equal((await postMark(base, { target: { node: '/lab#Lab' }, status: 'fine', author: 'typed name' })).status, 201);
+    const test = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' };
+    assert.equal((await postJudgment(base, { test, node: '/help#Help', kind: 'hand-over', reason: '', author: 'typed name' })).status, 201);
+  });
+  assert.deepEqual(signedWith(config), [name, name]);
+}
+
+function initGitRepoNamed(dir, name) {
+  execFileSync('git', ['init', '-q'], { cwd: dir });
+  execFileSync('git', ['config', 'user.name', name], { cwd: dir });
+}
+
+test('without a config author, a mark and a judgment are signed with the git user name of the config folder', async () => {
+  await withRebuiltFixture({}, async (config, copy) => {
+    initGitRepoNamed(copy, 'Git 이름');
+    await assertNewSavesSignedAs(config, 'Git 이름');
+  });
+});
+
+test('with no config author and no git user name, a mark and a judgment are signed with the computer user name', async () => {
+  await withRebuiltFixture({}, async (config, copy) => {
+    const noHome = path.join(copy, 'no-home');
+    const noGitName = { HOME: noHome, XDG_CONFIG_HOME: noHome, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull };
+    const kept = Object.fromEntries(Object.keys(noGitName).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, noGitName);
+    try {
+      await assertNewSavesSignedAs(config, os.userInfo().username);
+    } finally {
+      for (const [key, value] of Object.entries(kept)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
 });
 
 test('rebuilding the map leaves the marks untouched, and marks on screens that disappeared are detached', async () => {
@@ -1001,6 +1070,26 @@ async function withPage(base, fn, { view = 'list', setup } = {}) {
 
 const untaggedTab = '#left .views.side button:has-text("태그 없음")';
 
+test('in a browser, the header shows the author as text with no field, and a mark saved on the page is signed with the config author even when git has a name', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ author: '설정 이름' }, (config, copy) => {
+    initGitRepoNamed(copy, 'Git 이름');
+    return withServer(config, undefined, (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.textContent('#author'), '작성자 설정 이름');
+        assert.equal(await p.textContent('#author strong'), '설정 이름');
+        assert.equal(await p.locator('header input').count(), 0);
+        await p.click('#screen-list li:has-text("/lab/result")');
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        await openHistory(p);
+        await p.waitForSelector('#right .history li:has-text("설정 이름")');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => m.author), ['설정 이름']);
+      }),
+    );
+  });
+});
+
 for (const host of ['127.0.0.1', 'localhost']) {
   test(`in a browser at ${host}, the list filters screens, a mark is saved as a file and is there after reloading`, { skip: browserMissing }, async () => {
     await withRebuiltFixture({}, (config) =>
@@ -1410,29 +1499,34 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
 
 test('in a browser, a failed save stays with the form that tried it and is gone after choosing another story or switching tabs', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
-    withServer(config, null, (base) =>
+    withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
+        await p.evaluate(() => {
+          const real = window.fetch;
+          window.fetch = (url, init) => (String(url).includes('/api/marks') ? Promise.reject(new Error('disk full')) : real(url, init));
+        });
+        const failSave = async () => {
+          await p.click('#right .statuses button:has-text("없음")');
+          await p.click('#right button.save');
+          await p.waitForSelector('#right .error');
+          assert.match(await p.textContent('#right'), /저장하지 못했습니다: disk full/);
+        };
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.equal(await p.locator('#right .error').count(), 0);
-        await p.click('#right .statuses button:has-text("없음")');
-        await p.click('#right button.save');
-        assert.match(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        await failSave();
         await p.click('#story-list li:has-text("보고서")');
-        assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        assert.doesNotMatch(await p.textContent('#right'), /저장하지 못했습니다/);
         await p.click('#story-list li:has-text("실험실을 열어")');
-        await p.click('#right .statuses button:has-text("없음")');
-        await p.click('#right button.save');
+        await failSave();
         await p.click('#left .views.side button:has-text("화면")');
-        assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        assert.doesNotMatch(await p.textContent('#right'), /저장하지 못했습니다/);
         await p.click('#left .views.side button:has-text("스토리")');
-        await p.click('#right .statuses button:has-text("없음")');
-        await p.click('#right button.save');
-        assert.match(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        await failSave();
         await p.click('#center .story-path .step:has-text("/lab/result")');
         assert.equal(await p.textContent('#center h3'), '/lab/result');
-        assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        assert.doesNotMatch(await p.textContent('#right'), /저장하지 못했습니다/);
       }),
     ),
   );
@@ -1471,26 +1565,30 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
   });
 });
 
-test('in a browser, a missing-author warning stays with the screen or cell that tried to save, and a save that fails after the reviewer moved on names the target it was for', { skip: browserMissing }, async () => {
+test('in a browser, a failed save stays with the screen or cell that tried it, and a save that fails after the reviewer moved on names the target it was for', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
-    withServer(config, null, (base) =>
+    withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
+        await p.evaluate(() => {
+          const real = window.fetch;
+          window.fetch = (url, init) => (String(url).includes('/api/marks') ? Promise.reject(new Error('disk full')) : real(url, init));
+        });
         const failSave = async () => {
           await p.click('#right .statuses button:has-text("없음")');
           await p.click('#right button.save');
-          assert.match(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+          await p.waitForSelector('#right .error');
+          assert.match(await p.textContent('#right'), /저장하지 못했습니다: disk full/);
         };
         await p.click('#screen-list li:has-text("/document/:id")');
         await failSave();
         await p.click('#center tr:has-text("API")');
-        assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        assert.doesNotMatch(await p.textContent('#right'), /저장하지 못했습니다/);
         await failSave();
         await p.click('#screen-list li:has-text("/lab/result")');
-        assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
+        assert.doesNotMatch(await p.textContent('#right'), /저장하지 못했습니다/);
 
         await p.click('#screen-list li:has-text("/admin/report")');
-        await p.fill('#author input', 'reviewer');
         await p.evaluate(() => {
           const real = window.fetch;
           window.fetch = (url, init) => (String(url).includes('/api/marks')
@@ -1894,23 +1992,6 @@ test('in a browser, the in-screen conditions come between the incoming links and
   });
 });
 
-test('in a browser, a missing author name is not warned about on opening and is warned about, next to the form, only when saving, which saves nothing', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, null, (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#screen-list li');
-        assert.equal(await p.locator('#right .error').count(), 0);
-        assert.doesNotMatch(await p.textContent('#right'), /작성자/);
-        await p.click('#right .statuses button:has-text("없음")');
-        assert.doesNotMatch(await p.textContent('#right'), /작성자/);
-        await p.click('#right button.save');
-        assert.match(await p.textContent('#right .mark-form .error'), /작성자 이름이 필요합니다.*git user\.name/);
-        assert.equal(fs.existsSync(config.marksDir) ? loadMarks(config.marksDir).length : 0, 0);
-      }),
-    ),
-  );
-});
-
 const openDocumentScreenInShortViewport = async (p) => {
   await p.setViewportSize({ width: 1440, height: 400 });
   await p.waitForSelector('#screen-list li');
@@ -2294,24 +2375,28 @@ test('in a browser, picking a status updates the form in place, keeping the memo
 
 test('in a browser, a save that is refused shows its message in the dock above the save button, both inside the visible part of the pane', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
-    withServer(config, null, (base) =>
+    withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await openDocumentScreenInShortViewport(p);
+        await p.evaluate(() => {
+          const real = window.fetch;
+          window.fetch = (url, init) => (String(url).includes('/api/marks') ? Promise.resolve(new Response('mark is refused', { status: 400 })) : real(url, init));
+        });
         await p.click('#right .statuses button:has-text("없음")');
         await p.click('#right button.save');
+        await p.waitForSelector('#right-dock .error');
         assert.equal(await p.locator('#right-dock .error').count(), 1);
         assert.equal(await p.locator('#right .error ~ .save-row button.save').count(), 1);
         const inside = async () => (await insideRightPane(p, '#right .mark-form .error')) && insideRightPane(p, '#right .mark-form button.save');
-        assert.match(await p.textContent('#right .error'), /작성자 이름이 필요합니다/);
+        assert.match(await p.textContent('#right .error'), /저장하지 못했습니다: mark is refused/);
         assert.ok(await inside());
 
         await p.evaluate(() => {
           const real = window.fetch;
           window.fetch = (url, init) => (String(url).includes('/api/marks') ? Promise.reject(new Error('disk full')) : real(url, init));
         });
-        await p.fill('#author input', 'reviewer');
         await p.click('#right button.save');
-        await p.waitForFunction(() => /저장하지 못했습니다/.test(document.querySelector('#right .error')?.textContent ?? ''));
+        await p.waitForFunction(() => /저장하지 못했습니다: disk full/.test(document.querySelector('#right .error')?.textContent ?? ''));
         assert.ok(await inside());
       }),
     ),
@@ -2339,24 +2424,6 @@ test('in a browser, a save whose reload fails after the review ended raises no p
         await p.waitForSelector('#ended');
         release();
         await p.waitForTimeout(200);
-      }),
-    ),
-  );
-});
-
-test('in a browser, the author warning goes away when a name is typed in the header', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, null, (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#screen-list li');
-        await p.click('#right .statuses button:has-text("없음")');
-        await p.click('#right button.save');
-        assert.equal(await p.locator('#right .error').count(), 1);
-        await p.fill('#author input', '   ');
-        assert.equal(await p.locator('#right .error').count(), 1);
-        await p.fill('#author input', 'reviewer');
-        assert.equal(await p.locator('#right .error').count(), 0);
-        assert.equal(await p.locator('#right .statuses button.on').innerText(), '없음');
       }),
     ),
   );
@@ -6763,53 +6830,6 @@ test('in a browser, a bulk that ends while the reviewer types in the search box 
       })));
 });
 
-test('in a browser, a bulk that ends while the reviewer types the author name leaves the focus and the typing in the same box', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, null, (base) =>
-      withPage(base, async (p) => {
-        await openDocumentTable(p);
-        const author = '#author input';
-        await p.fill(author, 'rev');
-        let held;
-        await p.route('**/api/judgments', (route) => { held ??= route; if (route !== held) route.continue(); });
-        await p.check(`${bulk} input.pick-all`);
-        await p.click(`${bulk} button.hand-over`);
-        await untilSet(() => held, 'the first judgment request');
-        await p.click(author);
-        await p.keyboard.press('End');
-        await p.keyboard.type('iew');
-        await p.$eval(author, (el) => { el.kept = true; });
-        await held.continue();
-        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
-        assert.equal(await p.evaluate((sel) => document.activeElement.matches(sel) && document.activeElement.kept, author), true);
-        await p.keyboard.type('er');
-        assert.equal(await p.inputValue(author), 'reviewer');
-      })));
-});
-
-test('in a browser, the author box shows the name another window stored once the page is drawn again, but not while the reviewer types in it', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, null, (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#screen-list li');
-        const author = '#author input';
-        await p.fill(author, 'bob');
-        await p.evaluate(() => localStorage.setItem('duru.author', 'alice'));
-        await p.click('#screen-list li:has-text("/lab/result")');
-        assert.equal(await p.inputValue(author), 'alice');
-
-        await p.click(author);
-        await p.keyboard.press('End');
-        await p.keyboard.type(' k');
-        await p.evaluate(() => {
-          localStorage.setItem('duru.author', 'carol');
-          document.querySelector('#screen-list li:not(.selected)').click();
-        });
-        assert.equal(await p.evaluate((sel) => document.activeElement.matches(sel), author), true);
-        assert.equal(await p.inputValue(author), 'alice k');
-      })));
-});
-
 test('in a browser, a bulk that judges every pair moves the keyboard focus to the heading of the pairs', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
@@ -6919,32 +6939,6 @@ test('in a browser, the failure report, the picks and the note of a bulk survive
         await p.click('#untagged-list li:has-text("DocumentTable")');
         assert.equal(await p.locator(`${bulk} .bulk-error`).count(), 0);
         assert.equal(await p.inputValue(`${bulk} input.reason`), '');
-      })));
-});
-
-test('in a browser, one bulk is signed with the author read when it started, however the name box changes meanwhile', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, null, (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#screen-list li');
-        await p.fill('#author input', 'alice');
-        await p.click(untaggedTab);
-        await p.click('#untagged-list li:has-text("DocumentTable")');
-        let held;
-        let calls = 0;
-        await p.route('**/api/judgments', (route) => {
-          calls += 1;
-          if (calls === 1) held = route;
-          else route.continue();
-        });
-        await p.check(`${bulk} input.pick-all`);
-        await p.click(`${bulk} button.hand-over`);
-        await untilSet(() => held, 'the first judgment request');
-        await p.fill('#author input', '');
-        await held.continue();
-        await p.waitForFunction(() => !document.querySelector('#center .bulk-bar button:disabled'));
-        assert.equal(await p.locator(`${bulk} .bulk-error`).count(), 0);
-        assert.deepEqual(judgedBy(config).map((j) => j[3]), ['alice', 'alice']);
       })));
 });
 

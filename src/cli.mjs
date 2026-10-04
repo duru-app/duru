@@ -4,7 +4,7 @@ import path from 'node:path';
 import { loadConfig } from './config.mjs';
 import { buildMap } from './map.mjs';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.mjs';
-import { gitUserName, startReviewServer } from './review.mjs';
+import { reviewAuthor, startReviewServer } from './review.mjs';
 import { SERVER_NOT_COMPARED } from './server.mjs';
 import { checkStoryFiles } from './story-paths.mjs';
 import { taskList } from './tasks.mjs';
@@ -12,6 +12,7 @@ import { linkTests } from './test-links.mjs';
 
 const COMMANDS = ['extract', 'rebuild', 'review', 'tasks'];
 const DEFAULT_PORT = 4400;
+const AUTHOR_SOURCES = { config: 'config', git: 'git user.name', user: 'computer user name' };
 const [, , command, configPath, ...extra] = process.argv;
 const portArg = command === 'review' && extra[0] === '--port' && extra.length === 2 ? Number(extra[1]) : null;
 if (!COMMANDS.includes(command) || !configPath || (extra.length > 0 && !Number.isInteger(portArg))) {
@@ -24,7 +25,7 @@ const config = loadConfig(configPath);
 if (command === 'tasks') {
   process.stdout.write(taskList(config));
 } else if (command === 'review') {
-  const author = gitUserName(config.configDir);
+  const author = reviewAuthor(config);
   let ended = false;
   const end = () => {
     if (ended) return null;
@@ -35,7 +36,7 @@ if (command === 'tasks') {
       process.stdout.write(list, () => process.exit(0));
     };
   };
-  const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end });
+  const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author: author.name, onDone: end });
   process.on('SIGINT', () => {
     try {
       end()?.();
@@ -45,7 +46,7 @@ if (command === 'tasks') {
   });
   // 표준 출력에는 작업 목록만 나가야 리뷰를 띄운 에이전트가 그대로 읽을 수 있다.
   console.error(`review page http://127.0.0.1:${server.address().port}/`);
-  console.error(`marks ${config.marksDir} | stories ${config.storiesDir} | author ${author ?? '(git user.name not set — the page asks for a name)'}`);
+  console.error(`marks ${config.marksDir} | stories ${config.storiesDir} | author ${author.name} (${AUTHOR_SOURCES[author.source]})`);
 } else {
   fs.mkdirSync(config.outDir, { recursive: true });
   const write = (name, data) => {

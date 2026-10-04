@@ -302,10 +302,6 @@ const STORY_FILTERS = [
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
 const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, judgmentNotes: new Map(), untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false };
-const authorStore = {
-  get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
-  set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
-};
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -449,24 +445,7 @@ function renderHeader() {
       h('button', { type: 'button', class: 'chip state', 'aria-describedby': 'server-state-tip', onmouseenter: placeStateTip, onfocus: placeStateTip }, '서버 대조 안 함'),
       h('span', { class: 'state-tip', id: 'server-state-tip', role: 'note' }, SERVER_STATE_TIP),
     ] : null);
-  const slot = document.getElementById('author');
-  const box = slot.querySelector('input');
-  if (state.data.author) {
-    fill(slot, '작성자 ', h('strong', {}, state.data.author));
-  } else if (!box) {
-    fill(slot, h('label', {}, '작성자 ', h('input', {
-      type: 'text', value: authorStore.get(), placeholder: '이름', style: 'width:140px',
-      oninput: (e) => {
-        authorStore.set(e.target.value);
-        if (state.error === AUTHOR_MISSING && e.target.value.trim()) {
-          state.error = null;
-          renderRight();
-        }
-      },
-    })));
-  } else if (box !== document.activeElement) {
-    box.value = authorStore.get();
-  }
+  fill(document.getElementById('author'), '작성자 ', h('strong', {}, state.data.author));
 }
 
 const listAbsentNote = (text) => (state.data.map.serverNotCompared ? [' ', h('span', { class: 'list-absent' }, text)] : null);
@@ -1156,7 +1135,7 @@ function focusBulk(kind) {
   (bar ? bar.querySelector(`button.${kind}:enabled`) ?? bar.querySelector('input') : pairs?.querySelector('h2'))?.focus();
 }
 
-// 찾기 칸이나 이름 칸처럼 다시 그려도 남는 칸의 초점은 단추로 가져오지 않는다. 가져오면 치던 Space 나 Enter 가 단추를 다시 누른다.
+// 찾기 칸처럼 다시 그려도 남는 칸의 초점은 단추로 가져오지 않는다. 가져오면 치던 Space 나 Enter 가 단추를 다시 누른다.
 function showBulkResult(kind) {
   const focused = document.activeElement;
   render();
@@ -1584,8 +1563,6 @@ function screenDetails(s) {
   ];
 }
 
-const AUTHOR_MISSING = '작성자 이름이 필요합니다. 위쪽에 이름을 적어 주세요. git user.name 이 설정되지 않았습니다.';
-
 const shownTarget = () => (state.side === 'stories' ? { story: state.story } : state.target);
 const isShown = (target) => {
   const shown = shownTarget();
@@ -1598,18 +1575,13 @@ function showSaveError(reason, target) {
 }
 
 async function saveMark(target, draftKey) {
-  const author = state.data.author ?? authorStore.get();
   state.error = null;
-  if (!author.trim()) {
-    state.error = AUTHOR_MISSING;
-    return renderRight();
-  }
   const draft = state[draftKey];
   try {
     const res = await fetch('/api/marks', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ target, status: draft.status, note: draft.note, author }),
+      body: JSON.stringify({ target, status: draft.status, note: draft.note }),
     });
     if (!res.ok) throw new Error(await res.text());
   } catch (err) {
@@ -1626,17 +1598,14 @@ async function saveMark(target, draftKey) {
   render();
 }
 
-const judgmentAuthor = () => state.data.author ?? authorStore.get();
-
-function judgmentProblem(author, kind, reason) {
-  if (!author.trim()) return '작성자 이름이 필요합니다.';
+function judgmentProblem(kind, reason) {
   if (kind === 'discard' && !reason.trim()) return '버리는 까닭을 적어 주세요.';
   return null;
 }
 
-async function postJudgment(judgment, author) {
+async function postJudgment(judgment) {
   try {
-    const res = await fetch('/api/judgments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...judgment, author }) });
+    const res = await fetch('/api/judgments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(judgment) });
     if (!res.ok) throw new Error(await res.text());
   } catch (err) {
     return `저장하지 못했습니다: ${err.message}`;
@@ -1645,13 +1614,12 @@ async function postJudgment(judgment, author) {
 }
 
 async function saveJudgment(judgment, key) {
-  const author = judgmentAuthor();
   const fail = (message) => {
     state.judgmentError = { key, message };
     render();
   };
   state.judgmentError = null;
-  const problem = judgmentProblem(author, judgment.kind, judgment.reason) ?? await postJudgment(judgment, author);
+  const problem = judgmentProblem(judgment.kind, judgment.reason) ?? await postJudgment(judgment);
   if (problem) return fail(problem);
   state.judgmentNotes.delete(key);
   try {
@@ -1665,9 +1633,8 @@ async function saveJudgment(judgment, key) {
 async function saveBulk(t, bulk, kind) {
   const chosen = pairsOf(t).filter((p) => isPickable(p) && bulk.picked.has(p.id));
   const reason = bulk.note;
-  const author = judgmentAuthor();
   bulk.error = null;
-  const problem = judgmentProblem(author, kind, reason);
+  const problem = judgmentProblem(kind, reason);
   if (problem) {
     bulk.error = problem;
     return showBulkResult(kind);
@@ -1678,7 +1645,7 @@ async function saveBulk(t, bulk, kind) {
   const saved = [];
   let failure = null;
   for (const p of chosen) {
-    failure = await postJudgment({ test: t.ref, node: p.id, kind, reason }, author);
+    failure = await postJudgment({ test: t.ref, node: p.id, kind, reason });
     if (failure) break;
     saved.push(p);
     bulk.picked.delete(p.id);

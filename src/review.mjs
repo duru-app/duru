@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.mjs';
 import { buildFlow } from './flow.mjs';
@@ -13,12 +14,27 @@ import { DEPTHS } from './test-links.mjs';
 const PAGE = path.join(import.meta.dirname, 'review-page.html');
 const BODY_LIMIT = 64 * 1024;
 
-export function gitUserName(cwd) {
+function gitUserName(cwd) {
   try {
     return execFileSync('git', ['config', 'user.name'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
   } catch {
     return null;
   }
+}
+
+function computerUserName() {
+  let name = '';
+  try {
+    name = os.userInfo().username?.trim() ?? '';
+  } catch {}
+  return name || process.env.USER?.trim() || process.env.USERNAME?.trim() || 'unknown';
+}
+
+export function reviewAuthor(config, { gitName = gitUserName, userName = computerUserName } = {}) {
+  if (config.author) return { name: config.author, source: 'config' };
+  const git = gitName(config.configDir);
+  if (git) return { name: git, source: 'git' };
+  return { name: userName(), source: 'user' };
 }
 
 function readJson(file) {
@@ -103,7 +119,7 @@ function readBody(req) {
   });
 }
 
-export async function startReviewServer(config, { port = 0, author = null, onDone = () => {} } = {}) {
+export async function startReviewServer(config, { port = 0, author = reviewAuthor(config).name, onDone = () => {} } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
   const rootDefaults = () => {
     const map = readJson(mapFile);
@@ -166,7 +182,7 @@ export async function startReviewServer(config, { port = 0, author = null, onDon
           return send(res, 400, 'text/plain', err.message);
         }
         try {
-          const saved = saves[req.url]({ ...input, author: author ?? input.author });
+          const saved = saves[req.url]({ ...input, author });
           return send(res, 201, 'application/json', JSON.stringify(saved));
         } catch (err) {
           return send(res, 400, 'text/plain', err.message);
