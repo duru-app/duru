@@ -999,6 +999,8 @@ async function withPage(base, fn, { view = 'list', setup } = {}) {
   }
 }
 
+const untaggedTab = '#left .views.side button:has-text("태그 없음")';
+
 for (const host of ['127.0.0.1', 'localhost']) {
   test(`in a browser at ${host}, the list filters screens, a mark is saved as a file and is there after reloading`, { skip: browserMissing }, async () => {
     await withRebuiltFixture({}, (config) =>
@@ -1145,12 +1147,108 @@ test('in a browser, a map.json built before links carried their conditions shows
   });
 });
 
+test('in a browser, the three left tabs stay on one line inside the column, also with three-digit counts and a classic scrollbar', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        let counts = { screens: 11, stories: 5 };
+        await p.route('**/api/data', async (route) => {
+          const res = await route.fetch();
+          const data = await res.json();
+          const grow = (list, n) => Array.from({ length: n }, (_, i) => list[i % list.length]);
+          data.map.screens = grow(data.map.screens, counts.screens);
+          data.stories.list = grow(data.stories.list, counts.stories);
+          if (counts.untagged !== undefined) {
+            delete data.tests.untagged;
+            data.tests.untaggedCount = counts.untagged;
+          }
+          await route.fulfill({ response: res, json: data });
+        });
+        const measure = () => p.evaluate(() => {
+          const left = document.getElementById('left');
+          const row = left.querySelector('.views.side');
+          const probe = row.cloneNode(true);
+          probe.style.cssText = 'position: absolute; visibility: hidden; width: 1000px';
+          for (const b of [...probe.children].slice(1)) b.remove();
+          probe.querySelector('.tab-name').textContent = '가';
+          probe.querySelector('.tab-count').textContent = '1';
+          left.append(probe);
+          const oneLine = probe.firstElementChild.getBoundingClientRect().height;
+          probe.remove();
+          const middle = (el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
+          const tabs = [...row.children];
+          return {
+            heights: tabs.map((b) => b.getBoundingClientRect().height),
+            oneLine,
+            drop: tabs.map((b) => Math.abs(middle(b.querySelector('.tab-name')) - middle(b.querySelector('.tab-count')))),
+            inside: tabs.map((b) => {
+              const box = b.getBoundingClientRect();
+              const name = b.querySelector('.tab-name').getBoundingClientRect();
+              const count = b.querySelector('.tab-count').getBoundingClientRect();
+              const edge = b.clientLeft + parseFloat(getComputedStyle(b).paddingLeft);
+              return name.left >= box.left + edge - 0.5 && name.right <= count.left && count.right <= box.right - edge + 0.5;
+            }),
+            cut: tabs.map((b) => {
+              const name = b.querySelector('.tab-name');
+              const text = document.createRange();
+              text.selectNodeContents(name);
+              return name.getBoundingClientRect().width < text.getBoundingClientRect().width - 0.1;
+            }),
+            labels: tabs.map((b) => b.textContent),
+            rowScroll: [row.scrollWidth, row.clientWidth],
+            leftScroll: [left.scrollWidth, left.clientWidth],
+          };
+        });
+        const assertFits = (m, why) => {
+          assert.deepEqual(m.heights, Array(3).fill(m.oneLine), `${why}: every tab is as tall as a one-line tab`);
+          assert.ok(m.drop.every((d) => d <= 3), `${why}: each count stays beside its name ${m.drop}`);
+          assert.deepEqual(m.inside, Array(3).fill(true), `${why}: name and count stay inside their tab's padding`);
+          assert.ok(m.rowScroll[0] <= m.rowScroll[1], `${why}: row ${m.rowScroll[0]} fits in ${m.rowScroll[1]}`);
+          assert.ok(m.leftScroll[0] <= m.leftScroll[1], `${why}: left column ${m.leftScroll[0]} does not scroll sideways in ${m.leftScroll[1]}`);
+        };
+        const show = async (c) => {
+          counts = c;
+          await p.reload();
+          await toList(p);
+          await p.waitForSelector('#screen-list li');
+        };
+
+        const scrollbar = () => p.addStyleTag({ content: '#left { padding-right: 31px !important; }' });
+
+        await show({ screens: 11, stories: 5 });
+        let m = await measure();
+        assert.deepEqual(m.labels, ['화면 11', '스토리 5', '태그 없음 13']);
+        assert.deepEqual(m.cut, [false, false, false]);
+        assertFits(m, 'default counts');
+
+        await show({ screens: 111, stories: 5, untagged: 999 });
+        m = await measure();
+        assert.deepEqual(m.labels, ['화면 111', '스토리 5', '태그 없음 999']);
+        assert.deepEqual(m.cut, [false, false, false]);
+        assertFits(m, 'three-digit counts');
+
+        await show({ screens: 111, stories: 5, untagged: 999 });
+        await scrollbar();
+        m = await measure();
+        assert.deepEqual(m.cut, [false, false, false]);
+        assertFits(m, 'three-digit counts with a classic scrollbar');
+
+        await show({ screens: 111, stories: 111, untagged: 999 });
+        await scrollbar();
+        await p.click('#left .views.side button:nth-child(3)');
+        assertFits(await measure(), 'three-digit counts on every tab, a classic scrollbar and the widest tab chosen');
+      })));
+});
+
 test('in a browser, the story list sits next to the screen list, and a chosen story shows its screens in order with each link\'s verdict and what it takes to get to the end', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        assert.deepEqual(await p.locator('#left .views.side button').allTextContents(), ['화면 11', '스토리 5', '태그 없는 테스트 13']);
+        assert.deepEqual(await p.locator('#left .views.side button').allTextContents(), ['화면 11', '스토리 5', '태그 없음 13']);
+        assert.deepEqual(await p.locator('#left .views.side .tab-name').allTextContents(), ['화면', '스토리', '태그 없음']);
+        assert.deepEqual(await p.locator('#left .views.side .tab-count').allTextContents(), ['11', '5', '13']);
+        assert.equal(await p.getAttribute(untaggedTab, 'title'), '노드 태그도 스토리 태그도 없는 테스트');
         await p.click('#left .views.side button:has-text("스토리")');
         assert.deepEqual(await p.locator('#story-list li .name > span:first-child').allTextContents(), [
           '홈에서 개인 설정을 바꾼다', '홈에서 바로 도움말을 연다', '로그인해 문서 목록에서 문서를 연다', '관리자가 보고서를 본다', '실험실을 열어 결과를 본다',
@@ -5857,7 +5955,6 @@ test('in a browser, a hand-over whose test is no longer found shows apart and is
 
 const DOCUMENT_TABLE = { source: 'results/vitest/client-unit.json', file: 'components/DocumentTable.spec.js', title: 'DocumentTable › lists the documents it is given' };
 const DETAIL_TEST = { source: 'results/vitest/client-unit.json', file: 'components/DocumentDetail.spec.js', title: 'loads the detail screen only when it is needed' };
-const untaggedTab = '#left .views.side button:has-text("태그 없는 테스트")';
 
 test('the data carries the untagged tests with the reference a judgment points at them by', async () => {
   await withRebuiltFixture({}, (config) =>
@@ -5875,7 +5972,7 @@ test('in a browser, the untagged tab lists every untagged test and a search box 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        assert.equal(await p.textContent(untaggedTab), '태그 없는 테스트 13');
+        assert.equal(await p.textContent(untaggedTab), '태그 없음 13');
         await p.click(untaggedTab);
         assert.equal(await p.locator('#untagged-list li').count(), 13);
         const detail = p.locator('#untagged-list li', { hasText: 'loads the detail screen only when it is needed' });
@@ -5973,7 +6070,7 @@ test('in a browser, a tests.json without the untagged list shows the count and a
         await p.reload();
         await toList(p);
         await p.waitForSelector('#screen-list li');
-        assert.equal(await p.textContent(untaggedTab), '태그 없는 테스트 13');
+        assert.equal(await p.textContent(untaggedTab), '태그 없음 13');
         await p.click(untaggedTab);
         assert.match(await p.textContent('#center-body'), /태그 없는 테스트 목록이 없습니다.*duru rebuild/s);
         assert.doesNotMatch(await p.textContent('#center-body'), /태그 없는 테스트가 없습니다/);
@@ -6008,7 +6105,7 @@ test('in a browser, a pair for a screen that is no longer on the map shows as an
         assert.match(await off.textContent(), /components\/DocumentTable\.js/);
         assert.match(await pairs.filter({ hasText: '/document/:tab' }).getAttribute('class'), /on-map/);
         await off.click();
-        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없는 테스트 13');
+        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없음 13');
         assert.equal(await p.textContent('#center h3'), 'DocumentTable › lists the documents it is given');
       })));
 });
@@ -6108,7 +6205,7 @@ test('in a browser, only the pairs that still import get a checkbox, the bulk bu
         assert.equal(await p.textContent(`${bulk} button.hand-over`), '태그 달기로 넘기기 (1)');
         assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (1)');
         assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), false);
-        assert.equal(await p.locator('#left .views.side button.on').textContent(), '태그 없는 테스트 13');
+        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없음 13');
         assert.equal(await p.locator('#screen-list').count(), 0);
         await p.uncheck(pick);
         assert.equal(await p.locator(`${bulk} button.discard`).isDisabled(), true);
@@ -6121,7 +6218,7 @@ test('in a browser, picking a pair does not open its screen, and the pick-all bo
       withPage(base, async (p) => {
         await openDocumentTable(p);
         await p.check(pick.concat(' >> nth=0'));
-        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없는 테스트 13');
+        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없음 13');
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
         assert.equal(await p.locator(`${bulk} input.pick-all`).isChecked(), false);
 
@@ -6371,10 +6468,10 @@ test('in a browser, nothing leaves the test while a bulk is in flight, and the r
         assert.equal(await p.textContent('#untagged-list li.selected .title'), DOCUMENT_TABLE.title);
         assert.equal(await p.textContent('#center h3'), DOCUMENT_TABLE.title);
         await p.locator(homePair).click({ force: true });
-        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없는 테스트 13');
+        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없음 13');
         assert.equal(await p.locator(`${bulk} button.hand-over`).count(), 1);
         await p.locator('#left .views.side button:not(.on)').first().click({ force: true });
-        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없는 테스트 13');
+        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없음 13');
         await p.locator('#view-flow').click({ force: true });
         assert.equal(await p.locator('main').isVisible(), true);
         await p.locator('#end-review').click({ force: true });

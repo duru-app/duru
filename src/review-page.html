@@ -205,7 +205,10 @@
   .flowbar .focusing { margin-left: 8px; font-size: 12px; }
   .flowbar .flowsummary { flex-basis: 100%; font-size: 13px; }
   .views.side { margin-bottom: 10px; }
-  .views.side button { flex: 1 1 auto; padding: 4px 8px; }
+  .views.side button { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; padding: 4px 1px; white-space: nowrap; }
+  .views.side .tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .views.side .tab-count { flex: none; position: relative; top: .5px; padding: 0 4px; border-radius: 8px; background: var(--line); font-size: 11px; font-weight: 600; line-height: 16px; }
+  .views.side button.on .tab-count { background: var(--accent); color: var(--panel); }
   .chip.l-open { color: var(--pass); } .chip.l-conditioned { color: var(--accent); } .chip.l-broken { color: var(--fail); } .chip.l-off-map, .chip.l-unknown { color: var(--more); }
   .story-path { margin-top: 8px; }
   .story-path .step { display: flex; gap: 10px; align-items: baseline; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
@@ -484,8 +487,14 @@ const screenFilterBoxes = () => activeScreenFilters().map((f) => h('label', { ti
 function renderLeft() {
   const { marks, map, stories } = state.data;
   const left = document.getElementById('left');
-  const side = (key, label) => h('button', { class: state.side === key ? 'on' : '', disabled: state.bulkBusy, onclick: () => setSide(key) }, label);
-  const tabs = h('div', { class: 'views side' }, side('screens', `화면 ${map.screens.length}`), side('stories', `스토리 ${stories.list.length}`), side('untagged', `태그 없는 테스트 ${untaggedCount()}`));
+  const side = (key, name, count, title) => h('button', { class: state.side === key ? 'on' : '', title, disabled: state.bulkBusy, onclick: () => setSide(key) },
+    h('span', { class: 'tab-name' }, name),
+    // 화면에는 gap 이 띄우고, 이 빈칸은 탭의 글이 「화면 11」로 읽히게 한다.
+    ' ', h('span', { class: 'tab-count' }, count));
+  const tabs = h('div', { class: 'views side' },
+    side('screens', '화면', map.screens.length),
+    side('stories', '스토리', stories.list.length),
+    side('untagged', '태그 없음', untaggedCount(), '노드 태그도 스토리 태그도 없는 테스트'));
   if (state.side === 'stories') return fill(left, tabs, storyList());
   if (state.side === 'untagged') {
     if (!keptLeftList(left, tabs, 'untagged-list')) {
