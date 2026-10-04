@@ -440,9 +440,9 @@ and story tags go at the end of the line.
 
 A story is something a user gets done, written as the screens they pass through in order. Stories are
 kept in `storiesDir`, one JSON file per story, apart from the tests, so a story nobody has tested yet is
-still listed. Apart from the review page, which writes a story when a candidate is accepted and rewrites a
-story's name and memo (see [Story candidates](#story-candidates) and [Review page](#review-page)), duru
-reads them and never writes them.
+still listed. Apart from the review page, which writes a story when a candidate is accepted or a new story
+is put together from the screen list, and rewrites a story's name and memo (see
+[Story candidates](#story-candidates) and [Review page](#review-page)), duru reads them and never writes them.
 
 The file name without `.json` is the story ID: `open-document.json` is the story `open-document`. An ID
 uses only lowercase letters, digits, `-` and `_`, so it can go into a test tag and a file name as it is.
@@ -868,6 +868,24 @@ The page writes through `POST /api/candidates/accept` (`{ "record", "id", "name"
 `POST /api/candidates/discard` (`{ "record", "reason" }`), where `record` is the candidate's `source.record`,
 and `POST /api/stories/edit` (`{ "id", "name", "memo" }`). Each takes JSON only, like saving a mark; an unknown
 candidate is 404 and an input that breaks a rule is 400 with why.
+
+Above the story list, 「새 스토리」 starts a story written on the page. The left column turns into the screens of
+the map with a search box, and each screen pressed becomes the next step; a screen already used shows 「넣음 N」.
+The middle lists the steps in order with, between two steps, the same link verdict a story shows, judged again
+after every change, and the right shows whether the end can be reached and 「사전 조건」 as for a story. A step
+has a grip to drag it onto another step, whose place it takes, and the buttons 「위로」 and 「아래로」 for the same
+move without dragging (the focus stays on the moved step), 「앞에 넣기」, which makes the screens pressed next go in
+before that step until 「끝에 넣기」 is pressed, and 「빼기」. The same screen twice in a row is refused when
+pressed, and a move that leaves two in a row is shown but cannot be saved. Under the verdict, 「새 스토리 저장」
+takes an ID within the story ID rule, a name and a memo; 「스토리 저장」 writes `<id>.json` into `storiesDir` with
+the reviewer as author and shows the new story, and 「쓰던 것 버리기」 throws the steps and the form away.
+「스토리 목록」 goes back to the stories with what was written kept (the button then reads 「새 스토리 이어 쓰기」),
+the place is `#stories?new=1`, and 「리뷰 끝」 asks before ending while steps are unsaved. The button is not shown
+while the map is too old to check stories. Only new stories are put together this way: the steps of a story
+file are changed in the file. The page checks an order through `POST /api/stories/check` (`{ "screens" }`),
+which answers with the order judged like a story, and saves through `POST /api/stories/add`
+(`{ "id", "name", "memo", "screens" }`); both refuse an empty order and a screen that is not on the map, and
+the second also an ID in use, a name left blank and the same screen twice in a row.
 
 A mark targets a screen or an API call, or one depth of either, or one value of a call's option, or one depth
 of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "withHistory", "value": true },
