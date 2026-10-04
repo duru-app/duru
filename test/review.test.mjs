@@ -40,8 +40,10 @@ async function withRebuiltFixture(configPatch, fn, edits = []) {
   }
 }
 
+const signer = (name, source = 'config') => ({ name, source });
+
 async function withServer(config, author, fn) {
-  const server = await startReviewServer(config, { author });
+  const server = await startReviewServer(config, { author: typeof author === 'string' ? signer(author) : author });
   try {
     return await fn(`http://127.0.0.1:${server.address().port}`);
   } finally {
@@ -68,6 +70,7 @@ test('the page and its data are served, with the map, the tests per screen and t
       assert.deepEqual(data.marks, { attached: [], detached: [] });
       assert.deepEqual(data.depths, ['ui', 'api', 'render', 'code', 'data', 'output']);
       assert.equal(data.author, 'reviewer');
+      assert.equal(data.authorSource, 'config');
     }),
   );
 });
@@ -908,7 +911,7 @@ for (const signedOutPaths of [[], ['/signin']]) {
     await withFakeApi((api) =>
       withPassword('s3cret', () =>
         withRebuiltFixture({ app: { ...roleSettings(api).app, signedOutPaths } }, async (config) => {
-          const server = await startReviewServer(config, { author: 'reviewer' });
+          const server = await startReviewServer(config, { author: signer('reviewer') });
           let app;
           try {
             ({ app } = await (await fetch(`http://127.0.0.1:${server.address().port}/api/data`)).json());
@@ -1026,7 +1029,7 @@ test('the end request asks the caller to get ready, is answered, and then tells 
   await withRebuiltFixture({}, async (config) => {
     let done;
     const ended = new Promise((resolve) => (done = resolve));
-    const server = await startReviewServer(config, { author: 'reviewer', onDone: () => done });
+    const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => done });
     try {
       const base = `http://127.0.0.1:${server.address().port}`;
       const plain = await fetch(`${base}/api/end`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
@@ -1070,24 +1073,70 @@ async function withPage(base, fn, { view = 'list', setup } = {}) {
 
 const untaggedTab = '#left .views.side button:has-text("태그 없음")';
 
-test('in a browser, the header shows the author as text with no field, and a mark saved on the page is signed with the config author even when git has a name', { skip: browserMissing }, async () => {
+test('in a browser, the header does not name an author taken from the config, and a mark saved on the page is signed with the config author even when git has a name', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ author: '설정 이름' }, (config, copy) => {
     initGitRepoNamed(copy, 'Git 이름');
     return withServer(config, undefined, (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        assert.equal(await p.textContent('#author'), '작성자 설정 이름');
-        assert.equal(await p.textContent('#author strong'), '설정 이름');
+        assert.equal(await p.textContent('#author'), '');
         assert.equal(await p.locator('header input').count(), 0);
         await p.click('#screen-list li:has-text("/lab/result")');
         await p.click('#right .statuses button:has-text("없음")');
         await p.click('#right button.save');
         await openHistory(p);
-        await p.waitForSelector('#right .history li:has-text("설정 이름")');
+        await p.waitForSelector('#right .history li');
         assert.deepEqual(loadMarks(config.marksDir).map((m) => m.author), ['설정 이름']);
       }),
     );
   });
+});
+
+test('in a browser, the header names the author only when the name is the computer user name, and says why', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    for (const source of ['config', 'git']) {
+      await withServer(config, signer('reviewer', source), (base) =>
+        withPage(base, async (p) => {
+          await p.waitForSelector('#screen-list li');
+          assert.equal(await p.textContent('#author'), '', source);
+        }));
+    }
+    await withServer(config, signer('hit0607', 'user'), (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.textContent('#author'), '작성자 hit0607');
+        assert.match(await p.getAttribute('#author', 'title'), /컴퓨터 사용자 이름/);
+      }));
+  });
+});
+
+test('in a browser, marks and judgments show only their date while every one of them is the reviewer\'s own, and show the names once another person\'s is among them', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        await openHistory(p);
+        await p.waitForSelector('#right .history li');
+        await p.locator('#center .importers .importer', { hasText: 'renders the help text' }).locator('button.hand-over').click();
+        await p.waitForSelector('#center .awaiting-tag');
+        const signed = () => Promise.all(['#right .history li .muted', '#center .awaiting-tag .importer .detail .muted'].map((sel) => p.textContent(sel)));
+        for (const text of await signed()) {
+          assert.doesNotMatch(text, /reviewer/);
+          assert.match(text, /\d/);
+        }
+
+        addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: HOME_NODE, kind: 'discard', reason: 'judged elsewhere', author: 'someone' });
+        await p.reload();
+        await toList(p);
+        await p.click('#screen-list li:has-text("/help")');
+        await openHistory(p);
+        for (const text of await signed()) assert.match(text, /reviewer · /);
+        await p.click('#screen-list li:has-text("/home")');
+        assert.match(await p.textContent('#center .discarded .importer'), /judged elsewhere · someone · /);
+      })));
 });
 
 for (const host of ['127.0.0.1', 'localhost']) {
@@ -1097,7 +1146,7 @@ for (const host of ['127.0.0.1', 'localhost']) {
         withPage(base.replace('127.0.0.1', host), async (p) => {
           await p.waitForSelector('#screen-list li');
           assert.equal(await p.locator('#screen-list li').count(), 11);
-          assert.match(await p.textContent('#author'), /reviewer/);
+          assert.equal(await p.textContent('#author'), '');
 
           await p.fill('#left input[type=search]', 'lab');
           assert.deepEqual(await p.locator('#screen-list li .name > span:first-child').allTextContents(), ['/lab', '/lab/result']);
@@ -1508,7 +1557,8 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         assert.equal(await detached.count(), 1);
         assert.equal(await detached.locator('.chip').textContent(), '더 필요');
         assert.equal(await detached.locator('code').textContent(), 'run-lab');
-        assert.match(await detached.textContent(), /reviewer · .*the story test fails/);
+        assert.match(await detached.textContent(), /the story test fails/);
+        assert.doesNotMatch(await detached.textContent(), /reviewer/);
       }),
     ),
   );
@@ -3401,7 +3451,7 @@ test('in a browser, a call under a gathered entry screen wraps every line inside
 
 test('in a browser, resizing the window after the review ended throws nothing', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
-    const server = await startReviewServer(config, { author: 'reviewer', onDone: () => {} });
+    const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => {} });
     try {
       await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
         await p.waitForSelector('#flow .group-head');
@@ -3699,7 +3749,7 @@ test('in a browser, Escape closes the explanation only while the flow view is sh
 
 test('in a browser, pressing Escape after the review ended throws nothing', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
-    const server = await startReviewServer(config, { author: 'reviewer', onDone: () => {} });
+    const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => {} });
     try {
       await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
         await p.waitForSelector('#flow .box');
@@ -4214,7 +4264,7 @@ test('in a browser, the flow layout is worked out from the trees, the box sizes 
 test('in a browser, 「리뷰 끝」 ends the review and the page says so', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
     let ends = 0;
-    const server = await startReviewServer(config, { author: 'reviewer', onDone: () => { ends++; } });
+    const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => { ends++; } });
     try {
       await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
         await p.waitForSelector('#screen-list li');
@@ -4233,7 +4283,7 @@ test('in a browser, 「리뷰 끝」 ends the review and the page says so', { sk
 test('in a browser, 「리뷰 끝」 asks before throwing away a mark that was picked but not saved', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
     let ends = 0;
-    const server = await startReviewServer(config, { author: 'reviewer', onDone: () => { ends++; } });
+    const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => { ends++; } });
     try {
       await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
         await p.waitForSelector('#screen-list li');
@@ -4272,7 +4322,7 @@ test('in a browser, 「리뷰 끝」 asks before throwing away a mark that was p
 
 test('in a browser, 「리뷰 끝」 after the review already ended elsewhere says so rather than reporting a failure', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
-    const server = await startReviewServer(config, { author: 'reviewer', onDone: () => () => server.close() });
+    const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => () => server.close() });
     const base = `http://127.0.0.1:${server.address().port}`;
     const browser = await chromium.launch();
     try {
@@ -5862,7 +5912,7 @@ test('in a browser, a test importing a screen is discarded with a reason, stays 
         assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 1');
         assert.equal(await p.locator('#screen-list li:has-text("/help") .importer-count').textContent(), '불러옴 1');
         assert.equal(await p.textContent('#center .discarded h2'), '제외한 짝 1');
-        assert.match(await p.textContent('#center .discarded .importer'), /renders the help text.*only renders a shared header.*reviewer/s);
+        assert.match(await p.textContent('#center .discarded .importer'), /renders the help text.*only renders a shared header · \d/s);
 
         execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
         await p.reload();
@@ -6042,7 +6092,8 @@ test('in a browser, a pair included with one press waits for its tag apart from 
         assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 1');
         assert.equal(await p.locator('#screen-list li:has-text("/help") .importer-count').textContent(), '불러옴 1');
         assert.equal(await p.textContent('#center .awaiting-tag h2'), '태그 대기 1');
-        assert.match(await p.textContent('#center .awaiting-tag .importer'), /renders the help text.*reviewer/s);
+        assert.match(await p.textContent('#center .awaiting-tag .importer'), /renders the help text/);
+        assert.doesNotMatch(await p.textContent('#center .awaiting-tag .importer'), /reviewer/);
         assert.equal(await p.locator('#center .discarded').count(), 0);
 
         await p.click('#center .awaiting-tag button.undo');
@@ -6153,8 +6204,8 @@ test('in a browser, a discarded pair and a handed-over pair show their state und
         const pairs = p.locator('#center .test-pairs .pair');
         assert.deepEqual(await pairs.locator('.screen-path').allTextContents(), ['/document/:tab(draft|done)', '/home']);
         assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['태그 대기', '제외한 짝']);
-        assert.match(await pairs.nth(0).textContent(), /covers the list.*reviewer/s);
-        assert.match(await pairs.nth(1).textContent(), /only lists documents.*reviewer/s);
+        assert.match(await pairs.nth(0).textContent(), /covers the list · \d/s);
+        assert.match(await pairs.nth(1).textContent(), /only lists documents · \d/s);
         assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면의 짝 2');
       })));
 });

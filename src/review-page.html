@@ -358,6 +358,12 @@ const untaggedCount = () => state.data.tests.untagged?.length ?? state.data.test
 const untaggedKey = (t) => JSON.stringify([t.source, t.file, t.line, t.title]);
 const markOf = (t) => state.data.marks.attached.find((m) => m.key === keyOf(t));
 const fmtDate = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+function othersSigned() {
+  const { marks, tests, author } = state.data;
+  const judged = [tests.discarded, tests.awaitingTag, tests.detachedHandOvers].flatMap((byNode) => Object.values(byNode ?? {}).flat()).map((t) => t.judgment);
+  return [...marks.attached, ...marks.detached].flatMap((m) => m.history).concat(judged).some((record) => record.author !== author);
+}
+const signedAt = (record) => (othersSigned() ? `${record.author} · ${fmtDate(record.date)}` : fmtDate(record.date));
 const markChip = (m) => (m ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status]) : null);
 const callOf = (id) => state.data.map.calls.find((c) => c.id === id);
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];
@@ -467,7 +473,10 @@ function renderHeader() {
       h('button', { type: 'button', class: 'chip state', 'aria-describedby': 'server-state-tip', onmouseenter: placeStateTip, onfocus: placeStateTip }, '서버 대조 안 함'),
       h('span', { class: 'state-tip', id: 'server-state-tip', role: 'note' }, SERVER_STATE_TIP),
     ] : null);
-  fill(document.getElementById('author'), '작성자 ', h('strong', {}, state.data.author));
+  const author = document.getElementById('author');
+  const guessed = state.data.authorSource === 'user';
+  author.title = guessed ? '설정의 author 에도 git 의 user.name 에도 이름이 없어, 컴퓨터 사용자 이름으로 표시와 판단을 남깁니다' : '';
+  fill(author, guessed ? ['작성자 ', h('strong', {}, state.data.author)] : []);
 }
 
 const listAbsentNote = (text) => (state.data.map.serverNotCompared ? [' ', h('span', { class: 'list-absent' }, text)] : null);
@@ -542,7 +551,7 @@ function markList(title, cls, marks, label, empty, pick = null) {
     marks.length
       ? h('ul', { class: `plain ${cls}` }, marks.map((m) => h('li', pick ? { class: label(m) === state.story ? 'selected' : '', onclick: () => pick(label(m)) } : {},
           markChip(m), ' ', h('code', {}, label(m)), h('br'),
-          h('span', { class: 'muted' }, `${m.current.author} · ${fmtDate(m.current.date)}`), m.current.note ? h('div', {}, m.current.note) : null)))
+          h('span', { class: 'muted' }, signedAt(m.current)), m.current.note ? h('div', {}, m.current.note) : null)))
       : empty,
   ];
 }
@@ -769,7 +778,7 @@ function judgmentForm(t, node) {
 
 const judgmentMeta = (j, label) => h('div', { class: 'detail' },
   j.reason.trim() ? [`${label} `, h('span', { class: 'memo' }, j.reason)] : null,
-  h('span', { class: 'muted' }, `${j.reason.trim() ? ' · ' : ''}${j.author} · ${fmtDate(j.date)}`));
+  h('span', { class: 'muted' }, `${j.reason.trim() ? ' · ' : ''}${signedAt(j)}`));
 
 const undoButton = (t, node) => h('button', { class: 'undo', onclick: () => saveJudgment({ test: t.ref, node, kind: 'undo' }, judgmentKey(t, node)) }, '되돌리기');
 
@@ -1557,7 +1566,7 @@ function markForm(target, draftKey, label) {
   const draft = state[draftKey];
   const history = mark?.history.length ? mark.history : null;
   const historyList = history && h('ul', { class: 'plain history' }, history.map((m) => h('li', {},
-    h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]), ' ', h('span', { class: 'muted' }, `${m.author} · ${fmtDate(m.date)}`),
+    h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]), ' ', h('span', { class: 'muted' }, signedAt(m)),
     m.note ? h('div', {}, m.note) : null)));
   const historyToggle = history && h('button', { class: 'history-toggle', onclick: () => {
     state.historyOpen = !state.historyOpen;
