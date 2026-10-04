@@ -5820,8 +5820,7 @@ test('in a browser, a branch shown on its own counts the importing tests again a
         await p.click('#view-list');
         await p.click('#screen-list li:has-text("/help")');
         const first = p.locator('#center .importers .importer', { hasText: 'renders the help text' });
-        await first.locator('input.reason').fill('only renders a shared header');
-        await first.locator('button.discard').click();
+        await excludeIn(first, 'only renders a shared header');
         await p.waitForSelector('#center .discarded');
 
         await p.click('#view-flow');
@@ -5837,8 +5836,7 @@ test('in a browser, a test importing a screen is discarded with a reason, stays 
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
         const first = p.locator('#center .importers .importer', { hasText: 'renders the help text' });
-        await first.locator('input.reason').fill('only renders a shared header');
-        await first.locator('button.discard').click();
+        await excludeIn(first, 'only renders a shared header');
         await p.waitForSelector('#center .discarded');
 
         assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => [j.test, j.node, j.kind, j.reason, j.author]), [
@@ -5846,7 +5844,7 @@ test('in a browser, a test importing a screen is discarded with a reason, stays 
         ]);
         assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 1');
         assert.equal(await p.locator('#screen-list li:has-text("/help") .importer-count').textContent(), '불러옴 1');
-        assert.equal(await p.textContent('#center .discarded h2'), '버린 짝 1');
+        assert.equal(await p.textContent('#center .discarded h2'), '제외한 짝 1');
         assert.match(await p.textContent('#center .discarded .importer'), /renders the help text.*only renders a shared header.*reviewer/s);
 
         execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
@@ -5863,34 +5861,85 @@ test('in a browser, a test importing a screen is discarded with a reason, stays 
       })));
 });
 
-test('in a browser, a discard without a reason is not sent', { skip: browserMissing }, async () => {
+test('in a browser, the window asking why a pair is excluded names the pair, and a discard without a reason cannot be sent', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
-        await p.locator('#center .importers .importer').first().locator('button.discard').click();
-        await p.waitForSelector('#center .importers .importer .judgment-error');
+        const first = p.locator('#center .importers .importer', { hasText: 'renders the help text' });
+        assert.equal(await p.locator(asked).isVisible(), false);
+        await first.locator('button.discard').click();
+        assert.equal(await p.locator(asked).evaluate((el) => el.matches(':modal')), true);
+        assert.equal(await p.textContent(`${asked} h2`), '이 짝을 제외합니다');
+        assert.match(await p.textContent(`${asked} .pairs`), /테스트renders the help text.*Help\.spec\.js.*화면\/help Help/s);
+        assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '제외']);
+        assert.equal(await askedFocused(p), true);
+        assert.equal(await p.locator(`${asked} button.discard`).isDisabled(), true);
+
+        await p.fill(why, '  \n ');
+        assert.equal(await p.locator(`${asked} button.discard`).isDisabled(), true);
+        await p.press(why, 'Control+Enter');
+        assert.equal(await p.locator(asked).isVisible(), true);
         assert.equal(fs.existsSync(config.judgmentsDir), false);
         assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 2');
       })));
 });
 
-const SAVE_REFUSED = ['Failed to load resource: the server responded with a status of 500 (Internal Server Error)'];
-
-test('in a browser, a discard error shows beside the test whose button was pressed, and each way of leaving that view clears it', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+test('in a browser, Enter breaks the line of the reason and Ctrl+Enter sends it without the blank ends, and the saved reason keeps its lines', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await p.locator('#center .importers .importer', { hasText: 'renders the help text' }).locator('button.discard').click();
+        await p.keyboard.type(' only renders');
+        await p.keyboard.press('Enter');
+        await p.keyboard.type('a shared header');
+        await p.keyboard.press('Enter');
+        assert.equal(await p.inputValue(why), ' only renders\na shared header\n');
+        assert.equal(fs.existsSync(config.judgmentsDir), false);
+
+        await p.keyboard.press('Control+Enter');
+        await p.waitForSelector('#center .discarded');
+        assert.equal(await p.locator(asked).isVisible(), false);
+        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => j.reason), ['only renders\na shared header']);
+        assert.equal(await p.locator('#center .discarded .memo').evaluate((el) => getComputedStyle(el).whiteSpace), 'pre-wrap');
+      })));
+});
+
+const asked = '#exclude';
+const why = `${asked} textarea`;
+const askedFocused = (p) => p.evaluate((sel) => document.activeElement.matches(sel), why);
+
+async function excludeIn(row, reason) {
+  await row.locator('button.discard').click();
+  await row.page().fill(why, reason);
+  await row.page().click(`${asked} button.discard`);
+}
+
+async function excludePicked(p, reason) {
+  await p.click('#center .bulk-bar button.discard');
+  await p.fill(why, reason);
+  await p.click(`${asked} button.discard`);
+}
+
+const SAVE_REFUSED = ['Failed to load resource: the server responded with a status of 500 (Internal Server Error)'];
+
+test('in a browser, a judgment that fails to save shows its error beside the test whose button was pressed, and each way of leaving that view clears it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.route('**/api/judgments', (route) => route.fulfill({ status: 500, body: 'disk full' }));
         const errorOf = () => p.evaluate(() => state.judgmentError);
-        const discardWithoutReason = async () => {
-          const second = p.locator('#center .importers .importer').nth(1);
-          await second.locator('button.discard').click();
+        const second = p.locator('#center .importers .importer').nth(1);
+        const failToSave = async () => {
+          await second.locator('button.hand-over').click();
           await second.locator('.judgment-error').waitFor();
         };
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
-        await discardWithoutReason();
+        await failToSave();
         assert.equal(await p.locator('#center .judgment-error').count(), 1);
         assert.equal(await p.locator('#center .importers .importer').first().locator('.judgment-error').count(), 0);
 
@@ -5899,21 +5948,22 @@ test('in a browser, a discard error shows beside the test whose button was press
         await p.click('#screen-list li:has-text("/help")');
         assert.equal(await p.locator('#center .judgment-error').count(), 0);
 
-        await discardWithoutReason();
+        await failToSave();
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#left .views.side button:has-text("화면")');
         assert.equal(await errorOf(), null);
         assert.equal(await p.locator('#center .judgment-error').count(), 0);
 
-        await discardWithoutReason();
+        await failToSave();
         await p.click('#center table tbody tr:has-text("테스트 ") >> nth=0');
         await p.locator('#center table tbody tr.selected').waitFor();
         assert.equal(await errorOf(), null);
         assert.equal(await p.locator('#center .judgment-error').count(), 0);
+        assert.deepEqual(errors.splice(0), [...SAVE_REFUSED, ...SAVE_REFUSED, ...SAVE_REFUSED]);
       })));
 });
 
-test('in a browser, choosing a story clears a discard error that failed to save while the story list was open', { skip: browserMissing }, async () => {
+test('in a browser, choosing a story clears a judgment error that failed to save while the story list was open', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -5922,8 +5972,7 @@ test('in a browser, choosing a story clears a discard error that failed to save 
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
         const first = p.locator('#center .importers .importer').first();
-        await first.locator('input.reason').fill('only renders a shared header');
-        await first.locator('button.discard').click();
+        await first.locator('button.hand-over').click();
         await untilSet(() => held, 'the first judgment request');
         await p.click('#left .views.side button:has-text("스토리")');
         await held.fulfill({ status: 500, body: 'disk full' });
@@ -5934,7 +5983,7 @@ test('in a browser, choosing a story clears a discard error that failed to save 
       })));
 });
 
-test('in a browser, a discard that fails to save after another screen was selected still shows its error', { skip: browserMissing }, async () => {
+test('in a browser, a judgment that fails to save after another screen was selected still shows its error', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -5943,8 +5992,7 @@ test('in a browser, a discard that fails to save after another screen was select
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
         const first = p.locator('#center .importers .importer').first();
-        await first.locator('input.reason').fill('only renders a shared header');
-        await first.locator('button.discard').click();
+        await first.locator('button.hand-over').click();
         await untilSet(() => held, 'the first judgment request');
         await p.click('#screen-list li:not(:has-text("/help"))');
         assert.equal(await p.locator('#center .judgment-error').count(), 0);
@@ -5959,24 +6007,25 @@ test('in a browser, a discard that fails to save after another screen was select
       })));
 });
 
-test('in a browser, a pair handed over with a note waits for its tag apart from the importing tests, and comes back when undone', { skip: browserMissing }, async () => {
+test('in a browser, a pair included with one press waits for its tag apart from the importing tests, and comes back when undone', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
         const first = p.locator('#center .importers .importer', { hasText: 'renders the help text' });
-        await first.locator('input.reason').fill('checks the help screen');
+        assert.deepEqual(await first.locator('.judge-row > *').allTextContents(), ['제외', '포함']);
         await first.locator('button.hand-over').click();
         await p.waitForSelector('#center .awaiting-tag');
 
         assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => [j.test, j.node, j.kind, j.reason, j.author]), [
-          [HELP_TEST, '/help#Help', 'hand-over', 'checks the help screen', 'reviewer'],
+          [HELP_TEST, '/help#Help', 'hand-over', '', 'reviewer'],
         ]);
+        assert.equal(await p.locator('#center .judgment-error').count(), 0);
         assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 1');
         assert.equal(await p.locator('#screen-list li:has-text("/help") .importer-count').textContent(), '불러옴 1');
-        assert.equal(await p.textContent('#center .awaiting-tag h2'), '태그 달기 대기 1');
-        assert.match(await p.textContent('#center .awaiting-tag .importer'), /renders the help text.*checks the help screen.*reviewer/s);
+        assert.equal(await p.textContent('#center .awaiting-tag h2'), '태그 대기 1');
+        assert.match(await p.textContent('#center .awaiting-tag .importer'), /renders the help text.*reviewer/s);
         assert.equal(await p.locator('#center .discarded').count(), 0);
 
         await p.click('#center .awaiting-tag button.undo');
@@ -5986,17 +6035,16 @@ test('in a browser, a pair handed over with a note waits for its tag apart from 
       })));
 });
 
-test('in a browser, a hand-over without a note is accepted', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
+test('in a browser, a hand-over saved with a note shows the note while it waits for its tag', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    addJudgment(config.judgmentsDir, { test: HELP_TEST, node: '/help#Help', kind: 'hand-over', reason: 'checks the help screen', author: 'earlier reviewer' });
+    return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
-        await p.locator('#center .importers .importer', { hasText: 'renders the help text' }).locator('button.hand-over').click();
-        await p.waitForSelector('#center .awaiting-tag');
-        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => [j.kind, j.reason]), [['hand-over', '']]);
-        assert.equal(await p.locator('#center .judgment-error').count(), 0);
-      })));
+        assert.match(await p.textContent('#center .awaiting-tag .importer'), /renders the help text.*메모 checks the help screen.*earlier reviewer/s);
+      }));
+  });
 });
 
 test('in a browser, a hand-over whose test is no longer found shows apart and is closed by undoing it', { skip: browserMissing }, async () => {
@@ -6087,7 +6135,7 @@ test('in a browser, a discarded pair and a handed-over pair show their state und
         await p.click('#untagged-list li:has-text("DocumentTable")');
         const pairs = p.locator('#center .test-pairs .pair');
         assert.deepEqual(await pairs.locator('.screen-path').allTextContents(), ['/document/:tab(draft|done)', '/home']);
-        assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['태그 달기 대기', '버린 짝']);
+        assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['태그 대기', '제외한 짝']);
         assert.match(await pairs.nth(0).textContent(), /covers the list.*reviewer/s);
         assert.match(await pairs.nth(1).textContent(), /only lists documents.*reviewer/s);
         assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면의 짝 2');
@@ -6265,12 +6313,12 @@ test('in a browser, only the pairs that still import get a checkbox, the bulk bu
         assert.equal(await p.locator('#center .pair', { hasText: '/home' }).locator('button').count(), 0);
         assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), true);
         assert.equal(await p.locator(`${bulk} button.discard`).isDisabled(), true);
-        assert.equal(await p.textContent(`${bulk} button.hand-over`), '태그 달기로 넘기기 (0)');
-        assert.equal(await p.locator(`${bulk} input.reason`).evaluate((el) => getComputedStyle(el).flexBasis), '200px');
+        assert.equal(await p.textContent(`${bulk} button.hand-over`), '포함 (0)');
+        assert.equal(await p.locator(asked).isVisible(), false);
 
         await p.check(pick);
-        assert.equal(await p.textContent(`${bulk} button.hand-over`), '태그 달기로 넘기기 (1)');
-        assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (1)');
+        assert.equal(await p.textContent(`${bulk} button.hand-over`), '포함 (1)');
+        assert.equal(await p.textContent(`${bulk} button.discard`), '제외 (1)');
         assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), false);
         assert.equal(await p.textContent('#left .views.side button.on'), '태그 없음 13');
         assert.equal(await p.locator('#screen-list').count(), 0);
@@ -6291,7 +6339,7 @@ test('in a browser, picking a pair does not open its screen, and the pick-all bo
 
         await p.check(`${bulk} input.pick-all`);
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
-        assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (2)');
+        assert.equal(await p.textContent(`${bulk} button.discard`), '제외 (2)');
         await p.uncheck(`${bulk} input.pick-all`);
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 0);
         assert.equal(await p.locator(`${bulk} input.pick-all`).isChecked(), false);
@@ -6316,72 +6364,203 @@ test('in a browser, a pair whose screen is not on the map has no checkbox and is
         assert.equal(await p.locator(pick).count(), 1);
         assert.equal(await p.locator('#center .pair.off-map input').count(), 0);
         await p.check(`${bulk} input.pick-all`);
-        assert.equal(await p.textContent(`${bulk} button.hand-over`), '태그 달기로 넘기기 (1)');
+        assert.equal(await p.textContent(`${bulk} button.hand-over`), '포함 (1)');
       })));
 });
 
-test('in a browser, several pairs of one untagged test are handed over in one go with one note, each as its own judgment file', { skip: browserMissing }, async () => {
+test('in a browser, several pairs of one untagged test are included in one go, each as its own judgment file', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await openDocumentTable(p);
         await p.check(`${bulk} input.pick-all`);
-        await p.fill(`${bulk} input.reason`, 'covers the list');
         await p.click(`${bulk} button.hand-over`);
         await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
 
         assert.deepEqual(judgedBy(config), [
-          [LIST_NODE, 'hand-over', 'covers the list', 'reviewer'],
-          [HOME_NODE, 'hand-over', 'covers the list', 'reviewer'],
+          [LIST_NODE, 'hand-over', '', 'reviewer'],
+          [HOME_NODE, 'hand-over', '', 'reviewer'],
         ]);
         const files = fs.readdirSync(config.judgmentsDir, { recursive: true }).filter((f) => f.endsWith('.json'));
         assert.equal(files.length, 2);
-        assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['태그 달기 대기', '태그 달기 대기']);
+        assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['태그 대기', '태그 대기']);
         assert.equal(await p.locator(pick).count(), 0);
         assert.equal(await p.locator(bulk).count(), 0);
 
         await p.locator('#center .pair', { hasText: '/home' }).click();
-        assert.match(await p.textContent('#center .awaiting-tag'), /DocumentTable › lists the documents it is given.*covers the list/s);
+        assert.match(await p.textContent('#center .awaiting-tag'), /DocumentTable › lists the documents it is given/);
         assert.doesNotMatch(await p.textContent('#center'), /불러오는 테스트/);
       })));
 });
 
-test('in a browser, several pairs of one untagged test are discarded in one go with one reason, and a discard without a reason sends nothing', { skip: browserMissing }, async () => {
+test('in a browser, several pairs of one untagged test are discarded in one go with one reason, asked for in a window that lists the picked screens', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await openDocumentTable(p);
         await p.check(`${bulk} input.pick-all`);
         await p.click(`${bulk} button.discard`);
-        await p.locator(`${bulk} .bulk-error`).waitFor();
-        assert.equal(await p.textContent(`${bulk} .bulk-error`), '버리는 까닭을 적어 주세요.');
+        assert.equal(await p.textContent(`${asked} h2`), '짝 2개를 제외합니다');
+        assert.match(await p.textContent(`${asked} .pairs`), /lists the documents it is given.*DocumentTable/s);
+        assert.deepEqual(await p.locator(`${asked} .pairs li`).allTextContents(), ['/document/:tab(draft|done) DocumentList', '/home Home']);
+        assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '제외 (2)']);
+        assert.equal(await askedFocused(p), true);
+        assert.equal(await p.locator(`${bulk} .bulk-error`).count(), 0);
+
+        await p.press(why, 'Control+Enter');
         assert.equal(fs.existsSync(config.judgmentsDir), false);
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
 
-        await p.fill(`${bulk} input.reason`, 'only lists documents');
-        await p.click(`${bulk} button.discard`);
+        await p.fill(why, 'only lists documents');
+        await p.press(why, 'Control+Enter');
         await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.muted').length === 2);
         assert.deepEqual(judgedBy(config), [
           [LIST_NODE, 'discard', 'only lists documents', 'reviewer'],
           [HOME_NODE, 'discard', 'only lists documents', 'reviewer'],
         ]);
+        assert.equal(await p.locator(asked).isVisible(), false);
         assert.equal(await p.locator(bulk).count(), 0);
 
         await p.locator('#center .pair', { hasText: '/home' }).click();
-        assert.equal(await p.textContent('#center .discarded h2'), '버린 짝 1');
+        assert.equal(await p.textContent('#center .discarded h2'), '제외한 짝 1');
         assert.equal(await p.locator('#center .importers').filter({ hasText: 'DocumentTable' }).count(), 0);
       })));
 });
 
-test('in a browser, a hand-over without a note is accepted in bulk', { skip: browserMissing }, async () => {
+test('in a browser, the window asking for a reason is put away with 「취소」 or Escape and not by a click outside it, the reason typed goes with it and nothing is sent', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await openDocumentTable(p);
+        const focusedButton = () => p.evaluate(() => [document.activeElement.closest('.bulk-bar, .judge-row')?.className, document.activeElement.className]);
         await p.check(`${bulk} input.pick-all`);
-        await p.click(`${bulk} button.hand-over`);
-        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
-        assert.deepEqual(judgedBy(config).map((j) => j[2]), ['', '']);
+        await p.click(`${bulk} button.discard`);
+        await p.fill(why, 'typed and dropped');
+        await p.mouse.click(5, 5);
+        assert.equal(await p.locator(asked).isVisible(), true);
+        await p.press(why, 'Escape');
+        assert.equal(await p.locator(asked).isVisible(), false);
+        assert.deepEqual(await focusedButton(), ['bulk-bar', 'discard']);
+
+        await p.click(`${bulk} button.discard`);
+        assert.equal(await p.inputValue(why), '');
+        await p.click(`${asked} button.cancel`);
+        assert.equal(await p.locator(asked).isVisible(), false);
+        assert.deepEqual(await focusedButton(), ['bulk-bar', 'discard']);
+        assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
+
+        await p.locator('#center .pair', { hasText: '/home' }).click();
+        const row = p.locator('#center .importers .importer', { hasText: 'DocumentTable' }).locator('.judge-row');
+        await row.locator('button.discard').click();
+        await p.press(why, 'Escape');
+        assert.equal(await p.locator(asked).isVisible(), false);
+        assert.deepEqual(await focusedButton(), ['judge-row', 'discard']);
+        assert.equal(fs.existsSync(config.judgmentsDir), false);
+      })));
+});
+
+test('in a browser, while a discard is being saved the window stays open and locked, Ctrl+Enter and Escape do nothing, and one discard is saved', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        let held;
+        let calls = 0;
+        await p.route('**/api/judgments', (route) => {
+          calls += 1;
+          held = route;
+        });
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        const first = p.locator('#center .importers .importer', { hasText: 'renders the help text' });
+        await first.locator('button.discard').click();
+        await p.fill(why, 'only renders a shared header');
+        await p.press(why, 'Control+Enter');
+        await untilSet(() => held, 'the judgment request');
+
+        assert.deepEqual(await p.$$eval(`${asked} button`, (list) => list.map((b) => b.disabled)), [true, true]);
+        assert.equal(await p.locator(why).evaluate((el) => el.readOnly), true);
+        await p.keyboard.press('Control+Enter');
+        await p.keyboard.press('Escape');
+        await p.keyboard.press('Escape');
+        assert.equal(await p.locator(asked).isVisible(), true);
+        assert.equal(await askedFocused(p), true);
+        assert.equal(await p.inputValue(why), 'only renders a shared header');
+        await p.locator(`${asked} button.discard`).click({ force: true });
+        assert.equal(calls, 1);
+
+        await held.continue();
+        await p.waitForSelector('#center .discarded');
+        assert.equal(await p.locator(asked).isVisible(), false);
+        assert.equal(loadJudgments(config.judgmentsDir).judgments.length, 1);
+      })));
+});
+
+test('in a browser, a discard that fails to save leaves the window open with its reason and the error, and saves when sent again', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        const refuse = (route) => route.fulfill({ status: 500, body: 'disk full' });
+        await p.route('**/api/judgments', refuse);
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        const first = p.locator('#center .importers .importer', { hasText: 'renders the help text' });
+        await excludeIn(first, 'only renders a shared header');
+        await p.locator(`${asked} .error`).waitFor();
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+        assert.equal(await p.textContent(`${asked} .error`), '저장하지 못했습니다: disk full');
+        assert.equal(await p.inputValue(why), 'only renders a shared header');
+        assert.equal(await askedFocused(p), true);
+        assert.equal(await p.locator(`${asked} button.discard`).isDisabled(), false);
+        assert.equal(await p.locator('#center .judgment-error').count(), 0);
+
+        await p.unroute('**/api/judgments', refuse);
+        await p.press(why, 'Control+Enter');
+        await p.waitForSelector('#center .discarded');
+        assert.equal(await p.locator(asked).isVisible(), false);
+        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => j.reason), ['only renders a shared header']);
+
+        await p.locator('#center .importers .importer').first().locator('button.discard').click();
+        assert.equal(await p.locator(`${asked} .error`).isVisible(), false);
+      })));
+});
+
+test('in a browser, 「제외」 does not ask for a reason while the 「포함」 of the same row is being saved', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        let held;
+        await p.route('**/api/judgments', (route) => { held = route; });
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        const first = p.locator('#center .importers .importer', { hasText: 'renders the help text' });
+        await first.locator('button.hand-over').click();
+        await untilSet(() => held, 'the judgment request');
+        await first.locator('button.discard').click();
+        assert.equal(await p.locator(asked).isVisible(), false);
+        await held.continue();
+        await p.waitForSelector('#center .awaiting-tag');
+      })));
+});
+
+test('in a browser, a judgment of another row that ends while a reason is being typed leaves the focus and the typing in the window', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        let held;
+        await p.route('**/api/judgments', (route) => { held = route; });
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        const rows = p.locator('#center .importers .importer');
+        await rows.nth(0).locator('button.hand-over').click();
+        await untilSet(() => held, 'the judgment request');
+        await rows.nth(1).locator('button.discard').click();
+        await p.keyboard.type('second row re');
+        await held.fulfill({ status: 500, body: 'disk full' });
+        await rows.nth(0).locator('.judgment-error').waitFor();
+        await p.keyboard.type('ason');
+        assert.equal(await p.inputValue(why), 'second row reason');
+        assert.equal(await askedFocused(p), true);
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
       })));
 });
 
@@ -6401,7 +6580,7 @@ test('in a browser, every pair judged in bulk is undone one at a time from its s
 
         await p.click(untaggedTab);
         await p.click('#untagged-list li:has-text("DocumentTable")');
-        assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['태그 달기 대기', '불러옴']);
+        assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['태그 대기', '불러옴']);
         assert.equal(await p.locator(pick).count(), 1);
         assert.equal(await p.locator('#center .pair-row', { hasText: '/home' }).locator('input.pick').count(), 1);
       })));
@@ -6413,21 +6592,23 @@ test('in a browser, the pick survives a redraw, goes when another test is chosen
       withPage(base, async (p) => {
         await openDocumentTable(p);
         await p.check(`${bulk} input.pick-all`);
-        await p.fill(`${bulk} input.reason`, 'typed note');
+        await p.click(`${bulk} button.discard`);
+        await p.fill(why, 'typed reason');
         await p.evaluate(() => render());
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
-        assert.equal(await p.inputValue(`${bulk} input.reason`), 'typed note');
+        assert.equal(await p.inputValue(why), 'typed reason');
+        await p.click(`${asked} button.cancel`);
 
         addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: HOME_NODE, kind: 'discard', reason: 'judged elsewhere', author: 'someone' });
         await p.evaluate(async () => { await load(); render(); });
         assert.equal(await p.locator(pick).count(), 1);
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
-        assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (1)');
+        assert.equal(await p.textContent(`${bulk} button.discard`), '제외 (1)');
 
         await p.click('#untagged-list li:has-text("loads the detail screen only when it is needed")');
         await p.click('#untagged-list li:has-text("DocumentTable")');
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 0);
-        assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (0)');
+        assert.deepEqual(await p.locator(`${bulk} button`).allTextContents(), ['제외 (0)', '포함 (0)']);
       })));
 });
 
@@ -6444,22 +6625,24 @@ test('in a browser, a bulk save that fails midway stops, keeps the unsaved pairs
         };
         await p.route('**/api/judgments', refuse);
         await p.check(`${bulk} input.pick-all`);
-        await p.fill(`${bulk} input.reason`, 'covers the list');
         await p.click(`${bulk} button.hand-over`);
         await p.locator(`${bulk} .bulk-error`).waitFor();
 
         assert.equal(calls, 2);
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);
-        assert.deepEqual(judgedBy(config), [[LIST_NODE, 'hand-over', 'covers the list', 'reviewer']]);
+        assert.deepEqual(judgedBy(config), [[LIST_NODE, 'hand-over', '', 'reviewer']]);
         const message = await p.textContent(`${bulk} .bulk-error`);
         assert.match(message, /^저장하지 못했습니다: disk full\n저장한 짝 1: /);
         assert.match(message, /저장한 짝.*\/document\/:tab\(draft\|done\)/s);
         assert.match(message, /저장하지 못한 짝.*\/home/s);
-        assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['태그 달기 대기', '불러옴']);
+        assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['태그 대기', '불러옴']);
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
         assert.equal(await p.locator('#center .pair-row', { hasText: '/home' }).locator('input.pick').isChecked(), true);
         assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), false);
-        assert.equal(await p.inputValue(`${bulk} input.reason`), 'covers the list');
+        await p.click(`${bulk} button.discard`);
+        assert.equal(await p.textContent(`${bulk} .bulk-error`), message);
+        await p.click(`${asked} button.cancel`);
+        assert.equal(await p.textContent(`${bulk} .bulk-error`), message);
 
         await p.unroute('**/api/judgments', refuse);
         await p.click(`${bulk} button.hand-over`);
@@ -6482,13 +6665,16 @@ test('in a browser, the bulk controls stay disabled while the requests are in fl
           else route.continue();
         });
         await p.check(`${bulk} input.pick-all`);
-        await p.fill(`${bulk} input.reason`, 'only lists documents');
-        await p.click(`${bulk} button.discard`);
+        await excludePicked(p, 'only lists documents');
         await untilSet(() => held, 'the first judgment request');
-        for (const sel of [`${bulk} button.discard`, `${bulk} button.hand-over`, `${bulk} input.pick-all`, `${bulk} input.reason`, pick]) {
+        for (const sel of [`${bulk} button.discard`, `${bulk} button.hand-over`, `${bulk} input.pick-all`, pick, `${asked} button.discard`, `${asked} button.cancel`]) {
           assert.equal(await p.locator(sel).first().isDisabled(), true, sel);
         }
-        await p.locator(`${bulk} button.discard`).click({ force: true });
+        assert.equal(await p.locator(why).evaluate((el) => el.readOnly), true);
+        await p.locator(`${asked} button.discard`).click({ force: true });
+        await p.press(why, 'Control+Enter');
+        await p.press(why, 'Escape');
+        assert.equal(await p.locator(asked).isVisible(), true);
         assert.equal(calls, 1);
         await held.continue();
         await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.muted').length === 2);
@@ -6511,7 +6697,6 @@ test('in a browser, nothing leaves the test while a bulk is in flight, and the r
           else route.fulfill({ status: 500, body: 'disk full' });
         });
         await p.check(`${bulk} input.pick-all`);
-        await p.fill(`${bulk} input.reason`, 'covers the list');
         await p.click(`${bulk} button.hand-over`);
         await untilSet(() => held, 'the first judgment request');
 
@@ -6568,7 +6753,6 @@ test('in a browser, while the end request is pending a bulk cannot start and the
         let held;
         await p.route('**/api/end', (route) => { held = route; });
         await p.check(`${bulk} input.pick-all`);
-        await p.fill(`${bulk} input.reason`, 'covers the list');
         await p.click('#end-review');
         await untilSet(() => held, 'the end request');
 
@@ -6602,7 +6786,6 @@ test('in a browser, the page that was told the review ended shows the ended scre
         let held;
         await p.route('**/api/end', (route) => { held = route; });
         await p.check(`${bulk} input.pick-all`);
-        await p.fill(`${bulk} input.reason`, 'covers the list');
         await p.click('#end-review');
         await untilSet(() => held, 'the end request');
         await p.locator(`${bulk} button.hand-over`).click({ force: true });
@@ -6709,13 +6892,13 @@ test('in a browser, the data failing to arrive after the review ended leaves the
       })));
 });
 
-test('in a browser, the bulk buttons are locked in place while 「리뷰 끝」 is being sent, so the reason being typed keeps its box and focus', { skip: browserMissing }, async () => {
+test('in a browser, the bulk buttons are locked in place while 「리뷰 끝」 is being sent, so the checkbox that was toggled keeps the focus', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         await openDocumentTable(p);
         const buttons = `${bulk} button`;
-        const reason = `${bulk} input.reason`;
+        const picked = `${pick}[data-pair="${LIST_NODE}"]`;
         const disabled = () => p.$$eval(buttons, (list) => list.map((b) => b.disabled));
         let held;
         await p.route('**/api/end', (route) => { held = route; });
@@ -6728,17 +6911,15 @@ test('in a browser, the bulk buttons are locked in place while 「리뷰 끝」 
           await p.waitForFunction(() => /cannot end/.test(document.getElementById('end-error').textContent));
         };
 
-        await p.check(`${pick}[data-pair="${LIST_NODE}"]`);
-        await p.click(reason);
-        await p.keyboard.type('only lists');
-        await p.$eval(reason, (el) => { el.kept = true; });
+        await p.check(picked);
+        await p.$eval(picked, (el) => { el.kept = true; });
         await refuseEnd();
         assert.deepEqual(await disabled(), [false, false]);
-        assert.equal(await p.evaluate((sel) => document.activeElement.matches(sel) && document.activeElement.kept, reason), true);
-        assert.equal(await p.inputValue(reason), 'only lists');
+        assert.equal(await p.evaluate((sel) => document.activeElement.matches(sel) && document.activeElement.kept, picked), true);
 
-        await p.uncheck(`${pick}[data-pair="${LIST_NODE}"]`);
+        await p.uncheck(picked);
         await refuseEnd();
+        assert.deepEqual(await p.locator(buttons).allTextContents(), ['제외 (0)', '포함 (0)']);
         assert.deepEqual(await disabled(), [true, true]);
         assert.deepEqual(errors.splice(0), [...SAVE_REFUSED, ...SAVE_REFUSED]);
       })));
@@ -6770,7 +6951,7 @@ test('in a browser, a refused end in the flow view leaves the diagram as it was 
       })));
 });
 
-test('in a browser, the keyboard focus goes back to the bulk button that was pressed once the bulk ends, or to the first control of the bar when that button is off', { skip: browserMissing }, async () => {
+test('in a browser, the keyboard focus goes back to the bulk button that was pressed once the bulk ends, to the first control of the bar when that button is off, and stays in the window while a discard is not saved', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -6788,15 +6969,26 @@ test('in a browser, the keyboard focus goes back to the bulk button that was pre
 
         await p.check(`${pick}[data-pair="${HOME_NODE}"]`);
         await pressEnterOn(`${bulk} button.discard`);
-        await p.locator(`${bulk} .bulk-error`).waitFor();
+        assert.equal(await askedFocused(p), true);
+
+        const refuse = (route) => route.fulfill({ status: 500, body: 'disk full' });
+        await p.route('**/api/judgments', refuse);
+        await p.keyboard.type('only lists documents');
+        await p.keyboard.press('Control+Enter');
+        await p.locator(`${asked} .error`).waitFor();
+        assert.match(await p.textContent(`${asked} .error`), /disk full/);
+        assert.equal(await askedFocused(p), true);
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+        await p.keyboard.press('Escape');
         assert.equal(await active(), 'discard');
 
-        await p.route('**/api/judgments', (route) => route.fulfill({ status: 500, body: 'disk full' }));
-        await p.fill(`${bulk} input.reason`, 'only lists documents');
+        await p.unroute('**/api/judgments', refuse);
         await pressEnterOn(`${bulk} button.discard`);
-        await p.waitForFunction(() => /disk full/.test(document.querySelector('#center .bulk-error')?.textContent ?? ''));
-        assert.equal(await active(), 'discard');
-        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+        await p.keyboard.type('only lists documents');
+        await p.keyboard.press('Control+Enter');
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.muted').length === 1);
+        assert.equal(await p.locator(bulk).count(), 0);
+        assert.equal(await p.evaluate(() => document.activeElement.matches('#center .test-pairs h2')), true);
       })));
 });
 
@@ -6813,8 +7005,7 @@ test('in a browser, a bulk that ends while the reviewer types in the search box 
           else route.fulfill({ status: 500, body: 'disk full' });
         });
         await p.check(`${bulk} input.pick-all`);
-        await p.fill(`${bulk} input.reason`, 'only lists documents');
-        await p.click(`${bulk} button.discard`);
+        await p.click(`${bulk} button.hand-over`);
         await untilSet(() => held, 'the first judgment request');
         const search = '#left input[type=search]';
         await p.click(search);
@@ -6859,7 +7050,6 @@ test('in a browser, a pair saved by a bulk is not picked any more even when read
         await p.route('**/api/judgments', refuse);
         await p.route('**/api/data', unreadable);
         await p.check(`${bulk} input.pick-all`);
-        await p.fill(`${bulk} input.reason`, 'covers the list');
         await p.click(`${bulk} button.hand-over`);
         await p.locator(`${bulk} .bulk-error`).waitFor();
 
@@ -6868,7 +7058,7 @@ test('in a browser, a pair saved by a bulk is not picked any more even when read
         assert.match(message, /저장했지만 다시 읽지 못했습니다: data gone/);
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
         assert.equal(await p.locator('#center .pair-row', { hasText: '/home' }).locator('input.pick').isChecked(), true);
-        assert.equal(await p.textContent(`${bulk} button.hand-over`), '태그 달기로 넘기기 (1)');
+        assert.equal(await p.textContent(`${bulk} button.hand-over`), '포함 (1)');
 
         await p.unroute('**/api/judgments', refuse);
         await p.unroute('**/api/data', unreadable);
@@ -6905,7 +7095,42 @@ test('in a browser, the message of a failed bulk puts the report in its own line
       })));
 });
 
-test('in a browser, the failure report, the picks and the note of a bulk survive opening a pair\'s screen and coming back, and a click on the same test', { skip: browserMissing }, async () => {
+test('in a browser, a bulk discard that fails midway leaves the window open with the report, the reason and only the pairs not saved, and the rest is saved when sent again', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openDocumentTable(p);
+        let calls = 0;
+        const refuse = async (route) => {
+          calls += 1;
+          if (calls === 2) await route.fulfill({ status: 500, body: 'disk full' });
+          else await route.continue();
+        };
+        await p.route('**/api/judgments', refuse);
+        await p.check(`${bulk} input.pick-all`);
+        await excludePicked(p, 'only lists documents');
+        await p.locator(`${asked} .error`).waitFor();
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+
+        const message = await p.textContent(`${asked} .error`);
+        assert.match(message, /^저장하지 못했습니다: disk full\n저장한 짝 1: .*저장하지 못한 짝 1: \/home/s);
+        assert.equal(await p.textContent(`${bulk} .bulk-error`), message);
+        assert.equal(await p.textContent(`${asked} h2`), '이 짝을 제외합니다');
+        assert.deepEqual(await p.locator(`${asked} .pairs li`).allTextContents(), ['/home Home']);
+        assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '제외']);
+        assert.equal(await p.inputValue(why), 'only lists documents');
+        assert.equal(await askedFocused(p), true);
+        assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['제외한 짝', '불러옴']);
+
+        await p.unroute('**/api/judgments', refuse);
+        await p.press(why, 'Control+Enter');
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.muted').length === 2);
+        assert.equal(await p.locator(asked).isVisible(), false);
+        assert.deepEqual(judgedBy(config).map((j) => j.slice(1, 3)), [['discard', 'only lists documents'], ['discard', 'only lists documents']]);
+      })));
+});
+
+test('in a browser, the failure report and the picks of a bulk survive opening a pair\'s screen and coming back, and a click on the same test', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -6917,7 +7142,6 @@ test('in a browser, the failure report, the picks and the note of a bulk survive
           else route.continue();
         });
         await p.check(`${bulk} input.pick-all`);
-        await p.fill(`${bulk} input.reason`, 'covers the list');
         await p.click(`${bulk} button.hand-over`);
         await p.locator(`${bulk} .bulk-error`).waitFor();
         errors.splice(0);
@@ -6925,7 +7149,6 @@ test('in a browser, the failure report, the picks and the note of a bulk survive
 
         const intact = async () => {
           assert.equal(await p.textContent(`${bulk} .bulk-error`), message);
-          assert.equal(await p.inputValue(`${bulk} input.reason`), 'covers the list');
           assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
         };
         await p.locator('#center .pair', { hasText: '/document/' }).click();
@@ -6938,7 +7161,6 @@ test('in a browser, the failure report, the picks and the note of a bulk survive
         await p.click('#untagged-list li:has-text("loads the detail screen only when it is needed")');
         await p.click('#untagged-list li:has-text("DocumentTable")');
         assert.equal(await p.locator(`${bulk} .bulk-error`).count(), 0);
-        assert.equal(await p.inputValue(`${bulk} input.reason`), '');
       })));
 });
 
@@ -6954,7 +7176,7 @@ test('in a browser, picking a pair redraws only the middle and keeps the keyboar
           const el = document.activeElement;
           return el.matches('input.pick') && el.checked && [...document.querySelectorAll('input.pick')].indexOf(el);
         }), 1);
-        assert.equal(await p.textContent(`${bulk} button.discard`), '버리기 (1)');
+        assert.equal(await p.textContent(`${bulk} button.discard`), '제외 (1)');
         assert.equal(await p.evaluate(() => document.querySelector('#untagged-list li').dataset.kept), 'yes');
 
         await p.locator(`${bulk} input.pick-all`).focus();

@@ -578,12 +578,17 @@ block opening the screen. A guard longer than 80 characters is folded to its sta
 Then come the screen's source location, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.
-Each of them has 「버리기」 and 「태그 달기로 넘기기」 beside one field: a reviewer who finds that the test only passes
-through the screen discards the pair with a reason (required), and it leaves 「불러오는 테스트」 and the 「불러옴 N」
-counts (in the list and on the flow boxes, a branch shown on its own included) for 「버린 짝」 below, which shows the
+Each of them has the buttons 「제외」 and 「포함」: a reviewer who finds that the test only passes
+through the screen presses 「제외」, which opens a window over the page naming the test and the screen, with a
+field of a few lines for the reason. 「제외」 there or Ctrl+Enter discards the pair with the reason (required: the
+button stays off while the field is blank; Enter alone breaks the line), and 「취소」 or Escape puts the window and
+what was typed away; a click outside the window does not close it. While the discard is being saved the window stays
+open and locked, and if it is not saved the window shows why and keeps the reason, to be sent again. The pair
+leaves 「불러오는 테스트」 and the 「불러옴 N」
+counts (in the list and on the flow boxes, a branch shown on its own included) for 「제외한 짝」 below, which shows the
 reason, author and date with 「되돌리기」 to bring the pair back. A
-reviewer who finds that the test does check the screen hands the pair over for tagging, with a note that may be
-left empty: it moves to 「태그 달기 대기」, which shows the note, author and date with 「되돌리기」, and goes to the
+reviewer who finds that the test does check the screen presses 「포함」, which hands the pair over for tagging at
+once: it moves to 「태그 대기」, which shows the author and date (and the note, when the judgment file carries one) with 「되돌리기」, and goes to the
 task list under `# Tagging` for a coding agent to add the screen's tag to the test. Once the test carries the tag
 and `rebuild` has read it, the pair is closed: the test is an ordinary tagged test of the screen and nothing is
 shown for the judgment. A handed-over test that the results no longer hold (its file or title changed, or it no
@@ -674,25 +679,27 @@ files. Each tab shows its count in a badge after its label, a label too long for
 ellipsis instead of the row scrolling, and the tooltip of the third tab reads 「노드 태그도 스토리 태그도 없는 테스트」.
 Choosing a test shows in the middle its title, status, test file and line, result source and format, then
 its pairs with screens (the screens it reaches through the files it imports, and the screens it was judged
-against), each with the source files it came through and the state of the pair: 「불러옴」 for a plain importing test, 「태그 달기 대기」 for a pair handed over for tagging (with its note,
+against), each with the source files it came through and the state of the pair: 「불러옴」 for a plain importing test, 「태그 대기」 for a pair handed over for tagging (with its note,
 author and date), 「떨어져 나감」 for a hand-over of a test that no longer imports the screen (with its note, author
-and date) and 「버린 짝」 for a discarded one (with its reason, author and date). Pressing a screen opens it
+and date) and 「제외한 짝」 for a discarded one (with its reason, author and date). Pressing a screen opens it
 in the screen list; a screen no longer on the map shows as 「맵에 없는 화면」 and cannot be opened. A test whose
 imports were read and lead to no screen says so, adding that a file shared by more than three screens and an
 import that was not found link nothing. A test whose imports were not read, because its result format
 (JUnit, Playwright, verdict) carries no imports or because its test file was not found under `srcRoot`, says
 that instead. A `tests.json` from before the list existed has the count but no list: the tab shows the count and
 the middle asks for `duru rebuild`. Every 「불러옴」 pair whose screen is on the map has a checkbox, and a 「모두 고르기」 box picks all of
-them; with pairs picked, one reason or note and the buttons 「버리기」 (the reason is required) and 「태그 달기로 넘기기」
-(the note is optional) judge them all at once, each button showing how many pairs are picked. The page sends one
+them; with pairs picked, the buttons 「제외」 and 「포함」 judge them all at once, each button showing how many pairs
+are picked. 「포함」 hands them over at once; 「제외」 opens the same window as on the screen, listing the picked screens
+and asking once for the reason they share, and sends nothing until the reason is given. The page sends one
 judgment per picked pair, one after another in the order shown, so the result is the same as judging them one by one
-on the screen, and each can be undone there with 「되돌리기」. While the pairs are being sent, the checkboxes and buttons, the
-other tests, the left tabs, the 목록/흐름 switch, the pair rows and 「리뷰 끝」 are disabled; while 「리뷰 끝」 is being sent, the two bulk buttons are disabled too. When the bulk ends,
+on the screen, and each can be undone there with 「되돌리기」. While the pairs are being sent, the checkboxes, the buttons, the
+other tests, the left tabs, the 목록/흐름 switch, the pair rows and 「리뷰 끝」 are disabled; while 「리뷰 끝」 is being sent, the bulk buttons are disabled too. When the bulk ends,
 the keyboard focus returns to the button that was pressed, to the first control of the bar when that button is off,
 or to the heading of the pairs when no pair is left to pick; a reviewer who meanwhile moved the focus to the
 search box, which the redraw keeps, stays there and goes on typing where it was. If a request fails midway the rest are not sent, the data is
 read again, the unsaved pairs stay picked, and the message beside the buttons names the pairs that were saved and
-those that were not. The picks, the note and that message stay when the reviewer opens a pair's screen and comes back
+those that were not; after a 「제외」 the window stays open with the same message, the reason and only the screens not
+saved. The picks and that message stay when the reviewer opens a pair's screen and comes back
 to the same test, and go when another test is chosen. A pair for a screen that is not on the map cannot be picked, as it cannot be judged on the screen
 either. 「리뷰 끝」 works on a page whose data has not arrived or could not be read. `/api/data` carries the list as `tests.untagged`, each entry with its `ref`, the
 same reference a judgment names the test by.

@@ -106,8 +106,7 @@
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
   .importers p, .detached p { font-size: 12px; margin: 0 0 8px; }
   .importer .judge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
-  .importer .judge-row input, .bulk-bar input.reason { flex: 1 1 140px; min-width: 0; padding: 2px 6px; font-size: 12px; }
-  .importer button.discard, .importer button.hand-over, .importer button.undo, .bulk-bar button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .importer .judge-row button, .importer button.undo, .bulk-bar button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
   .discarded .importer, .awaiting-tag .importer, .detached .importer { margin-bottom: 10px; font-size: 12px; }
   .guard { display: block; }
   .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
@@ -231,9 +230,21 @@
   .pair-row .pick, .pair-row .pick-space { flex: none; width: 16px; margin: 12px 0 0; }
   .pair-row .pair { flex: 1; min-width: 0; }
   .bulk-bar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 8px 0; }
-  .bulk-bar input.reason { flex-basis: 200px; }
   .bulk-bar button:disabled { cursor: default; opacity: .5; }
   .bulk-bar .bulk-error { flex: 1 1 100%; margin: 0; font-size: 12px; white-space: pre-line; }
+  #exclude { width: min(520px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
+  #exclude::backdrop { background: rgba(0, 0, 0, .35); }
+  #exclude h2 { margin: 0 0 10px; font-size: 15px; color: var(--text); }
+  #exclude .pairs { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 10px; margin-bottom: 12px; font-size: 13px; overflow-wrap: anywhere; }
+  #exclude .pairs .label { font-size: 12px; font-weight: 600; color: var(--muted); }
+  #exclude .pairs ul { max-height: 30vh; overflow: auto; }
+  #exclude textarea { min-height: 84px; max-height: 40vh; }
+  #exclude .error { margin: 8px 0 0; font-size: 12px; white-space: pre-line; }
+  #exclude .actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  #exclude .actions .hint { margin-right: auto; font-size: 12px; }
+  #exclude button { padding: 4px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+  #exclude button.discard { border-color: var(--fail); color: var(--fail); font-weight: 600; }
+  #exclude button:disabled { cursor: default; opacity: .5; }
   .screens li.locked, .story-path .step.on-map.locked { cursor: default; opacity: .6; }
   .screens li.locked:not(.selected):hover { background: none; }
   .story-path .step.on-map.locked:hover { border-color: var(--line); }
@@ -271,6 +282,17 @@
 </main>
 <div id="flow" hidden></div>
 <p id="failed" class="error" hidden></p>
+<dialog id="exclude" closedby="none" aria-labelledby="exclude-title">
+  <h2 id="exclude-title"></h2>
+  <div class="pairs"></div>
+  <textarea rows="4" placeholder="제외하는 까닭" aria-label="제외하는 까닭"></textarea>
+  <p class="error" hidden></p>
+  <div class="actions">
+    <span class="muted hint">Ctrl+Enter 로 제외</span>
+    <button class="cancel">취소</button>
+    <button class="discard"></button>
+  </div>
+</dialog>
 <script>
 const DEPTH_LABELS = { ui: 'UI/E2E', api: 'API', render: '렌더링만', code: '코드', data: '데이터', output: '산출물' };
 const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류' };
@@ -282,7 +304,7 @@ const MIXED_KINDS = '링크마다 다름';
 const VALUE_LABEL = { true: '켬', false: '끔' };
 const SCREEN_FILTERS = [
   { key: 'no-tests', label: '테스트 없음만', keep: (s) => testsOf(s.id).length === 0 },
-  { key: 'imported-only', label: '지나간 테스트만 있음', title: '화면 테스트는 없고, 이 화면의 소스 파일을 불러오는 테스트만 있는 화면. 태그 달기를 기다리는 짝은 세고, 버린 짝은 세지 않습니다', keep: (s) => testsOf(s.id).length === 0 && importersOf(s.id).length + awaitingTagOf(s.id).length > 0 },
+  { key: 'imported-only', label: '지나간 테스트만 있음', title: '화면 테스트는 없고, 이 화면의 소스 파일을 불러오는 테스트만 있는 화면. 태그를 기다리는 짝은 세고, 제외한 짝은 세지 않습니다', keep: (s) => testsOf(s.id).length === 0 && importersOf(s.id).length + awaitingTagOf(s.id).length > 0 },
   { key: 'dead', label: '죽은 화면', keep: (s) => s.dead, needsServerList: true },
   { key: 'setting', label: '특정 설정에서만 열림', keep: (s) => s.access.kinds.includes('setting') },
   { key: 'role', label: '특정 역할에서만 열림', keep: (s) => s.access.kinds.includes('role') },
@@ -301,7 +323,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, judgmentNotes: new Map(), untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -396,7 +418,7 @@ function selectStory(id) {
 
 function setUntaggedTest(key) {
   state.untaggedTest = key;
-  if (state.bulk?.testKey !== key) state.bulk = key === null ? null : { testKey: key, picked: new Set(), note: '', error: null };
+  if (state.bulk?.testKey !== key) state.bulk = key === null ? null : { testKey: key, picked: new Set(), error: null };
 }
 
 function selectUntaggedTest(key) {
@@ -540,7 +562,7 @@ function renderLeftList() {
         markChip(markOf({ node: s.id })),
         h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'),
         importersOf(s.id).length ? h('span', { class: 'count importer-count', title: '이 화면의 소스 파일을 불러오는 단위 테스트' }, `불러옴 ${importersOf(s.id).length}`) : null,
-        waiting ? h('span', { class: 'count awaiting-count', title: '이 화면의 태그를 달도록 넘긴 테스트' }, `태그 대기 ${waiting}`) : null));
+        waiting ? h('span', { class: 'count awaiting-count', title: '이 화면의 테스트로 포함해 태그를 기다리는 테스트' }, `태그 대기 ${waiting}`) : null));
   }));
   if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 화면이 없습니다.'));
 }
@@ -638,21 +660,114 @@ function importerItem(t) {
     viaRow(t.via));
 }
 
-const REASON_PLACEHOLDER = '까닭 (버릴 때는 꼭) · 메모 (넘길 때는 선택)';
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
 const judgmentErrorOf = (key) => (state.judgmentError?.key === key ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null);
 
+const judgeRowControl = (key, selector) => document.querySelector(`#center .judge-row[data-pair="${CSS.escape(key)}"] ${selector}`);
+
+function renderKeepingJudgeRowFocus() {
+  const focused = document.activeElement;
+  const row = focused?.closest?.('#center .judge-row');
+  const place = row && { key: row.dataset.pair, selector: `${focused.localName}.${focused.className}` };
+  render();
+  if (place) judgeRowControl(place.key, place.selector)?.focus();
+}
+
+const excludeDialog = document.getElementById('exclude');
+const excludePart = (selector) => excludeDialog.querySelector(selector);
+let excludeJob = null;
+
+function syncExcludeConfirm() {
+  excludePart('button.discard').disabled = excludeJob.busy || !excludePart('textarea').value.trim();
+}
+
+function drawExclude() {
+  const { test, screenIds, busy, error } = excludeJob;
+  const ids = screenIds();
+  const many = ids.length > 1;
+  excludePart('h2').textContent = many ? `짝 ${ids.length}개를 제외합니다` : '이 짝을 제외합니다';
+  fill(excludePart('.pairs'),
+    h('span', { class: 'label' }, '테스트'),
+    h('div', {}, test.title, ' ', h('span', { class: 'muted mono' }, testPlace(test))),
+    h('span', { class: 'label' }, '화면'),
+    h('ul', { class: 'plain' }, ids.map((id) => h('li', {}, screenLabel(id), ' ', h('span', { class: 'muted' }, screenOf(id)?.component)))));
+  excludePart('textarea').readOnly = busy;
+  excludePart('button.cancel').disabled = busy;
+  excludePart('button.discard').textContent = many ? `제외 (${ids.length})` : '제외';
+  syncExcludeConfirm();
+  excludePart('.error').textContent = error ?? '';
+  excludePart('.error').hidden = !error;
+}
+
+function askExclude(job) {
+  excludeJob = { ...job, busy: false, error: null };
+  excludePart('textarea').value = '';
+  drawExclude();
+  excludeDialog.showModal();
+  excludePart('textarea').focus();
+}
+
+function closeExclude() {
+  excludeJob = null;
+  excludeDialog.close();
+  // 창을 연 단추가 그사이 다시 그려졌으면 초점이 닫힌 창 안에 남는다.
+  if (excludeDialog.contains(document.activeElement)) document.activeElement.blur();
+}
+
+async function confirmExclude() {
+  const job = excludeJob;
+  Object.assign(job, { busy: true, error: null });
+  drawExclude();
+  const error = await job.save(excludePart('textarea').value.trim());
+  if (error) {
+    Object.assign(job, { busy: false, error });
+    drawExclude();
+    return excludePart('textarea').focus();
+  }
+  closeExclude();
+  job.done();
+}
+
+excludePart('textarea').addEventListener('input', syncExcludeConfirm);
+excludePart('button.discard').addEventListener('click', confirmExclude);
+excludePart('button.cancel').addEventListener('click', () => {
+  const { refocus } = excludeJob;
+  closeExclude();
+  refocus();
+});
+// Ctrl+Enter 와 Escape 는 창의 단추를 대신 누르므로, 저장하는 동안에는 단추와 똑같이 막힌다.
+excludeDialog.addEventListener('keydown', (e) => {
+  const send = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
+  if (e.key !== 'Escape' && !send) return;
+  e.preventDefault();
+  if (e.isComposing || e.repeat) return;
+  excludePart(send ? 'button.discard' : 'button.cancel').click();
+});
+
+function askExcludePair(t, node, key) {
+  if (judgmentsInFlight.has(key)) return;
+  askExclude({
+    test: t,
+    screenIds: () => [node],
+    save: async (reason) => {
+      const { failure, reloadError } = await postAndReload({ test: t.ref, node, kind: 'discard', reason }, key);
+      if (!failure) state.judgmentError = reloadError ? { key, message: reloadError } : null;
+      return failure;
+    },
+    done: renderKeepingJudgeRowFocus,
+    refocus: () => judgeRowControl(key, 'button.discard')?.focus(),
+  });
+}
+
 function judgmentForm(t, node) {
   const key = judgmentKey(t, node);
-  const note = () => state.judgmentNotes.get(key) ?? '';
-  return h('div', { class: 'judge-row' },
-    h('input', { type: 'text', class: 'reason', placeholder: REASON_PLACEHOLDER, value: note(), oninput: (e) => state.judgmentNotes.set(key, e.target.value) }),
-    h('button', { class: 'discard', title: '이 테스트와 이 화면의 짝을 다시 보이지 않게 합니다', onclick: () => saveJudgment({ test: t.ref, node, kind: 'discard', reason: note() }, key) }, '버리기'),
-    h('button', { class: 'hand-over', title: '이 테스트에 이 화면의 태그를 달도록 작업 목록에 올립니다', onclick: () => saveJudgment({ test: t.ref, node, kind: 'hand-over', reason: note() }, key) }, '태그 달기로 넘기기'));
+  return h('div', { class: 'judge-row', 'data-pair': key },
+    h('button', { class: 'discard', title: '이 테스트와 이 화면의 짝을 다시 보이지 않게 합니다. 까닭을 적어야 합니다', onclick: () => askExcludePair(t, node, key) }, '제외'),
+    h('button', { class: 'hand-over', title: '이 화면의 테스트로 보고, 테스트에 이 화면의 태그를 달도록 작업 목록에 올립니다', onclick: () => saveJudgment({ test: t.ref, node, kind: 'hand-over', reason: '' }, key) }, '포함'));
 }
 
 const judgmentMeta = (j, label) => h('div', { class: 'detail' },
-  j.reason.trim() ? [`${label} `, j.reason] : null,
+  j.reason.trim() ? [`${label} `, h('span', { class: 'memo' }, j.reason)] : null,
   h('span', { class: 'muted' }, `${j.reason.trim() ? ' · ' : ''}${j.author} · ${fmtDate(j.date)}`));
 
 const undoButton = (t, node) => h('button', { class: 'undo', onclick: () => saveJudgment({ test: t.ref, node, kind: 'undo' }, judgmentKey(t, node)) }, '되돌리기');
@@ -677,14 +792,14 @@ function importerTests(s) {
       h('p', { class: 'muted' }, '이 화면에 딸린 소스 파일을 불러오는 단위 테스트입니다. 이 화면의 태그가 없어서 이 화면의 테스트로 세지 않습니다.'),
       importers.map((t) => h('div', { class: 'importer' }, importerItem(t), judgmentForm(t, s.id), judgmentErrorOf(judgmentKey(t, s.id))))) : null,
     awaiting.length ? h('div', { class: 'awaiting-tag' },
-      h('h2', {}, `태그 달기 대기 ${awaiting.length}`),
+      h('h2', {}, `태그 대기 ${awaiting.length}`),
       awaiting.map((t) => pairRow(importerItem(t), t, '메모'))) : null,
     detached.length ? h('div', { class: 'detached' },
       h('h2', {}, `떨어져 나감 ${detached.length}`),
-      h('p', { class: 'muted' }, '넘긴 테스트를 결과에서 찾을 수 없습니다. 테스트의 파일이나 제목이 바뀌었거나, 이 화면의 파일을 더는 불러오지 않는 것으로 보입니다.'),
+      h('p', { class: 'muted' }, '포함한 테스트를 결과에서 찾을 수 없습니다. 테스트의 파일이나 제목이 바뀌었거나, 이 화면의 파일을 더는 불러오지 않는 것으로 보입니다.'),
       detached.map((t) => pairRow(detachedItem(t), t, '메모'))) : null,
     discarded.length ? h('div', { class: 'discarded' },
-      h('h2', {}, `버린 짝 ${discarded.length}`),
+      h('h2', {}, `제외한 짝 ${discarded.length}`),
       discarded.map((t) => pairRow(importerItem(t), t, '까닭'))) : null,
   ];
 }
@@ -1085,9 +1200,9 @@ const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 const PAIR_STATES = [
   { list: 'importers', label: '불러옴', cls: 'config' },
-  { list: 'awaitingTag', label: '태그 달기 대기', cls: 'wait', noteLabel: '메모' },
+  { list: 'awaitingTag', label: '태그 대기', cls: 'wait', noteLabel: '메모' },
   { list: 'detachedHandOvers', label: '떨어져 나감', cls: 'wait', noteLabel: '메모' },
-  { list: 'discarded', label: '버린 짝', cls: 'muted', noteLabel: '까닭' },
+  { list: 'discarded', label: '제외한 짝', cls: 'muted', noteLabel: '까닭' },
 ];
 
 function pairsOf(t) {
@@ -1148,16 +1263,30 @@ function setPick(bulk, id, on) {
 }
 
 const bulkButtonOff = (count) => state.bulkBusy || state.ending || !count;
+const pickedPairs = (t, bulk) => pairsOf(t).filter((p) => isPickable(p) && bulk.picked.has(p.id));
+
+function askExcludePicked(t, bulk) {
+  askExclude({
+    test: t,
+    screenIds: () => pickedPairs(t, bulk).map((p) => p.id),
+    save: async (reason) => {
+      const failure = await saveBulk(t, bulk, 'discard', reason);
+      if (failure) render();
+      return failure;
+    },
+    done: () => showBulkResult('discard'),
+    refocus: () => document.querySelector('#center .bulk-bar button.discard')?.focus(),
+  });
+}
 
 function bulkBar(t, pickable, bulk) {
   const count = pickable.filter((p) => bulk.picked.has(p.id)).length;
-  const button = (kind, cls, title, text) => h('button', { class: cls, title, disabled: bulkButtonOff(count), onclick: () => saveBulk(t, bulk, kind) }, `${text} (${count})`);
+  const off = bulkButtonOff(count);
   return h('div', { class: 'bulk-bar' },
     h('label', {}, h('input', { type: 'checkbox', class: 'pick-all', checked: count === pickable.length, disabled: state.bulkBusy,
       onchange: (e) => { bulk.picked = new Set(e.target.checked ? pickable.map((p) => p.id) : []); redrawBulk('input.pick-all'); } }), ' 모두 고르기'),
-    h('input', { type: 'text', class: 'reason', placeholder: REASON_PLACEHOLDER, value: bulk.note, disabled: state.bulkBusy, oninput: (e) => { bulk.note = e.target.value; } }),
-    button('discard', 'discard', '고른 짝을 다시 보이지 않게 합니다', '버리기'),
-    button('hand-over', 'hand-over', '고른 짝에 태그를 달도록 작업 목록에 올립니다', '태그 달기로 넘기기'),
+    h('button', { class: 'discard', title: '고른 짝을 다시 보이지 않게 합니다. 까닭을 적어야 합니다', disabled: off, onclick: () => askExcludePicked(t, bulk) }, `제외 (${count})`),
+    h('button', { class: 'hand-over', title: '고른 짝을 화면의 테스트로 보고, 태그를 달도록 작업 목록에 올립니다', disabled: off, onclick: async () => { await saveBulk(t, bulk, 'hand-over', ''); showBulkResult('hand-over'); } }, `포함 (${count})`),
     bulk.error ? h('p', { class: 'error bulk-error' }, bulk.error) : null);
 }
 
@@ -1598,11 +1727,6 @@ async function saveMark(target, draftKey) {
   render();
 }
 
-function judgmentProblem(kind, reason) {
-  if (kind === 'discard' && !reason.trim()) return '버리는 까닭을 적어 주세요.';
-  return null;
-}
-
 async function postJudgment(judgment) {
   try {
     const res = await fetch('/api/judgments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(judgment) });
@@ -1613,32 +1737,35 @@ async function postJudgment(judgment) {
   return null;
 }
 
-async function saveJudgment(judgment, key) {
-  const fail = (message) => {
-    state.judgmentError = { key, message };
-    render();
-  };
-  state.judgmentError = null;
-  const problem = judgmentProblem(judgment.kind, judgment.reason) ?? await postJudgment(judgment);
-  if (problem) return fail(problem);
-  state.judgmentNotes.delete(key);
+const judgmentsInFlight = new Set();
+
+async function postAndReload(judgment, key) {
+  judgmentsInFlight.add(key);
   try {
-    await load();
-  } catch (err) {
-    state.judgmentError = { key, message: `저장했지만 다시 읽지 못했습니다: ${err.message}` };
+    const failure = await postJudgment(judgment);
+    if (failure) return { failure, reloadError: null };
+    try {
+      await load();
+    } catch (err) {
+      return { failure: null, reloadError: `저장했지만 다시 읽지 못했습니다: ${err.message}` };
+    }
+    return { failure: null, reloadError: null };
+  } finally {
+    judgmentsInFlight.delete(key);
   }
-  render();
 }
 
-async function saveBulk(t, bulk, kind) {
-  const chosen = pairsOf(t).filter((p) => isPickable(p) && bulk.picked.has(p.id));
-  const reason = bulk.note;
+async function saveJudgment(judgment, key) {
+  if (judgmentsInFlight.has(key)) return;
+  state.judgmentError = null;
+  const { failure, reloadError } = await postAndReload(judgment, key);
+  if (failure ?? reloadError) state.judgmentError = { key, message: failure ?? reloadError };
+  renderKeepingJudgeRowFocus();
+}
+
+async function saveBulk(t, bulk, kind, reason) {
+  const chosen = pickedPairs(t, bulk);
   bulk.error = null;
-  const problem = judgmentProblem(kind, reason);
-  if (problem) {
-    bulk.error = problem;
-    return showBulkResult(kind);
-  }
   state.bulkBusy = true;
   render();
   const names = (list) => list.map((p) => screenLabel(p.id)).join(', ');
@@ -1657,13 +1784,10 @@ async function saveBulk(t, bulk, kind) {
     reloadError = `${saved.length ? '저장했지만 ' : ''}다시 읽지 못했습니다: ${err.message}`;
   }
   state.bulkBusy = false;
-  if (failure) {
-    bulk.error = [failure, `저장한 짝 ${saved.length}: ${names(saved) || '없음'}. 저장하지 못한 짝 ${chosen.length - saved.length}: ${names(chosen.slice(saved.length))}.`, reloadError].filter(Boolean).join('\n');
-  } else {
-    bulk.note = '';
-    bulk.error = reloadError;
-  }
-  showBulkResult(kind);
+  bulk.error = failure
+    ? [failure, `저장한 짝 ${saved.length}: ${names(saved) || '없음'}. 저장하지 못한 짝 ${chosen.length - saved.length}: ${names(chosen.slice(saved.length))}.`, reloadError].filter(Boolean).join('\n')
+    : reloadError;
+  return failure ? bulk.error : null;
 }
 
 const GAP = 12, COL_GAP = 50, CELL_GAP = 24, CALL_INDENT = 16, GROUP_SPACE = 24, GROUP_HEAD_H = 28;
@@ -2367,7 +2491,7 @@ function showEnded(message) {
   fill(document.body, h('header', {}, h('h1', {}, 'duru 리뷰')), h('p', { id: 'ended' }, message));
 }
 
-// 가운데 칸을 다시 그리면 사유를 치던 칸이 새로 만들어져 초점을 잃으므로, 한 번에 판단하는 단추의 잠금만 그 자리에서 바꾼다.
+// 가운데 칸을 다시 그리면 그 안의 초점이 사라지므로, 한 번에 판단하는 단추만 그 자리에서 잠그거나 푼다.
 function setEnding(ending) {
   state.ending = ending;
   syncHeaderLocks();
