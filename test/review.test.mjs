@@ -1017,7 +1017,7 @@ for (const host of ['127.0.0.1', 'localhost']) {
           await p.click('#screen-list li:has-text("/document/:id")');
           assert.equal(await p.textContent('#center h3'), '/document/:id');
           await p.click('#center tr:has-text("API")');
-          assert.match(await p.textContent('#right h2'), /API 깊이/);
+          assert.match(await p.locator('#right h2', { hasText: '표시 —' }).textContent(), /API 깊이/);
           assert.equal(await p.isDisabled('#right button.save'), true);
           await p.click('#right .statuses button:has-text("더 필요")');
           await p.fill('#right textarea', 'no API test yet');
@@ -1261,7 +1261,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         assert.equal(await p.locator('#right .history li').count(), 0);
         assert.equal(await p.locator('#right .statuses button.on').count(), 0);
         await p.click('#left .views.side button:has-text("화면")');
-        assert.match(await p.textContent('#right h2'), /^표시 — 화면 전체$/);
+        assert.match(await p.locator('#right h2', { hasText: '표시 —' }).textContent(), /^표시 — 화면 전체$/);
         assert.equal(await p.locator('#right .history li').count(), 0);
         assert.match(await p.textContent('#left'), /떨어져 나감 0/);
 
@@ -1605,6 +1605,8 @@ test('in a browser, an over-wide route segment in the screen list is clipped at 
   });
 });
 
+const openLinkGroups = (access) => access.locator('details.link-group').evaluateAll((groups) => groups.forEach((g) => { g.open = true; }));
+
 test('in a browser, the setting and role filters keep the screens that open only under one, and the chosen screen shows why', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
@@ -1619,7 +1621,8 @@ test('in a browser, the setting and role filters keep the screens that open only
 
         const access = p.locator('#right .access');
         await p.click('#screen-list li:has-text("/admin/report")');
-        assert.deepEqual(await access.locator('.needs .chip').allTextContents(), ['역할', '설정']);
+        assert.deepEqual((await p.locator('#right .open-needs .need').allTextContents()).map((t) => t.split(' ')[0]), ['역할', '설정']);
+        await openLinkGroups(access);
         const fromHome = await access.locator('li:has-text("/home#Home")').innerText();
         assert.match(fromHome, /components\/SideMenu\.js:11/);
         assert.match(fromHome, /\['ADMIN', 'OWNER'\]\.indexOf\(session\['member\.role'\]\) > -1\s*역할/);
@@ -1627,16 +1630,20 @@ test('in a browser, the setting and role filters keep the screens that open only
 
         await p.uncheck('#left input[name=role]');
         await p.click('#screen-list li:has-text("/admin/member")');
-        assert.match(await access.locator('.route').innerText(), /isAdminRole\(memberRole\)\s*역할/);
+        assert.match(await p.locator('#right .open-needs .route').innerText(), /isAdminRole\(memberRole\)\s*역할/);
         await p.click('#screen-list li:has-text("/lab/result")');
-        assert.match(await access.locator('li:has-text("/lab#Lab")').innerText(), /설정 · 역할 조건 없음\s*링크를 건 화면에 필요한 것\s*설정/);
+        assert.equal(await access.locator('details.link-group > summary').innerText(), '조건 없음 링크 1');
+        await openLinkGroups(access);
+        assert.match(await access.locator('li:has-text("/lab#Lab")').innerText(), /링크를 건 화면에 필요한 것\s*설정/);
         assert.deepEqual(await access.locator('li:has-text("/lab#Lab") .from-kinds .chip').allTextContents(), ['설정']);
         await p.click('#screen-list li:has-text("/admin/audit")');
+        await openLinkGroups(access);
         assert.deepEqual(await access.locator('li:has-text("/admin/member#AdminMember") .from-kinds .chip').allTextContents(), ['역할']);
         await p.click('#screen-list li:has-text("/help")');
+        await openLinkGroups(access);
         assert.match(await access.locator('li:has-text("/signin#SignIn")').innerText(), /globalSettings\.SYSTEM\.HELP_LINK_ENABLED \(openHelp 로 물려받음\)\s*설정/);
         await p.click('#screen-list li:has-text("/signin")');
-        assert.equal(await access.locator('p').innerText(), '설정이나 역할 없이 열립니다.');
+        assert.equal(await p.locator('#right .open-needs p').innerText(), '설정이나 역할 없이 열립니다.');
 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
@@ -1663,8 +1670,9 @@ test('in a browser, a screen whose links ask for different kinds has its own fil
         await p.uncheck('#left input[name=mixed]');
         const access = p.locator('#right .access');
         await p.click('#screen-list li:has-text("/help")');
-        assert.equal(await access.locator('.needs').innerText(), '필요한 것 링크마다 다름');
+        assert.deepEqual(await p.locator('#right .open-needs .need').allTextContents(), ['링크마다 다름']);
         await p.click('#screen-list li:has-text("/lab/result")');
+        await openLinkGroups(access);
         assert.deepEqual(await access.locator('li:has-text("/help#Help") .from-kinds .chip').allTextContents(), ['링크마다 다름']);
 
         await p.click('#view-flow');
@@ -1672,6 +1680,193 @@ test('in a browser, a screen whose links ask for different kinds has its own fil
         assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), / · 불러옴 2 · 링크마다 다름$/);
       }),
     );
+  });
+});
+
+test('in a browser, the top of the right pane says what opens the chosen screen in the words of its flow box', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const summaryOf = async (label) => {
+          await p.click(`#screen-list li:has-text("${label}")`);
+          assert.equal(await p.locator('#right > :first-child').evaluate((e) => e.className), 'open-needs');
+          assert.equal(await p.textContent('#right .open-needs h2'), '이 화면을 열려면');
+          return p.locator('#right .open-needs .need').allTextContents();
+        };
+        const report = await summaryOf('/admin/report');
+        const group = await summaryOf('/admin/group');
+        await p.click('#screen-list li:has-text("/signin")');
+        assert.equal(await p.locator('#right .open-needs p').innerText(), '설정이나 역할 없이 열립니다.');
+
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+        assert.deepEqual(report, ['역할 ADMIN 외 1', '설정 "ADMIN_REPORT" (ADMIN.LIST 에) 외 1']);
+        assert.deepEqual(report, await needLines(await screenBox(p, '/admin/report#AdminReport')));
+        assert.deepEqual(group, await needLines(await screenBox(p, '/admin/group#AdminGroup')));
+      }),
+    ),
+  );
+});
+
+const LAB_SETTING = { guard: 'globalSettings.SYSTEM.LAB_ENABLED', kinds: ['setting'], settings: [{ root: 'globalSettings', path: ['SYSTEM', 'LAB_ENABLED'], need: 'on', default: false }] };
+const ADMIN_ROLE = { guard: "memberRole === 'ADMIN'", kinds: ['role'], roles: ['ADMIN'] };
+const LONG_GUARD = `globalSettings.SYSTEM.MAIN_MENU.LAB.LIST includes 'LAB_EXPERIMENTS_${'WITH_A_VERY_LONG_MENU_KEY_'.repeat(4)}END'`;
+const LONG_SETTING = { guard: LONG_GUARD, kinds: ['setting'], settings: [{ root: 'globalSettings', path: ['SYSTEM', 'MAIN_MENU', 'LAB', 'LIST'], need: 'includes', value: 'LAB_EXPERIMENTS' }] };
+const IN_SCREEN_GUARD = "location.pathname.startsWith('/lab/experiments/legacy')";
+const labLink = (from, file, line, guards) => ({ from, file, line, guards, fromKinds: [] });
+
+async function withLabLinks(fn, { only } = {}) {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        let reversed = false;
+        await p.route('**/api/data', async (route) => {
+          const data = await (await route.fetch()).json();
+          const lab = data.map.screens.find((s) => s.id === '/lab#Lab');
+          lab.routeGuards = [LAB_SETTING.guard, IN_SCREEN_GUARD];
+          const links = [
+            labLink('/home#Home', 'components/Home.js', 19, [LAB_SETTING]),
+            labLink('/admin/member#AdminMember', 'components/AdminMember.js', 30, [ADMIN_ROLE, LAB_SETTING]),
+            labLink('/help#Help', 'components/Help.js', 5, []),
+            labLink('/document/:id#DocumentDetail', 'components/DocumentDetail.js', 40, [LAB_SETTING, ADMIN_ROLE]),
+            labLink('/admin/group#AdminGroup', 'components/AdminGroup.js', 9, [LAB_SETTING, ADMIN_ROLE]),
+            labLink('/signin#SignIn', 'components/SignIn.js', 3, []),
+            labLink('/admin/audit#AdminAudit', 'components/AdminAudit.js', 7, [LONG_SETTING]),
+          ];
+          if (only) links.splice(0, links.length, ...only);
+          lab.access.links = reversed ? links.reverse().map((l) => ({ ...l, guards: [...l.guards].reverse() })) : links;
+          await route.fulfill({ json: data });
+        });
+        const open = async () => {
+          await p.reload();
+          await toList(p);
+          await p.waitForSelector('#screen-list li');
+          await p.click('#screen-list li:has-text("/lab")');
+          return p.locator('#right .access details.link-group');
+        };
+        await fn(p, open, () => { reversed = true; });
+      }),
+    ),
+  );
+}
+
+const groupSummaries = (groups) => groups.locator(':scope > summary').allInnerTexts();
+
+test('in a browser, the incoming links with the same conditions form one group with their number, and opening it shows where each link is and its conditions as written', { skip: browserMissing }, async () => {
+  await withLabLinks(async (p, open) => {
+    const groups = await open();
+    assert.equal(await p.textContent('#right .access h2'), '들어오는 링크 7');
+    assert.deepEqual(await groupSummaries(groups), [
+      '조건 없음 링크 2',
+      '역할 ADMIN · 설정 SYSTEM.LAB_ENABLED 켬 링크 3',
+      '설정 SYSTEM.LAB_ENABLED 켬 링크 1',
+      '설정 "LAB_EXPERIMENTS" (LAB.LIST 에) 링크 1',
+    ]);
+    const both = groups.nth(1);
+    assert.equal(await both.locator('li').first().isVisible(), false);
+    await both.locator(':scope > summary').click();
+    const links = await both.locator('li').allInnerTexts();
+    assert.equal(links.length, 3);
+    assert.match(links[0], /\/admin\/group#AdminGroup\s+components\/AdminGroup\.js:9/);
+    for (const text of links) {
+      assert.match(text, /globalSettings\.SYSTEM\.LAB_ENABLED\s*설정/);
+      assert.match(text, /memberRole === 'ADMIN'\s*역할/);
+    }
+    await groups.nth(0).locator(':scope > summary').click();
+    assert.match(await groups.nth(0).locator('li').first().innerText(), /\/help#Help\s+components\/Help\.js:5/);
+  });
+});
+
+test('in a browser, a route condition that is neither a setting nor a role is listed apart as not blocking the screen and is left out of the summary', { skip: browserMissing }, async () => {
+  await withLabLinks(async (p, open) => {
+    await open();
+    assert.deepEqual(await p.locator('#right .open-needs .need').allTextContents(), ['설정 SYSTEM.LAB_ENABLED 켬']);
+    assert.doesNotMatch(await p.locator('#right .open-needs').innerText(), /location\.pathname/);
+    const inScreen = p.locator('#right .in-screen');
+    assert.match(await inScreen.locator('h2').innerText(), /^화면 안 조건.*막지 않/);
+    assert.deepEqual(await inScreen.locator('code').allTextContents(), [IN_SCREEN_GUARD]);
+  });
+});
+
+test('in a browser, the groups of incoming links and the links in each come in the same order however the map lists them', { skip: browserMissing }, async () => {
+  await withLabLinks(async (p, open, reverse) => {
+    const order = async (groups) => {
+      const out = [];
+      for (let i = 0; i < await groups.count(); i++) {
+        await groups.nth(i).locator(':scope > summary').click();
+        out.push([(await groupSummaries(groups))[i], await groups.nth(i).locator('li > code.from').allTextContents()]);
+      }
+      return out;
+    };
+    const first = await order(await open());
+    reverse();
+    const second = await order(await open());
+    assert.deepEqual(second, first);
+    assert.deepEqual(first[1][1], ['/admin/group#AdminGroup', '/admin/member#AdminMember', '/document/:id#DocumentDetail']);
+  });
+});
+
+test('in a browser, a long condition is folded and reads in full once opened', { skip: browserMissing }, async () => {
+  await withLabLinks(async (p, open) => {
+    const groups = await open();
+    const long = groups.nth(3);
+    await long.locator(':scope > summary').click();
+    const full = long.locator('.long-guard code.full');
+    assert.equal(await full.isVisible(), false);
+    await long.locator('.long-guard > summary').click();
+    assert.equal(await full.isVisible(), true);
+    assert.equal(await full.innerText(), LONG_GUARD);
+    const box = await full.boundingBox();
+    const pane = await p.locator('#right').boundingBox();
+    assert.ok(box.x + box.width <= pane.x + pane.width, 'the full condition wraps inside the pane');
+  });
+});
+
+test('in a browser, links whose conditions read the same but resolve to different roles form separate groups, each summarised by its own roles', { skip: browserMissing }, async () => {
+  const canManage = (roles) => ({ guard: 'canManage', kinds: ['role'], roles });
+  await withLabLinks(async (p, open) => {
+    const groups = await open();
+    assert.deepEqual(await groupSummaries(groups), ['역할 ADMIN 외 1 링크 1', '역할 ADMIN 링크 1']);
+    for (const g of await groups.all()) assert.equal(await g.locator('li').count(), 1);
+  }, { only: [
+    labLink('/home#Home', 'components/Home.js', 19, [canManage(['ADMIN', 'OWNER'])]),
+    labLink('/help#Help', 'components/Help.js', 5, [canManage(['ADMIN'])]),
+  ] });
+});
+
+test('in a browser, opened link groups and opened long conditions stay open when the right pane is redrawn, and close again on another screen', { skip: browserMissing }, async () => {
+  await withLabLinks(async (p, open) => {
+    const groups = await open();
+    await groups.nth(0).locator(':scope > summary').click();
+    await groups.nth(3).locator(':scope > summary').click();
+    await groups.nth(3).locator('.long-guard > summary').click();
+    const openState = () => p.locator('#right .access').evaluate((a) => ({
+      groups: [...a.querySelectorAll('details.link-group')].map((g) => g.open),
+      long: [...a.querySelectorAll('details.long-guard')].map((g) => g.open),
+    }));
+    const expected = { groups: [true, false, false, true], long: [true] };
+    assert.deepEqual(await openState(), expected);
+    await p.click('#right .statuses button:has-text("더 필요")');
+    assert.deepEqual(await openState(), expected);
+    await p.fill('#right textarea', 'redraw');
+    await p.click('#right button.save');
+    await p.waitForSelector('#center tr.selected td.mark:has-text("더 필요")');
+    assert.deepEqual(await openState(), expected);
+    await p.click('#screen-list li:has-text("/home")');
+    await p.click('#screen-list li:has-text("/lab")');
+    assert.deepEqual(await openState(), { groups: [false, false, false, false], long: [false] });
+  });
+});
+
+test('in a browser, the headings of the incoming links and of the in-screen conditions keep the top margin of the other right-pane headings', { skip: browserMissing }, async () => {
+  await withLabLinks(async (p, open) => {
+    await open();
+    const marginOf = (text) => p.locator('#right h2', { hasText: text }).first().evaluate((e) => getComputedStyle(e).marginTop);
+    const source = await marginOf('소스 위치');
+    assert.notEqual(source, '0px');
+    assert.equal(await marginOf('들어오는 링크'), source);
+    assert.equal(await marginOf('화면 안 조건'), source);
   });
 });
 
@@ -1805,7 +2000,7 @@ test('in a browser, the output depth row comes after the other depths and takes 
         await p.click('#screen-list li:has-text("/lab/result")');
         assert.deepEqual(await p.locator('#center td.depth').allTextContents(), ['화면 전체', 'UI/E2E', 'API', '렌더링만', '코드', '데이터', '산출물']);
         await p.click('#center tr:has-text("산출물")');
-        assert.match(await p.textContent('#right h2'), /산출물 깊이/);
+        assert.match(await p.locator('#right h2', { hasText: '표시 —' }).textContent(), /산출물 깊이/);
         await p.click('#right .statuses button:has-text("더 필요")');
         await p.click('#right button.save');
         await p.waitForSelector('#center tr.selected td.mark:has-text("더 필요")');
@@ -1948,12 +2143,12 @@ test('in a browser, a flow box writes the roles and settings its screen needs, a
 
         const report = await screenBox(p, '/admin/report#AdminReport');
         assert.deepEqual(await needLines(report), ['역할 ADMIN 외 1', '설정 "ADMIN_REPORT" (ADMIN.LIST 에) 외 1']);
-        assert.deepEqual(await p.evaluate(() => nodeNeeds({ access: { settings: [{ from: 'route', unreadable: [], needs: [
+        assert.deepEqual(await p.evaluate(() => openNeeds({ access: { settings: [{ from: 'route', unreadable: [], needs: [
           { path: ['SYSTEM', 'MENU'], need: 'present' },
           { path: ['SYSTEM', 'MENU', 'LIST'], need: 'includes', value: 'X' },
         ] }] } }).lines.map((l) => l.text)), ['설정 "X" (MENU.LIST 에) 외 1']);
-        assert.deepEqual(await p.evaluate(() => nodeNeeds({ access: { roleValues: null, unreadableRoleGuards: [] } })), {
-          lines: [{ kind: 'role', text: '역할 미확인' }], tips: ['필요한 역할: 미확인'],
+        assert.deepEqual(await p.evaluate(() => openNeeds({ access: { roleValues: null, unreadableRoleGuards: [] } })), {
+          lines: [{ kind: 'role', text: '역할 미확인' }], tips: ['필요한 역할: 미확인'], bare: null,
         });
         assert.deepEqual((await tipLines(report)).filter((t) => t.startsWith('필요한')), [
           '필요한 역할: ADMIN, OWNER',
@@ -3289,6 +3484,7 @@ export default function AdminReport() {
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
+        await openLinkGroups(p.locator('#right .access'));
         const link = p.locator('#right .access li:has-text("/admin/report#AdminReport")');
         assert.match(await link.innerText(), /링크를 건 화면에 필요한 것/);
         assert.deepEqual(await link.locator('.from-kinds .chip').allTextContents(), ['역할', '설정']);
