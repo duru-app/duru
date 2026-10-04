@@ -5449,3 +5449,150 @@ test('in a browser, the story pane and the screen pane keep what is open apart: 
     }
   });
 });
+
+const CHIP = '서버 대조 안 함';
+const CHIP_EXPLANATION = '서버 API 목록(serverEndpoints)이 없거나 비어 있어 API 호출을 서버와 견주지 않았습니다. 목록을 채우고 duru rebuild 를 다시 하면 견줍니다.';
+
+const withoutServerList = (fn) => withRebuiltFixture({}, async (config, copy) => {
+  fs.writeFileSync(path.join(copy, 'server-endpoints.txt'), '');
+  fs.writeFileSync(path.join(copy, 'server-endpoints-lab.txt'), '');
+  rebuild(copy);
+  await fn(config, copy);
+});
+
+test('in a browser, with no server API list the header line carries a 「서버 대조 안 함」 chip in both views and nothing sits above the header', { skip: browserMissing }, async () => {
+  await withoutServerList((config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const box = (sel) => p.evaluate((q) => { const r = document.querySelector(q).getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; }, sel);
+        assert.equal(await p.locator('#meta .state').isVisible(), true);
+        assert.equal(await p.textContent('#meta .state'), CHIP);
+        assert.match(await p.innerText('#meta'), /^화면 \d+ · 테스트 있는 화면 \d+ · 맵 .+ · 테스트 연결 .+서버 대조 안 함$/);
+        assert.equal(await p.locator('#server-notice').count(), 0);
+        assert.equal(await p.evaluate(() => document.body.firstElementChild.tagName), 'HEADER');
+        assert.equal((await box('header')).top, 0);
+        assert.equal((await box('main')).top, (await box('header')).bottom);
+        assert.equal((await box('main')).height, 900 - 49);
+        assert.equal(await p.locator('input[name=dead]').count(), 0);
+        assert.equal(await p.locator('#left input[type=checkbox]').count(), 4);
+
+        await p.click('#screen-list li:has-text("/document/:tab")');
+        assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['판정 불가', '대조 안 함']);
+        assert.equal(await p.locator('table.calls td.call .chip.v-unchecked').count(), 1);
+        assert.deepEqual(await p.locator('#center .list-absent').allTextContents(), ['서버 목록 없음']);
+        assert.match(await p.textContent('#center h2:has(.list-absent)'), /^API 호출 \d+ 서버 목록 없음$/);
+        await p.locator('table.calls tr:has(.chip.v-unchecked) td.cell').first().click();
+        assert.match(await p.textContent('#right'), /서버 대조 목록 없음\s*대조 안 함/);
+        assert.deepEqual(await p.locator('#right .list-absent').allTextContents(), ['목록 없음']);
+        assert.equal(await p.textContent('#right h2:has(.list-absent)'), '서버 대조 목록 없음');
+        const text = () => p.innerText('body');
+        assert.doesNotMatch(await text(), /죽은 화면|서버에 없음/);
+
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+        await p.click('#flow button:has-text("모두 펼치기")');
+        await p.waitForSelector('#flow .box.call');
+        assert.equal(await p.locator('#meta .state').isVisible(), true);
+        assert.equal(await p.locator('#server-notice').count(), 0);
+        assert.equal((await box('#flow')).top, (await box('header')).bottom);
+        assert.equal((await box('#flow')).height, 900 - 49);
+        const labels = await p.locator('#flow .box.call .l2').allTextContents();
+        assert.ok(labels.length > 0);
+        assert.ok(labels.every((l) => l.endsWith(' · 대조 안 함')), labels.join('|'));
+        assert.doesNotMatch(await text(), /죽은 화면|서버에 없음/);
+      })));
+});
+
+test('in a browser, the 「서버 대조 안 함」 chip explains itself on hover and on keyboard focus, and the popover hangs below the header and stays 16 px inside the window at wide and narrow windows', { skip: browserMissing }, async () => {
+  await withoutServerList((config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const chip = p.locator('#meta .state');
+        const tip = p.locator('#server-state-tip');
+        assert.equal(await chip.evaluate((el) => el.tagName), 'BUTTON');
+        assert.equal(await chip.getAttribute('type'), 'button');
+        assert.equal(await chip.getAttribute('tabindex'), null);
+        assert.equal(await chip.getAttribute('aria-describedby'), 'server-state-tip');
+        assert.equal(await chip.getAttribute('title'), null);
+        assert.equal(await tip.getAttribute('role'), 'note');
+        assert.equal(await tip.textContent(), CHIP_EXPLANATION);
+        assert.equal(await tip.isVisible(), false);
+
+        const inside = async (width) => {
+          const r = await tip.evaluate((el) => { const b = el.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, h: innerHeight }; });
+          assert.ok(r.left >= 16 && r.right <= width - 16 && r.bottom <= r.h, JSON.stringify(r));
+          const chipLeft = await chip.evaluate((el) => el.getBoundingClientRect().left);
+          assert.ok(Math.abs(r.left - Math.max(16, Math.min(chipLeft, width - 16 - (r.right - r.left)))) < 1, `${JSON.stringify(r)} chip ${chipLeft}`);
+          const header = await p.evaluate(() => document.querySelector('header').getBoundingClientRect().bottom);
+          assert.ok(r.top >= header, `popover ${r.top} sits over the header ${header}`);
+          assert.equal(await p.evaluate(() => { const b = document.getElementById('server-state-tip').getBoundingClientRect(); return document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2).closest('#server-state-tip') !== null; }), true);
+        };
+
+        for (const width of [1440, 1100, 800, 600]) {
+          await p.setViewportSize({ width, height: 900 });
+          await p.mouse.move(0, 400);
+          assert.equal(await tip.isVisible(), false);
+          await chip.hover();
+          assert.equal(await tip.isVisible(), true, `hover at ${width}`);
+          await inside(width);
+          await p.mouse.move(0, 400);
+          assert.equal(await tip.isVisible(), false);
+          await chip.focus();
+          assert.equal(await tip.isVisible(), true, `focus at ${width}`);
+          await inside(width);
+          await p.evaluate(() => document.activeElement.blur());
+          assert.equal(await tip.isVisible(), false);
+        }
+
+        await p.setViewportSize({ width: 1440, height: 900 });
+        await p.focus('#view-flow');
+        await p.keyboard.press('Tab');
+        assert.equal(await p.evaluate(() => document.activeElement.className), 'chip state');
+        assert.equal(await tip.isVisible(), true);
+      })));
+});
+
+test('in a browser, with a server API list the page has no chip, no 「목록 없음」 note and keeps the dead-screen filter', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.locator('#meta .state, #server-state-tip, #server-notice').count(), 0);
+        assert.doesNotMatch(await p.textContent('#meta'), /서버 대조 안 함/);
+        assert.equal(await p.locator('input[name=dead]').count(), 1);
+        assert.equal(await p.locator('#left input[type=checkbox]').count(), 5);
+        await p.click('#screen-list li:has-text("/document/:tab")');
+        assert.equal(await p.locator('.list-absent').count(), 0);
+        assert.doesNotMatch(await p.textContent('#center'), /목록 없음/);
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+        assert.equal(await p.locator('#meta .state').count(), 0);
+      })));
+});
+
+test('in a browser, a 「죽은 화면」 filter left checked does not hide every screen once the map is rebuilt without a server API list', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config, copy) => {
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.check('#left input[name=dead]');
+        const dead = await p.locator('#screen-list li').count();
+        assert.ok(dead > 0 && dead < 11, String(dead));
+
+        fs.writeFileSync(path.join(copy, 'server-endpoints.txt'), '');
+        fs.writeFileSync(path.join(copy, 'server-endpoints-lab.txt'), '');
+        rebuild(copy);
+        await p.click('#screen-list li >> nth=0');
+        await p.click('#center tr:has-text("화면 전체")');
+        await p.click('#right .statuses button:has-text("충분")');
+        await p.click('#right button.save');
+        await p.waitForSelector('#center tr.selected td.mark:has-text("충분")');
+
+        assert.equal(await p.locator('#meta .state').isVisible(), true);
+        assert.equal(await p.locator('input[name=dead]').count(), 0);
+        assert.equal(await p.locator('#screen-list li').count(), 11);
+      }));
+  });
+});

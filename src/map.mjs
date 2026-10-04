@@ -118,6 +118,7 @@ export async function buildMap(config) {
     duplicateIds,
     calls,
     unknownBodyOptionCalls,
+    ...(server.length === 0 && { serverNotCompared: true }),
     entries,
     unknownEntryPaths,
     settingsDefaults,

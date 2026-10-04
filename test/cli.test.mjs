@@ -40,6 +40,34 @@ test('rebuild writes map.json and tests.json to the configured output folder and
   }
 });
 
+test('rebuild with no server API list counts the unchecked calls and says the comparison was not made', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const withList = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(withList, /^screens 11 \| api functions 11 \| endpoints match 8 method-mismatch 1 none 1 unresolved 1$/m);
+    assert.doesNotMatch(withList, /unchecked|server API list/);
+
+    fs.writeFileSync(path.join(copy, 'server-endpoints.txt'), '');
+    fs.writeFileSync(path.join(copy, 'server-endpoints-lab.txt'), '');
+    const empty = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    delete config.serverEndpoints;
+    fs.writeFileSync(configFile, JSON.stringify(config));
+    const absent = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+
+    for (const stdout of [empty, absent]) {
+      assert.match(stdout, /^screens 11 \| api functions 11 \| endpoints match 0 method-mismatch 0 none 0 unresolved 1 unchecked 10$/m);
+      assert.match(stdout, /^ {2}Server comparison skipped: the server API list is absent or has no endpoint lines$/m);
+      assert.match(stdout, /^dead calls reachable from screens: 0$/m);
+      assert.match(stdout, /^calls 10 \| dead screens 0$/m);
+    }
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 test('rebuild warns about each call ID in bodyOptions that is not on the map', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {

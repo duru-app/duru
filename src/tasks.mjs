@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { reviewData } from './review.mjs';
+import { SERVER_NOT_COMPARED } from './server.mjs';
 import { testsAt } from './story-paths.mjs';
 import { DEPTHS } from './test-links.mjs';
 
@@ -168,7 +169,9 @@ function markedOptionLines(call, marks, tests) {
 function serverText(server) {
   if (server.status === 'match') return `on the server (${server.labels.join(', ')})`;
   if (server.status === 'method-mismatch') return `method mismatch — the server has ${server.candidates.join('; ')}`;
-  return 'not on the server';
+  if (server.status === 'unchecked') return 'not checked';
+  if (server.status === 'none') return 'not on the server';
+  return server.status;
 }
 
 const place = (p) => `${p.file}:${p.line}`;
@@ -255,6 +258,7 @@ export function taskList(config) {
     '',
     `Source files are under \`${relative(config.srcRoot)}\`.`,
   ];
+  if (map.serverNotCompared) out.push('', `${SERVER_NOT_COMPARED}, so no call below is written as missing on the server.`);
   if (!open.length) out.push('', 'No open marks.');
   for (const s of screens) {
     const marks = open.filter((m) => m.target.node === s.id);

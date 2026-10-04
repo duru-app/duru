@@ -137,7 +137,7 @@ export function loadConfig(configPath) {
     settingsDefaults,
     redirectElements: raw.redirectElements ?? ['Redirect'],
     entryPaths: raw.entryPaths ?? [],
-    serverEndpoints: [raw.serverEndpoints].flat().map(at),
+    serverEndpoints: [raw.serverEndpoints ?? []].flat().map(at),
     outDir,
     marksDir: raw.marksDir ? at(raw.marksDir) : path.join(outDir, 'marks'),
     storiesDir: raw.storiesDir ? at(raw.storiesDir) : path.join(outDir, 'stories'),

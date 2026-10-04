@@ -20,9 +20,13 @@
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; background: var(--bg); color: var(--text); }
-  header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header { position: relative; z-index: 10; display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
   header h1 { font-size: 16px; margin: 0; }
   header .meta { color: var(--muted); font-size: 12px; }
+  header .meta .state { background: none; font: inherit; line-height: 14px; color: var(--more); margin-left: 6px; cursor: help; }
+  header .state-tip { display: none; position: absolute; top: 100%; margin-top: 6px; width: max-content; max-width: min(420px, calc(100vw - 32px)); padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); font-size: 12px; color: var(--muted); }
+  header .state:hover + .state-tip, header .state:focus + .state-tip { display: block; }
+  .list-absent { font-weight: normal; margin-left: 2px; }
   header .author { margin-left: auto; font-size: 13px; }
   #end-review { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--panel); color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   #end-review:disabled { opacity: .5; cursor: default; }
@@ -97,7 +101,7 @@
   table.calls tr.option.gap td.call > div:first-child, table.calls td.cell .none { color: var(--fail); font-weight: 600; }
   .chip.config { color: var(--accent); }
   .ok { color: var(--pass); } .ng { color: var(--fail); } .wait { color: var(--pending); }
-  .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved { color: var(--muted); }
+  .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved, .chip.v-unchecked { color: var(--muted); }
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
   .importers p { font-size: 12px; margin: 0 0 8px; }
@@ -247,13 +251,14 @@
 const DEPTH_LABELS = { ui: 'UI/E2E', api: 'API', render: '렌더링만', code: '코드', data: '데이터', output: '산출물' };
 const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류' };
 const MARK_STATUS = { 'needs-more': '더 필요', missing: '없음', fine: '충분' };
-const SERVER_STATUS = { match: '서버에 있음', 'method-mismatch': '메서드 불일치', none: '서버에 없음', unresolved: '판정 불가' };
+const SERVER_STATUS = { match: '서버에 있음', 'method-mismatch': '메서드 불일치', none: '서버에 없음', unresolved: '판정 불가', unchecked: '대조 안 함' };
+const SERVER_STATE_TIP = '서버 API 목록(serverEndpoints)이 없거나 비어 있어 API 호출을 서버와 견주지 않았습니다. 목록을 채우고 duru rebuild 를 다시 하면 견줍니다.';
 const KIND_LABEL = { setting: '설정', role: '역할' };
 const MIXED_KINDS = '링크마다 다름';
 const VALUE_LABEL = { true: '켬', false: '끔' };
 const SCREEN_FILTERS = [
   { key: 'no-tests', label: '테스트 없음만', keep: (s) => testsOf(s.id).length === 0 },
-  { key: 'dead', label: '죽은 화면', keep: (s) => s.dead },
+  { key: 'dead', label: '죽은 화면', keep: (s) => s.dead, needsServerList: true },
   { key: 'setting', label: '특정 설정에서만 열림', keep: (s) => s.access.kinds.includes('setting') },
   { key: 'role', label: '특정 역할에서만 열림', keep: (s) => s.access.kinds.includes('role') },
   { key: 'mixed', label: MIXED_KINDS, keep: (s) => s.access.restricted && !s.access.kinds.length },
@@ -371,11 +376,23 @@ function selectTarget(t) {
   render();
 }
 
+function placeStateTip(e) {
+  const tip = e.currentTarget.nextElementSibling;
+  const origin = tip.offsetParent.getBoundingClientRect().left;
+  const width = tip.getBoundingClientRect().width;
+  const room = document.documentElement.clientWidth - 16 - width;
+  tip.style.left = `${Math.max(16, Math.min(e.currentTarget.getBoundingClientRect().left, room)) - origin}px`;
+}
+
 function renderHeader() {
   const { map, tests } = state.data;
   const { screens, tested } = state.data.flow.summary;
-  document.getElementById('meta').textContent =
-    `화면 ${screens} · 테스트 있는 화면 ${tested} · 맵 ${fmtDate(map.meta.generatedAt)} · 테스트 연결 ${fmtDate(tests.meta.generatedAt)}`;
+  fill(document.getElementById('meta'),
+    `화면 ${screens} · 테스트 있는 화면 ${tested} · 맵 ${fmtDate(map.meta.generatedAt)} · 테스트 연결 ${fmtDate(tests.meta.generatedAt)}`,
+    map.serverNotCompared ? [
+      h('button', { type: 'button', class: 'chip state', 'aria-describedby': 'server-state-tip', onmouseenter: placeStateTip, onfocus: placeStateTip }, '서버 대조 안 함'),
+      h('span', { class: 'state-tip', id: 'server-state-tip', role: 'note' }, SERVER_STATE_TIP),
+    ] : null);
   const slot = document.getElementById('author');
   fill(slot);
   if (state.data.author) {
@@ -394,9 +411,14 @@ function renderHeader() {
   }
 }
 
+const listAbsentNote = (text) => (state.data.map.serverNotCompared ? [' ', h('span', { class: 'list-absent' }, text)] : null);
+
+const activeScreenFilters = () => SCREEN_FILTERS.filter((f) => !(f.needsServerList && state.data.map.serverNotCompared));
+
 function visibleScreens() {
   const q = state.query.trim().toLowerCase();
-  return state.data.map.screens.filter((s) => SCREEN_FILTERS.every((f) => !state.filters.has(f.key) || f.keep(s)) && (!q || s.id.toLowerCase().includes(q)));
+  const filters = activeScreenFilters();
+  return state.data.map.screens.filter((s) => filters.every((f) => !state.filters.has(f.key) || f.keep(s)) && (!q || s.id.toLowerCase().includes(q)));
 }
 
 function renderLeft() {
@@ -409,7 +431,7 @@ function renderLeft() {
     tabs,
     h('div', { class: 'filters' },
       h('input', { type: 'search', placeholder: '화면 찾기', value: state.query, oninput: (e) => { state.query = e.target.value; renderLeftList(); } }),
-      SCREEN_FILTERS.map((f) => h('label', {}, h('input', { type: 'checkbox', name: f.key, checked: state.filters.has(f.key), onchange: (e) => {
+      activeScreenFilters().map((f) => h('label', {}, h('input', { type: 'checkbox', name: f.key, checked: state.filters.has(f.key), onchange: (e) => {
         if (e.target.checked) state.filters.add(f.key); else state.filters.delete(f.key);
         renderLeftList();
       } }), f.label)),
@@ -1090,7 +1112,7 @@ function callTable(s) {
   if (!rows.length) return [h('h2', {}, 'API 호출'), h('p', { class: 'muted' }, '부르는 API 호출이 없습니다.')];
   const depths = state.data.depths;
   return [
-    h('h2', {}, `API 호출 ${rows.length}`),
+    h('h2', {}, `API 호출 ${rows.length}`, listAbsentNote('서버 목록 없음')),
     h('table', { class: 'calls' },
       h('thead', {}, h('tr', {}, h('th', {}, '호출'), h('th', {}, '전체'), depths.map((d) => h('th', {}, DEPTH_LABELS[d])))),
       h('tbody', {}, rows.flatMap((r) => {
@@ -1196,7 +1218,7 @@ function callDetails(call, s) {
     option ? h('ul', { class: 'plain option-sites' },
       option.sites.map((site) => h('li', {}, h('code', {}, `${site.file}:${site.line}`), ' ', h('span', { class: 'muted mono' }, site.screen))),
       option.sources.includes('config') ? h('li', {}, '설정에 적음 ', h('span', { class: 'muted mono' }, 'bodyOptions')) : null) : null,
-    h('h2', {}, '서버 대조'),
+    h('h2', {}, '서버 대조', listAbsentNote('목록 없음')),
     h('div', {}, verdictChip(call.server), ' ', call.server.path ? h('code', {}, call.server.path) : null),
     call.server.candidates ? h('ul', { class: 'plain' }, call.server.candidates.map((c) => h('li', {}, '서버에는 ', h('code', {}, c)))) : null,
     h('h2', {}, `테스트 ${tests.length}`),

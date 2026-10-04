@@ -4,6 +4,7 @@ import path from 'node:path';
 import { loadConfig } from './config.mjs';
 import { buildMap } from './map.mjs';
 import { gitUserName, startReviewServer } from './review.mjs';
+import { SERVER_NOT_COMPARED } from './server.mjs';
 import { checkStoryFiles } from './story-paths.mjs';
 import { taskList } from './tasks.mjs';
 import { linkTests } from './test-links.mjs';
@@ -56,7 +57,8 @@ if (command === 'tasks') {
   console.log(`wrote ${write('map.json', map)}`);
   const allEndpoints = Object.values(map.apiFunctions).flatMap((f) => f.endpoints);
   const count = (st) => allEndpoints.filter((e) => e.server.status === st).length;
-  console.log(`screens ${map.screens.length} | api functions ${Object.keys(map.apiFunctions).length} | endpoints match ${count('match')} method-mismatch ${count('method-mismatch')} none ${count('none')} unresolved ${count('unresolved')}`);
+  console.log(`screens ${map.screens.length} | api functions ${Object.keys(map.apiFunctions).length} | endpoints match ${count('match')} method-mismatch ${count('method-mismatch')} none ${count('none')} unresolved ${count('unresolved')}${map.serverNotCompared ? ` unchecked ${count('unchecked')}` : ''}`);
+  if (map.serverNotCompared) console.log(`  ${SERVER_NOT_COMPARED}`);
   console.log(`dead calls reachable from screens: ${map.deadCalls.length}`);
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s) => s.dead).length}`);
   console.log(`entry screens ${map.entries.length} | screens opening only under a setting or role ${map.screens.filter((s) => s.access.restricted).length}`);
