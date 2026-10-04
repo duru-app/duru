@@ -95,8 +95,8 @@ export function linkTests(config, map) {
             (importers[id] ??= []).push({ title: t.title, file: t.file, line: t.line, source: resultPath, format: source.format, depth, status: t.status, testFile: link.file, via });
           }
         }
-        if (t.trace) {
-          const trace = linkByTrace(t.trace);
+        const trace = t.trace ? linkByTrace(t.trace) : null;
+        if (trace) {
           const traced = { title: t.title, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status };
           if (trace.reason) traceNotices.push({ file: shownPath(t.trace), test: { title: t.title, file: t.file, line: t.line }, reason: trace.reason });
           for (const [id, level] of trace.screens ?? []) {
@@ -111,12 +111,15 @@ export function linkTests(config, map) {
         }
         if (nodeTags.length === 0 && storyTags.length === 0) {
           const seen = untagged.get(testKey);
-          if (!seen) untagged.set(testKey, { title: t.title, file: t.file, line: t.line, source: resultPath, format: source.format, status: t.status, ...(link?.file && { testFile: link.file }) });
-          else if (STATUS_RANK[t.status] > STATUS_RANK[seen.status]) seen.status = t.status;
+          if (!seen) untagged.set(testKey, { title: t.title, file: t.file, line: t.line, source: resultPath, format: source.format, status: t.status, ...(link?.file && { testFile: link.file }), ...(trace?.unmatched && { unmatched: trace.unmatched }) });
+          else {
+            if (STATUS_RANK[t.status] > STATUS_RANK[seen.status]) seen.status = t.status;
+            if (trace?.unmatched) seen.unmatched = [...new Set([...(seen.unmatched ?? []), ...trace.unmatched])];
+          }
           continue;
         }
         const test = { title: t.title, file: t.file, line: t.line, project: t.project };
-        const entry = { ...test, source: resultPath, format: source.format, depth, status: t.status, ...(link?.file && { testFile: link.file }), ...(t.detail && { detail: t.detail }) };
+        const entry = { ...test, source: resultPath, format: source.format, depth, status: t.status, ...(link?.file && { testFile: link.file }), ...(t.detail && { detail: t.detail }), ...(trace?.unmatched && { unmatched: trace.unmatched }) };
         for (const tag of nodeTags) {
           if (!known.has(tag)) {
             reportUnknown(tag, t, testKey);

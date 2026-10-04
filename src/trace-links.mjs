@@ -12,11 +12,13 @@ export function traceLinker(map) {
     screenAt ??= screenFinder(map);
     callAt ??= callFinder(map);
     const screens = new Map();
+    const unmatched = new Set();
     for (const { url, kind } of steps) {
       const id = screenAt(url);
-      if (id && PASS_LEVELS.indexOf(kind) > PASS_LEVELS.indexOf(screens.get(id))) screens.set(id, kind);
+      if (!id) unmatched.add(url);
+      else if (PASS_LEVELS.indexOf(kind) > PASS_LEVELS.indexOf(screens.get(id))) screens.set(id, kind);
     }
     const calls = new Set(requests.map(({ method, url }) => callAt(method, url)).filter(Boolean));
-    return { screens, calls };
+    return { screens, calls, unmatched: [...unmatched] };
   };
 }

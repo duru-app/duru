@@ -939,6 +939,45 @@ test('each test format says where its tag goes, and an API call gets a call tag'
   );
 });
 
+test('a browser test handed over for a screen it opened and for a call it sent is listed under Tagging with the screen tag and the call tag', () => {
+  const tests = [...JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8')).tests, { format: 'playwright', path: 'results/playwright-traced', depth: 'ui' }];
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const { judgmentsDir } = loadConfig(configFile);
+    const sent = { source: 'results/playwright-traced/calls.json', file: 'calls.spec.ts', title: 'reads a document from the server' };
+    addJudgment(judgmentsDir, { test: sent, node: '/home#Home', kind: 'hand-over', reason: 'checks the list on home', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
+    addJudgment(judgmentsDir, { test: sent, node: 'GET:/api/v1/document/{documentId}', kind: 'hand-over', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
+    assert.deepEqual(tagging(cli('tasks')).split('\n').slice(4), [
+      '',
+      '## calls.spec.ts:6 → /home#Home',
+      '',
+      '- title: reads a document from the server',
+      '- tag to add: `@screen:/home#Home`',
+      "- where: in the test's `tag` option (`{ tag: '@screen:/home#Home' }`), leaving the title as it is",
+      '- note: "checks the list on home" (reviewer, 2026-10-04)',
+      '',
+      '## calls.spec.ts:6 → GET:/api/v1/document/{documentId}',
+      '',
+      '- title: reads a document from the server',
+      '- tag to add: `@call:GET:/api/v1/document/{documentId}`',
+      "- where: in the test's `tag` option (`{ tag: '@call:GET:/api/v1/document/{documentId}' }`), leaving the title as it is",
+      '- note: none (reviewer, 2026-10-04)',
+      '',
+    ]);
+  }, { tests });
+});
+
+test('a browser test handed over for a screen stays under Tagging when its latest run left no trace to see the screen in', () => {
+  const tests = [...JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8')).tests, { format: 'playwright', path: 'results/playwright-traced', depth: 'ui' }];
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const untraced = { source: 'results/playwright-traced/visits.json', file: 'untraced.spec.ts', title: 'opens help without a trace' };
+    addJudgment(loadConfig(configFile).judgmentsDir, { test: untraced, node: '/help#Help', kind: 'hand-over', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
+    assert.deepEqual(tagging(cli('tasks')).match(/^## .*$/gm), ['## untraced.spec.ts:5 → /help#Help']);
+    assert.match(cli('rebuild'), /^pairs handed over for tagging waiting for the tag 1 \| .* 0$/m);
+  }, { tests });
+});
+
 test('the reviewer\'s note is printed trimmed, and a note of only whitespace counts as none', () => {
   const lines = (reason) => taggingLines({ '/help#Help': [handOverEntry('vitest', HELP_UNIT, 4, { reason })] }, new Set()).find((l) => l.startsWith('- note'));
   assert.equal(lines('  \n checks the text\nand the heading \n'), '- note: "checks the text\n  and the heading" (reviewer, 2026-10-04)');
