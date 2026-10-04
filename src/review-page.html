@@ -2452,6 +2452,7 @@ function renderFlow() {
   drawnGrid = canvases.map((c) => c.place()).find(Boolean) ?? null;
   Object.assign(flow, { scrollTop, scrollLeft });
   applyLegend(legendInfo);
+  recordPlace();
 }
 
 function setView(view) {
@@ -2480,7 +2481,84 @@ function render() {
   renderLeft();
   renderCenter();
   renderRight();
+  recordPlace();
 }
+
+const PLACE_TABS = ['screens', 'stories', 'untagged'];
+
+function placeHash() {
+  const p = new URLSearchParams();
+  if (state.view === 'flow') {
+    if (state.focus) p.set('from', state.focus.id);
+  } else if (state.side === 'stories') {
+    if (state.story !== null) p.set('story', state.story);
+  } else if (state.side === 'untagged') {
+    if (state.untaggedTest !== null) p.set('test', state.untaggedTest);
+  } else if (state.selected !== null) {
+    p.set('screen', state.selected);
+  }
+  return `#${state.view === 'flow' ? 'flow' : state.side}${p.size ? `?${p}` : ''}`;
+}
+
+let shownPlace = null;
+let placeTurn = 0;
+let applyingPlace = false;
+
+// 주소가 아니라 앞서 그린 자리와 견주므로, 주소에 적힌 가지를 읽어 오는 동안 같은 자리를 다시 그려도 기록이 늘지 않는다.
+function recordPlace() {
+  const hash = placeHash();
+  if (applyingPlace || shownPlace === null) {
+    if (hash !== location.hash) history.replaceState(null, '', hash);
+  } else if (hash !== shownPlace) {
+    placeTurn += 1;
+    if (hash !== location.hash) history.pushState(null, '', hash);
+  }
+  shownPlace = hash;
+}
+
+// 화면에서 그 자리를 누른 것과 같게 움직인다.
+// 가지를 읽어 오는 동안 검토자가 다른 자리를 고르면 그쪽을 따른다.
+async function applyPlace() {
+  const turn = ++placeTurn;
+  const [head, query] = location.hash.slice(1).split('?');
+  const p = new URLSearchParams(query ?? '');
+  let go = render;
+  if (head === 'flow') {
+    const from = p.get('from');
+    let { focus } = state;
+    if (from !== (focus?.id ?? null)) {
+      const roots = from ? await branchRoots(from).catch(() => null) : null;
+      if (turn !== placeTurn) return;
+      focus = roots && { id: from, roots };
+    }
+    go = () => {
+      Object.assign(state, { view: 'flow', focus });
+      render();
+    };
+  } else if (PLACE_TABS.includes(head)) {
+    state.view = 'list';
+    state.side = head;
+    const screen = p.get('screen');
+    const story = p.get('story');
+    const test = p.get('test');
+    if (head === 'screens' && screen !== state.selected && screenOf(screen)) go = () => select(screen);
+    else if (head === 'stories' && story !== state.story && (state.data.stories.list.some((st) => st.id === story) || unlistedMarks().some((m) => m.target.story === story))) go = () => selectStory(story);
+    else if (head === 'untagged' && test !== state.untaggedTest && untaggedTests().some((t) => untaggedKey(t) === test)) go = () => selectUntaggedTest(test);
+  }
+  applyingPlace = true;
+  try {
+    go();
+  } finally {
+    applyingPlace = false;
+  }
+}
+
+// 한 번에 판단하는 동안에는 화면의 다른 자리도 잠겨 있으므로, 뒤로 가지 않고 지금 자리를 다시 적는다.
+window.addEventListener('popstate', () => {
+  if (!state.data || state.ended || state.failed) return;
+  if (state.bulkBusy) return history.pushState(null, '', placeHash());
+  applyPlace();
+});
 
 const unsaved = (target, d) => !!d && (d.status !== (markOf(target)?.current.status ?? null) || d.note.trim() !== '');
 
@@ -2536,7 +2614,7 @@ window.addEventListener('resize', () => {
 // 리뷰를 끝낸 뒤에 늦게 실패한 읽기만 알리지 않고, 그리다 난 오류는 그대로 알린다.
 load().then(() => {
   openGapsOnly(flowTrees());
-  render();
+  return applyPlace();
 }, (err) => {
   if (!state.ended) throw err;
 }).catch((err) => {

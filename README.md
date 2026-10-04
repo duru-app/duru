@@ -483,6 +483,18 @@ no story file.
 
 ## Review page
 
+The page writes the place being looked at into its address, after the `#`: `#flow`, `#flow?from=<screen ID>`
+for a branch shown on its own, `#screens?screen=<screen ID>`, `#stories?story=<story ID>` and
+`#untagged?test=<test>`. Choosing another place adds a step to the browser history, so the back and forward
+buttons move through the places as they do through pages, and loading the page again or opening a copied
+address shows the same place. A place that is no longer there (a screen gone from the map) falls back to what
+the page would show without it, and the address is corrected. Going to a place by the address works like
+choosing it on the page: going to another screen or story drops a mark typed but not saved, as choosing it does,
+and coming back to a tab keeps it, as pressing the tab does. While a bulk judgment is being sent the back
+button stays on the test, as the rest of the page does, and the steps ahead of it in the history are lost.
+Which branches of the flow are folded, filters, and scroll positions are not part of a place. Moves made inside
+the app shown in the middle are steps of the same history: the back button undoes those first.
+
 `review` serves a local page that reads `map.json` and `tests.json` from `outDir` (run `rebuild` first) and
 writes only into the marks folder. It opens on the flow view, with only the way to boxes whose tests are
 missing or failing opened (as 「빈틈만 펼치기」 does) on first load; after that the branches stay as the reviewer
