@@ -124,6 +124,16 @@ test('a link guarded through the handler it sits in carries that guard with the 
   assert.deepEqual(story.links[0].ways[0].conditions.map((c) => [c.guard, c.via, c.kinds]), [['globalSettings.SYSTEM.HELP_LINK_ENABLED', 'openHelp', ['setting']]]);
 });
 
+test('a step that a move in the config joins, such as the screen opening after sign-in, is configured with the move\'s reason, not a missing link', async () => {
+  const story = { id: 'signin-lab', screens: ['/signin#SignIn', '/lab/result#LabResult'] };
+  assert.equal(checkStories(map, [story])[0].links[0].verdict, 'broken');
+  const signedIn = await buildMap({ ...config, moves: [{ from: '/signin', to: '/lab/result', reason: '로그인 뒤' }] });
+  const [checkedStory] = checkStories(signedIn, [story]);
+  assert.deepEqual(checkedStory.links, [{ from: '/signin#SignIn', to: '/lab/result#LabResult', verdict: 'configured', reasons: ['로그인 뒤'], ways: [] }]);
+  assert.equal(checkedStory.broken, false);
+  assert.deepEqual(checkedStory.reach, []);
+});
+
 const TINY_CONFIG = { settingsRoots: ['globalSettings'], roleIdentifiers: ['memberRole'], routesFile: 'Routes.js', entryPaths: [] };
 const NO_SETTING_READ = { settings: null, settingsReason: '조건에서 설정을 읽는 곳을 찾지 못했습니다' };
 

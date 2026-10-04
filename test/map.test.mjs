@@ -1504,3 +1504,30 @@ test('a link whose address fits the screen it sits in stays a link to itself and
   assert.deepEqual(linesFrom(map, '/help#Help', '/help/:topic#Help'), [8]);
   assert.deepEqual(linesFrom(map, '/help/:topic#Help', '/help#Help'), [7]);
 });
+
+test('paths in moves that match no route are listed, and each move joins every screen its from path matches to every screen its to path matches', async () => {
+  const moves = [
+    { from: '/signin', to: '/home', reason: '로그인 뒤' },
+    { from: '/login', to: '/home', reason: '로그인 뒤' },
+    { from: '/help', to: '/gone', reason: '도움말을 닫으면' },
+    { from: '/home', to: '/document', reason: '저장 뒤' },
+    { from: '/signin', to: '/home', reason: '로그인 뒤' },
+  ];
+  const map = await buildCopy((rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), moves })));
+  assert.deepEqual(map.moves, [
+    { from: '/signin#SignIn', to: '/home#Home', reason: '로그인 뒤' },
+    { from: '/home#Home', to: '/document/:tab_draft_done_#DocumentList', reason: '저장 뒤' },
+    { from: '/home#Home', to: '/document/:id#DocumentDetail', reason: '저장 뒤' },
+  ]);
+  assert.deepEqual(map.unknownMovePaths, ['/login', '/gone']);
+});
+
+const MOVE = { from: '/signin', to: '/home', reason: '로그인 뒤' };
+for (const moves of [MOVE, { '/signin': '/home' }, [{ ...MOVE, from: 'signin' }], [{ ...MOVE, to: undefined }], [{ ...MOVE, reason: '' }], [{ ...MOVE, reason: ' ' }], [{ ...MOVE, reason: '로그인 뒤\n저장' }], [{ ...MOVE, via: 'reload' }]]) {
+  test(`moves ${JSON.stringify(moves)} is rejected`, async () => {
+    await assert.rejects(
+      buildCopy((rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), moves }))),
+      /moves must be a list of \{ "from", "to", "reason" \}/,
+    );
+  });
+}

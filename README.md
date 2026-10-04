@@ -61,6 +61,13 @@ relative to the config file, except the files inside the client source (`routesF
   one member of an object (`workspace['member.role']`)
 - `redirectElements`, `entryPaths` — how fallback redirects are declared in the routes file (default
   `Redirect`), and route paths of further screens users start from when the code does not show them
+- `moves` — screen moves the code shows no link for (optional), each `{ "from", "to", "reason" }` with route
+  paths as in the map, such as `[{ "from": "/signin", "to": "/user-home", "reason": "로그인 뒤" }]` for an app
+  that reloads after sign-in and lets a redirect choose the screen. A move joins every screen its `from` path
+  matches to every screen its `to` path matches, as a link would, for story steps (see below): `/document` also
+  reaches `/document/:id`. A move that ends on different screens, such as one per role, is one move per screen.
+  They go to `moves` on the map with their reason, paths that match no route go to `unknownMovePaths`, and
+  `rebuild` prints them
 - `serverEndpoints`, `apiPathPrefix` — one or more server endpoint lists
   (`<label>\t<METHOD>\t<path>` per line, `{var}` for path variables); `serverEndpoints` may be left out, see
   `unchecked` below
@@ -448,7 +455,9 @@ Each story is checked against the map, with the same result every time for the s
   condition, such links are left out of the verdict and still listed in `unknownLinks`; next to an `open` step
   they could not change anything and are not listed. A link to a path duru can read but no screen has is not a
   link to the next screen. Redirects in the routes file are not followed, so a step whose only way goes
-  through such a redirect shows as `broken` (「링크 없음」 on the review page).
+  through such a redirect shows as `broken` (「링크 없음」 on the review page). When no link without a
+  condition joins the two but a move in `moves` does, the step is `configured` (「설정에 적은 이동」 on the
+  review page) with the moves' `reasons`, no ways and nothing to meet.
   Conditions here are the link's `conditions` on the map: all the guards around the link, not only setting
   and role guards, so a guard such as `doc.type !== 'FLEX'` is a condition too, with empty `kinds`.
 - 「사전 조건」 (what it takes to get to the end) gathers, in step order: what the first screen needs when
@@ -631,7 +640,7 @@ the request to run `rebuild` replaces the empty-list text and is not counted as 
 be read. Choosing a story shows in the middle its name with its status (「통과」 too), ID, file, author, date
 and memo, its story tests with their depth and status, then its screens in order, each with the number of
 its tests per depth and status (the titles show on hover) or 「화면 테스트 없음」, and the verdict of the link
-between each two: 「이어짐」, 「조건」 or 「링크 없음」, or 「판정 못 함」 next to a screen the map does
+between each two: 「이어짐」, 「설정에 적은 이동」 with its reasons, 「조건」 or 「링크 없음」, or 「판정 못 함」 next to a screen the map does
 not have or where no link joins the two but the first screen has links to a path duru cannot read (listed
 with their source locations and paths), with the source location and conditions of every link; a `conditioned`
 step also lists, as left out of the verdict, the first screen's links to a path duru cannot read. Pressing a
@@ -760,7 +769,8 @@ Stories with an open mark follow under `# Stories`, in ID order, below a line na
 is listed for its mark, never for having no tests. Each comes with its name, its open mark and note, its
 file with author and date, its memo, its status, its story tests with depth and status, its screens in order,
 each with its tests counted by depth and status (or `not on the map`) and the link to the next screen (`open`
-or `conditioned` with each link's source location, `no link`, or `not judged` with why), then `reach`
+or `conditioned` with each link's source location, `a move in the config` with its reasons, `no link`,
+or `not judged` with why), then `reach`
 (`reachable`, `unreachable, no link at N steps`, or `not judged` with why) and `preconditions`: the
 「사전 조건」 of the review page, with the setting and role guards and every link into the first screen when it
 opens only under one, the route guards with their line, and the guards of `conditioned` links with their source

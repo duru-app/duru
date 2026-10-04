@@ -208,7 +208,7 @@
   .views.side .tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .views.side .tab-count { flex: none; position: relative; top: .5px; padding: 0 4px; border-radius: 8px; background: var(--line); font-size: 11px; font-weight: 600; line-height: 16px; }
   .views.side button.on .tab-count { background: var(--accent); color: var(--panel); }
-  .chip.l-open { color: var(--pass); } .chip.l-conditioned { color: var(--accent); } .chip.l-broken { color: var(--fail); } .chip.l-off-map, .chip.l-unknown { color: var(--more); }
+  .chip.l-open, .chip.l-configured { color: var(--pass); } .chip.l-conditioned { color: var(--accent); } .chip.l-broken { color: var(--fail); } .chip.l-off-map, .chip.l-unknown { color: var(--more); }
   .story-path { margin-top: 8px; }
   .story-path .step { display: flex; gap: 10px; align-items: baseline; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
   .story-path .step.on-map { cursor: pointer; }
@@ -578,7 +578,8 @@ function renderUntaggedList() {
   if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 테스트가 없습니다.'));
 }
 
-const LINK_VERDICT = { open: '이어짐', conditioned: '조건', broken: '링크 없음', 'off-map': '판정 못 함', unknown: '판정 못 함' };
+const LINK_VERDICT = { open: '이어짐', configured: '설정에 적은 이동', conditioned: '조건', broken: '링크 없음', 'off-map': '판정 못 함', unknown: '판정 못 함' };
+const LINK_VERDICT_TITLE = { configured: '설정의 moves 에 적은 이동으로 이어집니다' };
 const storyOf = () => state.data.stories.list.find((st) => st.id === state.story);
 const unlistedMarks = () => state.data.marks.attached.filter((m) => m.target.story !== undefined && !state.data.stories.list.some((st) => st.id === m.target.story));
 const screenOf = (id) => state.data.map.screens.find((s) => s.id === id);
@@ -1183,8 +1184,9 @@ const skippedLinks = (links) => [h('div', { class: 'muted skipped' }, '판정에
 
 function linkItem(l) {
   return h('div', { class: `link l-${l.verdict}` },
-    h('span', { class: `chip l-${l.verdict}` }, LINK_VERDICT[l.verdict]),
+    h('span', { class: `chip l-${l.verdict}`, title: LINK_VERDICT_TITLE[l.verdict] }, LINK_VERDICT[l.verdict]),
     l.verdict === 'off-map' ? h('span', { class: 'muted' }, ' 화면 없음') : null,
+    l.verdict === 'configured' ? h('span', { class: 'muted' }, ` ${l.reasons.join(', ')}`) : null,
     l.verdict === 'unknown' ? [h('span', { class: 'muted' }, ' 주소 못 읽은 링크'), unknownList(l.unknownLinks)] : null,
     l.ways.length ? h('ul', { class: 'plain ways' }, l.ways.map((w) => wayItem(w))) : null,
     l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null);

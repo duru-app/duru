@@ -85,6 +85,21 @@ test('rebuild warns about each call ID in bodyOptions that is not on the map', (
   }
 });
 
+test('rebuild warns about each path in moves that matches no route', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, moves: [{ from: '/signin', to: '/home', reason: '로그인 뒤' }, { from: '/login', to: '/home', reason: '로그인 뒤' }] }));
+    const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(stdout, /^ {2}moves \/login matches no route$/m);
+    assert.doesNotMatch(stdout, /moves \/(signin|home)/);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 test('rebuild counts the stories with broken paths or screens gone from the map, the steps it could not judge and the stories in each status, and names each story file it skipped and why', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {

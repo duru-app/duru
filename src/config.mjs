@@ -17,7 +17,10 @@ export function parseRoleEntry(entry) {
 const isText = (v) => typeof v === 'string' && v.length > 0;
 export const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 export const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const isOneLine = (v) => typeof v === 'string' && /\S/.test(v) && !/[\r\n]/.test(v);
+const isRoutePath = (v) => isText(v) && v.startsWith('/');
 const isWebAddress = (v) => isText(v) && /^https?:\/\/[^/]/.test(v);
+const MOVE_KEYS = ['from', 'to', 'reason'];
 const LIST_API_KEYS = ['api', 'list', 'value', 'method', 'body'];
 const HEADER_EXAMPLE = '{ "Authorization": "Bearer {token}" }';
 
@@ -91,7 +94,7 @@ function appSettings(app, at, raw) {
     if (!isText(role) || !isAccount(roleAccount)) fail(`roles.${role}`, ACCOUNT);
   }
   const signedOutPaths = app.signedOutPaths ?? [];
-  if (!Array.isArray(signedOutPaths) || !signedOutPaths.every((p) => isText(p) && p.startsWith('/'))) {
+  if (!Array.isArray(signedOutPaths) || !signedOutPaths.every(isRoutePath)) {
     fail('signedOutPaths', 'a list of route paths shown signed out, such as ["/signin"]');
   }
   const pathValues = pathValuesSettings(app.pathValues ?? {});
@@ -120,6 +123,11 @@ export function loadConfig(configPath) {
   if (typeof bodyOptions !== 'object' || Array.isArray(bodyOptions) || !Object.values(bodyOptions).every(isKeyList)) {
     throw new Error(`bodyOptions must map call IDs to lists of body keys, such as {"POST:/api/v1/report/export": ["withHistory"]}, not ${JSON.stringify(raw.bodyOptions)}`);
   }
+  const moves = raw.moves ?? [];
+  const isMove = (m) => isPlainObject(m) && Object.keys(m).every((k) => MOVE_KEYS.includes(k)) && isRoutePath(m.from) && isRoutePath(m.to) && isOneLine(m.reason);
+  if (!Array.isArray(moves) || !moves.every(isMove)) {
+    throw new Error(`moves must be a list of { "from", "to", "reason" }, with the reason on one line, for screen moves the code shows no link for, with route paths as in the map, such as [{ "from": "/signin", "to": "/user-home", "reason": "로그인 뒤" }], not ${JSON.stringify(raw.moves)}`);
+  }
   const settingsDefaults = raw.settingsDefaults ?? {};
   for (const [root, entry] of Object.entries(settingsDefaults)) {
     if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
@@ -138,6 +146,7 @@ export function loadConfig(configPath) {
     roleIdentifiers: raw.roleIdentifiers ?? [],
     bodyArgKeys,
     bodyOptions,
+    moves,
     settingsDefaults,
     redirectElements: raw.redirectElements ?? ['Redirect'],
     entryPaths: raw.entryPaths ?? [],
