@@ -1533,7 +1533,7 @@ test('in a browser, a screen whose links ask for different kinds has its own fil
 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), / · 링크마다 다름 · 불러옴 2$/);
+        assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), / · 불러옴 2 · 링크마다 다름$/);
       }),
     );
   });
@@ -1686,6 +1686,58 @@ const screenBox = async (p, id) => {
 };
 const boxCount = async (p) => ({ screens: await p.locator('#flow .box.screen').count(), calls: await p.locator('#flow .box.call').count() });
 const flowButton = (p, label) => p.locator('.flowbar button', { hasText: label });
+const textOutside = (p) => p.$$eval('#flow .box', (els) => els.flatMap((box) => {
+  const r = box.getBoundingClientRect();
+  const cs = getComputedStyle(box);
+  const side = (s) => parseFloat(cs[`border${s}Width`]) + parseFloat(cs[`padding${s}`]);
+  const inner = { left: r.left + side('Left'), right: r.right - side('Right'), top: r.top + side('Top'), bottom: r.bottom - side('Bottom') };
+  const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const range = document.createRange();
+    range.selectNodeContents(walker.currentNode);
+    for (const t of range.getClientRects()) {
+      if (t.width && (t.left < inner.left - 0.5 || t.right > inner.right + 0.5 || t.top < inner.top - 0.5 || t.bottom > inner.bottom + 0.5)) return [box.title.split('\n')[0]];
+    }
+  }
+  return [];
+}));
+const layoutErrors = (p) => p.$$eval('#flow .canvas', (canvases) => canvases.flatMap((canvas) => {
+  const indent = CALL_INDENT;
+  const origin = canvas.getBoundingClientRect();
+  const els = new Map([...canvas.querySelectorAll('.box')].map((e) => [e.dataset.key, e]));
+  const box = (key) => {
+    const r = els.get(key).getBoundingClientRect();
+    const top = r.top - origin.top;
+    const left = r.left - origin.left;
+    return { key, grouped: els.get(key).classList.contains('grouped'), left, right: left + r.width, top, bottom: top + r.height, middle: top + r.height / 2 };
+  };
+  const edges = [...canvas.querySelectorAll('svg path')].map((path) => ({
+    from: box(path.dataset.from), to: box(path.dataset.to), start: path.getPointAtLength(0), end: path.getPointAtLength(path.getTotalLength()),
+  }));
+  const off = (a, b) => Math.abs(a - b) > 1;
+  const errors = [];
+  for (const [key, e] of els) {
+    const r = e.getBoundingClientRect();
+    if (off(r.left - origin.left, parseFloat(e.style.left))) errors.push(`${key} stands at x ${r.left - origin.left}, the layout put it at ${e.style.left}`);
+    if (off(r.width, parseFloat(e.style.width))) errors.push(`${key} is ${r.width}px wide, the layout made it ${e.style.width}`);
+  }
+  for (const { from, to, start, end } of edges) {
+    if (off(end.y, to.middle)) errors.push(`the line to ${to.key} ends at ${end.y}, the box's middle is at ${to.middle}`);
+    if (off(end.x, to.left)) errors.push(`the line to ${to.key} ends at x ${end.x}, the box's left edge is at ${to.left}`);
+    const y = from.grouped ? from.bottom : from.middle;
+    if (off(start.y, y)) errors.push(`the line from ${from.key} starts at ${start.y}, not at ${y}`);
+    const x = from.grouped ? from.left + indent / 2 : from.right;
+    if (off(start.x, x)) errors.push(`the line from ${from.key} starts at x ${start.x}, not at ${x}`);
+  }
+  const parents = new Set(edges.map((e) => e.from.key));
+  for (const parent of parents) {
+    const kids = edges.filter((e) => e.from.key === parent).map((e) => e.to).sort((a, b) => a.top - b.top);
+    const pairs = kids.slice(1).map((b, i) => [kids[i], b]).filter(([a, b]) => !parents.has(a.key) && !parents.has(b.key));
+    if (kids[0].grouped) pairs.unshift([box(parent), kids[0]]);
+    for (const [a, b] of pairs) if (off(b.top - a.bottom, GAP)) errors.push(`${b.key} stands ${b.top - a.bottom}px below ${a.key}`);
+  }
+  return errors;
+}));
 
 test('in a browser, the flow graph opens calls and branches, folds them, and a box opens the screen in the list', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -1759,15 +1811,6 @@ test('in a browser, a flow box writes the roles and settings its screen needs, a
 
         const report = await screenBox(p, '/admin/report#AdminReport');
         assert.deepEqual(await needLines(report), ['역할 ADMIN 외 1', '설정 "ADMIN_REPORT" (ADMIN.LIST 에) 외 1']);
-        const valueFits = await report.locator('.need .text', { hasText: '설정' }).evaluate((e) => {
-          const range = document.createRange();
-          range.setStart(e.firstChild, 0);
-          const end = e.textContent.indexOf(' (');
-          range.setEnd(e.firstChild, end < 0 ? e.textContent.length : end);
-          return range.getBoundingClientRect().right <= e.getBoundingClientRect().right;
-        });
-        assert.ok(valueFits, 'the value is never the part cut off');
-        assert.equal(await report.locator('.need .text', { hasText: '역할' }).evaluate((e) => e.scrollWidth > e.clientWidth), false);
         assert.deepEqual(await p.evaluate(() => nodeNeeds({ access: { settings: [{ from: 'route', unreadable: [], needs: [
           { path: ['SYSTEM', 'MENU'], need: 'present' },
           { path: ['SYSTEM', 'MENU', 'LIST'], need: 'includes', value: 'X' },
@@ -1781,27 +1824,11 @@ test('in a browser, a flow box writes the roles and settings its screen needs, a
           '필요한 설정: SYSTEM.MAIN_MENU.ADMIN 있음',
         ]);
 
-        const boxes = await p.$$eval('#flow .box', (els) => els.map((e) => ({ id: e.title.split('\n')[0], left: e.offsetLeft, top: e.offsetTop, h: e.offsetHeight, over: e.scrollHeight > e.clientHeight })));
-        assert.deepEqual(boxes.filter((b) => b.over).map((b) => b.id), []);
+        assert.deepEqual(await textOutside(p), []);
+        const boxes = await p.$$eval('#flow .box', (els) => els.map((e) => ({ id: e.title.split('\n')[0], left: e.offsetLeft, top: e.offsetTop, h: e.offsetHeight })));
         for (const a of boxes) for (const b of boxes) {
           if (a !== b && a.left === b.left) assert.ok(a.top + a.h <= b.top || b.top + b.h <= a.top, `${a.id} and ${b.id} do not overlap`);
         }
-      }),
-    ),
-  );
-});
-
-test('in a browser, a flow box without role or setting conditions has no extra line and keeps its size', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.click('#view-flow');
-        await p.waitForSelector('#flow .box');
-        const home = await screenBox(p, '/home#Home');
-        assert.equal(await home.locator('.need').count(), 0);
-        assert.equal(await home.evaluate((e) => e.offsetHeight), 60);
-        assert.deepEqual(await tipLines(home), []);
-        assert.equal(await (await screenBox(p, '/admin/audit#AdminAudit')).evaluate((e) => e.offsetHeight), 77);
       }),
     ),
   );
@@ -1812,23 +1839,26 @@ test('in a browser, a flow box sits midway between its first and last child and 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         const trees = await p.evaluate(() => {
+          const sizes = {};
+          const openCalls = [];
           const call = (id) => ({ kind: 'call', id });
-          const screen = (id, access, children = [], calls = []) => {
-            if (calls.length) state.openCalls.add(id);
-            return { kind: 'screen', id, access, children, calls };
+          const screen = (id, height, children = [], calls = []) => {
+            sizes[id] = { width: 100 + id.length * 10, height };
+            for (const c of calls) sizes[`${id}>${c.id}`] = { width: 150, height: 44 };
+            if (calls.length) openCalls.push(id);
+            return { kind: 'screen', id, children, calls, guards: [] };
           };
-          const role = { roleValues: ['ADMIN'], unreadableRoleGuards: [] };
-          const both = { ...role, settings: [{ from: 'route', needs: [{ path: ['A'], need: 'on' }], unreadable: [] }] };
+          const [plain, role, both] = [60, 77, 94];
           const shapes = {
-            plainOverCalls: [screen('root', {}, [screen('a', {}, [], [call('a1')]), screen('b', {}, [], [call('b1')])])],
-            tallOverOneCall: [screen('root', {}, [screen('tall', role, [], [call('t1')]), screen('next', {}, [screen('grandchild', {})])])],
-            tallOverScreens: [screen('root', {}, [screen('p', both, [screen('p1', {})]), screen('q', both, [screen('q1', {})])])],
-            tallLast: [screen('tall', both, [], [call('t1')])],
-            tallOverTallOverCall: [screen('root', {}, [screen('x', {}, [], [call('x1')]), screen('outer', both, [screen('inner', role, [], [call('i1')])])])],
+            plainOverCalls: [screen('root', plain, [screen('a', plain, [], [call('a1')]), screen('b', plain, [], [call('b1')])])],
+            tallOverOneCall: [screen('root', plain, [screen('tall', role, [], [call('t1')]), screen('next', plain, [screen('grandchild', plain)])])],
+            tallOverScreens: [screen('root', plain, [screen('p', both, [screen('p1', plain)]), screen('q', both, [screen('q1', plain)])])],
+            tallLast: [screen('tallest', both, [], [call('t1')])],
+            tallOverTallOverCall: [screen('root', plain, [screen('x', plain, [], [call('x1')]), screen('outer', both, [screen('inner', role, [], [call('i1')])])])],
           };
           return Object.fromEntries(Object.entries(shapes).map(([name, roots]) => {
-            const { boxes, edges, height } = layoutTree(roots);
-            return [name, { height, edges: edges.map((e) => [`${e.x1}:${e.y1}`, e.y1, e.y2]), boxes: boxes.map((b) => ({ id: b.node.id, x: b.x, y: b.y, bottom: b.y + b.height })) }];
+            const { boxes, edges, height } = layoutFlow(roots, sizes, { openCalls });
+            return [name, { height, edges: edges.map((e) => [e.from, e.y1, e.y2]), boxes: boxes.map((b) => ({ id: b.key, x: b.x, y: b.y, bottom: b.y + b.height })) }];
           }));
         });
         for (const [name, { height, edges, boxes }] of Object.entries(trees)) {
@@ -2032,7 +2062,7 @@ test('in a browser, a map with no screens says so in the flow, and the entryPath
   });
 });
 
-test('in a browser, a branch whose only gap is a screen with imported tests and no tagged test is open on first load, and a box lists its imported tests after its badges', { skip: browserMissing }, async () => {
+test('in a browser, a branch whose only gap is a screen with imported tests and no tagged test is open on first load, and a box lists its imported tests right after its test counts, before its badges', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
     const testsFile = path.join(config.outDir, 'tests.json');
     const tests = JSON.parse(fs.readFileSync(testsFile, 'utf8'));
@@ -2048,9 +2078,9 @@ test('in a browser, a branch whose only gap is a screen with imported tests and 
         assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 10/11 · 실패 0 · 태그 없는 테스트만 있는 화면 1');
         const result = await screenBox(p, '/lab/result#LabResult');
         assert.match(await result.getAttribute('class'), /s-none/);
-        assert.match(await result.locator('.l2').textContent(), /불러옴 1$/);
+        assert.match(await result.locator('.l2').textContent(), /^테스트 없음 · 불러옴 1/);
         const dead = await screenBox(p, '/document/:tab_draft_done_#DocumentList');
-        assert.match(await dead.locator('.l2').textContent(), /죽은 화면 · 불러옴 2$/);
+        assert.match(await dead.locator('.l2').textContent(), / · 불러옴 2 · 죽은 화면$/);
         assert.equal(await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: '−' }).count(), 1);
         const home = await screenBox(p, '/home#Home');
         assert.equal(await home.locator('button.toggle', { hasText: '−' }).count(), 1);
@@ -2058,7 +2088,7 @@ test('in a browser, a branch whose only gap is a screen with imported tests and 
 
         await home.locator('button.toggle', { hasText: '−' }).click();
         const folded = await screenBox(p, '/home#Home');
-        assert.match(await folded.locator('.l2').textContent(), /하위 합.* · 불러옴 3$/);
+        assert.match(await folded.locator('.l2').textContent(), /\(하위 합\) · 불러옴 3/);
       }, { view: 'flow' }),
     );
   });
@@ -2086,6 +2116,397 @@ test('in a browser, one branch is shown on its own, and a late answer for an ear
         await p.waitForTimeout(800);
         assert.match(await p.textContent('.flowbar .focusing'), /^\/lab /);
       }),
+    ),
+  );
+});
+
+const LONG_ROUTE = '/user-completed-documents/signature-requests/:documentId/participants/history';
+const LONG_COMPONENT = 'UserCompletedDocumentParticipantHistory';
+const walkFlow = (ns) => ns.flatMap((n) => [n, ...walkFlow(n.children)]);
+const withLongRoute = (data) => {
+  const help = walkFlow(data.flow.roots).find((n) => n.id === '/help#Help');
+  help.label = LONG_ROUTE;
+  help.component = LONG_COMPONENT;
+  help.jumps.push({ to: '/document/:id#DocumentDetail', label: '/user-completed-documents/signature-requests/:documentId', guards: [] });
+};
+const leafEntries = (data, count) => {
+  const leaves = walkFlow(data.flow.roots).filter((n) => !n.children.length);
+  return Array.from({ length: count }, (_, i) => ({ ...structuredClone(leaves[i % leaves.length]), id: `/extra/${i}#Extra${i}`, label: `/extra/${i}`, guards: [] }));
+};
+const flowBoxes = (p) => p.$$eval('#flow .box', (els) => els.map((e) => {
+  const r = e.getBoundingClientRect();
+  return { id: e.title.split('\n')[0], left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, grouped: e.classList.contains('grouped') };
+}));
+const overlapping = (boxes) => boxes.flatMap((a, i) => boxes.slice(i + 1)
+  .filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
+  .map((b) => `${a.id} / ${b.id}`));
+const WIDE_COMPONENT = 'UserCompletedDocumentSignatureRequestParticipantHistoryOverview';
+
+test('in a browser, a flow box without role or setting conditions has no extra line, and every box stands where the layout put it, each line ending at the middle of its box and boxes under one another keeping the layout\'s gap', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box');
+        const home = await screenBox(p, '/home#Home');
+        assert.equal(await home.locator('.need').count(), 0);
+        assert.deepEqual(await tipLines(home), []);
+        assert.equal(await (await screenBox(p, '/admin/audit#AdminAudit')).locator('.need').count(), 1);
+        await flowButton(p, '모두 펼치기').click();
+        assert.ok(await p.locator('#flow .box.call.grouped').count() > 0, 'a gathered entry screen shows its calls');
+        assert.deepEqual(await layoutErrors(p), []);
+        assert.deepEqual(await textOutside(p), []);
+      }, { setup: changeData((data) => {
+        withLongRoute(data);
+        const extras = leafEntries(data, 3);
+        extras[0].label = LONG_ROUTE;
+        extras[1].component = WIDE_COMPONENT;
+        data.flow.roots.push(...extras);
+      }) }),
+    ),
+  );
+});
+
+test('in a browser, a column is as wide as a component name longer than 360px needs, and the boxes it widens still stand where the layout put them', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        await flowButton(p, '모두 펼치기').click();
+        const home = await (await screenBox(p, '/home#Home')).evaluate((box) => {
+          const text = box.querySelector('.l1 .text').getBoundingClientRect();
+          const name = box.querySelector('.l1 .component');
+          return { width: box.getBoundingClientRect().width, text: text.width, name: name.getBoundingClientRect().width, nameLines: name.getClientRects().length };
+        });
+        assert.ok(home.width > 360, 'the box is wider than 360px');
+        assert.equal(home.nameLines, 1);
+        assert.ok(Math.abs(home.text - home.name) <= 1, 'the box is no wider than the name needs');
+        const boxes = await flowBoxes(p);
+        const left = boxes.find((b) => b.id === '/home#Home').left;
+        assert.deepEqual([...new Set(boxes.filter((b) => b.left === left).map((b) => b.width))], [home.width]);
+        assert.deepEqual(await layoutErrors(p), []);
+        assert.deepEqual(await textOutside(p), []);
+        assert.deepEqual(overlapping(boxes), []);
+      }, { view: 'flow', setup: changeData((data) => {
+        withLongRoute(data);
+        walkFlow(data.flow.roots).find((n) => n.id === '/home#Home').component = WIDE_COMPONENT;
+      }) }),
+    ),
+  );
+});
+
+test('in a browser, opening the API calls of a gathered entry screen leaves every cell where it was, and the calls wrap inside the cell', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        const cells = () => p.$$eval('#flow .box.screen.grouped', (els) => els.map((e) => ({ id: e.title.split('\n')[0], left: e.offsetLeft, width: e.offsetWidth, top: e.offsetTop })));
+        const calls = () => p.locator('#flow .box.screen.grouped').first().locator('.calls');
+        if ((await calls().textContent()).includes('▾')) await calls().click();
+        const closed = await cells();
+        assert.equal(closed[0].id, '/extra/0#Extra0');
+        await calls().click();
+        assert.match(await calls().textContent(), /▾/);
+        const open = await cells();
+        assert.deepEqual(open.map(({ id, left, width }) => ({ id, left, width })), closed.map(({ id, left, width }) => ({ id, left, width })));
+        assert.equal(open[0].top, closed[0].top);
+        const callWidths = await p.$$eval('#flow .box.call.grouped', (els) => els.filter((e) => e.dataset.key.startsWith('/extra/0#Extra0>')).map((e) => e.offsetWidth));
+        assert.ok(callWidths.length > 0);
+        assert.deepEqual([...new Set(callWidths)], [closed[0].width - (await p.evaluate(() => CALL_INDENT))]);
+        assert.deepEqual(await textOutside(p), []);
+        assert.deepEqual(await layoutErrors(p), []);
+        assert.deepEqual(overlapping(await flowBoxes(p)), []);
+      }, { view: 'flow', setup: changeData((data) => {
+        const extras = leafEntries(data, 8);
+        extras[0].calls[0].label += '/usercompleteddocumentsignaturerequestsparticipantshistoryoverview';
+        data.flow.roots.push(...extras);
+      }) }),
+    ),
+  );
+});
+
+test('in a browser, a call under a gathered entry screen wraps every line inside its box, a long server label included', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        const toggle = (await screenBox(p, '/extra/0#Extra0')).locator('.calls');
+        if (!(await toggle.textContent()).includes('▾')) await toggle.click();
+        const call = p.locator('#flow .box.call.grouped[data-key^="/extra/0#Extra0>"]').first();
+        assert.match(await call.locator('.l2').textContent(), /UserCompletedDocumentSignatureRequestController\.getParticipantHistoryOverview/);
+        assert.ok(await call.evaluate((e) => e.scrollWidth <= e.clientWidth), 'the call box holds its second line');
+        assert.deepEqual(await textOutside(p), []);
+        assert.deepEqual(overlapping(await flowBoxes(p)), []);
+      }, { view: 'flow', setup: changeData((data) => {
+        const extras = leafEntries(data, 8);
+        extras[0].calls[0].server = { status: 'match', labels: ['UserCompletedDocumentSignatureRequestController.getParticipantHistoryOverview'] };
+        data.flow.roots.push(...extras);
+      }) }),
+    ),
+  );
+});
+
+test('in a browser, resizing the window after the review ended throws nothing', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const server = await startReviewServer(config, { author: 'reviewer', onDone: () => {} });
+    try {
+      await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        await p.click('header button:has-text("리뷰 끝")');
+        await p.waitForSelector('#ended');
+        await p.setViewportSize({ width: 900, height: 700 });
+        await p.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) });
+    } finally {
+      server.close();
+    }
+  });
+});
+
+test('in a browser, the flow is drawn again on a resize only when gathered entry screens are shown and the number of cells in a row changes', { skip: browserMissing }, async () => {
+  const frames = (p) => p.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  const mark = (p) => p.evaluate(() => { document.querySelector('#flow .box').dataset.before = ''; });
+  const kept = (p) => p.evaluate(() => document.querySelector('#flow .box[data-before]') !== null);
+  const resize = async (p, width, height) => {
+    await p.setViewportSize({ width, height });
+    await frames(p);
+  };
+  const perRow = (p) => p.evaluate(() => drawnGrid.per);
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        const wide = await perRow(p);
+        await mark(p);
+        await resize(p, 1430, 600);
+        assert.equal(await perRow(p), wide);
+        assert.ok(await kept(p), 'a small change of width that keeps the number of cells in a row keeps the drawing');
+        await resize(p, 1000, 600);
+        assert.ok(await perRow(p) < wide, 'a narrower window holds fewer cells in a row');
+        assert.ok(!(await kept(p)), 'a change that alters the number of cells in a row draws the gathered entry screens again');
+        await (await screenBox(p, '/home#Home')).locator('button[title="이 가지만 보기"]').click();
+        await p.waitForSelector('.flowbar .focusing');
+        await mark(p);
+        await resize(p, 800, 600);
+        assert.ok(await kept(p), 'one branch shown on its own is not drawn again');
+      }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
+    ),
+  );
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        assert.equal(await p.locator('#flow .group-head').count(), 0);
+        await mark(p);
+        await resize(p, 900, 900);
+        assert.ok(await kept(p), 'with nothing gathered the width does not change the drawing');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, a flow box with a long route breaks it only before a slash, keeps its component name whole, and no box cuts or spills its text', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        await flowButton(p, '모두 펼치기').click();
+        const help = await (await screenBox(p, '/help#Help')).evaluate((box, [route, component]) => {
+          const texts = [];
+          const walker = document.createTreeWalker(box.querySelector('.l1 .text'), NodeFilter.SHOW_TEXT);
+          while (walker.nextNode()) texts.push(walker.currentNode);
+          const chars = texts.flatMap((node) => [...node.data].map((ch, i) => {
+            const range = document.createRange();
+            range.setStart(node, i);
+            range.setEnd(node, i + 1);
+            return { ch, top: Math.round(range.getBoundingClientRect().top) };
+          }));
+          const whole = chars.map((c) => c.ch).join('');
+          const at = whole.indexOf(route);
+          const routeChars = chars.slice(at, at + route.length);
+          const lineStarts = routeChars.filter((c, i) => i > 0 && c.top > routeChars[i - 1].top).map((c) => c.ch);
+          const from = whole.indexOf(component);
+          return {
+            found: at >= 0 && from >= 0,
+            routeLines: new Set(routeChars.map((c) => c.top)).size,
+            lineStarts,
+            componentLines: new Set(chars.slice(from, from + component.length).map((c) => c.top)).size,
+            text: box.textContent,
+          };
+        }, [LONG_ROUTE, LONG_COMPONENT]);
+        assert.ok(help.found, 'the route and the component name are written on the box');
+        assert.ok(help.routeLines > 1, 'the long route takes more than one line');
+        assert.deepEqual([...new Set(help.lineStarts)], ['/']);
+        assert.equal(help.componentLines, 1);
+        assert.match(help.text, /→ \/user-completed-documents\/signature-requests\/:documentId/);
+
+        const cut = await p.$$eval('#flow .box', (els) => els
+          .filter((box) => box.textContent.includes('…') || [box, ...box.querySelectorAll('*')].some((e) => getComputedStyle(e).textOverflow === 'ellipsis'))
+          .map((box) => box.title.split('\n')[0]));
+        assert.deepEqual(cut, []);
+        assert.deepEqual(await textOutside(p), []);
+      }, { view: 'flow', setup: changeData(withLongRoute) }),
+    ),
+  );
+});
+
+test('in a browser, flow boxes stand in columns by how many links they are from an entry screen, each column as wide as its boxes need and the same for all of them, with no two boxes overlapping', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        await flowButton(p, '모두 펼치기').click();
+        const boxes = await flowBoxes(p);
+        const byId = Object.fromEntries(boxes.map((b) => [b.id, b]));
+        const columns = new Map();
+        for (const b of boxes) columns.set(b.left, [...(columns.get(b.left) ?? []), b]);
+        for (const [left, column] of columns) assert.equal(new Set(column.map((b) => b.width)).size, 1, `the boxes at ${left} share one width`);
+        assert.equal(byId['/home#Home'].left, byId['/help#Help'].left);
+        assert.equal(byId['/lab#Lab'].left, byId['/admin/report#AdminReport'].left);
+        assert.ok(byId['/lab/result#LabResult'].left > byId['/lab#Lab'].right);
+        assert.ok(byId['/signin#SignIn'].width < byId['/help#Help'].width, 'the entry column is narrower than the column holding the long route');
+        assert.deepEqual(overlapping(boxes), []);
+      }, { view: 'flow', setup: changeData(withLongRoute) }),
+    ),
+  );
+});
+
+test('in a browser, entry screens that lead nowhere are gathered under 「더 뻗지 않는 진입 화면 N」 below the branching ones, in several columns, each box showing what any box shows', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 8');
+        const boxes = await flowBoxes(p);
+        const grouped = boxes.filter((b) => b.grouped);
+        const groupedScreens = await p.$$eval('#flow .box.screen.grouped', (els) => els.map((e) => e.title.split('\n')[0]));
+        assert.deepEqual(groupedScreens.sort(), Array.from({ length: 8 }, (_, i) => `/extra/${i}#Extra${i}`).sort());
+        const head = await p.$eval('#flow .group-head', (e) => e.getBoundingClientRect().toJSON());
+        const tree = boxes.filter((b) => !b.grouped);
+        assert.ok(tree.some((b) => b.id === '/signin#SignIn'));
+        assert.ok(tree.every((b) => b.bottom <= head.top), 'the branching entry screens come first');
+        assert.ok(grouped.every((b) => b.top >= head.bottom), 'the gathered boxes sit under the heading');
+        assert.ok(new Set(grouped.filter((b) => groupedScreens.includes(b.id)).map((b) => b.left)).size > 1, 'the gathered boxes stand in more than one column');
+        assert.deepEqual(overlapping(boxes), []);
+
+        const failing = await screenBox(p, '/extra/7#Extra7');
+        assert.match(await failing.getAttribute('class'), /s-fail/);
+        assert.match(await failing.locator('.l2').textContent(), /^✓1 ✕1 ○1 · 불러옴 2/);
+        assert.deepEqual(await needLines(await screenBox(p, '/extra/3#Extra3')), ['역할 ADMIN미확인 1']);
+        const linked = await screenBox(p, '/extra/0#Extra0');
+        assert.match(await linked.locator('.l3').textContent(), /→ /);
+        const callsBefore = (await boxCount(p)).calls;
+        await linked.locator('.calls').click();
+        assert.notEqual((await boxCount(p)).calls, callsBefore);
+        assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 8');
+        assert.deepEqual(overlapping(await flowBoxes(p)), []);
+      }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
+    ),
+  );
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 3');
+        const first = await p.$$eval('#flow .canvas', ([canvas]) => [...canvas.querySelectorAll('.box.screen')].map((e) => e.classList.contains('grouped')));
+        assert.deepEqual(first, [true, true, true]);
+      }, { view: 'flow', setup: changeData((data) => {
+        const extras = leafEntries(data, 3);
+        data.flow = { ...data.flow, unreached: [...data.flow.roots, ...data.flow.unreached], roots: extras };
+      }) }),
+    ),
+  );
+});
+
+test('in a browser, the gathered entry screens take fewer columns once the window gets narrower', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        const columns = () => p.$$eval('#flow .box.screen.grouped', (els) => new Set(els.map((e) => e.offsetLeft)).size);
+        const wide = await columns();
+        assert.ok(wide > 1);
+        await p.setViewportSize({ width: 700, height: 900 });
+        await p.waitForFunction((n) => new Set([...document.querySelectorAll('#flow .box.screen.grouped')].map((e) => e.offsetLeft)).size < n, wide);
+        assert.equal(await p.locator('#flow .box.screen.grouped').count(), 8);
+        assert.deepEqual(overlapping(await flowBoxes(p)), []);
+      }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
+    ),
+  );
+});
+
+test('in a browser, redrawing the flow keeps the place the reviewer scrolled to', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        const scrolled = await p.evaluate(() => {
+          const flow = document.getElementById('flow');
+          flow.scrollTop = 200;
+          return flow.scrollTop;
+        });
+        assert.equal(scrolled, 200);
+        await flowButton(p, '모두 펼치기').click();
+        assert.equal(await p.evaluate(() => document.getElementById('flow').scrollTop), 200);
+      }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
+    ),
+  );
+});
+
+test('in a browser, one branch shown on its own has no gathered entry screens, and the whole view brings them back', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        await (await screenBox(p, '/home#Home')).locator('button[title="이 가지만 보기"]').click();
+        await p.waitForSelector('.flowbar .focusing');
+        assert.equal(await p.locator('#flow .group-head').count(), 0);
+        assert.equal(await p.locator('#flow .box.grouped').count(), 0);
+        await flowButton(p, '전체 보기').click();
+        assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 2');
+      }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 2)); }) }),
+    ),
+  );
+});
+
+test('in a browser, the flow layout is worked out from the trees, the box sizes and the open state alone, the same every time, and each box\'s width from the widths alone', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        const [first, second, columns] = await p.evaluate(() => {
+          const screen = (id, children = [], calls = []) => ({ kind: 'screen', id, children, calls, guards: [] });
+          const roots = [screen('A', [screen('B'), screen('C')]), screen('D', [], [{ kind: 'call', id: 'GET:/d' }]), screen('E')];
+          const sizes = {
+            A: { width: 100, height: 40 }, B: { width: 120, height: 30 }, C: { width: 80, height: 50 },
+            D: { width: 90, height: 30 }, 'D>GET:/d': { width: 200, height: 20 }, E: { width: 70, height: 20 },
+          };
+          const view = { collapsed: [], openCalls: ['D'], group: true, width: 300 };
+          state.collapsed.add('A');
+          const { widths, grouped } = flowColumns(roots, sizes, view);
+          return [layoutFlow(roots, sizes, view), layoutFlow(roots, sizes, view), { widths, grouped: [...grouped] }];
+        });
+        assert.deepEqual(first, second);
+        assert.deepEqual(columns, { widths: { A: 100, B: 120, C: 120, D: 90, 'D>GET:/d': 74, E: 90 }, grouped: ['D', 'D>GET:/d', 'E'] });
+        const boxes = Object.fromEntries(first.boxes.map(({ key, ...b }) => [key, b]));
+        assert.deepEqual(boxes, {
+          A: { x: 0, y: 21, width: 100, height: 40, grouped: false },
+          B: { x: 150, y: 0, width: 120, height: 30, grouped: false },
+          C: { x: 150, y: 42, width: 120, height: 50, grouped: false },
+          D: { x: 0, y: 156, width: 90, height: 30, grouped: true },
+          'D>GET:/d': { x: 16, y: 198, width: 74, height: 20, grouped: true },
+          E: { x: 114, y: 156, width: 90, height: 20, grouped: true },
+        });
+        const edges = Object.fromEntries(first.edges.map(({ from, to, ...e }) => [`${from} ${to}`, e]));
+        assert.deepEqual(edges, {
+          'A B': { x1: 100, y1: 41, x2: 150, y2: 15, guards: [], grouped: false },
+          'A C': { x1: 100, y1: 41, x2: 150, y2: 67, guards: [], grouped: false },
+          'D D>GET:/d': { x1: 8, y1: 186, x2: 16, y2: 208, guards: [], grouped: true },
+        });
+        assert.deepEqual(first.group, { x: 0, y: 128, height: 28, count: 2 });
+        assert.equal(first.width, 270);
+        assert.equal(first.height, 230);
+      }, { view: 'flow' }),
     ),
   );
 });
