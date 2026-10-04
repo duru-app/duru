@@ -1127,9 +1127,11 @@ function setPick(bulk, id, on) {
   redrawBulk(`input.pick[data-pair="${CSS.escape(id)}"]`);
 }
 
+const bulkButtonOff = (count) => state.bulkBusy || state.ending || !count;
+
 function bulkBar(t, pickable, bulk) {
   const count = pickable.filter((p) => bulk.picked.has(p.id)).length;
-  const button = (kind, cls, title, text) => h('button', { class: cls, title, disabled: state.bulkBusy || state.ending || !count, onclick: () => saveBulk(t, bulk, kind) }, `${text} (${count})`);
+  const button = (kind, cls, title, text) => h('button', { class: cls, title, disabled: bulkButtonOff(count), onclick: () => saveBulk(t, bulk, kind) }, `${text} (${count})`);
   return h('div', { class: 'bulk-bar' },
     h('label', {}, h('input', { type: 'checkbox', class: 'pick-all', checked: count === pickable.length, disabled: state.bulkBusy,
       onchange: (e) => { bulk.picked = new Set(e.target.checked ? pickable.map((p) => p.id) : []); redrawBulk('input.pick-all'); } }), ' 모두 고르기'),
@@ -2326,18 +2328,22 @@ function setView(view) {
   render();
 }
 
+// 데이터를 읽지 못한 페이지에서도 리뷰를 끝낼 수 있어야 하므로, 위쪽 단추의 잠금은 읽어 온 데이터 없이 맞춘다.
+function syncHeaderLocks() {
+  document.getElementById('view-list').disabled = state.bulkBusy;
+  document.getElementById('view-flow').disabled = state.bulkBusy;
+  document.getElementById('end-review').disabled = state.bulkBusy || state.ending;
+}
+
 function render() {
   if (state.ended || state.failed) return;
   renderHeader();
   const flow = state.view === 'flow';
   document.querySelector('main').hidden = flow;
   document.getElementById('flow').hidden = !flow;
-  const viewList = document.getElementById('view-list');
-  const viewFlow = document.getElementById('view-flow');
-  viewList.className = flow ? '' : 'on';
-  viewFlow.className = flow ? 'on' : '';
-  viewList.disabled = viewFlow.disabled = state.bulkBusy;
-  document.getElementById('end-review').disabled = state.bulkBusy || state.ending;
+  document.getElementById('view-list').className = flow ? '' : 'on';
+  document.getElementById('view-flow').className = flow ? 'on' : '';
+  syncHeaderLocks();
   if (flow) return renderFlow();
   renderLeft();
   renderCenter();
@@ -2355,25 +2361,30 @@ function showEnded(message) {
   fill(document.body, h('header', {}, h('h1', {}, 'duru 리뷰')), h('p', { id: 'ended' }, message));
 }
 
+// 가운데 칸을 다시 그리면 사유를 치던 칸이 새로 만들어져 초점을 잃으므로, 한 번에 판단하는 단추의 잠금만 그 자리에서 바꾼다.
+function setEnding(ending) {
+  state.ending = ending;
+  syncHeaderLocks();
+  for (const button of document.querySelectorAll('#center .bulk-bar button')) button.disabled = bulkButtonOff(state.bulk?.picked.size);
+}
+
 async function endReview() {
   if (hasUnsavedMark() && !confirm('「표시 남기기」를 누르지 않은 표시가 있습니다. 이 표시는 작업 목록에 들어가지 않습니다. 그래도 리뷰를 끝낼까요?')) return;
   const error = document.getElementById('end-error');
-  state.ending = true;
-  render();
   error.textContent = '';
-  let res;
+  setEnding(true);
   try {
-    res = await fetch('/api/end', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-  } catch {
-    return showEnded('리뷰 페이지 서버가 이미 닫혔습니다. 다른 창에서 리뷰를 끝냈거나 터미널에서 멈춘 것입니다. 이 창은 닫아도 됩니다.');
-  }
-  if (!res.ok) {
-    state.ending = false;
-    render();
+    let res;
+    try {
+      res = await fetch('/api/end', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    } catch {
+      return showEnded('리뷰 페이지 서버가 이미 닫혔습니다. 다른 창에서 리뷰를 끝냈거나 터미널에서 멈춘 것입니다. 이 창은 닫아도 됩니다.');
+    }
+    if (res.ok) return showEnded('리뷰를 끝냈습니다. 작업 목록은 리뷰 페이지를 띄운 터미널로 넘어갔습니다. 이 창은 닫아도 됩니다.');
     error.textContent = `리뷰를 끝내지 못했습니다: ${await res.text()}`;
-    return;
+  } finally {
+    if (!state.ended) setEnding(false);
   }
-  showEnded('리뷰를 끝냈습니다. 작업 목록은 리뷰 페이지를 띄운 터미널로 넘어갔습니다. 이 창은 닫아도 됩니다.');
 }
 
 document.getElementById('end-review').addEventListener('click', endReview);
@@ -2390,9 +2401,12 @@ window.addEventListener('resize', () => {
   });
 });
 
+// 리뷰를 끝낸 뒤에 늦게 실패한 읽기만 알리지 않고, 그리다 난 오류는 그대로 알린다.
 load().then(() => {
   openGapsOnly(flowTrees());
   render();
+}, (err) => {
+  if (!state.ended) throw err;
 }).catch((err) => {
   state.failed = true;
   document.querySelector('main').hidden = true;

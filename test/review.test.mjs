@@ -6426,6 +6426,163 @@ test('in a browser, the page that was told the review ended shows the ended scre
       })));
 });
 
+test('in a browser, a page that could not read its data still ends the review', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        const ended = [];
+        p.on('request', (r) => r.url().endsWith('/api/end') && ended.push(r.url()));
+        await p.route('**/api/data', (route) => route.fulfill({ status: 500, body: 'data gone' }));
+        await p.reload();
+        await p.locator('#failed').waitFor();
+        assert.match(await p.textContent('#failed'), /data gone/);
+        await p.click('#end-review');
+        await p.locator('#ended').waitFor({ timeout: 5000 });
+        assert.match(await p.textContent('#ended'), /리뷰를 끝냈습니다/);
+        assert.equal(ended.length, 1);
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+      })));
+});
+
+const watchDataSettled = (p) => p.addInitScript(() => {
+  const fetch = window.fetch;
+  window.fetch = (...args) => {
+    const sent = fetch(...args);
+    if (String(args[0]).endsWith('/api/data')) {
+      // 페이지가 이 응답을 받아 하는 일이 모두 끝난 뒤에 표시하도록 타이머로 미룬다.
+      const settled = () => setTimeout(() => { window.dataSettled = true; });
+      sent.then((res) => {
+        const json = res.json.bind(res);
+        res.json = () => {
+          const body = json();
+          body.then(settled, settled);
+          return body;
+        };
+      }, settled);
+    }
+    return sent;
+  };
+});
+
+test('in a browser, 「리뷰 끝」 pressed before the data arrived ends the review, and when the end is refused the button is not left locked', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        const data = await (await fetch(`${base}/api/data`)).text();
+        const ended = [];
+        p.on('request', (r) => r.url().endsWith('/api/end') && ended.push(r.url()));
+        let held;
+        await p.route('**/api/data', (route) => { held = route; });
+        await p.route('**/api/end', (route) => route.fulfill({ status: 500, body: 'cannot end' }));
+        await p.reload();
+        await untilSet(() => held, 'the data request');
+        await p.click('#end-review');
+        await p.waitForFunction(() => /cannot end/.test(document.getElementById('end-error').textContent), null, { timeout: 5000 });
+        assert.equal(await p.locator('#end-review').isDisabled(), false);
+        await held.fulfill({ status: 200, contentType: 'application/json', body: data });
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.locator('#end-review').isDisabled(), false);
+        assert.equal(ended.length, 1);
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+
+        held = null;
+        await p.unroute('**/api/end');
+        await watchDataSettled(p);
+        await p.reload();
+        await untilSet(() => held, 'the data request');
+        await p.click('#end-review');
+        await p.locator('#ended').waitFor({ timeout: 5000 });
+        assert.match(await p.textContent('#ended'), /리뷰를 끝냈습니다/);
+        assert.equal(ended.length, 2);
+        await held.fulfill({ status: 200, contentType: 'application/json', body: data });
+        await p.waitForFunction(() => window.dataSettled);
+        assert.equal(await p.locator('#ended').count(), 1);
+      })));
+});
+
+test('in a browser, the data failing to arrive after the review ended leaves the ended screen without errors', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        let held;
+        await p.route('**/api/data', (route) => { held = route; });
+        await watchDataSettled(p);
+        await p.reload();
+        await untilSet(() => held, 'the data request');
+        await p.click('#end-review');
+        await p.locator('#ended').waitFor({ timeout: 5000 });
+        await held.abort();
+        await p.waitForFunction(() => window.dataSettled);
+        assert.match(await p.textContent('#ended'), /리뷰를 끝냈습니다/);
+        assert.deepEqual(errors.splice(0), ['Failed to load resource: net::ERR_FAILED']);
+      })));
+});
+
+test('in a browser, the bulk buttons are locked in place while 「리뷰 끝」 is being sent, so the reason being typed keeps its box and focus', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openDocumentTable(p);
+        const buttons = `${bulk} button`;
+        const reason = `${bulk} input.reason`;
+        const disabled = () => p.$$eval(buttons, (list) => list.map((b) => b.disabled));
+        let held;
+        await p.route('**/api/end', (route) => { held = route; });
+        const refuseEnd = async () => {
+          held = null;
+          await p.evaluate(() => document.getElementById('end-review').click());
+          await untilSet(() => held, 'the end request');
+          assert.deepEqual(await disabled(), [true, true]);
+          await held.fulfill({ status: 500, body: 'cannot end' });
+          await p.waitForFunction(() => /cannot end/.test(document.getElementById('end-error').textContent));
+        };
+
+        await p.check(`${pick}[data-pair="${LIST_NODE}"]`);
+        await p.click(reason);
+        await p.keyboard.type('only lists');
+        await p.$eval(reason, (el) => { el.kept = true; });
+        await refuseEnd();
+        assert.deepEqual(await disabled(), [false, false]);
+        assert.equal(await p.evaluate((sel) => document.activeElement.matches(sel) && document.activeElement.kept, reason), true);
+        assert.equal(await p.inputValue(reason), 'only lists');
+
+        await p.uncheck(`${pick}[data-pair="${LIST_NODE}"]`);
+        await refuseEnd();
+        assert.deepEqual(await disabled(), [true, true]);
+        assert.deepEqual(errors.splice(0), [...SAVE_REFUSED, ...SAVE_REFUSED]);
+      })));
+});
+
+test('in a browser, a refused end in the flow view leaves the diagram as it was drawn', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        await p.setViewportSize({ width: 1440, height: 400 });
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box.screen');
+        const scrollTop = await p.evaluate(() => {
+          for (const box of document.querySelectorAll('#flow .box')) box.dataset.drawn = 'before';
+          const flow = document.getElementById('flow');
+          flow.scrollTop = 60;
+          return flow.scrollTop;
+        });
+        assert.ok(scrollTop > 0);
+        await p.route('**/api/end', (route) => route.fulfill({ status: 500, body: 'cannot end' }));
+        await p.click('#end-review');
+        await p.waitForFunction(() => /cannot end/.test(document.getElementById('end-error').textContent));
+        assert.ok(await p.locator('#flow .box[data-drawn=before]').count() > 0);
+        assert.equal(await p.locator('#flow .box:not([data-drawn=before])').count(), 0);
+        assert.equal(await p.evaluate(() => document.getElementById('flow').scrollTop), scrollTop);
+        assert.equal(await p.locator('#end-review').isDisabled(), false);
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+      })));
+});
+
 test('in a browser, the keyboard focus goes back to the bulk button that was pressed once the bulk ends, or to the first control of the bar when that button is off', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>

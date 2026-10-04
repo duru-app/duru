@@ -688,7 +688,7 @@ the keyboard focus returns to the button that was pressed, or to the first contr
 read again, the unsaved pairs stay picked, and the message beside the buttons names the pairs that were saved and
 those that were not. The picks, the note and that message stay when the reviewer opens a pair's screen and comes back
 to the same test, and go when another test is chosen. A pair for a screen that is not on the map cannot be picked, as it cannot be judged on the screen
-either. `/api/data` carries the list as `tests.untagged`, each entry with its `ref`, the
+either. 「리뷰 끝」 works on a page whose data has not arrived or could not be read. `/api/data` carries the list as `tests.untagged`, each entry with its `ref`, the
 same reference a judgment names the test by.
 
 A mark targets a screen or an API call, or one depth of either, or one value of a call's option, or one depth
