@@ -714,7 +714,8 @@ a screen.
 Then come the screen's source location, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.
-Each of them has the buttons 「제외」 and 「포함」: a reviewer who finds that the test only passes
+Each of them has the buttons 「제외」 and 「포함」 at the right end of its row in the middle column, and below
+it in the right column: a reviewer who finds that the test only passes
 through the screen presses 「제외」, which opens a window over the page naming the test and the screen, with a
 field of a few lines for the reason. 「제외」 there or Ctrl+Enter discards the pair with the reason (required: the
 button stays off while the field is blank; Enter alone breaks the line), and 「취소」 or Escape puts the window and

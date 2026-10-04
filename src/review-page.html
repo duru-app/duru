@@ -107,6 +107,11 @@
   .importers p, .detached p, .passed p { font-size: 12px; margin: 0 0 8px; }
   .chip.level-assert { color: var(--pass); } .chip.level-interact, .chip.level-call { color: var(--accent); } .chip.level-visit { color: var(--muted); }
   table.calls td.call .sent-count { font-size: 12px; color: var(--muted); white-space: nowrap; margin-left: 6px; }
+  #center .pair-test { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 12px; }
+  #center .pair-test > .test { flex: 1 1 260px; min-width: 0; }
+  #center .pair-test > .judge-row, #center .pair-test > button.undo { order: 1; flex: none; margin-left: auto; }
+  #center .pair-test > .detail { order: 2; flex-basis: 100%; }
+  #center .pair-test > .judgment-error { order: 3; flex-basis: 100%; }
   .pair-test .judge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
   .pair-test .judge-row button, .pair-test button.undo, .bulk-bar button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
   .discarded .pair-test, .awaiting-tag .pair-test, .detached .pair-test { margin-bottom: 10px; font-size: 12px; }
