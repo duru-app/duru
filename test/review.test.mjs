@@ -7569,6 +7569,33 @@ test('in a browser, a browser test that passed through a screen is included with
 const LIST_CALL = 'GET:/api/v1/document/list';
 const DETAIL_CALL = 'GET:/api/v1/document/{documentId}';
 
+test('in a browser, the buttons that judge a pair sit at the right end of the row of its test in the middle column and below the test in the right column, and so does the button that undoes a judgment', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(TRACED, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        const boxes = (group, control) => p.locator(`#center ${group} .pair-test`).first().evaluate((row, selector) => {
+          const box = (el) => el.getBoundingClientRect();
+          const [whole, test, buttons] = [row, row.querySelector('.test'), row.querySelector(selector)].map(box);
+          return { gapOnRight: whole.right - buttons.right, sameLine: Math.abs(buttons.top - test.top) < 4, afterTest: buttons.left >= test.right };
+        }, control);
+        assert.deepEqual(await boxes('.passed', '.judge-row'), { gapOnRight: 0, sameLine: true, afterTest: true });
+        assert.deepEqual(await boxes('.importers', '.judge-row'), { gapOnRight: 0, sameLine: true, afterTest: true });
+        await p.locator('#center .passed .pair-test').first().locator('button.hand-over').click();
+        await p.waitForSelector('#center .awaiting-tag');
+        assert.deepEqual(await boxes('.awaiting-tag', 'button.undo'), { gapOnRight: 0, sameLine: true, afterTest: true });
+
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.locator('table.calls tr', { hasText: 'GET:/api/v1/document/{documentId}' }).first().click();
+        await p.waitForSelector('#right .pair-test .judge-row');
+        assert.equal(await p.locator('#right .pair-test').first().evaluate((row) => row.querySelector('.judge-row').getBoundingClientRect().top >= row.querySelector('.test').getBoundingClientRect().bottom), true);
+        await p.locator('#right .pair-test button.hand-over').first().click();
+        await p.waitForSelector('#right .awaiting-tag button.undo');
+        assert.equal(await p.locator('#right .awaiting-tag .pair-test').first().evaluate((row) => row.querySelector(':scope > button.undo').getBoundingClientRect().top >= row.querySelector(':scope > .detail').getBoundingClientRect().bottom), true);
+      })));
+});
+
 test('in a browser, a browser test that sent a call is excluded and included in the details of the call, and the window asking why names the call', { skip: browserMissing }, async () => {
   await withRebuiltFixture(TRACED, (config) =>
     withServer(config, 'reviewer', (base) =>
