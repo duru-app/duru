@@ -108,7 +108,10 @@
   .open-needs .need, .reach-summary .need { display: flex; align-items: center; gap: 6px; font-weight: 600; }
   .open-needs .need .flag { color: var(--pending); font-weight: normal; }
   .open-needs .tips { font-size: 12px; margin-top: 4px; }
-  #right { overflow-wrap: anywhere; }
+  #right { display: flex; flex-direction: column; padding: 0; overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere; }
+  #right-info { flex: 1 1 auto; min-height: 120px; overflow: auto; padding: 12px 16px; }
+  #right-dock { flex: none; padding: 10px 16px 12px; border-top: 1px solid var(--line); background: var(--panel); }
+  #right-info:empty, #right-dock:empty { display: none; }
   #right .chip { white-space: normal; }
   .target-id { margin-bottom: 4px; }
   .link-group { margin-bottom: 6px; }
@@ -119,15 +122,22 @@
   .long-guard[open] > summary .head { display: none; }
   ul.plain { list-style: none; padding: 0; margin: 0; }
   ul.plain li { margin-bottom: 6px; }
-  .mark-form:not(:first-child) { margin-top: 16px; }
-  .statuses { display: flex; gap: 6px; margin: 8px 0; }
+  .mark-form h2 { margin: 0; }
+  .statuses { display: flex; gap: 6px; margin: 6px 0; }
   .statuses button { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
   .statuses button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
   textarea, input[type=text], input[type=search] { width: 100%; font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); }
-  textarea { min-height: 72px; resize: vertical; }
-  button.save { margin-top: 8px; padding: 6px 14px; border-radius: 6px; border: 0; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+  textarea { min-height: 56px; resize: vertical; }
+  .mark-form textarea { max-height: 20vh; }
+  .mark-form .error { margin: 6px 0 0; }
+  .save-row { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+  button.save { padding: 6px 14px; border-radius: 6px; border: 0; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
   button.save:disabled { opacity: .5; cursor: default; }
   .history li { font-size: 12px; }
+  .history-toggle { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+  .history-toggle::after { content: ' ▸'; }
+  .history-toggle[aria-expanded=true]::after { content: ' ▾'; }
+  .mark-form .history { max-height: min(160px, 15vh); overflow-y: auto; margin-top: 8px; }
   .error { color: var(--fail); }
   a { color: var(--accent); }
   .views { display: flex; gap: 4px; }
@@ -229,7 +239,7 @@
 <main>
   <section id="left"></section>
   <section id="center"><div id="center-head"></div><div id="center-body"></div></section>
-  <section id="right"></section>
+  <section id="right"><div id="right-info"></div><div id="right-dock"></div></section>
 </main>
 <div id="flow" hidden></div>
 <p id="failed" class="error" hidden></p>
@@ -261,7 +271,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set() };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -285,6 +295,9 @@ function fill(el, ...children) {
 
 const keyOf = (t) => (t.story !== undefined ? `story(${t.story})` : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth].filter(Boolean).join(' '));
 const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
+const targetName = (t) => (t.story !== undefined
+  ? `스토리 ${state.data.stories.list.find((st) => st.id === t.story)?.name ?? t.story}`
+  : [t.node, t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`].filter(Boolean).join(' · '));
 const ownTests = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
 const testsOf = (id) => ownTests(state.data.tests.nodes, id);
 const importersOf = (id) => ownTests(state.data.tests.importers, id);
@@ -967,16 +980,19 @@ function reachBlock(st) {
   ];
 }
 
-function renderStoryRight(right) {
+function renderStoryRight(info, dock) {
   const st = storyOf();
-  if (!st) return fill(right, state.story ? markForm({ story: state.story }, 'storyDraft', '스토리') : null);
+  if (!st) {
+    fill(info);
+    return fill(dock, state.story ? markForm({ story: state.story }, 'storyDraft', '스토리') : null);
+  }
   const problems = storyProblems(st);
-  fill(right,
+  fill(dock, markForm({ story: st.id }, 'storyDraft', '스토리'));
+  fill(info,
     (problems.length ? problems : [['reachable', '도달 가능']]).map(([cls, text]) => h('p', { class: `verdict ${cls}` }, text)),
     st.links.some((l) => l.ways.length && l.unknownLinks) ? h('p', { class: 'muted skipped' }, '주소 못 읽은 링크 빼고 판정') : null,
     h('h2', {}, '사전 조건'),
-    st.reach.length ? reachBlock(st) : h('p', { class: 'muted' }, problems.length ? '판정한 구간에 조건 없음' : '조건 없음'),
-    markForm({ story: st.id }, 'storyDraft', '스토리'));
+    st.reach.length ? reachBlock(st) : h('p', { class: 'muted' }, problems.length ? '판정한 구간에 조건 없음' : '조건 없음'));
 }
 
 function renderCenter() {
@@ -1102,41 +1118,72 @@ function guardList(item) {
 }
 
 function renderRight() {
-  const right = document.getElementById('right');
+  const info = document.getElementById('right-info');
+  const dock = document.getElementById('right-dock');
   const view = state.side === 'stories' ? `story(${state.story})` : `${state.selected}\n${state.target?.node}`;
-  (state.side === 'stories' ? renderStoryRight : renderScreenRight)(right);
-  if (view !== state.rightView) right.scrollTop = 0;
+  const shown = shownTarget();
+  const dockKey = shown ? keyOf(shown) : null;
+  if (dockKey !== state.dockKey) state.historyOpen = false;
+  state.dockKey = dockKey;
+  (state.side === 'stories' ? renderStoryRight : renderScreenRight)(info, dock);
+  if (view !== state.rightView) {
+    info.scrollTop = 0;
+    document.getElementById('right').scrollTop = 0;
+  }
   state.rightView = view;
 }
 
-function renderScreenRight(right) {
+function renderScreenRight(info, dock) {
   const s = state.data.map.screens.find((x) => x.id === state.selected);
-  if (!s) return fill(right);
+  if (!s) {
+    fill(info);
+    return fill(dock);
+  }
   const call = state.target.node === s.id ? null : callOf(state.target.node);
   const { option, depth } = state.target;
   const targetLabel = [option && optionLabel(option), depth && `${DEPTH_LABELS[depth]} 깊이`].filter(Boolean).join(' · ') || (call ? '호출 전체' : '화면 전체');
-  fill(right,
+  fill(info,
     call ? null : openSummary(s),
     call ? h('div', { class: 'target-id' }, h('div', { class: 'mono' }, call.id), h('strong', {}, targetLabel)) : null,
     call ? callDetails(call, s) : screenDetails(s),
-    markForm(state.target, 'draft', targetLabel),
   );
+  fill(dock, markForm(state.target, 'draft', targetLabel));
 }
 
 function markForm(target, draftKey, label) {
   const mark = markOf(target);
   state[draftKey] ??= { status: mark?.current.status ?? null, note: '' };
   const draft = state[draftKey];
+  const history = mark?.history.length ? mark.history : null;
+  const historyList = history && h('ul', { class: 'plain history' }, history.map((m) => h('li', {},
+    h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]), ' ', h('span', { class: 'muted' }, `${m.author} · ${fmtDate(m.date)}`),
+    m.note ? h('div', {}, m.note) : null)));
+  const historyToggle = history && h('button', { class: 'history-toggle', onclick: () => {
+    state.historyOpen = !state.historyOpen;
+    applyHistoryFold(historyToggle, historyList);
+  } }, `이력 ${history.length}`);
+  if (history) applyHistoryFold(historyToggle, historyList);
+  const save = h('button', { class: 'save', disabled: !draft.status, onclick: () => saveMark(target, draftKey) }, '표시 남기기');
+  const statuses = Object.entries(MARK_STATUS).map(([k, text]) => {
+    const button = h('button', { class: draft.status === k ? 'on' : '', onclick: () => {
+      draft.status = k;
+      for (const b of statuses) b.classList.toggle('on', b === button);
+      save.disabled = false;
+    } }, text);
+    return button;
+  });
   return h('div', { class: 'mark-form' },
     h('h2', {}, '표시 — ', label),
-    h('div', { class: 'statuses' }, Object.entries(MARK_STATUS).map(([k, text]) =>
-      h('button', { class: draft.status === k ? 'on' : '', onclick: () => { draft.status = k; renderRight(); } }, text))),
+    h('div', { class: 'statuses' }, statuses),
     h('textarea', { placeholder: '메모', oninput: (e) => { draft.note = e.target.value; } }, draft.note),
     state.error ? h('p', { class: 'error' }, state.error) : null,
-    h('button', { class: 'save', disabled: !draft.status, onclick: () => saveMark(target, draftKey) }, '표시 남기기'),
-    mark ? h('ul', { class: 'plain history' }, mark.history.map((m) => h('li', {},
-      h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]), ' ', h('span', { class: 'muted' }, `${m.author} · ${fmtDate(m.date)}`),
-      m.note ? h('div', {}, m.note) : null))) : null);
+    h('div', { class: 'save-row' }, save, historyToggle),
+    historyList);
+}
+
+function applyHistoryFold(toggle, list) {
+  toggle.setAttribute('aria-expanded', String(state.historyOpen));
+  list.hidden = !state.historyOpen;
 }
 
 function callDetails(call, s) {
@@ -1249,41 +1296,43 @@ function screenDetails(s) {
 const AUTHOR_MISSING = '작성자 이름이 필요합니다. 위쪽에 이름을 적어 주세요. git user.name 이 설정되지 않았습니다.';
 
 const shownTarget = () => (state.side === 'stories' ? { story: state.story } : state.target);
+const isShown = (target) => {
+  const shown = shownTarget();
+  return !!shown && keyOf(shown) === keyOf(target);
+};
 
-function revealSaveButton(target) {
-  const shown = state.ended ? null : shownTarget();
-  if (shown && keyOf(shown) === keyOf(target)) document.querySelector('#right .mark-form button.save')?.scrollIntoView({ block: 'nearest' });
-}
-
-function showSaveError(message, target) {
-  state.error = message;
-  if (state.ended) return;
-  renderRight();
-  revealSaveButton(target);
+function showSaveError(reason, target) {
+  state.error = isShown(target) ? `저장하지 못했습니다: ${reason}` : `「${targetName(target)}」 표시를 저장하지 못했습니다: ${reason}`;
+  if (!state.ended) renderRight();
 }
 
 async function saveMark(target, draftKey) {
   const author = state.data.author ?? authorStore.get();
   state.error = null;
-  if (!author.trim()) return showSaveError(AUTHOR_MISSING, target);
+  if (!author.trim()) {
+    state.error = AUTHOR_MISSING;
+    return renderRight();
+  }
+  const draft = state[draftKey];
   try {
     const res = await fetch('/api/marks', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ target, status: state[draftKey].status, note: state[draftKey].note, author }),
+      body: JSON.stringify({ target, status: draft.status, note: draft.note, author }),
     });
     if (!res.ok) throw new Error(await res.text());
   } catch (err) {
-    return showSaveError(`저장하지 못했습니다: ${err.message}`, target);
+    return showSaveError(err.message, target);
   }
-  state[draftKey] = null;
+  const owner = draftKey === 'storyDraft' ? { story: state.story } : state.target;
+  const untouched = !!owner && keyOf(owner) === keyOf(target) && !unsaved(target, state[draftKey]);
+  if (state[draftKey] === draft || untouched) state[draftKey] = null;
   try {
     await load();
   } catch (err) {
-    state.error = `저장했지만 다시 읽지 못했습니다: ${err.message}`;
+    state.error = isShown(target) ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `「${targetName(target)}」 표시는 저장했지만 다시 읽지 못했습니다: ${err.message}`;
   }
   render();
-  if (state.error) revealSaveButton(target);
 }
 
 const GAP = 12, COL_GAP = 50, CELL_GAP = 24, CALL_INDENT = 16, GROUP_SPACE = 24, GROUP_HEAD_H = 28;

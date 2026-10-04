@@ -1022,6 +1022,7 @@ for (const host of ['127.0.0.1', 'localhost']) {
           await p.click('#right .statuses button:has-text("더 필요")');
           await p.fill('#right textarea', 'no API test yet');
           await p.click('#right button.save');
+          await openHistory(p);
           await p.waitForSelector('#right .history li:has-text("no API test yet")');
           assert.match(await p.textContent('#center tr.selected td.mark'), /더 필요/);
           assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note, m.author]), [
@@ -1141,7 +1142,7 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
         assert.deepEqual(await p.locator('#center .story-path .step .name > span:first-child').allTextContents(), ['/home', '/lab', '/lab/result']);
         assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['조건', '이어짐']);
         assert.match(await p.textContent('#center .story-path .link.l-conditioned'), /components\/Home\.js:19\s*globalSettings\.SYSTEM\.LAB_ENABLED\s*설정/);
-        assert.deepEqual(await p.locator('#right > *').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['도달 가능', '사전 조건']);
+        assert.deepEqual(await p.locator('#right-info > *').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['도달 가능', '사전 조건']);
         assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트']);
         assert.match(await p.textContent('#right .reach-link'), /components\/Home\.js:19/);
         assert.match(await p.textContent('#right .reach-route'), /Routes\.js:44.*globalSettings\.SYSTEM\.LAB_ENABLED/);
@@ -1159,7 +1160,7 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
 
         await p.click('#story-list li:has-text("문서를 연다")');
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 가능']);
-        assert.equal(await p.textContent('#right > p.muted'), '조건 없음');
+        assert.equal(await p.textContent('#right-info > p.muted'), '조건 없음');
         await p.click('#center .story-path .step:has-text("/document/:id")');
         assert.equal(await p.getAttribute('#left .views.side button.on', 'class'), 'on');
         assert.equal(await p.textContent('#left .views.side button.on'), '화면 11');
@@ -1244,6 +1245,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await p.click('#right .statuses button:has-text("없음")');
         await p.fill('#right textarea', 'no test walks the lab');
         await p.click('#right button.save');
+        await openHistory(p);
         await p.waitForSelector('#right .history li:has-text("no test walks the lab")');
         await p.click('#right .statuses button:has-text("더 필요")');
         await p.fill('#right textarea', 'the story test fails');
@@ -1329,9 +1331,12 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
         await unread.click();
         assert.equal(await p.textContent('#center h3'), 'run-lab');
         assert.equal(await p.textContent('#right h2'), '표시 — 스토리');
+        assert.equal(await p.locator('#right-info').isVisible(), false);
+        assert.ok(await p.evaluate(() => document.getElementById('right-dock').getBoundingClientRect().top - document.getElementById('right').getBoundingClientRect().top) < 1, 'the form sits at the top of the pane');
         assert.match(await p.textContent('#right .history'), /walk it/);
         await p.click('#right .statuses button:has-text("충분")');
         await p.click('#right button.save');
+        await openHistory(p);
         await p.waitForSelector('#right .history li:nth-child(2)');
         assert.equal(await p.textContent('#right .history li:first-child .chip'), '충분');
         assert.equal(await p.textContent('#left .unread-marks li .chip'), '충분');
@@ -1343,7 +1348,7 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
   });
 });
 
-test('in a browser, a failed save does not follow the reviewer to another screen or another cell', { skip: browserMissing }, async () => {
+test('in a browser, a missing-author warning stays with the screen or cell that tried to save, and a save that fails after the reviewer moved on names the target it was for', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, null, (base) =>
       withPage(base, async (p) => {
@@ -1361,8 +1366,7 @@ test('in a browser, a failed save does not follow the reviewer to another screen
         await p.click('#screen-list li:has-text("/lab/result")');
         assert.doesNotMatch(await p.textContent('#right'), /작성자 이름이 필요합니다/);
 
-        await p.setViewportSize({ width: 1440, height: 400 });
-        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#screen-list li:has-text("/admin/report")');
         await p.fill('#author input', 'reviewer');
         await p.evaluate(() => {
           const real = window.fetch;
@@ -1370,13 +1374,22 @@ test('in a browser, a failed save does not follow the reviewer to another screen
             ? new Promise((resolve, reject) => { window.failSave = () => reject(new Error('disk full')); })
             : real(url, init));
         });
+        await p.locator('table.calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').nth(1).click();
+        const cellLabel = (await p.textContent('#right-dock .mark-form h2')).replace('표시 — ', '');
+        assert.match(cellLabel, /^withAttachments 켬 · .+ 깊이$/);
+        const cellName = `${await p.textContent('#right-info .target-id .mono')} · ${cellLabel}`;
         await p.click('#right .statuses button:has-text("없음")');
         await p.click('#right button.save');
-        await p.locator('table.calls td.cell').first().click();
-        assert.equal(await p.evaluate(() => document.getElementById('right').scrollTop), 0);
+        await p.click('#center tr:has-text("화면 전체")');
+        assert.equal(await p.locator('#right .error').count(), 0);
         await p.evaluate(() => window.failSave());
-        await p.waitForTimeout(200);
-        assert.equal(await p.evaluate(() => document.getElementById('right').scrollTop), 0);
+        await p.waitForSelector('#right-dock .error');
+        assert.equal(await p.textContent('#right-dock .error'), `「${cellName}」 표시를 저장하지 못했습니다: disk full`);
+
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        await p.evaluate(() => window.failSave());
+        await p.waitForFunction(() => document.querySelector('#right-dock .error')?.textContent === '저장하지 못했습니다: disk full');
       }),
     ),
   );
@@ -1432,7 +1445,7 @@ test('in a browser, a step whose first screen has no link to the next but has li
         assert.match(await p.textContent('#center .story-path .link.l-conditioned .skipped'), /판정에서 뺀 링크/);
         assert.deepEqual(await skipped('l-open'), []);
         assert.equal(await p.locator('#center .story-path .link.l-open .skipped').count(), 0);
-        assert.match(await p.textContent('#right > p.skipped'), /주소 못 읽은 링크 빼고 판정/);
+        assert.match(await p.textContent('#right-info > p.skipped'), /주소 못 읽은 링크 빼고 판정/);
         assert.deepEqual(await p.locator('#right .reach-link .unknown-links li').allTextContents(), [`components/Home.js:20 → ${UNKNOWN}`]);
 
         await p.click('#story-list li:has-text("실험실에서 결과로")');
@@ -1457,7 +1470,7 @@ test('in a browser, the right of a story gives a verdict line for missing links 
         await p.click('#story-list li:has-text("도움말을 오간다")');
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 3곳', '판정 못 함 · 화면 없음']);
         assert.deepEqual(await p.locator('#right .verdict').evaluateAll((els) => els.map((e) => e.className)), ['verdict unreachable', 'verdict unjudged']);
-        assert.equal(await p.textContent('#right > p.muted:not(.skipped)'), '판정한 구간에 조건 없음');
+        assert.equal(await p.textContent('#right-info > p.muted:not(.skipped)'), '판정한 구간에 조건 없음');
       }),
     );
   });
@@ -1707,7 +1720,7 @@ test('in a browser, the top of the right pane says what opens the chosen screen 
         await p.waitForSelector('#screen-list li');
         const summaryOf = async (label) => {
           await p.click(`#screen-list li:has-text("${label}")`);
-          assert.equal(await p.locator('#right > :first-child').evaluate((e) => e.className), 'open-needs');
+          assert.equal(await p.locator('#right-info > :first-child').evaluate((e) => e.className), 'open-needs');
           assert.equal(await p.textContent('#right .open-needs h2'), '이 화면을 열려면');
           return p.locator('#right .open-needs .need').allTextContents();
         };
@@ -1726,22 +1739,25 @@ test('in a browser, the top of the right pane says what opens the chosen screen 
   );
 });
 
-test('in a browser, the mark form is the last block of the right pane, after the settings read, and also when a call is chosen', { skip: browserMissing }, async () => {
+test('in a browser, the info part of the right pane reads in order and the mark form sits apart in the dock below it, also when a call is chosen', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/document/:id")');
-        const headings = await p.locator('#right h2').allTextContents();
+        const headings = await p.locator('#right-info h2').allTextContents();
         assert.match(headings[0], /^이 화면을 열려면$/);
-        assert.deepEqual(headings.slice(1).map((t) => t.replace(/ \d+$/, '')), ['들어오는 링크', '소스 위치', '나가는 링크', '읽는 설정값', '표시 — 화면 전체']);
-        assert.equal(await p.locator('#right > :last-child').evaluate((e) => e.className), 'mark-form');
-        assert.equal(await p.locator('#right > .mark-form').count(), 1);
+        assert.deepEqual(headings.slice(1).map((t) => t.replace(/ \d+$/, '')), ['들어오는 링크', '소스 위치', '나가는 링크', '읽는 설정값']);
+        assert.equal(await p.locator('#right-info .mark-form').count(), 0);
+        assert.equal(await p.locator('#right > :last-child').evaluate((e) => e.id), 'right-dock');
+        assert.equal(await p.locator('#right-dock > .mark-form').count(), 1);
+        assert.equal(await p.textContent('#right-dock .mark-form h2'), '표시 — 화면 전체');
 
         await p.locator('table.calls td.cell').first().click();
-        assert.equal(await p.locator('#right > :last-child').evaluate((e) => e.className), 'mark-form');
-        assert.match(await p.locator('#right > :last-child h2').textContent(), /^표시 — /);
-        assert.match(await p.locator('#right h2').first().textContent(), /^서버 대조$/);
+        assert.equal(await p.locator('#right-info .mark-form').count(), 0);
+        assert.equal(await p.locator('#right-dock > .mark-form').count(), 1);
+        assert.match(await p.locator('#right-dock .mark-form h2').textContent(), /^표시 — /);
+        assert.match(await p.locator('#right-info h2').first().textContent(), /^서버 대조$/);
       }),
     ),
   );
@@ -1765,7 +1781,7 @@ test('in a browser, a missing author name is not warned about on opening and is 
         await p.click('#right .statuses button:has-text("없음")');
         assert.doesNotMatch(await p.textContent('#right'), /작성자/);
         await p.click('#right button.save');
-        assert.match(await p.textContent('#right > .mark-form .error'), /작성자 이름이 필요합니다.*git user\.name/);
+        assert.match(await p.textContent('#right .mark-form .error'), /작성자 이름이 필요합니다.*git user\.name/);
         assert.equal(fs.existsSync(config.marksDir) ? loadMarks(config.marksDir).length : 0, 0);
       }),
     ),
@@ -1777,9 +1793,13 @@ const openDocumentScreenInShortViewport = async (p) => {
   await p.waitForSelector('#screen-list li');
   await p.click('#screen-list li:has-text("/document/:id")');
 };
-const scrollRightToBottom = (p) => p.locator('#right').evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
-const scrollRightTo = (p, top) => p.locator('#right').evaluate((el, y) => { el.scrollTop = y; return el.scrollTop; }, top);
-const rightScroll = (p) => p.locator('#right').evaluate((el) => el.scrollTop);
+const openHistory = async (p) => {
+  const toggle = p.locator('#right .history-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+};
+const scrollRightToBottom = (p) => p.locator('#right-info').evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
+const scrollRightTo = (p, top) => p.locator('#right-info').evaluate((el, y) => { el.scrollTop = y; return el.scrollTop; }, top);
+const rightScroll = (p) => p.locator('#right-info').evaluate((el) => el.scrollTop);
 
 test('in a browser, choosing another screen or call target opens the right pane at its top, and redrawing the same target keeps the scroll offset', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -1802,7 +1822,7 @@ test('in a browser, choosing another screen or call target opens the right pane 
         await p.click('#right .statuses button:has-text("없음")');
         assert.equal(await rightScroll(p), kept);
         await p.click('#right button.save');
-        await p.waitForSelector('#right .history');
+        await p.waitForSelector('#right .history-toggle');
         assert.equal(await rightScroll(p), kept);
 
         await p.click('#screen-list li:has-text("/admin/report")');
@@ -1856,7 +1876,7 @@ test('in a browser, selecting another story opens the right pane at its top', { 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        await p.setViewportSize({ width: 1440, height: 250 });
+        await p.setViewportSize({ width: 1440, height: 360 });
         await p.click('#left .views.side button:has-text("스토리")');
         const stories = p.locator('#story-list li');
         await stories.nth(0).click();
@@ -1872,22 +1892,293 @@ test('in a browser, selecting another story opens the right pane at its top', { 
   );
 });
 
-test('in a browser, a save that is refused shows its message right above the save button, both inside the visible part of the pane', { skip: browserMissing }, async () => {
+const insideRightPane = (p, selector) => p.evaluate((sel) => {
+  const pane = document.getElementById('right').getBoundingClientRect();
+  const box = document.querySelector(sel).getBoundingClientRect();
+  return box.height > 0 && box.top >= pane.top - 0.5 && box.bottom <= pane.bottom + 0.5;
+}, selector);
+const topOf = (p, selector) => p.locator(selector).evaluate((e) => e.getBoundingClientRect().top);
+
+async function assertDockStaysPut(p) {
+  const info = p.locator('#right-info');
+  assert.ok(await info.evaluate((e) => e.scrollHeight > e.clientHeight), 'the info part is taller than its box');
+  for (const selector of ['#right .statuses', '#right button.save']) {
+    assert.ok(await insideRightPane(p, selector), `${selector} is visible without scrolling`);
+  }
+  const before = [await topOf(p, '#right .statuses'), await topOf(p, '#right button.save')];
+  assert.ok((await scrollRightToBottom(p)) > 0);
+  assert.deepEqual([await topOf(p, '#right .statuses'), await topOf(p, '#right button.save')], before);
+  for (const selector of ['#right .statuses', '#right button.save']) assert.ok(await insideRightPane(p, selector));
+}
+
+test('in a browser, the status buttons and the save button stay in view at the bottom of the right pane while its info part scrolls, for a screen and for a call', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentScreenInShortViewport(p);
+        await assertDockStaysPut(p);
+
+        await p.locator('table.calls td.cell').first().click();
+        assert.equal(await p.locator('#right-info .target-id').count(), 1);
+        await assertDockStaysPut(p);
+      }),
+    ),
+  );
+});
+
+test('in a browser, the status buttons and the save button stay in view at the bottom of the right pane for a story', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.setViewportSize({ width: 1440, height: 360 });
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.equal(await p.textContent('#right-dock .mark-form h2'), '표시 — 스토리');
+        await assertDockStaysPut(p);
+        assert.equal(await p.locator('#right-info .mark-form').count(), 0);
+      }),
+    ),
+  );
+});
+
+test('in a browser, the history sits behind a closed fold next to the save button, stays open when the pane is redrawn, and closes when another target is chosen', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const node = '/document/:id#DocumentDetail';
+        assert.equal((await postMark(base, { target: { node }, status: 'missing', note: 'first look', author: 'reviewer' })).status, 201);
+        assert.equal((await postMark(base, { target: { node }, status: 'fine', note: 'second look', author: 'reviewer' })).status, 201);
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:id")');
+        const toggle = p.locator('#right-dock .save-row .history-toggle');
+        assert.equal((await toggle.textContent()).trim(), '이력 2');
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+        assert.equal(await p.locator('#right .history').isVisible(), false);
+
+        await toggle.click();
+        assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+        assert.deepEqual(await p.locator('#right-dock .history li').allTextContents().then((ts) => ts.map((t) => /second look/.test(t) ? 'second' : /first look/.test(t) ? 'first' : t)), ['second', 'first']);
+        assert.equal(await p.locator('#right .history').isVisible(), true);
+        const list = await p.locator('#right .history').evaluate((e) => ({ overflowY: getComputedStyle(e).overflowY, maxHeight: getComputedStyle(e).maxHeight }));
+        assert.equal(list.overflowY, 'auto');
+        assert.notEqual(list.maxHeight, 'none');
+
+        await p.click('#right .statuses button:has-text("더 필요")');
+        assert.equal(await p.locator('#right .history-toggle').getAttribute('aria-expanded'), 'true');
+        assert.equal(await p.locator('#right .history').isVisible(), true);
+
+        await p.click('#center tr:has-text("API")');
+        assert.equal(await p.locator('#right .history-toggle').count(), 0);
+        await p.click('#center tr:has-text("화면 전체")');
+        assert.equal(await p.locator('#right .history-toggle').getAttribute('aria-expanded'), 'false');
+        assert.equal(await p.locator('#right .history').isVisible(), false);
+
+        await p.locator('#right .history-toggle').click();
+        await p.click('#screen-list li:has-text("/admin/report")');
+        assert.equal(await p.locator('#right .history-toggle').count(), 0);
+        assert.equal(await p.locator('#right .history').count(), 0);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        assert.equal(await p.locator('#right .history-toggle').getAttribute('aria-expanded'), 'false');
+      }),
+    ),
+  );
+});
+
+test('in a browser, the dock keeps the info part at least 120px tall on a short window and does not make the right pane itself scroll while both fit', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const node = '/document/:id#DocumentDetail';
+        for (let i = 0; i < 6; i++) {
+          assert.equal((await postMark(base, { target: { node }, status: 'fine', note: `look ${i} ${'long '.repeat(20)}`, author: 'reviewer' })).status, 201);
+        }
+        await p.setViewportSize({ width: 1440, height: 500 });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:id")');
+        const geometry = () => p.evaluate(() => {
+          const rect = (id) => document.getElementById(id).getBoundingClientRect();
+          const right = document.getElementById('right');
+          return { info: rect('right-info').height, dock: rect('right-dock').height, pane: rect('right'), dockBottom: rect('right-dock').bottom, overflow: right.scrollHeight - right.clientHeight };
+        });
+        for (const open of [false, true]) {
+          if (open) await p.locator('#right .history-toggle').click();
+          const g = await geometry();
+          assert.ok(g.dock <= g.pane.height * 0.65, `the dock takes ${g.dock}px of ${g.pane.height}px (history open: ${open})`);
+          assert.ok(g.info >= 120, `info part ${g.info}px (history open: ${open})`);
+          assert.ok(g.dockBottom <= g.pane.bottom + 0.5, 'the dock is fully inside the pane');
+          assert.ok(g.overflow <= 0, `the pane itself overflows by ${g.overflow}px`);
+          assert.ok(await insideRightPane(p, '#right button.save'));
+          assert.ok(await p.locator('#right-info').evaluate((e) => e.scrollHeight > e.clientHeight), 'the info part scrolls');
+        }
+        assert.ok((await p.locator('#right textarea').evaluate((e) => getComputedStyle(e).maxHeight)) !== 'none');
+      }),
+    ),
+  );
+});
+
+test('in a browser, on a window too short for the info part and the dock the right pane itself scrolls, so the save button can be reached and pressed', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 1440, height: 320 });
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#right .statuses button:has-text("없음")');
+        assert.equal(await insideRightPane(p, '#right button.save'), false);
+        const heading = await p.locator('#right-dock .mark-form h2').boundingBox();
+        await p.mouse.move(heading.x + 10, heading.y + heading.height / 2);
+        await p.mouse.wheel(0, 400);
+        for (let i = 0; i < 20 && !(await insideRightPane(p, '#right button.save')); i++) await p.waitForTimeout(50);
+        assert.ok(await insideRightPane(p, '#right button.save'), 'the save button is brought inside the pane by scrolling it');
+        await p.click('#right button.save');
+        await p.waitForSelector('#right .history-toggle');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]), [[{ node: '/document/:id#DocumentDetail' }, 'missing']]);
+        assert.ok((await p.locator('#right').evaluate((e) => e.scrollTop)) > 0);
+        await p.click('#screen-list li:has-text("/admin/report")');
+        assert.equal(await p.locator('#right').evaluate((e) => e.scrollTop), 0);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a save that finishes after the reviewer moved to another screen, or left and came back, keeps the status and memo picked since, and a form left untouched shows the saved mark', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        let onPost;
+        await p.route('**/api/marks', async (route) => {
+          await new Promise((release) => onPost(release));
+          await route.continue();
+        });
+        const holdNextPost = () => new Promise((resolve) => { onPost = resolve; });
+        const pick = async (status, note) => {
+          await p.click(`#right .statuses button:has-text("${status}")`);
+          await p.fill('#right textarea', note);
+        };
+        const assertForm = async (status, note) => {
+          assert.equal(await p.inputValue('#right textarea'), note);
+          assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), [status]);
+        };
+
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#right .statuses button:has-text("없음")');
+        let posting = holdNextPost();
+        await p.click('#right button.save');
+        let release = await posting;
+        await p.click('#screen-list li:has-text("/admin/report")');
+        await pick('더 필요', 'keep me');
+        const documentChip = '#screen-list li:has-text("/document/:id") .chip.missing';
+        assert.equal(await p.locator(documentChip).count(), 0);
+        release();
+        await p.waitForSelector(documentChip);
+        await assertForm('더 필요', 'keep me');
+
+        posting = holdNextPost();
+        await p.click('#right button.save');
+        release = await posting;
+        await p.click('#screen-list li:has-text("/lab/result")');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        await pick('충분', 'second thoughts');
+        const reportChip = '#screen-list li:has-text("/admin/report") .chip.needs-more';
+        assert.equal(await p.locator(reportChip).count(), 0);
+        release();
+        await p.waitForSelector(reportChip);
+        await assertForm('충분', 'second thoughts');
+
+        await p.click('#screen-list li:has-text("/lab/result")');
+        await p.click('#right .statuses button:has-text("충분")');
+        posting = holdNextPost();
+        await p.click('#right button.save');
+        release = await posting;
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#screen-list li:has-text("/lab/result")');
+        release();
+        await p.waitForSelector('#screen-list li:has-text("/lab/result") .chip.fine');
+        await assertForm('충분', '');
+
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note]).sort((a, b) => a[1].localeCompare(b[1])), [
+          [{ node: '/document/:id#DocumentDetail' }, 'missing', ''],
+          [{ node: '/admin/report#AdminReport' }, 'needs-more', 'keep me'],
+          [{ node: '/lab/result#LabResult' }, 'fine', ''],
+        ].sort((a, b) => a[1].localeCompare(b[1])));
+      }),
+    ),
+  );
+});
+
+test('in a browser, a save whose reload fails after the reviewer moved to another story names the story it was for, and one that stays says so plainly', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        let onPost;
+        await p.route('**/api/marks', async (route) => {
+          await new Promise((release) => onPost(release));
+          await route.continue();
+        });
+        const holdNextPost = () => new Promise((resolve) => { onPost = resolve; });
+        await p.click('#left .views.side button:has-text("스토리")');
+        const first = p.locator('#story-list li:has-text("실험실을 열어")');
+        const name = await first.locator('.name > span').textContent();
+        await first.click();
+        await p.click('#right .statuses button:has-text("없음")');
+        let posting = holdNextPost();
+        await p.click('#right button.save');
+        let release = await posting;
+        await p.click('#story-list li:has-text("보고서")');
+        await p.route('**/api/data', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: 'not json' }));
+        release();
+        await p.waitForSelector('#right-dock .error');
+        assert.ok((await p.textContent('#right-dock .error')).startsWith(`「스토리 ${name}」 표시는 저장했지만 다시 읽지 못했습니다: `));
+
+        await p.click('#right .statuses button:has-text("없음")');
+        posting = holdNextPost();
+        await p.click('#right button.save');
+        release = await posting;
+        release();
+        await p.waitForFunction(() => document.querySelector('#right-dock .error')?.textContent.startsWith('저장했지만 다시 읽지 못했습니다: '));
+      }),
+    ),
+  );
+});
+
+test('in a browser, picking a status updates the form in place, keeping the memo box and the height it was dragged to', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:id")');
+        assert.equal(await p.locator('#right button.save').isEnabled(), false);
+        const memo = await p.$('#right textarea');
+        const dragged = await memo.evaluate((e) => { e.style.height = '150px'; return e.getBoundingClientRect().height; });
+        await p.click('#right .statuses button:has-text("더 필요")');
+        assert.ok(await memo.evaluate((e) => e === document.querySelector('#right textarea')), 'the memo box is the same element');
+        assert.equal(await memo.evaluate((e) => e.getBoundingClientRect().height), dragged);
+        assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), ['더 필요']);
+        assert.equal(await p.locator('#right button.save').isEnabled(), true);
+        await p.click('#right .statuses button:has-text("충분")');
+        assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), ['충분']);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a save that is refused shows its message in the dock above the save button, both inside the visible part of the pane', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, null, (base) =>
       withPage(base, async (p) => {
         await openDocumentScreenInShortViewport(p);
         await p.click('#right .statuses button:has-text("없음")');
-        await scrollRightToBottom(p);
         await p.click('#right button.save');
-        assert.equal(await p.locator('#right .error + button.save').count(), 1);
-        const inside = () => p.evaluate(() => {
-          const pane = document.getElementById('right').getBoundingClientRect();
-          return ['.error', 'button.save'].every((selector) => {
-            const box = document.querySelector(`#right .mark-form ${selector}`).getBoundingClientRect();
-            return box.top >= pane.top && box.bottom <= pane.bottom;
-          });
-        });
+        assert.equal(await p.locator('#right-dock .error').count(), 1);
+        assert.equal(await p.locator('#right .error ~ .save-row button.save').count(), 1);
+        const inside = async () => (await insideRightPane(p, '#right .mark-form .error')) && insideRightPane(p, '#right .mark-form button.save');
         assert.match(await p.textContent('#right .error'), /작성자 이름이 필요합니다/);
         assert.ok(await inside());
 
@@ -1896,7 +2187,6 @@ test('in a browser, a save that is refused shows its message right above the sav
           window.fetch = (url, init) => (String(url).includes('/api/marks') ? Promise.reject(new Error('disk full')) : real(url, init));
         });
         await p.fill('#author input', 'reviewer');
-        await scrollRightToBottom(p);
         await p.click('#right button.save');
         await p.waitForFunction(() => /저장하지 못했습니다/.test(document.querySelector('#right .error')?.textContent ?? ''));
         assert.ok(await inside());
@@ -1956,18 +2246,18 @@ test('in a browser, the right pane starts by naming the call and the option and 
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/admin/report")');
         await p.locator('table.calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').nth(1).click();
-        const first = p.locator('#right > :first-child');
+        const first = p.locator('#right-info > :first-child');
         assert.equal(await first.evaluate((e) => e.className), 'target-id');
         assert.equal(await first.locator('.mono').textContent(), 'POST:/api/v1/report/export');
         assert.match(await first.innerText(), /withAttachments 켬 · UI\/E2E 깊이/);
-        assert.match(await p.locator('#right > :last-child h2').textContent(), /^표시 — withAttachments 켬 · UI\/E2E 깊이$/);
+        assert.match(await p.locator('#right .mark-form h2').textContent(), /^표시 — withAttachments 켬 · UI\/E2E 깊이$/);
 
         await p.locator('table.calls td.cell').first().click();
-        assert.match(await p.locator('#right > :first-child').innerText(), /POST:\/api\/v1\/report\/export\s+호출 전체/);
+        assert.match(await p.locator('#right-info > :first-child').innerText(), /POST:\/api\/v1\/report\/export\s+호출 전체/);
 
         await p.click('#screen-list li:has-text("/home")');
         assert.equal(await p.locator('#right .target-id').count(), 0);
-        assert.equal(await p.locator('#right > :first-child h2').textContent(), '이 화면을 열려면');
+        assert.equal(await p.locator('#right-info > :first-child h2').textContent(), '이 화면을 열려면');
       }),
     ),
   );
@@ -2002,7 +2292,7 @@ test('in a browser, long addresses and conditions wrap inside the right pane, wh
         await p.reload();
         await toList(p);
         await p.waitForSelector('#screen-list li');
-        const widths = () => p.locator('#right').evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+        const widths = () => p.locator('#right-info, #right-dock, #right').evaluateAll((els) => els.map((el) => ({ id: el.id, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth })));
         const block = (heading) => p.locator('#right h2', { hasText: heading }).locator('xpath=following-sibling::*[1]');
         const mentions = async (heading, selector) => assert.ok((await block(heading).locator(selector, { hasText: LONG_WORD }).count()) > 0, `${heading} shows the long text in ${selector}`);
 
@@ -2016,16 +2306,18 @@ test('in a browser, long addresses and conditions wrap inside the right pane, wh
         await mentions('나가는 링크', 'code');
         await mentions('나가는 링크', 'code.guard');
         await mentions('읽는 설정값', 'code');
+        await openHistory(p);
+        assert.ok((await p.locator('#right-dock .history li', { hasText: LONG_WORD }).count()) > 0, 'a long mark note in the history');
         const screen = await widths();
-        assert.ok(screen.scrollWidth <= screen.clientWidth, `screen: ${screen.scrollWidth} of ${screen.clientWidth}`);
+        assert.equal(screen.length, 3);
+        for (const w of screen) assert.ok(w.scrollWidth <= w.clientWidth, `screen ${w.id}: ${w.scrollWidth} of ${w.clientWidth}`);
 
         await p.locator('table.calls td.cell').first().click();
         assert.match(await p.textContent('#right .target-id'), new RegExp(LONG_WORD.replaceAll('.', '\\.')));
         await mentions('서버 대조', 'code');
         assert.equal(await block('서버 대조').locator('.chip').innerText(), `서버에 있음 (${labels.join(', ')})`);
         await mentions('이 화면에서 부르는 곳', 'code');
-        const call = await widths();
-        assert.ok(call.scrollWidth <= call.clientWidth, `call: ${call.scrollWidth} of ${call.clientWidth}`);
+        for (const w of await widths()) assert.ok(w.scrollWidth <= w.clientWidth, `call ${w.id}: ${w.scrollWidth} of ${w.clientWidth}`);
       }),
     ),
   );
@@ -4872,7 +5164,7 @@ const readSummary = (p) => p.locator('#right .reach-summary').evaluate((el) => {
 
 test('in a browser, a story that needs a setting and a role shows them as two summary lines under 사전 조건 in the wording of the screen summary, and the raw conditions only once the fold is opened', { skip: browserMissing }, async () => {
   await withStoryReach([reachLink([LAB_SETTING]), reachRoute([LAB_SETTING, ADMIN_ROLE])], async (p) => {
-    assert.deepEqual(await p.locator('#right > *').evaluateAll((els) => els.slice(0, 3).map((e) => e.textContent.slice(0, 5))), ['도달 가능', '사전 조건', '역할 AD']);
+    assert.deepEqual(await p.locator('#right-info > *').evaluateAll((els) => els.slice(0, 3).map((e) => e.textContent.slice(0, 5))), ['도달 가능', '사전 조건', '역할 AD']);
     assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN', '설정 SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
     assert.equal(await p.locator('#right details.reach-raw').evaluate((d) => d.open), false);
     assert.equal(await p.locator('#right .reach-raw .reach').isVisible(), false);
@@ -4881,8 +5173,8 @@ test('in a browser, a story that needs a setting and a role shows them as two su
     assert.equal(await p.locator('#right .reach-raw .reach').isVisible(), true);
     assert.match(await p.textContent('#right .reach-link'), /components\/Home\.js:19.*globalSettings\.SYSTEM\.LAB_ENABLED/);
     assert.match(await p.textContent('#right .reach-route'), /Routes\.js:44.*memberRole === 'ADMIN'/);
-    assert.equal(await p.locator('#right .mark-form').count(), 1);
-    assert.equal(await p.evaluate(() => document.getElementById('right').lastElementChild.className), 'mark-form');
+    assert.equal(await p.locator('#right-info .mark-form').count(), 0);
+    assert.equal(await p.locator('#right-dock > .mark-form').count(), 1);
   });
 });
 
@@ -5124,6 +5416,7 @@ test('in a browser, the fold of a story\'s raw conditions and its long condition
     assert.deepEqual(await openState(), expected);
     await p.fill('#right textarea', 'redraw');
     await p.click('#right button.save');
+    await openHistory(p);
     await p.waitForSelector('#right .history li:has-text("redraw")');
     assert.deepEqual(await openState(), expected);
     await p.click('#story-list li:has-text("보고서")');
