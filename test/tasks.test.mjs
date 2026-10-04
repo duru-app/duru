@@ -5,8 +5,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
+import { addJudgment } from '../src/judgments.mjs';
 import { addMark } from '../src/marks.mjs';
 import { reviewData } from '../src/review.mjs';
+import { taggingLines } from '../src/tasks.mjs';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
@@ -778,5 +780,176 @@ test('an API call with an open mark is listed once under API calls with its scre
         '',
       ].join('\n'),
     );
+  });
+});
+
+const HELP_UNIT = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' };
+const TABLE_UNIT = { source: 'results/vitest/client-unit.json', file: 'components/DocumentTable.spec.js', title: 'DocumentTable › lists the documents it is given' };
+const tagging = (tasks) => (tasks.includes('\n# Tagging\n') ? tasks.slice(tasks.indexOf('\n# Tagging\n')) : null);
+
+const TAGGING_INTRO = "A reviewer judged that each of these tests checks a screen or API call it carries no tag for. Add the tag where its format reads it (`where`), changing nothing else in the test, then run the test so its result file is written again and run `duru rebuild`, and read this list again: a test that carries the tag counts as a test of that screen or call, and its item leaves this list. The item also leaves, without being done, if the test's file changes or its title changes in any way other than the added tag. duru does not edit test files.";
+
+test('a pair handed over for tagging is listed under Tagging with its test file and line, title, the tag to add, where to write it and the reviewer\'s note', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const { judgmentsDir } = loadConfig(configFile);
+    addJudgment(judgmentsDir, { test: HELP_UNIT, node: '/help#Help', kind: 'hand-over', reason: 'checks the help text it renders\nand its heading', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
+    addJudgment(judgmentsDir, { test: TABLE_UNIT, node: '/home#Home', kind: 'hand-over', author: 'Kim Min' }, new Date('2026-10-04T02:00:00Z'));
+
+    assert.equal(
+      tagging(cli('tasks')),
+      [
+        '',
+        '# Tagging',
+        '',
+        TAGGING_INTRO,
+        '',
+        '## components/DocumentTable.spec.js:6 → /home#Home',
+        '',
+        '- title: DocumentTable › lists the documents it is given',
+        '- tag to add: `@screen:/home#Home`',
+        '- where: at the end of the test\'s own title, not a `describe` title',
+        '- note: none (Kim Min, 2026-10-04)',
+        '',
+        '## components/Help.spec.js:4 → /help#Help',
+        '',
+        '- title: renders the help text',
+        '- tag to add: `@screen:/help#Help`',
+        '- where: at the end of the test\'s own title, not a `describe` title',
+        '- note: "checks the help text it renders',
+        '  and its heading" (reviewer, 2026-10-04)',
+        '',
+      ].join('\n'),
+    );
+  });
+});
+
+for (const [how, helpTest] of [
+  ['in its tags', { tags: ['screen:/help#Help'] }],
+  ['at the end of its title', { title: 'renders the help text @screen:/help#Help' }],
+]) {
+  test(`a handed-over test that gets the screen tag ${how} leaves the task list after a rebuild and counts as a tagged test of the screen`, () => {
+    withFixtureCopy(({ copy, configFile, cli }) => {
+      const config = loadConfig(configFile);
+      addJudgment(config.judgmentsDir, { test: HELP_UNIT, node: '/help#Help', kind: 'hand-over', author: 'reviewer' });
+      const resultFile = path.join(copy, 'results/vitest/client-unit.json');
+      const report = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+      Object.assign(report.testResults[0].assertionResults[0], helpTest);
+      fs.writeFileSync(resultFile, JSON.stringify(report));
+      cli('rebuild');
+
+      assert.equal(tagging(cli('tasks')), null);
+      const { tests } = reviewData(config, null);
+      assert.deepEqual(tests.awaitingTag, {});
+      assert.deepEqual(tests.detachedHandOvers, {});
+      assert.deepEqual(tests.nodes['/help#Help'].filter((t) => t.format === 'vitest').map((t) => t.title).sort(), [helpTest.title ?? HELP_UNIT.title, 'searches help @screen:/help#Help']);
+      assert.deepEqual(tests.importers['/help#Help'].map((t) => t.title), ['shows the day the help was last updated']);
+    });
+  });
+}
+
+test('undoing a hand-over returns the pair to the tests importing the screen and takes it off the task list', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const config = loadConfig(configFile);
+    addJudgment(config.judgmentsDir, { test: HELP_UNIT, node: '/help#Help', kind: 'hand-over', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
+    assert.deepEqual(reviewData(config, null).tests.importers['/help#Help'].map((t) => t.title), ['shows the day the help was last updated']);
+    addJudgment(config.judgmentsDir, { test: HELP_UNIT, node: '/help#Help', kind: 'undo', author: 'reviewer' }, new Date('2026-10-04T02:00:00Z'));
+
+    assert.equal(tagging(cli('tasks')), null);
+    const { tests } = reviewData(config, null);
+    assert.deepEqual(tests.importers['/help#Help'].map((t) => t.title), ['renders the help text', 'shows the day the help was last updated']);
+    assert.deepEqual(tests.awaitingTag, {});
+  });
+});
+
+test('the tagging items come in the same order for the same map, results and judgments, whatever order the judgment files were written in', () => {
+  const handOvers = [
+    [{ ...HELP_UNIT, title: 'shows the day the help was last updated' }, '/help#Help'],
+    [HELP_UNIT, '/help#Help'],
+    [TABLE_UNIT, '/home#Home'],
+    [TABLE_UNIT, '/document/:tab_draft_done_#DocumentList'],
+  ];
+  const listWith = (order) =>
+    withFixtureCopy(({ configFile, cli }) => {
+      cli('rebuild');
+      const { judgmentsDir } = loadConfig(configFile);
+      for (const [test, node] of order) addJudgment(judgmentsDir, { test, node, kind: 'hand-over', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
+      return tagging(cli('tasks'));
+    });
+  const first = listWith(handOvers);
+  assert.equal(listWith([...handOvers].reverse()), first);
+  assert.deepEqual(first.match(/^## .*$/gm), [
+    '## components/DocumentTable.spec.js:6 → /document/:tab_draft_done_#DocumentList',
+    '## components/DocumentTable.spec.js:6 → /home#Home',
+    '## components/Help.spec.js:4 → /help#Help',
+    '## components/Help.spec.js:8 → /help#Help',
+  ]);
+});
+
+const handOverEntry = (format, ref, line, judgment = {}) => ({
+  title: ref.title, line, format, ref: { source: 'results/x.json', ...ref }, judgment: { reason: '', author: 'reviewer', date: '2026-10-04T01:00:00.000Z', ...judgment },
+});
+
+test('each test format says where its tag goes, and an API call gets a call tag', () => {
+  assert.deepEqual(
+    taggingLines({
+      '/home#Home': [handOverEntry('playwright', { file: 'e2e/home.spec.ts', title: 'opens home' }, 3)],
+      '/help#Help': [handOverEntry('junit', { file: 'com/example/HelpTest.java', title: 'Help service › loads the index' }, null)],
+      'GET:/api/v1/help': [handOverEntry('verdict', { file: 'checks/help.log', title: 'help check' }, 13)],
+    }, new Set(['GET:/api/v1/help'])),
+    [
+      '',
+      '# Tagging',
+      '',
+      TAGGING_INTRO,
+      '',
+      '## checks/help.log:13 → GET:/api/v1/help',
+      '',
+      '- title: help check',
+      '- tag to add: `@call:GET:/api/v1/help`',
+      '- where: at the end of its VERDICT line',
+      '- note: none (reviewer, 2026-10-04)',
+      '',
+      '## com/example/HelpTest.java → /help#Help',
+      '',
+      '- title: Help service › loads the index',
+      '- tag to add: `@screen:/help#Help`',
+      '- where: at the end of the test\'s `@DisplayName`',
+      '- note: none (reviewer, 2026-10-04)',
+      '',
+      '## e2e/home.spec.ts:3 → /home#Home',
+      '',
+      '- title: opens home',
+      '- tag to add: `@screen:/home#Home`',
+      "- where: in the test's `tag` option (`{ tag: '@screen:/home#Home' }`), leaving the title as it is",
+      '- note: none (reviewer, 2026-10-04)',
+    ],
+  );
+});
+
+test('the reviewer\'s note is printed trimmed, and a note of only whitespace counts as none', () => {
+  const lines = (reason) => taggingLines({ '/help#Help': [handOverEntry('vitest', HELP_UNIT, 4, { reason })] }, new Set()).find((l) => l.startsWith('- note'));
+  assert.equal(lines('  \n checks the text\nand the heading \n'), '- note: "checks the text\n  and the heading" (reviewer, 2026-10-04)');
+  assert.equal(lines(' \n '), '- note: none (reviewer, 2026-10-04)');
+});
+
+test('a note saved with surrounding whitespace is trimmed in the task list', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    addJudgment(loadConfig(configFile).judgmentsDir, { test: HELP_UNIT, node: '/help#Help', kind: 'hand-over', reason: '\n  checks the help text  \n', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
+    assert.match(tagging(cli('tasks')), /^- note: "checks the help text" \(reviewer, 2026-10-04\)$/m);
+  });
+});
+
+test('a mark\'s note is printed trimmed, and a mark whose note is only whitespace is printed without one', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    addMark(marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: '\n  checks the start\nand the end  \n', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
+    addMark(marksDir, { target: { node: '/admin/report#AdminReport' }, status: 'missing', note: ' \n ', author: 'a' }, new Date('2026-10-04T05:00:00Z'));
+    const tasks = cli('tasks');
+    assert.match(tasks, /^ {2}- missing, whole screen — "checks the start\n {4}and the end" \(a, 2026-10-03\)$/m);
+    assert.match(tasks, /^ {2}- missing, whole screen \(a, 2026-10-04\)$/m);
   });
 });

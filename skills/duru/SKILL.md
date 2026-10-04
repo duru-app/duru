@@ -9,6 +9,12 @@ duru computes the screens of a web client, attaches test results to them, and se
 person marks the screens and the stories (a named order of screens a user goes through) that need more tests.
 duru never calls a model: the reviewer decides what is missing, and you write the tests.
 
+A screen's own tests are the tests that carry its tag. duru also finds *importing* (or *passed-through*) tests: a
+test linked to a screen only by the source files it imports, shown on the review page under 「불러오는 테스트」. They
+are not counted as tests of the screen until they carry the screen's tag, and duru recomputes them on every
+rebuild. The reviewer can discard such a pair or hand it over for tagging; a handed-over pair appears in the task
+list under `# Tagging`.
+
 ## Before you start
 
 - The project config: the JSON file `duru` reads (it names the client source, the server endpoint lists and
@@ -52,6 +58,19 @@ duru never calls a model: the reviewer decides what is missing, and you write th
    order and meets its `preconditions` (the settings, roles and link conditions it lists, with where each is
    checked), and put `@story:<story ID>` in its title together with the `@screen:` tags of every screen on its
    path that is on the map, as its empty test has them.
+   The items under `# Tagging` (they can be listed even when no mark is open) are tests the reviewer judged to
+   check a screen or API call they carry no tag for. For each, open the test at its file and line and add exactly
+   the tag in `tag to add`, in the place its `where` line names, and change nothing else in the test: not its
+   title when the tag goes in the test's tag option, not its body, not its name. By format, the tag goes in the
+   `tag` option of the test for Playwright (`{ tag: '@screen:<screen ID>' }`, the title stays as it is), at the end
+   of the test's own title for Vitest (never a `describe` title), at the end of its `@DisplayName` for JUnit, and at
+   the end of the `VERDICT` line for a check script. Do not write a new test for the item and do not edit the
+   reviewer's `note`. Run the test so its result is written again, then `duru rebuild <config>`: the item leaves the
+   list once the tag is read, and the test counts as a test of that screen or call. The item stays when the result
+   file was not rewritten or the tag is not the one given. An item that left the list is done only if the test now
+   appears as a tagged test of that screen or call and `rebuild`'s "handed over but no longer found" count did not
+   go up: a test whose file or title no longer matches the result also leaves the list, as a detached pair. So
+   change nothing in the title except appending the tag, and do not move the file.
    Its story tests and the tests already on each screen show what is covered. A story whose `reach` is
    `unreachable` or `not judged` (a step with `no link`, a screen `not on the map`) may not be walkable as
    written: when a step cannot be taken, tell the user which one instead of writing a test that skips it. Do not

@@ -104,11 +104,11 @@
   .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved, .chip.v-unchecked { color: var(--muted); }
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
-  .importers p { font-size: 12px; margin: 0 0 8px; }
-  .importer .discard-row { display: flex; gap: 6px; margin: 0 0 10px; }
-  .importer .discard-row input { flex: 1; padding: 2px 6px; font-size: 12px; }
-  .importer button.discard, .importer button.undo { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
-  .discarded .importer { margin-bottom: 10px; font-size: 12px; }
+  .importers p, .detached p { font-size: 12px; margin: 0 0 8px; }
+  .importer .judge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .importer .judge-row input { flex: 1 1 140px; min-width: 0; padding: 2px 6px; font-size: 12px; }
+  .importer button.discard, .importer button.hand-over, .importer button.undo { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .discarded .importer, .awaiting-tag .importer, .detached .importer { margin-bottom: 10px; font-size: 12px; }
   .guard { display: block; }
   .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
   .access > h2:first-child, .in-screen > h2:first-child { margin-top: 16px; }
@@ -280,7 +280,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, discardReasons: new Map(), judgmentError: null };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, judgmentNotes: new Map() };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -311,6 +311,8 @@ const ownTests = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : [])
 const testsOf = (id) => ownTests(state.data.tests.nodes, id);
 const importersOf = (id) => ownTests(state.data.tests.importers, id);
 const discardedOf = (id) => ownTests(state.data.tests.discarded, id);
+const awaitingTagOf = (id) => ownTests(state.data.tests.awaitingTag, id);
+const detachedOf = (id) => ownTests(state.data.tests.detachedHandOvers, id);
 const markOf = (t) => state.data.marks.attached.find((m) => m.key === keyOf(t));
 const fmtDate = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 const markChip = (m) => (m ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status]) : null);
@@ -565,30 +567,50 @@ function importerItem(t) {
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
 const judgmentErrorOf = (key) => (state.judgmentError?.key === key ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null);
 
-function discardForm(t, node) {
+function judgmentForm(t, node) {
   const key = judgmentKey(t, node);
-  return h('div', { class: 'discard-row' },
-    h('input', { type: 'text', class: 'reason', placeholder: '버리는 까닭', value: state.discardReasons.get(key) ?? '', oninput: (e) => state.discardReasons.set(key, e.target.value) }),
-    h('button', { class: 'discard', title: '이 테스트와 이 화면의 짝을 다시 보이지 않게 합니다', onclick: () => saveJudgment({ test: t.ref, node, kind: 'discard', reason: state.discardReasons.get(key) ?? '' }, key) }, '버리기'));
+  const note = () => state.judgmentNotes.get(key) ?? '';
+  return h('div', { class: 'judge-row' },
+    h('input', { type: 'text', class: 'reason', placeholder: '까닭 (버릴 때는 꼭) · 메모 (넘길 때는 선택)', value: note(), oninput: (e) => state.judgmentNotes.set(key, e.target.value) }),
+    h('button', { class: 'discard', title: '이 테스트와 이 화면의 짝을 다시 보이지 않게 합니다', onclick: () => saveJudgment({ test: t.ref, node, kind: 'discard', reason: note() }, key) }, '버리기'),
+    h('button', { class: 'hand-over', title: '이 테스트에 이 화면의 태그를 달도록 작업 목록에 올립니다', onclick: () => saveJudgment({ test: t.ref, node, kind: 'hand-over', reason: note() }, key) }, '태그 달기로 넘기기'));
+}
+
+const judgmentMeta = (j, label) => h('div', { class: 'detail' },
+  j.reason.trim() ? [`${label} `, j.reason] : null,
+  h('span', { class: 'muted' }, `${j.reason.trim() ? ' · ' : ''}${j.author} · ${fmtDate(j.date)}`));
+
+const undoButton = (t, node) => h('button', { class: 'undo', onclick: () => saveJudgment({ test: t.ref, node, kind: 'undo' }, judgmentKey(t, node)) }, '되돌리기');
+
+function detachedItem(t) {
+  return h('div', { class: 'test' },
+    h('span', { class: 'muted mono' }, t.ref.file), ' ', t.ref.title);
 }
 
 function importerTests(s) {
   const importers = importersOf(s.id);
   const discarded = discardedOf(s.id);
-  const rowKeys = [...importers, ...discarded].map((t) => judgmentKey(t, s.id));
+  const awaiting = awaitingTagOf(s.id);
+  const detached = detachedOf(s.id);
+  const rowKeys = [...importers, ...discarded, ...awaiting, ...detached].map((t) => judgmentKey(t, s.id));
   const stray = state.judgmentError && !rowKeys.includes(state.judgmentError.key);
+  const pairRow = (item, t, label) => h('div', { class: 'importer' }, item, judgmentMeta(t.judgment, label), undoButton(t, s.id), judgmentErrorOf(judgmentKey(t, s.id)));
   return [
     stray ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null,
     importers.length ? h('div', { class: 'importers' },
       h('h2', {}, `불러오는 테스트 ${importers.length}`),
       h('p', { class: 'muted' }, '이 화면에 딸린 소스 파일을 불러오는 단위 테스트입니다. 이 화면의 태그가 없어서 이 화면의 테스트로 세지 않습니다.'),
-      importers.map((t) => h('div', { class: 'importer' }, importerItem(t), discardForm(t, s.id), judgmentErrorOf(judgmentKey(t, s.id))))) : null,
+      importers.map((t) => h('div', { class: 'importer' }, importerItem(t), judgmentForm(t, s.id), judgmentErrorOf(judgmentKey(t, s.id))))) : null,
+    awaiting.length ? h('div', { class: 'awaiting-tag' },
+      h('h2', {}, `태그 달기 대기 ${awaiting.length}`),
+      awaiting.map((t) => pairRow(importerItem(t), t, '메모'))) : null,
+    detached.length ? h('div', { class: 'detached' },
+      h('h2', {}, `떨어져 나감 ${detached.length}`),
+      h('p', { class: 'muted' }, '넘긴 테스트를 결과에서 찾을 수 없습니다. 테스트의 파일이나 제목이 바뀌었거나, 이 화면의 파일을 더는 불러오지 않는 것으로 보입니다.'),
+      detached.map((t) => pairRow(detachedItem(t), t, '메모'))) : null,
     discarded.length ? h('div', { class: 'discarded' },
       h('h2', {}, `버린 짝 ${discarded.length}`),
-      discarded.map((t) => h('div', { class: 'importer' }, importerItem(t),
-        h('div', { class: 'detail' }, '까닭 ', t.judgment.reason, h('span', { class: 'muted' }, ` · ${t.judgment.author} · ${fmtDate(t.judgment.date)}`)),
-        h('button', { class: 'undo', onclick: () => saveJudgment({ test: t.ref, node: s.id, kind: 'undo' }, judgmentKey(t, s.id)) }, '되돌리기'),
-        judgmentErrorOf(judgmentKey(t, s.id))))) : null,
+      discarded.map((t) => pairRow(importerItem(t), t, '까닭'))) : null,
   ];
 }
 
@@ -1407,7 +1429,7 @@ async function saveJudgment(judgment, key) {
   } catch (err) {
     return fail(`저장하지 못했습니다: ${err.message}`);
   }
-  state.discardReasons.delete(key);
+  state.judgmentNotes.delete(key);
   try {
     await load();
   } catch (err) {

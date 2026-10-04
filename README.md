@@ -69,7 +69,7 @@ relative to the config file, except the files inside the client source (`routesF
   files (verdict); files in another format are skipped
 - `outDir` — where `map.json` and `tests.json` are written (default: the config's folder)
 - `marksDir` — folder where review marks are kept (default: `marks` in `outDir`)
-- `judgmentsDir` — folder where the review page keeps judgments on pairs of a test and a screen, such as a discarded test importing the screen (default: `judgments` in `outDir`)
+- `judgmentsDir` — folder where the review page keeps judgments on pairs of a test and a screen, such as a test importing the screen that is discarded or handed over for tagging (default: `judgments` in `outDir`)
 - `storiesDir` — folder of story files, or a single story file (default: `stories` in `outDir`); see
   [Stories](#stories)
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
@@ -567,18 +567,33 @@ block opening the screen. A guard longer than 80 characters is folded to its sta
 Then come the screen's source location, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.
-Each of them has 「버리기」 with a field for the reason: a reviewer who finds that the test only passes through the
-screen discards the pair, and it leaves 「불러오는 테스트」 and the 「불러옴 N」 counts (in the list and on the flow boxes, a
-branch shown on its own included) for 「버린 짝」 below, which shows the
-reason, author and date with 「되돌리기」 to bring the pair back. A judgment names its test by result source, test file
-(its path under `srcRoot`) and title with the tags taken out, never by line or Playwright project, so a discarded pair
-stays discarded after a rebuild when lines are added above the test, the title gains a tag or the results come from
-another computer; a discarded pair whose test is no longer in the results shows nowhere. Like a mark, each judgment is a new file, `<judgmentsDir>/<node>/<date>-<author>-<short ID>.json`
-holding `test` (`source`, `file`, `title`), `node`, `kind` (`discard` or `undo`), `reason`, `author` and `date`;
-saving never changes an existing file, and the newest judgment of a pair wins. Judgments are applied whenever the
+Each of them has 「버리기」 and 「태그 달기로 넘기기」 beside one field: a reviewer who finds that the test only passes
+through the screen discards the pair with a reason (required), and it leaves 「불러오는 테스트」 and the 「불러옴 N」
+counts (in the list and on the flow boxes, a branch shown on its own included) for 「버린 짝」 below, which shows the
+reason, author and date with 「되돌리기」 to bring the pair back. A
+reviewer who finds that the test does check the screen hands the pair over for tagging, with a note that may be
+left empty: it moves to 「태그 달기 대기」, which shows the note, author and date with 「되돌리기」, and goes to the
+task list under `# Tagging` for a coding agent to add the screen's tag to the test. Once the test carries the tag
+and `rebuild` has read it, the pair is closed: the test is an ordinary tagged test of the screen and nothing is
+shown for the judgment. A handed-over test that the results no longer hold (its file or title changed, or it no
+longer imports the screen's files) shows under 「떨어져 나감」 with its test file, title and note, and 「되돌리기」
+closes it. A judgment names its test by result source, test file
+(its path under `srcRoot`) and title with the tags taken out, never by line or Playwright project, so a discarded or
+handed-over pair stays so after a rebuild when lines are added above the test, the title gains a tag or the results
+come from another computer; a discarded pair whose test is no longer in the results shows nowhere. Like a mark, each judgment is a new file, `<judgmentsDir>/<node>/<date>-<author>-<short ID>.json`
+holding `test` (`source`, `file`, `title`), `node`, `kind` (`discard`, `hand-over` or `undo`), `reason` (the note of a
+hand-over, which may be empty), `author` and `date`;
+saving never changes an existing file, and the newest judgment of a pair wins. duru stores only these judgments:
+the link between a test and a screen is confirmed by the tag in the test code, and what a test passes through is
+recomputed on every rebuild. Judgments are applied whenever the
 page loads its data and when `rebuild` counts the links made by imports, never to `tests.json` itself; `/api/data`
-carries the discarded pairs as `tests.discarded`, each with its `judgment`. `rebuild` prints how many pairs are
-discarded and names each judgment file it could not read with the reason, without stopping.
+carries the discarded pairs as `tests.discarded`, the handed-over pairs as `tests.awaitingTag` and the ones no longer
+found as `tests.detachedHandOvers`, each with its `judgment`. `rebuild` prints how many pairs are
+discarded, how many are waiting for the tag and how many handed over are no longer found among the tests importing
+or tagged with their screen. A hand-over whose screen is no longer on the map is not in that count; `rebuild` names
+its screen, test and judgment file on a line of its own, because the page has nowhere to show it and only deleting
+that file clears it. A hand-over for an API call counts, since calls are on the map. `rebuild` also names each
+judgment file it could not read with the reason, without stopping.
 The right is split in two. Everything above is in its upper part, the only part that scrolls; the mark form is docked
 below it, always in view, for a screen, a call, an option, a depth and a story alike. On a window too short for the
 form and a few lines of the upper part, the whole right scrolls instead, so the form can still be reached. The form
@@ -719,6 +734,16 @@ place of `<verdict>`; a verdict name ends at the first `: `, so the filled name 
 keeps those tags in its title attaches to the item after a `rebuild`. With no `tests` in the config, the item
 says so instead. A story listed only with its mark, because its file could not be read or the map is stale,
 gets no empty tests. duru writes only these empty tests, never their contents.
+
+Pairs handed over for tagging on the review page follow last under `# Tagging`, whether or not a mark is open, one
+item per pair in the order of test file, line, title, result source and node. Each says `<test file>:<line> → <node>`
+and holds the test's `title`, the `tag to add` (`@screen:<screen ID>` or `@call:<call ID>`), `where` the tag goes in
+the test's format and the reviewer's `note` with author and date. The tag goes in the test's `tag` option for
+Playwright (the title stays as it is), at the end of the test's own title for Vitest, at the end of its
+`@DisplayName` for JUnit and at the end of its `VERDICT` line for a check script. An item leaves the list once the
+test carries the tag, the test has been run again so its result file holds the tag, and `rebuild` has read it. An
+item also leaves, without being done, if the test's file changes or its title changes in any way other than the
+added tag. Only pairs waiting for the tag are listed; duru never edits the test file.
 
 The list starts with how to tag new tests so that they attach after a `rebuild`. Adding tests does not take a
 screen, call or story off the list; a reviewer marking it `fine` does.

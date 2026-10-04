@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './config.mjs';
 import { buildMap } from './map.mjs';
-import { applyJudgments, loadJudgments } from './judgments.mjs';
+import { applyJudgments, judgmentFile, loadJudgments } from './judgments.mjs';
 import { gitUserName, startReviewServer } from './review.mjs';
 import { SERVER_NOT_COMPARED } from './server.mjs';
 import { checkStoryFiles } from './story-paths.mjs';
@@ -80,6 +80,15 @@ if (command === 'tasks') {
     const pairs = (byScreen) => Object.values(byScreen).reduce((n, tests) => n + tests.length, 0);
     console.log(`links from unit tests to screens by the files they import ${pairs(judged.importers)} | test files not read ${links.importNotices.length}`);
     console.log(`pairs discarded by reviewers ${pairs(judged.discarded)} | judgment files skipped ${judgmentNotices.length}`);
+    const onMap = new Set([...map.screens, ...map.calls].map((n) => n.id));
+    let detachedOnMap = 0;
+    const offMap = [];
+    for (const [node, list] of Object.entries(judged.detachedHandOvers)) {
+      if (onMap.has(node)) detachedOnMap += list.length;
+      else for (const d of list) offMap.push(`  handed over for ${node}, which is not on the map ← ${[d.ref.file, d.ref.title].filter(Boolean).join(' ')} (delete ${path.join(config.judgmentsDir, judgmentFile(d.judgment))} to clear it)`);
+    }
+    console.log(`pairs handed over for tagging waiting for the tag ${pairs(judged.awaitingTag)} | handed over but no longer found among the tests importing or tagged with the screen ${detachedOnMap}`);
+    for (const line of offMap) console.log(line);
     for (const n of judgmentNotices) console.log(`  judgment file ${n.file}: ${n.reason}`);
     for (const m of links.missingSources) console.log(`  missing test results ${m}`);
     for (const u of unknownTags) console.log(`  unknown ${u.tag} ← ${u.test.file}:${u.test.line} ${u.test.title}`);

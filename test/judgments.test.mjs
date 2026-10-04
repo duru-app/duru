@@ -158,9 +158,9 @@ function withResults(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-judged-'));
   try {
     const file = path.join(dir, 'results.json');
-    const rebuild = (line, reportedPath = REPORTED_PATH) => {
+    const rebuild = (line, reportedPath = REPORTED_PATH, helpTitle = 'renders the help text') => {
       const assertionResults = [
-        { ancestorTitles: [], title: 'renders the help text', status: 'passed', location: { line } },
+        { ancestorTitles: [], title: helpTitle, status: 'passed', location: { line } },
         { ancestorTitles: [], title: 'shows the day the help was last updated', status: 'passed', location: { line: line + 4 } },
       ];
       fs.writeFileSync(file, JSON.stringify({ testResults: [{ assertionResults, name: reportedPath }] }));
@@ -220,6 +220,7 @@ test('a discarded pair whose test is not in the results shows nowhere', () => {
     const judged = applyJudgments(rebuild(4), loadJudgments(dir).judgments);
     assert.equal(judged.importers['/help#Help'].length, 2);
     assert.deepEqual(judged.discarded, {});
+    assert.deepEqual(judged.detachedHandOvers, {});
   });
 });
 
@@ -291,5 +292,34 @@ test('a stored judgment whose title carries a tag and doubled spaces still disca
     });
     const judged = applyJudgments(rebuild(4), loadJudgments(dir).judgments);
     assert.deepEqual(titles(judged.importers['/help#Help']), ['shows the day the help was last updated']);
+  });
+});
+
+test('a hand-over is written with an optional note and moves the pair out of the importing tests into those waiting for a tag', () => {
+  withResults((rebuild, source, dir) => {
+    const test = { ...HELP_TEST, source };
+    const judgment = addJudgment(dir, { test, node: '/help#Help', kind: 'hand-over', author: 'a' }, new Date('2026-10-04T01:00:00Z'));
+    assert.deepEqual(loadJudgments(dir).judgments, [{ id: judgment.id, test, node: '/help#Help', kind: 'hand-over', reason: '', author: 'a', date: '2026-10-04T01:00:00.000Z' }]);
+
+    const judged = applyJudgments(rebuild(4), loadJudgments(dir).judgments);
+    assert.deepEqual(titles(judged.importers['/help#Help']), ['shows the day the help was last updated']);
+    assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => [t.title, t.line, t.ref, t.judgment.id]), [['renders the help text', 4, test, judgment.id]]);
+    assert.deepEqual(judged.discarded, {});
+    assert.deepEqual(judged.detachedHandOvers, {});
+  });
+});
+
+test('a handed-over test whose title or file changed is shown as detached with its judgment, while the test under its new name imports the screen as before', () => {
+  withResults((rebuild, source, dir) => {
+    const retitled = addJudgment(dir, { test: { ...HELP_TEST, source }, node: '/help#Help', kind: 'hand-over', reason: 'checks the text', author: 'a' }, new Date('2026-10-04T01:00:00Z'));
+    const moved = addJudgment(dir, { test: { ...HELP_TEST, source, file: 'components/OldHelp.spec.js' }, node: '/help#Help', kind: 'hand-over', author: 'a' }, new Date('2026-10-04T02:00:00Z'));
+
+    const judged = applyJudgments(rebuild(4, REPORTED_PATH, 'renders the help page'), loadJudgments(dir).judgments);
+    assert.deepEqual(titles(judged.importers['/help#Help']), ['renders the help page', 'shows the day the help was last updated']);
+    assert.deepEqual(judged.awaitingTag, {});
+    assert.deepEqual(judged.detachedHandOvers['/help#Help'].map((d) => [d.ref, d.judgment.id]), [
+      [retitled.test, retitled.id],
+      [moved.test, moved.id],
+    ]);
   });
 });

@@ -1,12 +1,12 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileSafe, writeNewRecord } from './marks.mjs';
+import { fileSafe, recordName, writeNewRecord } from './marks.mjs';
 import { compare, isPlainObject } from './config.mjs';
 import { jsonFiles } from './json-files.mjs';
 import { withoutTags } from './verdict.mjs';
 
-export const JUDGMENT_KINDS = ['discard', 'undo'];
+export const JUDGMENT_KINDS = ['discard', 'hand-over', 'undo'];
 
 const isText = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -67,6 +67,8 @@ export function loadJudgments(dir) {
   return { judgments, notices };
 }
 
+export const judgmentFile = (judgment) => path.join(fileSafe(judgment.node), recordName(judgment));
+
 export function addJudgment(dir, { test, node, kind, reason, author }, now = new Date()) {
   const judgment = {
     id: crypto.randomUUID(),
@@ -79,24 +81,36 @@ export function addJudgment(dir, { test, node, kind, reason, author }, now = new
   };
   const problem = problemOf(judgment);
   if (problem) throw new Error(problem);
-  writeNewRecord(path.join(dir, fileSafe(node)), judgment);
+  writeNewRecord(path.join(dir, judgmentFile(judgment)), judgment);
   return judgment;
 }
 
-// importers 에 있는 테스트만 나누므로, 버린 판단의 테스트가 결과에 없으면 그 짝은 어디에도 나오지 않는다.
+// 버린 짝은 테스트가 결과에서 사라지면 어디에도 나오지 않는다.
 export function applyJudgments(tests, judgments) {
   const latest = new Map();
   const ordered = [...judgments].sort((a, b) => Date.parse(a.date) - Date.parse(b.date) || compare(a.id, b.id));
   for (const j of ordered) latest.set(pairKey(j.test, j.node), j);
   const importers = {};
   const discarded = {};
+  const awaitingTag = {};
+  const found = new Set();
   for (const [id, list] of Object.entries(tests.importers ?? {})) {
     for (const t of list) {
       const ref = testRef(t);
-      const judgment = latest.get(pairKey(ref, id));
+      const key = pairKey(ref, id);
+      const judgment = latest.get(key);
       if (judgment?.kind === 'discard') (discarded[id] ??= []).push({ ...t, ref, judgment });
+      else if (judgment?.kind === 'hand-over') (awaitingTag[id] ??= []).push({ ...t, ref, judgment });
       else (importers[id] ??= []).push({ ...t, ref });
+      found.add(key);
     }
   }
-  return { ...tests, importers, discarded };
+  const handOvers = [...latest].filter(([, judgment]) => judgment.kind === 'hand-over');
+  if (handOvers.length) for (const [id, list] of Object.entries(tests.nodes ?? {})) for (const t of list) found.add(pairKey(testRef(t), id));
+  const detachedHandOvers = {};
+  for (const [key, judgment] of handOvers) {
+    if (!found.has(key)) (detachedHandOvers[judgment.node] ??= []).push({ ref: judgment.test, judgment });
+  }
+  for (const list of Object.values(detachedHandOvers)) list.sort((a, b) => compare(a.ref.file, b.ref.file) || compare(a.ref.title, b.ref.title) || compare(a.ref.source, b.ref.source));
+  return { ...tests, importers, discarded, awaitingTag, detachedHandOvers };
 }

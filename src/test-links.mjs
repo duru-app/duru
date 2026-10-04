@@ -77,8 +77,8 @@ export function linkTests(config, map) {
         }
         options.sort(byKey);
         const storyTags = [...new Set(t.tags.filter((tag) => STORY_TAG.test(tag)))];
-        if (source.format === 'vitest') {
-          const link = linkByImports(t.file);
+        const link = source.format === 'vitest' ? linkByImports(t.file) : null;
+        if (link) {
           if (link.reason && !importNotices.some((n) => n.file === t.file)) importNotices.push({ file: t.file, reason: link.reason });
           for (const [id, via] of link.screens ?? []) {
             if (t.tags.includes(`screen:${id}`)) continue;
@@ -90,7 +90,7 @@ export function linkTests(config, map) {
           continue;
         }
         const test = { title: t.title, file: t.file, line: t.line, project: t.project };
-        const entry = { ...test, source: resultPath, format: source.format, depth, status: t.status, ...(t.detail && { detail: t.detail }) };
+        const entry = { ...test, source: resultPath, format: source.format, depth, status: t.status, ...(link?.file && { testFile: link.file }), ...(t.detail && { detail: t.detail }) };
         for (const tag of nodeTags) {
           if (!known.has(tag)) {
             reportUnknown(tag, t, testKey);
