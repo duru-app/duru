@@ -2562,7 +2562,69 @@ test('in a browser, pressing Escape after the review ended throws nothing', { sk
   });
 });
 
-test('in a browser, the explanation stays inside the visible part of the flow area when the flow is scrolled sideways', { skip: browserMissing }, async () => {
+test('in a browser, the info icon stands at the right end of the bar apart from the expand and fold buttons, drawn as an icon with an accessible name and no native tooltip', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 1440, height: 800 });
+        await p.waitForSelector('#flow .box');
+        const info = p.locator('.flowbar button.flowinfo-button');
+        assert.equal(await info.getAttribute('aria-label'), '흐름도 읽는 법');
+        assert.equal(await info.getAttribute('title'), null);
+        assert.match((await info.textContent()).trim(), /^(i|ⓘ)$/, 'the only visible text is the icon glyph');
+        const gaps = await p.evaluate(() => {
+          const bar = document.querySelector('.flowbar').getBoundingClientRect();
+          const icon = document.querySelector('.flowinfo-button').getBoundingClientRect();
+          const last = [...document.querySelectorAll('.flowbar button')].find((b) => b.textContent === '빈틈만 펼치기').getBoundingClientRect();
+          const controls = [...document.querySelectorAll('.flowbar button')].map((b) => b.getBoundingClientRect());
+          return { gap: icon.left - last.right, toBarEdge: bar.right - icon.right, rightmost: Math.max(...controls.map((r) => r.right)) === icon.right, round: Math.abs(icon.width - icon.height) < 0.5 && icon.width <= 28 };
+        });
+        assert.ok(gaps.gap > 200, `the icon is ${gaps.gap}px right of 「빈틈만 펼치기」`);
+        assert.ok(gaps.toBarEdge <= 20, `the icon is ${gaps.toBarEdge}px from the bar's right edge`);
+        assert.ok(gaps.rightmost, 'the icon is the right-most control');
+        assert.ok(gaps.round, 'a small round button');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, the info icon is the last control of its row when a branch is shown on its own, and the bar spans the visible width of the flow area', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 1440, height: 800 });
+        await p.waitForSelector('#flow .box');
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
+        await p.waitForSelector('.flowbar .focusing');
+        const rows = await p.evaluate(() => {
+          const icon = document.querySelector('.flowinfo-button').getBoundingClientRect();
+          const same = [...document.querySelectorAll('.flowbar button, .flowbar .focusing')].filter((e) => {
+            const r = e.getBoundingClientRect();
+            return r.top < icon.bottom && r.bottom > icon.top;
+          });
+          const lastRight = Math.max(...same.map((e) => e.getBoundingClientRect().right));
+          return { lastRight, iconRight: icon.right };
+        });
+        assert.equal(rows.lastRight, rows.iconRight, 'nothing sits to the right of the icon on its row');
+        await flowButton(p, '전체 보기').click();
+        await flowButton(p, '모두 펼치기').click();
+        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 300; });
+        const m = await p.evaluate(() => {
+          const flow = document.getElementById('flow');
+          const bar = document.querySelector('.flowbar').getBoundingClientRect();
+          const box = flow.getBoundingClientRect();
+          return { scrollWidth: flow.scrollWidth, clientWidth: flow.clientWidth, barLeft: bar.left - box.left, barRight: bar.right - box.left };
+        });
+        if (m.scrollWidth > m.clientWidth) {
+          assert.ok(Math.abs(m.barLeft) <= 0.5, `bar left ${m.barLeft}`);
+          assert.ok(Math.abs(m.barRight - m.clientWidth) <= 0.5, `bar right ${m.barRight} against visible width ${m.clientWidth}`);
+        }
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, the info icon and its explanation stay inside the visible box of the flow area when everything is expanded and the flow is scrolled sideways', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -2574,25 +2636,26 @@ test('in a browser, the explanation stays inside the visible part of the flow ar
         const edges = () => p.evaluate(() => {
           const flow = document.getElementById('flow');
           const box = flow.getBoundingClientRect();
-          const legend = document.getElementById('flowlegend').getBoundingClientRect();
-          return { left: legend.left - box.left, right: legend.right - box.left, visible: flow.clientWidth, scrolled: flow.scrollLeft };
+          const rel = (r) => ({ left: r.left - box.left, right: r.right - box.left });
+          return { visible: flow.clientWidth, scrolled: flow.scrollLeft, scrollWidth: flow.scrollWidth, icon: rel(document.querySelector('.flowinfo-button').getBoundingClientRect()), legend: rel(document.getElementById('flowlegend').getBoundingClientRect()) };
         });
         const within = (e) => {
-          assert.ok(e.scrolled > 0, `the flow is scrolled sideways (${e.scrolled})`);
-          assert.ok(e.left >= 0, `left edge ${e.left}`);
-          assert.ok(e.right <= e.visible, `right edge ${e.right} within ${e.visible}`);
+          assert.equal(e.scrolled, 300, `the flow is scrolled sideways (${e.scrolled} of ${e.scrollWidth})`);
+          assert.ok(e.icon.left >= 0 && e.icon.right <= e.visible, `icon ${e.icon.left}..${e.icon.right} within ${e.visible}`);
+          assert.ok(e.legend.left >= 0, `legend left edge ${e.legend.left}`);
+          assert.ok(e.legend.right <= e.visible, `legend right edge ${e.legend.right} within ${e.visible}`);
         };
 
         await info.click();
         await p.mouse.move(600, 500);
-        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 150; });
+        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 300; });
         await frames();
         assert.equal(await p.locator('#flowlegend').isVisible(), true);
         within(await edges());
 
         await info.click();
         await p.mouse.move(600, 500);
-        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 150; });
+        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 300; });
         await frames();
         await info.hover();
         await frames();
@@ -2603,26 +2666,55 @@ test('in a browser, the explanation stays inside the visible part of the flow ar
   );
 });
 
-test('in a browser, the pointer can travel from the info button down into the explanation without it disappearing', { skip: browserMissing }, async () => {
+const travelDown = async (p, info, legend) => {
+  await info.hover();
+  assert.equal(await legend.isVisible(), true);
+  const button = await info.boundingBox();
+  const text = await legend.boundingBox();
+  const x = button.x + button.width / 2;
+  const from = button.y + button.height / 2;
+  const to = text.y + 20;
+  assert.ok(to > from);
+  for (let y = from; y <= to; y += 1) {
+    await p.mouse.move(x, y);
+    assert.equal(await legend.isVisible(), true, `the explanation is gone with the pointer at y=${y} (icon bottom ${button.y + button.height}, explanation top ${text.y})`);
+  }
+  assert.equal(await p.evaluate(() => document.getElementById('flowlegend').matches(':hover')), true, 'the pointer is on the explanation');
+};
+
+test('in a browser, the pointer can travel from the info icon down into the explanation without it disappearing', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
+        await travelDown(p, p.locator('.flowbar button.flowinfo-button'), p.locator('#flowlegend'));
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, the pointer can travel from the info icon into the explanation when the bar wraps onto several lines at a 500px window with one branch shown', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 500, height: 700 });
+        await p.waitForSelector('#flow .box');
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
+        await p.waitForSelector('.flowbar .focusing');
+        const rows = await p.evaluate(() => new Set([...document.querySelectorAll('.flowbar > *')].map((e) => Math.round(e.getBoundingClientRect().top))).size);
+        assert.ok(rows >= 3, `the bar wraps onto ${rows} lines`);
         const info = p.locator('.flowbar button.flowinfo-button');
-        const legend = p.locator('#flowlegend');
-        await info.hover();
-        assert.equal(await legend.isVisible(), true);
-        const button = await info.boundingBox();
-        const text = await legend.boundingBox();
-        const x = button.x + button.width / 2;
-        const from = button.y + button.height - 2;
-        const to = text.y + 20;
-        assert.ok(to > from);
-        for (let y = from; y <= to; y += 1) {
-          await p.mouse.move(x, y);
-          assert.equal(await legend.isVisible(), true, `the explanation is gone with the pointer at y=${y} (button bottom ${button.y + button.height}, explanation top ${text.y})`);
-        }
-        assert.equal(await p.evaluate(() => document.getElementById('flowlegend').matches(':hover')), true, 'the pointer is on the explanation');
+        await travelDown(p, info, p.locator('#flowlegend'));
+        const e = await p.evaluate(() => {
+          const flow = document.getElementById('flow');
+          const box = flow.getBoundingClientRect();
+          const legend = document.getElementById('flowlegend').getBoundingClientRect();
+          const icon = document.querySelector('.flowinfo-button').getBoundingClientRect();
+          return { visible: flow.clientWidth, left: legend.left - box.left, right: legend.right - box.left, iconRight: icon.right - box.left, iconBottom: icon.bottom, legendTop: legend.top };
+        });
+        assert.ok(e.left >= 0 && e.right <= e.visible, `legend ${e.left}..${e.right} within ${e.visible}`);
+        assert.ok(e.iconRight <= e.visible, 'the icon is in view');
+        assert.ok(e.legendTop >= e.iconBottom, 'the explanation opens under the icon');
       }, { view: 'flow' }),
     ),
   );

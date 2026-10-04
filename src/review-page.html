@@ -119,10 +119,12 @@
   /* 상자를 재는 순간에는 내용이 짧아 스크롤바가 없으므로, 그때 잰 폭이 다 그린 뒤와 같도록 스크롤바 자리를 늘 비워 둔다. */
   #flow { height: calc(100vh - 49px); overflow: auto; scrollbar-gutter: stable; padding: 16px; }
   #flow h2 { margin: 20px 0 8px; }
-  /* 막대는 옆으로 스크롤되므로 설명 상자의 왼쪽은 스크롤한 만큼 밀어 흐름도에 보이는 부분 안에 둔다. */
-  .flowlegend { display: none; position: absolute; left: calc(16px + var(--flow-x, 0px)); top: 100%; width: min(640px, calc(100% - 32px)); box-sizing: border-box; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .flowinfo { align-self: stretch; display: flex; align-items: center; margin-left: auto; }
+  .flowbar .flowinfo-button { width: 20px; height: 20px; padding: 0; border-radius: 50%; font: italic bold 12px/1 Georgia, serif; color: var(--muted); }
+  .flowbar .flowinfo-button:hover, .flowbar .flowinfo-button:focus-visible, .flowinfo.shown .flowinfo-button { border-color: var(--accent); color: var(--text); }
+  .flowlegend { display: none; position: absolute; right: 16px; top: 100%; width: min(640px, calc(100% - 32px)); box-sizing: border-box; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.5; color: var(--muted); }
   .flowinfo.shown .flowlegend { display: flex; }
-  .flowlegend::before { content: ''; position: absolute; left: 0; right: 0; top: calc(-1px - var(--bar-pad)); height: var(--bar-pad); }
+  .flowlegend::before { content: ''; position: absolute; left: 0; right: 0; top: calc(-1 * var(--bar-pad) - 2px); height: calc(var(--bar-pad) + 2px); }
   .canvas { position: relative; }
   .canvas svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
   .canvas svg path { fill: none; stroke: var(--muted); stroke-width: 1.3; opacity: .7; }
@@ -151,7 +153,7 @@
   .box .acts { display: flex; column-gap: 4px; margin-top: 3px; }
   .box .toggle { flex: none; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--muted); font: inherit; font-size: 11px; font-weight: normal; line-height: 1.3; padding: 0 6px; white-space: nowrap; cursor: pointer; }
   .box .toggle:hover { border-color: var(--accent); color: var(--text); }
-  .flowbar { position: sticky; top: -16px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; --bar-pad: 8px; margin: -16px -16px 10px; padding: 12px 16px var(--bar-pad); background: var(--bg); border-bottom: 1px solid var(--line); }
+  .flowbar { position: sticky; top: -16px; left: -16px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; --bar-pad: 8px; margin: -16px -16px 10px; padding: 12px 16px var(--bar-pad); background: var(--bg); border-bottom: 1px solid var(--line); }
   .flowbar button { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
   .flowbar .focusing { margin-left: 8px; font-size: 12px; }
   .flowbar .flowsummary { flex-basis: 100%; font-size: 13px; }
@@ -1551,9 +1553,6 @@ document.addEventListener('keydown', (e) => {
   const info = document.querySelector('.flowinfo');
   if (info && legendShown(info)) setLegend(info, false);
 });
-document.getElementById('flow').addEventListener('scroll', (e) => {
-  e.currentTarget.style.setProperty('--flow-x', `${e.currentTarget.scrollLeft}px`);
-}, { passive: true });
 
 function renderFlow() {
   const flow = document.getElementById('flow');
@@ -1574,7 +1573,7 @@ function renderFlow() {
     onmouseenter: (e) => applyLegend(e.currentTarget),
     onmouseleave: (e) => { state.legendDismissed = false; applyLegend(e.currentTarget); },
   },
-    h('button', { class: 'flowinfo-button', 'aria-expanded': 'false', 'aria-controls': 'flowlegend', onclick: () => setLegend(legendInfo, !state.legendOpen) }, '읽는 법'),
+    h('button', { class: 'flowinfo-button', 'aria-label': '흐름도 읽는 법', 'aria-expanded': 'false', 'aria-controls': 'flowlegend', onclick: () => setLegend(legendInfo, !state.legendOpen) }, 'i'),
     h('div', { class: 'flowlegend', id: 'flowlegend' },
       h('span', {}, '진입 화면에서 링크를 따라 화면 → API 호출로 뻗습니다. 화면마다 처음 닿은 자리에 한 번만 그리고, 다른 가지로 가는 링크는 상자 안에 → 로 적습니다. 상자의 「API」 단추로 그 화면의 호출을, 「전부 펼치기」로 그 가지 전부를, 「처음으로」로 그 가지의 화면을 모두 펼치고 API 호출은 접고, 「이 가지만」으로 그 가지만 따로 봅니다. 「접기」는 그 화면에 딸린 것을 숨기고, 「펼치기」는 접기 전 모습대로 다시 보입니다.'),
       h('span', {}, '점선: 설정·역할 조건이 걸린 링크(조건은 상자 맨 아래 줄) · 상자 테두리: 붙은 테스트(초록 전부 통과 · 빨강 실패 있음 · 노랑 보류 있음 · 점선 테스트 없음) · 「불러옴 N」: 태그 없이 이 화면의 소스 파일을 불러오는 단위 테스트(테두리와 테스트 수에 넣지 않음) · 상자를 누르면 목록에서 그 화면을 엽니다')));
@@ -1584,12 +1583,12 @@ function renderFlow() {
       h('button', { onclick: act(expandAll) }, '모두 펼치기'),
       h('button', { onclick: act(collapseAll) }, '모두 접기'),
       h('button', { title: '테스트가 없거나 실패한 상자까지 가는 길만 펼치고 나머지는 접습니다', onclick: act(openGapsOnly) }, '빈틈만 펼치기'),
-      legendInfo,
       state.focus
         ? h('span', { class: 'focusing' }, h('strong', {}, focused?.label ?? state.focus.id), ' 가지만 보는 중 ',
           h('button', { onclick: () => { state.focus = null; renderFlow(); document.getElementById('flow').scrollTop = 0; } }, '전체 보기'))
         : null,
-      state.flowError ? h('span', { class: 'error' }, state.flowError) : null),
+      state.flowError ? h('span', { class: 'error' }, state.flowError) : null,
+      legendInfo),
     state.focus ? draw(state.focus.roots)
       : roots.length ? draw(roots, { group: true })
         : h('p', { class: 'muted' }, summary.screens ? '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.' : '화면이 없습니다.'),

@@ -470,8 +470,13 @@ name, written as words (「접기」/「펼치기」 to hide what hangs below th
 branch and its API calls, 「처음으로」 for the branch's screens opened and its API calls closed, 「이 가지만」 to show
 only that branch); the row takes part in the box's measured width, so a box is never narrower than its buttons
 (the longest row, four buttons, is about 240px, well inside the 360px cap). The two lines explaining
-how to read the picture stay hidden until the 「읽는 법」 button in the bar above it is hovered or pressed; it is a
-real button (`aria-expanded`, `aria-controls`) that Tab reaches, Enter or Space opens and closes, and Escape closes while the flow view is showing. The explanation stays inside the visible part of the flow view when it is scrolled sideways, and the pointer can move from the button down into it without it closing.
+how to read the picture stay hidden until the round ⓘ icon at the right end of the bar's button row is hovered or pressed
+(the bar's last control, set apart from 「모두 펼치기」, 「모두 접기」 and 「빈틈만 펼치기」, with the accessible name 「흐름도 읽는 법」 and
+no native tooltip). It is a real button (`aria-expanded`, `aria-controls`) that Tab reaches, Enter or Space opens and
+closes, and Escape closes while the flow view is showing. The explanation opens under the icon, aligned to the bar's
+right edge, and the pointer can move from the icon down into it without it closing, also when the bar wraps onto
+several lines in a narrow window. The bar stays in view when the flow is scrolled in either direction, so the icon is
+always at the right of the visible area and the explanation stays inside it.
 Entry screens that lead to no other screen are gathered under
 「더 뻗지 않는 진입 화면 N」 below the branching ones, in as many columns as the window holds, each as wide as the
 widest gathered screen, so opening a box's API calls keeps every cell's width and column but pushes the rows below it
