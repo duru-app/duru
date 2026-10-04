@@ -85,7 +85,7 @@ export function addJudgment(dir, { test, node, kind, reason, author }, now = new
   return judgment;
 }
 
-// 버린 짝은 테스트가 결과에서 사라지면 어디에도 나오지 않는다.
+// 제외한 짝은 테스트가 결과에서 사라지면 어디에도 나오지 않는다.
 export function applyJudgments(tests, judgments) {
   const latest = new Map();
   const ordered = [...judgments].sort((a, b) => Date.parse(a.date) - Date.parse(b.date) || compare(a.id, b.id));
