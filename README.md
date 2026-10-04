@@ -677,8 +677,20 @@ imports were read and lead to no screen says so, adding that a file shared by mo
 import that was not found link nothing. A test whose imports were not read, because its result format
 (JUnit, Playwright, verdict) carries no imports or because its test file was not found under `srcRoot`, says
 that instead. A `tests.json` from before the list existed has the count but no list: the tab shows the count and
-the middle asks for `duru rebuild`. The pairs cannot be judged from this
-tab; judge them on the screen. `/api/data` carries the list as `tests.untagged`, each entry with its `ref`, the
+the middle asks for `duru rebuild`. Every 「불러옴」 pair whose screen is on the map has a checkbox, and a 「모두 고르기」 box picks all of
+them; with pairs picked, one reason or note and the buttons 「버리기」 (the reason is required) and 「태그 달기로 넘기기」
+(the note is optional) judge them all at once, each button showing how many pairs are picked. The page sends one
+judgment per picked pair, one after another in the order shown, so the result is the same as judging them one by one
+on the screen, and each can be undone there with 「되돌리기」. While the pairs are being sent, the checkboxes and buttons, the
+other tests, the left tabs, the 목록/흐름 switch, the pair rows and 「리뷰 끝」 are disabled, and the whole bulk is
+signed with the author read when it started; while 「리뷰 끝」 is being sent, the two bulk buttons are disabled too. When the bulk ends,
+the keyboard focus returns to the button that was pressed, to the first control of the bar when that button is off,
+or to the heading of the pairs when no pair is left to pick; a reviewer who meanwhile moved the focus to the
+search box or the name box, which the redraw keeps, stays there and goes on typing where it was. If a request fails midway the rest are not sent, the data is
+read again, the unsaved pairs stay picked, and the message beside the buttons names the pairs that were saved and
+those that were not. The picks, the note and that message stay when the reviewer opens a pair's screen and comes back
+to the same test, and go when another test is chosen. A pair for a screen that is not on the map cannot be picked, as it cannot be judged on the screen
+either. 「리뷰 끝」 works on a page whose data has not arrived or could not be read. `/api/data` carries the list as `tests.untagged`, each entry with its `ref`, the
 same reference a judgment names the test by.
 
 A mark targets a screen or an API call, or one depth of either, or one value of a call's option, or one depth
