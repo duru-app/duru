@@ -574,6 +574,74 @@ test('a call line in the task list names the on/off options of its request body,
   });
 });
 
+const DETAIL_CALL = 'GET:/api/v1/document/{documentId}';
+const EXPORT_CALL = 'POST:/api/v1/report/export';
+
+function withLinkedResultCall(fn) {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.mkdirSync(path.join(copy, 'results/verdict/exports'));
+    fs.writeFileSync(
+      path.join(copy, 'results/verdict/exports/export-checks.log'),
+      `VERDICT history in the file: UPHOLDS — every change is listed @call:${EXPORT_CALL} @option:withHistory=true\n` +
+        `VERDICT package file: BROKEN — the attachments are missing @call:${EXPORT_CALL} @option:withAttachments=true @option:withHistory=false\n`,
+    );
+    const own = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    const callLinks = [
+      { from: EXPORT_CALL, to: DETAIL_CALL, note: '내보낸 파일을 연다' },
+      { from: 'POST:/api/v1/archive/document', to: DETAIL_CALL, note: '보관본을 연다' },
+      { from: 'POST:/api/v1/report/weekly', to: DETAIL_CALL, note: '주간 보고서를 연다' },
+    ];
+    fs.writeFileSync(configFile, JSON.stringify({ ...own, callLinks, tests: [...own.tests, { format: 'verdict', path: 'results/verdict/exports', depth: 'output' }] }));
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    addMark(marksDir, { target: { node: '/document/:id#DocumentDetail' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
+    addMark(marksDir, { target: { node: DETAIL_CALL, depth: 'output' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
+    fn({ copy, cli });
+  });
+}
+
+const RESULT_OPTION_LINES = [
+  `- options that change this result — set on POST:/api/v1/archive/document, "보관본을 연다": none, POST:/api/v1/archive/document has no options`,
+  `- options that change this result — set on ${EXPORT_CALL}, "내보낸 파일을 연다" (a test for these carries \`@call:${EXPORT_CALL}\`, its \`@option:\` tag and \`@depth:output\`):`,
+  '  - withAttachments=true — tests: output fail 1',
+  '  - withAttachments=false — no tests at output depth',
+  '  - withHistory=true — tests: output pass 1',
+  '  - withHistory=false — tests: output fail 1',
+  `- options that change this result — set on POST:/api/v1/report/weekly, "주간 보고서를 연다": POST:/api/v1/report/weekly is not on the map`,
+];
+
+test('a call that another call\'s options change the result of lists those options with the output-depth tests of the other call for each value, under its screen and under API calls', () => {
+  withLinkedResultCall(({ cli }) => {
+    const tasks = cli('tasks');
+    const detail = tasks.split('## /document/:id#DocumentDetail\n')[1].split('\n## ')[0];
+    const calls = detail.slice(detail.indexOf('- calls:'), detail.indexOf('\n- tests:'));
+    assert.deepEqual(calls.split('\n'), [
+      '- calls:',
+      `  - ${DETAIL_CALL} — no tests`,
+      ...RESULT_OPTION_LINES.map((l) => `    ${l}`),
+      '  - PUT:/api/v1/document/{documentId}/name — tests: ui fail 1',
+    ]);
+    const item = tasks.split(`## ${DETAIL_CALL}\n`)[1].split('\n## ')[0];
+    assert.equal(
+      item.slice(0, item.indexOf('\n- tests:')),
+      ['', '- marks:', '  - missing, output depth (a, 2026-10-01)', '- called from: /document/:id#DocumentDetail', '- server: on the server (core)', ...RESULT_OPTION_LINES].join('\n'),
+    );
+    assert.equal(tasks.match(/options that change this result/g).length, 6);
+  });
+});
+
+test('a map written before call links has no result option lines and the task list still comes out', () => {
+  withLinkedResultCall(({ copy, cli }) => {
+    const mapFile = path.join(copy, 'out/map.json');
+    const { callLinks, unknownCallLinks, ...old } = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    assert.equal(callLinks.length + unknownCallLinks.length, 3);
+    fs.writeFileSync(mapFile, JSON.stringify(old));
+    const tasks = cli('tasks');
+    assert.match(tasks, new RegExp(`^ {2}- ${DETAIL_CALL.replace(/[{}]/g, '\\$&')} — no tests$`, 'm'));
+    assert.doesNotMatch(tasks, /options that change this result/);
+  });
+});
+
 test('screens that share an ID each keep the options they send themselves', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     cli('rebuild');

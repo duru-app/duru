@@ -68,6 +68,13 @@ relative to the config file, except the files inside the client source (`routesF
   reaches `/document/:id`. A move that ends on different screens, such as one per role, is one move per screen.
   They go to `moves` on the map with their reason, paths that match no route go to `unknownMovePaths`, and
   `rebuild` prints them
+- `callLinks` — calls whose on/off options change what another call gives back (optional), each
+  `{ "from", "to", "note" }` with two different call IDs as in the map and the note on one line, such as
+  `[{ "from": "POST:/api/v1/document/{documentId}/export", "to": "GET:/api/v1/document/{documentId}/file", "note": "내보내기가 만든 파일을 내려받는다" }]`
+  for an export option that only shows in the file the download call delivers. The relation lives in the server,
+  so duru only checks that both calls are on the map. Links whose two calls are on the map go to `callLinks` on
+  the map, each once, sorted by `to`, `from` and note; the others go to `unknownCallLinks` with the IDs not on
+  the map under `missing`, and `rebuild` prints each of those IDs with its link
 - `serverEndpoints`, `apiPathPrefix` — one or more server endpoint lists
   (`<label>\t<METHOD>\t<path>` per line, `{var}` for path variables); `serverEndpoints` may be left out, see
   `unchecked` below
@@ -691,7 +698,13 @@ unresolved, or 「대조 안 함」 when there is no server list) and one cell p
 Under a call with on/off options, each option has an on row and an off row, holding the tests that set it to that value, and one more row counts the tests
 with no option tag. The options are the same as in the task list: those this screen sends in the source and
 those added to the call in `bodyOptions`, the latter tagged 「설정」. An on or off row with no tests at all
-stands out in red; the no-option row takes no marks. A call whose address could not be worked out
+stands out in red; the no-option row takes no marks. Under a call that is the `to` of a link in
+`callLinks`, a 「이 결과를 바꾸는 옵션」 row names the `from` call, which opens that call when pressed, with the
+link's note below it; then each option of the `from` call has an on row and an off row that fill only the
+산출물 column, with the tests of the `from` call that set that value at output depth, the same tests as that
+call's own 산출물 cell for the value. A value with none stands out in red with 「테스트 없음」. These rows take no
+marks, since the same gap is marked on the `from` call's own option cell. A `from` call with no options shows
+「옵션 없음」, and one not on the map shows 「맵에 없는 호출」 and no rows. A call whose address could not be worked out
 from the source has no node, so it shows without cells. For a screen, the right starts with 「이 화면을 열려면」:
 the settings and roles it needs, in the same words as its box in the flow view (「설정이나 역할 없이 열립니다」 when
 it needs neither), every needed value in full, and the blocking route guards. The right then holds, for a screen,
@@ -938,7 +951,11 @@ the screen it comes from needs itself when it is restricted; `differs by link` f
 ask for different kinds), the API calls it makes with their tests
 and their on/off options (those this screen sends in the source and those added in `bodyOptions`), and the tests already attached with their depth and status. Under a
 call with options, one line per option value (`withHistory=true`, `withHistory=false`) and one for tests with
-no option tag (`no option tag`) count the tests by depth and status. API calls with an open mark follow under
+no option tag (`no option tag`) count the tests by depth and status. Under a call that is the `to` of a link in
+`callLinks`, `options that change this result — set on <from call>, "<note>"`, followed by the tags a test for
+these rows carries (`@call:<from call>`, its `@option:` tag and `@depth:output`), lists each value of the `from`
+call's options with that call's tests at output depth, or `no tests at output depth`, or says that the `from` call
+has no options or is not on the map; the same lines follow the server line of that call under `# API calls`. API calls with an open mark follow under
 `# API calls`, each once however many screens call it, with its marks, the screens calling it, its server
 match and the tests already attached. A mark on an option value reads `withHistory=true` or
 `withHistory=true at output depth`; under `marked options`, each marked option says where it was found

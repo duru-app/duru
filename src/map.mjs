@@ -37,6 +37,17 @@ function configuredMoves(screens, moves) {
   return { moves: [...joined.values()], unknownMovePaths: [...unknownPaths] };
 }
 
+function configuredCallLinks(calls, callLinks) {
+  const onMap = new Set(calls.map((c) => c.id));
+  const joined = new Map();
+  for (const { from, to, note } of callLinks) {
+    const missing = [from, to].filter((id) => !onMap.has(id));
+    joined.set(JSON.stringify([from, to, note]), missing.length ? { from, to, note, missing } : { from, to, note });
+  }
+  const links = [...joined.values()].sort((a, b) => compare(a.to, b.to) || compare(a.from, b.from) || compare(a.note, b.note));
+  return { callLinks: links.filter((l) => !l.missing), unknownCallLinks: links.filter((l) => l.missing) };
+}
+
 const bySite = (a, b) => compare(a.screen, b.screen) || compare(a.file, b.file) || a.line - b.line;
 const OPTION_SOURCES = ['source', 'config'];
 
@@ -138,6 +149,7 @@ export async function buildMap(config) {
     duplicateIds,
     calls,
     unknownBodyOptionCalls,
+    ...configuredCallLinks(calls, config.callLinks ?? []),
     ...(server.length === 0 && { serverNotCompared: true }),
     entries,
     unknownEntryPaths,

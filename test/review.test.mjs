@@ -2844,6 +2844,108 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
   );
 });
 
+const RESULT_CALL = 'GET:/api/v1/document/{documentId}';
+const RESULT_LINKS = [
+  { from: 'POST:/api/v1/report/export', to: RESULT_CALL, note: '내보낸 파일을 연다' },
+  { from: 'POST:/api/v1/archive/document', to: RESULT_CALL, note: '보관본을 연다' },
+  { from: 'POST:/api/v1/report/weekly', to: RESULT_CALL, note: '주간 보고서를 연다' },
+];
+const OUTPUT_EXPORT_TESTS = [
+  ['results/playwright/export.json', '@call:POST:/api/v1/report/export @option:withHistory=true"', '@call:POST:/api/v1/report/export @option:withHistory=true @depth:output"'],
+  ['results/playwright/export.json', '@option:withAttachments=true @option:withHistory=false"', '@option:withAttachments=true @option:withHistory=false @depth:output"'],
+];
+
+test('the page data carries the call links of the map and the links with a call missing from it', async () => {
+  await withRebuiltFixture({ callLinks: RESULT_LINKS }, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const { map } = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(map.callLinks, [RESULT_LINKS[1], RESULT_LINKS[0]]);
+      assert.deepEqual(map.unknownCallLinks, [{ ...RESULT_LINKS[2], missing: ['POST:/api/v1/report/weekly'] }]);
+    }),
+  );
+});
+
+test('in a browser, a call whose result another call\'s options change shows those options under it with the other call\'s output-depth tests per value, a link to that call, and a missing call as off the map, and its rows take no mark', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ callLinks: RESULT_LINKS }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        const exportRow = (text) => p.locator('table.calls tr.option').filter({ hasText: text }).first();
+        const VALUES = ['withAttachments 켬', 'withAttachments 끔', 'withHistory 켬', 'withHistory 끔'];
+        const fromOutputCells = [];
+        for (const v of VALUES) fromOutputCells.push(await exportRow(v).locator('td.cell').nth(6).innerText());
+        assert.deepEqual(fromOutputCells, ['✕1', '—', '✓1', '✕1']);
+
+        await p.click('#screen-list li:has-text("/document/:id")');
+        const rows = p.locator('table.calls tbody tr');
+        const label = (row) => row.locator('td.call > div:first-child').innerText();
+        const labels = [];
+        for (let i = 0; i < (await rows.count()); i++) labels.push(await label(rows.nth(i)));
+        assert.deepEqual(labels, [
+          RESULT_CALL,
+          '이 결과를 바꾸는 옵션 POST:/api/v1/archive/document', '옵션 없음',
+          '이 결과를 바꾸는 옵션 POST:/api/v1/report/export', ...VALUES,
+          '이 결과를 바꾸는 옵션 POST:/api/v1/report/weekly맵에 없는 호출',
+          'PUT:/api/v1/document/{documentId}/name',
+        ]);
+        const heads = p.locator('table.calls tr.result-head');
+        assert.deepEqual(await heads.locator('td.call > div.muted').allInnerTexts(), ['보관본을 연다', '내보낸 파일을 연다', '주간 보고서를 연다']);
+
+        const valueRows = p.locator('table.calls tr.option:not(.result-head)');
+        assert.equal(await valueRows.locator('td.cell').count(), 0);
+        const outputCounts = [];
+        for (const v of VALUES) {
+          const row = valueRows.filter({ hasText: v });
+          assert.deepEqual((await row.locator('td').allInnerTexts()).slice(1, -1), ['', '', '', '', '', '']);
+          outputCounts.push(await row.locator('td.count').innerText());
+        }
+        assert.deepEqual(outputCounts, ['✕1', '테스트 없음', '✓1', '✕1']);
+        assert.deepEqual(await p.locator('table.calls tr.option.gap td.call > div').allInnerTexts(), ['withAttachments 끔']);
+        const gapLook = await p.locator('table.calls tr.option.gap td.count .none').evaluate((el) => {
+          const own = getComputedStyle(el);
+          const label = getComputedStyle(el.closest('tr').querySelector('td.call > div'));
+          return [own.color === label.color, own.fontWeight, label.fontWeight];
+        });
+        assert.deepEqual(gapLook, [true, '600', '600']);
+
+        const detached = heads.nth(2);
+        assert.equal(await detached.locator('a').count(), 0);
+        assert.equal(await detached.locator('.chip.l-off-map').innerText(), '맵에 없는 호출');
+
+        const before = await p.textContent('#right .mark-form h2');
+        await valueRows.filter({ hasText: 'withAttachments 끔' }).locator('td.count').click();
+        await valueRows.filter({ hasText: 'withHistory 켬' }).locator('td.call').click();
+        assert.equal(await p.textContent('#right .mark-form h2'), before);
+        assert.equal(await p.locator('table.calls .selected').count(), 0);
+
+        await heads.nth(1).locator('a').click();
+        await p.waitForSelector('#right .target-id');
+        assert.equal(await p.textContent('#right .target-id .mono'), 'POST:/api/v1/report/export');
+        assert.match(await p.textContent('#screen-list li.selected'), /\/admin\/audit/);
+      }),
+    ),
+  OUTPUT_EXPORT_TESTS);
+});
+
+test('in a browser, a map written before call links shows the call table without result option rows', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ callLinks: RESULT_LINKS }, (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    const { callLinks, unknownCallLinks, ...old } = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    assert.equal(callLinks.length + unknownCallLinks.length, 3);
+    fs.writeFileSync(mapFile, JSON.stringify(old));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.waitForSelector('table.calls');
+        assert.equal(await p.locator('table.calls tr.result-head').count(), 0);
+        assert.equal(await p.locator('table.calls tbody tr').count(), 2);
+      }),
+    );
+  });
+});
+
 test('in a browser, reloading a map with no screens while a call is chosen leaves the page empty instead of failing', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>

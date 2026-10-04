@@ -148,6 +148,27 @@ test('rebuild warns about each path in moves that matches no route', () => {
   }
 });
 
+test('rebuild warns about each call in callLinks that is not on the map, naming its link', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    const callLinks = [
+      { from: 'POST:/api/v1/report/export', to: 'GET:/api/v1/document/{documentId}', note: '내보낸 파일을 연다' },
+      { from: 'POST:/api/v1/report/weekly', to: 'GET:/api/v1/download', note: '주간 보고서를 내려받는다' },
+    ];
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, callLinks }));
+    const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.deepEqual(stdout.split('\n').filter((l) => l.includes('callLinks')), [
+      '  callLinks POST:/api/v1/report/weekly → GET:/api/v1/download: POST:/api/v1/report/weekly matches no call',
+      '  callLinks POST:/api/v1/report/weekly → GET:/api/v1/download: GET:/api/v1/download matches no call',
+    ]);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 test('rebuild counts the stories with broken paths or screens gone from the map, the steps it could not judge and the stories in each status, and names each story file it skipped and why', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
