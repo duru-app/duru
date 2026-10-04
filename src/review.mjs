@@ -10,13 +10,13 @@ import { buildFlow } from './flow.mjs';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.mjs';
 import { addMark, classifyMarks, loadMarks } from './marks.mjs';
 import { fillPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.mjs';
-import { editStory } from './stories.mjs';
-import { checkStoryFiles } from './story-paths.mjs';
+import { addStory, editStory } from './stories.mjs';
+import { checkScreens, checkStoryFiles } from './story-paths.mjs';
 import { DEPTHS } from './test-links.mjs';
 
 const PAGE = path.join(import.meta.dirname, 'review-page.html');
 const BODY_LIMIT = 64 * 1024;
-const STORY_WRITES = ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit'];
+const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit', '/api/stories/check', '/api/stories/add'];
 
 function gitUserName(cwd) {
   try {
@@ -179,7 +179,7 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
           return send(res, 400, 'text/plain', err.message);
         }
       }
-      if (req.method === 'POST' && STORY_WRITES.includes(req.url)) {
+      if (req.method === 'POST' && STORY_POSTS.includes(req.url)) {
         if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
         let input;
         try {
@@ -191,6 +191,16 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
         if (req.url === '/api/stories/edit') {
           try {
             return send(res, 200, 'application/json', JSON.stringify(editStory(config.storiesDir, input.id, input)));
+          } catch (err) {
+            return send(res, 400, 'text/plain', err.message);
+          }
+        }
+        if (req.url === '/api/stories/check' || req.url === '/api/stories/add') {
+          try {
+            const checked = checkScreens(readJson(mapFile), mapFile, input.screens);
+            if (req.url === '/api/stories/check') return send(res, 200, 'application/json', JSON.stringify(checked));
+            const { id, name, memo, screens } = input;
+            return send(res, 201, 'application/json', JSON.stringify(addStory(config.storiesDir, { id, name, memo, screens, author: author.name })));
           } catch (err) {
             return send(res, 400, 'text/plain', err.message);
           }

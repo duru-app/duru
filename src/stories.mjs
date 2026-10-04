@@ -89,14 +89,16 @@ export function writableStoriesFolder(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-export function addStory(dir, { id, name, screens, author, source }, now = new Date()) {
+export function addStory(dir, { id, name, screens, memo = '', author, source }, now = new Date()) {
   if (typeof id !== 'string' || !STORY_ID.test(id)) throw new Error('스토리 ID 는 영문 소문자 · 숫자 · - · _ 로만 씁니다');
   if (!isText(name)) throw new Error('스토리 이름이 필요합니다');
   if (!isText(author)) throw new Error('작성자가 필요합니다');
   writableStoriesFolder(dir);
   const taken = storyFiles(dir).files.find((f) => path.basename(f.file) === `${id}.json`);
   if (taken) throw new Error(`스토리 ID ${id} 는 ${taken.file} 이 이미 씁니다`);
-  const story = { name: name.trim(), screens, memo: '', author: author.trim(), date: now.toISOString(), ...(source && { source }) };
+  const story = { name: name.trim(), screens, memo, author: author.trim(), date: now.toISOString(), ...(source && { source }) };
+  const problem = problemOf(story);
+  if (problem) throw new Error(problem);
   fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(story, null, 2) + '\n', { flag: 'wx' });
   return { id, ...story, file: `${id}.json` };
 }

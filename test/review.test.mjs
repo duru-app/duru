@@ -8103,3 +8103,268 @@ test('in a browser, a candidate that was accepted but could not be read back say
     ),
   );
 });
+
+const HELP_PATH = ['/signin#SignIn', '/home#Home', '/help#Help'];
+
+test('a screen order sent for checking comes back judged like a story, and one that is empty, not a list or off the map is refused', async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const res = await postJson(base, '/api/stories/check', { screens: HELP_PATH });
+      assert.equal(res.status, 200);
+      const checked = await res.json();
+      assert.deepEqual([checked.screens, checked.links.map((l) => l.verdict), checked.broken, checked.detached], [HELP_PATH, ['open', 'broken'], true, false]);
+      for (const screens of [[], 'x', undefined, ['/home#Home', 3]]) assert.equal((await postJson(base, '/api/stories/check', { screens })).status, 400);
+      const offMap = await postJson(base, '/api/stories/check', { screens: ['/home#Home', '/gone#Gone'] });
+      assert.deepEqual([offMap.status, await offMap.text()], [400, '맵에 없는 화면입니다: /gone#Gone']);
+      const notJson = await fetch(`${base}/api/stories/check`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
+      assert.equal(notJson.status, 415);
+      assert.equal(fs.existsSync(config.storiesDir), false);
+    }),
+  );
+});
+
+test('a new story posted from the page is written with its screens, name, memo and the server-side author, and is refused when its ID is taken or breaks the rule, a screen repeats or a screen is off the map', async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const res = await postJson(base, '/api/stories/add', { id: 'help-from-signin', name: ' 로그인해 도움말을 연다 ', memo: '홈에 링크가 없다.', screens: HELP_PATH, author: 'someone else' });
+      assert.equal(res.status, 201);
+      const { date, ...saved } = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'help-from-signin.json'), 'utf8'));
+      assert.deepEqual(saved, { name: '로그인해 도움말을 연다', screens: HELP_PATH, memo: '홈에 링크가 없다.', author: 'reviewer' });
+      assert.match(date, /^\d{4}-\d{2}-\d{2}T/);
+      const data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.stories.list.map((st) => [st.id, st.broken]), [['help-from-signin', true]]);
+
+      const refused = async (body, why) => {
+        const r = await postJson(base, '/api/stories/add', { id: 'another', name: 'x', screens: ['/home#Home'], ...body });
+        assert.equal(r.status, 400, JSON.stringify(body));
+        assert.match(await r.text(), why);
+      };
+      await refused({ id: 'help-from-signin' }, /help-from-signin\.json 이 이미 씁니다/);
+      await refused({ id: 'Help From Signin' }, /스토리 ID 는/);
+      await refused({ name: ' ' }, /스토리 이름이 필요합니다/);
+      await refused({ memo: 3 }, /memo 는 글자여야 합니다/);
+      await refused({ screens: ['/home#Home', '/home#Home'] }, /같은 화면입니다/);
+      await refused({ screens: ['/gone#Gone'] }, /맵에 없는 화면입니다/);
+      assert.deepEqual(fs.readdirSync(config.storiesDir), ['help-from-signin.json']);
+      assert.equal((await postJson(base, '/api/stories/add', { id: 'no-memo', name: 'x', screens: ['/home#Home'] })).status, 201);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'no-memo.json'), 'utf8')).memo, '');
+    }),
+  );
+});
+
+const pickScreen = (p, routePath) => p.locator('#pick-list li').filter({ has: p.locator('.name > span:first-child', { hasText: new RegExp(`^${routePath}$`) }) }).click();
+const composeSteps = (p) => p.locator('#center .compose-step .screen-path').allTextContents();
+const composeLinks = (p) => p.locator('#center .story-path .link > .chip').allTextContents();
+const untilJudged = (p, links) => p.waitForFunction((n) => document.querySelectorAll('#center .story-path .link > .chip').length === n && !document.querySelector('#center .link.l-pending'), links);
+const stepButton = (step, cls) => `#center .compose-step[data-step="${step}"] button.${cls}`;
+const focusedStepButton = (p) => p.evaluate(() => [document.activeElement.closest('.compose-step')?.dataset.step, document.activeElement.className]);
+
+async function startNewStory(p) {
+  await p.waitForSelector('#screen-list li');
+  await p.click(storiesTab);
+  await p.click('#left button.new-story');
+  await p.waitForSelector('#pick-list li');
+}
+
+test('in a browser, 「새 스토리」 turns the left column into a screen picker, each screen pressed becomes the next step with the link from the step before judged at once, and saving writes the story file and shows the new story', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await startNewStory(p);
+        assert.equal(await p.locator('#pick-list li').count(), 11);
+        assert.equal(await p.textContent('#center h3'), '새 스토리');
+        assert.equal(await p.textContent('#center .no-steps'), '아직 넣은 화면이 없습니다.');
+        assert.equal(await p.isDisabled('#right button.save-compose'), true);
+        assert.equal(await p.locator('#right-dock').isVisible(), false);
+
+        await pickScreen(p, '/signin');
+        await pickScreen(p, '/home');
+        await pickScreen(p, '/help');
+        await untilJudged(p, 2);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
+        assert.deepEqual(await composeLinks(p), ['이어짐', '링크 없음']);
+        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
+        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['링크 없음']);
+        assert.deepEqual(await p.locator('#pick-list li .count').allTextContents(), ['넣음 1', '넣음 1', '넣음 1']);
+
+        await p.fill('#compose-id', 'Help From Signin');
+        assert.equal(await p.isVisible('label:has(#compose-id) .invalid'), true);
+        await p.fill('#compose-id', 'help-from-signin');
+        assert.equal(await p.isVisible('label:has(#compose-id) .invalid'), false);
+        assert.equal(await p.isDisabled('#right button.save-compose'), true);
+        await p.fill('#compose-name', '로그인해 도움말을 연다');
+        await p.fill('#compose-memo', '홈에 링크가 없다.');
+        assert.equal(await p.isDisabled('#right button.save-compose'), false);
+        await p.click('#right button.save-compose');
+        await p.waitForSelector('#story-list li.selected:has-text("로그인해 도움말을 연다")');
+
+        const { date, ...saved } = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'help-from-signin.json'), 'utf8'));
+        assert.deepEqual(saved, { name: '로그인해 도움말을 연다', screens: HELP_PATH, memo: '홈에 링크가 없다.', author: 'reviewer' });
+        assert.equal(await p.textContent('#center h3'), '로그인해 도움말을 연다');
+        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['이어짐', '링크 없음']);
+        assert.equal(await p.textContent('#left button.new-story'), '새 스토리');
+        assert.equal(await p.locator('#pick-list').count(), 0);
+      }),
+    ),
+  );
+});
+
+test('in a browser, moving a step of a new story with 「위로」 or 「아래로」 judges the links again at once and keeps the focus on the moved step, a step goes in before another or comes out, and the same screen twice in a row is refused', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await startNewStory(p);
+        await pickScreen(p, '/signin');
+        await pickScreen(p, '/home');
+        await untilJudged(p, 1);
+        assert.deepEqual([await composeLinks(p), await p.locator('#right .verdict').allTextContents()], [['이어짐'], ['도달 가능']]);
+        assert.deepEqual([await p.isDisabled(stepButton(0, 'up')), await p.isDisabled(stepButton(1, 'down'))], [true, true]);
+
+        await p.click(stepButton(0, 'down'));
+        await p.waitForFunction(() => document.querySelector('#center .story-path .link > .chip')?.textContent === '링크 없음');
+        assert.deepEqual(await composeSteps(p), ['/home', '/signin']);
+        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
+        assert.deepEqual(await focusedStepButton(p), ['1', 'up']);
+        await p.keyboard.press('Enter');
+        await p.waitForFunction(() => document.querySelector('#center .story-path .link > .chip')?.textContent === '이어짐');
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home']);
+        assert.deepEqual(await focusedStepButton(p), ['0', 'down']);
+
+        await pickScreen(p, '/home');
+        assert.equal(await p.textContent('#center .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home']);
+
+        await p.click(stepButton(1, 'insert-before'));
+        assert.match(await p.textContent('#center .insert-mark'), /^다음에 고르는 화면이 여기 들어갑니다/);
+        await pickScreen(p, '/help');
+        await pickScreen(p, '/lab');
+        await untilJudged(p, 3);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/help', '/lab', '/home']);
+        assert.equal(await p.locator('#center .compose-error').count(), 0);
+        await p.click('#center .insert-mark button.insert-at-end');
+        assert.equal(await p.locator('#center .insert-mark').count(), 0);
+
+        await p.click(stepButton(1, 'remove'));
+        await untilJudged(p, 2);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/lab', '/home']);
+        assert.deepEqual(await p.locator('#pick-list li .count').allTextContents(), ['넣음 1', '넣음 1', '넣음 1']);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a step of a new story is dragged onto another step to take its place, something else dropped on a step moves nothing, and the name being typed is left alone when a verdict arrives', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await startNewStory(p);
+        for (const routePath of ['/signin', '/home', '/help']) await pickScreen(p, routePath);
+        await untilJudged(p, 2);
+        const name = await p.$('#compose-name');
+        await p.fill('#compose-name', '끌어서 옮긴다');
+
+        await p.evaluate(() => {
+          const dropped = new DataTransfer();
+          dropped.setData('text/plain', '0');
+          document.querySelector('#center .compose-step[data-step="1"]').dispatchEvent(new DragEvent('drop', { dataTransfer: dropped, bubbles: true, cancelable: true }));
+        });
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
+
+        await p.locator('#center .compose-step[data-step="2"]').dragTo(p.locator('#center .compose-step[data-step="0"]'));
+        await p.waitForFunction(() => document.querySelector('#center .compose-step .screen-path')?.textContent === '/help');
+        await untilJudged(p, 2);
+        assert.deepEqual(await composeSteps(p), ['/help', '/signin', '/home']);
+        assert.deepEqual(await composeLinks(p), ['링크 없음', '이어짐']);
+        assert.equal(await name.evaluate((el) => el.isConnected && el.value), '끌어서 옮긴다');
+        assert.equal(await p.textContent('#center h3'), '끌어서 옮긴다');
+      }),
+    ),
+  );
+});
+
+test('in a browser, a new story being written is a place in the address and is kept while the reviewer looks at the story list, ending the review asks about it first, and 「쓰던 것 버리기」 throws it away', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await startNewStory(p);
+        assert.equal(await placeOf(p), '#stories?new=1');
+        await pickScreen(p, '/home');
+        await p.fill('#compose-name', '쓰다 만 스토리');
+        await p.click('#left button.leave-compose');
+        assert.equal(await p.textContent('#left button.new-story'), '새 스토리 이어 쓰기');
+        assert.match(await placeOf(p), /^#stories\?story=/);
+        assert.equal(await p.locator('#story-list li.selected').count(), 1);
+
+        await p.goBack();
+        await p.waitForSelector('#pick-list li');
+        assert.deepEqual(await composeSteps(p), ['/home']);
+        assert.equal(await p.inputValue('#compose-name'), '쓰다 만 스토리');
+
+        let asked = null;
+        p.once('dialog', (dialog) => {
+          asked = dialog.message();
+          dialog.dismiss();
+        });
+        await p.click('#end-review');
+        assert.match(asked, /^저장하지 않은 새 스토리가 있습니다/);
+        assert.equal(await p.locator('#ended').count(), 0);
+
+        await p.click('#right button.drop-draft');
+        await p.waitForSelector('#story-list li');
+        assert.equal(await p.textContent('#left button.new-story'), '새 스토리');
+        await p.click('#left button.new-story');
+        assert.equal(await p.textContent('#center .no-steps'), '아직 넣은 화면이 없습니다.');
+        assert.equal(await p.inputValue('#compose-name'), '');
+        assert.deepEqual(fs.readdirSync(config.storiesDir).filter((f) => f.includes('쓰다')), []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, the notice that the same screen cannot follow itself stays when a verdict asked for earlier arrives, and goes with the next change', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await startNewStory(p);
+        const checks = holdRequests(p, '**/api/stories/check');
+        await checks.done;
+        await pickScreen(p, '/signin');
+        await pickScreen(p, '/home');
+        await pickScreen(p, '/home');
+        assert.equal(await p.textContent('#center .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
+        assert.equal(await p.textContent('#center .link.l-pending'), '맞춰 보는 중');
+        await untilSet(() => checks.sent.length === 2, 'the two checks');
+        checks.release();
+        await untilJudged(p, 1);
+        assert.equal(await p.textContent('#center .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
+        await pickScreen(p, '/help');
+        assert.equal(await p.locator('#center .compose-error').count(), 0);
+        await untilSet(() => checks.sent.length === 3, 'the third check');
+        checks.release();
+        await untilJudged(p, 2);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a map built before links carried their conditions has no 「새 스토리」, also with no story file yet, and its address opens the story list', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    for (const s of map.screens) for (const l of s.links) delete l.conditions;
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+    await withServer(config, 'reviewer', async (base) => {
+      const refused = await postJson(base, '/api/stories/check', { screens: ['/home#Home'] });
+      assert.equal(refused.status, 400);
+      assert.match(await refused.text(), /스토리를 맞춰 보지 못했습니다\. duru rebuild 로 맵을 다시 만드세요$/);
+      await withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        assert.equal(await p.locator('#left button.new-story').count(), 0);
+        await p.evaluate(() => { location.hash = '#stories?new=1'; });
+        await p.waitForFunction(() => location.hash === '#stories');
+        assert.equal(await p.locator('#pick-list').count(), 0);
+      });
+    });
+  });
+});

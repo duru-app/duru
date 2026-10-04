@@ -152,6 +152,16 @@
   :is(.story-form, #accept-ask) .field > span { font-size: 12px; color: var(--muted); }
   :is(.story-form, #accept-ask) .field .invalid { font-size: 12px; color: var(--fail); }
   .story-path .step .records { flex: none; font-size: 12px; }
+  .compose-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  button.new-story, .compose-head button, .step-acts button, .insert-mark button, .story-form button.drop-draft { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  button.new-story { margin-bottom: 8px; }
+  .step-acts button:disabled { opacity: .5; cursor: default; }
+  .story-path .step.compose-step { align-items: center; cursor: grab; }
+  .story-path .step.compose-step .grip { flex: none; color: var(--muted); }
+  .story-path .step .step-acts { flex: none; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .story-path .insert-mark { display: flex; align-items: center; gap: 8px; margin: 4px 0; padding: 4px 8px; border: 1px dashed var(--accent); border-radius: 6px; font-size: 12px; color: var(--accent); }
+  .story-path .link.l-pending { color: var(--muted); }
+  #pick-list li .count { color: var(--accent); }
   .history li { font-size: 12px; }
   .history-toggle { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
   .history-toggle::after { content: ' ▸'; }
@@ -352,7 +362,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -427,6 +437,12 @@ async function load() {
     state.storyDraft = null;
   }
   if (!candidateOf()) state.candidate = null;
+  const c = state.compose;
+  const onMap = c?.screens.filter((id) => screens.some((sc) => sc.id === id));
+  if (c && onMap.length !== c.screens.length) {
+    Object.assign(c, { screens: onMap, at: null });
+    checkCompose();
+  }
 }
 
 function select(id, target = { node: id }) {
@@ -555,6 +571,17 @@ function renderLeft() {
     side('screens', '화면', map.screens.length),
     side('stories', '스토리', stories.list.length),
     side('untagged', '태그 없음', untaggedCount(), '노드 태그도 스토리 태그도 없는 테스트'));
+  if (state.side === 'stories' && state.composing) {
+    if (!keptLeftList(left, tabs, 'pick-list')) {
+      fill(left,
+        tabs,
+        h('div', { class: 'compose-head' }, h('strong', {}, '새 스토리에 넣을 화면'), h('button', { class: 'leave-compose', title: '쓰던 순서는 그대로 두고 스토리 목록을 봅니다', onclick: leaveCompose }, '스토리 목록')),
+        h('div', { class: 'filters' },
+          h('input', { type: 'search', placeholder: '화면 찾기', value: state.compose.query, oninput: (e) => { state.compose.query = e.target.value; renderPickList(); } })),
+        h('ul', { class: 'screens', id: 'pick-list' }));
+    }
+    return renderPickList();
+  }
   if (state.side === 'stories') return fill(left, tabs, storyList());
   if (state.side === 'untagged') {
     if (!keptLeftList(left, tabs, 'untagged-list')) {
@@ -700,9 +727,24 @@ function candidateGroup() {
   ];
 }
 
+function renderPickList() {
+  const c = state.compose;
+  const q = c.query.trim().toLowerCase();
+  const visible = state.data.map.screens.filter((sc) => !q || sc.id.toLowerCase().includes(q));
+  const list = document.getElementById('pick-list');
+  fill(list, ...visible.map((sc) => {
+    const used = c.screens.filter((id) => id === sc.id).length;
+    return h('li', { title: `${sc.path} ${sc.component}\n누르면 새 스토리의 단계로 넣습니다`, onclick: () => addComposeScreen(sc.id) },
+      h('span', { class: 'name' }, h('span', {}, routeSegments(sc.path)), ' ', h('span', { class: 'muted component' }, sc.component)),
+      used ? h('span', { class: 'count' }, `넣음 ${used}`) : null);
+  }));
+  if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 화면이 없습니다.'));
+}
+
 function storyList() {
   const { list, notices, stale } = state.data.stories;
   return [
+    oldMap() ? null : h('button', { class: 'new-story', title: '화면을 차례로 골라 스토리 파일을 새로 만듭니다', onclick: startCompose }, state.compose?.screens.length ? '새 스토리 이어 쓰기' : '새 스토리'),
     ...(stale
       ? [h('p', { class: 'error' }, stale)]
       : list.length
@@ -1478,6 +1520,7 @@ const storyPath = (st, stepRanges) => [
 function renderStoryCenter() {
   clearCenterHead();
   const center = document.getElementById('center-body');
+  if (state.composing) return fill(center, composeCenter());
   const c = candidateOf();
   if (c) {
     return fill(center,
@@ -1705,7 +1748,187 @@ function reachSection(st, key) {
   ];
 }
 
+// 링크에 조건이 없는 예전 맵으로는 화면 순서를 대조하지 못한다.
+const oldMap = () => state.data.map.screens.some((sc) => sc.links.some((l) => !Array.isArray(l.conditions)));
+const newCompose = () => ({ screens: [], at: null, id: '', name: '', memo: '', checked: null, turn: 0, error: null, refused: null, query: '' });
+const composeShown = () => state.composing && state.side === 'stories' && state.view === 'list';
+const checkedCompose = (c) => (c.checked && c.checked.screens.join('\n') === c.screens.join('\n') ? c.checked : null);
+const repeatedStep = (screens) => screens.some((id, i) => i > 0 && id === screens[i - 1]);
+
+function startCompose() {
+  state.compose ??= newCompose();
+  state.composing = true;
+  state.candidate = null;
+  state.storyError = null;
+  render();
+}
+
+function leaveCompose() {
+  state.composing = false;
+  state.storyError = null;
+  render();
+}
+
+function dropCompose() {
+  state.compose = null;
+  leaveCompose();
+}
+
+const canSaveCompose = (c) => STORY_ID.test(c.id) && Boolean(c.name.trim()) && c.screens.length > 0 && !repeatedStep(c.screens);
+
+function composeReach(c) {
+  const checked = checkedCompose(c);
+  return [
+    ...(checked ? reachSection(checked, 'compose') : [h('p', { class: 'muted' }, c.screens.length ? '경로를 맞춰 보는 중입니다.' : '화면을 넣으면 여기에서 끝까지 갈 수 있는지와 사전 조건을 보입니다.')]),
+    repeatedStep(c.screens) ? h('p', { class: 'error repeated' }, '같은 화면이 이어진 자리가 있어 저장할 수 없습니다.') : null,
+  ];
+}
+
+// 이름을 치는 동안 판정이 도착해도 입력 칸은 다시 만들지 않는다. 다시 만들면 조합 중이던 한글이 끊긴다.
+function renderCompose(focus) {
+  if (!composeShown()) return;
+  renderPickList();
+  renderCenter();
+  const reach = document.getElementById('compose-reach');
+  if (reach) {
+    fill(reach, ...composeReach(state.compose));
+    document.querySelector('#right-info button.save-compose').disabled = !canSaveCompose(state.compose);
+  } else renderRight();
+  if (focus) (focus.map((selector) => document.querySelector(`#center ${selector}`)).find((el) => el && !el.disabled))?.focus();
+}
+
+async function checkCompose(focus) {
+  const c = state.compose;
+  const turn = ++c.turn;
+  renderCompose(focus);
+  if (!c.screens.length) return;
+  let checked = null;
+  let error = null;
+  try {
+    const res = await fetch('/api/stories/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ screens: c.screens }) });
+    if (!res.ok) throw new Error(await res.text());
+    checked = await res.json();
+  } catch (err) {
+    error = `경로를 맞춰 보지 못했습니다: ${err.message}`;
+  }
+  if (state.compose !== c || turn !== c.turn) return;
+  Object.assign(c, { checked, error });
+  const focused = document.activeElement;
+  const step = focused?.closest?.('#center .compose-step');
+  renderCompose(step ? [`.compose-step[data-step="${step.dataset.step}"] button.${focused.className}`] : focused?.matches?.('#center .story-path') ? ['.story-path'] : null);
+}
+
+function changeCompose(edit, focus) {
+  const c = state.compose;
+  Object.assign(c, { refused: null, error: null });
+  edit(c);
+  checkCompose(focus);
+}
+
+function addComposeScreen(id) {
+  const c = state.compose;
+  const at = c.at ?? c.screens.length;
+  if (c.screens[at - 1] === id || c.screens[at] === id) {
+    c.refused = '같은 화면을 이어서 넣을 수 없습니다.';
+    return renderCompose();
+  }
+  changeCompose((d) => {
+    d.screens.splice(at, 0, id);
+    if (d.at !== null) d.at += 1;
+  });
+}
+
+function moveComposeStep(from, to, focus) {
+  changeCompose((d) => {
+    const [id] = d.screens.splice(from, 1);
+    d.screens.splice(to, 0, id);
+    d.at = null;
+  }, focus);
+}
+
+const STEP_DRAG = 'application/x-duru-step';
+
+function composeStep(id, i, c) {
+  const stepButtons = (step) => ['up', 'down'].map((cls) => `.compose-step[data-step="${step}"] button.${cls}`);
+  const last = i === c.screens.length - 1;
+  return h('div', {
+    class: 'step compose-step',
+    'data-step': i,
+    draggable: 'true',
+    ondragstart: (e) => { e.dataTransfer.setData(STEP_DRAG, String(i)); e.dataTransfer.effectAllowed = 'move'; },
+    ondragover: (e) => e.preventDefault(),
+    ondrop: (e) => {
+      e.preventDefault();
+      const dragged = e.dataTransfer.getData(STEP_DRAG);
+      const from = Number(dragged);
+      if (dragged !== '' && Number.isInteger(from) && from !== i && from >= 0 && from < c.screens.length) moveComposeStep(from, i);
+    },
+  },
+    h('span', { class: 'grip', title: '끌어서 순서를 바꿉니다', 'aria-hidden': 'true' }, '⠿'),
+    h('span', { class: 'no' }, i + 1),
+    h('span', { class: 'name' }, screenHead(screenOf(id))),
+    h('span', { class: 'step-acts' },
+      h('button', { class: 'up', disabled: i === 0, title: '한 단계 위로 옮깁니다', onclick: () => moveComposeStep(i, i - 1, stepButtons(i - 1)) }, '위로'),
+      h('button', { class: 'down', disabled: last, title: '한 단계 아래로 옮깁니다', onclick: () => moveComposeStep(i, i + 1, stepButtons(i + 1).reverse()) }, '아래로'),
+      h('button', { class: 'insert-before', disabled: c.at === i, title: '다음에 고르는 화면을 이 단계 앞에 넣습니다', onclick: () => { c.at = i; renderCompose([`.compose-step[data-step="${i}"] button.up`, `.compose-step[data-step="${i}"] button.down`]); } }, '앞에 넣기'),
+      h('button', { class: 'remove', title: '이 단계를 뺍니다', onclick: () => changeCompose((d) => { d.screens.splice(i, 1); d.at = null; }, ['.story-path']) }, '빼기')));
+}
+
+function composeCenter() {
+  const c = state.compose;
+  const checked = checkedCompose(c);
+  const insertMark = h('div', { class: 'insert-mark' }, '다음에 고르는 화면이 여기 들어갑니다',
+    h('button', { class: 'insert-at-end', onclick: () => { c.at = null; renderCompose(); } }, '끝에 넣기'));
+  const pending = h('div', { class: 'link l-pending' }, c.error ? '판정 못 함' : '맞춰 보는 중');
+  return [
+    h('div', { class: 'title-row' }, h('h3', {}, c.name.trim() || '새 스토리'), checked ? storyChips(checked) : null),
+    h('p', { class: 'muted' }, '왼쪽 목록에서 화면을 누르면 차례로 단계가 됩니다. 단계는 끌거나 「위로」·「아래로」로 옮깁니다. 순서를 바꿀 때마다 이웃한 화면 사이의 링크를 다시 맞춰 봅니다.'),
+    c.refused ?? c.error ? h('p', { class: 'error compose-error' }, c.refused ?? c.error) : null,
+    h('h2', {}, `화면 순서 ${c.screens.length}`),
+    c.screens.length
+      ? h('div', { class: 'story-path', tabindex: '-1' }, c.screens.flatMap((id, i) => [
+          i > 0 ? (checked ? linkItem(checked.links[i - 1]) : pending.cloneNode(true)) : null,
+          c.at === i ? insertMark : null,
+          composeStep(id, i, c),
+        ]))
+      : h('p', { class: 'muted no-steps' }, '아직 넣은 화면이 없습니다.'),
+  ];
+}
+
+function composeRight(info, dock) {
+  const c = state.compose;
+  const badId = () => Boolean(c.id) && !STORY_ID.test(c.id);
+  const canSave = () => canSaveCompose(c);
+  fill(dock);
+  fill(info,
+    h('div', { id: 'compose-reach' }, ...composeReach(c)),
+    h('h2', {}, '새 스토리 저장'),
+    storyForm(
+      field('ID', h('input', { type: 'text', id: 'compose-id', value: c.id, oninput: (e) => {
+        c.id = e.target.value;
+        e.target.nextElementSibling.hidden = !badId();
+        syncButton(e, canSave);
+      } }), h('small', { class: 'invalid', hidden: !badId() }, '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.')),
+      field('이름', h('input', { type: 'text', id: 'compose-name', value: c.name, oninput: (e) => { c.name = e.target.value; syncButton(e, canSave); } })),
+      field('메모', h('textarea', { id: 'compose-memo', oninput: (e) => { c.memo = e.target.value; } }, c.memo)),
+      h('button', { class: 'save-compose', disabled: !canSave(), title: '이 화면 순서로 스토리 파일을 씁니다.', onclick: saveCompose }, '스토리 저장'),
+      h('button', { class: 'drop-draft', title: '쓰던 순서와 이름을 버리고 스토리 목록으로 돌아갑니다', onclick: dropCompose }, '쓰던 것 버리기')),
+    storyErrorLine());
+}
+
+async function saveCompose() {
+  const c = state.compose;
+  if (!(await writeStories('/api/stories/add', { id: c.id, name: c.name, memo: c.memo, screens: c.screens }))) return;
+  state.compose = null;
+  state.composing = false;
+  state.story = c.id;
+  state.storyDraft = null;
+  state.error = null;
+  render();
+}
+
 function renderStoryRight(info, dock) {
+  if (state.composing) return composeRight(info, dock);
   const c = candidateOf();
   if (c) {
     fill(dock);
@@ -1853,7 +2076,7 @@ function renderRight() {
     fill(info);
     return fill(dock);
   }
-  const view = state.side !== 'stories' ? `${state.selected}\n${state.target?.node}` : state.candidate ? `candidate(${state.candidate})` : `story(${state.story})`;
+  const view = state.side !== 'stories' ? `${state.selected}\n${state.target?.node}` : state.composing ? 'compose' : state.candidate ? `candidate(${state.candidate})` : `story(${state.story})`;
   const shown = shownTarget();
   const dockKey = shown ? keyOf(shown) : null;
   if (dockKey !== state.dockKey) state.historyOpen = false;
@@ -2827,7 +3050,8 @@ function placeHash() {
   if (state.view === 'flow') {
     if (state.focus) p.set('from', state.focus.id);
   } else if (state.side === 'stories') {
-    if (state.candidate !== null) p.set('candidate', state.candidate);
+    if (state.composing) p.set('new', '1');
+    else if (state.candidate !== null) p.set('candidate', state.candidate);
     else if (state.story !== null) p.set('story', state.story);
   } else if (state.side === 'untagged') {
     if (state.untaggedTest !== null) p.set('test', state.untaggedTest);
@@ -2880,6 +3104,8 @@ async function applyPlace() {
     const candidate = p.get('candidate');
     const test = p.get('test');
     const storyKnown = state.data.stories.list.some((st) => st.id === story) || unlistedMarks().some((m) => m.target.story === story);
+    state.composing = head === 'stories' && p.has('new') && !oldMap();
+    if (state.composing) Object.assign(state, { compose: state.compose ?? newCompose(), candidate: null });
     if (head === 'screens' && screen !== state.selected && screenOf(screen)) go = () => select(screen);
     else if (head === 'stories' && candidate !== null) {
       if (candidate !== state.candidate && state.data.candidates.list.some((c) => c.source.record === candidate)) go = () => selectCandidate(candidate);
@@ -2921,6 +3147,7 @@ function setEnding(ending) {
 }
 
 async function endReview() {
+  if (state.compose?.screens.length && !confirm('저장하지 않은 새 스토리가 있습니다. 「스토리 저장」을 누르지 않으면 스토리 파일이 생기지 않습니다. 그래도 리뷰를 끝낼까요?')) return;
   if (hasUnsavedMark() && !confirm('「표시 남기기」를 누르지 않은 표시가 있습니다. 이 표시는 작업 목록에 들어가지 않습니다. 그래도 리뷰를 끝낼까요?')) return;
   const error = document.getElementById('end-error');
   error.textContent = '';

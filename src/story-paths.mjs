@@ -1,7 +1,7 @@
 import { linkTargets, unreadableTarget } from './access.mjs';
 import { compare } from './config.mjs';
 import path from 'node:path';
-import { loadStories, STORY_ID } from './stories.mjs';
+import { isScreenList, loadStories, STORY_ID } from './stories.mjs';
 
 const byPlace = (a, b) => compare(a.file, b.file) || a.line - b.line;
 
@@ -102,4 +102,13 @@ export function checkStoryFiles(map, dir, mapFile, tests = NO_TESTS) {
     return { ids, list: [], notices, unknownTags, stale: staleMapMessage(mapFile, '스토리') };
   }
   return { ids, list: checkStories(map, stories).map((s) => ({ ...s, status: statusOf(s, tests) })), notices, unknownTags };
+}
+
+export function checkScreens(map, mapFile, screens) {
+  if (!isScreenList(screens)) throw new Error('screens 는 화면 ID 를 하나 이상 차례대로 담은 목록이어야 합니다');
+  if (linksWithoutConditions(map)) throw new Error(staleMapMessage(mapFile, '스토리'));
+  const [checked] = checkStories(map, [{ screens }]);
+  const offMap = checked.steps.filter((step) => !step.onMap).map((step) => step.screen);
+  if (offMap.length) throw new Error(`맵에 없는 화면입니다: ${offMap.join(', ')}`);
+  return checked;
 }
