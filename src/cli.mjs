@@ -81,6 +81,7 @@ if (command === 'tasks') {
     const judged = applyJudgments(links, judgments);
     const pairs = (byScreen) => Object.values(byScreen).reduce((n, tests) => n + tests.length, 0);
     console.log(`links from unit tests to screens by the files they import ${pairs(judged.importers)} | test files not read ${links.importNotices.length}`);
+    console.log(`links from browser tests to screens they passed through ${pairs(links.passed)} | traces not read ${links.traceNotices.length} | browser tests that ran without a trace ${links.untracedCount}`);
     console.log(`pairs discarded by reviewers ${pairs(judged.discarded)} | judgment files skipped ${judgmentNotices.length}`);
     const onMap = new Set([...map.screens, ...map.calls].map((n) => n.id));
     let detachedOnMap = 0;
@@ -92,6 +93,7 @@ if (command === 'tasks') {
     console.log(`pairs handed over for tagging waiting for the tag ${pairs(judged.awaitingTag)} | handed over but no longer found among the tests importing or tagged with the screen ${detachedOnMap}`);
     for (const line of offMap) console.log(line);
     for (const n of judgmentNotices) console.log(`  judgment file ${n.file}: ${n.reason}`);
+    for (const n of links.traceNotices) console.log(`  trace ${n.file} ← ${n.test.file}:${n.test.line} ${n.test.title}: ${n.reason}`);
     for (const m of links.missingSources) console.log(`  missing test results ${m}`);
     for (const u of unknownTags) console.log(`  unknown ${u.tag} ← ${u.test.file}:${u.test.line} ${u.test.title}`);
 

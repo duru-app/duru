@@ -384,6 +384,26 @@ part that names a file there, and by the bare file name only when the folder bef
 report from another computer that names a file of another package can still match a file with the same
 trailing path under `srcRoot`.
 
+A browser test that carries no tag for a screen is shown next to it too, when it opened the screen while it
+ran. For every test of a `playwright` result source whose report holds traces (Playwright's `trace` option),
+duru reads the trace of the test's last run. It looks for the trace next to the report first, by the trailing
+part of the recorded path, so results moved from another computer or folder are still found, and then at the
+recorded path. From the trace it takes the addresses the page was at and what the test did at each. An address
+is matched to a screen without its query and hash, by the route paths of the map: the first route that fits
+wins, a value in the path fits its variable, and an address that fits no route links to nothing. `tests.json`
+lists the test under `passed` for each screen it opened, with its `level`: `visit` when it only had the screen
+open, `interact` when it clicked, typed or otherwise acted there, `assert` when an `expect` ran there; the
+highest one counts. An action that ended in an error is not an interaction, and a failed `expect` is still an
+assertion. A test already tagged with the screen is left out there. Like the importing tests, these do not
+count as tests of the screen. A test whose trace is gone, cannot be opened, was recorded without snapshots or
+is in a trace format duru does not know (the notice names the version) is listed in `traceNotices` with the
+trace file and the reason. A browser test that ran with no trace at all is only counted (`untracedCount`; a
+skipped test is not), since Playwright can be set to keep traces for failed or retried tests alone. `rebuild`
+prints how many links from a test to a screen it made this way, how many traces it could not read and how many
+browser tests ran without one, then each notice, and goes on. Only
+`src/playwright-trace.mjs` knows what is inside a trace file, a format Playwright does not document; it reads
+version 8 (Playwright 1.60).
+
 `test/fixtures/app` holds a small fake client with example results and a config.
 
 A check script that is not a test framework reports through verdict lines in its output, one test per line;
@@ -500,8 +520,8 @@ writes only into the marks folder. It opens on the flow view, with only the way 
 missing or failing opened (as 「빈틈만 펼치기」 does) on first load; after that the branches stay as the reviewer
 leaves them, also across visits to the list. A line on top reads 「테스트 있는 화면 n/전체 · 실패 n · 태그 없는
 테스트만 있는 화면 n」: screens with a tagged test, screens with a failing one, and screens with no tagged test
-but with tests linked by import (`flow.summary` in `/api/data`); a box adds 「불러옴 N」 for those (`imported` on
-each flow node) right after its test counts, which neither its border nor 「빈틈만 펼치기」 counts. A box is sized
+but with tests linked by import or by passing through (`flow.summary` in `/api/data`); a box adds 「불러옴 N」 and
+「지나감 N」 for those (`imported` and `passed` on each flow node) right after its test counts, which neither its border nor 「빈틈만 펼치기」 counts. A box is sized
 to what it says: its route breaks only before a `/`, its component name is never split and no line is cut. Boxes
 stand in columns by how many links they are from an entry screen, each column as wide as its widest box. A box
 wraps its route once the box's content would pass 360px, and is wider than that when its component name or one
@@ -516,8 +536,8 @@ with samples, not sentences. At the right of the bar's button row a legend is al
 「조건 걸린 링크」. No label breaks inside a word; in a narrow window the legend wraps onto a line of its own. Right
 of the legend stands a round ⓘ icon, the bar's last control, with the accessible name 「흐름도 읽는 법」 and no native
 tooltip. Hovering or pressing it opens a small list under it, aligned to the bar's right edge, with the two things
-a one-word sample cannot say: 「→ /주소」 is a link to a screen already drawn in another branch, and 「불러옴 N」
-counts the unit tests that import the screen without a tag and is not part of the border or the test count. The icon
+a one-word sample cannot say: 「→ /주소」 is a link to a screen already drawn in another branch, and 「불러옴 N · 지나감 N」
+count the unit tests that import the screen and the browser tests that opened it, both without a tag and neither part of the border or the test count. The icon
 is a real button (`aria-expanded`, `aria-controls`) that Tab reaches, Enter or Space opens and closes, and Escape
 closes while the flow view is showing; the pointer can move from the icon down into the list without it closing,
 also when the bar wraps onto several lines. The bar stays in view when the flow is scrolled in either direction, so
@@ -536,8 +556,8 @@ hover or keyboard focus, and shows the calls as 「대조 안 함」), and "open
 setting" and "opens only under a role" filters read from `access.kinds`; a screen that needs both shows under
 either, and a restricted screen with empty `kinds` shows under 「링크마다 다름」 instead. A 「지나간 테스트만 있음」
 filter keeps the screens that have no test tagged with the screen but at least one test importing their source
-files: a pair waiting for the tag counts as importing, a discarded pair does not. The screen's row shows
-「불러옴 N」 for the importing tests and 「태그 대기 N」 for the pairs waiting for the tag. (API calls have no importing tests, so the
+files or passing through them: a pair waiting for the tag counts as importing, a discarded pair does not. The screen's row shows
+「불러옴 N」 for the importing tests, 「지나감 N」 for the browser tests that passed through and 「태그 대기 N」 for the pairs waiting for the tag. (API calls have no importing tests, so the
 filter applies to the screen list only.) With `app` set, the middle starts with the chosen screen's app in a frame, served by duru on an address of
 its own and already logged in, so the reviewer can use it while marking; the line above the frame shows its
 address, a role picker, who the frame is logged in as (「ADMIN 역할 duru-admin 로 로그인」, or why that login
@@ -596,6 +616,10 @@ with its source location, its guards with their kinds and, when the screen it co
 shows 「링크마다 다름」 here, on the links it makes, in its 「이 화면을 열려면」 and on its box in the flow view.
 Route guards that are neither a setting nor a role follow under 「화면 안 조건」, whose heading says they do not
 block opening the screen. A guard longer than 80 characters is folded to its start and opens to its full text.
+Under the tests of a screen, 「지나간 테스트」 lists the browser tests that opened it without its tag (`passed` in
+`tests.json`), those that checked something there first, then those that acted, then those that only opened it,
+each with 「확인함」, 「조작함」 or 「지나감」, its status, title, file and line, project and result file. They have no
+buttons: a reviewer cannot discard or hand them over yet.
 Then come the screen's source location, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.

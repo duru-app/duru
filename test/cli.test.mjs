@@ -41,6 +41,40 @@ test('rebuild writes map.json and tests.json to the configured output folder and
   }
 });
 
+function rebuildTraced(change = () => {}) {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    config.tests.push({ format: 'playwright', path: 'results/playwright-traced', depth: 'ui' });
+    fs.writeFileSync(configFile, JSON.stringify(config));
+    change(path.join(copy, 'results/playwright-traced/test-results'));
+    return execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+}
+
+test('rebuild counts the screens that untagged browser tests passed through, finding the traces next to a report whose paths point elsewhere, and leaves the screens with tests as they were', () => {
+  const stdout = rebuildTraced();
+  assert.match(stdout, /^links from browser tests to screens they passed through 24 \| traces not read 1 \| browser tests that ran without a trace \d+$/m);
+  assert.match(stdout, /^screens with tests 7\/11 \|/m);
+  assert.match(stdout, /^  trace results\/playwright-traced\/test-results\/no-snapshots-[^ ]+\/trace\.zip ← no-snapshots\.spec\.ts:5 presses the button without snapshots: trace 파일에 화면 스냅숏이 없어/m);
+  assert.doesNotMatch(stdout, /untraced\.spec\.ts/);
+});
+
+test('rebuild goes on past a trace that is gone and one that is broken, and names each with its reason', () => {
+  const stdout = rebuildTraced((results) => {
+    fs.rmSync(path.join(results, 'visits-opens-home-and-then-help-chromium/trace.zip'));
+    fs.writeFileSync(path.join(results, 'visits-presses-the-button-on-home-chromium/trace.zip'), 'not a zip');
+  });
+  assert.match(stdout, /^links from browser tests to screens they passed through 21 \| traces not read 3 \|/m);
+  assert.match(stdout, /^  trace \/builds\/app\/test-results\/visits-opens-home-and-then-help-chromium\/trace\.zip ← visits\.spec\.ts:\d+ opens home and then help: trace 파일이 없습니다$/m);
+  assert.match(stdout, /^  trace results\/playwright-traced\/test-results\/visits-presses-the-button-on-home-chromium\/trace\.zip ← visits\.spec\.ts:\d+ presses the button on home: trace 파일을 열지 못했습니다: /m);
+  assert.match(stdout, /^stories /m);
+});
+
 test('rebuild with no server API list counts the unchecked calls and says the comparison was not made', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {

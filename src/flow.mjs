@@ -47,6 +47,7 @@ export function buildFlow(map, tests, { from } = {}) {
       component: s.component,
       counts: countOf(tests.nodes[id]),
       imported: tests.importers?.[id]?.length ?? 0,
+      passed: tests.passed?.[id]?.length ?? 0,
       dead: Boolean(s.dead),
       restricted: s.access.restricted,
       kinds: s.access.kinds,
@@ -92,7 +93,7 @@ export function buildFlow(map, tests, { from } = {}) {
   return { roots, unreached, summary: summarize([...roots, ...unreached]) };
 }
 
-// 「불러옴」은 태그로 확정한 연결이 아니므로 테스트 있는 화면과 실패한 화면을 셀 때 넣지 않는다.
+// 「불러옴」과 「지나감」은 태그로 확정한 연결이 아니므로 테스트 있는 화면과 실패한 화면을 셀 때 넣지 않는다.
 function summarize(trees) {
   const screens = [];
   const walk = (n) => { screens.push(n); n.children.forEach(walk); };
@@ -102,6 +103,6 @@ function summarize(trees) {
     screens: screens.length,
     tested: screens.filter(tagged).length,
     failing: screens.filter((n) => n.counts.fail > 0).length,
-    importedOnly: screens.filter((n) => !tagged(n) && n.imported > 0).length,
+    importedOnly: screens.filter((n) => !tagged(n) && n.imported + n.passed > 0).length,
   };
 }

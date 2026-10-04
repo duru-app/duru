@@ -97,5 +97,14 @@ test('a screen with only imported tests counts as such, and one that also has a 
   const tests = { nodes: { a: [{ status: 'fail' }], b: [{ status: 'pass' }] }, importers: { b: [imported], c: [imported, imported] } };
   const built = buildFlow(tiny, tests);
   assert.deepEqual(built.summary, { screens: 3, tested: 2, failing: 1, importedOnly: 1 });
+
+test('a screen that only untagged browser tests passed through counts with the screens that have only imported tests, and its box carries how many passed', () => {
+  const screen = (id, links) => ({ id, path: id, component: id, apiCalls: [], access: { kinds: [], links } });
+  const map = { screens: [screen('a', []), screen('b', [{ from: 'a', guards: [] }]), screen('c', [{ from: 'a', guards: [] }])], entries: [{ screen: 'a' }] };
+  const passed = { title: 'browser', status: 'pass', level: 'visit' };
+  const built = buildFlow(map, { nodes: { b: [{ status: 'pass' }] }, passed: { b: [passed], c: [passed, passed] } });
+  assert.deepEqual(built.summary, { screens: 3, tested: 1, failing: 0, importedOnly: 1 });
+  assert.deepEqual([built.roots[0].passed, ...built.roots[0].children.map((n) => n.passed)], [0, 1, 2]);
+});
   assert.deepEqual(built.roots[0].children.map((n) => [n.id, n.imported, n.counts.pass]), [['b', 1, 1], ['c', 2, 0]]);
 });
