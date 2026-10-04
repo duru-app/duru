@@ -975,14 +975,21 @@ test('the end request asks the caller to get ready, is answered, and then tells 
 
 const browserMissing = fs.existsSync(chromium.executablePath()) ? false : 'Chromium is not installed (npx playwright-core install chromium)';
 
-async function withPage(base, fn) {
+const toList = async (p) => {
+  await p.waitForSelector('#view-flow.on');
+  await p.click('#view-list');
+};
+
+async function withPage(base, fn, { view = 'list', setup } = {}) {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    if (setup) await setup(page);
     await page.goto(base);
+    if (view === 'list') await toList(page);
     await fn(page);
     assert.deepEqual(errors, []);
   } finally {
@@ -1028,6 +1035,7 @@ for (const host of ['127.0.0.1', 'localhost']) {
           assert.equal(await p.textContent('#screen-list li.selected .chip'), '충분');
 
           await p.reload();
+          await toList(p);
           await p.click('#screen-list li:has-text("/document/:id")');
           await p.click('#center tr:has-text("API")');
           assert.ok((await p.locator('#right .history li').allTextContents()).some((t) => t.includes('no API test yet')));
@@ -1259,6 +1267,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
 
         fs.rmSync(path.join(config.storiesDir, 'run-lab.json'));
         await p.reload();
+        await toList(p);
         await p.waitForSelector('#screen-list li');
         assert.match(await p.textContent('#left'), /떨어져 나감 0/);
         await p.click('#left .views.side button:has-text("스토리")');
@@ -1524,7 +1533,7 @@ test('in a browser, a screen whose links ask for different kinds has its own fil
 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), / · 링크마다 다름$/);
+        assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), / · 링크마다 다름 · 불러옴 2$/);
       }),
     );
   });
@@ -1625,6 +1634,7 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
 
         assert.equal((await postMark(base, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withComments', value: true } }, status: 'missing' })).status, 201);
         await p.reload();
+        await toList(p);
         await p.waitForSelector('#screen-list li');
         assert.match(await p.locator('#left ul.plain').innerText(), /POST:\/api\/v1\/report\/export withComments=true/);
       }),
@@ -1684,6 +1694,7 @@ test('in a browser, the flow graph opens calls and branches, folds them, and a b
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
         assert.equal(await p.isHidden('main'), true);
+        await (await screenBox(p, '/signin#SignIn')).locator('button[title^="이 가지의 화면은 모두"]').click();
         assert.deepEqual(await boxCount(p), { screens: 11, calls: 0 });
 
         const home = await screenBox(p, '/home#Home');
@@ -1853,13 +1864,15 @@ test('in a browser, a flow box says when a setting condition could not be turned
     ), edits);
 });
 
-test('in a browser, "back to start" returns one branch to how the page first drew it and leaves the rest alone', { skip: browserMissing }, async () => {
+test('in a browser, "reset" opens one branch fully with its calls closed and leaves the rest alone', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        const reset = async (id) => (await screenBox(p, id)).locator('button[title="처음 상태로"]').click();
+        const reset = async (id) => (await screenBox(p, id)).locator('button[title^="이 가지의 화면은 모두"]').click();
+        await reset('/signin#SignIn');
+        assert.deepEqual(await boxCount(p), { screens: 11, calls: 0 });
         await (await screenBox(p, '/signin#SignIn')).locator('.calls').click();
         const signinCalls = (await boxCount(p)).calls;
         assert.ok(signinCalls > 0);
@@ -1882,7 +1895,7 @@ test('in a browser, "back to start" returns one branch to how the page first dre
           return walk(state.focus.roots).find((n) => !n.children.length && !n.calls.length)?.id;
         });
         assert.ok(bare);
-        assert.equal(await (await screenBox(p, bare)).locator('button[title="처음 상태로"]').count(), 0);
+        assert.equal(await (await screenBox(p, bare)).locator('button[title^="이 가지의 화면은 모두"]').count(), 0);
       }),
     ),
   );
@@ -1908,6 +1921,147 @@ test('in a browser, "gaps only" folds exactly the branches with no untested or f
       }),
     ),
   );
+});
+
+test('in a browser, the page opens on the flow with a summary line counted from tagged tests, and a box with imported tests says so while its border follows its tagged tests', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        assert.equal(await p.isHidden('main'), true);
+        assert.equal(await p.getAttribute('#view-flow', 'class'), 'on');
+        assert.match(await p.textContent('#meta'), /^화면 11 · 테스트 있는 화면 7 · /);
+        assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 7/11 · 실패 5 · 태그 없는 테스트만 있는 화면 0');
+        const help = await screenBox(p, '/help#Help');
+        assert.match(await help.locator('.l2').textContent(), /^✓1 ✕1 ○1 · 불러옴 2/);
+        assert.match(await help.getAttribute('class'), /s-fail/);
+        assert.doesNotMatch(await (await screenBox(p, '/admin/member#AdminMember')).locator('.l2').textContent(), /불러옴/);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, the flow first opens only the way to untested or failing boxes, counts a screen with only imported tests as a gap, and keeps the shape the reviewer leaves across trips to the list', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const testsFile = path.join(config.outDir, 'tests.json');
+    const tests = JSON.parse(fs.readFileSync(testsFile, 'utf8'));
+    const passing = { title: 'passes', file: 'lab.spec.ts', line: 1, status: 'pass' };
+    for (const id of ['/lab#Lab', '/lab/result#LabResult', 'GET:/api/v1/lab/experiment']) tests.nodes[id] = [passing];
+    tests.importers['/admin/group#AdminGroup'] = [tests.importers['/help#Help'][0]];
+    fs.writeFileSync(testsFile, JSON.stringify(tests));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 8/11 · 실패 5 · 태그 없는 테스트만 있는 화면 1');
+        const lab = await screenBox(p, '/lab#Lab');
+        assert.equal(await lab.locator('button.toggle', { hasText: '+' }).count(), 1);
+        assert.match(await lab.getAttribute('class'), /s-pass/);
+        assert.equal(await p.$$eval('#flow .box.screen', (els) => els.some((e) => e.title.startsWith('/lab/result#'))), false);
+        const group = await screenBox(p, '/admin/group#AdminGroup');
+        assert.match(await group.locator('.l2').textContent(), /^테스트 없음 · 불러옴 1/);
+        assert.match(await group.getAttribute('class'), /s-none/);
+        const home = await screenBox(p, '/home#Home');
+        assert.equal(await home.locator('button.toggle', { hasText: '−' }).count(), 1);
+        assert.match(await home.locator('.calls').textContent(), /▾/);
+
+        await home.locator('button.toggle', { hasText: '−' }).click();
+        await p.click('#view-list');
+        await p.waitForSelector('main:not([hidden])');
+        await p.click('#view-flow');
+        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: '+' }).count(), 1);
+        await (await screenBox(p, '/signin#SignIn')).click();
+        await p.waitForSelector('main:not([hidden])');
+        await p.click('#view-flow');
+        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: '+' }).count(), 1);
+        assert.match(await (await screenBox(p, '/signin#SignIn')).locator('.calls').textContent(), /▾/);
+      }, { view: 'flow' }),
+    );
+  });
+});
+
+const changeData = (edit) => async (page) => {
+  await page.route('**/api/data', async (route) => {
+    const res = await route.fetch();
+    const data = await res.json();
+    edit(data);
+    await route.fulfill({ response: res, json: data });
+  });
+};
+
+test('in a browser, when the first flow drawing fails the message stays visible and neither view button changes that', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#failed', { state: 'visible' });
+        assert.match(await p.textContent('#failed'), /^페이지를 그리지 못했습니다: ./);
+        assert.equal(await p.isHidden('main'), true);
+        assert.equal(await p.isHidden('#flow'), true);
+        for (const id of ['#view-flow', '#view-list', '#view-flow']) {
+          await p.click(id);
+          assert.equal(await p.isVisible('#failed'), true);
+          assert.equal(await p.isHidden('main'), true);
+          assert.equal(await p.isHidden('#flow'), true);
+        }
+        assert.equal(await p.locator('main section').count(), 3);
+      }, { view: 'flow', setup: changeData((data) => { data.flow.roots[0].guards = null; }) }),
+    ),
+  );
+});
+
+test('in a browser, a map with no screens says so in the flow, and the entryPaths hint is only for screens with no entry', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const mapFile = path.join(config.outDir, 'map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .flowsummary');
+        assert.match(await p.textContent('#flow'), /entryPaths/);
+        assert.doesNotMatch(await p.textContent('#flow'), /화면이 없습니다\./);
+      }, { view: 'flow', setup: changeData((data) => {
+        data.flow = { ...data.flow, roots: [], unreached: [...data.flow.roots, ...data.flow.unreached] };
+      }) }),
+    );
+    fs.writeFileSync(mapFile, JSON.stringify({ ...map, screens: [], entries: [] }));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .flowsummary');
+        assert.match(await p.textContent('#flow'), /화면이 없습니다\./);
+        assert.doesNotMatch(await p.textContent('#flow'), /entryPaths/);
+      }, { view: 'flow' }),
+    );
+  });
+});
+
+test('in a browser, a branch whose only gap is a screen with imported tests and no tagged test is open on first load, and a box lists its imported tests after its badges', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const testsFile = path.join(config.outDir, 'tests.json');
+    const tests = JSON.parse(fs.readFileSync(testsFile, 'utf8'));
+    const map = JSON.parse(fs.readFileSync(path.join(config.outDir, 'map.json'), 'utf8'));
+    const passing = { title: 'passes', file: 'all.spec.ts', line: 1, status: 'pass' };
+    for (const id of [...map.screens.map((x) => x.id), ...map.calls.map((c) => c.id)]) tests.nodes[id] = [passing];
+    delete tests.nodes['/lab/result#LabResult'];
+    tests.importers = { '/lab/result#LabResult': [passing], '/document/:tab_draft_done_#DocumentList': [passing, passing] };
+    fs.writeFileSync(testsFile, JSON.stringify(tests));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 10/11 · 실패 0 · 태그 없는 테스트만 있는 화면 1');
+        const result = await screenBox(p, '/lab/result#LabResult');
+        assert.match(await result.getAttribute('class'), /s-none/);
+        assert.match(await result.locator('.l2').textContent(), /불러옴 1$/);
+        const dead = await screenBox(p, '/document/:tab_draft_done_#DocumentList');
+        assert.match(await dead.locator('.l2').textContent(), /죽은 화면 · 불러옴 2$/);
+        assert.equal(await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: '−' }).count(), 1);
+        const home = await screenBox(p, '/home#Home');
+        assert.equal(await home.locator('button.toggle', { hasText: '−' }).count(), 1);
+        assert.doesNotMatch(await home.locator('.l2').textContent(), /불러옴/);
+
+        await home.locator('button.toggle', { hasText: '−' }).click();
+        const folded = await screenBox(p, '/home#Home');
+        assert.match(await folded.locator('.l2').textContent(), /하위 합.* · 불러옴 3$/);
+      }, { view: 'flow' }),
+    );
+  });
 });
 
 test('in a browser, one branch is shown on its own, and a late answer for an earlier click does not replace the later one', { skip: browserMissing }, async () => {
@@ -1993,6 +2147,7 @@ test('in a browser, 「리뷰 끝」 after the review already ended elsewhere sa
     try {
       const p = await browser.newPage();
       await p.goto(base);
+      await toList(p);
       await p.waitForSelector('#screen-list li');
       await fetch(`${base}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       await new Promise((resolve) => server.on('close', resolve));
@@ -2865,6 +3020,7 @@ test('in a browser, a setting the settings file already turns on shows as on, a 
 
             fs.writeFileSync(path.join(copy, 'build/settings.js'), 'window.FAKE_SETTINGS = { SYSTEM: { HELP_LINK_ENABLED: document.title !== null } };\n');
             await p.reload();
+            await toList(p);
             await p.waitForSelector('#screen-list li');
             await chooseScreen(p, '/lab');
             await p.waitForSelector('#settings-bar .file-error');
