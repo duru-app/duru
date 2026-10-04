@@ -178,6 +178,50 @@ test('two builds from the same input differ only in the generation time', async 
   assert.deepEqual(strip(await buildFixture()), strip(await buildFixture()));
 });
 
+test('a file reached through a barrel file that re-exports it belongs to the screen, with the API calls inside it', async () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true });
+    const components = path.join(copy, 'client/src/components');
+    const widgets = path.join(components, 'widgets');
+    fs.mkdirSync(widgets);
+    fs.writeFileSync(
+      path.join(widgets, 'index.js'),
+      [
+        "export { default as Badge } from './Badge';",
+        "export { loadStats, loadMore } from './stats';",
+        "export * from './format';",
+        "export * as extras from './extras';",
+        "export { ajaxLabExperiment } from '_ajax/AjaxFunc';",
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(path.join(widgets, 'Badge.js'), 'export default function Badge() { return null; }\n');
+    fs.writeFileSync(path.join(widgets, 'format.js'), 'export const label = (name) => name;\n');
+    fs.writeFileSync(path.join(widgets, 'extras.js'), 'export const extra = 1;\n');
+    fs.writeFileSync(
+      path.join(widgets, 'stats.js'),
+      "import { ajaxMemberList } from '_ajax/AjaxFunc';\n\nexport const loadStats = () => ajaxMemberList({ page: 1 });\nexport const loadMore = () => ajaxMemberList({ page: 2 });\n",
+    );
+    const help = path.join(components, 'Help.js');
+    fs.writeFileSync(help, "import { Badge } from './widgets';\n\n" + fs.readFileSync(help, 'utf8'));
+
+    const reached = screen(await buildFixture(copy), '/help#Help');
+    assert.deepEqual(reached.sourceFiles, [
+      'components/Help.js',
+      'components/formatDate.js',
+      'components/widgets/Badge.js',
+      'components/widgets/extras.js',
+      'components/widgets/format.js',
+      'components/widgets/index.js',
+      'components/widgets/stats.js',
+    ]);
+    assert.deepEqual(reached.apiCalls.map((c) => c.fn), ['ajaxMemberList', 'ajaxMemberList']);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 test('screen and call IDs stay the same after unrelated files change', async () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {

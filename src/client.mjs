@@ -521,24 +521,27 @@ export async function extractClient(config) {
       }
     }
 
+    function addImport(spec) {
+      const resolved = resolveImport(config.srcRoot, file, spec);
+      if (resolved) facts.imports.push(resolved);
+      return resolved;
+    }
+
     traverse(ast, {
       ImportDeclaration(p) {
-        const spec = p.node.source.value;
-        const resolved = resolveImport(config.srcRoot, file, spec);
-        if (!resolved) return;
-        facts.imports.push(resolved);
-        if (apiModuleFiles.has(resolved)) {
-          for (const s of p.node.specifiers) {
-            if (s.type === 'ImportSpecifier') apiNamed.set(s.local.name, s.imported.name);
-            else apiNamespaces.add(s.local.name);
-          }
+        const resolved = addImport(p.node.source.value);
+        if (!apiModuleFiles.has(resolved)) return;
+        for (const s of p.node.specifiers) {
+          if (s.type === 'ImportSpecifier') apiNamed.set(s.local.name, s.imported.name);
+          else apiNamespaces.add(s.local.name);
         }
       },
       Import(p) {
         const arg = p.parentPath.node.arguments?.[0];
-        if (arg?.type !== 'StringLiteral') return;
-        const resolved = resolveImport(config.srcRoot, file, arg.value);
-        if (resolved) facts.imports.push(resolved);
+        if (arg?.type === 'StringLiteral') addImport(arg.value);
+      },
+      'ExportNamedDeclaration|ExportAllDeclaration'(p) {
+        if (p.node.source) addImport(p.node.source.value);
       },
     });
 
