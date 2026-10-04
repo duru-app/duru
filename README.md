@@ -573,8 +573,31 @@ step also lists, as left out of the verdict, the first screen's links to a path 
 screen on the map opens it in the screen list. The right shows first the verdict on every line that applies —
 「도달 불가 · 링크 없음 N곳」 with the number of `broken` steps, 「판정 못 함 · 화면 없음」 when a screen is not on the map,
 「판정 못 함 · 주소 못 읽은 링크」 when a step is `unknown`, or 「도달 가능」 when none of these is so — and says when a
-`conditioned` step was judged with such links left out, then under 「사전 조건」 the source location of each condition,
-with 「링크 N개 중 하나」 over a step that several links reach. Below that, the right holds the mark form for the story, with its
+`conditioned` step was judged with such links left out, then under 「사전 조건」 a summary of what the story needs that states
+only what the map proves, in the words of the screen's 「이 화면을 열려면」 but never shortened: one line for the role naming
+every value that passes (「역할 ADMIN 또는 OWNER」) and one line per setting (「설정 SYSTEM.LAB_ENABLED 켬」, with the settings
+root in front when the story's settings come from more than one root). A story passes every step, so the summary holds
+each setting any step needs, once, and only the roles every step allows. A route step needs all its setting and role
+guards. A step that several links reach needs only what every link needs and the roles any of its links allow; when the
+links differ in more than their roles and no link needs only the shared part, the step shows 「링크마다 다름」 after its
+name. A first screen needs its route guards and, when it can be entered only through blocked links, what every incoming
+link needs; it shows 「링크마다 다름」 when its incoming links differ in their setting conditions or its 「이 화면을 열려면」
+says only that, 「설정 필요」 when the map says a setting blocks it but none of its setting conditions could be stated, and
+its roles are those of 「이 화면을 열려면」. A guard a link inherits from a handler counts only when the link has no
+guard of its own and inherits exactly one, since only then is the handler used in a single place, under that guard; any
+other inherited guard is neither needed nor contradicting, and is listed apart. Steps whose role values hold every role
+that can pass them but share no value show 「모든 단계를 지나는 역할 없음」 with each such step's roles. Setting needs on one
+path that cannot hold together show as 「서로 어긋나는 설정」 instead of as needs: off with on, present, a value in a list or
+equality to a true value, and equality to two different values of the same type; the other needs on that path stay need
+lines. Under 「요약에 넣지 못한 조건」 the summary lists what it cannot state: role conditions whose roles were not read (for a
+step that several links reach, only those on every link), steps whose role is not known (「역할 미확인」) or was read only in
+part (「역할 일부만 읽음」, also a first screen with an incoming link that inherits a role guard counted as not decided),
+setting conditions that could not be decided, and the inherited guards that depend on where their handler is used, named
+with the handler; the role line, when there is one, then carries 「미확인 N」 with the number of role entries listed there.
+The summary says 「설정이나 역할로 막는 조건 없음」 only when it has no line and lists nothing apart. A fold,
+closed by default, holds the source location of each condition as written, with 「링크 N개 중 하나」 over a step that several
+links reach; the fold and its long conditions stay open while the pane is redrawn or a screen is opened, and close when
+another story is chosen. Below that, the right holds the mark form for the story, with its
 history; the story list shows each story's current mark, and under the list 「떨어져 나감」 holds the marks
 whose story file is gone (the screen list's 「떨어져 나감」 holds only marks on screens and calls). Marks on
 stories missing from the list because their file cannot be read, or while `stories.stale` is set, are listed
