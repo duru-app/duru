@@ -1788,7 +1788,8 @@ test('in a browser, the flow graph opens calls and branches, folds them, and a b
 });
 
 const needLines = (box) => box.locator('.need').allTextContents();
-const tipLines = async (box) => (await box.getAttribute('title')).split('\n').slice(1);
+const PRESS_HINT = '누르면 목록에서 이 화면을 엽니다';
+const tipLines = async (box) => (await box.getAttribute('title')).split('\n').slice(1).filter((line) => line !== PRESS_HINT);
 
 test('in a browser, a flow box writes the roles and settings its screen needs, abridged on the box with the value first and in full on hover', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -2418,7 +2419,7 @@ test('in a browser, the explanation above the flow is hidden on opening and an i
 
         await info.hover();
         assert.equal(await legend.isVisible(), true);
-        assert.match(await legend.textContent(), /전부 펼치기/);
+        assert.match(await legend.textContent(), /불러옴 N/);
         await p.mouse.move(600, 600);
         assert.equal(await legend.isVisible(), false);
 
@@ -2449,14 +2450,12 @@ test('in a browser, the explanation above the flow is hidden on opening and an i
         assert.equal(await legend.isVisible(), true);
         await flowButton(p, '모두 접기').click();
         assert.equal(await legend.isVisible(), true, 'a redraw keeps the explanation open');
-        for (const word of ['전부 펼치기', '처음으로', '이 가지만']) assert.match(await legend.textContent(), new RegExp(`「${word}」`));
-        assert.doesNotMatch(await legend.textContent(), /[»↺◎]/);
       }, { view: 'flow' }),
     ),
   );
 });
 
-test('in a browser, the explanation shows on hover after a keyboard close, never has a native tooltip, and describes the fold button without claiming API calls', { skip: browserMissing }, async () => {
+test('in a browser, the explanation shows on hover after a keyboard close and never has a native tooltip, and the fold button says what it hides without claiming API calls', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -2464,8 +2463,9 @@ test('in a browser, the explanation shows on hover after a keyboard close, never
         const info = p.locator('.flowbar button.flowinfo-button');
         const legend = p.locator('#flowlegend');
         assert.equal(await info.getAttribute('title'), null);
-        assert.match(await legend.textContent(), /「접기」는 그 화면에 딸린 것을 숨기고/);
-        assert.doesNotMatch(await legend.textContent(), /「접기」는[^.]*API/);
+        const fold = await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).getAttribute('title');
+        assert.match(fold, /이 화면에 딸린 것을 숨깁니다/);
+        assert.doesNotMatch(fold, /API/);
 
         await p.mouse.move(600, 600);
         await info.focus();
@@ -2562,7 +2562,7 @@ test('in a browser, pressing Escape after the review ended throws nothing', { sk
   });
 });
 
-test('in a browser, the info icon stands at the right end of the bar apart from the expand and fold buttons, drawn as an icon with an accessible name and no native tooltip', { skip: browserMissing }, async () => {
+test('in a browser, the info icon stands at the right end of the bar apart from the expand and fold buttons, drawn as an icon with an accessible name', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -2570,7 +2570,6 @@ test('in a browser, the info icon stands at the right end of the bar apart from 
         await p.waitForSelector('#flow .box');
         const info = p.locator('.flowbar button.flowinfo-button');
         assert.equal(await info.getAttribute('aria-label'), '흐름도 읽는 법');
-        assert.equal(await info.getAttribute('title'), null);
         assert.match((await info.textContent()).trim(), /^(i|ⓘ)$/, 'the only visible text is the icon glyph');
         const gaps = await p.evaluate(() => {
           const bar = document.querySelector('.flowbar').getBoundingClientRect();
@@ -2606,6 +2605,7 @@ test('in a browser, the info icon is the last control of its row when a branch i
           return { lastRight, iconRight: icon.right };
         });
         assert.equal(rows.lastRight, rows.iconRight, 'nothing sits to the right of the icon on its row');
+        await p.setViewportSize({ width: 700, height: 600 });
         await flowButton(p, '전체 보기').click();
         await flowButton(p, '모두 펼치기').click();
         await p.evaluate(() => { document.getElementById('flow').scrollLeft = 300; });
@@ -2615,16 +2615,15 @@ test('in a browser, the info icon is the last control of its row when a branch i
           const box = flow.getBoundingClientRect();
           return { scrollWidth: flow.scrollWidth, clientWidth: flow.clientWidth, barLeft: bar.left - box.left, barRight: bar.right - box.left };
         });
-        if (m.scrollWidth > m.clientWidth) {
-          assert.ok(Math.abs(m.barLeft) <= 0.5, `bar left ${m.barLeft}`);
-          assert.ok(Math.abs(m.barRight - m.clientWidth) <= 0.5, `bar right ${m.barRight} against visible width ${m.clientWidth}`);
-        }
+        assert.ok(m.scrollWidth > m.clientWidth, `the flow scrolls sideways (${m.scrollWidth} in ${m.clientWidth})`);
+        assert.ok(Math.abs(m.barLeft) <= 0.5, `bar left ${m.barLeft}`);
+        assert.ok(Math.abs(m.barRight - m.clientWidth) <= 0.5, `bar right ${m.barRight} against visible width ${m.clientWidth}`);
       }, { view: 'flow' }),
     ),
   );
 });
 
-test('in a browser, the info icon and its explanation stay inside the visible box of the flow area when everything is expanded and the flow is scrolled sideways', { skip: browserMissing }, async () => {
+test('in a browser, the legend samples, the info icon and its explanation stay inside the visible box of the flow area when everything is expanded and the flow is scrolled sideways', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -2637,14 +2636,23 @@ test('in a browser, the info icon and its explanation stay inside the visible bo
           const flow = document.getElementById('flow');
           const box = flow.getBoundingClientRect();
           const rel = (r) => ({ left: r.left - box.left, right: r.right - box.left });
-          return { visible: flow.clientWidth, scrolled: flow.scrollLeft, scrollWidth: flow.scrollWidth, icon: rel(document.querySelector('.flowinfo-button').getBoundingClientRect()), legend: rel(document.getElementById('flowlegend').getBoundingClientRect()) };
+          return { visible: flow.clientWidth, scrolled: flow.scrollLeft, scrollWidth: flow.scrollWidth, icon: rel(document.querySelector('.flowinfo-button').getBoundingClientRect()), legend: rel(document.getElementById('flowlegend').getBoundingClientRect()), key: [...document.querySelectorAll('.flowkey li')].map((li) => rel(li.getBoundingClientRect())) };
         });
-        const within = (e) => {
+        const within = (e, { legendOpen = true } = {}) => {
           assert.equal(e.scrolled, 300, `the flow is scrolled sideways (${e.scrolled} of ${e.scrollWidth})`);
           assert.ok(e.icon.left >= 0 && e.icon.right <= e.visible, `icon ${e.icon.left}..${e.icon.right} within ${e.visible}`);
-          assert.ok(e.legend.left >= 0, `legend left edge ${e.legend.left}`);
-          assert.ok(e.legend.right <= e.visible, `legend right edge ${e.legend.right} within ${e.visible}`);
+          if (legendOpen) {
+            assert.ok(e.legend.left >= 0, `legend left edge ${e.legend.left}`);
+            assert.ok(e.legend.right <= e.visible, `legend right edge ${e.legend.right} within ${e.visible}`);
+          }
+          assert.equal(e.key.length, 5);
+          for (const r of e.key) assert.ok(r.left >= 0 && r.right <= e.visible, `sample ${r.left}..${r.right} within ${e.visible}`);
         };
+
+        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 300; });
+        await frames();
+        assert.equal(await p.locator('#flowlegend').isVisible(), false);
+        within(await edges(), { legendOpen: false });
 
         await info.click();
         await p.mouse.move(600, 500);
@@ -2666,18 +2674,18 @@ test('in a browser, the info icon and its explanation stay inside the visible bo
   );
 });
 
-const travelDown = async (p, info, legend) => {
+const travelDown = async (p, info, legend, column = 'center') => {
   await info.hover();
   assert.equal(await legend.isVisible(), true);
   const button = await info.boundingBox();
   const text = await legend.boundingBox();
-  const x = button.x + button.width / 2;
+  const x = button.x + { left: 0.5, center: button.width / 2, right: button.width - 0.5 }[column];
   const from = button.y + button.height / 2;
   const to = text.y + 20;
   assert.ok(to > from);
   for (let y = from; y <= to; y += 1) {
     await p.mouse.move(x, y);
-    assert.equal(await legend.isVisible(), true, `the explanation is gone with the pointer at y=${y} (icon bottom ${button.y + button.height}, explanation top ${text.y})`);
+    assert.equal(await legend.isVisible(), true, `the explanation is gone with the pointer at x=${x}, y=${y} (icon bottom ${button.y + button.height}, explanation top ${text.y})`);
   }
   assert.equal(await p.evaluate(() => document.getElementById('flowlegend').matches(':hover')), true, 'the pointer is on the explanation');
 };
@@ -2687,7 +2695,7 @@ test('in a browser, the pointer can travel from the info icon down into the expl
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
-        await travelDown(p, p.locator('.flowbar button.flowinfo-button'), p.locator('#flowlegend'));
+        for (const column of ['center', 'left', 'right']) await travelDown(p, p.locator('.flowbar button.flowinfo-button'), p.locator('#flowlegend'), column);
       }, { view: 'flow' }),
     ),
   );
@@ -2715,6 +2723,153 @@ test('in a browser, the pointer can travel from the info icon into the explanati
         assert.ok(e.left >= 0 && e.right <= e.visible, `legend ${e.left}..${e.right} within ${e.visible}`);
         assert.ok(e.iconRight <= e.visible, 'the icon is in view');
         assert.ok(e.legendTop >= e.iconBottom, 'the explanation opens under the icon');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+const KEY_LABELS = ['통과', '실패', '보류', '테스트 없음', '조건 걸린 링크'];
+
+test('in a browser, the flow bar always shows a legend of five samples between the fold buttons and the info icon', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 1440, height: 800 });
+        await p.waitForSelector('#flow .box');
+        const key = p.locator('.flowbar ul.flowkey');
+        assert.equal(await key.isVisible(), true);
+        assert.equal(await key.getAttribute('aria-label'), '흐름도 범례');
+        assert.deepEqual(await key.locator('li .key-label').allTextContents(), KEY_LABELS);
+        assert.equal(await key.locator('li [aria-hidden="true"]').count(), 5, 'every drawn sample is hidden from a screen reader');
+        assert.deepEqual(await key.locator('li').evaluateAll((items) => items.map((li) => li.textContent.trim())), ['테두리 통과', '테두리 실패', '테두리 보류', '테두리 테스트 없음', '조건 걸린 링크']);
+        const m = await p.evaluate(() => {
+          const rect = (e) => e.getBoundingClientRect();
+          const items = [...document.querySelectorAll('.flowkey li')].map(rect);
+          const icon = rect(document.querySelector('.flowinfo-button'));
+          const last = rect([...document.querySelectorAll('.flowbar button')].find((b) => b.textContent === '빈틈만 펼치기'));
+          return { left: Math.min(...items.map((r) => r.left)), right: Math.max(...items.map((r) => r.right)), tops: new Set(items.map((r) => Math.round(r.top + r.height / 2))).size, iconLeft: icon.left, lastRight: last.right, legendShown: getComputedStyle(document.getElementById('flowlegend')).display };
+        });
+        assert.ok(m.left > m.lastRight, `the legend starts at ${m.left}, right of 「빈틈만 펼치기」 ending at ${m.lastRight}`);
+        assert.ok(m.right <= m.iconLeft, `the legend ends at ${m.right}, left of the icon at ${m.iconLeft}`);
+        assert.ok(m.iconLeft - m.right <= 16, 'the legend sits next to the icon');
+        assert.equal(m.tops, 1, 'the five samples are on one line at 1440px');
+        assert.equal(m.legendShown, 'none', 'the samples show without opening the explanation');
+        const before = await p.evaluate(() => document.querySelector('.canvas').getBoundingClientRect().top);
+        await p.locator('.flowbar button.flowinfo-button').click();
+        assert.equal(await p.evaluate(() => document.querySelector('.canvas').getBoundingClientRect().top), before, 'opening the explanation does not move the diagram');
+        assert.deepEqual(await key.locator('li .key-label').allTextContents(), KEY_LABELS);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, each legend sample is drawn with the border of the boxes and the dash of the guarded links it stands for', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        const { pairs, dashes } = await p.evaluate(() => {
+          const border = (e) => { const c = getComputedStyle(e); return [c.borderTopColor, c.borderTopStyle, c.borderTopWidth].join(' '); };
+          const canvas = document.querySelector('.canvas');
+          const out = {};
+          for (const cls of ['s-pass', 's-fail', 's-pending', 's-none']) {
+            const box = document.createElement('div');
+            box.className = `box ${cls}`;
+            canvas.append(box);
+            out[cls] = [border(document.querySelector(`.flowkey .swatch.${cls}`)), border(box)];
+            box.remove();
+          }
+          const edge = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          edge.setAttribute('class', 'guarded');
+          canvas.querySelector('svg').append(edge);
+          const stroke = (e) => { const c = getComputedStyle(e); return [c.stroke, c.strokeDasharray, c.strokeWidth].join(' '); };
+          out.guarded = [stroke(document.querySelector('.flowkey svg path')), stroke(edge)];
+          const dashes = [document.querySelector('.flowkey svg path'), edge].map((e) => getComputedStyle(e).strokeDasharray);
+          edge.remove();
+          return { pairs: out, dashes };
+        });
+        for (const [name, [sample, real]] of Object.entries(pairs)) assert.equal(sample, real, name);
+        assert.equal(new Set(['s-pass', 's-fail', 's-pending', 's-none'].map((c) => pairs[c][0])).size, 4, 'the four border samples differ');
+        for (const dash of dashes) assert.match(dash, /^\d+(\.\d+)?(px)?,? \d+(\.\d+)?(px)?$/, `a dash of two lengths, not ${dash}`);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, the explanation behind the info icon holds only the jump and the imported-test samples, and no sentence of the old prose is left on the page', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 1440, height: 800 });
+        await p.waitForSelector('#flow .box');
+        await p.locator('.flowbar button.flowinfo-button').click();
+        const legend = p.locator('#flowlegend');
+        assert.equal(await legend.evaluate((e) => e.tagName), 'UL');
+        assert.deepEqual(await legend.locator('li').evaluateAll((items) => items.map((li) => [...li.children].map((c) => c.textContent))), [
+          ['→ /주소', '다른 가지에 이미 그린 화면으로 가는 링크'],
+          ['불러옴 N', '태그 없이 이 화면을 불러오는 단위 테스트테두리와 테스트 수에는 넣지 않음'],
+        ]);
+        assert.equal(await legend.locator('li small').textContent(), '테두리와 테스트 수에는 넣지 않음');
+        const page = await p.evaluate(() => document.body.textContent);
+        for (const old of ['진입 화면에서 링크를 따라', '처음 닿은 자리에 한 번만', '상자의 「API」 단추로', '점선: 설정·역할 조건이 걸린 링크', '상자 테두리: 붙은 테스트']) assert.equal(page.includes(old), false, old);
+        const box = await p.evaluate(() => {
+          const flow = document.getElementById('flow').getBoundingClientRect();
+          const e = document.getElementById('flowlegend');
+          const r = e.getBoundingClientRect();
+          return { left: r.left - flow.left, right: r.right - flow.left, width: r.width, visible: document.getElementById('flow').clientWidth, overflowing: [...e.querySelectorAll('li')].filter((li) => li.scrollWidth > li.clientWidth).length };
+        });
+        assert.ok(box.width <= 320, `the explanation is ${box.width}px wide`);
+        assert.ok(box.left >= 0 && box.right <= box.visible, `explanation ${box.left}..${box.right} within ${box.visible}`);
+        assert.equal(box.overflowing, 0, 'nothing in the explanation is cut off');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, at a 500px window the bar with its legend stays within the flow area, no legend label is split inside a word and the explanation is in view', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 500, height: 700 });
+        await p.waitForSelector('#flow .box');
+        await p.locator('.flowbar button.flowinfo-button').click();
+        const m = await p.evaluate(() => {
+          const flow = document.getElementById('flow');
+          const box = flow.getBoundingClientRect();
+          const bar = document.querySelector('.flowbar');
+          const rel = (e) => { const r = e.getBoundingClientRect(); return { left: r.left - box.left, right: r.right - box.left, top: r.top, bottom: r.bottom }; };
+          const icon = rel(document.querySelector('.flowinfo-button'));
+          const sameLine = [...bar.querySelectorAll('button, .flowkey li')].map(rel).filter((r) => r.top < icon.bottom && r.bottom > icon.top);
+          return {
+            visible: flow.clientWidth, barScroll: bar.scrollWidth, barClient: bar.clientWidth,
+            labels: [...document.querySelectorAll('.flowkey .key-label')].map((e) => [e.textContent, e.getClientRects().length]),
+            items: [...document.querySelectorAll('.flowkey li')].map(rel), icon, legend: rel(document.getElementById('flowlegend')),
+            iconIsLast: Math.max(...sameLine.map((r) => r.right)) === icon.right,
+          };
+        });
+        assert.ok(m.barScroll <= m.barClient, `the bar's content is ${m.barScroll}px wide in a ${m.barClient}px bar`);
+        assert.deepEqual(m.labels.map(([label]) => label), KEY_LABELS);
+        for (const [label, rects] of m.labels) assert.equal(rects, 1, `「${label}」 is on one line`);
+        for (const r of [...m.items, m.icon, m.legend]) assert.ok(r.left >= 0 && r.right <= m.visible, `${r.left}..${r.right} within ${m.visible}`);
+        assert.ok(m.iconIsLast, 'the icon is the right-most thing on its line');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, a screen box says on hover that pressing it opens the screen in the list, and its buttons keep their own tooltips', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        const titles = await p.locator('#flow .box.screen').evaluateAll((boxes) => boxes.map((b) => b.getAttribute('title').split('\n').at(-1)));
+        assert.ok(titles.length > 3);
+        assert.deepEqual([...new Set(titles)], [PRESS_HINT]);
+        const home = await screenBox(p, '/home#Home');
+        for (const title of await home.locator('button').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('title')))) {
+          assert.ok(title, 'a button inside the box has its own tooltip');
+          assert.equal(title.includes(PRESS_HINT), false);
+        }
       }, { view: 'flow' }),
     ),
   );
