@@ -4125,6 +4125,14 @@ test('in a browser, the explanation behind the info icon holds only the jump and
         assert.ok(box.width <= 320, `the explanation is ${box.width}px wide`);
         assert.ok(box.left >= 0 && box.right <= box.visible, `explanation ${box.left}..${box.right} within ${box.visible}`);
         assert.equal(box.overflowing, 0, 'nothing in the explanation is cut off');
+        const rows = await legend.locator('li').evaluateAll((items) => items.map((li) => {
+          const [sample, text] = [...li.children].map((c) => c.getBoundingClientRect());
+          return { below: text.top >= sample.bottom - 1, text: Math.round(text.width), row: Math.round(li.getBoundingClientRect().width) };
+        }));
+        for (const r of rows) {
+          assert.ok(r.below, 'the description sits under its sample');
+          assert.equal(r.text, r.row, 'the description takes the whole width, however long the sample is');
+        }
       }, { view: 'flow' }),
     ),
   );
@@ -4361,6 +4369,356 @@ test('in a browser, the flow layout is worked out from the trees, the box sizes 
       }, { view: 'flow' }),
     ),
   );
+});
+
+const WALK = ['/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/help#Help', '/lab#Lab', '/lab/result#LabResult', '/settings#Settings'];
+const WALK_ON_MAP = WALK.slice(0, 7);
+
+async function withPathStories(stories, fn, edits = []) {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, async (config, copy) => {
+    const storyFile = (id) => path.join(copy, 'example-stories', `${id}.json`);
+    const writeStory = (id, screens) => fs.writeFileSync(storyFile(id), JSON.stringify({ name: `${id} 이야기`, screens, author: 'reviewer', date: '2026-10-05' }));
+    for (const [id, screens] of Object.entries(stories)) writeStory(id, screens);
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#flow .box.screen');
+        await fn(p, { base, errors, writeStory, storyFile });
+      }, { view: 'flow' }));
+  }, edits);
+}
+
+const flowPlace = (p) => p.evaluate(() => decodeURIComponent(location.hash));
+const pickPathStory = (p, id) => p.selectOption('.story-pick select', id);
+const drawnScreens = (p) => p.$$eval('#flow .box.screen', (els) => els.map((e) => e.dataset.key).sort());
+const pathMarks = (p, cls) => p.$$eval(`#flow .canvas > .${cls}`, (els) => els.map((e) => [e.dataset.at, e.textContent, ...[...e.classList].filter((c) => /^(l-.*|exit|entry)$/.test(c))]));
+const pathEdges = (p) => p.$$eval('#flow .canvas svg path.story-edge', (els) => els.map((e) => [e.dataset.from, e.dataset.to, [...e.classList].find((c) => c.startsWith('l-'))]).sort());
+const ringed = (p) => p.$$eval('#flow .box.story-ring', (els) => els.map((e) => e.dataset.key));
+const stripCurrent = (p) => p.$$eval('.story-strip .story-step.current .story-badge', (els) => els.map((e) => e.textContent));
+const inView = (p, key) => p.evaluate((k) => {
+  const flow = document.getElementById('flow');
+  const r = flow.querySelector(`.box.screen[data-key="${CSS.escape(k)}"]`).getBoundingClientRect();
+  const view = flow.getBoundingClientRect();
+  return r.top >= flow.querySelector('.flowbar').getBoundingClientRect().bottom && r.top < view.bottom && r.left >= view.left && r.left < view.right;
+}, key);
+
+test('in a browser, the flow lays out a story\'s step marks only in the gaps that hold them, beside their boxes and off the lines, and keeps room under a box for its hidden-screen count', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        assert.equal(await p.locator('.story-pick').count(), 0, 'no story picker without stories');
+        const out = await p.evaluate(() => {
+          const screen = (id, children = []) => ({ kind: 'screen', id, children, calls: [], guards: [] });
+          const roots = [screen('A', [screen('B'), screen('C', [screen('D')])])];
+          const sizes = { A: { width: 100, height: 40 }, B: { width: 120, height: 50 }, C: { width: 80, height: 30 }, D: { width: 90, height: 30 } };
+          const marks = [
+            { key: 'B', side: 'entry', kind: 'badge', width: 22, height: 22 },
+            { key: 'A', side: 'exit', kind: 'chip', width: 40, height: 20 },
+            { key: 'A', side: 'exit', kind: 'hidden', width: 80, height: 16 },
+            { key: 'C', side: 'entry', kind: 'tag', width: 30, height: 18 },
+          ];
+          const view = { collapsed: [], openCalls: [], marks };
+          const cols = flowColumns(roots, sizes, view);
+          return { plain: flowColumns(roots, sizes, {}).xs, xs: cols.xs, layout: layoutFlow(roots, sizes, view, cols) };
+        });
+        assert.deepEqual(out.plain, [0, 150, 320]);
+        assert.deepEqual(out.xs, [0, 100 + 54 + 32 + 44, 230 + 120 + 50]);
+        const box = Object.fromEntries(out.layout.boxes.map((b) => [b.key, b]));
+        const [badge, chip, hidden, tag] = out.layout.marks;
+        assert.deepEqual(hidden, { x: 8, y: box.A.y + 40 + 6 });
+        assert.deepEqual(badge, { x: 230 - 6 - 22, y: box.B.y - 2 });
+        assert.equal(chip.x, 110);
+        assert.equal(tag.y, box.C.y + 15 - 9, 'the tag sits on the line into its box');
+        assert.equal(tag.x, 230 - 10 - 30);
+        assert.equal(Math.min(...out.layout.boxes.map((b) => b.y), ...out.layout.marks.map((m) => m.y)), 0, 'a badge raised above the top box moves the drawing down');
+        const a = out.layout.edges.find((e) => e.to === 'B');
+        assert.deepEqual([a.ex, a.nx], [100 + 54, 230 - 44]);
+        for (const [m, height, lines] of [[chip, 20, out.layout.edges.filter((e) => e.from === 'A').map((e) => e.y1)], [badge, 22, [a.y2]]]) {
+          for (const line of lines) assert.ok(line < m.y - 4 || line > m.y + height + 4, `mark ${m.y}..${m.y + height} keeps off the line at ${line}`);
+        }
+        assert.ok(out.layout.height >= hidden.y + 16, 'the canvas is tall enough for the hidden-screen count');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, a story picked in the flow bar leaves only its screens and their ancestors with numbered badges and the hidden screens counted, closes API calls, and turning it off brings back the flow the reviewer had', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p) => {
+    const stories = await p.evaluate(() => state.data.stories.list.map((st) => [st.id, st.name]));
+    assert.deepEqual(await p.$$eval('.story-pick option', (os) => os.map((o) => [o.value, o.textContent])), [['', '고르기'], ...stories]);
+    assert.equal(await p.locator('.flowbar .path-off').count(), 0);
+
+    await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^접기$/ }).click();
+    await (await screenBox(p, '/home#Home')).locator('.calls').click();
+    const before = { screens: await drawnScreens(p), calls: await p.locator('#flow .box.call').count() };
+    assert.ok(before.calls > 0);
+
+    await pickPathStory(p, 'walk-around');
+    assert.equal(await flowPlace(p), '#flow?story=walk-around');
+    assert.deepEqual(await drawnScreens(p), [...WALK_ON_MAP].sort());
+    assert.equal(await p.locator('#flow .box.call').count(), 0, 'API calls start closed');
+    assert.equal(await p.textContent('.flowbar .story-only'), '스토리 경로만 보는 중 전체 보기');
+    assert.deepEqual(await pathMarks(p, 'story-badge'), WALK_ON_MAP.map((id, i) => [id, String(i + 1)]));
+    assert.deepEqual(await pathMarks(p, 'story-hidden'), [['/home#Home', '다른 화면 4 숨김']]);
+    assert.equal(await p.locator('#flow .box.on-story').count(), 7);
+
+    await flowButton(p, '경로 끄기').click();
+    assert.equal(await flowPlace(p), '#flow');
+    assert.deepEqual({ screens: await drawnScreens(p), calls: await p.locator('#flow .box.call').count() }, before);
+    assert.equal(await p.locator('.story-strip, #flow .mark, #flow .box.on-story').count(), 0);
+    assert.equal(await p.inputValue('.story-pick select'), '');
+  });
+});
+
+test('in a browser, a story hop from a box to its child is drawn on that link in the style of the story verdict, not of the flow conditions, and every other hop puts on both boxes a chip with the other step number', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p) => {
+    await pickPathStory(p, 'walk-around');
+    assert.deepEqual(await pathEdges(p), [
+      ['/home#Home', '/document/:tab_draft_done_#DocumentList', 'l-open'],
+      ['/lab#Lab', '/lab/result#LabResult', 'l-open'],
+      ['/signin#SignIn', '/home#Home', 'l-open'],
+    ]);
+    const stroke = (from, to) => p.$eval(`#flow svg path[data-from="${from}"][data-to="${to}"]`, (e) => { const c = getComputedStyle(e); return [c.strokeWidth, c.strokeDasharray, c.opacity]; });
+    assert.deepEqual(await stroke('/signin#SignIn', '/home#Home'), ['3.2px', 'none', '1']);
+    assert.deepEqual(await stroke('/signin#SignIn', '/help#Help'), ['1.3px', 'none', '0.35'], 'a guarded link that no hop takes is a thin grey line');
+    assert.deepEqual(await pathMarks(p, 'story-chip'), [
+      ['/document/:tab_draft_done_#DocumentList', '→ 4', 'exit', 'l-open'],
+      ['/document/:id#DocumentDetail', '3 →', 'entry', 'l-open'],
+      ['/document/:id#DocumentDetail', '→ 5조건', 'exit', 'l-conditioned'],
+      ['/help#Help', '4 →', 'entry', 'l-conditioned'],
+      ['/help#Help', '✕→ 6링크 없음', 'exit', 'l-broken'],
+      ['/lab#Lab', '✕5 →', 'entry', 'l-broken'],
+      ['/lab/result#LabResult', '→ 8맵에 없는 화면', 'exit', 'l-off-map'],
+    ]);
+    assert.equal(await p.locator('#flow .canvas > .story-tag').count(), 0);
+
+    const toHelp = p.locator('#flow .story-chip.exit[data-hop="3"]');
+    await toHelp.hover();
+    assert.deepEqual(await p.$$eval('#flow .story-chip.hovered', (els) => els.map((e) => e.dataset.at)), ['/document/:id#DocumentDetail', '/help#Help']);
+    await p.mouse.move(5, 890);
+    assert.equal(await p.locator('#flow .story-chip.hovered').count(), 0);
+    await p.evaluate(() => { document.getElementById('flow').scrollTop = 0; });
+    await toHelp.click();
+    assert.deepEqual(await ringed(p), ['/help#Help']);
+    assert.deepEqual(await stripCurrent(p), ['5']);
+    assert.equal(await inView(p, '/help#Help'), true);
+
+    await pickPathStory(p, 'run-lab');
+    assert.deepEqual(await pathEdges(p), [['/home#Home', '/lab#Lab', 'l-conditioned'], ['/lab#Lab', '/lab/result#LabResult', 'l-open']]);
+    assert.deepEqual((await stroke('/home#Home', '/lab#Lab')).slice(0, 2), ['3.2px', '8px, 5px']);
+    assert.deepEqual(await pathMarks(p, 'story-tag'), [['/lab#Lab', '조건', 'l-conditioned']]);
+    assert.deepEqual(await ringed(p), [], 'another story starts with nothing ringed');
+  });
+});
+
+test('in a browser, the step strip in the flow bar lists the steps with their routes joined by the verdict of each link, rings and shows the box of the step pressed, opens a folded branch to reach it, and lists a step off the map with no box', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p) => {
+    await pickPathStory(p, 'walk-around');
+    assert.deepEqual(await p.$$eval('.story-strip .story-step', (els) => els.map((e) => e.textContent)), [
+      '1/signin', '2/home', '3/document/:tab(draft|done)', '4/document/:id', '5/help', '6/lab', '7/lab/result', '8/settings#Settings맵에 없는 화면',
+    ]);
+    assert.deepEqual(await p.$$eval('.story-strip .story-join', (els) => els.map((e) => [[...e.classList].find((c) => c.startsWith('l-')), e.textContent])), [
+      ['l-open', ''], ['l-open', ''], ['l-open', ''], ['l-conditioned', '조건'], ['l-broken', '링크 없음'], ['l-open', ''], ['l-off-map', ''],
+    ]);
+    assert.equal(await p.evaluate(() => document.querySelector('.story-strip').closest('.flowbar') !== null), true);
+
+    await p.locator('.story-strip .story-step', { hasText: '/lab/result' }).click();
+    assert.deepEqual(await ringed(p), ['/lab/result#LabResult']);
+    assert.deepEqual(await stripCurrent(p), ['7']);
+    assert.equal(await inView(p, '/lab/result#LabResult'), true);
+    await p.locator('.story-strip .story-step', { hasText: '/settings#Settings' }).click();
+    assert.deepEqual(await ringed(p), []);
+    assert.deepEqual(await stripCurrent(p), ['8']);
+
+    await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).click();
+    const foldedOnPath = await (await screenBox(p, '/home#Home')).locator('.l2').textContent();
+    assert.deepEqual(await p.$$eval('.story-strip .story-step:has(.note)', (els) => els.map((e) => e.querySelector('.note').textContent + e.querySelector('.story-badge').textContent)), ['접힘3', '접힘4', '접힘6', '접힘7', '맵에 없는 화면8']);
+    assert.equal(await p.locator('#flow .story-chip[data-hop="2"]').count(), 0, 'a hop whose ends are folded away has no chips');
+    await p.locator('.story-strip .story-step', { hasText: '/document/:id' }).click();
+    assert.deepEqual(await ringed(p), ['/document/:id#DocumentDetail']);
+    assert.equal(await p.locator('.story-strip .note', { hasText: '접힘' }).count(), 0);
+
+    await p.setViewportSize({ width: 700, height: 700 });
+    const rows = await p.$$eval('.story-strip > li', (els) => new Set(els.map((e) => Math.round(e.getBoundingClientRect().top))).size);
+    assert.ok(rows >= 2, `the strip wraps onto ${rows} rows`);
+
+    await flowButton(p, '경로 끄기').click();
+    await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).click();
+    assert.equal(foldedOnPath, await (await screenBox(p, '/home#Home')).locator('.l2').textContent(), 'a box folded on the path sums the screens the path hides too');
+  });
+});
+
+test('in a browser, the story path view numbers a screen visited twice with both steps, reaches a step under the unreached screens with chips, and keeps the ancestors of a story that starts away from an entry without a number', { skip: browserMissing }, async () => {
+  const stories = {
+    twice: ['/signin#SignIn', '/home#Home', '/help#Help', '/home#Home'],
+    far: ['/home#Home', '/admin/group#AdminGroup'],
+  };
+  await withPathStories(stories, async (p) => {
+    await pickPathStory(p, 'twice');
+    assert.deepEqual(await pathMarks(p, 'story-badge'), [['/signin#SignIn', '1'], ['/home#Home', '2·4'], ['/help#Help', '3']]);
+    assert.deepEqual((await pathMarks(p, 'story-chip')).map(([at, text, end]) => [at, text.match(/→ \d+|\d+ →/)[0], end]), [
+      ['/home#Home', '→ 3', 'exit'], ['/help#Help', '2 →', 'entry'], ['/help#Help', '→ 4', 'exit'], ['/home#Home', '3 →', 'entry'],
+    ]);
+
+    await p.evaluate(() => {
+      const { flow } = state.data;
+      flow.unreached.push(...flow.roots.splice(flow.roots.findIndex((r) => r.id === '/admin/group#AdminGroup'), 1));
+    });
+    await pickPathStory(p, 'far');
+    assert.equal(await p.locator('#flow .canvas').count(), 2);
+    assert.equal(await p.textContent('#flow > h2'), '진입 화면에서 닿지 않는 화면 1');
+    assert.equal(await p.$eval('#flow .canvas:last-of-type .box.screen', (e) => e.dataset.key), '/admin/group#AdminGroup');
+    assert.deepEqual(await pathMarks(p, 'story-chip'), [['/home#Home', '✕→ 2링크 없음', 'exit', 'l-broken'], ['/admin/group#AdminGroup', '✕1 →', 'entry', 'l-broken']]);
+
+    await pickPathStory(p, 'run-lab');
+    assert.deepEqual(await drawnScreens(p), ['/home#Home', '/lab#Lab', '/lab/result#LabResult', '/signin#SignIn']);
+    assert.deepEqual((await pathMarks(p, 'story-badge')).map((m) => m[0]), ['/home#Home', '/lab#Lab', '/lab/result#LabResult']);
+
+    await pickPathStory(p, 'read-reports');
+    assert.deepEqual(await drawnScreens(p), ['/admin/report#AdminReport', '/home#Home', '/signin#SignIn']);
+    assert.equal(await p.locator('.story-strip .story-step').count(), 1);
+    assert.equal(await p.locator('.story-strip .story-join, #flow .canvas > .story-chip, #flow .canvas svg path.story-edge').count(), 0);
+  }, [['client/src/components/Home.js', '{isAdmin && <Link to={Option.ROUTE_PATH.ADMIN_GROUP}>Groups</Link>}', '']]);
+});
+
+test('in a browser, the picked story is kept in the address through reloads and back and forward, and the path view and a branch shown on its own hand over to each other', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p, { base, errors }) => {
+    const whole = (await drawnScreens(p)).length;
+    await pickPathStory(p, 'walk-around');
+    await p.reload();
+    await p.waitForSelector('.story-strip');
+    assert.equal(await flowPlace(p), '#flow?story=walk-around');
+    assert.deepEqual(await drawnScreens(p), [...WALK_ON_MAP].sort());
+    await p.goBack();
+    await p.waitForSelector('.story-strip', { state: 'detached' });
+    assert.equal(await flowPlace(p), '#flow');
+    assert.equal((await drawnScreens(p)).length, whole);
+    await p.goForward();
+    await p.waitForSelector('.story-strip');
+    assert.equal(await p.inputValue('.story-pick select'), 'walk-around');
+
+    await flowButton(p, '경로 끄기').click();
+    await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
+    await p.waitForSelector('.flowbar .focusing');
+    await pickPathStory(p, 'walk-around');
+    assert.equal(await flowPlace(p), '#flow?story=walk-around');
+    assert.equal(await p.locator('.flowbar .focusing').count(), 0);
+    assert.deepEqual(await drawnScreens(p), [...WALK_ON_MAP].sort(), 'the path is cut from the whole flow, not from the branch');
+    await flowButton(p, '경로 끄기').click();
+    assert.equal(await flowPlace(p), '#flow?from=/home#Home', 'turning the path off goes back to the branch');
+    assert.match(await p.textContent('.flowbar .focusing'), /^\/home /);
+
+    await pickPathStory(p, 'walk-around');
+    await p.click('.flowbar .story-only button');
+    assert.equal(await flowPlace(p), '#flow');
+    assert.equal((await drawnScreens(p)).length, whole);
+
+    await pickPathStory(p, 'walk-around');
+    await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
+    await p.waitForSelector('.flowbar .focusing');
+    assert.equal(await flowPlace(p), '#flow?from=/lab#Lab');
+    assert.equal(await p.locator('.story-strip').count(), 0);
+    assert.equal(await p.inputValue('.story-pick select'), '');
+
+    await p.goto(`${base}/#flow?story=gone`);
+    await p.reload();
+    await p.waitForSelector('#flow .box.screen');
+    assert.equal(await flowPlace(p), '#flow');
+    assert.deepEqual(errors, []);
+  });
+});
+
+test('in a browser, a picked story whose file changes while the page is open is drawn again from its new steps, and one whose file is removed turns the path view off', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p, { writeStory, storyFile }) => {
+    const whole = await drawnScreens(p);
+    await pickPathStory(p, 'walk-around');
+    await p.locator('.story-strip .story-step', { hasText: '/lab/result' }).click();
+    writeStory('walk-around', ['/signin#SignIn', '/help#Help']);
+    await p.evaluate(async () => { await load(); render(); });
+    assert.deepEqual(await drawnScreens(p), ['/help#Help', '/signin#SignIn']);
+    assert.equal(await p.locator('.story-strip .story-step').count(), 2);
+    assert.deepEqual(await stripCurrent(p), [], 'a ringed step past the new end is dropped');
+
+    fs.rmSync(storyFile('walk-around'));
+    await p.evaluate(async () => { await load(); render(); });
+    assert.equal(await flowPlace(p), '#flow');
+    assert.equal(await p.locator('.story-strip').count(), 0);
+    assert.deepEqual(await drawnScreens(p), whole);
+  });
+});
+
+test('in a browser, no chip, tag or badge of a story path covers a box or another mark, no thick line crosses a box, and no line runs under a chip or badge, also with every API call open', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p) => {
+    const problems = () => p.evaluate(() => {
+      const R = (e) => e.getBoundingClientRect();
+      const boxes = [...document.querySelectorAll('#flow .canvas > .box')];
+      const marks = [...document.querySelectorAll('#flow .canvas > .mark')];
+      const hit = (a, b) => a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
+      const out = [];
+      for (const m of marks) {
+        for (const b of boxes) if (hit(R(m), R(b))) out.push(`${m.textContent} covers ${b.dataset.key}`);
+        if (R(m).right > R(m.parentElement).right + 0.5) out.push(`${m.textContent} sticks out of its canvas`);
+      }
+      marks.forEach((m, i) => marks.slice(i + 1).forEach((o) => { if (hit(R(m), R(o))) out.push(`${m.textContent} covers ${o.textContent}`); }));
+      for (const line of document.querySelectorAll('#flow .canvas svg path')) {
+        const ctm = line.getScreenCTM();
+        const len = line.getTotalLength();
+        const thick = line.classList.contains('story-edge');
+        for (let at = 2; at < len - 2; at += 2) {
+          const q = line.getPointAtLength(at);
+          const x = ctm.a * q.x + ctm.e;
+          const y = ctm.d * q.y + ctm.f;
+          const inside = (e) => { const r = R(e); return x > r.left + 1 && x < r.right - 1 && y > r.top + 1 && y < r.bottom - 1; };
+          const box = thick && boxes.find(inside);
+          const under = marks.find((m) => !m.classList.contains('story-tag') && inside(m));
+          if (box || under) {
+            out.push(`${line.dataset.from} → ${line.dataset.to} runs ${box ? `across ${box.dataset.key}` : `under ${under.textContent}`}`);
+            break;
+          }
+        }
+      }
+      return out;
+    });
+    await pickPathStory(p, 'walk-around');
+    assert.deepEqual(await problems(), []);
+    assert.deepEqual(await textOutside(p), []);
+    assert.deepEqual(await layoutErrors(p), []);
+    await flowButton(p, '모두 펼치기').click();
+    assert.ok(await p.locator('#flow .box.call').count() > 0);
+    assert.deepEqual(await problems(), []);
+    assert.deepEqual(await layoutErrors(p), []);
+  });
+});
+
+test('in a browser, the info icon of the story picker opens a legend of the path marks drawn as small samples with short names, and Escape closes it', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p) => {
+    await pickPathStory(p, 'walk-around');
+    const info = p.locator('.flowbar button.pathinfo-button');
+    const legend = p.locator('#pathlegend');
+    assert.equal(await info.getAttribute('aria-label'), '스토리 경로 읽는 법');
+    assert.equal(await legend.isVisible(), false);
+    await info.click();
+    await p.mouse.move(5, 890);
+    assert.equal(await legend.isVisible(), true);
+    assert.deepEqual(await legend.locator('li > span:last-child').allTextContents(), [
+      '단계 번호', '이어짐 · 설정에 적은 이동', '조건', '5단계로 감', '4단계에서 옴', '링크 없음', '맵에 없는 화면', '판정 못 함', '경로 밖 화면',
+    ]);
+    assert.equal(await legend.locator('li > .sample').count(), 9);
+    const look = (sel) => p.$eval(sel, (e) => { const c = getComputedStyle(e); return [c.borderTopStyle, c.borderTopColor, c.color, c.height].join(' '); });
+    assert.equal(await look('#pathlegend .story-chip.l-broken'), await look('#flow .canvas .story-chip.l-broken'));
+    assert.equal(await look('#pathlegend .story-badge'), await look('#flow .canvas .story-badge'));
+    await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).click();
+    assert.equal(await legend.isVisible(), true, 'a redraw keeps the legend open');
+    const edges = await p.evaluate(() => {
+      const flow = document.getElementById('flow').getBoundingClientRect();
+      const r = document.getElementById('pathlegend').getBoundingClientRect();
+      return { left: r.left - flow.left, right: r.right - flow.left, visible: document.getElementById('flow').clientWidth };
+    });
+    assert.ok(edges.left >= 0 && edges.right <= edges.visible, `legend ${edges.left}..${edges.right} within ${edges.visible}`);
+    await p.keyboard.press('Escape');
+    assert.equal(await legend.isVisible(), false);
+    assert.equal(await p.locator('#flowlegend').isVisible(), false);
+  });
 });
 
 test('in a browser, 「리뷰 끝」 ends the review and the page says so', { skip: browserMissing }, async () => {

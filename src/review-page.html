@@ -189,19 +189,28 @@
   .flowkey .swatch { width: 22px; height: 14px; border-radius: 4px; }
   .flowkey svg { width: 26px; height: 6px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .flowinfo { align-self: stretch; display: flex; align-items: center; }
-  .flowbar .flowinfo-button { width: 20px; height: 20px; padding: 0; border-radius: 50%; font: italic bold 12px/1 Georgia, serif; color: var(--muted); }
-  .flowbar .flowinfo-button:hover, .flowbar .flowinfo-button:focus-visible, .flowinfo.shown .flowinfo-button { border-color: var(--accent); color: var(--text); }
-  .flowlegend { display: none; position: absolute; right: 16px; top: 100%; width: min(320px, calc(100% - 32px)); box-sizing: border-box; flex-direction: column; gap: 6px; margin: 0; padding: 10px 12px; list-style: none; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.5; color: var(--muted); }
-  .flowinfo.shown .flowlegend { display: flex; }
-  .flowlegend li { display: grid; grid-template-columns: max-content 1fr; column-gap: 8px; }
-  .flowlegend .sample { color: var(--text); }
+  .flowinfo, .pathinfo { align-self: stretch; display: flex; align-items: center; }
+  .flowbar :is(.flowinfo-button, .pathinfo-button) { width: 20px; height: 20px; padding: 0; border-radius: 50%; font: italic bold 12px/1 Georgia, serif; color: var(--muted); }
+  .flowbar :is(.flowinfo-button, .pathinfo-button):is(:hover, :focus-visible), .flowinfo.shown .flowinfo-button, .pathinfo.shown .pathinfo-button { border-color: var(--accent); color: var(--text); }
+  .flowlegend, .pathlegend { display: none; position: absolute; right: 16px; top: 100%; width: min(320px, calc(100% - 32px)); box-sizing: border-box; flex-direction: column; gap: 6px; margin: 0; padding: 10px 12px; list-style: none; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .flowinfo.shown .flowlegend, .pathinfo.shown .pathlegend { display: flex; }
+  :is(.flowlegend, .pathlegend) li { display: grid; grid-template-columns: max-content 1fr; column-gap: 8px; }
+  .flowlegend li { grid-template-columns: 1fr; }
+  :is(.flowlegend, .pathlegend) .sample { color: var(--text); }
   .flowlegend small { display: block; font-size: 11px; }
   .flowlegend::before { content: ''; position: absolute; left: -1px; right: -1px; top: calc(-1 * var(--bar-pad) - 2px); height: calc(var(--bar-pad) + 8px); }
   .canvas { position: relative; }
   .canvas svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
   .canvas svg path, .flowkey svg path { fill: none; stroke: var(--muted); stroke-width: 1.3; opacity: .7; }
   .canvas svg path.guarded, .flowkey svg path.guarded { stroke: var(--accent); stroke-dasharray: 5 4; opacity: .9; }
+  .canvas.story svg path { stroke: var(--muted); stroke-dasharray: none; opacity: .35; }
+  :is(.canvas.story, .pathlegend) svg path.story-edge { stroke: var(--text); stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: none; opacity: 1; }
+  :is(.canvas.story, .pathlegend) svg path.story-edge.l-conditioned { stroke: var(--accent); stroke-dasharray: 8 5; }
+  :is(.canvas.story, .pathlegend) svg path.story-edge.l-broken { stroke: var(--fail); stroke-dasharray: 8 5; }
+  :is(.canvas.story, .pathlegend) svg path.story-edge:is(.l-off-map, .l-unknown) { stroke: var(--more); stroke-dasharray: 2 5; }
+  .canvas > .mark { position: absolute; }
+  .box.on-story { box-shadow: 0 0 0 2px var(--text); }
+  .box.story-ring { box-shadow: 0 0 0 2.5px var(--text), 0 0 0 5px var(--selected); }
   #flow .canvas .group-head { position: absolute; margin: 0; line-height: 28px; white-space: nowrap; }
   .box, .flowkey .swatch { box-sizing: border-box; border: 1.5px solid var(--line); background: var(--panel); }
   .box { position: absolute; border-radius: 6px; padding: 4px 8px; font-size: 12px; line-height: 1.35; }
@@ -229,8 +238,61 @@
   .box .toggle:hover { border-color: var(--accent); color: var(--text); }
   .flowbar { position: sticky; top: -16px; left: -16px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; --bar-pad: 8px; margin: -16px -16px 10px; padding: 12px 16px var(--bar-pad); background: var(--bg); border-bottom: 1px solid var(--line); }
   .flowbar button { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
-  .flowbar .focusing { margin-left: 8px; font-size: 12px; }
+  .flowbar :is(.focusing, .story-only) { margin-left: 8px; font-size: 12px; }
   .flowbar .flowsummary { flex-basis: 100%; font-size: 13px; }
+  .story-pick { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; padding-left: 10px; border-left: 1px solid var(--line); font-size: 12px; }
+  .story-pick select { max-width: 300px; padding: 2px 4px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }
+  .pathinfo { position: relative; }
+  .pathlegend { position: absolute; right: -8px; top: calc(100% + 6px); z-index: 2; width: max-content; max-width: min(340px, calc(100vw - 48px)); flex-direction: column; gap: 8px; margin: 0; padding: 10px 12px; list-style: none; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .pathlegend::before { content: ''; position: absolute; left: -1px; right: -1px; top: -8px; height: 10px; }
+  .pathlegend li { align-items: center; column-gap: 10px; }
+  .pathlegend .sample { display: inline-flex; align-items: center; gap: 4px; }
+  .pathlegend .sample .story-chip.exit { margin-left: 10px; }
+  .pathlegend .sample .story-chip.entry { margin-right: 10px; }
+  .pathlegend svg { width: 40px; height: 8px; overflow: visible; }
+  .pathlegend svg path { fill: none; }
+  .story-strip { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px; margin: 4px 0 0; padding: 6px 0 2px; list-style: none; border-top: 1px dashed var(--line); font-size: 12px; }
+  .story-strip > li { display: flex; align-items: center; }
+  .flowbar .story-step { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 3px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); white-space: nowrap; }
+  .flowbar .story-step.current { border-color: var(--text); box-shadow: 0 0 0 1.5px var(--text); }
+  .flowbar .story-step.off { border-style: dashed; border-color: var(--more); }
+  .story-step .note { color: var(--muted); }
+  .story-step.off .note { color: var(--more); }
+  .story-step .story-badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; }
+  .story-join { flex-direction: column; min-width: 46px; padding: 0 3px; }
+  .story-join .arrow { display: block; position: relative; width: 34px; border-top: 2.5px solid var(--text); }
+  .story-join .arrow::after { content: ''; position: absolute; right: -2px; top: -6px; border: 5px solid transparent; border-left-color: var(--text); }
+  .story-join.l-conditioned .arrow { border-top-style: dashed; border-top-color: var(--accent); }
+  .story-join.l-conditioned .arrow::after { border-left-color: var(--accent); }
+  .story-join.l-broken .arrow { border-top: 2.5px dotted var(--fail); }
+  .story-join.l-broken .arrow::after { content: '✕'; top: -9px; right: 10px; border: 0; background: var(--bg); color: var(--fail); font-size: 11px; font-weight: 700; line-height: 1; }
+  .story-join:is(.l-off-map, .l-unknown) .arrow { border-top: 2.5px dotted var(--more); }
+  .story-join:is(.l-off-map, .l-unknown) .arrow::after { border-left-color: var(--more); }
+  .story-join .jtag { margin-top: 2px; font-size: 10px; line-height: 12px; white-space: nowrap; }
+  .story-join.l-conditioned .jtag { color: var(--accent); }
+  .story-join.l-broken .jtag { color: var(--fail); font-weight: 600; }
+  .story-join.l-unknown .jtag { color: var(--more); }
+  .story-badge { display: inline-block; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--text); color: var(--panel); font: 600 12px/22px system-ui, sans-serif; text-align: center; white-space: nowrap; }
+  /* ::before 는 상자 가장자리에서 표시까지 잇는 짧은 선이다. */
+  .story-chip { position: relative; display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 6px; border: 1.5px solid var(--text); border-radius: 10px; background: var(--panel); color: var(--text); font: 600 11px/17px system-ui, sans-serif; white-space: nowrap; }
+  button.story-chip { cursor: pointer; }
+  .story-chip::before { content: ''; position: absolute; top: calc(50% - 1px); width: 10px; border-top: 2px solid currentColor; }
+  .story-chip.exit::before { right: calc(100% + 1.5px); }
+  .story-chip.entry::before { left: calc(100% + 1.5px); }
+  .story-chip small { font-size: 10px; font-weight: 400; }
+  .story-chip b { font-size: 10px; }
+  .story-chip.l-conditioned { border-style: dashed; color: var(--accent); }
+  .story-chip.l-conditioned::before { border-top-style: dashed; }
+  .story-chip.l-broken { border-style: dashed; color: var(--fail); }
+  .story-chip.l-broken::before { border-top-style: dashed; }
+  .story-chip:is(.l-off-map, .l-unknown) { border-style: dotted; color: var(--more); }
+  .story-chip:is(.l-off-map, .l-unknown)::before { border-top-style: dotted; }
+  .story-chip.hovered { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px currentColor; }
+  .story-tag { display: inline-block; padding: 0 6px; border: 1px solid currentColor; border-radius: 4px; background: var(--panel); font-size: 11px; line-height: 16px; white-space: nowrap; }
+  .story-tag.l-conditioned { color: var(--accent); }
+  .story-tag.l-broken { color: var(--fail); font-weight: 600; }
+  .story-tag:is(.l-off-map, .l-unknown) { color: var(--more); }
+  .story-hidden { display: inline-block; padding: 0 6px; border: 1px dashed var(--line); border-radius: 4px; background: var(--bg); color: var(--muted); font-size: 11px; line-height: 16px; white-space: nowrap; }
   .views.side { margin-bottom: 10px; }
   .views.side button { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; padding: 4px 1px; white-space: nowrap; }
   .views.side .tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -368,7 +430,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -421,11 +483,14 @@ async function load() {
   const res = await fetch('/api/data');
   if (!res.ok) throw new Error(await res.text());
   state.data = await res.json();
-  if (state.focus) {
-    const { id } = state.focus;
+  // 스토리 경로를 보는 동안의 가지는 경로를 끄면 되돌릴 값 안에 들어 있다.
+  const holder = () => (state.storyPath ? state.storyPath.saved : state);
+  if (holder().focus) {
+    const { id } = holder().focus;
     const roots = await branchRoots(id).catch(() => null);
-    if (state.focus?.id === id) state.focus = roots && { id, roots };
+    if (holder().focus?.id === id) holder().focus = roots && { id, roots };
   }
+  if (state.storyPath && !pathStoryOf()) leaveStoryPath();
   const { screens } = state.data.map;
   const screen = screens.find((s) => s.id === state.selected) ?? screens[0];
   state.selected = screen?.id ?? null;
@@ -2383,6 +2448,7 @@ async function saveBulk(t, bulk, kind, reason) {
 }
 
 const GAP = 12, COL_GAP = 50, CELL_GAP = 24, CALL_INDENT = 16, GROUP_SPACE = 24, GROUP_HEAD_H = 28;
+const STUB = 10, BADGE_GAP = 6, LANE_PAD = 4, LANE_CURVE = 32, UNDER_GAP = 6;
 
 function svg(tag, attrs, ...children) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -2423,7 +2489,51 @@ function openGapsOnly(roots) {
   };
   roots.forEach(walk);
 }
-const flowTrees = () => (state.focus ? state.focus.roots : [...state.data.flow.roots, ...state.data.flow.unreached]);
+const flowTrees = () => {
+  const st = pathStoryOf();
+  if (st) {
+    const { roots, unreached } = storyTrees(state.data.flow, st);
+    return [...roots, ...unreached];
+  }
+  return state.focus ? state.focus.roots : [...state.data.flow.roots, ...state.data.flow.unreached];
+};
+
+const pathStories = () => (state.data.stories.stale ? [] : state.data.stories.list);
+const pathStoryOf = () => (state.storyPath && pathStories().find((st) => st.id === state.storyPath.id)) ?? null;
+
+function showStoryPath(id) {
+  if (!state.storyPath) state.storyPath = { saved: { collapsed: state.collapsed, openCalls: state.openCalls, focus: state.focus } };
+  Object.assign(state.storyPath, { id, ring: null });
+  Object.assign(state, { collapsed: new Set(), openCalls: new Set(), focus: null });
+  focusRequest = null;
+}
+
+function leaveStoryPath({ whole = false } = {}) {
+  const { saved } = state.storyPath;
+  state.storyPath = null;
+  Object.assign(state, { collapsed: saved.collapsed, openCalls: saved.openCalls, focus: whole ? null : saved.focus });
+}
+
+function storyTrees(flow, st) {
+  const parentOf = new Map();
+  const walk = (n, parent) => {
+    parentOf.set(n.id, parent);
+    n.children.forEach((c) => walk(c, n.id));
+  };
+  [...flow.roots, ...flow.unreached].forEach((r) => walk(r, null));
+  const keep = new Set();
+  for (const step of st.steps) {
+    for (let id = step.onMap ? step.screen : null; id != null && !keep.has(id); id = parentOf.get(id)) keep.add(id);
+  }
+  const hidden = new Map();
+  const prune = (n) => {
+    const kids = n.children.filter((c) => keep.has(c.id));
+    if (kids.length < n.children.length) hidden.set(n.id, n.children.length - kids.length);
+    return { ...n, children: kids.map(prune), whole: n };
+  };
+  const cut = (trees) => trees.filter((r) => keep.has(r.id)).map(prune);
+  return { roots: cut(flow.roots), unreached: cut(flow.unreached), hidden, parentOf };
+}
 
 let focusRequest = null;
 async function branchRoots(id) {
@@ -2438,6 +2548,7 @@ async function focusOn(id) {
   try {
     const roots = await branchRoots(id);
     if (focusRequest !== id) return;
+    if (state.storyPath) leaveStoryPath();
     state.focus = { id, roots };
   } catch (err) {
     if (focusRequest !== id) return;
@@ -2734,18 +2845,19 @@ function flowBoxes(roots, { collapsed = [], openCalls = [] }) {
   const folded = new Set(collapsed);
   const open = new Set(openCalls);
   const out = [];
-  const walk = (key, node) => {
-    out.push({ key, node, collapsed: isFolded(node, folded) });
-    for (const k of shownKids(node, folded, open)) walk(k.key, k.node);
+  const walk = (key, node, parent) => {
+    out.push({ key, node, parent, collapsed: isFolded(node, folded) });
+    for (const k of shownKids(node, folded, open)) walk(k.key, k.node, key);
   };
-  for (const r of roots) walk(r.id, r);
+  for (const r of roots) walk(r.id, r, null);
   return out;
 }
 
 // 칸 폭은 모은 화면 상자만으로 정하므로 API 호출을 펼쳐도 칸이 움직이지 않는다. 높이는 이 결과로 폭이 정해진 뒤에 재므로 sizes[key].height 는 아직 없어도 된다.
 const cellsPerRow = (count, cellW, width) => Math.max(1, Math.min(count, Math.floor((width + CELL_GAP) / (cellW + CELL_GAP))));
 
-function flowColumns(roots, sizes, { collapsed = [], openCalls = [], group = false, width = 0 } = {}) {
+// marks 는 상자 곁에 붙일 스토리 단계 표시다.
+function flowColumns(roots, sizes, { collapsed = [], openCalls = [], group = false, width = 0, marks = [] } = {}) {
   const folded = new Set(collapsed);
   const open = new Set(openCalls);
   const gathered = group ? roots.filter((r) => !r.children.length) : [];
@@ -2758,8 +2870,16 @@ function flowColumns(roots, sizes, { collapsed = [], openCalls = [], group = fal
   for (const r of trees) walk(r.id, r, 0);
   const colWidths = [];
   for (const [key, d] of depths) colWidths[d] = Math.max(colWidths[d] ?? 0, sizes[key].width);
-  const xs = colWidths.map(() => 0);
-  for (let d = 1; d < colWidths.length; d += 1) xs[d] = xs[d - 1] + colWidths[d - 1] + COL_GAP;
+  const exitW = colWidths.map(() => 0);
+  const entryW = colWidths.map(() => 0);
+  for (const m of marks) {
+    const d = depths.get(m.key);
+    if (d === undefined || m.kind === 'hidden') continue;
+    const lane = m.side === 'exit' ? exitW : entryW;
+    lane[d] = Math.max(lane[d], laneWidth(m));
+  }
+  const xs = colWidths.map(() => entryW[0] ?? 0);
+  for (let d = 1; d < colWidths.length; d += 1) xs[d] = xs[d - 1] + colWidths[d - 1] + Math.max(COL_GAP, exitW[d - 1] + LANE_CURVE + entryW[d]);
   const cellW = Math.max(0, ...gathered.map((r) => sizes[r.id].width));
   const per = cellsPerRow(gathered.length, cellW, width);
   const sized = {};
@@ -2772,18 +2892,65 @@ function flowColumns(roots, sizes, { collapsed = [], openCalls = [], group = fal
   return {
     widths: sized,
     grouped: new Set(grid.flatMap(({ screen, calls }) => [screen.id, ...calls.map((k) => k.key)])),
-    trees, depths, xs, grid, cellW, per,
-    span: colWidths.length ? xs[colWidths.length - 1] + colWidths[colWidths.length - 1] : 0,
+    trees, depths, xs, grid, cellW, per, exitW, entryW,
+    span: colWidths.length ? xs[colWidths.length - 1] + colWidths[colWidths.length - 1] + exitW[colWidths.length - 1] : 0,
   };
+}
+
+// 칸 사이의 왼쪽 가장자리는 나가는 표시가, 오른쪽 가장자리는 들어오는 표시가 쓰고, 선은 그 가운데에서만 굽는다.
+const laneWidth = (m) => m.width + (m.kind === 'badge' ? BADGE_GAP : STUB) + LANE_PAD;
+
+function laneMarks(placed, edges, cols, marks) {
+  const byKey = new Map(placed.map((b) => [b.key, b]));
+  const lanes = new Map();
+  const lane = (d, side) => {
+    const k = `${d} ${side}`;
+    if (!lanes.has(k)) lanes.set(k, { lines: [], taken: [] });
+    return lanes.get(k);
+  };
+  for (const e of edges) {
+    if (e.grouped) continue;
+    lane(cols.depths.get(e.from), 'exit').lines.push(e.y1);
+    lane(cols.depths.get(e.to), 'entry').lines.push(e.y2);
+  }
+  const clear = (l, y, height) => !l.taken.some(([top, bottom]) => y < bottom + 3 && y + height > top - 3)
+    && !l.lines.some((line) => line > y - 5 && line < y + height + 5);
+  // 번호는 상자 위쪽 모서리 곁에 있어야 어느 상자의 것인지 읽히므로 위로도 조금 찾아본다.
+  const BADGE_TRIES = [0, -2, -4, -6, -8, -10];
+  const KIND_ORDER = { tag: 0, badge: 1, chip: 2 };
+  const order = marks.map((m, i) => i).filter((i) => marks[i].kind !== 'hidden')
+    .sort((a, b) => KIND_ORDER[marks[a].kind] - KIND_ORDER[marks[b].kind] || byKey.get(marks[a].key).y - byKey.get(marks[b].key).y || a - b);
+  const spots = marks.map((m) => {
+    const b = byKey.get(m.key);
+    return m.kind === 'hidden' ? { x: b.x + 8, y: b.y + b.height + UNDER_GAP } : null;
+  });
+  for (const i of order) {
+    const m = marks[i];
+    const b = byKey.get(m.key);
+    const l = lane(cols.depths.get(m.key), m.side);
+    let y = m.kind === 'tag' ? b.y + b.height / 2 - m.height / 2 : b.y + 2;
+    if (m.kind !== 'tag') {
+      const start = y;
+      const tries = m.kind === 'badge' ? BADGE_TRIES : [];
+      for (let k = 0; ; k += 1) {
+        y = k < tries.length ? start + tries[k] : start + 2 * (k - tries.length + 1);
+        if (clear(l, y, m.height)) break;
+      }
+    }
+    l.taken.push([y, y + m.height]);
+    spots[i] = { x: m.side === 'exit' ? b.x + b.width + STUB : b.x - m.width - (m.kind === 'badge' ? BADGE_GAP : STUB), y };
+  }
+  return spots;
 }
 
 // sizes[key] 는 { width: 본래 폭, height: flowColumns 가 정한 폭으로 그려 잰 높이 } 이다. cols 는 같은 sizes 와 view 로 이미 구한 flowColumns 결과다.
 // 모은 상자의 API 호출은 칸이 넓어지지 않도록 오른쪽이 아니라 상자 아래에 들여 쌓는다.
 function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, view)) {
-  const { collapsed = [], openCalls = [] } = view;
+  const { collapsed = [], openCalls = [], marks } = view;
   const folded = new Set(collapsed);
   const open = new Set(openCalls);
   const middle = (b) => b.y + b.height / 2;
+  const below = new Map((marks ?? []).filter((m) => m.kind === 'hidden').map((m) => [m.key, UNDER_GAP + m.height]));
   const placed = [];
   let cursor = 0;
   const lower = (from, by) => {
@@ -2805,7 +2972,7 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
     }
     const self = { key, node, parent, x: cols.xs[cols.depths.get(key)], y, width: cols.widths[key], height, grouped: false };
     placed.push(self);
-    cursor = Math.max(cursor, y + height + GAP);
+    cursor = Math.max(cursor, y + height + (below.get(key) ?? 0) + GAP);
     return self;
   };
   for (const r of cols.trees) place(r.id, r, null);
@@ -2842,12 +3009,33 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
       ? { from: b.parent, to: b.key, x1: from.x + CALL_INDENT / 2, y1: from.y + from.height, x2: b.x, y2: middle(b), guards, grouped: true }
       : { from: b.parent, to: b.key, x1: from.x + from.width, y1: middle(from), x2: b.x, y2: middle(b), guards, grouped: false };
   });
+  if (marks) {
+    for (const e of edges) {
+      if (e.grouped) continue;
+      e.ex = e.x1 + cols.exitW[cols.depths.get(e.from)];
+      e.nx = e.x2 - cols.entryW[cols.depths.get(e.to)];
+    }
+  }
+  const spots = marks && laneMarks(placed, edges, cols, marks);
+  const lift = spots ? Math.max(0, ...spots.map((s) => -s.y)) : 0;
+  if (lift) {
+    for (const b of placed) b.y += lift;
+    for (const e of edges) Object.assign(e, { y1: e.y1 + lift, y2: e.y2 + lift });
+    for (const s of spots) s.y += lift;
+    if (heading) heading.y += lift;
+    height += lift;
+  }
+  marks?.forEach((m, i) => {
+    height = Math.max(height, spots[i].y + m.height + GAP);
+    span = Math.max(span, spots[i].x + m.width);
+  });
   return {
     boxes: placed.map((b) => ({ key: b.key, x: b.x, y: b.y, width: b.width, height: b.height, grouped: b.grouped })),
     edges,
     group: heading,
     width: span,
     height,
+    ...(marks && { marks: spots }),
   };
 }
 
@@ -2858,7 +3046,7 @@ function screenBox(b) {
   const n = b.node;
   const hasKids = n.children.length > 0;
   const callsOpen = state.openCalls.has(n.id);
-  const counts = b.collapsed ? subtreeCounts(n) : n.counts;
+  const counts = b.collapsed ? subtreeCounts(n.whole ?? n) : n.counts;
   const imported = b.collapsed ? counts.imported : n.imported;
   const passed = b.collapsed ? counts.passed : n.passed;
   const showCalls = n.calls.length > 0 && !b.collapsed;
@@ -2913,22 +3101,154 @@ function callBox(b) {
     h('div', { class: 'l2' }, countText(c.counts), c.passed ? ` · 호출함 ${c.passed}` : '', ` · ${serverText(c.server)}`));
 }
 
+const PATH_TAG = { conditioned: LINK_VERDICT.conditioned, broken: LINK_VERDICT.broken, unknown: LINK_VERDICT.unknown, 'off-map': '맵에 없는 화면' };
+const hopTitle = (l, i) => [`단계 ${i + 1} → ${i + 2}`, PATH_TAG[l.verdict] ?? LINK_VERDICT[l.verdict], LINK_VERDICT_TITLE[l.verdict]].filter(Boolean).join(' · ');
+const pathChip = (tag, attrs, verdict, end, ...text) => h(tag, { ...attrs, class: `story-chip ${end} l-${verdict}` }, verdict === 'broken' ? h('b', {}, '✕') : null, ...text);
+
+function storyMarks({ st, hidden, ring }, boxes, els) {
+  const parentOf = new Map(boxes.map((b) => [b.key, b.parent]));
+  const marks = [];
+  const edges = new Map();
+  const mark = (key, side, kind, el) => {
+    el.classList.add('mark');
+    el.dataset.at = key;
+    el.style.visibility = 'hidden';
+    marks.push({ key, side, kind, el });
+  };
+  const numbers = new Map();
+  st.steps.forEach((s, i) => {
+    if (s.onMap && els.has(s.screen)) numbers.set(s.screen, [...(numbers.get(s.screen) ?? []), i + 1]);
+  });
+  for (const [id, nums] of numbers) {
+    els.get(id).classList.add('on-story');
+    if (ring !== null && st.steps[ring].screen === id) els.get(id).classList.add('story-ring');
+    mark(id, 'entry', 'badge', h('span', { class: 'story-badge' }, nums.join('·')));
+  }
+  const hover = (i, on) => () => {
+    for (const c of document.querySelectorAll(`#flow .story-chip[data-hop="${i}"]`)) c.classList.toggle('hovered', on);
+  };
+  st.links.forEach((l, i) => {
+    const from = st.steps[i].onMap && els.has(l.from) ? l.from : null;
+    const to = st.steps[i + 1].onMap && els.has(l.to) ? l.to : null;
+    const tag = PATH_TAG[l.verdict];
+    if (from && to && parentOf.get(to) === from) {
+      const key = `${from}\n${to}`;
+      if (!edges.has(key) && tag) mark(to, 'entry', 'tag', h('span', { class: `story-tag l-${l.verdict}`, title: hopTitle(l, i) }, tag));
+      edges.set(key, l.verdict);
+      return;
+    }
+    const chip = (end, other, ...text) => pathChip('button', {
+      type: 'button', title: hopTitle(l, i), 'data-hop': i,
+      onclick: () => ringStep(other), onmouseenter: hover(i, true), onmouseleave: hover(i, false), onfocus: hover(i, true), onblur: hover(i, false),
+    }, l.verdict, end, ...text);
+    if (from) mark(from, 'exit', 'chip', chip('exit', i + 1, `→ ${i + 2}`, tag ? h('small', {}, tag) : null));
+    if (to) mark(to, 'entry', 'chip', chip('entry', i, `${i + 1} →`));
+  });
+  for (const [id, n] of hidden) if (els.has(id)) mark(id, 'exit', 'hidden', h('span', { class: 'story-hidden' }, `다른 화면 ${n} 숨김`));
+  return { marks, edges };
+}
+
+function pathLegend() {
+  const line = (verdict) => svg('svg', { viewBox: '0 0 40 8', 'aria-hidden': 'true' }, svg('path', { class: `story-edge l-${verdict}`, d: 'M2 4H38' }));
+  const row = (sample, name) => h('li', {}, h('span', { class: 'sample', 'aria-hidden': 'true' }, sample), h('span', {}, name));
+  return [
+    row(h('span', { class: 'story-badge' }, '3'), '단계 번호'),
+    row(line('open'), `${LINK_VERDICT.open} · ${LINK_VERDICT.configured}`),
+    row([line('conditioned'), h('span', { class: 'story-tag l-conditioned' }, PATH_TAG.conditioned)], PATH_TAG.conditioned),
+    row(pathChip('span', {}, 'open', 'exit', '→ 5'), '5단계로 감'),
+    row(pathChip('span', {}, 'open', 'entry', '4 →'), '4단계에서 옴'),
+    row(pathChip('span', {}, 'broken', 'exit', '→ 6', h('small', {}, PATH_TAG.broken)), PATH_TAG.broken),
+    row(pathChip('span', {}, 'off-map', 'exit', '→ 8', h('small', {}, PATH_TAG['off-map'])), PATH_TAG['off-map']),
+    row(pathChip('span', {}, 'unknown', 'exit', '→ 3', h('small', {}, PATH_TAG.unknown)), PATH_TAG.unknown),
+    row(h('span', { class: 'story-hidden' }, '다른 화면 2 숨김'), '경로 밖 화면'),
+  ];
+}
+
+function storyPicker(st) {
+  const list = pathStories();
+  if (!list.length) return null;
+  return h('span', { class: 'story-pick' },
+    h('label', {}, '스토리 ', h('select', { onchange: (e) => pickStory(e.target.value) },
+      h('option', { value: '', selected: !st }, '고르기'),
+      list.map((s) => h('option', { value: s.id, selected: s.id === st?.id }, s.name)))),
+    st ? h('button', { class: 'path-off', onclick: () => pickStory('') }, '경로 끄기') : null,
+    legendInfo('path', '스토리 경로 읽는 법', pathLegend()));
+}
+
+function storyStrip(st, drawn) {
+  const { ring } = state.storyPath;
+  return h('ol', { class: 'story-strip', 'aria-label': '스토리 단계' }, st.steps.flatMap((s, i) => {
+    const l = st.links[i - 1];
+    return [
+      l ? h('li', { class: `story-join l-${l.verdict}`, title: hopTitle(l, i - 1) },
+        h('span', { class: 'arrow', 'aria-hidden': 'true' }),
+        l.verdict !== 'off-map' && PATH_TAG[l.verdict] ? h('span', { class: 'jtag' }, PATH_TAG[l.verdict]) : null) : null,
+      h('li', {}, h('button', { type: 'button', class: `story-step${s.onMap ? '' : ' off'}${ring === i ? ' current' : ''}`, title: s.screen, onclick: () => ringStep(i) },
+        h('span', { class: 'story-badge' }, i + 1),
+        h('span', { class: 'name' }, s.onMap ? screenLabel(s.screen) : s.screen),
+        !s.onMap ? h('span', { class: 'note' }, '맵에 없는 화면') : drawn.has(s.screen) ? null : h('span', { class: 'note' }, '접힘'))),
+    ];
+  }));
+}
+
+function pickStory(id) {
+  if (id) showStoryPath(id);
+  else if (state.storyPath) leaveStoryPath();
+  renderFlow();
+  if (id) Object.assign(document.getElementById('flow'), { scrollTop: 0, scrollLeft: 0 });
+  document.querySelector('.story-pick select')?.focus();
+}
+
+function ringStep(i) {
+  const st = pathStoryOf();
+  if (!st) return;
+  state.storyPath.ring = i;
+  const step = st.steps[i];
+  if (step.onMap) {
+    const { parentOf } = storyTrees(state.data.flow, st);
+    for (let id = parentOf.get(step.screen); id != null; id = parentOf.get(id)) state.collapsed.delete(id);
+  }
+  renderFlow();
+  if (step.onMap) showBox(step.screen);
+}
+
+// 위쪽 막대가 붙어 있어 상자가 그 밑에 가려지지 않도록, 옮긴 뒤 한 번 더 재어 맞춘다.
+function showBox(key) {
+  const flow = document.getElementById('flow');
+  const box = flow.querySelector(`.box.screen[data-key="${CSS.escape(key)}"]`);
+  if (!box) return;
+  const bar = flow.querySelector('.flowbar');
+  for (let pass = 0; pass < 2; pass += 1) {
+    const view = flow.getBoundingClientRect();
+    const r = box.getBoundingClientRect();
+    const top = bar.getBoundingClientRect().bottom;
+    if (r.top < top + 8 || r.bottom > view.bottom - 8) flow.scrollTop += r.top - top - 32;
+    if (r.left < view.left + 8 || r.right > view.right - 8) flow.scrollLeft += r.left - view.left - 56;
+  }
+}
+
 // 상자는 페이지에 붙은 뒤에야 잴 수 있으므로, 상자를 붙인 쪽이 measureWidths → fit → measureHeights → place 순서로 불러 위치를 정한다.
-function canvas(roots, { group = false } = {}) {
+function canvas(roots, { group = false, story = null } = {}) {
   const shown = { collapsed: state.collapsed, openCalls: state.openCalls };
-  const view = { ...shown, group };
-  const els = new Map(flowBoxes(roots, shown).map((b) => [b.key, b.node.kind === 'screen' ? screenBox(b) : callBox(b)]));
+  const boxes = flowBoxes(roots, shown);
+  const els = new Map(boxes.map((b) => [b.key, b.node.kind === 'screen' ? screenBox(b) : callBox(b)]));
   for (const [key, box] of els) {
     box.classList.add('measuring');
     box.dataset.key = key;
   }
-  const el = h('div', { class: 'canvas' }, [...els.values()]);
+  const path = story && storyMarks(story, boxes, els);
+  const view = { ...shown, group, marks: path?.marks };
+  const el = h('div', { class: story ? 'canvas story' : 'canvas' }, [...els.values()], path?.marks.map((m) => m.el));
   const sizes = {};
   let cols;
   return {
     el,
     measureWidths() {
       for (const [key, box] of els) sizes[key] = { width: Math.ceil(box.getBoundingClientRect().width) };
+      for (const m of path?.marks ?? []) {
+        const r = m.el.getBoundingClientRect();
+        Object.assign(m, { width: Math.ceil(r.width), height: Math.ceil(r.height) });
+      }
     },
     fit(width) {
       cols = flowColumns(roots, sizes, { ...view, width });
@@ -2946,11 +3266,16 @@ function canvas(roots, { group = false } = {}) {
       for (const b of out.boxes) Object.assign(els.get(b.key).style, { left: `${b.x}px`, top: `${b.y}px` });
       const lines = svg('svg', { width: out.width, height: out.height });
       for (const e of out.edges) {
-        const mx = (e.x1 + e.x2) / 2;
-        const d = e.grouped ? `M${e.x1},${e.y1} V${e.y2} H${e.x2}` : `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${e.x2},${e.y2}`;
-        lines.append(svg('path', { d, class: e.guards.length ? 'guarded' : '', 'data-from': e.from, 'data-to': e.to }));
+        const mx = e.ex === undefined ? (e.x1 + e.x2) / 2 : (e.ex + e.nx) / 2;
+        const d = e.grouped ? `M${e.x1},${e.y1} V${e.y2} H${e.x2}`
+          : e.ex === undefined ? `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${e.x2},${e.y2}`
+            : `M${e.x1},${e.y1} H${e.ex} C${mx},${e.y1} ${mx},${e.y2} ${e.nx},${e.y2} H${e.x2}`;
+        const hop = path?.edges.get(`${e.from}\n${e.to}`);
+        const cls = [e.guards.length ? 'guarded' : '', hop ? `story-edge l-${hop}` : ''].filter(Boolean).join(' ');
+        lines.append(svg('path', { d, class: cls, 'data-from': e.from, 'data-to': e.to }));
       }
       el.prepend(lines);
+      out.marks?.forEach(({ x, y }, i) => Object.assign(path.marks[i].el.style, { left: `${x}px`, top: `${y}px`, visibility: '' }));
       if (out.group) {
         const { x, y, height, count } = out.group;
         el.append(h('h2', { class: 'group-head', style: `left:${x}px;top:${y}px;height:${height}px` }, `더 뻗지 않는 진입 화면 ${count}`));
@@ -2971,22 +3296,38 @@ let drawnGrid = null;
 
 // 설명 상자가 열렸는지는 상태에 두고 상자 그림은 다시 그리지 않는다. 다시 그리면 단추의 초점이 사라진다.
 // 마우스가 올라 있는 채로 닫으면, 마우스가 벗어났다가 다시 올라올 때까지 보이지 않는다.
-const legendShown = (info) => state.legendOpen || (!state.legendDismissed && info.matches(':hover'));
+const legendShown = (info) => {
+  const legend = state.legends[info.dataset.legend];
+  return legend.open || (!legend.dismissed && info.matches(':hover'));
+};
 function applyLegend(info) {
   const shown = legendShown(info);
   info.classList.toggle('shown', shown);
-  info.querySelector('.flowinfo-button').setAttribute('aria-expanded', String(shown));
+  info.querySelector('button').setAttribute('aria-expanded', String(shown));
 }
 function setLegend(info, open) {
-  state.legendOpen = open;
-  state.legendDismissed = !open && info.matches(':hover');
+  const legend = state.legends[info.dataset.legend];
+  legend.open = open;
+  legend.dismissed = !open && info.matches(':hover');
   applyLegend(info);
 }
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || document.getElementById('flow')?.hidden !== false) return;
-  const info = document.querySelector('.flowinfo');
-  if (info && legendShown(info)) setLegend(info, false);
+  for (const info of document.querySelectorAll('#flow [data-legend]')) if (legendShown(info)) setLegend(info, false);
 });
+
+// key 는 'flow' 또는 'path' 로, 단추와 설명 상자의 이름에도 쓴다.
+function legendInfo(key, label, items) {
+  const info = h('span', {
+    class: `${key}info`,
+    'data-legend': key,
+    onmouseenter: (e) => applyLegend(e.currentTarget),
+    onmouseleave: (e) => { state.legends[key].dismissed = false; applyLegend(e.currentTarget); },
+  },
+    h('button', { class: `${key}info-button`, 'aria-label': label, 'aria-expanded': 'false', 'aria-controls': `${key}legend`, onclick: () => setLegend(info, !state.legends[key].open) }, 'i'),
+    h('ul', { class: `${key}legend`, id: `${key}legend` }, items));
+  return info;
+}
 
 const KEY_BORDERS = [...['pass', 'fail', 'pending'].map((s) => [`s-${s}`, TEST_STATUS[s]]), ['s-none', NO_TESTS]];
 
@@ -3012,31 +3353,39 @@ function renderFlow() {
   const { roots, unreached, summary } = state.data.flow;
   const act = (fn) => () => { fn(flowTrees()); renderFlow(); };
   const focused = state.focus && screensIn(state.data.flow.roots.concat(unreached)).find((n) => n.id === state.focus.id);
-  const legendInfo = h('span', {
-    class: 'flowinfo',
-    onmouseenter: (e) => applyLegend(e.currentTarget),
-    onmouseleave: (e) => { state.legendDismissed = false; applyLegend(e.currentTarget); },
-  },
-    h('button', { class: 'flowinfo-button', 'aria-label': '흐름도 읽는 법', 'aria-expanded': 'false', 'aria-controls': 'flowlegend', onclick: () => setLegend(legendInfo, !state.legendOpen) }, 'i'),
-    h('ul', { class: 'flowlegend', id: 'flowlegend' },
-      h('li', {}, h('span', { class: 'sample' }, '→ /주소'), h('span', {}, '다른 가지에 이미 그린 화면으로 가는 링크')),
-      h('li', {}, h('span', { class: 'sample' }, '불러옴 N · 지나감 N · 호출함 N'), h('span', {}, '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 열거나 이 호출을 보낸 브라우저 테스트', h('small', {}, '테두리와 테스트 수에는 넣지 않음')))));
+  const st = pathStoryOf();
+  if (st && state.storyPath.ring >= st.steps.length) state.storyPath.ring = null;
+  const path = st && storyTrees(state.data.flow, st);
+  const story = st && { st, hidden: path.hidden, ring: state.storyPath.ring };
+  const drawn = st && new Set(flowBoxes([...path.roots, ...path.unreached], { collapsed: state.collapsed, openCalls: state.openCalls }).map((b) => b.key));
   fill(flow,
     h('div', { class: 'flowbar' },
       h('strong', { class: 'flowsummary' }, `테스트 있는 화면 ${summary.tested}/${summary.screens} · 실패 ${summary.failing} · 태그 없는 테스트만 있는 화면 ${summary.importedOnly}`),
       h('button', { onclick: act(expandAll) }, '모두 펼치기'),
       h('button', { onclick: act(collapseAll) }, '모두 접기'),
       h('button', { title: '테스트가 없거나 실패한 상자까지 가는 길만 펼치고 나머지는 접습니다', onclick: act(openGapsOnly) }, '빈틈만 펼치기'),
-      state.focus
-        ? h('span', { class: 'focusing' }, h('strong', {}, focused?.label ?? state.focus.id), ' 가지만 보는 중 ',
-          h('button', { onclick: () => { state.focus = null; renderFlow(); document.getElementById('flow').scrollTop = 0; } }, '전체 보기'))
-        : null,
+      st
+        ? h('span', { class: 'story-only' }, '스토리 경로만 보는 중 ',
+          h('button', { onclick: () => { leaveStoryPath({ whole: true }); renderFlow(); document.getElementById('flow').scrollTop = 0; } }, '전체 보기'))
+        : state.focus
+          ? h('span', { class: 'focusing' }, h('strong', {}, focused?.label ?? state.focus.id), ' 가지만 보는 중 ',
+            h('button', { onclick: () => { state.focus = null; renderFlow(); document.getElementById('flow').scrollTop = 0; } }, '전체 보기'))
+          : null,
       state.flowError ? h('span', { class: 'error' }, state.flowError) : null,
-      h('div', { class: 'flowguide' }, flowKey(), legendInfo)),
-    state.focus ? draw(state.focus.roots)
-      : roots.length ? draw(roots, { group: true })
-        : h('p', { class: 'muted' }, summary.screens ? '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.' : '화면이 없습니다.'),
-    !state.focus && unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(unreached).length}`), draw(unreached)] : null);
+      storyPicker(st),
+      h('div', { class: 'flowguide' }, flowKey(), legendInfo('flow', '흐름도 읽는 법', [
+        h('li', {}, h('span', { class: 'sample' }, '→ /주소'), h('span', {}, '다른 가지에 이미 그린 화면으로 가는 링크')),
+        h('li', {}, h('span', { class: 'sample' }, '불러옴 N · 지나감 N · 호출함 N'), h('span', {}, '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 열거나 이 호출을 보낸 브라우저 테스트', h('small', {}, '테두리와 테스트 수에는 넣지 않음'))),
+      ])),
+      st ? storyStrip(st, drawn) : null),
+    st ? [
+      path.roots.length ? draw(path.roots, { story }) : null,
+      ...(path.unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(path.unreached).length}`), draw(path.unreached, { story })] : []),
+    ]
+      : state.focus ? draw(state.focus.roots)
+        : roots.length ? draw(roots, { group: true })
+          : h('p', { class: 'muted' }, summary.screens ? '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.' : '화면이 없습니다.'),
+    !st && !state.focus && unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(unreached).length}`), draw(unreached)] : null);
   // 단계마다 모든 캔버스를 다 읽은 뒤에 쓰므로, 한 캔버스에 쓴 것 때문에 다음 캔버스를 읽다가 레이아웃을 다시 계산하지 않는다.
   const width = flowInnerWidth(flow);
   for (const c of canvases) c.measureWidths();
@@ -3044,7 +3393,7 @@ function renderFlow() {
   for (const c of canvases) c.measureHeights();
   drawnGrid = canvases.map((c) => c.place()).find(Boolean) ?? null;
   Object.assign(flow, { scrollTop, scrollLeft });
-  applyLegend(legendInfo);
+  for (const info of flow.querySelectorAll('[data-legend]')) applyLegend(info);
   recordPlace();
 }
 
@@ -3082,7 +3431,8 @@ const PLACE_TABS = ['screens', 'stories', 'untagged'];
 function placeHash() {
   const p = new URLSearchParams();
   if (state.view === 'flow') {
-    if (state.focus) p.set('from', state.focus.id);
+    if (state.storyPath) p.set('story', state.storyPath.id);
+    else if (state.focus) p.set('from', state.focus.id);
   } else if (state.side === 'stories') {
     if (state.composing) p.set('new', '1');
     else if (state.candidate !== null) p.set('candidate', state.candidate);
@@ -3120,14 +3470,21 @@ async function applyPlace() {
   let go = render;
   if (head === 'flow') {
     const from = p.get('from');
-    let { focus } = state;
-    if (from !== (focus?.id ?? null)) {
+    const story = pathStories().some((st) => st.id === p.get('story')) ? p.get('story') : null;
+    let focus = state.storyPath ? state.storyPath.saved.focus : state.focus;
+    if (!story && from !== (focus?.id ?? null)) {
       const roots = from ? await branchRoots(from).catch(() => null) : null;
       if (turn !== placeTurn) return;
       focus = roots && { id: from, roots };
     }
     go = () => {
-      Object.assign(state, { view: 'flow', focus });
+      if (story) {
+        if (state.storyPath?.id !== story) showStoryPath(story);
+      } else {
+        if (state.storyPath) leaveStoryPath();
+        state.focus = focus;
+      }
+      state.view = 'flow';
       render();
     };
   } else if (PLACE_TABS.includes(head)) {

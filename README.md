@@ -605,7 +605,8 @@ choosing it on the page: going to another screen or story drops a mark typed but
 and coming back to a tab keeps it, as pressing the tab does. While a bulk judgment is being sent the back
 button stays on the test, as the rest of the page does, and the steps ahead of it in the history are lost.
 Which branches of the flow are folded, filters, and scroll positions are not part of a place. Moves made inside
-the app shown in the middle are steps of the same history: the back button undoes those first.
+the app shown in the middle are steps of the same history: the back button undoes those first. A story shown on
+the flow is the place `#flow?story=<story ID>`.
 
 `review` serves a local page that reads `map.json` and `tests.json` from `outDir` (run `rebuild` first) and
 writes only into the marks folder and, for stories, into `storiesDir`. It opens on the flow view, with only the way to boxes whose tests are
@@ -641,7 +642,25 @@ Entry screens that lead to no other screen are gathered under
 widest gathered screen, so opening a box's API calls keeps every cell's width and column but pushes the rows below it
 down; the calls stack under the box, indented within the column, and every line of a call breaks even inside a word
 too long for it; when one branch is shown on its
-own, nothing is gathered. 「목록」 switches to the list described
+own, nothing is gathered.
+A 「스토리」 picker in the bar, there when the map has stories, draws one story's screen order on the flow. Picking a
+story cuts the flow down to the story's screens and the screens above them, with API calls closed and 「다른 화면 N
+숨김」 under a box whose other screens are left out; the bar reads 「스토리 경로만 보는 중」, and a row under it lists
+the steps in order with their routes, joined by small arrows that carry each link's verdict (a dashed 「조건」, a red ✕
+「링크 없음」, a dotted arrow to a 「맵에 없는 화면」 step, which has no box). Each step's box gets a round badge with its
+step number, or all its numbers (「8·10」) for a screen visited more than once. When two neighbouring steps are a box
+and its direct child, the line between them is drawn thick: solid when the story's verdict is open or a configured
+move, dashed with a 「조건」 tag when it is conditioned. Every other pair of neighbouring steps puts a chip on each of
+the two boxes instead, 「→ N」 at the right of the earlier box and 「M →」 at the left of the later one, dashed with
+「조건」, red with ✕ and 「링크 없음」, or dotted with 「맵에 없는 화면」 or 「판정 못 함」; hovering a chip rings its partner
+and pressing it goes to the other end. The look comes from the story's link verdicts only, not from the setting and
+role conditions the flow draws dashed. Pressing a step in the row scrolls its box into view and rings it, opening a
+folded branch to reach it. The gap between two columns widens only where it holds chips, badges or tags, so none
+covers a box or sits on a line. Folding and opening boxes while a story is shown leaves the flow without it alone:
+「경로 끄기」 brings back the flow as the reviewer left it, a branch shown on its own included, and 「전체 보기」 the
+whole flow; 「이 가지만」 on a box leaves the story for that branch. The round ⓘ next to the picker (「스토리 경로 읽는
+법」) shows each mark as a small sample with its name.
+「목록」 switches to the list described
 here. The left column lists the screens with a "no tests" filter, a "dead
 screens" filter, which keeps the screens that call an API missing on the server (left out when there is no
 server list, which also adds a 「서버 대조 안 함」 chip to the header line, with the reason in a popover on
