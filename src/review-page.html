@@ -98,7 +98,8 @@
   table.calls tr.option td.call { padding-left: 24px; font-size: 12px; }
   table.calls tr.option td.call .chip { margin-left: 6px; }
   table.calls td.count { white-space: nowrap; font-size: 12px; }
-  table.calls tr.option.gap td.call > div:first-child, table.calls td.cell .none { color: var(--fail); font-weight: 600; }
+  table.calls tr.option.gap td.call > div:first-child, table.calls td.cell .none, table.calls td.count .none { color: var(--fail); font-weight: 600; }
+  table.calls .result-title { color: var(--muted); font-weight: 600; }
   .chip.config { color: var(--accent); }
   .ok { color: var(--pass); } .ng { color: var(--fail); } .wait { color: var(--pending); }
   .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved, .chip.v-unchecked { color: var(--muted); }
@@ -2040,6 +2041,33 @@ function optionRows(s, call, depths) {
   return rows;
 }
 
+// 같은 빈자리를 옵션을 받는 호출의 옵션 칸에서 표시하므로, 여기서도 표시를 받으면 작업 목록에 두 번 오른다. 그래서 이 줄은 눌러도 고를 수 없다.
+function resultOptionRows(call, depths) {
+  const { callLinks = [], unknownCallLinks = [] } = state.data.map;
+  return [...callLinks, ...unknownCallLinks].filter((l) => l.to === call.id).flatMap((l) => {
+    const from = callOf(l.from);
+    const fromId = opensOnPage(l.from)
+      ? h('a', { href: '#', class: 'mono', title: '이 호출을 부르는 화면을 열고 이 호출을 고릅니다', onclick: (e) => { e.preventDefault(); openCall(l.from); } }, l.from)
+      : h('span', { class: 'mono' }, l.from);
+    const head = h('tr', { class: 'option result-head' },
+      h('td', { class: 'call', colspan: depths.length + 2 },
+        h('div', {}, h('span', { class: 'result-title' }, '이 결과를 바꾸는 옵션'), ' ', fromId, from ? null : h('span', { class: 'chip l-off-map' }, '맵에 없는 호출')),
+        h('div', { class: 'muted' }, l.note)));
+    if (!from) return [head];
+    if (!from.options.length) return [head, h('tr', { class: 'option' }, h('td', { class: 'call' }, h('div', { class: 'muted' }, '옵션 없음')), h('td', { colspan: depths.length + 1 }))];
+    const output = testsOf(l.from).filter((t) => t.depth === 'output');
+    return [head, ...from.options.flatMap((o) => [true, false].map((value) => {
+      const matching = hasOption(output, o.key, value);
+      return h('tr', { class: `option${matching.length ? '' : ' gap'}` },
+        h('td', { class: 'call' }, h('div', {}, optionLabel({ key: o.key, value }))),
+        h('td', {}),
+        depths.map((d) => (d === 'output'
+          ? h('td', { class: 'count' }, h('div', {}, matching.length ? countsOf(matching) : h('span', { class: 'none' }, '테스트 없음')))
+          : h('td', {}))));
+    }))];
+  });
+}
+
 function callTable(s) {
   const rows = callRows(s);
   if (!rows.length) return [h('h2', {}, 'API 호출'), h('p', { class: 'muted' }, '부르는 API 호출이 없습니다.')];
@@ -2061,7 +2089,8 @@ function callTable(s) {
             sent ? h('span', { class: 'sent-count', title: '이 호출의 태그 없이, 도는 동안 이 호출을 보낸 브라우저 테스트' }, `호출함 ${sent}`) : null),
           cell({ node: r.call.id }, tests),
           depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d)))),
-          ...optionRows(s, r.call, depths)];
+          ...optionRows(s, r.call, depths),
+          ...resultOptionRows(r.call, depths)];
       }))),
   ];
 }

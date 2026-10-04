@@ -104,7 +104,24 @@ function optionLines(keys, tests) {
   return rows.map(([label, matching]) => `    - ${label} — ${testSummary(matching)}`);
 }
 
-function callLines(screen, tests) {
+// 결과를 내주는 호출의 테스트는 세지 않는다.
+function resultOptionLines(map, tests) {
+  const callsById = new Map(map.calls.map((c) => [c.id, c]));
+  const links = [...(map.callLinks ?? []), ...(map.unknownCallLinks ?? [])];
+  return (callId, indent) => links.filter((l) => l.to === callId).flatMap((l) => {
+    const head = `${indent}- options that change this result — set on ${l.from}, "${l.note}"`;
+    const from = callsById.get(l.from);
+    if (!from) return [`${head}: ${l.from} is not on the map`];
+    if (!from.options.length) return [`${head}: none, ${l.from} has no options`];
+    const output = (tests[l.from] ?? []).filter((t) => t.depth === 'output');
+    return [`${head} (a test for these carries \`@call:${l.from}\`, its \`@option:\` tag and \`@depth:output\`):`, ...from.options.flatMap((o) => [true, false].map((value) => {
+      const matching = withOption(output, { key: o.key, value });
+      return `${indent}  - ${optionText({ key: o.key, value })} — ${matching.length ? testSummary(matching) : 'no tests at output depth'}`;
+    }))];
+  });
+}
+
+function callLines(screen, tests, resultLines) {
   const seen = new Set();
   const lines = [];
   for (const call of screen.apiCalls) {
@@ -123,6 +140,7 @@ function callLines(screen, tests) {
       const options = screen.callOptions[e.callId].map((o) => o.key);
       lines.push(`  - ${e.callId} — ${server}${testSummary(tests[e.callId])}${options.length ? ` — options: ${options.join(', ')}` : ''}`);
       if (options.length) lines.push(...optionLines(options, tests[e.callId] ?? []));
+      lines.push(...resultLines(e.callId, '    '));
     }
   }
   return lines.length ? ['- calls:', ...lines] : ['- calls: none'];
@@ -284,6 +302,7 @@ export function taskList(config) {
   const restricted = new Set(map.screens.filter((s) => s.access.restricted).map((s) => s.id));
   const relative = (p) => path.relative(config.configDir, p).split(path.sep).join('/');
   const formats = [...new Set(config.tests.map((t) => t.format))];
+  const resultLines = resultOptionLines(map, tests.nodes);
 
   const out = [
     `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}`,
@@ -305,7 +324,7 @@ export function taskList(config) {
       `- component: ${s.componentFile}, route at ${config.routesFile}:${s.line}`,
       ...(appLinks[s.id] ? [`- app: ${appLinks[s.id]}`] : []),
       ...accessLines(s.access, restricted),
-      ...callLines(s, tests.nodes),
+      ...callLines(s, tests.nodes, resultLines),
       ...testLines(tests.nodes[s.id]),
       ...emptyTestLines(formats, marks.map((m) => cellTags('screen', m.target))),
     );
@@ -321,6 +340,7 @@ export function taskList(config) {
       ...marks.map((m) => markLine(m.current, cellText(m.target, 'whole call'))),
       `- called from: ${c.screens.length ? c.screens.join(', ') : 'no screen'}`,
       `- server: ${serverText(c.server)}`,
+      ...resultLines(c.id, ''),
       ...markedOptionLines(c, marks, tests.nodes[c.id]),
       ...testLines(tests.nodes[c.id]),
       ...emptyTestLines(formats, marks.map((m) => cellTags('call', m.target))),

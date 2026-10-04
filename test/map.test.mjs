@@ -1531,3 +1531,53 @@ for (const moves of [MOVE, { '/signin': '/home' }, [{ ...MOVE, from: 'signin' }]
     );
   });
 }
+
+const EXPORT = 'POST:/api/v1/report/export';
+const DETAIL = 'GET:/api/v1/document/{documentId}';
+const withCallLinks = (callLinks) => buildCopy((rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), callLinks })));
+
+test('call links whose two calls are on the map are carried in order and once, and a link with a call missing from the map is listed with the missing call', async () => {
+  const map = await withCallLinks([
+    { from: EXPORT, to: DETAIL, note: '내보낸 파일을 연다' },
+    { from: 'POST:/api/v1/report/weekly', to: DETAIL, note: '주간 보고서' },
+    { from: 'POST:/api/v1/report/archive', to: DETAIL, note: '보관본을 연다' },
+    { from: EXPORT, to: 'GET:/api/v1/download', note: '내려받기' },
+    { from: EXPORT, to: DETAIL, note: '내보낸 파일을 연다' },
+    { from: 'POST:/api/v1/report/gone', to: 'GET:/api/v1/gone', note: '둘 다 없다' },
+  ]);
+  assert.deepEqual(map.callLinks, [
+    { from: 'POST:/api/v1/report/archive', to: DETAIL, note: '보관본을 연다' },
+    { from: EXPORT, to: DETAIL, note: '내보낸 파일을 연다' },
+  ]);
+  assert.deepEqual(map.unknownCallLinks, [
+    { from: 'POST:/api/v1/report/weekly', to: DETAIL, note: '주간 보고서', missing: ['POST:/api/v1/report/weekly'] },
+    { from: EXPORT, to: 'GET:/api/v1/download', note: '내려받기', missing: ['GET:/api/v1/download'] },
+    { from: 'POST:/api/v1/report/gone', to: 'GET:/api/v1/gone', note: '둘 다 없다', missing: ['POST:/api/v1/report/gone', 'GET:/api/v1/gone'] },
+  ]);
+});
+
+test('without callLinks in the config the map carries no link and no missing call', async () => {
+  const map = await buildFixture();
+  assert.deepEqual([map.callLinks, map.unknownCallLinks], [[], []]);
+});
+
+test('the call links come out the same on every run, whatever order the config lists them in', async () => {
+  const links = [
+    { from: 'POST:/api/v1/report/archive', to: DETAIL, note: '보관본을 연다' },
+    { from: EXPORT, to: DETAIL, note: '내보낸 파일을 연다' },
+    { from: EXPORT, to: 'GET:/api/v1/download', note: '내려받기' },
+    { from: 'POST:/api/v1/report/weekly', to: DETAIL, note: '주간 보고서' },
+  ];
+  const fields = async (list) => {
+    const map = await withCallLinks(list);
+    return JSON.stringify([map.callLinks, map.unknownCallLinks]);
+  };
+  assert.equal(await fields(links), await fields([...links].reverse()));
+});
+
+const CALL_LINK = { from: EXPORT, to: DETAIL, note: '내보낸 파일을 연다' };
+for (const callLinks of [CALL_LINK, { [EXPORT]: DETAIL }, [{ ...CALL_LINK, from: '' }], [{ ...CALL_LINK, to: undefined }], [{ ...CALL_LINK, note: undefined }], [{ ...CALL_LINK, note: ' ' }], [{ ...CALL_LINK, note: '내보낸 파일을\n연다' }], [{ ...CALL_LINK, to: EXPORT }], [{ ...CALL_LINK, option: 'withHistory' }]]) {
+  test(`callLinks ${JSON.stringify(callLinks)} is rejected`, async () => {
+    await assert.rejects(withCallLinks(callLinks), /callLinks must be a list of \{ "from", "to", "note" \}/);
+  });
+}

@@ -47,6 +47,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. A test of a
    call that sets an on/off option listed under it also carries `@option:<key>=true|false`; a mark on an
    option value (`withHistory=true at output depth`) asks for a test with that option tag at that depth.
+   Under a call, `options that change this result — set on <call ID>` lists the options of that other call
+   which change what this call gives back. Each value counts only the tests of that other call at output depth,
+   so a test for such a value carries `@call:<that other call ID>`, its `@option:<key>=true|false` and
+   `@depth:output`, and checks what the first call gives back.
    Under `empty tests`, a screen or call has one set for each open mark and a story one set: an empty test per
    test format in the config, with those tags already in its title. Copy the one for the runner you write the
    test in and keep every tag in its title as it is (you may replace `<what it checks>` and add words around the

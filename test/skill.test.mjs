@@ -18,6 +18,11 @@ test('the agent skill says to copy the empty test for its runner from the task l
   assert.match(SKILL, /`<verdict>` \(`UPHOLDS`, `FIXED`, `HEALTHY`\s+pass;/);
 });
 
+test('the agent skill says how to tag a test for an option that changes what another call gives back', () => {
+  assert.match(SKILL, /`options that change this result — set on <call ID>`/);
+  assert.match(SKILL, /`@call:<that other call ID>`, its `@option:<key>=true\|false` and\s+`@depth:output`/);
+});
+
 test('the agent skill says what an unchecked server match means when there is no server API list', () => {
   assert.match(SKILL, /`unchecked`/);
   assert.match(SKILL, /no call is dead and no screen is a dead screen/);

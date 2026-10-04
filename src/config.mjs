@@ -21,6 +21,7 @@ const isOneLine = (v) => typeof v === 'string' && /\S/.test(v) && !/[\r\n]/.test
 const isRoutePath = (v) => isText(v) && v.startsWith('/');
 const isWebAddress = (v) => isText(v) && /^https?:\/\/[^/]/.test(v);
 const MOVE_KEYS = ['from', 'to', 'reason'];
+const CALL_LINK_KEYS = ['from', 'to', 'note'];
 const LIST_API_KEYS = ['api', 'list', 'value', 'method', 'body'];
 const HEADER_EXAMPLE = '{ "Authorization": "Bearer {token}" }';
 
@@ -128,6 +129,11 @@ export function loadConfig(configPath) {
   if (!Array.isArray(moves) || !moves.every(isMove)) {
     throw new Error(`moves must be a list of { "from", "to", "reason" }, with the reason on one line, for screen moves the code shows no link for, with route paths as in the map, such as [{ "from": "/signin", "to": "/user-home", "reason": "로그인 뒤" }], not ${JSON.stringify(raw.moves)}`);
   }
+  const callLinks = raw.callLinks ?? [];
+  const isCallLink = (l) => isPlainObject(l) && Object.keys(l).every((k) => CALL_LINK_KEYS.includes(k)) && isText(l.from) && isText(l.to) && l.from !== l.to && isOneLine(l.note);
+  if (!Array.isArray(callLinks) || !callLinks.every(isCallLink)) {
+    throw new Error(`callLinks must be a list of { "from", "to", "note" }, with the note on one line, joining a call whose on/off options change what another call gives back ("from") to that other call ("to"), with two different call IDs as in the map, such as [{ "from": "POST:/api/v1/report/export", "to": "GET:/api/v1/report/{reportId}/file", "note": "내보내기가 만든 파일을 내려받는다" }], not ${JSON.stringify(raw.callLinks)}`);
+  }
   const settingsDefaults = raw.settingsDefaults ?? {};
   for (const [root, entry] of Object.entries(settingsDefaults)) {
     if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
@@ -151,6 +157,7 @@ export function loadConfig(configPath) {
     bodyArgKeys,
     bodyOptions,
     moves,
+    callLinks,
     settingsDefaults,
     redirectElements: raw.redirectElements ?? ['Redirect'],
     entryPaths: raw.entryPaths ?? [],

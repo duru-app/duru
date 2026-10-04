@@ -68,6 +68,7 @@ if (command === 'tasks') {
   for (const p of map.unknownEntryPaths) console.log(`  entryPaths ${p} matches no route`);
   for (const p of map.unknownMovePaths) console.log(`  moves ${p} matches no route`);
   for (const id of map.unknownBodyOptionCalls) console.log(`  bodyOptions ${id} matches no call`);
+  for (const l of map.unknownCallLinks) for (const id of l.missing) console.log(`  callLinks ${l.from} → ${l.to}: ${id} matches no call`);
   for (const d of map.duplicateIds) console.log(`  duplicate screen ID ${d.id} ← ${d.lines.map((l) => `${config.routesFile}:${l}`).join(', ')}`);
 
   if (command === 'rebuild') {
