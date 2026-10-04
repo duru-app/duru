@@ -108,7 +108,9 @@
   .open-needs .need { display: flex; align-items: center; gap: 6px; font-weight: 600; }
   .open-needs .need .flag { color: var(--pending); font-weight: normal; }
   .open-needs .tips { font-size: 12px; margin-top: 4px; }
-  .open-needs code, .access code { overflow-wrap: anywhere; }
+  #right { overflow-wrap: anywhere; }
+  #right .chip { white-space: normal; }
+  .target-id { margin-bottom: 4px; }
   .link-group { margin-bottom: 6px; }
   .link-group > summary, .long-guard > summary { cursor: pointer; }
   .link-group > ul { margin: 6px 0 8px 16px; }
@@ -117,6 +119,7 @@
   .long-guard[open] > summary .head { display: none; }
   ul.plain { list-style: none; padding: 0; margin: 0; }
   ul.plain li { margin-bottom: 6px; }
+  .mark-form:not(:first-child) { margin-top: 16px; }
   .statuses { display: flex; gap: 6px; margin: 8px 0; }
   .statuses button { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
   .statuses button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
@@ -204,7 +207,7 @@
   .verdict { margin: 2px 0; } .verdict.unreachable { color: var(--fail); } .verdict.reachable { color: var(--pass); } .verdict.unjudged { color: var(--more); }
   .ways li { margin: 4px 0 0; }
   .memo { white-space: pre-wrap; }
-  .reach > li { margin-bottom: 12px; overflow-wrap: anywhere; }
+  .reach > li { margin-bottom: 12px; }
   .reach h3 { font-size: 13px; margin: 0 0 4px; }
 </style>
 </head>
@@ -252,7 +255,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set() };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legendOpen: false, legendDismissed: false, openGroups: new Set(), openLong: new Set(), rightView: null };
 const authorStore = {
   get() { try { return localStorage.getItem('duru.author') ?? ''; } catch { return ''; } },
   set(v) { try { localStorage.setItem('duru.author', v); } catch {} },
@@ -360,7 +363,13 @@ function renderHeader() {
   } else {
     slot.append(h('label', {}, '작성자 ', h('input', {
       type: 'text', value: authorStore.get(), placeholder: '이름', style: 'width:140px',
-      oninput: (e) => authorStore.set(e.target.value),
+      oninput: (e) => {
+        authorStore.set(e.target.value);
+        if (state.error === AUTHOR_MISSING && e.target.value.trim()) {
+          state.error = null;
+          renderRight();
+        }
+      },
     })));
   }
 }
@@ -938,8 +947,7 @@ function storyProblems(st) {
   ].filter(Boolean);
 }
 
-function renderStoryRight() {
-  const right = document.getElementById('right');
+function renderStoryRight(right) {
   const st = storyOf();
   if (!st) return fill(right, state.story ? markForm({ story: state.story }, 'storyDraft', '스토리') : null);
   const problems = storyProblems(st);
@@ -1076,8 +1084,14 @@ function guardList(item) {
 }
 
 function renderRight() {
-  if (state.side === 'stories') return renderStoryRight();
   const right = document.getElementById('right');
+  const view = state.side === 'stories' ? `story(${state.story})` : `${state.selected}\n${state.target?.node}`;
+  (state.side === 'stories' ? renderStoryRight : renderScreenRight)(right);
+  if (view !== state.rightView) right.scrollTop = 0;
+  state.rightView = view;
+}
+
+function renderScreenRight(right) {
   const s = state.data.map.screens.find((x) => x.id === state.selected);
   if (!s) return fill(right);
   const call = state.target.node === s.id ? null : callOf(state.target.node);
@@ -1085,28 +1099,26 @@ function renderRight() {
   const targetLabel = [option && optionLabel(option), depth && `${DEPTH_LABELS[depth]} 깊이`].filter(Boolean).join(' · ') || (call ? '호출 전체' : '화면 전체');
   fill(right,
     call ? null : openSummary(s),
-    markForm(state.target, 'draft', targetLabel, call ? h('div', { class: 'mono' }, call.id) : null),
+    call ? h('div', { class: 'target-id' }, h('div', { class: 'mono' }, call.id), h('strong', {}, targetLabel)) : null,
     call ? callDetails(call, s) : screenDetails(s),
+    markForm(state.target, 'draft', targetLabel),
   );
 }
 
-function markForm(target, draftKey, label, sub = null) {
+function markForm(target, draftKey, label) {
   const mark = markOf(target);
   state[draftKey] ??= { status: mark?.current.status ?? null, note: '' };
   const draft = state[draftKey];
-  return [
+  return h('div', { class: 'mark-form' },
     h('h2', {}, '표시 — ', label),
-    !state.data.author && !authorStore.get() ? h('p', { class: 'error' }, '작성자 이름을 위쪽에 적어 주세요. git user.name 이 설정되지 않았습니다.') : null,
-    sub,
     h('div', { class: 'statuses' }, Object.entries(MARK_STATUS).map(([k, text]) =>
       h('button', { class: draft.status === k ? 'on' : '', onclick: () => { draft.status = k; renderRight(); } }, text))),
     h('textarea', { placeholder: '메모', oninput: (e) => { draft.note = e.target.value; } }, draft.note),
-    h('button', { class: 'save', disabled: !draft.status, onclick: () => saveMark(target, draftKey) }, '표시 남기기'),
     state.error ? h('p', { class: 'error' }, state.error) : null,
+    h('button', { class: 'save', disabled: !draft.status, onclick: () => saveMark(target, draftKey) }, '표시 남기기'),
     mark ? h('ul', { class: 'plain history' }, mark.history.map((m) => h('li', {},
       h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]), ' ', h('span', { class: 'muted' }, `${m.author} · ${fmtDate(m.date)}`),
-      m.note ? h('div', {}, m.note) : null))) : null,
-  ];
+      m.note ? h('div', {}, m.note) : null))) : null);
 }
 
 function callDetails(call, s) {
@@ -1216,13 +1228,26 @@ function screenDetails(s) {
   ];
 }
 
+const AUTHOR_MISSING = '작성자 이름이 필요합니다. 위쪽에 이름을 적어 주세요. git user.name 이 설정되지 않았습니다.';
+
+const shownTarget = () => (state.side === 'stories' ? { story: state.story } : state.target);
+
+function revealSaveButton(target) {
+  const shown = state.ended ? null : shownTarget();
+  if (shown && keyOf(shown) === keyOf(target)) document.querySelector('#right .mark-form button.save')?.scrollIntoView({ block: 'nearest' });
+}
+
+function showSaveError(message, target) {
+  state.error = message;
+  if (state.ended) return;
+  renderRight();
+  revealSaveButton(target);
+}
+
 async function saveMark(target, draftKey) {
   const author = state.data.author ?? authorStore.get();
   state.error = null;
-  if (!author.trim()) {
-    state.error = '작성자 이름이 필요합니다.';
-    return renderRight();
-  }
+  if (!author.trim()) return showSaveError(AUTHOR_MISSING, target);
   try {
     const res = await fetch('/api/marks', {
       method: 'POST',
@@ -1231,8 +1256,7 @@ async function saveMark(target, draftKey) {
     });
     if (!res.ok) throw new Error(await res.text());
   } catch (err) {
-    state.error = `저장하지 못했습니다: ${err.message}`;
-    return renderRight();
+    return showSaveError(`저장하지 못했습니다: ${err.message}`, target);
   }
   state[draftKey] = null;
   try {
@@ -1241,6 +1265,7 @@ async function saveMark(target, draftKey) {
     state.error = `저장했지만 다시 읽지 못했습니다: ${err.message}`;
   }
   render();
+  if (state.error) revealSaveButton(target);
 }
 
 const GAP = 12, COL_GAP = 50, CELL_GAP = 24, CALL_INDENT = 16, GROUP_SPACE = 24, GROUP_HEAD_H = 28;

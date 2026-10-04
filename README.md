@@ -542,7 +542,7 @@ those added to the call in `bodyOptions`, the latter tagged 「설정」. An on 
 stands out in red; the no-option row takes no marks. A call whose address could not be worked out
 from the source has no node, so it shows without cells. For a screen, the right starts with 「이 화면을 열려면」:
 the settings and roles it needs, in the same words as its box in the flow view (「설정이나 역할 없이 열립니다」 when
-it needs neither), every needed value in full, and the blocking route guards. The right then holds the mark form and, for a screen,
+it needs neither), every needed value in full, and the blocking route guards. The right then holds, for a screen,
 the links into it grouped by the set of guards they carry: the group without guards first, then larger groups
 before smaller and, among groups of one size, by the guards' text. Each group shows what its guards need in those
 same words and its number of links, and opens to each link, ordered by the screen it comes from, file and line,
@@ -553,6 +553,8 @@ block opening the screen. A guard longer than 80 characters is folded to its sta
 Then come the screen's source location, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.
+The mark form comes last in the right, for a call as well, and long addresses and conditions wrap inside the column,
+which never scrolls sideways.
 
 Next to the screen list, the left column has a tab with the stories: each with its name, ID and number of
 screens, its status unless it passes (「실패」, 「보류」, 「일부 화면만 테스트」, 「테스트 없음」), 「링크 없음」 when two
@@ -587,7 +589,8 @@ of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "with
 "depth": "output" }`), or a story (`{ "story": "run-lab" }`, with no `node`, `option` or `depth`: a story has
 no cells), and records a status (`needs-more`, `missing`,
 `fine`), a note, the author and the date. The author is `git config user.name` on the machine serving the
-page; when it is not set, the page asks for a name. Marks are never overwritten: marking a target again
+page; when it is not set, the page has a name field in the header and warns beside the mark form only when a mark
+is saved without a name, saving nothing. Marks are never overwritten: marking a target again
 adds to its history, and the latest mark is its current state.
 
 Each mark is its own file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, or
