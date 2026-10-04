@@ -553,8 +553,16 @@ block opening the screen. A guard longer than 80 characters is folded to its sta
 Then come the screen's source location, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.
-The mark form comes last in the right, for a call as well, and long addresses and conditions wrap inside the column,
-which never scrolls sideways.
+The right is split in two. Everything above is in its upper part, the only part that scrolls; the mark form is docked
+below it, always in view, for a screen, a call, an option, a depth and a story alike. On a window too short for the
+form and a few lines of the upper part, the whole right scrolls instead, so the form can still be reached. The form
+has the status buttons,
+a memo of about two lines (which can be dragged taller, up to a limit) and the 「표시 남기기」 button; the target's
+history is not listed there but sits behind 「이력 N」 next to that button, closed by default, and opens inside the
+form to a list with its own scroll. The fold stays open while the pane is redrawn and closes when another target is
+chosen. Choosing another screen, call or story opens the upper part at its top, while choosing another depth or
+option of the same node keeps its scroll offset. Long addresses and conditions wrap inside the column, and
+neither part scrolls sideways.
 
 Next to the screen list, the left column has a tab with the stories: each with its name, ID and number of
 screens, its status unless it passes (「실패」, 「보류」, 「일부 화면만 테스트」, 「테스트 없음」), 「링크 없음」 when two
@@ -597,11 +605,12 @@ with the handler; the role line, when there is one, then carries 「미확인 N�
 The summary says 「설정이나 역할로 막는 조건 없음」 only when it has no line and lists nothing apart. A fold,
 closed by default, holds the source location of each condition as written, with 「링크 N개 중 하나」 over a step that several
 links reach; the fold and its long conditions stay open while the pane is redrawn or a screen is opened, and close when
-another story is chosen. Below that, the right holds the mark form for the story, with its
-history; the story list shows each story's current mark, and under the list 「떨어져 나감」 holds the marks
+another story is chosen. Below the right's scrolling upper part, the docked mark form
+is for the story, with its history behind 「이력 N」; the story list shows each story's current mark, and under the list 「떨어져 나감」 holds the marks
 whose story file is gone (the screen list's 「떨어져 나감」 holds only marks on screens and calls). Marks on
 stories missing from the list because their file cannot be read, or while `stories.stale` is set, are listed
-under 「목록 밖 스토리 표시」 below the story files that could not be read; choosing one opens its mark form.
+under 「목록 밖 스토리 표시」 below the story files that could not be read; choosing one opens its mark form, alone
+at the top of the right.
 Stories are read again whenever the page loads its data, so a story file written during the review shows after
 a reload.
 `/api/data` carries the checked stories, each with its `status`, as `stories.list`, the notes as
@@ -612,9 +621,13 @@ of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "with
 "depth": "output" }`), or a story (`{ "story": "run-lab" }`, with no `node`, `option` or `depth`: a story has
 no cells), and records a status (`needs-more`, `missing`,
 `fine`), a note, the author and the date. The author is `git config user.name` on the machine serving the
-page; when it is not set, the page has a name field in the header and warns beside the mark form only when a mark
-is saved without a name, saving nothing. Marks are never overwritten: marking a target again
-adds to its history, and the latest mark is its current state.
+page; when it is not set, the page has a name field in the header and warns above the 「표시 남기기」 button only when a mark
+is saved without a name, saving nothing. A save that fails, or goes through but cannot reload the data, is reported
+in the same place; if another target is shown by then, the message names the target the save was for (「스토리」 and
+the story's name, or the node ID with the option and depth as the form heading writes them), and a status or memo
+picked after the reviewer chooses another target, there or back on the first one, is kept when the save goes
+through, while a form left untouched after coming back shows the saved mark. Marks are never overwritten: marking a
+target again adds to its history, and the latest mark is its current state.
 
 Each mark is its own file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, or
 `<marksDir>/stories/<story ID>/<date>-<author>-<short ID>.json` for a story, and saving a mark only
