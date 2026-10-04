@@ -665,9 +665,11 @@ a reload.
 `/api/data` carries the checked stories, each with its `status`, as `stories.list`, the notes as
 `stories.notices` and the story tags that no story file has as `stories.unknownTags`.
 
-The left column has a third tab, 「태그 없는 테스트 N」, listing the tests that carry no node tag and no story tag
+The left column has a third tab, labelled 「태그 없음」, listing the tests that carry no node tag and no story tag
 (`untagged` in `tests.json`) with their status and test file and line, and a search box over their titles and
-files. Choosing a test shows in the middle its title, status, test file and line, result source and format, then
+files. Each tab shows its count in a badge after its label, a label too long for the column is cut with an
+ellipsis instead of the row scrolling, and the tooltip of the third tab reads 「노드 태그도 스토리 태그도 없는 테스트」.
+Choosing a test shows in the middle its title, status, test file and line, result source and format, then
 its pairs with screens (the screens it reaches through the files it imports, and the screens it was judged
 against), each with the source files it came through and the state of the pair: 「불러옴」 for a plain importing test, 「태그 달기 대기」 for a pair handed over for tagging (with its note,
 author and date), 「떨어져 나감」 for a hand-over of a test that no longer imports the screen (with its note, author
