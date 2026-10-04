@@ -1127,7 +1127,7 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        assert.deepEqual(await p.locator('#left .views.side button').allTextContents(), ['화면 11', '스토리 5']);
+        assert.deepEqual(await p.locator('#left .views.side button').allTextContents(), ['화면 11', '스토리 5', '태그 없는 테스트 13']);
         await p.click('#left .views.side button:has-text("스토리")');
         assert.deepEqual(await p.locator('#story-list li .name > span:first-child').allTextContents(), [
           '홈에서 개인 설정을 바꾼다', '홈에서 바로 도움말을 연다', '로그인해 문서 목록에서 문서를 연다', '관리자가 보고서를 본다', '실험실을 열어 결과를 본다',
@@ -5477,7 +5477,7 @@ test('in a browser, with no server API list the header line carries a 「서버 
         assert.equal((await box('main')).top, (await box('header')).bottom);
         assert.equal((await box('main')).height, 900 - 49);
         assert.equal(await p.locator('input[name=dead]').count(), 0);
-        assert.equal(await p.locator('#left input[type=checkbox]').count(), 4);
+        assert.equal(await p.locator('#left input[type=checkbox]').count(), 5);
 
         await p.click('#screen-list li:has-text("/document/:tab")');
         assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['판정 불가', '대조 안 함']);
@@ -5564,7 +5564,7 @@ test('in a browser, with a server API list the page has no chip, no 「목록 �
         assert.equal(await p.locator('#meta .state, #server-state-tip, #server-notice').count(), 0);
         assert.doesNotMatch(await p.textContent('#meta'), /서버 대조 안 함/);
         assert.equal(await p.locator('input[name=dead]').count(), 1);
-        assert.equal(await p.locator('#left input[type=checkbox]').count(), 5);
+        assert.equal(await p.locator('#left input[type=checkbox]').count(), 6);
         await p.click('#screen-list li:has-text("/document/:tab")');
         assert.equal(await p.locator('.list-absent').count(), 0);
         assert.doesNotMatch(await p.textContent('#center'), /목록 없음/);
@@ -5830,4 +5830,214 @@ test('in a browser, a hand-over whose test is no longer found shows apart and is
         assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => j.kind).sort(), ['hand-over', 'undo']);
       }));
   });
+});
+
+const DOCUMENT_TABLE = { source: 'results/vitest/client-unit.json', file: 'components/DocumentTable.spec.js', title: 'DocumentTable › lists the documents it is given' };
+const DETAIL_TEST = { source: 'results/vitest/client-unit.json', file: 'components/DocumentDetail.spec.js', title: 'loads the detail screen only when it is needed' };
+const untaggedTab = '#left .views.side button:has-text("태그 없는 테스트")';
+
+test('the data carries the untagged tests with the reference a judgment points at them by', async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const { tests } = await (await fetch(`${base}/api/data`)).json();
+      assert.equal(tests.untaggedCount, 13);
+      assert.equal(tests.untagged.length, 13);
+      assert.deepEqual(tests.untagged.find((t) => t.title === DOCUMENT_TABLE.title).ref, DOCUMENT_TABLE);
+    }),
+  );
+});
+
+test('in a browser, the untagged tab lists every untagged test and a search box narrows the list', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.textContent(untaggedTab), '태그 없는 테스트 13');
+        await p.click(untaggedTab);
+        assert.equal(await p.locator('#untagged-list li').count(), 13);
+        const detail = p.locator('#untagged-list li', { hasText: 'loads the detail screen only when it is needed' });
+        assert.equal(await detail.textContent(), '통과loads the detail screen only when it is needed components/DocumentDetail.spec.js:1');
+        assert.match(await p.textContent('#untagged-list li:has-text("DocumentTable")'), /^실패/);
+        await p.fill('#left input[type=search]', 'help');
+        assert.deepEqual(await p.locator('#untagged-list li .title').allTextContents(), ['renders the help text', 'shows the day the help was last updated']);
+        await p.fill('#left input[type=search]', 'nothing like this');
+        assert.equal(await p.textContent('#untagged-list'), '해당하는 테스트가 없습니다.');
+      })));
+});
+
+test('in a browser, a chosen untagged test shows the screens it imports with the files it came through, and a click on a screen opens it in the screen list', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(untaggedTab);
+        await p.click('#untagged-list li:has-text("DocumentTable")');
+        assert.equal(await p.textContent('#center h3'), 'DocumentTable › lists the documents it is given');
+        assert.equal(await p.locator('#untagged-list li.selected').count(), 1);
+        assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면의 짝 2');
+        const pairs = p.locator('#center .test-pairs .pair');
+        assert.deepEqual(await pairs.locator('.screen-path').allTextContents(), ['/document/:tab(draft|done)', '/home']);
+        assert.deepEqual(await pairs.locator('.via').allTextContents(), ['components/DocumentTable.js', 'components/DocumentTable.js']);
+        assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['불러옴', '불러옴']);
+        assert.equal(await p.locator('#center button').count(), 0);
+
+        await pairs.filter({ hasText: '/home' }).click();
+        assert.equal(await p.getAttribute('#left .views.side button.on', 'class'), 'on');
+        assert.equal(await p.textContent('#left .views.side button.on'), '화면 11');
+        assert.equal(await p.textContent('#screen-list li.selected .name'), '/home Home');
+      })));
+});
+
+test('in a browser, a discarded pair and a handed-over pair show their state under the untagged test', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: '/home#Home', kind: 'discard', reason: 'only lists documents', author: 'reviewer' });
+        addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: '/document/:tab_draft_done_#DocumentList', kind: 'hand-over', reason: 'covers the list', author: 'reviewer' });
+        await p.reload();
+        await toList(p);
+        await p.click(untaggedTab);
+        await p.click('#untagged-list li:has-text("DocumentTable")');
+        const pairs = p.locator('#center .test-pairs .pair');
+        assert.deepEqual(await pairs.locator('.screen-path').allTextContents(), ['/document/:tab(draft|done)', '/home']);
+        assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['태그 달기 대기', '버린 짝']);
+        assert.match(await pairs.nth(0).textContent(), /covers the list.*reviewer/s);
+        assert.match(await pairs.nth(1).textContent(), /only lists documents.*reviewer/s);
+        assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면의 짝 2');
+      })));
+});
+
+test('in a browser, an untagged test whose imports were read and matched no screen says so', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(untaggedTab);
+        await p.click('#untagged-list li:has-text("formats a date as year-month-day")');
+        assert.equal(await p.locator('#center .pair').count(), 0);
+        assert.equal(await p.textContent('#center .no-screens'), '이 테스트가 불러오는 파일로 이어진 화면이 없습니다. 화면 넷 이상이 함께 쓰는 파일과 찾지 못한 파일로는 잇지 않습니다.');
+      })));
+});
+
+test('in a browser, an untagged test whose imports were not read says why instead of claiming it imports nothing', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(untaggedTab);
+        const say = async (title) => {
+          await p.click(`#untagged-list li:has-text("${title}")`);
+          assert.equal(await p.locator('#center .pair').count(), 0);
+          return p.textContent('#center .no-screens');
+        };
+        assert.equal(await say('Document service › sends the share mail'), '이 결과 형식(junit)에는 테스트가 불러오는 파일이 적혀 있지 않아, 어느 화면에 이어지는지 읽지 못했습니다.');
+        assert.equal(await say('loads without errors'), '이 결과 형식(playwright)에는 테스트가 불러오는 파일이 적혀 있지 않아, 어느 화면에 이어지는지 읽지 못했습니다.');
+        assert.equal(await say('cleanup'), '이 결과 형식(verdict)에는 테스트가 불러오는 파일이 적혀 있지 않아, 어느 화면에 이어지는지 읽지 못했습니다.');
+        assert.equal(await say('keeps the old menu'), '테스트가 불러오는 파일을 읽지 못했습니다. 테스트 파일을 소스 폴더에서 찾지 못했습니다.');
+      })));
+});
+
+test('in a browser, a tests.json without the untagged list shows the count and asks for a rebuild instead of saying there are no untagged tests', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const res = await route.fetch();
+          const data = await res.json();
+          delete data.tests.untagged;
+          await route.fulfill({ response: res, json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.textContent(untaggedTab), '태그 없는 테스트 13');
+        await p.click(untaggedTab);
+        assert.match(await p.textContent('#center-body'), /태그 없는 테스트 목록이 없습니다.*duru rebuild/s);
+        assert.doesNotMatch(await p.textContent('#center-body'), /태그 없는 테스트가 없습니다/);
+        assert.equal(await p.locator('#untagged-list li:not(.muted)').count(), 0);
+        assert.doesNotMatch(await p.textContent('#untagged-list'), /해당하는 테스트가 없습니다/);
+      })));
+});
+
+test('in a browser, a pair for a screen that is no longer on the map shows as an off-map item that cannot be opened', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const res = await route.fetch();
+          const data = await res.json();
+          data.map.screens = data.map.screens.filter((s) => s.id !== '/home#Home');
+          await route.fulfill({ response: res, json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        await p.click(untaggedTab);
+        await p.click('#untagged-list li:has-text("DocumentTable")');
+        const pairs = p.locator('#center .test-pairs .pair');
+        assert.equal(await pairs.count(), 2);
+        const off = pairs.filter({ hasText: '/home#Home' });
+        assert.equal(await off.count(), 1);
+        assert.match(await off.getAttribute('class'), /off-map/);
+        assert.doesNotMatch(await off.getAttribute('class'), /on-map/);
+        assert.equal(await off.getAttribute('title'), null);
+        assert.match(await off.textContent(), /맵에 없는 화면/);
+        assert.match(await off.textContent(), /components\/DocumentTable\.js/);
+        assert.match(await pairs.filter({ hasText: '/document/:tab' }).getAttribute('class'), /on-map/);
+        await off.click();
+        assert.equal(await p.textContent('#left .views.side button.on'), '태그 없는 테스트 13');
+        assert.equal(await p.textContent('#center h3'), 'DocumentTable › lists the documents it is given');
+      })));
+});
+
+test('in a browser, a hand-over of a test that no longer imports the screen shows under the test as 떨어져 나감, as it does under the screen', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const format = { source: 'results/vitest/client-unit.json', file: 'components/formatDate.spec.js', title: 'formats a date as year-month-day' };
+    addJudgment(config.judgmentsDir, { test: format, node: '/help#Help', kind: 'hand-over', reason: 'was about the help date', author: 'someone' });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await p.textContent('#center .detached h2'), '떨어져 나감 1');
+
+        await p.click(untaggedTab);
+        await p.click('#untagged-list li:has-text("formats a date as year-month-day")');
+        const pairs = p.locator('#center .test-pairs .pair');
+        assert.equal(await pairs.count(), 1);
+        assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면의 짝 1');
+        assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['떨어져 나감']);
+        assert.equal(await pairs.locator('.screen-path').textContent(), '/help');
+        assert.match(await pairs.textContent(), /메모 was about the help date.*someone/s);
+        assert.equal(await pairs.locator('.via').count(), 0);
+        assert.equal(await p.locator('#center .no-screens').count(), 0);
+      }));
+  });
+});
+
+test('in a browser, the imported-only filter keeps the screens with importing tests and no tagged test, counts a pair waiting for a tag and ignores a discarded one', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        addJudgment(config.judgmentsDir, { test: DETAIL_TEST, node: '/document/:id#DocumentDetail', kind: 'discard', reason: 'only loads a view', author: 'reviewer' });
+        addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: '/document/:tab_draft_done_#DocumentList', kind: 'hand-over', reason: '', author: 'reviewer' });
+        const bare = ['/help#Help', '/document/:id#DocumentDetail', '/document/:tab_draft_done_#DocumentList'];
+        await p.route('**/api/data', async (route) => {
+          const res = await route.fetch();
+          const data = await res.json();
+          for (const id of bare) delete data.tests.nodes[id];
+          await route.fulfill({ response: res, json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.locator('#screen-list li').count(), 11);
+        assert.equal(await p.locator('#left .filters label:has-text("지나간 테스트만 있음")').count(), 1);
+        await p.check('#left input[name="imported-only"]');
+        assert.deepEqual(await p.locator('#screen-list li .name > span:first-child').allTextContents(), ['/document/:tab(draft|done)', '/help']);
+        const counts = async (path) => (await p.locator('#screen-list li', { hasText: path }).locator('.count').allTextContents()).join('');
+        assert.equal(await counts('/document/:tab'), '테스트 없음태그 대기 1');
+        assert.equal(await counts('/help'), '테스트 없음불러옴 2');
+        await p.uncheck('#left input[name="imported-only"]');
+        assert.equal(await p.locator('#screen-list li').count(), 11);
+      })));
 });

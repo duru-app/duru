@@ -379,3 +379,78 @@ test('a story tag repeated in one test attaches that test to the story once', ()
     assert.deepEqual(linkTests(own, { screens: [] }).stories['open-document'].map((t) => t.title), ['twice']);
   }, ['verdict']);
 });
+
+test('every untagged test of the fixture is listed once, ordered by test file, line and title, and the count equals the list length', () => {
+  assert.equal(links.untaggedCount, links.untagged.length);
+  const row = (t) => `${t.format} ${t.testFile ?? t.file}:${t.line} ${t.title}`;
+  assert.deepEqual(links.untagged.map(row), [
+    'vitest /builds/client/src/components/Gone.spec.js:2 keeps the old menu',
+    'vitest /work/app/src/home/home.test.js:20 formats a date @depth:api',
+    'junit com.example.document.DocumentServiceTest:null Document service › sends the share mail',
+    'vitest components/DocumentDetail.spec.js:1 loads the detail screen only when it is needed',
+    'vitest components/DocumentTable.spec.js:6 DocumentTable › lists the documents it is given',
+    'vitest components/Help.spec.js:4 renders the help text',
+    'vitest components/Help.spec.js:8 shows the day the help was last updated',
+    'vitest components/formatDate.spec.js:3 formats a date as year-month-day',
+    'verdict document-checks.log:14 cleanup',
+    'verdict document-checks.log:15 teardown',
+    'playwright home.spec.ts:32 loads without errors @smoke',
+    'verdict storage-checks.txt:10 orphan files',
+    'vitest store/settings.spec.js:3 the lab is off by default',
+  ]);
+});
+
+test('an untagged list entry carries its result source, status and, for a Vitest test found under srcRoot, the test file', () => {
+  const byTitle = (title) => links.untagged.find((t) => t.title === title);
+  assert.deepEqual(byTitle('DocumentTable › lists the documents it is given'), {
+    title: 'DocumentTable › lists the documents it is given',
+    file: '/builds/client/src/components/DocumentTable.spec.js',
+    line: 6,
+    source: 'results/vitest/client-unit.json',
+    format: 'vitest',
+    status: 'fail',
+    testFile: 'components/DocumentTable.spec.js',
+  });
+  assert.equal('testFile' in byTitle('keeps the old menu'), false);
+});
+
+test('an untagged test that ran in two projects is listed once, with the worst status of its runs', () => {
+  const run = (projectName, status) => ({ projectName, status });
+  const spec = (title, line, runs) => ({ title, file: 'a.spec.ts', line, tests: runs });
+  const report = reportOf([
+    {
+      title: 'a.spec.ts',
+      specs: [
+        spec('passes then fails', 1, [run('chromium', 'expected'), run('firefox', 'unexpected')]),
+        spec('fails then passes', 2, [run('chromium', 'unexpected'), run('firefox', 'expected')]),
+        spec('passes then waits', 3, [run('chromium', 'expected'), run('firefox', 'skipped')]),
+        spec('waits then fails', 4, [run('chromium', 'skipped'), run('firefox', 'unexpected')]),
+        spec('passes twice', 5, [run('chromium', 'expected'), run('firefox', 'expected')]),
+      ],
+    },
+  ]);
+  withResults({ 'e2e.json': report }, (own) => {
+    const result = linkTests(own, { screens: [] });
+    assert.equal(result.untaggedCount, 5);
+    assert.deepEqual(result.untagged.map((t) => [t.title, t.status]), [
+      ['passes then fails', 'fail'],
+      ['fails then passes', 'fail'],
+      ['passes then waits', 'pending'],
+      ['waits then fails', 'fail'],
+      ['passes twice', 'pass'],
+    ]);
+  });
+});
+
+test('the untagged list is ordered by the test file the page shows, not by the path of the machine that ran the tests', () => {
+  const vitestFiles = JSON.stringify({
+    testResults: [
+      { name: '/z/client/src/components/Help.spec.js', assertionResults: [{ ancestorTitles: [], title: 'renders the help text', status: 'passed', location: { line: 4, column: 1 } }] },
+      { name: '/a/client/src/store/settings.spec.js', assertionResults: [{ ancestorTitles: [], title: 'the lab is off by default', status: 'passed', location: { line: 3, column: 1 } }] },
+    ],
+  });
+  withResults({ 'unit.json': vitestFiles }, (own) => {
+    const result = linkTests(own, { screens: [] });
+    assert.deepEqual(result.untagged.map((t) => t.testFile), ['components/Help.spec.js', 'store/settings.spec.js']);
+  }, ['vitest']);
+});
