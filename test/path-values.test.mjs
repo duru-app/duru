@@ -92,6 +92,58 @@ test('without the login, a list API is not called and the error says why', async
   assert.match(result.errors[0], /로그인/);
 });
 
+const KEY_ENV = 'DURU_TEST_PATH_VALUES_KEY';
+const ISSUING = { api: '/api/codes', method: 'POST', header: { 'X-API-KEY': '{key}', Accept: 'application/json' }, keyEnv: KEY_ENV, body: { memberId: 'm1' }, value: 'contents.code' };
+
+async function issued(fetchServer, spec = ISSUING, key = 'k3y') {
+  const map = { screens: [screen('/home#Home', '/home'), screen('/view/:code/:id#View', '/view/:code/:id', ['/home#Home'])] };
+  if (key === null) delete process.env[KEY_ENV];
+  else process.env[KEY_ENV] = key;
+  try {
+    return await preparePathValues(map, map.screens[1], { '/view/:code/:id': { code: spec, id: '7' } }, null, null, fetchServer);
+  } finally {
+    delete process.env[KEY_ENV];
+  }
+}
+
+test('an issuing API is called without the login, with the key from its environment variable in its header, every time', async () => {
+  const calls = [];
+  const fetchServer = async (api, options) => {
+    calls.push([api, options.method, options.headers, options.body]);
+    return new Response(JSON.stringify({ contents: { code: `c${calls.length}` } }));
+  };
+  const first = await issued(fetchServer);
+  assert.deepEqual([first.values, first.errors, first.path, first.issued], [{ code: 'c1', id: '7' }, [], '/view/c1/7', ['code']]);
+  assert.equal((await issued(fetchServer)).path, '/view/c2/7');
+  assert.deepEqual(calls[0], ['/api/codes', 'POST', { 'X-API-KEY': 'k3y', Accept: 'application/json' }, { memberId: 'm1' }]);
+  assert.equal((await issued(fetchServer, { ...ISSUING, header: { 'X-API-KEY': 'Key {key}$&' } }, '$1')).errors.length, 0);
+  assert.equal(calls[2][2]['X-API-KEY'], 'Key $1$&');
+});
+
+test('an issuing API whose key, request or reply fails says why without the key, and the screen falls back', async () => {
+  const answering = (body, status = 200) => async () => new Response(body, { status });
+  const throwing = (err) => async () => {
+    throw err;
+  };
+  for (const [fetchServer, error, key] of [
+    [answering('{}'), /^code: 환경 변수 DURU_TEST_PATH_VALUES_KEY 에 키가 없어 발급 API POST \/api\/codes 를 부르지 않았습니다$/, null],
+    [answering('{}', 403), /^code: 발급 API POST \/api\/codes 요청이 403 로 실패했습니다$/],
+    [answering('not json'), /^code: 발급 API POST \/api\/codes 의 응답이 JSON 이 아닙니다$/],
+    [answering('{ "contents": {} }'), /^code: 발급 API POST \/api\/codes 응답의 contents\.code 에 값이 없습니다$/],
+    [throwing(new DOMException('timed out', 'TimeoutError')), /^code: 발급 API POST \/api\/codes 요청에 15초 안에 응답이 없었습니다$/],
+    [throwing(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } })), /요청을 보내지 못했습니다 \(ECONNREFUSED\)$/],
+    [answering('{}'), /^code: 환경 변수 DURU_TEST_PATH_VALUES_KEY 의 키를 header 에 넣을 수 없습니다$/, 'k3y\nsecret'],
+  ]) {
+    const result = await issued(fetchServer, ISSUING, key);
+    assert.deepEqual([result.values, result.path, result.fallback], [{ id: '7' }, null, '/home#Home']);
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0], error);
+  }
+  const bare = await issued(async () => new Response('"c9"'), { ...ISSUING, value: '' });
+  assert.deepEqual(bare.values, { code: 'c9', id: '7' });
+  assert.match((await issued(async () => new Response('{}'), { ...ISSUING, value: '' })).errors[0], /의 응답이 값 하나가 아닙니다$/);
+});
+
 test('a list screen whose variables all have fixed values is a fallback too, opened with those values', async () => {
   const map = { screens: [
     screen('/home#Home', '/home'),

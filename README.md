@@ -146,7 +146,16 @@ relative to the config file, except the files inside the client source (`routesF
   (`""` when the reply is the list itself) and takes the dotted `value` path of its first item (`""` for the
   item itself, such as a list of bare ids). A list API is
   called with the token of the account the frame opens the screen as (`account`, or the role picked for it) in
-  `login.header` (`{token}` filled in), which is then required. An optional
+  `login.header` (`{token}` filled in), which is then required.
+  A variable can also take an API that issues the value, for an address that holds a code the server lets be
+  used once or for a few minutes, such as a screen an outside service opens with a one-time code:
+  `{ "api": "/api/v2/one-time-code/create", "method": "POST", "header": { "X-API-KEY": "{key}" }, "keyEnv":
+  "APP_API_KEY", "body": { "memberId": "..." }, "value": "contents.code" }`. duru calls `server` + `api` (with
+  `method` and `body` as for a list API) with only `header`, where `{key}` is filled with the key read from the
+  environment variable named by `keyEnv`, and takes the dotted `value` path of the JSON reply (`""` when the
+  reply is the value itself). It sends no login token, so it needs no `login.header`; at least one `header`
+  value must hold `{key}`, and the key is never written to the config, the map, any page or any message. It is
+  called again every time the screen is opened. An optional
   variable (`:tab?`) without a value is left out of the address, and a variable that spans several segments
   (`*`, `:path+`) keeps the `/` in its value. An entry or a variable that matches no screen
   path or no variable of that path is listed in red above the frame.
@@ -697,7 +706,14 @@ with `&role=<role>` when the frame opens the screen as one of `roles`,
 which answers `{ "parts", "values", "errors", "path", "fallback", "fallbackPath" }`: the route path split into text and
 variables (`{ "name", "prefix", "optional", "pattern" }`, with `"repeat": true` for `+` and `*`), the value found for each variable, why a value could
 not be found, the filled path (`null` while a required variable has no value) and the screen to open instead with its
-filled path (both `null` when there is none); an unknown screen or role is 404.
+filled path (both `null` when there is none), plus `"issued"`, the variables taken from an API that issues the
+value, when there are any; an unknown screen or role is 404. A value issued that way is used for one opening of
+the frame: choosing the screen again, coming back to it or picking another account calls the API again, while
+marking does not. 「다시 띄우기」, 「새 창으로 열기」 and changing a setting ask the API again for each issued variable
+that still has the value duru filled (in its box for 「다시 띄우기」, in the frame's address otherwise), and keep a
+value the reviewer typed over and every other variable as they are; the new tab opens at once and gets its address
+when the value arrives. When that request fails, the line shows why, the
+frame stays as it was and the new tab closes.
 For a screen with setting conditions (the screen opened instead, when the frame falls back to one), a second
 line shows the settings named in its route and link conditions, and only those: 「켜기」 and 「끄기」 for one that needs on or off, a select for one that
 needs a value, 「목록에 넣기」 for a menu list entry, and 「기본값에 있음」 for one that only has to be present.

@@ -167,7 +167,7 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
         const role = url.searchParams.get('role');
         const fetchApi = role ? app?.fetchApiAs(role) : app?.fetchApi;
         if (fetchApi === undefined && role) return send(res, 404, 'text/plain', `unknown role "${role}"`);
-        return send(res, 200, 'application/json', JSON.stringify(await preparePathValues(map, screen, config.app?.pathValues ?? {}, fetchApi ?? null, role)));
+        return send(res, 200, 'application/json', JSON.stringify(await preparePathValues(map, screen, config.app?.pathValues ?? {}, fetchApi ?? null, role, app?.fetchServer)));
       }
       if (req.method === 'POST' && req.url === '/api/settings') {
         if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
