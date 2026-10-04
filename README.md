@@ -684,7 +684,9 @@ judgment per picked pair, one after another in the order shown, so the result is
 on the screen, and each can be undone there with 「되돌리기」. While the pairs are being sent, the checkboxes and buttons, the
 other tests, the left tabs, the 목록/흐름 switch, the pair rows and 「리뷰 끝」 are disabled, and the whole bulk is
 signed with the author read when it started; while 「리뷰 끝」 is being sent, the two bulk buttons are disabled too. When the bulk ends,
-the keyboard focus returns to the button that was pressed, or to the first control of the bar when that button is off. If a request fails midway the rest are not sent, the data is
+the keyboard focus returns to the button that was pressed, to the first control of the bar when that button is off,
+or to the heading of the pairs when no pair is left to pick; a reviewer who meanwhile moved the focus to the
+search box or the name box, which the redraw keeps, stays there and goes on typing where it was. If a request fails midway the rest are not sent, the data is
 read again, the unsaved pairs stay picked, and the message beside the buttons names the pairs that were saved and
 those that were not. The picks, the note and that message stay when the reviewer opens a pair's screen and comes back
 to the same test, and go when another test is chosen. A pair for a screen that is not on the map cannot be picked, as it cannot be judged on the screen

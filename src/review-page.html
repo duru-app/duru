@@ -447,11 +447,11 @@ function renderHeader() {
       h('span', { class: 'state-tip', id: 'server-state-tip', role: 'note' }, SERVER_STATE_TIP),
     ] : null);
   const slot = document.getElementById('author');
-  fill(slot);
+  const box = slot.querySelector('input');
   if (state.data.author) {
-    slot.append('작성자 ', h('strong', {}, state.data.author));
-  } else {
-    slot.append(h('label', {}, '작성자 ', h('input', {
+    fill(slot, '작성자 ', h('strong', {}, state.data.author));
+  } else if (!box) {
+    fill(slot, h('label', {}, '작성자 ', h('input', {
       type: 'text', value: authorStore.get(), placeholder: '이름', style: 'width:140px',
       oninput: (e) => {
         authorStore.set(e.target.value);
@@ -461,6 +461,8 @@ function renderHeader() {
         }
       },
     })));
+  } else if (box !== document.activeElement) {
+    box.value = authorStore.get();
   }
 }
 
@@ -474,6 +476,11 @@ function visibleScreens() {
   return state.data.map.screens.filter((s) => filters.every((f) => !state.filters.has(f.key) || f.keep(s)) && (!q || s.id.toLowerCase().includes(q)));
 }
 
+const screenFilterBoxes = () => activeScreenFilters().map((f) => h('label', { title: f.title }, h('input', { type: 'checkbox', name: f.key, checked: state.filters.has(f.key), onchange: (e) => {
+  if (e.target.checked) state.filters.add(f.key); else state.filters.delete(f.key);
+  renderLeftList();
+} }), f.label));
+
 function renderLeft() {
   const { marks, map, stories } = state.data;
   const left = document.getElementById('left');
@@ -481,26 +488,42 @@ function renderLeft() {
   const tabs = h('div', { class: 'views side' }, side('screens', `화면 ${map.screens.length}`), side('stories', `스토리 ${stories.list.length}`), side('untagged', `태그 없는 테스트 ${untaggedCount()}`));
   if (state.side === 'stories') return fill(left, tabs, storyList());
   if (state.side === 'untagged') {
-    fill(left,
-      tabs,
-      h('div', { class: 'filters' },
-        h('input', { type: 'search', placeholder: '테스트 찾기', value: state.untaggedQuery, oninput: (e) => { state.untaggedQuery = e.target.value; renderUntaggedList(); } })),
-      h('ul', { class: 'screens', id: 'untagged-list' }));
+    if (!keptLeftList(left, tabs, 'untagged-list')) {
+      fill(left,
+        tabs,
+        h('div', { class: 'filters' },
+          h('input', { type: 'search', placeholder: '테스트 찾기', value: state.untaggedQuery, oninput: (e) => { state.untaggedQuery = e.target.value; renderUntaggedList(); } })),
+        h('ul', { class: 'screens', id: 'untagged-list' }));
+    }
     return renderUntaggedList();
+  }
+  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined), (m) => m.key, h('p', { class: 'muted' }, '맵에서 사라진 노드에 달린 표시가 여기 남습니다.'));
+  const list = keptLeftList(left, tabs, 'screen-list');
+  if (list) {
+    const search = left.querySelector(':scope > .filters > input[type=search]');
+    while (search.nextSibling) search.nextSibling.remove();
+    search.after(...screenFilterBoxes());
+    while (list.nextSibling) list.nextSibling.remove();
+    list.after(...detached);
+    return renderLeftList();
   }
   fill(left,
     tabs,
     h('div', { class: 'filters' },
       h('input', { type: 'search', placeholder: '화면 찾기', value: state.query, oninput: (e) => { state.query = e.target.value; renderLeftList(); } }),
-      activeScreenFilters().map((f) => h('label', { title: f.title }, h('input', { type: 'checkbox', name: f.key, checked: state.filters.has(f.key), onchange: (e) => {
-        if (e.target.checked) state.filters.add(f.key); else state.filters.delete(f.key);
-        renderLeftList();
-      } }), f.label)),
+      screenFilterBoxes(),
     ),
     h('ul', { class: 'screens', id: 'screen-list' }),
-    markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined), (m) => m.key, h('p', { class: 'muted' }, '맵에서 사라진 노드에 달린 표시가 여기 남습니다.')),
+    detached,
   );
   renderLeftList();
+}
+
+// 찾기 칸을 새로 만들면 조합 중이던 한글이 끊기고 초점도 사라진다.
+function keptLeftList(left, tabs, listId) {
+  const list = left.querySelector(`:scope > ul#${listId}`);
+  if (list) left.firstElementChild.replaceWith(tabs);
+  return list;
 }
 
 function markList(title, cls, marks, label, empty, pick = null) {
@@ -1117,9 +1140,18 @@ function redrawBulk(focusSelector) {
   document.querySelector(`#center ${focusSelector}`)?.focus();
 }
 
+// 고를 짝이 남지 않아 단추 줄이 사라지면 짝 묶음의 제목으로 간다.
 function focusBulk(kind) {
-  const bar = document.querySelector('#center .bulk-bar');
-  (bar?.querySelector(`button.${kind}:enabled`) ?? bar?.querySelector('input'))?.focus();
+  const pairs = document.querySelector('#center .test-pairs');
+  const bar = pairs?.querySelector('.bulk-bar');
+  (bar ? bar.querySelector(`button.${kind}:enabled`) ?? bar.querySelector('input') : pairs?.querySelector('h2'))?.focus();
+}
+
+// 찾기 칸이나 이름 칸처럼 다시 그려도 남는 칸의 초점은 단추로 가져오지 않는다. 가져오면 치던 Space 나 Enter 가 단추를 다시 누른다.
+function showBulkResult(kind) {
+  const focused = document.activeElement;
+  render();
+  if (!focused || focused === document.body || !focused.isConnected) focusBulk(kind);
 }
 
 function setPick(bulk, id, on) {
@@ -1161,7 +1193,7 @@ function renderUntaggedCenter() {
     h('div', { class: 'muted mono' }, testPlace(t)),
     h('div', { class: 'muted' }, `${t.format} · ${t.source}`),
     h('div', { class: 'test-pairs' },
-      h('h2', {}, `이 테스트와 화면의 짝 ${pairs.length}`),
+      h('h2', { tabindex: '-1' }, `이 테스트와 화면의 짝 ${pairs.length}`),
       pickable.length ? bulkBar(t, pickable, bulk) : null,
       pairs.length
         ? h('div', { class: 'story-path' }, pairs.map(pickRow))
@@ -1629,8 +1661,7 @@ async function saveBulk(t, bulk, kind) {
   const problem = judgmentProblem(author, kind, reason);
   if (problem) {
     bulk.error = problem;
-    render();
-    return focusBulk(kind);
+    return showBulkResult(kind);
   }
   state.bulkBusy = true;
   render();
@@ -1656,8 +1687,7 @@ async function saveBulk(t, bulk, kind) {
     bulk.note = '';
     bulk.error = reloadError;
   }
-  render();
-  focusBulk(kind);
+  showBulkResult(kind);
 }
 
 const GAP = 12, COL_GAP = 50, CELL_GAP = 24, CALL_INDENT = 16, GROUP_SPACE = 24, GROUP_HEAD_H = 28;

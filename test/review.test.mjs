@@ -1051,6 +1051,29 @@ for (const host of ['127.0.0.1', 'localhost']) {
   });
 }
 
+test('in a browser, drawing the screens side again keeps the search box and its filtering, and draws the 「떨어져 나감」 block once with the marks read again', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const search = '#left input[type=search]';
+        const detachedHeadings = () => p.locator('#left h2:has-text("떨어져 나감")').allTextContents();
+        assert.deepEqual(await detachedHeadings(), ['떨어져 나감 0']);
+        await p.fill(search, 'lab');
+        await p.$eval(search, (el) => { el.kept = true; });
+        await postMark(base, { target: { node: '/gone#Gone' }, status: 'missing' });
+        await p.click('#screen-list li:has-text("/lab/result")');
+        await p.click('#right .statuses button:has-text("충분")');
+        await p.click('#right button.save');
+        await p.waitForSelector('#screen-list li.selected .chip');
+        assert.equal(await p.$eval(search, (el) => el.kept), true);
+        assert.equal(await p.inputValue(search), 'lab');
+        assert.deepEqual(await p.locator('#screen-list li .name > span:first-child').allTextContents(), ['/lab', '/lab/result']);
+        assert.deepEqual(await detachedHeadings(), ['떨어져 나감 1']);
+        assert.deepEqual(await p.locator('#left .detached li code').allTextContents(), ['/gone#Gone']);
+      })));
+});
+
 test('a map.json built before links carried their conditions leaves the stories out with a message asking to rebuild apart from the story file notes, keeps the marks on stories attached, and the rest of the data and the task list still work', async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, async (config) => {
     const mapFile = path.join(config.outDir, 'map.json');
@@ -6610,6 +6633,97 @@ test('in a browser, the keyboard focus goes back to the bulk button that was pre
         await p.waitForFunction(() => /disk full/.test(document.querySelector('#center .bulk-error')?.textContent ?? ''));
         assert.equal(await active(), 'discard');
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+      })));
+});
+
+test('in a browser, a bulk that ends while the reviewer types in the search box leaves the focus and the typing there', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await openDocumentTable(p);
+        let held;
+        let calls = 0;
+        await p.route('**/api/judgments', (route) => {
+          calls += 1;
+          if (calls === 1) held = route;
+          else route.fulfill({ status: 500, body: 'disk full' });
+        });
+        await p.check(`${bulk} input.pick-all`);
+        await p.fill(`${bulk} input.reason`, 'only lists documents');
+        await p.click(`${bulk} button.discard`);
+        await untilSet(() => held, 'the first judgment request');
+        const search = '#left input[type=search]';
+        await p.click(search);
+        await p.keyboard.type('Document');
+        await p.$eval(search, (el) => { el.kept = true; });
+        await held.continue();
+        await p.locator(`${bulk} .bulk-error`).waitFor();
+        assert.equal(await p.evaluate((sel) => document.activeElement.matches(sel) && document.activeElement.kept, search), true);
+        await p.keyboard.type(' Table');
+        assert.equal(await p.inputValue(search), 'Document Table');
+        assert.equal(calls, 2);
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+      })));
+});
+
+test('in a browser, a bulk that ends while the reviewer types the author name leaves the focus and the typing in the same box', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, null, (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        const author = '#author input';
+        await p.fill(author, 'rev');
+        let held;
+        await p.route('**/api/judgments', (route) => { held ??= route; if (route !== held) route.continue(); });
+        await p.check(`${bulk} input.pick-all`);
+        await p.click(`${bulk} button.hand-over`);
+        await untilSet(() => held, 'the first judgment request');
+        await p.click(author);
+        await p.keyboard.press('End');
+        await p.keyboard.type('iew');
+        await p.$eval(author, (el) => { el.kept = true; });
+        await held.continue();
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
+        assert.equal(await p.evaluate((sel) => document.activeElement.matches(sel) && document.activeElement.kept, author), true);
+        await p.keyboard.type('er');
+        assert.equal(await p.inputValue(author), 'reviewer');
+      })));
+});
+
+test('in a browser, the author box shows the name another window stored once the page is drawn again, but not while the reviewer types in it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, null, (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const author = '#author input';
+        await p.fill(author, 'bob');
+        await p.evaluate(() => localStorage.setItem('duru.author', 'alice'));
+        await p.click('#screen-list li:has-text("/lab/result")');
+        assert.equal(await p.inputValue(author), 'alice');
+
+        await p.click(author);
+        await p.keyboard.press('End');
+        await p.keyboard.type(' k');
+        await p.evaluate(() => {
+          localStorage.setItem('duru.author', 'carol');
+          document.querySelector('#screen-list li:not(.selected)').click();
+        });
+        assert.equal(await p.evaluate((sel) => document.activeElement.matches(sel), author), true);
+        assert.equal(await p.inputValue(author), 'alice k');
+      })));
+});
+
+test('in a browser, a bulk that judges every pair moves the keyboard focus to the heading of the pairs', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openDocumentTable(p);
+        await p.check(`${bulk} input.pick-all`);
+        await p.focus(`${bulk} button.hand-over`);
+        await p.keyboard.press('Enter');
+        await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
+        assert.equal(await p.locator(bulk).count(), 0);
+        assert.equal(await p.evaluate(() => document.activeElement.matches('#center .test-pairs h2')), true);
       })));
 });
 
