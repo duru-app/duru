@@ -104,7 +104,8 @@
   .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved, .chip.v-unchecked { color: var(--muted); }
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
-  .importers p, .detached p { font-size: 12px; margin: 0 0 8px; }
+  .importers p, .detached p, .passed p { font-size: 12px; margin: 0 0 8px; }
+  .chip.level-assert { color: var(--pass); } .chip.level-interact { color: var(--accent); } .chip.level-visit { color: var(--muted); }
   .importer .judge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
   .importer .judge-row button, .importer button.undo, .bulk-bar button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
   .discarded .importer, .awaiting-tag .importer, .detached .importer { margin-bottom: 10px; font-size: 12px; }
@@ -304,7 +305,7 @@ const MIXED_KINDS = '링크마다 다름';
 const VALUE_LABEL = { true: '켬', false: '끔' };
 const SCREEN_FILTERS = [
   { key: 'no-tests', label: '테스트 없음만', keep: (s) => testsOf(s.id).length === 0 },
-  { key: 'imported-only', label: '지나간 테스트만 있음', title: '화면 테스트는 없고, 이 화면의 소스 파일을 불러오는 테스트만 있는 화면. 태그를 기다리는 짝은 세고, 제외한 짝은 세지 않습니다', keep: (s) => testsOf(s.id).length === 0 && importersOf(s.id).length + awaitingTagOf(s.id).length > 0 },
+  { key: 'imported-only', label: '지나간 테스트만 있음', title: '화면 테스트는 없고, 이 화면의 소스 파일을 불러오거나 도는 동안 이 화면을 연 테스트만 있는 화면. 태그를 기다리는 짝은 세고, 제외한 짝은 세지 않습니다', keep: (s) => testsOf(s.id).length === 0 && importersOf(s.id).length + awaitingTagOf(s.id).length + passedOf(s.id).length > 0 },
   { key: 'dead', label: '죽은 화면', keep: (s) => s.dead, needsServerList: true },
   { key: 'setting', label: '특정 설정에서만 열림', keep: (s) => s.access.kinds.includes('setting') },
   { key: 'role', label: '특정 역할에서만 열림', keep: (s) => s.access.kinds.includes('role') },
@@ -349,6 +350,7 @@ const targetName = (t) => (t.story !== undefined
 const ownTests = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
 const testsOf = (id) => ownTests(state.data.tests.nodes, id);
 const importersOf = (id) => ownTests(state.data.tests.importers, id);
+const passedOf = (id) => ownTests(state.data.tests.passed, id);
 const discardedOf = (id) => ownTests(state.data.tests.discarded, id);
 const awaitingTagOf = (id) => ownTests(state.data.tests.awaitingTag, id);
 const detachedOf = (id) => ownTests(state.data.tests.detachedHandOvers, id);
@@ -571,6 +573,7 @@ function renderLeftList() {
         markChip(markOf({ node: s.id })),
         h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'),
         importersOf(s.id).length ? h('span', { class: 'count importer-count', title: '이 화면의 소스 파일을 불러오는 단위 테스트' }, `불러옴 ${importersOf(s.id).length}`) : null,
+        passedOf(s.id).length ? h('span', { class: 'count passed-count', title: '이 화면의 태그 없이, 도는 동안 이 화면을 연 브라우저 테스트' }, `지나감 ${passedOf(s.id).length}`) : null,
         waiting ? h('span', { class: 'count awaiting-count', title: '이 화면의 테스트로 포함해 태그를 기다리는 테스트' }, `태그 대기 ${waiting}`) : null));
   }));
   if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 화면이 없습니다.'));
@@ -785,6 +788,27 @@ const undoButton = (t, node) => h('button', { class: 'undo', onclick: () => save
 function detachedItem(t) {
   return h('div', { class: 'test' },
     h('span', { class: 'muted mono' }, t.ref.file), ' ', t.ref.title);
+}
+
+const PASS_LEVEL = { assert: '확인함', interact: '조작함', visit: '지나감' };
+const PASS_LEVEL_TITLE = { assert: '이 화면이 열려 있을 때 확인문을 실행했습니다', interact: '이 화면이 열려 있을 때 누르거나 입력했습니다', visit: '이 화면을 열기만 했습니다' };
+
+function passedItem(t) {
+  return h('div', { class: 'test' },
+    h('span', { class: `chip level-${t.level}`, title: PASS_LEVEL_TITLE[t.level] }, PASS_LEVEL[t.level]), ' ',
+    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', t.title, ' ',
+    h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
+    t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
+    h('div', { class: 'detail' }, '결과 파일 ', h('span', { class: 'mono' }, t.source)));
+}
+
+function passedTests(s) {
+  const order = Object.keys(PASS_LEVEL);
+  const passed = [...passedOf(s.id)].sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level));
+  return passed.length ? h('div', { class: 'passed' },
+    h('h2', {}, `지나간 테스트 ${passed.length}`),
+    h('p', { class: 'muted' }, '도는 동안 이 화면을 연 브라우저 테스트입니다. 이 화면의 태그가 없어서 이 화면의 테스트로 세지 않습니다.'),
+    passed.map(passedItem)) : null;
 }
 
 function importerTests(s) {
@@ -1420,6 +1444,7 @@ function renderCenter() {
         h('td', { class: 'depth' }, r.label),
         h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map(testItem) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
         h('td', { class: 'mark' }, markChip(markOf(r.target)) ?? h('span', { class: 'muted' }, '—')))))),
+    passedTests(s),
     importerTests(s),
     callTable(s),
   );
@@ -1871,15 +1896,17 @@ function subtreeCounts(root) {
   const calls = new Map();
   let total = { pass: 0, fail: 0, pending: 0 };
   let imported = 0;
+  let passed = 0;
   const walk = (n) => {
     total = addCounts(total, n.counts);
     imported += n.imported;
+    passed += n.passed;
     for (const c of n.calls) calls.set(c.id, c.counts);
     n.children.forEach(walk);
   };
   walk(root);
   for (const c of calls.values()) total = addCounts(total, c);
-  return { ...total, imported };
+  return { ...total, imported, passed };
 }
 const NO_TESTS = '테스트 없음';
 const statusOf = (c) => (c.fail ? 's-fail' : c.pending ? 's-pending' : c.pass ? 's-pass' : 's-none');
@@ -2277,6 +2304,7 @@ function screenBox(b) {
   const callsOpen = state.openCalls.has(n.id);
   const counts = b.collapsed ? subtreeCounts(n) : n.counts;
   const imported = b.collapsed ? counts.imported : n.imported;
+  const passed = b.collapsed ? counts.passed : n.passed;
   const showCalls = n.calls.length > 0 && !b.collapsed;
   const guardLabel = n.guards.length ? guardText(n.guards) : null;
   const l3text = [guardLabel ? `조건 ${guardLabel}` : null, ...n.jumps.map((j) => `→ ${j.label}`)].filter(Boolean).join(' · ');
@@ -2309,7 +2337,7 @@ function screenBox(b) {
         e.stopPropagation();
         focusOn(n.id);
       } }, '이 가지만') : null) : null,
-    h('div', { class: 'l2' }, countText(counts), b.collapsed ? h('span', {}, ' (하위 합)') : null, imported ? ` · 불러옴 ${imported}` : '', badges ? ` · ${badges}` : ''),
+    h('div', { class: 'l2' }, countText(counts), b.collapsed ? h('span', {}, ' (하위 합)') : null, imported ? ` · 불러옴 ${imported}` : '', passed ? ` · 지나감 ${passed}` : '', badges ? ` · ${badges}` : ''),
     needs.lines.map(needLine),
     l3text || showCalls
       ? h('div', { class: 'l3' },
@@ -2436,7 +2464,7 @@ function renderFlow() {
     h('button', { class: 'flowinfo-button', 'aria-label': '흐름도 읽는 법', 'aria-expanded': 'false', 'aria-controls': 'flowlegend', onclick: () => setLegend(legendInfo, !state.legendOpen) }, 'i'),
     h('ul', { class: 'flowlegend', id: 'flowlegend' },
       h('li', {}, h('span', { class: 'sample' }, '→ /주소'), h('span', {}, '다른 가지에 이미 그린 화면으로 가는 링크')),
-      h('li', {}, h('span', { class: 'sample' }, '불러옴 N'), h('span', {}, '태그 없이 이 화면을 불러오는 단위 테스트', h('small', {}, '테두리와 테스트 수에는 넣지 않음')))));
+      h('li', {}, h('span', { class: 'sample' }, '불러옴 N · 지나감 N'), h('span', {}, '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 연 브라우저 테스트', h('small', {}, '테두리와 테스트 수에는 넣지 않음')))));
   fill(flow,
     h('div', { class: 'flowbar' },
       h('strong', { class: 'flowsummary' }, `테스트 있는 화면 ${summary.tested}/${summary.screens} · 실패 ${summary.failing} · 태그 없는 테스트만 있는 화면 ${summary.importedOnly}`),

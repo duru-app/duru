@@ -1,0 +1,772 @@
+{
+  "config": {
+    "projects": []
+  },
+  "suites": [
+    {
+      "title": "no-snapshots.spec.ts",
+      "file": "no-snapshots.spec.ts",
+      "line": 0,
+      "column": 0,
+      "specs": [
+        {
+          "title": "presses the button without snapshots",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/no-snapshots-presses-the-button-without-snapshots-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "fe124a94d4c731fb76ee-631fc0b9af81b2231b48",
+          "file": "no-snapshots.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "untraced.spec.ts",
+      "file": "untraced.spec.ts",
+      "line": 0,
+      "column": 0,
+      "specs": [
+        {
+          "title": "opens help without a trace",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d9e4c38f538edfff9ed2-ffa4f670f15883b18d52",
+          "file": "untraced.spec.ts",
+          "line": 5,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "visits.spec.ts",
+      "file": "visits.spec.ts",
+      "line": 0,
+      "column": 0,
+      "specs": [
+        {
+          "title": "opens home and then help",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-opens-home-and-then-help-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-47edd8248868948935dc",
+          "file": "visits.spec.ts",
+          "line": 3,
+          "column": 1
+        },
+        {
+          "title": "presses the button on home",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-presses-the-button-on-home-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-5bf247bd16e9e1e25505",
+          "file": "visits.spec.ts",
+          "line": 8,
+          "column": 1
+        },
+        {
+          "title": "checks the path of a document",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-checks-the-path-of-a-document-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-8d60324436bc89dcac03",
+          "file": "visits.spec.ts",
+          "line": 13,
+          "column": 1
+        },
+        {
+          "title": "moves to the drafts without loading a page",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-moves-to-the-drafts-without-loading-a-page-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-9cb1599a2c9fa8a15998",
+          "file": "visits.spec.ts",
+          "line": 18,
+          "column": 1
+        },
+        {
+          "title": "wanders off the map",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-wanders-off-the-map-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-9959855c9aa469cdca11",
+          "file": "visits.spec.ts",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "home shows its path @screen:/home#Home",
+          "ok": true,
+          "tags": [
+            "screen:/home#Home"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-home-shows-its-path-screen-home-Home-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-4f52e872fd12a94c6f20",
+          "file": "visits.spec.ts",
+          "line": 29,
+          "column": 1
+        },
+        {
+          "title": "follows a link while waiting for the new address",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-follows-a-link-while-waiting-for-the-new-address-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-adc01c7e5b9a674bc386",
+          "file": "visits.spec.ts",
+          "line": 34,
+          "column": 1
+        },
+        {
+          "title": "hovers and uses the keyboard on help",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-hovers-and-uses-the-keyboard-on-help-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-1cb0c2bfccf35f5f5df1",
+          "file": "visits.spec.ts",
+          "line": 47,
+          "column": 1
+        },
+        {
+          "title": "clicks on a blank page after leaving home",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-clicks-on-a-blank-page-after-leaving-home-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-255c9c200a319e5fc5ab",
+          "file": "visits.spec.ts",
+          "line": 53,
+          "column": 1
+        },
+        {
+          "title": "uses the mouse right after the address changes",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-uses-the-mouse-right-after-the-address-changes-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-03401c4ed63f70e6c250",
+          "file": "visits.spec.ts",
+          "line": 60,
+          "column": 1
+        },
+        {
+          "title": "checks a text that appears after the address changes",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-checks-a-text-that-appears-after-the-address-changes-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-55697be62cf50e0846ab",
+          "file": "visits.spec.ts",
+          "line": 69,
+          "column": 1
+        },
+        {
+          "title": "clicks a button that appears after the address changes",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-clicks-a-button-tha-72e64-s-after-the-address-changes-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-1372aa615a76205aa930",
+          "file": "visits.spec.ts",
+          "line": 80,
+          "column": 1
+        },
+        {
+          "title": "gives up on a button and on a text that are not there",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-gives-up-on-a-button-and-on-a-text-that-are-not-there-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-ca2721b157741ee99af1",
+          "file": "visits.spec.ts",
+          "line": 94,
+          "column": 1
+        },
+        {
+          "title": "calls the server without opening a page",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-calls-the-server-without-opening-a-page-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-a7e405a8c68ee0aa14b2",
+          "file": "visits.spec.ts",
+          "line": 100,
+          "column": 1
+        },
+        {
+          "title": "opens the app from a file",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-opens-the-app-from-a-file-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-c64347ad77097d4640d5",
+          "file": "visits.spec.ts",
+          "line": 105,
+          "column": 1
+        },
+        {
+          "title": "moves the mouse and turns the wheel on help",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-moves-the-mouse-and-turns-the-wheel-on-help-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-4e6feaefb762d5af35ca",
+          "file": "visits.spec.ts",
+          "line": 110,
+          "column": 1
+        },
+        {
+          "title": "types into a field and submits with the keyboard",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-types-into-a-field-and-submits-with-the-keyboard-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-f38a8411feaea9b54bb3",
+          "file": "visits.spec.ts",
+          "line": 116,
+          "column": 1
+        },
+        {
+          "title": "gives up on a button that is covered",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-gives-up-on-a-button-that-is-covered-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-cec1e943e9825f8091dd",
+          "file": "visits.spec.ts",
+          "line": 131,
+          "column": 1
+        },
+        {
+          "title": "checks a box that refuses to change",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-checks-a-box-that-refuses-to-change-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-2cac19c3a9cb6d02b277",
+          "file": "visits.spec.ts",
+          "line": 141,
+          "column": 1
+        },
+        {
+          "title": "runs out of time while typing slowly",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-runs-out-of-time-while-typing-slowly-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-7ce8d842ba781b6a9304",
+          "file": "visits.spec.ts",
+          "line": 153,
+          "column": 1
+        },
+        {
+          "title": "gives up on a field that is switched off",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/visits-gives-up-on-a-field-that-is-switched-off-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "2d4e657dba403356b104-3aa66ad21e8fcc6bbe43",
+          "file": "visits.spec.ts",
+          "line": 163,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-03T00:00:00.000Z",
+    "duration": 4400,
+    "expected": 23,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

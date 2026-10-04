@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
+import { readPlaywright } from '../src/playwright.mjs';
 import { linkTests } from '../src/test-links.mjs';
 
 const FIXTURE_CONFIG = path.join(import.meta.dirname, 'fixtures/app/config.json');
@@ -454,3 +455,70 @@ test('the untagged list is ordered by the test file the page shows, not by the p
     assert.deepEqual(result.untagged.map((t) => t.testFile), ['components/Help.spec.js', 'store/settings.spec.js']);
   }, ['vitest']);
 });
+
+const traced = { ...config, tests: [...config.tests, { format: 'playwright', path: path.join(path.dirname(FIXTURE_CONFIG), 'results/playwright-traced'), depth: 'ui' }] };
+const tracedLinks = linkTests(traced, await buildMap(traced));
+const passedAt = (id) => tracedLinks.passed[id].map((t) => `${t.level} ${t.title}`);
+
+test('a browser test is linked to each screen it opened with the highest of what it did there: opening, acting or checking', () => {
+  assert.deepEqual(passedAt('/help#Help'), [
+    'visit opens home and then help',
+    'assert follows a link while waiting for the new address',
+    'interact hovers and uses the keyboard on help',
+    'interact uses the mouse right after the address changes',
+    'interact clicks a button that appears after the address changes',
+    'interact moves the mouse and turns the wheel on help',
+  ]);
+  assert.ok(passedAt('/home#Home').includes('interact presses the button on home'));
+  assert.ok(passedAt('/home#Home').includes('visit opens home and then help'));
+});
+
+test('an address with a value in it or a query after it is linked to the screen of its route', () => {
+  assert.deepEqual(passedAt('/document/:id#DocumentDetail'), ['assert checks the path of a document']);
+  assert.ok(passedAt('/home#Home').includes('interact presses the button on home'));
+});
+
+test('a passed test carries its place, its result file, its project, its depth and its status', () => {
+  const [t] = tracedLinks.passed['/document/:id#DocumentDetail'];
+  assert.deepEqual(t, { title: 'checks the path of a document', file: 'visits.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/visits.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'assert' });
+  assert.equal(typeof t.line, 'number');
+});
+
+test('a test already tagged with a screen is not among the tests that passed through it, and an address off the map is linked to nothing', () => {
+  assert.equal(passedAt('/home#Home').some((t) => t.includes('home shows its path')), false);
+  assert.ok(tracedLinks.nodes['/home#Home'].some((t) => t.title.startsWith('home shows its path')));
+  assert.equal(Object.values(tracedLinks.passed).flat().some((t) => t.title === 'wanders off the map'), false);
+});
+
+test('tests that passed through a screen leave the tests of the screens, the untagged list of the other results and the screens with tests as they were', () => {
+  const covered = (l) => Object.keys(l.nodes).filter((id) => !id.includes(':/')).sort();
+  assert.deepEqual(covered(tracedLinks), covered(links));
+  for (const id of Object.keys(links.nodes)) {
+    const own = (l) => l.nodes[id].filter((t) => t.source !== 'results/playwright-traced/visits.json');
+    assert.deepEqual(own(tracedLinks), own(links), id);
+  }
+  assert.deepEqual(links.passed, {});
+  assert.deepEqual(links.traceNotices, []);
+});
+
+test('a trace that cannot be read is noticed with its file and the reason, and a browser test that ran without a trace is only counted', () => {
+  assert.deepEqual(tracedLinks.traceNotices, [
+    { file: 'results/playwright-traced/test-results/no-snapshots-presses-the-button-without-snapshots-chromium/trace.zip', test: { title: 'presses the button without snapshots', file: 'no-snapshots.spec.ts', line: 5 }, reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' },
+  ]);
+  const untraced = (l) => l.untracedCount;
+  assert.equal(untraced(tracedLinks) - untraced(links), 1);
+});
+
+test('browser tests that were skipped are not counted as run without a trace, and the tests of other formats never are', () => {
+  const all = ['e2e.json', 'export.json'].flatMap((file) => readPlaywright(path.join(path.dirname(FIXTURE_CONFIG), 'results/playwright', file)));
+  const ran = all.filter((t) => t.status !== 'pending');
+  assert.ok(ran.length < all.length);
+  assert.equal(links.untracedCount, ran.length);
+});
+
+test('the tests that passed through the screens come out in the same order every time', async () => {
+  const again = linkTests(traced, await buildMap(traced));
+  assert.deepEqual(again.passed, tracedLinks.passed);
+  assert.deepEqual(Object.keys(again.passed), Object.keys(tracedLinks.passed));
+});
+

@@ -3998,7 +3998,7 @@ test('in a browser, each legend sample is drawn with the border of the boxes and
   );
 });
 
-test('in a browser, the explanation behind the info icon holds only the jump and the imported-test samples, and no sentence of the old prose is left on the page', { skip: browserMissing }, async () => {
+test('in a browser, the explanation behind the info icon holds only the jump and the untagged-test samples, and no sentence of the old prose is left on the page', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -4009,7 +4009,7 @@ test('in a browser, the explanation behind the info icon holds only the jump and
         assert.equal(await legend.evaluate((e) => e.tagName), 'UL');
         assert.deepEqual(await legend.locator('li').evaluateAll((items) => items.map((li) => [...li.children].map((c) => c.textContent))), [
           ['→ /주소', '다른 가지에 이미 그린 화면으로 가는 링크'],
-          ['불러옴 N', '태그 없이 이 화면을 불러오는 단위 테스트테두리와 테스트 수에는 넣지 않음'],
+          ['불러옴 N · 지나감 N', '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 연 브라우저 테스트테두리와 테스트 수에는 넣지 않음'],
         ]);
         assert.equal(await legend.locator('li small').textContent(), '테두리와 테스트 수에는 넣지 않음');
         const page = await p.evaluate(() => document.body.textContent);
@@ -5852,6 +5852,55 @@ test('in a browser, a 「죽은 화면」 filter left checked does not hide ever
         assert.equal(await p.locator('#screen-list li').count(), 11);
       }));
   });
+});
+
+const TRACED = { tests: [
+  { format: 'playwright', path: 'results/playwright', depth: 'ui' },
+  { format: 'junit', path: 'results/junit', depth: 'api' },
+  { format: 'vitest', path: 'results/vitest', depth: 'code' },
+  { format: 'verdict', path: 'results/verdict/documents', depth: 'api' },
+  { format: 'verdict', path: 'results/verdict/storage', depth: 'data' },
+  { format: 'playwright', path: 'results/playwright-traced', depth: 'ui' },
+] };
+
+test('in a browser, a screen shows the untagged browser tests that passed through it under its own tests, the ones that checked something first, each with what it did there, its place and its result file', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(TRACED, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const testedBefore = await p.textContent('#meta');
+        const help = p.locator('#screen-list li:has-text("/help")');
+        assert.equal(await help.locator('.passed-count').textContent(), '지나감 6');
+        await help.click();
+        assert.equal(await p.textContent('#center .passed h2'), '지나간 테스트 6');
+        assert.deepEqual(await p.locator('#center .passed .test').evaluateAll((list) => list.map((el) => el.querySelector('.chip').textContent)), ['확인함', '조작함', '조작함', '조작함', '조작함', '지나감']);
+        const first = await p.textContent('#center .passed .test >> nth=0');
+        assert.match(first, /확인함 통과 follows a link while waiting for the new address visits\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/visits\.json/);
+        assert.equal(await p.locator('#center .passed button').count(), 0);
+        assert.deepEqual(await p.$$eval('#center-body > table, #center .passed, #center .importers', (list) => list.map((el) => el.className || el.localName)), ['table', 'passed', 'importers']);
+        assert.match(testedBefore, /테스트 있는 화면 7/);
+
+        await p.click('#view-flow');
+        assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), /불러옴 2 · 지나감 6/);
+      })));
+});
+
+test('in a browser, a screen with no tests of its own that browser tests passed through is kept by 「지나간 테스트만 있음」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(TRACED, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const res = await route.fetch();
+          const data = await res.json();
+          delete data.tests.nodes['/document/:id#DocumentDetail'];
+          await route.fulfill({ response: res, json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.check('#left input[name="imported-only"]');
+        assert.equal(await p.locator('#screen-list li').count(), 1);
+        assert.equal(await p.locator('#screen-list li:has-text("/document/:id")').count(), 1);
+      })));
 });
 
 const HELP_TEST = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' };

@@ -4,6 +4,7 @@ import { compare } from './config.mjs';
 import { importLinker } from './import-links.mjs';
 import { readJunit } from './junit.mjs';
 import { readPlaywright } from './playwright.mjs';
+import { traceLinker } from './trace-links.mjs';
 import { readVerdicts } from './verdict.mjs';
 import { readVitest } from './vitest.mjs';
 
@@ -45,6 +46,11 @@ export function linkTests(config, map) {
   const linkByImports = importLinker(config.srcRoot, map);
   const importers = {};
   const importNotices = [];
+  const linkByTrace = traceLinker(map);
+  const passed = {};
+  const traceNotices = [];
+  let untracedCount = 0;
+  const shownPath = (file) => (path.relative(config.configDir, file).startsWith('..') ? file : path.relative(config.configDir, file));
   const reportUnknown = (tag, t, testKey) => {
     if (seenUnknown.has(`${tag} ${testKey}`)) return;
     seenUnknown.add(`${tag} ${testKey}`);
@@ -89,6 +95,16 @@ export function linkTests(config, map) {
             (importers[id] ??= []).push({ title: t.title, file: t.file, line: t.line, source: resultPath, format: source.format, depth, status: t.status, testFile: link.file, via });
           }
         }
+        if (t.trace) {
+          const trace = linkByTrace(t.trace);
+          if (trace.reason) traceNotices.push({ file: shownPath(t.trace), test: { title: t.title, file: t.file, line: t.line }, reason: trace.reason });
+          for (const [id, level] of trace.screens ?? []) {
+            if (t.tags.includes(`screen:${id}`)) continue;
+            (passed[id] ??= []).push({ title: t.title, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status, level });
+          }
+        } else if (source.format === 'playwright' && t.status !== 'pending') {
+          untracedCount += 1;
+        }
         if (nodeTags.length === 0 && storyTags.length === 0) {
           const seen = untagged.get(testKey);
           if (!seen) untagged.set(testKey, { title: t.title, file: t.file, line: t.line, source: resultPath, format: source.format, status: t.status, ...(link?.file && { testFile: link.file }) });
@@ -111,5 +127,5 @@ export function linkTests(config, map) {
     }
   }
 
-  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, unknownTags, untagged: [...untagged.values()].sort(byTest), untaggedCount: untagged.size, missingSources };
+  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, passed, traceNotices, untracedCount, unknownTags, untagged: [...untagged.values()].sort(byTest), untaggedCount: untagged.size, missingSources };
 }

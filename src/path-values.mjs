@@ -43,6 +43,24 @@ function fill(parts, values) {
 
 export const fillPath = (routePath, values) => fill(pathParts(routePath), values);
 
+const escapeText = (s) => s.replace(/[.+*?=^!:${}()[\]|/\\]/g, '\\$&');
+
+// exact 라우트처럼 경로 전체가 맞아야 하고, path-to-regexp 1.x 처럼 끝의 / 하나와 대소문자는 가리지 않는다.
+export function routePattern(routePath) {
+  let source = '';
+  for (const p of pathParts(routePath)) {
+    if (!isVariable(p)) {
+      source += escapeText(p);
+      continue;
+    }
+    const prefix = escapeText(p.prefix);
+    let capture = `(?:${p.pattern ?? `[^${escapeText(p.prefix || '/')}]+?`})`;
+    if (p.repeat) capture += `(?:${prefix}${capture})*`;
+    source += p.optional ? `(?:${prefix}${capture})?` : prefix + capture;
+  }
+  return new RegExp(`^${source.replace(/\\\/$/, '')}(?:\\/(?=$))?$`, 'i');
+}
+
 export const opensAsIs = (routePath) => !routePath.includes(UNKNOWN) && !pathParts(routePath).some(isVariable);
 
 export function fallbackScreen(map, screen, pathValues = {}, role = null) {
