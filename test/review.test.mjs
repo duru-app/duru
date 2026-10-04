@@ -4125,6 +4125,14 @@ test('in a browser, the explanation behind the info icon holds only the jump and
         assert.ok(box.width <= 320, `the explanation is ${box.width}px wide`);
         assert.ok(box.left >= 0 && box.right <= box.visible, `explanation ${box.left}..${box.right} within ${box.visible}`);
         assert.equal(box.overflowing, 0, 'nothing in the explanation is cut off');
+        const rows = await legend.locator('li').evaluateAll((items) => items.map((li) => {
+          const [sample, text] = [...li.children].map((c) => c.getBoundingClientRect());
+          return { below: text.top >= sample.bottom - 1, text: Math.round(text.width), row: Math.round(li.getBoundingClientRect().width) };
+        }));
+        for (const r of rows) {
+          assert.ok(r.below, 'the description sits under its sample');
+          assert.equal(r.text, r.row, 'the description takes the whole width, however long the sample is');
+        }
       }, { view: 'flow' }),
     ),
   );

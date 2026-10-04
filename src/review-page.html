@@ -195,6 +195,7 @@
   .flowlegend, .pathlegend { display: none; position: absolute; right: 16px; top: 100%; width: min(320px, calc(100% - 32px)); box-sizing: border-box; flex-direction: column; gap: 6px; margin: 0; padding: 10px 12px; list-style: none; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.5; color: var(--muted); }
   .flowinfo.shown .flowlegend, .pathinfo.shown .pathlegend { display: flex; }
   :is(.flowlegend, .pathlegend) li { display: grid; grid-template-columns: max-content 1fr; column-gap: 8px; }
+  .flowlegend li { grid-template-columns: 1fr; }
   :is(.flowlegend, .pathlegend) .sample { color: var(--text); }
   .flowlegend small { display: block; font-size: 11px; }
   .flowlegend::before { content: ''; position: absolute; left: -1px; right: -1px; top: calc(-1 * var(--bar-pad) - 2px); height: calc(var(--bar-pad) + 8px); }
