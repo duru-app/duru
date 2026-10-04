@@ -62,7 +62,8 @@ relative to the config file, except the files inside the client source (`routesF
 - `redirectElements`, `entryPaths` — how fallback redirects are declared in the routes file (default
   `Redirect`), and route paths of further screens users start from when the code does not show them
 - `serverEndpoints`, `apiPathPrefix` — one or more server endpoint lists
-  (`<label>\t<METHOD>\t<path>` per line, `{var}` for path variables)
+  (`<label>\t<METHOD>\t<path>` per line, `{var}` for path variables); `serverEndpoints` may be left out, see
+  `unchecked` below
 - `tests` — test results to attach, each `{ "format": <playwright|junit|vitest|verdict>, "path": <file or folder>, "depth": <ui|api|render|code|data|output> }`.
   A folder is searched for `.json` files (Playwright, Vitest), `.xml` files (JUnit) or `.txt` and `.log`
   files (verdict); files in another format are skipped
@@ -204,13 +205,23 @@ Each API call is also a node under `calls`, with an ID of the form `<METHOD>:<pa
   in `server.candidates`
 - `none` — the client's URL without `apiPathPrefix`, starting with `/`
 - `unresolved` — the URL cannot be computed from the source, so there is no call node
+- `unchecked` — the call was not compared with the server because there is no server endpoint list: no
+  `serverEndpoints` setting, or lists with no endpoint line. `map.json` then carries a top-level
+  `serverNotCompared: true` (the field is left out when a list is read), and `rebuild` adds the unchecked count
+  to its server line and prints a line saying the comparison was skipped. The task list says so too, in a
+  line under its intro. An unchecked call's ID is the client's URL without `apiPathPrefix`, as for `none`,
+  with `{0}`, `{1}` for path variables (`GET:/api/v1/document/{0}`), so once a server list is added the ID of
+  a call with path variables can change to the server's path (`GET:/api/v1/document/{documentId}`); tags and
+  option keys written against the earlier ID then point outside the map. A call whose URL cannot be computed
+  stays `unresolved`.
 
 When several server paths fit one call, the one whose path variables and fixed names line up with the
 client URL wins, then the first in sorted order. The same character replacement as for screen IDs applies.
 Each call node lists its `method`, `path`, `server` match, the API functions that make it and the screens
 that reach it. Every endpoint under `apiFunctions` carries the `callId` of its node (`null` when unresolved),
 and a screen is marked `dead: true` when it reaches a call whose server match is `none`. An unresolved call
-alone does not make a screen dead.
+alone does not make a screen dead. Neither does an `unchecked` one: without a server list no call is dead and
+no screen is a dead screen, and the task list does not write such a call as missing on the server.
 
 Each call node also lists the on/off `options` of its request body, read where a screen calls the API
 function. The body is an object written into the call's arguments, or the object under a `bodyArgKeys`
@@ -490,7 +501,9 @@ down; the calls stack under the box, indented within the column, and every line 
 too long for it; when one branch is shown on its
 own, nothing is gathered. 「목록」 switches to the list described
 here. The left column lists the screens with a "no tests" filter, a "dead
-screens" filter, which keeps the screens that call an API missing on the server, and "opens only under a
+screens" filter, which keeps the screens that call an API missing on the server (left out when there is no
+server list, which also adds a 「서버 대조 안 함」 chip to the header line, with the reason in a popover on
+hover or keyboard focus, and shows the calls as 「대조 안 함」), and "opens only under a
 setting" and "opens only under a role" filters read from `access.kinds`; a screen that needs both shows under
 either, and a restricted screen with empty `kinds` shows under 「링크마다 다름」 instead. With `app` set, the middle starts with the chosen screen's app in a frame, served by duru on an address of
 its own and already logged in, so the reviewer can use it while marking; the line above the frame shows its
@@ -534,9 +547,9 @@ sets it, else the default in the map, then down the rest of the path. A setting 
 longer counted as changed. A setting that only has to be present is met by a truthy value. When the
 settings file could not be run, the line says so and the page uses the map's defaults. Below
 that, the middle shows the chosen screen's tests grouped by depth and, below them, its API calls: one row
-per call with its server match (on the server with its labels, method mismatch, not on the server, or
-unresolved) and one cell per depth counting the call's tests. Under a call with on/off options, each option
-has an on row and an off row, holding the tests that set it to that value, and one more row counts the tests
+per call with its server match (on the server with its labels, method mismatch, not on the server,
+unresolved, or 「대조 안 함」 when there is no server list) and one cell per depth counting the call's tests.
+Under a call with on/off options, each option has an on row and an off row, holding the tests that set it to that value, and one more row counts the tests
 with no option tag. The options are the same as in the task list: those this screen sends in the source and
 those added to the call in `bodyOptions`, the latter tagged 「설정」. An on or off row with no tests at all
 stands out in red; the no-option row takes no marks. A call whose address could not be worked out

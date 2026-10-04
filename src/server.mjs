@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 
+export const SERVER_NOT_COMPARED = 'Server comparison skipped: the server API list is absent or has no endpoint lines';
+
 // 한 줄에 「라벨<TAB>METHOD<TAB>경로」. 경로 변수 {id} 는 한 칸짜리 자리로 본다.
 export function loadServerEndpoints(file) {
   return fs
@@ -40,6 +42,7 @@ export function matchEndpoint(server, method, url, apiPathPrefix) {
   if (typeof url !== 'string') return { status: 'unresolved' };
   const segs = toSegments(clientPath(url, apiPathPrefix));
   if (segs.length === 0 || segs[0] === '*') return { status: 'unresolved' };
+  if (server.length === 0) return { status: 'unchecked' };
   const byPath = server.filter((e) => sameShape(e.segments, segs));
   if (byPath.length === 0) return { status: 'none' };
   const byMethod = method ? byPath.filter((e) => e.method === method) : byPath;

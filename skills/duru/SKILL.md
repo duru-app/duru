@@ -19,6 +19,12 @@ duru never calls a model: the reviewer decides what is missing, and you write th
 
 1. **Rebuild the map.** Run `duru rebuild <config>`. It writes `map.json` and `tests.json` and prints a summary.
    Stop and report if it fails.
+   When the summary also prints an `unchecked` count and a line saying the server API list is absent, the
+   config has no server endpoint list (or one with no endpoint lines), so no call was compared with the server:
+   a call's server match is `unchecked`, no call is dead and no screen is a dead screen. The task list then
+   says under its intro that the comparison was skipped, and a task-list line `server: not checked` means the same; it does not mean the
+   endpoint is missing, so do not write a test or a fix for a missing endpoint from it. Tell the user the list
+   is missing.
 2. **Open the review page.** Run `duru review <config>` (add `--port <n>` if port 4400 is taken). It prints
    `review page http://127.0.0.1:<port>/` on standard error; give that address to the user and ask them to
    mark the screens and stories and press 「리뷰 끝」 when they are done.

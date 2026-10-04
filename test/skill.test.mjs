@@ -17,3 +17,9 @@ test('the agent skill says to copy the empty test for its runner from the task l
   assert.match(SKILL, /`import org\.junit\.jupiter\.api\.Disabled;`/);
   assert.match(SKILL, /`<verdict>` \(`UPHOLDS`, `FIXED`, `HEALTHY`\s+pass;/);
 });
+
+test('the agent skill says what an unchecked server match means when there is no server API list', () => {
+  assert.match(SKILL, /`unchecked`/);
+  assert.match(SKILL, /no call is dead and no screen is a dead screen/);
+  assert.match(SKILL, /`server: not checked`/);
+});

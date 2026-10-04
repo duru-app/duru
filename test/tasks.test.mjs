@@ -185,6 +185,59 @@ ${emptyTests(['@story:help-from-home @screen:/signin#SignIn @screen:/home#Home @
 ${emptyTests(['@story:run-lab @screen:/home#Home @screen:/lab#Lab @screen:/lab/result#LabResult', 'story_run_lab'])}
 `;
 
+test('the task list does not call an unchecked call missing on the server when there is no server API list', () => {
+  const noList = {
+    'an empty list file': ({ copy }) => {
+      fs.writeFileSync(path.join(copy, 'server-endpoints.txt'), '');
+      fs.writeFileSync(path.join(copy, 'server-endpoints-lab.txt'), '');
+    },
+    'a config without serverEndpoints': ({ configFile }) => {
+      const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+      delete config.serverEndpoints;
+      fs.writeFileSync(configFile, JSON.stringify(config));
+    },
+  };
+  for (const [name, edit] of Object.entries(noList)) {
+    withFixtureCopy((ctx) => {
+      edit(ctx);
+      ctx.cli('rebuild');
+      const tasks = ctx.cli('tasks');
+      assert.doesNotMatch(tasks, /not on the server/, name);
+      assert.match(tasks, /^ {2}- POST:\/api\/v1\/archive\/document — no tests$/m, name);
+      assert.match(tasks, /^- server: not checked$/m, name);
+    });
+  }
+});
+
+test('with no server API list the task list says under its intro that the comparison was skipped, and with a list it does not', () => {
+  const skipped = 'Server comparison skipped: the server API list is absent or has no endpoint lines, so no call below is written as missing on the server.';
+  withFixtureCopy(({ copy, cli }) => {
+    cli('rebuild');
+    assert.doesNotMatch(cli('tasks'), /Server comparison skipped/);
+
+    fs.writeFileSync(path.join(copy, 'server-endpoints.txt'), '');
+    fs.writeFileSync(path.join(copy, 'server-endpoints-lab.txt'), '');
+    cli('rebuild');
+    const lines = cli('tasks').split('\n');
+    assert.deepEqual(lines.slice(3, 8), ['', 'Source files are under `client/src`.', '', skipped, '']);
+    assert.equal(lines[8], '## /admin/member#AdminMember');
+  });
+});
+
+test('a call with a server status the task list does not know prints that status instead of saying it is not on the server', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const config = loadConfig(configFile);
+    const mapFile = path.join(config.outDir, 'map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    map.calls.find((c) => c.id === 'POST:/api/v1/archive/document').server = { status: 'ajar' };
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+    const tasks = cli('tasks');
+    assert.match(tasks, /^- server: ajar$/m);
+    assert.doesNotMatch(tasks, /^- server: not on the server$/m);
+  });
+});
+
 test('the task list carries the stories whose current mark is needs-more or missing as a group of their own, leaving out stories marked fine, stories with no mark however untested, and marks whose story file is gone', () => {
   withFixtureCopy(({ cli }) => {
     cli('rebuild');

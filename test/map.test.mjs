@@ -134,6 +134,33 @@ test('a screen that reaches a call missing on the server is dead; a call whose U
   assert.equal(list.dead, false);
 });
 
+const SERVER_LIST_ABSENT = {
+  'an empty list file': (rewrite) => {
+    rewrite('server-endpoints.txt', () => '');
+    rewrite('server-endpoints-lab.txt', () => '');
+  },
+  'a config without serverEndpoints': (rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), serverEndpoints: undefined })),
+};
+
+for (const [name, edit] of Object.entries(SERVER_LIST_ABSENT)) {
+  test(`with ${name}, no call is compared with the server: calls are unchecked, and there is no dead call or dead screen`, async () => {
+    const map = await buildCopy(edit);
+    assert.deepEqual(map.calls.map((c) => c.server.status), Array(10).fill('unchecked'));
+    const statuses = Object.values(map.apiFunctions).flatMap((f) => f.endpoints.map((e) => e.server.status));
+    assert.deepEqual([...new Set(statuses)].sort(), ['unchecked', 'unresolved']);
+    assert.deepEqual(map.apiFunctions.ajaxDownload.endpoints.map((e) => [e.server.status, e.callId]), [['unresolved', null]]);
+    assert.deepEqual(map.deadCalls, []);
+    assert.deepEqual(map.screens.filter((s) => s.dead), []);
+    assert.equal(map.serverNotCompared, true);
+  });
+}
+
+test('with a server list, the map does not say the comparison was skipped', async () => {
+  const map = await buildFixture();
+  assert.equal('serverNotCompared' in map, false);
+  assert.equal(map.calls.some((c) => c.server.status === 'unchecked'), false);
+});
+
 test('when several server paths fit a call, the ID takes the closest one, then the first in sorted order', async () => {
   const map = await buildCopy((rewrite) => rewrite('server-endpoints-lab.txt', (src) => `${src}profile-lab\tGET\t/api/v1/document/{docId}\n`));
   const detail = map.calls.find((c) => c.apiFunctions.includes('ajaxDocumentDetail'));
