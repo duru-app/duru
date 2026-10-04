@@ -730,9 +730,13 @@ of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "with
 "depth": "output" }`), or a story (`{ "story": "run-lab" }`, with no `node`, `option` or `depth`: a story has
 no cells), and records a status (`needs-more`, `missing`,
 `fine`), a note, the author and the date. The author, of a mark and of a judgment alike, is the config's `author`, else `git config user.name` in
-the config's folder, else the user name of the computer serving the page, so it is never empty; the page shows
-it in the header as 「작성자 …」 and does not ask for it, and `duru review` prints it on stderr when it starts with
-where it was read from (`config`, `git user.name` or `computer user name`). A save that fails, or goes through
+the config's folder, else the user name of the computer serving the page, so it is never empty; the page does
+not ask for it, and `duru review` prints it on stderr when it starts with
+where it was read from (`config`, `git user.name` or `computer user name`). The files always carry the author,
+but the page names it only where it tells something. The header shows 「작성자 …」 only when the name is the
+computer user name, the one a reviewer may not have meant (`authorSource` in `/api/data` is `user`). A mark or a
+judgment shows its author before its date only when some mark or judgment was left by someone other than the
+reviewer; while every one of them is the reviewer's own, each shows its date alone. A save that fails, or goes through
 but cannot reload the data, is reported above the 「표시 남기기」 button; if another target is shown by then, the
 message names the target the save was for (「스토리」 and the story's name, or the node ID with the option and
 depth as the form heading writes them), and a status or memo picked after the reviewer chooses another target,

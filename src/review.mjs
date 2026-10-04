@@ -94,7 +94,8 @@ export function reviewData(config, author, app = null, fileSettings = null) {
     })),
     routesFile: config.routesFile,
     depths: DEPTHS,
-    author,
+    author: author?.name ?? null,
+    authorSource: author?.source ?? null,
   };
 }
 
@@ -119,7 +120,7 @@ function readBody(req) {
   });
 }
 
-export async function startReviewServer(config, { port = 0, author = reviewAuthor(config).name, onDone = () => {} } = {}) {
+export async function startReviewServer(config, { port = 0, author = reviewAuthor(config), onDone = () => {} } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
   const rootDefaults = () => {
     const map = readJson(mapFile);
@@ -182,7 +183,7 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
           return send(res, 400, 'text/plain', err.message);
         }
         try {
-          const saved = saves[req.url]({ ...input, author });
+          const saved = saves[req.url]({ ...input, author: author.name });
           return send(res, 201, 'application/json', JSON.stringify(saved));
         } catch (err) {
           return send(res, 400, 'text/plain', err.message);

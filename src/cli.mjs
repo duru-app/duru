@@ -36,7 +36,7 @@ if (command === 'tasks') {
       process.stdout.write(list, () => process.exit(0));
     };
   };
-  const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author: author.name, onDone: end });
+  const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end });
   process.on('SIGINT', () => {
     try {
       end()?.();
