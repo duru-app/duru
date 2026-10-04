@@ -81,7 +81,7 @@ if (command === 'tasks') {
     const judged = applyJudgments(links, judgments);
     const pairs = (byScreen) => Object.values(byScreen).reduce((n, tests) => n + tests.length, 0);
     console.log(`links from unit tests to screens by the files they import ${pairs(judged.importers)} | test files not read ${links.importNotices.length}`);
-    console.log(`links from browser tests to screens they passed through ${pairs(links.passed)} | traces not read ${links.traceNotices.length} | browser tests that ran without a trace ${links.untracedCount}`);
+    console.log(`links from browser tests to screens they passed through and calls they sent ${pairs(links.passed)} | traces not read ${links.traceNotices.length} | browser tests that ran without a trace ${links.untracedCount}`);
     console.log(`pairs discarded by reviewers ${pairs(judged.discarded)} | judgment files skipped ${judgmentNotices.length}`);
     const onMap = new Set([...map.screens, ...map.calls].map((n) => n.id));
     let detachedOnMap = 0;

@@ -97,10 +97,14 @@ export function linkTests(config, map) {
         }
         if (t.trace) {
           const trace = linkByTrace(t.trace);
+          const traced = { title: t.title, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status };
           if (trace.reason) traceNotices.push({ file: shownPath(t.trace), test: { title: t.title, file: t.file, line: t.line }, reason: trace.reason });
           for (const [id, level] of trace.screens ?? []) {
             if (t.tags.includes(`screen:${id}`)) continue;
-            (passed[id] ??= []).push({ title: t.title, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status, level });
+            (passed[id] ??= []).push({ ...traced, level });
+          }
+          for (const id of trace.calls ?? []) {
+            if (!t.tags.includes(`call:${id}`)) (passed[id] ??= []).push({ ...traced, level: 'call' });
           }
         } else if (source.format === 'playwright' && t.status !== 'pending') {
           untracedCount += 1;

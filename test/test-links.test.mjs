@@ -494,7 +494,7 @@ test('tests that passed through a screen leave the tests of the screens, the unt
   const covered = (l) => Object.keys(l.nodes).filter((id) => !id.includes(':/')).sort();
   assert.deepEqual(covered(tracedLinks), covered(links));
   for (const id of Object.keys(links.nodes)) {
-    const own = (l) => l.nodes[id].filter((t) => t.source !== 'results/playwright-traced/visits.json');
+    const own = (l) => l.nodes[id].filter((t) => !t.source.startsWith('results/playwright-traced/'));
     assert.deepEqual(own(tracedLinks), own(links), id);
   }
   assert.deepEqual(links.passed, {});
@@ -514,6 +514,31 @@ test('browser tests that were skipped are not counted as run without a trace, an
   const ran = all.filter((t) => t.status !== 'pending');
   assert.ok(ran.length < all.length);
   assert.equal(links.untracedCount, ran.length);
+});
+
+test('a browser test is linked to each call it sent a request for, whatever value or query the address carries and with or without a page', () => {
+  assert.deepEqual(passedAt('GET:/api/v1/document/{documentId}'), ['call reads a document from the server']);
+  assert.deepEqual(passedAt('GET:/api/v1/document/list'), ['call lists the documents']);
+  assert.deepEqual(passedAt('GET:/api/v1/lab/experiment'), ['call asks for the experiment without opening a page']);
+  assert.equal(passedAt('GET:/api/v1/member/list')[0], 'call turns the pages of the member list');
+  const [t] = tracedLinks.passed['GET:/api/v1/document/{documentId}'];
+  assert.deepEqual(t, { title: 'reads a document from the server', file: 'calls.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/calls.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'call' });
+});
+
+test('a request with another method than the call, or for a path no call has, links the test to no call', () => {
+  const callPairs = Object.values(tracedLinks.passed).flat().filter((t) => t.level === 'call').map((t) => t.title);
+  assert.equal(callPairs.includes('renames a document with the wrong method'), false);
+  assert.equal(tracedLinks.passed['PUT:/api/v1/document/{documentId}/name'], undefined);
+  assert.equal(callPairs.includes('presses the button on home'), false);
+  assert.ok(passedAt('/home#Home').includes('visit renames a document with the wrong method'));
+});
+
+test('a test already tagged with a call is not among the tests that sent it, stays among those of the other calls it sent, and the tests of the call are as the tags say', () => {
+  const tagged = 'lists the documents and the members @call:GET:/api/v1/document/list';
+  assert.equal(passedAt('GET:/api/v1/document/list').some((t) => t.includes(tagged)), false);
+  assert.deepEqual(passedAt('GET:/api/v1/member/list'), ['call turns the pages of the member list', `call ${tagged}`]);
+  assert.deepEqual(tracedLinks.nodes['GET:/api/v1/document/list'].map((t) => t.title), [tagged]);
+  assert.equal(tracedLinks.nodes['GET:/api/v1/member/list'], links.nodes['GET:/api/v1/member/list']);
 });
 
 test('the tests that passed through the screens come out in the same order every time', async () => {

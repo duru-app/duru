@@ -14,7 +14,7 @@ export function loadServerEndpoints(file) {
     });
 }
 
-function toSegments(p) {
+export function toSegments(p) {
   return p
     .split('?')[0]
     .split('/')

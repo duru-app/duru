@@ -1,0 +1,218 @@
+{
+  "config": {
+    "projects": []
+  },
+  "suites": [
+    {
+      "title": "calls.spec.ts",
+      "file": "calls.spec.ts",
+      "line": 0,
+      "column": 0,
+      "specs": [
+        {
+          "title": "reads a document from the server",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/calls-reads-a-document-from-the-server-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "46988341ec65045e624a-a9dd086b3ff94c1bc788",
+          "file": "calls.spec.ts",
+          "line": 6,
+          "column": 1
+        },
+        {
+          "title": "turns the pages of the member list",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/calls-turns-the-pages-of-the-member-list-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "46988341ec65045e624a-3041fcabc52fcad7f107",
+          "file": "calls.spec.ts",
+          "line": 11,
+          "column": 1
+        },
+        {
+          "title": "lists the documents",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/calls-lists-the-documents-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "46988341ec65045e624a-9e6606fc9e297b1587c8",
+          "file": "calls.spec.ts",
+          "line": 17,
+          "column": 1
+        },
+        {
+          "title": "renames a document with the wrong method",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/calls-renames-a-document-with-the-wrong-method-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "46988341ec65045e624a-97cf002a4efaef4af739",
+          "file": "calls.spec.ts",
+          "line": 22,
+          "column": 1
+        },
+        {
+          "title": "lists the documents and the members @call:GET:/api/v1/document/list",
+          "ok": true,
+          "tags": [
+            "call:GET:/api/v1/document/list"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/calls-lists-the-documents--94b8c-ll-GET-api-v1-document-list-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "46988341ec65045e624a-2cde5d780672765ae0d0",
+          "file": "calls.spec.ts",
+          "line": 27,
+          "column": 1
+        },
+        {
+          "title": "asks for the experiment without opening a page",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/calls-asks-for-the-experiment-without-opening-a-page-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "46988341ec65045e624a-347c2c4372d4907c2abd",
+          "file": "calls.spec.ts",
+          "line": 33,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-04T00:00:00.000Z",
+    "duration": 2000,
+    "expected": 6,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

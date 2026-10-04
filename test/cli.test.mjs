@@ -56,9 +56,9 @@ function rebuildTraced(change = () => {}) {
   }
 }
 
-test('rebuild counts the screens that untagged browser tests passed through, finding the traces next to a report whose paths point elsewhere, and leaves the screens with tests as they were', () => {
+test('rebuild counts the screens that untagged browser tests passed through and the calls they sent, finding the traces next to a report whose paths point elsewhere, and leaves the screens with tests as they were', () => {
   const stdout = rebuildTraced();
-  assert.match(stdout, /^links from browser tests to screens they passed through 24 \| traces not read 1 \| browser tests that ran without a trace \d+$/m);
+  assert.match(stdout, /^links from browser tests to screens they passed through and calls they sent 34 \| traces not read 1 \| browser tests that ran without a trace \d+$/m);
   assert.match(stdout, /^screens with tests 7\/11 \|/m);
   assert.match(stdout, /^  trace results\/playwright-traced\/test-results\/no-snapshots-[^ ]+\/trace\.zip ← no-snapshots\.spec\.ts:5 presses the button without snapshots: trace 파일에 화면 스냅숏이 없어/m);
   assert.doesNotMatch(stdout, /untraced\.spec\.ts/);
@@ -69,7 +69,7 @@ test('rebuild goes on past a trace that is gone and one that is broken, and name
     fs.rmSync(path.join(results, 'visits-opens-home-and-then-help-chromium/trace.zip'));
     fs.writeFileSync(path.join(results, 'visits-presses-the-button-on-home-chromium/trace.zip'), 'not a zip');
   });
-  assert.match(stdout, /^links from browser tests to screens they passed through 21 \| traces not read 3 \|/m);
+  assert.match(stdout, /^links from browser tests to screens they passed through and calls they sent 31 \| traces not read 3 \|/m);
   assert.match(stdout, /^  trace \/builds\/app\/test-results\/visits-opens-home-and-then-help-chromium\/trace\.zip ← visits\.spec\.ts:\d+ opens home and then help: trace 파일이 없습니다$/m);
   assert.match(stdout, /^  trace results\/playwright-traced\/test-results\/visits-presses-the-button-on-home-chromium\/trace\.zip ← visits\.spec\.ts:\d+ presses the button on home: trace 파일을 열지 못했습니다: /m);
   assert.match(stdout, /^stories /m);
