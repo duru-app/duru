@@ -404,6 +404,17 @@ browser tests ran without one, then each notice, and goes on. Only
 `src/playwright-trace.mjs` knows what is inside a trace file, a format Playwright does not document; it reads
 version 8 (Playwright 1.60).
 
+The same traces link a browser test to the calls it sent. Each request in the trace is matched to a call of
+the map by its method and its path, without the query. The path is compared with the address the client code
+sends for the call (`url` under `apiFunctions` in `map.json`, with `apiPathPrefix` still in front), so no
+setting is needed: a variable in that address fits any one segment, and a request that fits several calls goes
+to the one with the fewest variables. A request that fits no call (a static file, a path of another server, the
+right path with another method) is dropped without a notice, and a call whose method duru could not read
+matches no request. `tests.json` lists the test under `passed` for the call with `level: "call"`, unless the
+test already carries that call's tag. These do not count as tests of the call, and the number of links
+`rebuild` prints for browser tests includes them. A test that only calls the server, with no page, is linked
+the same way.
+
 `test/fixtures/app` holds a small fake client with example results and a config.
 
 A check script that is not a test framework reports through verdict lines in its output, one test per line;
@@ -521,7 +532,8 @@ missing or failing opened (as 「빈틈만 펼치기」 does) on first load; aft
 leaves them, also across visits to the list. A line on top reads 「테스트 있는 화면 n/전체 · 실패 n · 태그 없는
 테스트만 있는 화면 n」: screens with a tagged test, screens with a failing one, and screens with no tagged test
 but with tests linked by import or by passing through (`flow.summary` in `/api/data`); a box adds 「불러옴 N」 and
-「지나감 N」 for those (`imported` and `passed` on each flow node) right after its test counts, which neither its border nor 「빈틈만 펼치기」 counts. A box is sized
+「지나감 N」 for those (`imported` and `passed` on each flow node) right after its test counts, which neither its border nor 「빈틈만 펼치기」 counts.
+A call's box adds 「호출함 N」 the same way for the untagged browser tests that sent it (`passed` on the call). A box is sized
 to what it says: its route breaks only before a `/`, its component name is never split and no line is cut. Boxes
 stand in columns by how many links they are from an entry screen, each column as wide as its widest box. A box
 wraps its route once the box's content would pass 360px, and is wider than that when its component name or one
@@ -536,8 +548,8 @@ with samples, not sentences. At the right of the bar's button row a legend is al
 「조건 걸린 링크」. No label breaks inside a word; in a narrow window the legend wraps onto a line of its own. Right
 of the legend stands a round ⓘ icon, the bar's last control, with the accessible name 「흐름도 읽는 법」 and no native
 tooltip. Hovering or pressing it opens a small list under it, aligned to the bar's right edge, with the two things
-a one-word sample cannot say: 「→ /주소」 is a link to a screen already drawn in another branch, and 「불러옴 N · 지나감 N」
-count the unit tests that import the screen and the browser tests that opened it, both without a tag and neither part of the border or the test count. The icon
+a one-word sample cannot say: 「→ /주소」 is a link to a screen already drawn in another branch, and 「불러옴 N · 지나감 N · 호출함 N」
+count the unit tests that import the screen and the browser tests that opened it or sent the call, all without a tag and none part of the border or the test count. The icon
 is a real button (`aria-expanded`, `aria-controls`) that Tab reaches, Enter or Space opens and closes, and Escape
 closes while the flow view is showing; the pointer can move from the icon down into the list without it closing,
 also when the bar wraps onto several lines. The bar stays in view when the flow is scrolled in either direction, so
@@ -620,6 +632,8 @@ Under the tests of a screen, 「지나간 테스트」 lists the browser tests t
 `tests.json`), those that checked something there first, then those that acted, then those that only opened it,
 each with 「확인함」, 「조작함」 or 「지나감」, its status, title, file and line, project and result file. They have no
 buttons: a reviewer cannot discard or hand them over yet.
+A call shows the browser tests that sent it without its tag the same way: 「호출함 N」 in its row of the call
+table, and in its details, under its own tests, 「호출한 테스트」 with each test marked 「호출함」.
 Then come the screen's source location, links and settings reads, or, for a call, where an option value's option was found (file and line
 per screen, and whether it is set in the config), its server match, its tests, where the screen calls it and
 the screens using it. Between the two, under 「불러오는 테스트」, the page lists the unit tests linked to the screen by the files they import (`importers` in `tests.json`), each with its test file and the source files it came through; the left column shows their number as 「불러옴 N」 under the screen's test count, which they do not add to.

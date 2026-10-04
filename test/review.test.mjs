@@ -4009,7 +4009,7 @@ test('in a browser, the explanation behind the info icon holds only the jump and
         assert.equal(await legend.evaluate((e) => e.tagName), 'UL');
         assert.deepEqual(await legend.locator('li').evaluateAll((items) => items.map((li) => [...li.children].map((c) => c.textContent))), [
           ['→ /주소', '다른 가지에 이미 그린 화면으로 가는 링크'],
-          ['불러옴 N · 지나감 N', '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 연 브라우저 테스트테두리와 테스트 수에는 넣지 않음'],
+          ['불러옴 N · 지나감 N · 호출함 N', '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 열거나 이 호출을 보낸 브라우저 테스트테두리와 테스트 수에는 넣지 않음'],
         ]);
         assert.equal(await legend.locator('li small').textContent(), '테두리와 테스트 수에는 넣지 않음');
         const page = await p.evaluate(() => document.body.textContent);
@@ -5882,6 +5882,34 @@ test('in a browser, a screen shows the untagged browser tests that passed throug
 
         await p.click('#view-flow');
         assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), /불러옴 2 · 지나감 6/);
+      })));
+});
+
+test('in a browser, a call shows the untagged browser tests that sent it apart from its own tests: their number in its row and on its box, and each of them in its details', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(TRACED, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/home');
+        const row = (id) => p.locator('table.calls tbody tr:not(.option)', { hasText: id });
+        assert.equal(await row('GET:/api/v1/document/list').locator('.sent-count').textContent(), '호출함 1');
+        assert.equal(await row('POST:/api/v1/archive/document').locator('.sent-count').count(), 0);
+        assert.match(await row('GET:/api/v1/document/list').locator('td.cell').first().textContent(), /^✓1\s*$/);
+
+        await row('GET:/api/v1/document/list').locator('td.cell').first().click();
+        const headings = await p.locator('#right-info h2').allTextContents();
+        assert.deepEqual(headings.slice(headings.indexOf('테스트 1'), headings.indexOf('테스트 1') + 2), ['테스트 1', '호출한 테스트 1']);
+        assert.equal(await p.locator('#right-info .sent .test').count(), 1);
+        assert.match(await p.textContent('#right-info .sent .test'), /^호출함 통과 lists the documents calls\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/calls\.json$/);
+        assert.equal(await p.locator('#right-info .sent button').count(), 0);
+
+        await row('POST:/api/v1/archive/document').locator('td.cell').first().click();
+        assert.equal(await p.locator('#right-info .sent').count(), 0);
+
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box.call');
+        const boxes = await p.locator('#flow .box.call .l2').allTextContents();
+        assert.ok(boxes.some((text) => /^✓1\s* · 호출함 1 · /.test(text)), boxes.join(' | '));
       })));
 });
 

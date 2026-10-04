@@ -105,7 +105,8 @@
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
   .importers p, .detached p, .passed p { font-size: 12px; margin: 0 0 8px; }
-  .chip.level-assert { color: var(--pass); } .chip.level-interact { color: var(--accent); } .chip.level-visit { color: var(--muted); }
+  .chip.level-assert { color: var(--pass); } .chip.level-interact, .chip.level-call { color: var(--accent); } .chip.level-visit { color: var(--muted); }
+  table.calls td.call .sent-count { font-size: 12px; color: var(--muted); white-space: nowrap; margin-left: 6px; }
   .importer .judge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
   .importer .judge-row button, .importer button.undo, .bulk-bar button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
   .discarded .importer, .awaiting-tag .importer, .detached .importer { margin-bottom: 10px; font-size: 12px; }
@@ -790,8 +791,8 @@ function detachedItem(t) {
     h('span', { class: 'muted mono' }, t.ref.file), ' ', t.ref.title);
 }
 
-const PASS_LEVEL = { assert: '확인함', interact: '조작함', visit: '지나감' };
-const PASS_LEVEL_TITLE = { assert: '이 화면이 열려 있을 때 확인문을 실행했습니다', interact: '이 화면이 열려 있을 때 누르거나 입력했습니다', visit: '이 화면을 열기만 했습니다' };
+const PASS_LEVEL = { assert: '확인함', interact: '조작함', visit: '지나감', call: '호출함' };
+const PASS_LEVEL_TITLE = { assert: '이 화면이 열려 있을 때 확인문을 실행했습니다', interact: '이 화면이 열려 있을 때 누르거나 입력했습니다', visit: '이 화면을 열기만 했습니다', call: '도는 동안 이 호출의 메서드와 경로에 맞는 요청을 보냈습니다' };
 
 function passedItem(t) {
   return h('div', { class: 'test' },
@@ -809,6 +810,14 @@ function passedTests(s) {
     h('h2', {}, `지나간 테스트 ${passed.length}`),
     h('p', { class: 'muted' }, '도는 동안 이 화면을 연 브라우저 테스트입니다. 이 화면의 태그가 없어서 이 화면의 테스트로 세지 않습니다.'),
     passed.map(passedItem)) : null;
+}
+
+function sentTests(call) {
+  const sent = passedOf(call.id);
+  return sent.length ? h('div', { class: 'passed sent' },
+    h('h2', {}, `호출한 테스트 ${sent.length}`),
+    h('p', { class: 'muted' }, '도는 동안 이 호출을 보낸 브라우저 테스트입니다. 이 호출의 태그가 없어서 이 호출의 테스트로 세지 않습니다.'),
+    sent.map(passedItem)) : null;
 }
 
 function importerTests(s) {
@@ -1531,8 +1540,10 @@ function callTable(s) {
             h('td', { class: 'muted', colspan: depths.length + 1 }, '호출 노드가 없어 테스트를 붙이거나 표시할 수 없습니다'));
         }
         const tests = testsOf(r.call.id);
+        const sent = passedOf(r.call.id).length;
         return [h('tr', {},
-          h('td', { class: 'call' }, h('div', { class: 'mono' }, r.call.id), verdictChip(r.call.server)),
+          h('td', { class: 'call' }, h('div', { class: 'mono' }, r.call.id), verdictChip(r.call.server),
+            sent ? h('span', { class: 'sent-count', title: '이 호출의 태그 없이, 도는 동안 이 호출을 보낸 브라우저 테스트' }, `호출함 ${sent}`) : null),
           cell({ node: r.call.id }, tests),
           depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d)))),
           ...optionRows(s, r.call, depths)];
@@ -1636,6 +1647,7 @@ function callDetails(call, s) {
     call.server.candidates ? h('ul', { class: 'plain' }, call.server.candidates.map((c) => h('li', {}, '서버에는 ', h('code', {}, c)))) : null,
     h('h2', {}, `테스트 ${tests.length}`),
     tests.length ? h('div', {}, tests.map(testItem)) : h('p', { class: 'muted' }, '없음'),
+    sentTests(call),
     h('h2', {}, '이 화면에서 부르는 곳'),
     h('ul', { class: 'plain' }, sites.map((c) => h('li', {}, h('code', {}, c.fn), ' ', h('span', { class: 'muted mono' }, `${c.file}:${c.line}`)))),
     h('h2', {}, `이 호출을 쓰는 화면 ${call.screens.length}`),
@@ -2354,7 +2366,7 @@ function callBox(b) {
   const c = b.node;
   return h('div', { class: `box call ${statusOf(c.counts)}`, title: c.id },
     h('div', { class: 'l1 mono' }, pathText(c.label)),
-    h('div', { class: 'l2' }, countText(c.counts), ` · ${serverText(c.server)}`));
+    h('div', { class: 'l2' }, countText(c.counts), c.passed ? ` · 호출함 ${c.passed}` : '', ` · ${serverText(c.server)}`));
 }
 
 // 상자는 페이지에 붙은 뒤에야 잴 수 있으므로, 상자를 붙인 쪽이 measureWidths → fit → measureHeights → place 순서로 불러 위치를 정한다.
@@ -2464,7 +2476,7 @@ function renderFlow() {
     h('button', { class: 'flowinfo-button', 'aria-label': '흐름도 읽는 법', 'aria-expanded': 'false', 'aria-controls': 'flowlegend', onclick: () => setLegend(legendInfo, !state.legendOpen) }, 'i'),
     h('ul', { class: 'flowlegend', id: 'flowlegend' },
       h('li', {}, h('span', { class: 'sample' }, '→ /주소'), h('span', {}, '다른 가지에 이미 그린 화면으로 가는 링크')),
-      h('li', {}, h('span', { class: 'sample' }, '불러옴 N · 지나감 N'), h('span', {}, '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 연 브라우저 테스트', h('small', {}, '테두리와 테스트 수에는 넣지 않음')))));
+      h('li', {}, h('span', { class: 'sample' }, '불러옴 N · 지나감 N · 호출함 N'), h('span', {}, '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 열거나 이 호출을 보낸 브라우저 테스트', h('small', {}, '테두리와 테스트 수에는 넣지 않음')))));
   fill(flow,
     h('div', { class: 'flowbar' },
       h('strong', { class: 'flowsummary' }, `테스트 있는 화면 ${summary.tested}/${summary.screens} · 실패 ${summary.failing} · 태그 없는 테스트만 있는 화면 ${summary.importedOnly}`),

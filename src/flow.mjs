@@ -28,7 +28,7 @@ export function buildFlow(map, tests, { from } = {}) {
   const callsById = new Map((map.calls ?? []).map((c) => [c.id, c]));
   const callNode = (id) => {
     const c = callsById.get(id);
-    return { kind: 'call', id, label: id, server: c.server, counts: countOf(tests.nodes[id]) };
+    return { kind: 'call', id, label: id, server: c.server, counts: countOf(tests.nodes[id]), passed: tests.passed?.[id]?.length ?? 0 };
   };
   const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))].sort();
 

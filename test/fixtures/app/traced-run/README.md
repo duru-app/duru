@@ -5,4 +5,5 @@ To make them again, copy this folder and `../build` side by side, add a `package
 `@playwright/test` at the version you want to cover, run `npx playwright test`, then put `report.json` in
 place of `visits.json` and copy `test-results/*/trace.zip` over. `visits.json` is that report trimmed, with
 its attachment paths pointing at a folder that does not exist (`/builds/app/test-results/...`), the way a
-report looks after the results were moved.
+report looks after the results were moved. `calls.json` is the report of `tests/calls.spec.ts` alone
+(`npx playwright test calls.spec.ts`), trimmed the same way; keep that spec out of the run for `visits.json`.

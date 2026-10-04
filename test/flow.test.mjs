@@ -108,3 +108,12 @@ test('a screen that only untagged browser tests passed through counts with the s
 });
   assert.deepEqual(built.roots[0].children.map((n) => [n.id, n.imported, n.counts.pass]), [['b', 1, 1], ['c', 2, 0]]);
 });
+
+test('the box of a call carries how many untagged browser tests sent it, apart from its own tests', () => {
+  const endpoints = [{ callId: 'GET:/x' }, { callId: 'POST:/y' }];
+  const map = { screens: [{ id: 'a', path: 'a', component: 'a', apiCalls: [{ endpoints }], access: { kinds: [], links: [] } }], calls: [{ id: 'GET:/x', server: {} }, { id: 'POST:/y', server: {} }], entries: [{ screen: 'a' }] };
+  const sent = { title: 'browser', status: 'fail', level: 'call' };
+  const built = buildFlow(map, { nodes: { 'POST:/y': [{ status: 'pass' }] }, passed: { 'GET:/x': [sent, sent] } });
+  assert.deepEqual(built.roots[0].calls.map((c) => [c.id, c.passed, c.counts]), [['GET:/x', 2, { pass: 0, fail: 0, pending: 0 }], ['POST:/y', 0, { pass: 1, fail: 0, pending: 0 }]]);
+  assert.deepEqual(built.summary, { screens: 1, tested: 0, failing: 0, importedOnly: 0 });
+});
