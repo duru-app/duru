@@ -109,6 +109,27 @@ test('rebuild counts the stories with broken paths or screens gone from the map,
   }
 });
 
+test('rebuild leaves discarded pairs out of the links made by imports, and names each judgment file it could not read without stopping', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const judgments = path.join(copy, 'out/judgments/_help#Help');
+    fs.mkdirSync(judgments, { recursive: true });
+    fs.writeFileSync(path.join(judgments, 'a.json'), JSON.stringify({
+      id: 'a', node: '/help#Help', kind: 'discard', reason: 'only renders a shared header', author: 'a', date: '2026-10-04T01:00:00.000Z',
+      test: { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' },
+    }));
+    fs.writeFileSync(path.join(judgments, 'broken.json'), '{');
+    const stdout = execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
+    assert.match(stdout, /^links from unit tests to screens by the files they import 4 \| test files not read 2$/m);
+    assert.match(stdout, /^pairs discarded by reviewers 1 \| judgment files skipped 1$/m);
+    assert.match(stdout, /^ {2}judgment file _help#Help\/broken\.json: not valid JSON/m);
+    assert.match(stdout, /^stories /m);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc']]) {
   test(`"${args.join(' ')}" prints usage and exits with 2`, () => {
     assert.throws(

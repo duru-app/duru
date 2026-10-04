@@ -4,6 +4,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.mjs';
 import { buildFlow } from './flow.mjs';
+import { addJudgment, applyJudgments, loadJudgments } from './judgments.mjs';
 import { addMark, classifyMarks, loadMarks } from './marks.mjs';
 import { fillPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.mjs';
 import { checkStoryFiles } from './story-paths.mjs';
@@ -42,10 +43,12 @@ function screenCallOptions(screen, callsById) {
   return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id).options.filter((o) => keys.has(o.key) || o.sources.includes('config'))]));
 }
 
+const judgedTests = (config) => applyJudgments(readJson(path.join(config.outDir, 'tests.json')), loadJudgments(config.judgmentsDir).judgments);
+
 export function reviewData(config, author, app = null, fileSettings = null) {
   const mapFile = path.join(config.outDir, 'map.json');
   const map = readJson(mapFile);
-  const tests = readJson(path.join(config.outDir, 'tests.json'));
+  const tests = judgedTests(config);
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
   for (const s of map.screens) s.callOptions = screenCallOptions(s, callsById);
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
@@ -111,6 +114,7 @@ export async function startReviewServer(config, { port = 0, author = null, onDon
   // 다른 사이트가 사용자의 브라우저로 표시를 써 넣거나 리뷰를 끝내거나(JSON 이 아닌 요청), 자기 도메인을 이 주소로 돌려 맵을 읽어 가는 것(다른 Host)을 막는다.
   const ownHosts = () => [`127.0.0.1:${server.address().port}`, `localhost:${server.address().port}`];
   const isJson = (req) => req.headers['content-type']?.startsWith('application/json');
+  const saves = { '/api/marks': (input) => addMark(config.marksDir, input), '/api/judgments': (input) => addJudgment(config.judgmentsDir, input) };
   const server = http.createServer(async (req, res) => {
     try {
       if (!ownHosts().includes(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden host');
@@ -131,7 +135,7 @@ export async function startReviewServer(config, { port = 0, author = null, onDon
         const map = readJson(mapFile);
         const from = url.searchParams.get('from');
         if (!map.screens.some((s) => s.id === from)) return send(res, 404, 'text/plain', `unknown screen "${from}"`);
-        return send(res, 200, 'application/json', JSON.stringify(buildFlow(map, readJson(path.join(config.outDir, 'tests.json')), { from })));
+        return send(res, 200, 'application/json', JSON.stringify(buildFlow(map, judgedTests(config), { from })));
       }
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {
         const map = readJson(path.join(config.outDir, 'map.json'));
@@ -153,7 +157,7 @@ export async function startReviewServer(config, { port = 0, author = null, onDon
           return send(res, 400, 'text/plain', err.message);
         }
       }
-      if (req.method === 'POST' && req.url === '/api/marks') {
+      if (req.method === 'POST' && Object.hasOwn(saves, req.url)) {
         if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
         let input;
         try {
@@ -162,8 +166,8 @@ export async function startReviewServer(config, { port = 0, author = null, onDon
           return send(res, 400, 'text/plain', err.message);
         }
         try {
-          const mark = addMark(config.marksDir, { ...input, author: author ?? input.author });
-          return send(res, 201, 'application/json', JSON.stringify(mark));
+          const saved = saves[req.url]({ ...input, author: author ?? input.author });
+          return send(res, 201, 'application/json', JSON.stringify(saved));
         } catch (err) {
           return send(res, 400, 'text/plain', err.message);
         }

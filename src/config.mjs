@@ -140,6 +140,7 @@ export function loadConfig(configPath) {
     serverEndpoints: [raw.serverEndpoints ?? []].flat().map(at),
     outDir,
     marksDir: raw.marksDir ? at(raw.marksDir) : path.join(outDir, 'marks'),
+    judgmentsDir: raw.judgmentsDir ? at(raw.judgmentsDir) : path.join(outDir, 'judgments'),
     storiesDir: raw.storiesDir ? at(raw.storiesDir) : path.join(outDir, 'stories'),
     tests,
     app,

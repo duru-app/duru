@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { compare, isPlainObject } from './config.mjs';
+import { jsonFiles } from './json-files.mjs';
 
 export const STORY_ID = /^[a-z0-9_-]+$/;
 const KEYS = ['name', 'screens', 'memo', 'author', 'date'];
@@ -28,34 +29,15 @@ function problemOf(story) {
   return null;
 }
 
-// 폴더를 가리키는 링크는 readdirSync 가 이미 따라 들어갔으므로 null 로 건너뛴다.
-function linkedFile(file) {
-  try {
-    const stat = fs.statSync(file, { throwIfNoEntry: false });
-    if (!stat) return { reason: '링크가 가리키는 파일이 없습니다' };
-    return stat.isFile() ? {} : null;
-  } catch (err) {
-    return { reason: `링크를 따라가지 못했습니다: ${err.message}` };
-  }
-}
+const SAY = {
+  folder: (message) => `스토리 폴더를 읽지 못했습니다: ${message}`,
+  missing: () => '링크가 가리키는 파일이 없습니다',
+  link: (message) => `링크를 따라가지 못했습니다: ${message}`,
+};
 
 function storyFiles(dir) {
   if (!fs.statSync(dir).isDirectory()) return { root: path.dirname(dir), files: [{ file: path.basename(dir) }] };
-  let entries;
-  try {
-    entries = fs.readdirSync(dir, { recursive: true, withFileTypes: true });
-  } catch (err) {
-    return { root: dir, files: [{ file: dir, reason: `스토리 폴더를 읽지 못했습니다: ${err.message}` }] };
-  }
-  const files = entries
-    .filter((e) => e.name.endsWith('.json') && (e.isFile() || e.isSymbolicLink()))
-    .flatMap((e) => {
-      const full = path.join(e.parentPath, e.name);
-      const read = e.isSymbolicLink() ? linkedFile(full) : {};
-      return read ? [{ file: path.relative(dir, full), ...read }] : [];
-    })
-    .sort((a, b) => compare(a.file, b.file));
-  return { root: dir, files };
+  return { root: dir, files: jsonFiles(dir, SAY) };
 }
 
 export function loadStories(dir) {

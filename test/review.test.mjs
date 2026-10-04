@@ -9,6 +9,7 @@ import vm from 'node:vm';
 import { UNKNOWN } from '../src/client.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { chromium } from 'playwright-core';
+import { loadJudgments } from '../src/judgments.mjs';
 import { addMark, loadMarks } from '../src/marks.mjs';
 import { applyOverrides } from '../src/app-host.mjs';
 import { startReviewServer } from '../src/review.mjs';
@@ -49,6 +50,7 @@ const snapshot = (dir) =>
   Object.fromEntries(fs.readdirSync(dir, { recursive: true }).sort().map((f) => [f, fs.statSync(path.join(dir, f)).isFile() ? fs.readFileSync(path.join(dir, f), 'utf8') : null]));
 
 const postMark = (base, body) => fetch(`${base}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const postJudgment = (base, body) => fetch(`${base}/api/judgments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 test('the page and its data are served, with the map, the tests per screen and the marks', async () => {
   await withRebuiltFixture({}, (config) =>
@@ -990,7 +992,7 @@ async function withPage(base, fn, { view = 'list', setup } = {}) {
     if (setup) await setup(page);
     await page.goto(base);
     if (view === 'list') await toList(page);
-    await fn(page);
+    await fn(page, errors);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();
@@ -5595,4 +5597,176 @@ test('in a browser, a 「죽은 화면」 filter left checked does not hide ever
         assert.equal(await p.locator('#screen-list li').count(), 11);
       }));
   });
+});
+
+const HELP_TEST = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' };
+
+test('a judgment posted from the page is saved as a new file with the server-side author, and a discarded pair moves out of the screen\'s importing tests', async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postJudgment(base, { test: HELP_TEST, node: '/help#Help', kind: 'discard' })).status, 400);
+      const res = await postJudgment(base, { test: HELP_TEST, node: '/help#Help', kind: 'discard', reason: 'only renders a shared header', author: 'someone else' });
+      assert.equal(res.status, 201);
+      const { judgments } = loadJudgments(config.judgmentsDir);
+      assert.deepEqual(judgments.map((j) => [j.test, j.node, j.kind, j.reason, j.author]), [[HELP_TEST, '/help#Help', 'discard', 'only renders a shared header', 'reviewer']]);
+
+      const data = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.tests.importers['/help#Help'].map((t) => t.title), ['shows the day the help was last updated']);
+      assert.deepEqual(data.tests.discarded['/help#Help'].map((t) => [t.title, t.judgment.reason]), [['renders the help text', 'only renders a shared header']]);
+      const importedAt = (roots) => walkFlow(roots).find((n) => n.id === '/help#Help').imported;
+      const branch = await (await fetch(`${base}/api/flow?from=${encodeURIComponent('/home#Home')}`)).json();
+      assert.deepEqual([importedAt(data.flow.roots), importedAt(branch.roots)], [1, 1]);
+    }),
+  );
+});
+
+test('in a browser, a branch shown on its own counts the importing tests again after a pair is discarded', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const helpLine = async () => (await screenBox(p, '/help#Help')).locator('.l2').textContent();
+        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
+        await p.waitForSelector('.flowbar .focusing');
+        assert.match(await helpLine(), /불러옴 2/);
+
+        await p.click('#view-list');
+        await p.click('#screen-list li:has-text("/help")');
+        const first = p.locator('#center .importers .importer', { hasText: 'renders the help text' });
+        await first.locator('input.reason').fill('only renders a shared header');
+        await first.locator('button.discard').click();
+        await p.waitForSelector('#center .discarded');
+
+        await p.click('#view-flow');
+        await p.waitForSelector('.flowbar .focusing');
+        assert.match(await helpLine(), /불러옴 1/);
+      }, { view: 'flow' })));
+});
+
+test('in a browser, a test importing a screen is discarded with a reason, stays discarded after a rebuild, and comes back when undone', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config, copy) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        const first = p.locator('#center .importers .importer', { hasText: 'renders the help text' });
+        await first.locator('input.reason').fill('only renders a shared header');
+        await first.locator('button.discard').click();
+        await p.waitForSelector('#center .discarded');
+
+        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => [j.test, j.node, j.kind, j.reason, j.author]), [
+          [HELP_TEST, '/help#Help', 'discard', 'only renders a shared header', 'reviewer'],
+        ]);
+        assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 1');
+        assert.equal(await p.locator('#screen-list li:has-text("/help") .importer-count').textContent(), '불러옴 1');
+        assert.equal(await p.textContent('#center .discarded h2'), '버린 짝 1');
+        assert.match(await p.textContent('#center .discarded .importer'), /renders the help text.*only renders a shared header.*reviewer/s);
+
+        execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
+        await p.reload();
+        await toList(p);
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 1');
+
+        await p.click('#center .discarded button.undo');
+        await p.waitForSelector('#center .discarded', { state: 'detached' });
+        assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 2');
+        assert.equal(await p.locator('#screen-list li:has-text("/help") .importer-count').textContent(), '불러옴 2');
+        assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => j.kind).sort(), ['discard', 'undo']);
+      })));
+});
+
+test('in a browser, a discard without a reason is not sent', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await p.locator('#center .importers .importer').first().locator('button.discard').click();
+        await p.waitForSelector('#center .importers .importer .judgment-error');
+        assert.equal(fs.existsSync(config.judgmentsDir), false);
+        assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 2');
+      })));
+});
+
+const SAVE_REFUSED = ['Failed to load resource: the server responded with a status of 500 (Internal Server Error)'];
+
+test('in a browser, a discard error shows beside the test whose button was pressed, and each way of leaving that view clears it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const errorOf = () => p.evaluate(() => state.judgmentError);
+        const discardWithoutReason = async () => {
+          const second = p.locator('#center .importers .importer').nth(1);
+          await second.locator('button.discard').click();
+          await second.locator('.judgment-error').waitFor();
+        };
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await discardWithoutReason();
+        assert.equal(await p.locator('#center .judgment-error').count(), 1);
+        assert.equal(await p.locator('#center .importers .importer').first().locator('.judgment-error').count(), 0);
+
+        await p.click('#screen-list li:not(:has-text("/help"))');
+        assert.equal(await errorOf(), null);
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await p.locator('#center .judgment-error').count(), 0);
+
+        await discardWithoutReason();
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#left .views.side button:has-text("화면")');
+        assert.equal(await errorOf(), null);
+        assert.equal(await p.locator('#center .judgment-error').count(), 0);
+
+        await discardWithoutReason();
+        await p.click('#center table tbody tr:has-text("테스트 ") >> nth=0');
+        await p.locator('#center table tbody tr.selected').waitFor();
+        assert.equal(await errorOf(), null);
+        assert.equal(await p.locator('#center .judgment-error').count(), 0);
+      })));
+});
+
+test('in a browser, choosing a story clears a discard error that failed to save while the story list was open', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        let held;
+        await p.route('**/api/judgments', (route) => { held = route; });
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        const first = p.locator('#center .importers .importer').first();
+        await first.locator('input.reason').fill('only renders a shared header');
+        await first.locator('button.discard').click();
+        while (!held) await new Promise((resolve) => setTimeout(resolve, 20));
+        await p.click('#left .views.side button:has-text("스토리")');
+        await held.fulfill({ status: 500, body: 'disk full' });
+        await p.waitForFunction(() => state.judgmentError !== null);
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+        await p.click('#story-list li >> nth=0');
+        assert.equal(await p.evaluate(() => state.judgmentError), null);
+      })));
+});
+
+test('in a browser, a discard that fails to save after another screen was selected still shows its error', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        let held;
+        await p.route('**/api/judgments', (route) => { held = route; });
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        const first = p.locator('#center .importers .importer').first();
+        await first.locator('input.reason').fill('only renders a shared header');
+        await first.locator('button.discard').click();
+        while (!held) await new Promise((resolve) => setTimeout(resolve, 20));
+        await p.click('#screen-list li:not(:has-text("/help"))');
+        assert.equal(await p.locator('#center .judgment-error').count(), 0);
+        await held.fulfill({ status: 500, body: 'disk full' });
+        await p.locator('#center .judgment-error').waitFor();
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+        assert.match(await p.textContent('#center .judgment-error'), /저장하지 못했습니다: disk full/);
+        assert.equal(await p.locator('#center .judgment-error').count(), 1);
+
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await p.locator('#center .judgment-error').count(), 0);
+      })));
 });

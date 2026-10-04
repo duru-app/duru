@@ -314,14 +314,14 @@ test('a story file whose symbolic link points nowhere or cannot be followed is r
   });
 });
 
-test('a story folder that cannot be listed is reported once with why instead of throwing', { skip: process.getuid?.() === 0 && 'root can list any folder' }, () => {
+test('a story subfolder that cannot be listed is reported with why while the other stories are still read', { skip: process.getuid?.() === 0 && 'root can list any folder' }, () => {
   withStoriesDir({ 'ok.json': STORY, 'locked/a.json': STORY }, (dir) => {
     const locked = path.join(dir, 'locked');
     fs.chmodSync(locked, 0o000);
     try {
       const { stories, notices } = loadStories(dir);
-      assert.deepEqual(stories, []);
-      assert.deepEqual(notices.map((n) => n.file), [dir]);
+      assert.deepEqual(stories.map((s) => s.id), ['ok']);
+      assert.deepEqual(notices.map((n) => n.file), ['locked']);
       assert.match(notices[0].reason, /^스토리 폴더를 읽지 못했습니다: EACCES/);
     } finally {
       fs.chmodSync(locked, 0o700);
