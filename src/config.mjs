@@ -125,11 +125,15 @@ export function loadConfig(configPath) {
     if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
     if (typeof entry?.file !== 'string' || typeof entry?.const !== 'string') throw new Error(`settingsDefaults.${root} needs "file" and "const"`);
   }
+  if (raw.author !== undefined && !(typeof raw.author === 'string' && raw.author.trim())) {
+    throw new Error(`author must be the name to sign review marks and judgments with, such as "Kim Min", not ${JSON.stringify(raw.author)}`);
+  }
   const app = raw.app === undefined ? null : appSettings(raw.app, at, raw);
   const outDir = at(raw.outDir ?? '.');
   return {
     ...raw,
     configDir,
+    author: raw.author?.trim() ?? null,
     srcRoot: at(raw.srcRoot),
     roleIdentifiers: raw.roleIdentifiers ?? [],
     bodyArgKeys,

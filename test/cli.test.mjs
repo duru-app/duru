@@ -205,12 +205,12 @@ for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['reb
 const within = (promise, what) =>
   Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`no ${what} within 10s`)), 10_000).unref())]);
 
-async function withReviewFixture(fn) {
+async function withReviewFixture(fn, patch = {}) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const configFile = path.join(copy, 'config.json');
-    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), marksDir: 'example-marks' }));
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), marksDir: 'example-marks', ...patch }));
     execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     return await fn(configFile);
   } finally {
@@ -255,13 +255,27 @@ for (const [how, end] of [
         assert.equal(code, 0);
         assert.equal(stdout, execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8' }));
         assert.match(stdout, /^## \/lab#Lab$/m);
-        assert.match(stderr, /^marks .* \| author /m);
+        assert.match(stderr, /^marks .* \| author \S.* \((git user\.name|computer user name)\)$/m);
       } finally {
         child.kill();
       }
     });
   });
 }
+
+test('review prints the author on stderr with where the name was read from', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const { stderr } = await within(closed, 'exit');
+      assert.match(stderr, /^marks .* \| author 설정 이름 \(config\)$/m);
+    } finally {
+      child.kill();
+    }
+  }, { author: '설정 이름' });
+});
 
 test('when the task list cannot be built, ending the review reports it and the review keeps running until it can', async () => {
   await withReviewFixture(async (configFile) => {

@@ -70,6 +70,9 @@ relative to the config file, except the files inside the client source (`routesF
 - `outDir` — where `map.json` and `tests.json` are written (default: the config's folder)
 - `marksDir` — folder where review marks are kept (default: `marks` in `outDir`)
 - `judgmentsDir` — folder where the review page keeps judgments on pairs of a test and a screen, such as a test importing the screen that is discarded or handed over for tagging (default: `judgments` in `outDir`)
+- `author` — the name review marks and judgments are signed with (optional; default `git config user.name` in the
+  config's folder, else the computer's user name); everyone who reviews with the same config file signs with this
+  one name, so leave it out of a config file a team shares; see [Review page](#review-page)
 - `storiesDir` — folder of story files, or a single story file (default: `stories` in `outDir`); see
   [Stories](#stories)
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
@@ -684,11 +687,10 @@ them; with pairs picked, one reason or note and the buttons 「버리기」 (the
 (the note is optional) judge them all at once, each button showing how many pairs are picked. The page sends one
 judgment per picked pair, one after another in the order shown, so the result is the same as judging them one by one
 on the screen, and each can be undone there with 「되돌리기」. While the pairs are being sent, the checkboxes and buttons, the
-other tests, the left tabs, the 목록/흐름 switch, the pair rows and 「리뷰 끝」 are disabled, and the whole bulk is
-signed with the author read when it started; while 「리뷰 끝」 is being sent, the two bulk buttons are disabled too. When the bulk ends,
+other tests, the left tabs, the 목록/흐름 switch, the pair rows and 「리뷰 끝」 are disabled; while 「리뷰 끝」 is being sent, the two bulk buttons are disabled too. When the bulk ends,
 the keyboard focus returns to the button that was pressed, to the first control of the bar when that button is off,
 or to the heading of the pairs when no pair is left to pick; a reviewer who meanwhile moved the focus to the
-search box or the name box, which the redraw keeps, stays there and goes on typing where it was. If a request fails midway the rest are not sent, the data is
+search box, which the redraw keeps, stays there and goes on typing where it was. If a request fails midway the rest are not sent, the data is
 read again, the unsaved pairs stay picked, and the message beside the buttons names the pairs that were saved and
 those that were not. The picks, the note and that message stay when the reviewer opens a pair's screen and comes back
 to the same test, and go when another test is chosen. A pair for a screen that is not on the map cannot be picked, as it cannot be judged on the screen
@@ -699,14 +701,16 @@ A mark targets a screen or an API call, or one depth of either, or one value of 
 of that value (`{ "node": "POST:/api/v1/report/export", "option": { "key": "withHistory", "value": true },
 "depth": "output" }`), or a story (`{ "story": "run-lab" }`, with no `node`, `option` or `depth`: a story has
 no cells), and records a status (`needs-more`, `missing`,
-`fine`), a note, the author and the date. The author is `git config user.name` on the machine serving the
-page; when it is not set, the page has a name field in the header and warns above the 「표시 남기기」 button only when a mark
-is saved without a name, saving nothing. A save that fails, or goes through but cannot reload the data, is reported
-in the same place; if another target is shown by then, the message names the target the save was for (「스토리」 and
-the story's name, or the node ID with the option and depth as the form heading writes them), and a status or memo
-picked after the reviewer chooses another target, there or back on the first one, is kept when the save goes
-through, while a form left untouched after coming back shows the saved mark. Marks are never overwritten: marking a
-target again adds to its history, and the latest mark is its current state.
+`fine`), a note, the author and the date. The author, of a mark and of a judgment alike, is the config's `author`, else `git config user.name` in
+the config's folder, else the user name of the computer serving the page, so it is never empty; the page shows
+it in the header as 「작성자 …」 and does not ask for it, and `duru review` prints it on stderr when it starts with
+where it was read from (`config`, `git user.name` or `computer user name`). A save that fails, or goes through
+but cannot reload the data, is reported above the 「표시 남기기」 button; if another target is shown by then, the
+message names the target the save was for (「스토리」 and the story's name, or the node ID with the option and
+depth as the form heading writes them), and a status or memo picked after the reviewer chooses another target,
+there or back on the first one, is kept when the save goes through, while a form left untouched after coming
+back shows the saved mark. Marks are never overwritten: marking a target again adds to its history, and the
+latest mark is its current state.
 
 Each mark is its own file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, or
 `<marksDir>/stories/<story ID>/<date>-<author>-<short ID>.json` for a story, and saving a mark only
