@@ -42,6 +42,10 @@
   .screens li:hover { background: var(--bg); }
   .screens li.selected { background: var(--selected); }
   .screens .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #screen-list li { flex-direction: column; align-items: stretch; gap: 2px; }
+  #screen-list .name { overflow: clip; }
+  #screen-list .component, #screen-list .seg { white-space: nowrap; }
+  #screen-list .badges { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
   .screens .count { font-size: 12px; color: var(--muted); white-space: nowrap; }
   .screens .count.none { color: var(--fail); }
   .chip { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; border: 1px solid currentColor; white-space: nowrap; }
@@ -97,7 +101,6 @@
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
   .importers p { font-size: 12px; margin: 0 0 8px; }
-  .counts { display: flex; flex-direction: column; align-items: flex-end; }
   .guard { display: block; }
   .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
   .access h3 { font-size: 13px; margin: 10px 0 4px; }
@@ -384,16 +387,18 @@ function markList(title, cls, marks, label, empty, pick = null) {
   ];
 }
 
+const routeSegments = (path) => path.split(/(?=\/)/).flatMap((seg, i) => [i ? h('wbr') : null, h('span', { class: 'seg' }, seg)]);
+
 function renderLeftList() {
   const visible = visibleScreens();
   const list = document.getElementById('screen-list');
   fill(list, ...visible.map((s) => {
     const n = testsOf(s.id).length;
-    return h('li', { class: s.id === state.selected ? 'selected' : '', onclick: () => select(s.id) },
-      h('span', { class: 'name' }, h('span', {}, s.path), ' ', h('span', { class: 'muted' }, s.component)),
-      s.dead ? h('span', { class: 'chip dead', title: '서버에 없는 호출이 있습니다' }, '죽은 화면') : null,
-      markChip(markOf({ node: s.id })),
-      h('span', { class: 'counts' },
+    return h('li', { class: s.id === state.selected ? 'selected' : '', title: `${s.path} ${s.component}`, onclick: () => select(s.id) },
+      h('span', { class: 'name' }, h('span', {}, routeSegments(s.path)), ' ', h('span', { class: 'muted component' }, s.component)),
+      h('span', { class: 'badges' },
+        s.dead ? h('span', { class: 'chip dead', title: '서버에 없는 호출이 있습니다' }, '죽은 화면') : null,
+        markChip(markOf({ node: s.id })),
         h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'),
         importersOf(s.id).length ? h('span', { class: 'count importer-count', title: '이 화면의 소스 파일을 불러오는 단위 테스트' }, `불러옴 ${importersOf(s.id).length}`) : null));
   }));

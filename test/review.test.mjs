@@ -1469,6 +1469,142 @@ test('in a browser, the dead screen filter keeps the screens that call an API mi
   );
 });
 
+const LONG_PATH = '/organization-settings/notification-preferences/default-recipients/:groupId(active|archived)';
+const LONG_PATH_COMPONENT = 'RecipientSettings';
+
+async function withLongListRows(fn) {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        assert.equal((await postMark(base, { target: { node: '/home#Home' }, status: 'fine', author: 'reviewer' })).status, 201);
+        await p.route('**/api/data', async (route) => {
+          const data = await (await route.fetch()).json();
+          for (const id of ['/home#Home', '/help#Help']) {
+            const screen = data.map.screens.find((s) => s.id === id);
+            Object.assign(screen, { path: LONG_PATH, component: LONG_PATH_COMPONENT, dead: id === '/home#Home' });
+          }
+          const importer = { title: 't', file: 'a.test.js', line: 1, source: 'a.js', format: 'vitest', depth: 'code', status: 'pass', testFile: 'a.test.js', via: ['a.js'] };
+          data.tests.importers['/home#Home'] = [importer, importer];
+          await route.fulfill({ json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        await fn(p, (id) => p.locator('#screen-list li', { hasText: LONG_PATH_COMPONENT }).nth(id === 'home' ? 0 : 1));
+      }),
+    ),
+  );
+}
+
+const renderedLines = (locator) =>
+  locator.evaluate((el) => {
+    const lines = [];
+    let top;
+    for (const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); walker.nextNode(); ) {
+      const node = walker.currentNode;
+      for (let i = 0; i < node.length; i++) {
+        const range = document.createRange();
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const rect = range.getClientRects()[0];
+        if (!rect || /\s/.test(node.data[i])) continue;
+        if (rect.top !== top) lines.push('');
+        top = rect.top;
+        lines[lines.length - 1] += node.data[i];
+      }
+    }
+    return lines;
+  });
+
+test('in a browser, a long route in the screen list wraps only before a slash', { skip: browserMissing }, async () => {
+  await withLongListRows(async (p, row) => {
+    const lines = await renderedLines(row('help').locator('.name > span:first-child'));
+    assert.ok(lines.length >= 3, `the path is long enough to wrap: ${lines}`);
+    assert.equal(lines.join(''), LONG_PATH);
+    assert.deepEqual(lines.filter((line) => !line.startsWith('/')), []);
+  });
+});
+
+test('in a browser, the component name in the screen list stays on one line', { skip: browserMissing }, async () => {
+  await withLongListRows(async (p, row) => {
+    for (const id of ['home', 'help']) assert.deepEqual(await renderedLines(row(id).locator('.name .muted')), [LONG_PATH_COMPONENT]);
+  });
+});
+
+test('in a browser, the badges of a screen list row sit below the route and leave it the full row width', { skip: browserMissing }, async () => {
+  await withLongListRows(async (p, row) => {
+    const geometry = (r) =>
+      r.evaluate((li) => {
+        const box = (el) => el.getBoundingClientRect();
+        const style = getComputedStyle(li);
+        return {
+          content: box(li).width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+          name: box(li.querySelector('.name')),
+          badgesTop: Math.min(...[...li.querySelectorAll('.chip, .count')].map((el) => box(el).top)),
+        };
+      });
+    const crowded = await geometry(row('home'));
+    const bare = await geometry(row('help'));
+    assert.deepEqual(await row('home').locator('.chip, .count').allTextContents(), ['죽은 화면', '충분', '테스트 7', '불러옴 2']);
+    assert.equal(crowded.name.width, bare.name.width);
+    assert.ok(Math.abs(crowded.name.width - crowded.content) < 1, `${crowded.name.width} of ${crowded.content}`);
+    assert.ok(crowded.badgesTop >= crowded.name.bottom && bare.badgesTop >= bare.name.bottom);
+
+    const line = await row('home').evaluate((li) => {
+      const boxes = [...li.querySelectorAll('.badges > *')].map((el) => el.getBoundingClientRect());
+      return {
+        tops: boxes.map((b) => b.top),
+        widths: boxes.map((b) => b.width),
+        gaps: boxes.slice(1).map((b, i) => b.left - boxes[i].right),
+        content: li.querySelector('.name').getBoundingClientRect().width,
+      };
+    });
+    assert.ok(line.widths.reduce((sum, w) => sum + w, 0) + 8 * (line.widths.length - 1) <= line.content, `the badges fit in one row width: ${line.widths} of ${line.content}`);
+    assert.ok(Math.max(...line.tops) - Math.min(...line.tops) < 4, `the badges share one line: ${line.tops}`);
+    assert.ok(line.gaps.every((gap) => Math.abs(gap - 8) < 0.5), `adjacent badges are 8px apart: ${line.gaps}`);
+  });
+});
+
+test('in a browser, a route that spans several segments in the screen list is found by in-page text search', { skip: browserMissing }, async () => {
+  await withLongListRows(async (p) => {
+    for (const text of ['/organization-settings/notification-preferences', '/default-recipients/:groupId(active|archived)']) {
+      const found = await p.evaluate((t) => {
+        getSelection().removeAllRanges();
+        return { hit: window.find(t), inList: document.getElementById('screen-list').contains(getSelection().anchorNode) };
+      }, text);
+      assert.deepEqual(found, { hit: true, inList: true }, text);
+    }
+  });
+});
+
+test('in a browser, a screen list row gives its full route and component as a tooltip and never scrolls the list sideways', { skip: browserMissing }, async () => {
+  await withLongListRows(async (p, row) => {
+    assert.equal(await row('help').getAttribute('title'), `${LONG_PATH} ${LONG_PATH_COMPONENT}`);
+    const list = await p.locator('#screen-list').evaluate((ul) => {
+      ul.querySelector('.seg').append('x'.repeat(120));
+      const section = ul.closest('section');
+      return { scrollWidth: section.scrollWidth, clientWidth: section.clientWidth };
+    });
+    assert.equal(list.scrollWidth, list.clientWidth);
+  });
+});
+
+test('in a browser, an over-wide route segment in the screen list is clipped at the row content edge, not drawn into the row padding', { skip: browserMissing }, async () => {
+  await withLongListRows(async (p, row) => {
+    const li = row('help');
+    const strip = await li.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const pad = parseFloat(getComputedStyle(el).paddingRight);
+      return { x: box.right - pad, y: box.top, width: pad, height: box.height };
+    });
+    const before = await p.screenshot({ clip: strip });
+    await li.locator('.seg').first().evaluate((el) => el.append('x'.repeat(120)));
+    const after = await p.screenshot({ clip: strip });
+    assert.ok(before.equals(after), 'the right padding of the row stays empty');
+    assert.equal(await li.evaluate((el) => getComputedStyle(el).overflowX), 'visible');
+  });
+});
+
 test('in a browser, the setting and role filters keep the screens that open only under one, and the chosen screen shows why', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
