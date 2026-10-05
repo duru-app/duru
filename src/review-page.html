@@ -59,7 +59,7 @@
   .title-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .title-row h3 { margin: 0; font-size: 18px; }
   .frame-bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 6px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--bg); font-size: 13px; }
-  .frame-bar .mono { flex: 1 1 24em; min-width: 0; overflow-wrap: anywhere; }
+  .frame-bar .mono { flex: 1 1 24em; min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .frame-bar .error { color: var(--fail); }
   .frame-bar select { max-width: 100%; font: inherit; padding: 1px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
   .frame-bar .path-values { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
@@ -1085,15 +1085,22 @@ function rolePicker() {
     missing.map((v) => h('option', { disabled: true }, `${v} — 계정 없음`)));
 }
 
-function filledPath(parts, values) {
+function filledPath(parts, values, queryNames) {
   let out = '';
   for (const p of parts) {
     if (typeof p === 'string') out += p;
     else if (values[p.name]) out += p.prefix + (p.repeat || p.pattern === '.*' ? values[p.name].split('/').map(encodeURIComponent).join('/') : encodeURIComponent(values[p.name]));
     else if (!p.optional) return null;
   }
-  return out || '/';
+  const pairs = [];
+  for (const n of queryNames) {
+    if (!values[n]) return null;
+    pairs.push(`${encodeURIComponent(n.slice(1))}=${encodeURIComponent(values[n])}`);
+  }
+  return (out || '/') + (pairs.length ? `?${pairs.join('&')}` : '');
 }
+
+const variablesOf = (entry) => (entry.parts ?? []).filter((p) => typeof p !== 'string');
 
 const pathValueKey = (id, role) => `${id}\n${role ?? ''}`;
 const pathValuesUrl = (id, role) => `/api/path-values?screen=${encodeURIComponent(id)}${role ? `&role=${encodeURIComponent(role)}` : ''}`;
@@ -1106,7 +1113,7 @@ async function loadPathValues(id, role) {
     if (!res.ok) throw new Error(await res.text());
     Object.assign(entry, await res.json());
   } catch (err) {
-    Object.assign(entry, { parts: null, values: {}, errors: [`경로 변수 값을 가져오지 못했습니다: ${err.message}`], fallback: null });
+    Object.assign(entry, { parts: null, values: {}, queryNames: [], errors: [`경로 변수 값을 가져오지 못했습니다: ${err.message}`], fallback: null });
   }
   Object.assign(entry, { pending: false, draft: { ...entry.values }, filled: { ...entry.values }, opened: 0 });
   if (state.side === 'screens' && state.selected === id && state.view === 'list') renderCenterHead(state.data.map.screens.find((x) => x.id === id));
@@ -1115,9 +1122,11 @@ async function loadPathValues(id, role) {
 async function newIssued(s, entry, values) {
   const names = entry.issued.filter((n) => values[n] === entry.filled[n]);
   if (!names.length) return {};
+  const typed = Object.fromEntries([...variablesOf(entry).map((p) => p.name), ...entry.queryNames]
+    .filter((n) => !names.includes(n) && typeof values[n] === 'string').map((n) => [n, values[n]]));
   let fresh;
   try {
-    const res = await fetch(pathValuesUrl(s.id, frameAccount(s).role));
+    const res = await fetch('/api/path-values', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ screen: s.id, role: frameAccount(s).role ?? null, typed }) });
     if (!res.ok) throw new Error(await res.text());
     fresh = await res.json();
   } catch (err) {
@@ -1134,6 +1143,7 @@ function takeIssued(entry, got) {
     entry.values[n] = v;
     entry.filled[n] = v;
   }
+  entry.errors = entry.errors.filter((e) => !Object.keys(entry.values).some((n) => entry.values[n] && e.startsWith(`${n}: `)));
   entry.used = false;
 }
 
@@ -1157,16 +1167,16 @@ function frameTarget(s, entry) {
   const at = (routePath, path) => (app.signedOutPaths.includes(routePath) ? app.signedOutUrl : app.url) + path;
   if (!entry) return { link: appLinks[s.id] };
   if (entry.pending) return {};
-  const path = entry.parts && filledPath(entry.parts, entry.values);
+  const path = entry.parts && filledPath(entry.parts, entry.values, entry.queryNames);
   if (path) return { link: at(s.path, path) };
-  if (entry.opened) return { fallback: false, missing: entry.parts.filter((p) => typeof p !== 'string' && !p.optional && !entry.values[p.name]).map((p) => p.name) };
+  if (entry.opened) return { fallback: false, missing: [...variablesOf(entry).filter((p) => !p.optional).map((p) => p.name), ...entry.queryNames].filter((n) => !entry.values[n]) };
   if (!entry.fallback) return { fallback: false };
   const opens = map.screens.find((x) => x.id === entry.fallback);
   return { link: at(opens.path, entry.fallbackPath), fallback: true, opens };
 }
 
 function pathValueBar(s, entry, fallback) {
-  const variables = (entry.parts ?? []).filter((p) => typeof p !== 'string');
+  const variables = [...variablesOf(entry), ...entry.queryNames.map((n) => ({ name: n, optional: false }))];
   if (!variables.length && !fallback && !entry.errors.length) return null;
   const reopen = async () => {
     let got = {};
@@ -1230,7 +1240,7 @@ function appFrame(s, { link, fallback, opens, missing }, entry) {
   };
   return [
     h('div', { class: 'frame-bar' },
-      h('span', { class: 'mono' }, shown),
+      h('span', { class: 'mono', title: shown }, shown),
       signedOut ? h('span', {}, '로그아웃 상태') : [
         rolePicker(),
         who.error ? h('span', { class: 'error' }, who.error) : h('span', {}, who.label),

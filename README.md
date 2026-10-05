@@ -171,7 +171,21 @@ relative to the config file, except the files inside the client source (`routesF
   environment variable named by `keyEnv`, and takes the dotted `value` path of the JSON reply (`""` when the
   reply is the value itself). It sends no login token, so it needs no `login.header`; at least one `header`
   value must hold `{key}`, and the key is never written to the config, the map, any page or any message. It is
-  called again every time the screen is opened. An optional
+  called again every time the screen is opened. A key that starts with `?` is a query-string parameter of the
+  address instead of a path variable: `"?token"` fills `?token=<value>` at the end of the screen's address, and takes
+  a fixed value, a list API or an issuing API like a path variable (the value and its name are URL-encoded). A
+  screen without path variables opens with its fixed query values at the end of its address. The `body` of an
+  issuing API may hold `{documentId}`, the name of a path variable of the same route, in any string of the body at
+  any depth, and duru sends the value of that variable there; braces that name no path variable of the route stay
+  as written, and the `body` of a list API is sent as written. For a screen
+  such as `/view/:documentId?token=<token>`, where the token is issued for the document that is in the path:
+  `"/view/:documentId": { "documentId": "01a1...", "?token": { "api": "/api/v1/view-token/create", "method":
+  "POST", "header": { "X-API-KEY": "{key}" }, "keyEnv": "APP_API_KEY", "body": { "referenceType": "DOCUMENT",
+  "referenceId": "{documentId}" }, "value": "contents.accessToken" } }`. Values are found in two steps, first
+  those whose `body` names no path variable, then the others with the values of the first step; a request whose
+  `body` names a variable that has no value is not sent, and the error says which one. A value typed in the
+  review page is what the request is sent with, so the token above is issued for the document id typed in its
+  box, not the configured one. An optional
   variable (`:tab?`) without a value is left out of the address, and a variable that spans several segments
   (`*`, `:path+`) keeps the `/` in its value. An entry or a variable that matches no screen
   path or no variable of that path is listed in red above the frame.
@@ -750,7 +764,7 @@ each role in `roles`, and, unselectable, each value in some screen's `roleValues
 says when it does not meet the screen's `roleValues`; the screen still opens as that role. Picking a role
 reloads the frame on that role's address with the same path. Marking does not reload the frame. A screen with
 path variables opens with its `pathValues` filled in; the line above the frame
-shows each variable in a box that the reviewer can change and reopen with Enter or 「다시 띄우기」, and what was
+shows each variable, and each `?name` query parameter, in a box that the reviewer can change and reopen with Enter or 「다시 띄우기」, and what was
 filled or typed stays with the screen and the account it opened as while the page is open; a screen whose list API failed calls it again
 when it is chosen again, unless the reviewer has opened it with a typed value. When a required variable has no value, because
 none was given or the list API failed or was empty, the frame opens a screen linking to it whose
@@ -759,11 +773,14 @@ screen can open (no role condition, or one its role meets), else the first one, 
 「주소에 값이 필요한 화면」 instead of the frame. A required variable the reviewer clears and reopens does not fall
 back: the frame says 「<variable> 값이 없어 이 화면을 띄울 수 없습니다」. The page reads these from `GET /api/path-values?screen=<id>`,
 with `&role=<role>` when the frame opens the screen as one of `roles`,
-which answers `{ "parts", "values", "errors", "path", "fallback", "fallbackPath" }`: the route path split into text and
-variables (`{ "name", "prefix", "optional", "pattern" }`, with `"repeat": true` for `+` and `*`), the value found for each variable, why a value could
-not be found, the filled path (`null` while a required variable has no value) and the screen to open instead with its
+which answers `{ "parts", "values", "queryNames", "errors", "path", "fallback", "fallbackPath" }`: the route path split into text and
+variables (`{ "name", "prefix", "optional", "pattern" }`, with `"repeat": true` for `+` and `*`), the value found for each variable (and
+for each query parameter, under its `?name`), the `?name` of each query parameter in the order of the config, why a value could
+not be found, the filled path with its query string (`null` while a required variable or a query parameter has no value) and the screen to open instead with its
 filled path (both `null` when there is none), plus `"issued"`, the variables taken from an API that issues the
-value, when there are any; an unknown screen or role is 404. A value issued that way is used for one opening of
+value, when there are any; an unknown screen or role is 404. To issue values again with what is typed in the boxes, the page
+sends `POST /api/path-values` with `{ "screen", "role", "typed": { name: value } }` as JSON and gets the same answer, with each typed value
+used in place of the configured one. A value issued that way is used for one opening of
 the frame: choosing the screen again, coming back to it or picking another account calls the API again, while
 marking does not. 「다시 띄우기」, 「새 창으로 열기」 and changing a setting ask the API again for each issued variable
 that still has the value duru filled (in its box for 「다시 띄우기」, in the frame's address otherwise), and keep a

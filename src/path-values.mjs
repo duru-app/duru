@@ -43,6 +43,19 @@ function fill(parts, values) {
 
 export const fillPath = (routePath, values) => fill(pathParts(routePath), values);
 
+const isQuery = (name) => name.length > 1 && name.startsWith('?');
+const queryNamesOf = (given) => Object.keys(given).filter(isQuery);
+
+function withQuery(path, names, values) {
+  if (path === null) return null;
+  const pairs = [];
+  for (const name of names) {
+    if (!values[name]) return null;
+    pairs.push(`${encodeURIComponent(name.slice(1))}=${encodeURIComponent(values[name])}`);
+  }
+  return pairs.length ? `${path}?${pairs.join('&')}` : path;
+}
+
 const escapeText = (s) => s.replace(/[.+*?=^!:${}()[\]|/\\]/g, '\\$&');
 
 // exact 라우트처럼 경로 전체가 맞아야 하고, path-to-regexp 1.x 처럼 끝의 / 하나와 대소문자는 가리지 않는다.
@@ -61,7 +74,8 @@ export function routePattern(routePath) {
   return new RegExp(`^${source.replace(/\\\/$/, '')}(?:\\/(?=$))?$`, 'i');
 }
 
-export const opensAsIs = (routePath) => !routePath.includes(UNKNOWN) && !pathParts(routePath).some(isVariable);
+export const opensAsIs = (routePath, given = {}) => !routePath.includes(UNKNOWN) && !pathParts(routePath).some(isVariable) && queryNamesOf(given).every((n) => typeof given[n] === 'string' && given[n]);
+export const asIsPath = (routePath, given = {}) => withQuery(fillPath(routePath, {}), queryNamesOf(given), given);
 
 export function fallbackScreen(map, screen, pathValues = {}, role = null) {
   const byId = new Map(map.screens.map((s) => [s.id, s]));
@@ -69,8 +83,9 @@ export function fallbackScreen(map, screen, pathValues = {}, role = null) {
   for (const { from } of screen.access.links) {
     const s = byId.get(from);
     if (!s || s.path.includes(UNKNOWN)) continue;
-    const fixed = Object.fromEntries(Object.entries(pathValues[s.path] ?? {}).filter(([, v]) => typeof v === 'string'));
-    const path = fillPath(s.path, fixed);
+    const given = pathValues[s.path] ?? {};
+    const fixed = Object.fromEntries(Object.entries(given).filter(([, v]) => typeof v === 'string'));
+    const path = withQuery(fillPath(s.path, fixed), queryNamesOf(given), fixed);
     if (path) found.push({ id: s.id, path, opens: s.access.roleValues === undefined || Boolean(role && s.access.roleValues?.includes(role)) });
   }
   const { id, path } = found.find((f) => f.opens) ?? found[0] ?? {};
@@ -81,7 +96,7 @@ export function unknownPathValues(map, pathValues) {
   return Object.entries(pathValues).flatMap(([routePath, variables]) => {
     if (!map.screens.some((s) => s.path === routePath)) return [routePath];
     const names = pathParts(routePath).filter(isVariable).map((p) => p.name);
-    return Object.keys(variables).filter((n) => !names.includes(n)).map((n) => `${routePath} 의 ${n}`);
+    return Object.keys(variables).filter((n) => !names.includes(n) && !isQuery(n)).map((n) => `${routePath} 의 ${n}`);
   });
 }
 
@@ -103,8 +118,11 @@ async function replyOf(label, request) {
   return { json };
 }
 
-async function listValue({ api, method = 'GET', body, list, value }, fetchApi) {
-  const label = `목록 API ${method} ${api}`;
+const labelOf = ({ api, method = 'GET', keyEnv }) => `${keyEnv ? '발급' : '목록'} API ${method} ${api}`;
+
+async function listValue(spec, fetchApi) {
+  const { api, method = 'GET', body, list, value } = spec;
+  const label = labelOf(spec);
   if (!fetchApi) return { error: `로그인하지 못해 ${label} 를 부르지 않았습니다` };
   const { json, error } = await replyOf(label, (signal) => fetchApi(api, { method, body, signal }));
   if (error) return { error };
@@ -116,8 +134,9 @@ async function listValue({ api, method = 'GET', body, list, value }, fetchApi) {
   return { value: String(found) };
 }
 
-async function issuedValue({ api, method = 'GET', header, keyEnv, body, value }, fetchServer) {
-  const label = `발급 API ${method} ${api}`;
+async function issuedValue(spec, fetchServer) {
+  const { api, method = 'GET', header, keyEnv, body, value } = spec;
+  const label = labelOf(spec);
   const key = process.env[keyEnv];
   if (key === undefined) return { error: `환경 변수 ${keyEnv} 에 키가 없어 ${label} 를 부르지 않았습니다` };
   const headers = Object.fromEntries(Object.entries(header).map(([name, v]) => [name, v.replaceAll('{key}', () => key)]));
@@ -134,27 +153,60 @@ async function issuedValue({ api, method = 'GET', header, keyEnv, body, value },
   return { value: String(found) };
 }
 
-// 필수 경로 변수에 값이 없으면 path 는 null 이다.
-export async function preparePathValues(map, screen, pathValues, fetchApi, role = null, fetchServer = null) {
-  const found = opensAsIs(screen.path) ? null : fallbackScreen(map, screen, pathValues, role);
+const PLACEHOLDER = /\{(\w+)\}/g;
+const stringsOf = (v) => (typeof v === 'string' ? [v] : v !== null && typeof v === 'object' ? Object.values(v).flatMap(stringsOf) : []);
+const mapStrings = (v, f) => {
+  if (typeof v === 'string') return f(v);
+  if (Array.isArray(v)) return v.map((x) => mapStrings(x, f));
+  if (v !== null && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, mapStrings(x, f)]));
+  return v;
+};
+
+const namedIn = (body, names) => [...new Set(stringsOf(body).flatMap((text) => [...text.matchAll(PLACEHOLDER)].map((m) => m[1])))].filter((n) => names.includes(n));
+const fillBody = (body, names, values) => mapStrings(body, (text) => text.replace(PLACEHOLDER, (all, name) => (names.includes(name) ? values[name] : all)));
+
+// 필수 경로 변수나 설정한 쿼리 값에 값이 없으면 path 는 null 이다. typed 는 리뷰하는 사람이 칸에 적은 값으로, 설정값 대신 쓴다.
+export async function preparePathValues(map, screen, pathValues, fetchApi, role = null, fetchServer = null, typed = {}) {
+  const given = pathValues[screen.path] ?? {};
+  const found = opensAsIs(screen.path, given) ? null : fallbackScreen(map, screen, pathValues, role);
   const fallback = found?.id ?? null;
   const fallbackPath = found?.path ?? null;
-  if (screen.path.includes(UNKNOWN)) return { parts: null, values: {}, errors: [], path: null, fallback, fallbackPath };
+  if (screen.path.includes(UNKNOWN)) return { parts: null, values: {}, queryNames: [], errors: [], path: null, fallback, fallbackPath };
   const parts = pathParts(screen.path);
-  const variables = parts.filter(isVariable);
-  const given = pathValues[screen.path] ?? {};
-  const results = await Promise.all(variables.map(({ name }) => {
-    const spec = given[name];
-    if (typeof spec === 'string') return { value: spec };
-    if (!spec) return {};
-    return spec.keyEnv ? issuedValue(spec, fetchServer) : listValue(spec, fetchApi);
-  }));
-  const issued = variables.filter(({ name }) => given[name]?.keyEnv).map(({ name }) => name);
+  const variables = parts.filter(isVariable).map((p) => p.name);
+  const query = queryNamesOf(given);
+  const all = [...variables, ...query];
+  const specOf = (name) => (typeof typed[name] === 'string' ? typed[name] : given[name]);
+  const needs = new Map(all.map((name) => [name, specOf(name)?.keyEnv ? namedIn(specOf(name).body, variables) : []]));
   const values = {};
-  const errors = [];
-  results.forEach((f, i) => {
-    if (f.value !== undefined) values[variables[i].name] = f.value;
-    if (f.error) errors.push(`${variables[i].name}: ${f.error}`);
-  });
-  return { parts, values, errors, path: fill(parts, values), fallback, fallbackPath, ...(issued.length ? { issued } : {}) };
+  const errors = {};
+  const valueOf = async (name) => {
+    const spec = specOf(name);
+    if (typeof spec === 'string') return spec ? { value: spec } : {};
+    if (!spec) return {};
+    if (!spec.keyEnv) return listValue(spec, fetchApi);
+    const missing = needs.get(name).filter((n) => !values[n]);
+    if (missing.length) return { error: `${missing.join(', ')} 값이 없어 ${labelOf(spec)} 를 부르지 않았습니다` };
+    return issuedValue({ ...spec, body: fillBody(spec.body, needs.get(name), values) }, fetchServer);
+  };
+  const settle = async (batch) => {
+    const results = await Promise.all(batch.map(valueOf));
+    results.forEach((f, i) => {
+      if (f.value !== undefined) values[batch[i]] = f.value;
+      if (f.error) errors[batch[i]] = f.error;
+    });
+  };
+  await settle(all.filter((n) => !needs.get(n).length));
+  await settle(all.filter((n) => needs.get(n).length));
+  const issued = all.filter((n) => specOf(n)?.keyEnv);
+  return {
+    parts,
+    values,
+    queryNames: query,
+    errors: all.filter((n) => errors[n]).map((n) => `${n}: ${errors[n]}`),
+    path: withQuery(fill(parts, values), query, values),
+    fallback,
+    fallbackPath,
+    ...(issued.length ? { issued } : {}),
+  };
 }

@@ -9,7 +9,7 @@ import { isPlainObject } from './config.mjs';
 import { buildFlow } from './flow.mjs';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.mjs';
 import { addMark, classifyMarks, loadMarks } from './marks.mjs';
-import { fillPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.mjs';
+import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.mjs';
 import { addStory, editStory } from './stories.mjs';
 import { checkScreens, checkStoryFiles } from './story-paths.mjs';
 import { DEPTHS } from './test-links.mjs';
@@ -46,9 +46,9 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-function appLink(appUrl, routePath) {
-  if (!appUrl || !opensAsIs(routePath)) return null;
-  return appUrl.replace(/\/+$/, '') + fillPath(routePath, {});
+function appLink(appUrl, routePath, given) {
+  if (!appUrl || !opensAsIs(routePath, given)) return null;
+  return appUrl.replace(/\/+$/, '') + asIsPath(routePath, given);
 }
 
 function screenCallOptions(screen, callsById) {
@@ -104,7 +104,7 @@ export function reviewData(config, author, app = null, fileSettings = null) {
     },
     appLinks: Object.fromEntries(map.screens.map((s) => {
       const signedOut = app && config.app.signedOutPaths.includes(s.path);
-      return [s.id, appLink(signedOut ? app.signedOutUrl : (app?.url ?? config.appUrl), s.path)];
+      return [s.id, appLink(signedOut ? app.signedOutUrl : (app?.url ?? config.appUrl), s.path, config.app?.pathValues?.[s.path])];
     })),
     depths: DEPTHS,
     author: author?.name ?? null,
@@ -151,6 +151,14 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
   const ownHosts = () => [`127.0.0.1:${server.address().port}`, `localhost:${server.address().port}`];
   const isJson = (req) => req.headers['content-type']?.startsWith('application/json');
   const saves = { '/api/marks': (input) => addMark(config.marksDir, input), '/api/judgments': (input) => addJudgment(config.judgmentsDir, input) };
+  const sendPathValues = async (res, id, role, typed = {}) => {
+    const map = readMap(mapFile);
+    const screen = map.screens.find((s) => s.id === id);
+    if (!screen) return send(res, 404, 'text/plain', `unknown screen "${id}"`);
+    const fetchApi = role ? app?.fetchApiAs(role) : app?.fetchApi;
+    if (fetchApi === undefined && role) return send(res, 404, 'text/plain', `unknown role "${role}"`);
+    return send(res, 200, 'application/json', JSON.stringify(await preparePathValues(map, screen, config.app?.pathValues ?? {}, fetchApi ?? null, role, app?.fetchServer, typed)));
+  };
   const server = http.createServer(async (req, res) => {
     try {
       if (!ownHosts().includes(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden host');
@@ -174,14 +182,21 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
         return send(res, 200, 'application/json', JSON.stringify(buildFlow(map, judgedTests(config), { from })));
       }
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {
-        const map = readMap(mapFile);
-        const id = url.searchParams.get('screen');
-        const screen = map.screens.find((s) => s.id === id);
-        if (!screen) return send(res, 404, 'text/plain', `unknown screen "${id}"`);
-        const role = url.searchParams.get('role');
-        const fetchApi = role ? app?.fetchApiAs(role) : app?.fetchApi;
-        if (fetchApi === undefined && role) return send(res, 404, 'text/plain', `unknown role "${role}"`);
-        return send(res, 200, 'application/json', JSON.stringify(await preparePathValues(map, screen, config.app?.pathValues ?? {}, fetchApi ?? null, role, app?.fetchServer)));
+        return await sendPathValues(res, url.searchParams.get('screen'), url.searchParams.get('role'));
+      }
+      if (req.method === 'POST' && req.url === '/api/path-values') {
+        if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
+        let input;
+        try {
+          input = JSON.parse(await readBody(req));
+        } catch (err) {
+          return send(res, 400, 'text/plain', err.message);
+        }
+        const { screen, role = null, typed } = isPlainObject(input) ? input : {};
+        if (typeof screen !== 'string' || !(role === null || typeof role === 'string') || !isPlainObject(typed) || !Object.values(typed).every((v) => typeof v === 'string')) {
+          return send(res, 400, 'text/plain', 'expected { "screen", "role", "typed" } with the typed values as text');
+        }
+        return await sendPathValues(res, screen, role, typed);
       }
       if (req.method === 'POST' && req.url === '/api/settings') {
         if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
