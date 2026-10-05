@@ -2,7 +2,7 @@ import { UNKNOWN } from './client.mjs';
 
 // React Router v5 가 쓰는 path-to-regexp 1.x 의 경로 문법을 그대로 따른다.
 const TOKEN = /(\\.)|([/.])?(?:(?::(\w+)(?:\(((?:\\.|[^\\()])+)\))?|\(((?:\\.|[^\\()])+)\))([+*?])?|(\*))/g;
-const LIST_TIMEOUT_MS = 15_000;
+const API_TIMEOUT_MS = 15_000;
 
 const isVariable = (part) => typeof part !== 'string';
 
@@ -86,31 +86,56 @@ export function unknownPathValues(map, pathValues) {
 }
 
 const at = (value, dotted) => (dotted ? dotted.split('.').reduce((o, k) => o?.[k], value) : value);
+const isPathValue = (v) => (typeof v === 'string' && v !== '') || Number.isFinite(v);
 
-async function listValue({ api, method = 'GET', body, list, value }, fetchApi) {
-  const label = `목록 API ${method} ${api}`;
-  if (!fetchApi) return { error: `로그인하지 못해 ${label} 를 부르지 않았습니다` };
+async function replyOf(label, request) {
   let res;
   let json;
   try {
-    res = await fetchApi(api, { method, body, signal: AbortSignal.timeout(LIST_TIMEOUT_MS) });
+    res = await request(AbortSignal.timeout(API_TIMEOUT_MS));
     if (res.ok) json = await res.json();
   } catch (err) {
-    if (err.name === 'TimeoutError') return { error: `${label} 요청에 ${LIST_TIMEOUT_MS / 1000}초 안에 응답이 없었습니다` };
+    if (err.name === 'TimeoutError') return { error: `${label} 요청에 ${API_TIMEOUT_MS / 1000}초 안에 응답이 없었습니다` };
     if (err instanceof SyntaxError) return { error: `${label} 의 응답이 JSON 이 아닙니다` };
     return { error: `${label} 요청을 보내지 못했습니다 (${err.cause?.code ?? err.message})` };
   }
   if (!res.ok) return { error: `${label} 요청이 ${res.status} 로 실패했습니다` };
+  return { json };
+}
+
+async function listValue({ api, method = 'GET', body, list, value }, fetchApi) {
+  const label = `목록 API ${method} ${api}`;
+  if (!fetchApi) return { error: `로그인하지 못해 ${label} 를 부르지 않았습니다` };
+  const { json, error } = await replyOf(label, (signal) => fetchApi(api, { method, body, signal }));
+  if (error) return { error };
   const items = at(json, list);
   if (!Array.isArray(items)) return { error: list ? `${label} 응답의 ${list} 에 목록이 없습니다` : `${label} 의 응답이 목록이 아닙니다` };
   if (!items.length) return { error: `${label} 가 빈 목록을 돌려주었습니다` };
   const found = at(items[0], value);
-  if (!(typeof found === 'string' && found) && !Number.isFinite(found)) return { error: `${label} 의 첫 항목에 ${value} 값이 없습니다` };
+  if (!isPathValue(found)) return { error: `${label} 의 첫 항목에 ${value} 값이 없습니다` };
+  return { value: String(found) };
+}
+
+async function issuedValue({ api, method = 'GET', header, keyEnv, body, value }, fetchServer) {
+  const label = `발급 API ${method} ${api}`;
+  const key = process.env[keyEnv];
+  if (key === undefined) return { error: `환경 변수 ${keyEnv} 에 키가 없어 ${label} 를 부르지 않았습니다` };
+  const headers = Object.fromEntries(Object.entries(header).map(([name, v]) => [name, v.replaceAll('{key}', () => key)]));
+  // fetch 는 header 에 넣을 수 없는 값을 오류 문구에 그대로 실으므로, 키가 오류에 섞여 나가지 않게 보내기 전에 확인한다.
+  try {
+    new Headers(headers);
+  } catch {
+    return { error: `환경 변수 ${keyEnv} 의 키를 header 에 넣을 수 없습니다` };
+  }
+  const { json, error } = await replyOf(label, (signal) => fetchServer(api, { method, headers, body, signal }));
+  if (error) return { error };
+  const found = at(json, value);
+  if (!isPathValue(found)) return { error: value ? `${label} 응답의 ${value} 에 값이 없습니다` : `${label} 의 응답이 값 하나가 아닙니다` };
   return { value: String(found) };
 }
 
 // 필수 경로 변수에 값이 없으면 path 는 null 이다.
-export async function preparePathValues(map, screen, pathValues, fetchApi, role = null) {
+export async function preparePathValues(map, screen, pathValues, fetchApi, role = null, fetchServer = null) {
   const found = opensAsIs(screen.path) ? null : fallbackScreen(map, screen, pathValues, role);
   const fallback = found?.id ?? null;
   const fallbackPath = found?.path ?? null;
@@ -121,13 +146,15 @@ export async function preparePathValues(map, screen, pathValues, fetchApi, role 
   const results = await Promise.all(variables.map(({ name }) => {
     const spec = given[name];
     if (typeof spec === 'string') return { value: spec };
-    return spec ? listValue(spec, fetchApi) : {};
+    if (!spec) return {};
+    return spec.keyEnv ? issuedValue(spec, fetchServer) : listValue(spec, fetchApi);
   }));
+  const issued = variables.filter(({ name }) => given[name]?.keyEnv).map(({ name }) => name);
   const values = {};
   const errors = [];
   results.forEach((f, i) => {
     if (f.value !== undefined) values[variables[i].name] = f.value;
     if (f.error) errors.push(`${variables[i].name}: ${f.error}`);
   });
-  return { parts, values, errors, path: fill(parts, values), fallback, fallbackPath };
+  return { parts, values, errors, path: fill(parts, values), fallback, fallbackPath, ...(issued.length ? { issued } : {}) };
 }

@@ -300,13 +300,14 @@ export async function startAppHost(app, { port = 0, rootDefaults = () => ({ valu
   const signedOutServer = app.signedOutPaths.length ? await open(0, null) : null;
   const roleServers = [];
   for (const login of roleLogins) roleServers.push(await open(0, login));
+  const fetchServer = (apiPath, { method = 'GET', headers = {}, body, signal } = {}) => fetch(join(app.server, apiPath), {
+    method,
+    headers: { ...headers, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
+  });
   const apiCaller = ({ token }) => (token
-    ? (apiPath, { method = 'GET', body, signal } = {}) => fetch(join(app.server, apiPath), {
-      method,
-      headers: { ...fillIn(app.login.header ?? {}, { token }), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
-    })
+    ? (apiPath, options) => fetchServer(apiPath, { ...options, headers: fillIn(app.login.header ?? {}, { token }) })
     : null);
   const fetchApi = apiCaller(main);
   const roleIndex = new Map(roles.map(([role], i) => [role, i]));
@@ -318,6 +319,7 @@ export async function startAppHost(app, { port = 0, rootDefaults = () => ({ valu
     roles: roles.map(([role, account], i) => ({ role, account: account.id, url: urlOf(roleServers[i]), error: roleLogins[i].error ?? null })),
     fetchApi,
     fetchApiAs: (role) => (roleIndex.has(role) ? apiCaller(roleLogins[roleIndex.get(role)]) : undefined),
+    fetchServer,
     get overrides() {
       return overrides;
     },

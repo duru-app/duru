@@ -1096,19 +1096,54 @@ function filledPath(parts, values) {
 }
 
 const pathValueKey = (id, role) => `${id}\n${role ?? ''}`;
+const pathValuesUrl = (id, role) => `/api/path-values?screen=${encodeURIComponent(id)}${role ? `&role=${encodeURIComponent(role)}` : ''}`;
 
 async function loadPathValues(id, role) {
   const entry = { pending: true };
   state.pathValues.set(pathValueKey(id, role), entry);
   try {
-    const res = await fetch(`/api/path-values?screen=${encodeURIComponent(id)}${role ? `&role=${encodeURIComponent(role)}` : ''}`);
+    const res = await fetch(pathValuesUrl(id, role));
     if (!res.ok) throw new Error(await res.text());
     Object.assign(entry, await res.json());
   } catch (err) {
     Object.assign(entry, { parts: null, values: {}, errors: [`경로 변수 값을 가져오지 못했습니다: ${err.message}`], fallback: null });
   }
-  Object.assign(entry, { pending: false, draft: { ...entry.values }, opened: 0 });
+  Object.assign(entry, { pending: false, draft: { ...entry.values }, filled: { ...entry.values }, opened: 0 });
   if (state.side === 'screens' && state.selected === id && state.view === 'list') renderCenterHead(state.data.map.screens.find((x) => x.id === id));
+}
+
+async function newIssued(s, entry, values) {
+  const names = entry.issued.filter((n) => values[n] === entry.filled[n]);
+  if (!names.length) return {};
+  let fresh;
+  try {
+    const res = await fetch(pathValuesUrl(s.id, frameAccount(s).role));
+    if (!res.ok) throw new Error(await res.text());
+    fresh = await res.json();
+  } catch (err) {
+    throw new Error(`경로 변수 값을 가져오지 못했습니다: ${err.message}`);
+  }
+  const missing = names.filter((n) => fresh.values[n] === undefined);
+  if (missing.length) throw new Error(fresh.errors.filter((e) => missing.some((n) => e.startsWith(`${n}: `))).join(' ') || `${missing.join(', ')} 값을 받지 못했습니다`);
+  return Object.fromEntries(names.map((n) => [n, fresh.values[n]]));
+}
+
+function takeIssued(entry, got) {
+  for (const [n, v] of Object.entries(got)) {
+    if (entry.draft[n] === entry.filled[n]) entry.draft[n] = v;
+    entry.values[n] = v;
+    entry.filled[n] = v;
+  }
+  entry.used = false;
+}
+
+const stillShown = (s, entry) => state.side === 'screens' && state.view === 'list' && state.selected === s.id
+  && state.pathValues.get(pathValueKey(s.id, frameAccount(s).role)) === entry;
+
+function showPathValueError(message) {
+  const bar = document.querySelector('#center .path-values');
+  bar?.querySelector('.error.again')?.remove();
+  bar?.append(h('span', { class: 'error again' }, message));
 }
 
 function pathValuesOf(s, role) {
@@ -1133,8 +1168,18 @@ function frameTarget(s, entry) {
 function pathValueBar(s, entry, fallback) {
   const variables = (entry.parts ?? []).filter((p) => typeof p !== 'string');
   if (!variables.length && !fallback && !entry.errors.length) return null;
-  const reopen = () => {
+  const reopen = async () => {
+    let got = {};
+    if (entry.issued) {
+      try {
+        got = await newIssued(s, entry, entry.draft);
+      } catch (err) {
+        return stillShown(s, entry) ? showPathValueError(err.message) : null;
+      }
+      if (!stillShown(s, entry)) return;
+    }
     entry.values = { ...entry.draft };
+    takeIssued(entry, got);
     entry.opened += 1;
     renderCenterHead(s);
   };
@@ -1166,10 +1211,23 @@ function appFrame(s, { link, fallback, opens, missing }, entry) {
   }
   const signedOut = Boolean(app.signedOutUrl) && link.startsWith(`${app.signedOutUrl}/`);
   const who = signedOut ? null : frameAccount(opens ?? s);
-  const shown = who ? who.url + link.slice(app.url.length) : link;
-  const opened = signedOut
-    ? `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent(link.slice(app.signedOutUrl.length))}`
-    : shown;
+  const opening = (l) => (signedOut ? `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent(l.slice(app.signedOutUrl.length))}` : who.url + l.slice(app.url.length));
+  const shown = signedOut ? link : opening(link);
+  const opened = opening(link);
+  // 팝업이 막히지 않도록 탭은 누른 자리에서 바로 열고, 주소는 값을 받은 뒤에 넣는다.
+  const openAnew = async (e) => {
+    e.preventDefault();
+    const tab = window.open('', '_blank');
+    if (!tab) return;
+    tab.opener = null;
+    try {
+      const got = await newIssued(s, entry, entry.values);
+      tab.location.href = opening(frameTarget(s, { ...entry, values: { ...entry.values, ...got } }).link);
+    } catch (err) {
+      tab.close();
+      if (stillShown(s, entry)) showPathValueError(err.message);
+    }
+  };
   return [
     h('div', { class: 'frame-bar' },
       h('span', { class: 'mono' }, shown),
@@ -1180,7 +1238,7 @@ function appFrame(s, { link, fallback, opens, missing }, entry) {
         who.hint && h('span', { class: 'muted' }, who.hint),
       ],
       unknown,
-      h('a', { href: opened, target: '_blank', rel: 'noopener' }, '새 창으로 열기 ↗'),
+      h('a', { href: opened, target: '_blank', rel: 'noopener', onclick: entry?.issued && !fallback ? openAnew : null }, '새 창으로 열기 ↗'),
       values),
     h('div', { class: 'settings-bar', id: 'settings-bar', hidden: true }),
     h('iframe', { class: 'app', 'data-src': opened, title: '앱 화면' }),
@@ -1279,7 +1337,26 @@ function updateSettings(change) {
       state.settingsError = `설정을 바꾸지 못했습니다: ${err.message}`;
     }
     renderSettingsBar();
-    if (frame?.isConnected) frame.src = frame.dataset.src;
+    if (!frame?.isConnected) return;
+    const s = frame.hasAttribute('src') ? screenOf(state.selected) : null;
+    const entry = s && state.pathValues.get(pathValueKey(s.id, frameAccount(s).role));
+    // 이미 띄운 주소에 든 코드는 한 번 쓰여 다시 쓸 수 없다.
+    if (entry?.issued && !frameTarget(s, entry).fallback) {
+      if (state.settingsError) return;
+      let got;
+      try {
+        got = await newIssued(s, entry, entry.values);
+      } catch (err) {
+        return stillShown(s, entry) ? showPathValueError(err.message) : null;
+      }
+      if (!stillShown(s, entry)) return;
+      if (Object.keys(got).length) {
+        takeIssued(entry, got);
+        document.getElementById('center-head').dataset.key = '';
+        return renderCenterHead(s);
+      }
+    }
+    frame.src = frame.dataset.src;
   }).catch((err) => {
     state.settingsError = `설정 줄을 그리지 못했습니다: ${err.message}`;
   });
@@ -1369,12 +1446,19 @@ function renderSettingsBar() {
 function renderCenterHead(s) {
   const head = document.getElementById('center-head');
   const { app, appLinks } = state.data;
-  const entry = s && app && !appLinks[s.id] ? pathValuesOf(s, frameAccount(s).role) : null;
-  const target = s && app ? frameTarget(s, entry) : null;
+  const entryOf = () => (s && app && !appLinks[s.id] ? pathValuesOf(s, frameAccount(s).role) : null);
+  let entry = entryOf();
+  let target = s && app ? frameTarget(s, entry) : null;
   // 앱을 조작하던 중에 표시를 남겨도 프레임이 다시 로드되지 않게, 고른 화면이나 띄울 주소가 바뀔 때만 다시 그린다.
-  const key = s ? [s.id, app?.url, state.roleChoice, target?.link, entry?.pending, entry?.opened].join(' ') : '';
-  if (head.dataset.key === key) return;
-  head.dataset.key = key;
+  const keyOf = () => (s ? [s.id, app?.url, state.roleChoice, target?.link, entry?.pending, entry?.opened].join(' ') : '');
+  if (head.dataset.key === keyOf()) return;
+  if (entry?.issued && entry.used) {
+    state.pathValues.delete(pathValueKey(s.id, frameAccount(s).role));
+    entry = entryOf();
+    target = frameTarget(s, entry);
+  }
+  head.dataset.key = keyOf();
+  if (entry && !entry.pending) entry.used = true;
   if (!s) return fill(head);
   const link = appLinks[s.id];
   fill(head,

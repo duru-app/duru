@@ -23,12 +23,15 @@ const isWebAddress = (v) => isText(v) && /^https?:\/\/[^/]/.test(v);
 const MOVE_KEYS = ['from', 'to', 'reason'];
 const CALL_LINK_KEYS = ['from', 'to', 'note'];
 const LIST_API_KEYS = ['api', 'list', 'value', 'method', 'body'];
+const ISSUING_API_KEYS = ['api', 'method', 'header', 'keyEnv', 'body', 'value'];
 const HEADER_EXAMPLE = '{ "Authorization": "Bearer {token}" }';
 
-const isListApi = (v) => isPlainObject(v) && Object.keys(v).every((k) => LIST_API_KEYS.includes(k))
-  && isText(v.api) && v.api.startsWith('/') && typeof v.list === 'string' && typeof v.value === 'string'
+const isRequest = (v) => isText(v.api) && v.api.startsWith('/') && typeof v.value === 'string'
   && (v.method === undefined || /^[A-Z]+$/.test(v.method))
   && (v.body === undefined || (v.method ?? 'GET') !== 'GET');
+const isListApi = (v) => isPlainObject(v) && Object.keys(v).every((k) => LIST_API_KEYS.includes(k)) && isRequest(v) && typeof v.list === 'string';
+const isIssuingApi = (v) => isPlainObject(v) && Object.keys(v).every((k) => ISSUING_API_KEYS.includes(k)) && isRequest(v) && isText(v.keyEnv)
+  && isPlainObject(v.header) && Object.values(v.header).every(isText) && Object.values(v.header).some((h) => h.includes('{key}'));
 
 function pathValuesSettings(pathValues) {
   if (!isPlainObject(pathValues)) {
@@ -41,9 +44,13 @@ function pathValuesSettings(pathValues) {
       throw new Error(`${at} must map variable names to values, such as { "tab": "draft" }, not ${JSON.stringify(variables)}`);
     }
     for (const [name, value] of Object.entries(variables)) {
-      if (isText(value) || isListApi(value)) continue;
-      throw new Error(`${at}.${name} must be a fixed value such as "draft", or a list API such as { "api": "/api/v1/documents", "list": "contents.list", "value": "id" } `
-        + `with an optional "method" and, for a method other than GET, a JSON "body", not ${JSON.stringify(value)}`);
+      if (isText(value) || isListApi(value) || isIssuingApi(value)) continue;
+      // 발급 API 를 잘못 적은 값에는 header 에 키가 그대로 들어 있을 수 있어, 목록 API 에 없는 이름이 하나라도 있으면 값을 메시지에 싣지 않는다.
+      const shown = isPlainObject(value) && Object.keys(value).some((k) => !LIST_API_KEYS.includes(k)) ? '' : `, not ${JSON.stringify(value)}`;
+      throw new Error(`${at}.${name} must be a fixed value such as "draft", a list API such as { "api": "/api/v1/documents", "list": "contents.list", "value": "id" }, `
+        + 'or an API that issues the value such as { "api": "/api/v1/codes", "method": "POST", "header": { "X-API-KEY": "{key}" }, "keyEnv": "APP_API_KEY", "value": "contents.code" } '
+        + 'with the name of an environment variable that holds the key, never the key itself; '
+        + `each with an optional "method" and, for a method other than GET, a JSON "body"${shown}`);
     }
   }
   return pathValues;
