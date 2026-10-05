@@ -400,6 +400,27 @@ export async function extractClient(config) {
     return props.slice(i + 1).some((later) => mayOverride(later, key));
   }
 
+  const assignedKey = ({ computed, property }) => (!computed ? property.name : property.type === 'StringLiteral' ? property.value : undefined);
+
+  // 본문이 거쳐 온 const 마다, 호출보다 위에서 `body.key = …` 나 `body['key'] = …` 로 대입한 자리
+  function assignments(nodePath, before) {
+    const found = [];
+    const seen = new Set();
+    for (let at = nodePath; at?.isIdentifier(); ) {
+      const binding = at.scope.getBinding(at.node.name);
+      at = constInit(at, at.node.name, seen);
+      if (!at) break;
+      for (const ref of binding.referencePaths) {
+        const assign = ref.parentPath.parentPath;
+        if (ref.key !== 'object' || !ref.parentPath.isMemberExpression() || ref.parentPath.key !== 'left') continue;
+        if (!assign.isAssignmentExpression({ operator: '=' }) || assign.node.start > before) continue;
+        const key = assignedKey(ref.parentPath.node);
+        if (key !== undefined) found.push({ key, value: assign.get('right'), start: assign.node.start, line: assign.node.loc.start.line });
+      }
+    }
+    return found.sort((a, b) => a.start - b.start);
+  }
+
   function bodyOptions(callPath) {
     const options = [];
     for (const arg of callPath.get('arguments')) {
@@ -408,12 +429,19 @@ export async function extractClient(config) {
       const outer = obj.get('properties');
       const at = outer.findLastIndex((p) => config.bodyArgKeys.includes(propertyKey(p)));
       if (at >= 0 && overridden(outer, at)) continue;
-      const body = at >= 0 ? objectLiteral(outer[at].get('value')) : obj;
-      const props = body?.get('properties') ?? [];
+      const written = at >= 0 ? outer[at].get('value') : arg;
+      const body = objectLiteral(written);
+      if (!body) continue;
+      const props = body.get('properties');
+      const found = [];
       props.forEach((prop, i) => {
         const key = propertyKey(prop);
-        if (key !== undefined && isToggle(prop.get('value')) && !overridden(props, i)) options.push({ key, line: prop.node.loc.start.line });
+        if (key !== undefined && isToggle(prop.get('value')) && !overridden(props, i)) found.push({ key, line: prop.node.loc.start.line });
       });
+      for (const { key, value, line } of assignments(written, callPath.node.start)) {
+        if (isToggle(value) && !found.some((o) => o.key === key)) found.push({ key, line });
+      }
+      options.push(...found);
     }
     return options;
   }

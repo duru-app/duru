@@ -1129,6 +1129,7 @@ test('a redirect shown only under a setting or a role does not make its target a
 
 const exportSites = (line) => ['/admin/audit#AdminAudit', '/admin/report#AdminReport'].map((s) => ({ screen: s, file: 'components/ExportDialog.js', line }));
 const optionsOf = (map, id) => map.calls.find((c) => c.id === id).options;
+const siteLinesOf = (map, id) => optionsOf(map, id).map((o) => [o.key, o.sites.map((s) => s.line)]);
 
 test('a call node lists the on/off keys the screens put in its request body, with the screens and lines they were found at', async () => {
   const map = await buildFixture();
@@ -1225,6 +1226,95 @@ test('a later spread overrides the keys before it, and of several bodyArgKeys pr
   );
   assert.deepEqual(optionsOf(map, 'POST:/api/v1/report/export').map((o) => o.key), ['signedOnly']);
   assert.deepEqual(optionsOf(map, 'POST:/api/v1/report/archive'), []);
+});
+
+test('a key assigned to a const body above the call is an option when any assignment gives it true or false', async () => {
+  const map = await buildEditedCopy([
+    [
+      'client/src/components/ExportDialog.js',
+      '  const schedule = scheduleBody(ids);\n',
+      [
+        '  const schedule = scheduleBody(ids);',
+        '  const archiveSome = () => {',
+        '    const body = { ids };',
+        '    if (ids.length > 1) {',
+        "      body['with.attachments'] = ids.length > 2;",
+        "      body.watermark = 'draft';",
+        '    } else {',
+        "      body['with.attachments'] = false;",
+        '      body.signedOnly = signedOnly;',
+        '    }',
+        '    ajaxReportArchive({ data: body });',
+        '    body.late = true;',
+        '  };',
+        '  const exportAll = () => {',
+        "    const body = { format: 'pdf' };",
+        '    body.everything = true;',
+        '    ajaxReportExport(body);',
+        '  };',
+        '',
+      ].join('\n'),
+    ],
+  ]);
+  assert.deepEqual(siteLinesOf(map, 'POST:/api/v1/report/archive'), [
+    ['signedOnly', [18, 37, 18, 37]],
+    ['with.attachments', [17, 17]],
+    ['withHistory', [37, 37]],
+  ]);
+  assert.deepEqual(siteLinesOf(map, 'POST:/api/v1/report/export'), [
+    ['everything', [25, 25]],
+    ['withAttachments', [5, 5]],
+    ['withHistory', [35, 35]],
+  ]);
+});
+
+test('a key whose name is not written out in the assignment is not read, and assignments to every const the body passes through are', async () => {
+  const map = await buildEditedCopy([
+    [
+      'client/src/components/ExportDialog.js',
+      '  const schedule = scheduleBody(ids);\n',
+      [
+        '  const schedule = scheduleBody(ids);',
+        '  const archiveSome = (name) => {',
+        '    const body = { ids };',
+        '    const sent = body;',
+        '    body[name] = true;',
+        '    body.compressed = false;',
+        '    sent.compressed = true;',
+        '    sent.signedOnly = true;',
+        '    sent.count += 1;',
+        '    ajaxReportArchive({ data: sent });',
+        '  };',
+        '',
+      ].join('\n'),
+    ],
+  ]);
+  assert.deepEqual(siteLinesOf(map, 'POST:/api/v1/report/archive'), [
+    ['compressed', [15, 15]],
+    ['signedOnly', [17, 30, 17, 30]],
+    ['withHistory', [30, 30]],
+  ]);
+});
+
+test('keys assigned to a const that holds something other than an object are not read', async () => {
+  const map = await buildEditedCopy([
+    [
+      'client/src/components/ExportDialog.js',
+      '  const schedule = scheduleBody(ids);\n',
+      [
+        '  const schedule = scheduleBody(ids);',
+        '  const archiveMade = () => {',
+        '    const made = scheduleBody(ids);',
+        '    made.viaCall = true;',
+        '    ajaxReportArchive({ data: made });',
+        '    ajaxReportExport(made);',
+        '  };',
+        '',
+      ].join('\n'),
+    ],
+  ]);
+  assert.deepEqual(optionsOf(map, 'POST:/api/v1/report/archive').map((o) => o.key), ['signedOnly', 'withHistory']);
+  assert.deepEqual(optionsOf(map, 'POST:/api/v1/report/export').map((o) => o.key), ['withAttachments', 'withHistory']);
 });
 
 test('without bodyArgKeys in the config, only an object written straight into the call is read as the body', async () => {

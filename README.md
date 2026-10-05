@@ -266,6 +266,14 @@ config), sorted by key. The keys found in the code and their lines are also unde
 followed in the same body by a key or method of the same name, a computed key or a spread
 (`{ withHistory: false, ...prefs }`) is not an option, because the later one may be what is sent; a spread itself
 is not followed. A `bodyArgKeys` property followed in the same way gives no options at all.
+When the body is a const, the keys assigned to it above the call (`body.withHistory = false`,
+`body['document.withHistory'] = false`) are read as well: such a key is an option when any of its assignments
+gives it one of the on/off values above, whatever the other assignments give, since they usually sit in the
+branches of a condition. Its line is that of the first such assignment, unless the object literal already
+gives the key as an option, which keeps the literal's line. A key is read only when it is written after a dot or
+as a quoted string in brackets; `body[name] = true` and a key in backticks give no option. No assigned key is
+read when the const is initialised with something other than an object literal, such as
+`const body = makeBody()`; a const initialised with another const is followed to that one.
 
 Each screen's `access` says whether it opens only under a setting or a role. A guard that reads a member of
 a `settingsRoots` identifier is a `setting` condition, one that reads a `roleIdentifiers` entry is a `role`
