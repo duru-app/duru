@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { parse } from '@babel/parser';
 import _traverse from '@babel/traverse';
-import { PARSER_PLUGINS } from './client.mjs';
+import { parseSource } from './parse.mjs';
 import { resolveImport } from './resolve.mjs';
 
 const traverse = _traverse.default ?? _traverse;
@@ -36,7 +35,7 @@ function findUnder(srcRoot, realRoot, file) {
 }
 
 function importsOf(srcRoot, file) {
-  const ast = parse(fs.readFileSync(file, 'utf8'), { sourceType: 'module', plugins: PARSER_PLUGINS, errorRecovery: true });
+  const { ast } = parseSource(file);
   const found = new Set();
   const add = (spec) => {
     const resolved = typeof spec === 'string' ? resolveImport(srcRoot, file, spec) : null;
@@ -72,7 +71,7 @@ export function importLinker(srcRoot, map) {
     try {
       imports = importsOf(srcRoot, file);
     } catch (err) {
-      return { reason: `테스트 파일을 읽지 못했습니다: ${err.message}` };
+      return { reason: `테스트 파일을 읽지 못했습니다: ${err.detail ?? err.message}` };
     }
     const screens = new Map();
     for (const imported of imports.map((f) => path.relative(srcRoot, f)).sort()) {

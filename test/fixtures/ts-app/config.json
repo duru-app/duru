@@ -1,0 +1,41 @@
+{
+  "srcRoot": "client/src",
+  "routesFile": "Routes.tsx",
+  "routeElements": [
+    "Route"
+  ],
+  "routeConstant": "Option.ROUTE_PATH",
+  "constants": {
+    "Option": "_define/Option.js"
+  },
+  "apiModules": [
+    "_ajax/AjaxFunc.ts"
+  ],
+  "bodyArgKeys": [
+    "data"
+  ],
+  "settingsRoots": [
+    "globalSettings"
+  ],
+  "settingsDefaults": {
+    "globalSettings": {
+      "file": "store/settings.ts",
+      "const": "defaults"
+    }
+  },
+  "roleIdentifiers": [
+    "memberRole",
+    "session['member.role']"
+  ],
+  "entryPaths": [
+    "/home"
+  ],
+  "tests": [
+    {
+      "format": "vitest",
+      "path": "results/vitest",
+      "depth": "code"
+    }
+  ],
+  "outDir": "out"
+}

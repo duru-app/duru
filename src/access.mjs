@@ -1,6 +1,6 @@
-import { parseExpression } from '@babel/parser';
 import { lookupConstant, memberChain, UNKNOWN, VARIABLE_SEGMENT } from './client.mjs';
 import { parseRoleEntry } from './config.mjs';
+import { parseFragment, plainText } from './parse.mjs';
 import { pathParts } from './path-values.mjs';
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -22,9 +22,15 @@ function guardKinds(config, guardInits) {
   if (config.roleIdentifiers?.length) rules.push(['role', new RegExp(`(?<![\\w$])(?:${rolesSource(config)})(?![\\w$])`)]);
   const settings = config.settingsRoots ?? [];
   if (settings.length) rules.push(['setting', new RegExp(`(?<![\\w$])(?:${alt(settings)})\\s*\\??\\.`)]);
+  const plain = new Map();
+  const plainOf = (text, file) => {
+    const key = `${file}\n${text}`;
+    if (!plain.has(key)) plain.set(key, plainText(text, file));
+    return plain.get(key);
+  };
   return (guard, file) => {
     const entry = guardInits.get(file)?.get(guard);
-    const texts = [entry?.source ?? guard, ...(entry?.inits ?? []).map((i) => i.init)];
+    const texts = [entry?.source ?? guard, ...(entry?.inits ?? []).map((i) => i.init)].map((t) => plainOf(t, file));
     return rules.filter(([, re]) => texts.some((t) => re.test(t))).map(([kind]) => kind);
   };
 }
@@ -61,18 +67,20 @@ function roleReader(config, guardInits, constants) {
     (node.type === 'Identifier' && node.name === 'props') || (isMember(node) && node.object.type === 'ThisExpression' && node.property.name === 'props');
   const isPropsMember = (node) => isMember(node) && roleNames.has(node.property.name) && isProps(node.object);
   const parsed = new Map();
-  const parse = (text) => {
-    if (!parsed.has(text)) {
+  const parseIn = (file, text) => {
+    const key = JSON.stringify([file, text]);
+    if (!parsed.has(key)) {
       try {
-        parsed.set(text, parseExpression(text, { plugins: ['jsx'] }));
+        parsed.set(key, parseFragment(text, file));
       } catch {
-        parsed.set(text, null);
+        parsed.set(key, null);
       }
     }
-    return parsed.get(text) && { node: parsed.get(text), text };
+    return parsed.get(key);
   };
 
   return (guard, file) => {
+    const parse = (text) => parseIn(file, text);
     const entry = guardInits.get(file)?.get(guard);
     const inits = entry?.inits ?? [];
     const helpers = entry?.helpers ?? new Map();
