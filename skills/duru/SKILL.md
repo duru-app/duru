@@ -22,6 +22,12 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - The project config: the JSON file `duru` reads (it names the client source, the server endpoint lists and
   the test result files). Ask the user for its path if you do not know it.
 - The command: `duru` when it is installed, otherwise `node <duru checkout>/src/cli.mjs`.
+- The route files: `routesFile` in the config is one route file or a list of them, and duru reads only the files
+  listed, so an app that splits its routes over several files needs each of them in the list. A screen on the map,
+  and the `route at <file>:<line>` in the task list, name the route file the route is written in. When a screen
+  you expect is missing from the map, check that the file holding its route is listed before reading the code
+  for another cause. A `duplicate screen ID` line in the `rebuild` summary names the file and line of every
+  route that makes the same ID.
 
 ## Sequence
 

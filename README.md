@@ -41,7 +41,17 @@ The project config lives **outside this repository** next to the target project'
 relative to the config file, except the files inside the client source (`routesFile`, `constants`,
 `apiModules`, `settingsDefaults`), which are relative to `srcRoot`. It names:
 
-- `srcRoot`, `routesFile`, `routeElements`, `routeConstant` — the client source and how routes are declared
+- `srcRoot`, `routesFile`, `routeElements`, `routeConstant` — the client source and how routes are declared.
+  `routesFile` is one route file as text (`"Routes.js"`) or a list of them (`["Routes.js", "admin/Routes.js"]`)
+  for an app that splits its routes over several files. duru reads exactly the files listed and does not
+  follow imports to find more, so a route file left out of the list gives no screens. Screens come in the
+  order of the list, and in source order within a file. An empty list, an entry that is not text,
+  or a file listed twice stops the run with an error naming the key and the value,
+  and a listed file that is not there stops the map build with its name. Each file is read on its own: a
+  condition or a wrapper around the place where one route file renders the component of another is not carried
+  over to the screens of that other file. Each screen, redirect and route condition carries the
+  route file it is written in, and the review page's 「라우트」 line, the route location in a story's 「사전 조건」
+  and in the task list, and the place an access verdict rests on name that file
 - `constants`, `constantStubs` — modules evaluated for route paths and API endpoint definitions, and
   stand-in source for outside packages they import
 - `apiModules`, `passThroughCalls` — where API functions live and which wrappers pass a URL through
@@ -180,7 +190,9 @@ relative to the config file, except the files inside the client source (`routesF
   run) and posts its changes to `/api/settings` as `{ "overrides": [{ "path": [section, key, ...], "value" }
   or { "path", "item", "value": true|false }] }`, which replaces the whole list.
 
-`map.json` lists screens with their route guards, the API calls reachable from each screen with the
+`map.json` lists screens with the route file each is written in (`routeFile`, its path relative to `srcRoot`; `review`
+and `tasks` stop on a map built before duru recorded it and say to run `duru rebuild`) and
+the line there, with their route guards, the API calls reachable from each screen with the
 server match, the settings each screen reads, and links to other screens with the conditions guarding
 them. A screen reaches the files its route component imports, directly or in turn, and the files of every
 component that wraps its route in the routes file, such as a layout with a side menu around a group of
@@ -223,7 +235,8 @@ keep no incoming link.
 
 Each screen has an ID made of its route path and component name (`/document/:id#DocumentDetail`),
 with spaces and `, ( ) & | !` replaced so it works as a JUnit tag too. Routes that end up with the same
-ID are listed under `duplicateIds`.
+ID, in one route file or in several, are listed under `duplicateIds` as `{ "id", "places": [{ "file", "line" }] }`,
+and `extract` and `rebuild` print each place as `file:line`.
 
 Each API call is also a node under `calls`, with an ID of the form `<METHOD>:<path>`
 (`GET:/api/v1/document/{documentId}`). The server match decides the path:
@@ -284,7 +297,7 @@ plain name matches the dot form too (`session.role`, `session?.role`), and `work
 A `const` declared in the same file that a guard uses is judged by its initializer too, and so are
 the consts that initializer uses in turn: after `const isAdmin = isAdminRole(memberRole)`, the guard
 `isAdmin` is a role condition and is still listed as `isAdmin`. The walk starts from entry screens, listed under `entries` with their `reasons`: the targets of
-redirects in the routes file that no setting or role guards (`redirect`), screens no link leads to (`no-incoming-link`, such as pages
+redirects in the route files that no setting or role guards (`redirect`, with the route file and line of the redirect), screens no link leads to (`no-incoming-link`, such as pages
 opened from an e-mail), and `entryPaths` (`config`; paths that match no route go to `unknownEntryPaths`).
 A screen is open when an entry screen reaches it through links and routes without such a guard, and
 `restricted` otherwise; a screen no entry screen reaches at all stays open, since nothing shows what would
@@ -527,7 +540,7 @@ Each story is checked against the map, with the same result every time for the s
 - 「사전 조건」 (what it takes to get to the end) gathers, in step order: what the first screen needs when
   it opens only under a setting or a role (its `kinds` and `roleValues`), then for each step the conditions
   of the links into it when they are `conditioned` (with the step's `unknownLinks`, if any), and the setting
-  and role guards of its route with the route's line in `routesFile`.
+  and role guards of its route with the route's line in the screen's own route file.
 
 Each story also gets a `status` from the tests in `tests.json`, apart from the link verdicts above. A
 story with tests tagged `@story:<its ID>` fails when one of them fails, is `pending` when none fails and

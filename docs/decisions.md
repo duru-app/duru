@@ -51,6 +51,17 @@ Artifact page can be one optional front end. Making the Artifact the architectur
 claude.ai: its stored marks and its "send to Claude" comments are claude.ai features that only a Claude
 Code session can read.
 
+**Route files are listed in the config.**
+`routesFile` takes one route file or a list of them, and duru reads those files and no others. Every screen,
+redirect and route condition carries the route file it is written in, and everything shown about a route
+(the map, the review page, the task list, the evidence of an access verdict, the duplicate-ID notice) names
+that file.
+Alternative compared: give one root route file and follow its imports to find the others.
+Reason: what is read is visible in the config. Following imports would have to read code that builds routes by
+mapping over arrays or spreading lists of routes, which is easy to miss silently: a route file that is not
+followed leaves screens off the map and nothing says so. With a list, a missing file is a visible gap in the
+config that the reader of the config can see.
+
 **Project-specific data never lives in this repository.**
 Each target project's config, exported source, endpoint lists and generated maps live outside this repo.
 The repository holds only generic code.

@@ -112,9 +112,18 @@ function appSettings(app, at, raw) {
   return { ...app, roles, signedOutPaths, pathValues, settingsFile: settingsFileOf(app.settingsFile, raw), files: isWebAddress(app.files) ? app.files : at(app.files) };
 }
 
+export const ROUTES_FILE = 'a route file as a path from srcRoot, or a list of them with each file once, such as "Routes.js" or ["Routes.js", "admin/Routes.js"]';
+
+function routeFilesOf(value, srcRoot) {
+  const given = Array.isArray(value) ? value : [value];
+  const files = given.map((f) => (isText(f) ? path.relative(srcRoot, path.join(srcRoot, f)) : null));
+  if (!files.length || files.includes(null) || new Set(files).size < files.length) throw new Error(`routesFile must be ${ROUTES_FILE}, not ${JSON.stringify(value)}`);
+  return files;
+}
+
 export function loadConfig(configPath) {
   const configDir = path.dirname(path.resolve(configPath));
-  const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const { routesFile, ...raw } = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   const at = (p) => path.resolve(configDir, p);
   const tests = (raw.tests ?? []).map((t) => {
     if (!TEST_FORMATS.includes(t.format)) throw new Error(`unknown test format "${t.format}" (expected one of ${TEST_FORMATS.join(', ')})`);
@@ -160,6 +169,7 @@ export function loadConfig(configPath) {
     configDir,
     author: raw.author?.trim() ?? null,
     srcRoot: at(raw.srcRoot),
+    routeFiles: routesFile === undefined ? [] : routeFilesOf(routesFile, at(raw.srcRoot)),
     roleIdentifiers: raw.roleIdentifiers ?? [],
     bodyArgKeys,
     bodyOptions,

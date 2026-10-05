@@ -48,7 +48,7 @@ export function checkStories(map, stories) {
       if (i === 0 && s.access.restricted) {
         reach.push({ kind: 'start', screen: s.id, kinds: s.access.kinds, ...(s.access.roleValues !== undefined && { roleValues: s.access.roleValues }) });
       }
-      if (s.access.route.length) reach.push({ kind: 'route', screen: s.id, line: s.line, guards: s.access.route });
+      if (s.access.route.length) reach.push({ kind: 'route', screen: s.id, file: s.routeFile, line: s.line, guards: s.access.route });
     });
 
     return {

@@ -74,7 +74,7 @@ test('a story through a guarded link carries the link\'s condition and source, a
   assert.deepEqual(story.links[0].ways, [{ file: 'components/Home.js', line: 19, conditions: [lab] }]);
   assert.deepEqual(story.reach, [
     { kind: 'link', from: '/home#Home', to: '/lab#Lab', ways: [{ file: 'components/Home.js', line: 19, conditions: [lab] }] },
-    { kind: 'route', screen: '/lab#Lab', line: 44, guards: [lab] },
+    { kind: 'route', screen: '/lab#Lab', file: 'Routes.js', line: 44, guards: [lab] },
   ]);
   assert.equal(story.broken, false);
 });
@@ -114,7 +114,7 @@ test('the first screen\'s own opening condition is gathered when the story start
   assert.deepEqual(verdicts(story), ['/admin/member#AdminMember → /admin/audit#AdminAudit open']);
   assert.deepEqual(story.reach, [
     { kind: 'start', screen: '/admin/member#AdminMember', kinds: ['role'], roleValues: ['ADMIN'] },
-    { kind: 'route', screen: '/admin/member#AdminMember', line: 42, guards: [{ guard: 'isAdminRole(memberRole)', kinds: ['role'], roles: ['ADMIN'] }] },
+    { kind: 'route', screen: '/admin/member#AdminMember', file: 'Routes.js', line: 42, guards: [{ guard: 'isAdminRole(memberRole)', kinds: ['role'], roles: ['ADMIN'] }] },
   ]);
 });
 
@@ -134,7 +134,7 @@ test('a step that a move in the config joins, such as the screen opening after s
   assert.deepEqual(checkedStory.reach, []);
 });
 
-const TINY_CONFIG = { settingsRoots: ['globalSettings'], roleIdentifiers: ['memberRole'], routesFile: 'Routes.js', entryPaths: [] };
+const TINY_CONFIG = { settingsRoots: ['globalSettings'], roleIdentifiers: ['memberRole'], entryPaths: [] };
 const NO_SETTING_READ = { settings: null, settingsReason: '조건에서 설정을 읽는 곳을 찾지 못했습니다' };
 
 function tinyMap(links) {

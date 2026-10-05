@@ -63,11 +63,20 @@ function screenCallOptions(screen, callsById) {
   return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id).options.filter((o) => keys.has(o.key) || o.sources.includes('config'))]));
 }
 
+const isStaleMap = (map) => Array.isArray(map?.screens) && map.screens.some((s) => !s.routeFile);
+const staleMapError = (mapFile) => new Error(`${mapFile} was built by a duru that did not record the route file of each screen — run "duru rebuild"`);
+
+function readMap(mapFile) {
+  const map = readJson(mapFile);
+  if (isStaleMap(map)) throw staleMapError(mapFile);
+  return map;
+}
+
 const judgedTests = (config) => applyJudgments(readJson(path.join(config.outDir, 'tests.json')), loadJudgments(config.judgmentsDir).judgments);
 
 export function reviewData(config, author, app = null, fileSettings = null) {
   const mapFile = path.join(config.outDir, 'map.json');
-  const map = readJson(mapFile);
+  const map = readMap(mapFile);
   const tests = judgedTests(config);
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
   for (const s of map.screens) s.callOptions = screenCallOptions(s, callsById);
@@ -97,7 +106,6 @@ export function reviewData(config, author, app = null, fileSettings = null) {
       const signedOut = app && config.app.signedOutPaths.includes(s.path);
       return [s.id, appLink(signedOut ? app.signedOutUrl : (app?.url ?? config.appUrl), s.path)];
     })),
-    routesFile: config.routesFile,
     depths: DEPTHS,
     author: author?.name ?? null,
     authorSource: author?.source ?? null,
@@ -127,8 +135,14 @@ function readBody(req) {
 
 export async function startReviewServer(config, { port = 0, author = reviewAuthor(config), onDone = () => {} } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
+  // 없거나 아직 쓰는 중인 맵은 페이지가 요청할 때 알리고, 예전 형식의 맵만 서버를 띄우기 전에 알린다.
+  let onDisk = null;
+  try {
+    onDisk = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+  } catch {}
+  if (isStaleMap(onDisk)) throw staleMapError(mapFile);
   const rootDefaults = () => {
-    const map = readJson(mapFile);
+    const map = readMap(mapFile);
     const root = config.app.settingsFile?.root;
     return { values: map.settingsDefaults?.[root] ?? {}, incomplete: map.settingsDefaultsIncomplete?.[root] ?? [] };
   };
@@ -154,13 +168,13 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
       }
       const url = new URL(req.url, 'http://host');
       if (req.method === 'GET' && url.pathname === '/api/flow' && url.searchParams.has('from')) {
-        const map = readJson(mapFile);
+        const map = readMap(mapFile);
         const from = url.searchParams.get('from');
         if (!map.screens.some((s) => s.id === from)) return send(res, 404, 'text/plain', `unknown screen "${from}"`);
         return send(res, 200, 'application/json', JSON.stringify(buildFlow(map, judgedTests(config), { from })));
       }
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {
-        const map = readJson(path.join(config.outDir, 'map.json'));
+        const map = readMap(mapFile);
         const id = url.searchParams.get('screen');
         const screen = map.screens.find((s) => s.id === id);
         if (!screen) return send(res, 404, 'text/plain', `unknown screen "${id}"`);
@@ -197,7 +211,7 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
         }
         if (req.url === '/api/stories/check' || req.url === '/api/stories/add') {
           try {
-            const checked = checkScreens(readJson(mapFile), mapFile, input.screens);
+            const checked = checkScreens(readMap(mapFile), mapFile, input.screens);
             if (req.url === '/api/stories/check') return send(res, 200, 'application/json', JSON.stringify(checked));
             const { id, name, memo, screens } = input;
             return send(res, 201, 'application/json', JSON.stringify(addStory(config.storiesDir, { id, name, memo, screens, author: author.name })));
@@ -205,7 +219,7 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
             return send(res, 400, 'text/plain', err.message);
           }
         }
-        const candidate = storyCandidates(config, readJson(mapFile), mapFile).list.find((c) => c.source.record === input.record);
+        const candidate = storyCandidates(config, readMap(mapFile), mapFile).list.find((c) => c.source.record === input.record);
         if (!candidate) return send(res, 404, 'text/plain', `후보 ${input.record} 가 없습니다`);
         try {
           const written = req.url === '/api/candidates/accept'
