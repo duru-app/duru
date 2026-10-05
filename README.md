@@ -52,6 +52,12 @@ relative to the config file, except the files inside the client source (`routesF
   over to the screens of that other file. Each screen, redirect and route condition carries the
   route file it is written in, and the review page's 「라우트」 line, the route location in a story's 「사전 조건」
   and in the task list, and the place an access verdict rests on name that file
+- `tsconfig` — the tsconfig file that declares the app's import aliases (optional), such as
+  `"client/tsconfig.json"`, relative to the config file like `srcRoot`. Name the file that holds `paths`, itself
+  or through `extends`: in a project whose `tsconfig.json` only lists `references`, that is the referenced file,
+  such as `"client/tsconfig.app.json"`. Without it an import such as
+  `@domains/user/Form` is taken for an outside package and the screen's sources stop at that import; how
+  imports are resolved with it is described below, after the map
 - `constants`, `constantStubs` — modules evaluated for route paths and API endpoint definitions, and
   stand-in source for outside packages they import
 - `apiModules`, `passThroughCalls` — where API functions live and which wrappers pass a URL through
@@ -202,6 +208,35 @@ that barrel re-exports, and their API calls, settings reads and links belong to 
 function that a file imports through a barrel instead of from the API module is not read as an API call. A guard
 around the wrapper is a route guard of every screen inside it, so the wrapper's links count as coming from
 restricted screens and do not repeat that guard.
+
+An import is resolved in this order: a relative path; a name written in the `paths` of the `tsconfig` file
+(see the config keys above); a path that starts with the name of a folder directly under `srcRoot`; anything
+else is an outside package, which screens do not follow. duru reads `compilerOptions.paths` and
+`compilerOptions.baseUrl` of that file. `extends` is followed, as a single path or a list in which later files
+win, relative to the file that writes it and with or without `.json`, or as a package in `node_modules` (its
+`tsconfig.json` when the name is a folder); as in TypeScript, the `paths` of a file
+replace the `paths` of the file it extends as a whole, `baseUrl` is relative to the file that writes it, and
+without `baseUrl` the targets in `paths` are relative to the file that writes `paths`. `${configDir}` at the start of `baseUrl`
+or of a target stands for the folder of the tsconfig file named in the config. `baseUrl` is used only as the base of
+`paths`: an import written relative to `baseUrl` alone is not resolved through the tsconfig. Comments and trailing
+commas in these files are accepted. A name is either written exactly (`"@config"`) or has one `*`
+(`"@domains/*": ["src/domains/*"]`); several targets are tried in the order they are written, and when more than
+one name matches, an exact name wins and otherwise the one with the longest part before the `*`. A target
+outside `srcRoot` is never followed (`"react": ["../node_modules/@types/react"]`): when something is there the
+import is an outside package, and when nothing is there the next target is tried. A target that holds only a type
+declaration file (`.d.ts`) is passed over the same way. Screen sources, `constants` modules and the unit
+tests linked to screens by the files they import all resolve imports this way. There is no config
+key for aliases written by hand: they are read from the tsconfig file only.
+
+In a `constants` module, an import that is not a relative path and has a `constantStubs` entry gets that entry
+even when an alias or a folder under `srcRoot` would find a file for it.
+
+An import that matches an alias and finds no file, with every target of the alias a place inside `srcRoot` that holds no
+type declaration either, is listed under `unresolvedAliasImports` on the map, as
+`{ "spec", "files" }` with the import text and the number of files that write it, and `extract` and `rebuild`
+print each one. The list is on the map only when the config has `tsconfig`. A `tsconfig` that does not exist,
+cannot be read as JSON, extends a file that is not found or extends in a loop, has a `paths` that is not
+an object of lists of strings, or has no `paths` or an empty one, stops the command with an error that names the file and what is wrong.
 
 A menu built from a settings list, where the route is picked by the first parameter of a `forEach` or
 `map` callback over the list (`MENUS.ADMIN?.LIST?.forEach((menu) => ... Option.ROUTE_PATH[menu])`), gives one

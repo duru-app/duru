@@ -4,7 +4,7 @@ import _traverse from '@babel/traverse';
 import { ROUTES_FILE } from './config.mjs';
 import { loadConstants } from './constants.mjs';
 import { parseSource } from './parse.mjs';
-import { resolveImport } from './resolve.mjs';
+import { importResolver } from './resolve.mjs';
 import { settingNeeds } from './setting-needs.mjs';
 
 const traverse = _traverse.default ?? _traverse;
@@ -106,7 +106,8 @@ function enclosingFunctionName(nodePath) {
 
 // 화면마다 라우트 조건 · import 로 이어지는 파일의 API 호출 · 설정값 읽기 · 링크를 모으고, API 모듈의 함수별 endpoint 를 함께 돌려준다.
 export async function extractClient(config) {
-  const constants = await loadConstants(config);
+  const imports = importResolver(config);
+  const constants = await loadConstants(config, imports.resolve);
   const apiModuleFiles = new Set(config.apiModules.map((rel) => path.join(config.srcRoot, rel)));
   const constantFileOf = new Map(Object.entries(config.constants).map(([name, rel]) => [name, path.join(config.srcRoot, rel)]));
   const constantFiles = new Set(constantFileOf.values());
@@ -291,7 +292,7 @@ export async function extractClient(config) {
     const binding = id.scope.getBinding(name);
     if (!constantFileOf.has(name) || !id.parentPath.isMemberExpression({ object: id.node }) || !binding?.path.isImportDefaultSpecifier()) return false;
     const declaration = binding.path.parent;
-    if (!importedFile.has(declaration)) importedFile.set(declaration, resolveImport(config.srcRoot, file, declaration.source.value));
+    if (!importedFile.has(declaration)) importedFile.set(declaration, imports.resolve(file, declaration.source.value));
     return importedFile.get(declaration) === constantFileOf.get(name);
   };
 
@@ -574,7 +575,7 @@ export async function extractClient(config) {
     }
 
     function addImport(spec) {
-      const resolved = resolveImport(config.srcRoot, file, spec);
+      const resolved = imports.resolve(file, spec);
       if (resolved) facts.imports.push(resolved);
       return resolved;
     }
@@ -716,13 +717,13 @@ export async function extractClient(config) {
     const binding = scope.getBinding(name);
     if (!binding) return null;
     if (binding.kind === 'module') {
-      return resolveImport(config.srcRoot, fromFile, binding.path.parent.source.value);
+      return imports.resolve(fromFile, binding.path.parent.source.value);
     }
     let found = null;
     binding.path.traverse({
       Import(p) {
         const arg = p.parentPath.node.arguments?.[0];
-        if (arg?.type === 'StringLiteral') found = resolveImport(config.srcRoot, fromFile, arg.value);
+        if (arg?.type === 'StringLiteral') found = imports.resolve(fromFile, arg.value);
       },
     });
     return found;
@@ -754,5 +755,5 @@ export async function extractClient(config) {
     return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls, settingReads, links };
   });
 
-  return { screens, apiFunctions, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete };
+  return { screens, apiFunctions, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, unresolvedAliasImports: imports.unresolved() };
 }

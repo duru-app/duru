@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEPTHS, READERS } from './test-links.mjs';
+import { loadAliases } from './tsconfig.mjs';
 
 const TEST_FORMATS = Object.keys(READERS);
 const NAME = '[A-Za-z_$][\\w$]*';
@@ -162,6 +163,10 @@ export function loadConfig(configPath) {
   if (raw.author !== undefined && !(typeof raw.author === 'string' && raw.author.trim())) {
     throw new Error(`author must be the name to sign review marks and judgments with, such as "Kim Min", not ${JSON.stringify(raw.author)}`);
   }
+  if (raw.tsconfig !== undefined && !isText(raw.tsconfig)) {
+    throw new Error(`tsconfig must be the path of the tsconfig file that declares the import aliases, such as "client/tsconfig.json", not ${JSON.stringify(raw.tsconfig)}`);
+  }
+  const tsconfig = raw.tsconfig === undefined ? null : at(raw.tsconfig);
   const app = raw.app === undefined ? null : appSettings(raw.app, at, raw);
   const outDir = at(raw.outDir ?? '.');
   return {
@@ -170,6 +175,8 @@ export function loadConfig(configPath) {
     author: raw.author?.trim() ?? null,
     srcRoot: at(raw.srcRoot),
     routeFiles: routesFile === undefined ? [] : routeFilesOf(routesFile, at(raw.srcRoot)),
+    tsconfig,
+    aliases: tsconfig && loadAliases(tsconfig),
     roleIdentifiers: raw.roleIdentifiers ?? [],
     bodyArgKeys,
     bodyOptions,

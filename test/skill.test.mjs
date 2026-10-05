@@ -38,3 +38,10 @@ test('the agent skill says what an importing test is and how to add the tag a Ta
   assert.match(SKILL, /item stays when the result\s+file was not rewritten or the tag is not the one given/);
   assert.match(SKILL, /left the list is done only if the test now\s+appears as a tagged test[\s\S]*count did not\s+go up[\s\S]*change nothing in the title except appending the tag, and do not move the file/);
 });
+
+test('the agent skill says what the tsconfig item of the config is for and what the alias lines of the summary mean', () => {
+  assert.match(SKILL, /The `tsconfig` item of the config/);
+  assert.match(SKILL, /takes them for outside packages and a screen's sources stop at the first one/);
+  assert.match(SKILL, /There is no item for aliases written by\s+hand/);
+  assert.match(SKILL, /lines starting with `tsconfig import`/);
+});
