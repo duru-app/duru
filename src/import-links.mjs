@@ -34,11 +34,11 @@ function findUnder(srcRoot, realRoot, file) {
   return null;
 }
 
-function importsOf(srcRoot, file) {
+function importsOf(srcRoot, file, aliases) {
   const { ast } = parseSource(file);
   const found = new Set();
   const add = (spec) => {
-    const resolved = typeof spec === 'string' ? resolveImport(srcRoot, file, spec) : null;
+    const resolved = typeof spec === 'string' ? resolveImport(srcRoot, file, spec, aliases) : null;
     if (resolved) found.add(resolved);
   };
   traverse(ast, {
@@ -57,7 +57,7 @@ function importsOf(srcRoot, file) {
 }
 
 // 돌려주는 함수는 테스트 파일 하나를 받아 { file: 소스 폴더 기준 경로, screens: 화면 ID → 근거가 된 소스 파일들 } 을, 읽지 못하면 { reason } 을 돌려준다.
-export function importLinker(srcRoot, map) {
+export function importLinker(srcRoot, map, aliases = null) {
   const realRoot = fs.existsSync(srcRoot) ? fs.realpathSync(srcRoot) : srcRoot;
   const screensOf = new Map();
   for (const screen of map.screens) {
@@ -69,7 +69,7 @@ export function importLinker(srcRoot, map) {
     if (!file) return { reason: '테스트 파일을 소스 폴더에서 찾지 못했습니다' };
     let imports;
     try {
-      imports = importsOf(srcRoot, file);
+      imports = importsOf(srcRoot, file, aliases);
     } catch (err) {
       return { reason: `테스트 파일을 읽지 못했습니다: ${err.detail ?? err.message}` };
     }

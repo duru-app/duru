@@ -3,10 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseSource } from './parse.mjs';
-import { resolveImport } from './resolve.mjs';
+import { importResolver } from './resolve.mjs';
 
 // 상수 모듈은 브라우저 전역에 기대므로 최소한의 window·document 를 깔고 실제로 실행해 값을 얻는다.
-export async function loadConstants(config) {
+export async function loadConstants(config, resolve = importResolver(config).resolve) {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-'));
   const copied = new Map();
   const stubs = config.constantStubs ?? {};
@@ -27,7 +27,7 @@ export async function loadConstants(config) {
     for (const node of ast.program.body) {
       if (node.type !== 'ImportDeclaration') continue;
       const spec = node.source.value;
-      const resolved = resolveImport(config.srcRoot, absFile, spec);
+      const resolved = !spec.startsWith('.') && Object.hasOwn(stubs, spec) ? null : resolve(absFile, spec);
       const target = resolved ? copyModule(resolved) : stubFile(spec);
       edits.push([node.source.start, node.source.end, JSON.stringify(target)]);
     }

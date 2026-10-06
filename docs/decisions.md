@@ -98,6 +98,17 @@ show, so their layouts do not carry over.
 Scope, node ID rules, tag syntax, depth and status mapping, and the page layout are specified in the
 first-version PRD: https://github.com/Inte-H/duru/issues/1
 
+**Import aliases are read from the project's tsconfig; the duru config has no item for aliases written by hand.**
+The duru config names the tsconfig file (`tsconfig`), and duru reads its `paths`, `baseUrl` and `extends`.
+Alternatives compared:
+- Aliases written by hand in the duru config: a second copy of what the project already declares, which has to
+  be typed in whenever duru is attached to a project and drifts when the project changes its aliases.
+- Both: two keys that can disagree need a rule for which wins, and a reader of the config can no longer tell
+  where an alias comes from.
+Reason: the tsconfig is already the one place the client's aliases are written, so there is nothing to copy by
+hand when attaching duru to a project, and one source needs no precedence rule. A key for aliases written by
+hand is added if an app turns up that keeps its aliases only in its bundler config.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

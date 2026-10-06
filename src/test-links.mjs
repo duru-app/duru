@@ -43,7 +43,7 @@ export function linkTests(config, map) {
   const untagged = new Map();
   const missingSources = [];
   const seenUnknown = new Set();
-  const linkByImports = importLinker(config.srcRoot, map);
+  const linkByImports = importLinker(config.srcRoot, map, config.aliases);
   const importers = {};
   const importNotices = [];
   const linkByTrace = traceLinker(map);

@@ -21,6 +21,13 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 
 - The project config: the JSON file `duru` reads (it names the client source, the server endpoint lists and
   the test result files). Ask the user for its path if you do not know it.
+- The `tsconfig` item of the config (optional): the tsconfig file that declares the app's import aliases such as
+  `@domains/...`, relative to the config file. When the app writes imports with such names and the config has
+  no `tsconfig`, duru takes them for outside packages and a screen's sources stop at the first one, so its
+  API calls, settings reads and links are missing from the map. Add the item, pointing at the tsconfig file
+  of the client that holds `paths` (when `tsconfig.json` only lists `references`, the referenced file such as
+  `tsconfig.app.json`); duru reads `paths`, `baseUrl` and `extends` from it. There is no item for aliases written by
+  hand.
 - The command: `duru` when it is installed, otherwise `node <duru checkout>/src/cli.mjs`.
 - The route files: `routesFile` in the config is one route file or a list of them, and duru reads only the files
   listed, so an app that splits its routes over several files needs each of them in the list. A screen on the map,
@@ -39,6 +46,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    says under its intro that the comparison was skipped, and a task-list line `server: not checked` means the same; it does not mean the
    endpoint is missing, so do not write a test or a fix for a missing endpoint from it. Tell the user the list
    is missing.
+   When it prints lines starting with `tsconfig import`, each names an import that matches an alias of the
+   `tsconfig` file whose targets are inside the client source but finds no file, with the number of files that write it: the alias or the import is wrong, or
+   the file is missing. Tell the user, because the screens that use those files miss what they would reach.
 2. **Open the review page.** Run `duru review <config>` (add `--port <n>` if port 4400 is taken). It prints
    `review page http://127.0.0.1:<port>/` on standard error; give that address to the user and ask them to
    mark the screens and stories and press 「리뷰 끝」 when they are done.
