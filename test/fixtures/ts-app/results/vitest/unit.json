@@ -1,0 +1,10 @@
+{
+  "testResults": [
+    {
+      "assertionResults": [
+        { "ancestorTitles": ["Lab"], "title": "renders the archive button", "status": "passed", "location": { "line": 8, "column": 3 } }
+      ],
+      "name": "/builds/client/src/screens/Lab.test.ts"
+    }
+  ]
+}

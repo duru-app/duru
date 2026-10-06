@@ -1,22 +1,15 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { parse } from '@babel/parser';
 import _traverse from '@babel/traverse';
 import { loadConstants } from './constants.mjs';
+import { parseSource } from './parse.mjs';
 import { resolveImport } from './resolve.mjs';
 import { settingNeeds } from './setting-needs.mjs';
 
 const traverse = _traverse.default ?? _traverse;
-export const PARSER_PLUGINS = ['jsx', 'classProperties', 'optionalChaining', 'nullishCoalescingOperator', 'dynamicImport'];
 export const UNKNOWN = '{?}';
 export const VARIABLE_SEGMENT = '{*}';
 const UNREADABLE_PIECE = '\0';
 const GUARD_TEXT_LIMIT = 160;
-
-function parseFile(file) {
-  const src = fs.readFileSync(file, 'utf8');
-  return { src, ast: parse(src, { sourceType: 'module', plugins: PARSER_PLUGINS, errorRecovery: true }) };
-}
 
 export function memberChain(node) {
   const names = [];
@@ -264,7 +257,7 @@ export async function extractClient(config) {
     const values = {};
     const incomplete = {};
     for (const [root, { file, const: name }] of Object.entries(config.settingsDefaults ?? {})) {
-      const { ast } = parseFile(path.join(config.srcRoot, file));
+      const { ast } = parseSource(path.join(config.srcRoot, file));
       let init = null;
       traverse(ast, {
         VariableDeclarator(p) {
@@ -505,7 +498,7 @@ export async function extractClient(config) {
   // ---------- API 모듈: 내보낸 함수마다 호출하는 endpoint ----------
 
   function extractApiModule(file) {
-    const { ast } = parseFile(file);
+    const { ast } = parseSource(file);
     const fns = {};
     traverse(ast, {
       ExportNamedDeclaration(exp) {
@@ -559,7 +552,7 @@ export async function extractClient(config) {
 
   function fileFacts(file) {
     if (factCache.has(file)) return factCache.get(file);
-    const { src, ast } = parseFile(file);
+    const { src, ast } = parseSource(file);
     const facts = { imports: [], apiCalls: [], settingReads: [], routeRefs: [] };
     const apiNamed = new Map();
     const apiNamespaces = new Set();
@@ -668,7 +661,7 @@ export async function extractClient(config) {
   const redirects = [];
 
   function extractScreens(routesFile) {
-    const { src, ast } = parseFile(routesFile);
+    const { src, ast } = parseSource(routesFile);
     const note = guardNote(config.routesFile, src);
     const screens = [];
     traverse(ast, {

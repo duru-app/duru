@@ -2,10 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parse } from '@babel/parser';
+import { parseSource } from './parse.mjs';
 import { resolveImport } from './resolve.mjs';
-
-const PARSER_PLUGINS = ['jsx', 'classProperties', 'optionalChaining', 'nullishCoalescingOperator'];
 
 // 상수 모듈은 브라우저 전역에 기대므로 최소한의 window·document 를 깔고 실제로 실행해 값을 얻는다.
 export async function loadConstants(config) {
@@ -24,8 +22,7 @@ export async function loadConstants(config) {
     if (copied.has(absFile)) return copied.get(absFile);
     const name = `m_${copied.size}_${path.basename(absFile).replace(/\W/g, '_')}.mjs`;
     copied.set(absFile, `./${name}`);
-    const src = fs.readFileSync(absFile, 'utf8');
-    const ast = parse(src, { sourceType: 'module', plugins: PARSER_PLUGINS });
+    const { src, ast } = parseSource(absFile);
     const edits = [];
     for (const node of ast.program.body) {
       if (node.type !== 'ImportDeclaration') continue;

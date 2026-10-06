@@ -5,6 +5,7 @@ import { storyCandidates } from './candidates.mjs';
 import { loadConfig } from './config.mjs';
 import { buildMap } from './map.mjs';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.mjs';
+import { SOURCE_SYNTAX_ERROR } from './parse.mjs';
 import { reviewAuthor, startReviewServer } from './review.mjs';
 import { SERVER_NOT_COMPARED } from './server.mjs';
 import { checkStoryFiles } from './story-paths.mjs';
@@ -56,7 +57,11 @@ if (command === 'tasks') {
     return file;
   };
 
-  const map = await buildMap(config);
+  const map = await buildMap(config).catch((err) => {
+    if (err.code !== SOURCE_SYNTAX_ERROR) throw err;
+    console.error(err.message);
+    process.exit(1);
+  });
   console.log(`wrote ${write('map.json', map)}`);
   const allEndpoints = Object.values(map.apiFunctions).flatMap((f) => f.endpoints);
   const count = (st) => allEndpoints.filter((e) => e.server.status === st).length;
