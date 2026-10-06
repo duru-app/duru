@@ -112,6 +112,7 @@ export async function extractClient(config) {
   const constantFileOf = new Map(Object.entries(config.constants).map(([name, rel]) => [name, path.join(config.srcRoot, rel)]));
   const settingsOnly = new Set(Object.values(config.settingsDefaults ?? {}).map((d) => d.constant?.split('.')[0]).filter(Boolean));
   settingsOnly.delete(config.routeConstant.split('.')[0]);
+  const constantModuleFiles = new Set(constantFileOf.values());
   const constantFiles = new Set([...constantFileOf].filter(([name]) => !settingsOnly.has(name)).map(([, file]) => file));
   const settingsRoots = new Set(config.settingsRoots);
   const [routeRoot, ...routeRest] = config.routeConstant.split('.');
@@ -685,28 +686,28 @@ export async function extractClient(config) {
     const screens = [];
     traverse(ast, {
       JSXElement(p) {
-        const opening = p.node.openingElement;
-        if (opening.name.type !== 'JSXIdentifier') return;
+        const tag = tagOf(p.node.openingElement.name);
+        if (!tag) return;
         const attr = (name) => p.get('openingElement.attributes').find((a) => a.node.name?.name === name);
-        if (config.redirectElements.includes(opening.name.name)) {
+        if (config.redirectElements.includes(tag)) {
           const toValue = attr('to')?.get('value');
           const to = toValue && evaluate(toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue);
           redirects.push({ to: typeof to === 'string' ? to : UNKNOWN, file: routeFile, line: p.node.loc.start.line, guards: guardsOf(p, src, note) });
           return;
         }
-        if (!config.routeElements.includes(opening.name.name)) return;
+        if (!config.routeElements.includes(tag)) return;
         const pathAttr = attr('path');
         const compAttr = attr('component');
-        if (!pathAttr || !compAttr) return;
-        const pathValue = evaluate(pathAttr.get('value.expression')) ?? evaluate(pathAttr.get('value'));
-        let compExpr = compAttr.get('value.expression');
-        if (compExpr.isCallExpression()) compExpr = compExpr.get('arguments.0');
-        const compName = compExpr.node.name;
+        if (!pathAttr) return;
+        const page = compAttr ? componentAttrPage(compAttr, absFile) : elementPage(attr('element'), absFile);
+        if (!page) return;
+        const pathWritten = pathAttr.get('value');
+        const pathValue = evaluate(pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten);
         screens.push({
           path: typeof pathValue === 'string' ? pathValue : UNKNOWN,
-          component: compName,
-          componentFile: resolveComponent(p.scope, compName, absFile),
-          wrapperFiles: wrappersOf(p, absFile),
+          component: page.component,
+          componentFile: page.componentFile,
+          wrapperFiles: [...page.files, ...wrappersOf(p, absFile)],
           routeFile,
           routeGuards: guardsOf(p, src, note),
           line: p.node.loc.start.line,
@@ -719,12 +720,85 @@ export async function extractClient(config) {
   function wrappersOf(routePath, routesFile) {
     const files = [];
     for (let a = routePath.parentPath; a; a = a.parentPath) {
-      const name = a.isJSXElement() && a.node.openingElement.name;
-      if (name?.type !== 'JSXIdentifier') continue;
-      const file = resolveComponent(a.scope, name.name, routesFile);
+      const tag = a.isJSXElement() && tagOf(a.node.openingElement.name);
+      if (!tag) continue;
+      const file = resolveTag(a.scope, tag, routesFile);
       if (file) files.push(file);
     }
     return files;
+  }
+
+  const tagOf = (name) => (name.type === 'JSXIdentifier' ? name.name
+    : name.type === 'JSXMemberExpression' ? `${tagOf(name.object)}.${name.property.name}` : null);
+  const resolveTag = (scope, tag, fromFile) => (tag.includes('.') ? null : resolveComponent(scope, tag, fromFile));
+  const fromPackage = (scope, tag, fromFile) => {
+    const binding = scope.getBinding(tag.split('.')[0]);
+    return binding?.kind === 'module' && !imports.resolve(fromFile, binding.path.parent.source.value);
+  };
+
+  const unwrapCalls = (p) => {
+    while (p?.isCallExpression()) p = p.get('arguments.0');
+    return p;
+  };
+
+  function componentAttrPage(compAttr, routesFile) {
+    const compExpr = unwrapCalls(compAttr.get('value.expression'));
+    const component = compExpr.node?.name;
+    return { component, componentFile: resolveComponent(compExpr.scope, component, routesFile), files: [] };
+  }
+
+  const REDIRECT = Symbol('redirect');
+  const isPage = (page) => page && page !== REDIRECT;
+  const innerPageOf = (pages) => pages.find((c) => c.componentFile) ?? pages.find((c) => c.component.includes('.'));
+  const pickPage = (pages) => innerPageOf(pages) ?? pages[0];
+  const withFiles = (page, files) => (page ? { ...page, files } : null);
+
+  function elementPage(elementAttr, routesFile) {
+    const pages = elementsIn(elementAttr?.get('value')).map((e) => pageOf(e, routesFile)).filter(isPage);
+    return withFiles(pickPage(pages), pages.flatMap((c) => c.files));
+  }
+
+  function elementsIn(p) {
+    p = unwrapCalls(p);
+    if (!p) return [];
+    if (p.isJSXExpressionContainer()) return elementsIn(p.get('expression'));
+    if (p.isJSXElement()) return [p];
+    if (p.isJSXFragment()) return p.get('children').flatMap(elementsIn);
+    if (p.isConditionalExpression()) return [...elementsIn(p.get('consequent')), ...elementsIn(p.get('alternate'))];
+    if (p.isLogicalExpression()) return elementsIn(p.get('right'));
+    return [];
+  }
+
+  function pageOf(element, routesFile) {
+    const tag = tagOf(element.node.openingElement.name);
+    if (!tag) return null;
+    if (config.redirectElements.includes(tag)) return REDIRECT;
+    const insides = element.get('children').flatMap(elementsIn).map((e) => pageOf(e, routesFile));
+    const inner = insides.filter(isPage);
+    const onlyRedirect = insides.length > 0 && insides.every((c) => c === REDIRECT);
+    const innerFiles = inner.flatMap((c) => c.files);
+    const htmlLike = /^[a-z]/.test(tag.split('.').pop()) && (!tag.includes('.') || fromPackage(element.scope, tag, routesFile));
+    if (htmlLike) return onlyRedirect ? REDIRECT : withFiles(pickPage(inner), innerFiles);
+    if (onlyRedirect) return REDIRECT;
+
+    const candidate = (component) => ({ component, componentFile: resolveTag(element.scope, component, routesFile) });
+    const outer = candidate(tag);
+    const props = element.get('openingElement.attributes').flatMap((a) => {
+      const expr = a.node.value?.type === 'JSXExpressionContainer' ? a.node.value.expression : null;
+      const named = /^[A-Z]/.test(a.node.name?.name);
+      if (expr?.type !== 'Identifier' || !(named || /^[A-Z].*[a-z]/.test(expr.name))) return [];
+      return [{ ...candidate(expr.name), named }];
+    });
+    const passed = [...props.filter((c) => c.named), ...props.filter((c) => !c.named)]
+      .filter((c) => !constantModuleFiles.has(c.componentFile) && !apiModuleFiles.has(c.componentFile))
+      .map(({ named, ...c }) => c);
+    const files = [outer, ...passed].map((c) => c.componentFile).filter(Boolean).concat(innerFiles);
+    const innerPage = innerPageOf(inner);
+    if (innerPage) return withFiles(innerPage, files);
+    const binding = !tag.includes('.') && element.scope.getBinding(tag);
+    const declaredHere = Boolean(binding) && binding.kind !== 'module';
+    const page = [outer, ...passed].find((c) => c.componentFile) ?? (declaredHere ? passed[0] : null) ?? inner[0] ?? outer;
+    return withFiles(page, files);
   }
 
   function resolveComponent(scope, name, fromFile) {

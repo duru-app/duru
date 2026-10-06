@@ -51,7 +51,34 @@ relative to the config file, except the files inside the client source (`routesF
   condition or a wrapper around the place where one route file renders the component of another is not carried
   over to the screens of that other file. Each screen, redirect and route condition carries the
   route file it is written in, and the review page's 「라우트」 line, the route location in a story's 「사전 조건」
-  and in the task list, and the place an access verdict rests on name that file
+  and in the task list, and the place an access verdict rests on name that file.
+  A route (an element named in `routeElements`) with a `path` is read in these shapes:
+  `component={Home}` or `component={wrap(Home)}` names the screen component, and so does
+  `element={<Home />}` or `element={wrap(<Home />)}` (the first argument of the wrapping call, through any
+  number of wrapping calls) for a route without `component`. An element with elements inside it, such as
+  `element={<Suspense><RequireAuth><Home /></RequireAuth></Suspense>}`, only wraps the screen when a component
+  inside it, through fragments and conditions, has a file: that component is the screen, and the files of the
+  wrapping components and of the components passed to them as props are among the screen's sources. When none
+  inside has a file (`<Home><Outlet /></Home>`), the rule below for the outer component and its props applies,
+  and only when none of those has a file either is the component inside the screen. An HTML tag (`<h1>`) is not
+  read as a screen, and a wrapper holding only a redirect element, however deep, gives no screen, even when the
+  wrapper has a file. A name with a dot (`<Pages.Home />`) is read as written, without its file; inside a wrapper it is
+  taken for the screen as one with a file would be. A dotted name taken from an outside package whose last part
+  starts with a small letter (`<motion.div>`) is read as an HTML tag. A prop counts as a passed component when the
+  prop's name starts with a capital (`Page={detail}`) or its value is a name starting with a capital and holding
+  a small letter (`icon={Badge}`, not `role={ROLE}`); props of the first kind come first, and a name whose
+  file is any `constants` or `apiModules` file is never a passed component. When the element is a condition,
+  the files of both sides are the screen's sources. A screen component that takes other
+  components as children (`<Dashboard><Widget /></Dashboard>`) looks the same as a wrapper, so the child is read
+  as the screen. In
+  `element={<Wrapper Page={Signer} />}`, with no element inside, the outer component and each component passed
+  as a prop are candidates in that order, and the first whose file is found is the screen component; when none
+  is found and the outer component is declared in the route file itself under a plain name (not `<Pages.Main>`),
+  the first component passed as a prop is the screen component. The files of all of them are the screen's
+  sources. `element={<Navigate to=… />}`, with
+  an element named in `redirectElements`, is not a screen but a redirect, so the screen it points at is reached
+  by that redirect. The path is read as written in the route; the path of a parent route is not put in front
+  of it. A route in another shape, such as one without `path`, gives no screen
 - `tsconfig` — the tsconfig file that declares the app's import aliases (optional), such as
   `"client/tsconfig.json"`, relative to the config file like `srcRoot`. Name the file that holds `paths`, itself
   or through `extends`: in a project whose `tsconfig.json` only lists `references`, that is the referenced file,
@@ -83,8 +110,9 @@ relative to the config file, except the files inside the client source (`routesF
   the two forms, not both. The root must also be listed in `settingsRoots`
 - `roleIdentifiers` — where the user's role is read (optional, default none): an identifier (`memberRole`) or
   one member of an object (`workspace['member.role']`)
-- `redirectElements`, `entryPaths` — how fallback redirects are declared in the routes file (default
-  `Redirect`), and route paths of further screens users start from when the code does not show them
+- `redirectElements`, `entryPaths` — the elements that redirect in the route files (default `Redirect` and
+  `Navigate`; a config that lists them uses exactly the names listed), and route paths of further screens
+  users start from when the code does not show them
 - `moves` — screen moves the code shows no link for (optional), each `{ "from", "to", "reason" }` with route
   paths as in the map, such as `[{ "from": "/signin", "to": "/user-home", "reason": "로그인 뒤" }]` for an app
   that reloads after sign-in and lets a redirect choose the screen. A move joins every screen its `from` path
@@ -487,11 +515,14 @@ tags are matched against the story files whenever the stories are read, not when
 A unit test that carries no tag for a screen is still shown next to it when its test file imports one of
 the screen's source files. Each screen in `map.json` lists its `sourceFiles`: the files reached by `import`,
 `import()` and re-exports (`export ... from`, so a file used through a barrel file counts; `require()` is not
-followed) from its component and from the components wrapped around its route, leaving out the API modules and the
-constants files. For every test of a `vitest` result source (a Jest JSON report has the same shape and is
-read the same way), duru finds the test file under `srcRoot`, also when the report was written on another
-computer, and reads the files it imports (`import`, `import()` and
-`require()`; a file named only to mock it, as in `jest.mock()` or `vi.mock(import())`, does not count).
+followed) from its component, from the wrapping and passed components its route's `element` is read with (see
+the route shapes above), and from the components wrapped around the route itself. The API modules and the
+constants files are left out, except the module of a name that a `settingsDefaults` `constant` starts with,
+when `routeConstant` does not start with the same name. For
+every test of a `vitest` result source (a Jest JSON report has the same shape and is read the same way), duru
+finds the test file under `srcRoot`, also when the report was written on another computer, and reads the files it imports
+(`import`, `import()` and `require()`; a file named only to mock it, as in `jest.mock()` or `vi.mock(import())`,
+does not count).
 `tests.json` lists the test under `importers` for each screen
 that has one of those files among its `sourceFiles`, with the test file's path under `srcRoot` in `testFile`
 and the files it came through in `via`. A source file

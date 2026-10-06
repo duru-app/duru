@@ -70,10 +70,10 @@ test('extraction runs to the end on a client mixing TypeScript and JavaScript fi
 const WITHOUT_WRAPPERS = [
   ['client/src/Routes.tsx', 'Option.ROUTE_PATH.HOME as string', 'Option.ROUTE_PATH.HOME'],
   ['client/src/Routes.tsx', 'Option.ROUTE_PATH.DOCUMENT!', 'Option.ROUTE_PATH.DOCUMENT'],
-  ['client/src/Routes.tsx', '(memberRole as Role)', 'memberRole'],
-  ['client/src/Routes.tsx', 'globalSettings!.SYSTEM.LAB_ENABLED as boolean', 'globalSettings!.SYSTEM.LAB_ENABLED'],
-  ['client/src/Routes.tsx', 'globalSettings!.SYSTEM', 'globalSettings.SYSTEM'],
-  ['client/src/Routes.tsx', 'Option.ROUTE_PATH.REPORT satisfies string', 'Option.ROUTE_PATH.REPORT'],
+  ['client/src/admin/AdminRoutes.tsx', '(memberRole as Role)', 'memberRole'],
+  ['client/src/admin/AdminRoutes.tsx', 'globalSettings!.SYSTEM.LAB_ENABLED as boolean', 'globalSettings!.SYSTEM.LAB_ENABLED'],
+  ['client/src/admin/AdminRoutes.tsx', 'globalSettings!.SYSTEM', 'globalSettings.SYSTEM'],
+  ['client/src/admin/AdminRoutes.tsx', 'Option.ROUTE_PATH.REPORT satisfies string', 'Option.ROUTE_PATH.REPORT'],
   ['client/src/screens/Home.tsx', '(Option.ROUTE_PATH.DOCUMENT as string)', 'Option.ROUTE_PATH.DOCUMENT'],
   ['client/src/screens/Home.tsx', 'Option.ROUTE_PATH.DOCUMENT as string', 'Option.ROUTE_PATH.DOCUMENT'],
   ['client/src/screens/Home.tsx', 'recent!', 'recent'],
@@ -390,4 +390,219 @@ test('an outside package named like a member of every object gets the empty stan
     inCopy([['config.json', '"apiModules"', '"constantStubs": {\n    "left-out": null\n  },\n  "apiModules"']], (copy) => buildFixture(copy)),
     /constantStubs must map imports to the module source that stands in for them/,
   );
+});
+
+const ROUTES = 'client/src/Routes.tsx';
+const ADMIN_ROUTES = 'client/src/admin/AdminRoutes.tsx';
+const withoutMeta = (map) => ({ ...map, meta: null });
+
+test('a route written with element is a screen named after the element, or after the first argument of the call wrapping it, with its component file, route file and line', async () => {
+  const map = await buildFixture();
+  assert.deepEqual(map.screens.map((s) => [s.id, s.component, s.componentFile, s.routeFile, s.line]), [
+    ['/home#Home', 'Home', 'screens/Home.tsx', 'Routes.tsx', 17],
+    ['/document#DocumentList', 'DocumentList', 'screens/DocumentList.jsx', 'Routes.tsx', 18],
+    ['/document/:id#DocumentDetail', 'DocumentDetail', 'screens/DocumentDetail.js', 'Routes.tsx', 19],
+    ['/admin#Admin', 'Admin', 'screens/Admin.tsx', 'admin/AdminRoutes.tsx', 16],
+    ['/lab#Lab', 'Lab', 'screens/Lab.tsx', 'admin/AdminRoutes.tsx', 17],
+    ['/report#Report', 'Report', 'screens/Report.ts', 'admin/AdminRoutes.tsx', 18],
+  ]);
+});
+
+test('routes passing a component to a wrapper declared in the route file are each named after the component they pass, and its sources are those of that component', async () => {
+  const map = await buildFixture();
+  assert.deepEqual(map.screens.filter((s) => ['Signed', 'Checked'].includes(s.component)), []);
+  assert.deepEqual(screen(map, '/document/:id#DocumentDetail').sourceFiles, ['screens/DocumentDetail.js']);
+  assert.deepEqual(screen(map, '/report#Report').sourceFiles, ['screens/Report.ts']);
+});
+
+test('of a wrapper and the component passed to it, the first whose file is found is the screen component, and the files of both are the sources of the screen', async () => {
+  const frame = "import Frame from '../components/Frame';\nimport Report from '../screens/Report';";
+  await inCopy([[ADMIN_ROUTES, "import Report from '../screens/Report';", frame], [ADMIN_ROUTES, '<Checked Page={Report} />', '<Frame Page={Report} />']], async (copy) => {
+    fs.writeFileSync(path.join(copy, 'client/src/components/Frame.tsx'), 'export default function Frame({ Page }) {\n  return <section><Page /></section>;\n}\n');
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report');
+    assert.deepEqual([report.id, report.componentFile, report.sourceFiles], ['/report#Frame', 'components/Frame.tsx', ['components/Frame.tsx', 'screens/Report.ts']]);
+  });
+  const boundary = "import { ErrorBoundary } from 'react-error-boundary';\nimport Report from '../screens/Report';";
+  await inCopy([[ADMIN_ROUTES, "import Report from '../screens/Report';", boundary], [ADMIN_ROUTES, '<Checked Page={Report} />', '<ErrorBoundary Page={Report} />']], async (copy) => {
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report');
+    assert.deepEqual([report.id, report.componentFile, report.sourceFiles], ['/report#Report', 'screens/Report.ts', ['screens/Report.ts']]);
+  });
+  const unfound = [ADMIN_ROUTES, "import Report from '../screens/Report';", "import Report from 'report-package';"];
+  await inCopy([unfound], async (copy) => {
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report');
+    assert.deepEqual([report.id, report.componentFile], ['/report#Report', null]);
+  });
+  await inCopy([unfound, [ADMIN_ROUTES, "import type { Settings }", "import { ErrorBoundary } from 'react-error-boundary';\nimport type { Settings }"], [ADMIN_ROUTES, '<Checked Page={Report} />', '<ErrorBoundary Page={Report} />']], async (copy) => {
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report');
+    assert.deepEqual([report.id, report.componentFile], ['/report#ErrorBoundary', null]);
+  });
+});
+
+test('a route whose element wraps the screen as a child, through Suspense, a guard, a fragment, a condition or several wrapping calls, is named after the child, with the files of the wrappers and the components passed to them among its sources', async () => {
+  const plain = await buildFixture();
+  const routes = 'client/src/Routes.tsx';
+  await inCopy([
+    [routes, "import Home from './screens/Home';", "import { Suspense } from 'react';\nimport { ErrorBoundary } from 'react-error-boundary';\nimport Frame from './components/Frame';\nimport Banner from './components/Banner';\nimport * as Auth from 'auth-kit';\nimport Home from './screens/Home';"],
+    [routes, 'function Signed(', 'const withAuth = (page: ReactNode) => page;\nconst ready = true;\n\nfunction Guard({ children }: { children: ReactNode }) {\n  return <>{children}</>;\n}\n\nfunction Signed('],
+    [routes, 'element={<Home />}', 'element={<Suspense fallback={null}><Frame><Home><h1>Home</h1></Home></Frame></Suspense>}'],
+    [routes, 'element={framed(<DocumentList />)}', 'element={withAuth(framed(<Auth.Guard><>{ready ? <DocumentList /> : null}</></Auth.Guard>))}'],
+    [routes, 'element={<Signed Page={DocumentDetail} />}', 'element={<Guard><ErrorBoundary FallbackComponent={Banner}>{framed(<DocumentDetail />)}</ErrorBoundary></Guard>}'],
+    [routes, '<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />', '<Guard><Navigate to={Option.ROUTE_PATH.DOCUMENT} replace /></Guard>'],
+  ], async (copy) => {
+    fs.writeFileSync(path.join(copy, 'client/src/components/Frame.tsx'), 'export default function Frame({ children }) {\n  return <section>{children}</section>;\n}\n');
+    const map = await buildFixture(copy);
+    const pick = (m, p) => m.screens.find((s) => s.path === p);
+    for (const p of ['/home', '/document', '/document/:id']) {
+      assert.deepEqual([pick(map, p).id, pick(map, p).componentFile], [pick(plain, p).id, pick(plain, p).componentFile]);
+    }
+    assert.deepEqual(pick(map, '/home').sourceFiles, [...pick(plain, '/home').sourceFiles, 'components/Frame.tsx'].sort());
+    assert.deepEqual(pick(map, '/document/:id').sourceFiles, [...pick(plain, '/document/:id').sourceFiles, 'components/Banner.tsx'].sort());
+    assert.deepEqual(map.screens.map((s) => s.id), plain.screens.map((s) => s.id));
+    assert.deepEqual(map.entries.filter((e) => e.reasons.some((r) => r.kind === 'redirect')).map((e) => e.screen), ['/document#DocumentList']);
+  });
+});
+
+test('the screen of a wrapping element is a child with a file, else a wrapper or passed component with a file, so a child without a file does not take over, and a redirect wrapped twice gives no screen', async () => {
+  const plain = await buildFixture();
+  const routes = 'client/src/Routes.tsx';
+  await inCopy([
+    [routes, "import Home from './screens/Home';", "import { Outlet, Suspense } from 'react';\nimport { Spinner } from 'ui-kit';\nimport Home from './screens/Home';\nimport * as Lists from './screens/DocumentList';"],
+    [routes, 'function Signed(', 'function Guard({ children }: { children: ReactNode }) {\n  return <>{children}</>;\n}\n\nfunction Signed('],
+    [routes, 'element={<Home />}', 'element={<Home><Outlet /></Home>}'],
+    [routes, 'element={framed(<DocumentList />)}', 'element={<Suspense><Lists.default /></Suspense>}'],
+    [routes, 'element={<Signed Page={DocumentDetail} />}', 'element={<Signed Page={DocumentDetail}><Spinner /></Signed>}'],
+    [routes, '<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />', '<Suspense><Guard><Navigate to={Option.ROUTE_PATH.DOCUMENT} replace /></Guard></Suspense>'],
+  ], async (copy) => {
+    const map = await buildFixture(copy);
+    const pick = (m, p) => m.screens.find((s) => s.path === p);
+    assert.deepEqual(map.screens.map((s) => s.path), plain.screens.map((s) => s.path));
+    assert.deepEqual([pick(map, '/home').id, pick(map, '/home').sourceFiles], ['/home#Home', pick(plain, '/home').sourceFiles]);
+    assert.deepEqual([pick(map, '/document').id, pick(map, '/document').componentFile], ['/document#Lists.default', null]);
+    assert.deepEqual([pick(map, '/document/:id').id, pick(map, '/document/:id').sourceFiles], [pick(plain, '/document/:id').id, pick(plain, '/document/:id').sourceFiles]);
+  });
+});
+
+test('a redirect inside a wrapper with a file, a constant passed as a prop, an HTML tag holding the screen, a dotted screen under a wrapper with a file and both sides of a condition are read as the route means them', async () => {
+  const plain = await buildFixture();
+  const routes = 'client/src/Routes.tsx';
+  await inCopy([
+    [routes, "import Home from './screens/Home';", "import Home from './screens/Home';\nimport * as Lists from './screens/DocumentList';\nimport Banner from './components/Banner';\nimport Logo from './components/Badge';\nimport { ROLE } from './components/Badge';\nconst ready = true;"],
+    [routes, 'element={<Home />}', 'element={<div><img src={Logo} />{ready ? <Home /> : <DocumentDetail />}</div>}'],
+    [routes, 'element={framed(<DocumentList />)}', 'element={<Banner><Lists.default /></Banner>}'],
+    [routes, 'element={<Signed Page={DocumentDetail} />}', 'element={<Signed role={ROLE} Page={DocumentDetail} />}'],
+    [routes, '<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />', '<Banner><Navigate to={Option.ROUTE_PATH.DOCUMENT} replace /></Banner>'],
+  ], async (copy) => {
+    fs.appendFileSync(path.join(copy, 'client/src/components/Badge.tsx'), "\nexport const ROLE = 'ADMIN';\n");
+    const map = await buildFixture(copy);
+    const pick = (m, p) => m.screens.find((s) => s.path === p);
+    assert.deepEqual(map.screens.map((s) => s.id), plain.screens.map((s) => s.id).map((id) => (id === '/document#DocumentList' ? '/document#Lists.default' : id)));
+    assert.ok(pick(map, '/home').sourceFiles.includes('screens/DocumentDetail.js'));
+    assert.ok(!pick(map, '/home').sourceFiles.includes('components/Badge.tsx'));
+    assert.deepEqual(pick(map, '/document').sourceFiles, ['components/Banner.tsx']);
+    assert.deepEqual(pick(map, '/document/:id').sourceFiles, pick(plain, '/document/:id').sourceFiles);
+  });
+});
+
+test('a child with a file wins over a dotted sibling, HTML beside a redirect keeps the wrapper, a component named with capitals is passed, a constants module is not, and a dotted name in small letters is not an HTML tag', async () => {
+  const plain = await buildFixture();
+  const routes = 'client/src/Routes.tsx';
+  await inCopy([
+    [routes, "import Home from './screens/Home';", "import Home from './screens/Home';\nimport * as Layout from 'ui-layout';\nimport * as screens from './screens/DocumentList';\nimport Banner from './components/Banner';\nimport PDFViewer from './screens/DocumentDetail';\nconst ok = true;"],
+    [routes, 'element={<Home />}', 'element={<Banner><Layout.Header /><Home /></Banner>}'],
+    [routes, 'element={framed(<DocumentList />)}', 'element={<screens.List />}'],
+    [routes, 'element={<Signed Page={DocumentDetail} />}', 'element={<Signed options={Option} page={PDFViewer} />}'],
+    [routes, '<Route path="*" element={<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />} />', '<Route path="/banner" element={<Banner>{ok ? <p>hi</p> : <Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />}</Banner>} />'],
+  ], async (copy) => {
+    const map = await buildFixture(copy);
+    const pick = (p) => map.screens.find((s) => s.path === p);
+    assert.equal(pick('/home').id, '/home#Home');
+    assert.equal(pick('/document').id, '/document#screens.List');
+    assert.deepEqual([pick('/document/:id').id, pick('/document/:id').componentFile], ['/document/:id#PDFViewer', 'screens/DocumentDetail.js']);
+    assert.deepEqual([pick('/banner').id, pick('/banner').componentFile], ['/banner#Banner', 'components/Banner.tsx']);
+    assert.equal(map.screens.length, plain.screens.length + 1);
+  });
+});
+
+test('a component held in a lowercase name is passed under a prop named with a capital, and a dotted tag from a package ending in small letters is an HTML tag', async () => {
+  const routes = 'client/src/Routes.tsx';
+  await inCopy([
+    [routes, "import Home from './screens/Home';", "import Home from './screens/Home';\nimport { motion } from 'framer-motion';\nconst detail = DocumentDetail;\nconst pages = { list: DocumentList };\nconst ADMIN = 'admin';"],
+    [routes, 'element={<Home />}', 'element={<motion.div><p>hi</p></motion.div>}'],
+    [routes, 'element={framed(<DocumentList />)}', 'element={<pages.list />}'],
+    [routes, 'element={<Signed Page={DocumentDetail} />}', 'element={<Signed Page={detail} />}'],
+    [routes, '<Route path="*" element={<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />} />', '<Route path="/guarded" element={<Signed role={ADMIN} />} />'],
+  ], async (copy) => {
+    const map = await buildFixture(copy);
+    const id = (p) => map.screens.find((s) => s.path === p)?.id;
+    assert.equal(id('/home'), undefined);
+    assert.equal(id('/document'), '/document#pages.list');
+    assert.equal(id('/document/:id'), '/document/:id#detail');
+    assert.equal(id('/guarded'), '/guarded#Signed');
+  });
+});
+
+test('a name taken from a constants module listed only for settings defaults is not a passed component, and the route passing it does not make it a screen source', async () => {
+  await inCopy([
+    [ROUTES, "import Home from './screens/Home';", "import Home from './screens/Home';\nimport { appSettings as AppSettings } from './store';"],
+    [ROUTES, 'element={<Signed Page={DocumentDetail} />}', 'element={<Signed Config={AppSettings} Page={DocumentDetail} />}'],
+  ], async (copy) => {
+    const map = await buildFixture(copy);
+    const detail = map.screens.find((s) => s.path === '/document/:id');
+    assert.equal(detail.id, '/document/:id#DocumentDetail');
+    assert.ok(!detail.sourceFiles.includes('store/index.ts'));
+  });
+});
+
+test('a route whose element is a Navigate is not a screen, and the screen it points at is reached by that redirect unless a condition guards it', async () => {
+  const map = await buildFixture();
+  assert.equal(map.screens.some((s) => s.path === '*' || s.component === 'Navigate'), false);
+  assert.deepEqual(map.entries, [
+    { screen: '/home#Home', reasons: [{ kind: 'config' }] },
+    { screen: '/document#DocumentList', reasons: [{ kind: 'redirect', file: 'Routes.tsx', line: 20 }] },
+  ]);
+  const toReport = '<Route path="/reports" element={<Navigate to={Option.ROUTE_PATH.REPORT} />} />';
+  const withNavigate = [ADMIN_ROUTES, "import { Route, Routes } from 'react-router-dom';", "import { Navigate, Route, Routes } from 'react-router-dom';"];
+  await inCopy([withNavigate, [ADMIN_ROUTES, '</Routes>', `${toReport}\n    </Routes>`]], async (copy) => {
+    assert.deepEqual((await buildFixture(copy)).entries.at(-1), { screen: '/report#Report', reasons: [{ kind: 'redirect', file: 'admin/AdminRoutes.tsx', line: 19 }] });
+  });
+  await inCopy([withNavigate, [ADMIN_ROUTES, '</Routes>', `{(memberRole as Role) === 'ADMIN' && ${toReport}}\n    </Routes>`]], async (copy) => {
+    assert.deepEqual((await buildFixture(copy)).entries, map.entries);
+  });
+});
+
+test('the screens, conditions and redirects of routes written with element are read as those of the same routes written with component', async () => {
+  const asComponents = [
+    [ROUTES, 'element={<Home />}', 'component={Home}'],
+    [ROUTES, 'element={framed(<DocumentList />)}', 'component={framed(DocumentList)}'],
+    [ROUTES, 'element={<Signed Page={DocumentDetail} />}', 'component={DocumentDetail}'],
+    [ROUTES, '<Route path="*" element={<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />} />', '<Redirect to={Option.ROUTE_PATH.DOCUMENT} />'],
+    [ADMIN_ROUTES, 'element={<Admin />}', 'component={Admin}'],
+    [ADMIN_ROUTES, 'element={<Checked Page={Lab} />}', 'component={Lab}'],
+    [ADMIN_ROUTES, 'element={<Checked Page={Report} />}', 'component={Report}'],
+  ];
+  const elements = await buildFixture();
+  const components = await inCopy(asComponents, (copy) => buildFixture(copy));
+  assert.deepEqual(withoutMeta(elements), withoutMeta(components));
+  assert.deepEqual(screen(elements, '/admin#Admin').routeGuards, ["(memberRole as Role) === 'ADMIN'"]);
+  assert.deepEqual(screen(elements, '/lab#Lab').routeGuards, ['globalSettings!.SYSTEM.LAB_ENABLED as boolean']);
+});
+
+test('redirect elements default to Redirect and Navigate, and a config that lists them keeps exactly the listed names', async () => {
+  assert.deepEqual(loadConfig(path.join(FIXTURE, 'config.json')).redirectElements, ['Redirect', 'Navigate']);
+  await inCopy([], async (copy) => {
+    const configFile = path.join(copy, 'config.json');
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), redirectElements: ['Redirect'] }));
+    assert.deepEqual(loadConfig(configFile).redirectElements, ['Redirect']);
+    const map = await buildFixture(copy);
+    assert.equal(map.entries.some((e) => e.screen === '/document#DocumentList'), false);
+    assert.deepEqual(map.screens.filter((s) => s.path === '*').map((s) => [s.id, s.componentFile]), [['*#Navigate', null]]);
+  });
+});
+
+test('the usage guide and the agent skill name the route shapes duru reads and the default redirect elements', () => {
+  const read = (file) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  for (const doc of [read('../README.md'), read('../skills/duru/SKILL.md')]) {
+    assert.match(doc, /`component=\{Home\}`[\s\S]*`element=\{<Home \/>\}`[\s\S]*`element=\{wrap\(<Home \/>\)\}`[\s\S]*`element=\{<Wrapper Page=\{Signer\} \/>\}`[\s\S]*`element=\{<Navigate to=… \/>\}`/);
+    assert.match(doc, /`redirectElements`[\s\S]*default `Redirect` and\s+`Navigate`/);
+  }
 });

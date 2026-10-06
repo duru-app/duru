@@ -41,6 +41,14 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   you expect is missing from the map, check that the file holding its route is listed before reading the code
   for another cause. A `duplicate screen ID` line in the `rebuild` summary names the file and line of every
   route that makes the same ID.
+- The route shapes duru reads: `component={Home}`, `element={<Home />}`, `element={wrap(<Home />)}`,
+  `element={<Suspense><Home /></Suspense>}`, where the screen is the element inside the wrapping ones, and
+  `element={<Wrapper Page={Signer} />}`, where the screen is the first of the wrapper and the passed components whose
+  file is found, or the passed component when the wrapper is declared in the route file itself. A route whose
+  element is `element={<Navigate to=… />}` is a redirect, not a screen. The redirect element names come from
+  `redirectElements` in the config, default `Redirect` and `Navigate`; a config that lists them uses only the
+  names listed. Paths are read as written in each route, without the path of a parent route in front, so a
+  nested route written with a relative path shows on the map with that relative path.
 
 ## Sequence
 
