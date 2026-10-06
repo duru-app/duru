@@ -8,6 +8,8 @@ function routePaths(base: string): Record<RouteKey, string> {
     ADMIN: joinPath(base, 'admin'),
     LAB: joinPath(base, 'lab'),
     REPORT: joinPath(base, 'report'),
+    ARCHIVE: joinPath(base, 'archive'),
+    PROFILE: joinPath(base, 'profile'),
   };
 }
 

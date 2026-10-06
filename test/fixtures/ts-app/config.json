@@ -2,7 +2,8 @@
   "srcRoot": "client/src",
   "routesFile": [
     "Routes.tsx",
-    "admin/AdminRoutes.tsx"
+    "admin/AdminRoutes.tsx",
+    "pages/PageRoutes.tsx"
   ],
   "routeElements": [
     "Route"

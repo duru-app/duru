@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
+import { componentFileFinder } from './component-file.mjs';
 import { ROUTES_FILE } from './config.mjs';
 import { loadConstants } from './constants.mjs';
 import { parseSource } from './parse.mjs';
@@ -107,6 +108,7 @@ function enclosingFunctionName(nodePath) {
 // 화면마다 라우트 조건 · import 로 이어지는 파일의 API 호출 · 설정값 읽기 · 링크를 모으고, API 모듈의 함수별 endpoint 를 함께 돌려준다.
 export async function extractClient(config) {
   const imports = importResolver(config);
+  const components = componentFileFinder(imports.resolve);
   const constants = await loadConstants(config, imports.resolve);
   const apiModuleFiles = new Set(config.apiModules.map((rel) => path.join(config.srcRoot, rel)));
   const constantFileOf = new Map(Object.entries(config.constants).map(([name, rel]) => [name, path.join(config.srcRoot, rel)]));
@@ -730,7 +732,7 @@ export async function extractClient(config) {
 
   const tagOf = (name) => (name.type === 'JSXIdentifier' ? name.name
     : name.type === 'JSXMemberExpression' ? `${tagOf(name.object)}.${name.property.name}` : null);
-  const resolveTag = (scope, tag, fromFile) => (tag.includes('.') ? null : resolveComponent(scope, tag, fromFile));
+  const resolveTag = (scope, tag, fromFile) => components.find(scope, tag, fromFile).file;
   const fromPackage = (scope, tag, fromFile) => {
     const binding = scope.getBinding(tag.split('.')[0]);
     return binding?.kind === 'module' && !imports.resolve(fromFile, binding.path.parent.source.value);
@@ -742,9 +744,11 @@ export async function extractClient(config) {
   };
 
   function componentAttrPage(compAttr, routesFile) {
-    const compExpr = unwrapCalls(compAttr.get('value.expression'));
-    const component = compExpr.node?.name;
-    return { component, componentFile: resolveComponent(compExpr.scope, component, routesFile), files: [] };
+    const written = compAttr.get('value.expression');
+    const compExpr = unwrapCalls(written);
+    const component = compExpr.node && memberChain(compExpr.node)?.join('.');
+    const componentFile = component ? components.find(compExpr.scope, component, routesFile, written.isCallExpression()).file : null;
+    return { component, componentFile, files: [] };
   }
 
   const REDIRECT = Symbol('redirect');
@@ -782,7 +786,8 @@ export async function extractClient(config) {
     if (onlyRedirect) return REDIRECT;
 
     const candidate = (component) => ({ component, componentFile: resolveTag(element.scope, component, routesFile) });
-    const outer = candidate(tag);
+    const { file: outerFile, followed } = components.find(element.scope, tag, routesFile);
+    const outer = { component: tag, componentFile: outerFile };
     const props = element.get('openingElement.attributes').flatMap((a) => {
       const expr = a.node.value?.type === 'JSXExpressionContainer' ? a.node.value.expression : null;
       const named = /^[A-Z]/.test(a.node.name?.name);
@@ -797,24 +802,8 @@ export async function extractClient(config) {
     if (innerPage) return withFiles(innerPage, files);
     const binding = !tag.includes('.') && element.scope.getBinding(tag);
     const declaredHere = Boolean(binding) && binding.kind !== 'module';
-    const page = [outer, ...passed].find((c) => c.componentFile) ?? (declaredHere ? passed[0] : null) ?? inner[0] ?? outer;
+    const page = [...(followed ? [] : [outer]), ...passed].find((c) => c.componentFile) ?? (declaredHere ? passed[0] : null) ?? inner[0] ?? outer;
     return withFiles(page, files);
-  }
-
-  function resolveComponent(scope, name, fromFile) {
-    const binding = scope.getBinding(name);
-    if (!binding) return null;
-    if (binding.kind === 'module') {
-      return imports.resolve(fromFile, binding.path.parent.source.value);
-    }
-    let found = null;
-    binding.path.traverse({
-      Import(p) {
-        const arg = p.parentPath.node.arguments?.[0];
-        if (arg?.type === 'StringLiteral') found = imports.resolve(fromFile, arg.value);
-      },
-    });
-    return found;
   }
 
   // ---------- 화면마다 모으기 ----------
