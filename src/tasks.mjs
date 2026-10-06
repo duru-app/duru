@@ -226,12 +226,12 @@ function reachProblems(story) {
   ].filter(Boolean);
 }
 
-function preconditionLines(r, { screensById, routesFile, restricted }) {
+function preconditionLines(r, { screensById, restricted }) {
   if (r.kind === 'start') {
     const roles = r.roleValues ? `; roles that open it: ${r.roleValues.join(', ')}` : r.roleValues === null ? '; the roles that open it could not be read' : '';
     return [`  - ${r.screen}, the first screen, ${needsText(r.kinds)}${roles}`, ...linkInLines(screensById.get(r.screen).access.links, restricted).map((l) => `  ${l}`)];
   }
-  if (r.kind === 'route') return [`  - ${r.screen} route at ${routesFile}:${r.line}, guard ${r.guards.map(guardText).join('; ')}`];
+  if (r.kind === 'route') return [`  - ${r.screen} route at ${r.file}:${r.line}, guard ${r.guards.map(guardText).join('; ')}`];
   const way = (w) => `${place(w)}, guard ${w.conditions.map(guardText).join('; ')}`;
   const head = `  - link ${r.from} → ${r.to}`;
   return [
@@ -321,7 +321,7 @@ export function taskList(config) {
       '',
       '- marks:',
       ...marks.map((m) => markLine(m.current, cellText(m.target, 'whole screen'))),
-      `- component: ${s.componentFile}, route at ${config.routesFile}:${s.line}`,
+      `- component: ${s.componentFile}, route at ${s.routeFile}:${s.line}`,
       ...(appLinks[s.id] ? [`- app: ${appLinks[s.id]}`] : []),
       ...accessLines(s.access, restricted),
       ...callLines(s, tests.nodes, resultLines),
@@ -351,7 +351,7 @@ export function taskList(config) {
     out.push('', 'The map was built by a duru older than stories, so these stories are not checked against it. Run `duru rebuild` and read this list again.');
     for (const m of storyMarks) out.push('', `## ${m.target.story}`, '', '- marks:', markLine(m.current));
   }
-  const mapInfo = { screensById: new Map(map.screens.map((s) => [s.id, s])), routesFile: config.routesFile, restricted };
+  const mapInfo = { screensById: new Map(map.screens.map((s) => [s.id, s])), restricted };
   for (const id of [...new Set(storyMarks.map((m) => m.target.story))]) {
     const own = storyMarks.filter((m) => m.target.story === id);
     const story = stories.list.find((s) => s.id === id);

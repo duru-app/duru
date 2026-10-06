@@ -299,7 +299,7 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
   // 핸들러에서 물려받은 조건은 그 핸들러를 쓰는 곳이 모두 조건 아래 있을 때만 센다.
   const held = (own, uses) => (own.length || (uses.length && uses.every((u) => u.length)) ? [...own, ...uses.flat()] : []);
 
-  const route = screens.map((s) => blocking(s.routeGuards, config.routesFile));
+  const route = screens.map((s) => blocking(s.routeGuards, s.routeFile));
   const incoming = screens.map(() => []);
   const outgoing = screens.map(() => []);
   const targetsOf = linkTargets(screens);
@@ -322,8 +322,8 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
   const indices = screens.map((_, i) => i);
   const reasons = screens.map(() => []);
   for (const r of redirects) {
-    if (blocking(r.guards, config.routesFile).length) continue;
-    for (const i of targetsOf(r.to)) reasons[i].push({ kind: 'redirect', file: config.routesFile, line: r.line });
+    if (blocking(r.guards, r.file).length) continue;
+    for (const i of targetsOf(r.to)) reasons[i].push({ kind: 'redirect', file: r.file, line: r.line });
   }
   for (const i of indices) if (incoming[i].length === 0) reasons[i].push({ kind: 'no-incoming-link' });
   const unknownEntryPaths = [];

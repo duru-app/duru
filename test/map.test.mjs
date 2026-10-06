@@ -282,7 +282,7 @@ test('two routes that end up with the same screen ID are reported', async () => 
     const src = fs.readFileSync(routes, 'utf8');
     fs.writeFileSync(routes, src.replace('    </Switch>\n  );', '      {memberRole && <Route path={Option.ROUTE_PATH.HELP} component={Help} />}\n    </Switch>\n  );'));
     const map = await buildFixture(copy);
-    assert.deepEqual(map.duplicateIds, [{ id: '/help#Help', lines: [41, 49] }]);
+    assert.deepEqual(map.duplicateIds, [{ id: '/help#Help', places: [{ file: 'Routes.js', line: 41 }, { file: 'Routes.js', line: 49 }] }]);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
@@ -329,8 +329,8 @@ test('a screen opens only under a setting or a role when its route is guarded or
 const MENU_X = 'globalSettings.MENU.X';
 const IS_ADMIN = "memberRole === 'ADMIN'";
 const tinyAccess = (screens, entryPaths = []) => {
-  const config = { routesFile: 'Routes.js', entryPaths, roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
-  const full = screens.map(([path, routeGuards, links]) => ({ id: path, path, routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
+  const config = { entryPaths, roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
+  const full = screens.map(([path, routeGuards, links]) => ({ id: path, path, routeFile: 'Routes.js', routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
   const { access } = screenAccess(full, [], config, new Map(), {}, new Map());
   return Object.fromEntries(full.map((s, i) => [s.id, access[i]]));
 };
@@ -373,7 +373,7 @@ test('an entry screen needs only what its route guards ask, whatever the links i
 
 const MENU_Y = 'globalSettings.MENU.Y';
 const settingAccess = (screens) => {
-  const config = { routesFile: 'Routes.js', entryPaths: [], roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
+  const config = { entryPaths: [], roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
   const full = screens.map(([path, routeGuards, links]) => ({ id: path, path, routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
   const read = (guard) => [guard, { settings: [setting(guard.replace('globalSettings.', ''), 'on')] }];
   const guards = new Map([MENU_X, MENU_Y].map(read));
@@ -427,7 +427,7 @@ test('a link that carries its origin\'s settings is marked as inherited and carr
 });
 
 test('an unreadable setting guard on one of several ways into a restricted origin is not passed on', () => {
-  const config = { routesFile: 'Routes.js', entryPaths: [], roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
+  const config = { entryPaths: [], roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
   const U = 'globalSettings.MENU.U';
   const screens = [
     ['/start', [], [['/a', [MENU_X]], ['/a', [MENU_X, U]]]],

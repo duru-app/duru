@@ -1710,7 +1710,7 @@ function reachItem(r, scope) {
       h('div', { class: 'muted' }, '들어오는 링크: 화면 목록에서')];
   }
   if (r.kind === 'route') {
-    return [h('h3', {}, stepLabel(r)), h('code', {}, `${state.data.routesFile}:${r.line}`), ...r.guards.map((g) => accessGuard(g, scope, state.storyOpen))];
+    return [h('h3', {}, stepLabel(r)), h('code', {}, `${r.file}:${r.line}`), ...r.guards.map((g) => accessGuard(g, scope, state.storyOpen))];
   }
   return [h('h3', {}, stepLabel(r)),
     r.ways.length > 1 ? h('div', { class: 'muted' }, `링크 ${r.ways.length}개 중 하나`) : null,
@@ -2422,7 +2422,7 @@ function screenDetails(s) {
     accessDetails(s),
     h('h2', {}, '소스 위치'),
     h('ul', { class: 'plain' },
-      h('li', {}, '라우트 ', h('code', {}, `${state.data.routesFile}:${s.line}`)),
+      h('li', {}, '라우트 ', h('code', {}, `${s.routeFile}:${s.line}`)),
       h('li', {}, '컴포넌트 ', s.componentFile ? h('code', {}, s.componentFile) : h('span', { class: 'muted' }, '찾지 못함'))),
     h('h2', {}, `나가는 링크 ${s.links.length}`),
     s.links.length ? h('ul', { class: 'plain' }, s.links.map((l) => h('li', {},

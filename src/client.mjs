@@ -1,5 +1,7 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
+import { ROUTES_FILE } from './config.mjs';
 import { loadConstants } from './constants.mjs';
 import { parseSource } from './parse.mjs';
 import { resolveImport } from './resolve.mjs';
@@ -660,9 +662,11 @@ export async function extractClient(config) {
 
   const redirects = [];
 
-  function extractScreens(routesFile) {
-    const { src, ast } = parseSource(routesFile);
-    const note = guardNote(config.routesFile, src);
+  function extractScreens(routeFile) {
+    const absFile = path.join(config.srcRoot, routeFile);
+    if (!fs.statSync(absFile, { throwIfNoEntry: false })?.isFile()) throw new Error(`routesFile names ${JSON.stringify(routeFile)}, but ${absFile} is not a file`);
+    const { src, ast } = parseSource(absFile);
+    const note = guardNote(routeFile, src);
     const screens = [];
     traverse(ast, {
       JSXElement(p) {
@@ -672,7 +676,7 @@ export async function extractClient(config) {
         if (config.redirectElements.includes(opening.name.name)) {
           const toValue = attr('to')?.get('value');
           const to = toValue && evaluate(toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue);
-          redirects.push({ to: typeof to === 'string' ? to : UNKNOWN, line: p.node.loc.start.line, guards: guardsOf(p, src, note) });
+          redirects.push({ to: typeof to === 'string' ? to : UNKNOWN, file: routeFile, line: p.node.loc.start.line, guards: guardsOf(p, src, note) });
           return;
         }
         if (!config.routeElements.includes(opening.name.name)) return;
@@ -686,8 +690,9 @@ export async function extractClient(config) {
         screens.push({
           path: typeof pathValue === 'string' ? pathValue : UNKNOWN,
           component: compName,
-          componentFile: resolveComponent(p.scope, compName, routesFile),
-          wrapperFiles: wrappersOf(p, routesFile),
+          componentFile: resolveComponent(p.scope, compName, absFile),
+          wrapperFiles: wrappersOf(p, absFile),
+          routeFile,
           routeGuards: guardsOf(p, src, note),
           line: p.node.loc.start.line,
         });
@@ -731,7 +736,8 @@ export async function extractClient(config) {
   const routeValues = lookupConstant(constants, config.routeConstant.split('.')) ?? {};
   const rel = (f) => (f ? path.relative(config.srcRoot, f) : null);
 
-  const screens = extractScreens(path.join(config.srcRoot, config.routesFile)).map(({ wrapperFiles, ...s }) => {
+  if (!config.routeFiles.length) throw new Error(`the config has no routesFile, which takes ${ROUTES_FILE}`);
+  const screens = config.routeFiles.flatMap(extractScreens).map(({ wrapperFiles, ...s }) => {
     const files = [...new Set([s.componentFile, ...wrapperFiles].filter(Boolean).flatMap(closureOf))];
     const apiCalls = [];
     const settingReads = [];

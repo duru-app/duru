@@ -124,9 +124,9 @@ export async function buildMap(config) {
     s.links = s.links.map((l, j) => ({ ...l, conditions: linkConditions[i][j] }));
   });
 
-  const linesById = new Map();
-  for (const s of mapped) linesById.set(s.id, [...(linesById.get(s.id) ?? []), s.line]);
-  const duplicateIds = [...linesById].filter(([, lines]) => lines.length > 1).map(([id, lines]) => ({ id, lines }));
+  const placesById = new Map();
+  for (const s of mapped) placesById.set(s.id, [...(placesById.get(s.id) ?? []), { file: s.routeFile, line: s.line }]);
+  const duplicateIds = [...placesById].filter(([, places]) => places.length > 1).map(([id, places]) => ({ id, places }));
 
   for (const s of mapped) s.dead = s.apiCalls.some((c) => (c.endpoints ?? []).some((e) => e.server.status === 'none'));
 

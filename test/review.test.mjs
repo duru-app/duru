@@ -6002,7 +6002,7 @@ const UNREAD_ROLE = { guard: 'canManage(member)', kinds: ['role'], roles: null }
 const UNREAD_SETTING = { guard: 'settingOf(key)', kinds: ['setting'], settings: null, settingsReason: '설정 키를 읽지 못했습니다' };
 const settingGuard = (guard, path, need, value, root = 'globalSettings') => ({ guard, kinds: ['setting'], settings: [{ root, path, need, ...(value === undefined ? {} : { value }) }] });
 const LAB_OFF = settingGuard('!globalSettings.SYSTEM.LAB_ENABLED', ['SYSTEM', 'LAB_ENABLED'], 'off');
-const reachRoute = (guards, screen = LAB) => ({ kind: 'route', screen, line: 44, guards });
+const reachRoute = (guards, screen = LAB) => ({ kind: 'route', screen, file: 'Routes.js', line: 44, guards });
 const reachLink = (...ways) => ({ kind: 'link', from: HOME, to: LAB, ways: ways.map((conditions, i) => ({ file: 'components/Home.js', line: 19 + i, conditions })) });
 
 // 핸들러에서 물려받은 조건이 없는 길이면 맵은 길의 조건 중 설정이나 역할 조건만 도착 화면의 들어오는 링크에 적는다.
