@@ -45,6 +45,7 @@ function pathValuesSettings(pathValues) {
       throw new Error(`${at} must map variable names to values, such as { "tab": "draft" }, not ${JSON.stringify(variables)}`);
     }
     for (const [name, value] of Object.entries(variables)) {
+      if (name === '?') throw new Error(`${at} has the key "?" without a query parameter name, such as "?token"`);
       if (isText(value) || isListApi(value) || isIssuingApi(value)) continue;
       // 발급 API 를 잘못 적은 값에는 header 에 키가 그대로 들어 있을 수 있어, 목록 API 에 없는 이름이 하나라도 있으면 값을 메시지에 싣지 않는다.
       const shown = isPlainObject(value) && Object.keys(value).some((k) => !LIST_API_KEYS.includes(k)) ? '' : `, not ${JSON.stringify(value)}`;

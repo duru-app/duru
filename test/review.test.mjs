@@ -288,6 +288,11 @@ async function withFakeApi(fn) {
       if (req.headers['x-api-key'] !== API_KEY || req.headers.authorization || !JSON.parse(body).memberId) return json(res, 403, { message: 'bad key' });
       return json(res, 200, { contents: { code: `c-${requests.filter((r) => r === requests.at(-1)).length}` } });
     }
+    if (req.method === 'POST' && req.url === '/api/v1/view-token/create') {
+      const { referenceType, referenceId } = JSON.parse(body);
+      if (req.headers['x-api-key'] !== API_KEY || req.headers.authorization || referenceType !== 'DOCUMENT' || !referenceId) return json(res, 403, { message: 'bad key' });
+      return json(res, 200, { contents: { accessToken: `t-${referenceId}-${requests.filter((r) => r === requests.at(-1)).length}` } });
+    }
     const me = Object.values(ACCOUNTS).find((a) => req.headers.authorization === `Bearer ${a.token}`);
     if (!me) return json(res, 401, { message: 'no token' });
     if (req.method === 'GET' && req.url === '/api/v1/me') return json(res, 200, { name: me.name });
@@ -361,6 +366,10 @@ const LIST_API = { api: '/api/v1/documents', list: 'contents.list', value: 'id' 
 const API_KEY_ENV = 'DURU_TEST_API_KEY';
 const API_KEY = 'k3y-s3cret';
 const ISSUING_API = { api: '/api/v2/one-time-code/create', method: 'POST', header: { 'X-API-KEY': '{key}' }, keyEnv: API_KEY_ENV, body: { memberId: 'duru-admin' }, value: 'contents.code' };
+const VIEW_TOKEN_API = { api: '/api/v1/view-token/create', method: 'POST', header: { 'X-API-KEY': '{key}' }, keyEnv: API_KEY_ENV, body: { referenceType: 'DOCUMENT', referenceId: '{documentId}' }, value: 'contents.accessToken' };
+const VIEW_ROUTE = ['client/src/Routes.js', '<Route path={`${Option.ROUTE_PATH.DOCUMENT}/:id`} component={waitFor(DocumentDetail)} exact />',
+  "<Route path={'/view/:documentId'} component={waitFor(DocumentDetail)} exact />"];
+const VIEW_SCREEN = '/view/:documentId#DocumentDetail';
 const loginWithHeader = { ...appSettings('http://127.0.0.1:1').app.login, header: { Authorization: 'Bearer {token}' } };
 
 const roleSettings = (server, roles = { ADMIN: 'duru-boss', AUDITOR: 'duru-auditor' }) => ({
@@ -636,6 +645,7 @@ test('the path values of a screen come from its fixed values and from list APIs 
           assert.deepEqual(await prepared('/document/:tab_draft_done_#DocumentList'), {
             parts: ['/document', { name: 'tab', prefix: '/', optional: false, pattern: 'draft|done' }],
             values: { tab: 'draft' },
+            queryNames: [],
             errors: [],
             path: '/document/draft',
             fallback: '/home#Home', fallbackPath: '/home',
@@ -644,11 +654,12 @@ test('the path values of a screen come from its fixed values and from list APIs 
           assert.deepEqual(detail, {
             parts: ['/document', { name: 'id', prefix: '/', optional: false, pattern: null }],
             values: { id: '17' },
+            queryNames: [],
             errors: [],
             path: '/document/17',
             fallback: '/document/:tab_draft_done_#DocumentList', fallbackPath: '/document/draft',
           });
-          assert.deepEqual(await prepared('/home#Home'), { parts: ['/home'], values: {}, errors: [], path: '/home', fallback: null, fallbackPath: null });
+          assert.deepEqual(await prepared('/home#Home'), { parts: ['/home'], values: {}, queryNames: [], errors: [], path: '/home', fallback: null, fallbackPath: null });
           const unknown = await fetch(`${base}/api/path-values?screen=${encodeURIComponent('/nowhere#Nowhere')}`);
           assert.equal(unknown.status, 404);
 
@@ -699,7 +710,7 @@ test('a list API that is empty, fails or answers in another shape is reported, a
           assert.match(result.errors[0], error);
         }
         assert.deepEqual(await preparedFor(config, {}, '/document/:id#DocumentDetail'), {
-          parts: ['/document', { name: 'id', prefix: '/', optional: false, pattern: null }], values: {}, errors: [], path: null, fallback: '/home#Home', fallbackPath: '/home',
+          parts: ['/document', { name: 'id', prefix: '/', optional: false, pattern: null }], values: {}, queryNames: [], errors: [], path: null, fallback: '/home#Home', fallbackPath: '/home',
         });
         await withPassword('wrong', async () => {
           const result = await detail(LIST_API);
@@ -733,6 +744,49 @@ test('an issuing API is called anew for every request, with its key and without 
           for (const text of [...texts, refused, missing]) assert.ok(!text.includes(API_KEY) && !text.includes('wrong-key'), text);
         }),
       ),
+    ),
+  );
+});
+
+test('a query token is issued for the document id of the same address, a typed value is used in place of the configured one, and the key reaches nothing', async () => {
+  const pathValues = { '/view/:documentId': { documentId: '01a1', '?token': VIEW_TOKEN_API }, '/home': { '?lang': 'ko' } };
+  await withFakeApi((api, presses, logins, listCalls, requests) =>
+    withPasswords({ [PASSWORD_ENV]: 'wrong', [API_KEY_ENV]: API_KEY }, () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, pathValues } }, (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const again = (body, type = 'application/json') => fetch(`${base}/api/path-values`, { method: 'POST', headers: { 'Content-Type': type }, body });
+          const prepared = async (id, typed) => (typed ? await again(JSON.stringify({ screen: id, typed })) : await fetch(`${base}/api/path-values?screen=${encodeURIComponent(id)}`)).text();
+          const first = JSON.parse(await prepared(VIEW_SCREEN));
+          assert.deepEqual([first.values, first.queryNames, first.errors, first.path, first.issued], [{ documentId: '01a1', '?token': 't-01a1-1' }, ['?token'], [], '/view/01a1?token=t-01a1-1', ['?token']]);
+          const typed = JSON.parse(await prepared(VIEW_SCREEN, { documentId: 'typed7' }));
+          assert.deepEqual([typed.values.documentId, typed.path], ['typed7', '/view/typed7?token=t-typed7-2']);
+          const own = JSON.parse(await prepared(VIEW_SCREEN, { '?token': 'mine' }));
+          assert.deepEqual([own.path, own.issued], ['/view/01a1?token=mine', undefined]);
+          assert.equal(requests.filter((r) => r === 'POST /api/v1/view-token/create').length, 2);
+
+          const home = JSON.parse(await prepared('/home#Home'));
+          assert.deepEqual([home.parts, home.queryNames, home.path], [['/home'], ['?lang'], '/home?lang=ko']);
+          const data = await (await fetch(`${base}/api/data`)).json();
+          assert.equal(data.appLinks['/home#Home'], `${data.app.url}/home?lang=ko`);
+          assert.equal(data.appLinks[VIEW_SCREEN], null);
+          assert.deepEqual(data.app.unknownPathValues, []);
+
+          for (const bad of ['nope', '[1]', JSON.stringify({ screen: VIEW_SCREEN }), JSON.stringify({ screen: VIEW_SCREEN, typed: { documentId: 7 } }), JSON.stringify({ screen: 7, typed: {} })]) {
+            assert.equal((await again(bad)).status, 400, bad);
+          }
+          assert.equal((await again(JSON.stringify({ screen: VIEW_SCREEN, typed: { documentId: 'x' } }), 'text/plain')).status, 415);
+          assert.equal((await fetch(`${base}/api/path-values?screen=${encodeURIComponent(VIEW_SCREEN)}&typed=${encodeURIComponent('{"documentId":"x"}')}`).then((r) => r.json())).values.documentId, '01a1');
+          assert.equal((await again(JSON.stringify({ screen: '/gone#Gone', typed: {} }))).status, 404);
+          process.env[API_KEY_ENV] = 'wrong-key';
+          const refused = await prepared(VIEW_SCREEN, { documentId: 'typed7' });
+          assert.deepEqual(JSON.parse(refused).errors, ['?token: 발급 API POST /api/v1/view-token/create 요청이 403 로 실패했습니다']);
+          process.env[API_KEY_ENV] = API_KEY;
+          const unsent = await prepared(VIEW_SCREEN, { documentId: '' });
+          assert.deepEqual(JSON.parse(unsent).errors, ['?token: documentId 값이 없어 발급 API POST /api/v1/view-token/create 를 부르지 않았습니다']);
+          assert.equal(requests.filter((r) => r === 'POST /api/v1/view-token/create').length, 4);
+          for (const text of [JSON.stringify(first), JSON.stringify(typed), refused, unsent, JSON.stringify(data)]) assert.ok(!text.includes(API_KEY) && !text.includes('wrong-key'), text);
+        }),
+        [VIEW_ROUTE]),
     ),
   );
 });
@@ -977,6 +1031,10 @@ for (const [name, broken, message] of [
   ['pathValues that is not a map of route paths', { pathValues: ['/document/:id'] }, /app\.pathValues must/],
   ['a pathValues key that is not a route path', { pathValues: { 'document/:id': { id: '1' } } }, /app\.pathValues key "document\/:id" must be a route path/],
   ['a path variable given a number', { pathValues: { '/document/:id': { id: 17 } } }, /app\.pathValues\["\/document\/:id"\]\.id must/],
+  ['a query key without a name', { pathValues: { '/document/:id': { id: '1', '?': 'x' } } }, /app\.pathValues\["\/document\/:id"\] has the key "\?" without a query parameter name/],
+  ['a query value given a number', { pathValues: { '/document/:id': { '?token': 17 } } }, /app\.pathValues\["\/document\/:id"\]\.\?token must/],
+  ['a query value that is a list API without its value', { login: loginWithHeader, pathValues: { '/document/:id': { '?token': { ...LIST_API, value: undefined } } } }, /app\.pathValues\["\/document\/:id"\]\.\?token must/],
+  ['a query value that is an issuing API with the key itself in its header', { pathValues: { '/document/:id': { '?token': { ...ISSUING_API, header: { 'X-API-KEY': 's3cret' } } } } }, /app\.pathValues\["\/document\/:id"\]\.\?token must/],
   ...[
     ['without the value to take', { value: undefined }],
     ['whose address is not a path', { api: 'http://127.0.0.1:1/api/v1/documents' }],
@@ -1025,6 +1083,19 @@ test('an issuing API is accepted without login.header, since it is called with i
   }
 });
 
+test('a query value is accepted as a fixed value, a list API or an issuing API', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    const file = path.join(dir, 'config.json');
+    const pathValues = { '/view/:documentId': { documentId: '1', '?lang': 'ko', '?mode': LIST_API, '?token': VIEW_TOKEN_API } };
+    const app = { ...appSettings('http://127.0.0.1:1').app, login: loginWithHeader, pathValues };
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8')), app }));
+    assert.deepEqual(loadConfig(file).app.pathValues, pathValues);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a list API answering with bare values is accepted', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
@@ -1046,6 +1117,14 @@ test('the page reports a missing map instead of serving empty data', async () =>
       const res = await fetch(`${base}/api/data`);
       assert.equal(res.status, 500);
       assert.match(await res.text(), /run "duru rebuild" first/);
+      const values = [
+        await fetch(`${base}/api/path-values?screen=x`),
+        await fetch(`${base}/api/path-values`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ screen: 'x', typed: {} }) }),
+      ];
+      for (const reply of values) {
+        assert.equal(reply.status, 500);
+        assert.match(await reply.text(), /run "duru rebuild" first/);
+      }
     });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -5255,12 +5334,12 @@ test('in a browser, 「새 창으로 열기」 and 「다시 띄우기」 ask fo
             assert.equal(await bar.locator('input[name=code]').inputValue(), 'c-3');
             assert.equal(issued(), 3);
 
-            await p.route('**/api/path-values?*', (r) => r.fulfill({ status: 500, body: 'down' }));
+            await p.route('**/api/path-values', (r) => r.fulfill({ status: 500, body: 'down' }));
             await reopen('id', '44');
             await bar.locator('.path-values .error:has-text("down")').waitFor();
             const failed = await newTab();
             if (!failed.isClosed()) await failed.waitForEvent('close');
-            await p.unroute('**/api/path-values?*');
+            await p.unroute('**/api/path-values');
             assert.equal(await frame.locator('#path').textContent(), '/document/43/c-3');
             assert.equal(issued(), 3);
             assert.deepEqual(errors.splice(0), Array(2).fill('Failed to load resource: the server responded with a status of 500 (Internal Server Error)'));
@@ -5273,7 +5352,7 @@ test('in a browser, 「새 창으로 열기」 and 「다시 띄우기」 ask fo
             assert.equal(issued(), 3);
 
             let held;
-            await p.route('**/api/path-values?*', (r) => { held = r; });
+            await p.route('**/api/path-values', (r) => { held = r; });
             await bar.locator('input[name=code]').fill('c-3');
             await reopen('id', '45');
             await untilSet(() => held, 'the path-values request');
@@ -5287,6 +5366,75 @@ test('in a browser, 「새 창으로 열기」 and 「다시 띄우기」 ask fo
           }),
         ), [['client/src/Routes.js', '<Route path={`${Option.ROUTE_PATH.DOCUMENT}/:id`} component={waitFor(DocumentDetail)} exact />',
         '<Route path={`${Option.ROUTE_PATH.DOCUMENT}/:id/:code`} component={waitFor(DocumentDetail)} exact />']]),
+    ),
+  );
+});
+
+test('in a browser, a screen whose address needs an issued query token opens with it, and a typed document id gets the token issued for that id', { skip: browserMissing }, async () => {
+  const pathValues = { '/view/:documentId': { documentId: '01a1', '?token': VIEW_TOKEN_API } };
+  await withFakeApi((api, presses, logins, listCalls, requests) =>
+    withPasswords({ [PASSWORD_ENV]: 's3cret', [API_KEY_ENV]: API_KEY }, () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, pathValues } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const issued = () => requests.filter((r) => r === 'POST /api/v1/view-token/create').length;
+            const bar = p.locator('#center .frame-bar');
+            const frame = p.frameLocator('#center iframe.app');
+            const field = (name) => bar.locator(`input[name="${name}"]`);
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/view/:documentId")');
+            await frame.locator('#path:has-text("/view/01a1?token=t-01a1-1")').waitFor();
+            assert.equal(await bar.locator('.mono').textContent(), `${(await (await fetch(`${base}/api/data`)).json()).app.url}/view/01a1?token=t-01a1-1`);
+            assert.deepEqual([await field('documentId').inputValue(), await field('?token').inputValue()], ['01a1', 't-01a1-1']);
+            assert.equal(await bar.locator('label:has(input[name="?token"])').textContent(), '?token ');
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+
+            const tab = await Promise.all([p.context().waitForEvent('page'), bar.locator('a:has-text("새 창")').click()]).then(([t]) => t);
+            await tab.waitForURL(`${app.url}/view/01a1?token=t-01a1-2`);
+            await tab.close();
+            assert.equal(issued(), 2);
+
+            await field('documentId').fill('typed7');
+            await bar.locator('button:has-text("다시 띄우기")').click();
+            await frame.locator('#path:has-text("/view/typed7?token=t-typed7-3")').waitFor();
+            assert.equal(await field('?token').inputValue(), 't-typed7-3');
+            assert.equal(issued(), 3);
+
+            await field('?token').fill('mine');
+            await field('?token').press('Enter');
+            await frame.locator('#path:has-text("/view/typed7?token=mine")').waitFor();
+            assert.equal(issued(), 3);
+            const typedTab = await Promise.all([p.context().waitForEvent('page'), bar.locator('a:has-text("새 창")').click()]).then(([t]) => t);
+            await typedTab.waitForURL(`${app.url}/view/typed7?token=mine`);
+            await typedTab.close();
+            assert.equal(issued(), 3);
+            assert.ok(!(await p.content()).includes(API_KEY));
+          }),
+        ), [VIEW_ROUTE, ['build/app.js', "textContent = location.pathname;", 'textContent = location.pathname + location.search;']]),
+    ),
+  );
+});
+
+
+test('in a browser, a token that could not be asked for at first is issued once the reviewer types the document id, and the line saying it was not asked for goes away', { skip: browserMissing }, async () => {
+  const pathValues = { '/view/:documentId': { '?token': VIEW_TOKEN_API } };
+  await withFakeApi((api, presses, logins, listCalls, requests) =>
+    withPasswords({ [PASSWORD_ENV]: 's3cret', [API_KEY_ENV]: API_KEY }, () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, pathValues } }, (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const bar = p.locator('#center .frame-bar');
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/view/:documentId")');
+            await bar.locator('.error:has-text("?token: documentId 값이 없어 발급 API POST /api/v1/view-token/create 를 부르지 않았습니다")').waitFor();
+            assert.equal(requests.filter((r) => r === 'POST /api/v1/view-token/create').length, 0);
+
+            await bar.locator('input[name="documentId"]').fill('typed7');
+            await bar.locator('button:has-text("다시 띄우기")').click();
+            await p.frameLocator('#center iframe.app').locator('#path:has-text("/view/typed7?token=t-typed7-1")').waitFor();
+            assert.equal(await bar.locator('.error').count(), 0);
+          }),
+        ), [VIEW_ROUTE, ['build/app.js', "textContent = location.pathname;", 'textContent = location.pathname + location.search;']]),
     ),
   );
 });
