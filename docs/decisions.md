@@ -109,6 +109,18 @@ Reason: the tsconfig is already the one place the client's aliases are written, 
 hand when attaching duru to a project, and one source needs no precedence rule. A key for aliases written by
 hand is added if an app turns up that keeps its aliases only in its bundler config.
 
+**Settings defaults a function builds are read by running a `constants` module; a shape the config cannot point
+at is reached through a small module beside the duru config.**
+`settingsDefaults` names a `constants` name, optionally with a dotted path into its value, like `routeConstant`.
+Alternatives compared:
+- A `constants` name alone, its whole default export: cannot reach defaults kept in one member of an object or
+  in a named export, and a dotted path already covers it.
+- Arguments written in the duru config to call an exported function with: works only for arguments JSON can
+  write, and each new way of building defaults would need another key.
+Reason: a dotted path covers every value a module holds once it has run, and a module the person attaching duru
+writes covers every other shape (a function never called at load, one that needs arguments, several calls
+combined) with no key per shape and without touching the client's source.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

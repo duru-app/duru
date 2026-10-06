@@ -45,3 +45,9 @@ test('the agent skill says what the tsconfig item of the config is for and what 
   assert.match(SKILL, /There is no item for aliases written by\s+hand/);
   assert.match(SKILL, /lines starting with `tsconfig import`/);
 });
+
+test('the agent skill says how settings defaults a function builds are given, and the Node version that needs', () => {
+  assert.match(SKILL, /`\{ "constant": "<constants name>\[\.<path>\]" \}`/);
+  assert.match(SKILL, /Node 22\.13 or later/);
+  assert.match(SKILL, /small module beside the config that calls it/);
+});

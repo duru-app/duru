@@ -39,13 +39,20 @@ function unwrapped(node) {
   return inner;
 }
 
-const isTypeOnly = (node, kind) => node[kind] === 'type' || (node.specifiers?.length > 0 && node.specifiers.every((s) => s[kind] === 'type'));
+const kindOf = (node) => (node.type === 'ImportDeclaration' ? 'importKind' : node.type.startsWith('Export') && node.source ? 'exportKind' : null);
+
+export const importsModule = (node) => Boolean(kindOf(node));
+
+export function isTypeOnlyLine(node) {
+  const kind = kindOf(node);
+  return Boolean(kind) && (node[kind] === 'type' || (node.specifiers?.length > 0 && node.specifiers.every((s) => s[kind] === 'type')));
+}
 
 function withoutTypeImports(program) {
   program.body = program.body.filter((node) => {
-    const kind = node.type === 'ImportDeclaration' ? 'importKind' : node.type.startsWith('Export') && node.source ? 'exportKind' : null;
+    const kind = kindOf(node);
     if (!kind) return true;
-    if (isTypeOnly(node, kind)) return false;
+    if (isTypeOnlyLine(node)) return false;
     if (node.specifiers) node.specifiers = node.specifiers.filter((s) => s[kind] !== 'type');
     return true;
   });
@@ -57,7 +64,8 @@ function syntaxError(file, err) {
   return Object.assign(new Error(`${file}:${detail}`, { cause: err }), { code: SOURCE_SYNTAX_ERROR, detail });
 }
 
-export function parseSource(file) {
+// asWritten 이면 타입 전용 import 와 타입 문법이 감싼 값을 소스에 적힌 그대로 둔다.
+export function parseSource(file, { asWritten = false } = {}) {
   const src = fs.readFileSync(file, 'utf8');
   let ast;
   try {
@@ -65,7 +73,7 @@ export function parseSource(file) {
   } catch (err) {
     throw syntaxError(file, err);
   }
-  if (!isTypeScript(file)) return { src, ast };
+  if (!isTypeScript(file) || asWritten) return { src, ast };
   withoutTypeImports(ast.program);
   return { src, ast: unwrapped(ast) };
 }

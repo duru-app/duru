@@ -155,7 +155,21 @@ export function loadConfig(configPath) {
   const settingsDefaults = raw.settingsDefaults ?? {};
   for (const [root, entry] of Object.entries(settingsDefaults)) {
     if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
-    if (typeof entry?.file !== 'string' || typeof entry?.const !== 'string') throw new Error(`settingsDefaults.${root} needs "file" and "const"`);
+    const fromFile = entry?.file !== undefined || entry?.const !== undefined;
+    if (fromFile && entry?.constant !== undefined) {
+      throw new Error(`settingsDefaults.${root} takes either "file" and "const" or "constant", not both`);
+    }
+    if (entry?.constant !== undefined) {
+      if (!isText(entry.constant) || !DOTTED_NAME.test(entry.constant)) {
+        throw new Error(`settingsDefaults.${root}.constant must be a constants name, or a dotted path starting with one, such as "Settings.defaults", not ${JSON.stringify(entry.constant)}`);
+      }
+      const name = entry.constant.split('.')[0];
+      if (!Object.hasOwn(raw.constants ?? {}, name)) {
+        throw new Error(`settingsDefaults.${root}.constant "${entry.constant}" starts with "${name}", which is not a name in constants`);
+      }
+      continue;
+    }
+    if (typeof entry?.file !== 'string' || typeof entry?.const !== 'string') throw new Error(`settingsDefaults.${root} needs "file" and "const", or "constant"`);
   }
   const visitRecords = raw.visitRecords ?? [];
   if (!Array.isArray(visitRecords) || !visitRecords.every(isText)) {
@@ -163,6 +177,10 @@ export function loadConfig(configPath) {
   }
   if (raw.author !== undefined && !(typeof raw.author === 'string' && raw.author.trim())) {
     throw new Error(`author must be the name to sign review marks and judgments with, such as "Kim Min", not ${JSON.stringify(raw.author)}`);
+  }
+  const stubs = raw.constantStubs ?? {};
+  if (!isPlainObject(stubs) || !Object.values(stubs).every((v) => typeof v === 'string')) {
+    throw new Error(`constantStubs must map imports to the module source that stands in for them, such as { "axios": "export default { create: () => ({}) };" }, not ${JSON.stringify(raw.constantStubs)}`);
   }
   if (raw.tsconfig !== undefined && !isText(raw.tsconfig)) {
     throw new Error(`tsconfig must be the path of the tsconfig file that declares the import aliases, such as "client/tsconfig.json", not ${JSON.stringify(raw.tsconfig)}`);

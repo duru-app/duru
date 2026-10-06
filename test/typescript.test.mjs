@@ -208,3 +208,186 @@ test('extract stops with one line naming the file, line and column of a syntax e
     assert.equal(result.stderr, `${path.join(copy, 'client/src/screens/Report.ts')}:8:17: Unexpected token\n`);
     assert.equal(fs.existsSync(path.join(copy, 'out/map.json')), false);
   }));
+
+const SETTINGS_FROM_FILE = [
+  ['config.json', '"constant": "Settings.appSettings"', '"file": "store/settings.ts",\n      "const": "defaults"'],
+];
+
+test('route paths a function builds in a TypeScript constants module, and settings defaults a function builds, are read as values', async () => {
+  const map = await buildFixture();
+  assert.deepEqual(map.screens.map((s) => s.path), ['/home', '/document', '/document/:id', '/admin', '/lab', '/report']);
+  assert.deepEqual(screen(map, '/lab#Lab').access.route, [{ guard: 'globalSettings!.SYSTEM.LAB_ENABLED as boolean', kinds: ['setting'], settings: [LAB_ON] }]);
+  const fromFile = await inCopy(SETTINGS_FROM_FILE, (copy) => buildFixture(copy));
+  assert.deepEqual({ ...map, meta: null }, { ...fromFile, meta: null });
+});
+
+test('settings defaults can come from a module kept beside the duru config that calls a function of the client', async () => {
+  const fromAdapter = await inCopy([
+    ['config.json', '"Settings": "store/index.ts"', '"Settings": "../../duru/defaults.ts"'],
+    ['config.json', '"constant": "Settings.appSettings"', '"constant": "Settings"'],
+  ], (copy) => {
+    fs.mkdirSync(path.join(copy, 'duru'));
+    fs.writeFileSync(path.join(copy, 'duru/defaults.ts'), [
+      "import { createSettings } from '../client/src/store/createSettings';",
+      "import type { Settings } from '../client/src/store/settings';",
+      '',
+      'const defaults: Settings = createSettings({ SYSTEM: { REPORT_ENABLED: false } });',
+      'export default defaults;',
+      '',
+    ].join('\n'));
+    return buildFixture(copy);
+  });
+  assert.deepEqual(fromAdapter.settingsDefaults, { globalSettings: { SYSTEM: { LAB_ENABLED: false, REPORT_ENABLED: false } } });
+  assert.deepEqual(fromAdapter.settingsDefaultsIncomplete, { globalSettings: [] });
+});
+
+test('a settings root given both ways, a constant path not starting with a constants name, or one that holds no object, stops with what is wrong', async () => {
+  await assert.rejects(
+    inCopy([['config.json', '"constant": "Settings.appSettings"', '"constant": "Settings.appSettings",\n      "file": "store/settings.ts",\n      "const": "defaults"']], (copy) => buildFixture(copy)),
+    /settingsDefaults\.globalSettings takes either "file" and "const" or "constant", not both/,
+  );
+  await assert.rejects(
+    inCopy([['config.json', '"constant": "Settings.appSettings"', '"constant": "Store.appSettings"']], (copy) => buildFixture(copy)),
+    /settingsDefaults\.globalSettings\.constant "Store\.appSettings" starts with "Store", which is not a name in constants/,
+  );
+  await assert.rejects(
+    inCopy([['config.json', '"constant": "Settings.appSettings"', '"constant": "Settings.missing"']], (copy) => buildFixture(copy)),
+    /settingsDefaults\.globalSettings: constant Settings\.missing is not an object but undefined/,
+  );
+});
+
+test('a constants module importing a TypeScript file that a value import and a type import both name runs, and extract prints no warning about stripping types', () => inCopy([], (copy) => {
+  const result = spawnSync(process.execPath, [CLI, 'extract', path.join(copy, 'config.json')], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, '');
+  const map = JSON.parse(fs.readFileSync(path.join(copy, 'out/map.json'), 'utf8'));
+  assert.deepEqual(map.settingsDefaults, { globalSettings: { SYSTEM: { LAB_ENABLED: false, REPORT_ENABLED: true } } });
+}));
+
+test('a TypeScript import whose names are used only as types, written without the type keyword, is dropped before the constants module runs', async () => {
+  const map = await inCopy([
+    ['client/src/store/createSettings.ts', "import { defaults } from './settings';\nimport type { Settings } from './settings';", "import { defaults, Settings } from './settings';"],
+    ['client/src/store/index.ts', "import type { Settings } from './settings';", "import { Settings } from './settings';"],
+  ], (copy) => buildFixture(copy));
+  assert.deepEqual(map.settingsDefaults, { globalSettings: { SYSTEM: { LAB_ENABLED: false, REPORT_ENABLED: true } } });
+});
+
+test('a constants module that fails to run names the source file, not the copy duru runs', async () => {
+  await assert.rejects(
+    inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { produce } from 'immer';\nproduce();"]], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:3: The requested module 'immer' does not provide an export named 'produce'$/);
+      return true;
+    },
+  );
+});
+
+test('a module listed in constants only for settings defaults stays among the source files of the screens that import it', async () => {
+  const importStore = [['client/src/screens/Lab.tsx', "import { scheduleReport } from './scheduleReport';", "import { scheduleReport } from './scheduleReport';\nimport { appSettings } from '../store';\nexport const labSettings = appSettings;"]];
+  const fromConstant = await inCopy(importStore, (copy) => buildFixture(copy));
+  const fromFile = await inCopy([...importStore, ...SETTINGS_FROM_FILE, ['config.json', ',\n    "Settings": "store/index.ts"', '']], (copy) => buildFixture(copy));
+  assert.ok(screen(fromConstant, '/lab#Lab').sourceFiles.includes('store/index.ts'));
+  assert.deepEqual(screen(fromConstant, '/lab#Lab').sourceFiles, screen(fromFile, '/lab#Lab').sourceFiles);
+});
+
+test('a constant path that points at the function building the defaults says so', async () => {
+  await assert.rejects(
+    inCopy([
+      ['config.json', '"Settings": "store/index.ts"', '"Settings": "store/index.ts",\n    "Factory": "store/createSettings.ts"'],
+      ['config.json', '"constant": "Settings.appSettings"', '"constant": "Factory.createSettings"'],
+    ], (copy) => buildFixture(copy)),
+    /settingsDefaults\.globalSettings: constant Factory\.createSettings is not an object but a function: point at the value it returns/,
+  );
+});
+
+test('a default or namespace import used only as a type next to a used one is dropped, and an error after a dropped import spread over several lines names the line in the source', async () => {
+  const map = await inCopy([
+    ['client/src/store/settings.ts', 'export type Settings =', 'export default interface Shape { SYSTEM: object }\nexport type Settings ='],
+    ['client/src/store/createSettings.ts', "import { defaults } from './settings';\nimport type { Settings } from './settings';", "import Shape, { defaults } from './settings';\nimport * as Types from './settings';\nimport Option, * as Unused from '../_define/Option';\nimport type { Settings } from './settings';\ntype Kept = Shape | Types.Settings | Unused.Kind;\nconst option = Option;"],
+  ], (copy) => buildFixture(copy));
+  assert.deepEqual(map.settingsDefaults, { globalSettings: { SYSTEM: { LAB_ENABLED: false, REPORT_ENABLED: true } } });
+
+  await assert.rejects(
+    inCopy([['client/src/store/index.ts', "import type { Settings } from './settings';", "import {\n  Settings,\n} from './settings';\nmissing();"]], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Settings: \S+client\/src\/store\/index\.ts:5: missing is not defined$/);
+      return true;
+    },
+  );
+});
+
+test('an import used only by a type-only export, or written with comments and line breaks between its names, is rewritten keeping the lines of the source', async () => {
+  const map = await inCopy([
+    ['client/src/store/settings.ts', 'export type Settings =', 'export default interface Shape { SYSTEM: object }\nexport type Settings ='],
+    ['client/src/store/createSettings.ts', "import { defaults } from './settings';", "import Shape /* a, b */, {\n  defaults,\n} from './settings';\nimport { Settings as Exported } from './settings';\nexport type { Shape };\nexport { type Exported };"],
+  ], (copy) => buildFixture(copy));
+  assert.deepEqual(map.settingsDefaults, { globalSettings: { SYSTEM: { LAB_ENABLED: false, REPORT_ENABLED: true } } });
+
+  await assert.rejects(
+    inCopy([['client/src/store/index.ts', "import { createSettings } from './createSettings';", "import Option,\n  * as Unused from '../_define/Option';\ntype Kept = Unused.Kind;\nconst kept = Option;\nmissing();\nimport { createSettings } from './createSettings';"]], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Settings: \S+client\/src\/store\/index\.ts:5: /);
+      return true;
+    },
+  );
+});
+
+test('every import of the same outside package in the constants modules gets one stand-in module, so state it holds is shared', async () => {
+  const map = await inCopy([
+    ['config.json', '"apiModules"', '"constantStubs": {\n    "registry": "export const reg = new Map();"\n  },\n  "apiModules"'],
+    ['client/src/_define/paths.ts', 'export type RouteKey', "import { reg } from 'registry';\nreg.set('paths', true);\n\nexport type RouteKey"],
+    ['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { reg } from 'registry';\nif (reg.size !== 1) throw new Error('registry not shared');"],
+  ], (copy) => buildFixture(copy));
+  assert.ok(map.screens.length);
+});
+
+test('a constant path that holds text shows the text in quotes', async () => {
+  await assert.rejects(
+    inCopy([['config.json', '"constant": "Settings.appSettings"', '"constant": "Option.ROUTE_PATH.HOME"']], (copy) => buildFixture(copy)),
+    /constant Option\.ROUTE_PATH\.HOME is not an object but "\/home"$/,
+  );
+});
+
+test('imports and re-exports whose names are all marked type, a relative import that finds no file, and a source on another line than the names keep the constants module running with the lines of the source', async () => {
+  const map = await inCopy([
+    ['client/src/store/index.ts', "import type { Settings } from './settings';", "import { type Settings } from './settings';\nexport { type Settings as Shown } from './settings';\nexport * from './settings';\nimport { createSettings as\n  build }\n  from './createSettings'\n;"],
+    ['client/src/store/index.ts', 'createSettings((window', 'build((window'],
+  ], (copy) => buildFixture(copy));
+  assert.deepEqual(map.settingsDefaults, { globalSettings: { SYSTEM: { LAB_ENABLED: false, REPORT_ENABLED: true } } });
+
+  await assert.rejects(
+    inCopy([['client/src/store/index.ts', "import type { Settings } from './settings';", "import { type Settings } from './settings';\nimport Kept, { defaults }\n  from './settings'\n;\nlet seen: Kept = defaults;\nmissing();"]], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Settings: \S+client\/src\/store\/index\.ts:7: missing is not defined$/);
+      return true;
+    },
+  );
+});
+
+test('relative imports of the same missing file with the same stand-in share it, while another folder or another stand-in gets its own', async () => {
+  const map = await inCopy([
+    ['config.json', '"apiModules"', '"constantStubs": {\n    "./gone": "export const marks = [];",\n    "../_define/gone": "export const marks = [];\\nexport const other = 1;"\n  },\n  "apiModules"'],
+    ['client/src/_define/paths.ts', 'export type RouteKey', "import { marks } from './gone';\nmarks.push('paths');\n\nexport type RouteKey"],
+    ['client/src/store/settings.ts', 'export type Settings =', "import { marks } from './gone';\nif (marks.length) throw new Error('another folder shares');\nimport { marks as same, other } from '../_define/gone';\nif (same.length || other !== 1) throw new Error('another stand-in shares');\n\nexport type Settings ="],
+    ['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { marks } from './gone';\nexport * from './gone';\nif (marks.length !== 1) throw new Error('stand-ins not shared');"],
+  ], (copy) => buildFixture(copy));
+  assert.ok(map.screens.length);
+});
+
+test('a type-only import removed between two statements written without semicolons leaves them apart', async () => {
+  const map = await inCopy([
+    ['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nconst join = joinPath\nimport type { RouteKey as Key } from './paths'\n[1].forEach(() => join)\nimport { RouteKey as Typed } from './paths'\n[2].forEach((k: Typed) => join)"],
+  ], (copy) => buildFixture(copy));
+  assert.ok(map.screens.length);
+});
+
+test('an outside package named like a member of every object gets the empty stand-in, and a stand-in that is not source text is refused', async () => {
+  const map = await inCopy([
+    ['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport made from 'constructor';\nif (JSON.stringify(made) !== '{}') throw new Error('not the empty stand-in');"],
+  ], (copy) => buildFixture(copy));
+  assert.ok(map.screens.length);
+  await assert.rejects(
+    inCopy([['config.json', '"apiModules"', '"constantStubs": {\n    "left-out": null\n  },\n  "apiModules"']], (copy) => buildFixture(copy)),
+    /constantStubs must map imports to the module source that stands in for them/,
+  );
+});
