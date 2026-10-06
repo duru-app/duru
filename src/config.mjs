@@ -202,7 +202,7 @@ export function loadConfig(configPath) {
     moves,
     callLinks,
     settingsDefaults,
-    redirectElements: raw.redirectElements ?? ['Redirect'],
+    redirectElements: raw.redirectElements ?? ['Redirect', 'Navigate'],
     entryPaths: raw.entryPaths ?? [],
     serverEndpoints: [raw.serverEndpoints ?? []].flat().map(at),
     outDir,
