@@ -288,7 +288,7 @@ test('rebuild counts the story candidates from the visit records and names each 
     fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), storiesDir: 'example-stories', visitRecords: ['example-visits'] }));
     const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     assert.match(stdout, /^story candidates 2 \| files skipped 1$/m);
-    assert.match(stdout, /^ {2}example-visits\/broken-record\.json: 2 번째 단계에 url 이 없습니다$/m);
+    assert.match(stdout, /^ {2}example-visits\/broken-record\.json: 2 번째 단계의 url 을 읽지 못했습니다$/m);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }

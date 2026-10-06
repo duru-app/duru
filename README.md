@@ -616,7 +616,8 @@ review page.
 
 A visit record is a JSON file holding either a list of steps or an object with the list in `steps`. Each step
 is an object whose `url` is the address it was at, a full address or only the path. Other keys in the file
-and in each step are ignored:
+and in each step are ignored, and so is a step with no `url` or a `url` of `null`, such as a note the test
+wrote down between two addresses; it still counts in the step numbers below:
 
 ```json
 {
@@ -639,9 +640,9 @@ and in each step are ignored:
 - The candidate's name is the record's file name without `.json`. It carries its `source`: the record's path
   relative to the config file and the record's first and last steps (`[1, 21]`), and for each of its steps
   the record steps it covers (`stepRanges`).
-- A file that is not valid JSON, has no list of steps, has no steps, or has a step without a `url` or with
-  a full address that cannot be read, is skipped and noted with its path and why; so is a source that does
-  not exist. The other records are read as usual.
+- A file that is not valid JSON, has no list of steps, has no step with a `url`, or has a step that is not an
+  object or whose `url` is not text, is blank or cannot be read, is skipped and noted with its path and why; so
+  is a source that does not exist. The other records are read as usual.
 
 Candidates are checked against the map like stories. An unmatched path is a screen the map does not have, so
 such a candidate is detached and the links next to that path are not judged. With a `map.json` whose links do
@@ -669,8 +670,9 @@ and discarding are refused.
 candidate file with its path relative to the config file and why.
 
 `test/fixtures/app/example-visits` holds example visit records for the fake client: one that stays on the same
-screen over several steps and has addresses with a query and a hash, one with full addresses and a path that
-is not on the map, one whose screen order is that of the example story `run-lab`, and one malformed file.
+screen over several steps, has addresses with a query and a hash and a step with no `url`, one with full
+addresses and a path that is not on the map, one whose screen order is that of the example story `run-lab`, and
+one with an address that cannot be read.
 
 ## Review page
 

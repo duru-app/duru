@@ -32,12 +32,15 @@ function readRecord(file) {
   if (!steps.length) return { reason: '단계가 없습니다' };
   const addresses = [];
   for (const [i, step] of steps.entries()) {
-    if (!isPlainObject(step) || typeof step.url !== 'string' || !step.url.trim()) return { reason: `${i + 1} 번째 단계에 url 이 없습니다` };
+    if (!isPlainObject(step)) return { reason: `${i + 1} 번째 단계는 객체여야 합니다` };
+    if (step.url == null) continue;
+    if (typeof step.url !== 'string' || !step.url.trim()) return { reason: `${i + 1} 번째 단계의 url 이 문자열이 아니거나 비어 있습니다` };
     const address = pathOf(step.url.trim());
     if (!address) return { reason: `${i + 1} 번째 단계의 url 을 읽지 못했습니다` };
-    addresses.push(address);
+    addresses.push({ address, step: i + 1 });
   }
-  return { addresses };
+  if (!addresses.length) return { reason: 'url 이 있는 단계가 없습니다' };
+  return { addresses, stepCount: steps.length };
 }
 
 export function loadVisitRecords(sources, configDir) {
@@ -50,26 +53,26 @@ export function loadVisitRecords(sources, configDir) {
     files.push(...found.files);
   }
   for (const file of [...new Set(files)].sort((a, b) => compare(relative(configDir, a), relative(configDir, b)))) {
-    const { addresses, reason } = readRecord(file);
+    const { addresses, stepCount, reason } = readRecord(file);
     const record = relative(configDir, file);
     if (reason) notices.push({ file: record, reason });
-    else records.push({ record, name: path.basename(file, '.json'), addresses });
+    else records.push({ record, name: path.basename(file, '.json'), addresses, stepCount });
   }
   return { records, notices };
 }
 
-function candidateOf({ record, name, addresses }, screenAt) {
+function candidateOf({ record, name, addresses, stepCount }, screenAt) {
   const screens = [];
   const stepRanges = [];
-  addresses.forEach((address, i) => {
+  for (const { address, step } of addresses) {
     const screen = screenAt(address) ?? address;
-    if (screen === screens.at(-1)) stepRanges.at(-1)[1] = i + 1;
+    if (screen === screens.at(-1)) stepRanges.at(-1)[1] = step;
     else {
       screens.push(screen);
-      stepRanges.push([i + 1, i + 1]);
+      stepRanges.push([step, step]);
     }
-  });
-  return { name, screens, source: { record, steps: [1, addresses.length] }, stepRanges };
+  }
+  return { name, screens, source: { record, steps: [1, stepCount] }, stepRanges };
 }
 
 function discardedProblemOf(d) {

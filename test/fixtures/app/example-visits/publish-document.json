@@ -6,6 +6,7 @@
     { "action": "open drafts", "url": "/document/draft" },
     { "action": "open the first draft", "url": "/document/42?mode=edit#participants" },
     { "action": "publish", "url": "/document/42" },
+    { "action": "count the rows of the table", "rows": 3 },
     { "action": "open help", "url": "/help" }
   ]
 }

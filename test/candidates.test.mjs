@@ -49,7 +49,7 @@ test('visit record sources default to none and are read as paths relative to the
   }
 });
 
-test('the example visit records give one candidate per record, with steps on the same screen merged, queries and hashes dropped, addresses off the map kept, and a record whose screens equal an existing story left out', () => {
+test('the example visit records give one candidate per record, with steps on the same screen merged, a step without a url passed over, queries and hashes dropped, addresses off the map kept, and a record whose screens equal an existing story left out', () => {
   const { list, notices } = candidatesOf();
   assert.deepEqual(list.map(shape), [
     {
@@ -61,11 +61,11 @@ test('the example visit records give one candidate per record, with steps on the
     {
       name: 'publish-document',
       screens: ['/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/help#Help'],
-      source: { record: 'example-visits/publish-document.json', steps: [1, 6] },
-      stepRanges: [[1, 2], [3, 3], [4, 5], [6, 6]],
+      source: { record: 'example-visits/publish-document.json', steps: [1, 7] },
+      stepRanges: [[1, 2], [3, 3], [4, 5], [7, 7]],
     },
   ]);
-  assert.deepEqual(notices, [{ file: 'example-visits/broken-record.json', reason: '2 번째 단계에 url 이 없습니다' }]);
+  assert.deepEqual(notices, [{ file: 'example-visits/broken-record.json', reason: '2 번째 단계의 url 을 읽지 못했습니다' }]);
 });
 
 test('a candidate is checked against the map like a story, and an address off the map shows as a screen the map does not have', () => {
@@ -102,8 +102,10 @@ for (const [name, body, reason] of [
   ['text that is not JSON', '{', /^JSON 으로 읽지 못했습니다: /],
   ['an object without steps', { url: '/home' }, /^단계 배열이거나, steps 에 단계 배열을 담은 객체여야 합니다$/],
   ['no steps', { steps: [] }, /^단계가 없습니다$/],
-  ['a step that is not an object', ['/home'], /^1 번째 단계에 url 이 없습니다$/],
-  ['an empty address', [{ url: '/home' }, { url: '' }], /^2 번째 단계에 url 이 없습니다$/],
+  ['only steps without a url', [{ action: 'open' }, { action: 'click', url: null }], /^url 이 있는 단계가 없습니다$/],
+  ['a step that is not an object', ['/home'], /^1 번째 단계는 객체여야 합니다$/],
+  ['a url that is not text', [{ url: '/home' }, { url: 42 }], /^2 번째 단계의 url 이 문자열이 아니거나 비어 있습니다$/],
+  ['an empty address', [{ url: '/home' }, { url: '' }], /^2 번째 단계의 url 이 문자열이 아니거나 비어 있습니다$/],
   ['an address that cannot be read', [{ url: 'http://' }], /^1 번째 단계의 url 을 읽지 못했습니다$/],
   ['an address that is only a query or a hash', [{ url: '/home' }, { url: '?tab=2' }], /^2 번째 단계의 url 을 읽지 못했습니다$/],
 ]) {
@@ -117,6 +119,20 @@ for (const [name, body, reason] of [
     });
   });
 }
+
+test('a step without a url is passed over wherever it sits, keeps its step number, and does not split steps on the same screen', () => {
+  withFolder({
+    'edges.json': [{ action: 'start' }, { url: '/home' }, { url: '/home?x=1' }, { action: 'end', url: null }],
+    'middle.json': [{ url: '/lab' }, { action: 'note', rows: 3 }, { url: '/lab?run=1' }, { url: '/home' }],
+  }, (dir) => {
+    const { list, notices } = candidatesOf({ configDir: dir, visitRecords: [dir], storiesDir: path.join(dir, 'stories') });
+    assert.deepEqual(notices, []);
+    assert.deepEqual(list.map(shape), [
+      { name: 'edges', screens: ['/home#Home'], source: { record: 'edges.json', steps: [1, 4] }, stepRanges: [[2, 3]] },
+      { name: 'middle', screens: ['/lab#Lab', '/home#Home'], source: { record: 'middle.json', steps: [1, 4] }, stepRanges: [[1, 3], [4, 4]] },
+    ]);
+  });
+});
 
 test('of two records with the same screens only the first in path order is a candidate', () => {
   withFolder(recordsIn({ 'b.json': ['/home', '/lab'], 'a.json': ['/home', '/home?x=1', '/lab'] }), (dir) => {
@@ -194,7 +210,7 @@ test('a discarded candidate file that cannot be read is noted with the candidate
     const { list, notices } = candidatesOf({ storiesDir: dir });
     assert.equal(list.length, 2);
     assert.deepEqual(notices.map((n) => [n.file, n.reason]), [
-      ['example-visits/broken-record.json', '2 번째 단계에 url 이 없습니다'],
+      ['example-visits/broken-record.json', '2 번째 단계의 url 을 읽지 못했습니다'],
       [path.relative(FIXTURE, path.join(dir, 'discarded/bad.json')), 'reason 에 버린 까닭을 적어야 합니다'],
     ]);
   });

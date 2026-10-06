@@ -8531,7 +8531,7 @@ test('the data carries the story candidates from the visit records, checked agai
         ['open-help', HELP_RECORD, 4, ['open', 'off-map', 'off-map']],
         ['publish-document', 'example-visits/publish-document.json', 4, ['open', 'open', 'conditioned']],
       ]);
-      assert.deepEqual(candidates.notices, [{ file: 'example-visits/broken-record.json', reason: '2 번째 단계에 url 이 없습니다' }]);
+      assert.deepEqual(candidates.notices, [{ file: 'example-visits/broken-record.json', reason: '2 번째 단계의 url 을 읽지 못했습니다' }]);
     }),
   );
 });

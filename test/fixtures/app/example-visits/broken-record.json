@@ -1,6 +1,6 @@
 {
   "steps": [
     { "url": "/home" },
-    { "action": "click" }
+    { "url": "?tab=2" }
   ]
 }
