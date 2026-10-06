@@ -35,7 +35,7 @@ node src/cli.mjs tasks path/to/project-config.json > tasks.md        # task list
 npm test
 ```
 
-Requires Node 22 or later.
+Requires Node 22.13 or later, for the type stripping that runs `constants` modules written in TypeScript.
 
 The project config lives **outside this repository** next to the target project's data. Paths in it are
 relative to the config file, except the files inside the client source (`routesFile`, `constants`,
@@ -59,7 +59,12 @@ relative to the config file, except the files inside the client source (`routesF
   `@domains/user/Form` is taken for an outside package and the screen's sources stop at that import; how
   imports are resolved with it is described below, after the map
 - `constants`, `constantStubs` — modules evaluated for route paths and API endpoint definitions, and
-  stand-in source for outside packages they import
+  stand-in source for outside packages they import, or for relative imports that find no file. A module's
+  value is what it exports by default, or, when it has no default export, an object of its named exports;
+  source code is still matched to a module only where it imports the module by default (`import Option
+  from …`), so the named exports serve paths written in this config such as `settingsDefaults`. A
+  `constantStubs` value is the source text of the stand-in module. How the modules are run is described below,
+  after the map
 - `apiModules`, `passThroughCalls` — where API functions live and which wrappers pass a URL through
 - `bodyArgKeys` — properties of a call argument that hold the request body (optional, default none), such
   as `data` in `ajaxExport({ data: { withHistory } })`. Without it only an object written straight into the
@@ -72,7 +77,10 @@ relative to the config file, except the files inside the client source (`routesF
 - `settingsDefaults` — where the default values of a settings root are written (optional), as
   `{ "globalSettings": { "file": "store/settings.js", "const": "defaults" } }`: the object literal that a
   top-level `const` of that name in the file holds, such as a reducer's initial state. Changes the file makes to
-  it afterwards are not seen. The root must also be listed in `settingsRoots`
+  it afterwards are not seen. When a function builds the defaults, write `{ "constant": "Settings.appSettings" }`
+  instead: a name in `constants`, alone or followed by a dotted path into its value, and the value the module
+  gives when run is the default, with no place listed under `settingsDefaultsIncomplete`. A root takes one of
+  the two forms, not both. The root must also be listed in `settingsRoots`
 - `roleIdentifiers` — where the user's role is read (optional, default none): an identifier (`memberRole`) or
   one member of an object (`workspace['member.role']`)
 - `redirectElements`, `entryPaths` — how fallback redirects are declared in the routes file (default
@@ -244,6 +252,33 @@ key for aliases written by hand: they are read from the tsconfig file only.
 
 In a `constants` module, an import that is not a relative path and has a `constantStubs` entry gets that entry
 even when an alias or a folder under `srcRoot` would find a file for it.
+
+A `constants` module, and every file it imports or re-exports from, is run as written, so a value that a function
+builds (`ROUTE_PATH: routePaths('')`) is read like a literal one. A `.ts` file has its types stripped first with
+the type stripping built into Node, which also drops imports and re-exports of types only, and imports of names
+the file uses only as types even without the `type` keyword. A TypeScript feature that stripping cannot remove
+(an `enum`, a `namespace`, JSX in a `.tsx` file) stops the extraction with the file's path. An import that finds
+no file and has no `constantStubs` entry gets a module whose default export is an empty object. Such a stand-in,
+or the one a `constantStubs` entry gives, is one module for every import of the same outside package, and for
+every relative import of the same missing path, extension included, that gets the same stand-in source. A
+relative import can have a `constantStubs` entry too, keyed by its text as written (`"./gone"`), and used only
+when the import finds no file. A named import from an empty stand-in, or a
+call into it while the module loads (`axios.create()`), stops the extraction with the file and line, and the
+import then needs a `constantStubs` entry. A module that sets up the whole app, such as a store that builds its
+reducers and API client, often pulls in such packages; point `constants` at the smallest module that builds the
+value instead.
+
+Only what a module holds once it has run is read: a function that the module exports but never calls gives no
+value. For such a case, when the defaults need arguments, or when the module that holds them pulls in too much,
+write a small module beside the duru config that calls the function and exports the result, and list it in
+`constants` with a path relative to `srcRoot`:
+
+```ts
+// duru/defaults.ts, listed as "Defaults": "../../duru/defaults.ts"
+import { createSettings } from '../client/src/store/createSettings';
+
+export default createSettings();
+```
 
 An import that matches an alias and finds no file, with every target of the alias a place inside `srcRoot` that holds no
 type declaration either, is listed under `unresolvedAliasImports` on the map, as

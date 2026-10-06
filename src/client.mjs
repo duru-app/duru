@@ -110,7 +110,9 @@ export async function extractClient(config) {
   const constants = await loadConstants(config, imports.resolve);
   const apiModuleFiles = new Set(config.apiModules.map((rel) => path.join(config.srcRoot, rel)));
   const constantFileOf = new Map(Object.entries(config.constants).map(([name, rel]) => [name, path.join(config.srcRoot, rel)]));
-  const constantFiles = new Set(constantFileOf.values());
+  const settingsOnly = new Set(Object.values(config.settingsDefaults ?? {}).map((d) => d.constant?.split('.')[0]).filter(Boolean));
+  settingsOnly.delete(config.routeConstant.split('.')[0]);
+  const constantFiles = new Set([...constantFileOf].filter(([name]) => !settingsOnly.has(name)).map(([, file]) => file));
   const settingsRoots = new Set(config.settingsRoots);
   const [routeRoot, ...routeRest] = config.routeConstant.split('.');
   const guardInits = new Map();
@@ -259,7 +261,19 @@ export async function extractClient(config) {
   function loadSettingsDefaults() {
     const values = {};
     const incomplete = {};
-    for (const [root, { file, const: name }] of Object.entries(config.settingsDefaults ?? {})) {
+    for (const [root, { file, const: name, constant }] of Object.entries(config.settingsDefaults ?? {})) {
+      if (constant) {
+        const value = lookupConstant(constants, constant.split('.'));
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          const found = typeof value === 'function'
+            ? 'a function: point at the value it returns, or call it from a module listed in constants'
+            : Array.isArray(value) ? 'a list' : typeof value === 'string' ? JSON.stringify(value) : String(value);
+          throw new Error(`settingsDefaults.${root}: constant ${constant} is not an object but ${found}`);
+        }
+        values[root] = value;
+        incomplete[root] = [];
+        continue;
+      }
       const { ast } = parseSource(path.join(config.srcRoot, file));
       let init = null;
       traverse(ast, {

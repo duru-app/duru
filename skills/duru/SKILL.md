@@ -28,6 +28,12 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   of the client that holds `paths` (when `tsconfig.json` only lists `references`, the referenced file such as
   `tsconfig.app.json`); duru reads `paths`, `baseUrl` and `extends` from it. There is no item for aliases written by
   hand.
+- Settings defaults: `settingsDefaults` gives each settings root either `{ "file", "const" }`, an object literal
+  written in a file, or `{ "constant": "<constants name>[.<path>]" }`, the value a `constants` module gives when
+  run, for defaults a function builds. duru runs `constants` modules, `.ts` ones after stripping their types,
+  which needs Node 22.13 or later. When the defaults come from a function the app never calls at load, or that
+  needs arguments, add a small module beside the config that calls it and exports the result, and list it in
+  `constants`.
 - The command: `duru` when it is installed, otherwise `node <duru checkout>/src/cli.mjs`.
 - The route files: `routesFile` in the config is one route file or a list of them, and duru reads only the files
   listed, so an app that splits its routes over several files needs each of them in the list. A screen on the map,
