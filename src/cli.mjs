@@ -75,6 +75,7 @@ if (command === 'tasks') {
   for (const p of map.unknownEntryPaths) console.log(`  entryPaths ${p} matches no route`);
   for (const p of map.unknownMovePaths) console.log(`  moves ${p} matches no route`);
   for (const id of map.unknownBodyOptionCalls) console.log(`  bodyOptions ${id} matches no call`);
+  for (const g of map.unknownRoleGuards ?? []) console.log(`  roleGuards ${g} matches no role guard`);
   for (const l of map.unknownCallLinks) for (const id of l.missing) console.log(`  callLinks ${l.from} → ${l.to}: ${id} matches no call`);
   for (const n of map.settingsCallNotices ?? []) console.log(`  settingsFunctions ${n.file ? `${n.file}:${n.line} ` : ''}${n.reason}`);
   for (const { spec, files } of map.unresolvedAliasImports ?? []) console.log(`  tsconfig import ${spec} matches an alias but no file, imported in ${files} file${files === 1 ? '' : 's'}`);

@@ -144,6 +144,10 @@ export function loadConfig(configPath) {
   if (typeof bodyOptions !== 'object' || Array.isArray(bodyOptions) || !Object.values(bodyOptions).every(isKeyList)) {
     throw new Error(`bodyOptions must map call IDs to lists of body keys, such as {"POST:/api/v1/report/export": ["withHistory"]}, not ${JSON.stringify(raw.bodyOptions)}`);
   }
+  const roleGuards = raw.roleGuards ?? {};
+  if (!isPlainObject(roleGuards) || !Object.entries(roleGuards).every(([guard, roles]) => isText(guard) && Array.isArray(roles) && roles.length > 0 && roles.every((r) => isText(r) && !/\s/.test(r)))) {
+    throw new Error(`roleGuards must map role guards as in the map to the roles that pass them, such as { "menuPolicy.canAccessAdminRoutes": ["member:ADMINISTRATOR"] }, with no spaces in a role, not ${JSON.stringify(raw.roleGuards)}`);
+  }
   const moves = raw.moves ?? [];
   const isMove = (m) => isPlainObject(m) && Object.keys(m).every((k) => MOVE_KEYS.includes(k)) && isRoutePath(m.from) && isRoutePath(m.to) && isOneLine(m.reason);
   if (!Array.isArray(moves) || !moves.every(isMove)) {
@@ -230,6 +234,7 @@ export function loadConfig(configPath) {
     tsconfig,
     aliases: tsconfig && loadAliases(tsconfig),
     roleIdentifiers: raw.roleIdentifiers ?? [],
+    roleGuards: Object.fromEntries(Object.entries(roleGuards).map(([guard, roles]) => [guard, [...new Set(roles)].sort()])),
     calledApiModules,
     requestFunction,
     bodyArgKeys,

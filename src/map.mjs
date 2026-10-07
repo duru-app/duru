@@ -118,7 +118,7 @@ export async function buildMap(config) {
     ...s,
     apiCalls: s.apiCalls.map((c) => ({ ...c, endpoints: apiFunctions[c.fn]?.endpoints ?? null })),
   }));
-  const { access, entries, unknownEntryPaths, linkConditions } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
+  const { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
   mapped.forEach((s, i) => {
     s.access = access[i];
     s.links = s.links.map((l, j) => ({ ...l, conditions: linkConditions[i][j] }));
@@ -154,6 +154,7 @@ export async function buildMap(config) {
     ...(server.length === 0 && { serverNotCompared: true }),
     entries,
     unknownEntryPaths,
+    ...(Object.keys(config.roleGuards ?? {}).length > 0 && { unknownRoleGuards }),
     ...configuredMoves(mapped, config.moves ?? []),
     settingsDefaults,
     settingsDefaultsIncomplete,

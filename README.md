@@ -157,6 +157,11 @@ client with example results and a config to start from.
 
 - `roleIdentifiers` — where the user's role is read (optional): an identifier (`memberRole`) or one member of an
   object (`workspace['member.role']`).
+- `roleGuards` — the roles that pass a role guard (optional), keyed by the guard as the map writes it, such as
+  `{ "menuPolicy.canAccessAdminRoutes": ["member:ADMINISTRATOR", "member:WORKSPACE_ADMINISTRATOR"] }`. Use it
+  for a guard whose roles the source does not show where it is written. The roles listed replace what duru reads
+  for that guard everywhere it appears, and they are compared as written, so give the kind of role before the
+  name when two kinds share a name, and list every role guard of a screen once you list one of them.
 - `moves` — screen moves the code shows no link for (optional), each `{ "from", "to", "reason" }` with route
   paths as in the map, such as `[{ "from": "/signin", "to": "/user-home", "reason": "로그인 뒤" }]` for an app
   that reloads after sign-in and lets a redirect choose the screen. Story steps use them like links.
@@ -219,8 +224,9 @@ client with example results and a config to start from.
   password is read from the environment variable named by `account.passwordEnv` and never written anywhere.
   Give duru an account of its own: an app that allows one login per account logs out whoever else uses it.
 
-  `roles` gives an account per role, keyed by the role value the app compares the role with (`"ADMIN"` for
-  `memberRole === 'ADMIN'`); `account` stays the account for screens without a role condition.
+  `roles` gives an account per role, keyed by the role as the map writes it: the value the app compares the role
+  with (`"ADMIN"` for `memberRole === 'ADMIN'`), or the role as written in `roleGuards` (`"member:ADMINISTRATOR"`)
+  for a guard listed there; `account` stays the account for screens without a role condition.
   `signedOutPaths` lists route paths to show signed out, such as a sign-in screen.
 
   `pathValues` fills the path variables of a screen, keyed by its route path as in the map. Each variable takes a
@@ -292,7 +298,8 @@ listing the places whose value the source does not show in full.
 - An alias import that finds no file, with the number of files that write it (`unresolvedAliasImports`).
 - Routes that end up with the same ID, each place as `file:line` (`duplicateIds`).
 - `bodyOptions` call IDs that are not on the map (`unknownBodyOptionCalls`), `moves` paths that match no route
-  (`unknownMovePaths`) and `callLinks` call IDs that are not on the map (`unknownCallLinks`).
+  (`unknownMovePaths`), `callLinks` call IDs that are not on the map (`unknownCallLinks`) and `roleGuards`
+  guards that guard no route or link with a role (`unknownRoleGuards`).
 - `rebuild` also prints the story and candidate counts and the files skipped, the links from untagged tests to
   screens and the trace or test files it could not read, the judged test pairs, and each judgment file it could
   not read or whose screen is gone from the map.

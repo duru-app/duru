@@ -493,6 +493,25 @@ The limits: a declaration reached is reached whole, so using one member of an ex
 the calls of all its members; a name written in a branch that never runs still counts; a top-level statement
 of a reached file brings every name it uses.
 
+**The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
+the name.**
+In the 2.0.0 client every role screen is guarded by a member of `menuPolicy` (`canAccessAdminRoutes`,
+`canAccessDepartmentRoutes`, `canAccessSystemSettings`, `canAccessTrash`), which a function in another file
+builds by comparing the user's roles with lists in `config/permissions.ts`. duru reads only comparisons in the
+file of the guard, so all 12 role screens had their roles unread, while 10 of the 11 in 1.5.0 were read. The
+name `ADMINISTRATOR` is a member role, a user role and a role in a department, and a department screen opens
+for a member administrator or for an administrator of the chosen department, so the config writes
+`member:ADMINISTRATOR` and `department:ADMINISTRATOR`. Compared: writing the bare names (the tags look as in
+1.5.0, but the two administrators of a department screen are one), and following the policy function into
+`permissions.ts` without a config (the largest change, and the shared names stay shared). The roles written
+replace what duru reads for a guard with the same text, wherever it is, rather than being merged with it: a
+written role and a read one never match as text, so mixing the two on one screen would leave it no roles; when
+that happens, the screen lists the guards missing from `roleGuards` as unreadable.
+A key that guards no route or link with a role is listed like an unknown `bodyOptions` call.
+Measured on main 8a62577 against the branch: with the four guards written, the 2.0.0 map gives roles for all 12
+screens and leaves no guard unread, and nothing else on the map changes; without `roleGuards`, the 1.5.0 and
+2.0.0 maps are identical to main's apart from the time they were written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

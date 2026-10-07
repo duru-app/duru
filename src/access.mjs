@@ -289,7 +289,9 @@ function settle(targets, values, compute) {
 
 export function screenAccess(screens, redirects, config, guardInits, constants, guardSettings) {
   const kindsOf = guardKinds(config, guardInits);
-  const rolesOf = roleReader(config, guardInits, constants);
+  const readRoles = roleReader(config, guardInits, constants);
+  const configured = config.roleGuards ?? {};
+  const rolesOf = (guard, file) => (Object.hasOwn(configured, guard) ? [...configured[guard]] : readRoles(guard, file));
   const describe = (guards, file, via) =>
     guards.map((guard) => {
       const kinds = kindsOf(guard, file);
@@ -407,7 +409,9 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
   const roleAccess = (i) => {
     if (!restricted[i] || !kinds[i].has('role')) return {};
     const guards = [...route[i], ...(onlyBlockedLinks(i) ? incoming[i].flatMap((l) => l.guards) : [])];
-    const unreadable = roleGuards(guards).filter((g) => !g.roles).map((g) => g.guard);
+    const roleOnes = roleGuards(guards);
+    const mixed = values[i] === null && roleOnes.every((g) => g.roles) && roleOnes.some((g) => Object.hasOwn(configured, g.guard));
+    const unreadable = roleOnes.filter((g) => !g.roles || (mixed && !Object.hasOwn(configured, g.guard))).map((g) => g.guard);
     return { roleValues: values[i], unreadableRoleGuards: [...new Set(unreadable)].sort() };
   };
 
@@ -446,5 +450,8 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
     return { restricted: restricted[i], kinds: shownKinds[i], route: route[i], links, ...roleAccess(i), ...settings };
   });
   const entries = starts.map((i) => ({ screen: screens[i].id, reasons: reasons[i] }));
-  return { access, entries, unknownEntryPaths, linkConditions };
+  const guarding = [...route.flat(), ...linkConditions.flat(2)];
+  const usedRoleGuards = new Set(roleGuards(guarding).map((g) => g.guard));
+  const unknownRoleGuards = Object.keys(configured).filter((g) => !usedRoleGuards.has(g)).sort();
+  return { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions };
 }
