@@ -280,6 +280,13 @@ test('a TypeScript import whose names are used only as types, written without th
 
 test('a constants module that fails to run names the source file, not the copy duru runs', async () => {
   await assert.rejects(
+    inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { produce } from 'immer';\nproduce();"]], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:3: The requested module 'immer' does not provide an export named 'produce'$/);
+      return true;
+    },
+  );
+  await assert.rejects(
     inCopy([['client/src/_define/Option.ts', 'function routePaths', "import { produce } from 'immer';\nproduce();\n\nfunction routePaths"]], (copy) => buildFixture(copy)),
     (e) => {
       assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:16: The requested module 'immer' does not provide an export named 'produce'$/);
@@ -325,12 +332,20 @@ test('JSX in a .tsx file a constants module imports stops the extraction with th
 });
 
 test('a CommonJS import or export in a TypeScript constants module stops the extraction with the file and line', async () => {
-  for (const line of ["import paths = require('./paths');", 'export = {};']) {
+  for (const [line, shown] of [["import paths = require('./paths');", 'import … = require(…)'], ['export = {};', 'export =']]) {
     await assert.rejects(
       inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", `import { joinPath } from './paths';\n${line}`]], (copy) => buildFixture(copy)),
-      /^Error: constants: cannot turn \S+client\/src\/_define\/Option\.ts into JavaScript: line 3 is CommonJS/,
+      (e) => {
+        assert.equal(e.message.replace(/\S+client\//, 'client/'), `constants: client/src/_define/Option.ts:3: \`${shown}\` is CommonJS, which duru cannot run as an ES module`);
+        return true;
+      },
     );
   }
+});
+
+test('a type-only CommonJS import in a TypeScript constants module is dropped before it runs', async () => {
+  const map = await inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport type Paths = require('./paths');"]], (copy) => buildFixture(copy));
+  assert.deepEqual({ ...map, meta: null }, { ...(await buildFixture()), meta: null });
 });
 
 test('a module listed in constants only for settings defaults stays among the source files of the screens that import it', async () => {

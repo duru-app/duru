@@ -32,11 +32,11 @@ function toJavaScript(file, code) {
   }
 }
 
-// 모듈을 불러오다 난 오류에는 줄 번호만 있어서 그 줄의 첫 글자 자리로 찾는다. 줄 앞 공백 자리로 찾으면 윗줄이 나온다.
+// 모듈을 불러오다 난 오류에는 줄 번호만 있어서 그 줄의 첫 글자 자리로 찾는다. 같은 줄에 매핑이 없으면 줄을 모르는 것으로 둔다.
 function sourceLine({ code, map }, line, column) {
   const col = column ? Number(column) - 1 : Math.max((code.split('\n')[line - 1] ?? '').search(/\S/), 0);
   const entry = map.findEntry(line - 1, col);
-  return entry?.originalLine === undefined ? null : entry.originalLine + 1;
+  return entry?.generatedLine === line - 1 ? entry.originalLine + 1 : null;
 }
 
 const TYPE_PLACES = new Set([
@@ -93,9 +93,10 @@ export async function loadConstants(config, resolve = importResolver(config).res
     const importsValues = ast.program.body.some((n) => n.type === 'ImportDeclaration' && n.importKind !== 'type' && n.specifiers.some((sp) => sp.importKind !== 'type'));
     const unused = TYPESCRIPT.test(absFile) && importsValues ? typeOnlyImports(ast) : new Set();
     for (const node of ast.program.body) {
-      if ((node.type === 'TSImportEqualsDeclaration' && node.moduleReference.type === 'TSExternalModuleReference') || node.type === 'TSExportAssignment') {
-        throw new Error(`constants: cannot turn ${absFile} into JavaScript: line ${node.loc.start.line} is CommonJS (\`import … = require\` or \`export =\`), which an ES module cannot run`);
-      }
+      const commonJS = node.type === 'TSExportAssignment' ? '`export =`'
+        : node.type === 'TSImportEqualsDeclaration' && node.importKind !== 'type' && node.moduleReference.type === 'TSExternalModuleReference' ? '`import … = require(…)`'
+          : null;
+      if (commonJS) throw new Error(`constants: ${absFile}:${node.loc.start.line}: ${commonJS} is CommonJS, which duru cannot run as an ES module`);
       if (!importsModule(node)) continue;
       if (isTypeOnlyLine(node)) {
         edits.push(removed(node));
