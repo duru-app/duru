@@ -246,8 +246,11 @@ client with example results and a config to start from.
 
 **Screens.** Each screen has an ID made of its route path and component name (`/document/:id#DocumentDetail`),
 usable as a test tag. It lists its route file and line, its component file, its `sourceFiles`, the API calls it
-reaches, the settings it reads, and its links to other screens with the conditions guarding them. A layout with
-a side menu around a group of routes gives its calls, settings reads and links to every screen inside it.
+reaches, the settings it reads, and its links to other screens with the conditions guarding them. The settings
+and links come from every file in `sourceFiles`. The API calls are only those the screen's code reaches, so a file
+in `sourceFiles` can hold calls the screen does not list; each call names the file and line where it is written.
+A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
+inside it.
 
 **Calls.** Each API call is a node under `calls` with an ID `<METHOD>:<path>`
 (`GET:/api/v1/document/{documentId}`), its server match, the API functions that make it, the screens that reach

@@ -252,7 +252,7 @@ Choices made inside it:
   the fake response.
 - A screen's sources do not go into the listed files, like `apiModules`. A call attaches to a screen where a
   file of the screen calls `object.method(…)`, `function(…)` or the same through a namespace import, so a hook
-  file still brings all of its calls to every screen importing it.
+  file brought all of its calls to every screen importing it, until the entry below.
 - Two listed files exporting different objects under one name, or a name `apiModules` already has, get the file
   path in front of the name (`domains/signing/api/index.ts#linkDocumentApi.search`); into-sign has two such names.
 Measured on into-sign 2.0.0 (`release/2.0.0` at `0f436776f`), ten `domains/*/api/index.ts` files and
@@ -347,6 +347,151 @@ whole is not followed; a call assigned with `let` is printed, not read; a call t
 `S.signing.SIGN_LIST`) is not read; `section` is a single key. A condition written with the same text twice in
 one file is a setting condition at both places when one of them reads the returned object. A call in a file the
 route files do not lead to, such as an app shell or a provider rendered around the routes, gives no defaults.
+
+**A screen gets the API calls that the names it uses reach; its links and setting reads still come from every
+file of its sources.**
+duru reads the screen's component file and the components wrapped around its route whole, and follows each name
+they use to its declaration, through files that re-export it (`export *` included), then the names that
+declaration uses, and so on. A call attaches to the screen when it is written inside a declaration reached this
+way, or where a reached file runs it as soon as it is imported: in a top-level statement, or in a call that a
+top-level declaration makes while the file loads, in its value or a destructuring default
+(`const warm = load()`, `export default register(…)`), its arguments, a class's `extends`, static fields, static
+blocks and computed member names included. A top-level `X.y = …` belongs to `X`, apart from the calls written
+in it, which run on import too. A file a reached file imports or re-exports from is reached too, even when
+none of its names is used, because importing it runs its top-level statements. Function bodies and a class's
+methods and instance fields, wherever they are written, are taken to run only when called and stay with the
+declaration: a function handed to a function that makes hooks (`createMutation((args) => api.archive(args))`)
+comes with the hook. A function that a call runs at once (`KEYS.map((k) => api.label(k))`,
+`(function () { … }).call(this)`) stays there too, so its calls come only with the declaration; only a function
+called right where it is written (`(() => load())()`) counts as running on import. Names used only in types are
+not followed. Following stays inside the screen's `sourceFiles`, so no screen gets a call it did not have before.
+Each call keeps the file and line it is written at, so a call reached through a hook shows the line in the hook
+file. The following lives in `src/follow-names.mjs`, which takes a file and a name and gives back the call sites
+they reach; the screen extraction only asks it.
+Where duru cannot tell which names are used, the whole file counts as used: a namespace import used other than
+as `ns.name`, a dynamic `import(…)`, an import for side effects only, a name the file does not export (a CommonJS
+file, for one), and `export * as ns`.
+For `calledApiModules` two more shapes are read. A name imported through files that re-export it from a listed
+file counts as imported from that file, so `object.method(…)` on it joins the method's call; a file re-exports a
+name by `export { name }`, `export default name`, or a constant holding it (`export const notes = noteApi`). An
+API function or method handed over as a value without being called (`queryFn: fetchNotices`) counts as a call at
+that place, but re-exporting it in one of those ways does not.
+`apiModules` imports are read as before, only directly from a listed file.
+Alternatives compared (driver's decision, 2026-10-07, recorded in the planning issue):
+- Whole files, as before: on into-sign 2.0.0 one hook file holds 46 hooks calling different methods and 53
+  files import it, so most screens carried the same 74 calls.
+- Following names for calls, links and setting reads alike: the links and setting reads of the 1.5.0 map would
+  move too, and the work is about three times as large; on 2.0.0 the stop at other screens' component files had
+  already cleared the links and setting reads.
+Choices made inside it:
+- Starting from the whole component file rather than from the component's name: the file's other declarations
+  are mostly helpers of that component, and reading it whole cannot drop a call the screen's own file writes.
+- Taking the whole file where a shape cannot be followed, rather than nothing: a call missing from a screen
+  looks like a screen that does not make it, while an extra call shows in the screen's list with its file and
+  line.
+Measured before and after, counting for each screen the distinct calls it reaches. On into-sign 1.5.0 one call
+site changes: `common/Form/components/FormSelectLabel.js:49` (`ajaxWorkspaceLabelListType`) leaves 34 screens
+that import other form components through `common/Form/index.js` but never render `FormSelectLabel`, and stays
+on `/admin-member`, whose member create and update modals render it. 32 of those screens lose the call, listed
+below, and the two `admin-settings` screens reach the same address from another file. Screen–call pairs go
+538 → 506; the call counts of the other 13 screens, those two among them, are unchanged.
+
+| Screen (1.5.0) | Calls before | Calls after |
+|---|---|---|
+| `/participant/s/:documentId/:participantId#ParticipantSigner` | 24 | 23 |
+| `/book/:documentId/:metaSignerId#ParticipantSignerMetaBook` | 20 | 19 |
+| `/link/:documentId#ParticipantSignerMetaLink` | 19 | 18 |
+| `/reset-password#ResetPassContainer` | 4 | 3 |
+| `/publish/document-basic/:id#PublishBasicDocument` | 8 | 7 |
+| `/publish/document-link/:id#PublishLinkDocument` | 7 | 6 |
+| `/publish/document-flexible/:id#PublishFlexibleDocument` | 6 | 5 |
+| `/edit/template-document/:id#DesignTemplateDocumentView` | 6 | 5 |
+| `/edit/draft-document/:id#DesignDraftDocumentView` | 7 | 6 |
+| `/detail/document/:id#DetailDocument` | 26 | 25 |
+| `/detail/document-flexible/:id#DetailFlexibleDocument` | 24 | 23 |
+| `/detail/document-link/:id#DetailLinkDocument` | 21 | 20 |
+| `/user-home#UserHome` | 9 | 8 |
+| `/user-info#UserInfo` | 11 | 10 |
+| `/user-sign/:type#UserSign` | 13 | 12 |
+| `/user-sign#UserSign` | 13 | 12 |
+| `/user-draft-document#UserDraftDocument` | 11 | 10 |
+| `/user-document/:type#UserDocument` | 10 | 9 |
+| `/user-document#UserDocument` | 10 | 9 |
+| `/user-document-basic/:type#UserMetaDocumentBasic` | 17 | 16 |
+| `/user-document-basic#UserMetaDocumentBasic` | 17 | 16 |
+| `/user-document-batch#UserMetaDocumentBatch` | 8 | 7 |
+| `/user-document-link#UserMetaDocumentLink` | 8 | 7 |
+| `/user-document-flexible#UserMetaDocumentFlexible` | 8 | 7 |
+| `/user-completed-document#UserCompletedDocument` | 18 | 17 |
+| `/admin-template#AdminTemplate` | 13 | 12 |
+| `/admin-meta-document#AdminMetaDocument` | 8 | 7 |
+| `/admin-progress-document#AdminProgressDocument` | 17 | 16 |
+| `/admin-complete-document/:type#AdminCompletedDocument` | 19 | 18 |
+| `/admin-complete-document#AdminCompletedDocument` | 19 | 18 |
+| `/trash/:tab?#Trash` | 8 | 7 |
+| `/system-settings/:type?#SystemSetting` | 20 | 19 |
+
+On into-sign 2.0.0 (`release/2.0.0` at `0f436776f`, the ten `calledApiModules` files of the entry above),
+screen–call pairs go 2,656 → 552 and call sites on screens 3,935 → 759. Two calls leave every screen, both
+rightly: `POST /internal/v2/user-token/temp-user-token/create` is made by `useLoginByTempToken`, used only in
+`session/SessionLoad.tsx`, which no screen's sources hold, and `POST /internal/v2/workspace/create` by
+`useCreateWorkspace`, used only by a test and by a modal that only `SessionLoad.tsx` loads; some screens hold
+that modal's file because they import another modal from the same index file.
+
+| Screen (2.0.0) | Calls before | Calls after |
+|---|---|---|
+| `/signin#SignInContainer` | 4 | 2 |
+| `/user-home#UserHome` | 74 | 10 |
+| `/user-info#UserInfo` | 82 | 13 |
+| `/user-sign/:type?#UserSign` | 79 | 13 |
+| `/user-draft-document#UserDraftDocument` | 74 | 11 |
+| `/user-document/:type?#UserDocument` | 74 | 9 |
+| `/user-document-basic/:type?#MetaDocumentBasic` | 74 | 16 |
+| `/user-document-batch#MetaDocumentBatch` | 74 | 9 |
+| `/user-document-link#MetaDocumentLink` | 74 | 9 |
+| `/user-document-flexible#MetaDocumentFlexible` | 74 | 9 |
+| `/user-completed-document/:type?#UserCompletedDocument` | 74 | 17 |
+| `/department-template#DepartmentTemplate` | 87 | 14 |
+| `/department-draft-document#DepartmentDraftDocument` | 76 | 12 |
+| `/department-progress-document#DepartmentProgressDocument` | 87 | 18 |
+| `/department-complete-document/:type?#DepartmentCompletedDocument` | 76 | 19 |
+| `/admin-member#AdminMember` | 93 | 26 |
+| `/admin-template#AdminTemplate` | 97 | 25 |
+| `/admin-settings/:type?#AdminSpaceData` | 74 | 16 |
+| `/admin-meta-document#AdminMetaDocument` | 74 | 9 |
+| `/admin-progress-document#AdminProgressDocument` | 74 | 17 |
+| `/admin-complete-document/:type?#AdminCompletedDocument` | 74 | 18 |
+| `/system-settings/:type?#SystemSetting` | 81 | 21 |
+| `/trash/:tab?#Trash` | 76 | 10 |
+| `/publish/document-basic/:id#PublishBasicDocument` | 76 | 8 |
+| `/publish/document-link/:id#PublishLinkDocument` | 69 | 6 |
+| `/publish/document-flexible/:id#PublishFlexibleDocument` | 69 | 6 |
+| `/edit/template-document/:id#EditTemplateDocument` | 68 | 5 |
+| `/edit/draft-document/:id#EditDraftDocument` | 68 | 5 |
+| `/detail/document/:id#DetailDocument` | 73 | 21 |
+| `/detail/document-basic/:id#DetailBasicDocument` | 26 | 1 |
+| `/detail/document-batch/:id#DetailBatchDocument` | 73 | 19 |
+| `/detail/document-flexible/:id#DetailFlexibleDocument` | 60 | 18 |
+| `/detail/document-link/:id#DetailLinkDocument` | 60 | 13 |
+| `/participant/s/:documentId/:participantId#ParticipantSigner` | 51 | 23 |
+| `/flexible-document/:flexibleDocumentId#ParticipantSignerMetaBook` | 45 | 17 |
+| `/book/:documentId#ParticipantSignerMetaBook` | 45 | 17 |
+| `/book/:documentId/*#ParticipantSignerMetaBook` | 45 | 17 |
+| `/link/:documentId#ParticipantSignerMetaLink` | 44 | 16 |
+| `/participant/:participantType/:documentId/:participantId#ParticipantViewer` | 16 | 16 |
+| `/view/:documentId#ParticipantExternalViewer` | 0 | 0 |
+| `/customer/view/:documentId#ParticipantExternalViewer` | 0 | 0 |
+| `/external/view/document/:code/:documentId#ExternalDocViewer` | 34 | 13 |
+| `/external/view/draft-document/:code/:documentId#ExternalDraftDocViewer` | 4 | 4 |
+| `/external/view/template-document/:code/:documentId#ExternalTemplateDocViewer` | 4 | 4 |
+
+On both maps links, setting reads, conditions, entry screens and screen IDs are unchanged, and the JavaScript
+example map is identical apart from the time it was written. A screen whose sources hold the file of a hook it
+does not use no longer shows that hook's calls, though `sourceFiles` still lists the file. Extraction takes
+about a second longer on either version (1.5.0 2.1 → 3.0 s, 2.0.0 2.8 → 3.6 s).
+The limits: a declaration reached is reached whole, so using one member of an exported object or class brings
+the calls of all its members; a name written in a branch that never runs still counts; a top-level statement
+of a reached file brings every name it uses.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

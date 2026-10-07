@@ -5,6 +5,7 @@ import { recordApiCalls } from './api-calls.mjs';
 import { componentFileFinder } from './component-file.mjs';
 import { ROUTES_FILE } from './config.mjs';
 import { loadConstants } from './constants.mjs';
+import { inTypePosition, nameFollower } from './follow-names.mjs';
 import { parseSource } from './parse.mjs';
 import { importResolver } from './resolve.mjs';
 import { settingNeeds } from './setting-needs.mjs';
@@ -97,6 +98,17 @@ function guardsOf(nodePath, src, note) {
   return guards;
 }
 
+const exportsOnly = (p) => p.parentPath.isExportSpecifier() || p.parentPath.isExportDefaultDeclaration();
+
+// `export { f }` · `export default f` · 내보내기에만 쓰는 `const g = f` 는 f 를 부르지 않는다.
+function reExported(p) {
+  if (exportsOnly(p)) return true;
+  const declarator = p.parentPath;
+  if (!declarator.isVariableDeclarator() || p.key !== 'init' || declarator.node.id.type !== 'Identifier' || declarator.parent.kind !== 'const') return false;
+  const binding = declarator.scope.getBinding(declarator.node.id.name);
+  return binding.scope.block.type === 'Program' && binding.referencePaths.every((r) => r.isExportNamedDeclaration() || exportsOnly(r));
+}
+
 function enclosingFunctionName(nodePath) {
   const fn = nodePath.getFunctionParent();
   if (!fn) return null;
@@ -107,7 +119,7 @@ function enclosingFunctionName(nodePath) {
   return null;
 }
 
-// 화면마다 라우트 조건 · import 로 이어지는 파일의 API 호출 · 설정값 읽기 · 링크를 모으고, API 모듈의 함수별 endpoint 를 함께 돌려준다.
+// 화면마다 라우트 조건 · 화면이 쓰는 이름으로 닿는 API 호출 · import 로 이어지는 파일의 설정값 읽기와 링크를 모으고, API 모듈의 함수별 endpoint 를 함께 돌려준다.
 export async function extractClient(config) {
   const imports = importResolver(config);
   const components = componentFileFinder(imports.resolve);
@@ -583,10 +595,23 @@ export async function extractClient(config) {
   // ---------- 일반 파일: import · API 호출 · 설정 읽기 · 라우트 참조 ----------
 
   const factCache = new Map();
+  const parsed = new Map();
+  const parse = (file) => {
+    if (!parsed.has(file)) parsed.set(file, parseSource(file));
+    return parsed.get(file);
+  };
+  const siteStart = new WeakMap();
+  const follower = nameFollower({ parse, resolve: imports.resolve, sitesOf: (file) => fileFacts(file).apiCalls.map((site) => ({ start: siteStart.get(site), site })) });
+  const origins = new Map();
+  const calledOrigin = (file, name) => {
+    const key = `${file}\0${name}`;
+    if (!origins.has(key)) origins.set(key, follower.origin(file, name, (f) => calledFiles.has(f)));
+    return origins.get(key);
+  };
 
   function fileFacts(file) {
     if (factCache.has(file)) return factCache.get(file);
-    const { src, ast } = parseSource(file);
+    const { src, ast } = parse(file);
     programFile.set(ast.program, file);
     const facts = { imports: [], apiCalls: [], settingReads: [], routeRefs: [] };
     const apiNamed = new Map();
@@ -601,6 +626,7 @@ export async function extractClient(config) {
       const guards = [...ownGuards, ...guardsOf(nodePath, src, note)];
       const owner = enclosingFunctionName(nodePath);
       const item = { ...entry, line: nodePath.node.loc.start.line, guards };
+      siteStart.set(item, nodePath.node.start);
       facts[kind].push(item);
       if (owner) {
         if (!localFnRefs.has(owner.name)) localFnRefs.set(owner.name, { fnPath: owner.fnPath, items: [] });
@@ -619,11 +645,15 @@ export async function extractClient(config) {
     traverse(ast, {
       ImportDeclaration(p) {
         const resolved = addImport(p.node.source.value);
-        if (calledFiles.has(resolved) && p.node.importKind !== 'type') {
+        if (calledFiles.size && resolved && p.node.importKind !== 'type' && !apiModuleFiles.has(resolved) && !constantModuleFiles.has(resolved)) {
           for (const s of p.node.specifiers) {
             if (s.importKind === 'type') continue;
-            if (s.type === 'ImportNamespaceSpecifier') calledNamespaces.set(s.local.name, resolved);
-            else calledNamed.set(s.local.name, { file: resolved, exportName: s.type === 'ImportDefaultSpecifier' ? 'default' : s.imported.name ?? s.imported.value });
+            if (s.type === 'ImportNamespaceSpecifier') {
+              calledNamespaces.set(s.local.name, resolved);
+              continue;
+            }
+            const found = calledOrigin(resolved, s.type === 'ImportDefaultSpecifier' ? 'default' : s.imported.name ?? s.imported.value);
+            if (found) calledNamed.set(s.local.name, { file: found.file, exportName: found.name });
           }
         }
         if (!apiModuleFiles.has(resolved)) return;
@@ -649,7 +679,8 @@ export async function extractClient(config) {
       const binding = callee.scope.getBinding(first);
       if (binding?.kind !== 'module') return null;
       const named = calledNamed.get(first);
-      const [file, exportName, member] = named ? [named.file, named.exportName, rest] : calledNamespaces.has(first) ? [calledNamespaces.get(first), rest[0], rest.slice(1)] : [];
+      const through = !named && calledNamespaces.has(first) && rest.length ? calledOrigin(calledNamespaces.get(first), rest[0]) : null;
+      const [file, exportName, member] = named ? [named.file, named.exportName, rest] : through ? [through.file, through.name, rest.slice(1)] : [];
       if (!file || !exportName || member.length > 1) return null;
       const key = called.keyOf(file, exportName);
       return member.length ? `${key}.${member[0]}` : key;
@@ -666,6 +697,20 @@ export async function extractClient(config) {
           const fn = calledFunction(p.get('callee'));
           if (fn) record('apiCalls', { fn, options: bodyOptions(p) }, p);
         }
+      },
+      // 부르지 않고 값으로 넘긴 API 함수나 메서드 `queryFn: fetchNotices` · `queryFn: api.load`
+      Identifier(p) {
+        if (!called || !(calledNamed.has(p.node.name) || calledNamespaces.has(p.node.name)) || !p.isReferencedIdentifier() || inTypePosition(p)) return;
+        let used = null;
+        for (let at = p, depth = 0; depth < 3; at = at.parentPath, depth += 1) {
+          const fn = calledFunction(at);
+          if (fn && Object.hasOwn(called.functions, fn)) used = { at, fn };
+          const up = at.parentPath;
+          if (!(up.isMemberExpression() || up.isOptionalMemberExpression()) || up.node.object !== at.node) break;
+        }
+        if (!used || ((used.at.parentPath.isCallExpression() || used.at.parentPath.isOptionalCallExpression()) && used.at.key === 'callee')) return;
+        if (used.at === p && reExported(p)) return;
+        record('apiCalls', { fn: used.fn, options: [] }, used.at);
       },
       'MemberExpression|OptionalMemberExpression'(p) {
         const parent = p.parentPath;
@@ -873,12 +918,14 @@ export async function extractClient(config) {
     const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean);
     const isOtherScreen = (f) => screenFiles.has(f) && !entryFiles.includes(f);
     const files = [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))];
+    const inSources = new Set(files);
+    const reached = follower.reach(entryFiles.map((file) => ({ file, name: null })), (f) => inSources.has(f));
     const apiCalls = [];
     const settingReads = [];
     const links = [];
     for (const f of files) {
       const facts = fileFacts(f);
-      for (const c of facts.apiCalls) apiCalls.push({ ...c, file: rel(f) });
+      for (const c of facts.apiCalls) if (reached.has(c)) apiCalls.push({ ...c, file: rel(f) });
       for (const r of facts.settingReads) settingReads.push({ ...r, file: rel(f) });
       for (const { tail, ...r } of facts.routeRefs) {
         const value = routeValues[r.route];

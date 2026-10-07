@@ -206,7 +206,7 @@ test('two builds from the same input differ only in the generation time', async 
   assert.deepEqual(strip(await buildFixture()), strip(await buildFixture()));
 });
 
-test('a file reached through a barrel file that re-exports it belongs to the screen, with the API calls inside it', async () => {
+test('a file reached through a barrel file that re-exports it belongs to the screen, and of its API calls only those of the names the screen uses', async () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true });
@@ -232,7 +232,7 @@ test('a file reached through a barrel file that re-exports it belongs to the scr
       "import { ajaxMemberList } from '_ajax/AjaxFunc';\n\nexport const loadStats = () => ajaxMemberList({ page: 1 });\nexport const loadMore = () => ajaxMemberList({ page: 2 });\n",
     );
     const help = path.join(components, 'Help.js');
-    fs.writeFileSync(help, "import { Badge } from './widgets';\n\n" + fs.readFileSync(help, 'utf8'));
+    fs.writeFileSync(help, "import { Badge, loadStats } from './widgets';\n\nexport const helpStats = () => loadStats();\n" + fs.readFileSync(help, 'utf8'));
 
     const reached = screen(await buildFixture(copy), '/help#Help');
     assert.deepEqual(reached.sourceFiles, [
@@ -244,7 +244,7 @@ test('a file reached through a barrel file that re-exports it belongs to the scr
       'components/widgets/index.js',
       'components/widgets/stats.js',
     ]);
-    assert.deepEqual(reached.apiCalls.map((c) => c.fn), ['ajaxMemberList', 'ajaxMemberList']);
+    assert.deepEqual(reached.apiCalls.map((c) => [c.fn, c.file, c.line]), [['ajaxMemberList', 'components/widgets/stats.js', 3]]);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
