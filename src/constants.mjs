@@ -11,20 +11,32 @@ const traverse = _traverse.default ?? _traverse;
 
 const TYPESCRIPT = /\.tsx?$/;
 
+const SOURCE_MAP = /\n\/\/# sourceMappingURL=data:application\/json;base64,(\S+)\s*$/;
+
+// 바꿔 쓴 코드는 줄이 원래 파일과 어긋나므로 소스 맵을 함께 돌려준다.
 // Node 가 처음 부를 때 실험 기능 경고를 stderr 에 찍는다. 두루의 출력에 섞이지 않게 이 경고만 걸러 낸다.
-function stripTypes(file, code) {
-  if (!nodeModule.stripTypeScriptTypes) throw new Error(`constants: running ${file} needs Node 22.13 or later, for stripping its types`);
+function toJavaScript(file, code) {
+  if (!nodeModule.stripTypeScriptTypes) throw new Error(`constants: running ${file} needs Node 22.13 or later, for turning it into JavaScript`);
   const emit = process.emitWarning;
   process.emitWarning = (warning, ...rest) => {
     if (!String(warning?.message ?? warning).startsWith('stripTypeScriptTypes')) emit.call(process, warning, ...rest);
   };
   try {
-    return nodeModule.stripTypeScriptTypes(code);
+    const out = nodeModule.stripTypeScriptTypes(code, { mode: 'transform', sourceMap: true });
+    const map = out.match(SOURCE_MAP);
+    return { code: out.slice(0, map.index), map: new nodeModule.SourceMap(JSON.parse(Buffer.from(map[1], 'base64').toString())) };
   } catch (e) {
-    throw new Error(`constants: cannot strip the types of ${file}: ${e.message.split('\n')[0]}`);
+    throw new Error(`constants: cannot turn ${file} into JavaScript: ${e.message.split('\n')[0]}`);
   } finally {
     process.emitWarning = emit;
   }
+}
+
+// 모듈을 불러오다 난 오류에는 줄 번호만 있어서 그 줄의 첫 글자 자리로 찾는다. 줄 앞 공백 자리로 찾으면 윗줄이 나온다.
+function sourceLine({ code, map }, line, column) {
+  const col = column ? Number(column) - 1 : Math.max((code.split('\n')[line - 1] ?? '').search(/\S/), 0);
+  const entry = map.findEntry(line - 1, col);
+  return entry?.originalLine === undefined ? line : entry.originalLine + 1;
 }
 
 const TYPE_PLACES = new Set([
@@ -54,6 +66,7 @@ export async function loadConstants(config, resolve = importResolver(config).res
   const copied = new Map();
   const stubbed = new Map();
   const stubOf = new Map();
+  const transformed = new Map();
   const stubs = Object.assign(Object.create(null), config.constantStubs);
 
   function stubFile(fromFile, spec) {
@@ -105,7 +118,11 @@ export async function loadConstants(config, resolve = importResolver(config).res
     }
     let out = src;
     for (const [s, e, text] of edits.sort((a, b) => b[0] - a[0])) out = out.slice(0, s) + text + out.slice(e);
-    if (TYPESCRIPT.test(absFile)) out = stripTypes(absFile, out);
+    if (TYPESCRIPT.test(absFile)) {
+      const js = toJavaScript(absFile, out);
+      transformed.set(`./${name}`, js);
+      out = js.code;
+    }
     fs.writeFileSync(path.join(outDir, name), out);
     return `./${name}`;
   }
@@ -124,9 +141,11 @@ export async function loadConstants(config, resolve = importResolver(config).res
         let message = String(e?.message ?? e);
         for (const [file, copy] of copied) message = message.replaceAll(path.join(outDir, copy), file).replaceAll(copy, file);
         for (const [stub, spec] of stubbed) message = message.replaceAll(stub, spec);
-        const where = String(e?.stack ?? '').match(/[/\\](m_\d+_\w+\.mjs):(\d+)/);
+        const where = String(e?.stack ?? '').match(/[/\\](m_\d+_\w+\.mjs):(\d+)(?::(\d+))?/);
         const source = where && [...copied].find(([, copy]) => copy === `./${where[1]}`)?.[0];
-        throw new Error(`constants.${name}: ${source ? `${source}:${where[2]}: ` : ''}${message}`, { cause: e });
+        const js = where && transformed.get(`./${where[1]}`);
+        const line = js ? sourceLine(js, Number(where[2]), where[3]) : where?.[2];
+        throw new Error(`constants.${name}: ${source ? `${source}:${line}: ` : ''}${message}`, { cause: e });
       }
       loaded[name] = 'default' in mod ? mod.default : { ...mod };
     }

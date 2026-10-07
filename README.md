@@ -71,14 +71,13 @@ client with example results and a config to start from.
 - `constants`, `constantStubs` — modules run for route paths, API endpoint definitions and settings defaults,
   and stand-in source for imports they cannot run. A module's value is what it exports by default, or, without a
   default export, an object of its named exports. A module and every file it imports are run as written, `.ts`
-  files with their types stripped, so a value a function builds is read like a literal one. An `enum`, a
-  `namespace` or JSX in a `.tsx` file stops the extraction with the file's path. An import that finds no file gets
-  an empty stand-in; when the extraction stops on one with a file and line, give that import a `constantStubs`
-  entry, the source text of a stand-in module, keyed by the package name or by the relative import as written
-  (`"./gone"`). Point `constants` at the smallest module that builds the value, not at one that sets up the whole
-  app. When the value is built by a function that the module never calls, needs arguments or reads browser
-  globals, write a small module beside the duru config that calls the function, and list it with a path relative
-  to `srcRoot`:
+  files after Node turns them into JavaScript, so a value a function builds is read like a literal one. JSX in a
+  `.tsx` file stops the extraction with the file's path. An import that finds no file gets an empty stand-in;
+  when the extraction stops on one with a file and line, give that import a `constantStubs` entry, the source
+  text of a stand-in module, keyed by the package name or by the relative import as written (`"./gone"`). Point
+  `constants` at the smallest module that builds the value, not at one that sets up the whole app. When the
+  value is built by a function that the module never calls, needs arguments or reads browser globals, write a
+  small module beside the duru config that calls the function, and list it with a path relative to `srcRoot`:
 
   ```ts
   // duru/defaults.ts, listed as "Defaults": "../../duru/defaults.ts"

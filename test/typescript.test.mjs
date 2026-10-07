@@ -218,9 +218,10 @@ const SETTINGS_FROM_FILE = [
   ['config.json', '"constant": "Settings.appSettings"', '"file": "store/settings.ts",\n      "const": "defaults"'],
 ];
 
-test('route paths a function builds in a TypeScript constants module, and settings defaults a function builds, are read as values', async () => {
+test('route paths a function builds in a TypeScript constants module from enum and namespace values, and settings defaults a function builds, are read as values', async () => {
   const map = await buildFixture();
   assert.deepEqual(map.screens.map((s) => s.path), ['/home', '/document', '/document/:id', '/admin', '/lab', '/report', '/archive', '/profile']);
+  assert.deepEqual(map.screens.map((s) => s.id).filter((id) => /^\/(home|document|admin|lab)#/.test(id)), ['/home#Home', '/document#DocumentList', '/admin#Admin', '/lab#Lab']);
   assert.deepEqual(screen(map, '/lab#Lab').access.route, [{ guard: 'globalSettings!.SYSTEM.LAB_ENABLED as boolean', kinds: ['setting'], settings: [LAB_ON] }]);
   const fromFile = await inCopy(SETTINGS_FROM_FILE, (copy) => buildFixture(copy));
   assert.deepEqual({ ...map, meta: null }, { ...fromFile, meta: null });
@@ -282,6 +283,53 @@ test('a constants module that fails to run names the source file, not the copy d
     inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { produce } from 'immer';\nproduce();"]], (copy) => buildFixture(copy)),
     (e) => {
       assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:3: The requested module 'immer' does not provide an export named 'produce'$/);
+      return true;
+    },
+  );
+});
+
+test('a constants module importing a class that takes constructor parameter properties runs', async () => {
+  const map = await inCopy([[
+    'client/src/_define/paths.ts',
+    'export const joinPath = (base: string, segment: string): string => `${base}/${segment}`;',
+    [
+      'class PathJoiner {',
+      '  constructor(private readonly separator: string) {}',
+      '',
+      '  join(base: string, segment: string): string {',
+      '    return `${base}${this.separator}${segment}`;',
+      '  }',
+      '}',
+      '',
+      "export const joinPath = (base: string, segment: string): string => new PathJoiner('/').join(base, segment);",
+    ].join('\n'),
+  ]], (copy) => buildFixture(copy));
+  assert.deepEqual({ ...map, meta: null }, { ...(await buildFixture()), meta: null });
+});
+
+test('JSX in a .tsx file a constants module imports, and a name an outside package without a stand-in does not export, stop the extraction with the file, and a failure below an enum or namespace names the line in the source', async () => {
+  const OPTION = 'client/src/_define/Option.ts';
+  await assert.rejects(
+    inCopy([[OPTION, "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { label } from './label';\nexport const LABEL = label;"]], (copy) => {
+      fs.writeFileSync(path.join(copy, 'client/src/_define/label.tsx'), 'export const label = <b>Home</b>;\n');
+      return buildFixture(copy);
+    }),
+    (e) => {
+      assert.match(e.message, /^constants: cannot turn \S+client\/src\/_define\/label\.tsx into JavaScript: /);
+      return true;
+    },
+  );
+  await assert.rejects(
+    inCopy([[OPTION, 'function routePaths', "import { produce } from 'immer';\nproduce();\n\nfunction routePaths"]], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:16: The requested module 'immer' does not provide an export named 'produce'$/);
+      return true;
+    },
+  );
+  await assert.rejects(
+    inCopy([[OPTION, 'function routePaths', 'const segments = [Segment.Home,\n  Section.ADMIN, missing];\n\nfunction routePaths']], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:17: missing is not defined$/);
       return true;
     },
   );
