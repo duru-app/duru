@@ -3,7 +3,8 @@
   "routesFile": [
     "Routes.tsx",
     "admin/AdminRoutes.tsx",
-    "pages/PageRoutes.tsx"
+    "pages/PageRoutes.tsx",
+    "pages/MailRoutes.tsx"
   ],
   "routeElements": [
     "Route"

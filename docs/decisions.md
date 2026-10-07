@@ -191,6 +191,30 @@ today (`<Layout><Pages.Admin /><Home /></Layout>` was `…#Home` and is `…#Pag
 `component={pages.Home}` was named `undefined` and is now named `pages.Home`, so its ID changes too. Measured: no
 ID changes on the two examples, the into-sign 1.5.0 map and the into-sign 2.0.0 source.
 
+**A screen's sources do not follow a dynamic import into the component file of another screen.**
+While collecting the files a screen reaches through imports, duru does not follow an `import(…)` that leads to a
+file that is the component file of a different screen on the routes, unless the same file also imports it with
+a plain `import`. The files the screen starts from, its own component file and the components wrapped around
+its route, are always read. There is no config key for it.
+Alternatives compared:
+- Stopping at another screen's component file however it is imported: the same numbers on into-sign, but a
+  screen that renders another screen's component, or uses a hook or helper that file exports, loses its calls,
+  setting reads and links, and so does every screen importing through an index file that is a screen's
+  component file.
+- Stopping at every file that the sources of another screen contain: a navigation helper or a component shared
+  by several screens drops out of all of them, with its calls, setting reads and links.
+- A config key listing files not to follow: it fixes the one table at hand, but every project has to find and
+  list such files, and a table added later brings the defect back until someone updates the list.
+Reason: a dynamic import of another screen's component loads that screen ahead of a move to it, so what the
+file holds belongs to that screen, while a plain import runs the file inside the importing screen. On the
+into-sign 2.0.0 source (`release/2.0.0` at `0f436776f`) a navigation helper imports a table that preloads
+screens, and every screen using the helper took in the files of every screen in the table. Measured before and
+after: link rows 2,273 → 411, distinct links (from screen, to address) 1,030 → 268, setting-read rows 2,546 →
+451, entry screens 17 → 24 (screens only their own sources link to), distinct setting keys 15 and screen IDs
+unchanged. The into-sign 1.5.0 map and the JavaScript example map are identical apart from the time they were
+written. The price is that a screen which lazily loads another screen's component to render inside itself
+loses that component's links, setting reads and calls.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
