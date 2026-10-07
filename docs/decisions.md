@@ -133,9 +133,10 @@ Reason: transform mode comes with the same Node 22.13 that duru already needs an
 prints the code anew, so lines move, and the source map puts a failure's line back on the source; a failure on a
 line that has no mapping of its own names the file without a line. JSX still stops the extraction in both modes,
 and a CommonJS `import x = require(…)` or `export =` is stopped before running with its line, since transform
-mode turns it into `require` and `module.exports`, which the module duru runs cannot use. Measured: the two
-examples, the into-sign 1.5.0 map and the into-sign 2.0.0 source, with its own constants files and with the
-stand-ins kept beside its config, give the same maps before and after.
+mode turns it into `require` and `module.exports`, which the module duru runs cannot use; an `import type x =
+require(…)` is let through, because transform mode drops it. Measured: the two examples, the into-sign 1.5.0 map
+and the into-sign 2.0.0 source, with its own constants files and with the stand-ins kept beside its config, give
+the same maps before and after.
 
 **A component's name is followed further than the line that imports it only when it leads to a dynamic import;
 otherwise the component file is the file that line names.**
