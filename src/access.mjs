@@ -31,7 +31,8 @@ function guardKinds(config, guardInits) {
   return (guard, file) => {
     const entry = guardInits.get(file)?.get(guard);
     const texts = [entry?.source ?? guard, ...(entry?.inits ?? []).map((i) => i.init)].map((t) => plainOf(t, file));
-    return rules.filter(([, re]) => texts.some((t) => re.test(t))).map(([kind]) => kind);
+    const kinds = rules.filter(([, re]) => texts.some((t) => re.test(t))).map(([kind]) => kind);
+    return entry?.readsSettingsResult && !kinds.includes('setting') ? [...kinds, 'setting'] : kinds;
   };
 }
 

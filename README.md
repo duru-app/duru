@@ -141,6 +141,20 @@ client with example results and a config to start from.
   top-level `const` of that name holds. When a function builds the defaults, write
   `{ "constant": "Settings.appSettings" }` instead: a name in `constants`, alone or followed by a dotted path into
   its value. The root must also be listed in `settingsRoots`.
+- `settingsFunctions` — functions whose returned object holds settings (optional), such as
+  `readSystemSettings({ SIGN_LIST: [] })`. Each entry is `{ "import", "name", "root", "section" }`: `import` and
+  `name` as the app imports the function (`"default"` for a default export; an `import` starting with `.` is a
+  path from `srcRoot`), and `root` and `section`, the `settingsRoots` entry and the key under it whose settings
+  the function returns. What screens read from the returned object is on the map as settings under that key, and
+  the object passed to the function gives their defaults, next to the ones `settingsDefaults` gives. On into-sign
+  2.0.0:
+
+  ```json
+  "settingsFunctions": [
+    { "import": "@config/settings/readSystemSettings", "name": "readSystemSettings", "root": "settings", "section": "SYSTEM" }
+  ]
+  ```
+
 - `roleIdentifiers` — where the user's role is read (optional): an identifier (`memberRole`) or one member of an
   object (`workspace['member.role']`).
 - `moves` — screen moves the code shows no link for (optional), each `{ "from", "to", "reason" }` with route
@@ -268,6 +282,10 @@ listing the places whose value the source does not show in full.
   its functions or methods are on the map.
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring.
+- `settingsFunctions <file>:<line> <what>` — about calls in the files the route files lead to by import: a call
+  that duru does not read as settings; a default the function is given that differs from the `settingsDefaults`
+  value (the map keeps that value), or that differs from another call's or cannot be compared with it (the map
+  leaves the default unknown); and a function called in none of those files (`settingsCallNotices`).
 - An alias import that finds no file, with the number of files that write it (`unresolvedAliasImports`).
 - Routes that end up with the same ID, each place as `file:line` (`duplicateIds`).
 - `bodyOptions` call IDs that are not on the map (`unknownBodyOptionCalls`), `moves` paths that match no route

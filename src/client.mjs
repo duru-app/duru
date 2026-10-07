@@ -8,6 +8,7 @@ import { loadConstants } from './constants.mjs';
 import { parseSource } from './parse.mjs';
 import { importResolver } from './resolve.mjs';
 import { settingNeeds } from './setting-needs.mjs';
+import { addCallDefaults, findSettingsCalls, settingsResultFinder } from './settings-functions.mjs';
 
 const traverse = _traverse.default ?? _traverse;
 export const UNKNOWN = '{?}';
@@ -297,7 +298,12 @@ export async function extractClient(config) {
   }
 
   const { values: settingsDefaults, incomplete: settingsDefaultsIncomplete } = loadSettingsDefaults();
-  const needs = settingNeeds(config.settingsRoots ?? [], settingsDefaults);
+  const settingsCalls = config.settingsFunctions.length ? findSettingsCalls(config) : { calls: [], unread: [], notices: [] };
+  const settingsCallNotices = [...settingsCalls.notices, ...addCallDefaults(settingsCalls.calls, settingsDefaults, settingsDefaultsIncomplete, { evaluate, lossless }, config.srcRoot), ...settingsCalls.unread];
+  const programFile = new WeakMap();
+  const resultOf = settingsResultFinder(settingsCalls);
+  const settingsResult = (id) => resultOf(id, programFile.get(id.scope.getProgramParent().block));
+  const needs = settingNeeds(config.settingsRoots ?? [], settingsDefaults, settingsResult);
   const CONFLICT = { reason: '같은 파일에 글자는 같고 읽는 설정이 다른 조건이 있어 켤 값을 정할 수 없습니다' };
 
   function noteSettings(file, text, result) {
@@ -370,6 +376,7 @@ export async function extractClient(config) {
         known.inits.push(...found.filter((f) => !known.inits.some((k) => k.name === f.name && k.init === f.init)));
       }
       noteHelpers(inits.get(text), calls, path.join(config.srcRoot, file), src);
+      if (needs.readsResult(exprPath)) inits.get(text).readsSettingsResult = true;
       noteSettings(file, text, negated ? needs.readNegated(exprPath) : needs.read(exprPath));
     };
   }
@@ -467,10 +474,14 @@ export async function extractClient(config) {
     const chain = memberChain(nodePath.node);
     if (!chain) return null;
     if (Object.hasOwn(settingsDefaults, chain[0])) return chain;
+    const result = settingsResult(rootIdentifier(nodePath));
+    if (result) return [...result, ...chain.slice(1)];
     const init = constInit(nodePath, chain[0], seen);
     const base = init && settingsPath(init, seen);
     return base ? [...base, ...chain.slice(1)] : null;
   }
+
+  const rootIdentifier = (p) => (p.isMemberExpression() || p.isOptionalMemberExpression() ? rootIdentifier(p.get('object')) : p);
 
   function listedRoutes(p) {
     if (memberChain(p.node.object)?.join('.') !== config.routeConstant) return [];
@@ -576,6 +587,7 @@ export async function extractClient(config) {
   function fileFacts(file) {
     if (factCache.has(file)) return factCache.get(file);
     const { src, ast } = parseSource(file);
+    programFile.set(ast.program, file);
     const facts = { imports: [], apiCalls: [], settingReads: [], routeRefs: [] };
     const apiNamed = new Map();
     const apiNamespaces = new Set();
@@ -667,8 +679,11 @@ export async function extractClient(config) {
           }
           return;
         }
+        const result = !settingsRoots.has(chain[0]) && chain.length >= 2 && settingsResult(rootIdentifier(p));
         if (settingsRoots.has(chain[0]) && chain.length >= 3) {
           record('settingReads', { key: chain.slice(1).join('.') }, p);
+        } else if (result) {
+          record('settingReads', { key: [result[1], ...chain.slice(1)].join('.') }, p);
         } else if (chain[0] === routeRoot && chain.length === routeRest.length + 2 && routeRest.every((k, i) => chain[i + 1] === k)) {
           record('routeRefs', { route: chain[chain.length - 1], tail: routeTail(p) }, p);
         }
@@ -718,6 +733,7 @@ export async function extractClient(config) {
     const absFile = path.join(config.srcRoot, routeFile);
     if (!fs.statSync(absFile, { throwIfNoEntry: false })?.isFile()) throw new Error(`routesFile names ${JSON.stringify(routeFile)}, but ${absFile} is not a file`);
     const { src, ast } = parseSource(absFile);
+    programFile.set(ast.program, absFile);
     const note = guardNote(routeFile, src);
     const screens = [];
     traverse(ast, {
@@ -872,5 +888,5 @@ export async function extractClient(config) {
     return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls, settingReads, links };
   });
 
-  return { screens, apiFunctions, unrunApiModules: called?.failedModules ?? null, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, unresolvedAliasImports: imports.unresolved() };
+  return { screens, apiFunctions, unrunApiModules: called?.failedModules ?? null, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
 }

@@ -302,6 +302,52 @@ ky's `.json()`, ends in an error printed for that method, and ky's `prefixUrl` i
 to one request rather than to `create` is not read; the constants run does not stand in for `import.meta.env`,
 so a constants file reading it still fails there.
 
+**Settings read from the object a function returns are found by naming the function in the config, and the
+object passed to it is read as setting defaults.**
+`settingsFunctions` lists functions as the app imports them, each with the settings root and the key under it
+that the returned object stands for. Before reading any condition, duru follows imports from the route files,
+written `import`, `export … from` or `import('…')`, and looks in the files it reaches for calls written
+`const name = fn({ … })` or `export default fn({ … })`, the function imported directly or through files that
+re-export it. A read of that name, in that file or in a file importing it, directly or through such files, is a
+read of `<section>.<key>` under that root, and the keys and values of the object passed in become defaults of
+that section.
+Alternatives compared (driver's decision, 2026-10-07, recorded in the issue):
+- Listing the files that hold such calls (22 on into-sign 2.0.0): the list has to grow whenever the app adds one,
+  while the function's name already finds them all.
+- Reading the keys without the defaults: the conditions would name the setting that opens a screen but not
+  whether it is on after a fresh install; 84 of the 96 defaults known on into-sign come from these objects.
+- An app-specific function name built into duru: the config names it, so any app that wraps its settings in a
+  function of its own is read the same way.
+Choices made inside it:
+- A key the `settingsDefaults` source also has keeps that value, and a different value passed to the function is
+  printed. There are none on into-sign 2.0.0.
+- Two calls passing different defaults for one key leave that default unknown on the map, with both places
+  printed: each screen gets its own default at run time, and one value on the map would be wrong for the others.
+  When the source does not show both values in full, the line says the map cannot tell whether they match, not
+  that they differ: two calls passing the same imported constant would otherwise be said to differ.
+- Only calls in the files the route files lead to count, for the defaults and for every printed line. A test,
+  story or mock passing its own values would otherwise change the defaults the screens are shown with, and on
+  into-sign the 17 calls written another way, all in test files, would bury the lines that matter. The screens'
+  sources would be the narrower scope, but the defaults are needed while the screens' conditions are read, before
+  those sources are known; the import walk also takes in the route files, whose conditions read settings too.
+  On into-sign 2.0.0 it finds the same 22 calls as looking through every file did, and none of the 17.
+Measured on into-sign 2.0.0 (`release/2.0.0` at `0f436776f`) with `readSystemSettings` under `settings.SYSTEM`,
+before and after: setting keys read by screens 15 → 111, setting-read rows 408 → 881, link rows with a setting
+condition 0 → 4, defaults known under `settings.SYSTEM` 12 → 96 (6 marked as not shown in full). Of the 89 keys
+passed to the function, screens read 84; the other 5 are upload size limits that screens read from a server
+response, not from the returned object. The other 12 of the 96 new keys are reads such as
+`signing.SIGN_LIST.length`, counted with the method name as reads under `settings` already are. One screen's access changed (two links into
+it now carry the setting condition); restricted screens stay 12, and screen IDs, the 411 link rows, the 24 entry
+screens and the calls are unchanged. The 1.5.0 map, the 2.0.0 map without the key, and both example maps are
+identical to before apart from the time they were written. Three runs took 2.9 to 3.6 seconds without the key
+and 3.5 to 3.7 seconds with it; the import walk parses each file it reaches once more.
+The limits: a name taken apart (`const { SIGN_LIST } = signing`), read as `signing['SIGN_LIST']` or passed on
+whole is not followed; a call assigned with `let` is printed, not read; a call through a namespace import
+(`settings.read({ … })`) is not found at all, and a result read through one (`import * as S`, then
+`S.signing.SIGN_LIST`) is not read; `section` is a single key. A condition written with the same text twice in
+one file is a setting condition at both places when one of them reads the returned object. A call in a file the
+route files do not lead to, such as an app shell or a provider rendered around the routes, gives no defaults.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

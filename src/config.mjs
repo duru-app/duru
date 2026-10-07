@@ -23,6 +23,7 @@ const isRoutePath = (v) => isText(v) && v.startsWith('/');
 const isWebAddress = (v) => isText(v) && /^https?:\/\/[^/]/.test(v);
 const MOVE_KEYS = ['from', 'to', 'reason'];
 const CALL_LINK_KEYS = ['from', 'to', 'note'];
+const SETTINGS_FUNCTION_KEYS = ['import', 'name', 'root', 'section'];
 const LIST_API_KEYS = ['api', 'list', 'value', 'method', 'body'];
 const ISSUING_API_KEYS = ['api', 'method', 'header', 'keyEnv', 'body', 'value'];
 const HEADER_EXAMPLE = '{ "Authorization": "Bearer {token}" }';
@@ -172,6 +173,17 @@ export function loadConfig(configPath) {
     }
     if (typeof entry?.file !== 'string' || typeof entry?.const !== 'string') throw new Error(`settingsDefaults.${root} needs "file" and "const", or "constant"`);
   }
+  const settingsFunctions = raw.settingsFunctions ?? [];
+  const isSettingsFunction = (f) => isPlainObject(f) && Object.keys(f).every((k) => SETTINGS_FUNCTION_KEYS.includes(k))
+    && isText(f.import) && isText(f.name) && (f.name === 'default' || IDENTIFIER.test(f.name)) && isText(f.root) && isText(f.section) && !f.section.includes('.');
+  if (!Array.isArray(settingsFunctions) || !settingsFunctions.every(isSettingsFunction)) {
+    throw new Error('settingsFunctions must be a list of { "import", "name", "root", "section" }: the import path and name the app imports a function returning settings by, '
+      + 'and the settingsRoots entry and the key under it whose settings that function reads, '
+      + `such as [{ "import": "@/config/readSettings", "name": "readSettings", "root": "settings", "section": "SYSTEM" }], not ${JSON.stringify(raw.settingsFunctions)}`);
+  }
+  for (const { root } of settingsFunctions) {
+    if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsFunctions root "${root}" is not listed in settingsRoots`);
+  }
   const visitRecords = raw.visitRecords ?? [];
   if (!Array.isArray(visitRecords) || !visitRecords.every(isText)) {
     throw new Error(`visitRecords must be a list of record files or folders, such as ["qa/records"], not ${JSON.stringify(raw.visitRecords)}`);
@@ -225,6 +237,7 @@ export function loadConfig(configPath) {
     moves,
     callLinks,
     settingsDefaults,
+    settingsFunctions,
     redirectElements: raw.redirectElements ?? ['Redirect', 'Navigate'],
     entryPaths: raw.entryPaths ?? [],
     serverEndpoints: [raw.serverEndpoints ?? []].flat().map(at),
