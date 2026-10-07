@@ -76,6 +76,7 @@ if (command === 'tasks') {
   for (const l of map.unknownCallLinks) for (const id of l.missing) console.log(`  callLinks ${l.from} → ${l.to}: ${id} matches no call`);
   for (const { spec, files } of map.unresolvedAliasImports ?? []) console.log(`  tsconfig import ${spec} matches an alias but no file, imported in ${files} file${files === 1 ? '' : 's'}`);
   for (const d of map.duplicateIds) console.log(`  duplicate screen ID ${d.id} ← ${d.places.map((p) => `${p.file}:${p.line}`).join(', ')}`);
+  for (const s of map.screens.filter((s) => !s.componentFile)) console.log(`  component file not found for ${s.id} ← ${s.routeFile}:${s.line}`);
 
   if (command === 'rebuild') {
     const links = linkTests(config, map);

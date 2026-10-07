@@ -121,6 +121,59 @@ Reason: a dotted path covers every value a module holds once it has run, and a m
 writes covers every other shape (a function never called at load, one that needs arguments, several calls
 combined) with no key per shape and without touching the client's source.
 
+**A component's name is followed further than the line that imports it only when it leads to a dynamic import;
+otherwise the component file is the file that line names.**
+A screen kept in a table of lazy components gets the file its own entry loads. A component imported by name
+from an index file keeps the index file as its component file, as before.
+Alternatives compared:
+- Following every name to the file that declares it, through index files too: the same screen gets the same
+  file however it is imported, but the component file and the sources of screens on existing maps can move, an
+  index file that does work of its own drops out of the screen (its API calls were lost in a trial), and it
+  contradicts the documented rule that a file is followed whole.
+- Keeping the imported file for every name that is imported: a module of `export const X = lazy(…)` lines stays
+  the one component file of all its screens, which is the defect this lookup exists to remove.
+Reason: maps that exist do not move. Measured before and after the change: the JavaScript example (11 screens)
+and the into-sign 1.5.0 map (45 screens) are identical, and on the into-sign 2.0.0 source 43 of 44 screens go
+from no component file to their own. The screen ID does not hold the file, so changing this later costs a few
+lines and no marks, judgments or stories.
+What counts as a dynamic import a name leads to is decided by where a function stands, the first argument of
+a call, and by how sure the answer has to be. A name the route file imports by a plain `import` already has a
+file, so that file is replaced only when the function returns the module it loads. Every other name has no file
+from the route file alone, so a loader of any shape is read there, and the file is the last source file among
+the dynamic imports in its own statements and in what it returns. A function whose imports all sit in callbacks
+written in statements of their own is neither: a component keeping a callback for later and a loader passing
+through `retry(…)` look alike there, so a table entry of that shape is reported as having no component file
+instead of being given the file holding the table.
+Alternatives compared:
+- One wide test for every name: a screen component wrapped in a call (`export default memo(Home)`) lost its
+  file to a module its body imports, which changes maps that exist.
+- One narrow test for every name: each loader shape it did not list (a preload before the import, a
+  condition, a promise built by hand) fell back to the file holding the table, which gives one screen the
+  sources of every screen in it.
+- Choosing the test by where the function sits (table entry or whole export) instead of by the name at the
+  route: a `lazy(loader)` declared in the route file around a loader imported from another module then stayed
+  on the module of loaders.
+Reason: where the route file already answers, a wrong guess costs a map that exists, and where it does not, a
+wrong guess costs nothing that exists. The price is that one component can get two files under two names
+(`import { Home }` keeps the file holding `export const Home = lazy(() => retry(…))`, `Pages.Home` reaches the
+screen), and that a loader passed as a later argument, or inside an object under another key than `loader`, is
+left unread, because those places also hold options and lifecycle callbacks of a wrapped component.
+
+**When the screen is picked among an element, the components inside it and the components passed to it, an
+outer element whose file is found only by following its value counts as one without a file.**
+The components inside and the passed components use the file the lookup finds.
+Alternatives compared:
+- Using the found file for the outer element too: one rule, but `<Guarded Page={Home} />` with
+  `const Guarded = withAuth(Layout)` changes from `…#Home` to `…#Guarded`, and marks, judgments and stories hang
+  on the ID, so they come loose on the change and again if it is taken back.
+- Not using a newly found file for picking at all: no ID ever changes, but a screen taken from a table and put
+  inside a wrapper is named after the wrapper, so every such screen of an app carries the same name.
+Reason: a wrapper keeps the name the screen has today, and screens from a table get their own names. An ID
+still changes where a component inside, or one passed as a prop, gains a file and stands before the one named
+today (`<Layout><Pages.Admin /><Home /></Layout>` was `…#Home` and is `…#Pages.Admin`). A route written
+`component={pages.Home}` was named `undefined` and is now named `pages.Home`, so its ID changes too. Measured: no
+ID changes on the two examples, the into-sign 1.5.0 map and the into-sign 2.0.0 source.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

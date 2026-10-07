@@ -49,6 +49,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `redirectElements` in the config, default `Redirect` and `Navigate`; a config that lists them uses only the
   names listed. Paths are read as written in each route, without the path of a parent route in front, so a
   nested route written with a relative path shows on the map with that relative path.
+- A `component file not found` line in the `extract` summary names a screen whose component file duru could
+  not find and the route it is written at. The map then holds only what the components wrapping that route
+  bring: the screen's own source files, API calls, setting reads and links are missing.
 
 ## Sequence
 

@@ -62,7 +62,7 @@ relative to the config file, except the files inside the client source (`routesF
   inside has a file (`<Home><Outlet /></Home>`), the rule below for the outer component and its props applies,
   and only when none of those has a file either is the component inside the screen. An HTML tag (`<h1>`) is not
   read as a screen, and a wrapper holding only a redirect element, however deep, gives no screen, even when the
-  wrapper has a file. A name with a dot (`<Pages.Home />`) is read as written, without its file; inside a wrapper it is
+  wrapper has a file. A name with a dot (`<Pages.Home />`) keeps the name as written; inside a wrapper it is
   taken for the screen as one with a file would be. A dotted name taken from an outside package whose last part
   starts with a small letter (`<motion.div>`) is read as an HTML tag. A prop counts as a passed component when the
   prop's name starts with a capital (`Page={detail}`) or its value is a name starting with a capital and holding
@@ -78,7 +78,9 @@ relative to the config file, except the files inside the client source (`routesF
   sources. `element={<Navigate to=… />}`, with
   an element named in `redirectElements`, is not a screen but a redirect, so the screen it points at is reached
   by that redirect. The path is read as written in the route; the path of a parent route is not put in front
-  of it. A route in another shape, such as one without `path`, gives no screen
+  of it. A route in another shape, such as one without `path`, gives no screen.
+  When duru cannot find the file a screen's component comes from, the screen holds only what the components
+  wrapping its route bring, and `extract` prints `component file not found for <id> ← <route file>:<line>` for it.
 - `tsconfig` — the tsconfig file that declares the app's import aliases (optional), such as
   `"client/tsconfig.json"`, relative to the config file like `srcRoot`. Name the file that holds `paths`, itself
   or through `extends`: in a project whose `tsconfig.json` only lists `references`, that is the referenced file,
