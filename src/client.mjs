@@ -591,9 +591,11 @@ export async function extractClient(config) {
       }
     }
 
-    function addImport(spec) {
+    const staticImports = new Set();
+    function addImport(spec, dynamic = false) {
       const resolved = imports.resolve(file, spec);
       if (resolved) facts.imports.push(resolved);
+      if (resolved && !dynamic) staticImports.add(resolved);
       return resolved;
     }
 
@@ -608,7 +610,7 @@ export async function extractClient(config) {
       },
       Import(p) {
         const arg = p.parentPath.node.arguments?.[0];
-        if (arg?.type === 'StringLiteral') addImport(arg.value);
+        if (arg?.type === 'StringLiteral') addImport(arg.value, true);
       },
       'ExportNamedDeclaration|ExportAllDeclaration'(p) {
         if (p.node.source) addImport(p.node.source.value);
@@ -659,11 +661,13 @@ export async function extractClient(config) {
     });
 
     facts.imports = [...new Set(facts.imports)];
+    facts.dynamicOnly = new Set(facts.imports.filter((f) => !staticImports.has(f)));
     factCache.set(file, facts);
     return facts;
   }
 
-  function closureOf(entryFile) {
+  // 다른 화면의 컴포넌트 파일을 동적 import 로만 참조하면 미리 불러 두는 것이라 따라가지 않는다.
+  function closureOf(entryFile, isOtherScreen) {
     const seen = new Set();
     const stack = [entryFile];
     while (stack.length) {
@@ -671,7 +675,8 @@ export async function extractClient(config) {
       if (seen.has(f) || apiModuleFiles.has(f) || constantFiles.has(f)) continue;
       if (!/\.(jsx?|tsx?)$/.test(f)) continue;
       seen.add(f);
-      for (const dep of fileFacts(f).imports) stack.push(dep);
+      const { imports, dynamicOnly } = fileFacts(f);
+      for (const dep of imports) if (!(dynamicOnly.has(dep) && isOtherScreen(dep))) stack.push(dep);
     }
     return [...seen];
   }
@@ -815,8 +820,12 @@ export async function extractClient(config) {
   const rel = (f) => (f ? path.relative(config.srcRoot, f) : null);
 
   if (!config.routeFiles.length) throw new Error(`the config has no routesFile, which takes ${ROUTES_FILE}`);
-  const screens = config.routeFiles.flatMap(extractScreens).map(({ wrapperFiles, ...s }) => {
-    const files = [...new Set([s.componentFile, ...wrapperFiles].filter(Boolean).flatMap(closureOf))];
+  const extracted = config.routeFiles.flatMap(extractScreens);
+  const screenFiles = new Set(extracted.map((s) => s.componentFile).filter(Boolean));
+  const screens = extracted.map(({ wrapperFiles, ...s }) => {
+    const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean);
+    const isOtherScreen = (f) => screenFiles.has(f) && !entryFiles.includes(f);
+    const files = [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))];
     const apiCalls = [];
     const settingReads = [];
     const links = [];

@@ -44,6 +44,8 @@ test('extraction runs to the end on a client mixing TypeScript and JavaScript fi
     ['/report#Report', 'screens/Report.ts'],
     ['/archive#Archive', 'screens/Archive.tsx'],
     ['/profile#LazyPage.Profile', 'screens/Profile.tsx'],
+    ['/inbox#Inbox', 'screens/Inbox.tsx'],
+    ['/outbox#Outbox', 'screens/Outbox.tsx'],
   ]);
   assert.deepEqual(
     map.screens.flatMap((s) => s.access.links.map((l) => `${l.from} → ${s.id} ${l.file}:${l.line}`)),
@@ -56,8 +58,10 @@ test('extraction runs to the end on a client mixing TypeScript and JavaScript fi
       '/home#Home → /admin#Admin screens/Home.tsx:16',
       '/home#Home → /lab#Lab components/Banner.tsx:7',
       '/home#Home → /report#Report screens/Home.tsx:17',
+      '/outbox#Outbox → /archive#Archive screens/Outbox.tsx:7',
       '/profile#LazyPage.Profile → /archive#Archive screens/Profile.tsx:6',
       '/archive#Archive → /profile#LazyPage.Profile screens/Archive.tsx:5',
+      '/inbox#Inbox → /outbox#Outbox screens/Inbox.tsx:10',
     ],
   );
   assert.deepEqual(Object.fromEntries(map.screens.filter((s) => s.access.restricted).map((s) => [s.id, s.access.kinds])), {
@@ -114,7 +118,7 @@ test('a setting read, a route address with a value appended and a request body o
     ['POST:/api/v1/report/archive', ['signedOnly screens/Lab.tsx:11']],
     ['POST:/api/v1/report/schedule', ['monthly screens/Report.ts:7', 'notify screens/scheduleReport.ts:6', 'weekly screens/scheduleReport.ts:6']],
   ]);
-  assert.deepEqual(wrapped.screens.map((s) => s.path), ['/home', '/document', '/document/:id', '/admin', '/lab', '/report', '/archive', '/profile']);
+  assert.deepEqual(wrapped.screens.map((s) => s.path), ['/home', '/document', '/document/:id', '/admin', '/lab', '/report', '/archive', '/profile', '/inbox', '/outbox']);
 });
 
 test('a route condition in a TypeScript route file is read as a condition, and the role values are read from conditions holding type syntax, showing the condition as written', async () => {
@@ -171,7 +175,7 @@ test('an error the parser reports but can read past does not stop the extraction
     ['client/src/components/index.ts', "export { type BannerProps, Banner } from './Banner';", "export { Banner };\nexport type { BannerProps };\nimport { Banner, type BannerProps } from './Banner';"],
   ];
   for (const edit of cases) {
-    await inCopy([edit], async (copy) => assert.equal((await buildFixture(copy)).screens.length, 8, edit[0]));
+    await inCopy([edit], async (copy) => assert.equal((await buildFixture(copy)).screens.length, 10, edit[0]));
   }
 });
 
@@ -179,7 +183,7 @@ test('a declaration file and an import with an assert clause do not stop the ext
   const imports = "import './env.d';\nimport labels from './labels.json' assert { type: 'json' };\nexport default function Report";
   await inCopy([['client/src/screens/Report.ts', 'export default function Report', imports]], async (copy) => {
     fs.writeFileSync(path.join(copy, 'client/src/screens/env.d.ts'), 'export const API_URL: string;\ndeclare function load(name: string): void;\n');
-    assert.equal((await buildFixture(copy)).screens.length, 8);
+    assert.equal((await buildFixture(copy)).screens.length, 10);
   });
 });
 
@@ -220,7 +224,7 @@ const SETTINGS_FROM_FILE = [
 
 test('route paths a function builds in a TypeScript constants module from enum and namespace values, and settings defaults a function builds, are read as values', async () => {
   const map = await buildFixture();
-  assert.deepEqual(map.screens.map((s) => s.path), ['/home', '/document', '/document/:id', '/admin', '/lab', '/report', '/archive', '/profile']);
+  assert.deepEqual(map.screens.map((s) => s.path), ['/home', '/document', '/document/:id', '/admin', '/lab', '/report', '/archive', '/profile', '/inbox', '/outbox']);
   assert.deepEqual(map.screens.map((s) => s.id).filter((id) => /^\/(home|document|admin|lab)#/.test(id)), ['/home#Home', '/document#DocumentList', '/admin#Admin', '/lab#Lab']);
   assert.deepEqual(screen(map, '/lab#Lab').access.route, [{ guard: 'globalSettings!.SYSTEM.LAB_ENABLED as boolean', kinds: ['setting'], settings: [LAB_ON] }]);
   const fromFile = await inCopy(SETTINGS_FROM_FILE, (copy) => buildFixture(copy));
@@ -480,6 +484,8 @@ test('a route written with element is a screen named after the element, or after
     ['/report#Report', 'Report', 'screens/Report.ts', 'admin/AdminRoutes.tsx', 18],
     ['/archive#Archive', 'Archive', 'screens/Archive.tsx', 'pages/PageRoutes.tsx', 10],
     ['/profile#LazyPage.Profile', 'LazyPage.Profile', 'screens/Profile.tsx', 'pages/PageRoutes.tsx', 11],
+    ['/inbox#Inbox', 'Inbox', 'screens/Inbox.tsx', 'pages/MailRoutes.tsx', 9],
+    ['/outbox#Outbox', 'Outbox', 'screens/Outbox.tsx', 'pages/MailRoutes.tsx', 10],
   ]);
 });
 
@@ -634,11 +640,12 @@ test('a route whose element is a Navigate is not a screen, and the screen it poi
   assert.deepEqual(map.entries, [
     { screen: '/home#Home', reasons: [{ kind: 'config' }] },
     { screen: '/document#DocumentList', reasons: [{ kind: 'redirect', file: 'Routes.tsx', line: 20 }] },
+    { screen: '/inbox#Inbox', reasons: [{ kind: 'no-incoming-link' }] },
   ]);
   const toReport = '<Route path="/reports" element={<Navigate to={Option.ROUTE_PATH.REPORT} />} />';
   const withNavigate = [ADMIN_ROUTES, "import { Route, Routes } from 'react-router-dom';", "import { Navigate, Route, Routes } from 'react-router-dom';"];
   await inCopy([withNavigate, [ADMIN_ROUTES, '</Routes>', `${toReport}\n    </Routes>`]], async (copy) => {
-    assert.deepEqual((await buildFixture(copy)).entries.at(-1), { screen: '/report#Report', reasons: [{ kind: 'redirect', file: 'admin/AdminRoutes.tsx', line: 19 }] });
+    assert.deepEqual((await buildFixture(copy)).entries.find((e) => e.screen === '/report#Report'), { screen: '/report#Report', reasons: [{ kind: 'redirect', file: 'admin/AdminRoutes.tsx', line: 19 }] });
   });
   await inCopy([withNavigate, [ADMIN_ROUTES, '</Routes>', `{(memberRole as Role) === 'ADMIN' && ${toReport}}\n    </Routes>`]], async (copy) => {
     assert.deepEqual((await buildFixture(copy)).entries, map.entries);
@@ -686,6 +693,43 @@ test('screens taken out of a lazy table, one by destructuring and one as a prope
   assert.deepEqual([profile.componentFile, profile.sourceFiles], ['screens/Profile.tsx', ['screens/Profile.tsx']]);
   assert.deepEqual([archive.settingReads.length, archive.links.map((l) => l.to)], [0, ['/profile']]);
   assert.deepEqual([profile.settingReads.map((r) => r.key), profile.links.map((l) => l.to)], [['SYSTEM.REPORT_ENABLED'], ['/archive']]);
+});
+
+test('a screen does not follow a dynamic import into the component file of another screen, so a navigation helper importing a table that preloads screens brings in the helper and the table but not the links and setting reads of the screens in it, and a screen only its own file links to is an entry', async () => {
+  const map = await buildFixture();
+  const inbox = screen(map, '/inbox#Inbox');
+  const outbox = screen(map, '/outbox#Outbox');
+  assert.deepEqual(inbox.sourceFiles, ['pages/navigateLazyPage.ts', 'pages/preloadPages.ts', 'screens/Inbox.tsx']);
+  assert.deepEqual(outbox.sourceFiles, ['pages/navigateLazyPage.ts', 'pages/preloadPages.ts', 'screens/Outbox.tsx']);
+  assert.deepEqual(inbox.links.map((l) => `${l.file}:${l.line} ${l.to}`), ['screens/Inbox.tsx:9 /inbox', 'screens/Inbox.tsx:10 /outbox']);
+  assert.deepEqual(outbox.links.map((l) => `${l.file}:${l.line} ${l.to}`), ['screens/Outbox.tsx:7 /archive']);
+  assert.deepEqual([inbox.settingReads, outbox.settingReads], [[], []]);
+  assert.deepEqual(map.entries.find((e) => e.screen === '/inbox#Inbox'), { screen: '/inbox#Inbox', reasons: [{ kind: 'no-incoming-link' }] });
+});
+
+test('a screen that imports the component file of another screen with a plain import keeps that file among its sources', async () => {
+  const OUTBOX = 'client/src/screens/Outbox.tsx';
+  await inCopy([
+    [OUTBOX, "import { navigateLazyPage } from '../pages/navigateLazyPage';", "import { navigateLazyPage } from '../pages/navigateLazyPage';\nimport Inbox from './Inbox';"],
+    [OUTBOX, "  return <button", "  return <Inbox />;\n  <button"],
+  ], async (copy) => {
+    const outbox = screen(await buildFixture(copy), '/outbox#Outbox');
+    assert.deepEqual(outbox.sourceFiles, ['pages/navigateLazyPage.ts', 'pages/preloadPages.ts', 'screens/Inbox.tsx', 'screens/Outbox.tsx']);
+    assert.deepEqual(outbox.links.map((l) => `${l.file}:${l.line} ${l.to}`).sort(), ['screens/Inbox.tsx:10 /outbox', 'screens/Inbox.tsx:9 /inbox', 'screens/Outbox.tsx:9 /archive']);
+  });
+});
+
+test('a screen that loads the component file of another screen only by a dynamic import loses that file, and one that also imports it with a plain import keeps it', async () => {
+  const OUTBOX = 'client/src/screens/Outbox.tsx';
+  const lazyInbox = [OUTBOX, "import { navigateLazyPage } from '../pages/navigateLazyPage';", "import { navigateLazyPage } from '../pages/navigateLazyPage';\nconst InboxPanel = lazy(() => import('./Inbox'));"];
+  await inCopy([lazyInbox], async (copy) => {
+    const outbox = screen(await buildFixture(copy), '/outbox#Outbox');
+    assert.deepEqual(outbox.sourceFiles, ['pages/navigateLazyPage.ts', 'pages/preloadPages.ts', 'screens/Outbox.tsx']);
+  });
+  await inCopy([lazyInbox, [OUTBOX, "const InboxPanel", "import { default as InboxScreen } from './Inbox';\nconst InboxPanel"]], async (copy) => {
+    const outbox = screen(await buildFixture(copy), '/outbox#Outbox');
+    assert.deepEqual(outbox.sourceFiles, ['pages/navigateLazyPage.ts', 'pages/preloadPages.ts', 'screens/Inbox.tsx', 'screens/Outbox.tsx']);
+  });
 });
 
 test('a table entry is followed through a wrapping call holding the dynamic import, a loader that wraps it, a call around the table, a spread table, an index file re-exporting the table and a default export', async () => {

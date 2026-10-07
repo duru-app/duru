@@ -22,6 +22,8 @@ function routePaths(base: string): Record<RouteKey, string> {
     REPORT: joinPath(base, 'report'),
     ARCHIVE: joinPath(base, 'archive'),
     PROFILE: joinPath(base, 'profile'),
+    INBOX: joinPath(base, 'inbox'),
+    OUTBOX: joinPath(base, 'outbox'),
   };
 }
 
