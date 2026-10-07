@@ -102,7 +102,7 @@ function buildCalls(apiFunctions, screens, apiPathPrefix, bodyOptions) {
 }
 
 export async function buildMap(config) {
-  const { screens, apiFunctions, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, unresolvedAliasImports } = await extractClient(config);
+  const { screens, apiFunctions, unrunApiModules, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, unresolvedAliasImports } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -145,6 +145,7 @@ export async function buildMap(config) {
     meta: { generatedAt: new Date().toISOString(), srcRoot: config.srcRoot, clientRef: config.clientRef ?? null, serverRef: config.serverRef ?? null },
     screens: mapped,
     apiFunctions,
+    ...(unrunApiModules && { unrunApiModules }),
     deadCalls,
     duplicateIds,
     calls,

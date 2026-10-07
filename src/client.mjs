@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
+import { recordApiCalls } from './api-calls.mjs';
 import { componentFileFinder } from './component-file.mjs';
 import { ROUTES_FILE } from './config.mjs';
 import { loadConstants } from './constants.mjs';
@@ -111,6 +112,8 @@ export async function extractClient(config) {
   const components = componentFileFinder(imports.resolve);
   const constants = await loadConstants(config, imports.resolve);
   const apiModuleFiles = new Set(config.apiModules.map((rel) => path.join(config.srcRoot, rel)));
+  const calledFiles = new Set(config.calledApiModules.map((rel) => path.join(config.srcRoot, rel)));
+  let called = null;
   const constantFileOf = new Map(Object.entries(config.constants).map(([name, rel]) => [name, path.join(config.srcRoot, rel)]));
   const settingsOnly = new Set(Object.values(config.settingsDefaults ?? {}).map((d) => d.constant?.split('.')[0]).filter(Boolean));
   settingsOnly.delete(config.routeConstant.split('.')[0]);
@@ -576,6 +579,8 @@ export async function extractClient(config) {
     const facts = { imports: [], apiCalls: [], settingReads: [], routeRefs: [] };
     const apiNamed = new Map();
     const apiNamespaces = new Set();
+    const calledNamed = new Map();
+    const calledNamespaces = new Map();
     const localFnRefs = new Map();
     const relFile = path.relative(config.srcRoot, file);
     const note = guardNote(relFile, src);
@@ -602,6 +607,13 @@ export async function extractClient(config) {
     traverse(ast, {
       ImportDeclaration(p) {
         const resolved = addImport(p.node.source.value);
+        if (calledFiles.has(resolved) && p.node.importKind !== 'type') {
+          for (const s of p.node.specifiers) {
+            if (s.importKind === 'type') continue;
+            if (s.type === 'ImportNamespaceSpecifier') calledNamespaces.set(s.local.name, resolved);
+            else calledNamed.set(s.local.name, { file: resolved, exportName: s.type === 'ImportDefaultSpecifier' ? 'default' : s.imported.name ?? s.imported.value });
+          }
+        }
         if (!apiModuleFiles.has(resolved)) return;
         for (const s of p.node.specifiers) {
           if (s.type === 'ImportSpecifier') apiNamed.set(s.local.name, s.imported.name);
@@ -617,6 +629,20 @@ export async function extractClient(config) {
       },
     });
 
+    // import 한 API 함수 `f(…)`, API 객체의 메서드 `o.m(…)`, 네임스페이스로 import 한 것 `ns.f(…)` · `ns.o.m(…)`
+    function calledFunction(callee) {
+      const chain = memberChain(callee.node);
+      if (!chain || chain.length > 3) return null;
+      const [first, ...rest] = chain;
+      const binding = callee.scope.getBinding(first);
+      if (binding?.kind !== 'module') return null;
+      const named = calledNamed.get(first);
+      const [file, exportName, member] = named ? [named.file, named.exportName, rest] : calledNamespaces.has(first) ? [calledNamespaces.get(first), rest[0], rest.slice(1)] : [];
+      if (!file || !exportName || member.length > 1) return null;
+      const key = called.keyOf(file, exportName);
+      return member.length ? `${key}.${member[0]}` : key;
+    }
+
     traverse(ast, {
       CallExpression(p) {
         const callee = p.node.callee;
@@ -624,6 +650,9 @@ export async function extractClient(config) {
           record('apiCalls', { fn: apiNamed.get(callee.name), options: bodyOptions(p) }, p);
         } else if (callee.type === 'MemberExpression' && callee.object.type === 'Identifier' && apiNamespaces.has(callee.object.name)) {
           record('apiCalls', { fn: callee.property.name, options: bodyOptions(p) }, p);
+        } else {
+          const fn = calledFunction(p.get('callee'));
+          if (fn) record('apiCalls', { fn, options: bodyOptions(p) }, p);
         }
       },
       'MemberExpression|OptionalMemberExpression'(p) {
@@ -672,7 +701,7 @@ export async function extractClient(config) {
     const stack = [entryFile];
     while (stack.length) {
       const f = stack.pop();
-      if (seen.has(f) || apiModuleFiles.has(f) || constantFiles.has(f)) continue;
+      if (seen.has(f) || apiModuleFiles.has(f) || calledFiles.has(f) || constantFiles.has(f)) continue;
       if (!/\.(jsx?|tsx?)$/.test(f)) continue;
       seen.add(f);
       const { imports, dynamicOnly } = fileFacts(f);
@@ -815,6 +844,8 @@ export async function extractClient(config) {
 
   const apiFunctions = {};
   for (const f of apiModuleFiles) Object.assign(apiFunctions, extractApiModule(f));
+  if (calledFiles.size) called = await recordApiCalls(config, imports.resolve, new Set(Object.keys(apiFunctions)));
+  Object.assign(apiFunctions, called?.functions);
 
   const routeValues = lookupConstant(constants, config.routeConstant.split('.')) ?? {};
   const rel = (f) => (f ? path.relative(config.srcRoot, f) : null);
@@ -841,5 +872,5 @@ export async function extractClient(config) {
     return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls, settingReads, links };
   });
 
-  return { screens, apiFunctions, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, unresolvedAliasImports: imports.unresolved() };
+  return { screens, apiFunctions, unrunApiModules: called?.failedModules ?? null, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, unresolvedAliasImports: imports.unresolved() };
 }

@@ -62,6 +62,7 @@ const isAccount = (v) => isPlainObject(v) && isText(v.id) && isText(v.passwordEn
 const ACCOUNT = '{ "id", "passwordEnv" } with the name of an environment variable that holds the password, never the password itself';
 
 const DOTTED_NAME = new RegExp(`^${NAME}(?:\\.${NAME})*$`);
+const ARGUMENT_PLACE = new RegExp(`^\\d+(?:\\.${NAME})*$`);
 
 function settingsFileOf(file, raw) {
   if (file === undefined) return null;
@@ -182,6 +183,23 @@ export function loadConfig(configPath) {
   if (!isPlainObject(stubs) || !Object.values(stubs).every((v) => typeof v === 'string')) {
     throw new Error(`constantStubs must map imports to the module source that stands in for them, such as { "axios": "export default { create: () => ({}) };" }, not ${JSON.stringify(raw.constantStubs)}`);
   }
+  const calledApiModules = raw.calledApiModules ?? [];
+  if (!Array.isArray(calledApiModules) || !calledApiModules.every(isText) || new Set(calledApiModules).size < calledApiModules.length) {
+    throw new Error(`calledApiModules must be a list of files exporting API objects or API functions, as paths from srcRoot with each file once, such as ["api/index.ts"], not ${JSON.stringify(raw.calledApiModules)}`);
+  }
+  const twice = calledApiModules.find((f) => (raw.apiModules ?? []).includes(f));
+  if (twice) throw new Error(`${twice} is in both apiModules and calledApiModules; list it in one of them`);
+  const requestFunction = raw.requestFunction ?? null;
+  const { import: from, name, method, url, ...extraKeys } = isPlainObject(requestFunction) ? requestFunction : {};
+  const isArgumentPlace = (v) => typeof v === 'string' && ARGUMENT_PLACE.test(v);
+  if (requestFunction !== null && !(isText(from) && isText(name) && (name === 'default' || IDENTIFIER.test(name))
+    && isArgumentPlace(url) && (method === undefined || isArgumentPlace(method)) && !Object.keys(extraKeys).length)) {
+    throw new Error(`requestFunction must be { "import", "name", "method", "url" }: the import path and name the app's API code imports the function sending its requests by, `
+      + 'and where the method and the address are among the values it is given, as the place of the value counted from 0 followed by the keys inside it, '
+      + `such as { "import": "@/api/request", "name": "executeRequest", "method": "0.endpoint.method", "url": "0.url" }, not ${JSON.stringify(requestFunction)}`);
+  }
+  if (calledApiModules.length && !requestFunction) throw new Error('calledApiModules needs requestFunction, the function the app sends its API requests through, which duru records in place of');
+  if (requestFunction && !calledApiModules.length) throw new Error('requestFunction is set but calledApiModules lists no file to call');
   if (raw.tsconfig !== undefined && !isText(raw.tsconfig)) {
     throw new Error(`tsconfig must be the path of the tsconfig file that declares the import aliases, such as "client/tsconfig.json", not ${JSON.stringify(raw.tsconfig)}`);
   }
@@ -197,6 +215,8 @@ export function loadConfig(configPath) {
     tsconfig,
     aliases: tsconfig && loadAliases(tsconfig),
     roleIdentifiers: raw.roleIdentifiers ?? [],
+    calledApiModules,
+    requestFunction,
     bodyArgKeys,
     bodyOptions,
     moves,
