@@ -66,6 +66,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   the user which methods are missing; do not write tests or fixes for them as if their endpoints were gone.
   Most come from the fake values, for example a method that checks a value it is given or picks its address by
   it. A `{?}` in a call's address is a piece that came from a fake value, a path variable.
+- A screen's API calls are the ones its code reaches, each with the file and line where it is written,
+  while its `sourceFiles` hold whole files. A call written in one of those files is not the screen's when the
+  screen does not use the function holding it, so do not write a test of that call for the screen.
 - A `component file not found` line in the `extract` summary names a screen whose component file duru could
   not find and the route it is written at. The map then holds only what the components wrapping that route
   bring: the screen's own source files, API calls, setting reads and links are missing.

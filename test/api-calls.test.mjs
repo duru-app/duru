@@ -76,7 +76,72 @@ test('the calls of an API object attach to the screen whose sources call its met
     ['contractApi.loadParticipant', 'contracts/ContractDetail.tsx', 5, ['GET:/workflow/view/participant/{contractId}']],
     ['contractApi.exportContract', 'contracts/ContractDetail.tsx', 6, []],
   ]);
-  assert.deepEqual(map.calls.find((c) => c.id === 'GET:/internal/v2/workspace/{workspaceId}/contract/list').screens, ['/contracts#Contracts']);
+  assert.deepEqual(map.calls.find((c) => c.id === 'GET:/internal/v2/workspace/{workspaceId}/contract/list').screens, ['/contract-board#ContractBoard', '/contracts#Contracts']);
+});
+
+const sitesOf = (map, id) => screen(map, id).apiCalls.map((c) => [c.fn, c.file, c.line]);
+
+test('two screens importing the same hook file get only the calls of the hooks each of them uses, with the file and line of each call', async () => {
+  const map = await called();
+  assert.deepEqual(sitesOf(map, '/contract-board#ContractBoard'), [
+    ['contractApi.loadList', 'contracts/queries/contract.queries.ts', 7],
+    ['contractApi.archiveAndReload', 'contracts/queries/contract.queries.ts', 14],
+  ]);
+  assert.deepEqual(sitesOf(map, '/contract-summary#ContractSummary'), [
+    ['contractApi.loadDetail', 'contracts/queries/contract.queries.ts', 11],
+    ['fetchNotices', 'contracts/queries/contract.queries.ts', 17],
+  ]);
+  assert.deepEqual(map.calls.find((c) => c.id === 'GET:/internal/v2/notice/list').screens, ['/contract-summary#ContractSummary', '/contracts#Contracts']);
+});
+
+test('a hook a function-making function returns brings the calls of the function given to it, and an API function handed over as a value counts as called', async () => {
+  const map = await called();
+  const archive = screen(map, '/contract-board#ContractBoard').apiCalls.find((c) => c.fn === 'contractApi.archiveAndReload');
+  assert.deepEqual(archive.endpoints.map((e) => e.callId), ['POST:/internal/v2/workspace/{workspaceId}/contract/{contractId}/archive', 'GET:/internal/v2/workspace/{workspaceId}/contract/list']);
+  const notices = screen(map, '/contract-summary#ContractSummary').apiCalls.find((c) => c.fn === 'fetchNotices');
+  assert.deepEqual(notices.endpoints.map((e) => e.callId), ['GET:/internal/v2/notice/list']);
+});
+
+test('an API object imported through a file that re-exports it is joined to its methods where the screen calls them', async () => {
+  const map = await called();
+  assert.deepEqual(sitesOf(map, '/notes#Notes'), [['noteApi.loadNotes', 'contracts/Notes.tsx', 4]]);
+  assert.deepEqual(screen(map, '/notes#Notes').apiCalls[0].endpoints.map((e) => e.url), ['{?}/internal/v2/note/list']);
+});
+
+test('a file that re-exports an imported API function makes no call of it, but a constant holding it that the file itself hands over does', async () => {
+  const map = await build(fixtureCopy(CALLED, {
+    'contracts/shared/index.ts': "import { fetchNotices } from '../api';\nexport { noteApi } from '../api';\nexport { fetchNotices };\nconst notices = fetchNotices;\nexport const load = () => [notices];\n",
+    'contracts/Notes.tsx': "import { noteApi, load } from './shared';\n\nexport default function Notes() {\n  return <main onLoad={() => [noteApi.loadNotes(), load()]} />;\n}\n",
+  }));
+  assert.deepEqual(sitesOf(map, '/notes#Notes'), [['noteApi.loadNotes', 'contracts/Notes.tsx', 4], ['fetchNotices', 'contracts/shared/index.ts', 4]]);
+});
+
+test('an API object or function re-exported as the default or under a constant of another name is joined where the screen calls it', async () => {
+  const map = await build(fixtureCopy(CALLED, {
+    'contracts/shared/index.ts': "import { noteApi, fetchNotices } from '../api';\nexport default noteApi;\nexport const notices = fetchNotices;\n",
+    'contracts/Notes.tsx': "import notes, { notices } from './shared';\n\nexport default function Notes() {\n  return <main onLoad={() => [notes.loadNotes(), notices()]} />;\n}\n",
+  }));
+  assert.deepEqual(sitesOf(map, '/notes#Notes'), [['noteApi.loadNotes', 'contracts/Notes.tsx', 4], ['fetchNotices', 'contracts/Notes.tsx', 4]]);
+});
+
+test('a call at the top level of an imported file attaches to the screen even when the screen uses none of its names', async () => {
+  const map = await build(fixtureCopy(CALLED, {
+    'contracts/shared/index.ts': "import { noteApi } from '../api';\nexport const x = 1;\nnoteApi.loadNotes();\n",
+    'contracts/Notes.tsx': "import { x } from './shared';\n\nexport default function Notes() {\n  return <main />;\n}\n",
+  }));
+  assert.deepEqual(sitesOf(map, '/notes#Notes'), [['noteApi.loadNotes', 'contracts/shared/index.ts', 3]]);
+});
+
+test('a file whose names are used in a way that cannot be followed brings all of its calls', async () => {
+  const map = await build(fixtureCopy(CALLED, {
+    'contracts/ContractSummary.tsx': "import * as queries from './queries/contract.queries';\n\nconst hooks = Object.values(queries);\n\nexport default function ContractSummary() {\n  return <main>{hooks.length}</main>;\n}\n",
+  }));
+  assert.deepEqual(sitesOf(map, '/contract-summary#ContractSummary').map(([fn, , line]) => [fn, line]), [
+    ['contractApi.loadList', 7],
+    ['contractApi.loadDetail', 11],
+    ['contractApi.archiveAndReload', 14],
+    ['fetchNotices', 17],
+  ]);
 });
 
 test('a method that sends nothing for the first fake value is tried with the next, and a piece of an address coming from an outside package without a stand-in, imported by name or by default, is a variable piece', async () => {
@@ -133,7 +198,7 @@ test('extract prints one line for each method that gave no address, and counts t
   const configFile = fixtureCopy(CALLED);
   const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^screens 12 \| api functions 22 \| endpoints match 6 /m);
+  assert.match(result.stdout, /^screens 15 \| api functions 22 \| endpoints match 6 /m);
   assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('api method')), [
     '  api method contractApi.exportContract ← contracts/api/contract.api.ts:50: Unknown export format: {?}',
     '  api method contractApi.waitForSigners ← contracts/api/contract.api.ts:59: did not finish within 1000 ms',
