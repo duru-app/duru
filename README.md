@@ -112,6 +112,25 @@ client with example results and a config to start from.
 
   where `domains/user/api/index.ts` is `export const userApi = new UserApi(executeRequest);` and the methods call
   `this.executeRequest({ endpoint, url, body })`.
+
+  When the API code sends its requests through a request object such as axios, write `"object": true` in place
+  of `method` and `url`. When the object is made by a package's `create`, `import` and `name` give that package,
+  as below. For API code that does
+
+  ```ts
+  // api/http.ts
+  export const http = axios.create({ baseURL: '/api/v2' });
+  // api/index.ts
+  export const invoiceApi = { list: () => http.get('/invoices'), remove: (id) => http.delete(`/invoices/${id}`) };
+  ```
+
+  write `"calledApiModules": ["api/index.ts"]` and
+
+  ```json
+  "requestFunction": { "import": "axios", "name": "default", "object": true }
+  ```
+
+  to get `GET /api/v2/invoices` and `DELETE /api/v2/invoices/{?}`.
 - `bodyArgKeys` — properties of a call argument that hold the request body (optional), such as `data` in
   `ajaxExport({ data: { withHistory } })`.
 - `bodyOptions` — on/off keys to add to a call's request body, per call ID (optional), as

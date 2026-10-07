@@ -173,6 +173,14 @@ export function moduleCopier(config, resolve, { label = 'constants', fillMissing
         : resolved ? copy(resolved) : stubFile(absFile, spec, stubs[spec] ?? (fillMissing ? '' : 'export default {};'), names);
       edits.push([node.source.start, node.source.end, JSON.stringify(target)]);
     }
+    if (fillMissing && src.includes('import.meta')) {
+      // 빌드 도구가 채우는 환경 값은 실행할 때 없으므로 아무 일도 하지 않는 값으로 읽는다.
+      traverse(ast, {
+        MetaProperty(p) {
+          if (p.node.meta.name === 'import') edits.push([p.node.start, p.node.end, '({ ...import.meta, env: globalThis.__duruNothing })']);
+        },
+      });
+    }
     let out = src;
     for (const [s, e, text] of edits.sort((a, b) => b[0] - a[0])) out = out.slice(0, s) + text + out.slice(e);
     if (TYPESCRIPT.test(absFile)) {

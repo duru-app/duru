@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import inspector from 'node:inspector';
 import { parentPort, workerData } from 'node:worker_threads';
 
-const { modules, skip, request, timeoutMs, mark, markNumber } = workerData;
+const { modules, skip, request, timeoutMs, mark, markNumber, scheme } = workerData;
 const skipped = new Set(skip);
 const send = (message) => parentPort.postMessage(message);
 
@@ -44,16 +44,38 @@ const current = new AsyncLocalStorage();
 const sent = new Map();
 // 가짜 값만큼 도는 반복이 요청을 쏟아내면 그 시도를 버린다.
 const REQUEST_LIMIT = 20;
-const recorder = (...args) => {
+const keep = (method, url) => {
   const record = sent.get(current.getStore());
   if (record && record.list.length >= REQUEST_LIMIT) {
     record.flooded = true;
     throw new Error(`sent more than ${REQUEST_LIMIT} requests`);
   }
-  if (record) record.list.push({ method: request.method ? text(at(args, request.method)) : null, url: text(at(args, request.url)) });
+  if (record) record.list.push({ method, url });
   return Promise.resolve(fake);
 };
+const recorder = (...args) => keep(request.method ? text(at(args, request.method)) : null, text(at(args, request.url)));
 globalThis.__duruRecorder = recorder;
+
+const VERBS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'];
+const SCHEME = new RegExp(scheme, 'i');
+const standIns = new WeakSet();
+// 요청 메서드와 create 가 아닌 속성은 아무 일도 하지 않는 값이라, interceptors 같은 설정 코드가 멈추지 않는다.
+function requestObject(base) {
+  const join = (url) => (typeof base !== 'string' || url === null || SCHEME.test(url) ? url : url ? `${base.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}` : base);
+  const fromConfig = (config) => keep(text(config?.method) ?? 'get', join(text(config?.url)));
+  const sendAny = (first, second) => (typeof first === 'string' ? fromConfig({ ...second, url: first }) : fromConfig(first));
+  const verbs = Object.fromEntries(VERBS.map((verb) => [verb, (url) => keep(verb, join(text(url)))]));
+  verbs.request = sendAny;
+  verbs.create = (options) => requestObject(options?.baseURL === undefined ? base : options.baseURL);
+  for (const fn of Object.values(verbs)) standIns.add(fn);
+  const made = new Proxy(Object.assign(function () {}, verbs), {
+    get: (t, k) => (Object.hasOwn(verbs, k) ? verbs[k] : typeof k === 'symbol' || k === 'then' ? undefined : globalThis.__duruNothing),
+    apply: (t, self, [first, second]) => sendAny(first, second),
+  });
+  standIns.add(made);
+  return made;
+}
+globalThis.__duruRequestObject = requestObject(undefined);
 
 const session = new inspector.Session();
 session.connect();
@@ -76,8 +98,8 @@ async function locationOf(fn) {
 }
 
 const describe = (e) => ({ message: String(e?.message ?? e), stack: String(e?.stack ?? '') });
-// 요청을 기록하는 함수와 빈 스텁은 앱의 API 가 아니다. 생성자에 넘긴 기록 함수가 객체의 속성으로 남아도 호출하지 않는다.
-const isStandIn = (v) => v === recorder || v === globalThis.__duruNothing;
+// 생성자에 넘긴 기록 함수가 객체의 속성으로 남아도 호출하지 않는다.
+const isStandIn = (v) => v === recorder || v === globalThis.__duruNothing || standIns.has(v);
 const isClass = (fn) => /^class\b/.test(Function.prototype.toString.call(fn));
 const isNative = (fn) => typeof fn === 'function' && /\{\s*\[native code\]\s*\}\s*$/.test(Function.prototype.toString.call(fn));
 

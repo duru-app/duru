@@ -190,13 +190,16 @@ export function loadConfig(configPath) {
   const twice = calledApiModules.find((f) => (raw.apiModules ?? []).includes(f));
   if (twice) throw new Error(`${twice} is in both apiModules and calledApiModules; list it in one of them`);
   const requestFunction = raw.requestFunction ?? null;
-  const { import: from, name, method, url, ...extraKeys } = isPlainObject(requestFunction) ? requestFunction : {};
+  const { import: from, name, method, url, object, ...extraKeys } = isPlainObject(requestFunction) ? requestFunction : {};
   const isArgumentPlace = (v) => typeof v === 'string' && ARGUMENT_PLACE.test(v);
-  if (requestFunction !== null && !(isText(from) && isText(name) && (name === 'default' || IDENTIFIER.test(name))
-    && isArgumentPlace(url) && (method === undefined || isArgumentPlace(method)) && !Object.keys(extraKeys).length)) {
+  const places = object === true ? method === undefined && url === undefined
+    : (object === undefined || object === false) && isArgumentPlace(url) && (method === undefined || isArgumentPlace(method));
+  if (requestFunction !== null && !(isText(from) && isText(name) && (name === 'default' || IDENTIFIER.test(name)) && places && !Object.keys(extraKeys).length)) {
     throw new Error(`requestFunction must be { "import", "name", "method", "url" }: the import path and name the app's API code imports the function sending its requests by, `
       + 'and where the method and the address are among the values it is given, as the place of the value counted from 0 followed by the keys inside it, '
-      + `such as { "import": "@/api/request", "name": "executeRequest", "method": "0.endpoint.method", "url": "0.url" }, not ${JSON.stringify(requestFunction)}`);
+      + 'such as { "import": "@/api/request", "name": "executeRequest", "method": "0.endpoint.method", "url": "0.url" }; '
+      + 'or, when the API code calls get, post, put, patch and delete of a request object with the address first, { "import", "name", "object": true }, '
+      + `such as { "import": "axios", "name": "default", "object": true }, not ${JSON.stringify(requestFunction)}`);
   }
   if (calledApiModules.length && !requestFunction) throw new Error('calledApiModules needs requestFunction, the function the app sends its API requests through, which duru records in place of');
   if (requestFunction && !calledApiModules.length) throw new Error('requestFunction is set but calledApiModules lists no file to call');

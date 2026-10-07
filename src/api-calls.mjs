@@ -100,12 +100,12 @@ function runWorker(workerData, onMessage) {
 
 // functions 는 「export 한 이름.메서드」마다 { file, line, endpoints, error? }, keyOf 는 (파일, export 한 이름) 에서 그 이름을 돌려준다.
 export async function recordApiCalls(config, resolve, taken = new Set()) {
-  const { import: from, name, method, url } = config.requestFunction;
+  const { import: from, name, method, url, object } = config.requestFunction;
   const relative = from.startsWith('.');
   const target = resolve(path.join(config.srcRoot, 'index.js'), from);
   if (relative && !target) throw new Error(`requestFunction.import ${from} names no file under srcRoot ${config.srcRoot}`);
   let recorded = false;
-  const recorder = `const record = globalThis.__duruRecorder;\nexport { record as ${name === 'default' ? 'default' : JSON.stringify(name)} };`;
+  const recorder = `const record = globalThis.${object ? '__duruRequestObject' : '__duruRecorder'};\nexport { record as ${name === 'default' ? 'default' : JSON.stringify(name)} };`;
   const copier = moduleCopier(config, resolve, {
     label: 'calledApiModules',
     fillMissing: true,
@@ -144,7 +144,7 @@ export async function recordApiCalls(config, resolve, taken = new Set()) {
       else if (m.type === 'classes') classes.set(`${m.file}\n${m.exportName}`, m.locations);
     };
     for (;;) {
-      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER }, onMessage);
+      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, scheme: SCHEME.source }, onMessage);
       if (outcome.done) break;
       if (!outcome.unit) throw new Error(`calledApiModules: the run stopped outside any module or method: ${firstLine(outcome.error.message)}`);
       skip.add(outcome.unit);
