@@ -218,9 +218,10 @@ const SETTINGS_FROM_FILE = [
   ['config.json', '"constant": "Settings.appSettings"', '"file": "store/settings.ts",\n      "const": "defaults"'],
 ];
 
-test('route paths a function builds in a TypeScript constants module, and settings defaults a function builds, are read as values', async () => {
+test('route paths a function builds in a TypeScript constants module from enum and namespace values, and settings defaults a function builds, are read as values', async () => {
   const map = await buildFixture();
   assert.deepEqual(map.screens.map((s) => s.path), ['/home', '/document', '/document/:id', '/admin', '/lab', '/report', '/archive', '/profile']);
+  assert.deepEqual(map.screens.map((s) => s.id).filter((id) => /^\/(home|document|admin|lab)#/.test(id)), ['/home#Home', '/document#DocumentList', '/admin#Admin', '/lab#Lab']);
   assert.deepEqual(screen(map, '/lab#Lab').access.route, [{ guard: 'globalSettings!.SYSTEM.LAB_ENABLED as boolean', kinds: ['setting'], settings: [LAB_ON] }]);
   const fromFile = await inCopy(SETTINGS_FROM_FILE, (copy) => buildFixture(copy));
   assert.deepEqual({ ...map, meta: null }, { ...fromFile, meta: null });
@@ -285,6 +286,73 @@ test('a constants module that fails to run names the source file, not the copy d
       return true;
     },
   );
+  await assert.rejects(
+    inCopy([['client/src/_define/Option.ts', 'function routePaths', "import { produce } from 'immer';\nproduce();\n\nfunction routePaths"]], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:16: The requested module 'immer' does not provide an export named 'produce'$/);
+      return true;
+    },
+  );
+  await assert.rejects(
+    inCopy([['client/src/_define/Option.ts', 'function routePaths', 'const segments = [Segment.Home,\n  Section.ADMIN, missing];\n\nfunction routePaths']], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:17: missing is not defined$/);
+      return true;
+    },
+  );
+  await assert.rejects(
+    inCopy([['client/src/_define/Option.ts', "  Document = 'document',\n}", "  Document = 'document',\n  Broken = missing(\n    1,\n    2,\n  ),\n}"]], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:7: missing is not defined$/);
+      return true;
+    },
+  );
+});
+
+test('a constants module importing a class that takes constructor parameter properties runs', async () => {
+  const map = await inCopy([[
+    'client/src/_define/paths.ts',
+    'export const joinPath = (base: string, segment: string): string => `${base}/${segment}`;',
+    [
+      'class PathJoiner {',
+      '  constructor(private readonly separator: string) {}',
+      '',
+      '  join(base: string, segment: string): string {',
+      '    return `${base}${this.separator}${segment}`;',
+      '  }',
+      '}',
+      '',
+      "export const joinPath = (base: string, segment: string): string => new PathJoiner('/').join(base, segment);",
+    ].join('\n'),
+  ]], (copy) => buildFixture(copy));
+  assert.deepEqual({ ...map, meta: null }, { ...(await buildFixture()), meta: null });
+});
+
+test('JSX in a .tsx file a constants module imports stops the extraction with the file', async () => {
+  await assert.rejects(
+    inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { label } from './label';\nexport const LABEL = label;"]], (copy) => {
+      fs.writeFileSync(path.join(copy, 'client/src/_define/label.tsx'), 'export const label = <b>Home</b>;\n');
+      return buildFixture(copy);
+    }),
+    /^Error: constants: cannot turn \S+client\/src\/_define\/label\.tsx into JavaScript: /,
+  );
+});
+
+test('a CommonJS import or export in a TypeScript constants module stops the extraction with the file and line', async () => {
+  for (const [line, shown] of [["import paths = require('./paths');", 'import … = require(…)'], ['export = {};', 'export =']]) {
+    await assert.rejects(
+      inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", `import { joinPath } from './paths';\n${line}`]], (copy) => buildFixture(copy)),
+      (e) => {
+        assert.equal(e.message.replace(/\S+client\//, 'client/'), `constants: client/src/_define/Option.ts:3: \`${shown}\` is CommonJS, which duru cannot run as an ES module`);
+        return true;
+      },
+    );
+  }
+});
+
+test('a type-only CommonJS import in a TypeScript constants module is dropped before it runs', async () => {
+  const map = await inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport type Paths = require('./paths');"]], (copy) => buildFixture(copy));
+  assert.deepEqual({ ...map, meta: null }, { ...(await buildFixture()), meta: null });
 });
 
 test('a module listed in constants only for settings defaults stays among the source files of the screens that import it', async () => {

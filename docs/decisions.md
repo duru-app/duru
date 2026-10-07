@@ -121,6 +121,23 @@ Reason: a dotted path covers every value a module holds once it has run, and a m
 writes covers every other shape (a function never called at load, one that needs arguments, several calls
 combined) with no key per shape and without touching the client's source.
 
+**TypeScript files a `constants` module runs are turned into JavaScript by Node's transform mode, and the line of
+a failure is put back on the file as written through the source map that comes with it.**
+Alternatives compared:
+- Stripping the types only, Node's default mode: every line stays where it was, but an `enum`, a `namespace` or a
+  constructor parameter property stops the extraction, and a client cannot be asked to rewrite its constants for
+  duru.
+- Bundling with an outside compiler such as TypeScript or esbuild: reads every syntax, JSX too, but adds a
+  dependency for what Node already ships, and its compile options have to be kept in step with the client's.
+Reason: transform mode comes with the same Node 22.13 that duru already needs and runs what stripping refused. It
+prints the code anew, so lines move, and the source map puts a failure's line back on the source; a failure on a
+line that has no mapping of its own names the file without a line. JSX still stops the extraction in both modes,
+and a CommonJS `import x = require(…)` or `export =` is stopped before running with its line, since transform
+mode turns it into `require` and `module.exports`, which the module duru runs cannot use; an `import type x =
+require(…)` is let through, because transform mode drops it. Measured: the two examples, the into-sign 1.5.0 map
+and the into-sign 2.0.0 source, with its own constants files and with the stand-ins kept beside its config, give
+the same maps before and after.
+
 **A component's name is followed further than the line that imports it only when it leads to a dynamic import;
 otherwise the component file is the file that line names.**
 A screen kept in a table of lazy components gets the file its own entry loads. A component imported by name
