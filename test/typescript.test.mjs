@@ -280,9 +280,16 @@ test('a TypeScript import whose names are used only as types, written without th
 
 test('a constants module that fails to run names the source file, not the copy duru runs', async () => {
   await assert.rejects(
-    inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { produce } from 'immer';\nproduce();"]], (copy) => buildFixture(copy)),
+    inCopy([['client/src/_define/Option.ts', 'function routePaths', "import { produce } from 'immer';\nproduce();\n\nfunction routePaths"]], (copy) => buildFixture(copy)),
     (e) => {
-      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:3: The requested module 'immer' does not provide an export named 'produce'$/);
+      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:16: The requested module 'immer' does not provide an export named 'produce'$/);
+      return true;
+    },
+  );
+  await assert.rejects(
+    inCopy([['client/src/_define/Option.ts', 'function routePaths', 'const segments = [Segment.Home,\n  Section.ADMIN, missing];\n\nfunction routePaths']], (copy) => buildFixture(copy)),
+    (e) => {
+      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:17: missing is not defined$/);
       return true;
     },
   );
@@ -307,32 +314,23 @@ test('a constants module importing a class that takes constructor parameter prop
   assert.deepEqual({ ...map, meta: null }, { ...(await buildFixture()), meta: null });
 });
 
-test('JSX in a .tsx file a constants module imports, and a name an outside package without a stand-in does not export, stop the extraction with the file, and a failure below an enum or namespace names the line in the source', async () => {
-  const OPTION = 'client/src/_define/Option.ts';
+test('JSX in a .tsx file a constants module imports stops the extraction with the file', async () => {
   await assert.rejects(
-    inCopy([[OPTION, "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { label } from './label';\nexport const LABEL = label;"]], (copy) => {
+    inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { label } from './label';\nexport const LABEL = label;"]], (copy) => {
       fs.writeFileSync(path.join(copy, 'client/src/_define/label.tsx'), 'export const label = <b>Home</b>;\n');
       return buildFixture(copy);
     }),
-    (e) => {
-      assert.match(e.message, /^constants: cannot turn \S+client\/src\/_define\/label\.tsx into JavaScript: /);
-      return true;
-    },
+    /^Error: constants: cannot turn \S+client\/src\/_define\/label\.tsx into JavaScript: /,
   );
-  await assert.rejects(
-    inCopy([[OPTION, 'function routePaths', "import { produce } from 'immer';\nproduce();\n\nfunction routePaths"]], (copy) => buildFixture(copy)),
-    (e) => {
-      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:16: The requested module 'immer' does not provide an export named 'produce'$/);
-      return true;
-    },
-  );
-  await assert.rejects(
-    inCopy([[OPTION, 'function routePaths', 'const segments = [Segment.Home,\n  Section.ADMIN, missing];\n\nfunction routePaths']], (copy) => buildFixture(copy)),
-    (e) => {
-      assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:17: missing is not defined$/);
-      return true;
-    },
-  );
+});
+
+test('a CommonJS import or export in a TypeScript constants module stops the extraction with the file and line', async () => {
+  for (const line of ["import paths = require('./paths');", 'export = {};']) {
+    await assert.rejects(
+      inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", `import { joinPath } from './paths';\n${line}`]], (copy) => buildFixture(copy)),
+      /^Error: constants: cannot turn \S+client\/src\/_define\/Option\.ts into JavaScript: line 3 is CommonJS/,
+    );
+  }
 });
 
 test('a module listed in constants only for settings defaults stays among the source files of the screens that import it', async () => {

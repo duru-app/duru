@@ -36,7 +36,7 @@ function toJavaScript(file, code) {
 function sourceLine({ code, map }, line, column) {
   const col = column ? Number(column) - 1 : Math.max((code.split('\n')[line - 1] ?? '').search(/\S/), 0);
   const entry = map.findEntry(line - 1, col);
-  return entry?.originalLine === undefined ? line : entry.originalLine + 1;
+  return entry?.originalLine === undefined ? null : entry.originalLine + 1;
 }
 
 const TYPE_PLACES = new Set([
@@ -93,6 +93,9 @@ export async function loadConstants(config, resolve = importResolver(config).res
     const importsValues = ast.program.body.some((n) => n.type === 'ImportDeclaration' && n.importKind !== 'type' && n.specifiers.some((sp) => sp.importKind !== 'type'));
     const unused = TYPESCRIPT.test(absFile) && importsValues ? typeOnlyImports(ast) : new Set();
     for (const node of ast.program.body) {
+      if ((node.type === 'TSImportEqualsDeclaration' && node.moduleReference.type === 'TSExternalModuleReference') || node.type === 'TSExportAssignment') {
+        throw new Error(`constants: cannot turn ${absFile} into JavaScript: line ${node.loc.start.line} is CommonJS (\`import … = require\` or \`export =\`), which an ES module cannot run`);
+      }
       if (!importsModule(node)) continue;
       if (isTypeOnlyLine(node)) {
         edits.push(removed(node));
@@ -145,7 +148,7 @@ export async function loadConstants(config, resolve = importResolver(config).res
         const source = where && [...copied].find(([, copy]) => copy === `./${where[1]}`)?.[0];
         const js = where && transformed.get(`./${where[1]}`);
         const line = js ? sourceLine(js, Number(where[2]), where[3]) : where?.[2];
-        throw new Error(`constants.${name}: ${source ? `${source}:${line}: ` : ''}${message}`, { cause: e });
+        throw new Error(`constants.${name}: ${source ? `${source}${line ? `:${line}` : ''}: ` : ''}${message}`, { cause: e });
       }
       loaded[name] = 'default' in mod ? mod.default : { ...mod };
     }
