@@ -32,11 +32,13 @@ function toJavaScript(file, code) {
   }
 }
 
-// 모듈을 불러오다 난 오류에는 줄 번호만 있어서 그 줄의 첫 글자 위치로 찾는다. 오류 위치 앞에 매핑이 없으면 같은 줄의 마지막 매핑을 쓰고, 그 줄에 매핑이 없으면 줄을 모르는 것으로 둔다.
 function sourceLine({ code, map }, line, column) {
-  const col = column ? Number(column) - 1 : Math.max((code.split('\n')[line - 1] ?? '').search(/\S/), 0);
-  const entry = [col, Number.MAX_SAFE_INTEGER].map((c) => map.findEntry(line - 1, c)).find((e) => e?.generatedLine === line - 1);
-  return entry ? entry.originalLine + 1 : null;
+  const text = code.split('\n')[line - 1] ?? '';
+  for (let col = column ? Number(column) - 1 : Math.max(text.search(/\S/), 0); col <= text.length; col++) {
+    const entry = map.findEntry(line - 1, col);
+    if (entry?.generatedLine === line - 1) return entry.originalLine + 1;
+  }
+  return null;
 }
 
 const TYPE_PLACES = new Set([

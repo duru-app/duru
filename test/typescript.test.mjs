@@ -301,7 +301,7 @@ test('a constants module that fails to run names the source file, not the copy d
     },
   );
   await assert.rejects(
-    inCopy([['client/src/_define/Option.ts', "  Document = 'document',\n}", "  Document = 'document',\n  Broken = missing(),\n}"]], (copy) => buildFixture(copy)),
+    inCopy([['client/src/_define/Option.ts', "  Document = 'document',\n}", "  Document = 'document',\n  Broken = missing(\n    1,\n    2,\n  ),\n}"]], (copy) => buildFixture(copy)),
     (e) => {
       assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:7: missing is not defined$/);
       return true;
