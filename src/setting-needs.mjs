@@ -10,8 +10,10 @@ const REASONS = {
 const LITERALS = ['StringLiteral', 'NumericLiteral', 'BooleanLiteral'];
 
 // 조건식이 설정에 요구하는 값을 읽는다. 설정을 읽지 않는 조건은 null, 읽지만 값을 정할 수 없으면 { reason }.
-export function settingNeeds(settingsRoots, defaults) {
+// resultOf 는 설정 함수가 돌려준 객체를 가리키는 이름에 그 객체가 놓인 설정 자리 [root, section] 을 준다.
+export function settingNeeds(settingsRoots, defaults, resultOf = () => null) {
   const roots = new Set(settingsRoots);
+  const named = (id) => roots.has(id.node.name) || Boolean(resultOf(id));
 
   function constInit(p, seen) {
     const binding = p.scope.getBinding(p.node.name);
@@ -21,14 +23,14 @@ export function settingNeeds(settingsRoots, defaults) {
     return init.node ? init : null;
   }
 
-  function mentions(p, seen) {
+  function mentions(p, seen, isSetting = named) {
     const ids = p.isIdentifier() ? [p] : [];
     p.traverse({ Identifier: (id) => void ids.push(id) });
     return ids.some((id) => {
       if (!id.isReferencedIdentifier()) return false;
-      if (roots.has(id.node.name)) return true;
+      if (isSetting(id)) return true;
       const init = constInit(id, seen);
-      return Boolean(init) && mentions(init, seen);
+      return Boolean(init) && mentions(init, seen, isSetting);
     });
   }
 
@@ -36,6 +38,8 @@ export function settingNeeds(settingsRoots, defaults) {
   function settingPath(p, seen) {
     if (p.isIdentifier()) {
       if (roots.has(p.node.name)) return [p.node.name];
+      const result = resultOf(p);
+      if (result) return [...result];
       const init = constInit(p, seen);
       return init && settingPath(init, seen);
     }
@@ -110,6 +114,7 @@ export function settingNeeds(settingsRoots, defaults) {
   return {
     read,
     readNegated: (p) => negate(read(p)),
+    readsResult: (p) => mentions(p, new Set(), (id) => Boolean(resultOf(id))),
     includes: (chain, entry) => one(chain, 'includes', entry),
   };
 }

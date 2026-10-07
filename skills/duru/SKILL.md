@@ -34,6 +34,14 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   JavaScript, which needs Node 22.13 or later. When the defaults come from a function the app never calls at
   load, or that needs arguments, add a small module beside the config that calls it and exports the result, and
   list it in `constants`.
+- Settings read through a function: when the app reads its settings from the object a function returns, such as
+  `const signing = readSystemSettings({ SIGN_LIST: [] })` and then `signing.SIGN_LIST`, add the function to
+  `settingsFunctions` as `{ "import", "name", "root", "section" }`, with the settings root and the key under it
+  the function reads. Without it those reads and the conditions on them are missing from the map. The object
+  passed to the function gives the defaults. Lines starting with `settingsFunctions` in the `extract` summary
+  name a call duru did not read in the files the route files lead to, a default that differs from another one or
+  cannot be compared with it, or a function called in none of those files; tell the user, since the settings
+  behind them are missing or their defaults unknown.
 - The command: `duru` when it is installed, otherwise `node <duru checkout>/src/cli.mjs`.
 - The route files: `routesFile` in the config is one route file or a list of them, and duru reads only the files
   listed, so an app that splits its routes over several files needs each of them in the list. A screen on the map,
