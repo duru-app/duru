@@ -41,7 +41,7 @@ Requires Node 22.13 or later, to run `constants` modules written in TypeScript.
 
 The project config lives **outside this repository** next to the target project's data. Paths in it are
 relative to the config file, except the files inside the client source (`routesFile`, `constants`,
-`apiModules`, `settingsDefaults`), which are relative to `srcRoot`. `test/fixtures/app` holds a small fake
+`apiModules`, `calledApiModules`, `settingsDefaults`), which are relative to `srcRoot`. `test/fixtures/app` holds a small fake
 client with example results and a config to start from.
 
 ### Client source
@@ -87,6 +87,31 @@ client with example results and a config to start from.
   ```
 
 - `apiModules`, `passThroughCalls` — where API functions live and which wrappers pass a URL through.
+- `calledApiModules`, `requestFunction` — for API code whose methods find their address somewhere else, such as
+  in a table or through a prefix added when the request is sent. `calledApiModules` lists the files that export
+  the API objects or API functions. `requestFunction` names the function the app sends its requests through:
+  `import` and `name` as the API code imports it, and `method` and `url`, the place of each among the values
+  that function is given, written as the position of the value counted from 0 followed by the keys inside it.
+  An `import` starting with `.` is a path from `srcRoot`. duru runs the listed files with that function
+  replaced by a recorder, calls every exported function and every method of every exported object once with
+  fake values, and puts the method and address of each request on the map as that function's or method's call,
+  with the prefix the app adds. A piece of an address that comes from a fake value is written `{?}`. Outside
+  packages that `constantStubs` does not give are filled with values that do nothing. A call stopped after one
+  second counts as failed. Two listed files exporting different objects under one name, or a name `apiModules`
+  already has, get the file path in front of the name. On into-sign 2.0.0:
+
+  ```json
+  "calledApiModules": ["domains/user/api/index.ts", "domains/document/api/index.ts", "domains/signing/api/index.ts"],
+  "requestFunction": {
+    "import": "@domains/_shared/api/axiosInstance",
+    "name": "executeRequest",
+    "method": "0.endpoint.method",
+    "url": "0.url"
+  }
+  ```
+
+  where `domains/user/api/index.ts` is `export const userApi = new UserApi(executeRequest);` and the methods call
+  `this.executeRequest({ endpoint, url, body })`.
 - `bodyArgKeys` — properties of a call argument that hold the request body (optional), such as `data` in
   `ajaxExport({ data: { withHistory } })`.
 - `bodyOptions` — on/off keys to add to a call's request body, per call ID (optional), as
@@ -215,7 +240,13 @@ listing the places whose value the source does not show in full.
 ### What extract and rebuild print
 
 - `screens N | api functions N | endpoints match N method-mismatch N none N unresolved N unchecked N` — the
-  screens and the server match of the calls.
+  screens and the server match of the calls. The API functions include the functions and methods
+  `calledApiModules` called.
+- `api method <name> ← <file>:<line>: <error>` — a called function or method that gave no address, where it is
+  declared and the first line of what stopped it (`did not finish within 1000 ms` for one stopped after a
+  second). Its calls are missing from the map. A method that sends no request is not printed.
+- `calledApiModules <file> did not run: <file>:<line>: <error>` — a listed file that failed to run, so none of
+  its functions or methods are on the map.
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring.
 - An alias import that finds no file, with the number of files that write it (`unresolvedAliasImports`).

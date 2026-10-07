@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import _traverse from '@babel/traverse';
+import { parse } from '@babel/parser';
 import { importsModule, isTypeOnlyLine, parseSource } from './parse.mjs';
 import { importResolver } from './resolve.mjs';
 
@@ -15,8 +16,8 @@ const SOURCE_MAP = /\n\/\/# sourceMappingURL=data:application\/json;base64,(\S+)
 
 // 바꿔 쓴 코드는 줄이 원래 파일과 어긋나므로 소스 맵을 함께 돌려준다.
 // Node 가 처음 부를 때 실험 기능 경고를 stderr 에 찍는다. 두루의 출력에 섞이지 않게 이 경고만 걸러 낸다.
-function toJavaScript(file, code) {
-  if (!nodeModule.stripTypeScriptTypes) throw new Error(`constants: running ${file} needs Node 22.13 or later, for turning it into JavaScript`);
+function toJavaScript(file, code, label) {
+  if (!nodeModule.stripTypeScriptTypes) throw new Error(`${label}: running ${file} needs Node 22.13 or later, for turning it into JavaScript`);
   const emit = process.emitWarning;
   process.emitWarning = (warning, ...rest) => {
     if (!String(warning?.message ?? warning).startsWith('stripTypeScriptTypes')) emit.call(process, warning, ...rest);
@@ -26,7 +27,7 @@ function toJavaScript(file, code) {
     const map = out.match(SOURCE_MAP);
     return { code: out.slice(0, map.index), map: new nodeModule.SourceMap(JSON.parse(Buffer.from(map[1], 'base64').toString())) };
   } catch (e) {
-    throw new Error(`constants: cannot turn ${file} into JavaScript: ${e.message.split('\n')[0]}`);
+    throw new Error(`${label}: cannot turn ${file} into JavaScript: ${e.message.split('\n')[0]}`);
   } finally {
     process.emitWarning = emit;
   }
@@ -62,27 +63,72 @@ function typeOnlyImports(ast) {
   return names;
 }
 
-// 상수 모듈은 브라우저 전역에 기대므로 최소한의 window·document 를 깔고 실제로 실행해 값을 얻는다.
-export async function loadConstants(config, resolve = importResolver(config).resolve) {
-  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-'));
+const NOTHING_SOURCE = 'const nothing = globalThis.__duruNothing;';
+
+function exportedNames(body) {
+  let ast;
+  try {
+    ast = parse(body, { sourceType: 'module' });
+  } catch {
+    return null;
+  }
+  const names = new Set();
+  for (const node of ast.program.body) {
+    if (node.type === 'ExportAllDeclaration') return null;
+    if (node.type === 'ExportDefaultDeclaration') names.add('default');
+    if (node.type !== 'ExportNamedDeclaration') continue;
+    for (const sp of node.specifiers) names.add(sp.exported.name ?? sp.exported.value);
+    const decl = node.declaration;
+    if (decl?.id) names.add(decl.id.name);
+    for (const d of decl?.declarations ?? []) {
+      if (d.id.type === 'Identifier') names.add(d.id.name);
+      else return null;
+    }
+  }
+  return names;
+}
+
+// 상수 모듈과 API 모듈을 임시 폴더에 ES 모듈로 옮겨 적는다. 바깥 패키지는 constantStubs 의 스텁으로 바꾼다.
+// fillMissing 이면 스텁에 없는 이름을 아무 일도 하지 않는 값으로 채우고, replacement 가 돌려준 문자열이 있으면 그 import 를 그 문자열로 바꾼다.
+export function moduleCopier(config, resolve, { label = 'constants', fillMissing = false, replacement = () => null } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-'));
   const copied = new Map();
   const stubbed = new Map();
   const stubOf = new Map();
+  const stubNames = new Map();
   const transformed = new Map();
   const stubs = Object.assign(Object.create(null), config.constantStubs);
 
-  function stubFile(fromFile, spec) {
-    const body = stubs[spec] ?? 'export default {};';
-    const key = spec.startsWith('.') ? `${path.resolve(path.dirname(fromFile), spec)}\n${body}` : spec;
-    if (stubOf.has(key)) return stubOf.get(key);
-    const name = `stub_${stubbed.size}_${spec.replace(/[^a-zA-Z0-9]/g, '_')}.mjs`;
-    fs.writeFileSync(path.join(outDir, name), body);
-    stubbed.set(`./${name}`, spec);
-    stubOf.set(key, `./${name}`);
-    return `./${name}`;
+  function stubFile(fromFile, spec, body, names) {
+    const key = spec.startsWith('.') ? `${path.resolve(path.dirname(fromFile), spec)}\n${body}` : `${spec}\n${body}`;
+    if (!stubOf.has(key)) {
+      const name = `stub_${stubbed.size}_${spec.replace(/[^a-zA-Z0-9]/g, '_')}.mjs`;
+      stubbed.set(`./${name}`, spec);
+      stubOf.set(key, `./${name}`);
+      stubNames.set(`./${name}`, { body, names: new Set() });
+    }
+    const stub = stubOf.get(key);
+    for (const n of names) stubNames.get(stub).names.add(n);
+    return stub;
   }
 
-  function copyModule(absFile) {
+  function writeStubs() {
+    for (const [stub, { body, names }] of stubNames) {
+      const given = fillMissing ? exportedNames(body) : null;
+      const missing = given ? [...names].filter((n) => !given.has(n)) : [];
+      const fill = missing.length ? [NOTHING_SOURCE, ...missing.map((n) => `export { nothing as ${n === 'default' ? 'default' : JSON.stringify(n)} };`)] : [];
+      fs.writeFileSync(path.join(dir, stub), [body, ...fill].join('\n'));
+    }
+  }
+
+  const importedNames = (node) => node.specifiers.flatMap((sp) => {
+    if (sp.type === 'ImportDefaultSpecifier') return ['default'];
+    if (sp.type === 'ImportSpecifier') return [sp.imported.name ?? sp.imported.value];
+    if (sp.type === 'ExportSpecifier') return [sp.local.name ?? sp.local.value];
+    return [];
+  });
+
+  function copy(absFile) {
     if (copied.has(absFile)) return copied.get(absFile);
     const name = `m_${copied.size}_${path.basename(absFile).replace(/\W/g, '_')}.mjs`;
     copied.set(absFile, `./${name}`);
@@ -98,14 +144,15 @@ export async function loadConstants(config, resolve = importResolver(config).res
       const commonJS = node.type === 'TSExportAssignment' ? '`export =`'
         : node.type === 'TSImportEqualsDeclaration' && node.importKind !== 'type' && node.moduleReference.type === 'TSExternalModuleReference' ? '`import … = require(…)`'
           : null;
-      if (commonJS) throw new Error(`constants: ${absFile}:${node.loc.start.line}: ${commonJS} is CommonJS, which duru cannot run as an ES module`);
+      if (commonJS) throw new Error(`${label}: ${absFile}:${node.loc.start.line}: ${commonJS} is CommonJS, which duru cannot run as an ES module`);
       if (!importsModule(node)) continue;
       if (isTypeOnlyLine(node)) {
         edits.push(removed(node));
         continue;
       }
+      let kept = node.specifiers ?? [];
       if (node.type === 'ImportDeclaration') {
-        const kept = node.specifiers.filter((sp) => sp.importKind !== 'type' && !unused.has(sp.local.name));
+        kept = node.specifiers.filter((sp) => sp.importKind !== 'type' && !unused.has(sp.local.name));
         if (!kept.length && node.specifiers.length) {
           edits.push(removed(node));
           continue;
@@ -118,45 +165,84 @@ export async function loadConstants(config, resolve = importResolver(config).res
         }
       }
       const spec = node.source.value;
-      const resolved = !spec.startsWith('.') && Object.hasOwn(stubs, spec) ? null : resolve(absFile, spec);
-      const target = resolved ? copyModule(resolved) : stubFile(absFile, spec);
+      const stubbedSpec = !spec.startsWith('.') && Object.hasOwn(stubs, spec);
+      const resolved = stubbedSpec ? null : resolve(absFile, spec);
+      const replacing = replacement(spec, resolved);
+      const names = importedNames({ specifiers: kept.filter((sp) => sp.exportKind !== 'type') });
+      const target = replacing !== null ? stubFile(absFile, spec, replacing, names)
+        : resolved ? copy(resolved) : stubFile(absFile, spec, stubs[spec] ?? (fillMissing ? '' : 'export default {};'), names);
       edits.push([node.source.start, node.source.end, JSON.stringify(target)]);
     }
     let out = src;
     for (const [s, e, text] of edits.sort((a, b) => b[0] - a[0])) out = out.slice(0, s) + text + out.slice(e);
     if (TYPESCRIPT.test(absFile)) {
-      const js = toJavaScript(absFile, out);
+      const js = toJavaScript(absFile, out, label);
       transformed.set(`./${name}`, js);
       out = js.code;
     }
-    fs.writeFileSync(path.join(outDir, name), out);
+    fs.writeFileSync(path.join(dir, name), out);
     return `./${name}`;
   }
 
+  // 복사본의 자리를 원래 파일과 줄로 돌려준다. 복사본이 아니면 null 이다.
+  function place(copyName, line, column) {
+    const source = [...copied].find(([, c]) => c === copyName)?.[0];
+    if (!source) return null;
+    const js = transformed.get(copyName);
+    return { file: source, line: js ? sourceLine(js, line, column) : line };
+  }
+
+  function rename(text) {
+    let out = text;
+    for (const [file, c] of copied) out = out.replaceAll(path.join(dir, c), file).replaceAll(c, file);
+    for (const [stub, spec] of stubbed) out = out.replaceAll(path.join(dir, stub), spec).replaceAll(stub, spec);
+    return out;
+  }
+
+  function explain(e) {
+    const message = rename(String(e?.message ?? e));
+    const where = String(e?.stack ?? '').match(/[/\\](m_\d+_\w+\.mjs):(\d+)(?::(\d+))?/);
+    const at = where && place(`./${where[1]}`, Number(where[2]), where[3]);
+    return `${at ? `${at.file}${at.line ? `:${at.line}` : ''}: ` : ''}${message}`;
+  }
+
+  return {
+    dir,
+    copy,
+    url: (copyName) => pathToFileURL(path.join(dir, copyName)).href,
+    copyOfUrl: (url) => {
+      const m = String(url).match(/[/\\](m_\d+_\w+\.mjs)$/);
+      return m ? `./${m[1]}` : null;
+    },
+    place,
+    rename,
+    explain,
+    finish: writeStubs,
+    cleanup: () => fs.rmSync(dir, { recursive: true, force: true }),
+  };
+}
+
+// 상수 모듈은 브라우저 전역에 기대므로 최소한의 window·document 를 깔고 실제로 실행해 값을 얻는다.
+export async function loadConstants(config, resolve = importResolver(config).resolve) {
+  const copier = moduleCopier(config, resolve);
   globalThis.window ??= { location: { protocol: 'http:', host: 'localhost', origin: 'http://localhost' } };
   globalThis.document ??= { getElementById: () => null };
 
   const loaded = {};
   try {
     for (const [name, rel] of Object.entries(config.constants)) {
-      const rewritten = copyModule(path.join(config.srcRoot, rel));
+      const rewritten = copier.copy(path.join(config.srcRoot, rel));
+      copier.finish();
       let mod;
       try {
-        mod = await import(pathToFileURL(path.join(outDir, rewritten)).href);
+        mod = await import(copier.url(rewritten));
       } catch (e) {
-        let message = String(e?.message ?? e);
-        for (const [file, copy] of copied) message = message.replaceAll(path.join(outDir, copy), file).replaceAll(copy, file);
-        for (const [stub, spec] of stubbed) message = message.replaceAll(stub, spec);
-        const where = String(e?.stack ?? '').match(/[/\\](m_\d+_\w+\.mjs):(\d+)(?::(\d+))?/);
-        const source = where && [...copied].find(([, copy]) => copy === `./${where[1]}`)?.[0];
-        const js = where && transformed.get(`./${where[1]}`);
-        const line = js ? sourceLine(js, Number(where[2]), where[3]) : where?.[2];
-        throw new Error(`constants.${name}: ${source ? `${source}${line ? `:${line}` : ''}: ` : ''}${message}`, { cause: e });
+        throw new Error(`constants.${name}: ${copier.explain(e)}`, { cause: e });
       }
       loaded[name] = 'default' in mod ? mod.default : { ...mod };
     }
   } finally {
-    fs.rmSync(outDir, { recursive: true, force: true });
+    copier.cleanup();
   }
   return loaded;
 }

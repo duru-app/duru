@@ -1,0 +1,5 @@
+v2	GET	/internal/v2/workspace/{workspaceId}/contract/list
+v2	GET	/internal/v2/workspace/{workspaceId}/contract/{contractId}
+v2	POST	/internal/v2/workspace/{workspaceId}/contract/{contractId}/archive
+v2	GET	/workflow/view/participant/{contractId}
+v2	GET	/internal/v2/notice/list

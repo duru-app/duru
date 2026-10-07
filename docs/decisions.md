@@ -215,6 +215,59 @@ unchanged. The into-sign 1.5.0 map and the JavaScript example map are identical 
 written. The price is that a screen which lazily loads another screen's component to render inside itself
 loses that component's links, setting reads and calls.
 
+**API methods that find their address in another table are called, and the request they send is recorded.**
+`calledApiModules` lists files exporting API objects or API functions; `requestFunction` names the function
+the app sends its requests through, as the API code imports it, and where the method and the address are among
+the values it is given. duru runs those files with that import replaced by a recorder, calls every exported
+function and every method of every exported object once, and keeps the method and address each call hands
+to the recorder. The prefix comes in as the app adds it. A piece of the address that came from the fake value
+is written `{?}`, which the server comparison already reads as a path variable. `apiModules` stays as it was.
+Alternatives compared (driver's decision, 2026-10-07, recorded in the planning issue):
+- Running only the address tables and joining them to the methods by reading the source: every project would
+  have to write how its methods point into the tables and which prefix each table gets (five or more on
+  into-sign), the rules grow with each app, and a client that builds addresses from pieces is not read at all.
+- Replacing the HTTP library with a recorder: on into-sign the app stops in its session check before any
+  request, so 0 of 290 methods were recorded.
+Choices made inside it:
+- The fake value is tried in three shapes, one after another, and the first call that sends a request and ends
+  without an error is kept, else the one with the most requests: a value that gives itself back for any key
+  and can be called, then an object whose every key gives a text, then one whose every key gives the number
+  0.7310595213. into-sign checks that a path value is a text or a number, so the first shape alone left 256 of
+  309 methods without an address; with the three, 51. The number is below 1 so that a loop running up to it
+  stops after one round: a whole number large enough to stand out in an address made such loops run billions
+  of rounds, and a small one flooded the map with an address per round. An attempt sending more than 20
+  requests is still dropped; the most any into-sign method sends is 8. A memory limit on the worker was not
+  set: measured, a worker filling its heap with small arrays ended the whole duru process instead of only the
+  worker, so a method that keeps allocating is stopped by the time limit alone.
+- The run happens in a worker thread. A method that waits forever, or loops, is stopped after one second, the
+  worker is started again and the run goes on after it. In the main thread a looping method would hang the
+  extraction and a late failure of a called method would end the process.
+- An outside package name that `constantStubs` does not give, default exports included, is filled with a value
+  that does nothing and turns into `{?}` in an address, only in this run; constants and settings defaults still stop on it, so a wrong value cannot slip into the map quietly.
+- TypeScript `private` and `protected` members are not called, whether methods, methods bound in the
+  constructor or functions given to it: they cannot be called from a screen, and calling them with fake values
+  gave the only address the server list did not have.
+- A method that gave at least one address and then failed keeps its addresses and is not printed; the printed
+  lines are for methods the map has no address of. 20 methods on into-sign record their request and then fail on
+  the fake response.
+- A screen's sources do not go into the listed files, like `apiModules`. A call attaches to a screen where a
+  file of the screen calls `object.method(…)`, `function(…)` or the same through a namespace import, so a hook
+  file still brings all of its calls to every screen importing it.
+- Two listed files exporting different objects under one name, or a name `apiModules` already has, get the file
+  path in front of the name (`domains/signing/api/index.ts#linkDocumentApi.search`); into-sign has two such names.
+Measured on into-sign 2.0.0 (`release/2.0.0` at `0f436776f`), ten `domains/*/api/index.ts` files and
+`executeRequest` from `@domains/_shared/api/axiosInstance`, before and after: API functions 0 → 309, calls
+0 → 196, screens with a call 0 → 42 of 44, screen–call pairs 0 → 2,656; 231 methods gave an address, 51 gave
+none and are printed, 27 sent no request. With the 1.5.0 server endpoint list added for the measurement only,
+all 245 addresses match a server endpoint. Links (411 rows), entry screens (24), conditions and screen IDs are
+unchanged; setting-read rows go 451 → 408 because the request-encryption setting read inside the request
+module, and a menu setting reached only through the API files, no longer attach to screens. The into-sign 1.5.0
+map and the JavaScript example map are identical apart from the time they were written.
+The limits: a method whose address depends on a value it is given shows only the branch the fake value takes;
+a method that copies its argument with `...` copies no key, because the fake value cannot know its keys; a
+namespace import of an outside package without a stand-in gives no names; a dynamic `import(…)` inside a listed
+file does not run.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

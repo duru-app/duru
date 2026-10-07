@@ -14,12 +14,14 @@ export function loadServerEndpoints(file) {
     });
 }
 
+// 변수 자리 {?} 의 물음표에서 쿼리로 잘리지 않게, 그 자리를 먼저 감춰 둔다.
 export function toSegments(p) {
   return p
+    .replaceAll('{?}', '\0')
     .split('?')[0]
     .split('/')
     .filter(Boolean)
-    .map((s) => (/^\{.*\}$/.test(s) || s.includes('{?}') ? '*' : s));
+    .map((s) => (/^\{.*\}$/.test(s) || s.includes('\0') ? '*' : s));
 }
 
 function sameShape(a, b) {
