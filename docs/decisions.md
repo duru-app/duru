@@ -268,6 +268,40 @@ a method that copies its argument with `...` copies no key, because the fake val
 namespace import of an outside package without a stand-in gives no names; a dynamic `import(…)` inside a listed
 file does not run.
 
+**API code that calls `get` or `post` of a request object is read through `requestFunction` with `"object": true`.**
+`{ "import", "name", "object": true }` says that what the API code imports is an object whose `get`, `post`,
+`put`, `patch` and `delete` it calls with the address first. duru puts in its place an object that records the
+name called as the method and the first value as the address; `head` and `options` are recorded the same way,
+and `request` or calling the object itself takes them from `method` and `url` in the config, or the address
+from a first value that is text, as axios does. `create` on it gives another such object, which puts the
+`baseURL` it is given in front of every address without a scheme, when that `baseURL` is text in the run; given
+no `baseURL`, it keeps that of the object it was made from, and given one that is not text, it puts none. Any
+other property is the value that does nothing, so `interceptors.request.use(…)` and the like run through. The
+functions on this object are not API functions, so `export const { get } = http` puts none on the map.
+In the files duru runs to call API methods, `import.meta.env`, however it is written, is the value that does
+nothing: a Vite app's `axios.create({ baseURL: import.meta.env.VITE_API })` otherwise stops the whole file at
+load.
+Alternatives compared:
+- A key of its own, such as `requestObject`: `import` and `name` mean the same as in `requestFunction`, and a
+  second key would need its own rules against the first (one of the two, either one with `calledApiModules`).
+- A list of the method names to record: the five are those the planning issue names, and no client at hand calls
+  others. An optional list can still be added later without changing a config written now.
+- Leaving out the `baseURL` given to `create`: a client made by `axios.create({ baseURL })` then gets addresses
+  without the prefix, and none of them match the server list.
+Naming `axios` here replaces the HTTP library itself, which the decision above set aside. That was for an app
+whose own request function stands between the API code and axios; such an app still names that function.
+Measured before and after: the into-sign 1.5.0 map, the into-sign 2.0.0 map with the function-shaped
+`requestFunction` above and the JavaScript example map are identical apart from the time they were written, and
+the extract output is the same (2.0.0: 309 API functions, 196 calls, 42 of 44 screens with a call, 51 methods
+printed). into-sign has no API code calling a request object directly, so this has nothing to change there.
+The limits: naming the made object (`./api/http`) instead of the package gives the addresses without the
+`baseURL`, because that file is then not run; a `baseURL` set after `create` is not seen; a protocol-relative
+address (`//host/path`) gets the `baseURL` in front, where axios would not; what a recorded call returns is a
+resolved promise of the fake value, so `axios.all(…).then(…)` or a library whose calls are chained, such as
+ky's `.json()`, ends in an error printed for that method, and ky's `prefixUrl` is not read; a `baseURL` given
+to one request rather than to `create` is not read; the constants run does not stand in for `import.meta.env`,
+so a constants file reading it still fails there.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

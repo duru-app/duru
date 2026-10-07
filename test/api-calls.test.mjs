@@ -179,4 +179,68 @@ test('the usage guide and the agent skill name the new keys and the lines extrac
     assert.ok(readme.includes(text), `README lacks ${text}`);
     assert.ok(skill.includes(text), `SKILL lacks ${text}`);
   }
+  assert.ok(readme.includes('"requestFunction": { "import": "axios", "name": "default", "object": true }'), 'README lacks a request object example');
+});
+
+const INVOICES = { calledApiModules: ['invoices/api/index.ts'], serverEndpoints: 'invoice-server-endpoints.txt' };
+const invoiceCopy = (requestFunction) => {
+  const configFile = fixtureCopy({ ...INVOICES, requestFunction });
+  const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+  config.routesFile.push('invoices/InvoiceRoutes.tsx');
+  fs.writeFileSync(configFile, JSON.stringify(config, null, 2));
+  return configFile;
+};
+const requestsOf = (map) => Object.fromEntries(Object.entries(map.apiFunctions).filter(([name]) => !name.startsWith('ajax')).map(([name, f]) => [name, f.endpoints.map((e) => `${e.method} ${e.url}`)]));
+
+test('API functions calling get, post, put, patch and delete of a request object made by a factory, the object itself or its request with a config, give their method and address, with the base address given to the factory or to the object a create came from in front, when the factory\'s package is the request object; a base address from the build environment is left out, and a method taken out of the object is not an API function', async () => {
+  const map = await build(invoiceCopy({ import: 'axios', name: 'default', object: true }));
+  assert.deepEqual(requestsOf(map), {
+    'invoiceApi.list': ['GET /internal/v2/billing/invoices?page={?}'],
+    'invoiceApi.detail': ['GET /internal/v2/billing/invoices/{?}'],
+    'invoiceApi.create': ['POST /internal/v2/billing/invoices'],
+    'invoiceApi.replace': ['PUT /internal/v2/billing/invoices/{?}'],
+    'invoiceApi.rename': ['PATCH /internal/v2/billing/invoices/{?}'],
+    'invoiceApi.remove': ['DELETE /internal/v2/billing/invoices/{?}'],
+    fetchInvoiceSummary: ['GET /internal/v2/billing/invoices/summary'],
+    'invoiceApi.send': ['POST /internal/v2/billing/invoices/{?}/send'],
+    'invoiceApi.archive': ['POST /internal/v2/billing/invoices/{?}/archive'],
+    'reportApi.monthly': ['GET /internal/v2/reports/monthly'],
+    fetchAudit: ['GET /internal/v2/audit'],
+    fetchRates: ['GET /internal/v2/rates'],
+  });
+  assert.ok(Object.values(map.apiFunctions).filter((f) => f.file?.startsWith('invoices/')).every((f) => f.endpoints.every((e) => e.server.status === 'match')));
+  const callsOf = (id) => screen(map, id).apiCalls.map((c) => [c.fn, (c.endpoints ?? []).map((e) => e.callId)]);
+  assert.deepEqual(callsOf('/invoices/:invoiceId#InvoiceDetail'), [
+    ['invoiceApi.detail', ['GET:/internal/v2/billing/invoices/{invoiceId}']],
+    ['invoiceApi.rename', ['PATCH:/internal/v2/billing/invoices/{invoiceId}']],
+    ['invoiceApi.remove', ['DELETE:/internal/v2/billing/invoices/{invoiceId}']],
+  ]);
+  assert.deepEqual(map.unrunApiModules, []);
+});
+
+test('the same API functions give the addresses as they call them when the object the factory made is the request object, and a call through the package itself is then not recorded', async () => {
+  const map = await build(invoiceCopy({ import: './invoices/api/http', name: 'http', object: true }));
+  assert.deepEqual(requestsOf(map), {
+    'invoiceApi.list': ['GET /invoices?page={?}'],
+    'invoiceApi.detail': ['GET /invoices/{?}'],
+    'invoiceApi.create': ['POST /invoices'],
+    'invoiceApi.replace': ['PUT /invoices/{?}'],
+    'invoiceApi.rename': ['PATCH /invoices/{?}'],
+    'invoiceApi.remove': ['DELETE /invoices/{?}'],
+    fetchInvoiceSummary: ['GET /invoices/summary'],
+    'invoiceApi.send': ['POST /invoices/{?}/send'],
+    'invoiceApi.archive': ['POST /invoices/{?}/archive'],
+    'reportApi.monthly': [],
+    fetchAudit: ['GET /internal/v2/audit'],
+    fetchRates: [],
+  });
+  assert.deepEqual(map.unrunApiModules, []);
+});
+
+test('a request object setting is refused when it also gives the places of the method or the address', () => {
+  const refused = (requestFunction) => assert.throws(() => loadConfig(fixtureCopy({ ...INVOICES, requestFunction })), /"object": true/);
+  refused({ import: 'axios', name: 'default', object: true, url: '0' });
+  refused({ import: 'axios', name: 'default', object: true, method: '0.method' });
+  refused({ import: 'axios', name: 'default', object: 'yes' });
+  refused({ import: 'axios', name: 'default' });
 });

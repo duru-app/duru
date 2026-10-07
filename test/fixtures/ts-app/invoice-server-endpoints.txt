@@ -1,0 +1,12 @@
+v2	GET	/internal/v2/billing/invoices
+v2	GET	/internal/v2/billing/invoices/{invoiceId}
+v2	POST	/internal/v2/billing/invoices
+v2	PATCH	/internal/v2/billing/invoices/{invoiceId}
+v2	DELETE	/internal/v2/billing/invoices/{invoiceId}
+v2	GET	/internal/v2/billing/invoices/summary
+v2	GET	/internal/v2/rates
+v2	PUT	/internal/v2/billing/invoices/{invoiceId}
+v2	POST	/internal/v2/billing/invoices/{invoiceId}/send
+v2	POST	/internal/v2/billing/invoices/{invoiceId}/archive
+v2	GET	/internal/v2/reports/monthly
+v2	GET	/internal/v2/audit
