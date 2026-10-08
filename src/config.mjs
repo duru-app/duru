@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEPTHS, READERS } from './test-links.mjs';
-import { loadAliases } from './tsconfig.mjs';
+import { loadAliases } from './tsconfig.ts';
 
 const TEST_FORMATS = Object.keys(READERS);
 const NAME = '[A-Za-z_$][\\w$]*';

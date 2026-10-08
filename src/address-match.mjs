@@ -1,6 +1,6 @@
 import { UNKNOWN } from './client.mjs';
 import { routePattern } from './path-values.mjs';
-import { toSegments } from './server.mjs';
+import { toSegments } from './server.ts';
 
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
 

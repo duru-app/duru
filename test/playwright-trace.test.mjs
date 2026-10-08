@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readPlaywright } from '../src/playwright.mjs';
-import { readTrace } from '../src/playwright-trace.mjs';
+import { readPlaywright } from '../src/playwright.ts';
+import { readTrace } from '../src/playwright-trace.ts';
 
 const RESULTS = path.join(import.meta.dirname, 'fixtures/app/results/playwright-traced');
 const REPORT = path.join(RESULTS, 'visits.json');

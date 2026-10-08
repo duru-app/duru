@@ -5,10 +5,10 @@ import { recordApiCalls } from './api-calls.mjs';
 import { componentFileFinder } from './component-file.mjs';
 import { ROUTES_FILE } from './config.mjs';
 import { loadConstants } from './constants.mjs';
-import { inTypePosition, nameFollower } from './follow-names.mjs';
-import { parseSource } from './parse.mjs';
-import { importResolver } from './resolve.mjs';
-import { settingNeeds } from './setting-needs.mjs';
+import { inTypePosition, nameFollower } from './follow-names.ts';
+import { parseSource } from './parse.ts';
+import { importResolver } from './resolve.ts';
+import { settingNeeds } from './setting-needs.ts';
 import { addCallDefaults, findSettingsCalls, settingsResultFinder } from './settings-functions.mjs';
 
 const traverse = _traverse.default ?? _traverse;

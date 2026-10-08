@@ -5,8 +5,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import _traverse from '@babel/traverse';
 import { parse } from '@babel/parser';
-import { importsModule, isTypeOnlyLine, parseSource } from './parse.mjs';
-import { importResolver } from './resolve.mjs';
+import { importsModule, isTypeOnlyLine, parseSource } from './parse.ts';
+import { importResolver } from './resolve.ts';
 
 const traverse = _traverse.default ?? _traverse;
 

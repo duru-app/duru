@@ -1,5 +1,5 @@
 import { callFinder, screenFinder } from './address-match.mjs';
-import { readTrace } from './playwright-trace.mjs';
+import { readTrace } from './playwright-trace.ts';
 
 export const PASS_LEVELS = ['visit', 'interact', 'assert'];
 

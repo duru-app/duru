@@ -3,7 +3,7 @@ import { Worker } from 'node:worker_threads';
 import _traverse from '@babel/traverse';
 import { UNKNOWN } from './client.mjs';
 import { moduleCopier } from './constants.mjs';
-import { parseSource } from './parse.mjs';
+import { parseSource } from './parse.ts';
 
 const traverse = _traverse.default ?? _traverse;
 
@@ -62,7 +62,7 @@ function requestOf({ method, url }) {
 
 function runWorker(workerData, onMessage) {
   return new Promise((resolve) => {
-    const worker = new Worker(new URL('./api-calls-worker.mjs', import.meta.url), { workerData, stdout: true, stderr: true });
+    const worker = new Worker(new URL('./api-calls-worker.ts', import.meta.url), { workerData, stdout: true, stderr: true });
     worker.stdout.resume();
     worker.stderr.resume();
     let unit = null;

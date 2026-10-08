@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
 import { compare } from './config.mjs';
-import { parseSource, SOURCE_SYNTAX_ERROR } from './parse.mjs';
-import { resolveImport } from './resolve.mjs';
+import { parseSource, SOURCE_SYNTAX_ERROR } from './parse.ts';
+import { resolveImport } from './resolve.ts';
 
 const traverse = _traverse.default ?? _traverse;
 

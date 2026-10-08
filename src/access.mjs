@@ -1,6 +1,6 @@
 import { lookupConstant, memberChain, UNKNOWN, VARIABLE_SEGMENT } from './client.mjs';
 import { parseRoleEntry } from './config.mjs';
-import { parseFragment, plainText } from './parse.mjs';
+import { parseFragment, plainText } from './parse.ts';
 import { pathParts } from './path-values.mjs';
 
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

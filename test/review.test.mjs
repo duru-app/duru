@@ -11,7 +11,7 @@ import { loadConfig } from '../src/config.mjs';
 import { chromium } from 'playwright-core';
 import { addJudgment, loadJudgments } from '../src/judgments.mjs';
 import { addMark, loadMarks } from '../src/marks.mjs';
-import { applyOverrides } from '../src/app-host.mjs';
+import { applyOverrides } from '../src/app-host.ts';
 import { reviewAuthor, startReviewServer } from '../src/review.mjs';
 import { taskList } from '../src/tasks.mjs';
 

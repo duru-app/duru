@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
-import { nameFollower } from '../src/follow-names.mjs';
-import { parseSource } from '../src/parse.mjs';
+import { nameFollower } from '../src/follow-names.ts';
+import { parseSource } from '../src/parse.ts';
 
 const traverse = _traverse.default ?? _traverse;
 const dirs = [];

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { screenCases } from '../src/access.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
-import { readPlaywright } from '../src/playwright.mjs';
+import { readPlaywright } from '../src/playwright.ts';
 import { linkTests } from '../src/test-links.mjs';
 
 const FIXTURE_CONFIG = path.join(import.meta.dirname, 'fixtures/app/config.json');

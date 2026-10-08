@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
-import { parseSource } from './parse.mjs';
-import { resolveImport } from './resolve.mjs';
+import { parseSource } from './parse.ts';
+import { resolveImport } from './resolve.ts';
 
 const traverse = _traverse.default ?? _traverse;
 // 이보다 많은 화면에 딸린 소스 파일은 여러 화면이 함께 쓰는 파일로 보고 근거로 치지 않는다.
