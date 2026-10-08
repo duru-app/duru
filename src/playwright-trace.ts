@@ -58,7 +58,6 @@ function zipEntries(buffer: Buffer): Map<string, () => Buffer> {
 
 const jsonLines = (read: () => Buffer) => read().toString('utf8').split('\n').filter(Boolean).map((line: string) => JSON.parse(line));
 
-// 읽지 못하면 { reason } 을 돌려준다.
 export function readTrace(file: string): TraceResult {
   if (!fs.existsSync(file)) return { reason: 'trace 파일이 없습니다' };
   let events: any[];
@@ -85,7 +84,6 @@ export function readTrace(file: string): TraceResult {
     return { reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' };
   }
 
-  // 조작은 입력을 넣은 시점의 URL 로, 확인은 expect 가 끝난 시점의 URL 로 본다.
   const ends = new Map(events.filter((e) => e.type === 'after').map((e) => [e.callId, e]));
   const timeline: TimelineEntry[] = [];
   for (const action of actions) {

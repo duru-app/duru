@@ -92,7 +92,6 @@ function syntaxError(file: string, err: SyntaxFailure) {
   return Object.assign(new Error(`${file}:${detail}`, { cause: err }), { code: SOURCE_SYNTAX_ERROR, detail });
 }
 
-// asWritten 이면 타입 전용 import 와 타입 문법이 감싼 값을 소스에 적힌 그대로 둔다.
 export function parseSource(file: string, { asWritten = false }: { asWritten?: boolean } = {}) {
   const src = fs.readFileSync(file, 'utf8');
   let ast: ReturnType<typeof parse>;
