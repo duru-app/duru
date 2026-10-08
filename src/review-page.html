@@ -2192,6 +2192,7 @@ function optionRows(s, call, depths) {
     const split = byDepth(matching);
     return h('tr', { class: `option${matching.length ? '' : ' gap'}` },
       h('td', { class: 'call' }, h('div', {}, optionLabel(target.option)),
+        o.sources.includes('type') ? h('span', { class: 'chip config', title: 'API 메서드가 보내는 본문의 타입에서 읽은 옵션' }, '본문 타입') : null,
         o.sources.includes('config') ? h('span', { class: 'chip config', title: '설정 bodyOptions 에 적은 옵션' }, '설정') : null),
       cell(target, matching, '테스트 없음'),
       depths.map((d, i) => cell({ ...target, depth: d }, split[i])));
@@ -2347,6 +2348,7 @@ function callDetails(call, s) {
     option ? h('h2', {}, '옵션을 찾은 자리') : null,
     option ? h('ul', { class: 'plain option-sites' },
       option.sites.map((site) => h('li', {}, h('code', {}, `${site.file}:${site.line}`), ' ', h('span', { class: 'muted mono' }, site.screen))),
+      option.sources.includes('type') ? h('li', {}, '본문 타입에서 읽음 ', h('span', { class: 'muted mono' }, call.apiFunctions.join(', '))) : null,
       option.sources.includes('config') ? h('li', {}, '설정에 적음 ', h('span', { class: 'muted mono' }, 'bodyOptions')) : null) : null,
     h('h2', {}, '서버 대조', listAbsentNote('목록 없음')),
     h('div', {}, verdictChip(call.server), ' ', call.server.path ? h('code', {}, call.server.path) : null),

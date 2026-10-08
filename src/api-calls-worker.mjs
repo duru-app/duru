@@ -54,16 +54,17 @@ const current = new AsyncLocalStorage();
 const sent = new Map();
 // 가짜 값만큼 도는 반복이 요청을 쏟아내면 그 시도를 버린다.
 const REQUEST_LIMIT = 20;
-const keep = (method, url) => {
+// body 는 요청에 본문이 실렸는지이고, requestFunction 에 body 자리가 없으면 undefined 다.
+const keep = (method, url, body) => {
   const record = sent.get(current.getStore());
   if (record && record.list.length >= REQUEST_LIMIT) {
     record.flooded = true;
     throw new Error(`sent more than ${REQUEST_LIMIT} requests`);
   }
-  if (record) record.list.push({ method, url });
+  if (record) record.list.push({ method, url, body });
   return Promise.resolve(fake);
 };
-const recorder = (...args) => keep(request.method ? text(at(args, request.method)) : null, text(at(args, request.url)));
+const recorder = (...args) => keep(request.method ? text(at(args, request.method)) : null, text(at(args, request.url)), request.body ? at(args, request.body) != null : undefined);
 globalThis.__duruRecorder = recorder;
 
 const VERBS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'];

@@ -247,7 +247,8 @@ test('the new keys are refused when one comes without the other, a file is in bo
   refused({ requestFunction: CALLED.requestFunction });
   refused({ ...CALLED, calledApiModules: ['_ajax/AjaxFunc.ts'] });
   refused({ ...CALLED, requestFunction: { ...CALLED.requestFunction, url: 'url' } });
-  refused({ ...CALLED, requestFunction: { ...CALLED.requestFunction, body: '0.body' } });
+  refused({ ...CALLED, requestFunction: { ...CALLED.requestFunction, body: 'body' } });
+  refused({ ...CALLED, requestFunction: { ...CALLED.requestFunction, headers: '0.headers' } });
   await assert.rejects(build(fixtureCopy({ ...CALLED, requestFunction: { ...CALLED.requestFunction, import: './contracts/api/missing' } })), /requestFunction\.import \.\/contracts\/api\/missing names no file/);
   await assert.rejects(build(fixtureCopy({ ...CALLED, requestFunction: { ...CALLED.requestFunction, import: '@/send' } })), /is imported by none of the files/);
 });
@@ -321,6 +322,7 @@ test('a request object setting is refused when it also gives the places of the m
   const refused = (requestFunction) => assert.throws(() => loadConfig(fixtureCopy({ ...INVOICES, requestFunction })), /"object": true/);
   refused({ import: 'axios', name: 'default', object: true, url: '0' });
   refused({ import: 'axios', name: 'default', object: true, method: '0.method' });
+  refused({ import: 'axios', name: 'default', object: true, body: '1' });
   refused({ import: 'axios', name: 'default', object: 'yes' });
   refused({ import: 'axios', name: 'default' });
 });

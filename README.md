@@ -134,7 +134,11 @@ client with example results and a config to start from.
 
   to get `GET /api/v2/invoices` and `DELETE /api/v2/invoices/{?}`.
 - `bodyArgKeys` — properties of a call argument that hold the request body (optional), such as `data` in
-  `ajaxExport({ data: { withHistory } })`.
+  `ajaxExport({ data: { withHistory } })`. With `tsconfig`, `calledApiModules` and `body` in `requestFunction` (the
+  place of the body among the values the request function is given, such as `"body": "0.body"`), duru also reads
+  the TypeScript type of the value a called method gives under one of these keys, such as
+  `this.request({ operation: 'update', body })`. Its true/false fields become on/off options of the calls the
+  method sent with a body, named by their path in the body, with `[]` for a list (`signers[].notify`).
 - `bodyOptions` — on/off keys to add to a call's request body, per call ID (optional), as
   `{ "POST:/api/v1/report/export": ["withHistory"] }`, for a body the source does not show.
 - `settingsRoots` — identifiers through which settings are read.
@@ -291,6 +295,13 @@ listing the places whose value the source does not show in full.
   second). Its calls are missing from the map. A method that sends no request is not printed.
 - `calledApiModules <file> did not run: <file>:<line>: <error>` — a listed file that failed to run, so none of
   its functions or methods are on the map.
+- `body type <name>: <field> goes with <other field>, so it is not taken as an on/off option` — a true/false body
+  field left out because it picks among more than two values with that other field. The other `body type <name>:`
+  lines name what duru could not read, so those on/off options are missing from the map: `the body is typed
+  <type>, …` or `the body field <path> is typed <type>, …`, a body or a field of it whose type gives no field
+  names, such as `Record<string, unknown>` or `any`; `it sent a body, but no <key> was found …`, a method whose
+  body is not written in an object it gives to a call, such as one put in a variable first; and `no function was
+  found at <file>:<line>` (`bodyTypeNotices`).
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring.
 - `settingsFunctions <file>:<line> <what>` — about calls in the files the route files lead to by import: a call

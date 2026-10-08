@@ -181,9 +181,9 @@ function optionSource(option) {
     sites.set(at, [...(sites.get(at) ?? []), s.screen]);
   }
   const found = [...sites].map(([at, screens]) => `${at} (${screens.join(', ')})`).join('; ');
-  const config = option.sources.includes('config');
-  if (!found) return 'set in the config, not found in the source';
-  return `found at ${found}${config ? '; also set in the config' : ''}`;
+  const also = [option.sources.includes('type') && 'read from the request body type', option.sources.includes('config') && 'set in the config'].filter(Boolean);
+  if (!found) return `${also.join('; ')}, not found in the source`;
+  return `found at ${found}${also.map((a) => `; also ${a}`).join('')}`;
 }
 
 function markedOptionLines(call, marks, tests) {

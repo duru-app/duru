@@ -61,7 +61,7 @@ function screenCallOptions(screen, callsById) {
       for (const o of c.options ?? []) sent.get(e.callId).add(o.key);
     }
   }
-  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id).options.filter((o) => keys.has(o.key) || o.sources.includes('config'))]));
+  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id).options.filter((o) => keys.has(o.key) || o.sources.includes('type') || o.sources.includes('config'))]));
 }
 
 const isStaleMap = (map) => Array.isArray(map?.screens) && map.screens.some((s) => !s.routeFile);
