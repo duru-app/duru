@@ -15,6 +15,7 @@ import { linkTests } from './test-links.mjs';
 const COMMANDS = ['extract', 'rebuild', 'review', 'tasks'];
 const DEFAULT_PORT = 4400;
 const AUTHOR_SOURCES = { config: 'config', git: 'git user.name', user: 'computer user name' };
+const KEPT_BY = { source: 'the source', config: 'bodyOptions' };
 const [, , command, configPath, ...extra] = process.argv;
 const portArg = command === 'review' && extra[0] === '--port' && extra.length === 2 ? Number(extra[1]) : null;
 if (!COMMANDS.includes(command) || !configPath || (extra.length > 0 && !Number.isInteger(portArg))) {
@@ -71,6 +72,10 @@ if (command === 'tasks') {
   for (const n of map.bodyTypeNotices ?? []) {
     console.log(`  body type ${n.method}: ${n.field ? `${n.field} goes with ${n.beside}, so it is not taken as an on/off option` : n.reason}`);
   }
+  for (const { call, field } of map.leftOutBodyTypeFields ?? []) console.log(`  bodyTypeExclusions ${call} leaves out ${field}`);
+  for (const { call, field, keptBy } of map.keptBodyTypeExclusions ?? []) {
+    console.log(`  bodyTypeExclusions ${call} ${field} stays an option, given by ${keptBy.map((src) => KEPT_BY[src]).join(' and ')}`);
+  }
   for (const [name, fn] of Object.entries(map.apiFunctions)) if (fn.error && !fn.endpoints.length) console.log(`  api method ${name} ← ${fn.file ?? '?'}${fn.line ? `:${fn.line}` : ''}: ${fn.error}`);
   console.log(`dead calls reachable from screens: ${map.deadCalls.length}`);
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s) => s.dead).length}`);
@@ -78,6 +83,9 @@ if (command === 'tasks') {
   for (const p of map.unknownEntryPaths) console.log(`  entryPaths ${p} matches no route`);
   for (const p of map.unknownMovePaths) console.log(`  moves ${p} matches no route`);
   for (const id of map.unknownBodyOptionCalls) console.log(`  bodyOptions ${id} matches no call`);
+  for (const { call, field } of map.unknownBodyTypeExclusions ?? []) {
+    console.log(`  bodyTypeExclusions ${call}${field === undefined ? ' matches no call' : ` ${field} matches no on/off option read from its body type`}`);
+  }
   for (const g of map.unknownRoleGuards ?? []) console.log(`  roleGuards ${g} matches no role guard`);
   for (const l of map.unknownCallLinks) for (const id of l.missing) console.log(`  callLinks ${l.from} → ${l.to}: ${id} matches no call`);
   for (const n of map.settingsCallNotices ?? []) console.log(`  settingsFunctions ${n.file ? `${n.file}:${n.line} ` : ''}${n.reason}`);

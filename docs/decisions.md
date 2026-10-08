@@ -662,6 +662,27 @@ took 12.7 and 11.7 s against main's 9.8 and 10.5 s without them, in two runs on 
 options and `bodyTypeNotices` it is the same as main's. The into-sign 1.5.0 map, the 2.0.0 map without the
 two keys and the two example maps are identical to main's apart from the time they were written.
 
+**The on/off fields read from a body type that no screen lets the user change are taken out by hand, per call ID,
+in `bodyTypeExclusions`.**
+The type cannot tell a field the screens always send with one value from a real option, and the other readings
+compared above miss far more keys, so a person lists them. Alternatives compared:
+- One list of field paths for every call: the same path is fixed on one call and a real option on another
+  (`enabledLinkAble` is always `null` on the link publish and set by a screen on the link update), so it would take a
+  real option away.
+- A reason written beside each field: the config is already the place a person reads it, so it adds little.
+- Showing the left-out fields on the review page: a larger change for the same notice.
+Only what was read from the type is taken out; a key that the source or `bodyOptions` also gives the call stays an
+option with that source, so a screen that starts to set the field at the call keeps it. Each field the config names
+is printed on every run, as taken out or as still an option and from where, so a field that a screen starts to set
+shows up as an entry to remove; a call or field the config names that is not there is printed like an unknown
+`bodyOptions` call. Without the key the map has none of `leftOutBodyTypeFields`, `keptBodyTypeExclusions` and
+`unknownBodyTypeExclusions`, so maps of configs that do not use it stay as they were.
+Measured on into-sign 2.0.0 (`release/2.0.0` at `0f436776f`) with the 12 fields of the measurement above: 11 are
+taken out, and `document.signers[].authConfig.enabledAuth` of the flexible publish, which already goes with
+`authType` and is not an option, is printed as matching no option. Apart from the 11 options and those three lists the
+map is the same as without the key. Without the key, the into-sign 1.5.0 map, the 2.0.0 map with and without the
+body type keys and the two example maps are identical to main's apart from the time they were written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

@@ -214,3 +214,87 @@ test('a body is found through satisfies, !, new, the result of a condition or a 
   assert.deepEqual([...fields.keys()], ['api.viaSatisfies', 'api.viaNonNull', 'api.viaNew', 'api.viaComma', 'api.viaQuote', 'api.overload']);
   assert.deepEqual(notices, ['api.inCondition', 'api.inVariable'].map((method) => ({ method, reason: 'it sent a body, but no body was found in an object it gives to a call' })));
 });
+
+test('a field written in bodyTypeExclusions is left out of that call only, and listed', async () => {
+  const map = await build(fixtureCopy({ ...CALLED, bodyTypeExclusions: { 'POST:/internal/v2/member/update': ['enabledInvite'], 'POST:/internal/v2/setting/save': ['members[].enabledAlert'] } }));
+  assert.deepEqual(optionsOf(map, 'POST:/internal/v2/member/update'), []);
+  assert.deepEqual(optionsOf(map, 'POST:/internal/v2/member/publish'), [['enabledInvite', ['type']]]);
+  assert.deepEqual(optionsOf(map, 'POST:/internal/v2/setting/save'), [['enabledNotice', ['type']]]);
+  assert.deepEqual(map.leftOutBodyTypeFields, [
+    { call: 'POST:/internal/v2/member/update', field: 'enabledInvite' },
+    { call: 'POST:/internal/v2/setting/save', field: 'members[].enabledAlert' },
+  ]);
+  assert.deepEqual(map.keptBodyTypeExclusions, []);
+  assert.deepEqual(map.unknownBodyTypeExclusions, []);
+});
+
+test('a call in bodyTypeExclusions not on the map, and a field not read as an option from its body type, are listed and leave out nothing', async () => {
+  const map = await build(fixtureCopy({ ...CALLED, bodyTypeExclusions: {
+    'POST:/internal/v2/setting/save': ['title', 'expiry.enabledExpire'],
+    'POST:/internal/v2/member/notify': ['enabledInvite'],
+    'POST:/internal/v2/setting/gone': ['enabledNotice'],
+  } }));
+  assert.deepEqual(optionsOf(map, 'POST:/internal/v2/setting/save'), [['enabledNotice', ['type']], ['members[].enabledAlert', ['type']]]);
+  assert.deepEqual(map.leftOutBodyTypeFields, []);
+  assert.deepEqual(map.unknownBodyTypeExclusions, [
+    { call: 'POST:/internal/v2/member/notify', field: 'enabledInvite' },
+    { call: 'POST:/internal/v2/setting/gone' },
+    { call: 'POST:/internal/v2/setting/save', field: 'expiry.enabledExpire' },
+    { call: 'POST:/internal/v2/setting/save', field: 'title' },
+  ]);
+});
+
+test('bodyTypeExclusions leaves out only what was read from the type, so a key also written in bodyOptions stays with the config as its source, and is listed as kept', async () => {
+  const map = await build(fixtureCopy({ ...CALLED, bodyOptions: { 'POST:/internal/v2/member/update': ['enabledInvite'] }, bodyTypeExclusions: { 'POST:/internal/v2/member/update': ['enabledInvite'] } }));
+  assert.deepEqual(optionsOf(map, 'POST:/internal/v2/member/update'), [['enabledInvite', ['config']]]);
+  assert.deepEqual(map.leftOutBodyTypeFields, []);
+  assert.deepEqual(map.keptBodyTypeExclusions, [{ call: 'POST:/internal/v2/member/update', field: 'enabledInvite', keptBy: ['config'] }]);
+});
+
+function withMembersScreen(configFile: string) {
+  const contracts = path.join(path.dirname(configFile), 'client/src/contracts');
+  fs.writeFileSync(path.join(contracts, 'Members.tsx'),
+    "import { settingApi } from './api';\n\nexport default function Members() {\n  return <button onClick={() => settingApi.updateMember({ enabledInvite: true })} />;\n}\n");
+  const routes = path.join(contracts, 'ContractRoutes.tsx');
+  const patched = fs.readFileSync(routes, 'utf8')
+    .replace("import Notes from './Notes';", "import Notes from './Notes';\nimport Members from './Members';")
+    .replace('<Route path="/notes" element={<Notes />} />', '<Route path="/notes" element={<Notes />} />\n      <Route path="/members" element={<Members />} />');
+  assert.ok(patched.includes('import Members') && patched.includes('path="/members"'), 'the route file no longer has the lines the Members screen is added after');
+  fs.writeFileSync(routes, patched);
+  return configFile;
+}
+
+test('a field in bodyTypeExclusions that a screen sets at the call stays an option from the source, is listed as kept, and extract says where it comes from', async () => {
+  const configFile = withMembersScreen(fixtureCopy({ ...CALLED, bodyTypeExclusions: { 'POST:/internal/v2/member/update': ['enabledInvite'] } }));
+  const map = await build(configFile);
+  assert.deepEqual(optionsOf(map, 'POST:/internal/v2/member/update'), [['enabledInvite', ['source']]]);
+  assert.deepEqual(map.leftOutBodyTypeFields, []);
+  assert.deepEqual(map.keptBodyTypeExclusions, [{ call: 'POST:/internal/v2/member/update', field: 'enabledInvite', keptBy: ['source'] }]);
+  const run = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /^ {2}bodyTypeExclusions POST:\/internal\/v2\/member\/update enabledInvite stays an option, given by the source$/m);
+});
+
+test('without bodyTypeExclusions the map has no list of fields left out', async () => {
+  const map = await read();
+  assert.ok(['leftOutBodyTypeFields', 'keptBodyTypeExclusions', 'unknownBodyTypeExclusions'].every((key) => !(key in map)));
+});
+
+for (const bodyTypeExclusions of [['enabledInvite'], { 'POST:/internal/v2/member/update': 'enabledInvite' }, { 'POST:/internal/v2/member/update': [true] }, 5]) {
+  test(`bodyTypeExclusions ${JSON.stringify(bodyTypeExclusions)} is rejected`, () => {
+    assert.throws(() => loadConfig(fixtureCopy({ ...CALLED, bodyTypeExclusions })), /bodyTypeExclusions must map call IDs to lists of body fields/);
+  });
+}
+
+test('extract prints each field bodyTypeExclusions leaves out or that stays an option, and each call or field it names that is not there', () => {
+  const run = spawnSync(process.execPath, [CLI, 'extract', fixtureCopy({ ...CALLED, bodyOptions: { 'POST:/internal/v2/member/publish': ['enabledInvite'] }, bodyTypeExclusions: {
+    'POST:/internal/v2/member/update': ['enabledInvite', 'title'],
+    'POST:/internal/v2/member/publish': ['enabledInvite'],
+    'POST:/internal/v2/setting/gone': ['enabledNotice'],
+  } })], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /^ {2}bodyTypeExclusions POST:\/internal\/v2\/member\/update leaves out enabledInvite$/m);
+  assert.match(run.stdout, /^ {2}bodyTypeExclusions POST:\/internal\/v2\/member\/publish enabledInvite stays an option, given by bodyOptions$/m);
+  assert.match(run.stdout, /^ {2}bodyTypeExclusions POST:\/internal\/v2\/member\/update title matches no on\/off option read from its body type$/m);
+  assert.match(run.stdout, /^ {2}bodyTypeExclusions POST:\/internal\/v2\/setting\/gone matches no call$/m);
+});
