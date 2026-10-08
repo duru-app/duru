@@ -154,7 +154,7 @@ test('a method that sends nothing for the first fake value is tried with the nex
 test('a public method a subclass declares over a protected one is called while the protected ones are not, a value a method that sends nothing stores turns into a variable piece in a later address, and a loop as long as a value it is given ends at once', async () => {
   const map = await called();
   const urls = (name) => endpointsOf(map, name).map(([method, url]) => `${method} ${url}`);
-  assert.deepEqual(Object.keys(map.apiFunctions).filter((name) => name.startsWith('noteApi.')), ['noteApi.search', 'noteApi.setBase', 'noteApi.loadNotes', 'noteApi.loadNumbered', 'noteApi.fetchItems', 'noteApi.sendForever', 'noteApi.fetchPages']);
+  assert.deepEqual(Object.keys(map.apiFunctions).filter((name) => name.startsWith('noteApi.')), ['noteApi.search', 'noteApi.setBase', 'noteApi.loadNotes', 'noteApi.loadNumbered', 'noteApi.fetchItems', 'noteApi.sendForever', 'noteApi.fetchPages', 'noteApi.removeNotes', 'noteApi.tagNotes']);
   assert.deepEqual(urls('noteApi.search'), ['GET /internal/v2/note/search?q={?}']);
   assert.deepEqual(urls('noteApi.loadNotes'), ['GET {?}/internal/v2/note/list']);
   assert.deepEqual(urls('noteApi.fetchPages'), ['GET /internal/v2/note/page/0']);
@@ -165,6 +165,12 @@ test('a method that sends only for a number gets a number below 1, so a loop up 
   assert.deepEqual(endpointsOf(map, 'noteApi.loadNumbered').map(([method, url]) => `${method} ${url}`), ['GET /internal/v2/note/{?}']);
   assert.deepEqual(endpointsOf(map, 'noteApi.fetchItems').map(([method, url]) => `${method} ${url}`), ['GET /internal/v2/note/item/0']);
   assert.deepEqual(map.apiFunctions['noteApi.sendForever'], { file: 'contracts/api/note.api.ts', line: 44, endpoints: [], error: 'sent more than 20 requests' });
+});
+
+test('a method sending one request for each id in a set made from the fake value sends one request, not one for each of its letters, while a set made from any other text still holds its letters', async () => {
+  const map = await called();
+  assert.deepEqual(endpointsOf(map, 'noteApi.removeNotes').map(([method, url]) => `${method} ${url}`), ['POST /internal/v2/note/{?}/delete']);
+  assert.deepEqual(endpointsOf(map, 'noteApi.tagNotes').map(([method, url]) => `${method} ${url}`), ['POST /internal/v2/note/tag/a', 'POST /internal/v2/note/tag/b']);
 });
 
 test('a method checking that its address values are strings or numbers while it uses `in` and an array method on the body it is given gets strings only for the keys named like an id, and sends its request', async () => {
@@ -207,7 +213,7 @@ test('extract prints one line for each method that gave no address, and counts t
   const configFile = fixtureCopy(CALLED);
   const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^screens 15 \| api functions 23 \| endpoints match 6 /m);
+  assert.match(result.stdout, /^screens 15 \| api functions 25 \| endpoints match 6 /m);
   assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('api method')), [
     '  api method contractApi.exportContract ← contracts/api/contract.api.ts:50: Unknown export format: {?}',
     '  api method contractApi.waitForSigners ← contracts/api/contract.api.ts:59: did not finish within 1000 ms',

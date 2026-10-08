@@ -50,4 +50,12 @@ export class NoteApi extends BaseApi {
     for (let page = 0; page < pages; page++) sent.push(this.send({ endpoint: { method: 'GET', path: '' }, url: `/internal/v2/note/page/${page}` }));
     return Promise.all(sent);
   }
+
+  removeNotes({ ids = [] }: { ids?: string[] }) {
+    return Promise.all([...new Set(ids)].map((id) => this.send({ endpoint: { method: 'POST', path: '' }, url: `/internal/v2/note/${id}/delete` })));
+  }
+
+  tagNotes() {
+    return Promise.all([...new Set('ab')].map((tag) => this.send({ endpoint: { method: 'POST', path: '' }, url: `/internal/v2/note/tag/${tag}` })));
+  }
 }
