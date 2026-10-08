@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileSafe, recordName, writeNewRecord } from './marks.ts';
-import { compare, isPlainObject } from './config.mjs';
+import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { withoutTags } from './verdict.ts';
 

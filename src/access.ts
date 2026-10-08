@@ -1,5 +1,5 @@
 import { lookupConstant, memberChain, UNKNOWN, VARIABLE_SEGMENT } from './client.ts';
-import { parseRoleEntry } from './config.mjs';
+import { parseRoleEntry } from './config.ts';
 import { parseFragment, plainText } from './parse.ts';
 import { pathParts, type PathPart } from './path-values.ts';
 import type { SettingNeed } from './setting-needs.ts';

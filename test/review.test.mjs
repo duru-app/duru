@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { UNKNOWN } from '../src/client.ts';
-import { loadConfig } from '../src/config.mjs';
+import { loadConfig } from '../src/config.ts';
 import { chromium } from 'playwright-core';
 import { addJudgment, loadJudgments } from '../src/judgments.ts';
 import { addMark, loadMarks } from '../src/marks.ts';
@@ -19,7 +19,7 @@ import { taskList } from '../src/tasks.ts';
 for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete process.env[key];
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
-const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
+const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 
 async function withRebuiltFixture(configPatch, fn, edits = []) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));

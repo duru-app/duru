@@ -3,7 +3,7 @@ import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath } from '@babel/traverse';
 import type { ExportSpecifier, Identifier, ImportDeclaration, ObjectExpression, Program, VariableDeclaration, VariableDeclarator } from '@babel/types';
-import { compare } from './config.mjs';
+import { compare } from './config.ts';
 import { parseSource, SOURCE_SYNTAX_ERROR } from './parse.ts';
 import { resolveImport } from './resolve.ts';
 

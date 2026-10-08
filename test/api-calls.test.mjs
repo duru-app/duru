@@ -5,11 +5,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { callFinder } from '../src/address-match.ts';
-import { loadConfig } from '../src/config.mjs';
-import { buildMap } from '../src/map.mjs';
+import { loadConfig } from '../src/config.ts';
+import { buildMap } from '../src/map.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/ts-app');
-const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
+const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 const copies = [];
 after(() => copies.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
 

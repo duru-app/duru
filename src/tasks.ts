@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { compare } from './config.mjs';
+import { compare } from './config.ts';
 import { reviewData } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { testsAt } from './story-paths.ts';

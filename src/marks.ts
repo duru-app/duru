@@ -109,7 +109,7 @@ export function addMark(dir: string, { target, status, note, author }: NewMark, 
   return mark;
 }
 
-// 화면 · 호출 ID 에는 괄호가 들어가지 않으므로(map.mjs 의 TAG_FORBIDDEN) story(<ID>) 는 노드의 키가 될 수 없다.
+// 화면 · 호출 ID 에는 괄호가 들어가지 않으므로(map.ts 의 TAG_FORBIDDEN) story(<ID>) 는 노드의 키가 될 수 없다.
 const targetKey = (t: MarkTarget) => (t.story !== undefined ? `story(${t.story})` : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth].filter(Boolean).join(' '));
 
 export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = []): { attached: MarkEntry[]; detached: MarkEntry[] } {

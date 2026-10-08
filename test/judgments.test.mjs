@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadConfig } from '../src/config.mjs';
+import { loadConfig } from '../src/config.ts';
 import { addJudgment, applyJudgments, loadJudgments } from '../src/judgments.ts';
-import { buildMap } from '../src/map.mjs';
+import { buildMap } from '../src/map.ts';
 import { linkTests } from '../src/test-links.ts';
 
 const HELP_TEST = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' };

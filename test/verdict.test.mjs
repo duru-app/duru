@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadConfig } from '../src/config.mjs';
-import { buildMap } from '../src/map.mjs';
+import { loadConfig } from '../src/config.ts';
+import { buildMap } from '../src/map.ts';
 import { linkTests } from '../src/test-links.ts';
 import { readVerdicts } from '../src/verdict.ts';
 

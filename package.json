@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "Every screen of your app, under every configuration — computes a screen map from source, including screens reachable only under certain settings and screens whose backing API is gone",
   "bin": {
-    "duru": "src/cli.mjs"
+    "duru": "src/cli.ts"
   },
   "scripts": {
-    "extract": "node src/cli.mjs extract",
-    "rebuild": "node src/cli.mjs rebuild",
+    "extract": "node src/cli.ts extract",
+    "rebuild": "node src/cli.ts rebuild",
     "test": "tsc --noEmit && node --test \"test/*.test.{mjs,ts}\""
   },
   "engines": {

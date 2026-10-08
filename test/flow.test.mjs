@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { loadConfig } from '../src/config.mjs';
+import { loadConfig } from '../src/config.ts';
 import { buildFlow } from '../src/flow.ts';
-import { buildMap } from '../src/map.mjs';
+import { buildMap } from '../src/map.ts';
 import { linkTests } from '../src/test-links.ts';
 
 const config = loadConfig(path.join(import.meta.dirname, 'fixtures/app/config.json'));

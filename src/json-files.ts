@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { compare } from './config.mjs';
+import { compare } from './config.ts';
 
 interface Say {
   folder: (message: string) => string;
