@@ -140,7 +140,7 @@ export function addJudgment(dir: string, { test, node, kind, reason, author }: N
 }
 
 // 제외한 짝은 테스트가 결과에서 사라지면 어디에도 나오지 않는다.
-export function applyJudgments(tests: JudgedTests, judgments: Judgment[]) {
+export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgment[]) {
   const latest = new Map<string, Judgment>();
   const ordered = [...judgments].sort((a, b) => Date.parse(a.date) - Date.parse(b.date) || compare(a.id, b.id));
   for (const j of ordered) latest.set(pairKey(j.test, j.node), j);

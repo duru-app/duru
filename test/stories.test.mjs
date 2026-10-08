@@ -8,7 +8,7 @@ import { UNKNOWN } from '../src/client.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
 import { loadStories } from '../src/stories.ts';
-import { checkStories, checkStoryFiles } from '../src/story-paths.mjs';
+import { checkStories, checkStoryFiles } from '../src/story-paths.ts';
 import { linkTests } from '../src/test-links.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');

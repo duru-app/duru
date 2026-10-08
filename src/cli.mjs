@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
-import { storyCandidates } from './candidates.mjs';
+import { storyCandidates } from './candidates.ts';
 import { loadConfig } from './config.mjs';
 import { buildMap } from './map.mjs';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
-import { reviewAuthor, startReviewServer } from './review.mjs';
+import { reviewAuthor, startReviewServer } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
-import { checkStoryFiles } from './story-paths.mjs';
-import { taskList } from './tasks.mjs';
+import { checkStoryFiles } from './story-paths.ts';
+import { taskList } from './tasks.ts';
 import { linkTests } from './test-links.ts';
 
 const COMMANDS = ['extract', 'rebuild', 'review', 'tasks'];

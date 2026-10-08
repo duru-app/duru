@@ -7,8 +7,8 @@ import path from 'node:path';
 import { chromium } from 'playwright-core';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
-import { startReviewServer } from '../src/review.mjs';
-import { checkStories } from '../src/story-paths.mjs';
+import { startReviewServer } from '../src/review.ts';
+import { checkStories } from '../src/story-paths.ts';
 
 for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete process.env[key];
 
