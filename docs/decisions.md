@@ -493,6 +493,55 @@ The limits: a declaration reached is reached whole, so using one member of an ex
 the calls of all its members; a name written in a branch that never runs still counts; a top-level statement
 of a reached file brings every name it uses.
 
+**The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
+the name.**
+In the 2.0.0 client every role screen is guarded by a member of `menuPolicy` (`canAccessAdminRoutes`,
+`canAccessDepartmentRoutes`, `canAccessSystemSettings`, `canAccessTrash`), which a function in another file
+builds by comparing the user's roles with lists in `config/permissions.ts`. duru reads only comparisons in the
+file of the guard, so all 12 role screens had their roles unread, while 10 of the 11 in 1.5.0 were read. The
+name `ADMINISTRATOR` is a member role, a user role and a role in a department, and a department screen opens
+for a member administrator or for an administrator of the chosen department, so the config writes
+`member:ADMINISTRATOR` and `department:ADMINISTRATOR`. Compared: writing the bare names (the tags look as in
+1.5.0, but the two administrators of a department screen are one), and following the policy function into
+`permissions.ts` without a config (the largest change, and the shared names stay shared). The roles written
+replace what duru reads for a guard with the same text, wherever it is, rather than being merged with it: a
+written role and a read one never match as text, so mixing the two on one screen would leave it no roles; when
+that happens, the screen lists the guards missing from `roleGuards` as unreadable.
+A key that guards no route or link with a role is listed like an unknown `bodyOptions` call.
+Measured on main 8a62577 against the branch: with the four guards written, the 2.0.0 map gives roles for all 12
+screens and leaves no guard unread, and nothing else on the map changes; without `roleGuards`, the 1.5.0 and
+2.0.0 maps are identical to main's apart from the time they were written.
+
+**A screen that opens only under a role or a setting has a case for each condition, and a test names its case
+with `@role:` or `@setting:`.**
+Each role that opens the screen is a case where it opens, and one more case, `role:other`, is a role that does not
+open it being kept out. Each setting condition is two cases, written `=true` for a test that meets the condition
+and `=false` for one that does not, whatever the condition asks, so `=true` is always the case where the screen
+opens. The setting tag carries the setting's path and, for a list that must hold a value or a setting that must
+equal one, the value after a colon. In 1.5.0 each of the 12 setting screens asks two conditions, that a menu slot
+is there and that its list holds the screen's entry; with the path alone a tag would not say which entry a test
+left out, and two entries asked of one list would fall into one case. Compared: the path alone (shorter, and in
+1.5.0 no list is asked for more than one entry).
+The blocked role case is `role:other` rather than a real role. The issue reports a tag that names a role outside
+the screen's condition, and a real role there would either be reported or have to be written somewhere first:
+the plain member role a blocked test would sign in with appears nowhere on the 1.5.0 map. Which role a blocked
+test used belongs in its title, which the review page and the task list show; a Playwright tag is not shown at
+all. Compared: any role the map or `review.roles` names (keeps the role in the tag, but the plain member role must
+be added to the config first), and any role that does not open the screen (also counts a misspelt role as
+blocked).
+A setting condition on only some of the links into a screen is no case, since the screen still opens through the
+others. A test with both kinds of tag counts for each case it names. A tag that is not a case of a screen the test
+is tagged with is reported with the tags that point at nothing, and the test still counts for the screen. Cases are
+worked out from each screen's access when tests are linked and when the review page and the task list read the map,
+as the options of a call are, so the map does not change.
+Measured on main 8a62577 against the branch: on the 1.5.0 map each of the 14 screens that open only under a role
+or a setting gets cases, 78 in all, and the one role screen whose roles are unread has `role:other` as its only
+role case; on the 2.0.0
+map the 12 role screens get 39 cases with `roleGuards` written and 12 without it. Without tests that carry these
+tags, `map.json`, `tests.json` and what `rebuild` prints for both maps are identical to main's apart from the
+time they were written. In the task list a marked screen without a condition comes out as on main, and a marked
+screen with one gains its case lines and an empty test set for each case with no tests.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

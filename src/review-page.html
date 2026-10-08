@@ -123,6 +123,8 @@
   .open-needs .need, .reach-summary .need { display: flex; align-items: center; gap: 6px; font-weight: 600; }
   .open-needs .need .flag { color: var(--pending); font-weight: normal; }
   .open-needs .tips { font-size: 12px; margin-top: 4px; }
+  .open-needs .cases li { margin: 4px 0; }
+  .open-needs .cases .case { font-size: 13px; }
   #right { display: flex; flex-direction: column; padding: 0; overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere; }
   #right-info { flex: 1 1 auto; min-height: 120px; overflow: auto; padding: 12px 16px; }
   #right-dock { flex: none; padding: 10px 16px 12px; border-top: 1px solid var(--line); background: var(--panel); }
@@ -1507,14 +1509,15 @@ function stepItem(step, i, recordSteps) {
     records);
 }
 
-function stepTests(id) {
-  const tests = testsOf(id);
-  if (!tests.length) return h('div', { class: 'step-tests' }, h('span', { class: 'none' }, '화면 테스트 없음'));
+function depthCounts(tests, empty) {
+  if (!tests.length) return h('div', { class: 'step-tests' }, h('span', { class: 'none' }, empty));
   return h('div', { class: 'step-tests' }, state.data.depths.map((d) => {
     const at = tests.filter((t) => t.depth === d);
     return at.length ? h('span', { title: at.map((t) => `${TEST_STATUS[t.status]} ${t.title}`).join('\n') }, DEPTH_LABELS[d], ' ', countsOf(at)) : null;
   }));
 }
+
+const stepTests = (id) => depthCounts(testsOf(id), '화면 테스트 없음');
 
 const wayItem = (w, scope = null) => h('li', {}, h('code', {}, `${w.file}:${w.line}`),
   w.conditions.length ? w.conditions.map((g) => accessGuard(g, scope, state.storyOpen)) : h('span', { class: 'muted' }, ' 조건 없음'));
@@ -2402,12 +2405,29 @@ function linkGroup({ key, guards, links }) {
         : null))));
 }
 
+const settingCaseName = (tag) => tag.slice('setting:'.length, tag.lastIndexOf('='));
+const CASE_LABEL = {
+  role: (c) => (c.opens ? `역할 ${c.tag.slice('role:'.length)} — 열림` : '여는 역할이 아닌 역할 — 막힘'),
+  setting: (c) => `설정 ${settingCaseName(c.tag)} ${c.opens ? '맞춤 — 열림' : '맞추지 않음 — 막힘'}`,
+};
+
+function caseCounts(s) {
+  if (!s.cases.length) return null;
+  const tests = testsOf(s.id);
+  return h('div', { class: 'cases' },
+    h('h3', {}, '경우별 테스트'),
+    h('ul', { class: 'plain' }, s.cases.map((c) => h('li', { title: `@${c.tag}` },
+      h('div', { class: 'case' }, CASE_LABEL[c.kind](c)),
+      depthCounts(tests.filter((t) => t.cases?.includes(c.tag)), '테스트 없음')))));
+}
+
 function openSummary(s) {
   const { lines, tips, bare } = openNeeds(s);
   return h('div', { class: 'open-needs' },
     h('h2', {}, '이 화면을 열려면'),
     s.access.restricted ? [...lines.map(needLine), bare ? bareLine(bare) : null] : h('p', { class: 'muted' }, '설정이나 역할 없이 열립니다.'),
     tips.length ? h('ul', { class: 'plain tips muted' }, tips.map((t) => h('li', {}, t))) : null,
+    caseCounts(s),
     s.access.route.length ? h('div', { class: 'route' }, h('h3', {}, '라우트에서 막는 조건'), s.access.route.map((g) => accessGuard(g, 'route'))) : null);
 }
 

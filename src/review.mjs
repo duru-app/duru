@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { screenCases } from './access.mjs';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.mjs';
 import { acceptCandidate, discardCandidate, storyCandidates } from './candidates.mjs';
 import { isPlainObject } from './config.mjs';
@@ -79,7 +80,10 @@ export function reviewData(config, author, app = null, fileSettings = null) {
   const map = readMap(mapFile);
   const tests = judgedTests(config);
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
-  for (const s of map.screens) s.callOptions = screenCallOptions(s, callsById);
+  for (const s of map.screens) {
+    s.callOptions = screenCallOptions(s, callsById);
+    s.cases = screenCases(s.access);
+  }
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
   return {
     map,

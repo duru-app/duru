@@ -32,10 +32,11 @@ test('rebuild writes map.json and tests.json to the configured output folder and
     ]);
     assert.match(stdout, /^screens 11 \|/m);
     assert.match(stdout, /^calls 10 \| dead screens 2$/m);
-    assert.match(stdout, /^screens with tests 7\/11 \| tags pointing outside the map 10 \| tests without a node or story tag 13$/m);
+    assert.match(stdout, /^screens with tests 7\/11 \| tags pointing outside the map 13 \| tests without a node or story tag 13$/m);
     assert.match(stdout, /^links from unit tests to screens by the files they import 5 \| test files not read 2$/m);
     assert.match(stdout, /^calls with tests 3\/10$/m);
     assert.doesNotMatch(stdout, /bodyOptions/);
+    assert.doesNotMatch(stdout, /roleGuards/);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
@@ -128,6 +129,21 @@ test('rebuild warns about each call ID in bodyOptions that is not on the map', (
     const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     assert.match(stdout, /^ {2}bodyOptions POST:\/api\/v1\/report\/weekly matches no call$/m);
     assert.doesNotMatch(stdout, /bodyOptions POST:\/api\/v1\/report\/schedule/);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('rebuild warns about each guard in roleGuards that guards no route or link with a role', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, roleGuards: { isAdmin: ['ADMIN'], 'menuPolicy.canAccessTrash': ['ADMIN'] } }));
+    const stdout = execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+    assert.match(stdout, /^ {2}roleGuards menuPolicy\.canAccessTrash matches no role guard$/m);
+    assert.doesNotMatch(stdout, /roleGuards isAdmin/);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }

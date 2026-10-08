@@ -34,9 +34,13 @@ const emptyTests = (...cells) => ['- empty tests:', ...cells.flatMap(([tags, met
   `  - verdict: \`VERDICT <what it checks>: <verdict> — <what was seen> ${tags}\``,
 ])].join('\n');
 
+const withCases = (tags, method, cases) => [[tags, method], ...cases.map((c) => [`${tags} @${c}`, `${method}_${c.replace(/[^A-Za-z0-9]+/g, '_').replace(/_$/, '')}`])];
+const REPORT_CASES = ['role:ADMIN', 'role:OWNER', 'role:other', 'setting:SYSTEM.MAIN_MENU.ADMIN=true', 'setting:SYSTEM.MAIN_MENU.ADMIN=false', 'setting:SYSTEM.MAIN_MENU.ADMIN.LIST:ADMIN_REPORT=true', 'setting:SYSTEM.MAIN_MENU.ADMIN.LIST:ADMIN_REPORT=false'];
+const AUDIT_CASES = ['role:ADMIN', 'role:AUDITOR', 'role:other'];
+
 const EXPECTED = `# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks
 
-A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. Under \`empty tests\`, a screen or call gets one set for each open mark and a story one set: an empty test for each test format in the config, with the tags already in its title and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.
+A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and for a screen that opens only under a role or a setting the tag of each case under \`cases\` it checks), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. Under \`empty tests\`, a screen or call gets one set for each open mark, a screen one more for each case with no tests, and a story one set: an empty test for each test format in the config, with the tags already in its title and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.
 
 Source files are under \`client/src\`.
 
@@ -48,10 +52,17 @@ Source files are under \`client/src\`.
 - access: needs a role
   - route guard \`isAdminRole(memberRole)\` (role)
   - link from /home#Home at components/Home.js:17, guard \`memberRole === 'ADMIN'\` (role)
+- cases (a test of one carries its tag with \`@screen:/admin/member#AdminMember\`):
+  - \`@role:ADMIN\` opens for this role — tests: ui pass 1
+  - \`@role:other\` blocked for a role that does not open it, named in the test title — tests: ui pass 1
+  - in no case — tests: ui fail 1, ui pass 1, api pass 1
 - calls:
   - GET:/api/v1/member/list — no tests
 - tests:
   - ui fail — admin @screen:/admin/member#AdminMember › lists members — home.spec.ts:11 (chromium)
+  - ui pass — lists members for an admin — access.spec.ts:3 (chromium)
+  - ui pass — sends a member signed in as MEMBER back home — access.spec.ts:8 (chromium)
+  - ui pass — lists members for an owner — access.spec.ts:23 (chromium)
   - api pass — Help service › links the member page @screen:/admin/member#AdminMember — com.example.help.HelpServiceTest
 ${emptyTests(['@screen:/admin/member#AdminMember', 'screen_admin_member_AdminMember'])}
 
@@ -63,12 +74,20 @@ ${emptyTests(['@screen:/admin/member#AdminMember', 'screen_admin_member_AdminMem
 - access: needs a setting
   - link from /document/:id#DocumentDetail at components/DocumentDetail.js:20, guard \`helpEnabled\` (setting)
   - link from /signin#SignIn at components/SignIn.js:8, guard \`globalSettings.SYSTEM.HELP_LINK_ENABLED\` through openHelp (setting)
+- cases (a test of one carries its tag with \`@screen:/help#Help\`):
+  - \`@setting:SYSTEM.HELP_LINK_ENABLED=true\` opens with the setting condition met — tests: ui fail 1
+  - \`@setting:SYSTEM.HELP_LINK_ENABLED=false\` blocked with the setting condition not met — no tests
+  - in no case — tests: ui pass 1, api fail 1, code pending 1
 - calls: none
 - tests:
   - ui pass — help link opens help @screen:/signin#SignIn @screen:/help#Help — sign-in.spec.ts:5 (chromium)
+  - ui fail — opens help from the sign-in page while the help link is on — access.spec.ts:13 (chromium)
   - api fail — Help service › loads the help index @screen:/help#Help @depth:e2e — com.example.help.HelpServiceTest
   - code pending — searches help @screen:/help#Help — /work/app/src/home/home.test.js:17
-${emptyTests(['@screen:/help#Help @depth:api', 'screen_help_Help_depth_api'])}
+${emptyTests(
+  ['@screen:/help#Help @depth:api', 'screen_help_Help_depth_api'],
+  ['@screen:/help#Help @setting:SYSTEM.HELP_LINK_ENABLED=false', 'screen_help_Help_setting_SYSTEM_HELP_LINK_ENABLED_false'],
+)}
 
 ## /home#Home
 
@@ -82,6 +101,7 @@ ${emptyTests(['@screen:/help#Help @depth:api', 'screen_help_Help_depth_api'])}
 - tests:
   - ui pass — shows the document list @screen:/home#Home — home.spec.ts:3 (chromium)
   - ui pass — shows the document list @screen:/home#Home — home.spec.ts:3 (firefox)
+  - ui pass — shows the home page to an admin — access.spec.ts:28 (chromium)
   - api pass — Home service @screen:/home#Home › lists recent documents — com.example.home.HomeServiceTest
   - api pending — Home service @screen:/home#Home › hides archived documents — com.example.home.HomeServiceTest
   - render fail — Home @screen:/home#Home › filters › keeps the draft filter @depth:render — /work/app/src/home/home.test.js:9
@@ -96,9 +116,17 @@ ${emptyTests(['@screen:/home#Home @depth:data', 'screen_home_Home_depth_data'])}
 - component: components/LabResult.js, route at Routes.js:45
 - access: needs a setting
   - link from /lab#Lab at components/Lab.js:14, no guard — /lab#Lab itself needs a setting
+- cases (a test of one carries its tag with \`@screen:/lab/result#LabResult\`):
+  - \`@setting:SYSTEM.LAB_ENABLED=true\` opens with the setting condition met — no tests
+  - \`@setting:SYSTEM.LAB_ENABLED=false\` blocked with the setting condition not met — no tests
+  - in no case — no tests
 - calls: none
 - tests: none
-${emptyTests(['@screen:/lab/result#LabResult', 'screen_lab_result_LabResult'])}
+${emptyTests(
+  ['@screen:/lab/result#LabResult', 'screen_lab_result_LabResult'],
+  ['@screen:/lab/result#LabResult @setting:SYSTEM.LAB_ENABLED=true', 'screen_lab_result_LabResult_setting_SYSTEM_LAB_ENABLED_true'],
+  ['@screen:/lab/result#LabResult @setting:SYSTEM.LAB_ENABLED=false', 'screen_lab_result_LabResult_setting_SYSTEM_LAB_ENABLED_false'],
+)}
 
 # API calls
 
@@ -119,7 +147,7 @@ test('the task list holds the needs-more and missing marks of the fake client, l
   });
 });
 
-const HOME_TESTS = 'tests: ui pass 2, api pass 1, api pending 1, render fail 1, code pass 1, data fail 1';
+const HOME_TESTS = 'tests: ui pass 3, api pass 1, api pending 1, render fail 1, code pass 1, data fail 1';
 
 const EXPECTED_STORIES = `
 # Stories
@@ -158,7 +186,7 @@ ${emptyTests(['@story:change-settings @screen:/home#Home', 'story_change_setting
      - to /home#Home: open at components/SignIn.js:12
   2. /home#Home — ${HOME_TESTS}
      - to /help#Help: no link
-  3. /help#Help — tests: ui pass 1, api fail 1, code pending 1
+  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1
 - reach: unreachable, no link at 1 step
 - preconditions: none where links were found
 ${emptyTests(['@story:help-from-home @screen:/signin#SignIn @screen:/home#Home @screen:/help#Help', 'story_help_from_home'])}
@@ -177,7 +205,7 @@ ${emptyTests(['@story:help-from-home @screen:/signin#SignIn @screen:/home#Home @
 - screens:
   1. /home#Home — ${HOME_TESTS}
      - to /lab#Lab: conditioned at components/Home.js:19
-  2. /lab#Lab — tests: ui pending 1, code pending 1
+  2. /lab#Lab — tests: ui pending 1, ui pass 2, code pending 1
      - to /lab/result#LabResult: open at components/Lab.js:14
   3. /lab/result#LabResult — no tests
 - reach: reachable
@@ -344,7 +372,7 @@ test('an empty test from the task list, filled in with its title tags kept, atta
       const section = tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0];
       for (const [, format, code] of section.matchAll(/^ {2}- (playwright|junit|vitest|verdict): `(.*)`$/gm)) copied[format].push(fillIn(code));
     }
-    assert.deepEqual(Object.values(copied).map((c) => c.length), [3, 3, 3, 3]);
+    assert.deepEqual(Object.values(copied).map((c) => c.length), [4, 4, 4, 4]);
     assert.doesNotMatch(Object.values(copied).flat().join('\n'), /\.fixme|\.todo|@Disabled|<verdict>/);
     const titles = (format) => copied[format].map((code) => JSON.parse(code.match(/"(?:[^"\\]|\\.)*"/)[0]));
     fs.writeFileSync(path.join(copy, 'results/playwright/filled.json'), JSON.stringify({
@@ -358,9 +386,15 @@ test('an empty test from the task list, filled in with its title tags kept, atta
     cli('rebuild');
 
     const { nodes, stories } = JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8'));
-    const filled = (tests) => tests.filter((t) => t.source.includes('filled')).map((t) => [t.format, t.depth, ...(t.options ? [t.options] : [])]);
+    const filled = (tests) => tests.filter((t) => t.source.includes('filled')).map((t) => [t.format, t.depth, ...(t.options ? [t.options] : []), ...(t.cases ? [t.cases] : [])]);
     const formats = ['playwright', 'junit', 'vitest', 'verdict'];
-    assert.deepEqual(filled(nodes['/help#Help']), formats.map((f) => [f, 'api']));
+    const helpOff = ['setting:SYSTEM.HELP_LINK_ENABLED=false'];
+    assert.deepEqual(filled(nodes['/help#Help']), [
+      ['playwright', 'api'], ['playwright', 'ui', helpOff],
+      ['junit', 'api'], ['junit', 'api', helpOff],
+      ['vitest', 'api'], ['vitest', 'code', helpOff],
+      ['verdict', 'api'], ['verdict', 'api', helpOff],
+    ]);
     assert.deepEqual(filled(nodes['POST:/api/v1/report/export']), formats.map((f) => [f, 'output', [{ key: 'withHistory', value: true }]]));
     const storyDepths = [['playwright', 'ui'], ['junit', 'api'], ['vitest', 'code'], ['verdict', 'api']];
     assert.deepEqual(filled(stories['run-lab']), storyDepths);
@@ -567,7 +601,7 @@ test('a call line in the task list names the on/off options of its request body,
         '    - weekly=false — no tests',
         '    - no option tag — no tests',
         '- tests: none',
-        emptyTests(['@screen:/admin/report#AdminReport', 'screen_admin_report_AdminReport']),
+        emptyTests(...withCases('@screen:/admin/report#AdminReport', 'screen_admin_report_AdminReport', REPORT_CASES)),
         '',
       ].join('\n'),
     );
@@ -739,7 +773,7 @@ test('a test whose option tags name only options this screen does not send count
         '    - withAttachments=false — no tests',
         '    - no option tag — tests: ui pass 2',
         '- tests: none',
-        emptyTests(['@screen:/admin/audit#AdminAudit', 'screen_admin_audit_AdminAudit']),
+        emptyTests(...withCases('@screen:/admin/audit#AdminAudit', 'screen_admin_audit_AdminAudit', AUDIT_CASES)),
         '',
       ].join('\n'),
     );

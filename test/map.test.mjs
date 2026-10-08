@@ -548,6 +548,73 @@ test('a guard keeps its own const declarations when another component in the fil
   assert.deepEqual(fromBanner.flatMap((l) => l.guards), []);
 });
 
+const ROLE_IDENTIFIERS = '"roleIdentifiers": [\n    "memberRole",\n    "session[\'member.role\']"\n  ],';
+const withRoleGuards = (roleGuards) => ['config.json', ROLE_IDENTIFIERS, `${ROLE_IDENTIFIERS}\n  "roleGuards": ${JSON.stringify(roleGuards)},`];
+
+test('the roles written for a guard in roleGuards are its roles wherever the guard is, in place of what the source shows', async () => {
+  const map = await buildEditedCopy([withRoleGuards({ isAdmin: ['member:OWNER', 'member:ADMIN'] })]);
+  const group = screen(map, '/admin/group#AdminGroup').access;
+  assert.deepEqual(roleGuards(group), [['isAdmin', ['member:ADMIN', 'member:OWNER']], ['isAdmin', ['member:ADMIN', 'member:OWNER']]]);
+  assert.deepEqual([group.roleValues, group.unreadableRoleGuards], [['member:ADMIN', 'member:OWNER'], []]);
+  assert.deepEqual(screen(map, '/admin/member#AdminMember').access.roleValues, ['ADMIN']);
+  assert.deepEqual(map.unknownRoleGuards, []);
+});
+
+test('a roleGuards guard that no route or link guards with a role is listed as unknown', async () => {
+  const map = await buildEditedCopy([withRoleGuards({ 'globalSettings.SYSTEM.LAB_ENABLED': ['ADMIN'], 'menuPolicy.canAccessTrash': ['ADMIN'], isAdmin: ['ADMIN'] })]);
+  assert.deepEqual(map.unknownRoleGuards, ['globalSettings.SYSTEM.LAB_ENABLED', 'menuPolicy.canAccessTrash']);
+  assert.ok(!('roleValues' in screen(map, '/lab#Lab').access));
+  assert.ok(!('unknownRoleGuards' in (await buildFixture())));
+});
+
+test('a roleGuards guard that only guards a redirect is listed as unknown', async () => {
+  const map = await buildEditedCopy([
+    withRoleGuards({ "memberRole === 'OWNER'": ['member:OWNER'] }),
+    ['client/src/Routes.js', '      <Redirect to={Option.ROUTE_PATH.SIGN_IN} />', "      {memberRole === 'OWNER' && <Redirect to={Option.ROUTE_PATH.HOME} />}\n      <Redirect to={Option.ROUTE_PATH.SIGN_IN} />"],
+  ]);
+  assert.deepEqual(map.unknownRoleGuards, ["memberRole === 'OWNER'"]);
+});
+
+test('a roleGuards guard on a link from a screen to itself still counts as guarding a link', async () => {
+  const audit = "{session['member.role'] === 'AUDITOR' && <Link to={Option.ROUTE_PATH.ADMIN_AUDIT}>Audit</Link>}";
+  const map = await buildEditedCopy([
+    withRoleGuards({ "memberRole === 'OWNER'": ['member:OWNER'] }),
+    ['client/src/components/Home.js', audit, `${audit}\n      {memberRole === 'OWNER' && <Link to={Option.ROUTE_PATH.HOME}>Home</Link>}`],
+  ]);
+  assert.ok(screen(map, '/home#Home').links.some((l) => l.guards.includes("memberRole === 'OWNER'")));
+  assert.deepEqual(map.unknownRoleGuards, []);
+});
+
+test('when roles from roleGuards and roles read from the source leave a screen no role, the guards missing from roleGuards are unreadable', async () => {
+  const map = await buildEditedCopy([withRoleGuards({ 'isAdminRole(memberRole)': ['member:ADMIN'] })]);
+  const member = screen(map, '/admin/member#AdminMember').access;
+  assert.equal(member.roleValues, null);
+  assert.deepEqual(member.unreadableRoleGuards, ["memberRole === 'ADMIN'"]);
+});
+
+test('when a screen also has an unreadable role guard, a readable guard missing from roleGuards is not listed as unreadable', async () => {
+  const audit = "{session['member.role'] === 'AUDITOR' && <Link to={Option.ROUTE_PATH.ADMIN_AUDIT}>Audit</Link>}";
+  const map = await buildEditedCopy([
+    withRoleGuards({ 'canAudit(memberRole)': ['member:AUDITOR'] }),
+    ['client/src/components/Home.js', audit, `${audit}\n      {canAudit(memberRole) && <Link to={Option.ROUTE_PATH.ADMIN_AUDIT}>Audit</Link>}\n      {hasSeat(memberRole) && <Link to={Option.ROUTE_PATH.ADMIN_AUDIT}>Audit</Link>}`],
+  ]);
+  const access = screen(map, '/admin/audit#AdminAudit').access;
+  assert.equal(access.roleValues, null);
+  assert.deepEqual(access.unreadableRoleGuards, ['hasSeat(memberRole)']);
+});
+
+test('roleGuards lists each role once', async () => {
+  const map = await buildEditedCopy([withRoleGuards({ isAdmin: ['member:OWNER', 'member:ADMIN', 'member:OWNER'] })]);
+  assert.deepEqual(screen(map, '/admin/group#AdminGroup').access.roleValues, ['member:ADMIN', 'member:OWNER']);
+  assert.deepEqual(roleGuards(screen(map, '/admin/group#AdminGroup').access)[0], ['isAdmin', ['member:ADMIN', 'member:OWNER']]);
+});
+
+for (const roleGuards of [['ADMIN'], { isAdmin: 'ADMIN' }, { isAdmin: [] }, { isAdmin: [''] }, { '': ['ADMIN'] }, { isAdmin: ['Super Admin'] }]) {
+  test(`roleGuards ${JSON.stringify(roleGuards)} is refused`, async () => {
+    await assert.rejects(buildEditedCopy([withRoleGuards(roleGuards)]), (err) => err.message.startsWith('roleGuards must map role guards'));
+  });
+}
+
 test('a screen whose route and links allow no role in common has no role values', async () => {
   const map = await buildEditedCopy([['client/src/Routes.js', '{isAdminRole(memberRole) && <Route path={Option.ROUTE_PATH.ADMIN_MEMBER}', "{memberRole === 'OWNER' && <Route path={Option.ROUTE_PATH.ADMIN_MEMBER}"]]);
   const member = screen(map, '/admin/member#AdminMember').access;

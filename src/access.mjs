@@ -289,7 +289,9 @@ function settle(targets, values, compute) {
 
 export function screenAccess(screens, redirects, config, guardInits, constants, guardSettings) {
   const kindsOf = guardKinds(config, guardInits);
-  const rolesOf = roleReader(config, guardInits, constants);
+  const readRoles = roleReader(config, guardInits, constants);
+  const configured = config.roleGuards ?? {};
+  const rolesOf = (guard, file) => (Object.hasOwn(configured, guard) ? [...configured[guard]] : readRoles(guard, file));
   const describe = (guards, file, via) =>
     guards.map((guard) => {
       const kinds = kindsOf(guard, file);
@@ -407,7 +409,9 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
   const roleAccess = (i) => {
     if (!restricted[i] || !kinds[i].has('role')) return {};
     const guards = [...route[i], ...(onlyBlockedLinks(i) ? incoming[i].flatMap((l) => l.guards) : [])];
-    const unreadable = roleGuards(guards).filter((g) => !g.roles).map((g) => g.guard);
+    const roleOnes = roleGuards(guards);
+    const mixed = values[i] === null && roleOnes.every((g) => g.roles) && roleOnes.some((g) => Object.hasOwn(configured, g.guard));
+    const unreadable = roleOnes.filter((g) => !g.roles || (mixed && !Object.hasOwn(configured, g.guard))).map((g) => g.guard);
     return { roleValues: values[i], unreadableRoleGuards: [...new Set(unreadable)].sort() };
   };
 
@@ -446,5 +450,32 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
     return { restricted: restricted[i], kinds: shownKinds[i], route: route[i], links, ...roleAccess(i), ...settings };
   });
   const entries = starts.map((i) => ({ screen: screens[i].id, reasons: reasons[i] }));
-  return { access, entries, unknownEntryPaths, linkConditions };
+  const guarding = [...route.flat(), ...linkConditions.flat(2)];
+  const usedRoleGuards = new Set(roleGuards(guarding).map((g) => g.guard));
+  const unknownRoleGuards = Object.keys(configured).filter((g) => !usedRoleGuards.has(g)).sort();
+  return { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions };
+}
+
+const caseName = (need) => `${need.path.join('.')}${need.need === 'includes' || need.need === 'equals' ? `:${need.value}` : ''}`;
+const needKey = (need) => JSON.stringify([need.root, need.path, need.need, need.value]);
+
+// 링크로만 들어오는 화면은 모든 링크에 걸린 조건만 화면을 막는다. 조건이 없는 링크는 settings 에 오르지 않는다.
+function requiredNeeds({ settings = [], links }) {
+  const route = settings.filter((s) => s.from === 'route').flatMap((s) => s.needs);
+  const ways = settings.filter((s) => s.from !== 'route');
+  if (!ways.length || ways.length < links.length) return route;
+  return [...route, ...ways[0].needs.filter((n) => ways.every((w) => w.needs.some((m) => needKey(m) === needKey(n))))];
+}
+
+// 설정 케이스의 =true 는 조건을 맞춘 테스트(열림), =false 는 맞추지 않은 테스트(막힘)다. 설정이 꺼져 있어야 열리는 조건이어도 같다.
+export function screenCases(access) {
+  if (!access.restricted) return [];
+  const cases = [];
+  if (access.kinds.includes('role')) {
+    for (const role of access.roleValues ?? []) cases.push({ tag: `role:${role}`, kind: 'role', opens: true });
+    cases.push({ tag: 'role:other', kind: 'role', opens: false });
+  }
+  const names = [...new Set(requiredNeeds(access).map(caseName))].sort();
+  for (const name of names) cases.push({ tag: `setting:${name}=true`, kind: 'setting', opens: true }, { tag: `setting:${name}=false`, kind: 'setting', opens: false });
+  return cases;
 }

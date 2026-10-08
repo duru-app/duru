@@ -23,6 +23,13 @@ test('the agent skill says how to tag a test for an option that changes what ano
   assert.match(SKILL, /`@call:<that other call ID>`, its `@option:<key>=true\|false` and\s+`@depth:output`/);
 });
 
+test('the agent skill says how to tag a test of a role or setting case of a screen', () => {
+  assert.match(SKILL, /`cases`/);
+  assert.match(SKILL, /`@role:other` signs in as a role that does not open it[\s\S]*its title names that role/);
+  assert.match(SKILL, /`@setting:<path>=true` meets that setting condition[\s\S]*`=false` breaks it/);
+  assert.match(SKILL, /a screen one more for each case with no\s+tests/);
+});
+
 test('the agent skill says what an unchecked server match means when there is no server API list', () => {
   assert.match(SKILL, /`unchecked`/);
   assert.match(SKILL, /no call is dead and no screen is a dead screen/);
