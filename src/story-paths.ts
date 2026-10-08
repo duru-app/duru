@@ -1,5 +1,5 @@
 import { linkTargets, unreadableTarget } from './access.ts';
-import { compare } from './config.mjs';
+import { compare } from './config.ts';
 import path from 'node:path';
 import { isScreenList, loadStories, STORY_ID } from './stories.ts';
 

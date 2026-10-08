@@ -1,5 +1,5 @@
-import { lookupConstant, memberChain, UNKNOWN, VARIABLE_SEGMENT } from './client.mjs';
-import { parseRoleEntry } from './config.mjs';
+import { lookupConstant, memberChain, UNKNOWN, VARIABLE_SEGMENT } from './client.ts';
+import { parseRoleEntry } from './config.ts';
 import { parseFragment, plainText } from './parse.ts';
 import { pathParts, type PathPart } from './path-values.ts';
 import type { SettingNeed } from './setting-needs.ts';
@@ -11,23 +11,23 @@ interface AccessConfig {
   entryPaths: string[];
 }
 
-interface GuardInit {
+export interface GuardInit {
   source?: string | null;
-  inits?: { name: string; init: string }[];
+  inits?: { name: string | null; init: string }[];
   helpers?: Map<string, { params: string[]; body: string } | null | undefined>;
   readsSettingsResult?: boolean;
 }
 
 type GuardInits = Map<string, Map<string, GuardInit>>;
 
-interface GuardSetting {
+export interface GuardSetting {
   settings?: SettingNeed[];
   reason?: string;
 }
 
-type GuardSettings = Map<string, Map<string, GuardSetting>>;
+type GuardSettings = Map<string, Map<string, GuardSetting | null>>;
 
-type Constants = Record<string, unknown>;
+export type Constants = Record<string, unknown>;
 
 interface CodeNode {
   type: string;

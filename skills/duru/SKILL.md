@@ -41,7 +41,7 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   name a call duru did not read in the files the route files lead to, a default that differs from another one or
   cannot be compared with it, or a function called in none of those files; tell the user, since the settings
   behind them are missing or their defaults unknown.
-- The command: `duru` when `npm link` put it on the path, otherwise `node <duru checkout>/src/cli.mjs`, on Node
+- The command: `duru` when `npm link` put it on the path, otherwise `node <duru checkout>/src/cli.ts`, on Node
   22.18 or later (23.6 or later on Node 23). A copy of duru installed into `node_modules`, as from a packed `.tgz`,
   stops on its first `.ts` file.
 - The route files: `routesFile` in the config is one route file or a list of them, and duru reads only the files

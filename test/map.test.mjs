@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { screenAccess } from '../src/access.ts';
-import { loadConfig } from '../src/config.mjs';
-import { buildMap } from '../src/map.mjs';
+import { loadConfig } from '../src/config.ts';
+import { buildMap } from '../src/map.ts';
 import { checkStories } from '../src/story-paths.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');

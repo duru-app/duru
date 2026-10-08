@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { acceptCandidate, discardCandidate, storyCandidates } from '../src/candidates.ts';
-import { loadConfig } from '../src/config.mjs';
-import { buildMap } from '../src/map.mjs';
+import { loadConfig } from '../src/config.ts';
+import { buildMap } from '../src/map.ts';
 import { editStory, loadStories } from '../src/stories.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');

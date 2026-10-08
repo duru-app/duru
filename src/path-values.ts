@@ -1,4 +1,4 @@
-import { UNKNOWN } from './client.mjs';
+import { UNKNOWN } from './client.ts';
 
 interface PathVariable {
   name: string;

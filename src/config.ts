@@ -8,19 +8,19 @@ const NAME = '[A-Za-z_$][\\w$]*';
 const IDENTIFIER = new RegExp(`^${NAME}$`);
 const ROLE_MEMBER = new RegExp(`^(${NAME})(?:\\[(?:'([^']*)'|"([^"]*)")\\]|\\.(${NAME}))$`);
 
-export function parseRoleEntry(entry) {
+export function parseRoleEntry(entry: unknown) {
   if (typeof entry === 'string' && IDENTIFIER.test(entry)) return { name: entry };
   const m = typeof entry === 'string' && entry.match(ROLE_MEMBER);
   if (m) return { object: m[1], key: m[2] ?? m[3] ?? m[4] };
   throw new Error(`roleIdentifiers entry ${JSON.stringify(entry)} is neither an identifier (memberRole) nor one member of an object (workspace['member.role'])`);
 }
 
-const isText = (v) => typeof v === 'string' && v.length > 0;
-export const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
-export const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
-const isOneLine = (v) => typeof v === 'string' && /\S/.test(v) && !/[\r\n]/.test(v);
-const isRoutePath = (v) => isText(v) && v.startsWith('/');
-const isWebAddress = (v) => isText(v) && /^https?:\/\/[^/]/.test(v);
+const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+export const isPlainObject = (v: unknown): boolean => typeof v === 'object' && v !== null && !Array.isArray(v);
+export const compare = <T>(a: T, b: T) => (a < b ? -1 : a > b ? 1 : 0);
+const isOneLine = (v: unknown) => typeof v === 'string' && /\S/.test(v) && !/[\r\n]/.test(v);
+const isRoutePath = (v: unknown) => isText(v) && v.startsWith('/');
+const isWebAddress = (v: unknown) => isText(v) && /^https?:\/\/[^/]/.test(v);
 const MOVE_KEYS = ['from', 'to', 'reason'];
 const CALL_LINK_KEYS = ['from', 'to', 'note'];
 const SETTINGS_FUNCTION_KEYS = ['import', 'name', 'root', 'section'];
@@ -28,24 +28,24 @@ const LIST_API_KEYS = ['api', 'list', 'value', 'method', 'body'];
 const ISSUING_API_KEYS = ['api', 'method', 'header', 'keyEnv', 'body', 'value'];
 const HEADER_EXAMPLE = '{ "Authorization": "Bearer {token}" }';
 
-const isRequest = (v) => isText(v.api) && v.api.startsWith('/') && typeof v.value === 'string'
+const isRequest = (v: Record<string, any>) => isText(v.api) && v.api.startsWith('/') && typeof v.value === 'string'
   && (v.method === undefined || /^[A-Z]+$/.test(v.method))
   && (v.body === undefined || (v.method ?? 'GET') !== 'GET');
-const isListApi = (v) => isPlainObject(v) && Object.keys(v).every((k) => LIST_API_KEYS.includes(k)) && isRequest(v) && typeof v.list === 'string';
-const isIssuingApi = (v) => isPlainObject(v) && Object.keys(v).every((k) => ISSUING_API_KEYS.includes(k)) && isRequest(v) && isText(v.keyEnv)
-  && isPlainObject(v.header) && Object.values(v.header).every(isText) && Object.values(v.header).some((h) => h.includes('{key}'));
+const isListApi = (v: any) => isPlainObject(v) && Object.keys(v).every((k) => LIST_API_KEYS.includes(k)) && isRequest(v) && typeof v.list === 'string';
+const isIssuingApi = (v: any) => isPlainObject(v) && Object.keys(v).every((k) => ISSUING_API_KEYS.includes(k)) && isRequest(v) && isText(v.keyEnv)
+  && isPlainObject(v.header) && Object.values(v.header).every(isText) && Object.values(v.header).some((h) => (h as string).includes('{key}'));
 
-function pathValuesSettings(pathValues) {
+function pathValuesSettings(pathValues: any) {
   if (!isPlainObject(pathValues)) {
     throw new Error(`app.pathValues must map route paths to their path variables, such as { "/document/:tab": { "tab": "draft" } }, not ${JSON.stringify(pathValues)}`);
   }
-  for (const [routePath, variables] of Object.entries(pathValues)) {
+  for (const [routePath, variables] of Object.entries<any>(pathValues)) {
     const at = `app.pathValues[${JSON.stringify(routePath)}]`;
     if (!routePath.startsWith('/')) throw new Error(`app.pathValues key ${JSON.stringify(routePath)} must be a route path as in the map, starting with "/"`);
     if (!isPlainObject(variables)) {
       throw new Error(`${at} must map variable names to values, such as { "tab": "draft" }, not ${JSON.stringify(variables)}`);
     }
-    for (const [name, value] of Object.entries(variables)) {
+    for (const [name, value] of Object.entries<any>(variables)) {
       if (name === '?') throw new Error(`${at} has the key "?" without a query parameter name, such as "?token"`);
       if (isText(value) || isListApi(value) || isIssuingApi(value)) continue;
       // 발급 API 를 잘못 적은 값에는 header 에 키가 그대로 들어 있을 수 있어, 목록 API 에 없는 이름이 하나라도 있으면 값을 메시지에 싣지 않는다.
@@ -59,13 +59,13 @@ function pathValuesSettings(pathValues) {
   return pathValues;
 }
 
-const isAccount = (v) => isPlainObject(v) && isText(v.id) && isText(v.passwordEnv) && !('password' in v);
+const isAccount = (v: any) => isPlainObject(v) && isText(v.id) && isText(v.passwordEnv) && !('password' in v);
 const ACCOUNT = '{ "id", "passwordEnv" } with the name of an environment variable that holds the password, never the password itself';
 
 const DOTTED_NAME = new RegExp(`^${NAME}(?:\\.${NAME})*$`);
 const ARGUMENT_PLACE = new RegExp(`^\\d+(?:\\.${NAME})*$`);
 
-function settingsFileOf(file, raw) {
+function settingsFileOf(file: any, raw: any) {
   if (file === undefined) return null;
   const { path: filePath, global, root, merged } = isPlainObject(file) ? file : {};
   if (!isText(filePath) || !filePath.startsWith('/') || !isText(global) || !DOTTED_NAME.test(global) || !isText(root)
@@ -79,16 +79,16 @@ function settingsFileOf(file, raw) {
   return { path: filePath, global, root, merged };
 }
 
-function appSettings(app, at, raw) {
+function appSettings(app: any, at: (p: string) => string, raw: any) {
   // login · account · roles 에는 비밀번호가 잘못 들어 있을 수 있어 값을 메시지에 싣지 않는다.
-  const fail = (key, expected) => {
+  const fail = (key: string, expected: string) => {
     const shown = ['login', 'account', 'roles'].includes(key.split('.')[0]) ? '' : `, not ${JSON.stringify(app[key])}`;
     throw new Error(`app.${key} must be ${expected}${shown}`);
   };
   if (!isPlainObject(app)) throw new Error(`app must be an object, not ${JSON.stringify(app)}`);
   if (!isText(app.files)) fail('files', "the app's build folder or the address it is deployed at");
   if (!isWebAddress(app.server)) fail('server', `the address of the server the app's API requests go to, such as "http://localhost:8080"`);
-  if (!Array.isArray(app.apiPaths) || !app.apiPaths.length || !app.apiPaths.every((p) => isText(p) && p.startsWith('/'))) {
+  if (!Array.isArray(app.apiPaths) || !app.apiPaths.length || !app.apiPaths.every((p: unknown) => isText(p) && p.startsWith('/'))) {
     fail('apiPaths', 'a list of path prefixes sent to the server, such as ["/api/"]');
   }
   const { login, account } = app;
@@ -110,7 +110,7 @@ function appSettings(app, at, raw) {
     fail('signedOutPaths', 'a list of route paths shown signed out, such as ["/signin"]');
   }
   const pathValues = pathValuesSettings(app.pathValues ?? {});
-  if (!login.header && Object.values(pathValues).some((variables) => Object.values(variables).some(isListApi))) {
+  if (!login.header && Object.values<any>(pathValues).some((variables) => Object.values(variables).some(isListApi))) {
     throw new Error(`app.login.header is needed to call the list APIs in app.pathValues with the login token, such as ${HEADER_EXAMPLE}`);
   }
   return { ...app, roles, signedOutPaths, pathValues, settingsFile: settingsFileOf(app.settingsFile, raw), files: isWebAddress(app.files) ? app.files : at(app.files) };
@@ -118,18 +118,18 @@ function appSettings(app, at, raw) {
 
 export const ROUTES_FILE = 'a route file as a path from srcRoot, or a list of them with each file once, such as "Routes.js" or ["Routes.js", "admin/Routes.js"]';
 
-function routeFilesOf(value, srcRoot) {
+function routeFilesOf(value: unknown, srcRoot: string) {
   const given = Array.isArray(value) ? value : [value];
   const files = given.map((f) => (isText(f) ? path.relative(srcRoot, path.join(srcRoot, f)) : null));
   if (!files.length || files.includes(null) || new Set(files).size < files.length) throw new Error(`routesFile must be ${ROUTES_FILE}, not ${JSON.stringify(value)}`);
   return files;
 }
 
-export function loadConfig(configPath) {
+export function loadConfig(configPath: string) {
   const configDir = path.dirname(path.resolve(configPath));
   const { routesFile, ...raw } = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  const at = (p) => path.resolve(configDir, p);
-  const tests = (raw.tests ?? []).map((t) => {
+  const at = (p: string) => path.resolve(configDir, p);
+  const tests = (raw.tests ?? []).map((t: any) => {
     if (!TEST_FORMATS.includes(t.format)) throw new Error(`unknown test format "${t.format}" (expected one of ${TEST_FORMATS.join(', ')})`);
     if (!DEPTHS.includes(t.depth)) throw new Error(`unknown depth "${t.depth}" for ${t.path} (expected one of ${DEPTHS.join(', ')})`);
     return { ...t, path: at(t.path) };
@@ -140,7 +140,7 @@ export function loadConfig(configPath) {
     throw new Error(`bodyArgKeys must be a list of property names, such as ["data"], not ${JSON.stringify(raw.bodyArgKeys)}`);
   }
   const bodyOptions = raw.bodyOptions ?? {};
-  const isKeyList = (keys) => Array.isArray(keys) && keys.every((k) => typeof k === 'string');
+  const isKeyList = (keys: unknown) => Array.isArray(keys) && keys.every((k) => typeof k === 'string');
   if (typeof bodyOptions !== 'object' || Array.isArray(bodyOptions) || !Object.values(bodyOptions).every(isKeyList)) {
     throw new Error(`bodyOptions must map call IDs to lists of body keys, such as {"POST:/api/v1/report/export": ["withHistory"]}, not ${JSON.stringify(raw.bodyOptions)}`);
   }
@@ -153,16 +153,16 @@ export function loadConfig(configPath) {
     throw new Error(`roleGuards must map role guards as in the map to the roles that pass them, such as { "menuPolicy.canAccessAdminRoutes": ["member:ADMINISTRATOR"] }, with no spaces in a role, not ${JSON.stringify(raw.roleGuards)}`);
   }
   const moves = raw.moves ?? [];
-  const isMove = (m) => isPlainObject(m) && Object.keys(m).every((k) => MOVE_KEYS.includes(k)) && isRoutePath(m.from) && isRoutePath(m.to) && isOneLine(m.reason);
+  const isMove = (m: any) => isPlainObject(m) && Object.keys(m).every((k) => MOVE_KEYS.includes(k)) && isRoutePath(m.from) && isRoutePath(m.to) && isOneLine(m.reason);
   if (!Array.isArray(moves) || !moves.every(isMove)) {
     throw new Error(`moves must be a list of { "from", "to", "reason" }, with the reason on one line, for screen moves the code shows no link for, with route paths as in the map, such as [{ "from": "/signin", "to": "/user-home", "reason": "로그인 뒤" }], not ${JSON.stringify(raw.moves)}`);
   }
   const callLinks = raw.callLinks ?? [];
-  const isCallLink = (l) => isPlainObject(l) && Object.keys(l).every((k) => CALL_LINK_KEYS.includes(k)) && isText(l.from) && isText(l.to) && l.from !== l.to && isOneLine(l.note);
+  const isCallLink = (l: any) => isPlainObject(l) && Object.keys(l).every((k) => CALL_LINK_KEYS.includes(k)) && isText(l.from) && isText(l.to) && l.from !== l.to && isOneLine(l.note);
   if (!Array.isArray(callLinks) || !callLinks.every(isCallLink)) {
     throw new Error(`callLinks must be a list of { "from", "to", "note" }, with the note on one line, joining a call whose on/off options change what another call gives back ("from") to that other call ("to"), with two different call IDs as in the map, such as [{ "from": "POST:/api/v1/report/export", "to": "GET:/api/v1/report/{reportId}/file", "note": "내보내기가 만든 파일을 내려받는다" }], not ${JSON.stringify(raw.callLinks)}`);
   }
-  const settingsDefaults = raw.settingsDefaults ?? {};
+  const settingsDefaults: Record<string, any> = raw.settingsDefaults ?? {};
   for (const [root, entry] of Object.entries(settingsDefaults)) {
     if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
     const fromFile = entry?.file !== undefined || entry?.const !== undefined;
@@ -182,7 +182,7 @@ export function loadConfig(configPath) {
     if (typeof entry?.file !== 'string' || typeof entry?.const !== 'string') throw new Error(`settingsDefaults.${root} needs "file" and "const", or "constant"`);
   }
   const settingsFunctions = raw.settingsFunctions ?? [];
-  const isSettingsFunction = (f) => isPlainObject(f) && Object.keys(f).every((k) => SETTINGS_FUNCTION_KEYS.includes(k))
+  const isSettingsFunction = (f: any) => isPlainObject(f) && Object.keys(f).every((k) => SETTINGS_FUNCTION_KEYS.includes(k))
     && isText(f.import) && isText(f.name) && (f.name === 'default' || IDENTIFIER.test(f.name)) && isText(f.root) && isText(f.section) && !f.section.includes('.');
   if (!Array.isArray(settingsFunctions) || !settingsFunctions.every(isSettingsFunction)) {
     throw new Error('settingsFunctions must be a list of { "import", "name", "root", "section" }: the import path and name the app imports a function returning settings by, '
@@ -211,7 +211,7 @@ export function loadConfig(configPath) {
   if (twice) throw new Error(`${twice} is in both apiModules and calledApiModules; list it in one of them`);
   const requestFunction = raw.requestFunction ?? null;
   const { import: from, name, method, url, body, object, ...extraKeys } = isPlainObject(requestFunction) ? requestFunction : {};
-  const isArgumentPlace = (v) => typeof v === 'string' && ARGUMENT_PLACE.test(v);
+  const isArgumentPlace = (v: unknown) => typeof v === 'string' && ARGUMENT_PLACE.test(v);
   const places = object === true ? method === undefined && url === undefined && body === undefined
     : (object === undefined || object === false) && isArgumentPlace(url) && [method, body].every((v) => v === undefined || isArgumentPlace(v));
   if (requestFunction !== null && !(isText(from) && isText(name) && (name === 'default' || IDENTIFIER.test(name)) && places && !Object.keys(extraKeys).length)) {
@@ -238,7 +238,7 @@ export function loadConfig(configPath) {
     tsconfig,
     aliases: tsconfig && loadAliases(tsconfig),
     roleIdentifiers: raw.roleIdentifiers ?? [],
-    roleGuards: Object.fromEntries(Object.entries(roleGuards).map(([guard, roles]) => [guard, [...new Set(roles)].sort()])),
+    roleGuards: Object.fromEntries(Object.entries<any>(roleGuards).map(([guard, roles]) => [guard, [...new Set(roles)].sort()])),
     calledApiModules,
     requestFunction,
     bodyArgKeys,

@@ -618,7 +618,8 @@ therefore `^22.18.0 || >=23.6.0`. A `.ts` file imports others with their `.ts` e
 (`allowImportingTsExtensions`), and syntax that cannot just be dropped, such as `enum`, is refused by
 `erasableSyntaxOnly`. `allowJs` lets a `.ts` file import an `.mjs` one; `checkJs` stays off, so `.mjs` files are
 only parsed, and a function from one is typed loosely: calling it with an argument missing is not reported until
-it is moved. Not covered: Node does not drop types from files under `node_modules`; duru linked there from its
+it is moved. Every file under `src` is `.ts` now; the test files are still `.mjs`, so `allowJs` keeps them in the
+type check's program, where they are parsed but not checked. Not covered: Node does not drop types from files under `node_modules`; duru linked there from its
 clone runs, since Node follows the link, but a copy installed from a packed `.tgz` stops with
 `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`. The type check adds about 3 s to `npm test`.
 Measured on main 38f87f3 against the branch: the into-sign 1.5.0 and 2.0.0 maps and the two example maps are

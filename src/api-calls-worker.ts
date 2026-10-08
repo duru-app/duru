@@ -11,7 +11,7 @@ declare global {
   var __duruFunction: unknown;
 }
 
-interface WorkerData {
+export interface WorkerData {
   modules: { file: string; url: string }[];
   skip: string[];
   request: { method: string | null; url: string; body: string | null };
@@ -21,7 +21,7 @@ interface WorkerData {
   scheme: string;
 }
 
-interface SentRequest {
+export interface SentRequest {
   method: string | null;
   url: string | null;
   body: boolean | undefined;
@@ -32,7 +32,7 @@ interface SentRecord {
   flooded: boolean;
 }
 
-interface AttemptError {
+export interface AttemptError {
   message: string;
   stack: string;
   late?: boolean;
@@ -43,7 +43,7 @@ interface Attempt {
   error: AttemptError | null;
 }
 
-interface FunctionLocation {
+export interface FunctionLocation {
   url: string | null;
   line: number;
   column: number;

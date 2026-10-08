@@ -4,11 +4,11 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadConfig } from '../src/config.mjs';
-import { buildMap } from '../src/map.mjs';
+import { loadConfig } from '../src/config.ts';
+import { buildMap } from '../src/map.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/ts-app');
-const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
+const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 const READ_SETTINGS = { import: './settings/readSettings', name: 'readSettings', root: 'globalSettings', section: 'SYSTEM' };
 
 const FILES = {

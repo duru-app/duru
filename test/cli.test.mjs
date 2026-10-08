@@ -7,7 +7,7 @@ import path from 'node:path';
 import { addJudgment } from '../src/judgments.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
-const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
+const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 
 test('rebuild writes map.json and tests.json to the configured output folder and prints a summary', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));

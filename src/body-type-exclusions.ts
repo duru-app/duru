@@ -1,4 +1,4 @@
-import { compare } from './config.mjs';
+import { compare } from './config.ts';
 
 export interface RemovedField {
   call: string;

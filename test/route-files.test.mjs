@@ -5,15 +5,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
-import { loadConfig } from '../src/config.mjs';
-import { buildMap } from '../src/map.mjs';
+import { loadConfig } from '../src/config.ts';
+import { buildMap } from '../src/map.ts';
 import { startReviewServer } from '../src/review.ts';
 import { checkStories } from '../src/story-paths.ts';
 
 for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete process.env[key];
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
-const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
+const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 
 const SECOND = 'AdminRoutes.js';
 

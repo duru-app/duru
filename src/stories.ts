@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { compare, isPlainObject } from './config.mjs';
+import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 
 interface RawSource {

@@ -30,8 +30,8 @@ a task list hands what was marked to a coding agent.
 npm install
 npm run rebuild -- path/to/project-config.json   # map.json + tests.json
 npm run extract -- path/to/project-config.json   # map.json only
-node src/cli.mjs review path/to/project-config.json [--port 4400]   # review page on 127.0.0.1, task list when it ends
-node src/cli.mjs tasks path/to/project-config.json > tasks.md        # task list for a coding agent
+node src/cli.ts review path/to/project-config.json [--port 4400]   # review page on 127.0.0.1, task list when it ends
+node src/cli.ts tasks path/to/project-config.json > tasks.md        # task list for a coding agent
 npm test
 ```
 

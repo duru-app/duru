@@ -7,7 +7,7 @@ import path from 'node:path';
 import { screenCases } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { acceptCandidate, discardCandidate, storyCandidates } from './candidates.ts';
-import { isPlainObject } from './config.mjs';
+import { isPlainObject } from './config.ts';
 import { buildFlow } from './flow.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
 import { addMark, classifyMarks, loadMarks } from './marks.ts';
@@ -143,7 +143,7 @@ function readBody(req: http.IncomingMessage) {
   });
 }
 
-export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {} }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void } = {}) {
+export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {} }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
   // 없거나 아직 쓰는 중인 맵은 페이지가 요청할 때 알리고, 예전 형식의 맵만 서버를 띄우기 전에 알린다.
   let onDisk: any = null;

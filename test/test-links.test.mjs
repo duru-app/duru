@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { screenCases } from '../src/access.ts';
-import { loadConfig } from '../src/config.mjs';
-import { buildMap } from '../src/map.mjs';
+import { loadConfig } from '../src/config.ts';
+import { buildMap } from '../src/map.ts';
 import { readPlaywright } from '../src/playwright.ts';
 import { linkTests } from '../src/test-links.ts';
 

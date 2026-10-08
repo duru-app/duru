@@ -4,14 +4,14 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadConfig } from '../src/config.mjs';
+import { loadConfig } from '../src/config.ts';
 import { addJudgment } from '../src/judgments.ts';
 import { addMark } from '../src/marks.ts';
 import { reviewData } from '../src/review.ts';
 import { taggingLines } from '../src/tasks.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
-const CLI = path.join(import.meta.dirname, '../src/cli.mjs');
+const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 
 function withFixtureCopy(fn, configPatch = {}) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
