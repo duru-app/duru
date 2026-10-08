@@ -6,7 +6,7 @@ import path from 'node:path';
 import { acceptCandidate, discardCandidate, storyCandidates } from '../src/candidates.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
-import { editStory, loadStories } from '../src/stories.mjs';
+import { editStory, loadStories } from '../src/stories.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const EXAMPLE_STORIES = path.join(FIXTURE, 'example-stories');

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { storyCandidates } from './candidates.mjs';
 import { loadConfig } from './config.mjs';
 import { buildMap } from './map.mjs';
-import { applyJudgments, judgmentFile, loadJudgments } from './judgments.mjs';
+import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
 import { reviewAuthor, startReviewServer } from './review.mjs';
 import { SERVER_NOT_COMPARED } from './server.ts';

@@ -4,8 +4,8 @@ import path from 'node:path';
 import { pathOf, screenFinder } from './address-match.ts';
 import { compare, isPlainObject } from './config.mjs';
 import { jsonFiles } from './json-files.ts';
-import { recordName, writeNewRecord } from './marks.mjs';
-import { addStory, DISCARDED, isDate, isScreenList, isText, loadStories, writableStoriesFolder } from './stories.mjs';
+import { recordName, writeNewRecord } from './marks.ts';
+import { addStory, DISCARDED, isDate, isScreenList, isText, loadStories, writableStoriesFolder } from './stories.ts';
 import { checkStories, linksWithoutConditions, staleMapMessage } from './story-paths.mjs';
 
 const relative = (configDir, file) => path.relative(configDir, file).split(path.sep).join('/');

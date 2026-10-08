@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { screenAccess } from '../src/access.mjs';
+import { screenAccess } from '../src/access.ts';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
 import { checkStories } from '../src/story-paths.mjs';

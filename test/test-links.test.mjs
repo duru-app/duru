@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { screenCases } from '../src/access.mjs';
+import { screenCases } from '../src/access.ts';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
 import { readPlaywright } from '../src/playwright.ts';

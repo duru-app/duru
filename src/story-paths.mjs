@@ -1,7 +1,7 @@
-import { linkTargets, unreadableTarget } from './access.mjs';
+import { linkTargets, unreadableTarget } from './access.ts';
 import { compare } from './config.mjs';
 import path from 'node:path';
-import { isScreenList, loadStories, STORY_ID } from './stories.mjs';
+import { isScreenList, loadStories, STORY_ID } from './stories.ts';
 
 const byPlace = (a, b) => compare(a.file, b.file) || a.line - b.line;
 

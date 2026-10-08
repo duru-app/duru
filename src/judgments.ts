@@ -1,29 +1,83 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileSafe, recordName, writeNewRecord } from './marks.mjs';
+import { fileSafe, recordName, writeNewRecord } from './marks.ts';
 import { compare, isPlainObject } from './config.mjs';
 import { jsonFiles } from './json-files.ts';
 import { withoutTags } from './verdict.ts';
 
 export const JUDGMENT_KINDS = ['discard', 'hand-over', 'undo'];
 
-const isText = (v) => typeof v === 'string' && v.trim().length > 0;
+interface TestRef {
+  source: string;
+  file: string | null;
+  title: string;
+}
+
+interface ResultTest extends TestRef {
+  testFile?: string;
+  format?: string;
+  unmatched?: unknown;
+}
+
+type Referenced = ResultTest & { ref: TestRef };
+type Judged = Referenced & { judgment: Judgment; unconfirmed?: boolean };
+
+export interface Judgment {
+  id: string;
+  test: TestRef;
+  node: string;
+  kind: string;
+  reason: string;
+  author: string;
+  date: string;
+}
+
+interface RawJudgment {
+  test: { source?: unknown; file?: unknown; title?: unknown };
+  node?: unknown;
+  kind: string;
+  reason?: unknown;
+  author?: unknown;
+}
+
+interface NewJudgment {
+  test: TestRef;
+  node: string;
+  kind: string;
+  reason?: string;
+  author: string;
+}
+
+interface Notice {
+  file: string;
+  reason: string;
+}
+
+interface JudgedTests {
+  importers?: Record<string, ResultTest[]>;
+  passed?: Record<string, ResultTest[]>;
+  nodes?: Record<string, ResultTest[]>;
+  untagged?: ResultTest[];
+  stories?: Record<string, ResultTest[]>;
+}
+
+const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 
 // 경로 구분자는 / 로 통일해야 Windows 에서 적은 판단이 다른 OS 에서도 같은 테스트를 가리킨다.
-const slashed = (p) => (typeof p === 'string' ? p.replaceAll('\\', '/') : p);
+const slashed = <T extends string | null>(p: T) => (typeof p === 'string' ? p.replaceAll('\\', '/') : p) as T;
 
 // 줄 번호와 Playwright 프로젝트 이름은 넣지 않는다. 테스트 위에 줄이 늘거나 제목에 태그를 달아도 같은 테스트여야 하기 때문이다.
 // 결과 파일에 적힌 경로는 결과를 만든 컴퓨터마다 다르므로, srcRoot 아래에서 찾은 경로(testFile)가 있으면 그것을 쓴다.
-const reference = ({ source, file, title }) => ({ source: slashed(source), file: slashed(file), title: typeof title === 'string' ? withoutTags(title) : title });
-export const testRef = (t) => reference({ source: t.source, file: t.testFile ?? t.file, title: t.title });
+const reference = ({ source, file, title }: TestRef): TestRef => ({ source: slashed(source), file: slashed(file), title: typeof title === 'string' ? withoutTags(title) : title });
+export const testRef = (t: ResultTest) => reference({ source: t.source, file: t.testFile ?? t.file, title: t.title });
 
-const pairKey = (test, node) => JSON.stringify([test.source, test.file, test.title, node]);
+const pairKey = (test: TestRef, node: string) => JSON.stringify([test.source, test.file, test.title, node]);
 
 // 시간대가 없는 날짜는 읽는 컴퓨터의 시간대로 풀려 순서가 달라지므로, Z 나 ±hh:mm 으로 시간대를 밝힌 날짜만 받는다.
-const hasZonedDate = (v) => typeof v === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/.test(v) && !Number.isNaN(Date.parse(v));
+const hasZonedDate = (v: unknown) => typeof v === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/.test(v) && !Number.isNaN(Date.parse(v));
 
-function problemOf(j) {
+function problemOf(j: RawJudgment) {
   if (!isPlainObject(j)) return 'a judgment must be a JSON object';
   const { test } = j;
   if (!isPlainObject(test) || !isText(test.source) || !(isText(test.file) || test.file === null) || !isText(test.title)) {
@@ -38,16 +92,16 @@ function problemOf(j) {
 }
 
 const SAY = {
-  folder: (message) => `cannot read the folder: ${message}`,
+  folder: (message: string) => `cannot read the folder: ${message}`,
   missing: () => 'the link points to no file',
-  link: (message) => `cannot follow the link: ${message}`,
+  link: (message: string) => `cannot follow the link: ${message}`,
 };
 
 // 읽지 못하는 폴더나 파일, 형식이 틀린 파일은 예외를 던지지 않고 notices 에 담아 돌려준다.
-export function loadJudgments(dir) {
+export function loadJudgments(dir: string): { judgments: Judgment[]; notices: Notice[] } {
   if (!fs.existsSync(dir)) return { judgments: [], notices: [] };
-  const judgments = [];
-  const notices = [];
+  const judgments: Judgment[] = [];
+  const notices: Notice[] = [];
   for (const { file, reason } of jsonFiles(dir, SAY)) {
     if (reason) {
       notices.push({ file, reason });
@@ -57,7 +111,7 @@ export function loadJudgments(dir) {
     try {
       judgment = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
     } catch (err) {
-      notices.push({ file, reason: `not valid JSON: ${err.message}` });
+      notices.push({ file, reason: `not valid JSON: ${(err as Error).message}` });
       continue;
     }
     const problem = problemOf(judgment) ?? (!isText(judgment.id) || !hasZonedDate(judgment.date) ? 'judgment needs an ID and a date with its time zone, like 2026-10-04T01:00:00Z' : null);
@@ -67,9 +121,9 @@ export function loadJudgments(dir) {
   return { judgments, notices };
 }
 
-export const judgmentFile = (judgment) => path.join(fileSafe(judgment.node), recordName(judgment));
+export const judgmentFile = (judgment: Judgment) => path.join(fileSafe(judgment.node), recordName(judgment));
 
-export function addJudgment(dir, { test, node, kind, reason, author }, now = new Date()) {
+export function addJudgment(dir: string, { test, node, kind, reason, author }: NewJudgment, now = new Date()) {
   const judgment = {
     id: crypto.randomUUID(),
     test: isPlainObject(test) ? reference(test) : test,
@@ -86,15 +140,15 @@ export function addJudgment(dir, { test, node, kind, reason, author }, now = new
 }
 
 // 제외한 짝은 테스트가 결과에서 사라지면 어디에도 나오지 않는다.
-export function applyJudgments(tests, judgments) {
-  const latest = new Map();
+export function applyJudgments(tests: JudgedTests, judgments: Judgment[]) {
+  const latest = new Map<string, Judgment>();
   const ordered = [...judgments].sort((a, b) => Date.parse(a.date) - Date.parse(b.date) || compare(a.id, b.id));
   for (const j of ordered) latest.set(pairKey(j.test, j.node), j);
-  const discarded = {};
-  const awaitingTag = {};
-  const found = new Set();
-  const unjudged = (byNode) => {
-    const left = {};
+  const discarded: Record<string, Judged[]> = {};
+  const awaitingTag: Record<string, Judged[]> = {};
+  const found = new Set<string>();
+  const unjudged = (byNode: Record<string, ResultTest[]> | undefined) => {
+    const left: Record<string, Referenced[]> = {};
     for (const [id, list] of Object.entries(byNode ?? {})) {
       for (const t of list) {
         const ref = testRef(t);
@@ -114,14 +168,14 @@ export function applyJudgments(tests, judgments) {
   const passed = unjudged(tests.passed);
   const handOvers = [...latest].filter(([, judgment]) => judgment.kind === 'hand-over');
   if (handOvers.length) for (const [id, list] of Object.entries(tests.nodes ?? {})) for (const t of list) found.add(pairKey(testRef(t), id));
-  const inResults = new Map();
+  const inResults = new Map<string, ResultTest>();
   if (handOvers.length) {
     for (const t of [...(tests.untagged ?? []), ...Object.values(tests.nodes ?? {}).flat(), ...Object.values(tests.stories ?? {}).flat()]) {
       const key = JSON.stringify(testRef(t));
       if (!inResults.has(key) || 'unmatched' in t) inResults.set(key, t);
     }
   }
-  const detachedHandOvers = {};
+  const detachedHandOvers: Record<string, { ref: TestRef; judgment: Judgment }[]> = {};
   for (const [key, judgment] of handOvers) {
     if (found.has(key)) continue;
     const t = inResults.get(JSON.stringify(judgment.test));
