@@ -31,9 +31,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - Settings defaults: `settingsDefaults` gives each settings root either `{ "file", "const" }`, an object literal
   written in a file, or `{ "constant": "<constants name>[.<path>]" }`, the value a `constants` module gives when
   run, for defaults a function builds. duru runs `constants` modules, `.ts` ones after turning them into
-  JavaScript, which needs Node 22.13 or later. When the defaults come from a function the app never calls at
-  load, or that needs arguments, add a small module beside the config that calls it and exports the result, and
-  list it in `constants`.
+  JavaScript. When the defaults come from a function the app never calls at load, or that needs arguments, add a
+  small module beside the config that calls it and exports the result, and list it in `constants`.
 - Settings read through a function: when the app reads its settings from the object a function returns, such as
   `const signing = readSystemSettings({ SIGN_LIST: [] })` and then `signing.SIGN_LIST`, add the function to
   `settingsFunctions` as `{ "import", "name", "root", "section" }`, with the settings root and the key under it
@@ -42,7 +41,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   name a call duru did not read in the files the route files lead to, a default that differs from another one or
   cannot be compared with it, or a function called in none of those files; tell the user, since the settings
   behind them are missing or their defaults unknown.
-- The command: `duru` when it is installed, otherwise `node <duru checkout>/src/cli.mjs`.
+- The command: `duru` when `npm link` put it on the path, otherwise `node <duru checkout>/src/cli.mjs`, on Node
+  22.18 or later (23.6 or later on Node 23). A copy of duru installed into `node_modules`, as from a packed `.tgz`,
+  stops on its first `.ts` file.
 - The route files: `routesFile` in the config is one route file or a list of them, and duru reads only the files
   listed, so an app that splits its routes over several files needs each of them in the list. A screen on the map,
   and the `route at <file>:<line>` in the task list, name the route file the route is written in. When a screen

@@ -53,8 +53,12 @@ test('the agent skill says what the tsconfig item of the config is for and what 
   assert.match(SKILL, /lines starting with `tsconfig import`/);
 });
 
-test('the agent skill says how settings defaults a function builds are given, and the Node version that needs', () => {
+test('the agent skill says how settings defaults a function builds are given', () => {
   assert.match(SKILL, /`\{ "constant": "<constants name>\[\.<path>\]" \}`/);
-  assert.match(SKILL, /Node 22\.13 or later/);
   assert.match(SKILL, /small module beside the config that calls it/);
+});
+
+test('the agent skill gives the Node version duru needs and says a copy installed into node_modules stops', () => {
+  assert.match(SKILL, /Node\s+22\.18\s+or\s+later\s+\(23\.6\s+or\s+later\s+on\s+Node\s+23\)/);
+  assert.match(SKILL, /A\s+copy\s+of\s+duru\s+installed\s+into\s+`node_modules`,\s+as\s+from\s+a\s+packed\s+`\.tgz`,\s+stops\s+on\s+its\s+first\s+`\.ts`\s+file/);
 });
