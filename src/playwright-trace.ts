@@ -1,6 +1,27 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 
+type StepKind = 'visit' | 'assert' | 'interact';
+
+export interface TraceStep {
+  url: string;
+  kind: StepKind;
+}
+
+export interface TraceRequest {
+  method: string;
+  url: string;
+}
+
+export type TraceResult = { reason: string } | { steps: TraceStep[]; requests: TraceRequest[] };
+
+interface TimelineEntry {
+  at: number;
+  page: string;
+  url?: string;
+  kind?: 'assert' | 'interact';
+}
+
 const KNOWN_VERSIONS = [8];
 const ASSERTIONS = new Set(['expect', 'expectScreenshot']);
 const INTERACTIONS = new Set([
@@ -12,11 +33,11 @@ const NOT_THE_APP = /^(about|data|blob|chrome|chrome-error):/;
 const END_OF_DIRECTORY = 0x06054b50;
 const DIRECTORY_ENTRY = 0x02014b50;
 
-function zipEntries(buffer) {
+function zipEntries(buffer: Buffer): Map<string, () => Buffer> {
   let end = buffer.length - 22;
   while (end >= 0 && buffer.readUInt32LE(end) !== END_OF_DIRECTORY) end -= 1;
   if (end < 0) throw new Error('not a zip file');
-  const entries = new Map();
+  const entries = new Map<string, () => Buffer>();
   let at = buffer.readUInt32LE(end + 16);
   for (let i = buffer.readUInt16LE(end + 10); i > 0; i -= 1) {
     if (buffer.readUInt32LE(at) !== DIRECTORY_ENTRY) throw new Error('broken zip directory');
@@ -35,20 +56,20 @@ function zipEntries(buffer) {
   return entries;
 }
 
-const jsonLines = (read) => read().toString('utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
+const jsonLines = (read: () => Buffer) => read().toString('utf8').split('\n').filter(Boolean).map((line: string) => JSON.parse(line));
 
 // 읽지 못하면 { reason } 을 돌려준다.
-export function readTrace(file) {
+export function readTrace(file: string): TraceResult {
   if (!fs.existsSync(file)) return { reason: 'trace 파일이 없습니다' };
-  let events;
-  let network;
+  let events: any[];
+  let network: any[];
   try {
     const entries = zipEntries(fs.readFileSync(file));
-    const named = (ending) => [...entries].filter(([name]) => name.endsWith(ending) && name !== 'test.trace').flatMap(([, read]) => jsonLines(read));
+    const named = (ending: string) => [...entries].filter(([name]) => name.endsWith(ending) && name !== 'test.trace').flatMap(([, read]) => jsonLines(read));
     events = named('.trace');
     network = named('.network');
   } catch (err) {
-    return { reason: `trace 파일을 열지 못했습니다: ${err.message}` };
+    return { reason: `trace 파일을 열지 못했습니다: ${(err as Error).message}` };
   }
   const contexts = events.filter((e) => e.type === 'context-options');
   if (!contexts.length) return { reason: 'trace 파일에서 브라우저 기록을 찾지 못했습니다' };
@@ -58,7 +79,7 @@ export function readTrace(file) {
   const snapshots = new Map(
     events.filter((e) => e.type === 'frame-snapshot' && e.snapshot.isMainFrame).map((e) => [e.snapshot.snapshotName, e.snapshot]),
   );
-  const kindOf = (method) => (ASSERTIONS.has(method) ? 'assert' : INTERACTIONS.has(method) ? 'interact' : null);
+  const kindOf = (method: string) => (ASSERTIONS.has(method) ? 'assert' : INTERACTIONS.has(method) ? 'interact' : null);
   const actions = events.filter((e) => e.type === 'before' && e.pageId);
   if (!snapshots.size && actions.some((a) => a.method === 'goto' || kindOf(a.method))) {
     return { reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' };
@@ -66,7 +87,7 @@ export function readTrace(file) {
 
   // 조작은 입력을 넣은 시점의 URL 로, 확인은 expect 가 끝난 시점의 URL 로 본다.
   const ends = new Map(events.filter((e) => e.type === 'after').map((e) => [e.callId, e]));
-  const timeline = [];
+  const timeline: TimelineEntry[] = [];
   for (const action of actions) {
     const end = ends.get(action.callId);
     const endTime = end?.endTime ?? action.startTime;
@@ -82,15 +103,15 @@ export function readTrace(file) {
   }
   timeline.sort((a, b) => a.at - b.at || Number(Boolean(a.kind)) - Number(Boolean(b.kind)));
   const current = new Map();
-  const steps = [];
+  const steps: TraceStep[] = [];
   for (const { page, url, kind } of timeline) {
     if (kind) {
       if (current.has(page)) steps.push({ url: current.get(page), kind });
-    } else if (NOT_THE_APP.test(url)) {
+    } else if (NOT_THE_APP.test(url!)) {
       current.delete(page);
     } else if (current.get(page) !== url) {
       current.set(page, url);
-      steps.push({ url, kind: 'visit' });
+      steps.push({ url: url!, kind: 'visit' });
     }
   }
   const requests = network

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { XMLParser } from 'fast-xml-parser';
+import type { TestStatus } from './verdict.ts';
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -9,24 +10,33 @@ const parser = new XMLParser({
   isArray: (name) => name === 'testsuite' || name === 'testcase',
 });
 
-const statusOf = (testcase) => {
+export interface JunitResult {
+  title: string;
+  file: string | null;
+  line: null;
+  project: null;
+  tags: string[];
+  status: TestStatus;
+}
+
+const statusOf = (testcase: any): TestStatus => {
   if (testcase.failure !== undefined || testcase.error !== undefined) return 'fail';
   if (testcase.skipped !== undefined) return 'pending';
   return 'pass';
 };
 
 // 루트가 <testsuites> 도 <testsuite> 도 아닌 XML 이면 null 을 돌려준다.
-export function readJunit(file) {
+export function readJunit(file: string): JunitResult[] | null {
   let doc;
   try {
     doc = parser.parse(fs.readFileSync(file, 'utf8'), true);
   } catch (err) {
-    throw new Error(`cannot read JUnit report ${file}: ${err.message}`);
+    throw new Error(`cannot read JUnit report ${file}: ${(err as Error).message}`);
   }
   if (doc.testsuites === undefined && doc.testsuite === undefined) return null;
 
-  const out = [];
-  const walk = (suite, suiteTitles) => {
+  const out: JunitResult[] = [];
+  const walk = (suite: any, suiteTitles: string[]) => {
     const here = [...suiteTitles, suite.name].filter(Boolean);
     for (const testcase of suite.testcase ?? []) {
       const titles = [...here, testcase.name].filter(Boolean);

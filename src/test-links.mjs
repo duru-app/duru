@@ -3,11 +3,11 @@ import path from 'node:path';
 import { screenCases } from './access.mjs';
 import { compare } from './config.mjs';
 import { importLinker } from './import-links.mjs';
-import { readJunit } from './junit.mjs';
-import { readPlaywright } from './playwright.mjs';
+import { readJunit } from './junit.ts';
+import { readPlaywright } from './playwright.ts';
 import { traceLinker } from './trace-links.mjs';
-import { readVerdicts } from './verdict.mjs';
-import { readVitest } from './vitest.mjs';
+import { readVerdicts } from './verdict.ts';
+import { readVitest } from './vitest.ts';
 
 export const READERS = {
   playwright: { read: readPlaywright, extensions: ['.json'] },

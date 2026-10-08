@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileSafe, recordName, writeNewRecord } from './marks.mjs';
 import { compare, isPlainObject } from './config.mjs';
 import { jsonFiles } from './json-files.mjs';
-import { withoutTags } from './verdict.mjs';
+import { withoutTags } from './verdict.ts';
 
 export const JUDGMENT_KINDS = ['discard', 'hand-over', 'undo'];
 
