@@ -2,19 +2,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { compare } from './config.mjs';
 
-// 돌려주는 항목에 reason 이 있으면 읽지 못한 폴더나 링크이고, file 은 dir 기준 상대 경로다.
-export function jsonFiles(dir, say) {
-  const found = [];
-  const walk = (folder, above = []) => {
+interface Say {
+  folder: (message: string) => string;
+  link: (message: string) => string;
+  missing: () => string;
+}
+
+interface JsonFile {
+  file: string;
+  reason?: string;
+}
+
+export function jsonFiles(dir: string, say: Say): JsonFile[] {
+  const found: JsonFile[] = [];
+  const walk = (folder: string, above: string[] = []) => {
     const here = path.relative(dir, folder) || dir;
-    let entries;
+    let entries: fs.Dirent[];
     try {
       const real = fs.realpathSync(folder);
       if (above.includes(real)) return;
       above = [...above, real];
       entries = fs.readdirSync(folder, { withFileTypes: true });
     } catch (err) {
-      found.push({ file: here, reason: say.folder(err.message) });
+      found.push({ file: here, reason: say.folder((err as Error).message) });
       return;
     }
     for (const e of entries) {
@@ -24,12 +34,12 @@ export function jsonFiles(dir, say) {
       else if (e.isFile() && e.name.endsWith('.json')) found.push({ file: path.relative(dir, full) });
     }
   };
-  const walkLink = (link, above) => {
+  const walkLink = (link: string, above: string[]) => {
     let stat;
     try {
       stat = fs.statSync(link, { throwIfNoEntry: false });
     } catch (err) {
-      if (link.endsWith('.json')) found.push({ file: path.relative(dir, link), reason: say.link(err.message) });
+      if (link.endsWith('.json')) found.push({ file: path.relative(dir, link), reason: say.link((err as Error).message) });
       return;
     }
     if (stat?.isDirectory()) walk(link, above);

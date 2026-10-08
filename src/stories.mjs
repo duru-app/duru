@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { compare, isPlainObject } from './config.mjs';
-import { jsonFiles } from './json-files.mjs';
+import { jsonFiles } from './json-files.ts';
 
 export const STORY_ID = /^[a-z0-9_-]+$/;
 const KEYS = ['name', 'screens', 'memo', 'author', 'date', 'source'];

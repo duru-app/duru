@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathOf, screenFinder } from './address-match.mjs';
+import { pathOf, screenFinder } from './address-match.ts';
 import { compare, isPlainObject } from './config.mjs';
-import { jsonFiles } from './json-files.mjs';
+import { jsonFiles } from './json-files.ts';
 import { recordName, writeNewRecord } from './marks.mjs';
 import { addStory, DISCARDED, isDate, isScreenList, isText, loadStories, writableStoriesFolder } from './stories.mjs';
 import { checkStories, linksWithoutConditions, staleMapMessage } from './story-paths.mjs';

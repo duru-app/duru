@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileSafe, recordName, writeNewRecord } from './marks.mjs';
 import { compare, isPlainObject } from './config.mjs';
-import { jsonFiles } from './json-files.mjs';
+import { jsonFiles } from './json-files.ts';
 import { withoutTags } from './verdict.ts';
 
 export const JUDGMENT_KINDS = ['discard', 'hand-over', 'undo'];

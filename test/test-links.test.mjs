@@ -7,7 +7,7 @@ import { screenCases } from '../src/access.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
 import { readPlaywright } from '../src/playwright.ts';
-import { linkTests } from '../src/test-links.mjs';
+import { linkTests } from '../src/test-links.ts';
 
 const FIXTURE_CONFIG = path.join(import.meta.dirname, 'fixtures/app/config.json');
 const config = loadConfig(FIXTURE_CONFIG);
