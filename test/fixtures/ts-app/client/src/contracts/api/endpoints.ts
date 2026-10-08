@@ -3,6 +3,7 @@ export const contractEndpoints = {
   detail: { method: 'GET', path: '/contract/{contractId}' },
   archive: { method: 'POST', path: '/contract/{contractId}/archive' },
   export: { method: 'POST', path: '/contract/{contractId}/export' },
+  update: { method: 'POST', path: '/contract/{contractId}/update' },
 } as const;
 
 export const participantEndpoints = {

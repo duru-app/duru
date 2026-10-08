@@ -80,6 +80,11 @@ export class ContractApi {
     return this.send({ endpoint: contractEndpoints.list, url: buildUrl(WORKSPACE_PREFIX, `/contract/day/${day}`, { workspaceId }) });
   }
 
+  updateTerms({ workspaceId, contractId, data, tags }: ContractArgs & { data: Record<string, unknown>; tags: string[] }) {
+    const body = { ...('title' in data && { title: data.title }), tags: tags.map(String) };
+    return this.run('contract', 'update', { workspaceId, contractId, body });
+  }
+
   loadReports() {
     return this.send({ endpoint: contractEndpoints.list, url: `${REPORT_BASE}/report/list` });
   }

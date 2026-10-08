@@ -238,7 +238,8 @@ Choices made inside it:
   of rounds, and a small one flooded the map with an address per round. An attempt sending more than 20
   requests is still dropped; the most any into-sign method sends is 8. A memory limit on the worker was not
   set: measured, a worker filling its heap with small arrays ended the whole duru process instead of only the
-  worker, so a method that keeps allocating is stopped by the time limit alone.
+  worker, so a method that keeps allocating is stopped by the time limit alone. A fourth shape, tried last, came
+  later; see the entry on keys named like an id.
 - The run happens in a worker thread. A method that waits forever, or loops, is stopped after one second, the
   worker is started again and the run goes on after it. In the main thread a looping method would hang the
   extraction and a late failure of a called method would end the process.
@@ -541,6 +542,34 @@ map the 12 role screens get 39 cases with `roleGuards` written and 12 without it
 tags, `map.json`, `tests.json` and what `rebuild` prints for both maps are identical to main's apart from the
 time they were written. In the task list a marked screen without a condition comes out as on main, and a marked
 screen with one gains its case lines and an empty test set for each case with no tests.
+
+**A method that checks its address values and also reads the body it is given gets a fourth fake value, in which
+only keys named like an id are texts.**
+On the into-sign 2.0.0 map 30 methods had no address, all printed with `Invalid V2 endpoint param: workspaceId`.
+Each takes one object holding both the address values and a body or a list. With the first shape the id is a
+function and the app's address check refuses it; with the second and third every key is a text or a number, so
+the body is one too, and the method stops on `'key' in data`, `.map` or `.join` before it sends. No value can be a
+text and an object at once, so the fourth shape tells the keys apart by name: `id`, or a key ending in `Id` or
+`ID` (`templateUUID` included), gives the text, and any other key gives the fourth shape's value again, so an id
+key is a text at any depth. It comes after the other three under the same rule: the first attempt that sends a
+request and ends without an error is kept, else the one with the most requests, one without an error winning a
+tie, and an attempt that runs out of time ends the tries. Not covered: keys named otherwise (`uuid`, `slug`),
+ids the app checks to be numbers, and keys ending in `Id` that hold an object or a function (`byId`).
+Compared: making the first shape give texts for those keys (no extra attempt, but the first shape then gets
+through `include?.length` to `include.join(…)`, and 24 methods that already had an address gain `?include={?}`,
+which changes their call IDs); taking each argument's type from the TypeScript source (whether duru can resolve
+those types is not measured); and deciding each key by how the earlier attempts used it, a text for one only
+turned into text and an object for one read into (no name rule, but each key's use has to be recorded across
+attempts; not tried).
+Measured on main 37f0709 against the branch, into-sign 2.0.0: methods printed with that error 30 → 7, methods
+with any error 71 → 49, addresses 245 → 267, calls 196 → 206, none lost. Compared method by method, the 25 that
+change all had no request on main. Of the 30, 21 give their address, 3 of them still ending in `Aborted` after
+the request because the fake response reads as aborted; 2 (`getAllDownload`, `getBatchDownload`) build an
+address and return it without sending, so they show neither an address nor an error. The other 7 download by
+clicking a link they make with the address, not through the request function, so nothing is recorded; they stop
+on `document.createElement`, which the run does not give, and keep the first shape's error. Two methods outside
+the 30, printed with `Invalid V2 endpoint param: documentId`, now end without an error, one of them with its
+address. The into-sign 1.5.0 map is identical apart from the time it was written.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
