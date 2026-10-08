@@ -2,7 +2,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import _traverse from '@babel/traverse';
 import { UNKNOWN } from './client.mjs';
-import { moduleCopier } from './constants.mjs';
+import { moduleCopier } from './constants.ts';
 import { parseSource } from './parse.ts';
 
 const traverse = _traverse.default ?? _traverse;

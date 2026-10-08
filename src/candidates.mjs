@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathOf, screenFinder } from './address-match.mjs';
+import { pathOf, screenFinder } from './address-match.ts';
 import { compare, isPlainObject } from './config.mjs';
 import { jsonFiles } from './json-files.mjs';
 import { recordName, writeNewRecord } from './marks.mjs';

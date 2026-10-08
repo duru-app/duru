@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { callFinder } from '../src/address-match.mjs';
+import { callFinder } from '../src/address-match.ts';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
 

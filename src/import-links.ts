@@ -3,6 +3,14 @@ import path from 'node:path';
 import _traverse from '@babel/traverse';
 import { parseSource } from './parse.ts';
 import { resolveImport } from './resolve.ts';
+import type { AliasRule } from './resolve.ts';
+
+interface LinkScreen {
+  id: string;
+  sourceFiles?: string[];
+}
+
+type LinkResult = { reason: string } | { file: string; screens: Map<string, string[]> };
 
 const traverse = _traverse.default ?? _traverse;
 // 이보다 많은 화면에 딸린 소스 파일은 여러 화면이 함께 쓰는 파일로 보고 근거로 치지 않는다.
@@ -11,11 +19,11 @@ const MAX_SCREENS_PER_FILE = 3;
 const MOCKERS = new Set(['vi', 'vitest', 'jest']);
 const MOCKS = new Set(['mock', 'doMock', 'unmock', 'doUnmock']);
 
-const isFile = (file) => fs.existsSync(file) && fs.statSync(file).isFile();
+const isFile = (file: string) => fs.existsSync(file) && fs.statSync(file).isFile();
 
-const isAbsolute = (file) => path.isAbsolute(file) || /^[A-Za-z]:[\\/]/.test(file);
+const isAbsolute = (file: string) => path.isAbsolute(file) || /^[A-Za-z]:[\\/]/.test(file);
 
-function findUnder(srcRoot, realRoot, file) {
+function findUnder(srcRoot: string, realRoot: string, file: string) {
   if (path.isAbsolute(file) && isFile(file)) {
     const rel = path.relative(realRoot, fs.realpathSync(file));
     const outside = rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
@@ -34,10 +42,10 @@ function findUnder(srcRoot, realRoot, file) {
   return null;
 }
 
-function importsOf(srcRoot, file, aliases) {
+function importsOf(srcRoot: string, file: string, aliases: AliasRule[] | null) {
   const { ast } = parseSource(file);
-  const found = new Set();
-  const add = (spec) => {
+  const found = new Set<string>();
+  const add = (spec: unknown) => {
     const resolved = typeof spec === 'string' ? resolveImport(srcRoot, file, spec, aliases) : null;
     if (resolved) found.add(resolved);
   };
@@ -49,31 +57,31 @@ function importsOf(srcRoot, file, aliases) {
       const { callee, arguments: args } = p.node;
       if (callee.type !== 'Import' && !(callee.type === 'Identifier' && callee.name === 'require')) return;
       const outer = p.parentPath.isCallExpression() ? p.parentPath.node.callee : null;
-      if (outer?.type === 'MemberExpression' && MOCKERS.has(outer.object.name) && MOCKS.has(outer.property.name)) return;
-      add(args[0]?.value);
+      if (outer?.type === 'MemberExpression' && MOCKERS.has((outer.object as { name: string }).name) && MOCKS.has((outer.property as { name: string }).name)) return;
+      add((args[0] as { value?: unknown } | undefined)?.value);
     },
   });
   return [...found];
 }
 
 // 돌려주는 함수는 테스트 파일 하나를 받아 { file: 소스 폴더 기준 경로, screens: 화면 ID → 근거가 된 소스 파일들 } 을, 읽지 못하면 { reason } 을 돌려준다.
-export function importLinker(srcRoot, map, aliases = null) {
+export function importLinker(srcRoot: string, map: { screens: LinkScreen[] }, aliases: AliasRule[] | null = null) {
   const realRoot = fs.existsSync(srcRoot) ? fs.realpathSync(srcRoot) : srcRoot;
-  const screensOf = new Map();
+  const screensOf = new Map<string, Set<string>>();
   for (const screen of map.screens) {
     for (const file of screen.sourceFiles ?? []) screensOf.set(file, (screensOf.get(file) ?? new Set()).add(screen.id));
   }
 
-  function link(testFile) {
+  function link(testFile: string | null | undefined): LinkResult {
     const file = testFile ? findUnder(srcRoot, realRoot, testFile) : null;
     if (!file) return { reason: '테스트 파일을 소스 폴더에서 찾지 못했습니다' };
-    let imports;
+    let imports: string[];
     try {
       imports = importsOf(srcRoot, file, aliases);
     } catch (err) {
-      return { reason: `테스트 파일을 읽지 못했습니다: ${err.detail ?? err.message}` };
+      return { reason: `테스트 파일을 읽지 못했습니다: ${(err as { detail?: string }).detail ?? (err as Error).message}` };
     }
-    const screens = new Map();
+    const screens = new Map<string, string[]>();
     for (const imported of imports.map((f) => path.relative(srcRoot, f)).sort()) {
       const ids = screensOf.get(imported) ?? new Set();
       if (ids.size > MAX_SCREENS_PER_FILE) continue;
@@ -82,9 +90,9 @@ export function importLinker(srcRoot, map, aliases = null) {
     return { file: path.relative(srcRoot, file), screens };
   }
 
-  const results = new Map();
-  return (testFile) => {
+  const results = new Map<string | null | undefined, LinkResult>();
+  return (testFile: string | null | undefined) => {
     if (!results.has(testFile)) results.set(testFile, link(testFile));
-    return results.get(testFile);
+    return results.get(testFile)!;
   };
 }

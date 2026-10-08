@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { screenCases } from './access.mjs';
 import { compare } from './config.mjs';
-import { importLinker } from './import-links.mjs';
+import { importLinker } from './import-links.ts';
 import { readJunit } from './junit.ts';
 import { readPlaywright } from './playwright.ts';
 import { traceLinker } from './trace-links.mjs';

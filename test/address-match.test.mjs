@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { callFinder, screenFinder } from '../src/address-match.mjs';
+import { callFinder, screenFinder } from '../src/address-match.ts';
 
 const map = {
   screens: [
