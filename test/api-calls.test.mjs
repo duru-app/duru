@@ -167,6 +167,15 @@ test('a method that sends only for a number gets a number below 1, so a loop up 
   assert.deepEqual(map.apiFunctions['noteApi.sendForever'], { file: 'contracts/api/note.api.ts', line: 44, endpoints: [], error: 'sent more than 20 requests' });
 });
 
+test('a method checking that its address values are strings or numbers while it uses `in` and an array method on the body it is given gets strings only for the keys named like an id, and sends its request', async () => {
+  const map = await called();
+  assert.deepEqual(map.apiFunctions['contractApi.updateTerms'], {
+    file: 'contracts/api/contract.api.ts',
+    line: 83,
+    endpoints: [{ method: 'POST', url: '/internal/v2/workspace/{?}/contract/{?}/update', line: 83, server: { status: 'none' }, callId: 'POST:/internal/v2/workspace/{?}/contract/{?}/update' }],
+  });
+});
+
 test('an API function named like an apiModules function keeps the file in front of its name and leaves the apiModules function as it was', async () => {
   const map = await called();
   assert.deepEqual(endpointsOf(map, 'contracts/api/index.ts#ajaxReportSchedule').map(([method, url]) => `${method} ${url}`), ['POST /internal/v2/report/schedule']);
@@ -198,7 +207,7 @@ test('extract prints one line for each method that gave no address, and counts t
   const configFile = fixtureCopy(CALLED);
   const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^screens 15 \| api functions 22 \| endpoints match 6 /m);
+  assert.match(result.stdout, /^screens 15 \| api functions 23 \| endpoints match 6 /m);
   assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('api method')), [
     '  api method contractApi.exportContract ← contracts/api/contract.api.ts:50: Unknown export format: {?}',
     '  api method contractApi.waitForSigners ← contracts/api/contract.api.ts:59: did not finish within 1000 ms',

@@ -19,17 +19,23 @@ globalThis.__duruNothing = new Proxy(function () {}, {
   construct: () => globalThis.__duruNothing,
 });
 
-const fake = new Proxy(function () {}, {
-  get: (t, k) => {
-    if (k === Symbol.toPrimitive || k === 'toString' || k === 'valueOf' || k === 'toJSON') return () => mark;
-    if (k === Symbol.iterator) return function* () {};
-    if (typeof k === 'symbol' || k === 'then') return undefined;
-    return fake;
-  },
-  has: () => true,
-  apply: () => fake,
-  construct: () => fake,
-});
+function standIn(named = () => undefined) {
+  const value = new Proxy(function () {}, {
+    get: (t, k) => {
+      if (k === Symbol.toPrimitive || k === 'toString' || k === 'valueOf' || k === 'toJSON') return () => mark;
+      if (k === Symbol.iterator) return function* () {};
+      if (typeof k === 'symbol' || k === 'then') return undefined;
+      return named(k) ?? value;
+    },
+    has: () => true,
+    apply: () => value,
+    construct: () => value,
+  });
+  return value;
+}
+const fake = standIn();
+const ID_KEY = /^id$|Id$|ID$/;
+const idsAsText = standIn((k) => (ID_KEY.test(k) ? mark : undefined));
 
 const at = (args, dotted) => dotted.split('.').reduce((v, k) => (v == null ? undefined : v[k]), args);
 const text = (v) => {
@@ -122,7 +128,8 @@ const leaves = (leaf) => new Proxy({}, {
   has: () => true,
 });
 // 앞의 모양이 오류로 끝나거나 요청 없이 끝나면 다음 모양을 넣어 본다. URL 변수 값이 문자열이나 숫자인지 검사하는 앱은 키마다 문자열이나 숫자가 나와야 통과한다.
-const ARGUMENT_SHAPES = [() => fake, () => leaves(mark), () => leaves(markNumber)];
+// 마지막 시도에서는 이름이 id 이거나 Id · ID 로 끝나는 키만 문자열이고, 다른 키를 읽으면 몇 단계를 내려가도 이 값이 다시 나온다. URL 경로 값과 함께 받은 body 에 `in` 을 쓰거나 배열 메서드를 호출하는 메서드도 그래야 요청까지 간다.
+const ARGUMENT_SHAPES = [() => fake, () => leaves(mark), () => leaves(markNumber), () => idsAsText];
 
 async function attempt(self, fn, argument) {
   const record = { list: [], flooded: false };
