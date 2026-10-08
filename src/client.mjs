@@ -8,7 +8,7 @@ import { loadConstants } from './constants.mjs';
 import { inTypePosition, nameFollower } from './follow-names.ts';
 import { parseSource } from './parse.ts';
 import { importResolver } from './resolve.ts';
-import { settingNeeds } from './setting-needs.mjs';
+import { settingNeeds } from './setting-needs.ts';
 import { addCallDefaults, findSettingsCalls, settingsResultFinder } from './settings-functions.mjs';
 
 const traverse = _traverse.default ?? _traverse;

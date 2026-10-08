@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
-import { buildFlow } from '../src/flow.mjs';
+import { buildFlow } from '../src/flow.ts';
 import { buildMap } from '../src/map.mjs';
 import { linkTests } from '../src/test-links.mjs';
 

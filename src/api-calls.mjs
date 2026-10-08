@@ -62,7 +62,7 @@ function requestOf({ method, url }) {
 
 function runWorker(workerData, onMessage) {
   return new Promise((resolve) => {
-    const worker = new Worker(new URL('./api-calls-worker.mjs', import.meta.url), { workerData, stdout: true, stderr: true });
+    const worker = new Worker(new URL('./api-calls-worker.ts', import.meta.url), { workerData, stdout: true, stderr: true });
     worker.stdout.resume();
     worker.stderr.resume();
     let unit = null;
