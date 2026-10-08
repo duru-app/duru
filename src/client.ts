@@ -153,7 +153,6 @@ function constInits(exprPath: NodePath, src: string) {
   return result;
 }
 
-// 이 노드가 렌더되거나 실행되려면 참이어야 하는 조건들을 파일 안에서 거슬러 올라가며 모은다.
 function guardsOf(nodePath: NodePath, src: string, note: Note) {
   const guards: string[] = [];
   const add = (text: string, exprPath: NodePath, negated: boolean, source: string) => {
