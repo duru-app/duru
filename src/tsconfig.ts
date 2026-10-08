@@ -1,12 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+interface PathOptions {
+  baseUrl?: string;
+  paths?: Record<string, string[]>;
+  pathsDir?: string;
+}
+
 const PATHS_EXAMPLE = '{ "@domains/*": ["src/domains/*"] }';
 const CONFIG_DIR = '${configDir}';
 
-const isPlainObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-function stripJsonc(text) {
+function stripJsonc(text: string) {
   let out = '';
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
@@ -31,20 +37,20 @@ function stripJsonc(text) {
   return out;
 }
 
-function readJsonc(file) {
-  let parsed;
+function readJsonc(file: string): Record<string, unknown> {
+  let parsed: unknown;
   try {
     parsed = JSON.parse(stripJsonc(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')));
   } catch (err) {
-    throw new Error(`tsconfig file ${file} cannot be read as JSON (comments and trailing commas are allowed): ${err.message}`);
+    throw new Error(`tsconfig file ${file} cannot be read as JSON (comments and trailing commas are allowed): ${(err as Error).message}`);
   }
   if (!isPlainObject(parsed)) throw new Error(`tsconfig file ${file} must hold a JSON object, not ${JSON.stringify(parsed)}`);
   return parsed;
 }
 
-const isFile = (file) => fs.existsSync(file) && fs.statSync(file).isFile();
+const isFile = (file: string) => fs.existsSync(file) && fs.statSync(file).isFile();
 
-function extendedFile(from, spec) {
+function extendedFile(from: string, spec: string) {
   const dir = path.dirname(from);
   const relative = spec.startsWith('.') || path.isAbsolute(spec);
   const bases = relative ? [path.resolve(dir, spec)] : ancestors(dir).map((d) => path.join(d, 'node_modules', spec));
@@ -53,15 +59,16 @@ function extendedFile(from, spec) {
   return found;
 }
 
-function ancestors(dir) {
+function ancestors(dir: string): string[] {
   const parent = path.dirname(dir);
   return parent === dir ? [dir] : [dir, ...ancestors(parent)];
 }
 
-function ownOptions(file, json, rootDir) {
+function ownOptions(file: string, json: Record<string, unknown>, rootDir: string): PathOptions {
   const options = json.compilerOptions ?? {};
   if (!isPlainObject(options)) throw new Error(`compilerOptions in ${file} must be an object, not ${JSON.stringify(options)}`);
-  const { baseUrl, paths } = options;
+  const { baseUrl } = options;
+  const paths = options.paths as Record<string, string[]> | undefined;
   if (baseUrl !== undefined && typeof baseUrl !== 'string') {
     throw new Error(`compilerOptions.baseUrl in ${file} must be a folder path such as "src", not ${JSON.stringify(baseUrl)}`);
   }
@@ -78,7 +85,7 @@ function ownOptions(file, json, rootDir) {
 }
 
 // 이어받은 paths 는 항목마다 합쳐지지 않고 통째로 바뀐다.
-function effectiveOptions(file, rootDir, chain = []) {
+function effectiveOptions(file: string, rootDir: string, chain: string[] = []): PathOptions {
   if (chain.includes(file)) throw new Error(`tsconfig file ${file} extends itself through ${chain.join(' → ')} → ${file}`);
   const json = readJsonc(file);
   const parents = json.extends === undefined ? [] : [json.extends].flat();
@@ -89,10 +96,10 @@ function effectiveOptions(file, rootDir, chain = []) {
   return Object.assign({}, ...inherited, ownOptions(file, json, rootDir));
 }
 
-const expanded = (text, rootDir) => (text.startsWith(CONFIG_DIR) ? rootDir + text.slice(CONFIG_DIR.length) : text);
+const expanded = (text: string, rootDir: string) => (text.startsWith(CONFIG_DIR) ? rootDir + text.slice(CONFIG_DIR.length) : text);
 
 // 돌려주는 targets 는 절대 경로이고 `*` 가 남아 있을 수 있다.
-export function loadAliases(tsconfigFile) {
+export function loadAliases(tsconfigFile: string) {
   const file = path.resolve(tsconfigFile);
   if (!isFile(file)) throw new Error(`tsconfig file ${file} does not exist, but tsconfig must be the path of a tsconfig file such as "client/tsconfig.json"`);
   const rootDir = path.dirname(file);
@@ -101,6 +108,6 @@ export function loadAliases(tsconfigFile) {
     throw new Error(`tsconfig file ${file} declares no import aliases: compilerOptions.paths is missing or empty, in it and in the files it extends; `
       + 'name the tsconfig file that holds them (a file that only lists "references" holds none), such as "client/tsconfig.app.json"');
   }
-  const base = baseUrl ?? pathsDir;
+  const base = baseUrl ?? pathsDir!;
   return Object.entries(paths).map(([name, targets]) => ({ name, targets: targets.map((t) => path.resolve(base, expanded(t, rootDir))) }));
 }

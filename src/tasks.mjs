@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { compare } from './config.mjs';
 import { reviewData } from './review.mjs';
-import { SERVER_NOT_COMPARED } from './server.mjs';
+import { SERVER_NOT_COMPARED } from './server.ts';
 import { testsAt } from './story-paths.mjs';
 import { DEPTHS } from './test-links.mjs';
 

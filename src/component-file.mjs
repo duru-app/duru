@@ -1,5 +1,5 @@
 import _traverse from '@babel/traverse';
-import { parseSource } from './parse.mjs';
+import { parseSource } from './parse.ts';
 
 const traverse = _traverse.default ?? _traverse;
 const SOURCE_FILE = /\.(jsx?|tsx?)$/;

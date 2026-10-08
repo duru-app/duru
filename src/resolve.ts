@@ -1,9 +1,35 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+export interface AliasRule {
+  name: string;
+  targets: string[];
+}
+
+interface AliasMatch {
+  rule: AliasRule;
+  captured: string;
+}
+
+interface Resolution {
+  file: string | null;
+  missedAlias?: boolean;
+}
+
+interface AliasTargetResult {
+  file: string | null;
+  outside?: boolean;
+  quiet?: boolean;
+}
+
+export interface ImportResolver {
+  resolve: (fromFile: string, spec: string) => string | null;
+  unresolved: () => { spec: string; files: number }[];
+}
+
 const EXTENSIONS = ['', '.js', '.jsx', '.ts', '.tsx', '/index.js', '/index.jsx', '/index.ts', '/index.tsx'];
 
-function firstFile(base) {
+function firstFile(base: string): string | null {
   for (const ext of EXTENSIONS) {
     const candidate = base + ext;
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
@@ -11,7 +37,7 @@ function firstFile(base) {
   return null;
 }
 
-export const isInside = (root, file) => {
+export const isInside = (root: string, file: string) => {
   const rel = path.relative(root, file);
   return rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
 };
@@ -19,8 +45,8 @@ export const isInside = (root, file) => {
 const DECLARATIONS = ['.d.ts', '/index.d.ts'];
 
 // 정확히 같은 이름이 먼저고, 그다음이 `*` 앞부분이 가장 긴 규칙이다. 맞는 규칙이 없으면 null.
-function matchRule(aliases, spec) {
-  let best = null;
+function matchRule(aliases: AliasRule[], spec: string): AliasMatch | null {
+  let best: (AliasMatch & { prefix: string }) | null = null;
   for (const rule of aliases) {
     if (rule.name === spec) return { rule, captured: '' };
     const star = rule.name.indexOf('*');
@@ -33,7 +59,7 @@ function matchRule(aliases, spec) {
   return best;
 }
 
-function underSrcRoot(srcRoot, target) {
+function underSrcRoot(srcRoot: string, target: string) {
   if (isInside(srcRoot, target) || !fs.existsSync(srcRoot)) return target;
   let dir = target;
   while (!fs.existsSync(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
@@ -42,10 +68,10 @@ function underSrcRoot(srcRoot, target) {
   return isInside(realRoot, real) ? path.join(srcRoot, path.relative(realRoot, real)) : target;
 }
 
-const hasDeclaration = (base) => DECLARATIONS.some((ext) => fs.existsSync(base + ext));
-const holdsSomething = (base) => fs.existsSync(base) || Boolean(firstFile(base)) || hasDeclaration(base);
+const hasDeclaration = (base: string) => DECLARATIONS.some((ext) => fs.existsSync(base + ext));
+const holdsSomething = (base: string) => fs.existsSync(base) || Boolean(firstFile(base)) || hasDeclaration(base);
 
-function aliasTarget(srcRoot, { rule, captured }) {
+function aliasTarget(srcRoot: string, { rule, captured }: AliasMatch): AliasTargetResult {
   let quiet = false;
   for (const target of rule.targets) {
     const base = underSrcRoot(srcRoot, target.replace('*', () => captured));
@@ -61,10 +87,10 @@ function aliasTarget(srcRoot, { rule, captured }) {
   return { file: null, quiet };
 }
 
-function resolveDetailed(srcRoot, fromFile, spec, aliases) {
+function resolveDetailed(srcRoot: string, fromFile: string, spec: string, aliases: AliasRule[] | null): Resolution {
   if (spec.startsWith('.')) return { file: firstFile(path.resolve(path.dirname(fromFile), spec)) };
   const matched = aliases && matchRule(aliases, spec);
-  const aliased = matched ? aliasTarget(srcRoot, matched) : { file: null, quiet: true };
+  const aliased: AliasTargetResult = matched ? aliasTarget(srcRoot, matched) : { file: null, quiet: true };
   if (aliased.file || aliased.outside) return { file: aliased.file };
   const first = spec.split('/')[0];
   const file = first.startsWith('@') || !fs.existsSync(path.join(srcRoot, first)) ? null : firstFile(path.join(srcRoot, spec));
@@ -72,13 +98,13 @@ function resolveDetailed(srcRoot, fromFile, spec, aliases) {
 }
 
 // 상대 경로, tsconfig 의 paths 별칭, srcRoot 바로 아래 폴더 이름으로 시작하는 경로 순으로 찾는다. 외부 패키지와 srcRoot 밖의 파일은 null.
-export function resolveImport(srcRoot, fromFile, spec, aliases = null) {
+export function resolveImport(srcRoot: string, fromFile: string, spec: string, aliases: AliasRule[] | null = null): string | null {
   return resolveDetailed(srcRoot, fromFile, spec, aliases).file;
 }
 
-export function importResolver({ srcRoot, aliases = null }) {
-  const missed = new Map();
-  const resolve = (fromFile, spec) => {
+export function importResolver({ srcRoot, aliases = null }: { srcRoot: string; aliases?: AliasRule[] | null }): ImportResolver {
+  const missed = new Map<string, Set<string>>();
+  const resolve = (fromFile: string, spec: string) => {
     const { file, missedAlias } = resolveDetailed(srcRoot, fromFile, spec, aliases);
     if (missedAlias) missed.set(spec, (missed.get(spec) ?? new Set()).add(fromFile));
     return file;

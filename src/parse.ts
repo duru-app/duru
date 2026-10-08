@@ -1,9 +1,36 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse, parseExpression } from '@babel/parser';
+import type { ParserOptions, ParserPlugin } from '@babel/parser';
 
-const JS_PLUGINS = ['jsx', 'classProperties', 'optionalChaining', 'nullishCoalescingOperator', 'dynamicImport'];
-const TS_GRAMMARS = {
+interface Position {
+  line: number;
+  column: number;
+}
+
+interface ParseNode {
+  type: string;
+  start: number;
+  end: number;
+  loc: { start: Position; end: Position };
+  extra?: { parenthesized?: boolean; parenStart: number };
+  expression: ParseNode;
+  object: ParseNode;
+  importKind?: string;
+  exportKind?: string;
+  typeAnnotation: { start: number };
+  source?: unknown;
+  specifiers?: Record<string, unknown>[];
+}
+
+type Cut = [number, number];
+
+interface SyntaxFailure extends Error {
+  loc?: Position;
+}
+
+const JS_PLUGINS: ParserPlugin[] = ['jsx', 'classProperties', 'optionalChaining', 'nullishCoalescingOperator', 'dynamicImport'];
+const TS_GRAMMARS: Record<string, ParserPlugin[]> = {
   '.ts': [...JS_PLUGINS.filter((p) => p !== 'jsx'), 'typescript'],
   '.tsx': [...JS_PLUGINS, 'typescript'],
 };
@@ -11,22 +38,23 @@ const WRAPPERS = new Set(['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullE
 const NODE_META = new Set(['loc', 'extra', 'comments', 'errors', 'leadingComments', 'trailingComments', 'innerComments']);
 export const SOURCE_SYNTAX_ERROR = 'DURU_SOURCE_SYNTAX_ERROR';
 
-const TS_FRAGMENT = { sourceType: 'module', allowAwaitOutsideFunction: true, allowSuperOutsideMethod: true, allowNewTargetOutsideFunction: true };
+const TS_FRAGMENT: ParserOptions = { sourceType: 'module', allowAwaitOutsideFunction: true, allowSuperOutsideMethod: true, allowNewTargetOutsideFunction: true };
 
-const isTypeScript = (file) => Object.hasOwn(TS_GRAMMARS, path.extname(file));
-const pluginsOf = (file) => TS_GRAMMARS[path.extname(file)] ?? JS_PLUGINS;
-const fragmentOptions = (file) => ({ plugins: pluginsOf(file), ...(isTypeScript(file) && TS_FRAGMENT) });
+const isTypeScript = (file: string) => Object.hasOwn(TS_GRAMMARS, path.extname(file));
+const pluginsOf = (file: string) => TS_GRAMMARS[path.extname(file)] ?? JS_PLUGINS;
+const fragmentOptions = (file: string): ParserOptions => ({ plugins: pluginsOf(file), ...(isTypeScript(file) && TS_FRAGMENT) });
 
-function eachChild(node, visit) {
+function eachChild(node: ParseNode, visit: (child: ParseNode, replace: (next: ParseNode) => void) => void) {
   for (const [key, value] of Object.entries(node)) {
     if (NODE_META.has(key)) continue;
     if (Array.isArray(value)) value.forEach((v, i) => typeof v?.type === 'string' && visit(v, (next) => (value[i] = next)));
-    else if (typeof value?.type === 'string') visit(value, (next) => (node[key] = next));
+    else if (typeof (value as ParseNode | null)?.type === 'string') visit(value as ParseNode, (next) => ((node as unknown as Record<string, unknown>)[key] = next));
   }
 }
 
 // 안쪽 값이 감싼 식의 위치를 이어받아야, 위치로 잘라 낸 조건식에 타입 문법이 소스에 적힌 대로 남는다.
-function unwrapped(node) {
+function unwrapped<T extends object>(root: T): T {
+  const node = root as unknown as ParseNode;
   let inner = node;
   while (WRAPPERS.has(inner.type)) inner = inner.expression;
   if (inner !== node) {
@@ -36,19 +64,19 @@ function unwrapped(node) {
     if (node.extra?.parenthesized) inner.extra = { ...inner.extra, parenthesized: true, parenStart: node.extra.parenStart };
   }
   eachChild(inner, (child, replace) => replace(unwrapped(child)));
-  return inner;
+  return inner as unknown as T;
 }
 
-const kindOf = (node) => (node.type === 'ImportDeclaration' ? 'importKind' : node.type.startsWith('Export') && node.source ? 'exportKind' : null);
+const kindOf = (node: ParseNode): 'importKind' | 'exportKind' | null => (node.type === 'ImportDeclaration' ? 'importKind' : node.type.startsWith('Export') && node.source ? 'exportKind' : null);
 
-export const importsModule = (node) => Boolean(kindOf(node));
+export const importsModule = (node: ParseNode) => Boolean(kindOf(node));
 
-export function isTypeOnlyLine(node) {
+export function isTypeOnlyLine(node: ParseNode) {
   const kind = kindOf(node);
-  return Boolean(kind) && (node[kind] === 'type' || (node.specifiers?.length > 0 && node.specifiers.every((s) => s[kind] === 'type')));
+  return Boolean(kind) && (node[kind!] === 'type' || (node.specifiers?.length! > 0 && node.specifiers!.every((s) => s[kind!] === 'type')));
 }
 
-function withoutTypeImports(program) {
+function withoutTypeImports(program: { body: ParseNode[] }) {
   program.body = program.body.filter((node) => {
     const kind = kindOf(node);
     if (!kind) return true;
@@ -58,39 +86,39 @@ function withoutTypeImports(program) {
   });
 }
 
-function syntaxError(file, err) {
+function syntaxError(file: string, err: SyntaxFailure) {
   if (!err.loc) return err;
   const detail = `${err.loc.line}:${err.loc.column + 1}: ${err.message.replace(/ \(\d+:\d+\)$/, '')}`;
   return Object.assign(new Error(`${file}:${detail}`, { cause: err }), { code: SOURCE_SYNTAX_ERROR, detail });
 }
 
 // asWritten 이면 타입 전용 import 와 타입 문법이 감싼 값을 소스에 적힌 그대로 둔다.
-export function parseSource(file, { asWritten = false } = {}) {
+export function parseSource(file: string, { asWritten = false }: { asWritten?: boolean } = {}) {
   const src = fs.readFileSync(file, 'utf8');
-  let ast;
+  let ast: ReturnType<typeof parse>;
   try {
     ast = parse(src, { sourceType: 'module', plugins: pluginsOf(file), errorRecovery: true });
   } catch (err) {
-    throw syntaxError(file, err);
+    throw syntaxError(file, err as SyntaxFailure);
   }
   if (!isTypeScript(file) || asWritten) return { src, ast };
-  withoutTypeImports(ast.program);
+  withoutTypeImports(ast.program as unknown as { body: ParseNode[] });
   return { src, ast: unwrapped(ast) };
 }
 
-const innermost = (node) => (WRAPPERS.has(node.type) ? innermost(node.expression) : node);
-const isReference = (node) => node.type === 'Identifier' || node.type === 'ThisExpression' || (node.type === 'MemberExpression' && isReference(node.object));
+const innermost = (node: ParseNode): ParseNode => (WRAPPERS.has(node.type) ? innermost(node.expression) : node);
+const isReference = (node: ParseNode): boolean => node.type === 'Identifier' || node.type === 'ThisExpression' || (node.type === 'MemberExpression' && isReference(node.object));
 
 // (x as T).y 의 괄호까지 지워야 x.y 모양을 찾는 정규식에 걸린다.
-function parenCuts(node, text, cuts) {
+function parenCuts(node: ParseNode, text: string, cuts: Cut[]) {
   if (!node.extra?.parenthesized || !isReference(innermost(node))) return;
-  const open = node.extra.parenStart;
+  const open = node.extra!.parenStart;
   const close = text.indexOf(')', node.end);
   if (close < 0 || text.slice(open + 1, node.start).trim() || text.slice(node.end, close).trim()) return;
   cuts.push([open, open + 1], [close, close + 1]);
 }
 
-function wrapperCuts(node, text) {
+function wrapperCuts(node: ParseNode, text: string): Cut[] {
   if (node.type === 'TSNonNullExpression') return [[node.end - 1, node.end]];
   const inner = node.expression;
   if (node.type === 'TSTypeAssertion') return [[node.start, inner.extra?.parenthesized ? inner.extra.parenStart : inner.start]];
@@ -99,23 +127,23 @@ function wrapperCuts(node, text) {
   return before.endsWith(keyword) ? [[before.slice(0, -keyword.length).trimEnd().length, node.end]] : [];
 }
 
-function typeCuts(node, text, cuts) {
+function typeCuts(node: ParseNode, text: string, cuts: Cut[]) {
   if (!WRAPPERS.has(node.type)) return eachChild(node, (child) => typeCuts(child, text, cuts));
   parenCuts(node, text, cuts);
   cuts.push(...wrapperCuts(node, text));
   typeCuts(node.expression, text, cuts);
 }
 
-export function plainText(text, file) {
+export function plainText(text: string, file: string) {
   if (!isTypeScript(file)) return text;
-  let node;
+  let node: ReturnType<typeof parseExpression>;
   try {
     node = parseExpression(text, fragmentOptions(file));
   } catch {
     return text;
   }
-  const cuts = [];
-  typeCuts(node, text, cuts);
+  const cuts: Cut[] = [];
+  typeCuts(node as unknown as ParseNode, text, cuts);
   // 지운 자리에 빈칸을 두어야 typeof<T>x 나 x!in y 에서 앞뒤 낱말이 붙지 않는다.
   let out = text;
   for (const [start, end] of cuts.sort((a, b) => b[0] - a[0])) out = `${out.slice(0, start)} ${out.slice(end)}`;
@@ -123,7 +151,7 @@ export function plainText(text, file) {
 }
 
 // node 의 위치는 받은 문자열이 아니라 함께 돌려주는 text 를 가리킨다.
-export function parseFragment(text, file) {
+export function parseFragment(text: string, file: string) {
   const plain = plainText(text, file);
   const node = parseExpression(plain, fragmentOptions(file));
   return { node: isTypeScript(file) ? unwrapped(node) : node, text: plain };

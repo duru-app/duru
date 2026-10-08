@@ -367,7 +367,7 @@ comes with the hook. A function that a call runs at once (`KEYS.map((k) => api.l
 called right where it is written (`(() => load())()`) counts as running on import. Names used only in types are
 not followed. Following stays inside the screen's `sourceFiles`, so no screen gets a call it did not have before.
 Each call keeps the file and line it is written at, so a call reached through a hook shows the line in the hook
-file. The following lives in `src/follow-names.mjs`, which takes a file and a name and gives back the call sites
+file. The following lives in `src/follow-names.ts`, which takes a file and a name and gives back the call sites
 they reach; the screen extraction only asks it.
 Where duru cannot tell which names are used, the whole file counts as used: a namespace import used other than
 as `ns.name`, a dynamic `import(…)`, an import for side effects only, a name the file does not export (a CommonJS
