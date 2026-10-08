@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
-import { linkTests } from '../src/test-links.mjs';
+import { linkTests } from '../src/test-links.ts';
 import { readVerdicts } from '../src/verdict.ts';
 
 const FIXTURE_CONFIG = path.join(import.meta.dirname, 'fixtures/app/config.json');

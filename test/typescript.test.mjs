@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
-import { linkTests } from '../src/test-links.mjs';
+import { linkTests } from '../src/test-links.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/ts-app');
 const CLI = path.join(import.meta.dirname, '../src/cli.mjs');

@@ -9,7 +9,7 @@ import { inTypePosition, nameFollower } from './follow-names.ts';
 import { parseSource } from './parse.ts';
 import { importResolver } from './resolve.ts';
 import { settingNeeds } from './setting-needs.ts';
-import { addCallDefaults, findSettingsCalls, settingsResultFinder } from './settings-functions.mjs';
+import { addCallDefaults, findSettingsCalls, settingsResultFinder } from './settings-functions.ts';
 
 const traverse = _traverse.default ?? _traverse;
 export const UNKNOWN = '{?}';

@@ -10,7 +10,7 @@ import { reviewAuthor, startReviewServer } from './review.mjs';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { checkStoryFiles } from './story-paths.mjs';
 import { taskList } from './tasks.mjs';
-import { linkTests } from './test-links.mjs';
+import { linkTests } from './test-links.ts';
 
 const COMMANDS = ['extract', 'rebuild', 'review', 'tasks'];
 const DEFAULT_PORT = 4400;

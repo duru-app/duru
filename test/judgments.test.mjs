@@ -6,7 +6,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
 import { addJudgment, applyJudgments, loadJudgments } from '../src/judgments.mjs';
 import { buildMap } from '../src/map.mjs';
-import { linkTests } from '../src/test-links.mjs';
+import { linkTests } from '../src/test-links.ts';
 
 const HELP_TEST = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' };
 const REPORTED_PATH = '/builds/client/src/components/Help.spec.js';

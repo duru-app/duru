@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { STORY_ID } from './stories.mjs';
-import { DEPTHS } from './test-links.mjs';
+import { DEPTHS } from './test-links.ts';
 
 export const MARK_STATUSES = ['needs-more', 'missing', 'fine'];
 

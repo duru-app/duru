@@ -13,7 +13,7 @@ import { addMark, classifyMarks, loadMarks } from './marks.mjs';
 import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.mjs';
 import { addStory, editStory } from './stories.mjs';
 import { checkScreens, checkStoryFiles } from './story-paths.mjs';
-import { DEPTHS } from './test-links.mjs';
+import { DEPTHS } from './test-links.ts';
 
 const PAGE = path.join(import.meta.dirname, 'review-page.html');
 const BODY_LIMIT = 64 * 1024;

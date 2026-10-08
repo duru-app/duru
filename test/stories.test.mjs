@@ -9,7 +9,7 @@ import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
 import { loadStories } from '../src/stories.mjs';
 import { checkStories, checkStoryFiles } from '../src/story-paths.mjs';
-import { linkTests } from '../src/test-links.mjs';
+import { linkTests } from '../src/test-links.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const EXAMPLES = path.join(FIXTURE, 'example-stories');

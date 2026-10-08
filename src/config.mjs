@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEPTHS, READERS } from './test-links.mjs';
+import { DEPTHS, READERS } from './test-links.ts';
 import { loadAliases } from './tsconfig.ts';
 
 const TEST_FORMATS = Object.keys(READERS);

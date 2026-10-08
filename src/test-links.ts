@@ -5,11 +5,30 @@ import { compare } from './config.mjs';
 import { importLinker } from './import-links.ts';
 import { readJunit } from './junit.ts';
 import { readPlaywright } from './playwright.ts';
-import { traceLinker } from './trace-links.mjs';
+import { traceLinker } from './trace-links.ts';
 import { readVerdicts } from './verdict.ts';
+import type { TestStatus } from './verdict.ts';
 import { readVitest } from './vitest.ts';
 
-export const READERS = {
+type ImportLink = { reason?: string; file?: string; screens?: Map<string, string[]> };
+
+interface Reader {
+  read: (file: string) => any[] | null;
+  extensions: string[];
+}
+
+interface UntaggedTest {
+  title: string;
+  file: string | null;
+  line: number | null;
+  source: string;
+  format: string;
+  status: TestStatus;
+  testFile?: string;
+  unmatched?: string[];
+}
+
+export const READERS: Record<string, Reader> = {
   playwright: { read: readPlaywright, extensions: ['.json'] },
   junit: { read: readJunit, extensions: ['.xml'] },
   vitest: { read: readVitest, extensions: ['.json'] },
@@ -22,44 +41,44 @@ const DEPTH_TAG = /^depth:(.*)$/;
 const OPTION_TAG = /^option:(.*)$/;
 const OPTION_VALUE = /^([^=]+)=(true|false)$/;
 const CASE_TAG = /^(role|setting):/;
-const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
-const shownFile = (t) => t.testFile ?? t.file ?? '';
-const byTest = (a, b) => compare(shownFile(a), shownFile(b)) || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.source, b.source);
-const STATUS_RANK = { pass: 0, pending: 1, fail: 2 };
+const byKey = (a: { key: string }, b: { key: string }) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+const shownFile = (t: { testFile?: string; file?: string | null }) => t.testFile ?? t.file ?? '';
+const byTest = (a: UntaggedTest, b: UntaggedTest) => compare(shownFile(a), shownFile(b)) || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.source, b.source);
+const STATUS_RANK: Record<string, number> = { pass: 0, pending: 1, fail: 2 };
 
-function resultFiles(p, extensions) {
+function resultFiles(p: string, extensions: string[]) {
   if (!fs.statSync(p).isDirectory()) return [p];
   return fs
     .readdirSync(p, { recursive: true, withFileTypes: true })
-    .filter((e) => e.isFile() && extensions.some((ext) => e.name.endsWith(ext)))
+    .filter((e) => e.isFile() && extensions.some((ext: string) => e.name.endsWith(ext)))
     .map((e) => path.join(e.parentPath, e.name))
     .sort();
 }
 
-export function linkTests(config, map) {
-  const known = new Set([...map.screens.map((s) => `screen:${s.id}`), ...(map.calls ?? []).map((c) => `call:${c.id}`)]);
-  const callOptions = new Map((map.calls ?? []).map((c) => [c.id, new Set((c.options ?? []).map((o) => o.key))]));
-  const screensById = new Map(map.screens.map((s) => [s.id, s]));
-  const caseTagsMemo = new Map();
-  const caseTagsOf = (id) => {
+export function linkTests(config: any, map: any) {
+  const known = new Set([...map.screens.map((s: any) => `screen:${s.id}`), ...(map.calls ?? []).map((c: any) => `call:${c.id}`)]);
+  const callOptions = new Map<string, Set<string>>((map.calls ?? []).map((c: any) => [c.id, new Set((c.options ?? []).map((o: any) => o.key))]));
+  const screensById = new Map<string, any>(map.screens.map((s: any) => [s.id, s]));
+  const caseTagsMemo = new Map<string, Set<string>>();
+  const caseTagsOf = (id: string) => {
     if (!caseTagsMemo.has(id)) caseTagsMemo.set(id, new Set(screenCases(screensById.get(id).access).map((c) => c.tag)));
-    return caseTagsMemo.get(id);
+    return caseTagsMemo.get(id)!;
   };
-  const nodes = {};
-  const stories = Object.create(null);
-  const unknownTags = [];
-  const untagged = new Map();
+  const nodes: Record<string, any[]> = {};
+  const stories: Record<string, any[]> = Object.create(null);
+  const unknownTags: { tag: string; test: { title: string; file: string | null; line: number | null } }[] = [];
+  const untagged = new Map<string, any>();
   const missingSources = [];
   const seenUnknown = new Set();
   const linkByImports = importLinker(config.srcRoot, map, config.aliases);
-  const importers = {};
-  const importNotices = [];
+  const importers: Record<string, any[]> = {};
+  const importNotices: { file: string; reason: string }[] = [];
   const linkByTrace = traceLinker(map);
-  const passed = {};
+  const passed: Record<string, any[]> = {};
   const traceNotices = [];
   let untracedCount = 0;
-  const shownPath = (file) => (path.relative(config.configDir, file).startsWith('..') ? file : path.relative(config.configDir, file));
-  const reportUnknown = (tag, t, testKey) => {
+  const shownPath = (file: string) => (path.relative(config.configDir, file).startsWith('..') ? file : path.relative(config.configDir, file));
+  const reportUnknown = (tag: string, t: any, testKey: string) => {
     if (seenUnknown.has(`${tag} ${testKey}`)) return;
     seenUnknown.add(`${tag} ${testKey}`);
     unknownTags.push({ tag, test: { title: t.title, file: t.file, line: t.line } });
@@ -83,22 +102,22 @@ export function linkTests(config, map) {
           if (DEPTHS.includes(value)) depth = value;
           else reportUnknown(tag, t, testKey);
         }
-        const nodeTags = t.tags.filter((tag) => NODE_TAG.test(tag));
-        const calls = nodeTags.filter((tag) => known.has(tag) && tag.startsWith('call:')).map((tag) => tag.match(NODE_TAG)[2]);
-        const options = [];
+        const nodeTags: string[] = t.tags.filter((tag: string) => NODE_TAG.test(tag));
+        const calls = nodeTags.filter((tag) => known.has(tag) && tag.startsWith('call:')).map((tag) => tag.match(NODE_TAG)![2]);
+        const options: { key: string; value: boolean }[] = [];
         for (const tag of t.tags) {
           const value = tag.match(OPTION_TAG)?.[1];
           if (value === undefined) continue;
           const m = value.match(OPTION_VALUE);
-          if (m && calls.some((id) => callOptions.get(id).has(m[1]))) options.push({ key: m[1], value: m[2] === 'true' });
+          if (m && calls.some((id) => callOptions.get(id)!.has(m[1]))) options.push({ key: m[1], value: m[2] === 'true' });
           else reportUnknown(tag, t, testKey);
         }
         options.sort(byKey);
-        const screens = nodeTags.filter((tag) => known.has(tag) && tag.startsWith('screen:')).map((tag) => tag.match(NODE_TAG)[2]);
-        const caseTags = [...new Set(t.tags.filter((tag) => CASE_TAG.test(tag)))].sort();
+        const screens = nodeTags.filter((tag) => known.has(tag) && tag.startsWith('screen:')).map((tag) => tag.match(NODE_TAG)![2]);
+        const caseTags = [...new Set<string>(t.tags.filter((tag: string) => CASE_TAG.test(tag)))].sort();
         for (const tag of caseTags) if (!screens.some((id) => caseTagsOf(id).has(tag))) reportUnknown(tag, t, testKey);
-        const storyTags = [...new Set(t.tags.filter((tag) => STORY_TAG.test(tag)))];
-        const link = source.format === 'vitest' ? linkByImports(t.file) : null;
+        const storyTags = [...new Set<string>(t.tags.filter((tag: string) => STORY_TAG.test(tag)))];
+        const link: ImportLink | null = source.format === 'vitest' ? linkByImports(t.file) : null;
         if (link) {
           if (link.reason && !importNotices.some((n) => n.file === t.file)) importNotices.push({ file: t.file, reason: link.reason });
           for (const [id, via] of link.screens ?? []) {
@@ -136,12 +155,12 @@ export function linkTests(config, map) {
             reportUnknown(tag, t, testKey);
             continue;
           }
-          const [, kind, id] = tag.match(NODE_TAG);
+          const [, kind, id] = tag.match(NODE_TAG)!;
           const cases = kind === 'screen' && caseTags.length ? caseTags.filter((tag) => caseTagsOf(id).has(tag)) : [];
-          const own = kind === 'call' ? { ...entry, options: options.filter((o) => callOptions.get(id).has(o.key)) } : cases.length ? { ...entry, cases } : entry;
+          const own = kind === 'call' ? { ...entry, options: options.filter((o) => callOptions.get(id)!.has(o.key)) } : cases.length ? { ...entry, cases } : entry;
           (nodes[id] ??= []).push(own);
         }
-        for (const tag of storyTags) (stories[tag.match(STORY_TAG)[1]] ??= []).push(entry);
+        for (const tag of storyTags) (stories[tag.match(STORY_TAG)![1]] ??= []).push(entry);
       }
     }
   }

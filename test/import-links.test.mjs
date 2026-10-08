@@ -6,7 +6,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
 import { importLinker } from '../src/import-links.ts';
 import { buildMap } from '../src/map.mjs';
-import { linkTests } from '../src/test-links.mjs';
+import { linkTests } from '../src/test-links.ts';
 
 const config = loadConfig(path.join(import.meta.dirname, 'fixtures/app/config.json'));
 const map = await buildMap(config);
