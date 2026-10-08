@@ -206,14 +206,14 @@ export function loadConfig(configPath) {
   const twice = calledApiModules.find((f) => (raw.apiModules ?? []).includes(f));
   if (twice) throw new Error(`${twice} is in both apiModules and calledApiModules; list it in one of them`);
   const requestFunction = raw.requestFunction ?? null;
-  const { import: from, name, method, url, object, ...extraKeys } = isPlainObject(requestFunction) ? requestFunction : {};
+  const { import: from, name, method, url, body, object, ...extraKeys } = isPlainObject(requestFunction) ? requestFunction : {};
   const isArgumentPlace = (v) => typeof v === 'string' && ARGUMENT_PLACE.test(v);
-  const places = object === true ? method === undefined && url === undefined
-    : (object === undefined || object === false) && isArgumentPlace(url) && (method === undefined || isArgumentPlace(method));
+  const places = object === true ? method === undefined && url === undefined && body === undefined
+    : (object === undefined || object === false) && isArgumentPlace(url) && [method, body].every((v) => v === undefined || isArgumentPlace(v));
   if (requestFunction !== null && !(isText(from) && isText(name) && (name === 'default' || IDENTIFIER.test(name)) && places && !Object.keys(extraKeys).length)) {
-    throw new Error(`requestFunction must be { "import", "name", "method", "url" }: the import path and name the app's API code imports the function sending its requests by, `
-      + 'and where the method and the address are among the values it is given, as the place of the value counted from 0 followed by the keys inside it, '
-      + 'such as { "import": "@/api/request", "name": "executeRequest", "method": "0.endpoint.method", "url": "0.url" }; '
+    throw new Error(`requestFunction must be { "import", "name", "method", "url", "body" }: the import path and name the app's API code imports the function sending its requests by, `
+      + 'and where the method, the address and the request body (optional) are among the values it is given, as the place of the value counted from 0 followed by the keys inside it, '
+      + 'such as { "import": "@/api/request", "name": "executeRequest", "method": "0.endpoint.method", "url": "0.url", "body": "0.body" }; '
       + 'or, when the API code calls get, post, put, patch and delete of a request object with the address first, { "import", "name", "object": true }, '
       + `such as { "import": "axios", "name": "default", "object": true }, not ${JSON.stringify(requestFunction)}`);
   }

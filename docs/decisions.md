@@ -624,6 +624,44 @@ clone runs, since Node follows the link, but a copy installed from a packed `.tg
 Measured on main 38f87f3 against the branch: the into-sign 1.5.0 and 2.0.0 maps and the two example maps are
 identical apart from the time they were written.
 
+**The on/off values a request body carries are read from the TypeScript type of the body each API method sends,
+with the TypeScript checker, and become options of the method's calls named by their path in the body.**
+In into-sign 2.0.0 a screen puts its values under dotted form keys, and a conversion function inside the API
+method turns them into the body, so the call site the map reads shows no body keys. Alternatives compared, each
+scored against the 53 on/off keys the nine document calls carry (correct / wrong / missed):
+- Keys read by conversion functions listed in the config: 28 / 11 / 25, a dozen functions to list, and the option
+  is named by the form key rather than by what is sent.
+- Fixed values at the screen's `mutate` call: 4 / 0 / 49; the publish screens' keys are all missed until hooks are
+  joined to the API calls.
+Reason: the type names what is sent, which is what a test's `@option:` tag names, and needs no screen code. The
+body is the value an API method gives under a `bodyArgKeys` name, or the one a method it calls on `this` gives,
+since into-sign sends a signer update through a private method shared with notify and delete. Only objects given
+to a call count, so an object built from the answer is not taken for the body. Running the method tells which
+requests carried a body (`requestFunction.body`, without which no type is read), so notify and delete, which send
+none, get no options.
+A true/false field next to a field of two or more fixed texts named after the same thing (`enabledAuth` and
+`authType: 'CONTACT' | 'PASSWORD'`) picks among more than two values, is left out and printed; next to a single
+fixed text (`authType: 'PASSWORD'` on a link document) it stays an option. A field typed only `true` or only
+`false` is not an option.
+Measured on into-sign 2.0.0 (`release/2.0.0` at `0f436776f`), the nine calls: before leaving fields out, 52 of the
+53 keys are found, the same as reading the type files by hand; the one missed is the cc update, whose body is typed
+`Record<string, unknown>` and is printed. 12 fields are found that no screen sets, against 9 counted by hand:
+`enabledOrderedSigning`, `enabledPkiSign` and `viewExpiration.enabledViewExpire` of the flexible publish, which
+always sends `false`; `enabledLinkAble` of the link publish, always `null`; seven per-item `required` fields
+(five counted by hand); and `document.signers[].authConfig.enabledAuth` of the flexible publish. The authentication
+fields of signers, cc and the flexible document, and the view expiry of the link publish (`viewExpireType: 'DAYS'
+| 'DATE'`), are left out as more than two values. Outside the nine, the system settings update gets five options
+and the label create and update one each. Not covered: a body built where the type is lost (`any`), a body given
+positionally rather than under a key, a method reaching its body through a function outside its object, and an
+options object put in a variable before the call; a method that sent a body duru did not find is printed (five
+on into-sign 2.0.0, each building its body in a helper function). An object built from the
+answer and given to another call, such as `JSON.stringify({ body: answer })`, is read as a body, and a method
+sending two different bodies gives each of its calls the fields of both.
+Measured on main 38f87f3 against the branch: the 2.0.0 map with `"bodyArgKeys": ["body"]` and `"body": "0.body"`
+took 12.7 and 11.7 s against main's 9.8 and 10.5 s without them, in two runs on each side; apart from the new
+options and `bodyTypeNotices` it is the same as main's. The into-sign 1.5.0 map, the 2.0.0 map without the
+two keys and the two example maps are identical to main's apart from the time they were written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

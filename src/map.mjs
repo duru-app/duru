@@ -49,7 +49,7 @@ function configuredCallLinks(calls, callLinks) {
 }
 
 const bySite = (a, b) => compare(a.screen, b.screen) || compare(a.file, b.file) || a.line - b.line;
-const OPTION_SOURCES = ['source', 'config'];
+const OPTION_SOURCES = ['source', 'type', 'config'];
 
 function buildCalls(apiFunctions, screens, apiPathPrefix, bodyOptions) {
   const calls = new Map();
@@ -67,6 +67,12 @@ function buildCalls(apiFunctions, screens, apiPathPrefix, bodyOptions) {
     if (!node.options.has(key)) node.options.set(key, { sources: new Set(), sites: new Map() });
     return node.options.get(key);
   };
+  for (const fn of Object.values(apiFunctions)) {
+    for (const e of fn.endpoints) {
+      const node = calls.get(callOf(e, apiPathPrefix)?.id);
+      if (node) for (const key of e.bodyOptions ?? []) optionOf(node, key).sources.add('type');
+    }
+  }
   for (const s of screens) {
     for (const c of s.apiCalls) {
       for (const e of c.endpoints ?? []) {
@@ -102,7 +108,7 @@ function buildCalls(apiFunctions, screens, apiPathPrefix, bodyOptions) {
 }
 
 export async function buildMap(config) {
-  const { screens, apiFunctions, unrunApiModules, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports } = await extractClient(config);
+  const { screens, apiFunctions, unrunApiModules, bodyTypeNotices, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -146,6 +152,7 @@ export async function buildMap(config) {
     screens: mapped,
     apiFunctions,
     ...(unrunApiModules && { unrunApiModules }),
+    ...(bodyTypeNotices && { bodyTypeNotices }),
     deadCalls,
     duplicateIds,
     calls,

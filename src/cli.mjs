@@ -68,6 +68,9 @@ if (command === 'tasks') {
   console.log(`screens ${map.screens.length} | api functions ${Object.keys(map.apiFunctions).length} | endpoints match ${count('match')} method-mismatch ${count('method-mismatch')} none ${count('none')} unresolved ${count('unresolved')}${map.serverNotCompared ? ` unchecked ${count('unchecked')}` : ''}`);
   if (map.serverNotCompared) console.log(`  ${SERVER_NOT_COMPARED}`);
   for (const m of map.unrunApiModules ?? []) console.log(`  calledApiModules ${m.file} did not run: ${m.error}`);
+  for (const n of map.bodyTypeNotices ?? []) {
+    console.log(`  body type ${n.method}: ${n.field ? `${n.field} goes with ${n.beside}, so it is not taken as an on/off option` : n.reason}`);
+  }
   for (const [name, fn] of Object.entries(map.apiFunctions)) if (fn.error && !fn.endpoints.length) console.log(`  api method ${name} ← ${fn.file ?? '?'}${fn.line ? `:${fn.line}` : ''}: ${fn.error}`);
   console.log(`dead calls reachable from screens: ${map.deadCalls.length}`);
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s) => s.dead).length}`);

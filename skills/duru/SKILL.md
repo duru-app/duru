@@ -67,6 +67,13 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   the user which methods are missing; do not write tests or fixes for them as if their endpoints were gone.
   Most come from the fake values, for example a method that checks a value it is given or picks its address by
   it. A `{?}` in a call's address is a piece that came from a fake value, a path variable.
+- On/off options read from request body types: with `tsconfig`, `bodyArgKeys` (such as `["body"]`) and
+  `requestFunction.body` (such as `"0.body"`), a call gets an option for each true/false field of the body its API
+  method sends, named by the field's path in the body. A `body type <name>: <field> goes with <other field>` line names a field that
+  picks among more than two values with that other field, such as an authentication that is off, by contact or by
+  password; it is not an option, so tell the user it needs a test per value. A `body type <name>: the body is
+  typed …` or `body type <name>: it sent a body, but no …` line names a method whose body fields duru could not
+  read, so its options are missing from the map.
 - A screen's API calls are the ones its code reaches, each with the file and line where it is written,
   while its `sourceFiles` hold whole files. A call written in one of those files is not the screen's when the
   screen does not use the function holding it, so do not write a test of that call for the screen.

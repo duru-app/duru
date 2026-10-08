@@ -100,7 +100,7 @@ function runWorker(workerData, onMessage) {
 
 // functions 는 「export 한 이름.메서드」마다 { file, line, endpoints, error? }, keyOf 는 (파일, export 한 이름) 에서 그 이름을 돌려준다.
 export async function recordApiCalls(config, resolve, taken = new Set()) {
-  const { import: from, name, method, url, object } = config.requestFunction;
+  const { import: from, name, method, url, body, object } = config.requestFunction;
   const relative = from.startsWith('.');
   const target = resolve(path.join(config.srcRoot, 'index.js'), from);
   if (relative && !target) throw new Error(`requestFunction.import ${from} names no file under srcRoot ${config.srcRoot}`);
@@ -144,7 +144,7 @@ export async function recordApiCalls(config, resolve, taken = new Set()) {
       else if (m.type === 'classes') classes.set(`${m.file}\n${m.exportName}`, m.locations);
     };
     for (;;) {
-      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, scheme: SCHEME.source }, onMessage);
+      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url, body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, scheme: SCHEME.source }, onMessage);
       if (outcome.done) break;
       if (!outcome.unit) throw new Error(`calledApiModules: the run stopped outside any module or method: ${firstLine(outcome.error.message)}`);
       skip.add(outcome.unit);
@@ -185,6 +185,7 @@ export async function recordApiCalls(config, resolve, taken = new Set()) {
       return hidden.get(owner);
     };
     const functions = {};
+    const bodyMethods = [];
     for (const c of called) {
       const key = c.member === null ? keyOf.get(`${c.file}\n${c.exportName}`) : `${keyOf.get(`${c.file}\n${c.exportName}`)}.${c.member}`;
       const copy = c.location && copier.copyOfUrl(c.location.url);
@@ -204,8 +205,18 @@ export async function recordApiCalls(config, resolve, taken = new Set()) {
         endpoints,
         ...(c.error && { error: unmarked(firstLine(copier.rename(c.error.message))) }),
       };
+      const sentBody = new Set(c.requests.filter((r) => r.body).map(requestOf).map((r) => `${r.method} ${r.url}`));
+      const withBody = endpoints.filter((e) => e.method !== 'GET' && sentBody.has(`${e.method} ${e.url}`));
+      if (line && withBody.length) bodyMethods.push({ key, file: place.file, line, shownFile: rel(place.file), endpoints: withBody });
     }
-    return { functions, keyOf: (file, exportName) => keyOf.get(`${file}\n${exportName}`) ?? prefixOf(file, exportName), failedModules };
+    const bodyTypeNotices = [];
+    if (config.tsconfig && body && config.bodyArgKeys.length && bodyMethods.length) {
+      const { readBodyFields } = await import('./body-types.ts');
+      const { fields, notices } = readBodyFields(config.tsconfig, config.bodyArgKeys, bodyMethods);
+      for (const m of bodyMethods) if (fields.has(m.key)) for (const e of m.endpoints) e.bodyOptions = fields.get(m.key);
+      bodyTypeNotices.push(...notices);
+    }
+    return { functions, keyOf: (file, exportName) => keyOf.get(`${file}\n${exportName}`) ?? prefixOf(file, exportName), failedModules, bodyTypeNotices };
   } finally {
     copier.cleanup();
   }

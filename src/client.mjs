@@ -935,5 +935,5 @@ export async function extractClient(config) {
     return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls, settingReads, links };
   });
 
-  return { screens, apiFunctions, unrunApiModules: called?.failedModules ?? null, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
+  return { screens, apiFunctions, unrunApiModules: called?.failedModules ?? null, bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
 }
