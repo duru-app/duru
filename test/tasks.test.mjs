@@ -5,10 +5,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
-import { addJudgment } from '../src/judgments.mjs';
-import { addMark } from '../src/marks.mjs';
-import { reviewData } from '../src/review.mjs';
-import { taggingLines } from '../src/tasks.mjs';
+import { addJudgment } from '../src/judgments.ts';
+import { addMark } from '../src/marks.ts';
+import { reviewData } from '../src/review.ts';
+import { taggingLines } from '../src/tasks.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.mjs');

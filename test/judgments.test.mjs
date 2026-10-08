@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
-import { addJudgment, applyJudgments, loadJudgments } from '../src/judgments.mjs';
+import { addJudgment, applyJudgments, loadJudgments } from '../src/judgments.ts';
 import { buildMap } from '../src/map.mjs';
 import { linkTests } from '../src/test-links.ts';
 

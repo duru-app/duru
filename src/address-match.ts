@@ -1,5 +1,5 @@
 import { UNKNOWN } from './client.mjs';
-import { routePattern } from './path-values.mjs';
+import { routePattern } from './path-values.ts';
 import { toSegments } from './server.ts';
 
 interface MapScreen {

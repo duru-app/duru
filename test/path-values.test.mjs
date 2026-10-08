@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { asIsPath, fallbackScreen, fillPath, opensAsIs, pathParts, preparePathValues, unknownPathValues } from '../src/path-values.mjs';
+import { asIsPath, fallbackScreen, fillPath, opensAsIs, pathParts, preparePathValues, unknownPathValues } from '../src/path-values.ts';
 
 const screen = (id, path, from = []) => ({ id, path, access: { links: from.map((f) => ({ from: f })) } });
 

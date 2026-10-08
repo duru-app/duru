@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { addMark, classifyMarks, loadMarks } from '../src/marks.mjs';
+import { addMark, classifyMarks, loadMarks } from '../src/marks.ts';
 
 const MAP = { screens: [{ id: '/home#Home' }, { id: '/lab#Lab' }], calls: [{ id: 'GET:/api/v1/document/list' }] };
 

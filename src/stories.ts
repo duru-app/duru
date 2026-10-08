@@ -3,21 +3,60 @@ import path from 'node:path';
 import { compare, isPlainObject } from './config.mjs';
 import { jsonFiles } from './json-files.ts';
 
+interface RawSource {
+  record?: unknown;
+  steps?: unknown;
+}
+
+interface RawStory {
+  name?: unknown;
+  screens?: unknown;
+  memo?: unknown;
+  author?: unknown;
+  date?: unknown;
+  source?: RawSource;
+}
+
+export interface Story {
+  id: string;
+  name: string;
+  screens: string[];
+  memo: string;
+  author: string;
+  date: string;
+  source?: { record: string; steps: [number, number] };
+  file: string;
+}
+
+interface Notice {
+  file: string;
+  reason: string;
+}
+
+interface NewStory {
+  id: unknown;
+  name: unknown;
+  screens: string[];
+  memo?: string;
+  author: unknown;
+  source?: RawSource;
+}
+
 export const STORY_ID = /^[a-z0-9_-]+$/;
 const KEYS = ['name', 'screens', 'memo', 'author', 'date', 'source'];
 export const DISCARDED = 'discarded';
 const DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
-export const isText = (v) => typeof v === 'string' && v.trim().length > 0;
-export const isScreenList = (v) => Array.isArray(v) && v.length > 0 && v.every(isText);
-const isStep = (v) => Number.isInteger(v) && v > 0;
-const isSource = (v) => isPlainObject(v) && Object.keys(v).length === 2 && isText(v.record)
+export const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+export const isScreenList = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every(isText);
+const isStep = (v: number) => Number.isInteger(v) && v > 0;
+const isSource = (v: RawSource) => isPlainObject(v) && Object.keys(v).length === 2 && isText(v.record)
   && Array.isArray(v.steps) && v.steps.length === 2 && v.steps.every(isStep) && v.steps[0] <= v.steps[1];
 // Date.parse 는 2026-02-30 을 3월 2일로 넘겨 받으므로, 날짜 부분이 그대로 되돌아오는지 본다.
-export const isDate = (v) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v))
+export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v))
   && new Date(`${v.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === v.slice(0, 10);
 
-function problemOf(story) {
+function problemOf(story: RawStory) {
   if (!isPlainObject(story)) return '스토리는 JSON 객체여야 합니다';
   const unknown = Object.keys(story).filter((k) => !KEYS.includes(k));
   if (unknown.length) {
@@ -36,22 +75,22 @@ function problemOf(story) {
 }
 
 const SAY = {
-  folder: (message) => `스토리 폴더를 읽지 못했습니다: ${message}`,
+  folder: (message: string) => `스토리 폴더를 읽지 못했습니다: ${message}`,
   missing: () => '링크가 가리키는 파일이 없습니다',
-  link: (message) => `링크를 따라가지 못했습니다: ${message}`,
+  link: (message: string) => `링크를 따라가지 못했습니다: ${message}`,
 };
 
-function storyFiles(dir) {
+function storyFiles(dir: string): { root: string; files: { file: string; reason?: string }[] } {
   if (!fs.statSync(dir).isDirectory()) return { root: path.dirname(dir), files: [{ file: path.basename(dir) }] };
   return { root: dir, files: jsonFiles(dir, SAY).filter((f) => f.file.split(path.sep)[0] !== DISCARDED) };
 }
 
-export function loadStories(dir) {
+export function loadStories(dir: string): { stories: Story[]; notices: Notice[] } {
   if (!fs.existsSync(dir)) return { stories: [], notices: [] };
   const { root, files } = storyFiles(dir);
-  const stories = [];
-  const notices = [];
-  const fileOfId = new Map();
+  const stories: Story[] = [];
+  const notices: Notice[] = [];
+  const fileOfId = new Map<string, string>();
   for (const { file, reason } of files) {
     if (reason) {
       notices.push({ file, reason });
@@ -71,7 +110,7 @@ export function loadStories(dir) {
     try {
       story = JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
     } catch (err) {
-      notices.push({ file, reason: `JSON 으로 읽지 못했습니다: ${err.message}` });
+      notices.push({ file, reason: `JSON 으로 읽지 못했습니다: ${(err as Error).message}` });
       continue;
     }
     const problem = problemOf(story);
@@ -84,12 +123,12 @@ export function loadStories(dir) {
   return { stories: stories.sort((a, b) => compare(a.id, b.id)), notices };
 }
 
-export function writableStoriesFolder(dir) {
+export function writableStoriesFolder(dir: string) {
   if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory()) throw new Error(`스토리 폴더 ${dir} 가 파일이라 새 파일을 쓸 수 없습니다`);
   fs.mkdirSync(dir, { recursive: true });
 }
 
-export function addStory(dir, { id, name, screens, memo = '', author, source }, now = new Date()) {
+export function addStory(dir: string, { id, name, screens, memo = '', author, source }: NewStory, now = new Date()) {
   if (typeof id !== 'string' || !STORY_ID.test(id)) throw new Error('스토리 ID 는 영문 소문자 · 숫자 · - · _ 로만 씁니다');
   if (!isText(name)) throw new Error('스토리 이름이 필요합니다');
   if (!isText(author)) throw new Error('작성자가 필요합니다');
@@ -103,7 +142,7 @@ export function addStory(dir, { id, name, screens, memo = '', author, source }, 
   return { id, ...story, file: `${id}.json` };
 }
 
-export function editStory(dir, id, { name, memo }) {
+export function editStory(dir: string, id: string, { name, memo }: { name: unknown; memo: unknown }) {
   if (!isText(name)) throw new Error('스토리 이름이 필요합니다');
   if (typeof memo !== 'string') throw new Error('메모는 글자여야 합니다');
   const story = loadStories(dir).stories.find((s) => s.id === id);

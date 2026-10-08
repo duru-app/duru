@@ -1,6 +1,6 @@
 import { extractClient, UNKNOWN } from './client.mjs';
 import { clientPath, loadServerEndpoints, matchEndpoint } from './server.ts';
-import { linkTargets, screenAccess } from './access.mjs';
+import { linkTargets, screenAccess } from './access.ts';
 import { compare } from './config.mjs';
 import { removeExcludedFields } from './body-type-exclusions.ts';
 

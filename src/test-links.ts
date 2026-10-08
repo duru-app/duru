@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { screenCases } from './access.mjs';
+import { screenCases } from './access.ts';
 import { compare } from './config.mjs';
 import { importLinker } from './import-links.ts';
 import { readJunit } from './junit.ts';

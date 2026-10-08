@@ -1,25 +1,26 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { screenCases } from './access.mjs';
+import { screenCases } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
-import { acceptCandidate, discardCandidate, storyCandidates } from './candidates.mjs';
+import { acceptCandidate, discardCandidate, storyCandidates } from './candidates.ts';
 import { isPlainObject } from './config.mjs';
 import { buildFlow } from './flow.ts';
-import { addJudgment, applyJudgments, loadJudgments } from './judgments.mjs';
-import { addMark, classifyMarks, loadMarks } from './marks.mjs';
-import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.mjs';
-import { addStory, editStory } from './stories.mjs';
-import { checkScreens, checkStoryFiles } from './story-paths.mjs';
+import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
+import { addMark, classifyMarks, loadMarks } from './marks.ts';
+import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.ts';
+import { addStory, editStory } from './stories.ts';
+import { checkScreens, checkStoryFiles } from './story-paths.ts';
 import { DEPTHS } from './test-links.ts';
 
 const PAGE = path.join(import.meta.dirname, 'review-page.html');
 const BODY_LIMIT = 64 * 1024;
 const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit', '/api/stories/check', '/api/stories/add'];
 
-function gitUserName(cwd) {
+function gitUserName(cwd: string) {
   try {
     return execFileSync('git', ['config', 'user.name'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
   } catch {
@@ -35,51 +36,56 @@ function computerUserName() {
   return name || process.env.USER?.trim() || process.env.USERNAME?.trim() || 'unknown';
 }
 
-export function reviewAuthor(config, { gitName = gitUserName, userName = computerUserName } = {}) {
+export interface ReviewAuthor {
+  name: string;
+  source: string;
+}
+
+export function reviewAuthor(config: any, { gitName = gitUserName, userName = computerUserName }: { gitName?: (cwd: string) => string | null; userName?: () => string } = {}): ReviewAuthor {
   if (config.author) return { name: config.author, source: 'config' };
   const git = gitName(config.configDir);
   if (git) return { name: git, source: 'git' };
   return { name: userName(), source: 'user' };
 }
 
-function readJson(file) {
+function readJson(file: string) {
   if (!fs.existsSync(file)) throw new Error(`${file} does not exist — run "duru rebuild" first`);
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-function appLink(appUrl, routePath, given) {
+function appLink(appUrl: string | null | undefined, routePath: string, given: any) {
   if (!appUrl || !opensAsIs(routePath, given)) return null;
   return appUrl.replace(/\/+$/, '') + asIsPath(routePath, given);
 }
 
-function screenCallOptions(screen, callsById) {
-  const sent = new Map();
-  for (const c of screen.apiCalls) {
+function screenCallOptions(screen: any, callsById: Map<string, any>) {
+  const sent = new Map<string, Set<string>>();
+  for (const c of screen.apiCalls as any[]) {
     for (const e of c.endpoints ?? []) {
       if (!e.callId) continue;
       if (!sent.has(e.callId)) sent.set(e.callId, new Set());
-      for (const o of c.options ?? []) sent.get(e.callId).add(o.key);
+      for (const o of c.options ?? []) sent.get(e.callId)!.add(o.key);
     }
   }
-  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id).options.filter((o) => keys.has(o.key) || o.sources.includes('type') || o.sources.includes('config'))]));
+  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id).options.filter((o: any) => keys.has(o.key) || o.sources.includes('type') || o.sources.includes('config'))]));
 }
 
-const isStaleMap = (map) => Array.isArray(map?.screens) && map.screens.some((s) => !s.routeFile);
-const staleMapError = (mapFile) => new Error(`${mapFile} was built by a duru that did not record the route file of each screen — run "duru rebuild"`);
+const isStaleMap = (map: any) => Array.isArray(map?.screens) && map.screens.some((s: any) => !s.routeFile);
+const staleMapError = (mapFile: string) => new Error(`${mapFile} was built by a duru that did not record the route file of each screen — run "duru rebuild"`);
 
-function readMap(mapFile) {
+function readMap(mapFile: string) {
   const map = readJson(mapFile);
   if (isStaleMap(map)) throw staleMapError(mapFile);
   return map;
 }
 
-const judgedTests = (config) => applyJudgments(readJson(path.join(config.outDir, 'tests.json')), loadJudgments(config.judgmentsDir).judgments);
+const judgedTests = (config: any) => applyJudgments(readJson(path.join(config.outDir, 'tests.json')), loadJudgments(config.judgmentsDir).judgments);
 
-export function reviewData(config, author, app = null, fileSettings = null) {
+export function reviewData(config: any, author: ReviewAuthor | null, app: Awaited<ReturnType<typeof startAppHost>> | null = null, fileSettings: Record<string, unknown> | null = null) {
   const mapFile = path.join(config.outDir, 'map.json');
   const map = readMap(mapFile);
   const tests = judgedTests(config);
-  const callsById = new Map(map.calls.map((c) => [c.id, c]));
+  const callsById = new Map<string, any>(map.calls.map((c: any) => [c.id, c]));
   for (const s of map.screens) {
     s.callOptions = screenCallOptions(s, callsById);
     s.cases = screenCases(s.access);
@@ -99,14 +105,14 @@ export function reviewData(config, author, app = null, fileSettings = null) {
       signedOutUrl: app.signedOutUrl,
       signOutPath: SIGN_OUT_PATH,
       signedOutPaths: config.app.signedOutPaths,
-      unknownSignedOutPaths: config.app.signedOutPaths.filter((p) => !map.screens.some((s) => s.path === p)),
+      unknownSignedOutPaths: config.app.signedOutPaths.filter((p: string) => !map.screens.some((s: any) => s.path === p)),
       unknownPathValues: unknownPathValues(map, config.app.pathValues),
       account: app.account,
       roles: app.roles,
       error: app.error,
       settings: config.app.settingsFile && { root: config.app.settingsFile.root, merged: config.app.settingsFile.merged, overrides: app.overrides, ...fileSettings },
     },
-    appLinks: Object.fromEntries(map.screens.map((s) => {
+    appLinks: Object.fromEntries(map.screens.map((s: any) => {
       const signedOut = app && config.app.signedOutPaths.includes(s.path);
       return [s.id, appLink(signedOut ? app.signedOutUrl : (app?.url ?? config.appUrl), s.path, config.app?.pathValues?.[s.path])];
     })),
@@ -116,16 +122,16 @@ export function reviewData(config, author, app = null, fileSettings = null) {
   };
 }
 
-function send(res, status, type, body) {
+function send(res: http.ServerResponse, status: number, type: string, body: string) {
   res.writeHead(status, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' });
   res.end(body);
 }
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
+function readBody(req: http.IncomingMessage) {
+  return new Promise<string>((resolve, reject) => {
     let body = '';
     req.setEncoding('utf8');
-    req.on('data', (chunk) => {
+    req.on('data', (chunk: string) => {
       body += chunk;
       if (body.length > BODY_LIMIT) {
         reject(new Error('request body too large'));
@@ -137,10 +143,10 @@ function readBody(req) {
   });
 }
 
-export async function startReviewServer(config, { port = 0, author = reviewAuthor(config), onDone = () => {} } = {}) {
+export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {} }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
   // 없거나 아직 쓰는 중인 맵은 페이지가 요청할 때 알리고, 예전 형식의 맵만 서버를 띄우기 전에 알린다.
-  let onDisk = null;
+  let onDisk: any = null;
   try {
     onDisk = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
   } catch {}
@@ -152,12 +158,12 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
   };
   const app = config.app && (await startAppHost(config.app, { rootDefaults }));
   // 다른 사이트가 사용자의 브라우저로 표시를 써 넣거나 리뷰를 끝내거나(JSON 이 아닌 요청), 자기 도메인을 이 주소로 돌려 맵을 읽어 가는 것(다른 Host)을 막는다.
-  const ownHosts = () => [`127.0.0.1:${server.address().port}`, `localhost:${server.address().port}`];
-  const isJson = (req) => req.headers['content-type']?.startsWith('application/json');
-  const saves = { '/api/marks': (input) => addMark(config.marksDir, input), '/api/judgments': (input) => addJudgment(config.judgmentsDir, input) };
-  const sendPathValues = async (res, id, role, typed = {}) => {
+  const ownHosts = () => [`127.0.0.1:${(server.address() as AddressInfo).port}`, `localhost:${(server.address() as AddressInfo).port}`];
+  const isJson = (req: http.IncomingMessage) => req.headers['content-type']?.startsWith('application/json');
+  const saves: Record<string, (input: any) => unknown> = { '/api/marks': (input) => addMark(config.marksDir, input), '/api/judgments': (input) => addJudgment(config.judgmentsDir, input) };
+  const sendPathValues = async (res: http.ServerResponse, id: string | null, role: string | null, typed = {}) => {
     const map = readMap(mapFile);
-    const screen = map.screens.find((s) => s.id === id);
+    const screen = map.screens.find((s: any) => s.id === id);
     if (!screen) return send(res, 404, 'text/plain', `unknown screen "${id}"`);
     const fetchApi = role ? app?.fetchApiAs(role) : app?.fetchApi;
     if (fetchApi === undefined && role) return send(res, 404, 'text/plain', `unknown role "${role}"`);
@@ -165,7 +171,7 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
   };
   const server = http.createServer(async (req, res) => {
     try {
-      if (!ownHosts().includes(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden host');
+      if (!ownHosts().includes(req.headers.host!)) return send(res, 403, 'text/plain', 'forbidden host');
       if (req.method === 'POST' && req.url === '/api/end') {
         if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
         // onDone 이 예외를 던지면 리뷰를 끝내지 않고 500 으로 응답한다.
@@ -178,11 +184,11 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
         const fileSettings = app && config.app.settingsFile ? await app.fileSettings() : null;
         return send(res, 200, 'application/json', JSON.stringify(reviewData(config, author, app, fileSettings)));
       }
-      const url = new URL(req.url, 'http://host');
+      const url = new URL(req.url!, 'http://host');
       if (req.method === 'GET' && url.pathname === '/api/flow' && url.searchParams.has('from')) {
         const map = readMap(mapFile);
-        const from = url.searchParams.get('from');
-        if (!map.screens.some((s) => s.id === from)) return send(res, 404, 'text/plain', `unknown screen "${from}"`);
+        const from = url.searchParams.get('from') as string;
+        if (!map.screens.some((s: any) => s.id === from)) return send(res, 404, 'text/plain', `unknown screen "${from}"`);
         return send(res, 200, 'application/json', JSON.stringify(buildFlow(map, judgedTests(config), { from })));
       }
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {
@@ -193,7 +199,7 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
         let input;
         try {
           input = JSON.parse(await readBody(req));
-        } catch (err) {
+        } catch (err: any) {
           return send(res, 400, 'text/plain', err.message);
         }
         const { screen, role = null, typed } = isPlainObject(input) ? input : {};
@@ -208,23 +214,23 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
         try {
           const overrides = await app.setOverrides(JSON.parse(await readBody(req))?.overrides);
           return send(res, 200, 'application/json', JSON.stringify({ overrides }));
-        } catch (err) {
+        } catch (err: any) {
           return send(res, 400, 'text/plain', err.message);
         }
       }
-      if (req.method === 'POST' && STORY_POSTS.includes(req.url)) {
+      if (req.method === 'POST' && STORY_POSTS.includes(req.url!)) {
         if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
         let input;
         try {
           input = JSON.parse(await readBody(req));
-        } catch (err) {
+        } catch (err: any) {
           return send(res, 400, 'text/plain', err.message);
         }
         if (!isPlainObject(input)) return send(res, 400, 'text/plain', 'expected a JSON object');
         if (req.url === '/api/stories/edit') {
           try {
             return send(res, 200, 'application/json', JSON.stringify(editStory(config.storiesDir, input.id, input)));
-          } catch (err) {
+          } catch (err: any) {
             return send(res, 400, 'text/plain', err.message);
           }
         }
@@ -234,7 +240,7 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
             if (req.url === '/api/stories/check') return send(res, 200, 'application/json', JSON.stringify(checked));
             const { id, name, memo, screens } = input;
             return send(res, 201, 'application/json', JSON.stringify(addStory(config.storiesDir, { id, name, memo, screens, author: author.name })));
-          } catch (err) {
+          } catch (err: any) {
             return send(res, 400, 'text/plain', err.message);
           }
         }
@@ -245,32 +251,32 @@ export async function startReviewServer(config, { port = 0, author = reviewAutho
             ? acceptCandidate(config.storiesDir, candidate, { id: input.id, name: input.name, author: author.name })
             : discardCandidate(config.storiesDir, candidate, { reason: input.reason, author: author.name });
           return send(res, 201, 'application/json', JSON.stringify(written));
-        } catch (err) {
+        } catch (err: any) {
           return send(res, 400, 'text/plain', err.message);
         }
       }
-      if (req.method === 'POST' && Object.hasOwn(saves, req.url)) {
+      if (req.method === 'POST' && Object.hasOwn(saves, req.url!)) {
         if (!isJson(req)) return send(res, 415, 'text/plain', 'expected application/json');
         let input;
         try {
           input = JSON.parse(await readBody(req));
-        } catch (err) {
+        } catch (err: any) {
           return send(res, 400, 'text/plain', err.message);
         }
         try {
-          const saved = saves[req.url]({ ...input, author: author.name });
+          const saved = saves[req.url!]({ ...input, author: author.name });
           return send(res, 201, 'application/json', JSON.stringify(saved));
-        } catch (err) {
+        } catch (err: any) {
           return send(res, 400, 'text/plain', err.message);
         }
       }
       send(res, 404, 'text/plain', 'not found');
-    } catch (err) {
+    } catch (err: any) {
       send(res, 500, 'text/plain', err.message);
     }
   });
   if (app) server.on('close', () => app.close());
-  return new Promise((resolve, reject) => {
+  return new Promise<http.Server>((resolve, reject) => {
     server.once('error', (err) => {
       app?.close();
       reject(err);
