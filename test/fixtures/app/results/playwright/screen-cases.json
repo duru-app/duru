@@ -1,0 +1,185 @@
+{
+  "config": {
+    "projects": []
+  },
+  "suites": [
+    {
+      "title": "access.spec.ts",
+      "file": "access.spec.ts",
+      "line": 0,
+      "column": 0,
+      "specs": [
+        {
+          "title": "lists members for an admin",
+          "ok": true,
+          "tags": [
+            "screen:/admin/member#AdminMember",
+            "role:ADMIN"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "expected"
+            }
+          ],
+          "id": "access.spec.ts-3",
+          "file": "access.spec.ts",
+          "line": 3,
+          "column": 1
+        },
+        {
+          "title": "sends a member signed in as MEMBER back home",
+          "ok": true,
+          "tags": [
+            "screen:/admin/member#AdminMember",
+            "role:other"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "expected"
+            }
+          ],
+          "id": "access.spec.ts-8",
+          "file": "access.spec.ts",
+          "line": 8,
+          "column": 1
+        },
+        {
+          "title": "opens help from the sign-in page while the help link is on",
+          "ok": false,
+          "tags": [
+            "screen:/help#Help",
+            "setting:SYSTEM.HELP_LINK_ENABLED=true"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "unexpected"
+            }
+          ],
+          "id": "access.spec.ts-13",
+          "file": "access.spec.ts",
+          "line": 13,
+          "column": 1
+        },
+        {
+          "title": "keeps the lab closed while it is off",
+          "ok": true,
+          "tags": [
+            "screen:/lab#Lab",
+            "setting:SYSTEM.LAB_ENABLED=false"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "expected"
+            }
+          ],
+          "id": "access.spec.ts-18",
+          "file": "access.spec.ts",
+          "line": 18,
+          "column": 1
+        },
+        {
+          "title": "lists members for an owner",
+          "ok": true,
+          "tags": [
+            "screen:/admin/member#AdminMember",
+            "role:OWNER"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "expected"
+            }
+          ],
+          "id": "access.spec.ts-23",
+          "file": "access.spec.ts",
+          "line": 23,
+          "column": 1
+        },
+        {
+          "title": "shows the home page to an admin",
+          "ok": true,
+          "tags": [
+            "screen:/home#Home",
+            "role:ADMIN"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "expected"
+            }
+          ],
+          "id": "access.spec.ts-28",
+          "file": "access.spec.ts",
+          "line": 28,
+          "column": 1
+        },
+        {
+          "title": "opens the lab with the setting named but no value",
+          "ok": true,
+          "tags": [
+            "screen:/lab#Lab",
+            "setting:SYSTEM.LAB_ENABLED"
+          ],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "expected"
+            }
+          ],
+          "id": "access.spec.ts-33",
+          "file": "access.spec.ts",
+          "line": 33,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-30T00:00:00.000Z",
+    "duration": 700,
+    "expected": 6,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

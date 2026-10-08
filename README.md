@@ -316,6 +316,17 @@ A test of a call that sets on/off options of its request body declares each with
 (`@call:POST:/api/v1/report/export @option:withHistory=true`). A test that walks a whole story declares it with
 `@story:<story ID>`; it may carry node tags too and then counts for each.
 
+A test of a screen that opens only under a role or a setting declares the case it checks next to its `@screen:`
+tag. Each role that opens the screen is a case, `@role:<role>` with the role as the map writes it (`@role:ADMIN`,
+`@role:member:ADMINISTRATOR`). `@role:other` is the case where a role that does not open the screen is kept out;
+the tag does not say which role, so put it in the test's title. Each setting condition is two cases:
+`@setting:<path>=true` for a test that meets the condition, so the screen opens, and `=false` for one that does
+not. The path is the setting's path as the map writes it, without its root; for a condition that a list holds a
+value or that a setting equals a value, the value follows a colon
+(`@setting:SYSTEM.MAIN_MENU.ADMIN_SETTING.LIST:ADMIN_MEMBER=false`). `=true` means the condition is met, also when
+the condition is that a setting is off. A test with both tags counts for each case. A role or setting tag that is
+not a case of a screen the test is tagged with is listed with the tags that point at nothing on the map.
+
 `tests.json` lists the tests per node and per story with depth and status (pass, fail, pending; skipped and todo
 count as pending), the tags that point at nothing on the map, and the tests with no tag as `untagged`.
 
@@ -408,8 +419,8 @@ branch alone. The 「스토리」 picker draws one story's path on the flow.
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
 in a frame, already logged in, with a role picker, boxes for path values and a line for the settings the screen's
 conditions name, which can be turned on and off. Below come the screen's tests by depth and its API calls, with
-a row per option value. The right says what it takes to open the screen and lists the links into it with their
-guards.
+a row per option value. The right says what it takes to open the screen, with the tests of each role and setting
+case by depth, and lists the links into it with their guards.
 
 **Untagged tests.** An untagged test linked to a screen by its imports or its trace has 「제외」, to discard the
 pair with a reason, and 「포함」, to hand it over so a coding agent adds the tag. A handed-over pair waits under
@@ -433,14 +444,15 @@ output, so a coding agent that launched the page receives it as soon as the revi
 
 `tasks` prints, as Markdown, every screen, API call and story whose current mark is `needs-more` or `missing`.
 Each screen comes with its marks, component file and route line, the app address, the settings and roles it
-needs, its API calls and the tests already attached. Calls follow under `# API calls` and stories under
-`# Stories` with their steps, link verdicts and 「사전 조건」.
+needs, the tests of each role and setting case by depth and status, its API calls and the tests already attached.
+Calls follow under `# API calls` and stories under `# Stories` with their steps, link verdicts and 「사전 조건」.
 
 Each item ends with `empty tests`: one empty test per test format in the config, with the item's tags already in
 its title and held back so a copy run as it is does not pass (`test.fixme` for Playwright, `test.todo` for
-Vitest, `@Disabled` for JUnit, a verdict line with `<verdict>` for a check script). The writer fills in the data
-setup and the checks, and the test attaches after a `rebuild`. Pairs handed over on the review page follow under
-`# Tagging`, each with the test, the tag to add and where it goes. duru never edits a test file.
+Vitest, `@Disabled` for JUnit, a verdict line with `<verdict>` for a check script). A screen gets one more set for
+each role or setting case with no tests. The writer fills in the data setup and the checks, and the test attaches
+after a `rebuild`. Pairs handed over on the review page follow under `# Tagging`, each with the test, the tag to
+add and where it goes. duru never edits a test file.
 
 ## Agent skill
 

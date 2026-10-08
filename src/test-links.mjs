@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { screenCases } from './access.mjs';
 import { compare } from './config.mjs';
 import { importLinker } from './import-links.mjs';
 import { readJunit } from './junit.mjs';
@@ -20,6 +21,7 @@ const STORY_TAG = /^story:(.+)$/;
 const DEPTH_TAG = /^depth:(.*)$/;
 const OPTION_TAG = /^option:(.*)$/;
 const OPTION_VALUE = /^([^=]+)=(true|false)$/;
+const CASE_TAG = /^(role|setting):/;
 const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 const shownFile = (t) => t.testFile ?? t.file ?? '';
 const byTest = (a, b) => compare(shownFile(a), shownFile(b)) || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.source, b.source);
@@ -37,6 +39,12 @@ function resultFiles(p, extensions) {
 export function linkTests(config, map) {
   const known = new Set([...map.screens.map((s) => `screen:${s.id}`), ...(map.calls ?? []).map((c) => `call:${c.id}`)]);
   const callOptions = new Map((map.calls ?? []).map((c) => [c.id, new Set((c.options ?? []).map((o) => o.key))]));
+  const screensById = new Map(map.screens.map((s) => [s.id, s]));
+  const caseTagsMemo = new Map();
+  const caseTagsOf = (id) => {
+    if (!caseTagsMemo.has(id)) caseTagsMemo.set(id, new Set(screenCases(screensById.get(id).access).map((c) => c.tag)));
+    return caseTagsMemo.get(id);
+  };
   const nodes = {};
   const stories = Object.create(null);
   const unknownTags = [];
@@ -86,6 +94,9 @@ export function linkTests(config, map) {
           else reportUnknown(tag, t, testKey);
         }
         options.sort(byKey);
+        const screens = nodeTags.filter((tag) => known.has(tag) && tag.startsWith('screen:')).map((tag) => tag.match(NODE_TAG)[2]);
+        const caseTags = [...new Set(t.tags.filter((tag) => CASE_TAG.test(tag)))].sort();
+        for (const tag of caseTags) if (!screens.some((id) => caseTagsOf(id).has(tag))) reportUnknown(tag, t, testKey);
         const storyTags = [...new Set(t.tags.filter((tag) => STORY_TAG.test(tag)))];
         const link = source.format === 'vitest' ? linkByImports(t.file) : null;
         if (link) {
@@ -126,7 +137,8 @@ export function linkTests(config, map) {
             continue;
           }
           const [, kind, id] = tag.match(NODE_TAG);
-          const own = kind === 'call' ? { ...entry, options: options.filter((o) => callOptions.get(id).has(o.key)) } : entry;
+          const cases = kind === 'screen' && caseTags.length ? caseTags.filter((tag) => caseTagsOf(id).has(tag)) : [];
+          const own = kind === 'call' ? { ...entry, options: options.filter((o) => callOptions.get(id).has(o.key)) } : cases.length ? { ...entry, cases } : entry;
           (nodes[id] ??= []).push(own);
         }
         for (const tag of storyTags) (stories[tag.match(STORY_TAG)[1]] ??= []).push(entry);

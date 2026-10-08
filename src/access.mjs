@@ -455,3 +455,27 @@ export function screenAccess(screens, redirects, config, guardInits, constants, 
   const unknownRoleGuards = Object.keys(configured).filter((g) => !usedRoleGuards.has(g)).sort();
   return { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions };
 }
+
+const caseName = (need) => `${need.path.join('.')}${need.need === 'includes' || need.need === 'equals' ? `:${need.value}` : ''}`;
+const needKey = (need) => JSON.stringify([need.root, need.path, need.need, need.value]);
+
+// 링크로만 들어오는 화면은 모든 링크에 걸린 조건만 화면을 막는다. 조건이 없는 링크는 settings 에 오르지 않는다.
+function requiredNeeds({ settings = [], links }) {
+  const route = settings.filter((s) => s.from === 'route').flatMap((s) => s.needs);
+  const ways = settings.filter((s) => s.from !== 'route');
+  if (!ways.length || ways.length < links.length) return route;
+  return [...route, ...ways[0].needs.filter((n) => ways.every((w) => w.needs.some((m) => needKey(m) === needKey(n))))];
+}
+
+// 설정 케이스의 =true 는 조건을 맞춘 테스트(열림), =false 는 맞추지 않은 테스트(막힘)다. 설정이 꺼져 있어야 열리는 조건이어도 같다.
+export function screenCases(access) {
+  if (!access.restricted) return [];
+  const cases = [];
+  if (access.kinds.includes('role')) {
+    for (const role of access.roleValues ?? []) cases.push({ tag: `role:${role}`, kind: 'role', opens: true });
+    cases.push({ tag: 'role:other', kind: 'role', opens: false });
+  }
+  const names = [...new Set(requiredNeeds(access).map(caseName))].sort();
+  for (const name of names) cases.push({ tag: `setting:${name}=true`, kind: 'setting', opens: true }, { tag: `setting:${name}=false`, kind: 'setting', opens: false });
+  return cases;
+}

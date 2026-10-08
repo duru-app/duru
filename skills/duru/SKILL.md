@@ -104,7 +104,14 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    which change what this call gives back. Each value counts only the tests of that other call at output depth,
    so a test for such a value carries `@call:<that other call ID>`, its `@option:<key>=true|false` and
    `@depth:output`, and checks what the first call gives back.
-   Under `empty tests`, a screen or call has one set for each open mark and a story one set: an empty test per
+   A screen that opens only under a role or a setting lists its `cases` with the tests of each. A test of a case
+   carries the case's tag next to `@screen:` as the list writes it: `@role:<role>` signs in as that role and
+   checks the screen opens; `@role:other` signs in as a role that does not open it and checks it stays shut, and
+   its title names that role, since the tag does not; `@setting:<path>=true` meets that setting condition and
+   checks the screen opens, `=false` breaks it and checks the screen stays shut. A tag that is not one of the
+   screen's cases does not attach and `rebuild` prints it as `unknown`.
+   Under `empty tests`, a screen or call has one set for each open mark, a screen one more for each case with no
+   tests, and a story one set: an empty test per
    test format in the config, with those tags already in its title. Copy the one for the runner you write the
    test in and keep every tag in its title as it is (you may replace `<what it checks>` and add words around the
    tags). Each is held back so that a copy left as it is does not pass: take `.fixme` off `test.fixme`, turn

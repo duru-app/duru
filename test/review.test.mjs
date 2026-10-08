@@ -1627,14 +1627,14 @@ test('in a browser, the story list shows only the statuses that need a look, fil
         ]);
         assert.match(await p.locator('#center .story-tests .test').first().textContent(), /Lab flow › runs the lab and reads the result @story:run-lab/);
         const stepTests = () => p.locator('#center .story-path .step').evaluateAll((steps) => steps.map((s) => [...s.querySelectorAll('.step-tests > span')].map((e) => e.textContent.trim())));
-        assert.deepEqual(await stepTests(), [['UI/E2E ✓2', 'API ✓1 ○1', '렌더링만 ✕1', '코드 ✓1', '데이터 ✕1'], ['UI/E2E ○1', '코드 ○1'], ['화면 테스트 없음']]);
+        assert.deepEqual(await stepTests(), [['UI/E2E ✓3', 'API ✓1 ○1', '렌더링만 ✕1', '코드 ✓1', '데이터 ✕1'], ['UI/E2E ✓2 ○1', '코드 ○1'], ['화면 테스트 없음']]);
         assert.match(await p.getAttribute('#center .story-path .step:nth-child(3) .step-tests > span:first-child', 'title'), /opens the lab @screen:\/lab#Lab/);
 
         await p.uncheck('#left input[name=fail]');
         assert.equal((await ids()).length, 5);
         await p.click('#story-list li:has-text("문서를 연다")');
         assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['통과']);
-        assert.deepEqual(await stepTests(), [['UI/E2E ✓1', '코드 ✓1'], ['UI/E2E ✓2', 'API ✓1 ○1', '렌더링만 ✕1', '코드 ✓1', '데이터 ✕1'], ['API ✓1 ✕2 ○1', '데이터 ○4'], ['UI/E2E ✓1', 'API ✓3 ✕3', '데이터 ✓2 ○2']]);
+        assert.deepEqual(await stepTests(), [['UI/E2E ✓1', '코드 ✓1'], ['UI/E2E ✓3', 'API ✓1 ○1', '렌더링만 ✕1', '코드 ✓1', '데이터 ✕1'], ['API ✓1 ✕2 ○1', '데이터 ○4'], ['UI/E2E ✓1', 'API ✓3 ✕3', '데이터 ✓2 ○2']]);
 
         await p.click('#story-list li:has-text("보고서")');
         assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['테스트 없음']);
@@ -1997,7 +1997,7 @@ test('in a browser, the badges of a screen list row sit below the route and leav
       });
     const crowded = await geometry(row('home'));
     const bare = await geometry(row('help'));
-    assert.deepEqual(await row('home').locator('.chip, .count').allTextContents(), ['죽은 화면', '충분', '테스트 7', '불러옴 2']);
+    assert.deepEqual(await row('home').locator('.chip, .count').allTextContents(), ['죽은 화면', '충분', '테스트 8', '불러옴 2']);
     assert.equal(crowded.name.width, bare.name.width);
     assert.ok(Math.abs(crowded.name.width - crowded.content) < 1, `${crowded.name.width} of ${crowded.content}`);
     assert.ok(crowded.badgesTop >= crowded.name.bottom && bare.badgesTop >= bare.name.bottom);
@@ -2058,6 +2058,27 @@ test('in a browser, an over-wide route segment in the screen list is clipped at 
 });
 
 const openLinkGroups = (access) => access.locator('details.link-group').evaluateAll((groups) => groups.forEach((g) => { g.open = true; }));
+
+test('in a browser, a screen that opens only under a role or a setting shows its tests for each case under what it needs', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const cases = p.locator('#right .open-needs .cases li');
+        const counts = async () => (await cases.locator('.step-tests').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+        await p.click('#screen-list li:has-text("/admin/member")');
+        assert.equal(await p.textContent('#right .open-needs .cases h3'), '경우별 테스트');
+        assert.deepEqual(await cases.locator('.case').allTextContents(), ['역할 ADMIN — 열림', '여는 역할이 아닌 역할 — 막힘']);
+        assert.deepEqual(await counts(), ['UI/E2E ✓1', 'UI/E2E ✓1']);
+        await p.click('#screen-list li:has-text("/help")');
+        assert.deepEqual(await cases.locator('.case').allTextContents(), ['설정 SYSTEM.HELP_LINK_ENABLED 맞춤 — 열림', '설정 SYSTEM.HELP_LINK_ENABLED 맞추지 않음 — 막힘']);
+        assert.deepEqual(await counts(), ['UI/E2E ✕1', '테스트 없음']);
+        await p.click('#screen-list li:has-text("/signin")');
+        assert.equal(await p.locator('#right .open-needs .cases').count(), 0);
+      }),
+    ),
+  );
+});
 
 test('in a browser, the setting and role filters keep the screens that open only under one, and the chosen screen shows why', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -3402,7 +3423,7 @@ test('in a browser, the page opens on the flow with a summary line counted from 
         assert.match(await p.textContent('#meta'), /^화면 11 · 테스트 있는 화면 7 · /);
         assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 7/11 · 실패 5 · 태그 없는 테스트만 있는 화면 0');
         const help = await screenBox(p, '/help#Help');
-        assert.match(await help.locator('.l2').textContent(), /^✓1 ✕1 ○1 · 불러옴 2/);
+        assert.match(await help.locator('.l2').textContent(), /^✓1 ✕2 ○1 · 불러옴 2/);
         assert.match(await help.getAttribute('class'), /s-fail/);
         assert.doesNotMatch(await (await screenBox(p, '/admin/member#AdminMember')).locator('.l2').textContent(), /불러옴/);
       }, { view: 'flow' }),
@@ -4385,7 +4406,7 @@ test('in a browser, entry screens that lead nowhere are gathered under 「더 �
 
         const failing = await screenBox(p, '/extra/7#Extra7');
         assert.match(await failing.getAttribute('class'), /s-fail/);
-        assert.match(await failing.locator('.l2').textContent(), /^✓1 ✕1 ○1 · 불러옴 2/);
+        assert.match(await failing.locator('.l2').textContent(), /^✓1 ✕2 ○1 · 불러옴 2/);
         assert.deepEqual(await needLines(await screenBox(p, '/extra/3#Extra3')), ['역할 ADMIN미확인 1']);
         const linked = await screenBox(p, '/extra/0#Extra0');
         assert.match(await linked.locator('.l3').textContent(), /→ /);

@@ -35,7 +35,7 @@ test('the flow starts at the entry screens and places each screen once, with the
 test('each screen box carries its test counts, its calls and whether it is dead or opens only under a condition', () => {
   const find = (nodes, id) => nodes.map((n) => (n.id === id ? n : find(n.children, id))).find(Boolean);
   const home = find(flow.roots, '/home#Home');
-  assert.deepEqual(home.counts, { pass: 4, fail: 2, pending: 1 });
+  assert.deepEqual(home.counts, { pass: 5, fail: 2, pending: 1 });
   assert.equal(home.dead, true);
   assert.deepEqual(home.calls.map((c) => [c.id, c.server.status]), [
     ['GET:/api/v1/document/list', 'match'],

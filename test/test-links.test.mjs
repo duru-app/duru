@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { screenCases } from '../src/access.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { buildMap } from '../src/map.mjs';
 import { readPlaywright } from '../src/playwright.mjs';
@@ -15,8 +16,8 @@ const summary = (id, format = 'playwright') =>
   (links.nodes[id] ?? []).filter((t) => t.format === format).map((t) => [t.project, t.depth, t.status].filter(Boolean).join(' '));
 
 test('a tagged Playwright test attaches to its screen with the configured depth and its status', () => {
-  assert.deepEqual(summary('/home#Home'), ['chromium ui pass', 'firefox ui pass']);
-  assert.deepEqual(summary('/admin/member#AdminMember'), ['chromium ui fail']);
+  assert.deepEqual(summary('/home#Home'), ['chromium ui pass', 'firefox ui pass', 'chromium ui pass']);
+  assert.deepEqual(summary('/admin/member#AdminMember'), ['chromium ui fail', 'chromium ui pass', 'chromium ui pass', 'chromium ui pass']);
   const [home] = links.nodes['/home#Home'];
   assert.equal(home.title, 'shows the document list @screen:/home#Home');
   assert.equal(home.file, 'home.spec.ts');
@@ -25,12 +26,12 @@ test('a tagged Playwright test attaches to its screen with the configured depth 
 });
 
 test('a skipped test is pending', () => {
-  assert.deepEqual(summary('/lab#Lab'), ['chromium ui pending']);
+  assert.deepEqual(summary('/lab#Lab'), ['chromium ui pending', 'chromium ui pass', 'chromium ui pass']);
 });
 
 test('a test tagged with two screens attaches to both', () => {
   assert.deepEqual(summary('/signin#SignIn'), ['chromium ui pass']);
-  assert.deepEqual(summary('/help#Help'), ['chromium ui pass']);
+  assert.deepEqual(summary('/help#Help'), ['chromium ui pass', 'chromium ui fail']);
 });
 
 test('tags pointing outside the map and tests without a node tag are reported separately, once per test across projects', () => {
@@ -41,12 +42,78 @@ test('tags pointing outside the map and tests without a node tag are reported se
       'call:DELETE:/api/v1/document/{documentId} document.spec.ts:12',
       'option:signedOnly=true export.spec.ts:31',
       'option:withHistory=yes export.spec.ts:31',
+      'role:OWNER access.spec.ts:23',
+      'role:ADMIN access.spec.ts:28',
+      'setting:SYSTEM.LAB_ENABLED access.spec.ts:33',
       'depth:e2e com.example.help.HelpServiceTest:null',
     ],
   );
   assert.equal(links.untaggedCount, 13);
   assert.equal(Object.keys(links.nodes).includes('/settings#Settings'), false);
   assert.deepEqual(links.missingSources, []);
+});
+
+const casesAt = (id) => links.nodes[id].filter((t) => t.cases).map((t) => [t.title, t.cases]);
+
+test('a role or setting tag attaches its test to that case of the screen it is tagged with', () => {
+  assert.deepEqual(casesAt('/admin/member#AdminMember'), [
+    ['lists members for an admin', ['role:ADMIN']],
+    ['sends a member signed in as MEMBER back home', ['role:other']],
+  ]);
+  assert.deepEqual(casesAt('/help#Help'), [['opens help from the sign-in page while the help link is on', ['setting:SYSTEM.HELP_LINK_ENABLED=true']]]);
+  assert.deepEqual(casesAt('/lab#Lab'), [['keeps the lab closed while it is off', ['setting:SYSTEM.LAB_ENABLED=false']]]);
+});
+
+test('a test with a role tag and a setting tag counts for each case, and the setting case of a list names the value', () => {
+  const access = {
+    restricted: true,
+    kinds: ['role', 'setting'],
+    roleValues: ['ADMIN'],
+    links: [],
+    settings: [{ from: 'route', needs: [{ root: 'globalSettings', path: ['MENU', 'LIST'], need: 'includes', value: 'REPORT' }, { root: 'globalSettings', path: ['MENU'], need: 'present' }], unreadable: [] }],
+  };
+  const report = reportOf([{ title: 'a.spec.ts', specs: [{ title: 'x', tags: ['screen:/report#Report', 'role:ADMIN', 'setting:MENU.LIST:REPORT=false'], file: 'a.spec.ts', line: 1, tests: [{ status: 'expected' }] }] }]);
+  withResults({ 'report.json': report }, (own) => {
+    const result = linkTests(own, { screens: [{ id: '/report#Report', access }] });
+    assert.deepEqual(result.nodes['/report#Report'].map((t) => t.cases), [['role:ADMIN', 'setting:MENU.LIST:REPORT=false']]);
+    assert.deepEqual(result.unknownTags, []);
+  });
+});
+
+const need = (path, extra = {}) => ({ root: 'globalSettings', path: path.split('.'), need: 'on', ...extra });
+const settingTags = (access) => screenCases({ restricted: true, kinds: ['setting'], ...access }).map((c) => c.tag);
+
+test('a screen reached only through links has setting cases only for the conditions every link asks, and its route conditions always', () => {
+  const links = [{ from: '/a' }, { from: '/b' }];
+  assert.deepEqual(
+    settingTags({ links, settings: [{ from: '/a', needs: [need('LAB'), need('MENU')] }, { from: '/b', needs: [need('LAB')] }] }),
+    ['setting:LAB=true', 'setting:LAB=false'],
+  );
+  assert.deepEqual(settingTags({ links, settings: [{ from: '/a', needs: [need('LAB')] }] }), []);
+  assert.deepEqual(
+    settingTags({ links, settings: [{ from: 'route', needs: [need('MENU.LIST', { need: 'includes', value: 'REPORT' })] }, { from: '/a', needs: [need('LAB')] }] }),
+    ['setting:MENU.LIST:REPORT=true', 'setting:MENU.LIST:REPORT=false'],
+  );
+});
+
+test('a role or setting tag that is no case of its screen is reported, and its test still counts for the screen without a case', () => {
+  assert.deepEqual(
+    links.unknownTags.filter((u) => /^(role|setting):/.test(u.tag)).map((u) => `${u.tag} ${u.test.title}`),
+    ['role:OWNER lists members for an owner', 'role:ADMIN shows the home page to an admin', 'setting:SYSTEM.LAB_ENABLED opens the lab with the setting named but no value'],
+  );
+  const owner = links.nodes['/admin/member#AdminMember'].find((t) => t.title === 'lists members for an owner');
+  assert.equal(owner.status, 'pass');
+  assert.ok(!('cases' in owner));
+  assert.ok(links.nodes['/home#Home'].every((t) => !t.cases));
+});
+
+test('a role tag on a test with no screen tag is reported', () => {
+  const report = reportOf([{ title: 'a.spec.ts', specs: [{ title: 'x', tags: ['call:GET:/x', 'role:ADMIN'], file: 'a.spec.ts', line: 1, tests: [{ status: 'expected' }] }] }]);
+  withResults({ 'report.json': report }, (own) => {
+    const result = linkTests(own, { screens: [], calls: [{ id: 'GET:/x' }] });
+    assert.deepEqual(result.unknownTags.map((u) => u.tag), ['role:ADMIN']);
+    assert.equal(result.nodes['GET:/x'].length, 1);
+  });
 });
 
 test('a Playwright test tagged with a call ID attaches to that call node', () => {
@@ -88,7 +155,7 @@ test('tagged Vitest tests attach with their status, reading the tags field and t
 test('tests of several formats on one node each carry their own depth', () => {
   assert.deepEqual(
     links.nodes['/home#Home'].map((t) => `${t.format} ${t.depth}`),
-    ['playwright ui', 'playwright ui', 'junit api', 'junit data', 'junit api', 'vitest code', 'vitest render'],
+    ['playwright ui', 'playwright ui', 'playwright ui', 'junit api', 'junit data', 'junit api', 'vitest code', 'vitest render'],
   );
 });
 
@@ -510,7 +577,7 @@ test('a trace that cannot be read is noticed with its file and the reason, and a
 });
 
 test('browser tests that were skipped are not counted as run without a trace, and the tests of other formats never are', () => {
-  const all = ['e2e.json', 'export.json'].flatMap((file) => readPlaywright(path.join(path.dirname(FIXTURE_CONFIG), 'results/playwright', file)));
+  const all = ['e2e.json', 'export.json', 'screen-cases.json'].flatMap((file) => readPlaywright(path.join(path.dirname(FIXTURE_CONFIG), 'results/playwright', file)));
   const ran = all.filter((t) => t.status !== 'pending');
   assert.ok(ran.length < all.length);
   assert.equal(links.untracedCount, ran.length);
