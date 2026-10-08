@@ -6,7 +6,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
-import { UNKNOWN } from '../src/client.mjs';
+import { UNKNOWN } from '../src/client.ts';
 import { loadConfig } from '../src/config.mjs';
 import { chromium } from 'playwright-core';
 import { addJudgment, loadJudgments } from '../src/judgments.ts';

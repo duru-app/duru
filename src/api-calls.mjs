@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import _traverse from '@babel/traverse';
-import { UNKNOWN } from './client.mjs';
+import { UNKNOWN } from './client.ts';
 import { moduleCopier } from './constants.ts';
 import { parseSource } from './parse.ts';
 

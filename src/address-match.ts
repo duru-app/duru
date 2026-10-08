@@ -1,4 +1,4 @@
-import { UNKNOWN } from './client.mjs';
+import { UNKNOWN } from './client.ts';
 import { routePattern } from './path-values.ts';
 import { toSegments } from './server.ts';
 

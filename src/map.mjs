@@ -1,4 +1,4 @@
-import { extractClient, UNKNOWN } from './client.mjs';
+import { extractClient, UNKNOWN } from './client.ts';
 import { clientPath, loadServerEndpoints, matchEndpoint } from './server.ts';
 import { linkTargets, screenAccess } from './access.ts';
 import { compare } from './config.mjs';
