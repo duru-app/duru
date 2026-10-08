@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.18', '24']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - name: Chromium for the browser tests
+        run: npx playwright-core install --with-deps chromium
+      - run: npm test
+      - name: Maps of the example apps
+        run: |
+          npm run extract -- test/fixtures/app/config.json
+          npm run extract -- test/fixtures/ts-app/config.json

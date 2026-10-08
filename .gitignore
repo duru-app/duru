@@ -1,3 +1,4 @@
 node_modules/
 *.map.json
 test/fixtures/app/out/
+test/fixtures/ts-app/out/
