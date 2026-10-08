@@ -64,7 +64,6 @@ function importsOf(srcRoot: string, file: string, aliases: AliasRule[] | null) {
   return [...found];
 }
 
-// 돌려주는 함수는 테스트 파일 하나를 받아 { file: 소스 폴더 기준 경로, screens: 화면 ID → 근거가 된 소스 파일들 } 을, 읽지 못하면 { reason } 을 돌려준다.
 export function importLinker(srcRoot: string, map: { screens: LinkScreen[] }, aliases: AliasRule[] | null = null) {
   const realRoot = fs.existsSync(srcRoot) ? fs.realpathSync(srcRoot) : srcRoot;
   const screensOf = new Map<string, Set<string>>();

@@ -240,7 +240,6 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
     return `./${name}`;
   }
 
-  // 복사본의 자리를 원래 파일과 줄로 돌려준다. 복사본이 아니면 null 이다.
   function place(copyName: string, line: number, column?: number | string) {
     const source = [...copied].find(([, c]) => c === copyName)?.[0];
     if (!source) return null;

@@ -13,7 +13,6 @@ interface JsonFile {
   reason?: string;
 }
 
-// 돌려주는 항목에 reason 이 있으면 읽지 못한 폴더나 링크이고, file 은 dir 기준 상대 경로다.
 export function jsonFiles(dir: string, say: Say): JsonFile[] {
   const found: JsonFile[] = [];
   const walk = (folder: string, above: string[] = []) => {
