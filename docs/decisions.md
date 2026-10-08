@@ -598,6 +598,32 @@ the map already had; no other method changes. `/admin-member` gains `.../departm
 8 letter calls, and `/admin-template` loses its 8. The into-sign 1.5.0 map is identical apart from the time it
 was written.
 
+**duru's code is moved to TypeScript without a build step: Node runs `.ts` by dropping the types, `tsc --noEmit`
+checks them, and `.mjs` and `.ts` live side by side until every file is moved.**
+Alternatives compared:
+- Compiling to JavaScript before running: any syntax works, but every run and test waits on a build, and what runs
+  is not the file a failure names.
+- Keeping Node 22.13 and passing `--experimental-strip-types`: every command in README, the `bin` entry and each
+  test run would need the flag.
+- TypeScript 7, the current release: its checker runs in a separate native process and is offered only under
+  `typescript/unstable/*`. TypeScript 6.0.3 is the last release whose checker runs in the same process with a
+  stable API, which reading the on/off fields of a client's request body types needs; it is pinned exactly,
+  since TypeScript minor releases change what is reported. `@types/node` is pinned the same way, at 22.18, so a
+  Node API missing from the lowest version is reported.
+Reason: measured on a module importing a `.ts` file that imports an `.mjs` one, run directly, from a test file of
+each kind and inside a worker thread. Node 22.13.0 and 22.17.1 stop with `ERR_UNKNOWN_FILE_EXTENSION`; 22.18.0 is
+the first 22 release that runs them without a flag, and prints no warning. On Node 23, 23.5.0 stops the same way
+and 23.6.0 runs them with an experimental warning; 24.14.0 runs them without one. The lowest version is
+therefore `^22.18.0 || >=23.6.0`. A `.ts` file imports others with their `.ts` ending
+(`allowImportingTsExtensions`), and syntax that cannot just be dropped, such as `enum`, is refused by
+`erasableSyntaxOnly`. `allowJs` lets a `.ts` file import an `.mjs` one; `checkJs` stays off, so `.mjs` files are
+only parsed, and a function from one is typed loosely: calling it with an argument missing is not reported until
+it is moved. Not covered: Node does not drop types from files under `node_modules`; duru linked there from its
+clone runs, since Node follows the link, but a copy installed from a packed `.tgz` stops with
+`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`. The type check adds about 3 s to `npm test`.
+Measured on main 38f87f3 against the branch: the into-sign 1.5.0 and 2.0.0 maps and the two example maps are
+identical apart from the time they were written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
