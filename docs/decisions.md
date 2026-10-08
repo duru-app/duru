@@ -571,6 +571,33 @@ on `document.createElement`, which the run does not give, and keep the first sha
 the 30, printed with `Invalid V2 endpoint param: documentId`, now end without an error, one of them with its
 address. The into-sign 1.5.0 map is identical apart from the time it was written.
 
+**Iterating the fake text gives the fake text once, not its letters.**
+On the into-sign 2.0.0 map 16 calls had a single letter in one place of their address, 8 each for
+`departmentApi.deleteDepartments` (`department/<letter>/delete`) and
+`templateDocumentApi.assignTemplateDocumentsDepartment` (`template-document/<letter>/update`). Both take a list of
+ids, make it unique with `[...new Set(ids)]` and send one request per id. With the second shape the list is the
+fake text, which a `Set` splits into `_ d u r f a k e`, so one request went out per letter. In the worker the
+string iterator now gives the fake text itself once when the text iterated is exactly the fake text, and works as
+before for any other text. Not covered: code that splits the text another way, such as `split('')` or a loop over
+its indexes, and a text that has the fake text as one part among others, such as `prefix + ids`. Every other use
+of the string iterator on the fake text changes too: `for … of` runs once, `[first, ...rest] = text` gives the
+whole text and an empty rest, and `[...text].length` is 1. The 2.0.0 map took 11.5 s against main's 11.0 s, in two
+runs on each side; that the replaced string iterator causes the gap is a guess, not measured apart.
+Also tried: making the first shape's value give itself once when iterated, which needs no change to strings. The
+2.0.0 map stays as it was, with the 16 one-letter calls. Read from the into-sign source: with the first shape
+`workspaceId` is a function too, and the app's address check refuses it before any request goes out.
+Compared, each measured to give the same 2.0.0 and 1.5.0 maps as this one: rewriting an address place that is
+one letter of the fake text to `{?}` when the request is recorded (the requests still go out per letter and count
+towards the limit of 20, and a real one-letter place such as `/v1/a/list` in another app becomes `/v1/{?}/list`);
+giving a list holding the fake value to keys named `ids` or ending in `Ids` in the second and third shapes (a list
+under any other name is still split); and giving that list to every key ending in `s` (`status`, `address` and
+`settings` turn into lists too, and an app checking that such a value is a text fails that shape).
+Measured on main 997ba38 against the branch, into-sign 2.0.0: calls 206 → 190, one-letter calls 16 → 0; each of
+the two methods sends one request, `.../department/{?}/delete` and `.../template-document/{?}/update`, both calls
+the map already had; no other method changes. `/admin-member` gains `.../department/{?}/delete` in place of its
+8 letter calls, and `/admin-template` loses its 8. The into-sign 1.5.0 map is identical apart from the time it
+was written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

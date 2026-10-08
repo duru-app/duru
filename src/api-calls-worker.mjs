@@ -34,6 +34,10 @@ function standIn(named = () => undefined) {
   return value;
 }
 const fake = standIn();
+const letters = String.prototype[Symbol.iterator];
+String.prototype[Symbol.iterator] = function () {
+  return this === mark ? [mark][Symbol.iterator]() : letters.call(this);
+};
 const ID_KEY = /^id$|Id$|ID$/;
 const idsAsText = standIn((k) => (ID_KEY.test(k) ? mark : undefined));
 
