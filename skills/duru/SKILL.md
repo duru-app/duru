@@ -74,6 +74,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   password; it is not an option, so tell the user it needs a test per value. A `body type <name>: the body is
   typed …` or `body type <name>: it sent a body, but no …` line names a method whose body fields duru could not
   read, so its options are missing from the map.
+  A `bodyTypeExclusions <call ID> leaves out <field>` line names a field the config took out of that call's
+  options; if a screen lets the user set that field, tell the user to remove it from `bodyTypeExclusions`. A
+  `bodyTypeExclusions <call ID> <field> stays an option, given by …` line names an entry the screen code or
+  `bodyOptions` overrides, so tell the user it can be removed. A `bodyTypeExclusions` line ending in
+  `matches no call` or `matches no on/off option …` names an entry that took nothing out.
 - A screen's API calls are the ones its code reaches, each with the file and line where it is written,
   while its `sourceFiles` hold whole files. A call written in one of those files is not the screen's when the
   screen does not use the function holding it, so do not write a test of that call for the screen.

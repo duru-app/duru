@@ -2,6 +2,7 @@ import { extractClient, UNKNOWN } from './client.mjs';
 import { clientPath, loadServerEndpoints, matchEndpoint } from './server.mjs';
 import { linkTargets, screenAccess } from './access.mjs';
 import { compare } from './config.mjs';
+import { removeExcludedFields } from './body-type-exclusions.ts';
 
 // JUnit 태그에 쓸 수 없는 문자. 이 문자만 없으면 Playwright · Vitest 제목에서도 그대로 태그로 쓸 수 있다.
 const TAG_FORBIDDEN = /[\s,()&|!]+/g;
@@ -51,15 +52,20 @@ function configuredCallLinks(calls, callLinks) {
 const bySite = (a, b) => compare(a.screen, b.screen) || compare(a.file, b.file) || a.line - b.line;
 const OPTION_SOURCES = ['source', 'type', 'config'];
 
-function buildCalls(apiFunctions, screens, apiPathPrefix, bodyOptions) {
+function buildCalls(apiFunctions, screens, apiPathPrefix, bodyOptions, bodyTypeExclusions) {
   const calls = new Map();
+  const typeFields = new Map();
   for (const [name, fn] of Object.entries(apiFunctions)) {
     for (const e of fn.endpoints) {
       const call = callOf(e, apiPathPrefix);
       if (!call) continue;
-      if (!calls.has(call.id)) calls.set(call.id, { ...call, server: { ...e.server }, apiFunctions: new Set(), screens: new Set(), options: new Map() });
+      if (!calls.has(call.id)) {
+        calls.set(call.id, { ...call, server: { ...e.server }, apiFunctions: new Set(), screens: new Set(), options: new Map() });
+        typeFields.set(call.id, new Set());
+      }
       const node = calls.get(call.id);
       node.apiFunctions.add(name);
+      for (const key of e.bodyOptions ?? []) typeFields.get(call.id).add(key);
       if (e.server.candidates) node.server.candidates = [...new Set([...node.server.candidates, ...e.server.candidates])].sort();
     }
   }
@@ -67,12 +73,8 @@ function buildCalls(apiFunctions, screens, apiPathPrefix, bodyOptions) {
     if (!node.options.has(key)) node.options.set(key, { sources: new Set(), sites: new Map() });
     return node.options.get(key);
   };
-  for (const fn of Object.values(apiFunctions)) {
-    for (const e of fn.endpoints) {
-      const node = calls.get(callOf(e, apiPathPrefix)?.id);
-      if (node) for (const key of e.bodyOptions ?? []) optionOf(node, key).sources.add('type');
-    }
-  }
+  const { removed, unknown } = removeExcludedFields(typeFields, bodyTypeExclusions);
+  for (const [id, keys] of typeFields) for (const key of keys) optionOf(calls.get(id), key).sources.add('type');
   for (const s of screens) {
     for (const c of s.apiCalls) {
       for (const e of c.endpoints ?? []) {
@@ -94,6 +96,13 @@ function buildCalls(apiFunctions, screens, apiPathPrefix, bodyOptions) {
     if (!node) unknownBodyOptionCalls.push(id);
     else for (const key of keys) optionOf(node, key).sources.add('config');
   }
+  const leftOutBodyTypeFields = [];
+  const keptBodyTypeExclusions = [];
+  for (const r of removed) {
+    const option = calls.get(r.call).options.get(r.field);
+    if (option) keptBodyTypeExclusions.push({ ...r, keptBy: OPTION_SOURCES.filter((src) => option.sources.has(src)) });
+    else leftOutBodyTypeFields.push(r);
+  }
   const nodes = [...calls.values()]
     .sort((a, b) => compare(a.id, b.id))
     .map((c) => ({
@@ -104,7 +113,7 @@ function buildCalls(apiFunctions, screens, apiPathPrefix, bodyOptions) {
         .sort(([a], [b]) => compare(a, b))
         .map(([key, o]) => ({ key, values: [true, false], sources: OPTION_SOURCES.filter((src) => o.sources.has(src)), sites: [...o.sites.values()].sort(bySite) })),
     }));
-  return { calls: nodes, unknownBodyOptionCalls: unknownBodyOptionCalls.sort() };
+  return { calls: nodes, unknownBodyOptionCalls: unknownBodyOptionCalls.sort(), leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions: unknown };
 }
 
 export async function buildMap(config) {
@@ -145,7 +154,8 @@ export async function buildMap(config) {
     }
   }
 
-  const { calls, unknownBodyOptionCalls } = buildCalls(apiFunctions, mapped, apiPathPrefix, config.bodyOptions ?? {});
+  const bodyTypeExclusions = config.bodyTypeExclusions ?? {};
+  const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
 
   return {
     meta: { generatedAt: new Date().toISOString(), srcRoot: config.srcRoot, clientRef: config.clientRef ?? null, serverRef: config.serverRef ?? null },
@@ -157,6 +167,7 @@ export async function buildMap(config) {
     duplicateIds,
     calls,
     unknownBodyOptionCalls,
+    ...(Object.keys(bodyTypeExclusions).length > 0 && { leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions }),
     ...configuredCallLinks(calls, config.callLinks ?? []),
     ...(server.length === 0 && { serverNotCompared: true }),
     entries,

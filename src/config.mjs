@@ -144,6 +144,10 @@ export function loadConfig(configPath) {
   if (typeof bodyOptions !== 'object' || Array.isArray(bodyOptions) || !Object.values(bodyOptions).every(isKeyList)) {
     throw new Error(`bodyOptions must map call IDs to lists of body keys, such as {"POST:/api/v1/report/export": ["withHistory"]}, not ${JSON.stringify(raw.bodyOptions)}`);
   }
+  const bodyTypeExclusions = raw.bodyTypeExclusions ?? {};
+  if (!isPlainObject(bodyTypeExclusions) || !Object.values(bodyTypeExclusions).every(isKeyList)) {
+    throw new Error(`bodyTypeExclusions must map call IDs to lists of body fields read from the body type, as the map names them, such as {"POST:/api/v1/documents": ["enabledPkiSign", "signers[].required"]}, not ${JSON.stringify(raw.bodyTypeExclusions)}`);
+  }
   const roleGuards = raw.roleGuards ?? {};
   if (!isPlainObject(roleGuards) || !Object.entries(roleGuards).every(([guard, roles]) => isText(guard) && Array.isArray(roles) && roles.length > 0 && roles.every((r) => isText(r) && !/\s/.test(r)))) {
     throw new Error(`roleGuards must map role guards as in the map to the roles that pass them, such as { "menuPolicy.canAccessAdminRoutes": ["member:ADMINISTRATOR"] }, with no spaces in a role, not ${JSON.stringify(raw.roleGuards)}`);
@@ -239,6 +243,7 @@ export function loadConfig(configPath) {
     requestFunction,
     bodyArgKeys,
     bodyOptions,
+    bodyTypeExclusions,
     moves,
     callLinks,
     settingsDefaults,

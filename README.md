@@ -141,6 +141,9 @@ client with example results and a config to start from.
   method sent with a body, named by their path in the body, with `[]` for a list (`signers[].notify`).
 - `bodyOptions` — on/off keys to add to a call's request body, per call ID (optional), as
   `{ "POST:/api/v1/report/export": ["withHistory"] }`, for a body the source does not show.
+- `bodyTypeExclusions` — on/off fields read from the body type to leave out of a call's options, per call ID
+  (optional), as `{ "POST:/api/v1/documents": ["enabledPkiSign", "signers[].required"] }` with the field paths as
+  the map names them, for a field no screen lets the user change.
 - `settingsRoots` — identifiers through which settings are read.
 - `settingsDefaults` — where the default values of a settings root are written (optional), as
   `{ "globalSettings": { "file": "store/settings.js", "const": "defaults" } }`: the object literal that a
@@ -302,6 +305,11 @@ listing the places whose value the source does not show in full.
   names, such as `Record<string, unknown>` or `any`; `it sent a body, but no <key> was found …`, a method whose
   body is not written in an object it gives to a call, such as one put in a variable first; and `no function was
   found at <file>:<line>` (`bodyTypeNotices`).
+- `bodyTypeExclusions <call ID> leaves out <field>` — a field read from the body type that the config takes out
+  of that call's options (`leftOutBodyTypeFields`).
+- `bodyTypeExclusions <call ID> <field> stays an option, given by <where>` — a field the config names that is
+  still an option of that call, with where it comes from: `the source`, `bodyOptions`, or both joined by `and`. The
+  entry can come out of the config (`keptBodyTypeExclusions`).
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring.
 - `settingsFunctions <file>:<line> <what>` — about calls in the files the route files lead to by import: a call
@@ -310,7 +318,9 @@ listing the places whose value the source does not show in full.
   leaves the default unknown); and a function called in none of those files (`settingsCallNotices`).
 - An alias import that finds no file, with the number of files that write it (`unresolvedAliasImports`).
 - Routes that end up with the same ID, each place as `file:line` (`duplicateIds`).
-- `bodyOptions` call IDs that are not on the map (`unknownBodyOptionCalls`), `moves` paths that match no route
+- `bodyOptions` call IDs that are not on the map (`unknownBodyOptionCalls`), `bodyTypeExclusions` call IDs that are
+  not on the map and fields that are not an on/off option read from that call's body type
+  (`unknownBodyTypeExclusions`), `moves` paths that match no route
   (`unknownMovePaths`), `callLinks` call IDs that are not on the map (`unknownCallLinks`) and `roleGuards`
   guards that guard no route or link with a role (`unknownRoleGuards`).
 - `rebuild` also prints the story and candidate counts and the files skipped, the links from untagged tests to
