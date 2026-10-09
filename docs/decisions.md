@@ -299,9 +299,23 @@ The limits: naming the made object (`./api/http`) instead of the package gives t
 `baseURL`, because that file is then not run; a `baseURL` set after `create` is not seen; a protocol-relative
 address (`//host/path`) gets the `baseURL` in front, where axios would not; what a recorded call returns is a
 resolved promise of the fake value, so `axios.all(…).then(…)` or a library whose calls are chained, such as
-ky's `.json()`, ends in an error printed for that method, and ky's `prefixUrl` is not read; a `baseURL` given
-to one request rather than to `create` is not read; the constants run does not stand in for `import.meta.env`,
-so a constants file reading it still fails there.
+ky's `.json()`, ends in an error printed for that method, and ky's `prefixUrl` is not read; the constants run
+does not stand in for `import.meta.env`, so a constants file reading it still fails there.
+
+**A `baseURL` given with one request goes in front of that request's address in place of the one given to
+`create`.**
+The config is read where axios takes it: `get`, `delete`, `head` and `options` after the address, `post`, `put`
+and `patch` after the body, and `request` or a call of the object itself as the config. As in axios, a text
+`baseURL` replaces the one of `create`, and an empty one (`null`, `false`, `0`, `""`) puts none. A `baseURL` duru
+cannot know, such as one read from an argument it tried, a stand-in for a package or `import.meta.env`, or text built
+from them, shows as `{?}`, as an unknown part of an address does. The base of `create` stays, as before this rule,
+when the config is itself an argument duru tried, passed on whole by an API method, or a stand-in for a package or
+`import.meta.env`: duru cannot see a `baseURL` in it, so the address stays what it was before a per-request
+`baseURL` was read. `defaults.baseURL` is not modelled and shows as `{?}`. Compared with keeping the base of `create` for every value duru cannot
+know: the map would then show an address the app does not send as if it were known.
+appsmith's `api/Api.ts`, one of the open-source apps measured for real use, makes its client with `axios.create()`
+and gives `baseURL: "/api/"` with each request. The into-sign maps and the two example maps, which give no `baseURL`
+with a request, are identical to main's apart from the time they were written.
 
 **Settings read from the object a function returns are found by naming the function in the config, and the
 object passed to it is read as setting defaults.**
