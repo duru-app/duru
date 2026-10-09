@@ -11,7 +11,11 @@ import { linkTests } from '../src/test-links.ts';
 const HELP_TEST = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' };
 const REPORTED_PATH = '/builds/client/src/components/Help.spec.js';
 
-function withJudgmentsDir(fn) {
+type NewJudgment = Parameters<typeof addJudgment>[1];
+type Leveled = { level?: string; project?: string; line?: number };
+type Rebuild = (line: number, reportedPath?: string, helpTitle?: string) => ReturnType<typeof linkTests>;
+
+function withJudgmentsDir(fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     return fn(path.join(dir, 'judgments'));
@@ -20,8 +24,8 @@ function withJudgmentsDir(fn) {
   }
 }
 
-const snapshot = (dir) =>
-  Object.fromEntries(fs.readdirSync(dir, { recursive: true }).sort().map((f) => [f, fs.statSync(path.join(dir, f)).isFile() ? fs.readFileSync(path.join(dir, f), 'utf8') : null]));
+const snapshot = (dir: string) =>
+  Object.fromEntries((fs.readdirSync(dir, { recursive: true }) as string[]).sort().map((f) => [f, fs.statSync(path.join(dir, f)).isFile() ? fs.readFileSync(path.join(dir, f), 'utf8') : null]));
 
 test('a discard is written with its test, node, kind, reason, author and date, and read back', () => {
   withJudgmentsDir((dir) => {
@@ -38,7 +42,7 @@ test('a discard is written with its test, node, kind, reason, author and date, a
 test('a judgment names its test by result source, test file and title without tags, never by line or project', () => {
   withJudgmentsDir((dir) => {
     const judgment = addJudgment(dir, {
-      test: { ...HELP_TEST, title: 'renders the help text @depth:code', line: 4, project: 'chromium', testFile: 'elsewhere/Help.spec.js' },
+      test: { ...HELP_TEST, title: 'renders the help text @depth:code', line: 4, project: 'chromium', testFile: 'elsewhere/Help.spec.js' } as NewJudgment['test'],
       node: '/help#Help', kind: 'discard', reason: 'r', author: 'a',
     });
     assert.deepEqual(judgment.test, HELP_TEST);
@@ -64,7 +68,7 @@ test('a judgment is refused when its kind is unknown, a discard has no reason, o
     const ok = { test: HELP_TEST, node: '/help#Help', kind: 'discard', reason: 'r', author: 'a' };
     assert.throws(() => addJudgment(dir, { ...ok, kind: 'keep' }), /unknown judgment kind "keep"/);
     assert.throws(() => addJudgment(dir, { ...ok, reason: '  ' }), /discard needs a reason/);
-    assert.throws(() => addJudgment(dir, { ...ok, test: { source: HELP_TEST.source, file: HELP_TEST.file } }), /test needs a result source, a test file and a title/);
+    assert.throws(() => addJudgment(dir, { ...ok, test: { source: HELP_TEST.source, file: HELP_TEST.file } as unknown as NewJudgment['test'] }), /test needs a result source, a test file and a title/);
     assert.throws(() => addJudgment(dir, { ...ok, node: '' }), /needs a node ID/);
     assert.throws(() => addJudgment(dir, { ...ok, author: '' }), /needs an author/);
     assert.equal(fs.existsSync(dir), false);
@@ -154,11 +158,11 @@ test('a symbolic link back to a folder above it does not make the folder walk en
 const config = loadConfig(path.join(import.meta.dirname, 'fixtures/app/config.json'));
 const map = await buildMap(config);
 
-function withResults(fn) {
+function withResults(fn: (rebuild: Rebuild, source: string, dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-judged-'));
   try {
     const file = path.join(dir, 'results.json');
-    const rebuild = (line, reportedPath = REPORTED_PATH, helpTitle = 'renders the help text') => {
+    const rebuild: Rebuild = (line, reportedPath = REPORTED_PATH, helpTitle = 'renders the help text') => {
       const assertionResults = [
         { ancestorTitles: [], title: helpTitle, status: 'passed', location: { line } },
         { ancestorTitles: [], title: 'shows the day the help was last updated', status: 'passed', location: { line: line + 4 } },
@@ -172,7 +176,7 @@ function withResults(fn) {
   }
 }
 
-const titles = (tests) => (tests ?? []).map((t) => t.title);
+const titles = (tests: { title: string }[] | undefined) => (tests ?? []).map((t) => t.title);
 
 test('a discarded pair is gone from the tests importing the screen after a rebuild, even when the test moved to another line, and is back after an undo', () => {
   withResults((rebuild, source, dir) => {
@@ -252,14 +256,14 @@ test('the judgments folder defaults to judgments in outDir and can be set in the
   }
 });
 
-const writeRaw = (dir, name, judgment) => {
+const writeRaw = (dir: string, name: string, judgment: unknown) => {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, name), JSON.stringify(judgment));
 };
 
 test('a discard written on Windows, with backslashes in its paths, still discards the pair', () => {
   withResults((rebuild, source, dir) => {
-    const windows = (p) => p.replaceAll('/', '\\');
+    const windows = (p: string) => p.replaceAll('/', '\\');
     writeRaw(dir, 'win.json', {
       id: 'win-1', test: { source: windows(source), file: windows(HELP_TEST.file), title: HELP_TEST.title },
       node: '/help#Help', kind: 'discard', reason: 'r', author: 'a', date: '2026-10-04T01:00:00.000Z',
@@ -312,7 +316,7 @@ test('a hand-over is written with an optional note and moves the pair out of the
 
     const judged = applyJudgments(rebuild(4), loadJudgments(dir).judgments);
     assert.deepEqual(titles(judged.importers['/help#Help']), ['shows the day the help was last updated']);
-    assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => [t.title, t.line, t.ref, t.judgment.id]), [['renders the help text', 4, test, judgment.id]]);
+    assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => [t.title, (t as Leveled).line, t.ref, t.judgment.id]), [['renders the help text', 4, test, judgment.id]]);
     assert.deepEqual(judged.discarded, {});
     assert.deepEqual(judged.detachedHandOvers, {});
   });
@@ -350,8 +354,8 @@ test('a browser test that passed through a screen or sent a call is judged like 
     const judged = applyJudgments(tracedLinks, loadJudgments(dir).judgments);
     assert.equal(judged.passed[DETAIL], undefined);
     assert.equal(judged.passed[DETAIL_CALL], undefined);
-    assert.deepEqual(judged.discarded[DETAIL].map((t) => [t.title, t.level, t.judgment.reason]), [['checks the path of a document', 'assert', 'only reads the address']]);
-    assert.deepEqual(judged.awaitingTag[DETAIL_CALL].map((t) => [t.title, t.level, t.ref]), [['reads a document from the server', 'call', sent.ref]]);
+    assert.deepEqual(judged.discarded[DETAIL].map((t) => [t.title, (t as Leveled).level, t.judgment.reason]), [['checks the path of a document', 'assert', 'only reads the address']]);
+    assert.deepEqual(judged.awaitingTag[DETAIL_CALL].map((t) => [t.title, (t as Leveled).level, t.ref]), [['reads a document from the server', 'call', sent.ref]]);
     assert.ok(titles(judged.passed['/home#Home']).includes('reads a document from the server'));
     assert.deepEqual(judged.detachedHandOvers, {});
 
@@ -375,13 +379,13 @@ test('a handed-over browser test that no longer passes through the screen is sho
 });
 
 const browserTest = { title: 'opens help', file: 'help.spec.ts', line: 3, source: 'results/e2e.json', format: 'playwright', status: 'pass' };
-const handOver = (test, node) => ({ id: 'a', test: { source: test.source, file: test.file, title: test.title }, node, kind: 'hand-over', reason: '', author: 'a', date: '2026-10-04T01:00:00.000Z' });
+const handOver = (test: typeof browserTest, node: string) => ({ id: 'a', test: { source: test.source, file: test.file, title: test.title }, node, kind: 'hand-over', reason: '', author: 'a', date: '2026-10-04T01:00:00.000Z' });
 
 test('a handed-over browser test still in the results, whose trace was not read this time, goes on waiting for the tag instead of showing as detached', () => {
   const judgments = [handOver(browserTest, '/help#Help')];
-  const awaiting = (tests) => {
+  const awaiting = (tests: Record<string, unknown>) => {
     const judged = applyJudgments({ passed: {}, nodes: {}, ...tests }, judgments);
-    return [(judged.awaitingTag['/help#Help'] ?? []).map((t) => [t.title, t.line, t.unconfirmed]), Object.keys(judged.detachedHandOvers)];
+    return [(judged.awaitingTag['/help#Help'] ?? []).map((t) => [t.title, (t as Leveled).line, t.unconfirmed]), Object.keys(judged.detachedHandOvers)];
   };
   assert.deepEqual(awaiting({ untagged: [browserTest] }), [[['opens help', 3, true]], []]);
   assert.deepEqual(awaiting({ untagged: [], nodes: { '/home#Home': [browserTest] } }), [[['opens help', 3, true]], []]);
@@ -396,8 +400,8 @@ test('a judged pair of a test that ran in several Playwright projects is one pai
   const inProjects = ['chromium', 'firefox'].map((project) => ({ ...browserTest, project, level: 'visit' }));
   const tests = { passed: { '/help#Help': inProjects, '/home#Home': inProjects }, nodes: {} };
   const judged = applyJudgments(tests, [handOver(browserTest, '/help#Help'), { ...handOver(browserTest, '/lab#Lab'), kind: 'discard', reason: 'r' }]);
-  assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => t.project), ['chromium']);
-  assert.deepEqual(judged.passed['/home#Home'].map((t) => t.project), ['chromium', 'firefox']);
+  assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => (t as Leveled).project), ['chromium']);
+  assert.deepEqual(judged.passed['/home#Home'].map((t) => (t as Leveled).project), ['chromium', 'firefox']);
   const discardedTwice = applyJudgments(tests, [{ ...handOver(browserTest, '/home#Home'), kind: 'discard', reason: 'r' }]);
-  assert.deepEqual(discardedTwice.discarded['/home#Home'].map((t) => t.project), ['chromium']);
+  assert.deepEqual(discardedTwice.discarded['/home#Home'].map((t) => (t as Leveled).project), ['chromium']);
 });

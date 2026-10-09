@@ -10,8 +10,14 @@ import { buildMap } from '../src/map.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/ts-app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
-const copies = [];
+const copies: string[] = [];
 after(() => copies.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
+
+type Endpoint = { method: string; url: string; callId?: string; server: { status: string } };
+type ApiCall = { fn: string; file: string; line: number; endpoints: Endpoint[] };
+type ApiFunction = { file?: string; line?: number; error?: string; endpoints: Endpoint[] };
+type Screen = { id: string; path: string; links: unknown; settingReads: unknown; access: unknown; apiCalls: ApiCall[] };
+type MapData = { screens: Screen[]; apiFunctions: Record<string, ApiFunction>; calls: { id: string; screens: string[] }[]; unrunApiModules?: string[] };
 
 const CALLED = {
   calledApiModules: ['contracts/api/index.ts'],
@@ -19,7 +25,7 @@ const CALLED = {
   serverEndpoints: 'contract-server-endpoints.txt',
 };
 
-function fixtureCopy(keys = {}, files = {}) {
+function fixtureCopy(keys: Record<string, unknown> = {}, files: Record<string, string> = {}) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   copies.push(copy);
   fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
@@ -31,11 +37,11 @@ function fixtureCopy(keys = {}, files = {}) {
   return configFile;
 }
 
-const build = (configFile) => buildMap(loadConfig(configFile));
-let calledMap;
+const build = (configFile: string): Promise<MapData> => buildMap(loadConfig(configFile));
+let calledMap: Promise<MapData> | undefined;
 const called = () => (calledMap ??= build(fixtureCopy(CALLED)));
-const screen = (map, id) => map.screens.find((s) => s.id === id);
-const endpointsOf = (map, name) => map.apiFunctions[name].endpoints.map((e) => [e.method, e.url, e.server.status, e.callId]);
+const screen = (map: MapData, id: string) => map.screens.find((s) => s.id === id)!;
+const endpointsOf = (map: MapData, name: string) => map.apiFunctions[name].endpoints.map((e) => [e.method, e.url, e.server.status, e.callId]);
 
 test('a method of an API class, given the request function and the address tables in its constructor, comes out as the request it sends with the prefix the app adds, whether it names the table by two names or passes a cell of it', async () => {
   const map = await called();
@@ -65,7 +71,7 @@ test('a method sending two requests gives both, a method whose prefix depends on
 
 test('the calls of an API object attach to the screen whose sources call its methods, through a named import or a namespace import', async () => {
   const map = await called();
-  const callsOf = (id) => screen(map, id).apiCalls.map((c) => [c.fn, c.file, c.line, (c.endpoints ?? []).map((e) => e.callId)]);
+  const callsOf = (id: string) => screen(map, id).apiCalls.map((c) => [c.fn, c.file, c.line, (c.endpoints ?? []).map((e) => e.callId)]);
   assert.deepEqual(callsOf('/contracts#Contracts'), [
     ['contractApi.loadList', 'contracts/Contracts.tsx', 4, ['GET:/internal/v2/workspace/{workspaceId}/contract/list']],
     ['contractApi.archiveAndReload', 'contracts/Contracts.tsx', 5, ['POST:/internal/v2/workspace/{workspaceId}/contract/{contractId}/archive', 'GET:/internal/v2/workspace/{workspaceId}/contract/list']],
@@ -76,10 +82,10 @@ test('the calls of an API object attach to the screen whose sources call its met
     ['contractApi.loadParticipant', 'contracts/ContractDetail.tsx', 5, ['GET:/workflow/view/participant/{contractId}']],
     ['contractApi.exportContract', 'contracts/ContractDetail.tsx', 6, []],
   ]);
-  assert.deepEqual(map.calls.find((c) => c.id === 'GET:/internal/v2/workspace/{workspaceId}/contract/list').screens, ['/contract-board#ContractBoard', '/contracts#Contracts']);
+  assert.deepEqual(map.calls.find((c) => c.id === 'GET:/internal/v2/workspace/{workspaceId}/contract/list')!.screens, ['/contract-board#ContractBoard', '/contracts#Contracts']);
 });
 
-const sitesOf = (map, id) => screen(map, id).apiCalls.map((c) => [c.fn, c.file, c.line]);
+const sitesOf = (map: MapData, id: string) => screen(map, id).apiCalls.map((c) => [c.fn, c.file, c.line]);
 
 test('two screens importing the same hook file get only the calls of the hooks each of them uses, with the file and line of each call', async () => {
   const map = await called();
@@ -91,14 +97,14 @@ test('two screens importing the same hook file get only the calls of the hooks e
     ['contractApi.loadDetail', 'contracts/queries/contract.queries.ts', 11],
     ['fetchNotices', 'contracts/queries/contract.queries.ts', 17],
   ]);
-  assert.deepEqual(map.calls.find((c) => c.id === 'GET:/internal/v2/notice/list').screens, ['/contract-summary#ContractSummary', '/contracts#Contracts']);
+  assert.deepEqual(map.calls.find((c) => c.id === 'GET:/internal/v2/notice/list')!.screens, ['/contract-summary#ContractSummary', '/contracts#Contracts']);
 });
 
 test('a hook a function-making function returns brings the calls of the function given to it, and an API function handed over as a value counts as called', async () => {
   const map = await called();
-  const archive = screen(map, '/contract-board#ContractBoard').apiCalls.find((c) => c.fn === 'contractApi.archiveAndReload');
+  const archive = screen(map, '/contract-board#ContractBoard').apiCalls.find((c) => c.fn === 'contractApi.archiveAndReload')!;
   assert.deepEqual(archive.endpoints.map((e) => e.callId), ['POST:/internal/v2/workspace/{workspaceId}/contract/{contractId}/archive', 'GET:/internal/v2/workspace/{workspaceId}/contract/list']);
-  const notices = screen(map, '/contract-summary#ContractSummary').apiCalls.find((c) => c.fn === 'fetchNotices');
+  const notices = screen(map, '/contract-summary#ContractSummary').apiCalls.find((c) => c.fn === 'fetchNotices')!;
   assert.deepEqual(notices.endpoints.map((e) => e.callId), ['GET:/internal/v2/notice/list']);
 });
 
@@ -153,7 +159,7 @@ test('a method that sends nothing for the first fake value is tried with the nex
 
 test('a public method a subclass declares over a protected one is called while the protected ones are not, a value a method that sends nothing stores turns into a variable piece in a later address, and a loop as long as a value it is given ends at once', async () => {
   const map = await called();
-  const urls = (name) => endpointsOf(map, name).map(([method, url]) => `${method} ${url}`);
+  const urls = (name: string) => endpointsOf(map, name).map(([method, url]) => `${method} ${url}`);
   assert.deepEqual(Object.keys(map.apiFunctions).filter((name) => name.startsWith('noteApi.')), ['noteApi.search', 'noteApi.setBase', 'noteApi.loadNotes', 'noteApi.loadNumbered', 'noteApi.fetchItems', 'noteApi.sendForever', 'noteApi.fetchPages', 'noteApi.removeNotes', 'noteApi.tagNotes']);
   assert.deepEqual(urls('noteApi.search'), ['GET /internal/v2/note/search?q={?}']);
   assert.deepEqual(urls('noteApi.loadNotes'), ['GET {?}/internal/v2/note/list']);
@@ -224,7 +230,7 @@ test('extract prints one line for each method that gave no address, and counts t
 
 test('without the new keys, the screens of the example have the same links, setting reads and conditions, and the API object calls are not read', async () => {
   const [plain, map] = await Promise.all([build(fixtureCopy()), called()]);
-  const shape = (m) => m.screens.map((s) => [s.id, s.links, s.settingReads, s.access]);
+  const shape = (m: MapData) => m.screens.map((s) => [s.id, s.links, s.settingReads, s.access]);
   assert.deepEqual(shape(plain), shape(map));
   assert.deepEqual(screen(plain, '/contracts#Contracts').apiCalls, []);
   assert.deepEqual(Object.keys(plain.apiFunctions), ['ajaxReportArchive', 'ajaxReportSchedule']);
@@ -242,7 +248,7 @@ test('a listed file that fails to run is reported with the place of the error, a
 });
 
 test('the new keys are refused when one comes without the other, a file is in both API lists, a place is not a number followed by keys, or a relative import names no file', async () => {
-  const refused = (keys) => assert.throws(() => loadConfig(fixtureCopy(keys)));
+  const refused = (keys: Record<string, unknown>) => assert.throws(() => loadConfig(fixtureCopy(keys)));
   refused({ calledApiModules: CALLED.calledApiModules });
   refused({ requestFunction: CALLED.requestFunction });
   refused({ ...CALLED, calledApiModules: ['_ajax/AjaxFunc.ts'] });
@@ -264,14 +270,14 @@ test('the usage guide and the agent skill name the new keys and the lines extrac
 });
 
 const INVOICES = { calledApiModules: ['invoices/api/index.ts'], serverEndpoints: 'invoice-server-endpoints.txt' };
-const invoiceCopy = (requestFunction) => {
+const invoiceCopy = (requestFunction: unknown) => {
   const configFile = fixtureCopy({ ...INVOICES, requestFunction });
   const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
   config.routesFile.push('invoices/InvoiceRoutes.tsx');
   fs.writeFileSync(configFile, JSON.stringify(config, null, 2));
   return configFile;
 };
-const requestsOf = (map) => Object.fromEntries(Object.entries(map.apiFunctions).filter(([name]) => !name.startsWith('ajax')).map(([name, f]) => [name, f.endpoints.map((e) => `${e.method} ${e.url}`)]));
+const requestsOf = (map: MapData) => Object.fromEntries(Object.entries(map.apiFunctions).filter(([name]) => !name.startsWith('ajax')).map(([name, f]) => [name, f.endpoints.map((e) => `${e.method} ${e.url}`)]));
 
 test('API functions calling get, post, put, patch and delete of a request object made by a factory, the object itself or its request with a config, give their method and address, with the base address given to the factory or to the object a create came from in front, when the factory\'s package is the request object; a base address from the build environment is left out, and a method taken out of the object is not an API function', async () => {
   const map = await build(invoiceCopy({ import: 'axios', name: 'default', object: true }));
@@ -290,7 +296,7 @@ test('API functions calling get, post, put, patch and delete of a request object
     fetchRates: ['GET /internal/v2/rates'],
   });
   assert.ok(Object.values(map.apiFunctions).filter((f) => f.file?.startsWith('invoices/')).every((f) => f.endpoints.every((e) => e.server.status === 'match')));
-  const callsOf = (id) => screen(map, id).apiCalls.map((c) => [c.fn, (c.endpoints ?? []).map((e) => e.callId)]);
+  const callsOf = (id: string) => screen(map, id).apiCalls.map((c) => [c.fn, (c.endpoints ?? []).map((e) => e.callId)]);
   assert.deepEqual(callsOf('/invoices/:invoiceId#InvoiceDetail'), [
     ['invoiceApi.detail', ['GET:/internal/v2/billing/invoices/{invoiceId}']],
     ['invoiceApi.rename', ['PATCH:/internal/v2/billing/invoices/{invoiceId}']],
@@ -319,7 +325,7 @@ test('the same API functions give the addresses as they call them when the objec
 });
 
 test('a request object setting is refused when it also gives the places of the method or the address', () => {
-  const refused = (requestFunction) => assert.throws(() => loadConfig(fixtureCopy({ ...INVOICES, requestFunction })), /"object": true/);
+  const refused = (requestFunction: unknown) => assert.throws(() => loadConfig(fixtureCopy({ ...INVOICES, requestFunction })), /"object": true/);
   refused({ import: 'axios', name: 'default', object: true, url: '0' });
   refused({ import: 'axios', name: 'default', object: true, method: '0.method' });
   refused({ import: 'axios', name: 'default', object: true, body: '1' });
