@@ -264,6 +264,56 @@ test('a config without routesFile, or naming a route file that is not there, is 
   });
 });
 
+const LITERAL_ROUTES = `import { Route, Switch } from 'react-router-dom';
+import SignIn from './components/SignIn';
+import Help from './components/Help';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/signin" component={SignIn} exact />
+      <Route path="/help" component={Help} exact />
+    </Switch>
+  );
+}
+`;
+
+for (const keys of [['routeConstant'], ['constants', 'routeConstant']]) {
+  test(`a config without ${keys.join(' and ')}, or with null for it, builds the map and gives a screen to a route whose path is written in place`, async () => {
+    await withCopy(async ({ configFile, setConfig, src }) => {
+      fs.writeFileSync(path.join(src, 'Routes.js'), LITERAL_ROUTES);
+      for (const value of [undefined, null]) {
+        setConfig(Object.fromEntries(keys.map((k) => [k, value])));
+        assert.deepEqual((await mapOf(configFile)).screens.map((s) => s.id).sort(), ['/help#Help', '/signin#SignIn'], String(value));
+      }
+    });
+  });
+}
+
+test('an empty routeConstant is taken as left out', async () => {
+  await withCopy(async ({ configFile, setConfig, src }) => {
+    fs.writeFileSync(path.join(src, 'Routes.js'), LITERAL_ROUTES);
+    setConfig({ routeConstant: '' });
+    assert.equal(loadConfig(configFile).routeConstant, null);
+    assert.deepEqual((await mapOf(configFile)).screens.map((s) => s.id).sort(), ['/help#Help', '/signin#SignIn']);
+  });
+});
+
+test('constants that are not an object of file paths, or a routeConstant that is not a dotted name or does not start with a name in constants, stop the run with an error that says what to write', async () => {
+  await withCopy(({ configFile, setConfig }) => {
+    const refused = (change: Record<string, unknown>, message: RegExp) => {
+      setConfig(change);
+      assert.throws(() => loadConfig(configFile), message);
+    };
+    refused({ constants: ['_define/Option.js'] }, /constants must map each name .* to its file as a path from srcRoot, such as \{ "Option": "_define\/Option.js" \}, not \["_define\/Option.js"\]/);
+    refused({ constants: { Option: 3 } }, /constants must map each name/);
+    refused({ constants: undefined, routeConstant: 'Option.ROUTE-PATH' }, /routeConstant must be the dotted name of the object that holds the route paths, such as "Option.ROUTE_PATH", not "Option.ROUTE-PATH"/);
+    for (const routeConstant of ['Option.ROUTE_PATH ', ['Option', 'ROUTE_PATH'], 3]) refused({ routeConstant }, /routeConstant must be the dotted name/);
+    refused({ routeConstant: 'Option.ROUTE_PATH' }, /^Error: routeConstant "Option\.ROUTE_PATH" starts with "Option", which is not a name in constants \(none\); add it to constants, or leave routeConstant out when the route paths are written in place$/);
+    refused({ constants: { Option: '_define/Option.js' }, routeConstant: 'Opton.ROUTE_PATH' }, /^Error: routeConstant "Opton\.ROUTE_PATH" starts with "Opton", which is not a name in constants \("Option"\); /);
+  });
+});
+
 test('a map built before screens carried their route file stops the task list, and the review server before it starts, with a line that says to rebuild', async () => {
   await withCopy(async ({ copy, configFile }) => {
     execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });

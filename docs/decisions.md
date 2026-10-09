@@ -710,6 +710,26 @@ of outline, the 4579 client files of appsmith and the 4307 webapp files of matte
 failure, against 73, 1, 1 and 0 failures with neither. The two example maps and the into-sign 1.5.0 and 2.0.0 maps
 are identical to main's.
 
+**`constants` and `routeConstant` may be left out of the config.**
+An app can write its route paths in place (`path="/signin"`) and have no table of them; outline and mattermost, in the
+measurement that found the stop, had to write `"constants": {}` and a route constant that names nothing to get past a
+`TypeError`. Making the keys required with a clear error would turn that stop into a message and still make every such
+app write two made-up values, so they are optional: without `constants` nothing is run, and without `routeConstant`
+no member chain is taken for a route reference. `null`, and for `routeConstant` an empty name, count as left out. A
+key that is present but of the wrong shape (`constants` not an object of file paths, `routeConstant` not a dotted
+name, or one whose first name is not in `constants`, as `settingsDefaults.<root>.constant` is checked) stops the
+run in the config check with a message in the style of the other keys, so it does not reach the extraction as a
+`TypeError`. Compared with taking any text as `routeConstant`, as main did: a name with a stray space or a typo in
+its first name matches no reference, and measured on `test/fixtures/app`, `"Option.ROUTE_PATH "` builds a map with
+the same 11 screens and none of its 14 links, with nothing printed. A config that used such a name to name nothing
+now gets the error, and an empty name or leaving the key out does the same job. So `constants` can be left out only
+together with `routeConstant`. A typo after the first name still matches nothing without a word, since the names
+inside a constants module are known only once it runs.
+Measured with `test/fixtures/app` and its route file rewritten to literal paths: each of the config without
+`routeConstant` and without both keys builds the map and gives a screen to every literal route. The
+two example maps and the into-sign 1.5.0 and 2.0.0 maps, which set both keys, are identical to main's apart from the
+time they were written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

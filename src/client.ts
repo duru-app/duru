@@ -208,11 +208,12 @@ export async function extractClient(config: any) {
   let called: Awaited<ReturnType<typeof recordApiCalls>> | null = null;
   const constantFileOf = new Map(Object.entries<string>(config.constants).map(([name, rel]): [string, string] => [name, path.join(config.srcRoot, rel)]));
   const settingsOnly = new Set(Object.values<any>(config.settingsDefaults ?? {}).map((d) => d.constant?.split('.')[0]).filter(Boolean));
-  settingsOnly.delete(config.routeConstant.split('.')[0]);
+  const routeChain: string[] | null = config.routeConstant?.split('.') ?? null;
+  if (routeChain) settingsOnly.delete(routeChain[0]);
   const constantModuleFiles = new Set(constantFileOf.values());
   const constantFiles = new Set([...constantFileOf].filter(([name]) => !settingsOnly.has(name)).map(([, file]) => file));
   const settingsRoots = new Set<string>(config.settingsRoots);
-  const [routeRoot, ...routeRest] = config.routeConstant.split('.');
+  const [routeRoot, ...routeRest] = routeChain ?? [];
   const guardInits = new Map<string, Map<string, GuardEntry>>();
   const guardSettings = new Map<string, Map<string, GuardSetting | null>>();
   const mapOf = <V>(maps: Map<string, Map<string, V>>, file: string) => {
@@ -575,7 +576,7 @@ export async function extractClient(config: any) {
   const rootIdentifier = (p: NodePath): NodePath => (p.isMemberExpression() || p.isOptionalMemberExpression() ? rootIdentifier(p.get('object') as NodePath) : p);
 
   function listedRoutes(p: NodePath<MemberExpression | OptionalMemberExpression>) {
-    if (memberChain(p.node.object)?.join('.') !== config.routeConstant) return [];
+    if (!routeChain || memberChain(p.node.object)?.join('.') !== config.routeConstant) return [];
     const key = p.get('property');
     const binding = (key.isIdentifier() && key.scope.getBinding(key.node.name)) as Binding | undefined;
     if (binding?.kind !== 'param' || binding.path.listKey !== 'params' || binding.path.key !== 0) return [];
@@ -987,7 +988,7 @@ export async function extractClient(config: any) {
   if (calledFiles.size) called = await recordApiCalls(config, imports.resolve, new Set(Object.keys(apiFunctions)));
   Object.assign(apiFunctions, called?.functions);
 
-  const routeValues = lookupConstant(constants, config.routeConstant.split('.')) ?? {};
+  const routeValues = lookupConstant(constants, routeChain) ?? {};
   const rel = (f: string | null | undefined) => (f ? path.relative(config.srcRoot, f) : null);
 
   if (!config.routeFiles.length) throw new Error(`the config has no routesFile, which takes ${ROUTES_FILE}`);

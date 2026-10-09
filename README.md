@@ -59,7 +59,9 @@ client with example results and a config to start from.
   `component={Home}`, `element={<Home />}`, `element={wrap(<Home />)}`, an element wrapped in others
   (`element={<Suspense><Home /></Suspense>}`) or a component passed to another (`element={<Wrapper Page={Signer} />}`).
   `element={<Navigate to=… />}` is a redirect, not a screen. A route without `path` gives no screen, and the path
-  of a parent route is not put in front of it.
+  of a parent route is not put in front of it. `routeConstant` and `constants` may be left out, or set to `null`
+  (`routeConstant` also to `""`), for an app that has no table of its route paths. A `routeConstant` that is not a
+  dotted name, or whose first name is not in `constants`, stops the run with an error.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
@@ -71,7 +73,9 @@ client with example results and a config to start from.
   key for writing them by hand. A tsconfig that cannot be used (missing, not JSON, a broken `extends`, no
   `paths`) stops the command with an error that names the file and what is wrong.
 - `constants`, `constantStubs` — modules run for route paths, API endpoint definitions and settings defaults,
-  and stand-in source for imports they cannot run. A module's value is what it exports by default, or, without a
+  and stand-in source for imports they cannot run. `constants` is optional unless `routeConstant` or a settings
+  default names one of its modules, and when it is there it must be an object of file paths, or the run stops with
+  an error. A module's value is what it exports by default, or, without a
   default export, an object of its named exports. A module and every file it imports, `.ts` files included, are
   run as written, so a value a function builds is read like a literal one. An import that finds no file gets an
   empty stand-in; when the extraction stops on one with a file and line, give that import a `constantStubs`
