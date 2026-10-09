@@ -3,20 +3,57 @@ import { clientPath, loadServerEndpoints, matchEndpoint } from './server.ts';
 import { linkTargets, screenAccess } from './access.ts';
 import { compare } from './config.ts';
 import { removeExcludedFields } from './body-type-exclusions.ts';
-import type { RemovedField } from './body-type-exclusions.ts';
+import type { AccessConfig } from './access.ts';
+import type { RemovedField, UnknownExclusion } from './body-type-exclusions.ts';
+import type { AliasRule } from './resolve.ts';
 import type { EndpointMatch } from './server.ts';
 
-interface Endpoint {
+type Client = Awaited<ReturnType<typeof extractClient>>;
+type ClientScreen = Client['screens'][number];
+type Access = ReturnType<typeof screenAccess>;
+
+interface MapConfig extends AccessConfig {
+  srcRoot: string;
+  clientRef?: string;
+  serverRef?: string;
+  serverEndpoints: string[];
+  apiPathPrefix?: string;
+  bodyOptions?: Record<string, string[]>;
+  bodyTypeExclusions?: Record<string, string[]>;
+  callLinks?: CallLink[];
+  moves?: { from: string; to: string; reason: string }[];
+  settingsFunctions: unknown[];
+  aliases?: AliasRule[] | null;
+}
+
+export interface Endpoint {
   method: string | null;
-  url: string;
-  server: EndpointMatch & { path?: string; candidates?: string[] };
-  callId?: string | null;
+  url: string | null;
+  line: number | null;
+  via?: string;
+  server: EndpointMatch & { path?: string; candidates?: string[]; labels?: string[] };
+  callId: string | null;
   bodyOptions?: string[];
 }
 
-interface ApiFunctions {
-  [name: string]: { endpoints: Endpoint[] };
+export interface ApiFunction {
+  file: string | null;
+  line: number | null;
+  endpoints: Endpoint[];
+  error?: string;
 }
+
+interface ApiFunctions {
+  [name: string]: ApiFunction;
+}
+
+export type MapScreen = Omit<ClientScreen, 'apiCalls' | 'links'> & {
+  id: string;
+  apiCalls: (ClientScreen['apiCalls'][number] & { endpoints: Endpoint[] | null })[];
+  links: (ClientScreen['links'][number] & { conditions: Access['linkConditions'][number][number] })[];
+  access: Access['access'][number];
+  dead: boolean;
+};
 
 interface OptionSite {
   screen: string;
@@ -36,6 +73,39 @@ interface CallLink {
   missing?: string[];
 }
 
+export interface MapCall {
+  id: string;
+  method: string;
+  path: string;
+  server: Endpoint['server'];
+  apiFunctions: string[];
+  screens: string[];
+  options: { key: string; values: boolean[]; sources: string[]; sites: OptionSite[] }[];
+}
+
+export type ScreenMap = {
+  meta: { generatedAt: string; srcRoot: string; clientRef: string | null; serverRef: string | null };
+  screens: MapScreen[];
+  apiFunctions: ApiFunctions;
+  unrunApiModules?: NonNullable<Client['unrunApiModules']>;
+  bodyTypeNotices?: NonNullable<Client['bodyTypeNotices']>;
+  deadCalls: { screen: string; fn: string; method: string | null; url: string | null; callSite: string }[];
+  duplicateIds: { id: string; places: { file: string; line: number }[] }[];
+  calls: MapCall[];
+  unknownBodyOptionCalls: string[];
+  leftOutBodyTypeFields?: RemovedField[];
+  keptBodyTypeExclusions?: (RemovedField & { keptBy: string[] })[];
+  unknownBodyTypeExclusions?: UnknownExclusion[];
+  serverNotCompared?: true;
+  entries: Access['entries'];
+  unknownEntryPaths: string[];
+  unknownRoleGuards?: string[];
+  settingsDefaults: Client['settingsDefaults'];
+  settingsDefaultsIncomplete: Client['settingsDefaultsIncomplete'];
+  settingsCallNotices?: Client['settingsCallNotices'];
+  unresolvedAliasImports?: Client['unresolvedAliasImports'];
+} & ReturnType<typeof configuredCallLinks> & ReturnType<typeof configuredMoves>;
+
 // JUnit 태그에 쓸 수 없는 문자. 이 문자만 없으면 Playwright · Vitest 제목에서도 그대로 태그로 쓸 수 있다.
 const TAG_FORBIDDEN = /[\s,()&|!]+/g;
 
@@ -46,7 +116,7 @@ export function screenId(routePath: string, component: string) {
 function callOf(e: Endpoint, apiPathPrefix: string) {
   if (e.server.status === 'unresolved') return null;
   const method = e.method ?? UNKNOWN;
-  const p = e.server.path ?? clientPath(e.url, apiPathPrefix);
+  const p = e.server.path ?? clientPath(e.url!, apiPathPrefix);
   return { id: `${method}:${p}`.replace(TAG_FORBIDDEN, '_'), method, path: p };
 }
 
@@ -78,7 +148,7 @@ function configuredCallLinks(calls: { id: string }[], callLinks: CallLink[]) {
     joined.set(JSON.stringify([from, to, note]), missing.length ? { from, to, note, missing } : { from, to, note });
   }
   const links = [...joined.values()].sort((a, b) => compare(a.to, b.to) || compare(a.from, b.from) || compare(a.note, b.note));
-  return { callLinks: links.filter((l) => !l.missing), unknownCallLinks: links.filter((l) => l.missing) };
+  return { callLinks: links.filter((l) => !l.missing), unknownCallLinks: links.filter((l): l is CallLink & { missing: string[] } => Boolean(l.missing)) };
 }
 
 const bySite = (a: OptionSite, b: OptionSite) => compare(a.screen, b.screen) || compare(a.file, b.file) || a.line - b.line;
@@ -148,7 +218,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
   return { calls: nodes, unknownBodyOptionCalls: unknownBodyOptionCalls.sort(), leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions: unknown };
 }
 
-export async function buildMap(config: any) {
+export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   const { screens, apiFunctions, unrunApiModules, bodyTypeNotices, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
@@ -177,7 +247,7 @@ export async function buildMap(config: any) {
 
   for (const s of mapped) s.dead = s.apiCalls.some((c: { endpoints: Endpoint[] | null }) => (c.endpoints ?? []).some((e) => e.server.status === 'none'));
 
-  const deadCalls: { screen: string; fn: string; method: string | null; url: string; callSite: string }[] = [];
+  const deadCalls: ScreenMap['deadCalls'] = [];
   for (const s of mapped) {
     for (const c of s.apiCalls) {
       for (const e of c.endpoints ?? []) {

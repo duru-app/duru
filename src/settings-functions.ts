@@ -185,8 +185,9 @@ export function findSettingsCalls(config: any) {
     const found: FoundCall[] = [];
     traverse(ast, {
       CallExpression(p) {
-        const callee = p.get('callee') as NodePath<Identifier>;
-        const spec = callee.isIdentifier() && p.scope.getBinding(callee.node.name)?.path;
+        const callee = p.get('callee');
+        if (!callee.isIdentifier()) return;
+        const spec = p.scope.getBinding(callee.node.name)?.path;
         if (!spec || !(spec.isImportDefaultSpecifier() || spec.isImportSpecifier())) return;
         const fn = fnOf(file, { from: (spec.parent as ImportDeclaration).source.value, name: importedName(spec)! });
         if (!fn) return;

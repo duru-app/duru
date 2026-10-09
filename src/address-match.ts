@@ -8,9 +8,9 @@ interface MapScreen {
 }
 
 interface MapEndpoint {
-  callId?: string;
-  method: string;
-  url: string;
+  callId?: string | null;
+  method: string | null;
+  url: string | null;
 }
 
 interface AddressMap {
@@ -19,9 +19,9 @@ interface AddressMap {
 }
 
 interface CallRoute {
-  id: string | undefined;
+  id: string | null | undefined;
   segments: string[];
-  method: string;
+  method: string | null;
 }
 
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
@@ -45,12 +45,12 @@ export function screenFinder(map: AddressMap) {
 }
 
 // 맞는 호출이 없으면 null 이다. 여러 호출에 맞으면 변수 자리가 가장 적은 호출을 고른다. document/list 요청은 document/{0} 보다 document/list 에 가깝다.
-export function callFinder(map: AddressMap) {
+export function callFinder(map: Pick<AddressMap, 'apiFunctions'>) {
   const variables = (e: CallRoute) => e.segments.filter((s) => s === '*').length;
   const endpoints = Object.values(map.apiFunctions ?? {})
     .flatMap((fn) => fn.endpoints)
     .filter((e) => e.callId)
-    .map((e) => ({ id: e.callId, method: e.method, segments: toSegments(e.url) }))
+    .map((e) => ({ id: e.callId, method: e.method, segments: toSegments(e.url!) }))
     .sort((a, b) => variables(a) - variables(b));
   return (method: string, url: string) => {
     const segments = pathOf(url)?.split('/').filter(Boolean);

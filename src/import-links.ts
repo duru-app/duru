@@ -7,10 +7,10 @@ import type { AliasRule } from './resolve.ts';
 
 interface LinkScreen {
   id: string;
-  sourceFiles?: string[];
+  sourceFiles?: (string | null)[];
 }
 
-type LinkResult = { reason: string } | { file: string; screens: Map<string, string[]> };
+export type LinkResult = { reason: string } | { file: string; screens: Map<string, string[]> };
 
 const traverse = _traverse.default ?? _traverse;
 // 이보다 많은 화면에 딸린 소스 파일은 여러 화면이 함께 쓰는 파일로 보고 근거로 치지 않는다.
@@ -66,7 +66,7 @@ function importsOf(srcRoot: string, file: string, aliases: AliasRule[] | null) {
 
 export function importLinker(srcRoot: string, map: { screens: LinkScreen[] }, aliases: AliasRule[] | null = null) {
   const realRoot = fs.existsSync(srcRoot) ? fs.realpathSync(srcRoot) : srcRoot;
-  const screensOf = new Map<string, Set<string>>();
+  const screensOf = new Map<string | null, Set<string>>();
   for (const screen of map.screens) {
     for (const file of screen.sourceFiles ?? []) screensOf.set(file, (screensOf.get(file) ?? new Set()).add(screen.id));
   }

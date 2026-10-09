@@ -6,35 +6,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
+import type { ScreenMap } from '../src/map.ts';
 import { linkTests } from '../src/test-links.ts';
 
-type Link = { file: string; line: number; to: string; tail?: string; conditions: { kinds: string[] }[] };
-type Screen = {
-  id: string;
-  path: string;
-  component: string;
-  componentFile: string | null;
-  routeFile: string;
-  line: number;
-  routeGuards: string[];
-  links: Link[];
-  settingReads: { file: string; line: number; key: string }[];
-  sourceFiles: string[];
-  access: { restricted: boolean; kinds: string[]; roleValues: string[]; settings: unknown; route: unknown; links: { from: string; file: string; line: number }[] };
-};
-type MapData = {
-  meta: Record<string, unknown> | null;
-  screens: Screen[];
-  settingsDefaults: unknown;
-  settingsDefaultsIncomplete: unknown;
-  entries: { screen: string; reasons: { kind: string }[] }[];
-  calls: { id: string; options: { key: string; sites: { file: string; line: number }[] }[] }[];
-};
 type Edit = string[];
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/ts-app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
-const buildFixture = (dir = FIXTURE): Promise<MapData> => buildMap(loadConfig(path.join(dir, 'config.json')));
+const buildFixture = (dir = FIXTURE) => buildMap(loadConfig(path.join(dir, 'config.json')));
 
 async function inCopy<T>(edits: Edit[], fn: (copy: string) => T | Promise<T>): Promise<T> {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
@@ -52,7 +31,7 @@ async function inCopy<T>(edits: Edit[], fn: (copy: string) => T | Promise<T>): P
   }
 }
 
-const screen = (map: MapData, id: string) => map.screens.find((s) => s.id === id)!;
+const screen = (map: ScreenMap, id: string) => map.screens.find((s) => s.id === id)!;
 const setting = (key: string, need: string, value: boolean) => ({ root: 'globalSettings', path: key.split('.'), need, default: value });
 const LAB_ON = setting('SYSTEM.LAB_ENABLED', 'on', false);
 const REPORT_ON = setting('SYSTEM.REPORT_ENABLED', 'on', true);
@@ -540,7 +519,7 @@ test('an outside package named like a member of every object gets the empty stan
 
 const ROUTES = 'client/src/Routes.tsx';
 const ADMIN_ROUTES = 'client/src/admin/AdminRoutes.tsx';
-const withoutMeta = (map: MapData) => ({ ...map, meta: null });
+const withoutMeta = (map: ScreenMap) => ({ ...map, meta: null });
 
 test('a route written with element is a screen named after the element, or after the first argument of the call wrapping it, with its component file, route file and line', async () => {
   const map = await buildFixture();
@@ -601,7 +580,7 @@ test('a route whose element wraps the screen as a child, through Suspense, a gua
   ], async (copy) => {
     fs.writeFileSync(path.join(copy, 'client/src/components/Frame.tsx'), 'export default function Frame({ children }) {\n  return <section>{children}</section>;\n}\n');
     const map = await buildFixture(copy);
-    const pick = (m: MapData, p: string) => m.screens.find((s) => s.path === p)!;
+    const pick = (m: ScreenMap, p: string) => m.screens.find((s) => s.path === p)!;
     for (const p of ['/home', '/document', '/document/:id']) {
       assert.deepEqual([pick(map, p).id, pick(map, p).componentFile], [pick(plain, p).id, pick(plain, p).componentFile]);
     }
@@ -624,7 +603,7 @@ test('the screen of a wrapping element is a child with a file, else a wrapper or
     [routes, '<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />', '<Suspense><Guard><Navigate to={Option.ROUTE_PATH.DOCUMENT} replace /></Guard></Suspense>'],
   ], async (copy) => {
     const map = await buildFixture(copy);
-    const pick = (m: MapData, p: string) => m.screens.find((s) => s.path === p)!;
+    const pick = (m: ScreenMap, p: string) => m.screens.find((s) => s.path === p)!;
     assert.deepEqual(map.screens.map((s) => s.path), plain.screens.map((s) => s.path));
     assert.deepEqual([pick(map, '/home').id, pick(map, '/home').sourceFiles], ['/home#Home', pick(plain, '/home').sourceFiles]);
     assert.deepEqual([pick(map, '/document').id, pick(map, '/document').componentFile], ['/document#Lists.default', 'screens/DocumentList.jsx']);
@@ -644,7 +623,7 @@ test('a redirect inside a wrapper with a file, a constant passed as a prop, an H
   ], async (copy) => {
     fs.appendFileSync(path.join(copy, 'client/src/components/Badge.tsx'), "\nexport const ROLE = 'ADMIN';\n");
     const map = await buildFixture(copy);
-    const pick = (m: MapData, p: string) => m.screens.find((s) => s.path === p)!;
+    const pick = (m: ScreenMap, p: string) => m.screens.find((s) => s.path === p)!;
     assert.deepEqual(map.screens.map((s) => s.id), plain.screens.map((s) => s.id).map((id) => (id === '/document#DocumentList' ? '/document#Lists.default' : id)));
     assert.ok(pick(map, '/home').sourceFiles.includes('screens/DocumentDetail.js'));
     assert.ok(!pick(map, '/home').sourceFiles.includes('components/Badge.tsx'));
@@ -752,7 +731,7 @@ test('redirect elements default to Redirect and Navigate, and a config that list
 
 const TABLE = 'client/src/pages/lazyPages.ts';
 const PAGE_ROUTES = 'client/src/pages/PageRoutes.tsx';
-const pageAt = (map: MapData, address: string) => map.screens.find((s) => s.path === address)!;
+const pageAt = (map: ScreenMap, address: string) => map.screens.find((s) => s.path === address)!;
 
 test('screens taken out of a lazy table, one by destructuring and one as a property, each point at the file their own entry loads and carry only the setting reads and links of that file', async () => {
   const map = await buildFixture();
@@ -997,7 +976,7 @@ test('a screen that the file declaring it wraps in a call keeps its own file whe
 });
 
 test('the loaders of a table are read in another module than the table, and a loader of any shape gives the last source file it imports', async () => {
-  const own = (map: MapData) => ['/archive', '/profile'].map((address) => [pageAt(map, address).componentFile, pageAt(map, address).sourceFiles]);
+  const own = (map: ScreenMap) => ['/archive', '/profile'].map((address) => [pageAt(map, address).componentFile, pageAt(map, address).sourceFiles]);
   const expected = [['screens/Archive.tsx', ['screens/Archive.tsx']], ['screens/Profile.tsx', ['screens/Profile.tsx']]];
   await inCopy([[TABLE, "const loadPage = {\n  Archive: () => import('../screens/Archive'),\n  Profile: () => import('../screens/Profile'),\n};", "import { loadPage } from './loaders';"]], async (copy) => {
     fs.writeFileSync(path.join(copy, 'client/src/pages/loaders.ts'), "export const loadPage = {\n  Archive: () => import('../screens/Archive'),\n  Profile: () => import('../screens/Profile'),\n};\n");
