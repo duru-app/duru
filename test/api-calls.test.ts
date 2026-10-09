@@ -242,21 +242,43 @@ test('a listed file that fails to run is reported with the place of the error, a
   assert.equal(map.apiFunctions['contractApi.loadList'].endpoints.length, 1);
 });
 
-test('each listed file importing a decorated class, directly or through another module, is reported with the file, line and column of the decorator, and the other files still run', async () => {
-  const importer = (name: string, from: string) => `import { Store } from './${from}';\nexport const ${name} = { load: () => new Store() };\n`;
-  const listed = ['stored', 'storedAgain', 'storedThrough', 'storedThroughAgain'];
+test('a file that a listed file reaches by import, directly or through `export *`, and that holds JSX or a decorator is run as a stand-in, so the listed file still gives its requests, and a listed file with a decorator of its own is reported', async () => {
+  const send = (name: string, url: string) => `export const ${name} = { load: () => executeRequest({ endpoint: { method: 'GET', path: '' }, url: '${url}' }) };\n`;
   const configFile = fixtureCopy(
-    { ...CALLED, calledApiModules: [...listed.map((f) => `contracts/api/${f}.ts`), ...CALLED.calledApiModules] },
+    { ...CALLED, calledApiModules: ['contracts/api/drawn.ts', 'contracts/api/storedThrough.ts', 'contracts/api/decorated.ts', ...CALLED.calledApiModules] },
     {
-      ...Object.fromEntries(listed.map((f) => [`contracts/api/${f}.ts`, importer(`${f}Api`, f.startsWith('storedThrough') ? 'stores' : 'store')])),
-      'contracts/api/stores.ts': "export { Store } from './store';\n",
+      'contracts/api/icons.tsx': 'export interface Kind { name: string }\nexport const Icon = () => <svg><path /></svg>;\nexport const { Badge, sizes: [Small] } = { Badge: () => <>{Icon()}</>, sizes: [16] };\n',
+      'contracts/api/ui.ts': "export * from './icons';\nexport * from './kinds';\n",
+      'contracts/api/kinds.ts': "export const Kind = { name: 'drawn' };\n",
+      'contracts/api/drawn.ts': `import { executeRequest } from './request';\nimport { Icon, Kind, Small } from './ui';\n\nconst icon = Icon(Small);\nexport const drawnApi = { load: () => executeRequest({ endpoint: { method: 'GET', path: '' }, url: '/' + Kind.name }) };\n`,
       'contracts/api/store.ts': 'const dec = (v: unknown) => v;\nexport class Store {\n  @dec count = 0;\n}\n',
+      'contracts/api/stores.ts': "export { Store } from './store';\n",
+      'contracts/api/storedThrough.ts': `import { executeRequest } from './request';\nimport { Store } from './stores';\n\nconst store = new Store();\n${send('storedApi', '/stored')}`,
+      'contracts/api/decorated.ts': `import { executeRequest } from './request';\n\nconst dec = (v: unknown) => v;\nexport class Own {\n  @dec count = 0;\n}\n${send('ownApi', '/own')}`,
     },
   );
   const map = await build(configFile);
-  const error = `calledApiModules: ${path.join(path.dirname(configFile), 'client/src/contracts/api/store.ts')}:3:3: a decorator is not JavaScript that Node runs, so duru cannot run this file`;
-  assert.deepEqual(map.unrunApiModules, listed.map((f) => ({ file: `contracts/api/${f}.ts`, error })));
+  assert.deepEqual([endpointsOf(map, 'drawnApi.load'), endpointsOf(map, 'storedApi.load')].map((e) => e.map(([method, url]) => `${method} ${url}`)), [['GET /drawn'], ['GET /stored']]);
+  const error = `calledApiModules: ${path.join(path.dirname(configFile), 'client/src/contracts/api/decorated.ts')}:5:3: a decorator is not JavaScript that Node runs, so duru cannot run this file`;
+  assert.deepEqual(map.unrunApiModules, [{ file: 'contracts/api/decorated.ts', error }]);
   assert.equal(map.apiFunctions['contractApi.loadList'].endpoints.length, 1);
+});
+
+test('a listed file that calls require() for a package, reads process.env.NODE_ENV or uses self runs, as does one that calls require() for a file of the app only in a function it does not run, and one that runs such a call is reported with the line', async () => {
+  const send = (name: string, url: string) => `export const ${name} = { load: () => executeRequest({ endpoint: { method: 'GET', path: '' }, url: \`${url}\` }) };\n`;
+  const configFile = fixtureCopy(
+    { ...CALLED, calledApiModules: ['contracts/api/required.ts', 'contracts/api/local.ts', 'contracts/api/later.ts', ...CALLED.calledApiModules] },
+    {
+      'contracts/api/paths.ts': "const { match } = require('path-to-regexp');\nexport const matcher = match('/x');\nexport const mode = process.env.NODE_ENV.slice(0, 4);\nexport const later = self.setTimeout;\n",
+      'contracts/api/required.ts': `import { executeRequest } from './request';\nimport { mode } from './paths';\n\n${send('requiredApi', '/required/${mode}')}`,
+      'contracts/api/local.ts': `import { executeRequest } from './request'\nconst base = '/local'\nrequire('./endpoints')\n${send('localApi', '/local')}`,
+      'contracts/api/later.ts': `import { executeRequest } from './request';\n\nfunction devtools() {\n  require('./endpoints').debug = true;\n  const { endpointTables } = require('./endpoints');\n  return endpointTables;\n}\n${send('laterApi', '/later')}`,
+    },
+  );
+  const map = await build(configFile);
+  assert.deepEqual([endpointsOf(map, 'requiredApi.load'), endpointsOf(map, 'laterApi.load')].map((e) => e.map(([method, url]) => `${method} ${url}`)), [['GET /required/prod'], ['GET /later']]);
+  const error = `${path.join(path.dirname(configFile), 'client/src/contracts/api/local.ts')}:3: \`require(…)\` of a file of the app is CommonJS, which duru cannot run as an ES module`;
+  assert.deepEqual(map.unrunApiModules, [{ file: 'contracts/api/local.ts', error }]);
 });
 
 test('the new keys are refused when one comes without the other, a file is in both API lists, a place is not a number followed by keys, or a relative import names no file', async () => {

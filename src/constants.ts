@@ -6,7 +6,7 @@ import type { SourceMap } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import _traverse from '@babel/traverse';
 import type { NodePath } from '@babel/traverse';
-import type { File } from '@babel/types';
+import type { File, Node, Statement } from '@babel/types';
 import { parse } from '@babel/parser';
 import { firstDecorator, importsModule, isTypeOnlyLine, parseSource } from './parse.ts';
 import { importResolver } from './resolve.ts';
@@ -110,6 +110,41 @@ function typeOnlyImports(ast: File) {
   return names;
 }
 
+function hasJsx(ast: File) {
+  let found = false;
+  traverse(ast, {
+    'JSXElement|JSXFragment'(p) {
+      found = true;
+      p.stop();
+    },
+  });
+  return found;
+}
+
+function boundNames(node: Node | null): string[] {
+  if (node?.type === 'Identifier') return [node.name];
+  if (node?.type === 'ObjectPattern') return node.properties.flatMap((p) => boundNames(p.type === 'RestElement' ? p.argument : (p.value as Node)));
+  if (node?.type === 'ArrayPattern') return node.elements.flatMap(boundNames);
+  if (node?.type === 'AssignmentPattern') return boundNames(node.left);
+  if (node?.type === 'RestElement') return boundNames(node.argument);
+  return [];
+}
+
+// export * from 과 export import 로 내보내는 이름은 읽지 않는다.
+function ownExports(body: Statement[]) {
+  const names: string[] = [];
+  for (const node of body) {
+    if (node.type === 'ExportDefaultDeclaration') names.push('default');
+    if (node.type !== 'ExportNamedDeclaration' || node.exportKind === 'type') continue;
+    for (const sp of node.specifiers) if ((sp as { exportKind?: string }).exportKind !== 'type') names.push(sp.exported.type === 'Identifier' ? sp.exported.name : sp.exported.value);
+    const declaration = node.declaration;
+    if (declaration?.type === 'VariableDeclaration') names.push(...declaration.declarations.flatMap((d) => boundNames(d.id)));
+    else if (declaration && 'id' in declaration) names.push(...boundNames(declaration.id ?? null));
+  }
+  return names;
+}
+
+const APP_REQUIRE = '`require(…)` of a file of the app is CommonJS, which duru cannot run as an ES module';
 const NOTHING_SOURCE = 'const nothing = globalThis.__duruNothing;';
 
 function exportedNames(body: string) {
@@ -119,20 +154,7 @@ function exportedNames(body: string) {
   } catch {
     return null;
   }
-  const names = new Set();
-  for (const node of ast.program.body) {
-    if (node.type === 'ExportAllDeclaration') return null;
-    if (node.type === 'ExportDefaultDeclaration') names.add('default');
-    if (node.type !== 'ExportNamedDeclaration') continue;
-    for (const sp of node.specifiers) names.add((sp.exported as unknown as Named).name ?? (sp.exported as unknown as Named).value);
-    const decl = node.declaration as { id?: { name: string }; declarations?: { id: { type: string; name: string } }[] } | null | undefined;
-    if (decl?.id) names.add(decl.id.name);
-    for (const d of decl?.declarations ?? []) {
-      if (d.id.type === 'Identifier') names.add(d.id.name);
-      else return null;
-    }
-  }
-  return names;
+  return ast.program.body.some((node) => node.type === 'ExportAllDeclaration') ? null : new Set(ownExports(ast.program.body));
 }
 
 // 상수 모듈과 API 모듈을 임시 폴더에 ES 모듈로 옮겨 적는다. 바깥 패키지는 constantStubs 의 스텁으로 바꾼다.
@@ -146,6 +168,23 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
   const stubNames = new Map<string, { body: string; names: Set<string> }>();
   const transformed = new Map<string, Transformed>();
   const stubs = Object.assign(Object.create(null), config.constantStubs);
+  const standIns = new Map<string, string[] | null>();
+
+  // JSX 나 데코레이터는 Node 가 실행하지 못하므로, import 로 닿은 그런 파일은 그 파일이 export 하는 이름마다 아무 일도 하지 않는 값을 준다.
+  // 실행할 수 있는 파일이면 null 이다.
+  function standInNames(file: string) {
+    if (!standIns.has(file)) {
+      let names = null;
+      try {
+        const { src, ast } = parseSource(file, { asWritten: true });
+        if ((src.includes('<') && hasJsx(ast)) || (src.includes('@') && firstDecorator(ast.program))) names = ownExports(ast.program.body);
+      } catch {
+        // 읽지 못하는 파일은 그대로 옮겨 적어, 실행할 때 나는 오류로 알린다.
+      }
+      standIns.set(file, names);
+    }
+    return standIns.get(file)!;
+  }
 
   function stubFile(fromFile: string, spec: string, body: string, names: string[]) {
     const key = spec.startsWith('.') ? `${path.resolve(path.dirname(fromFile), spec)}\n${body}` : `${spec}\n${body}`;
@@ -229,9 +268,22 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
       const resolved = stubbedSpec ? null : resolve(absFile, spec);
       const replacing = replacement(spec, resolved);
       const names = importedNames({ specifiers: kept.filter((sp) => sp.exportKind !== 'type') });
+      const exported = replacing === null && resolved && fillMissing ? standInNames(resolved) : null;
       const target = replacing !== null ? stubFile(absFile, spec, replacing, names)
+        : exported ? stubFile(absFile, spec, '', [...exported, ...names])
         : resolved ? copy(resolved) : stubFile(absFile, spec, stubs[spec] ?? (fillMissing ? '' : 'export default {};'), names);
       edits.push([node.source.start, node.source.end, JSON.stringify(target)]);
+    }
+    if (fillMissing && src.includes('require')) {
+      // 패키지를 부르는 require() 는 import 한 패키지처럼 아무 일도 하지 않는 값으로 읽는다. 앱 파일을 부르는 것은 그 줄이 실행될 때 오류가 된다.
+      traverse(ast, {
+        CallExpression(p) {
+          if (!p.get('callee').isIdentifier({ name: 'require' }) || p.scope.hasBinding('require')) return;
+          const [arg] = p.node.arguments;
+          const value = arg?.type === 'StringLiteral' && resolve(absFile, arg.value) ? `Reflect.apply(() => { throw new Error(${JSON.stringify(APP_REQUIRE)}); }, null, [])` : 'globalThis.__duruNothing';
+          edits.push([p.node.start!, p.node.end!, `${value}${lines(p.node.start!, p.node.end!)}`]);
+        },
+      });
     }
     if (fillMissing && src.includes('import.meta')) {
       // 빌드 도구가 채우는 환경 값은 실행할 때 없으므로 아무 일도 하지 않는 값으로 읽는다.

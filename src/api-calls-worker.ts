@@ -56,9 +56,12 @@ const send = (message: object) => parentPort!.postMessage(message);
 // 호출해 본 메서드가 나중에 throw 하거나 reject 돼도 worker 가 멈추지 않게 한다.
 process.on('uncaughtException', () => {});
 process.on('unhandledRejection', () => {});
-const browserGlobals = globalThis as { window?: unknown; document?: unknown };
+const browserGlobals = globalThis as { window?: unknown; document?: unknown; self?: unknown };
 browserGlobals.window ??= { location: { protocol: 'http:', host: 'localhost', origin: 'http://localhost' } };
 browserGlobals.document ??= { getElementById: () => null };
+// 번들러가 채워 넣는 NODE_ENV 와 브라우저에만 있는 self 를 앱 코드가 모듈을 불러올 때 읽는다.
+process.env.NODE_ENV ??= 'production';
+browserGlobals.self ??= globalThis;
 
 // 스텁에 없는 외부 패키지 이름을 채우는 값. 문자열로 바꾸면 mark 가 되어 URL 에서 {?} 로 남는다.
 globalThis.__duruNothing = new Proxy(function () {}, {
