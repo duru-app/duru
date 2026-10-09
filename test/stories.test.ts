@@ -9,7 +9,11 @@ import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { loadStories } from '../src/stories.ts';
 import { checkStories, checkStoryFiles } from '../src/story-paths.ts';
+import type { StoryTests } from '../src/story-paths.ts';
 import { linkTests } from '../src/test-links.ts';
+
+type Checked = ReturnType<typeof checkStories>[number];
+type StoryFiles = Record<string, string | Record<string, unknown>>;
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const EXAMPLES = path.join(FIXTURE, 'example-stories');
@@ -18,10 +22,10 @@ const map = await buildMap(config);
 const examples = loadStories(EXAMPLES);
 const checked = Object.fromEntries(checkStories(map, examples.stories).map((s) => [s.id, s]));
 
-const verdicts = (story) => story.links.map((l) => `${l.from} → ${l.to} ${l.verdict}`);
-const places = (ways) => ways.map((w) => `${w.file}:${w.line}`);
+const verdicts = (story: Checked) => story.links.map((l) => `${l.from} → ${l.to} ${l.verdict}`);
+const places = (ways: { file: string; line: number }[]) => ways.map((w) => `${w.file}:${w.line}`);
 
-function withStoriesDir(files, fn) {
+function withStoriesDir<T>(files: StoryFiles, fn: (dir: string) => T) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     for (const [name, body] of Object.entries(files)) {
@@ -121,7 +125,7 @@ test('the first screen\'s own opening condition is gathered when the story start
 test('a link guarded through the handler it sits in carries that guard with the handler\'s name', () => {
   const [story] = checkStories(map, [{ id: 'help', screens: ['/signin#SignIn', '/help#Help'] }]);
   assert.deepEqual(story.links[0].verdict, 'conditioned');
-  assert.deepEqual(story.links[0].ways[0].conditions.map((c) => [c.guard, c.via, c.kinds]), [['globalSettings.SYSTEM.HELP_LINK_ENABLED', 'openHelp', ['setting']]]);
+  assert.deepEqual(story.links[0].ways[0].conditions.map((c: { guard: string; via?: string; kinds: string[] }) => [c.guard, c.via, c.kinds]), [['globalSettings.SYSTEM.HELP_LINK_ENABLED', 'openHelp', ['setting']]]);
 });
 
 test('a step that a move in the config joins, such as the screen opening after sign-in, is configured with the move\'s reason, not a missing link', async () => {
@@ -137,8 +141,10 @@ test('a step that a move in the config joins, such as the screen opening after s
 const TINY_CONFIG = { settingsRoots: ['globalSettings'], roleIdentifiers: ['memberRole'], entryPaths: [] };
 const NO_SETTING_READ = { settings: null, settingsReason: '조건에서 설정을 읽는 곳을 찾지 못했습니다' };
 
-function tinyMap(links) {
-  const screens = Object.entries(links).map(([id, out]) => ({ id, path: id, line: 1, routeGuards: [], links: out }));
+type TinyLink = Parameters<typeof screenAccess>[0][number]['links'][number];
+
+function tinyMap(links: Record<string, TinyLink[]>) {
+  const screens = Object.entries(links).map(([id, out]) => ({ id, path: id, line: 1, routeGuards: [], routeFile: 'routes.js', links: out }));
   const { access, linkConditions } = screenAccess(screens, [], TINY_CONFIG, new Map(), {}, new Map());
   return { screens: screens.map((s, i) => ({ ...s, access: access[i], links: s.links.map((l, j) => ({ ...l, conditions: linkConditions[i][j] })) })) };
 }
@@ -171,7 +177,7 @@ test('two links on one line to the same screen each keep their own conditions', 
     '/b': [],
   });
   const [story] = checkStories(tiny, [{ id: 's', screens: ['/a', '/b'] }]);
-  assert.deepEqual(story.links[0].ways.map((w) => w.conditions.map((c) => [c.guard, c.kinds])), [
+  assert.deepEqual(story.links[0].ways.map((w: { conditions: { guard: string; kinds: string[] }[] }) => w.conditions.map((c) => [c.guard, c.kinds])), [
     [['memberRole === \'ADMIN\'', ['role']]],
     [['!(memberRole === \'ADMIN\')', ['role']], ['globalSettings.SYSTEM.B', ['setting']]],
   ]);
@@ -183,7 +189,7 @@ test('when two screens have no link between them but the first has links to a pa
       { to: '/', file: 'A.js', line: 9, guards: [] },
       { to: `/doc/${UNKNOWN}`, file: 'A.js', line: 6, guards: [] },
       { to: '/c', file: 'A.js', line: 3, guards: [] },
-      { to: null, file: 'A.js', line: 4, guards: [] },
+      { to: null as unknown as string, file: 'A.js', line: 4, guards: [] },
     ],
     '/b': [],
     '/c': [],
@@ -208,7 +214,7 @@ test('a step joined by a link keeps the verdict of that link, and also lists the
   const [story] = checkStories(tiny, [{ id: 's', screens: ['/a', '/b'] }]);
   const unknownLinks = [{ file: 'A.js', line: 9, to: `/doc/${UNKNOWN}` }];
   assert.equal(story.links[0].verdict, 'conditioned');
-  assert.deepEqual(story.links[0].unknownLinks, unknownLinks);
+  assert.deepEqual((story.links[0] as { unknownLinks?: unknown[] }).unknownLinks, unknownLinks);
   assert.deepEqual(story.reach.map((r) => [r.kind, r.unknownLinks]), [['link', unknownLinks]]);
   assert.equal(story.unjudged, false);
 });
@@ -234,12 +240,12 @@ test('when two screens have no link between them and every link of the first has
 });
 
 test('a map built before links carried their conditions checks no story and says to rebuild apart from the story file notes, still naming the stories read, unless there is no story to check', () => {
-  const old = { screens: map.screens.map((s) => ({ ...s, links: s.links.map(({ conditions, ...l }) => l) })) };
+  const old = { screens: map.screens.map((s: { links: { conditions: unknown }[] }) => ({ ...s, links: s.links.map(({ conditions, ...l }) => l) })) };
   withStoriesDir({ 'ok.json': STORY, 'bad.json': '{' }, (dir) => {
     const { ids, list, notices, stale } = checkStoryFiles(old, dir, 'out/map.json');
     assert.deepEqual([ids, list], [['bad', 'ok'], []]);
     assert.deepEqual(notices.map((n) => n.file), ['bad.json']);
-    assert.match(stale, /^out\/map\.json 은 .* duru rebuild 로 맵을 다시 만드세요$/);
+    assert.match(stale!, /^out\/map\.json 은 .* duru rebuild 로 맵을 다시 만드세요$/);
   });
   assert.deepEqual(checkStoryFiles(old, path.join(os.tmpdir(), 'duru-no-such-folder'), 'out/map.json'), { ids: [], list: [], notices: [], unknownTags: [] });
   assert.equal(checkStoryFiles(map, EXAMPLES, 'out/map.json').stale, undefined);
@@ -256,11 +262,11 @@ test('the story IDs named are those of every story file in the folder, read or n
 
 test('the map carries every link with all of its conditions, and no redirects', () => {
   assert.equal(map.redirects, undefined);
-  const help = map.screens.find((s) => s.id === '/signin#SignIn').links.find((l) => l.to === '/help');
-  assert.deepEqual(help.conditions.map((c) => [c.guard, c.via, c.kinds]), [['globalSettings.SYSTEM.HELP_LINK_ENABLED', 'openHelp', ['setting']]]);
+  const help = map.screens.find((s: { id: string }) => s.id === '/signin#SignIn').links.find((l: { to: string }) => l.to === '/help');
+  assert.deepEqual(help.conditions.map((c: { guard: string; via?: string; kinds: string[] }) => [c.guard, c.via, c.kinds]), [['globalSettings.SYSTEM.HELP_LINK_ENABLED', 'openHelp', ['setting']]]);
 });
 
-for (const [name, files, notices] of [
+const NOTICE_CASES: [string, StoryFiles, { file: string; reason: string | RegExp }[]][] = [
   ['not valid JSON', { 'a.json': '{' }, [{ file: 'a.json', reason: /^JSON 으로 읽지 못했습니다: / }]],
   ['a file name outside the ID rule', { 'Open Doc.json': STORY }, [{ file: 'Open Doc.json', reason: /스토리 ID 규칙/ }]],
   ['an ID inside the file', { 'a.json': { ...STORY, id: 'a' } }, [{ file: 'a.json', reason: /모르는 항목이 있습니다: id \(스토리 ID 는 파일 이름에서 정합니다\)/ }]],
@@ -278,7 +284,9 @@ for (const [name, files, notices] of [
     { file: 'docs/a.json', reason: /^JSON 으로 읽지 못했습니다: / },
     { file: 'lab/a.json', reason: '스토리 ID a 는 docs/a.json 에서 이미 썼습니다' },
   ]],
-]) {
+];
+
+for (const [name, files, notices] of NOTICE_CASES) {
   test(`a story file with ${name} is reported and the rest are read`, () => {
     withStoriesDir({ ...files, 'ok.json': STORY }, (dir) => {
       const { stories, notices: got } = loadStories(dir);
@@ -350,7 +358,7 @@ test('a story date may carry the time, and the memo may be left out', () => {
 });
 
 const NO_TESTS = { nodes: {}, stories: {} };
-const statuses = (dir, tests) => checkStoryFiles(map, dir, 'out/map.json', tests).list.map((s) => [s.id, s.status]);
+const statuses = (dir: string, tests?: StoryTests) => checkStoryFiles(map, dir, 'out/map.json', tests).list.map((s) => [s.id, s.status]);
 
 test('each example story takes its status from the example results: its story tests when it has any, else the tests of the screens on its path', () => {
   const tests = linkTests(config, map);
@@ -364,7 +372,7 @@ test('each example story takes its status from the example results: its story te
 });
 
 test('a story fails when one story test fails whatever the others did, waits when one is pending and none fails, and passes when every one passes, whatever the tests of its screens did', () => {
-  const t = (status) => ({ title: status, status });
+  const t = (status: string) => ({ title: status, status, depth: 'ui' });
   const tests = {
     nodes: { '/home#Home': [t('fail')] },
     stories: { failing: [t('pass'), t('pending'), t('fail')], waiting: [t('pass'), t('pending')], passing: [t('pass'), t('pass')] },
@@ -375,7 +383,7 @@ test('a story fails when one story test fails whatever the others did, waits whe
 });
 
 test('without story tests a story is partly covered when any screen on its path has a test of any status, and has no tests when none has, even with tests on other stories or screens', () => {
-  const failing = [{ title: 'x', status: 'fail' }];
+  const failing = [{ title: 'x', status: 'fail', depth: 'ui' }];
   withStoriesDir({ 'lab.json': STORY, 'gone.json': { ...STORY, screens: ['/settings#Settings', '/admin/report#AdminReport'] } }, (dir) => {
     assert.deepEqual(statuses(dir, { nodes: { '/lab#Lab': failing }, stories: { gone: [] } }), [['gone', 'untested'], ['lab', 'partial']]);
     assert.deepEqual(statuses(dir, { nodes: { '/help#Help': failing }, stories: { other: failing } }), [['gone', 'untested'], ['lab', 'untested']]);
@@ -395,8 +403,9 @@ test('story tags are matched against the story files read now: a tag pointing at
 });
 
 test('a story tag on a test that runs in two projects is listed once', () => {
-  const t = { title: 'x @story:gone', file: 'a.spec.ts', line: 1, source: 'r/e2e.json', status: 'pass' };
-  const { unknownTags } = checkStoryFiles(map, EXAMPLES, 'out/map.json', { nodes: {}, stories: { gone: [{ ...t, project: 'chromium' }, { ...t, project: 'firefox' }] } });
+  const t = { title: 'x @story:gone', file: 'a.spec.ts', line: 1, source: 'r/e2e.json', status: 'pass', depth: 'ui' };
+  const runs = [{ ...t, project: 'chromium' }, { ...t, project: 'firefox' }];
+  const { unknownTags } = checkStoryFiles(map, EXAMPLES, 'out/map.json', { nodes: {}, stories: { gone: runs } });
   assert.deepEqual(unknownTags, [{ tag: 'story:gone', test: { title: 'x @story:gone', file: 'a.spec.ts', line: 1 } }]);
 });
 
@@ -405,11 +414,11 @@ test('without tests every story has no tests', () => {
 });
 
 test('story IDs and screen IDs that are names of object members take their status like any other', () => {
-  const read = (tests) => JSON.parse(JSON.stringify(tests));
+  const read = (tests: StoryTests) => JSON.parse(JSON.stringify(tests));
   const files = { 'constructor.json': { ...STORY, screens: ['constructor', 'toString'] }, '__proto__.json': { ...STORY, screens: ['hasOwnProperty', 'valueOf'] } };
   withStoriesDir(files, (dir) => {
     assert.deepEqual(statuses(dir, read(NO_TESTS)), [['__proto__', 'untested'], ['constructor', 'untested']]);
-    const pass = [{ title: 'x', status: 'pass' }];
+    const pass = [{ title: 'x', status: 'pass', depth: 'ui' }];
     const tests = read({ nodes: {}, stories: Object.fromEntries([['constructor', pass], ['__proto__', pass]]) });
     assert.deepEqual(statuses(dir, tests), [['__proto__', 'pass'], ['constructor', 'pass']]);
     assert.deepEqual(checkStoryFiles(map, dir, 'out/map.json', tests).unknownTags, []);
