@@ -8,11 +8,35 @@ import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { linkTests } from '../src/test-links.ts';
 
+type Link = { file: string; line: number; to: string; tail?: string; conditions: { kinds: string[] }[] };
+type Screen = {
+  id: string;
+  path: string;
+  component: string;
+  componentFile: string | null;
+  routeFile: string;
+  line: number;
+  routeGuards: string[];
+  links: Link[];
+  settingReads: { file: string; line: number; key: string }[];
+  sourceFiles: string[];
+  access: { restricted: boolean; kinds: string[]; roleValues: string[]; settings: unknown; route: unknown; links: { from: string; file: string; line: number }[] };
+};
+type MapData = {
+  meta: Record<string, unknown> | null;
+  screens: Screen[];
+  settingsDefaults: unknown;
+  settingsDefaultsIncomplete: unknown;
+  entries: { screen: string; reasons: { kind: string }[] }[];
+  calls: { id: string; options: { key: string; sites: { file: string; line: number }[] }[] }[];
+};
+type Edit = string[];
+
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/ts-app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
-const buildFixture = (dir = FIXTURE) => buildMap(loadConfig(path.join(dir, 'config.json')));
+const buildFixture = (dir = FIXTURE): Promise<MapData> => buildMap(loadConfig(path.join(dir, 'config.json')));
 
-async function inCopy(edits, fn) {
+async function inCopy<T>(edits: Edit[], fn: (copy: string) => T | Promise<T>): Promise<T> {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
@@ -28,8 +52,8 @@ async function inCopy(edits, fn) {
   }
 }
 
-const screen = (map, id) => map.screens.find((s) => s.id === id);
-const setting = (key, need, value) => ({ root: 'globalSettings', path: key.split('.'), need, default: value });
+const screen = (map: MapData, id: string) => map.screens.find((s) => s.id === id)!;
+const setting = (key: string, need: string, value: boolean) => ({ root: 'globalSettings', path: key.split('.'), need, default: value });
 const LAB_ON = setting('SYSTEM.LAB_ENABLED', 'on', false);
 const REPORT_ON = setting('SYSTEM.REPORT_ENABLED', 'on', true);
 
@@ -126,7 +150,7 @@ test('a route condition in a TypeScript route file is read as a condition, and t
   assert.deepEqual(screen(map, '/admin#Admin').access.route, [{ guard: "(memberRole as Role) === 'ADMIN'", kinds: ['role'], roles: ['ADMIN'] }]);
   assert.deepEqual(screen(map, '/admin#Admin').access.roleValues, ['ADMIN']);
   assert.deepEqual(screen(map, '/lab#Lab').access.route, [{ guard: 'globalSettings!.SYSTEM.LAB_ENABLED as boolean', kinds: ['setting'], settings: [LAB_ON] }]);
-  const conditions = (id, file, line) => screen(map, id).links.find((l) => l.file === file && l.line === line).conditions;
+  const conditions = (id: string, file: string, line: number) => screen(map, id).links.find((l) => l.file === file && l.line === line)!.conditions;
   assert.deepEqual(conditions('/home#Home', 'screens/Home.tsx', 16), [{ guard: "(memberRole as string) === 'ADMIN'", kinds: ['role'], roles: ['ADMIN'] }]);
   assert.deepEqual(conditions('/lab#Lab', 'screens/Lab.tsx', 13), [{ guard: "session!['member.role'] === 'AUDITOR'", kinds: ['role'], roles: ['AUDITOR'] }]);
   assert.deepEqual(conditions('/home#Home', 'screens/Home.tsx', 17), [{ guard: '(globalSettings as Settings).SYSTEM.REPORT_ENABLED', kinds: ['setting'], settings: [REPORT_ON] }]);
@@ -159,9 +183,9 @@ test('a unit test file written in TypeScript links the screen whose file it impo
 });
 
 test('a condition holding type syntax is still told apart as a role or setting condition next to import.meta, right after a keyword and right before one', async () => {
-  const kindsOf = async (from, to, target) => inCopy([['client/src/screens/Home.tsx', from, to]], async (copy) => {
+  const kindsOf = async (from: string, to: string, target: string) => inCopy([['client/src/screens/Home.tsx', from, to]], async (copy) => {
     const map = await buildFixture(copy);
-    return screen(map, '/home#Home').links.find((l) => l.to === target).conditions.map((c) => c.kinds);
+    return screen(map, '/home#Home').links.find((l) => l.to === target)!.conditions.map((c) => c.kinds);
   });
   assert.deepEqual(await kindsOf('{(globalSettings as Settings).SYSTEM.REPORT_ENABLED && ', '{import.meta.env.DEV && (globalSettings as Settings).SYSTEM.REPORT_ENABLED && ', '/report'), [['setting']]);
   assert.deepEqual(await kindsOf("{(memberRole as string) === 'ADMIN' && ", "{typeof(memberRole as string) === 'string' && ", '/admin'), [['role']]);
@@ -285,28 +309,28 @@ test('a TypeScript import whose names are used only as types, written without th
 test('a constants module that fails to run names the source file, not the copy duru runs', async () => {
   await assert.rejects(
     inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { produce } from 'immer';\nproduce();"]], (copy) => buildFixture(copy)),
-    (e) => {
+    (e: Error) => {
       assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:3: The requested module 'immer' does not provide an export named 'produce'$/);
       return true;
     },
   );
   await assert.rejects(
     inCopy([['client/src/_define/Option.ts', 'function routePaths', "import { produce } from 'immer';\nproduce();\n\nfunction routePaths"]], (copy) => buildFixture(copy)),
-    (e) => {
+    (e: Error) => {
       assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:16: The requested module 'immer' does not provide an export named 'produce'$/);
       return true;
     },
   );
   await assert.rejects(
     inCopy([['client/src/_define/Option.ts', 'function routePaths', 'const segments = [Segment.Home,\n  Section.ADMIN, missing];\n\nfunction routePaths']], (copy) => buildFixture(copy)),
-    (e) => {
+    (e: Error) => {
       assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:17: missing is not defined$/);
       return true;
     },
   );
   await assert.rejects(
     inCopy([['client/src/_define/Option.ts', "  Document = 'document',\n}", "  Document = 'document',\n  Broken = missing(\n    1,\n    2,\n  ),\n}"]], (copy) => buildFixture(copy)),
-    (e) => {
+    (e: Error) => {
       assert.match(e.message, /^constants\.Option: \S+client\/src\/_define\/Option\.ts:7: missing is not defined$/);
       return true;
     },
@@ -346,7 +370,7 @@ test('a CommonJS import or export in a TypeScript constants module stops the ext
   for (const [line, shown] of [["import paths = require('./paths');", 'import … = require(…)'], ['export = {};', 'export =']]) {
     await assert.rejects(
       inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", `import { joinPath } from './paths';\n${line}`]], (copy) => buildFixture(copy)),
-      (e) => {
+      (e: Error) => {
         assert.equal(e.message.replace(/\S+client\//, 'client/'), `constants: client/src/_define/Option.ts:3: \`${shown}\` is CommonJS, which duru cannot run as an ES module`);
         return true;
       },
@@ -386,7 +410,7 @@ test('a default or namespace import used only as a type next to a used one is dr
 
   await assert.rejects(
     inCopy([['client/src/store/index.ts', "import type { Settings } from './settings';", "import {\n  Settings,\n} from './settings';\nmissing();"]], (copy) => buildFixture(copy)),
-    (e) => {
+    (e: Error) => {
       assert.match(e.message, /^constants\.Settings: \S+client\/src\/store\/index\.ts:5: missing is not defined$/);
       return true;
     },
@@ -402,7 +426,7 @@ test('an import used only by a type-only export, or written with comments and li
 
   await assert.rejects(
     inCopy([['client/src/store/index.ts', "import { createSettings } from './createSettings';", "import Option,\n  * as Unused from '../_define/Option';\ntype Kept = Unused.Kind;\nconst kept = Option;\nmissing();\nimport { createSettings } from './createSettings';"]], (copy) => buildFixture(copy)),
-    (e) => {
+    (e: Error) => {
       assert.match(e.message, /^constants\.Settings: \S+client\/src\/store\/index\.ts:5: /);
       return true;
     },
@@ -434,7 +458,7 @@ test('imports and re-exports whose names are all marked type, a relative import 
 
   await assert.rejects(
     inCopy([['client/src/store/index.ts', "import type { Settings } from './settings';", "import { type Settings } from './settings';\nimport Kept, { defaults }\n  from './settings'\n;\nlet seen: Kept = defaults;\nmissing();"]], (copy) => buildFixture(copy)),
-    (e) => {
+    (e: Error) => {
       assert.match(e.message, /^constants\.Settings: \S+client\/src\/store\/index\.ts:7: missing is not defined$/);
       return true;
     },
@@ -471,7 +495,7 @@ test('an outside package named like a member of every object gets the empty stan
 
 const ROUTES = 'client/src/Routes.tsx';
 const ADMIN_ROUTES = 'client/src/admin/AdminRoutes.tsx';
-const withoutMeta = (map) => ({ ...map, meta: null });
+const withoutMeta = (map: MapData) => ({ ...map, meta: null });
 
 test('a route written with element is a screen named after the element, or after the first argument of the call wrapping it, with its component file, route file and line', async () => {
   const map = await buildFixture();
@@ -500,21 +524,21 @@ test('of a wrapper and the component passed to it, the first whose file is found
   const frame = "import Frame from '../components/Frame';\nimport Report from '../screens/Report';";
   await inCopy([[ADMIN_ROUTES, "import Report from '../screens/Report';", frame], [ADMIN_ROUTES, '<Checked Page={Report} />', '<Frame Page={Report} />']], async (copy) => {
     fs.writeFileSync(path.join(copy, 'client/src/components/Frame.tsx'), 'export default function Frame({ Page }) {\n  return <section><Page /></section>;\n}\n');
-    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report');
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report')!;
     assert.deepEqual([report.id, report.componentFile, report.sourceFiles], ['/report#Frame', 'components/Frame.tsx', ['components/Frame.tsx', 'screens/Report.ts']]);
   });
   const boundary = "import { ErrorBoundary } from 'react-error-boundary';\nimport Report from '../screens/Report';";
   await inCopy([[ADMIN_ROUTES, "import Report from '../screens/Report';", boundary], [ADMIN_ROUTES, '<Checked Page={Report} />', '<ErrorBoundary Page={Report} />']], async (copy) => {
-    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report');
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report')!;
     assert.deepEqual([report.id, report.componentFile, report.sourceFiles], ['/report#Report', 'screens/Report.ts', ['screens/Report.ts']]);
   });
   const unfound = [ADMIN_ROUTES, "import Report from '../screens/Report';", "import Report from 'report-package';"];
   await inCopy([unfound], async (copy) => {
-    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report');
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report')!;
     assert.deepEqual([report.id, report.componentFile], ['/report#Report', null]);
   });
   await inCopy([unfound, [ADMIN_ROUTES, "import type { Settings }", "import { ErrorBoundary } from 'react-error-boundary';\nimport type { Settings }"], [ADMIN_ROUTES, '<Checked Page={Report} />', '<ErrorBoundary Page={Report} />']], async (copy) => {
-    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report');
+    const report = (await buildFixture(copy)).screens.find((s) => s.path === '/report')!;
     assert.deepEqual([report.id, report.componentFile], ['/report#ErrorBoundary', null]);
   });
 });
@@ -532,7 +556,7 @@ test('a route whose element wraps the screen as a child, through Suspense, a gua
   ], async (copy) => {
     fs.writeFileSync(path.join(copy, 'client/src/components/Frame.tsx'), 'export default function Frame({ children }) {\n  return <section>{children}</section>;\n}\n');
     const map = await buildFixture(copy);
-    const pick = (m, p) => m.screens.find((s) => s.path === p);
+    const pick = (m: MapData, p: string) => m.screens.find((s) => s.path === p)!;
     for (const p of ['/home', '/document', '/document/:id']) {
       assert.deepEqual([pick(map, p).id, pick(map, p).componentFile], [pick(plain, p).id, pick(plain, p).componentFile]);
     }
@@ -555,7 +579,7 @@ test('the screen of a wrapping element is a child with a file, else a wrapper or
     [routes, '<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />', '<Suspense><Guard><Navigate to={Option.ROUTE_PATH.DOCUMENT} replace /></Guard></Suspense>'],
   ], async (copy) => {
     const map = await buildFixture(copy);
-    const pick = (m, p) => m.screens.find((s) => s.path === p);
+    const pick = (m: MapData, p: string) => m.screens.find((s) => s.path === p)!;
     assert.deepEqual(map.screens.map((s) => s.path), plain.screens.map((s) => s.path));
     assert.deepEqual([pick(map, '/home').id, pick(map, '/home').sourceFiles], ['/home#Home', pick(plain, '/home').sourceFiles]);
     assert.deepEqual([pick(map, '/document').id, pick(map, '/document').componentFile], ['/document#Lists.default', 'screens/DocumentList.jsx']);
@@ -575,7 +599,7 @@ test('a redirect inside a wrapper with a file, a constant passed as a prop, an H
   ], async (copy) => {
     fs.appendFileSync(path.join(copy, 'client/src/components/Badge.tsx'), "\nexport const ROLE = 'ADMIN';\n");
     const map = await buildFixture(copy);
-    const pick = (m, p) => m.screens.find((s) => s.path === p);
+    const pick = (m: MapData, p: string) => m.screens.find((s) => s.path === p)!;
     assert.deepEqual(map.screens.map((s) => s.id), plain.screens.map((s) => s.id).map((id) => (id === '/document#DocumentList' ? '/document#Lists.default' : id)));
     assert.ok(pick(map, '/home').sourceFiles.includes('screens/DocumentDetail.js'));
     assert.ok(!pick(map, '/home').sourceFiles.includes('components/Badge.tsx'));
@@ -595,7 +619,7 @@ test('a child with a file wins over a dotted sibling, HTML beside a redirect kee
     [routes, '<Route path="*" element={<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />} />', '<Route path="/banner" element={<Banner>{ok ? <p>hi</p> : <Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />}</Banner>} />'],
   ], async (copy) => {
     const map = await buildFixture(copy);
-    const pick = (p) => map.screens.find((s) => s.path === p);
+    const pick = (p: string) => map.screens.find((s) => s.path === p)!;
     assert.equal(pick('/home').id, '/home#Home');
     assert.equal(pick('/document').id, '/document#screens.List');
     assert.deepEqual([pick('/document/:id').id, pick('/document/:id').componentFile], ['/document/:id#PDFViewer', 'screens/DocumentDetail.js']);
@@ -614,7 +638,7 @@ test('a component held in a lowercase name is passed under a prop named with a c
     [routes, '<Route path="*" element={<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />} />', '<Route path="/guarded" element={<Signed role={ADMIN} />} />'],
   ], async (copy) => {
     const map = await buildFixture(copy);
-    const id = (p) => map.screens.find((s) => s.path === p)?.id;
+    const id = (p: string) => map.screens.find((s) => s.path === p)?.id;
     assert.equal(id('/home'), undefined);
     assert.equal(id('/document'), '/document#pages.list');
     assert.equal(id('/document/:id'), '/document/:id#detail');
@@ -628,7 +652,7 @@ test('a name taken from a constants module listed only for settings defaults is 
     [ROUTES, 'element={<Signed Page={DocumentDetail} />}', 'element={<Signed Config={AppSettings} Page={DocumentDetail} />}'],
   ], async (copy) => {
     const map = await buildFixture(copy);
-    const detail = map.screens.find((s) => s.path === '/document/:id');
+    const detail = map.screens.find((s) => s.path === '/document/:id')!;
     assert.equal(detail.id, '/document/:id#DocumentDetail');
     assert.ok(!detail.sourceFiles.includes('store/index.ts'));
   });
@@ -683,7 +707,7 @@ test('redirect elements default to Redirect and Navigate, and a config that list
 
 const TABLE = 'client/src/pages/lazyPages.ts';
 const PAGE_ROUTES = 'client/src/pages/PageRoutes.tsx';
-const pageAt = (map, address) => map.screens.find((s) => s.path === address);
+const pageAt = (map: MapData, address: string) => map.screens.find((s) => s.path === address)!;
 
 test('screens taken out of a lazy table, one by destructuring and one as a property, each point at the file their own entry loads and carry only the setting reads and links of that file', async () => {
   const map = await buildFixture();
@@ -778,7 +802,7 @@ test('a name imported from a file that declares it with a function returning the
     assert.equal(pageAt(await buildFixture(copy), '/archive').componentFile, 'screens/Archive.tsx');
   });
   const imported = [PAGE_ROUTES, "import { LazyPage } from './lazyPages';\n\nconst { Archive } = LazyPage;", "import { Archive, LazyPage } from './lazyPages';"];
-  const declaredWith = async (loader) => inCopy([[TABLE, 'export const LazyPage', `export const Archive = ${loader};\n\nexport const LazyPage`], imported], async (copy) => pageAt(await buildFixture(copy), '/archive').componentFile);
+  const declaredWith = async (loader: string) => inCopy([[TABLE, 'export const LazyPage', `export const Archive = ${loader};\n\nexport const LazyPage`], imported], async (copy) => pageAt(await buildFixture(copy), '/archive').componentFile);
   const returningTheModule = [
     "lazy(async () => await import('../screens/Archive'))",
     "lazy(() => import('../screens/Archive').catch(report))",
@@ -866,7 +890,7 @@ test('a table entry that cannot be followed, a member a module does not export a
 test('a screen that the file declaring it wraps in a call keeps its own file when its body, an option or a data loader passed beside it holds a dynamic import, however the route file names it', async () => {
   const home = 'client/src/screens/Home.tsx';
   const helper = "const later = async () => (await import('./scheduleReport'));\n";
-  const wrapped = (declared, exported) => [[home, 'export default function Home(', `import { memo } from 'react';\n\n${declared}`], [home, '  return (', `  ${helper}  return (`], [home, '  );\n}\n', `  );\n}${exported}\n`]];
+  const wrapped = (declared: string, exported: string) => [[home, 'export default function Home(', `import { memo } from 'react';\n\n${declared}`], [home, '  return (', `  ${helper}  return (`], [home, '  );\n}\n', `  );\n}${exported}\n`]];
   const shapes = [
     wrapped('function Home(', '\n\nexport default memo(Home);'),
     wrapped('export default memo(function Home(', ');'),
@@ -902,7 +926,7 @@ test('a screen that the file declaring it wraps in a call keeps its own file whe
 });
 
 test('the loaders of a table are read in another module than the table, and a loader of any shape gives the last source file it imports', async () => {
-  const own = (map) => ['/archive', '/profile'].map((address) => [pageAt(map, address).componentFile, pageAt(map, address).sourceFiles]);
+  const own = (map: MapData) => ['/archive', '/profile'].map((address) => [pageAt(map, address).componentFile, pageAt(map, address).sourceFiles]);
   const expected = [['screens/Archive.tsx', ['screens/Archive.tsx']], ['screens/Profile.tsx', ['screens/Profile.tsx']]];
   await inCopy([[TABLE, "const loadPage = {\n  Archive: () => import('../screens/Archive'),\n  Profile: () => import('../screens/Profile'),\n};", "import { loadPage } from './loaders';"]], async (copy) => {
     fs.writeFileSync(path.join(copy, 'client/src/pages/loaders.ts'), "export const loadPage = {\n  Archive: () => import('../screens/Archive'),\n  Profile: () => import('../screens/Profile'),\n};\n");
@@ -937,12 +961,12 @@ test('a lazy declared in the route file around a loader imported from another mo
 });
 
 test('a loader gives the last source file it imports when a later import is a style sheet or a package, one importing no source file or importing only inside a callback gives none, also when it overrides an earlier entry through a spread, a spread that cannot be read or lacks the key is passed over, and a loader is read under the loader key of an object but not as a second argument', async () => {
-  const fileOf = async (edit, write) => inCopy([edit], async (copy) => {
+  const fileOf = async (edit: Edit, write?: (copy: string) => void) => inCopy([edit], async (copy) => {
     write?.(copy);
     return pageAt(await buildFixture(copy), '/archive').componentFile;
   });
   const entry = "Archive: () => import('../screens/Archive'),";
-  const css = (copy) => fs.writeFileSync(path.join(copy, 'client/src/screens/Archive.css'), 'a {}\n');
+  const css = (copy: string) => fs.writeFileSync(path.join(copy, 'client/src/screens/Archive.css'), 'a {}\n');
   assert.equal(await fileOf([TABLE, entry, "Archive: () => import('../screens/Archive').then((page) => import('../screens/Archive.css').then(() => page)),"], css), 'screens/Archive.tsx');
   assert.equal(await fileOf([TABLE, entry, "Archive: () => import('../screens/Archive').then((page) => { import('some-package'); return page; }),"]), 'screens/Archive.tsx');
   assert.equal(await fileOf([TABLE, 'Archive: lazy(loadPage.Archive),', "Archive: asyncPage('archive', loadPage.Archive),"]), null);
@@ -950,8 +974,8 @@ test('a loader gives the last source file it imports when a later import is a st
   const unclear = "async () => { const page = await retry(() => import('../screens/Profile')); return { default: page.default }; }";
   assert.equal(await fileOf([TABLE, entry, `Archive: ${unclear},`]), null);
   const withLater = [TABLE, 'const loadPage = {', `const later = { Archive: ${unclear} };\n\nconst loadPage = {`];
-  const spreadLast = (spread) => [TABLE, "  Profile: () => import('../screens/Profile'),\n};", `  Profile: () => import('../screens/Profile'),\n  ...${spread},\n};`];
-  const tableFile = (...edits) => inCopy(edits, async (copy) => pageAt(await buildFixture(copy), '/archive').componentFile);
+  const spreadLast = (spread: string) => [TABLE, "  Profile: () => import('../screens/Profile'),\n};", `  Profile: () => import('../screens/Profile'),\n  ...${spread},\n};`];
+  const tableFile = (...edits: Edit[]) => inCopy(edits, async (copy) => pageAt(await buildFixture(copy), '/archive').componentFile);
   assert.equal(await tableFile(withLater), 'screens/Archive.tsx');
   assert.equal(await tableFile(withLater, spreadLast('later')), null);
   assert.equal(await tableFile(spreadLast("(globalThis.debug ? { Debug: () => import('../screens/Profile') } : {})")), 'screens/Archive.tsx');
@@ -960,7 +984,7 @@ test('a loader gives the last source file it imports when a later import is a st
   const otherOnly = "{ Other: () => import('../screens/Profile') }";
   assert.equal(await tableFile([TABLE, 'const loadPage = {', "const tables = { later: { Archive: () => import('../screens/Profile') } };\n\nconst loadPage = {"], spreadLast('tables.later')), 'screens/Profile.tsx');
   assert.equal(await tableFile(spreadLast("{ Archive: other.Missing }"), [TABLE, 'const loadPage = {', `const other = ${otherOnly};\n\nconst loadPage = {`]), null);
-  const nested = (spread) => [[TABLE, 'Archive: lazy(loadPage.Archive),', 'Archive: lazy(loadPage.screens.Archive),'], [TABLE, 'const loadPage = {', `const loadPage = {\n  screens: { Archive: () => import('../screens/Archive') },\n  ...${spread},`]];
+  const nested = (spread: string) => [[TABLE, 'Archive: lazy(loadPage.Archive),', 'Archive: lazy(loadPage.screens.Archive),'], [TABLE, 'const loadPage = {', `const loadPage = {\n  screens: { Archive: () => import('../screens/Archive') },\n  ...${spread},`]];
   assert.equal(await tableFile(...nested(`{ screens: ${otherOnly} }`)), null);
   assert.equal(await tableFile(...nested(`{ others: ${otherOnly} }`)), 'screens/Archive.tsx');
   assert.equal(await fileOf([TABLE, 'Archive: lazy(loadPage.Archive),', 'Archive: Loadable({ loading: () => null, loader: loadPage.Archive }),']), 'screens/Archive.tsx');
@@ -969,7 +993,7 @@ test('a loader gives the last source file it imports when a later import is a st
 
 test('a table reached through index files that re-export the same file twice is still found, and a member of a module that imports a component and exports it again points at the file of that component', async () => {
   await inCopy([[PAGE_ROUTES, "from './lazyPages'", "from './index'"]], async (copy) => {
-    const write = (name, text) => fs.writeFileSync(path.join(copy, 'client/src/pages', name), text);
+    const write = (name: string, text: string) => fs.writeFileSync(path.join(copy, 'client/src/pages', name), text);
     write('index.ts', "export * from './b';\nexport * from './c';\nexport * from './lazyPages';\n");
     write('b.ts', "export * from './shared';\n");
     write('c.ts', "export * from './shared';\n");
@@ -1013,7 +1037,7 @@ test('a loader whose import is not written out, and names that lead back to them
 });
 
 test('the usage guide and the agent skill name the route shapes duru reads and the default redirect elements', () => {
-  const read = (file) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
   for (const doc of [read('../README.md'), read('../skills/duru/SKILL.md')]) {
     assert.match(doc, /`component=\{Home\}`[\s\S]*`element=\{<Home \/>\}`[\s\S]*`element=\{wrap\(<Home \/>\)\}`[\s\S]*`element=\{<Wrapper Page=\{Signer\} \/>\}`[\s\S]*`element=\{<Navigate to=… \/>\}`/);
     assert.match(doc, /`redirectElements`[\s\S]*default `Redirect` and\s+`Navigate`/);

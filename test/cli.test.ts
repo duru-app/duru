@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,9 @@ import { addJudgment } from '../src/judgments.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
+
+type Failure = Error & { status: number | null; stderr: string };
+type HandOver = { node: string; title: string; file?: string | null };
 
 test('rebuild writes map.json and tests.json to the configured output folder and prints a summary', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
@@ -42,7 +46,7 @@ test('rebuild writes map.json and tests.json to the configured output folder and
   }
 });
 
-function rebuildTraced(change = () => {}) {
+function rebuildTraced(change: (results: string) => void = () => {}) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
@@ -233,7 +237,7 @@ test('rebuild leaves discarded pairs out of the links made by imports, and names
 
 const HELP_UNIT = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js' };
 
-function rebuildWithHandOvers(handOvers, check) {
+function rebuildWithHandOvers(handOvers: HandOver[], check: (result: { stdout: string; lines: string[]; judgments: ReturnType<typeof addJudgment>[]; judgmentsDir: string }) => void) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
@@ -289,7 +293,7 @@ test('rebuild counts a detached hand-over for an API call, which is on the map, 
 test('rebuild names an off-map hand-over by its title alone when the test has no file', () => {
   rebuildWithHandOvers([{ node: '/gone#Gone', title: 'a check without a file', file: null }], ({ lines }) => {
     const line = lines.find((l) => l.includes('which is not on the map'));
-    assert.match(line, /^  handed over for \/gone#Gone, which is not on the map ← a check without a file \(delete /);
+    assert.match(line!, /^  handed over for \/gone#Gone, which is not on the map ← a check without a file \(delete /);
   });
 });
 
@@ -314,15 +318,15 @@ for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['reb
   test(`"${args.join(' ')}" prints usage and exits with 2`, () => {
     assert.throws(
       () => execFileSync(process.execPath, [CLI, ...args], { encoding: 'utf8', stdio: 'pipe' }),
-      (err) => err.status === 2 && /usage: duru <extract\|rebuild\|tasks>/.test(err.stderr),
+      (err: Failure) => err.status === 2 && /usage: duru <extract\|rebuild\|tasks>/.test(err.stderr),
     );
   });
 }
 
-const within = (promise, what) =>
-  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`no ${what} within 10s`)), 10_000).unref())]);
+const within = <T>(promise: Promise<T>, what: string) =>
+  Promise.race([promise, new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`no ${what} within 10s`)), 10_000).unref())]);
 
-async function withReviewFixture(fn, patch = {}) {
+async function withReviewFixture(fn: (configFile: string) => Promise<void>, patch: Record<string, unknown> = {}) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
@@ -335,13 +339,13 @@ async function withReviewFixture(fn, patch = {}) {
   }
 }
 
-function startReview(configFile) {
+function startReview(configFile: string) {
   const child = spawn(process.execPath, [CLI, 'review', configFile, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
   const out = { stdout: '', stderr: '' };
   child.stdout.setEncoding('utf8').on('data', (c) => (out.stdout += c));
   child.stderr.setEncoding('utf8').on('data', (c) => (out.stderr += c));
-  const closed = new Promise((resolve) => child.on('close', (code) => resolve({ code, ...out })));
-  const base = new Promise((resolve, reject) => {
+  const closed = new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => child.on('close', (code) => resolve({ code, ...out })));
+  const base = new Promise<string>((resolve, reject) => {
     child.stderr.on('data', () => {
       const m = out.stderr.match(/^review page (http:\/\/\S+?)\/?$/m);
       if (m) resolve(m[1]);
@@ -352,9 +356,9 @@ function startReview(configFile) {
 }
 
 for (const [how, end] of [
-  ['the end request', (child, base) => fetch(`${base}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })],
-  ['Ctrl+C', (child) => child.kill('SIGINT')],
-]) {
+  ['the end request', (child: ChildProcess, base: string) => fetch(`${base}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })],
+  ['Ctrl+C', (child: ChildProcess) => child.kill('SIGINT')],
+] satisfies [string, (child: ChildProcess, base: string) => unknown][]) {
   test(`review ended by ${how} exits with 0 and prints the task list, with marks made during the review, on stdout`, async () => {
     await withReviewFixture(async (configFile) => {
       const { child, base, closed } = startReview(configFile);
@@ -407,7 +411,7 @@ test('when the task list cannot be built, ending the review reports it and the r
       assert.equal(refused.status, 500);
       assert.match(await refused.text(), /broken\.json/);
       child.kill('SIGINT');
-      await within(new Promise((resolve) => child.stderr.on('data', (c) => /broken\.json/.test(c) && resolve())), 'error on stderr');
+      await within(new Promise<void>((resolve) => child.stderr.on('data', (c) => /broken\.json/.test(c) && resolve())), 'error on stderr');
       assert.equal((await fetch(`${url}/`)).status, 200);
 
       fs.rmSync(broken);

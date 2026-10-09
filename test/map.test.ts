@@ -8,9 +8,24 @@ import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { checkStories } from '../src/story-paths.ts';
 
+type Row = [string, string[], [string, string[]][]];
+type Rewrite = (rel: string, fn: (src: string) => string) => void;
+type Need = { root: string; path: string[]; need: string; value?: string };
+type Guard = { guard: string; kinds: string[]; roles?: string[] | null; via?: string; settings?: Need[] | null; settingsReason?: string };
+type Source = { from: string; needs: Need[]; unreadable: unknown[]; inherited?: boolean };
+type AccessLink = { from: string; file: string; line: number; guards: Guard[]; fromKinds?: string[] };
+type Access = { restricted: boolean; kinds: string[]; roleValues?: string[] | null; route: Guard[]; links: AccessLink[]; settings: Source[]; unreadableRoleGuards: string[] };
+type Link = { to: string; file: string; line: number; route?: string; guards: string[]; inheritedGuards: { via: string; guards: string[] }[]; conditions: Guard[] };
+type Endpoint = { callId: string | null; line: number; server: { status: string } };
+type ApiCall = { fn: string; file: string; line: number; endpoints: Endpoint[]; inheritedGuards: { guards: string[] }[] };
+type CallOption = { key: string; sites: { screen: string; file: string; line: number }[] };
+type Call = { id: string; method: string; path: string; server: { status: string; labels?: string[]; candidates?: string[] }; apiFunctions: string[]; screens: string[]; options: CallOption[] };
+type Screen = { id: string; path: string; line: number; sourceFiles: string[]; dead: boolean; routeGuards: string[]; links: Link[]; apiCalls: ApiCall[]; settingReads: { file: string; key: string }[]; access: Access };
+type MapData = { meta: Record<string, unknown>; deadCalls: unknown[]; settingsDefaults: { globalSettings: { SYSTEM: { NAMES: string[] } } }; settingsDefaultsIncomplete: unknown; unknownEntryPaths: unknown; unknownBodyOptionCalls: unknown; moves: unknown; unknownMovePaths: unknown; callLinks: unknown; unknownCallLinks: unknown; serverNotCompared: boolean; unknownRoleGuards: string[]; screens: Screen[]; calls: Call[]; apiFunctions: Record<string, { endpoints: Endpoint[] }>; entries: { screen: string; reasons: { kind: string }[] }[]; duplicateIds: unknown; redirects: unknown };
+
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
-const buildFixture = (dir = FIXTURE) => buildMap(loadConfig(path.join(dir, 'config.json')));
-const screen = (map, id) => map.screens.find((s) => s.id === id);
+const buildFixture = (dir = FIXTURE): Promise<MapData> => buildMap(loadConfig(path.join(dir, 'config.json')));
+const screen = (map: MapData, id: string) => map.screens.find((s) => s.id === id)!;
 
 test('every route of the fake client becomes a screen, with the guard on its route', async () => {
   const map = await buildFixture();
@@ -38,20 +53,20 @@ test('links carry their own guard, and a handler used under a guard passes it to
     },
   ]);
 
-  const help = screen(map, '/signin#SignIn').links.find((l) => l.to === '/help');
+  const help = screen(map, '/signin#SignIn').links.find((l) => l.to === '/help')!;
   assert.deepEqual(help.guards, []);
   assert.deepEqual(
     help.inheritedGuards.map((g) => ({ via: g.via, guards: g.guards })),
     [{ via: 'openHelp', guards: ['globalSettings.SYSTEM.HELP_LINK_ENABLED'] }],
   );
 
-  const rename = screen(map, '/document/:id#DocumentDetail').apiCalls.find((c) => c.fn === 'ajaxDocumentRename');
+  const rename = screen(map, '/document/:id#DocumentDetail').apiCalls.find((c) => c.fn === 'ajaxDocumentRename')!;
   assert.deepEqual(rename.inheritedGuards.map((g) => g.guards), [['canEdit']]);
 });
 
 test('each screen lists the settings read by the files it reaches', async () => {
   const map = await buildFixture();
-  const keys = (id) => screen(map, id).settingReads.map((r) => `${r.file} ${r.key}`);
+  const keys = (id: string) => screen(map, id).settingReads.map((r) => `${r.file} ${r.key}`);
   assert.deepEqual(keys('/home#Home'), [
     'components/Home.js SYSTEM.LAB_ENABLED',
     'components/DocumentTable.js DISPLAY.PAGE_SIZE',
@@ -61,11 +76,11 @@ test('each screen lists the settings read by the files it reaches', async () => 
   assert.deepEqual(keys('/help#Help'), []);
 });
 
-async function buildCopy(edit) {
+async function buildCopy(edit: (rewrite: Rewrite) => void) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true });
-    const rewrite = (rel, fn) => fs.writeFileSync(path.join(copy, rel), fn(fs.readFileSync(path.join(copy, rel), 'utf8')));
+    const rewrite: Rewrite = (rel, fn) => fs.writeFileSync(path.join(copy, rel), fn(fs.readFileSync(path.join(copy, rel), 'utf8')));
     edit(rewrite);
     return await buildFixture(copy);
   } finally {
@@ -90,7 +105,7 @@ test('each API call becomes a node named by its method and the server path, or t
       ['PUT:/api/v1/document/{documentId}/name', 'method-mismatch', '', 'ajaxDocumentRename', '/document/:id#DocumentDetail'],
     ],
   );
-  const rename = map.calls.find((c) => c.id === 'PUT:/api/v1/document/{documentId}/name');
+  const rename = map.calls.find((c) => c.id === 'PUT:/api/v1/document/{documentId}/name')!;
   assert.deepEqual(rename.server.candidates, ['core POST /api/v1/document/{documentId}/name']);
   assert.equal(rename.method, 'PUT');
   assert.equal(rename.path, '/api/v1/document/{documentId}/name');
@@ -135,11 +150,11 @@ test('a screen that reaches a call missing on the server is dead; a call whose U
 });
 
 const SERVER_LIST_ABSENT = {
-  'an empty list file': (rewrite) => {
+  'an empty list file': (rewrite: Rewrite) => {
     rewrite('server-endpoints.txt', () => '');
     rewrite('server-endpoints-lab.txt', () => '');
   },
-  'a config without serverEndpoints': (rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), serverEndpoints: undefined })),
+  'a config without serverEndpoints': (rewrite: Rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), serverEndpoints: undefined })),
 };
 
 for (const [name, edit] of Object.entries(SERVER_LIST_ABSENT)) {
@@ -163,19 +178,19 @@ test('with a server list, the map does not say the comparison was skipped', asyn
 
 test('when several server paths fit a call, the ID takes the closest one, then the first in sorted order', async () => {
   const map = await buildCopy((rewrite) => rewrite('server-endpoints-lab.txt', (src) => `${src}profile-lab\tGET\t/api/v1/document/{docId}\n`));
-  const detail = map.calls.find((c) => c.apiFunctions.includes('ajaxDocumentDetail'));
+  const detail = map.calls.find((c) => c.apiFunctions.includes('ajaxDocumentDetail'))!;
   assert.equal(detail.id, 'GET:/api/v1/document/{docId}');
   assert.deepEqual(detail.server.labels, ['core', 'profile-lab']);
-  assert.equal(map.calls.find((c) => c.apiFunctions.includes('ajaxDocumentList')).id, 'GET:/api/v1/document/list');
+  assert.equal(map.calls.find((c) => c.apiFunctions.includes('ajaxDocumentList'))!.id, 'GET:/api/v1/document/list');
 });
 
 test('a call node carries only the labels that serve its own path, whatever order the API functions come in', async () => {
-  const moveListToLab = (rewrite) => {
+  const moveListToLab = (rewrite: Rewrite) => {
     rewrite('server-endpoints.txt', (src) => src.replace('core\tGET\t/api/v1/document/list\n', ''));
     rewrite('server-endpoints-lab.txt', (src) => `${src}profile-lab\tGET\t/api/v1/document/list\n`);
   };
   const recent = "export const ajaxDocumentRecent = async () => Ajax.request({ info: { METHOD: 'GET', URL: '/api/v1/document/recent' } });\n";
-  const labelsById = (map) => Object.fromEntries(map.calls.map((c) => [c.id, c.server.labels ?? c.server.candidates ?? []]));
+  const labelsById = (map: MapData) => Object.fromEntries(map.calls.map((c) => [c.id, c.server.labels ?? c.server.candidates ?? []]));
   const after = await buildCopy((rewrite) => {
     moveListToLab(rewrite);
     rewrite('client/src/_ajax/AjaxFunc.js', (src) => src + recent);
@@ -196,13 +211,13 @@ test('screen and call IDs contain no character a JUnit tag rejects', async () =>
   assert.deepEqual(map.duplicateIds, []);
 
   const odd = await buildCopy((rewrite) => rewrite('client/src/_define/Option.js', (src) => src.replace("'archive/document'", "'archive/document (all)'")));
-  const archive = odd.calls.find((c) => c.apiFunctions.includes('ajaxDocumentArchive'));
+  const archive = odd.calls.find((c) => c.apiFunctions.includes('ajaxDocumentArchive'))!;
   assert.equal(archive.id, 'POST:/api/v1/archive/document_all_');
   assert.equal(archive.path, '/api/v1/archive/document (all)');
 });
 
 test('two builds from the same input differ only in the generation time', async () => {
-  const strip = (map) => ({ ...map, meta: { ...map.meta, generatedAt: null } });
+  const strip = (map: MapData) => ({ ...map, meta: { ...map.meta, generatedAt: null } });
   assert.deepEqual(strip(await buildFixture()), strip(await buildFixture()));
 });
 
@@ -255,7 +270,7 @@ test('screen and call IDs stay the same after unrelated files change', async () 
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true });
     const src = path.join(copy, 'client/src');
-    const prepend = (rel, text) => fs.writeFileSync(path.join(src, rel), text + fs.readFileSync(path.join(src, rel), 'utf8'));
+    const prepend = (rel: string, text: string) => fs.writeFileSync(path.join(src, rel), text + fs.readFileSync(path.join(src, rel), 'utf8'));
     prepend('Routes.js', '// moved\n\n\n');
     prepend('components/Help.js', "import { useState } from 'react';\n\n");
     prepend('_ajax/AjaxFunc.js', '// moved\n');
@@ -288,7 +303,7 @@ test('two routes that end up with the same screen ID are reported', async () => 
   }
 });
 
-async function buildEditedCopy(edits) {
+async function buildEditedCopy(edits: [string, string, string][]) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true });
@@ -304,11 +319,11 @@ async function buildEditedCopy(edits) {
   }
 }
 
-const setting = (path, need, extra = {}) => ({ root: 'globalSettings', path: path.split('.'), need, ...extra });
+const setting = (path: string, need: string, extra = {}) => ({ root: 'globalSettings', path: path.split('.'), need, ...extra });
 const HELP_ON = setting('SYSTEM.HELP_LINK_ENABLED', 'on');
 const helpGuard = { guard: 'helpEnabled', kinds: ['setting'], settings: [HELP_ON] };
 const MENU_LIST = ['ADMIN_REPORT', 'ADMIN_ARCHIVE'];
-const restrictedKinds = (map) => Object.fromEntries(map.screens.filter((s) => s.access.restricted).map((s) => [s.id, s.access.kinds]));
+const restrictedKinds = (map: MapData) => Object.fromEntries(map.screens.filter((s) => s.access.restricted).map((s) => [s.id, s.access.kinds]));
 
 test('a screen opens only under a setting or a role when its route is guarded or every link into it is', async () => {
   const map = await buildFixture();
@@ -328,7 +343,7 @@ test('a screen opens only under a setting or a role when its route is guarded or
 
 const MENU_X = 'globalSettings.MENU.X';
 const IS_ADMIN = "memberRole === 'ADMIN'";
-const tinyAccess = (screens, entryPaths = []) => {
+const tinyAccess = (screens: Row[], entryPaths: string[] = []) => {
   const config = { entryPaths, roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
   const full = screens.map(([path, routeGuards, links]) => ({ id: path, path, routeFile: 'Routes.js', routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
   const { access } = screenAccess(full, [], config, new Map(), {}, new Map());
@@ -368,20 +383,20 @@ test('an entry screen needs only what its route guards ask, whatever the links i
     ['/start', [], [['/y', ['globalSettings.MENU.Y']]]],
     ['/y', [MENU_X], []],
   ], ['/y']);
-  assert.deepEqual(bySetting['/y'].settings.map((x) => x.from), ['route']);
+  assert.deepEqual(bySetting['/y'].settings!.map((x) => x.from), ['route']);
 });
 
 const MENU_Y = 'globalSettings.MENU.Y';
-const settingAccess = (screens) => {
+const settingAccess = (screens: Row[]) => {
   const config = { entryPaths: [], roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
-  const full = screens.map(([path, routeGuards, links]) => ({ id: path, path, routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
-  const read = (guard) => [guard, { settings: [setting(guard.replace('globalSettings.', ''), 'on')] }];
+  const full = screens.map(([path, routeGuards, links]) => ({ id: path, path, routeFile: 'Routes.js', routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
+  const read = (guard: string): [string, { settings: Need[] }] => [guard, { settings: [setting(guard.replace('globalSettings.', ''), 'on')] }];
   const guards = new Map([MENU_X, MENU_Y].map(read));
   const guardSettings = new Map(['Routes.js', ...full.map((s) => `${s.path}.js`)].map((f) => [f, guards]));
   const { access } = screenAccess(full, [], config, new Map(), {}, guardSettings);
   return Object.fromEntries(full.map((s, i) => [s.id, access[i]]));
 };
-const needPaths = (sources) => sources.map((x) => [x.from, x.needs.map((n) => n.path.join('.'))]);
+const needPaths = (sources: { from: string; needs: { path: string[] }[] }[]) => sources.map((x) => [x.from, x.needs.map((n) => n.path.join('.'))]);
 
 test('a link with no setting guard of its own carries the settings its restricted origin needs, along a chain and around a loop, and a guarded link keeps its own', () => {
   const chain = settingAccess([
@@ -390,24 +405,24 @@ test('a link with no setting guard of its own carries the settings its restricte
     ['/b', [], [['/c', [MENU_Y]]]],
     ['/c', [], []],
   ]);
-  assert.deepEqual(needPaths(chain['/b'].settings), [['/a', ['MENU.X']]]);
-  assert.deepEqual(needPaths(chain['/c'].settings), [['/b', ['MENU.Y']]]);
+  assert.deepEqual(needPaths(chain['/b'].settings!), [['/a', ['MENU.X']]]);
+  assert.deepEqual(needPaths(chain['/c'].settings!), [['/b', ['MENU.Y']]]);
 
   const loop = settingAccess([
     ['/start', [], [['/a', [MENU_X]]]],
     ['/a', [], [['/b', []]]],
     ['/b', [], [['/a', []]]],
   ]);
-  assert.deepEqual(needPaths(loop['/a'].settings), [['/b', ['MENU.X']], ['/start', ['MENU.X']]]);
-  assert.deepEqual(needPaths(loop['/b'].settings), [['/a', ['MENU.X']]]);
+  assert.deepEqual(needPaths(loop['/a'].settings!), [['/b', ['MENU.X']], ['/start', ['MENU.X']]]);
+  assert.deepEqual(needPaths(loop['/b'].settings!), [['/a', ['MENU.X']]]);
 
   const loopListedFirst = settingAccess([
     ['/start', [], [['/a', [MENU_X]]]],
     ['/b', [], [['/a', []]]],
     ['/a', [], [['/b', []]]],
   ]);
-  assert.deepEqual(needPaths(loopListedFirst['/a'].settings), [['/b', ['MENU.X']], ['/start', ['MENU.X']]]);
-  assert.deepEqual(needPaths(loopListedFirst['/b'].settings), [['/a', ['MENU.X']]]);
+  assert.deepEqual(needPaths(loopListedFirst['/a'].settings!), [['/b', ['MENU.X']], ['/start', ['MENU.X']]]);
+  assert.deepEqual(needPaths(loopListedFirst['/b'].settings!), [['/a', ['MENU.X']]]);
 });
 
 test('a link that carries its origin\'s settings is marked as inherited and carries what every way into the origin needs', () => {
@@ -416,29 +431,30 @@ test('a link that carries its origin\'s settings is marked as inherited and carr
     ['/a', [], [['/b', []]]],
     ['/b', [], []],
   ]);
-  assert.deepEqual(even['/b'].settings.map((x) => [x.inherited, x.unreadable]), [[true, []]]);
+  assert.deepEqual(even['/b'].settings!.map((x) => [x.inherited, x.unreadable]), [[true, []]]);
 
   const uneven = settingAccess([
     ['/start', [], [['/a', [MENU_X, MENU_Y]], ['/a', [MENU_X]]]],
     ['/a', [], [['/b', []]]],
     ['/b', [], []],
   ]);
-  assert.deepEqual(uneven['/b'].settings.map((x) => [x.from, x.needs.map((n) => n.path.join('.')), x.unreadable]), [['/a', ['MENU.X'], []]]);
+  assert.deepEqual(uneven['/b'].settings!.map((x) => [x.from, x.needs.map((n) => n.path.join('.')), x.unreadable]), [['/a', ['MENU.X'], []]]);
 });
 
 test('an unreadable setting guard on one of several ways into a restricted origin is not passed on', () => {
   const config = { entryPaths: [], roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
   const U = 'globalSettings.MENU.U';
-  const screens = [
+  const rows: Row[] = [
     ['/start', [], [['/a', [MENU_X]], ['/a', [MENU_X, U]]]],
     ['/a', [], [['/b', []]]],
     ['/b', [], [['/c', []]]],
     ['/c', [], []],
-  ].map(([path, routeGuards, links]) => ({ id: path, path, routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
-  const guards = new Map([[MENU_X, { settings: [setting('MENU.X', 'on')] }], [U, { settings: null, reason: '읽지 못함' }]]);
+  ];
+  const screens = rows.map(([path, routeGuards, links]) => ({ id: path, path, routeFile: 'Routes.js', routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
+  const guards = new Map([[MENU_X, { settings: [setting('MENU.X', 'on')] }], [U, { reason: '읽지 못함' }]]);
   const guardSettings = new Map(['Routes.js', ...screens.map((s) => `${s.path}.js`)].map((f) => [f, guards]));
   const { access } = screenAccess(screens, [], config, new Map(), {}, guardSettings);
-  for (const i of [2, 3]) assert.deepEqual(access[i].settings.map((x) => [x.needs.map((n) => n.path.join('.')), x.unreadable]), [[['MENU.X'], []]]);
+  for (const i of [2, 3]) assert.deepEqual(access[i].settings!.map((x) => [x.needs.map((n) => n.path.join('.')), x.unreadable]), [[['MENU.X'], []]]);
 });
 
 test('two restricted screens that link to each other keep the kind of the only link into them from outside', () => {
@@ -498,8 +514,8 @@ test('a role check held in a local const hides the route and the link, and the s
   });
 });
 
-const roleValues = (map) => Object.fromEntries(map.screens.filter((s) => 'roleValues' in s.access).map((s) => [s.id, s.access.roleValues]));
-const roleGuards = (access) => [...access.route, ...access.links.flatMap((l) => l.guards)].filter((g) => g.kinds.includes('role')).map((g) => [g.guard, g.roles]);
+const roleValues = (map: MapData) => Object.fromEntries(map.screens.filter((s) => 'roleValues' in s.access).map((s) => [s.id, s.access.roleValues]));
+const roleGuards = (access: Access) => [...access.route, ...access.links.flatMap((l) => l.guards)].filter((g) => g.kinds.includes('role')).map((g) => [g.guard, g.roles]);
 
 test('the role values a role guard compares with are read, and a screen keeps the values every way into it allows', async () => {
   const map = await buildFixture();
@@ -534,7 +550,7 @@ test('a role identifier read as a member of another object, such as props.member
   ]);
   const group = screen(map, '/admin/group#AdminGroup').access;
   assert.deepEqual(group.roleValues, ['ADMIN']);
-  const fromHome = group.links.find((l) => l.from === '/home#Home');
+  const fromHome = group.links.find((l) => l.from === '/home#Home')!;
   assert.deepEqual(fromHome.guards.map((g) => [g.guard, g.roles]), [['isAdmin', ['ADMIN']]]);
 });
 
@@ -549,7 +565,7 @@ test('a guard keeps its own const declarations when another component in the fil
 });
 
 const ROLE_IDENTIFIERS = '"roleIdentifiers": [\n    "memberRole",\n    "session[\'member.role\']"\n  ],';
-const withRoleGuards = (roleGuards) => ['config.json', ROLE_IDENTIFIERS, `${ROLE_IDENTIFIERS}\n  "roleGuards": ${JSON.stringify(roleGuards)},`];
+const withRoleGuards = (roleGuards: unknown): [string, string, string] => ['config.json', ROLE_IDENTIFIERS, `${ROLE_IDENTIFIERS}\n  "roleGuards": ${JSON.stringify(roleGuards)},`];
 
 test('the roles written for a guard in roleGuards are its roles wherever the guard is, in place of what the source shows', async () => {
   const map = await buildEditedCopy([withRoleGuards({ isAdmin: ['member:OWNER', 'member:ADMIN'] })]);
@@ -611,7 +627,7 @@ test('roleGuards lists each role once', async () => {
 
 for (const roleGuards of [['ADMIN'], { isAdmin: 'ADMIN' }, { isAdmin: [] }, { isAdmin: [''] }, { '': ['ADMIN'] }, { isAdmin: ['Super Admin'] }]) {
   test(`roleGuards ${JSON.stringify(roleGuards)} is refused`, async () => {
-    await assert.rejects(buildEditedCopy([withRoleGuards(roleGuards)]), (err) => err.message.startsWith('roleGuards must map role guards'));
+    await assert.rejects(buildEditedCopy([withRoleGuards(roleGuards)]), (err: Error) => err.message.startsWith('roleGuards must map role guards'));
   });
 }
 
@@ -623,7 +639,7 @@ test('a screen whose route and links allow no role in common has no role values'
 });
 
 const SIDE_MENU_ROLE ="['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1";
-for (const [guard, roles] of [
+const ROLE_GUARDS: [string, string[] | null][] = [
   ["['ADMIN', 'OWNER'].includes(session['member.role'])", ['ADMIN', 'OWNER']],
   ["['OWNER', 'ADMIN'].indexOf(session['member.role']) !== -1", ['ADMIN', 'OWNER']],
   ["['ADMIN', 'OWNER'].indexOf(session['member.role']) >= 0", ['ADMIN', 'OWNER']],
@@ -639,11 +655,13 @@ for (const [guard, roles] of [
   ["this.props.memberRole === 'OWNER'", ['OWNER']],
   ["props.memberRole === 'OWNER'", ['OWNER']],
   ["row.memberRole === 'OWNER'", null],
-]) {
+];
+
+for (const [guard, roles] of ROLE_GUARDS) {
   test(`the role guard ${guard} allows ${JSON.stringify(roles)}`, async () => {
     const map = await buildEditedCopy([['client/src/components/SideMenu.js', SIDE_MENU_ROLE, guard]]);
     const report = screen(map, '/admin/report#AdminReport').access;
-    assert.deepEqual(report.links[0].guards.find((g) => g.kinds.includes('role')).roles, roles);
+    assert.deepEqual(report.links[0].guards.find((g) => g.kinds.includes('role'))!.roles, roles);
     assert.deepEqual(report.roleValues, roles);
     assert.deepEqual(report.unreadableRoleGuards, roles ? [] : [guard]);
   });
@@ -652,7 +670,7 @@ for (const [guard, roles] of [
 const SIDE_MENU_IMPORT = "import Option from '_define/Option';\n";
 const ENUM_IMPORT = "import Enum from '_define/Enum';\n";
 const ROLE_ARG = "session['member.role']";
-for (const [helpers, guard, roles] of [
+const ROLE_GUARDS_WITH_HELPERS: [string, string, string[] | null][] = [
   ["const isBoss = (role) => ['ADMIN', 'OWNER'].includes(role);", `isBoss(${ROLE_ARG})`, ['ADMIN', 'OWNER']],
   [`${ENUM_IMPORT}const isBoss = (role) => {\n  return [Enum.ROLE.ADMIN, Enum.ROLE.MEMBER].includes(role);\n};`, `isBoss(${ROLE_ARG})`, ['ADMIN', 'MEMBER']],
   ["const isBoss = function (role) {\n  return role === 'OWNER' || role === 'ADMIN';\n};", `isBoss(${ROLE_ARG})`, ['ADMIN', 'OWNER']],
@@ -681,14 +699,16 @@ for (const [helpers, guard, roles] of [
   ['const roleTabs = (role) => [role];', `roleTabs(${ROLE_ARG}).length > 0`, null],
   ["const isBoss = (role) => role === 'OWNER' || isBoss(role);", `isBoss(${ROLE_ARG})`, null],
   ['const isBoss = (role) => isOwner(role);\nconst isOwner = (role) => isBoss(role);', `isBoss(${ROLE_ARG})`, null],
-]) {
+];
+
+for (const [helpers, guard, roles] of ROLE_GUARDS_WITH_HELPERS) {
   test(`the role guard ${guard} calling ${helpers.replace(ENUM_IMPORT, '').split('\n')[0]} allows ${JSON.stringify(roles)}`, async () => {
     const map = await buildEditedCopy([
       ['client/src/components/SideMenu.js', SIDE_MENU_IMPORT, `${SIDE_MENU_IMPORT}\n${helpers}\n`],
       ['client/src/components/SideMenu.js', SIDE_MENU_ROLE, guard],
     ]);
     const report = screen(map, '/admin/report#AdminReport').access;
-    const read = report.links[0].guards.find((g) => g.kinds.includes('role'));
+    const read = report.links[0].guards.find((g) => g.kinds.includes('role'))!;
     assert.deepEqual([read.guard, read.roles], [guard, roles]);
     assert.deepEqual(report.unreadableRoleGuards, roles ? [] : [guard]);
   });
@@ -787,7 +807,7 @@ test('a role guard longer than its shown text is read in full', async () => {
   const guard = `[${roles.map((r) => `'${r}'`).join(', ')}].indexOf(session['member.role']) > -1`;
   const map = await buildEditedCopy([['client/src/components/SideMenu.js', SIDE_MENU_ROLE, guard]]);
   const report = screen(map, '/admin/report#AdminReport').access;
-  assert.match(report.links[0].guards.find((g) => g.kinds.includes('role')).guard, /…$/);
+  assert.match(report.links[0].guards.find((g) => g.kinds.includes('role'))!.guard, /…$/);
   assert.deepEqual(report.roleValues, roles.sort());
 });
 
@@ -817,20 +837,20 @@ test('a role compared with a constant from the constants modules is read as its 
 
 test('a setting held in a local const, even through another const, hides a link as a setting condition', async () => {
   const map = await buildFixture();
-  const link = screen(map, '/help#Help').access.links.find((l) => l.from === '/document/:id#DocumentDetail');
+  const link = screen(map, '/help#Help').access.links.find((l) => l.from === '/document/:id#DocumentDetail')!;
   assert.deepEqual(link.guards, [helpGuard]);
 });
 
 test('a let is not followed, and a const that refers back to itself is followed once', async () => {
-  const fromDetail = (map) => screen(map, '/help#Help').access.links.find((l) => l.from === '/document/:id#DocumentDetail');
+  const fromDetail = (map: MapData) => screen(map, '/help#Help').access.links.find((l) => l.from === '/document/:id#DocumentDetail');
   const withLet = await buildEditedCopy([['client/src/components/DocumentDetail.js', 'const helpEnabled =', 'let helpEnabled =']]);
-  assert.deepEqual(fromDetail(withLet).guards, []);
+  assert.deepEqual(fromDetail(withLet)!.guards, []);
 
   const looping = await buildEditedCopy([
     ['client/src/components/DocumentDetail.js', 'const helpEnabled = system.HELP_LINK_ENABLED;', 'const helpEnabled = () => system.HELP_LINK_ENABLED || helpEnabled();'],
     ['client/src/components/DocumentDetail.js', '{helpEnabled && <Link', '{helpEnabled() && <Link'],
   ]);
-  assert.deepEqual(fromDetail(looping).guards, [
+  assert.deepEqual(fromDetail(looping)!.guards, [
     { guard: 'helpEnabled()', kinds: ['setting'], settings: null, settingsReason: '함수를 불러 정하는 조건이라 켤 값을 정할 수 없습니다' },
   ]);
 });
@@ -862,7 +882,7 @@ test('a guard on another member of the same store object does not block', async 
   assert.deepEqual(screen(map, '/admin/audit#AdminAudit').access.links.map((l) => l.guards), [[], []]);
 });
 
-for (const [name, edits] of [
+const ROLE_READS: [string, [string, string, string][]][] = [
   ['with optional chaining', [['client/src/components/Home.js', "session['member.role']", "session?.['member.role']"]]],
   ['in double quotes', [['client/src/components/Home.js', "session['member.role']", 'session["member.role"]']]],
   [
@@ -886,7 +906,9 @@ for (const [name, edits] of [
       ['client/src/components/Home.js', "session['member.role']", "session['role']"],
     ],
   ],
-]) {
+];
+
+for (const [name, edits] of ROLE_READS) {
   test(`a member role read ${name} is a role condition`, async () => {
     const map = await buildEditedCopy(edits);
     assert.deepEqual(screen(map, '/admin/audit#AdminAudit').access.links.map((l) => l.guards.map((g) => g.kinds)), [[], [['role']]]);
@@ -897,7 +919,7 @@ for (const [name, edits] of [
 
 test('a roleIdentifiers entry that is neither an identifier nor one member of an object is rejected', async () => {
   for (const entry of ["session['member.role'].name", 'session[role]', 'role()', 'session.member.role']) {
-    await assert.rejects(buildEditedCopy([['config.json', '"memberRole"', JSON.stringify(entry)]]), (err) => err.message.includes(`roleIdentifiers entry ${JSON.stringify(entry)}`));
+    await assert.rejects(buildEditedCopy([['config.json', '"memberRole"', JSON.stringify(entry)]]), (err: Error) => err.message.includes(`roleIdentifiers entry ${JSON.stringify(entry)}`));
   }
 });
 
@@ -964,9 +986,9 @@ test('defaults that the source does not show in full are listed by section and k
 });
 
 const LAB_ROUTE = '{globalSettings.SYSTEM.LAB_ENABLED ? <Route path={Option.ROUTE_PATH.LAB} component={waitFor(Lab)} exact /> : null}';
-const labRouteUnder = (guard) => LAB_ROUTE.replace('globalSettings.SYSTEM.LAB_ENABLED', guard);
+const labRouteUnder = (guard: string) => LAB_ROUTE.replace('globalSettings.SYSTEM.LAB_ENABLED', guard);
 
-for (const [guard, needs] of [
+const ROUTE_GUARD_NEEDS: [string, Need[]][] = [
   ['!globalSettings.SYSTEM.LAB_ENABLED', [setting('SYSTEM.LAB_ENABLED', 'off', { default: false })]],
   ["globalSettings.SYSTEM.THEME === 'dark'", [setting('SYSTEM.THEME', 'equals', { value: 'dark' })]],
   ["'dark' == globalSettings?.SYSTEM?.['THEME']", [setting('SYSTEM.THEME', 'equals', { value: 'dark' })]],
@@ -976,10 +998,12 @@ for (const [guard, needs] of [
     'memberRole && globalSettings.SYSTEM.LAB_ENABLED && !globalSettings.SYSTEM.HELP_LINK_ENABLED',
     [setting('SYSTEM.LAB_ENABLED', 'on', { default: false }), setting('SYSTEM.HELP_LINK_ENABLED', 'off')],
   ],
-]) {
+];
+
+for (const [guard, needs] of ROUTE_GUARD_NEEDS) {
   test(`a route guard ${guard} needs ${needs.map((n) => `${n.path.join('.')} ${n.need}`).join(', ')}`, async () => {
     const map = await buildEditedCopy([['client/src/Routes.js', LAB_ROUTE, labRouteUnder(guard)]]);
-    assert.deepEqual(screen(map, '/lab#Lab').access.route.find((g) => g.kinds.includes('setting')).settings, needs);
+    assert.deepEqual(screen(map, '/lab#Lab').access.route.find((g) => g.kinds.includes('setting'))!.settings, needs);
   });
 }
 
@@ -990,7 +1014,7 @@ test('the guard of an else branch needs the opposite of its test', async () => {
   ]);
 });
 
-for (const [guard, reason] of [
+const UNREADABLE_ROUTE_GUARDS: [string, RegExp][] = [
   ['globalSettings.SYSTEM.LAB_ENABLED !== false', /같지 않음/],
   ['globalSettings.SYSTEM.LAB_ENABLED || memberRole', /또는/],
   ['globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST.includes(memberRole)', /함수를 불러/],
@@ -998,13 +1022,15 @@ for (const [guard, reason] of [
   ['globalSettings.SYSTEM.LEVEL > 1', /크기를 비교/],
   ['!(globalSettings.SYSTEM.LAB_ENABLED && globalSettings.SYSTEM.HELP_LINK_ENABLED)', /부정한 조건/],
   ['!(memberRole && globalSettings.SYSTEM.LAB_ENABLED)', /부정한 조건/],
-]) {
+];
+
+for (const [guard, reason] of UNREADABLE_ROUTE_GUARDS) {
   test(`a route guard ${guard} cannot be read, and the screen says why`, async () => {
     const map = await buildEditedCopy([['client/src/Routes.js', LAB_ROUTE, labRouteUnder(guard)]]);
     const { route, settings } = screen(map, '/lab#Lab').access;
     const [read] = route.filter((g) => g.kinds.includes('setting'));
     assert.equal(read.settings, null);
-    assert.match(read.settingsReason, reason);
+    assert.match(read.settingsReason!, reason);
     assert.deepEqual(settings[0], { from: 'route', needs: [], unreadable: [{ guard: read.guard, reason: read.settingsReason }] });
   });
 }
@@ -1014,7 +1040,7 @@ test('a long guard is read from its source, not from the shortened text shown fo
   const map = await buildEditedCopy([['client/src/Routes.js', LAB_ROUTE, labRouteUnder(long)]]);
   const [guard] = screen(map, '/lab#Lab').access.route;
   assert.match(guard.guard, /…$/);
-  assert.deepEqual(guard.settings.map((n) => n.path.join('.')), ['SYSTEM.LAB_ENABLED', `SYSTEM.${'VERY_LONG_SETTING_NAME_'.repeat(6)}ON`]);
+  assert.deepEqual(guard.settings!.map((n) => n.path.join('.')), ['SYSTEM.LAB_ENABLED', `SYSTEM.${'VERY_LONG_SETTING_NAME_'.repeat(6)}ON`]);
 });
 
 test('a menu rendered with map over the settings list links the same way', async () => {
@@ -1037,7 +1063,7 @@ test('without settingsDefaults a route picked by a computed key makes no link', 
   ]);
   assert.deepEqual(screen(map, '/admin/report#AdminReport').access.links, []);
   assert.equal(screen(map, '/admin/report#AdminReport').access.restricted, false);
-  assert.deepEqual(map.entries.find((e) => e.screen === '/admin/report#AdminReport').reasons, [{ kind: 'no-incoming-link' }]);
+  assert.deepEqual(map.entries.find((e) => e.screen === '/admin/report#AdminReport')!.reasons, [{ kind: 'no-incoming-link' }]);
 });
 
 test('a settingsDefaults entry must name a settings root and a const holding an object in its file', async () => {
@@ -1052,7 +1078,7 @@ test('a settingsDefaults entry must name a settings root and a const holding an 
 });
 
 const wrapped = ['/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail'];
-const menuLinks = (map, id) => screen(map, id).links.filter((l) => l.file === 'components/SideMenu.js').map((l) => l.to);
+const menuLinks = (map: MapData, id: string) => screen(map, id).links.filter((l) => l.file === 'components/SideMenu.js').map((l) => l.to);
 
 test('a component wrapping routes in the routes file is part of every screen it wraps', async () => {
   const map = await buildFixture();
@@ -1105,7 +1131,7 @@ test('a guard around the wrapping component guards every screen inside it, so th
 
 test('a link to a path without its parameters enters every route that only adds parameters to it', async () => {
   const map = await buildFixture();
-  const from = (id) => screen(map, id).access.links.map((l) => l.from);
+  const from = (id: string) => screen(map, id).access.links.map((l) => l.from);
   assert.deepEqual(from('/document/:tab_draft_done_#DocumentList'), ['/home#Home']);
   assert.deepEqual(from('/document/:id#DocumentDetail'), ['/document/:tab_draft_done_#DocumentList', '/home#Home']);
 });
@@ -1194,9 +1220,9 @@ test('a redirect shown only under a setting or a role does not make its target a
   assert.deepEqual(screen(map, '/help#Help').access.kinds, ['setting']);
 });
 
-const exportSites = (line) => ['/admin/audit#AdminAudit', '/admin/report#AdminReport'].map((s) => ({ screen: s, file: 'components/ExportDialog.js', line }));
-const optionsOf = (map, id) => map.calls.find((c) => c.id === id).options;
-const siteLinesOf = (map, id) => optionsOf(map, id).map((o) => [o.key, o.sites.map((s) => s.line)]);
+const exportSites = (line: number) => ['/admin/audit#AdminAudit', '/admin/report#AdminReport'].map((s) => ({ screen: s, file: 'components/ExportDialog.js', line }));
+const optionsOf = (map: MapData, id: string) => map.calls.find((c) => c.id === id)!.options;
+const siteLinesOf = (map: MapData, id: string) => optionsOf(map, id).map((o) => [o.key, o.sites.map((s) => s.line)]);
 
 test('a call node lists the on/off keys the screens put in its request body, with the screens and lines they were found at', async () => {
   const map = await buildFixture();
@@ -1411,7 +1437,7 @@ for (const bodyOptions of [5, ['weekly'], [['weekly']], { 'POST:/api/v1/report/s
   });
 }
 
-const addRoutes = (rewrite, paths) =>
+const addRoutes = (rewrite: Rewrite, paths: [string, string][]) =>
   rewrite('client/src/Routes.js', (src) =>
     src.replace(
       '      <Route path={Option.ROUTE_PATH.HELP} component={Help} exact />\n',
@@ -1419,17 +1445,17 @@ const addRoutes = (rewrite, paths) =>
     ),
   );
 
-const withHelpTopicRoute = (rewrite) => addRoutes(rewrite, [['`${Option.ROUTE_PATH.HELP}/:topic`', 'Help']]);
+const withHelpTopicRoute = (rewrite: Rewrite) => addRoutes(rewrite, [['`${Option.ROUTE_PATH.HELP}/:topic`', 'Help']]);
 
-const addToHome = (rewrite, lines) => rewrite('client/src/components/Home.js', (src) => src.replace('    </div>\n  );', `${lines}\n    </div>\n  );`));
+const addToHome = (rewrite: Rewrite, lines: string) => rewrite('client/src/components/Home.js', (src) => src.replace('    </div>\n  );', `${lines}\n    </div>\n  );`));
 
-const linksAddedToHome = (map) => {
+const linksAddedToHome = (map: MapData) => {
   const links = screen(map, '/home#Home').links.filter((l) => l.file === 'components/Home.js');
-  const audit = links.find((l) => l.route === 'ADMIN_AUDIT').line;
+  const audit = links.find((l) => l.route === 'ADMIN_AUDIT')!.line;
   return links.filter((l) => l.line > audit).map((l) => [l.to, l.guards]);
 };
 
-const linksTo = (map, id, file = 'components/Home.js') => screen(map, id).access.links.filter((l) => l.from === '/home#Home' && l.file === file);
+const linksTo = (map: MapData, id: string, file = 'components/Home.js') => screen(map, id).access.links.filter((l) => l.from === '/home#Home' && l.file === file);
 
 test('an address written as a route constant followed by a variable segment is an incoming link of the route with a parameter there', async () => {
   const map = await buildCopy((rewrite) => {
@@ -1500,7 +1526,7 @@ test('an address whose tail cannot be read as whole segments is read as the bare
   assert.equal(linksTo(map, '/help#Help').length, 7);
   const topic = screen(map, '/help/:topic#Help');
   assert.deepEqual(topic.access.links, []);
-  assert.deepEqual(map.entries.find((e) => e.screen === topic.id).reasons, [{ kind: 'no-incoming-link' }]);
+  assert.deepEqual(map.entries.find((e) => e.screen === topic.id)!.reasons, [{ kind: 'no-incoming-link' }]);
 });
 
 test('a tail that fits no route falls back to what the bare route constant reaches, and a tail that fits does not', async () => {
@@ -1528,7 +1554,7 @@ test('a fixed tail reaches a parameter only when it fits the pattern written in 
   const map = await buildCopy((rewrite) =>
     addToHome(rewrite, ["      <Link to={Option.ROUTE_PATH.DOCUMENT + '/draft'}>draft</Link>", "      <Link to={Option.ROUTE_PATH.DOCUMENT + '/other'}>other</Link>"].join('\n')),
   );
-  const fromHome = (id) => screen(map, id).access.links.filter((l) => l.file === 'components/Home.js').length;
+  const fromHome = (id: string) => screen(map, id).access.links.filter((l) => l.file === 'components/Home.js').length;
   assert.equal(fromHome('/document/:tab_draft_done_#DocumentList'), 1);
   assert.equal(fromHome('/document/:id#DocumentDetail'), 2);
 });
@@ -1635,12 +1661,12 @@ test('a route written with a trailing slash takes a tail link that fits it', asy
   assert.deepEqual(linksTo(map, '/help#Help'), []);
 });
 
-const helpLinks = (links) =>
+const helpLinks = (links: string[]) =>
   "import { Link } from 'react-router-dom';\nimport Option from '_define/Option';\n\nexport default function Help({ topic }) {\n  return (\n    <article>\n" +
   links.map((l) => `      ${l}\n`).join('') +
   '    </article>\n  );\n}\n';
 
-const linesFrom = (map, id, fromId) => screen(map, id).access.links.filter((l) => l.from === fromId).map((l) => l.line);
+const linesFrom = (map: MapData, id: string, fromId: string) => screen(map, id).access.links.filter((l) => l.from === fromId).map((l) => l.line);
 
 test('a tail link that only the screen it sits in would take by added parameters goes on to the bare route constant', async () => {
   const map = await buildCopy((rewrite) => {
@@ -1650,7 +1676,7 @@ test('a tail link that only the screen it sits in would take by added parameters
   assert.deepEqual(linesFrom(map, '/help#Help', '/help/s/:id#Help'), [7]);
   assert.deepEqual(linesFrom(map, '/help/s/:id#Help', '/help#Help'), [7]);
   const [story] = checkStories(map, [{ id: 'prefix', screens: ['/help/s/:id#Help', '/help#Help'] }]);
-  assert.deepEqual([story.links[0].verdict, story.links[0].ways.map((w) => w.line)], ['open', [7]]);
+  assert.deepEqual([story.links[0].verdict, story.links[0].ways.map((w: { line: number }) => w.line)], ['open', [7]]);
 });
 
 test('a link whose address fits the screen it sits in stays a link to itself and does not go on to the bare route constant', async () => {
@@ -1691,7 +1717,7 @@ for (const moves of [MOVE, { '/signin': '/home' }, [{ ...MOVE, from: 'signin' }]
 
 const EXPORT = 'POST:/api/v1/report/export';
 const DETAIL = 'GET:/api/v1/document/{documentId}';
-const withCallLinks = (callLinks) => buildCopy((rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), callLinks })));
+const withCallLinks = (callLinks: unknown) => buildCopy((rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), callLinks })));
 
 test('call links whose two calls are on the map are carried in order and once, and a link with a call missing from the map is listed with the missing call', async () => {
   const map = await withCallLinks([
@@ -1725,7 +1751,7 @@ test('the call links come out the same on every run, whatever order the config l
     { from: EXPORT, to: 'GET:/api/v1/download', note: '내려받기' },
     { from: 'POST:/api/v1/report/weekly', to: DETAIL, note: '주간 보고서' },
   ];
-  const fields = async (list) => {
+  const fields = async (list: unknown[]) => {
     const map = await withCallLinks(list);
     return JSON.stringify([map.callLinks, map.unknownCallLinks]);
   };

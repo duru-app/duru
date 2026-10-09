@@ -4,15 +4,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { screenCases } from '../src/access.ts';
+import type { ScreenAccess } from '../src/access.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { readPlaywright } from '../src/playwright.ts';
 import { linkTests } from '../src/test-links.ts';
 
+type Config = ReturnType<typeof loadConfig>;
+type Links = ReturnType<typeof linkTests>;
+
 const FIXTURE_CONFIG = path.join(import.meta.dirname, 'fixtures/app/config.json');
 const config = loadConfig(FIXTURE_CONFIG);
 const links = linkTests(config, await buildMap(config));
-const summary = (id, format = 'playwright') =>
+const summary = (id: string, format = 'playwright') =>
   (links.nodes[id] ?? []).filter((t) => t.format === format).map((t) => [t.project, t.depth, t.status].filter(Boolean).join(' '));
 
 test('a tagged Playwright test attaches to its screen with the configured depth and its status', () => {
@@ -53,7 +57,7 @@ test('tags pointing outside the map and tests without a node tag are reported se
   assert.deepEqual(links.missingSources, []);
 });
 
-const casesAt = (id) => links.nodes[id].filter((t) => t.cases).map((t) => [t.title, t.cases]);
+const casesAt = (id: string) => links.nodes[id].filter((t) => t.cases).map((t) => [t.title, t.cases]);
 
 test('a role or setting tag attaches its test to that case of the screen it is tagged with', () => {
   assert.deepEqual(casesAt('/admin/member#AdminMember'), [
@@ -80,18 +84,18 @@ test('a test with a role tag and a setting tag counts for each case, and the set
   });
 });
 
-const need = (path, extra = {}) => ({ root: 'globalSettings', path: path.split('.'), need: 'on', ...extra });
-const settingTags = (access) => screenCases({ restricted: true, kinds: ['setting'], ...access }).map((c) => c.tag);
+const need = (path: string, extra = {}) => ({ root: 'globalSettings', path: path.split('.'), need: 'on', ...extra });
+const settingTags = (access: Omit<ScreenAccess, 'restricted' | 'kinds'>) => screenCases({ restricted: true, kinds: ['setting'], ...access }).map((c) => c.tag);
 
 test('a screen reached only through links has setting cases only for the conditions every link asks, and its route conditions always', () => {
   const links = [{ from: '/a' }, { from: '/b' }];
   assert.deepEqual(
-    settingTags({ links, settings: [{ from: '/a', needs: [need('LAB'), need('MENU')] }, { from: '/b', needs: [need('LAB')] }] }),
+    settingTags({ links, settings: [{ from: '/a', needs: [need('LAB'), need('MENU')], unreadable: [] }, { from: '/b', needs: [need('LAB')], unreadable: [] }] }),
     ['setting:LAB=true', 'setting:LAB=false'],
   );
-  assert.deepEqual(settingTags({ links, settings: [{ from: '/a', needs: [need('LAB')] }] }), []);
+  assert.deepEqual(settingTags({ links, settings: [{ from: '/a', needs: [need('LAB')], unreadable: [] }] }), []);
   assert.deepEqual(
-    settingTags({ links, settings: [{ from: 'route', needs: [need('MENU.LIST', { need: 'includes', value: 'REPORT' })] }, { from: '/a', needs: [need('LAB')] }] }),
+    settingTags({ links, settings: [{ from: 'route', needs: [need('MENU.LIST', { need: 'includes', value: 'REPORT' })], unreadable: [] }, { from: '/a', needs: [need('LAB')], unreadable: [] }] }),
     ['setting:MENU.LIST:REPORT=true', 'setting:MENU.LIST:REPORT=false'],
   );
 });
@@ -160,7 +164,7 @@ test('tests of several formats on one node each carry their own depth', () => {
 });
 
 test('only tests tagged with a known @depth come out with a depth other than the configured one', () => {
-  const configured = (t) => config.tests.find((s) => path.join(config.configDir, t.source).startsWith(s.path)).depth;
+  const configured = (t: Links['untagged'][number]) => config.tests.find((s: Config['tests'][number]) => path.join(config.configDir, t.source).startsWith(s.path)).depth;
   const overridden = Object.values(links.nodes)
     .flat()
     .filter((t) => t.depth !== configured(t))
@@ -179,7 +183,7 @@ test('an unknown @depth value keeps the configured depth and is reported as an u
   );
 });
 
-function withResults(files, fn, formats = ['playwright']) {
+function withResults(files: Record<string, string>, fn: (own: Config, dir: string) => void, formats = ['playwright']) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.mkdirSync(path.join(dir, 'results'));
@@ -192,7 +196,7 @@ function withResults(files, fn, formats = ['playwright']) {
   }
 }
 
-const reportOf = (suites) => JSON.stringify({ suites });
+const reportOf = (suites: unknown[]) => JSON.stringify({ suites });
 
 test('without a tags field, tags are read from the test title and the titles of its describe blocks', () => {
   const report = reportOf([
@@ -225,11 +229,11 @@ test('JSON in a results folder that is not a Playwright report is skipped', () =
 
 test('a broken report names the file it could not read', () => {
   withResults({ 'broken.json': '{"suites": [' }, (own, dir) => {
-    assert.throws(() => linkTests(own, { screens: [] }), (err) => err.message.includes(path.join(dir, 'results', 'broken.json')));
+    assert.throws(() => linkTests(own, { screens: [] }), (err: Error) => err.message.includes(path.join(dir, 'results', 'broken.json')));
   });
 });
 
-const vitestReportOf = (assertionResults) => JSON.stringify({ numTotalTests: assertionResults.length, testResults: [{ name: '/work/app/a.test.js', status: 'passed', assertionResults }] });
+const vitestReportOf = (assertionResults: unknown[]) => JSON.stringify({ numTotalTests: assertionResults.length, testResults: [{ name: '/work/app/a.test.js', status: 'passed', assertionResults }] });
 
 test('Playwright and Vitest reports in one folder are each read only by their own format', () => {
   const playwright = reportOf([{ title: 'a.spec.ts', specs: [{ title: 'x @screen:/help#Help', file: 'a.spec.ts', line: 1, tests: [{ status: 'expected' }] }] }]);
@@ -291,7 +295,7 @@ test('XML in a results folder that is not a JUnit report is skipped', () => {
 
 test('a broken JUnit report names the file it could not read', () => {
   withResults({ 'broken.xml': '<testsuite><testcase name="x"></testsuite>' }, (own, dir) => {
-    assert.throws(() => linkTests(own, { screens: [] }), (err) => err.message.includes(path.join(dir, 'results', 'broken.xml')));
+    assert.throws(() => linkTests(own, { screens: [] }), (err: Error) => err.message.includes(path.join(dir, 'results', 'broken.xml')));
   }, ['junit']);
 });
 
@@ -324,7 +328,7 @@ test('a @depth:output tag sets the output depth for one test', () => {
 
 const EXPORT = 'POST:/api/v1/report/export';
 const ARCHIVE = 'POST:/api/v1/report/archive';
-const optionsOf = (id) => links.nodes[id].map((t) => [t.line, t.options.map((o) => `${o.key}=${o.value}`).join(' ')]);
+const optionsOf = (id: string) => links.nodes[id].map((t) => [t.line, t.options.map((o: { key: string; value: boolean }) => `${o.key}=${o.value}`).join(' ')]);
 
 test('an @option tag attaches the test to that value of the option on its call', () => {
   assert.deepEqual(links.nodes[EXPORT][0].options, [{ key: 'withHistory', value: true }]);
@@ -402,7 +406,7 @@ test('a test lists its option values for a call by key, whatever order its title
   });
 });
 
-const storySummary = (id) => (links.stories[id] ?? []).map((t) => [t.format, t.project, t.depth, t.status].filter(Boolean).join(' '));
+const storySummary = (id: string) => (links.stories[id] ?? []).map((t) => [t.format, t.project, t.depth, t.status].filter(Boolean).join(' '));
 
 test('a test tagged with @story: is kept under that story ID with its depth and status, from every result format, whether or not a story file has the ID', () => {
   assert.deepEqual(Object.keys(links.stories).sort(), ['help-from-home', 'open-document', 'print-document', 'run-lab']);
@@ -423,7 +427,7 @@ test('a test tagged with a story and a screen counts on both sides', () => {
 });
 
 test('a test whose tags only point at stories is not counted as untagged, and its story tags are not reported as tags outside the map', () => {
-  const vitest = (title) => vitestReportOf([{ ancestorTitles: [], title, status: 'passed', tags: [] }]);
+  const vitest = (title: string) => vitestReportOf([{ ancestorTitles: [], title, status: 'passed', tags: [] }]);
   withResults({ 'unit.json': vitest('goes on @story:open-document'), 'other.json': vitest('goes away @story:gone') }, (own) => {
     const result = linkTests(own, { screens: [] });
     assert.deepEqual(Object.keys(result.stories).sort(), ['gone', 'open-document']);
@@ -450,7 +454,7 @@ test('a story tag repeated in one test attaches that test to the story once', ()
 
 test('every untagged test of the fixture is listed once, ordered by test file, line and title, and the count equals the list length', () => {
   assert.equal(links.untaggedCount, links.untagged.length);
-  const row = (t) => `${t.format} ${t.testFile ?? t.file}:${t.line} ${t.title}`;
+  const row = (t: Links['untagged'][number]) => `${t.format} ${t.testFile ?? t.file}:${t.line} ${t.title}`;
   assert.deepEqual(links.untagged.map(row), [
     'vitest /builds/client/src/components/Gone.spec.js:2 keeps the old menu',
     'vitest /work/app/src/home/home.test.js:20 formats a date @depth:api',
@@ -469,7 +473,7 @@ test('every untagged test of the fixture is listed once, ordered by test file, l
 });
 
 test('an untagged list entry carries its result source, status and, for a Vitest test found under srcRoot, the test file', () => {
-  const byTitle = (title) => links.untagged.find((t) => t.title === title);
+  const byTitle = (title: string) => links.untagged.find((t) => t.title === title);
   assert.deepEqual(byTitle('DocumentTable › lists the documents it is given'), {
     title: 'DocumentTable › lists the documents it is given',
     file: '/builds/client/src/components/DocumentTable.spec.js',
@@ -483,8 +487,8 @@ test('an untagged list entry carries its result source, status and, for a Vitest
 });
 
 test('an untagged test that ran in two projects is listed once, with the worst status of its runs', () => {
-  const run = (projectName, status) => ({ projectName, status });
-  const spec = (title, line, runs) => ({ title, file: 'a.spec.ts', line, tests: runs });
+  const run = (projectName: string, status: string) => ({ projectName, status });
+  const spec = (title: string, line: number, runs: unknown[]) => ({ title, file: 'a.spec.ts', line, tests: runs });
   const report = reportOf([
     {
       title: 'a.spec.ts',
@@ -525,7 +529,7 @@ test('the untagged list is ordered by the test file the page shows, not by the p
 
 const traced = { ...config, tests: [...config.tests, { format: 'playwright', path: path.join(path.dirname(FIXTURE_CONFIG), 'results/playwright-traced'), depth: 'ui' }] };
 const tracedLinks = linkTests(traced, await buildMap(traced));
-const passedAt = (id) => tracedLinks.passed[id].map((t) => `${t.level} ${t.title}`);
+const passedAt = (id: string) => tracedLinks.passed[id].map((t) => `${t.level} ${t.title}`);
 
 test('a browser test is linked to each screen it opened with the highest of what it did there: opening, acting or checking', () => {
   assert.deepEqual(passedAt('/help#Help'), [
@@ -558,10 +562,10 @@ test('a test already tagged with a screen is not among the tests that passed thr
 });
 
 test('tests that passed through a screen leave the tests of the screens, the untagged list of the other results and the screens with tests as they were', () => {
-  const covered = (l) => Object.keys(l.nodes).filter((id) => !id.includes(':/')).sort();
+  const covered = (l: Links) => Object.keys(l.nodes).filter((id) => !id.includes(':/')).sort();
   assert.deepEqual(covered(tracedLinks), covered(links));
   for (const id of Object.keys(links.nodes)) {
-    const own = (l) => l.nodes[id].filter((t) => !t.source.startsWith('results/playwright-traced/'));
+    const own = (l: Links) => l.nodes[id].filter((t) => !t.source.startsWith('results/playwright-traced/'));
     assert.deepEqual(own(tracedLinks), own(links), id);
   }
   assert.deepEqual(links.passed, {});
@@ -572,12 +576,12 @@ test('a trace that cannot be read is noticed with its file and the reason, and a
   assert.deepEqual(tracedLinks.traceNotices, [
     { file: 'results/playwright-traced/test-results/no-snapshots-presses-the-button-without-snapshots-chromium/trace.zip', test: { title: 'presses the button without snapshots', file: 'no-snapshots.spec.ts', line: 5 }, reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' },
   ]);
-  const untraced = (l) => l.untracedCount;
+  const untraced = (l: Links) => l.untracedCount;
   assert.equal(untraced(tracedLinks) - untraced(links), 1);
 });
 
 test('browser tests that were skipped are not counted as run without a trace, and the tests of other formats never are', () => {
-  const all = ['e2e.json', 'export.json', 'screen-cases.json'].flatMap((file) => readPlaywright(path.join(path.dirname(FIXTURE_CONFIG), 'results/playwright', file)));
+  const all = ['e2e.json', 'export.json', 'screen-cases.json'].flatMap((file) => readPlaywright(path.join(path.dirname(FIXTURE_CONFIG), 'results/playwright', file))!);
   const ran = all.filter((t) => t.status !== 'pending');
   assert.ok(ran.length < all.length);
   assert.equal(links.untracedCount, ran.length);
@@ -609,7 +613,7 @@ test('a test already tagged with a call is not among the tests that sent it, sta
 });
 
 test('a browser test whose trace was read carries the addresses it opened that fit no screen, tagged or not, and one whose trace was not read carries no such list', () => {
-  const untagged = (title) => tracedLinks.untagged.find((t) => t.title === title);
+  const untagged = (title: string) => tracedLinks.untagged.find((t) => t.title === title);
   assert.deepEqual(untagged('wanders off the map').unmatched, ['http://127.0.0.1:4598/nowhere']);
   assert.deepEqual(untagged('opens home and then help').unmatched, []);
   assert.deepEqual(untagged('checks the path of a document').unmatched, []);

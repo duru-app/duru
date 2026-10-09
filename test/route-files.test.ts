@@ -4,7 +4,9 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { AddressInfo } from 'node:net';
 import { chromium } from 'playwright-core';
+import type { Page } from 'playwright-core';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { startReviewServer } from '../src/review.ts';
@@ -16,6 +18,13 @@ const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 
 const SECOND = 'AdminRoutes.js';
+
+type Copy = { copy: string; configFile: string; setConfig: (change: Record<string, unknown>) => void; src: string };
+type SplitCopy = Omit<Copy, 'setConfig'> & { first: string; second: string };
+type Guard = { guard: string; kinds: string[] };
+type Screen = { id: string; routeFile?: string; line: number; routeGuards: string[]; access: { kinds: string[]; route: Guard[]; restricted: boolean } };
+type MapData = { meta: Record<string, unknown>; screens: Screen[]; entries: { screen: string }[]; duplicateIds: unknown };
+type Failure = Error & { status: number | null; stderr: string };
 
 const FIRST_ROUTES = `import { lazy } from 'react';
 import { Route, Switch } from 'react-router-dom';
@@ -94,35 +103,35 @@ function canManageGroups(role) {
 }
 `;
 
-const lineOf = (file, text) => {
+const lineOf = (file: string, text: string) => {
   const at = fs.readFileSync(file, 'utf8').split('\n').findIndex((l) => l.includes(text));
   assert.ok(at >= 0, `${file} has ${text}`);
   return at + 1;
 };
 
-async function withCopy(fn) {
+async function withCopy(fn: (copy: Copy) => unknown) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const configFile = path.join(copy, 'config.json');
-    const setConfig = (change) => fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), ...change }));
+    const setConfig = (change: Record<string, unknown>) => fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), ...change }));
     return await fn({ copy, configFile, setConfig, src: path.join(copy, 'client/src') });
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
 }
 
-const withSplitCopy = (fn, { configPatch = {}, extra } = {}) => withCopy(({ src, setConfig, ...rest }) => {
+const withSplitCopy = (fn: (copy: SplitCopy) => unknown, { configPatch = {}, extra }: { configPatch?: Record<string, unknown>; extra?: string } = {}) => withCopy(({ src, setConfig, ...rest }) => {
   fs.writeFileSync(path.join(src, 'Routes.js'), FIRST_ROUTES);
   fs.writeFileSync(path.join(src, SECOND), secondRoutes(extra));
   setConfig({ routesFile: ['Routes.js', SECOND], ...configPatch });
   return fn({ ...rest, src, first: path.join(src, 'Routes.js'), second: path.join(src, SECOND) });
 });
 
-const mapOf = (configFile) => buildMap(loadConfig(configFile));
-const screen = (map, id) => map.screens.find((s) => s.id === id);
+const mapOf = (configFile: string): Promise<MapData> => buildMap(loadConfig(configFile));
+const screen = (map: MapData, id: string) => map.screens.find((s) => s.id === id)!;
 const IDS = ['/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/help#Help', '/admin/member#AdminMember', '/admin/group#AdminGroup', '/lab#Lab', '/lab/result#LabResult', '/admin/audit#AdminAudit', '/admin/report#AdminReport'];
-const withoutRun = ({ meta, ...rest }) => ({ ...rest, meta: { ...meta, generatedAt: null } });
+const withoutRun = ({ meta, ...rest }: { meta: object }) => ({ ...rest, meta: { ...meta, generatedAt: null } });
 
 test('a config that lists two route files puts the screens of both on the map in listed order, each with its own route file and line', async () => {
   await withSplitCopy(async ({ configFile, first, second }) => {
@@ -178,7 +187,7 @@ test('a story step through a route checks that route with the guards of its own 
     const map = await mapOf(configFile);
     const [story] = checkStories(map, [{ id: 'lab', screens: ['/lab#Lab'] }]);
     const route = story.reach.find((r) => r.kind === 'route');
-    assert.deepEqual([route.screen, route.file, route.line, route.guards.map((g) => g.guard)], ['/lab#Lab', SECOND, screen(map, '/lab#Lab').line, ['globalSettings.SYSTEM.LAB_ENABLED']]);
+    assert.deepEqual([route!.screen, route!.file, route!.line, route!.guards.map((g: Guard) => g.guard)], ['/lab#Lab', SECOND, screen(map, '/lab#Lab').line, ['globalSettings.SYSTEM.LAB_ENABLED']]);
   });
 });
 
@@ -195,7 +204,7 @@ test('the same screen ID in two route files is reported with the name and line o
 
 test('the task list gives each screen and each story precondition the route file of that screen', async () => {
   await withSplitCopy(({ configFile, first, second }) => {
-    const cli = (...args) => execFileSync(process.execPath, [CLI, ...args, configFile], { encoding: 'utf8' });
+    const cli = (...args: string[]) => execFileSync(process.execPath, [CLI, ...args, configFile], { encoding: 'utf8' });
     cli('rebuild');
     const tasks = cli('tasks');
     assert.match(tasks, new RegExp(`^- component: components/Home\\.js, route at Routes\\.js:${lineOf(first, 'ROUTE_PATH.HOME')}$`, 'm'));
@@ -220,7 +229,7 @@ test('a config with one route file written as text or as a list of one gives the
     setConfig({ routesFile: ['Routes.js'] });
     const asList = loadConfig(configFile);
     assert.deepEqual(asList.routeFiles, ['Routes.js']);
-    const [fromText, fromList] = await Promise.all([buildMap(asText), buildMap(asList)]);
+    const [fromText, fromList]: MapData[] = await Promise.all([buildMap(asText), buildMap(asList)]);
     assert.ok(fromText.screens.every((s) => s.routeFile === 'Routes.js'));
     assert.deepEqual(withoutRun({ ...fromList, meta: { ...fromList.meta, srcRoot: null } }), withoutRun({ ...fromText, meta: { ...fromText.meta, srcRoot: null } }));
     assert.deepEqual(fromText.screens.map((s) => s.id), IDS);
@@ -236,12 +245,12 @@ test('a routesFile that is empty, not text, or a list naming a file twice ends i
       ['Routes.js', 'Routes.js'], ['Routes.js', './Routes.js'], ['Routes.js', 'admin/../Routes.js'], ['Routes.js', '/Routes.js'], ['Routes.js', '../src/Routes.js']];
     for (const value of bad) {
       setConfig({ routesFile: value });
-      assert.throws(() => loadConfig(configFile), (err) => err.message === ROUTES_FILE_ERROR + JSON.stringify(value), JSON.stringify(value));
+      assert.throws(() => loadConfig(configFile), (err: Failure) => err.message === ROUTES_FILE_ERROR + JSON.stringify(value), JSON.stringify(value));
     }
     setConfig({ routesFile: [] });
     assert.throws(
       () => execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8', stdio: 'pipe' }),
-      (err) => err.status !== 0 && err.stderr.includes(`${ROUTES_FILE_ERROR}[]`),
+      (err: Failure) => err.status !== 0 && err.stderr.includes(`${ROUTES_FILE_ERROR}[]`),
     );
   });
 });
@@ -249,9 +258,9 @@ test('a routesFile that is empty, not text, or a list naming a file twice ends i
 test('a config without routesFile, or naming a route file that is not there, is refused when the map is built', async () => {
   await withCopy(async ({ configFile, setConfig }) => {
     setConfig({ routesFile: undefined });
-    await assert.rejects(() => mapOf(configFile), (err) => err.message === `the config has no routesFile, which takes ${ROUTES_FILE}`);
+    await assert.rejects(() => mapOf(configFile), (err: Failure) => err.message === `the config has no routesFile, which takes ${ROUTES_FILE}`);
     setConfig({ routesFile: ['Routes.js', 'admin/Routes.jsx'] });
-    await assert.rejects(() => mapOf(configFile), (err) => err.message === `routesFile names "admin/Routes.jsx", but ${path.join(loadConfig(configFile).srcRoot, 'admin/Routes.jsx')} is not a file`);
+    await assert.rejects(() => mapOf(configFile), (err: Failure) => err.message === `routesFile names "admin/Routes.jsx", but ${path.join(loadConfig(configFile).srcRoot, 'admin/Routes.jsx')} is not a file`);
   });
 });
 
@@ -259,11 +268,11 @@ test('a map built before screens carried their route file stops the task list, a
   await withCopy(async ({ copy, configFile }) => {
     execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     const mapFile = path.join(copy, 'out/map.json');
-    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    const map: MapData = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
     fs.writeFileSync(mapFile, JSON.stringify({ ...map, screens: map.screens.map(({ routeFile, ...s }) => s) }));
-    const said = (text) => text.includes(`${mapFile} was built by a duru that did not record the route file of each screen — run "duru rebuild"`);
-    assert.throws(() => execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8', stdio: 'pipe' }), (err) => err.status !== 0 && said(err.stderr));
-    await assert.rejects(() => startReviewServer(loadConfig(configFile), { author: { name: 'reviewer', source: 'config' } }), (err) => said(err.message));
+    const said = (text: string) => text.includes(`${mapFile} was built by a duru that did not record the route file of each screen — run "duru rebuild"`);
+    assert.throws(() => execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8', stdio: 'pipe' }), (err: Failure) => err.status !== 0 && said(err.stderr));
+    await assert.rejects(() => startReviewServer(loadConfig(configFile), { author: { name: 'reviewer', source: 'config' } }), (err: Failure) => said(err.message));
     const review = spawnSync(process.execPath, [CLI, 'review', configFile, '--port', '0'], { encoding: 'utf8', timeout: 20000 });
     assert.ok(review.status !== 0 && review.signal === null && said(review.stderr) && !review.stderr.includes('review page'), review.stderr);
   });
@@ -274,16 +283,16 @@ test('a map that turns old or unreadable while the review server runs is reporte
     execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     const mapFile = path.join(copy, 'out/map.json');
     const good = fs.readFileSync(mapFile, 'utf8');
-    const map = JSON.parse(good);
+    const map: MapData = JSON.parse(good);
     const old = JSON.stringify({ ...map, screens: map.screens.map(({ routeFile, ...s }) => s) });
-    const asked = async (base) => {
+    const asked = async (base: string) => {
       const replies = [await fetch(`${base}/api/data`), await fetch(`${base}/api/flow?from=${encodeURIComponent('/home#Home')}`), await fetch(`${base}/api/path-values?screen=${encodeURIComponent('/home#Home')}`)];
-      return Promise.all(replies.map(async (r) => [r.status, await r.text()]));
+      return Promise.all(replies.map(async (r) => [r.status, await r.text()] as [number, string]));
     };
-    const withServer = async (fn) => {
+    const withServer = async (fn: (base: string) => Promise<void>) => {
       const server = await startReviewServer(loadConfig(configFile), { author: { name: 'reviewer', source: 'config' } });
       try {
-        return await fn(`http://127.0.0.1:${server.address().port}`);
+        return await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
       } finally {
         server.close();
       }
@@ -302,7 +311,7 @@ test('a map that turns old or unreadable while the review server runs is reporte
 });
 
 test('the usage guide, the agent skill and the decision record say that route files are listed in the config', () => {
-  const read = (file) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
   assert.match(read('../README.md'), /`routesFile` is one route file as text[\s\S]*or a list of them/);
   assert.match(read('../skills/duru/SKILL.md'), /`routesFile` in the config is one route file or a list of them[\s\S]*`route at <file>:<line>`/);
   assert.match(read('../docs/decisions.md'), /\*\*Route files are listed in the config\.\*\*[\s\S]*Alternative compared: give one root route file and follow its imports/);
@@ -310,16 +319,16 @@ test('the usage guide, the agent skill and the decision record say that route fi
 
 const browserMissing = fs.existsSync(chromium.executablePath()) ? false : 'Chromium is not installed (npx playwright-core install chromium)';
 
-async function withReviewPage(configFile, fn) {
+async function withReviewPage(configFile: string, fn: (page: Page) => Promise<void>) {
   execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
   const server = await startReviewServer(loadConfig(configFile), { author: { name: 'reviewer', source: 'config' } });
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    const errors = [];
+    const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-    await page.goto(`http://127.0.0.1:${server.address().port}`);
+    await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
     await page.waitForSelector('#view-flow.on, #view-list.on');
     await page.click('#view-list');
     await page.waitForSelector('#screen-list li');
@@ -333,7 +342,7 @@ async function withReviewPage(configFile, fn) {
 
 test('in a browser, the 라우트 line of a screen and the route step of a story name the route file that holds the route', { skip: browserMissing }, async () => {
   await withSplitCopy(({ configFile, first, second }) => withReviewPage(configFile, async (p) => {
-    const routeLine = async (component) => {
+    const routeLine = async (component: string) => {
       await p.locator('#screen-list li', { hasText: new RegExp(`${component}(?![A-Za-z])`) }).click();
       return p.locator('#right-info li', { hasText: /^라우트 / }).textContent();
     };
