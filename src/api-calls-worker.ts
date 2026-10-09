@@ -117,14 +117,26 @@ const recorder = (...args: unknown[]) => keep(request.method ? text(at(args, req
 globalThis.__duruRecorder = recorder;
 
 const VERBS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'];
+const WITH_DATA = new Set(['post', 'put', 'patch']);
 const SCHEME = new RegExp(scheme, 'i');
 const standIns = new WeakSet<object>();
+const duruValues = new WeakSet<object>([fake, idsAsText, globalThis.__duruNothing]);
 // 요청 메서드와 create 가 아닌 속성은 아무 일도 하지 않는 값이라, interceptors 같은 설정 코드가 멈추지 않는다.
 function requestObject(base: unknown): unknown {
-  const join = (url: string | null) => (typeof base !== 'string' || url === null || SCHEME.test(url) ? url : url ? `${base.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}` : base);
-  const fromConfig = (config: { method?: unknown; url?: unknown } | undefined) => keep(text(config?.method) ?? 'get', join(text(config?.url)));
-  const sendAny = (first: string | { method?: unknown; url?: unknown } | undefined, second?: { method?: unknown }) => (typeof first === 'string' ? fromConfig({ ...second, url: first }) : fromConfig(first));
-  const verbs: Record<string | symbol, (...args: never[]) => unknown> = Object.fromEntries(VERBS.map((verb) => [verb, (url: unknown) => keep(verb, join(text(url)))]));
+  const baseOf = (config: unknown) => {
+    if (duruValues.has(config as object)) return base;
+    const given = (config as { baseURL?: unknown } | null | undefined)?.baseURL;
+    if (given === undefined) return base;
+    if (!given) return null;
+    return typeof given === 'string' ? given : mark;
+  };
+  const join = (url: string | null, from: unknown) => (typeof from !== 'string' || url === null || SCHEME.test(url) ? url : url ? `${from.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}` : from);
+  type Config = { method?: unknown; url?: unknown; baseURL?: unknown };
+  const fromConfig = (config: Config | undefined) => keep(text(config?.method) ?? 'get', join(text(config?.url), baseOf(config)));
+  const sendAny = (first: string | Config | undefined, second?: Config) => (typeof first === 'string' ? fromConfig({ ...second, url: first }) : fromConfig(first));
+  const verbs: Record<string | symbol, (...args: never[]) => unknown> = Object.fromEntries(
+    VERBS.map((verb) => [verb, (url: unknown, ...rest: unknown[]) => keep(verb, join(text(url), baseOf(rest[WITH_DATA.has(verb) ? 1 : 0])))]),
+  );
   verbs.request = sendAny;
   verbs.create = (options?: { baseURL?: unknown }) => requestObject(options?.baseURL === undefined ? base : options.baseURL);
   for (const fn of Object.values(verbs)) standIns.add(fn);
@@ -177,10 +189,14 @@ function methodsOf(obj: object): [string, Callable][] {
   return [...found];
 }
 
-const leaves = (leaf: unknown) => new Proxy({}, {
-  get: (t, k) => (k === Symbol.toPrimitive ? () => mark : typeof k === 'symbol' || k === 'then' ? undefined : leaf),
-  has: () => true,
-});
+const leaves = (leaf: unknown) => {
+  const argument = new Proxy({}, {
+    get: (t, k) => (k === Symbol.toPrimitive ? () => mark : typeof k === 'symbol' || k === 'then' ? undefined : leaf),
+    has: () => true,
+  });
+  duruValues.add(argument);
+  return argument;
+};
 // 앞의 모양이 오류로 끝나거나 요청 없이 끝나면 다음 모양을 넣어 본다. URL 변수 값이 문자열이나 숫자인지 검사하는 앱은 키마다 문자열이나 숫자가 나와야 통과한다.
 // 마지막 시도에서는 이름이 id 이거나 Id · ID 로 끝나는 키만 문자열이고, 다른 키를 읽으면 몇 단계를 내려가도 이 값이 다시 나온다. URL 경로 값과 함께 받은 body 에 `in` 을 쓰거나 배열 메서드를 호출하는 메서드도 그래야 요청까지 간다.
 const ARGUMENT_SHAPES: (() => unknown)[] = [() => fake, () => leaves(mark), () => leaves(markNumber), () => idsAsText];
