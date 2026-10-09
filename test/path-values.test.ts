@@ -2,7 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { asIsPath, fallbackScreen, fillPath, opensAsIs, pathParts, preparePathValues, unknownPathValues } from '../src/path-values.ts';
 
-const screen = (id, path, from = []) => ({ id, path, access: { links: from.map((f) => ({ from: f })) } });
+type PrepareArgs = Parameters<typeof preparePathValues>;
+type ApiFetch = NonNullable<PrepareArgs[3]>;
+type Init = Parameters<ApiFetch>[1];
+type Given = PrepareArgs[2][string];
+type Spec = Extract<Given[string], { api: string }>;
+type Sent = [string, unknown][];
+
+const screen = (id: string, path: string, from: string[] = []) => ({ id, path, access: { links: from.map((f) => ({ from: f })) } });
 
 test('a route path is split into text and its variables, with optional ones and their patterns', () => {
   assert.deepEqual(pathParts('/home'), ['/home']);
@@ -36,12 +43,12 @@ test('the list screen to fall back to is the first screen linking in whose path 
     screen('/document/:id#Detail', '/document/:id', ['/document/:tab#List', '/broken#Broken', '/home#Home']),
     screen('/document/:id/edit#Edit', '/document/:id/edit', ['/document/:id#Detail']),
   ] };
-  assert.equal(fallbackScreen(map, map.screens[3]).id, '/home#Home');
+  assert.equal(fallbackScreen(map, map.screens[3])!.id, '/home#Home');
   assert.equal(fallbackScreen(map, map.screens[4]), null);
 });
 
 test('the fallback prefers a list screen the account opening the frame can open, and takes the first one when none can be', () => {
-  const admin = (id, path) => ({ ...screen(id, path), access: { links: [], roleValues: ['ADMIN'] } });
+  const admin = (id: string, path: string) => ({ ...screen(id, path), access: { links: [], roleValues: ['ADMIN'] } });
   const map = { screens: [
     admin('/admin/docs#AdminDocs', '/admin/docs'),
     screen('/my/docs#MyDocs', '/my/docs'),
@@ -49,10 +56,10 @@ test('the fallback prefers a list screen the account opening the frame can open,
     screen('/document/:id#Detail', '/document/:id', ['/admin/docs#AdminDocs', '/my/docs#MyDocs']),
     screen('/report/:id#Report', '/report/:id', ['/admin/docs#AdminDocs', '/audit#Audit']),
   ] };
-  assert.equal(fallbackScreen(map, map.screens[3]).id, '/my/docs#MyDocs');
-  assert.equal(fallbackScreen(map, map.screens[3], {}, 'ADMIN').id, '/admin/docs#AdminDocs');
-  assert.equal(fallbackScreen(map, map.screens[3], {}, 'AUDITOR').id, '/my/docs#MyDocs');
-  assert.equal(fallbackScreen(map, map.screens[4]).id, '/admin/docs#AdminDocs');
+  assert.equal(fallbackScreen(map, map.screens[3])!.id, '/my/docs#MyDocs');
+  assert.equal(fallbackScreen(map, map.screens[3], {}, 'ADMIN')!.id, '/admin/docs#AdminDocs');
+  assert.equal(fallbackScreen(map, map.screens[3], {}, 'AUDITOR')!.id, '/my/docs#MyDocs');
+  assert.equal(fallbackScreen(map, map.screens[4])!.id, '/admin/docs#AdminDocs');
 });
 
 test('pathValues entries that match no screen path, and variables missing from their path, are listed', () => {
@@ -95,7 +102,7 @@ test('without the login, a list API is not called and the error says why', async
 const KEY_ENV = 'DURU_TEST_PATH_VALUES_KEY';
 const ISSUING = { api: '/api/codes', method: 'POST', header: { 'X-API-KEY': '{key}', Accept: 'application/json' }, keyEnv: KEY_ENV, body: { memberId: 'm1' }, value: 'contents.code' };
 
-async function issued(fetchServer, spec = ISSUING, key = 'k3y') {
+async function issued(fetchServer: ApiFetch, spec: Spec = ISSUING, key: string | null = 'k3y') {
   const map = { screens: [screen('/home#Home', '/home'), screen('/view/:code/:id#View', '/view/:code/:id', ['/home#Home'])] };
   if (key === null) delete process.env[KEY_ENV];
   else process.env[KEY_ENV] = key;
@@ -107,8 +114,8 @@ async function issued(fetchServer, spec = ISSUING, key = 'k3y') {
 }
 
 test('an issuing API is called without the login, with the key from its environment variable in its header, every time', async () => {
-  const calls = [];
-  const fetchServer = async (api, options) => {
+  const calls: [string, string, Record<string, string> | undefined, unknown][] = [];
+  const fetchServer = async (api: string, options: Init) => {
     calls.push([api, options.method, options.headers, options.body]);
     return new Response(JSON.stringify({ contents: { code: `c${calls.length}` } }));
   };
@@ -117,15 +124,15 @@ test('an issuing API is called without the login, with the key from its environm
   assert.equal((await issued(fetchServer)).path, '/view/c2/7');
   assert.deepEqual(calls[0], ['/api/codes', 'POST', { 'X-API-KEY': 'k3y', Accept: 'application/json' }, { memberId: 'm1' }]);
   assert.equal((await issued(fetchServer, { ...ISSUING, header: { 'X-API-KEY': 'Key {key}$&' } }, '$1')).errors.length, 0);
-  assert.equal(calls[2][2]['X-API-KEY'], 'Key $1$&');
+  assert.equal(calls[2][2]!['X-API-KEY'], 'Key $1$&');
 });
 
 test('an issuing API whose key, request or reply fails says why without the key, and the screen falls back', async () => {
-  const answering = (body, status = 200) => async () => new Response(body, { status });
-  const throwing = (err) => async () => {
+  const answering = (body: string, status = 200) => async () => new Response(body, { status });
+  const throwing = (err: Error) => async () => {
     throw err;
   };
-  for (const [fetchServer, error, key] of [
+  for (const [fetchServer, error, key] of ([
     [answering('{}'), /^code: 환경 변수 DURU_TEST_PATH_VALUES_KEY 에 키가 없어 발급 API POST \/api\/codes 를 부르지 않았습니다$/, null],
     [answering('{}', 403), /^code: 발급 API POST \/api\/codes 요청이 403 로 실패했습니다$/],
     [answering('not json'), /^code: 발급 API POST \/api\/codes 의 응답이 JSON 이 아닙니다$/],
@@ -133,7 +140,7 @@ test('an issuing API whose key, request or reply fails says why without the key,
     [throwing(new DOMException('timed out', 'TimeoutError')), /^code: 발급 API POST \/api\/codes 요청에 15초 안에 응답이 없었습니다$/],
     [throwing(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } })), /요청을 보내지 못했습니다 \(ECONNREFUSED\)$/],
     [answering('{}'), /^code: 환경 변수 DURU_TEST_PATH_VALUES_KEY 의 키를 header 에 넣을 수 없습니다$/, 'k3y\nsecret'],
-  ]) {
+  ] as [ApiFetch, RegExp, (string | null)?][])) {
     const result = await issued(fetchServer, ISSUING, key);
     assert.deepEqual([result.values, result.path, result.fallback], [{ id: '7' }, null, '/home#Home']);
     assert.equal(result.errors.length, 1);
@@ -154,7 +161,7 @@ test('a list screen whose variables all have fixed values is a fallback too, ope
   const result = await preparePathValues(map, map.screens[2], pathValues, async () => new Response('[]'));
   assert.equal(result.fallback, '/document/:tab#List');
   assert.equal(result.fallbackPath, '/document/draft');
-  assert.equal(fallbackScreen(map, map.screens[2], {}).id, '/home#Home');
+  assert.equal(fallbackScreen(map, map.screens[2], {})!.id, '/home#Home');
 });
 
 test('a wildcard or repeated variable keeps the slashes of its value', () => {
@@ -177,15 +184,14 @@ test('a list API answering with bare values takes the first one itself', async (
 const VIEW_TOKEN = { api: '/api/v1/view-token/create', method: 'POST', header: { 'X-API-KEY': '{key}' }, keyEnv: KEY_ENV, body: { referenceType: 'DOCUMENT', referenceId: '{documentId}' }, value: 'contents.accessToken' };
 const viewMap = { screens: [screen('/home#Home', '/home'), screen('/view/:documentId#View', '/view/:documentId', ['/home#Home'])] };
 
-// 요청 본문의 referenceId 로 토큰을 만들어, 어느 문서 번호가 요청에 실렸는지 알 수 있게 한다.
-function tokenServer(calls = []) {
-  return async (api, options) => {
+function tokenServer(calls: Sent = []) {
+  return async (api: string, options: Init) => {
     calls.push([api, options.body]);
-    return new Response(JSON.stringify({ contents: { accessToken: `t-${options.body.referenceId}` } }));
+    return new Response(JSON.stringify({ contents: { accessToken: `t-${(options.body as { referenceId: string }).referenceId}` } }));
   };
 }
 
-async function viewing(pathValues, fetchServer, typed, { fetchApi = null, key = 'k3y' } = {}) {
+async function viewing(pathValues: Given, fetchServer: ApiFetch, typed?: Record<string, string>, { fetchApi = null, key = 'k3y' }: { fetchApi?: ApiFetch | null; key?: string } = {}) {
   process.env[KEY_ENV] = key;
   try {
     return await preparePathValues(viewMap, viewMap.screens[1], { '/view/:documentId': pathValues }, fetchApi, null, fetchServer, typed);
@@ -195,7 +201,7 @@ async function viewing(pathValues, fetchServer, typed, { fetchApi = null, key = 
 }
 
 test('a query value is issued with the path variable it names in its request body, and ends the path as an encoded query string', async () => {
-  const calls = [];
+  const calls: Sent = [];
   const result = await viewing({ documentId: 'doc 1', '?token': VIEW_TOKEN }, tokenServer(calls));
   assert.deepEqual(calls, [['/api/v1/view-token/create', { referenceType: 'DOCUMENT', referenceId: 'doc 1' }]]);
   assert.deepEqual([result.values, result.queryNames, result.errors, result.issued], [{ documentId: 'doc 1', '?token': 't-doc 1' }, ['?token'], [], ['?token']]);
@@ -212,10 +218,10 @@ test('a query value may be fixed or come from a list API, and the order of the c
 });
 
 test('variables resolve in two waves, so a body may name only a variable that did not need another one', async () => {
-  const order = [];
-  const fetchServer = async (api, options) => {
+  const order: string[] = [];
+  const fetchServer = async (api: string, options: Init) => {
     order.push(api);
-    return new Response(JSON.stringify({ id: `id-${options.body.seed ?? 'x'}`, contents: { accessToken: `t-${options.body.referenceId}` } }));
+    return new Response(JSON.stringify({ id: `id-${(options.body as { seed?: string }).seed ?? 'x'}`, contents: { accessToken: `t-${(options.body as { referenceId: string }).referenceId}` } }));
   };
   const issuedId = { ...VIEW_TOKEN, api: '/api/ids', body: { seed: '1' }, value: 'id' };
   const result = await viewing({ documentId: issuedId, '?token': VIEW_TOKEN }, fetchServer);
@@ -226,26 +232,26 @@ test('variables resolve in two waves, so a body may name only a variable that di
 });
 
 test('an issuing request whose body needs a variable without a value is not sent, and the error names the variable but not the key; a list API sends its body as written', async () => {
-  for (const [pathValues, error] of [
+  for (const [pathValues, error] of ([
     [{ '?token': VIEW_TOKEN }, '?token: documentId 값이 없어 발급 API POST /api/v1/view-token/create 를 부르지 않았습니다'],
     [{ documentId: { api: '/api/ids', list: '', value: 'id' }, '?token': VIEW_TOKEN }, null],
-  ]) {
-    const calls = [];
+  ] as [Given, string | null][])) {
+    const calls: Sent = [];
     const result = await viewing(pathValues, tokenServer(calls), undefined, { fetchApi: async () => new Response('{}', { status: 500 }) });
     assert.deepEqual([calls, result.path, result.fallback], [[], null, '/home#Home']);
-    assert.equal(result.errors.at(-1).startsWith('?token: documentId 값이 없어 '), true);
+    assert.equal(result.errors.at(-1)!.startsWith('?token: documentId 값이 없어 '), true);
     assert.equal(result.errors.every((e) => !e.includes('k3y')), true);
     if (error) assert.deepEqual(result.errors, [error]);
   }
   const listed = { api: '/api/v1/tokens', method: 'POST', list: 'contents', value: 'code', body: { id: '{documentId}' } };
-  const sent = [];
-  const fetchApi = async (api, options) => { sent.push(options.body); return new Response(JSON.stringify({ contents: [{ code: 'c' }] })); };
+  const sent: unknown[] = [];
+  const fetchApi = async (api: string, options: Init) => { sent.push(options.body); return new Response(JSON.stringify({ contents: [{ code: 'c' }] })); };
   const result = await viewing({ documentId: '7', '?token': listed }, tokenServer(), undefined, { fetchApi });
   assert.deepEqual([sent, result.path, result.errors], [[{ id: '{documentId}' }], '/view/7?token=c', []]);
 });
 
 test('the path variables named in the body of an issuing API fill every string of the body at any depth, and braces that name no path variable stay as written', async () => {
-  const calls = [];
+  const calls: Sent = [];
   const body = { a: '{documentId}-{other}', query: 'mutation{createToken(doc:"{documentId}"){token}}', list: ['{documentId}', { deep: 'x{documentId}y{documentId}' }], n: 3, flag: true, nothing: null };
   const result = await viewing({ documentId: '7$&', '?token': { ...VIEW_TOKEN, body } }, tokenServer(calls));
   assert.deepEqual(calls[0][1], { a: '7$&-{other}', query: 'mutation{createToken(doc:"7$&"){token}}', list: ['7$&', { deep: 'x7$&y7$&' }], n: 3, flag: true, nothing: null });
@@ -253,14 +259,14 @@ test('the path variables named in the body of an issuing API fill every string o
 });
 
 test('a value typed by the reviewer is used instead of the configured one, and an issued value typed over is not requested', async () => {
-  const calls = [];
+  const calls: Sent = [];
   const typedId = await viewing({ documentId: '7', '?token': VIEW_TOKEN }, tokenServer(calls), { documentId: 'typed-9' });
-  assert.deepEqual([calls.length, calls[0][1].referenceId, typedId.values.documentId, typedId.path], [1, 'typed-9', 'typed-9', '/view/typed-9?token=t-typed-9']);
-  const listCalls = [];
+  assert.deepEqual([calls.length, (calls[0][1] as { referenceId: string }).referenceId, typedId.values.documentId, typedId.path], [1, 'typed-9', 'typed-9', '/view/typed-9?token=t-typed-9']);
+  const listCalls: string[] = [];
   const fetchApi = async () => { listCalls.push('list'); return new Response('[]'); };
   const overList = await viewing({ documentId: { api: '/api/ids', list: '', value: 'id' }, '?token': VIEW_TOKEN }, tokenServer(), { documentId: 'typed-9' }, { fetchApi });
   assert.deepEqual([listCalls, overList.errors, overList.issued], [[], [], ['?token']]);
-  const none = [];
+  const none: Sent = [];
   const overToken = await viewing({ documentId: '7', '?token': VIEW_TOKEN }, tokenServer(none), { '?token': 'mine' });
   assert.deepEqual([none, overToken.path, overToken.issued], [[], '/view/7?token=mine', undefined]);
   const cleared = await viewing({ documentId: '7', '?token': VIEW_TOKEN }, tokenServer(), { '?token': '' });

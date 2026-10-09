@@ -8,12 +8,14 @@ import { importLinker } from '../src/import-links.ts';
 import { buildMap } from '../src/map.ts';
 import { linkTests } from '../src/test-links.ts';
 
+type Linked = Extract<ReturnType<ReturnType<typeof importLinker>>, { file: string }>;
+
 const config = loadConfig(path.join(import.meta.dirname, 'fixtures/app/config.json'));
 const map = await buildMap(config);
 const links = linkTests(config, map);
-const importers = (id) => (links.importers[id] ?? []).map((t) => `${t.title} | ${t.via.join(', ')}`);
+const importers = (id: string) => (links.importers[id] ?? []).map((t) => `${t.title} | ${t.via.join(', ')}`);
 
-function linksOf(assertionResults, name) {
+function linksOf(assertionResults: unknown[], name: string) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-imports-'));
   try {
     const file = path.join(dir, 'results.json');
@@ -54,7 +56,7 @@ test('a source file no screen uses links nothing', () => {
 });
 
 test('a test file is found in the source folder whether the results name it by this path or by another computer\'s', () => {
-  const linkOf = importLinker(config.srcRoot, map);
+  const linkOf = importLinker(config.srcRoot, map) as (testFile: string) => Linked;
   const here = linkOf(path.join(config.srcRoot, 'components/Help.spec.js'));
   const elsewhere = linkOf('C:\\builds\\client\\src\\components\\Help.spec.js');
   assert.deepEqual([...here.screens], [['/help#Help', ['components/Help.js']]]);
@@ -91,11 +93,11 @@ test('a test file that is not in the source folder is reported once, with the re
 });
 
 test('every screen of the map carries the source files it is made of', () => {
-  const help = map.screens.find((s) => s.id === '/help#Help');
+  const help = map.screens.find((s: { id: string }) => s.id === '/help#Help');
   assert.deepEqual(help.sourceFiles, ['components/Help.js', 'components/formatDate.js']);
 });
 
-function inTempSource(files, fn) {
+function inTempSource(files: Record<string, string>, fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-imports-'));
   try {
     for (const [file, text] of Object.entries(files)) {
@@ -118,9 +120,9 @@ test('a test file of another package on this computer is not taken for the file 
       'mono/packages/app/src/..well/known.spec.js': "import Help from '../Help';\n",
       'mono/packages/lib/src/index.spec.js': "test('lib', () => {});\n",
     },
-    (dir) => {
+    (dir: string) => {
       const srcRoot = path.join(dir, 'mono/packages/app/src');
-      const linkOf = importLinker(srcRoot, helpMap);
+      const linkOf = importLinker(srcRoot, helpMap) as (testFile: string) => Linked;
       assert.deepEqual([...linkOf(path.join(srcRoot, 'index.spec.js')).screens.keys()], ['/help#Help']);
       assert.equal(linkOf(path.join(srcRoot, '..well/known.spec.js')).file, '..well/known.spec.js');
       assert.deepEqual(linkOf(path.join(dir, 'mono/packages/lib/src/index.spec.js')), NOT_FOUND);
@@ -138,8 +140,8 @@ test('a path from another computer is matched by its longest trailing part, and 
       'app/Help.spec.js': "import Other from './Other';\n",
       'app/features/app/Help.spec.js': "import Help from '../../Help';\n",
     },
-    (dir) => {
-      const linkOf = importLinker(path.join(dir, 'app'), { screens: [{ id: '/help#Help', sourceFiles: ['Help.js'] }, { id: '/other#Other', sourceFiles: ['Other.js'] }] });
+    (dir: string) => {
+      const linkOf = importLinker(path.join(dir, 'app'), { screens: [{ id: '/help#Help', sourceFiles: ['Help.js'] }, { id: '/other#Other', sourceFiles: ['Other.js'] }] }) as (testFile: string) => Linked;
       assert.equal(linkOf('/ci/app/features/app/Help.spec.js').file, 'features/app/Help.spec.js');
       assert.equal(linkOf('features/app/Help.spec.js').file, 'features/app/Help.spec.js');
       assert.equal(linkOf('/builds/group/client/features/app/Help.spec.js').file, 'features/app/Help.spec.js');
@@ -164,8 +166,8 @@ test('a file named only to mock it does not link the test', () =>
       'src/sinon.spec.js': "const spy = sinon.mock(require('./Help'));\n",
       'src/vitest.spec.js': "vitest.mock(import('./Help'));\n",
     },
-    (dir) => {
-      const linkOf = importLinker(path.join(dir, 'src'), helpMap);
+    (dir: string) => {
+      const linkOf = importLinker(path.join(dir, 'src'), helpMap) as (testFile: string) => Linked;
       assert.deepEqual([...linkOf('/ci/src/vi.spec.js').screens], []);
       assert.deepEqual([...linkOf('/ci/src/jest.spec.js').screens], []);
       assert.deepEqual([...linkOf('/ci/src/vitest.spec.js').screens], []);
@@ -179,8 +181,8 @@ test('a source folder that does not exist reports the test file as not found', (
 });
 
 test('a screen ID the map lists twice counts as one screen', () =>
-  inTempSource({ 'src/Help.js': 'export default 1;\n', 'src/Help.spec.js': "import Help from './Help';\n" }, (dir) => {
+  inTempSource({ 'src/Help.js': 'export default 1;\n', 'src/Help.spec.js': "import Help from './Help';\n" }, (dir: string) => {
     const twice = { id: '/a#Help', sourceFiles: ['Help.js'] };
-    const linkOf = importLinker(path.join(dir, 'src'), { screens: [twice, twice, twice, { id: '/b#Help', sourceFiles: ['Help.js'] }] });
+    const linkOf = importLinker(path.join(dir, 'src'), { screens: [twice, twice, twice, { id: '/b#Help', sourceFiles: ['Help.js'] }] }) as (testFile: string) => Linked;
     assert.deepEqual([...linkOf('/ci/src/Help.spec.js').screens], [['/a#Help', ['Help.js']], ['/b#Help', ['Help.js']]]);
   }));

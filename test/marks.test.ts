@@ -7,7 +7,7 @@ import { addMark, classifyMarks, loadMarks } from '../src/marks.ts';
 
 const MAP = { screens: [{ id: '/home#Home' }, { id: '/lab#Lab' }], calls: [{ id: 'GET:/api/v1/document/list' }] };
 
-function withMarksDir(fn) {
+function withMarksDir(fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     return fn(path.join(dir, 'marks'));
@@ -17,7 +17,7 @@ function withMarksDir(fn) {
 }
 
 test('a mark is written with its target, status, note, author and date, and read back', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     assert.deepEqual(loadMarks(dir), []);
     const mark = addMark(dir, { target: { node: '/home#Home', depth: 'api' }, status: 'needs-more', note: 'no API test for the list', author: 'reviewer' }, new Date('2026-09-30T01:00:00Z'));
     assert.match(mark.id, /^[0-9a-f-]{36}$/);
@@ -28,7 +28,7 @@ test('a mark is written with its target, status, note, author and date, and read
 });
 
 test('each mark is a new file in its screen\'s folder, named by date, author and short ID, and earlier files are never rewritten', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     const first = addMark(dir, { target: { node: '/document/:id#DocumentDetail' }, status: 'fine', author: 'Kim Min' }, new Date('2026-09-30T01:00:00Z'));
     const firstFile = path.join(dir, '_document__id#DocumentDetail', `2026-09-30-Kim_Min-${first.id.slice(0, 8)}.json`);
     const before = fs.readFileSync(firstFile, 'utf8');
@@ -44,7 +44,7 @@ test('each mark is a new file in its screen\'s folder, named by date, author and
 });
 
 test('a screen ID that would point outside the marks folder still lands inside it', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     addMark(dir, { target: { node: '..' }, status: 'fine', author: 'a' });
     assert.deepEqual(fs.readdirSync(path.dirname(dir)), ['marks']);
     assert.equal(loadMarks(dir).length, 1);
@@ -52,7 +52,7 @@ test('a screen ID that would point outside the marks folder still lands inside i
 });
 
 test('which screen a mark belongs to comes from its target, not from the folder it sits in', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     addMark(dir, { target: { node: '/lab#Lab' }, status: 'missing', author: 'a' });
     fs.renameSync(path.join(dir, '_lab#Lab'), path.join(dir, 'moved'));
     assert.deepEqual(classifyMarks(loadMarks(dir), MAP).attached.map((m) => m.key), ['/lab#Lab']);
@@ -60,7 +60,7 @@ test('which screen a mark belongs to comes from its target, not from the folder 
 });
 
 test('a mark file that is not valid JSON is reported with its path', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     fs.mkdirSync(path.join(dir, '_lab#Lab'), { recursive: true });
     fs.writeFileSync(path.join(dir, '_lab#Lab', 'broken.json'), '{');
     assert.throws(() => loadMarks(dir), /broken\.json/);
@@ -68,7 +68,7 @@ test('a mark file that is not valid JSON is reported with its path', () => {
 });
 
 test('marking the same target again keeps the history, and the latest mark is the current one', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     addMark(dir, { target: { node: '/home#Home' }, status: 'needs-more', note: 'first', author: 'a' }, new Date('2026-09-30T01:00:00Z'));
     addMark(dir, { target: { node: '/home#Home' }, status: 'fine', note: 'second', author: 'b' }, new Date('2026-09-30T02:00:00Z'));
     addMark(dir, { target: { node: '/home#Home', depth: 'ui' }, status: 'missing', author: 'a' }, new Date('2026-09-30T03:00:00Z'));
@@ -82,7 +82,7 @@ test('marking the same target again keeps the history, and the latest mark is th
 });
 
 test('a mark whose node is gone from the map is detached, not dropped', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     addMark(dir, { target: { node: '/lab#Lab', depth: 'data' }, status: 'missing', author: 'a' });
     addMark(dir, { target: { node: '/settings#Settings' }, status: 'needs-more', note: 'renamed?', author: 'a' });
     const { attached, detached } = classifyMarks(loadMarks(dir), MAP);
@@ -93,7 +93,7 @@ test('a mark whose node is gone from the map is detached, not dropped', () => {
 });
 
 test('a mark on an API call or on one depth of it is attached while the call is on the map', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     addMark(dir, { target: { node: 'GET:/api/v1/document/list' }, status: 'missing', author: 'a' });
     addMark(dir, { target: { node: 'GET:/api/v1/document/list', depth: 'api' }, status: 'needs-more', author: 'a' });
     addMark(dir, { target: { node: 'DELETE:/api/v1/document/list' }, status: 'missing', author: 'a' });
@@ -109,20 +109,20 @@ const OPTION_MAP = {
 };
 
 test('a mark on an option value, or on one depth of it, is written with the option in its target and stays in the call\'s folder', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     const call = 'POST:/api/v1/report/export';
     const value = addMark(dir, { target: { node: call, option: { key: 'withHistory', value: true } }, status: 'missing', author: 'a' }, new Date('2026-10-01T01:00:00Z'));
     const depth = addMark(dir, { target: { depth: 'output', option: { value: false, key: 'withHistory' }, node: call }, status: 'needs-more', author: 'a' }, new Date('2026-10-01T02:00:00Z'));
     assert.deepEqual(value.target, { node: call, option: { key: 'withHistory', value: true } });
     assert.deepEqual(Object.keys(depth.target), ['node', 'option', 'depth']);
-    assert.deepEqual(Object.keys(depth.target.option), ['key', 'value']);
+    assert.deepEqual(Object.keys((depth.target as { option: object }).option), ['key', 'value']);
     assert.deepEqual(fs.readdirSync(dir), ['POST__api_v1_report_export']);
-    assert.deepEqual(loadMarks(dir).map((m) => m.target).sort((a, b) => (a.depth ?? '').localeCompare(b.depth ?? '')), [value.target, depth.target]);
+    assert.deepEqual(loadMarks(dir).map((m) => m.target).sort((a: { depth?: string }, b: { depth?: string }) => (a.depth ?? '').localeCompare(b.depth ?? '')), [value.target, depth.target]);
   });
 });
 
 test('marks on a call, its depth, its option values and their depths are kept apart, each with its own history', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     const node = 'POST:/api/v1/report/export';
     addMark(dir, { target: { node }, status: 'fine', author: 'a' });
     addMark(dir, { target: { node, depth: 'ui' }, status: 'fine', author: 'a' });
@@ -143,7 +143,7 @@ test('marks on a call, its depth, its option values and their depths are kept ap
 });
 
 test('a mark on an option the map no longer has is detached while the call stays, and so is an option mark on a screen', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     const node = 'POST:/api/v1/report/export';
     addMark(dir, { target: { node, option: { key: 'withHistory', value: true } }, status: 'missing', author: 'a' });
     addMark(dir, { target: { node, option: { key: 'withAttachments', value: true }, depth: 'output' }, status: 'missing', author: 'a' });
@@ -155,7 +155,7 @@ test('a mark on an option the map no longer has is detached while the call stays
 });
 
 test('a mark on a story is written with only the story in its target, in that story\'s folder under stories, and keeps its history', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     const first = addMark(dir, { target: { story: 'run-lab' }, status: 'missing', note: 'first', author: 'Kim Min' }, new Date('2026-10-01T01:00:00Z'));
     const second = addMark(dir, { target: { story: 'run-lab' }, status: 'needs-more', note: 'second', author: 'b' }, new Date('2026-10-02T01:00:00Z'));
     assert.deepEqual(first.target, { story: 'run-lab' });
@@ -173,7 +173,7 @@ test('a mark on a story is written with only the story in its target, in that st
 });
 
 test('a mark on a story with no story file is detached, while marks on screens stay as they are', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     addMark(dir, { target: { story: 'old-story' }, status: 'missing', note: 'gone?', author: 'a' });
     addMark(dir, { target: { story: 'run-lab' }, status: 'fine', author: 'a' });
     addMark(dir, { target: { node: '/home#Home' }, status: 'missing', author: 'a' });
@@ -184,7 +184,7 @@ test('a mark on a story with no story file is detached, while marks on screens s
 });
 
 test('a mark on a story never shares its history with a mark on a call, whatever the call\'s method', () => {
-  withMarksDir((dir) => {
+  withMarksDir((dir: string) => {
     const map = { screens: [], calls: [{ id: 'story:run-lab' }] };
     addMark(dir, { target: { story: 'run-lab' }, status: 'missing', author: 'a' }, new Date('2026-10-01T01:00:00Z'));
     addMark(dir, { target: { node: 'story:run-lab' }, status: 'fine', author: 'a' }, new Date('2026-10-02T01:00:00Z'));
@@ -211,8 +211,8 @@ for (const [name, input] of [
   ['no author', { target: { node: '/home#Home' }, status: 'fine', author: ' ' }],
 ]) {
   test(`a mark with ${name} is refused and nothing is written`, () => {
-    withMarksDir((dir) => {
-      assert.throws(() => addMark(dir, input));
+    withMarksDir((dir: string) => {
+      assert.throws(() => addMark(dir, input as Parameters<typeof addMark>[1]));
       assert.equal(fs.existsSync(dir), false);
     });
   });

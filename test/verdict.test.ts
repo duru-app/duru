@@ -15,7 +15,7 @@ const links = linkTests(config, map);
 const LIST = '/document/:tab_draft_done_#DocumentList';
 const DETAIL = '/document/:id#DocumentDetail';
 const verdicts = Object.values(links.nodes).flat().filter((t) => t.format === 'verdict');
-const byTitle = (title) => verdicts.find((t) => t.title === title);
+const byTitle = (title: string) => verdicts.find((t) => t.title === title);
 
 test('every word in the verdict table maps to its status and keeps the description after the em dash', () => {
   const rows = [
@@ -57,7 +57,7 @@ test('a verdict without an em dash has no description', () => {
 });
 
 test('the verdicts of one script attach separately to the nodes they name', () => {
-  const lines = (id) => links.nodes[id].filter((t) => t.file === 'document-checks.log').map((t) => t.line);
+  const lines = (id: string) => links.nodes[id].filter((t) => t.file === 'document-checks.log').map((t) => t.line);
   assert.deepEqual(lines(LIST), [3, 9, 11, 12]);
   assert.deepEqual(lines(DETAIL), [4, 5, 7, 8, 10]);
   assert.deepEqual(byTitle('empty form save'), {
@@ -81,7 +81,7 @@ test('depth comes from the config entry of each script folder', () => {
 });
 
 test('each untagged verdict line counts as an untagged test, and other files in the folder are not read', () => {
-  const own = { ...config, tests: config.tests.filter((t) => t.format === 'verdict') };
+  const own = { ...config, tests: config.tests.filter((t: { format: string }) => t.format === 'verdict') };
   const result = linkTests(own, map);
   assert.equal(result.untaggedCount, 3);
   assert.equal(result.unknownTags.length, 0);
@@ -102,7 +102,7 @@ test('untagged verdicts in logs of the same name in different folders are counte
   }
 });
 
-function withLog(body, fn) {
+function withLog(body: string, fn: (file: string) => unknown) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     const file = path.join(dir, 'checks.log');
@@ -114,7 +114,7 @@ function withLog(body, fn) {
 }
 
 test('tags lose their @ and every tag after the colon is returned, including depth tags', () => {
-  withLog('VERDICT a: FIXED — mail user@example.com @screen:/home#Home @depth:ui\n', (file) => {
+  withLog('VERDICT a: FIXED — mail user@example.com @screen:/home#Home @depth:ui\n', (file: string) => {
     const [v] = readVerdicts(file);
     assert.deepEqual(v.tags, ['screen:/home#Home', 'depth:ui']);
     assert.equal(v.detail, 'mail user@example.com');
@@ -122,17 +122,17 @@ test('tags lose their @ and every tag after the colon is returned, including dep
 });
 
 test('a log without verdict lines gives no tests, and a line with no colon is a pending verdict', () => {
-  withLog('build ok\r\nVERDICTS follow\r\n', (file) => assert.deepEqual(readVerdicts(file), []));
-  withLog('VERDICT half written\n', (file) => {
+  withLog('build ok\r\nVERDICTS follow\r\n', (file: string) => assert.deepEqual(readVerdicts(file), []));
+  withLog('VERDICT half written\n', (file: string) => {
     assert.deepEqual(readVerdicts(file), [{ title: 'half written', file: 'checks.log', line: 1, project: null, tags: [], status: 'pending' }]);
   });
 });
 
 test('extra spaces around the name are not part of the title', () => {
-  withLog('VERDICT  spaced name : FIXED\n', (file) => assert.equal(readVerdicts(file)[0].title, 'spaced name'));
+  withLog('VERDICT  spaced name : FIXED\n', (file: string) => assert.equal(readVerdicts(file)[0].title, 'spaced name'));
 });
 
 test('a log that cannot be read names the file', () => {
   const file = path.join(os.tmpdir(), 'duru-missing', 'checks.log');
-  assert.throws(() => readVerdicts(file), (err) => err.message.includes(file));
+  assert.throws(() => readVerdicts(file), (err: Error) => err.message.includes(file));
 });

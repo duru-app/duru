@@ -46,6 +46,8 @@ export const reportSettings = readSettings({ PAGE_SIZE: 50, REPORT_LIMIT: 10 } a
 `,
 };
 
+type BuiltMap = Awaited<ReturnType<typeof buildMap>>;
+
 const EDITS = [
   ['client/src/screens/Lab.tsx', "import { scheduleReport } from './scheduleReport';", "import { scheduleReport } from './scheduleReport';\nimport labSettings from './labSettings';"],
   ['client/src/screens/Lab.tsx', '<button onClick={() => scheduleReport(ids)}>Every week</button>', '<button onClick={() => scheduleReport(ids)}>Every week</button>\n      {labSettings.LAB_BETA && <Link to={Option.ROUTE_PATH.REPORT}>Report</Link>}'],
@@ -60,10 +62,14 @@ const EDITS = [
   ['client/src/screens/scheduleReport.ts', 'export ', "export const titleOf = (name: string) => `${name}`.toUpperCase();\n\nexport "],
 ];
 
-async function inCopy(config, fn, { files = FILES, edits = EDITS } = {}) {
+async function inCopy(
+  config: Record<string, unknown>,
+  fn: (dir: string, configFile: string) => void | Promise<void>,
+  { files = FILES, edits = EDITS }: { files?: Record<string, string>; edits?: string[][] } = {},
+) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
-    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src: string) => !src.startsWith(path.join(FIXTURE, 'out')) });
     for (const [rel, text] of Object.entries(files)) {
       fs.mkdirSync(path.dirname(path.join(copy, rel)), { recursive: true });
       fs.writeFileSync(path.join(copy, rel), text, { flag: 'wx' });
@@ -82,14 +88,14 @@ async function inCopy(config, fn, { files = FILES, edits = EDITS } = {}) {
   }
 }
 
-const lineOf = (dir, rel, text) => fs.readFileSync(path.join(dir, 'client/src', rel), 'utf8').split('\n').findIndex((l) => l.includes(text)) + 1;
-const screen = (map, id) => map.screens.find((s) => s.id === id);
-const need = (key, value) => ({ root: 'globalSettings', path: ['SYSTEM', key], need: 'on', default: value });
+const lineOf = (dir: string, rel: string, text: string) => fs.readFileSync(path.join(dir, 'client/src', rel), 'utf8').split('\n').findIndex((l: string) => l.includes(text)) + 1;
+const screen = (map: BuiltMap, id: string) => map.screens.find((s: { id: string }) => s.id === id);
+const need = (key: string, value: unknown) => ({ root: 'globalSettings', path: ['SYSTEM', key], need: 'on', default: value });
 
 test('a screen reading the object a settings function returns, declared in its own file, or exported by default or by name from another file, reads those settings', async () => {
-  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir, configFile) => {
+  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir: string, configFile: string) => {
     const map = await buildMap(loadConfig(configFile));
-    const reads = (id) => screen(map, id).settingReads.map((r) => `${r.key} ${r.file}:${r.line}`);
+    const reads = (id: string) => screen(map, id).settingReads.map((r: { key: string; file: string; line: number }) => `${r.key} ${r.file}:${r.line}`);
     assert.deepEqual(reads('/lab#Lab'), [`SYSTEM.LAB_BETA screens/Lab.tsx:${lineOf(dir, 'screens/Lab.tsx', 'labSettings.LAB_BETA')}`]);
     assert.deepEqual(reads('/home#Home'), [
       `SYSTEM.REPORT_LIMIT screens/Home.tsx:${lineOf(dir, 'screens/Home.tsx', 'reportSettings.REPORT_LIMIT')}`,
@@ -101,10 +107,10 @@ test('a screen reading the object a settings function returns, declared in its o
 });
 
 test('a link or a route guarded by the object a settings function returns opens under that setting, with the default passed to the function', async () => {
-  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir, configFile) => {
+  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir: string, configFile: string) => {
     const map = await buildMap(loadConfig(configFile));
     const line = lineOf(dir, 'screens/Lab.tsx', 'labSettings.LAB_BETA');
-    assert.deepEqual(screen(map, '/lab#Lab').links.find((l) => l.line === line).conditions, [
+    assert.deepEqual(screen(map, '/lab#Lab').links.find((l: { line: number }) => l.line === line).conditions, [
       { guard: 'labSettings.LAB_BETA', kinds: ['setting'], settings: [need('LAB_BETA', false)] },
     ]);
     const outbox = screen(map, '/outbox#Outbox');
@@ -114,13 +120,13 @@ test('a link or a route guarded by the object a settings function returns opens 
 });
 
 test('the objects passed to a settings function are setting defaults; a value the source does not show is incomplete, settingsDefaults wins over a different default, and two different defaults leave the value unknown', async () => {
-  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir, configFile) => {
+  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir: string, configFile: string) => {
     const map = await buildMap(loadConfig(configFile));
     assert.deepEqual(map.settingsDefaults, {
       globalSettings: { SYSTEM: { LAB_ENABLED: false, REPORT_ENABLED: true, OUTBOX_ENABLED: false, ARCHIVE_DAYS: 30, LAB_BETA: false, REPORT_LIMIT: 10 } },
     });
     assert.deepEqual(map.settingsDefaultsIncomplete, { globalSettings: [['SYSTEM', 'LAB_TITLE'], ['SYSTEM', 'PAGE_SIZE']] });
-    const at = (text) => `screens/labSettings.ts:${lineOf(dir, 'screens/labSettings.ts', text)}`;
+    const at = (text: string) => `screens/labSettings.ts:${lineOf(dir, 'screens/labSettings.ts', text)}`;
     assert.deepEqual(map.settingsCallNotices, [
       { file: 'screens/labSettings.ts', line: lineOf(dir, 'screens/labSettings.ts', 'REPORT_ENABLED'), reason: 'default of globalSettings.SYSTEM.REPORT_ENABLED differs from settingsDefaults, whose value the map keeps' },
       { file: 'screens/reportSettings.ts', line: 3, reason: `default of globalSettings.SYSTEM.PAGE_SIZE differs from the one at ${at('PAGE_SIZE')}, so the map leaves it unknown` },
@@ -131,7 +137,7 @@ test('the objects passed to a settings function are setting defaults; a value th
 
 test('extract prints the settings function calls it could not read in files the route files lead to and the functions called in none of them', async () => {
   const other = { ...READ_SETTINGS, name: 'readOther' };
-  await inCopy({ settingsFunctions: [READ_SETTINGS, other] }, async (dir, configFile) => {
+  await inCopy({ settingsFunctions: [READ_SETTINGS, other] }, async (dir: string, configFile: string) => {
     const run = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     const lines = run.stdout.split('\n').filter((l) => l.includes('settingsFunctions'));
@@ -146,7 +152,7 @@ test('extract prints the settings function calls it could not read in files the 
 
 test('without settingsFunctions the same source gives the map it gave before, with no settings function notices', async () => {
   const fixture = await buildMap(loadConfig(path.join(FIXTURE, 'config.json')));
-  await inCopy({}, async (dir, configFile) => {
+  await inCopy({}, async (dir: string, configFile: string) => {
     const map = await buildMap(loadConfig(configFile));
     assert.equal('settingsCallNotices' in map, false);
     assert.deepEqual(map.settingsDefaults, fixture.settingsDefaults);
@@ -157,12 +163,12 @@ test('without settingsFunctions the same source gives the map it gave before, wi
 });
 
 test('a settings function config that is not { import, name, root, section } with a root from settingsRoots, or whose relative import names no file, stops the run', async () => {
-  const refused = (entry, message) => inCopy({ settingsFunctions: [entry] }, async (dir, configFile) => assert.throws(() => loadConfig(configFile), message));
+  const refused = (entry: Record<string, unknown>, message: RegExp) => inCopy({ settingsFunctions: [entry] }, async (dir: string, configFile: string) => assert.throws(() => loadConfig(configFile), message));
   await refused({ ...READ_SETTINGS, root: 'settings' }, /settingsFunctions root "settings" is not listed in settingsRoots/);
   await refused({ ...READ_SETTINGS, defaults: true }, /settingsFunctions must be a list of \{ "import", "name", "root", "section" \}/);
   await refused({ ...READ_SETTINGS, section: 'SYSTEM.MENU' }, /settingsFunctions must be a list/);
   await refused({ ...READ_SETTINGS, name: 'read-settings' }, /settingsFunctions must be a list/);
-  await inCopy({ settingsFunctions: [{ ...READ_SETTINGS, import: './settings/gone' }] }, async (dir, configFile) => {
+  await inCopy({ settingsFunctions: [{ ...READ_SETTINGS, import: './settings/gone' }] }, async (dir: string, configFile: string) => {
     await assert.rejects(buildMap(loadConfig(configFile)), /settingsFunctions import \.\/settings\/gone names no file under srcRoot/);
   });
 });
@@ -179,9 +185,9 @@ test('a settings function imported through a file that re-exports it, and a resu
     ['client/src/screens/Profile.tsx', "import type { Settings } from '../store/settings';", "import type { Settings } from '../store/settings';\nimport { labSettings, profileSettings, reportSettings } from './allSettings';"],
     ['client/src/screens/Profile.tsx', '<section>', '<section title={`${labSettings.LAB_TITLE} ${reportSettings.REPORT_LIMIT} ${profileSettings.PROFILE_BADGE}`}>'],
   ];
-  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir, configFile) => {
+  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir: string, configFile: string) => {
     const map = await buildMap(loadConfig(configFile));
-    const keys = screen(map, '/profile#LazyPage.Profile').settingReads.map((r) => r.key).sort();
+    const keys = screen(map, '/profile#LazyPage.Profile').settingReads.map((r: { key: string }) => r.key).sort();
     assert.deepEqual(keys, ['SYSTEM.LAB_TITLE', 'SYSTEM.PROFILE_BADGE', 'SYSTEM.REPORT_ENABLED', 'SYSTEM.REPORT_LIMIT']);
     assert.equal(map.settingsDefaults.globalSettings.SYSTEM.PROFILE_BADGE, true);
   }, { files, edits });
@@ -192,10 +198,10 @@ test('a settings function called in a file the route files do not lead to, such 
     ...FILES,
     'client/src/screens/labSettings.test.ts': "import { readSettings } from '../settings/readSettings';\n\nconst testSettings = readSettings({ LAB_BETA: true, ONLY_IN_TEST: 1, REPORT_ENABLED: false });\n\nexport default testSettings;\n",
   };
-  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir, configFile) => {
+  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir: string, configFile: string) => {
     const map = await buildMap(loadConfig(configFile));
     assert.deepEqual(map.settingsDefaults.globalSettings.SYSTEM, { LAB_ENABLED: false, REPORT_ENABLED: true, OUTBOX_ENABLED: false, ARCHIVE_DAYS: 30, LAB_BETA: false, REPORT_LIMIT: 10 });
-    assert.deepEqual(map.settingsCallNotices.filter((n) => n.file === 'screens/labSettings.test.ts'), []);
+    assert.deepEqual(map.settingsCallNotices.filter((n: { file: string }) => n.file === 'screens/labSettings.test.ts'), []);
   }, { files });
 });
 
@@ -203,24 +209,24 @@ test('two calls passing a default the source does not show in full are not said 
   const files = {
     ...FILES,
     'client/src/screens/paging.ts': 'export const PAGE = Number(globalThis.PAGE ?? 20);\n',
-    'client/src/screens/labSettings.ts': FILES['client/src/screens/labSettings.ts'].replace("import { titleOf } from './scheduleReport';", "import { titleOf } from './scheduleReport';\nimport { PAGE } from './paging';").replace('PAGE_SIZE: 20', 'PAGE_SIZE: PAGE'),
+    'client/src/screens/labSettings.ts': FILES['client/src/screens/labSettings.ts']!.replace("import { titleOf } from './scheduleReport';", "import { titleOf } from './scheduleReport';\nimport { PAGE } from './paging';").replace('PAGE_SIZE: 20', 'PAGE_SIZE: PAGE'),
     'client/src/screens/reportSettings.ts': "import { readSettings } from '../settings/readSettings';\nimport { PAGE } from './paging';\n\nexport const reportSettings = readSettings({ PAGE_SIZE: PAGE, REPORT_LIMIT: 10 } as const);\n",
   };
-  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir, configFile) => {
+  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir: string, configFile: string) => {
     const map = await buildMap(loadConfig(configFile));
-    const pageSize = map.settingsCallNotices.filter((n) => n.reason.includes('PAGE_SIZE'));
+    const pageSize = map.settingsCallNotices.filter((n: { reason: string }) => n.reason.includes('PAGE_SIZE'));
     assert.deepEqual(pageSize, [{
       file: 'screens/reportSettings.ts',
       line: 4,
       reason: `the map cannot tell whether the default of globalSettings.SYSTEM.PAGE_SIZE here is the one at screens/labSettings.ts:${lineOf(dir, 'screens/labSettings.ts', 'PAGE_SIZE')}, since the source does not show both in full, so it leaves the default unknown`,
     }]);
     assert.equal(Object.hasOwn(map.settingsDefaults.globalSettings.SYSTEM, 'PAGE_SIZE'), false);
-    assert.ok(map.settingsDefaultsIncomplete.globalSettings.some((p) => p.join('.') === 'SYSTEM.PAGE_SIZE'));
+    assert.ok(map.settingsDefaultsIncomplete.globalSettings.some((p: string[]) => p.join('.') === 'SYSTEM.PAGE_SIZE'));
   }, { files });
 });
 
 test('a symbolic link under srcRoot that points nowhere does not stop the run', async () => {
-  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir, configFile) => {
+  await inCopy({ settingsFunctions: [READ_SETTINGS] }, async (dir: string, configFile: string) => {
     fs.symlinkSync(path.join(dir, 'client/src/screens/missing.ts'), path.join(dir, 'client/src/screens/gone.ts'));
     const map = await buildMap(loadConfig(configFile));
     assert.ok(screen(map, '/lab#Lab'));
@@ -228,11 +234,11 @@ test('a symbolic link under srcRoot that points nowhere does not stop the run', 
 });
 
 test('the README and the agent skill say what settingsFunctions takes and what its summary lines mean', () => {
-  const read = (rel) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
   assert.match(read('../README.md'), /`settingsFunctions` — functions whose returned object holds settings[\s\S]*`\{ "import", "name", "root", "section" \}`/);
   assert.match(read('../README.md'), /`settingsFunctions <file>:<line> <what>`/);
   const entry = read('../README.md').split('\n- ').find((item) => item.startsWith('`settingsFunctions` —'));
-  assert.doesNotMatch(entry, /is a read of/, 'which reads count is fixed by the tests, not written in the README');
+  assert.doesNotMatch(entry!, /is a read of/, 'which reads count is fixed by the tests, not written in the README');
   assert.match(read('../skills/duru/SKILL.md'), /add the function to\s+`settingsFunctions` as `\{ "import", "name", "root", "section" \}`/);
   assert.match(read('../skills/duru/SKILL.md'), /Lines starting with `settingsFunctions` in the `extract` summary/);
 });
