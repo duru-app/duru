@@ -29,7 +29,7 @@ interface SyntaxFailure extends Error {
   loc?: Position;
 }
 
-const JS_PLUGINS: ParserPlugin[] = ['jsx', 'classProperties', 'optionalChaining', 'nullishCoalescingOperator', 'dynamicImport'];
+const JS_PLUGINS: ParserPlugin[] = ['jsx', 'decorators', 'decoratorAutoAccessors', 'classProperties', 'optionalChaining', 'nullishCoalescingOperator', 'dynamicImport'];
 const TS_GRAMMARS: Record<string, ParserPlugin[]> = {
   '.ts': [...JS_PLUGINS.filter((p) => p !== 'jsx'), 'typescript'],
   '.tsx': [...JS_PLUGINS, 'typescript'],
@@ -50,6 +50,16 @@ function eachChild(node: ParseNode, visit: (child: ParseNode, replace: (next: Pa
     if (Array.isArray(value)) value.forEach((v, i) => typeof v?.type === 'string' && visit(v, (next) => (value[i] = next)));
     else if (typeof (value as ParseNode | null)?.type === 'string') visit(value as ParseNode, (next) => ((node as unknown as Record<string, unknown>)[key] = next));
   }
+}
+
+export function firstDecorator(root: ParseNode): Position | null {
+  let first = null as ParseNode | null;
+  const visit = (node: ParseNode) => {
+    if (node.type === 'Decorator' && (!first || node.start < first.start)) first = node;
+    eachChild(node, visit);
+  };
+  visit(root);
+  return first?.loc.start ?? null;
 }
 
 // 안쪽 값이 감싼 식의 위치를 이어받아야, 위치로 잘라 낸 조건식에 타입 문법이 소스에 적힌 대로 남는다.
