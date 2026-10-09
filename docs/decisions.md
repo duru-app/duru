@@ -684,6 +684,32 @@ taken out, and `document.signers[].authConfig.enabledAuth` of the flexible publi
 map is the same as without the key. Without the key, the into-sign 1.5.0 map, the 2.0.0 map with and without the
 body type keys and the two example maps are identical to main's apart from the time they were written.
 
+**Source files are read with Babel's standard `decorators` plugin, always on for `.js`, `.jsx`, `.ts` and `.tsx`.**
+A client using a decorator library (MobX, an inversion container) writes `@observable x = 1`, `@action method() {}`,
+`@dec export class` and `constructor(@Inject() private x: X)`. One such file in a screen's import range stopped the
+whole map with `DURU_SOURCE_SYNTAX_ERROR`. Alternatives compared:
+- The `decorators-legacy` plugin: it parses the same field, method and `@dec export class` shapes, but throws on
+  `export @dec class A {}`, which `decorators` reads.
+- A config item choosing the plugin: the two plugins read the same files of every app measured, so the item would
+  make a person decide something that changes no result, and a missing item would stop the map again.
+Parameter decorators are the one shape where the two differ the other way: `decorators-legacy` parses them, and
+`decorators` reports a recovered error. duru parses with `errorRecovery: true` and never reads the errors it
+recovered, so it goes on. `decoratorAutoAccessors` is on with it, for `@observable accessor x = 1`, the form MobX 6
+takes with standard decorators; a field or method named `accessor` still reads as before. The plugins only add
+grammar; what duru reads from a file without decorators does not change.
+Reading is not running: Node cannot run a decorator. A decorated file that a `constants` module imports still stops
+the map, and one that a `calledApiModules` file imports still leaves that file unrun. The error names the file, line
+and column of the first decorator, and every listed file that reaches the decorated file, directly or through
+another module, gets the same error; before, only the first got the parse error and the others `Cannot find module`.
+The one exception is an import cycle through the failing module: a module of the cycle that finished first still
+points at the copy that was never written, so a later file reaching the decorated file through it gets
+`Cannot find module`.
+Measured with @babel/parser 7.29.9: the two files that stopped the map of outline (`DocumentContext.tsx`) and
+appsmith (`WidgetProvider/factory/index.tsx`) parse with either plugin; over the 852 app files and 368 shared files
+of outline, the 4579 client files of appsmith and the 4307 webapp files of mattermost, both plugins give no
+failure, against 73, 1, 1 and 0 failures with neither. The two example maps and the into-sign 1.5.0 and 2.0.0 maps
+are identical to main's.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

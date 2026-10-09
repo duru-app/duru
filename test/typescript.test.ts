@@ -242,6 +242,31 @@ test('extract stops with one line naming the file, line and column of a syntax e
     assert.equal(fs.existsSync(path.join(copy, 'out/map.json')), false);
   }));
 
+test('decorators on class fields, accessors, methods and classes, before or after export, and on TypeScript parameters, do not stop the extraction of .ts, .tsx, .js or .jsx screens', async () => {
+  const typed = [
+    'declare const dec: any;',
+    '@dec export class Model { @dec value = 1; @dec accessor count = 0; @dec method() { return this.value; } constructor(@dec private readonly part: string) {} }',
+    'export @dec class Other { @dec static kind = 2; }',
+    '',
+  ].join(' ');
+  const untyped = [
+    'const dec = () => {};',
+    '@dec export class Model { @dec value = 1; @dec accessor count = 0; @dec method() { return this.value; } }',
+    'export @dec class Other { @dec static kind = 2; }',
+    '',
+  ].join(' ');
+  const before = await buildFixture();
+  await inCopy([
+    ['client/src/screens/Report.ts', 'export default function Report', `${typed}export default function Report`],
+    ['client/src/screens/Lab.tsx', 'export default function Lab', `${typed}export default function Lab`],
+    ['client/src/screens/DocumentDetail.js', 'export default function DocumentDetail', `${untyped}export default function DocumentDetail`],
+    ['client/src/screens/DocumentList.jsx', 'export default function DocumentList', `${untyped}export default function DocumentList`],
+  ], async (copy) => {
+    const after = await buildFixture(copy);
+    assert.deepEqual({ ...after, meta: null }, { ...before, meta: null });
+  });
+});
+
 const SETTINGS_FROM_FILE = [
   ['config.json', '"constant": "Settings.appSettings"', '"file": "store/settings.ts",\n      "const": "defaults"'],
 ];
@@ -372,6 +397,26 @@ test('a CommonJS import or export in a TypeScript constants module stops the ext
       inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", `import { joinPath } from './paths';\n${line}`]], (copy) => buildFixture(copy)),
       (e: Error) => {
         assert.equal(e.message.replace(/\S+client\//, 'client/'), `constants: client/src/_define/Option.ts:3: \`${shown}\` is CommonJS, which duru cannot run as an ES module`);
+        return true;
+      },
+    );
+  }
+});
+
+test('a decorator in a file a constants module imports, on a field or on a TypeScript constructor parameter property, stops the extraction with the file, line and column', async () => {
+  const cases = [
+    ['store.ts', 'const dec = (v: unknown) => v;\nexport class Store {\n  @dec count = 0;\n}\n', '3:3'],
+    ['store.js', 'const dec = (v) => v;\nexport class Store {\n  @dec count = 0;\n}\n', '3:3'],
+    ['store.ts', 'const dec = (...v: unknown[]) => undefined;\nexport class Store {\n  constructor(@dec private readonly name: string) {}\n}\n', '3:15'],
+  ];
+  for (const [file, source, place] of cases) {
+    await assert.rejects(
+      inCopy([['client/src/_define/Option.ts', "import { joinPath } from './paths';", "import { joinPath } from './paths';\nimport { Store } from './store';\nexport const STORE = Store;"]], (copy) => {
+        fs.writeFileSync(path.join(copy, 'client/src/_define', file), source);
+        return buildFixture(copy);
+      }),
+      (e: Error) => {
+        assert.equal(e.message.replace(/\S+client\//, 'client/'), `constants: client/src/_define/${file}:${place}: a decorator is not JavaScript that Node runs, so duru cannot run this file`);
         return true;
       },
     );

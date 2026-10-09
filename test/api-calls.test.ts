@@ -247,6 +247,23 @@ test('a listed file that fails to run is reported with the place of the error, a
   assert.equal(map.apiFunctions['contractApi.loadList'].endpoints.length, 1);
 });
 
+test('each listed file importing a decorated class, directly or through another module, is reported with the file, line and column of the decorator, and the other files still run', async () => {
+  const importer = (name: string, from: string) => `import { Store } from './${from}';\nexport const ${name} = { load: () => new Store() };\n`;
+  const listed = ['stored', 'storedAgain', 'storedThrough', 'storedThroughAgain'];
+  const configFile = fixtureCopy(
+    { ...CALLED, calledApiModules: [...listed.map((f) => `contracts/api/${f}.ts`), ...CALLED.calledApiModules] },
+    {
+      ...Object.fromEntries(listed.map((f) => [`contracts/api/${f}.ts`, importer(`${f}Api`, f.startsWith('storedThrough') ? 'stores' : 'store')])),
+      'contracts/api/stores.ts': "export { Store } from './store';\n",
+      'contracts/api/store.ts': 'const dec = (v: unknown) => v;\nexport class Store {\n  @dec count = 0;\n}\n',
+    },
+  );
+  const map = await build(configFile);
+  const error = `calledApiModules: ${path.join(path.dirname(configFile), 'client/src/contracts/api/store.ts')}:3:3: a decorator is not JavaScript that Node runs, so duru cannot run this file`;
+  assert.deepEqual(map.unrunApiModules, listed.map((f) => ({ file: `contracts/api/${f}.ts`, error })));
+  assert.equal(map.apiFunctions['contractApi.loadList'].endpoints.length, 1);
+});
+
 test('the new keys are refused when one comes without the other, a file is in both API lists, a place is not a number followed by keys, or a relative import names no file', async () => {
   const refused = (keys: Record<string, unknown>) => assert.throws(() => loadConfig(fixtureCopy(keys)));
   refused({ calledApiModules: CALLED.calledApiModules });

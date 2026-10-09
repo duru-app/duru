@@ -8,7 +8,7 @@ import _traverse from '@babel/traverse';
 import type { NodePath } from '@babel/traverse';
 import type { File } from '@babel/types';
 import { parse } from '@babel/parser';
-import { importsModule, isTypeOnlyLine, parseSource } from './parse.ts';
+import { firstDecorator, importsModule, isTypeOnlyLine, parseSource } from './parse.ts';
 import { importResolver } from './resolve.ts';
 import type { AliasRule, ImportResolver } from './resolve.ts';
 
@@ -141,6 +141,7 @@ function exportedNames(body: string) {
 export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['resolve'], { label = 'constants', fillMissing = false, replacement = () => null }: CopierOptions = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-'));
   const copied = new Map<string, string>();
+  const failed = new Map<string, unknown>();
   const stubbed = new Map<string, string>();
   const stubOf = new Map<string, string>();
   const stubNames = new Map<string, { body: string; names: Set<string> }>();
@@ -177,10 +178,22 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
   });
 
   function copy(absFile: string): string {
+    if (failed.has(absFile)) throw failed.get(absFile);
     if (copied.has(absFile)) return copied.get(absFile)!;
     const name = `m_${copied.size}_${path.basename(absFile).replace(/\W/g, '_')}.mjs`;
     copied.set(absFile, `./${name}`);
+    try {
+      return copyAs(absFile, name);
+    } catch (e) {
+      failed.set(absFile, e);
+      throw e;
+    }
+  }
+
+  function copyAs(absFile: string, name: string): string {
     const { src, ast } = parseSource(absFile, { asWritten: true });
+    const decorator = src.includes('@') ? firstDecorator(ast.program as unknown as ParseNode) : null;
+    if (decorator) throw new Error(`${label}: ${absFile}:${decorator.line}:${decorator.column + 1}: a decorator is not JavaScript that Node runs, so duru cannot run this file`);
     const edits: Edit[] = [];
     // 지운 자리의 줄바꿈을 남겨, 실행 오류의 줄 번호가 원래 파일과 맞게 한다.
     const lines = (start: number, end: number) => src.slice(start, end).replace(/[^\n]/g, '');
