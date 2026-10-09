@@ -63,7 +63,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   request it hands to the app's request function, or to `get`, `post`, `put`, `patch` and `delete` of the app's
   request object when `requestFunction` has `"object": true`. An `api method <name> ← <file>:<line>: <error>` line in the
   summary names a method that gave no address, so its calls are missing from the map and from every screen that
-  calls it; a `calledApiModules <file> did not run` line means none of that file's methods are on the map. Tell
+  calls it; a `calledApiModules <file> did not run` line means none of that file's methods are on the map, and a
+  `calledApiModules ran <import> as a stand-in, though it is <path> outside srcRoot` line names a package of the
+  repository whose API code was not run; ask the user to add its folder to `sourcePackages`. Tell
   the user which methods are missing; do not write tests or fixes for them as if their endpoints were gone.
   Most come from the fake values, for example a method that checks a value it is given or picks its address by
   it. A `{?}` in a call's address is a piece that came from a fake value, a path variable.

@@ -137,6 +137,15 @@ client with example results and a config to start from.
   ```
 
   to get `GET /api/v2/invoices` and `DELETE /api/v2/invoices/{?}`.
+- `sourcePackages` — packages of the same repository whose source duru reads like the app's own (optional),
+  each package name with its source folder as a path from the config file. An import of a package that is not
+  listed here runs as a value that does nothing, as an outside package does. For a client whose API class lives in
+  a workspace package:
+
+  ```json
+  "sourcePackages": { "@mattermost/client": "webapp/platform/client/src" }
+  ```
+
 - `bodyArgKeys` — properties of a call argument that hold the request body (optional), such as `data` in
   `ajaxExport({ data: { withHistory } })`. With `tsconfig`, `calledApiModules` and `body` in `requestFunction` (the
   place of the body among the values the request function is given, such as `"body": "0.body"`), duru also reads
@@ -302,6 +311,10 @@ listing the places whose value the source does not show in full.
   second). Its calls are missing from the map. A method that sends no request is not printed.
 - `calledApiModules <file> did not run: <file>:<line>: <error>` — a listed file that failed to run, so none of
   its functions or methods are on the map.
+- `calledApiModules ran <import> as a stand-in, though it is <path> outside srcRoot, imported by <files>` — an
+  import the listed files reach that duru ran as a value doing nothing, although it is a file or folder of the
+  repository outside `srcRoot`, reached through a tsconfig alias or a workspace link under `node_modules`. What it
+  holds is missing from the map; name its folder in `sourcePackages` to read it (`outsideStandIns`).
 - `body type <name>: <field> goes with <other field>, so it is not taken as an on/off option` — a true/false body
   field left out because it picks among more than two values with that other field. The other `body type <name>:`
   lines name what duru could not read, so those on/off options are missing from the map: `the body is typed

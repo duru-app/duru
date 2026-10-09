@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DEPTHS, READERS } from './test-links.ts';
 import { loadAliases } from './tsconfig.ts';
+import type { AliasRule } from './resolve.ts';
 
 const TEST_FORMATS = Object.keys(READERS);
 const NAME = '[A-Za-z_$][\\w$]*';
 const IDENTIFIER = new RegExp(`^${NAME}$`);
+const PACKAGE_NAME = /^(@[\w.-]+\/)?[\w.-]+$/;
 const ROLE_MEMBER = new RegExp(`^(${NAME})(?:\\[(?:'([^']*)'|"([^"]*)")\\]|\\.(${NAME}))$`);
 
 export function parseRoleEntry(entry: unknown) {
@@ -241,6 +243,17 @@ export function loadConfig(configPath: string) {
     throw new Error(`tsconfig must be the path of the tsconfig file that declares the import aliases, such as "client/tsconfig.json", not ${JSON.stringify(raw.tsconfig)}`);
   }
   const tsconfig = raw.tsconfig === undefined ? null : at(raw.tsconfig);
+  const sourcePackages = raw.sourcePackages ?? {};
+  if (!isPlainObject(sourcePackages) || !Object.entries(sourcePackages).every(([name, folder]) => PACKAGE_NAME.test(name) && isText(folder))) {
+    throw new Error(`sourcePackages must map package names the app imports to the folders holding their source, as paths from the config file, such as { "@mattermost/client": "webapp/platform/client/src" }, not ${JSON.stringify(raw.sourcePackages)}`);
+  }
+  for (const [name, folder] of Object.entries<string>(sourcePackages)) {
+    if (!fs.existsSync(at(folder)) || !fs.statSync(at(folder)).isDirectory()) throw new Error(`sourcePackages ${name}: ${folder} is not a folder`);
+  }
+  const packageRules: AliasRule[] = Object.entries<string>(sourcePackages).flatMap(([name, folder]) => [
+    { name, targets: [at(folder)], anywhere: true },
+    { name: `${name}/*`, targets: [path.join(at(folder), '*')], anywhere: true },
+  ]);
   const app = raw.app === undefined ? null : appSettings(raw.app, at, raw);
   const outDir = at(raw.outDir ?? '.');
   return {
@@ -252,7 +265,7 @@ export function loadConfig(configPath: string) {
     srcRoot: at(raw.srcRoot),
     routeFiles: routesFile === undefined ? [] : routeFilesOf(routesFile, at(raw.srcRoot)),
     tsconfig,
-    aliases: tsconfig && loadAliases(tsconfig),
+    aliases: tsconfig || packageRules.length ? [...packageRules, ...(tsconfig ? loadAliases(tsconfig) : [])] : null,
     roleIdentifiers: raw.roleIdentifiers ?? [],
     roleGuards: Object.fromEntries(Object.entries<any>(roleGuards).map(([guard, roles]) => [guard, [...new Set(roles)].sort()])),
     calledApiModules,

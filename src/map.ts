@@ -23,6 +23,7 @@ interface MapConfig extends AccessConfig {
   callLinks?: CallLink[];
   moves?: { from: string; to: string; reason: string }[];
   settingsFunctions: unknown[];
+  tsconfig?: string | null;
   aliases?: AliasRule[] | null;
 }
 
@@ -88,6 +89,7 @@ export type ScreenMap = {
   screens: MapScreen[];
   apiFunctions: ApiFunctions;
   unrunApiModules?: NonNullable<Client['unrunApiModules']>;
+  outsideStandIns?: Client['outsideStandIns'];
   bodyTypeNotices?: NonNullable<Client['bodyTypeNotices']>;
   deadCalls: { screen: string; fn: string; method: string | null; url: string | null; callSite: string }[];
   duplicateIds: { id: string; places: { file: string; line: number }[] }[];
@@ -219,7 +221,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, apiFunctions, unrunApiModules, bodyTypeNotices, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports } = await extractClient(config);
+  const { screens, apiFunctions, unrunApiModules, outsideStandIns, bodyTypeNotices, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -264,6 +266,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     screens: mapped,
     apiFunctions,
     ...(unrunApiModules && { unrunApiModules }),
+    ...(outsideStandIns.length && { outsideStandIns }),
     ...(bodyTypeNotices && { bodyTypeNotices }),
     deadCalls,
     duplicateIds,
@@ -279,6 +282,6 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     settingsDefaults,
     settingsDefaultsIncomplete,
     ...(config.settingsFunctions.length > 0 && { settingsCallNotices }),
-    ...(config.aliases && { unresolvedAliasImports }),
+    ...(config.tsconfig && { unresolvedAliasImports }),
   };
 }
