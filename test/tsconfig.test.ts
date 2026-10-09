@@ -9,6 +9,9 @@ import { importLinker } from '../src/import-links.ts';
 import { buildMap } from '../src/map.ts';
 import { linkTests } from '../src/test-links.ts';
 
+type BuiltMap = Awaited<ReturnType<typeof buildMap>>;
+type Linked = Extract<ReturnType<ReturnType<typeof importLinker>>, { file: string }>;
+
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 const TSCONFIG = `{
@@ -18,16 +21,16 @@ const TSCONFIG = `{
   },
 }
 `;
-const screen = (map, id) => map.screens.find((s) => s.id === id);
-const withoutRun = ({ meta, ...rest }) => rest;
+const screen = (map: BuiltMap, id: string) => map.screens.find((s: { id: string }) => s.id === id);
+const withoutRun = ({ meta, ...rest }: { meta?: unknown; [key: string]: unknown }) => rest;
 
-async function inApp(callback, { rewrite = false, tsconfig = true } = {}) {
+async function inApp(callback: (dir: string) => void | Promise<void>, { rewrite = false, tsconfig = true }: { rewrite?: boolean; tsconfig?: boolean } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-alias-'));
   try {
-    fs.cpSync(FIXTURE, dir, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    fs.cpSync(FIXTURE, dir, { recursive: true, filter: (src: string) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const src = path.join(dir, 'client/src');
     if (rewrite) {
-      for (const file of fs.readdirSync(src, { recursive: true }).filter((f) => f.endsWith('.js'))) {
+      for (const file of (fs.readdirSync(src, { recursive: true }) as string[]).filter((f) => f.endsWith('.js'))) {
         alias(path.join(src, file), src);
       }
     }
@@ -39,9 +42,9 @@ async function inApp(callback, { rewrite = false, tsconfig = true } = {}) {
   }
 }
 
-const edit = (file, change) => fs.writeFileSync(file, JSON.stringify(change(JSON.parse(fs.readFileSync(file, 'utf8')))));
+const edit = <T extends object>(file: string, change: (config: T) => object) => fs.writeFileSync(file, JSON.stringify(change(JSON.parse(fs.readFileSync(file, 'utf8')))));
 
-function alias(file, src) {
+function alias(file: string, src: string) {
   const text = fs.readFileSync(file, 'utf8').replace(/(from |import\(|require\()'(\.\.?\/[^']*)'/g, (_, head, spec) => {
     return `${head}'@app/${path.relative(src, path.resolve(path.dirname(file), spec)).split(path.sep).join('/')}'`;
   });
@@ -51,7 +54,7 @@ function alias(file, src) {
 const baseline = await buildMap(loadConfig(path.join(FIXTURE, 'config.json')));
 
 test('a client that writes every import as a tsconfig alias gives the same map as one that writes them as relative paths', async () => {
-  await inApp(async (dir) => {
+  await inApp(async (dir: string) => {
     assert.match(fs.readFileSync(path.join(dir, 'client/src/Routes.js'), 'utf8'), /from '@app\/components\/Home'/);
     const map = await buildMap(loadConfig(path.join(dir, 'config.json')));
     assert.deepEqual(map.unresolvedAliasImports, []);
@@ -61,7 +64,7 @@ test('a client that writes every import as a tsconfig alias gives the same map a
 });
 
 test('without a tsconfig entry an import written as an alias is an outside package that the screen does not follow', async () => {
-  await inApp(async (dir) => {
+  await inApp(async (dir: string) => {
     const home = path.join(dir, 'client/src/components/Home.js');
     fs.writeFileSync(home, fs.readFileSync(home, 'utf8').replace("'./DocumentTable'", "'@app/components/DocumentTable'"));
     const map = await buildMap(loadConfig(path.join(dir, 'config.json')));
@@ -71,7 +74,7 @@ test('without a tsconfig entry an import written as an alias is an outside packa
 });
 
 test('a screen takes the API calls, settings reads and links of a file it imports through an alias', async () => {
-  await inApp(async (dir) => {
+  await inApp(async (dir: string) => {
     const home = path.join(dir, 'client/src/components/Home.js');
     const text = fs.readFileSync(home, 'utf8');
     fs.writeFileSync(home, text.replace("'./DocumentTable'", "'@app/components/DocumentTable'"));
@@ -79,44 +82,44 @@ test('a screen takes the API calls, settings reads and links of a file it import
     const expected = screen(baseline, '/home#Home');
     assert.deepEqual(screen(map, '/home#Home'), expected);
     assert.ok(expected.sourceFiles.includes('components/DocumentTable.js'));
-    assert.ok(expected.apiCalls.some((c) => c.file === 'components/DocumentTable.js'));
-    assert.ok(expected.settingReads.some((r) => r.file === 'components/DocumentTable.js'));
-    assert.ok(expected.links.some((l) => l.file === 'components/DocumentTable.js'));
+    assert.ok(expected.apiCalls.some((c: { file: string }) => c.file === 'components/DocumentTable.js'));
+    assert.ok(expected.settingReads.some((r: { file: string }) => r.file === 'components/DocumentTable.js'));
+    assert.ok(expected.links.some((l: { file: string }) => l.file === 'components/DocumentTable.js'));
   });
 });
 
 test('a constants module that imports through an alias still gets the values it imports', async () => {
-  await inApp(async (dir) => {
+  await inApp(async (dir: string) => {
     const option = path.join(dir, 'client/src/_define/Option.js');
     fs.writeFileSync(option, fs.readFileSync(option, 'utf8').replace("'./Enum'", "'@app/_define/Enum'"));
     const map = await buildMap(loadConfig(path.join(dir, 'config.json')));
     assert.deepEqual(withoutRun(map).apiFunctions, withoutRun(baseline).apiFunctions);
-    assert.deepEqual(map.screens.map((s) => s.id), baseline.screens.map((s) => s.id));
+    assert.deepEqual(map.screens.map((s: { id: string }) => s.id), baseline.screens.map((s: { id: string }) => s.id));
   });
 });
 
 test('a constantStubs entry for an import is used even when a tsconfig alias would find a file for it', async () => {
-  await inApp(async (dir) => {
+  await inApp(async (dir: string) => {
     const option = path.join(dir, 'client/src/_define/Option.js');
     fs.writeFileSync(option, fs.readFileSync(option, 'utf8').replace("'./Enum'", "'@app/_define/Enum'"));
     fs.writeFileSync(path.join(dir, 'client/src/_define/Enum.js'), "throw new Error('the real module was run');\n");
     const enumSource = fs.readFileSync(path.join(FIXTURE, 'client/src/_define/Enum.js'), 'utf8');
-    edit(path.join(dir, 'config.json'), ({ constants: { Option }, ...config }) => ({ ...config, constants: { Option }, constantStubs: { '@app/_define/Enum': enumSource } }));
+    edit(path.join(dir, 'config.json'), ({ constants: { Option }, ...config }: { constants: { Option: unknown } }) => ({ ...config, constants: { Option }, constantStubs: { '@app/_define/Enum': enumSource } }));
     const map = await buildMap(loadConfig(path.join(dir, 'config.json')));
-    assert.deepEqual(map.screens.map((s) => s.path), baseline.screens.map((s) => s.path));
+    assert.deepEqual(map.screens.map((s: { path: string }) => s.path), baseline.screens.map((s: { path: string }) => s.path));
   });
 });
 
 test('a constantStubs entry for a relative import is not used while the file it names is there, as before', async () => {
-  await inApp(async (dir) => {
+  await inApp(async (dir: string) => {
     edit(path.join(dir, 'config.json'), (config) => ({ ...config, constantStubs: { './Enum': "throw new Error('the stub was run');" } }));
     const map = await buildMap(loadConfig(path.join(dir, 'config.json')));
-    assert.deepEqual(map.screens.map((s) => s.path), baseline.screens.map((s) => s.path));
+    assert.deepEqual(map.screens.map((s: { path: string }) => s.path), baseline.screens.map((s: { path: string }) => s.path));
   });
 });
 
 test('a unit test that imports a screen file through an alias is linked to the screen like one that imports it by a relative path', async () => {
-  await inApp(async (dir) => {
+  await inApp(async (dir: string) => {
     const config = loadConfig(path.join(dir, 'config.json'));
     const map = await buildMap(config);
     const links = linkTests(config, map);
@@ -127,13 +130,13 @@ test('a unit test that imports a screen file through an alias is linked to the s
     assert.deepEqual(links.importNotices, expected.importNotices);
 
     const spec = path.join(config.srcRoot, 'components/Help.spec.js');
-    assert.deepEqual([...importLinker(config.srcRoot, map, config.aliases)(spec).screens.keys()], ['/help#Help']);
-    assert.deepEqual([...importLinker(config.srcRoot, map)(spec).screens.keys()], []);
+    assert.deepEqual([...(importLinker(config.srcRoot, map, config.aliases) as (testFile: string) => Linked)(spec).screens.keys()], ['/help#Help']);
+    assert.deepEqual([...(importLinker(config.srcRoot, map) as (testFile: string) => Linked)(spec).screens.keys()], []);
   }, { rewrite: true });
 });
 
 test('extract prints each import that matches an alias but finds no file, with the number of files that import it', async () => {
-  await inApp(async (dir) => {
+  await inApp(async (dir: string) => {
     const src = path.join(dir, 'client/src/components');
     for (const name of ['Home', 'Help', 'AdminMember']) {
       const file = path.join(src, `${name}.js`);
@@ -151,7 +154,7 @@ test('extract prints each import that matches an alias but finds no file, with t
 });
 
 test('a config without tsconfig prints no alias lines and puts no alias list on the map', async () => {
-  await inApp(async (dir) => {
+  await inApp(async (dir: string) => {
     const stdout = execFileSync(process.execPath, [CLI, 'extract', path.join(dir, 'config.json')], { encoding: 'utf8' });
     assert.doesNotMatch(stdout, /tsconfig/);
     assert.equal('unresolvedAliasImports' in JSON.parse(fs.readFileSync(path.join(dir, 'out/map.json'), 'utf8')), false);
@@ -159,9 +162,9 @@ test('a config without tsconfig prints no alias lines and puts no alias list on 
 });
 
 test('a tsconfig entry that names no file, is not a path or holds nothing readable ends in an error that says what is wrong', () =>
-  inApp((dir) => {
+  inApp((dir: string) => {
     const config = path.join(dir, 'config.json');
-    const set = (tsconfig) => edit(config, (c) => ({ ...c, tsconfig }));
+    const set = (tsconfig: unknown) => edit(config, (c) => ({ ...c, tsconfig }));
     set('client/missing.json');
     assert.throws(() => loadConfig(config), /tsconfig file .*client\/missing\.json does not exist/);
     set(['client/tsconfig.json']);
@@ -178,7 +181,7 @@ test('a tsconfig entry that names no file, is not a path or holds nothing readab
   }));
 
 test('the command line stops with the reason when the tsconfig cannot be used', () => {
-  return inApp((dir) => {
+  return inApp((dir: string) => {
     edit(path.join(dir, 'config.json'), (c) => ({ ...c, tsconfig: 'client/missing.json' }));
     const run = spawnSync(process.execPath, [CLI, 'extract', path.join(dir, 'config.json')], { encoding: 'utf8' });
     assert.notEqual(run.status, 0);
@@ -187,7 +190,7 @@ test('the command line stops with the reason when the tsconfig cannot be used', 
 });
 
 test('tsconfig is read relative to the folder of the config file, like srcRoot', () => {
-  return inApp((dir) => {
+  return inApp((dir: string) => {
     const config = loadConfig(path.join(dir, 'config.json'));
     assert.equal(config.tsconfig, path.join(dir, 'client/tsconfig.json'));
     assert.deepEqual(config.aliases, [{ name: '@app/*', targets: [path.join(dir, 'client/src/*')] }]);

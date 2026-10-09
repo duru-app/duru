@@ -8,15 +8,17 @@ import { readTrace } from '../src/playwright-trace.ts';
 
 const RESULTS = path.join(import.meta.dirname, 'fixtures/app/results/playwright-traced');
 const REPORT = path.join(RESULTS, 'visits.json');
-const tests = readPlaywright(REPORT);
-const traceOf = (title) => tests.find((t) => t.title === title).trace;
-const address = (url) => url.replace(/^https?:\/\/[^/]+/, '');
-const steps = (title) => readTrace(traceOf(title)).steps.map((s) => `${s.kind} ${address(s.url)}`);
-const requests = (title) => readTrace(traceOf(title)).requests.map((r) => `${r.method} ${address(r.url)}`);
+type Traced = Extract<ReturnType<typeof readTrace>, { steps: unknown }>;
 
-function storedZip(files) {
-  const bodies = [];
-  const directory = [];
+const tests = readPlaywright(REPORT)!;
+const traceOf = (title: string) => tests.find((t) => t.title === title)!.trace;
+const address = (url: string) => url.replace(/^https?:\/\/[^/]+/, '');
+const steps = (title: string) => (readTrace(traceOf(title)!) as Traced).steps.map((s) => `${s.kind} ${address(s.url)}`);
+const requests = (title: string) => (readTrace(traceOf(title)!) as Traced).requests.map((r) => `${r.method} ${address(r.url)}`);
+
+function storedZip(files: Record<string, string>) {
+  const bodies: Buffer[] = [];
+  const directory: Buffer[] = [];
   let offset = 0;
   for (const [name, content] of Object.entries(files)) {
     const nameBytes = Buffer.from(name);
@@ -43,7 +45,7 @@ function storedZip(files) {
   return Buffer.concat([...bodies, ...directory, end]);
 }
 
-function inTempDir(fn) {
+function inTempDir(fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-trace-'));
   try {
     return fn(dir);
@@ -108,11 +110,11 @@ test('an interaction that ended in an error is not counted, even when its input 
 });
 
 test('a test that opened no page has no steps but keeps its requests', () => {
-  assert.deepEqual(readTrace(traceOf('calls the server without opening a page')), { steps: [], requests: [{ method: 'POST', url: 'http://127.0.0.1:4598/api/v1/press' }] });
+  assert.deepEqual(readTrace(traceOf('calls the server without opening a page')!), { steps: [], requests: [{ method: 'POST', url: 'http://127.0.0.1:4598/api/v1/press' }] });
 });
 
 test('an app opened from a file counts like one opened from a server', () => {
-  const opened = readTrace(traceOf('opens the app from a file')).steps;
+  const opened = (readTrace(traceOf('opens the app from a file')!) as Traced).steps;
   assert.deepEqual(opened.map((s) => s.kind), ['visit', 'interact']);
   assert.match(opened[0].url, /^file:.*\/build\/index\.html$/);
 });
@@ -126,24 +128,24 @@ test('requests come back with their method and address in the order they were se
 });
 
 test('a trace recorded under another folder is found next to the report', () => {
-  const recorded = JSON.parse(fs.readFileSync(REPORT, 'utf8')).suites.flatMap((s) => s.specs).find((s) => s.title === 'wanders off the map');
+  const recorded = JSON.parse(fs.readFileSync(REPORT, 'utf8')).suites.flatMap((s: { specs: unknown[] }) => s.specs).find((s: { title: string }) => s.title === 'wanders off the map');
   assert.equal(fs.existsSync(recorded.tests[0].results[0].attachments[0].path), false);
   assert.equal(traceOf('wanders off the map'), path.join(RESULTS, 'test-results/visits-wanders-off-the-map-chromium/trace.zip'));
 });
 
 test('a trace file of another test lying next to the report is not taken for a test whose own trace is gone', () =>
-  inTempDir((dir) => {
+  inTempDir((dir: string) => {
     fs.writeFileSync(path.join(dir, 'trace.zip'), '');
     const recorded = '/builds/app/test-results/a-one/trace.zip';
     const report = path.join(dir, 'report.json');
     fs.writeFileSync(report, JSON.stringify({
       suites: [{ title: 'a.spec.ts', specs: [{ title: 'one', file: 'a.spec.ts', line: 1, tests: [{ projectName: 'chromium', status: 'expected', results: [{ attachments: [{ name: 'trace', path: recorded }] }] }] }] }],
     }));
-    assert.equal(readPlaywright(report)[0].trace, recorded);
+    assert.equal(readPlaywright(report)![0].trace, recorded);
   }));
 
 test('the copy next to the report wins over the recorded path when both exist', () =>
-  inTempDir((dir) => {
+  inTempDir((dir: string) => {
     const recorded = path.join(dir, 'project/test-results/a-one/trace.zip');
     const copy = path.join(dir, 'archive/test-results/a-one/trace.zip');
     for (const file of [recorded, copy]) {
@@ -154,7 +156,7 @@ test('the copy next to the report wins over the recorded path when both exist', 
     fs.writeFileSync(report, JSON.stringify({
       suites: [{ title: 'a.spec.ts', specs: [{ title: 'one', file: 'a.spec.ts', line: 1, tests: [{ projectName: 'chromium', status: 'expected', results: [{ attachments: [{ name: 'trace', path: recorded }] }] }] }] }],
     }));
-    assert.equal(readPlaywright(report)[0].trace, copy);
+    assert.equal(readPlaywright(report)![0].trace, copy);
   }));
 
 test('a test that ran without tracing has no trace', () => {
@@ -162,36 +164,36 @@ test('a test that ran without tracing has no trace', () => {
 });
 
 test('a test that ran again uses the trace of its last run', () =>
-  inTempDir((dir) => {
+  inTempDir((dir: string) => {
     const first = path.join(dir, 'first.zip');
     const last = path.join(dir, 'last.zip');
     fs.writeFileSync(first, '');
     fs.writeFileSync(last, '');
-    const attachment = (file) => [{ name: 'trace', contentType: 'application/zip', path: file }];
+    const attachment = (file: string) => [{ name: 'trace', contentType: 'application/zip', path: file }];
     const report = path.join(dir, 'report.json');
     fs.writeFileSync(report, JSON.stringify({
       suites: [{ title: 'a.spec.ts', specs: [{ title: 'retried', file: 'a.spec.ts', line: 1, tests: [{ projectName: 'chromium', status: 'flaky', results: [{ attachments: attachment(first) }, { attachments: attachment(last) }] }] }] }],
     }));
-    assert.equal(readPlaywright(report)[0].trace, last);
+    assert.equal(readPlaywright(report)![0].trace, last);
   }));
 
 test('a trace that is missing, broken or empty of browser records gives a reason instead of steps', () =>
-  inTempDir((dir) => {
+  inTempDir((dir: string) => {
     assert.deepEqual(readTrace(path.join(dir, 'gone.zip')), { reason: 'trace 파일이 없습니다' });
     const broken = path.join(dir, 'broken.zip');
     fs.writeFileSync(broken, 'this is not a zip file at all');
-    assert.match(readTrace(broken).reason, /^trace 파일을 열지 못했습니다: /);
+    assert.match((readTrace(broken) as { reason: string }).reason, /^trace 파일을 열지 못했습니다: /);
     const runnerOnly = path.join(dir, 'runner-only.zip');
     fs.writeFileSync(runnerOnly, storedZip({ 'test.trace': `${JSON.stringify({ type: 'context-options', version: 8 })}\n` }));
     assert.deepEqual(readTrace(runnerOnly), { reason: 'trace 파일에서 브라우저 기록을 찾지 못했습니다' });
   }));
 
 test('a trace recorded without snapshots gives a reason, since it cannot tell which address was open', () => {
-  assert.deepEqual(readTrace(traceOf('presses the button without snapshots')), { reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' });
+  assert.deepEqual(readTrace(traceOf('presses the button without snapshots')!), { reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' });
 });
 
 test('a trace of a version duru does not know gives a reason that names the version', () =>
-  inTempDir((dir) => {
+  inTempDir((dir: string) => {
     const file = path.join(dir, 'newer.zip');
     fs.writeFileSync(file, storedZip({ '0-trace.trace': `${JSON.stringify({ type: 'context-options', version: 99, playwrightVersion: '9.9.9' })}\n` }));
     assert.deepEqual(readTrace(file), { reason: '두루가 모르는 trace 파일 버전입니다: 99 (Playwright 9.9.9)' });

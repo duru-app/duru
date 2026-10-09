@@ -8,36 +8,36 @@ import { nameFollower } from '../src/follow-names.ts';
 import { parseSource } from '../src/parse.ts';
 
 const traverse = _traverse.default ?? _traverse;
-const dirs = [];
+const dirs: string[] = [];
 after(() => dirs.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
 
-function follow(files) {
+function follow(files: Record<string, string>) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-follow-'));
   dirs.push(dir);
   for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), text);
-  const resolve = (from, spec) => {
+  const resolve = (from: string, spec: string) => {
     if (!spec.startsWith('.')) return null;
     const base = path.join(path.dirname(from), spec);
     return ['', '.ts', '.tsx', '.js'].map((ext) => base + ext).find((f) => fs.existsSync(f) && fs.statSync(f).isFile()) ?? null;
   };
   const parsed = new Map();
-  const parse = (file) => {
+  const parse = (file: string) => {
     if (!parsed.has(file)) parsed.set(file, parseSource(file));
     return parsed.get(file);
   };
-  const sitesOf = (file) => {
-    const found = [];
+  const sitesOf = (file: string) => {
+    const found: { start: number; site: string }[] = [];
     traverse(parse(file).ast, {
       CallExpression(p) {
-        if (p.node.callee.type === 'Identifier' && p.node.callee.name === 'send') found.push({ start: p.node.start, site: p.node.arguments[0].value });
+        if (p.node.callee.type === 'Identifier' && p.node.callee.name === 'send') found.push({ start: p.node.start!, site: (p.node.arguments[0] as { value: string }).value });
       },
     });
     return found;
   };
   const follower = nameFollower({ parse, resolve, sitesOf });
-  const at = (file) => path.join(dir, file);
-  const reached = (file, name = null, closed = []) => [...follower.reach([{ file: at(file), name }], (f) => !closed.map(at).includes(f))].sort();
-  return { at, reached, origin: (file, name, end) => follower.origin(at(file), name, (f) => f === at(end)) };
+  const at = (file: string) => path.join(dir, file);
+  const reached = (file: string, name: string | null = null, closed: string[] = []) => [...follower.reach([{ file: at(file), name }], (f) => !closed.map(at).includes(f!))].sort();
+  return { at, reached, origin: (file: string, name: string, end: string) => follower.origin(at(file), name, (f) => f === at(end)) };
 }
 
 test('a name reaches its declaration, the declarations it uses, top-level statements of its file and assignments to its members, and nothing else', () => {
