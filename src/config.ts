@@ -237,7 +237,6 @@ export function loadConfig(configPath: string) {
       + 'or, when the API code calls get, post, put, patch and delete of a request object with the address first, { "import", "name", "object": true }, '
       + `such as { "import": "axios", "name": "default", "object": true }, not ${JSON.stringify(requestFunction)}`);
   }
-  if (calledApiModules.length && !requestFunction) throw new Error('calledApiModules needs requestFunction, the function the app sends its API requests through, which duru records in place of');
   if (requestFunction && !calledApiModules.length) throw new Error('requestFunction is set but calledApiModules lists no file to call');
   if (raw.tsconfig !== undefined && !isText(raw.tsconfig)) {
     throw new Error(`tsconfig must be the path of the tsconfig file that declares the import aliases, such as "client/tsconfig.json", not ${JSON.stringify(raw.tsconfig)}`);

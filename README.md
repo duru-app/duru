@@ -102,9 +102,11 @@ client with example results and a config to start from.
   calls every exported function, every method of every exported object and every static method of every exported
   class once with fake values, and puts the method and address of each request on the map as that function's or
   method's call, with the prefix the app adds. A piece of an address that comes from a fake value is written `{?}`.
-  Outside packages that `constantStubs` does not give are filled with values that do nothing. A call stopped after
-  one second counts as failed. Two listed files exporting different objects under one name, or a name `apiModules`
-  already has, get the file path in front of the name. On into-sign 2.0.0:
+  Requests the listed files send with the global `fetch` are recorded too, so API code that sends only through
+  `fetch` lists its files in `calledApiModules` and leaves `requestFunction` out. Outside packages that
+  `constantStubs` does not give are filled with values that do nothing. A call stopped after one second counts as
+  failed. Two listed files exporting different objects under one name, or a name `apiModules` already has, get the
+  file path in front of the name. On into-sign 2.0.0:
 
   ```json
   "calledApiModules": ["domains/user/api/index.ts", "domains/document/api/index.ts", "domains/signing/api/index.ts"],
@@ -311,6 +313,11 @@ listing the places whose value the source does not show in full.
   second). Its calls are missing from the map. A method that sends no request is not printed.
 - `calledApiModules <file> did not run: <file>:<line>: <error>` — a listed file that failed to run, so none of
   its functions or methods are on the map.
+- `calledApiModules <file> recorded no request; without requestFunction only requests sent with fetch are recorded`
+  — with `requestFunction` left out, a listed file none of whose methods sent a request with `fetch`. Its API code
+  may send through a function or object that `requestFunction` should name, or its methods may have stopped on the
+  fake values (`silentApiModules`). When no listed file sends a request with `fetch`, the run stops with an error
+  that also gives the cause for each listed file that did not run.
 - `calledApiModules ran <import> as a stand-in, though it is <path> outside srcRoot, imported by <files>` — an
   import the listed files reach that duru ran as a value doing nothing, although it is a file or folder of the
   repository outside `srcRoot`, reached through a tsconfig alias or a workspace link under `node_modules`. What it
