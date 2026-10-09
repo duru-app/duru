@@ -8,15 +8,17 @@ import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { editStory, loadStories } from '../src/stories.ts';
 
+type Candidate = Parameters<typeof acceptCandidate>[1];
+
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const EXAMPLE_STORIES = path.join(FIXTURE, 'example-stories');
 const EXAMPLE_VISITS = path.join(FIXTURE, 'example-visits');
 const config = loadConfig(path.join(FIXTURE, 'config.json'));
 const map = await buildMap(config);
 
-const shape = (c) => ({ name: c.name, screens: c.screens, source: c.source, stepRanges: c.stepRanges });
+const shape = (c: Candidate) => ({ name: c.name, screens: c.screens, source: c.source, stepRanges: c.stepRanges });
 
-function withFolder(files, fn) {
+function withFolder(files: Record<string, unknown>, fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     for (const [name, body] of Object.entries(files)) {
@@ -29,21 +31,21 @@ function withFolder(files, fn) {
   }
 }
 
-const withStoryCopy = (fn) => withFolder({}, (dir) => {
+const withStoryCopy = (fn: (dir: string) => void) => withFolder({}, (dir: string) => {
   fs.cpSync(EXAMPLE_STORIES, dir, { recursive: true });
   return fn(dir);
 });
 
-const candidatesOf = (patch, onMap = map, mapFile = path.join(config.outDir, 'map.json')) => storyCandidates({ ...config, visitRecords: [EXAMPLE_VISITS], storiesDir: EXAMPLE_STORIES, ...patch }, onMap, mapFile);
-const recordsIn = (records) => Object.fromEntries(Object.entries(records).map(([name, steps]) => [name, steps.map((url) => ({ url }))]));
+const candidatesOf = (patch: Record<string, unknown> = {}, onMap = map, mapFile = path.join(config.outDir, 'map.json')) => storyCandidates({ ...config, visitRecords: [EXAMPLE_VISITS], storiesDir: EXAMPLE_STORIES, ...patch }, onMap, mapFile);
+const recordsIn = (records: Record<string, string[]>) => Object.fromEntries(Object.entries(records).map(([name, steps]) => [name, steps.map((url: string) => ({ url }))]));
 
 test('visit record sources default to none and are read as paths relative to the config file', () => {
   assert.deepEqual(config.visitRecords, []);
-  withFolder({ 'config.json': { srcRoot: 'src', serverEndpoints: [], visitRecords: ['records', 'one.json'] } }, (dir) => {
+  withFolder({ 'config.json': { srcRoot: 'src', serverEndpoints: [], visitRecords: ['records', 'one.json'] } }, (dir: string) => {
     assert.deepEqual(loadConfig(path.join(dir, 'config.json')).visitRecords, [path.join(dir, 'records'), path.join(dir, 'one.json')]);
   });
   for (const visitRecords of ['records', [''], [3]]) {
-    withFolder({ 'config.json': { srcRoot: 'src', serverEndpoints: [], visitRecords } }, (dir) => {
+    withFolder({ 'config.json': { srcRoot: 'src', serverEndpoints: [], visitRecords } }, (dir: string) => {
       assert.throws(() => loadConfig(path.join(dir, 'config.json')), /visitRecords must be a list of record files or folders/);
     });
   }
@@ -70,10 +72,10 @@ test('the example visit records give one candidate per record, with steps on the
 
 test('a candidate is checked against the map like a story, and an address off the map shows as a screen the map does not have', () => {
   const { list } = candidatesOf();
-  const help = list.find((c) => c.name === 'open-help');
+  const help = list.find((c) => c.name === 'open-help')!;
   assert.deepEqual(help.links.map((l) => l.verdict), ['open', 'off-map', 'off-map']);
   assert.equal(help.detached, true);
-  const publish = list.find((c) => c.name === 'publish-document');
+  const publish = list.find((c) => c.name === 'publish-document')!;
   assert.deepEqual(publish.links.map((l) => l.verdict), ['open', 'open', 'conditioned']);
   assert.equal(publish.detached, false);
 });
@@ -82,7 +84,7 @@ test('an address picks the first screen in map order whose route path matches th
   const records = recordsIn({
     'a.json': ['/document/done/', '/HOME', '/document/other', '/document/7/edit', '/document'],
   });
-  withFolder(records, (dir) => {
+  withFolder(records, (dir: string) => {
     const { list } = candidatesOf({ visitRecords: [dir], storiesDir: path.join(dir, 'stories') });
     assert.deepEqual(list.map((c) => c.screens), [[
       '/document/:tab_draft_done_#DocumentList', '/home#Home', '/document/:id#DocumentDetail', '/document/7/edit', '/document',
@@ -91,14 +93,14 @@ test('an address picks the first screen in map order whose route path matches th
 });
 
 test('a record source may be a single file or a folder searched for .json files, and a source that does not exist is noted', () => {
-  withFolder({ 'one.json': [{ url: '/home' }, { url: '/lab' }], 'more/deep/two.json': [{ url: '/help' }], 'more/notes.txt': 'x' }, (dir) => {
+  withFolder({ 'one.json': [{ url: '/home' }, { url: '/lab' }], 'more/deep/two.json': [{ url: '/help' }], 'more/notes.txt': 'x' }, (dir: string) => {
     const { list, notices } = candidatesOf({ configDir: dir, visitRecords: [path.join(dir, 'one.json'), path.join(dir, 'more'), path.join(dir, 'gone')], storiesDir: path.join(dir, 'stories') });
     assert.deepEqual(list.map((c) => [c.name, c.source.record]), [['two', 'more/deep/two.json'], ['one', 'one.json']]);
     assert.deepEqual(notices, [{ file: 'gone', reason: '방문 기록 출처가 없습니다' }]);
   });
 });
 
-for (const [name, body, reason] of [
+for (const [name, body, reason] of ([
   ['text that is not JSON', '{', /^JSON 으로 읽지 못했습니다: /],
   ['an object without steps', { url: '/home' }, /^단계 배열이거나, steps 에 단계 배열을 담은 객체여야 합니다$/],
   ['no steps', { steps: [] }, /^단계가 없습니다$/],
@@ -108,9 +110,9 @@ for (const [name, body, reason] of [
   ['an empty address', [{ url: '/home' }, { url: '' }], /^2 번째 단계의 url 이 문자열이 아니거나 비어 있습니다$/],
   ['an address that cannot be read', [{ url: 'http://' }], /^1 번째 단계의 url 을 읽지 못했습니다$/],
   ['an address that is only a query or a hash', [{ url: '/home' }, { url: '?tab=2' }], /^2 번째 단계의 url 을 읽지 못했습니다$/],
-]) {
+] as [string, unknown, RegExp][])) {
   test(`a visit record with ${name} is noted with its file and why, and the other records still give candidates`, () => {
-    withFolder({ 'bad.json': body, 'good.json': [{ url: '/home' }] }, (dir) => {
+    withFolder({ 'bad.json': body, 'good.json': [{ url: '/home' }] }, (dir: string) => {
       const { list, notices } = candidatesOf({ configDir: dir, visitRecords: [dir], storiesDir: path.join(dir, 'stories') });
       assert.deepEqual(list.map((c) => c.name), ['good']);
       assert.equal(notices.length, 1);
@@ -124,7 +126,7 @@ test('a step without a url is passed over wherever it sits, keeps its step numbe
   withFolder({
     'edges.json': [{ action: 'start' }, { url: '/home' }, { url: '/home?x=1' }, { action: 'end', url: null }],
     'middle.json': [{ url: '/lab' }, { action: 'note', rows: 3 }, { url: '/lab?run=1' }, { url: '/home' }],
-  }, (dir) => {
+  }, (dir: string) => {
     const { list, notices } = candidatesOf({ configDir: dir, visitRecords: [dir], storiesDir: path.join(dir, 'stories') });
     assert.deepEqual(notices, []);
     assert.deepEqual(list.map(shape), [
@@ -135,16 +137,16 @@ test('a step without a url is passed over wherever it sits, keeps its step numbe
 });
 
 test('of two records with the same screens only the first in path order is a candidate', () => {
-  withFolder(recordsIn({ 'b.json': ['/home', '/lab'], 'a.json': ['/home', '/home?x=1', '/lab'] }), (dir) => {
+  withFolder(recordsIn({ 'b.json': ['/home', '/lab'], 'a.json': ['/home', '/home?x=1', '/lab'] }), (dir: string) => {
     const { list } = candidatesOf({ configDir: dir, visitRecords: [dir], storiesDir: path.join(dir, 'stories') });
     assert.deepEqual(list.map((c) => c.name), ['a']);
   });
 });
 
 test('accepting a candidate writes a story file with the given ID and name, its screens and source, that reads back as a story and is no longer a candidate', () => {
-  withStoryCopy((dir) => {
+  withStoryCopy((dir: string) => {
     const before = candidatesOf({ storiesDir: dir }).list;
-    const help = before.find((c) => c.name === 'open-help');
+    const help = before.find((c) => c.name === 'open-help')!;
     const story = acceptCandidate(dir, help, { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' }, new Date('2026-10-03T01:02:03Z'));
     const written = JSON.parse(fs.readFileSync(path.join(dir, 'open-help.json'), 'utf8'));
     assert.deepEqual(written, {
@@ -158,16 +160,16 @@ test('accepting a candidate writes a story file with the given ID and name, its 
     assert.equal(story.id, 'open-help');
     const read = loadStories(dir);
     assert.deepEqual(read.notices.map((n) => n.file), ['lab-shortcut.json']);
-    assert.deepEqual(read.stories.find((s) => s.id === 'open-help').source, { record: 'example-visits/open-help.json', steps: [1, 5] });
+    assert.deepEqual(read.stories.find((s) => s.id === 'open-help')!.source, { record: 'example-visits/open-help.json', steps: [1, 5] });
     assert.deepEqual(candidatesOf({ storiesDir: dir }).list.map((c) => c.name), ['publish-document']);
   });
 });
 
 test('accepting a candidate needs an ID within the story ID rule that no story file uses yet, a name and an author, and writes nothing otherwise', () => {
-  withStoryCopy((dir) => {
+  withStoryCopy((dir: string) => {
     const [candidate] = candidatesOf({ storiesDir: dir }).list;
     const before = fs.readdirSync(dir, { recursive: true }).sort();
-    const accept = (input) => () => acceptCandidate(dir, candidate, { id: 'new-one', name: '이름', author: 'reviewer', ...input });
+    const accept = (input: Record<string, unknown>) => () => acceptCandidate(dir, candidate, { id: 'new-one', name: '이름', author: 'reviewer', ...input });
     assert.throws(accept({ id: 'New One' }), /스토리 ID 는 영문 소문자 · 숫자 · - · _ 로만 씁니다/);
     assert.throws(accept({ id: 'run-lab' }), /스토리 ID run-lab 는 run-lab\.json 이 이미 씁니다/);
     assert.throws(accept({ id: 'lab-shortcut' }), /스토리 ID lab-shortcut 는 lab-shortcut\.json 이 이미 씁니다/);
@@ -178,8 +180,8 @@ test('accepting a candidate needs an ID within the story ID rule that no story f
 });
 
 test('discarding a candidate writes a file of its own into the discarded folder of the stories folder, never over another, which is not read as a story and keeps that screen order from coming back', () => {
-  withStoryCopy((dir) => {
-    const help = candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help');
+  withStoryCopy((dir: string) => {
+    const help = candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help')!;
     const now = new Date('2026-10-03T01:02:03Z');
     discardCandidate(dir, help, { reason: '베타 받은편지함은 맵의 클라이언트에 없다', author: 'reviewer' }, now);
     discardCandidate(dir, help, { reason: '다시 버림', author: 'reviewer' }, now);
@@ -204,7 +206,7 @@ test('discarding a candidate writes a file of its own into the discarded folder 
 });
 
 test('a discarded candidate file that cannot be read is noted with the candidates and does not keep anything out', () => {
-  withStoryCopy((dir) => {
+  withStoryCopy((dir: string) => {
     fs.mkdirSync(path.join(dir, 'discarded'));
     fs.writeFileSync(path.join(dir, 'discarded', 'bad.json'), JSON.stringify({ screens: ['/home#Home'], author: 'a', date: '2026-10-03' }));
     const { list, notices } = candidatesOf({ storiesDir: dir });
@@ -217,7 +219,7 @@ test('a discarded candidate file that cannot be read is noted with the candidate
 });
 
 test('editing a story rewrites the name and memo of its file and leaves the rest as it was', () => {
-  withStoryCopy((dir) => {
+  withStoryCopy((dir: string) => {
     editStory(dir, 'run-lab', { name: '실험실 결과를 본다', memo: '' });
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'run-lab.json'), 'utf8')), {
       name: '실험실 결과를 본다',
@@ -233,7 +235,7 @@ test('editing a story rewrites the name and memo of its file and leaves the rest
 });
 
 test('with a single story file for storiesDir, accepting and discarding a candidate are refused and write nothing', () => {
-  withStoryCopy((dir) => {
+  withStoryCopy((dir: string) => {
     const file = path.join(dir, 'run-lab.json');
     const [candidate] = candidatesOf({ storiesDir: file }).list;
     const before = fs.readdirSync(dir).sort();
@@ -244,7 +246,7 @@ test('with a single story file for storiesDir, accepting and discarding a candid
 });
 
 test('a discarded entry in the stories folder that is a file, or a discarded folder that cannot be listed, is noted with the candidates instead of throwing', (t) => {
-  withStoryCopy((dir) => {
+  withStoryCopy((dir: string) => {
     fs.writeFileSync(path.join(dir, 'discarded'), 'not a folder');
     const { list, notices } = candidatesOf({ storiesDir: dir });
     assert.equal(list.length, 2);
@@ -252,7 +254,7 @@ test('a discarded entry in the stories folder that is a file, or a discarded fol
     assert.throws(() => discardCandidate(dir, list[0], { reason: 'x', author: 'a' }), /^Error: 스토리 폴더 안 discarded 가 파일이라 버린 후보를 쓸 수 없습니다$/);
     assert.equal(fs.readFileSync(path.join(dir, 'discarded'), 'utf8'), 'not a folder');
   });
-  withStoryCopy((dir) => {
+  withStoryCopy((dir: string) => {
     const folder = path.join(dir, 'discarded');
     fs.mkdirSync(folder);
     fs.chmodSync(folder, 0o000);
@@ -262,8 +264,8 @@ test('a discarded entry in the stories folder that is a file, or a discarded fol
         return t.skip('this user or file system can list a folder without read permission');
       } catch {}
       const { notices } = candidatesOf({ storiesDir: dir });
-      assert.equal(notices.at(-1).file, path.relative(FIXTURE, folder));
-      assert.match(notices.at(-1).reason, /^버린 후보 폴더를 읽지 못했습니다: EACCES/);
+      assert.equal(notices.at(-1)!.file, path.relative(FIXTURE, folder));
+      assert.match(notices.at(-1)!.reason, /^버린 후보 폴더를 읽지 못했습니다: EACCES/);
     } finally {
       fs.chmodSync(folder, 0o700);
     }
@@ -273,11 +275,11 @@ test('a discarded entry in the stories folder that is a file, or a discarded fol
 test('with a map built before links carried their conditions, visit records give no candidate and a request to rebuild, while without records there is no such request', () => {
   const stale = structuredClone(map);
   for (const s of stale.screens) for (const l of s.links) delete l.conditions;
-  withFolder({}, (dir) => {
+  withFolder({}, (dir: string) => {
     const empty = { storiesDir: path.join(dir, 'stories') };
     const withRecords = candidatesOf(empty, stale, path.join(dir, 'map.json'));
     assert.deepEqual(withRecords.list, []);
-    assert.equal(withRecords.stale, `${path.join(dir, 'map.json')} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요`);
-    assert.equal(candidatesOf({ ...empty, visitRecords: [] }, stale).stale, undefined);
+    assert.equal((withRecords as { stale?: string }).stale, `${path.join(dir, 'map.json')} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요`);
+    assert.equal((candidatesOf({ ...empty, visitRecords: [] }, stale) as { stale?: string }).stale, undefined);
   });
 });
