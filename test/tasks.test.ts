@@ -10,16 +10,20 @@ import { addMark } from '../src/marks.ts';
 import { reviewData } from '../src/review.ts';
 import { taggingLines } from '../src/tasks.ts';
 
+type Row = { title: string; source: string; format: string; depth: string; status: string };
+type NewJudgment = Parameters<typeof addJudgment>[1];
+type Ctx = { copy: string; configFile: string; cli: (...args: string[]) => string };
+
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 
-function withFixtureCopy(fn, configPatch = {}) {
+function withFixtureCopy<T>(fn: (ctx: Ctx) => T, configPatch: Record<string, unknown> = {}): T {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const configFile = path.join(copy, 'config.json');
     fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), marksDir: 'example-marks', ...configPatch }));
-    const cli = (...args) => execFileSync(process.execPath, [CLI, ...args, configFile], { encoding: 'utf8' });
+    const cli = (...args: string[]) => execFileSync(process.execPath, [CLI, ...args, configFile], { encoding: 'utf8' });
     return fn({ copy, configFile, cli });
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
@@ -27,14 +31,14 @@ function withFixtureCopy(fn, configPatch = {}) {
 }
 
 // 형식은 가짜 클라이언트 설정의 테스트 출처 순서(playwright, junit, vitest, verdict)로 나온다.
-const emptyTests = (...cells) => ['- empty tests:', ...cells.flatMap(([tags, method]) => [
+const emptyTests = (...cells: string[][]) => ['- empty tests:', ...cells.flatMap(([tags, method]) => [
   `  - playwright: \`test.fixme("<what it checks> ${tags}", async ({ page }) => {});\``,
   `  - junit: \`@Test @Disabled @DisplayName("<what it checks> ${tags}") void ${method}() {}\``,
   `  - vitest: \`test.todo("<what it checks> ${tags}");\``,
   `  - verdict: \`VERDICT <what it checks>: <verdict> — <what was seen> ${tags}\``,
 ])].join('\n');
 
-const withCases = (tags, method, cases) => [[tags, method], ...cases.map((c) => [`${tags} @${c}`, `${method}_${c.replace(/[^A-Za-z0-9]+/g, '_').replace(/_$/, '')}`])];
+const withCases = (tags: string, method: string, cases: string[]) => [[tags, method], ...cases.map((c) => [`${tags} @${c}`, `${method}_${c.replace(/[^A-Za-z0-9]+/g, '_').replace(/_$/, '')}`])];
 const REPORT_CASES = ['role:ADMIN', 'role:OWNER', 'role:other', 'setting:SYSTEM.MAIN_MENU.ADMIN=true', 'setting:SYSTEM.MAIN_MENU.ADMIN=false', 'setting:SYSTEM.MAIN_MENU.ADMIN.LIST:ADMIN_REPORT=true', 'setting:SYSTEM.MAIN_MENU.ADMIN.LIST:ADMIN_REPORT=false'];
 const AUDIT_CASES = ['role:ADMIN', 'role:AUDITOR', 'role:other'];
 
@@ -216,7 +220,7 @@ ${emptyTests(['@story:run-lab @screen:/home#Home @screen:/lab#Lab @screen:/lab/r
 `;
 
 test('the task list does not call an unchecked call missing on the server when there is no server API list', () => {
-  const noList = {
+  const noList: Record<string, (ctx: Ctx) => void> = {
     'an empty list file': ({ copy }) => {
       fs.writeFileSync(path.join(copy, 'server-endpoints.txt'), '');
       fs.writeFileSync(path.join(copy, 'server-endpoints-lab.txt'), '');
@@ -260,7 +264,7 @@ test('a call with a server status the task list does not know prints that status
     const config = loadConfig(configFile);
     const mapFile = path.join(config.outDir, 'map.json');
     const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
-    map.calls.find((c) => c.id === 'POST:/api/v1/archive/document').server = { status: 'ajar' };
+    map.calls.find((c: { id: string }) => c.id === 'POST:/api/v1/archive/document').server = { status: 'ajar' };
     fs.writeFileSync(mapFile, JSON.stringify(map));
     const tasks = cli('tasks');
     assert.match(tasks, /^- server: ajar$/m);
@@ -353,28 +357,28 @@ test('a story name, author or screen over several lines stays inside its item, w
 });
 
 // 스킬이 시키는 대로 채운다: 제목 글과 판정 낱말을 바꾸고, 통과하지 않게 막아 둔 표시를 떼고, 몸체를 넣는다.
-const fillIn = (code) => code
+const fillIn = (code: string) => code
   .replace('<what it checks>', 'checks it')
   .replace('<verdict>', 'UPHOLDS')
   .replace('test.fixme(', 'test(')
   .replace('@Disabled ', '')
   .replace(/^test\.todo\((.*)\);$/, 'test($1, () => { expect(1).toBe(1); });');
 
-const xmlText = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const xmlText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 test('an empty test from the task list, filled in with its title tags kept, attaches to its screen, call cell or story after a rebuild in every configured format', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     cli('rebuild');
     addMark(loadConfig(configFile).marksDir, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true }, depth: 'output' }, status: 'missing', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
     const tasks = cli('tasks');
-    const copied = { playwright: [], junit: [], vitest: [], verdict: [] };
+    const copied: Record<string, string[]> = { playwright: [], junit: [], vitest: [], verdict: [] };
     for (const id of ['/help#Help', 'POST:/api/v1/report/export', 'run-lab']) {
       const section = tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0];
       for (const [, format, code] of section.matchAll(/^ {2}- (playwright|junit|vitest|verdict): `(.*)`$/gm)) copied[format].push(fillIn(code));
     }
     assert.deepEqual(Object.values(copied).map((c) => c.length), [4, 4, 4, 4]);
     assert.doesNotMatch(Object.values(copied).flat().join('\n'), /\.fixme|\.todo|@Disabled|<verdict>/);
-    const titles = (format) => copied[format].map((code) => JSON.parse(code.match(/"(?:[^"\\]|\\.)*"/)[0]));
+    const titles = (format: string) => copied[format].map((code) => JSON.parse(code.match(/"(?:[^"\\]|\\.)*"/)![0]));
     fs.writeFileSync(path.join(copy, 'results/playwright/filled.json'), JSON.stringify({
       suites: [{ title: 'filled.spec.ts', file: 'filled.spec.ts', specs: titles('playwright').map((title, i) => ({ title, file: 'filled.spec.ts', line: i + 1, tests: [{ status: 'expected', projectName: 'chromium' }] })) }],
     }));
@@ -386,7 +390,7 @@ test('an empty test from the task list, filled in with its title tags kept, atta
     cli('rebuild');
 
     const { nodes, stories } = JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8'));
-    const filled = (tests) => tests.filter((t) => t.source.includes('filled')).map((t) => [t.format, t.depth, ...(t.options ? [t.options] : []), ...(t.cases ? [t.cases] : [])]);
+    const filled = (tests: { source: string; format: string; depth: string; options?: unknown; cases?: unknown }[]) => tests.filter((t) => t.source.includes('filled')).map((t) => [t.format, t.depth, ...(t.options ? [t.options] : []), ...(t.cases ? [t.cases] : [])]);
     const formats = ['playwright', 'junit', 'vitest', 'verdict'];
     const helpOff = ['setting:SYSTEM.HELP_LINK_ENABLED=false'];
     assert.deepEqual(filled(nodes['/help#Help']), [
@@ -406,11 +410,11 @@ test('an empty verdict line printed as the task list gives it, without a verdict
   withFixtureCopy(({ copy, cli }) => {
     cli('rebuild');
     const help = cli('tasks').split('\n## /help#Help\n')[1].split('\n## ')[0];
-    const line = help.match(/^ {2}- verdict: `(.*)`$/m)[1];
+    const line = help.match(/^ {2}- verdict: `(.*)`$/m)![1];
     fs.writeFileSync(path.join(copy, 'results/verdict/documents/unfilled.log'), `${line}\n`);
     cli('rebuild');
     const { nodes } = JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8'));
-    assert.deepEqual(nodes['/help#Help'].filter((t) => t.source.includes('unfilled')).map((t) => [t.depth, t.status]), [['api', 'pending']]);
+    assert.deepEqual(nodes['/help#Help'].filter((t: Row) => t.source.includes('unfilled')).map((t: Row) => [t.depth, t.status]), [['api', 'pending']]);
   });
 });
 
@@ -418,8 +422,8 @@ test('an empty Playwright, Vitest or JUnit test run as the task list gives it re
   withFixtureCopy(({ copy, cli }) => {
     cli('rebuild');
     const help = cli('tasks').split('\n## /help#Help\n')[1].split('\n## ')[0];
-    const code = (format) => help.match(new RegExp(`^ {2}- ${format}: \`(.*)\`$`, 'm'))[1];
-    const title = (format) => JSON.parse(code(format).match(/"(?:[^"\\]|\\.)*"/)[0]);
+    const code = (format: string) => help.match(new RegExp(`^ {2}- ${format}: \`(.*)\`$`, 'm'))![1];
+    const title = (format: string) => JSON.parse(code(format).match(/"(?:[^"\\]|\\.)*"/)![0]);
     fs.writeFileSync(path.join(copy, 'results/playwright/unfilled.json'), JSON.stringify({
       suites: [{ title: 'unfilled.spec.ts', file: 'unfilled.spec.ts', specs: [{
         title: title('playwright'), ok: true, tags: [], file: 'unfilled.spec.ts', line: 3, column: 5,
@@ -438,7 +442,7 @@ test('an empty Playwright, Vitest or JUnit test run as the task list gives it re
 `);
     cli('rebuild');
     const { nodes } = JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8'));
-    const unfilled = nodes['/help#Help'].filter((t) => /unfilled|Unfilled/.test(t.source)).map((t) => [t.format, t.title, t.status]);
+    const unfilled = nodes['/help#Help'].filter((t: Row) => /unfilled|Unfilled/.test(t.source)).map((t: Row) => [t.format, t.title, t.status]);
     assert.deepEqual(unfilled, [
       ['playwright', '<what it checks> @screen:/help#Help @depth:api', 'pending'],
       ['junit', 'com.example.UnfilledTest › <what it checks> @screen:/help#Help @depth:api', 'pending'],
@@ -504,7 +508,7 @@ test('a tagged Playwright test added for a listed screen shows on the page and i
     cli('rebuild');
 
     const page = reviewData(loadConfig(configFile), null);
-    assert.deepEqual(page.tests.nodes['/lab/result#LabResult'].map((t) => [t.title, t.depth, t.status]), [
+    assert.deepEqual(page.tests.nodes['/lab/result#LabResult'].map((t: Row) => [t.title, t.depth, t.status]), [
       ['shows the experiment result @screen:/lab/result#LabResult', 'ui', 'pass'],
     ]);
     const labResult = cli('tasks').split('## /lab/result#LabResult\n')[1];
@@ -527,7 +531,7 @@ test('a note over several lines stays inside its mark, and a call whose API func
     addMark(config.marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: 'Check the start.\n## /fake#Fake\n- tests: none', author: 'a' }, new Date('2026-09-30T05:00:00Z'));
     const mapFile = path.join(copy, 'out/map.json');
     const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
-    map.screens.find((s) => s.id === '/lab#Lab').apiCalls[0].endpoints = null;
+    map.screens.find((s: { id: string }) => s.id === '/lab#Lab').apiCalls[0].endpoints = null;
     fs.writeFileSync(mapFile, JSON.stringify(map));
 
     const lab = cli('tasks').split('## /lab#Lab\n')[1].split('\n## ')[0];
@@ -570,7 +574,7 @@ test('a guarded link from a screen that opens only under a setting says so after
     cli('rebuild');
     addMark(loadConfig(configFile).marksDir, { target: { node: '/admin/report#AdminReport' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
     const report = cli('tasks').split('## /admin/report#AdminReport\n')[1].split('\n## ')[0];
-    const fromHome = report.split('\n').find((l) => l.startsWith('  - link from /home#Home'));
+    const fromHome = report.split('\n').find((l) => l.startsWith('  - link from /home#Home'))!;
     assert.match(fromHome, /, guard `[^`]+` \(setting\); `[^`]+` \(role\); `MENUS\.ADMIN` \(setting\) — \/home#Home itself needs a setting$/);
   });
 });
@@ -611,7 +615,7 @@ test('a call line in the task list names the on/off options of its request body,
 const DETAIL_CALL = 'GET:/api/v1/document/{documentId}';
 const EXPORT_CALL = 'POST:/api/v1/report/export';
 
-function withLinkedResultCall(fn) {
+function withLinkedResultCall(fn: (ctx: Omit<Ctx, 'configFile'>) => void) {
   withFixtureCopy(({ copy, configFile, cli }) => {
     fs.mkdirSync(path.join(copy, 'results/verdict/exports'));
     fs.writeFileSync(
@@ -660,7 +664,7 @@ test('a call that another call\'s options change the result of lists those optio
       item.slice(0, item.indexOf('\n- tests:')),
       ['', '- marks:', '  - missing, output depth (a, 2026-10-01)', '- called from: /document/:id#DocumentDetail', '- server: on the server (core)', ...RESULT_OPTION_LINES].join('\n'),
     );
-    assert.equal(tasks.match(/options that change this result/g).length, 6);
+    assert.equal(tasks.match(/options that change this result/g)!.length, 6);
   });
 });
 
@@ -681,8 +685,8 @@ test('screens that share an ID each keep the options they send themselves', () =
     cli('rebuild');
     const mapFile = path.join(copy, 'out/map.json');
     const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
-    const report = map.screens.find((s) => s.id === '/admin/report#AdminReport');
-    const plainExport = { ...report.apiCalls.find((c) => c.fn === 'ajaxReportExport'), options: [] };
+    const report = map.screens.find((s: { id: string; apiCalls: { fn: string }[] }) => s.id === '/admin/report#AdminReport');
+    const plainExport = { ...report.apiCalls.find((c: { fn: string }) => c.fn === 'ajaxReportExport'), options: [] };
     map.screens.push({ ...report, line: 99, apiCalls: [plainExport] });
     fs.writeFileSync(mapFile, JSON.stringify(map));
     addMark(loadConfig(configFile).marksDir, { target: { node: '/admin/report#AdminReport' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
@@ -734,7 +738,7 @@ test('a screen whose links ask for different kinds, and a link from it, say it d
     cli('rebuild');
     const { marksDir } = loadConfig(configFile);
     for (const node of ['/help#Help', '/lab/result#LabResult']) addMark(marksDir, { target: { node }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
-    const section = (id) => cli('tasks').split(`## ${id}\n`)[1].split('\n## ')[0];
+    const section = (id: string) => cli('tasks').split(`## ${id}\n`)[1].split('\n## ')[0];
     const help = section('/help#Help');
     assert.match(help, /^- access: differs by link, see each link below$/m);
     assert.match(help, /^ {2}- link from \/home#Home at components\/Home\.js:\d+, guard `memberRole === 'ADMIN'` \(role\)$/m);
@@ -792,7 +796,7 @@ test('a mark on an option value of a call is listed with the option key, value a
 
     const tasks = cli('tasks');
     assert.match(tasks, /^# Test tasks — 4 screens, 3 calls, 0 stories, 8 open marks$/m);
-    const section = (id) => tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0];
+    const section = (id: string) => tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0];
     assert.equal(
       section('POST:/api/v1/report/export'),
       [
@@ -898,7 +902,7 @@ test('an API call with an open mark is listed once under API calls with its scre
 
 const HELP_UNIT = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' };
 const TABLE_UNIT = { source: 'results/vitest/client-unit.json', file: 'components/DocumentTable.spec.js', title: 'DocumentTable › lists the documents it is given' };
-const tagging = (tasks) => (tasks.includes('\n# Tagging\n') ? tasks.slice(tasks.indexOf('\n# Tagging\n')) : null);
+const tagging = (tasks: string) => (tasks.includes('\n# Tagging\n') ? tasks.slice(tasks.indexOf('\n# Tagging\n')) : null);
 
 const TAGGING_INTRO = "A reviewer judged that each of these tests checks a screen or API call it carries no tag for. Add the tag where its format reads it (`where`), changing nothing else in the test, then run the test so its result file is written again and run `duru rebuild`, and read this list again: a test that carries the tag counts as a test of that screen or call, and its item leaves this list. The item also leaves, without being done, if the test's file changes or its title changes in any way other than the added tag. duru does not edit test files.";
 
@@ -940,7 +944,7 @@ test('a pair handed over for tagging is listed under Tagging with its test file 
 for (const [how, helpTest] of [
   ['in its tags', { tags: ['screen:/help#Help'] }],
   ['at the end of its title', { title: 'renders the help text @screen:/help#Help' }],
-]) {
+] satisfies [string, { tags?: string[]; title?: string }][]) {
   test(`a handed-over test that gets the screen tag ${how} leaves the task list after a rebuild and counts as a tagged test of the screen`, () => {
     withFixtureCopy(({ copy, configFile, cli }) => {
       const config = loadConfig(configFile);
@@ -955,8 +959,8 @@ for (const [how, helpTest] of [
       const { tests } = reviewData(config, null);
       assert.deepEqual(tests.awaitingTag, {});
       assert.deepEqual(tests.detachedHandOvers, {});
-      assert.deepEqual(tests.nodes['/help#Help'].filter((t) => t.format === 'vitest').map((t) => t.title).sort(), [helpTest.title ?? HELP_UNIT.title, 'searches help @screen:/help#Help']);
-      assert.deepEqual(tests.importers['/help#Help'].map((t) => t.title), ['shows the day the help was last updated']);
+      assert.deepEqual(tests.nodes['/help#Help'].filter((t: Row) => t.format === 'vitest').map((t: Row) => t.title).sort(), [helpTest.title ?? HELP_UNIT.title, 'searches help @screen:/help#Help']);
+      assert.deepEqual(tests.importers['/help#Help'].map((t: Row) => t.title), ['shows the day the help was last updated']);
     });
   });
 }
@@ -966,24 +970,24 @@ test('undoing a hand-over returns the pair to the tests importing the screen and
     cli('rebuild');
     const config = loadConfig(configFile);
     addJudgment(config.judgmentsDir, { test: HELP_UNIT, node: '/help#Help', kind: 'hand-over', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
-    assert.deepEqual(reviewData(config, null).tests.importers['/help#Help'].map((t) => t.title), ['shows the day the help was last updated']);
+    assert.deepEqual(reviewData(config, null).tests.importers['/help#Help'].map((t: Row) => t.title), ['shows the day the help was last updated']);
     addJudgment(config.judgmentsDir, { test: HELP_UNIT, node: '/help#Help', kind: 'undo', author: 'reviewer' }, new Date('2026-10-04T02:00:00Z'));
 
     assert.equal(tagging(cli('tasks')), null);
     const { tests } = reviewData(config, null);
-    assert.deepEqual(tests.importers['/help#Help'].map((t) => t.title), ['renders the help text', 'shows the day the help was last updated']);
+    assert.deepEqual(tests.importers['/help#Help'].map((t: Row) => t.title), ['renders the help text', 'shows the day the help was last updated']);
     assert.deepEqual(tests.awaitingTag, {});
   });
 });
 
 test('the tagging items come in the same order for the same map, results and judgments, whatever order the judgment files were written in', () => {
-  const handOvers = [
+  const handOvers: [NewJudgment['test'], string][] = [
     [{ ...HELP_UNIT, title: 'shows the day the help was last updated' }, '/help#Help'],
     [HELP_UNIT, '/help#Help'],
     [TABLE_UNIT, '/home#Home'],
     [TABLE_UNIT, '/document/:tab_draft_done_#DocumentList'],
   ];
-  const listWith = (order) =>
+  const listWith = (order: [NewJudgment['test'], string][]) =>
     withFixtureCopy(({ configFile, cli }) => {
       cli('rebuild');
       const { judgmentsDir } = loadConfig(configFile);
@@ -992,7 +996,7 @@ test('the tagging items come in the same order for the same map, results and jud
     });
   const first = listWith(handOvers);
   assert.equal(listWith([...handOvers].reverse()), first);
-  assert.deepEqual(first.match(/^## .*$/gm), [
+  assert.deepEqual(first!.match(/^## .*$/gm), [
     '## components/DocumentTable.spec.js:6 → /document/:tab_draft_done_#DocumentList',
     '## components/DocumentTable.spec.js:6 → /home#Home',
     '## components/Help.spec.js:4 → /help#Help',
@@ -1000,7 +1004,7 @@ test('the tagging items come in the same order for the same map, results and jud
   ]);
 });
 
-const handOverEntry = (format, ref, line, judgment = {}) => ({
+const handOverEntry = (format: string, ref: Record<string, unknown> & { title: string }, line: number | null, judgment: Record<string, unknown> = {}) => ({
   title: ref.title, line, format, ref: { source: 'results/x.json', ...ref }, judgment: { reason: '', author: 'reviewer', date: '2026-10-04T01:00:00.000Z', ...judgment },
 });
 
@@ -1049,7 +1053,7 @@ test('a browser test handed over for a screen it opened and for a call it sent i
     const sent = { source: 'results/playwright-traced/calls.json', file: 'calls.spec.ts', title: 'reads a document from the server' };
     addJudgment(judgmentsDir, { test: sent, node: '/home#Home', kind: 'hand-over', reason: 'checks the list on home', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
     addJudgment(judgmentsDir, { test: sent, node: 'GET:/api/v1/document/{documentId}', kind: 'hand-over', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
-    assert.deepEqual(tagging(cli('tasks')).split('\n').slice(4), [
+    assert.deepEqual(tagging(cli('tasks'))!.split('\n').slice(4), [
       '',
       '## calls.spec.ts:6 → /home#Home',
       '',
@@ -1075,13 +1079,13 @@ test('a browser test handed over for a screen stays under Tagging when its lates
     cli('rebuild');
     const untraced = { source: 'results/playwright-traced/visits.json', file: 'untraced.spec.ts', title: 'opens help without a trace' };
     addJudgment(loadConfig(configFile).judgmentsDir, { test: untraced, node: '/help#Help', kind: 'hand-over', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
-    assert.deepEqual(tagging(cli('tasks')).match(/^## .*$/gm), ['## untraced.spec.ts:5 → /help#Help']);
+    assert.deepEqual(tagging(cli('tasks'))!.match(/^## .*$/gm), ['## untraced.spec.ts:5 → /help#Help']);
     assert.match(cli('rebuild'), /^pairs handed over for tagging waiting for the tag 1 \| .* 0$/m);
   }, { tests });
 });
 
 test('the reviewer\'s note is printed trimmed, and a note of only whitespace counts as none', () => {
-  const lines = (reason) => taggingLines({ '/help#Help': [handOverEntry('vitest', HELP_UNIT, 4, { reason })] }, new Set()).find((l) => l.startsWith('- note'));
+  const lines = (reason: string) => taggingLines({ '/help#Help': [handOverEntry('vitest', HELP_UNIT, 4, { reason })] }, new Set()).find((l) => l.startsWith('- note'));
   assert.equal(lines('  \n checks the text\nand the heading \n'), '- note: "checks the text\n  and the heading" (reviewer, 2026-10-04)');
   assert.equal(lines(' \n '), '- note: none (reviewer, 2026-10-04)');
 });
@@ -1090,7 +1094,7 @@ test('a note saved with surrounding whitespace is trimmed in the task list', () 
   withFixtureCopy(({ configFile, cli }) => {
     cli('rebuild');
     addJudgment(loadConfig(configFile).judgmentsDir, { test: HELP_UNIT, node: '/help#Help', kind: 'hand-over', reason: '\n  checks the help text  \n', author: 'reviewer' }, new Date('2026-10-04T01:00:00Z'));
-    assert.match(tagging(cli('tasks')), /^- note: "checks the help text" \(reviewer, 2026-10-04\)$/m);
+    assert.match(tagging(cli('tasks'))!, /^- note: "checks the help text" \(reviewer, 2026-10-04\)$/m);
   });
 });
 
