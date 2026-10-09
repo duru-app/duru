@@ -191,6 +191,24 @@ function methodsOf(obj: object): [string, Callable][] {
   return [...found];
 }
 
+// getter 와, 정적 필드에 든 클래스는 호출하지 않는다.
+function staticsOf(chain: Callable[]): [string, Callable][] {
+  const found = new Map<string, Callable>();
+  for (const K of chain) {
+    for (const name of Object.getOwnPropertyNames(K)) {
+      const d = Object.getOwnPropertyDescriptor(K, name);
+      if (!['length', 'name', 'prototype'].includes(name) && !found.has(name) && typeof d!.value === 'function' && !isStandIn(d!.value) && !isClass(d!.value)) found.set(name, d!.value);
+    }
+  }
+  return [...found];
+}
+
+function classChain(C: unknown) {
+  const chain: Callable[] = [];
+  for (let K = C; typeof K === 'function' && !isNative(K) && isClass(K); K = Object.getPrototypeOf(K)) chain.push(K);
+  return chain;
+}
+
 const leaves = (leaf: unknown) => {
   const argument = new Proxy({}, {
     get: (t, k) => (k === Symbol.toPrimitive ? () => mark : typeof k === 'symbol' || k === 'then' ? undefined : leaf),
@@ -240,17 +258,43 @@ async function call(unit: string, self: unknown, fn: Callable): Promise<Attempt>
   return best!;
 }
 
-async function classesOf(obj: object) {
+async function locationsOf(chain: Callable[]) {
   const found: (FunctionLocation | null)[] = [];
-  for (let o = Object.getPrototypeOf(obj); o && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
-    const C = o.constructor;
-    if (typeof C !== 'function' || isNative(C) || !isClass(C)) break;
-    found.push(await locationOf(C));
-  }
+  for (const C of chain) found.push(await locationOf(C));
   return found.filter(Boolean);
 }
 
+async function callExport(file: string, exportName: string, value: object) {
+  const chain = typeof value === 'function' && isClass(value) ? classChain(value) : null;
+  let targets: [string | null, Callable, unknown][] = [];
+  try {
+    if (chain) targets = staticsOf(chain).map(([member, fn]) => [member, fn, value]);
+    else targets = typeof value === 'function' ? [[null, value, undefined]] : methodsOf(value).map(([member, fn]) => [member, fn, value]);
+  } catch {
+    // 속성을 읽다 던지는 값(Proxy 같은 것)은 호출할 메서드가 없는 것으로 본다.
+  }
+  if (typeof value === 'object' || chain) {
+    let locations: (FunctionLocation | null)[] = [];
+    try {
+      locations = await locationsOf(chain ?? classChain(Object.getPrototypeOf(value)?.constructor));
+    } catch {
+      // 프로토타입을 읽다 던지면 감출 멤버가 없는 것으로 본다.
+    }
+    send({ type: 'classes', file, exportName, locations });
+  }
+  for (const [member, fn, self] of targets) {
+    const unit = `call\n${file}\n${exportName}\n${member ?? ''}`;
+    if (skipped.has(unit)) continue;
+    const location = await locationOf(fn);
+    send({ type: 'begin', unit, location });
+    const { requests, error } = await call(unit, self, fn);
+    send({ type: 'called', unit, file, exportName, member, location, requests, error });
+  }
+}
+
 const seen = new Map<unknown, { file: string; exportName: string }>();
+// 정적 메서드에는 주소나 토큰을 바꾸는 것(setBaseURL 같은 것)이 있어, 다른 export 를 모두 호출한 뒤에 호출한다.
+const classes: [string, string, Callable][] = [];
 for (const { file, url } of modules) {
   const loading = `load\n${file}`;
   if (skipped.has(loading)) continue;
@@ -264,35 +308,15 @@ for (const { file, url } of modules) {
   }
   send({ type: 'loaded', unit: loading });
   for (const [exportName, value] of Object.entries(mod)) {
-    if (!value || !['object', 'function'].includes(typeof value) || isStandIn(value) || (typeof value === 'function' && isClass(value))) continue;
+    if (!value || !['object', 'function'].includes(typeof value) || isStandIn(value)) continue;
     if (seen.has(value)) {
       send({ type: 'same', file, exportName, as: seen.get(value) });
       continue;
     }
     seen.set(value, { file, exportName });
-    let targets: [string | null, Callable, unknown][] = [];
-    try {
-      targets = typeof value === 'function' ? [[null, value, undefined]] : methodsOf(value).map(([member, fn]) => [member, fn, value]);
-    } catch {
-      // 속성을 읽다 던지는 값(Proxy 같은 것)은 호출할 메서드가 없는 것으로 본다.
-    }
-    if (typeof value === 'object') {
-      let locations: (FunctionLocation | null)[] = [];
-      try {
-        locations = await classesOf(value);
-      } catch {
-        // 프로토타입을 읽다 던지면 감출 멤버가 없는 것으로 본다.
-      }
-      send({ type: 'classes', file, exportName, locations });
-    }
-    for (const [member, fn, self] of targets) {
-      const unit = `call\n${file}\n${exportName}\n${member ?? ''}`;
-      if (skipped.has(unit)) continue;
-      const location = await locationOf(fn);
-      send({ type: 'begin', unit, location });
-      const { requests, error } = await call(unit, self, fn);
-      send({ type: 'called', unit, file, exportName, member, location, requests, error });
-    }
+    if (typeof value === 'function' && isClass(value)) classes.push([file, exportName, value]);
+    else await callExport(file, exportName, value);
   }
 }
+for (const [file, exportName, C] of classes) await callExport(file, exportName, C);
 send({ type: 'end' });

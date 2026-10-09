@@ -93,17 +93,17 @@ client with example results and a config to start from.
   ```
 
 - `apiModules`, `passThroughCalls` — where API functions live and which wrappers pass a URL through.
-- `calledApiModules`, `requestFunction` — for API code whose methods find their address somewhere else, such as
-  in a table or through a prefix added when the request is sent. `calledApiModules` lists the files that export
-  the API objects or API functions. `requestFunction` names the function the app sends its requests through:
-  `import` and `name` as the API code imports it, and `method` and `url`, the place of each among the values
-  that function is given, written as the position of the value counted from 0 followed by the keys inside it.
-  An `import` starting with `.` is a path from `srcRoot`. duru runs the listed files with that function
-  replaced by a recorder, calls every exported function and every method of every exported object once with
-  fake values, and puts the method and address of each request on the map as that function's or method's call,
-  with the prefix the app adds. A piece of an address that comes from a fake value is written `{?}`. Outside
-  packages that `constantStubs` does not give are filled with values that do nothing. A call stopped after one
-  second counts as failed. Two listed files exporting different objects under one name, or a name `apiModules`
+- `calledApiModules`, `requestFunction` — for API code whose methods find their address somewhere else, such as in a
+  table or through a prefix added when the request is sent. `calledApiModules` lists the files that export the API
+  objects, API functions or API classes. `requestFunction` names the function the app sends its requests through:
+  `import` and `name` as the API code imports it, and `method` and `url`, the place of each among the values that
+  function is given, written as the position of the value counted from 0 followed by the keys inside it. An `import`
+  starting with `.` is a path from `srcRoot`. duru runs the listed files with that function replaced by a recorder,
+  calls every exported function, every method of every exported object and every static method of every exported
+  class once with fake values, and puts the method and address of each request on the map as that function's or
+  method's call, with the prefix the app adds. A piece of an address that comes from a fake value is written `{?}`.
+  Outside packages that `constantStubs` does not give are filled with values that do nothing. A call stopped after
+  one second counts as failed. Two listed files exporting different objects under one name, or a name `apiModules`
   already has, get the file path in front of the name. On into-sign 2.0.0:
 
   ```json
