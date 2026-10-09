@@ -3,16 +3,19 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { UNKNOWN } from '../src/client.ts';
 import { loadConfig } from '../src/config.ts';
 import { chromium } from 'playwright-core';
+import type { Locator, Page, Route } from 'playwright-core';
 import { addJudgment, loadJudgments } from '../src/judgments.ts';
 import { addMark, loadMarks } from '../src/marks.ts';
 import { applyOverrides } from '../src/app-host.ts';
 import { reviewAuthor, startReviewServer } from '../src/review.ts';
+import type { ReviewAuthor } from '../src/review.ts';
 import { taskList } from '../src/tasks.ts';
 
 // git exports these to hooks and to rebase --exec; with them set, git in a test folder reads and writes the repository they name.
@@ -21,7 +24,51 @@ for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete process
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 
-async function withRebuiltFixture(configPatch, fn, edits = []) {
+type Config = ReturnType<typeof loadConfig>;
+
+type Guard = { guard: string; kinds: string[]; roles?: string[] | null; settings?: object[]; via?: unknown };
+type FlowNode = { id: string; imported?: number; label: string; component: string; counts?: object; children: FlowNode[]; calls: { label: string; server?: object; counts?: object }[]; jumps: { to: string; label: string; guards: Guard[] }[]; guards: Guard[] | null };
+type ScreenLink = { from: string; file: string; line: number; guards: Guard[]; fromKinds: string[] };
+type MapScreen = { id: string; path: string; component: string; componentFile?: string; dead?: boolean; routeGuards: string[]; access: { links: ScreenLink[] }; links?: object[]; settingReads?: object[]; apiCalls: object[] };
+type Story = { id: string; name: string; screens: string[]; links: { verdict: string }[]; broken: boolean; detached: boolean; status: string; reach: Reach[] };
+type Mark = { key: string; target: unknown; current: { status: string; note: string; author: string } };
+type AppData = { url: string; signedOutUrl: string; roles: { role: string; account: string; error: string | null; url: string }[]; settings: { overrides: object[] } };
+type PageData = {
+  map: { screens: MapScreen[]; calls: { id: string; server?: object }[] };
+  flow: { roots: FlowNode[]; unreached: FlowNode[] };
+  tests: {
+    importers: Record<string, { title: string }[]>;
+    discarded: Record<string, { title: string; judgment: { reason: string } }[]>;
+    stories: Record<string, object[]>;
+    untagged?: { title: string; ref: unknown; status: string }[];
+    untaggedCount?: number;
+  };
+  stories: { list: Story[]; notices: { file: string }[]; unknownTags: { tag: string }[]; stale: string };
+  storiesDir: string;
+  candidates: { list: { name: string; source: { record: unknown }; screens: string[]; links: { verdict: string }[] }[]; notices: object[] };
+  marks: { attached: Mark[]; detached: Mark[] };
+  app: AppData;
+};
+type FlowView = { collapsed?: string[]; openCalls?: string[]; group?: boolean; width?: number; marks?: object[] };
+type FlowBox = { key: string; x: number; y: number; width: number; height: number; grouped: boolean };
+type FlowEdge = { from: string; to: string; x1: number; y1: number; x2: number; y2: number; ex?: number; nx?: number; grouped: boolean };
+type FlowColumns = { widths: Record<string, number>; grouped: Set<string>; xs: number[] };
+
+declare const state: any;
+declare const GAP: number;
+declare const CALL_INDENT: number;
+declare let drawnGrid: { count: number; cellW: number; per: number } | null;
+declare function load(): Promise<void>;
+declare function render(): void;
+declare function renderFlow(): void;
+declare function hasUnsavedMark(): boolean;
+declare function pathValueKey(id: string, role: string | null): string;
+declare function updateSettings(change: (list: object[]) => object[] | undefined): void;
+declare function openNeeds(screen: { access: object }): { lines: { kind: string; text: string }[]; tips: string[]; bare: unknown };
+declare function flowColumns(roots: object[], sizes: object, view?: FlowView): FlowColumns;
+declare function layoutFlow(roots: object[], sizes: object, view?: FlowView, cols?: FlowColumns): { boxes: FlowBox[]; edges: FlowEdge[]; group: { x: number; y: number; height: number; count: number } | null; width: number; height: number; marks?: { x: number; y: number }[] };
+
+async function withRebuiltFixture<T>(configPatch: object, fn: (config: Config, copy: string) => T | Promise<T>, edits: [string, string, string][] = []) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
@@ -40,22 +87,22 @@ async function withRebuiltFixture(configPatch, fn, edits = []) {
   }
 }
 
-const signer = (name, source = 'config') => ({ name, source });
+const signer = (name: string, source = 'config') => ({ name, source });
 
-async function withServer(config, author, fn) {
+async function withServer<T>(config: Config, author: string | ReviewAuthor | undefined, fn: (base: string) => T | Promise<T>) {
   const server = await startReviewServer(config, { author: typeof author === 'string' ? signer(author) : author });
   try {
-    return await fn(`http://127.0.0.1:${server.address().port}`);
+    return await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
   } finally {
     server.close();
   }
 }
 
-const snapshot = (dir) =>
-  Object.fromEntries(fs.readdirSync(dir, { recursive: true }).sort().map((f) => [f, fs.statSync(path.join(dir, f)).isFile() ? fs.readFileSync(path.join(dir, f), 'utf8') : null]));
+const snapshot = (dir: string) =>
+  Object.fromEntries((fs.readdirSync(dir, { recursive: true }) as string[]).sort().map((f) => [f, fs.statSync(path.join(dir, f)).isFile() ? fs.readFileSync(path.join(dir, f), 'utf8') : null]));
 
-const postMark = (base, body) => fetch(`${base}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-const postJudgment = (base, body) => fetch(`${base}/api/judgments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const postMark = (base: string, body: object) => fetch(`${base}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const postJudgment = (base: string, body: object) => fetch(`${base}/api/judgments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 test('the page and its data are served, with the map, the tests per screen and the marks', async () => {
   await withRebuiltFixture({}, (config) =>
@@ -78,7 +125,7 @@ test('the page and its data are served, with the map, the tests per screen and t
 test('the data carries each story checked against the map with its status, the tests per story and the story files that could not be read, read again on every request', async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      const data = await (await fetch(`${base}/api/data`)).json();
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual([data.stories.list, data.stories.notices], [[], []]);
       assert.deepEqual(data.stories.unknownTags.map((u) => u.tag), ['story:help-from-home', 'story:open-document', 'story:print-document', 'story:run-lab', 'story:run-lab']);
       assert.equal(data.storiesDir, path.join(config.outDir, 'stories'));
@@ -86,7 +133,7 @@ test('the data carries each story checked against the map with its status, the t
   );
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      const data = await (await fetch(`${base}/api/data`)).json();
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual(data.stories.list.map((s) => [s.id, s.links.map((l) => l.verdict), s.broken, s.detached, s.status]), [
         ['change-settings', ['off-map'], false, true, 'partial'],
         ['help-from-home', ['open', 'broken'], true, false, 'pending'],
@@ -99,13 +146,13 @@ test('the data carries each story checked against the map with its status, the t
       assert.deepEqual(data.stories.notices.map((n) => n.file), ['lab-shortcut.json']);
 
       fs.writeFileSync(path.join(config.storiesDir, 'lab-shortcut.json'), JSON.stringify({ name: '실험실 결과', screens: ['/lab#Lab', '/lab/result#LabResult'], author: 'a', date: '2026-10-02' }));
-      const again = await (await fetch(`${base}/api/data`)).json();
+      const again: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual(again.stories.notices, []);
-      assert.equal(again.stories.list.find((s) => s.id === 'lab-shortcut').reach[0].kind, 'start');
+      assert.equal(again.stories.list.find((s) => s.id === 'lab-shortcut')!.reach[0].kind, 'start');
 
       fs.writeFileSync(path.join(config.storiesDir, 'print-document.json'), JSON.stringify({ name: '문서를 인쇄한다', screens: ['/document/:id#DocumentDetail'], author: 'a', date: '2026-10-03' }));
-      const printed = await (await fetch(`${base}/api/data`)).json();
-      assert.equal(printed.stories.list.find((s) => s.id === 'print-document').status, 'pass');
+      const printed: PageData = await (await fetch(`${base}/api/data`)).json();
+      assert.equal(printed.stories.list.find((s) => s.id === 'print-document')!.status, 'pass');
       assert.deepEqual(printed.stories.unknownTags, []);
     }),
   );
@@ -124,7 +171,7 @@ test('a mark posted from the page is saved with the server-side author and date 
     assert.match(saved.date, /^\d{4}-\d\d-\d\dT/);
 
     await withServer(config, 'reviewer', async (base) => {
-      const data = await (await fetch(`${base}/api/data`)).json();
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual(data.marks.attached.map((m) => [m.key, m.current.status, m.current.note]), [['/lab#Lab api', 'needs-more', 'only a UI test']]);
     });
   });
@@ -132,8 +179,8 @@ test('a mark posted from the page is saved with the server-side author and date 
 
 test('the author is the config author, else the git user name of the config folder, else the computer user name, and says where it came from', () => {
   const config = { configDir: '/projects/app', author: null };
-  const asked = [];
-  const git = (name) => (dir) => { asked.push(dir); return name; };
+  const asked: string[] = [];
+  const git = (name: string | null) => (dir: string) => { asked.push(dir); return name; };
   const user = () => 'kim';
   assert.deepEqual(reviewAuthor({ ...config, author: '설정 이름' }, { gitName: git('Git Name'), userName: user }), { name: '설정 이름', source: 'config' });
   assert.deepEqual(reviewAuthor(config, { gitName: git('Git Name'), userName: user }), { name: 'Git Name', source: 'git' });
@@ -144,7 +191,7 @@ test('the author is the config author, else the git user name of the config fold
   assert.ok(fallback.name.trim().length > 0);
 });
 
-const withConfigFile = (patch, fn) => {
+const withConfigFile = <T>(patch: object, fn: (file: string) => T) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     const file = path.join(dir, 'config.json');
@@ -162,13 +209,13 @@ test('the config author is kept trimmed, and is null when the config has none', 
 
 for (const [name, author] of [['a number', 7], ['an empty string', ''], ['only spaces', '   ']]) {
   test(`a config author that is ${name} is rejected with what it should be`, () => {
-    withConfigFile({ author }, (file) => assert.throws(() => loadConfig(file), (err) => /^author must be .*"Kim Min"/.test(err.message) && err.message.endsWith(`not ${JSON.stringify(author)}`)));
+    withConfigFile({ author }, (file) => assert.throws(() => loadConfig(file), (err: Error) => /^author must be .*"Kim Min"/.test(err.message) && err.message.endsWith(`not ${JSON.stringify(author)}`)));
   });
 }
 
-const signedWith = (config) => [...loadMarks(config.marksDir), ...loadJudgments(config.judgmentsDir).judgments].map((saved) => saved.author);
+const signedWith = (config: Config) => [...loadMarks(config.marksDir), ...loadJudgments(config.judgmentsDir).judgments].map((saved) => saved.author);
 
-async function assertNewSavesSignedAs(config, name) {
+async function assertNewSavesSignedAs(config: Config, name: string) {
   await withServer(config, undefined, async (base) => {
     assert.equal((await (await fetch(`${base}/api/data`)).json()).author, name);
     assert.equal((await postMark(base, { target: { node: '/lab#Lab' }, status: 'fine', author: 'typed name' })).status, 201);
@@ -178,7 +225,7 @@ async function assertNewSavesSignedAs(config, name) {
   assert.deepEqual(signedWith(config), [name, name]);
 }
 
-function initGitRepoNamed(dir, name) {
+function initGitRepoNamed(dir: string, name: string) {
   execFileSync('git', ['init', '-q'], { cwd: dir });
   execFileSync('git', ['config', 'user.name', name], { cwd: dir });
 }
@@ -221,7 +268,7 @@ test('rebuilding the map leaves the marks untouched, and marks on screens that d
     assert.deepEqual(snapshot(config.marksDir), before);
 
     await withServer(config, 'reviewer', async (base) => {
-      const data = await (await fetch(`${base}/api/data`)).json();
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual(data.marks.attached.map((m) => m.key), ['/home#Home ui']);
       assert.deepEqual(data.marks.detached.map((m) => m.key), ['/help#Help']);
     });
@@ -265,12 +312,12 @@ const ACCOUNTS = {
   'duru-auditor': { password: 'aud1t', token: 't-audit', name: '두루 감사', documents: [{ id: 37 }] },
 };
 
-async function withFakeApi(fn) {
-  const presses = [];
-  const logins = [];
-  const listCalls = [];
-  const requests = [];
-  const json = (res, status, body) => {
+async function withFakeApi<T>(fn: (api: string, presses: string[], logins: string[], listCalls: string[], requests: string[]) => Promise<T>) {
+  const presses: string[] = [];
+  const logins: string[] = [];
+  const listCalls: string[] = [];
+  const requests: string[] = [];
+  const json = (res: http.ServerResponse, status: number, body: unknown) => {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(body));
   };
@@ -281,7 +328,7 @@ async function withFakeApi(fn) {
     if (req.method === 'POST' && req.url === '/auth/login') {
       const { loginId, pw } = JSON.parse(body);
       logins.push(loginId);
-      const account = ACCOUNTS[loginId];
+      const account = ACCOUNTS[loginId as keyof typeof ACCOUNTS];
       return account?.password === pw ? json(res, 200, { result: { token: account.token } }) : json(res, 401, { message: 'bad login' });
     }
     if (req.method === 'POST' && req.url === '/api/v2/one-time-code/create') {
@@ -296,7 +343,7 @@ async function withFakeApi(fn) {
     const me = Object.values(ACCOUNTS).find((a) => req.headers.authorization === `Bearer ${a.token}`);
     if (!me) return json(res, 401, { message: 'no token' });
     if (req.method === 'GET' && req.url === '/api/v1/me') return json(res, 200, { name: me.name });
-    if (req.url.startsWith('/api/v1/documents')) {
+    if (req.url!.startsWith('/api/v1/documents')) {
       listCalls.push(`${req.method} ${req.url}`);
       if (req.method === 'GET' && req.url === '/api/v1/documents') return json(res, 200, { contents: { list: me.documents } });
       if (req.method === 'POST' && req.url === '/api/v1/documents/search') return json(res, 200, [{ code: `${JSON.parse(body).status} 1/2` }]);
@@ -317,16 +364,16 @@ async function withFakeApi(fn) {
     }
     json(res, 404, {});
   });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
-    return await fn(`http://127.0.0.1:${server.address().port}`, presses, logins, listCalls, requests);
+    return await fn(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, presses, logins, listCalls, requests);
   } finally {
     server.closeAllConnections();
     server.close();
   }
 }
 
-const appSettings = (server) => ({
+const appSettings = (server: string) => ({
   app: {
     files: 'build',
     server,
@@ -342,44 +389,44 @@ const appSettings = (server) => ({
 });
 
 const SETTINGS_FILE = { path: '/settings.js', global: 'window.FAKE_SETTINGS', root: 'globalSettings', merged: ['SYSTEM', 'CUSTOM'] };
-const withSettingsFile = (api, extra = {}) => ({ app: { ...appSettings(api).app, settingsFile: SETTINGS_FILE, ...extra } });
-const postSettings = (base, overrides) =>
+const withSettingsFile = (api: string, extra = {}) => ({ app: { ...appSettings(api).app, settingsFile: SETTINGS_FILE, ...extra } });
+const postSettings = (base: string, overrides: unknown) =>
   fetch(`${base}/api/settings`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ overrides }) });
 
-function runSettingsFile(code) {
+function runSettingsFile(code: string) {
   const context = vm.createContext({});
   vm.runInContext('var window = globalThis;', context);
   vm.runInContext(code, context);
   return JSON.parse(vm.runInContext('JSON.stringify({ settings: window.FAKE_SETTINGS, kept: window.KEPT })', context));
 }
 
-function rewrite(copy, rel, from, to) {
+function rewrite(copy: string, rel: string, from: string, to: string) {
   const file = path.join(copy, rel);
   const src = fs.readFileSync(file, 'utf8');
   assert.ok(src.includes(from), `${rel} has no ${from}`);
   fs.writeFileSync(file, src.replace(from, to));
 }
 
-const rebuild = (copy) => execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
+const rebuild = (copy: string) => execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
 
 const LIST_API = { api: '/api/v1/documents', list: 'contents.list', value: 'id' };
 const API_KEY_ENV = 'DURU_TEST_API_KEY';
 const API_KEY = 'k3y-s3cret';
 const ISSUING_API = { api: '/api/v2/one-time-code/create', method: 'POST', header: { 'X-API-KEY': '{key}' }, keyEnv: API_KEY_ENV, body: { memberId: 'duru-admin' }, value: 'contents.code' };
 const VIEW_TOKEN_API = { api: '/api/v1/view-token/create', method: 'POST', header: { 'X-API-KEY': '{key}' }, keyEnv: API_KEY_ENV, body: { referenceType: 'DOCUMENT', referenceId: '{documentId}' }, value: 'contents.accessToken' };
-const VIEW_ROUTE = ['client/src/Routes.js', '<Route path={`${Option.ROUTE_PATH.DOCUMENT}/:id`} component={waitFor(DocumentDetail)} exact />',
+const VIEW_ROUTE: [string, string, string] = ['client/src/Routes.js', '<Route path={`${Option.ROUTE_PATH.DOCUMENT}/:id`} component={waitFor(DocumentDetail)} exact />',
   "<Route path={'/view/:documentId'} component={waitFor(DocumentDetail)} exact />"];
 const VIEW_SCREEN = '/view/:documentId#DocumentDetail';
 const loginWithHeader = { ...appSettings('http://127.0.0.1:1').app.login, header: { Authorization: 'Bearer {token}' } };
 
-const roleSettings = (server, roles = { ADMIN: 'duru-boss', AUDITOR: 'duru-auditor' }) => ({
+const roleSettings = (server: string, roles: Record<string, string> = { ADMIN: 'duru-boss', AUDITOR: 'duru-auditor' }) => ({
   app: {
     ...appSettings(server).app,
     roles: Object.fromEntries(Object.entries(roles).map(([role, id]) => [role, { id, passwordEnv: id === 'duru-boss' ? ADMIN_PASSWORD_ENV : AUDITOR_PASSWORD_ENV }])),
   },
 });
 
-async function withPasswords(values, fn) {
+async function withPasswords<T>(values: Record<string, string | undefined>, fn: () => Promise<T>) {
   for (const [env, value] of Object.entries(values)) {
     if (value === undefined) delete process.env[env];
     else process.env[env] = value;
@@ -391,7 +438,7 @@ async function withPasswords(values, fn) {
   }
 }
 
-const withPassword = (value, fn) => withPasswords({ [PASSWORD_ENV]: value }, fn);
+const withPassword = <T>(value: string | undefined, fn: () => Promise<T>) => withPasswords({ [PASSWORD_ENV]: value }, fn);
 const ALL_PASSWORDS = { [PASSWORD_ENV]: 's3cret', [ADMIN_PASSWORD_ENV]: 'b0ss', [AUDITOR_PASSWORD_ENV]: 'aud1t' };
 
 test('with app settings, the app is served logged in on its own address and its API requests go to the test server', async () => {
@@ -413,7 +460,7 @@ test('with app settings, the app is served logged in on its own address and its 
           assert.match(html, /FAKE_AUTH/);
           assert.match(html, /t-123/);
           const script = await fetch(`${data.app.url}/app.js`);
-          assert.match(script.headers.get('content-type'), /javascript/);
+          assert.match(script.headers.get('content-type')!, /javascript/);
           assert.match(await script.text(), /FAKE_AUTH/);
 
           const me = await fetch(`${data.app.url}/api/v1/me`, { headers: { authorization: 'Bearer t-123' } });
@@ -521,7 +568,7 @@ test('when the password variable is missing or the login is refused, the page sa
 test('app files taken from a deployed address are served without the headers that forbid framing, with the token and the settings overrides put in', async () => {
   const build = path.join(FIXTURE, 'build');
   const deployed = http.createServer((req, res) => {
-    const file = path.join(build, ['/app.js', '/settings.js'].includes(req.url) ? req.url.slice(1) : 'index.html');
+    const file = path.join(build, ['/app.js', '/settings.js'].includes(req.url!) ? req.url!.slice(1) : 'index.html');
     res.writeHead(200, {
       'content-type': file.endsWith('.js') ? 'application/javascript' : 'text/html; charset=utf-8',
       'x-frame-options': 'DENY',
@@ -529,9 +576,9 @@ test('app files taken from a deployed address are served without the headers tha
     });
     res.end(fs.readFileSync(file));
   });
-  await new Promise((resolve) => deployed.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => deployed.listen(0, '127.0.0.1', resolve));
   try {
-    const files = `http://127.0.0.1:${deployed.address().port}`;
+    const files = `http://127.0.0.1:${(deployed.address() as AddressInfo).port}`;
     await withFakeApi((api) =>
       withPassword('s3cret', () =>
         withRebuiltFixture(withSettingsFile(api, { files }), (config) =>
@@ -542,7 +589,7 @@ test('app files taken from a deployed address are served without the headers tha
             assert.equal(page.headers.get('content-security-policy'), null);
             assert.match(await page.text(), /FAKE_AUTH/);
             const script = await fetch(`${app.url}/app.js`);
-            assert.match(script.headers.get('content-type'), /javascript/);
+            assert.match(script.headers.get('content-type')!, /javascript/);
             assert.doesNotMatch(await script.text(), /t-123/);
 
             await postSettings(base, [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
@@ -564,7 +611,7 @@ test('each configured role is served logged in as its own account on an address 
     withPasswords(ALL_PASSWORDS, () =>
       withRebuiltFixture({ app: { ...roleSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
         withServer(config, 'reviewer', async (base) => {
-          const { app } = await (await fetch(`${base}/api/data`)).json();
+          const { app }: PageData = await (await fetch(`${base}/api/data`)).json();
           assert.deepEqual(app.roles.map(({ url, ...r }) => r), [
             { role: 'ADMIN', account: 'duru-boss', error: null },
             { role: 'AUDITOR', account: 'duru-auditor', error: null },
@@ -627,9 +674,9 @@ test('a role whose password variable is missing gets its own error while the oth
   );
 });
 
-const pathValueSettings = (api, pathValues) => ({ app: { ...appSettings(api).app, login: loginWithHeader, pathValues } });
+const pathValueSettings = (api: string, pathValues: unknown) => ({ app: { ...appSettings(api).app, login: loginWithHeader, pathValues } });
 
-const preparedFor = (config, pathValues, id) =>
+const preparedFor = (config: Config, pathValues: unknown, id: string) =>
   withServer({ ...config, app: { ...config.app, pathValues } }, 'reviewer', async (base) => {
     const res = await fetch(`${base}/api/path-values?screen=${encodeURIComponent(id)}`);
     return res.status === 200 ? res.json() : res.status;
@@ -641,7 +688,7 @@ test('the path values of a screen come from its fixed values and from list APIs 
     withPassword('s3cret', () =>
       withRebuiltFixture(pathValueSettings(api, pathValues), (config) =>
         withServer(config, 'reviewer', async (base) => {
-          const prepared = async (id) => (await fetch(`${base}/api/path-values?screen=${encodeURIComponent(id)}`)).json();
+          const prepared = async (id: string) => (await fetch(`${base}/api/path-values?screen=${encodeURIComponent(id)}`)).json();
           assert.deepEqual(await prepared('/document/:tab_draft_done_#DocumentList'), {
             parts: ['/document', { name: 'tab', prefix: '/', optional: false, pattern: 'draft|done' }],
             values: { tab: 'draft' },
@@ -679,7 +726,7 @@ test('the path values of a screen asked for with a role come from list APIs call
     withPasswords(ALL_PASSWORDS, () =>
       withRebuiltFixture({ app: { ...roleSettings(api).app, login: loginWithHeader, pathValues } }, (config) =>
         withServer(config, 'reviewer', async (base) => {
-          const prepared = (query) => fetch(`${base}/api/path-values?screen=${encodeURIComponent('/document/:id#DocumentDetail')}${query}`);
+          const prepared = (query: string) => fetch(`${base}/api/path-values?screen=${encodeURIComponent('/document/:id#DocumentDetail')}${query}`);
           assert.deepEqual((await (await prepared('')).json()).values, { id: '17' });
           assert.deepEqual((await (await prepared('&role=ADMIN')).json()).values, { id: '27' });
           assert.deepEqual((await (await prepared('&role=AUDITOR')).json()).values, { id: '37' });
@@ -694,7 +741,7 @@ test('a list API that is empty, fails or answers in another shape is reported, a
   await withFakeApi((api) =>
     withPassword('s3cret', () =>
       withRebuiltFixture(pathValueSettings(api, {}), async (config) => {
-        const detail = (id) => preparedFor(config, { '/document/:id': { id } }, '/document/:id#DocumentDetail');
+        const detail = (id: unknown) => preparedFor(config, { '/document/:id': { id } }, '/document/:id#DocumentDetail');
         const searched = await detail({ api: '/api/v1/documents/search', method: 'POST', body: { status: 'done' }, list: '', value: 'code' });
         assert.deepEqual([searched.values, searched.errors, searched.path], [{ id: 'done 1/2' }, [], '/document/done%201%2F2']);
         for (const [given, error] of [
@@ -703,7 +750,7 @@ test('a list API that is empty, fails or answers in another shape is reported, a
           [{ ...LIST_API, api: '/api/v1/documents/text' }, /JSON 이 아닙니다/],
           [{ ...LIST_API, list: 'contents.items' }, /contents\.items 에 목록이 없습니다/],
           [{ ...LIST_API, value: 'uuid' }, /첫 항목에 uuid 값이 없습니다/],
-        ]) {
+        ] satisfies [object, RegExp][]) {
           const result = await detail(given);
           assert.deepEqual([result.values, result.path, result.fallback], [{}, null, '/home#Home'], given.api);
           assert.equal(result.errors.length, 1);
@@ -754,8 +801,8 @@ test('a query token is issued for the document id of the same address, a typed v
     withPasswords({ [PASSWORD_ENV]: 'wrong', [API_KEY_ENV]: API_KEY }, () =>
       withRebuiltFixture({ app: { ...appSettings(api).app, pathValues } }, (config) =>
         withServer(config, 'reviewer', async (base) => {
-          const again = (body, type = 'application/json') => fetch(`${base}/api/path-values`, { method: 'POST', headers: { 'Content-Type': type }, body });
-          const prepared = async (id, typed) => (typed ? await again(JSON.stringify({ screen: id, typed })) : await fetch(`${base}/api/path-values?screen=${encodeURIComponent(id)}`)).text();
+          const again = (body: string, type = 'application/json') => fetch(`${base}/api/path-values`, { method: 'POST', headers: { 'Content-Type': type }, body });
+          const prepared = async (id: string, typed?: object) => (typed ? await again(JSON.stringify({ screen: id, typed })) : await fetch(`${base}/api/path-values?screen=${encodeURIComponent(id)}`)).text();
           const first = JSON.parse(await prepared(VIEW_SCREEN));
           assert.deepEqual([first.values, first.queryNames, first.errors, first.path, first.issued], [{ documentId: '01a1', '?token': 't-01a1-1' }, ['?token'], [], '/view/01a1?token=t-01a1-1', ['?token']]);
           const typed = JSON.parse(await prepared(VIEW_SCREEN, { documentId: 'typed7' }));
@@ -829,7 +876,7 @@ test('the settings file is served with the posted overrides applied the way the 
 
           for (const url of [app.url, app.signedOutUrl]) {
             const served = await fetch(`${url}/settings.js`);
-            assert.match(served.headers.get('content-type'), /javascript/);
+            assert.match(served.headers.get('content-type')!, /javascript/);
             const text = await served.text();
             assert.ok(text.startsWith(fileText));
             assert.deepEqual(runSettingsFile(text).settings, {
@@ -883,7 +930,7 @@ test('settings overrides that are not JSON, not a list, or reach outside the sec
             [[{ path: ['SYSTEM', '__proto__', 'polluted'], value: true }], /__proto__/],
             [[{ path: ['SYSTEM', 'constructor', 'prototype', 'polluted'], value: true }], /constructor/],
             [[{ path: ['SYSTEM', 'MAIN_MENU', 'prototype'], value: true }], /prototype/],
-          ]) {
+          ] satisfies [unknown, RegExp][]) {
             const res = await postSettings(base, overrides);
             assert.equal(res.status, 400, JSON.stringify(overrides));
             assert.match(await res.text(), message);
@@ -922,7 +969,7 @@ test('the page gets what the settings file sets in the merged sections, without 
       withRebuiltFixture(withSettingsFile(api), (config, copy) =>
         withServer(config, 'reviewer', async (base) => {
           const settingsOf = async () => (await (await fetch(`${base}/api/data`)).json()).app.settings;
-          const writeFile = (text) => fs.writeFileSync(path.join(copy, 'build/settings.js'), text);
+          const writeFile = (text: string) => fs.writeFileSync(path.join(copy, 'build/settings.js'), text);
           await postSettings(base, [{ path: ['SYSTEM', 'HELP_LINK_ENABLED'], value: false }]);
           assert.deepEqual(await settingsOf(), {
             root: 'globalSettings',
@@ -1002,12 +1049,12 @@ for (const signedOutPaths of [[], ['/signin']]) {
           const server = await startReviewServer(config, { author: signer('reviewer') });
           let app;
           try {
-            ({ app } = await (await fetch(`http://127.0.0.1:${server.address().port}/api/data`)).json());
+            ({ app } = await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/data`)).json());
           } finally {
             await new Promise((resolve) => server.close(resolve));
           }
           assert.equal(Boolean(app.signedOutUrl), signedOutPaths.length > 0);
-          const refused = (err) => err.cause?.code === 'ECONNREFUSED';
+          const refused = (err: { cause?: { code?: string } }) => err.cause?.code === 'ECONNREFUSED';
           await assert.rejects(fetch(`${app.url}/home`), refused);
           if (app.signedOutUrl) await assert.rejects(fetch(`${app.signedOutUrl}/signin`), refused);
           assert.equal(app.roles.length, 2);
@@ -1035,15 +1082,15 @@ for (const [name, broken, message] of [
   ['a query value given a number', { pathValues: { '/document/:id': { '?token': 17 } } }, /app\.pathValues\["\/document\/:id"\]\.\?token must/],
   ['a query value that is a list API without its value', { login: loginWithHeader, pathValues: { '/document/:id': { '?token': { ...LIST_API, value: undefined } } } }, /app\.pathValues\["\/document\/:id"\]\.\?token must/],
   ['a query value that is an issuing API with the key itself in its header', { pathValues: { '/document/:id': { '?token': { ...ISSUING_API, header: { 'X-API-KEY': 's3cret' } } } } }, /app\.pathValues\["\/document\/:id"\]\.\?token must/],
-  ...[
+  ...([
     ['without the value to take', { value: undefined }],
     ['whose address is not a path', { api: 'http://127.0.0.1:1/api/v1/documents' }],
     ['with a list that is not a dotted path', { list: 7 }],
     ['with a body but no method', { body: { status: 'draft' } }],
     ['with a key it does not know', { headers: {} }],
-  ].map(([name, change]) => [`a list API ${name}`, { login: loginWithHeader, pathValues: { '/document/:id': { id: { ...LIST_API, ...change } } } }, /app\.pathValues\["\/document\/:id"\]\.id must/]),
+  ] satisfies [string, object][]).map(([name, change]): [string, object, RegExp] => [`a list API ${name}`, { login: loginWithHeader, pathValues: { '/document/:id': { id: { ...LIST_API, ...change } } } }, /app\.pathValues\["\/document\/:id"\]\.id must/]),
   ['a list API without login.header', { pathValues: { '/document/:id': { id: LIST_API } } }, /app\.login\.header/],
-  ...[
+  ...([
     ['with the key itself in its header', { header: { 'X-API-KEY': 's3cret' } }],
     ['without a header', { header: undefined }],
     ['with a header that is not a map of names to text', { header: ['{key}'] }],
@@ -1051,20 +1098,20 @@ for (const [name, broken, message] of [
     ['with a body but no method', { method: undefined }],
     ['whose address is not a path', { api: 'api/codes' }],
     ['with the key itself beside its header', { key: 's3cret' }],
-  ].map(([name, change]) => [`an issuing API ${name}`, { pathValues: { '/document/:id': { id: { ...ISSUING_API, ...change } } } }, /app\.pathValues\["\/document\/:id"\]\.id must/]),
+  ] satisfies [string, object][]).map(([name, change]): [string, object, RegExp] => [`an issuing API ${name}`, { pathValues: { '/document/:id': { id: { ...ISSUING_API, ...change } } } }, /app\.pathValues\["\/document\/:id"\]\.id must/]),
   ['a login header that is not a map of header names', { login: { ...loginWithHeader, header: ['Bearer s3cret'] } }, /app\.login\.header/],
   ['a settingsFile without merged sections', { settingsFile: { ...SETTINGS_FILE, merged: [] } }, /app\.settingsFile must be/],
   ['a settingsFile path that is not absolute', { settingsFile: { ...SETTINGS_FILE, path: 'settings.js' } }, /app\.settingsFile must be/],
   ['a settingsFile global that is not a dotted name', { settingsFile: { ...SETTINGS_FILE, global: "window['FAKE_SETTINGS']" } }, /app\.settingsFile must be/],
   ['a settingsFile root that is not a settings root', { settingsFile: { ...SETTINGS_FILE, root: 'appSettings' } }, /app\.settingsFile\.root "appSettings" is not listed in settingsRoots/],
-]) {
+] satisfies [string, object, RegExp][]) {
   test(`app settings with ${name} are rejected`, () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
     try {
       const file = path.join(dir, 'config.json');
       const app = { ...appSettings('http://127.0.0.1:1').app, ...broken };
       fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8')), app }));
-      assert.throws(() => loadConfig(file), (err) => message.test(err.message) && !err.message.includes('s3cret'));
+      assert.throws(() => loadConfig(file), (err: Error) => message.test(err.message) && !err.message.includes('s3cret'));
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1136,7 +1183,7 @@ test('the flow grown from one screen is served for that screen, and an unknown s
     withServer(config, 'reviewer', async (base) => {
       const res = await fetch(`${base}/api/flow?from=${encodeURIComponent('/document/:tab_draft_done_#DocumentList')}`);
       assert.equal(res.status, 200);
-      const { roots } = await res.json();
+      const { roots }: PageData['flow'] = await res.json();
       assert.deepEqual([roots[0].id, ...roots[0].children.map((c) => c.id)], ['/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/admin/report#AdminReport']);
       assert.equal((await fetch(`${base}/api/flow?from=${encodeURIComponent('/nowhere#Nowhere')}`)).status, 404);
     }),
@@ -1161,11 +1208,11 @@ test('requests another site could send through the browser are refused', async (
 
 test('the end request asks the caller to get ready, is answered, and then tells the caller to finish, and an end request that is not JSON is refused', async () => {
   await withRebuiltFixture({}, async (config) => {
-    let done;
-    const ended = new Promise((resolve) => (done = resolve));
+    let done: () => void;
+    const ended = new Promise<void>((resolve) => (done = resolve));
     const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => done });
     try {
-      const base = `http://127.0.0.1:${server.address().port}`;
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
       const plain = await fetch(`${base}/api/end`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
       assert.equal(plain.status, 415);
       const signalled = await Promise.race([ended.then(() => true), new Promise((r) => setTimeout(() => r(false), 100))]);
@@ -1183,16 +1230,16 @@ test('the end request asks the caller to get ready, is answered, and then tells 
 
 const browserMissing = fs.existsSync(chromium.executablePath()) ? false : 'Chromium is not installed (npx playwright-core install chromium)';
 
-const toList = async (p) => {
+const toList = async (p: Page) => {
   await p.waitForSelector('#view-flow.on, #view-list.on');
   await p.click('#view-list');
 };
 
-async function withPage(base, fn, { view = 'list', setup } = {}) {
+async function withPage(base: string, fn: (p: Page, errors: string[]) => Promise<void>, { view = 'list', setup }: { view?: string; setup?: (page: Page) => Promise<unknown> } = {}) {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    const errors = [];
+    const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
     if (setup) await setup(page);
@@ -1239,7 +1286,7 @@ test('in a browser, the header names the author only when the name is the comput
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         assert.equal(await p.textContent('#author'), '작성자 hit0607');
-        assert.match(await p.getAttribute('#author', 'title'), /컴퓨터 사용자 이름/);
+        assert.match((await p.getAttribute('#author', 'title'))!, /컴퓨터 사용자 이름/);
       }));
   });
 });
@@ -1258,8 +1305,8 @@ test('in a browser, marks and judgments show only their date while every one of 
         await p.waitForSelector('#center .awaiting-tag');
         const signed = () => Promise.all(['#right .history li .muted', '#center .awaiting-tag .importer .detail .muted'].map((sel) => p.textContent(sel)));
         for (const text of await signed()) {
-          assert.doesNotMatch(text, /reviewer/);
-          assert.match(text, /\d/);
+          assert.doesNotMatch(text!, /reviewer/);
+          assert.match(text!, /\d/);
         }
 
         addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: HOME_NODE, kind: 'discard', reason: 'judged elsewhere', author: 'someone' });
@@ -1267,9 +1314,9 @@ test('in a browser, marks and judgments show only their date while every one of 
         await toList(p);
         await p.click('#screen-list li:has-text("/help")');
         await openHistory(p);
-        for (const text of await signed()) assert.match(text, /reviewer · /);
+        for (const text of await signed()) assert.match(text!, /reviewer · /);
         await p.click('#screen-list li:has-text("/home")');
-        assert.match(await p.textContent('#center .discarded .importer'), /judged elsewhere · someone · /);
+        assert.match((await p.textContent('#center .discarded .importer'))!, /judged elsewhere · someone · /);
       })));
 });
 
@@ -1293,14 +1340,14 @@ for (const host of ['127.0.0.1', 'localhost']) {
           await p.click('#screen-list li:has-text("/document/:id")');
           assert.equal(await p.textContent('#center h3'), '/document/:id');
           await p.click('#center tr:has-text("API")');
-          assert.match(await p.locator('#right h2', { hasText: '표시 —' }).textContent(), /API 깊이/);
+          assert.match((await p.locator('#right h2', { hasText: '표시 —' }).textContent())!, /API 깊이/);
           assert.equal(await p.isDisabled('#right button.save'), true);
           await p.click('#right .statuses button:has-text("더 필요")');
           await p.fill('#right-dock textarea', 'no API test yet');
           await p.click('#right button.save');
           await openHistory(p);
           await p.waitForSelector('#right .history li:has-text("no API test yet")');
-          assert.match(await p.textContent('#center tr.selected td.mark'), /더 필요/);
+          assert.match((await p.textContent('#center tr.selected td.mark'))!, /더 필요/);
           assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note, m.author]), [
             [{ node: '/document/:id#DocumentDetail', depth: 'api' }, 'needs-more', 'no API test yet', 'reviewer'],
           ]);
@@ -1325,6 +1372,8 @@ for (const host of ['127.0.0.1', 'localhost']) {
   });
 }
 
+type Kept = { kept?: boolean };
+
 test('in a browser, drawing the screens side again keeps the search box and its filtering, and draws the 「떨어져 나감」 block once with the marks read again', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
@@ -1334,13 +1383,13 @@ test('in a browser, drawing the screens side again keeps the search box and its 
         const detachedHeadings = () => p.locator('#left h2:has-text("떨어져 나감")').allTextContents();
         assert.deepEqual(await detachedHeadings(), ['떨어져 나감 0']);
         await p.fill(search, 'lab');
-        await p.$eval(search, (el) => { el.kept = true; });
+        await p.$eval(search, (el: HTMLInputElement & Kept) => { el.kept = true; });
         await postMark(base, { target: { node: '/gone#Gone' }, status: 'missing' });
         await p.click('#screen-list li:has-text("/lab/result")');
         await p.click('#right .statuses button:has-text("충분")');
         await p.click('#right button.save');
         await p.waitForSelector('#screen-list li.selected .chip');
-        assert.equal(await p.$eval(search, (el) => el.kept), true);
+        assert.equal(await p.$eval(search, (el: HTMLInputElement & Kept) => el.kept), true);
         assert.equal(await p.inputValue(search), 'lab');
         assert.deepEqual(await p.locator('#screen-list li .name > span:first-child').allTextContents(), ['/lab', '/lab/result']);
         assert.deepEqual(await detachedHeadings(), ['떨어져 나감 1']);
@@ -1358,7 +1407,7 @@ test('a map.json built before links carried their conditions leaves the stories 
     await withServer(config, 'reviewer', async (base) => {
       const res = await fetch(`${base}/api/data`);
       assert.equal(res.status, 200);
-      const data = await res.json();
+      const data: PageData = await res.json();
       assert.equal(data.stories.list.length, 0);
       assert.deepEqual(data.stories.notices.map((n) => n.file), ['lab-shortcut.json']);
       assert.ok(data.stories.stale.startsWith(`${mapFile} 은 `));
@@ -1392,7 +1441,7 @@ test('a mark on a story is saved through the page, and one on a story ID outside
       const refused = await postMark(base, { target: { story: '../run-lab' }, status: 'missing' });
       assert.equal(refused.status, 400);
       assert.equal((await postMark(base, { target: { story: 'run-lab', depth: 'ui' }, status: 'missing' })).status, 400);
-      const data = await (await fetch(`${base}/api/data`)).json();
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual(data.marks.attached.map((m) => [m.key, m.target, m.current.note, m.current.author]), [['story(run-lab)', { story: 'run-lab' }, 'walk it', 'reviewer']]);
     }),
   );
@@ -1408,12 +1457,12 @@ test('in a browser, a map.json built before links carried their conditions shows
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#left .views.side button:has-text("스토리")');
-        assert.match(await p.textContent('#left'), /duru rebuild 로 맵을 다시 만드세요/);
-        assert.doesNotMatch(await p.textContent('#left'), /스토리 파일이 없습니다/);
+        assert.match((await p.textContent('#left'))!, /duru rebuild 로 맵을 다시 만드세요/);
+        assert.doesNotMatch((await p.textContent('#left'))!, /스토리 파일이 없습니다/);
         assert.equal(await p.locator('#story-list li').count(), 0);
         assert.equal(await p.locator('#left .notices li').count(), 1);
         assert.equal(await p.textContent('#left .notices li code'), 'lab-shortcut.json');
-        assert.match(await p.textContent('#left'), /읽지 못한 스토리 파일 1/);
+        assert.match((await p.textContent('#left'))!, /읽지 못한 스토리 파일 1/);
       }),
     );
   });
@@ -1423,11 +1472,11 @@ test('in a browser, the three left tabs stay on one line inside the column, also
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        let counts = { screens: 11, stories: 5 };
+        let counts: { screens: number; stories: number; untagged?: number } = { screens: 11, stories: 5 };
         await p.route('**/api/data', async (route) => {
           const res = await route.fetch();
-          const data = await res.json();
-          const grow = (list, n) => Array.from({ length: n }, (_, i) => list[i % list.length]);
+          const data: PageData = await res.json();
+          const grow = <T>(list: T[], n: number) => Array.from({ length: n }, (_, i) => list[i % list.length]);
           data.map.screens = grow(data.map.screens, counts.screens);
           data.stories.list = grow(data.stories.list, counts.stories);
           if (counts.untagged !== undefined) {
@@ -1437,31 +1486,31 @@ test('in a browser, the three left tabs stay on one line inside the column, also
           await route.fulfill({ response: res, json: data });
         });
         const measure = () => p.evaluate(() => {
-          const left = document.getElementById('left');
-          const row = left.querySelector('.views.side');
-          const probe = row.cloneNode(true);
+          const left = document.getElementById('left')!;
+          const row = left.querySelector('.views.side')!;
+          const probe = row.cloneNode(true) as HTMLElement;
           probe.style.cssText = 'position: absolute; visibility: hidden; width: 1000px';
           for (const b of [...probe.children].slice(1)) b.remove();
-          probe.querySelector('.tab-name').textContent = '가';
-          probe.querySelector('.tab-count').textContent = '1';
+          probe.querySelector('.tab-name')!.textContent = '가';
+          probe.querySelector('.tab-count')!.textContent = '1';
           left.append(probe);
-          const oneLine = probe.firstElementChild.getBoundingClientRect().height;
+          const oneLine = probe.firstElementChild!.getBoundingClientRect().height;
           probe.remove();
-          const middle = (el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
+          const middle = (el: Element) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
           const tabs = [...row.children];
           return {
             heights: tabs.map((b) => b.getBoundingClientRect().height),
             oneLine,
-            drop: tabs.map((b) => Math.abs(middle(b.querySelector('.tab-name')) - middle(b.querySelector('.tab-count')))),
+            drop: tabs.map((b) => Math.abs(middle(b.querySelector('.tab-name')!) - middle(b.querySelector('.tab-count')!))),
             inside: tabs.map((b) => {
               const box = b.getBoundingClientRect();
-              const name = b.querySelector('.tab-name').getBoundingClientRect();
-              const count = b.querySelector('.tab-count').getBoundingClientRect();
+              const name = b.querySelector('.tab-name')!.getBoundingClientRect();
+              const count = b.querySelector('.tab-count')!.getBoundingClientRect();
               const edge = b.clientLeft + parseFloat(getComputedStyle(b).paddingLeft);
               return name.left >= box.left + edge - 0.5 && name.right <= count.left && count.right <= box.right - edge + 0.5;
             }),
             cut: tabs.map((b) => {
-              const name = b.querySelector('.tab-name');
+              const name = b.querySelector('.tab-name')!;
               const text = document.createRange();
               text.selectNodeContents(name);
               return name.getBoundingClientRect().width < text.getBoundingClientRect().width - 0.1;
@@ -1471,14 +1520,14 @@ test('in a browser, the three left tabs stay on one line inside the column, also
             leftScroll: [left.scrollWidth, left.clientWidth],
           };
         });
-        const assertFits = (m, why) => {
+        const assertFits = (m: Awaited<ReturnType<typeof measure>>, why: string) => {
           assert.deepEqual(m.heights, Array(3).fill(m.oneLine), `${why}: every tab is as tall as a one-line tab`);
           assert.ok(m.drop.every((d) => d <= 3), `${why}: each count stays beside its name ${m.drop}`);
           assert.deepEqual(m.inside, Array(3).fill(true), `${why}: name and count stay inside their tab's padding`);
           assert.ok(m.rowScroll[0] <= m.rowScroll[1], `${why}: row ${m.rowScroll[0]} fits in ${m.rowScroll[1]}`);
           assert.ok(m.leftScroll[0] <= m.leftScroll[1], `${why}: left column ${m.leftScroll[0]} does not scroll sideways in ${m.leftScroll[1]}`);
         };
-        const show = async (c) => {
+        const show = async (c: typeof counts) => {
           counts = c;
           await p.reload();
           await toList(p);
@@ -1529,18 +1578,18 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
           ['일부 화면만 테스트', '화면 없음'], ['보류', '링크 없음'], [], ['테스트 없음'], ['실패'],
         ]);
         assert.equal(await p.locator('#story-list li:has-text("개인 설정") .chip.l-off-map').getAttribute('title'), '맵에서 찾을 수 없는 화면: /settings#Settings');
-        assert.match(await p.textContent('#left .notices'), /lab-shortcut\.json.*screens 는/);
+        assert.match((await p.textContent('#left .notices'))!, /lab-shortcut\.json.*screens 는/);
 
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.equal(await p.textContent('#center h3'), '실험실을 열어 결과를 본다');
-        assert.match(await p.textContent('#center .memo'), /고객사 설정/);
+        assert.match((await p.textContent('#center .memo'))!, /고객사 설정/);
         assert.deepEqual(await p.locator('#center .story-path .step .name > span:first-child').allTextContents(), ['/home', '/lab', '/lab/result']);
         assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['조건', '이어짐']);
-        assert.match(await p.textContent('#center .story-path .link.l-conditioned'), /components\/Home\.js:19\s*globalSettings\.SYSTEM\.LAB_ENABLED\s*설정/);
+        assert.match((await p.textContent('#center .story-path .link.l-conditioned'))!, /components\/Home\.js:19\s*globalSettings\.SYSTEM\.LAB_ENABLED\s*설정/);
         assert.deepEqual(await p.locator('#right-info > *').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['도달 가능', '사전 조건']);
         assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트']);
-        assert.match(await p.textContent('#right .reach-link'), /components\/Home\.js:19/);
-        assert.match(await p.textContent('#right .reach-route'), /Routes\.js:44.*globalSettings\.SYSTEM\.LAB_ENABLED/);
+        assert.match((await p.textContent('#right .reach-link'))!, /components\/Home\.js:19/);
+        assert.match((await p.textContent('#right .reach-route'))!, /Routes\.js:44.*globalSettings\.SYSTEM\.LAB_ENABLED/);
         assert.equal(await p.locator('#center iframe').count(), 0);
 
         await p.click('#story-list li:has-text("도움말")');
@@ -1560,7 +1609,7 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
         assert.equal(await p.getAttribute('#left .views.side button.on', 'class'), 'on');
         assert.equal(await p.textContent('#left .views.side button.on'), '화면 11');
         assert.equal(await p.textContent('#center h3'), '/document/:id');
-        assert.match(await p.textContent('#screen-list li.selected'), /\/document\/:id/);
+        assert.match((await p.textContent('#screen-list li.selected'))!, /\/document\/:id/);
 
         await p.click('#left .views.side button:has-text("스토리")');
         assert.equal(await p.textContent('#story-list li.selected .name > span:first-child'), '로그인해 문서 목록에서 문서를 연다');
@@ -1585,7 +1634,7 @@ test('in a browser, a step that a move in the config joins shows as 설정에 �
         await p.click('#story-list li:has-text("실험 결과를 본다")');
         assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['설정에 적은 이동']);
         assert.equal(await p.textContent('#center .story-path .link.l-configured'), '설정에 적은 이동 로그인 뒤');
-        assert.match(await p.getAttribute('#center .story-path .link.l-configured > .chip', 'title'), /moves/);
+        assert.match((await p.getAttribute('#center .story-path .link.l-configured > .chip', 'title'))!, /moves/);
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 가능']);
       }),
     );
@@ -1625,10 +1674,10 @@ test('in a browser, the story list shows only the statuses that need a look, fil
         assert.deepEqual(await p.locator('#center .story-tests .test').evaluateAll((items) => items.map((t) => [...t.querySelectorAll('.depth, .chip')].map((e) => e.textContent))), [
           ['API', '실패'], ['API', '통과'],
         ]);
-        assert.match(await p.locator('#center .story-tests .test').first().textContent(), /Lab flow › runs the lab and reads the result @story:run-lab/);
+        assert.match((await p.locator('#center .story-tests .test').first().textContent())!, /Lab flow › runs the lab and reads the result @story:run-lab/);
         const stepTests = () => p.locator('#center .story-path .step').evaluateAll((steps) => steps.map((s) => [...s.querySelectorAll('.step-tests > span')].map((e) => e.textContent.trim())));
         assert.deepEqual(await stepTests(), [['UI/E2E ✓3', 'API ✓1 ○1', '렌더링만 ✕1', '코드 ✓1', '데이터 ✕1'], ['UI/E2E ✓2 ○1', '코드 ○1'], ['화면 테스트 없음']]);
-        assert.match(await p.getAttribute('#center .story-path .step:nth-child(3) .step-tests > span:first-child', 'title'), /opens the lab @screen:\/lab#Lab/);
+        assert.match((await p.getAttribute('#center .story-path .step:nth-child(3) .step-tests > span:first-child', 'title'))!, /opens the lab @screen:\/lab#Lab/);
 
         await p.uncheck('#left input[name=fail]');
         assert.equal((await ids()).length, 5);
@@ -1665,7 +1714,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await p.waitForSelector('#right .history li:has-text("the story test fails")');
         assert.deepEqual(await p.locator('#right .history li .chip').allTextContents(), ['더 필요', '없음']);
         assert.equal(await p.textContent('#story-list li.selected .chip.needs-more'), '더 필요');
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note, m.author]).sort((a, b) => a[1].localeCompare(b[1])), [
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note, m.author] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ story: 'run-lab' }, 'missing', 'no test walks the lab', 'reviewer'],
           [{ story: 'run-lab' }, 'needs-more', 'the story test fails', 'reviewer'],
         ]);
@@ -1675,24 +1724,24 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         assert.equal(await p.locator('#right .history li').count(), 0);
         assert.equal(await p.locator('#right .statuses button.on').count(), 0);
         await p.click('#left .views.side button:has-text("화면")');
-        assert.match(await p.locator('#right h2', { hasText: '표시 —' }).textContent(), /^표시 — 화면 전체$/);
+        assert.match((await p.locator('#right h2', { hasText: '표시 —' }).textContent())!, /^표시 — 화면 전체$/);
         assert.equal(await p.locator('#right .history li').count(), 0);
-        assert.match(await p.textContent('#left'), /떨어져 나감 0/);
+        assert.match((await p.textContent('#left'))!, /떨어져 나감 0/);
 
         fs.rmSync(path.join(config.storiesDir, 'run-lab.json'));
         await p.reload();
         await toList(p);
         await p.waitForSelector('#screen-list li');
-        assert.match(await p.textContent('#left'), /떨어져 나감 0/);
+        assert.match((await p.textContent('#left'))!, /떨어져 나감 0/);
         await p.click('#left .views.side button:has-text("스토리")');
         assert.equal(await p.locator('#story-list li:has-text("실험실을 열어")').count(), 0);
-        assert.match(await p.textContent('#left'), /떨어져 나감 1/);
+        assert.match((await p.textContent('#left'))!, /떨어져 나감 1/);
         const detached = p.locator('#left .detached li');
         assert.equal(await detached.count(), 1);
         assert.equal(await detached.locator('.chip').textContent(), '더 필요');
         assert.equal(await detached.locator('code').textContent(), 'run-lab');
-        assert.match(await detached.textContent(), /the story test fails/);
-        assert.doesNotMatch(await detached.textContent(), /reviewer/);
+        assert.match((await detached.textContent())!, /the story test fails/);
+        assert.doesNotMatch((await detached.textContent())!, /reviewer/);
       }),
     ),
   );
@@ -1711,23 +1760,23 @@ test('in a browser, a failed save stays with the form that tried it and is gone 
           await p.click('#right .statuses button:has-text("없음")');
           await p.click('#right button.save');
           await p.waitForSelector('#right .error');
-          assert.match(await p.textContent('#right'), /저장하지 못했습니다: disk full/);
+          assert.match((await p.textContent('#right'))!, /저장하지 못했습니다: disk full/);
         };
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.equal(await p.locator('#right .error').count(), 0);
         await failSave();
         await p.click('#story-list li:has-text("보고서")');
-        assert.doesNotMatch(await p.textContent('#right'), /저장하지 못했습니다/);
+        assert.doesNotMatch((await p.textContent('#right'))!, /저장하지 못했습니다/);
         await p.click('#story-list li:has-text("실험실을 열어")');
         await failSave();
         await p.click('#left .views.side button:has-text("화면")');
-        assert.doesNotMatch(await p.textContent('#right'), /저장하지 못했습니다/);
+        assert.doesNotMatch((await p.textContent('#right'))!, /저장하지 못했습니다/);
         await p.click('#left .views.side button:has-text("스토리")');
         await failSave();
         await p.click('#center .story-path .step:has-text("/lab/result")');
         assert.equal(await p.textContent('#center h3'), '/lab/result');
-        assert.doesNotMatch(await p.textContent('#right'), /저장하지 못했습니다/);
+        assert.doesNotMatch((await p.textContent('#right'))!, /저장하지 못했습니다/);
       }),
     ),
   );
@@ -1741,7 +1790,7 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#left .views.side button:has-text("스토리")');
-        assert.match(await p.textContent('#left'), /떨어져 나감 0/);
+        assert.match((await p.textContent('#left'))!, /떨어져 나감 0/);
         const unread = p.locator('#left .unread-marks li');
         assert.equal(await unread.count(), 1);
         assert.equal(await unread.locator('.chip').textContent(), '없음');
@@ -1750,21 +1799,23 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
         assert.equal(await p.textContent('#center h3'), 'run-lab');
         assert.equal(await p.textContent('#right h2'), '표시 — 스토리');
         assert.equal(await p.locator('#right-info').isVisible(), false);
-        assert.ok(await p.evaluate(() => document.getElementById('right-dock').getBoundingClientRect().top - document.getElementById('right').getBoundingClientRect().top) < 1, 'the form sits at the top of the pane');
-        assert.match(await p.textContent('#right .history'), /walk it/);
+        assert.ok(await p.evaluate(() => document.getElementById('right-dock')!.getBoundingClientRect().top - document.getElementById('right')!.getBoundingClientRect().top) < 1, 'the form sits at the top of the pane');
+        assert.match((await p.textContent('#right .history'))!, /walk it/);
         await p.click('#right .statuses button:has-text("충분")');
         await p.click('#right button.save');
         await openHistory(p);
         await p.waitForSelector('#right .history li:nth-child(2)');
         assert.equal(await p.textContent('#right .history li:first-child .chip'), '충분');
         assert.equal(await p.textContent('#left .unread-marks li .chip'), '충분');
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]).sort((a, b) => a[1].localeCompare(b[1])), [
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ story: 'run-lab' }, 'fine'], [{ story: 'run-lab' }, 'missing'],
         ]);
       }),
     );
   });
 });
+
+type FailSave = { failSave: () => void };
 
 test('in a browser, a failed save stays with the screen or cell that tried it, and a save that fails after the reviewer moved on names the target it was for', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -1779,38 +1830,38 @@ test('in a browser, a failed save stays with the screen or cell that tried it, a
           await p.click('#right .statuses button:has-text("없음")');
           await p.click('#right button.save');
           await p.waitForSelector('#right .error');
-          assert.match(await p.textContent('#right'), /저장하지 못했습니다: disk full/);
+          assert.match((await p.textContent('#right'))!, /저장하지 못했습니다: disk full/);
         };
         await p.click('#screen-list li:has-text("/document/:id")');
         await failSave();
         await p.click('#center tr:has-text("API")');
-        assert.doesNotMatch(await p.textContent('#right'), /저장하지 못했습니다/);
+        assert.doesNotMatch((await p.textContent('#right'))!, /저장하지 못했습니다/);
         await failSave();
         await p.click('#screen-list li:has-text("/lab/result")');
-        assert.doesNotMatch(await p.textContent('#right'), /저장하지 못했습니다/);
+        assert.doesNotMatch((await p.textContent('#right'))!, /저장하지 못했습니다/);
 
         await p.click('#screen-list li:has-text("/admin/report")');
         await p.evaluate(() => {
           const real = window.fetch;
           window.fetch = (url, init) => (String(url).includes('/api/marks')
-            ? new Promise((resolve, reject) => { window.failSave = () => reject(new Error('disk full')); })
+            ? new Promise((resolve, reject) => { (window as unknown as FailSave).failSave = () => reject(new Error('disk full')); })
             : real(url, init));
         });
         await p.locator('table.calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').nth(1).click();
-        const cellLabel = (await p.textContent('#right-dock .mark-form h2')).replace('표시 — ', '');
+        const cellLabel = (await p.textContent('#right-dock .mark-form h2'))!.replace('표시 — ', '');
         assert.match(cellLabel, /^withAttachments 켬 · .+ 깊이$/);
         const cellName = `${await p.textContent('#right-info .target-id .mono')} · ${cellLabel}`;
         await p.click('#right .statuses button:has-text("없음")');
         await p.click('#right button.save');
         await p.click('#center tr:has-text("화면 전체")');
         assert.equal(await p.locator('#right .error').count(), 0);
-        await p.evaluate(() => window.failSave());
+        await p.evaluate(() => (window as unknown as FailSave).failSave());
         await p.waitForSelector('#right-dock .error');
         assert.equal(await p.textContent('#right-dock .error'), `「${cellName}」 표시를 저장하지 못했습니다: disk full`);
 
         await p.click('#right .statuses button:has-text("없음")');
         await p.click('#right button.save');
-        await p.evaluate(() => window.failSave());
+        await p.evaluate(() => (window as unknown as FailSave).failSave());
         await p.waitForFunction(() => document.querySelector('#right-dock .error')?.textContent === '저장하지 못했습니다: disk full');
       }),
     ),
@@ -1841,7 +1892,7 @@ test('in a browser, a step whose first screen has no link to the next but has li
     rewrite(copy, 'client/src/components/Home.js', '<Link to={Option.ROUTE_PATH.LAB}>Lab</Link>}', '<Link to={Option.ROUTE_PATH.LAB}>Lab</Link>}\n      <Link to={Option.ROUTE_PATH.NOPE}>Nope</Link>');
     rebuild(copy);
     fs.mkdirSync(config.storiesDir, { recursive: true });
-    const story = (name, screens) => JSON.stringify({ name, screens, author: 'a', date: '2026-10-02' });
+    const story = (name: string, screens: string[]) => JSON.stringify({ name, screens, author: 'a', date: '2026-10-02' });
     fs.writeFileSync(path.join(config.storiesDir, 'lab-to-start.json'), story('실험실에서 처음으로', ['/lab#Lab', '/signin#SignIn']));
     fs.writeFileSync(path.join(config.storiesDir, 'home-to-lab-result.json'), story('홈에서 실험 결과로', ['/home#Home', '/lab#Lab', '/lab/result#LabResult']));
     fs.writeFileSync(path.join(config.storiesDir, 'lab-result.json'), story('실험실에서 결과로', ['/lab#Lab', '/lab/result#LabResult']));
@@ -1856,18 +1907,18 @@ test('in a browser, a step whose first screen has no link to the next but has li
         await p.click('#story-list li:has-text("처음으로")');
         assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['판정 못 함']);
         assert.deepEqual(await p.locator('#center .story-path .link.l-unknown li').allTextContents(), [`components/Lab.js:16 → ${UNKNOWN}`]);
-        assert.doesNotMatch(await p.textContent('#center .story-path'), /리다이렉트/);
+        assert.doesNotMatch((await p.textContent('#center .story-path'))!, /리다이렉트/);
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 주소 못 읽은 링크']);
         assert.equal(await p.locator('#right .skipped').count(), 0);
 
         await p.click('#story-list li:has-text("실험 결과로")');
         assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['조건', '이어짐']);
-        const skipped = (link) => p.locator(`#center .story-path .link.${link} .unknown-links li`).allTextContents();
+        const skipped = (link: string) => p.locator(`#center .story-path .link.${link} .unknown-links li`).allTextContents();
         assert.deepEqual(await skipped('l-conditioned'), [`components/Home.js:20 → ${UNKNOWN}`]);
-        assert.match(await p.textContent('#center .story-path .link.l-conditioned .skipped'), /판정에서 뺀 링크/);
+        assert.match((await p.textContent('#center .story-path .link.l-conditioned .skipped'))!, /판정에서 뺀 링크/);
         assert.deepEqual(await skipped('l-open'), []);
         assert.equal(await p.locator('#center .story-path .link.l-open .skipped').count(), 0);
-        assert.match(await p.textContent('#right-info > p.skipped'), /주소 못 읽은 링크 빼고 판정/);
+        assert.match((await p.textContent('#right-info > p.skipped'))!, /주소 못 읽은 링크 빼고 판정/);
         assert.deepEqual(await p.locator('#right .reach-link .unknown-links li').allTextContents(), [`components/Home.js:20 → ${UNKNOWN}`]);
 
         await p.click('#story-list li:has-text("실험실에서 결과로")');
@@ -1924,15 +1975,15 @@ test('in a browser, the dead screen filter keeps the screens that call an API mi
 const LONG_PATH = '/organization-settings/notification-preferences/default-recipients/:groupId(active|archived)';
 const LONG_PATH_COMPONENT = 'RecipientSettings';
 
-async function withLongListRows(fn) {
+async function withLongListRows(fn: (p: Page, row: (id: string) => Locator) => Promise<void>) {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         assert.equal((await postMark(base, { target: { node: '/home#Home' }, status: 'fine', author: 'reviewer' })).status, 201);
         await p.route('**/api/data', async (route) => {
-          const data = await (await route.fetch()).json();
+          const data: PageData = await (await route.fetch()).json();
           for (const id of ['/home#Home', '/help#Help']) {
-            const screen = data.map.screens.find((s) => s.id === id);
+            const screen = data.map.screens.find((s) => s.id === id)!;
             Object.assign(screen, { path: LONG_PATH, component: LONG_PATH_COMPONENT, dead: id === '/home#Home' });
           }
           const importer = { title: 't', file: 'a.test.js', line: 1, source: 'a.js', format: 'vitest', depth: 'code', status: 'pass', testFile: 'a.test.js', via: ['a.js'] };
@@ -1948,12 +1999,12 @@ async function withLongListRows(fn) {
   );
 }
 
-const renderedLines = (locator) =>
+const renderedLines = (locator: Locator) =>
   locator.evaluate((el) => {
     const lines = [];
     let top;
     for (const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); walker.nextNode(); ) {
-      const node = walker.currentNode;
+      const node = walker.currentNode as Text;
       for (let i = 0; i < node.length; i++) {
         const range = document.createRange();
         range.setStart(node, i);
@@ -1985,13 +2036,13 @@ test('in a browser, the component name in the screen list stays on one line', { 
 
 test('in a browser, the badges of a screen list row sit below the route and leave it the full row width', { skip: browserMissing }, async () => {
   await withLongListRows(async (p, row) => {
-    const geometry = (r) =>
+    const geometry = (r: Locator) =>
       r.evaluate((li) => {
-        const box = (el) => el.getBoundingClientRect();
+        const box = (el: Element) => el.getBoundingClientRect();
         const style = getComputedStyle(li);
         return {
           content: box(li).width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
-          name: box(li.querySelector('.name')),
+          name: box(li.querySelector('.name')!),
           badgesTop: Math.min(...[...li.querySelectorAll('.chip, .count')].map((el) => box(el).top)),
         };
       });
@@ -2008,7 +2059,7 @@ test('in a browser, the badges of a screen list row sit below the route and leav
         tops: boxes.map((b) => b.top),
         widths: boxes.map((b) => b.width),
         gaps: boxes.slice(1).map((b, i) => b.left - boxes[i].right),
-        content: li.querySelector('.name').getBoundingClientRect().width,
+        content: li.querySelector('.name')!.getBoundingClientRect().width,
       };
     });
     assert.ok(line.widths.reduce((sum, w) => sum + w, 0) + 8 * (line.widths.length - 1) <= line.content, `the badges fit in one row width: ${line.widths} of ${line.content}`);
@@ -2021,8 +2072,8 @@ test('in a browser, a route that spans several segments in the screen list is fo
   await withLongListRows(async (p) => {
     for (const text of ['/organization-settings/notification-preferences', '/default-recipients/:groupId(active|archived)']) {
       const found = await p.evaluate((t) => {
-        getSelection().removeAllRanges();
-        return { hit: window.find(t), inList: document.getElementById('screen-list').contains(getSelection().anchorNode) };
+        getSelection()!.removeAllRanges();
+        return { hit: (window as unknown as { find: (text: string) => boolean }).find(t), inList: document.getElementById('screen-list')!.contains(getSelection()!.anchorNode) };
       }, text);
       assert.deepEqual(found, { hit: true, inList: true }, text);
     }
@@ -2033,8 +2084,8 @@ test('in a browser, a screen list row gives its full route and component as a to
   await withLongListRows(async (p, row) => {
     assert.equal(await row('help').getAttribute('title'), `${LONG_PATH} ${LONG_PATH_COMPONENT}`);
     const list = await p.locator('#screen-list').evaluate((ul) => {
-      ul.querySelector('.seg').append('x'.repeat(120));
-      const section = ul.closest('section');
+      ul.querySelector('.seg')!.append('x'.repeat(120));
+      const section = ul.closest('section')!;
       return { scrollWidth: section.scrollWidth, clientWidth: section.clientWidth };
     });
     assert.equal(list.scrollWidth, list.clientWidth);
@@ -2057,7 +2108,7 @@ test('in a browser, an over-wide route segment in the screen list is clipped at 
   });
 });
 
-const openLinkGroups = (access) => access.locator('details.link-group').evaluateAll((groups) => groups.forEach((g) => { g.open = true; }));
+const openLinkGroups = (access: Locator) => access.locator('details.link-group').evaluateAll((groups: HTMLDetailsElement[]) => groups.forEach((g) => { g.open = true; }));
 
 test('in a browser, a screen that opens only under a role or a setting shows its tests for each case under what it needs', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -2120,11 +2171,11 @@ test('in a browser, the setting and role filters keep the screens that open only
 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        assert.doesNotMatch(await (await screenBox(p, '/admin/report#AdminReport')).locator('.l2').textContent(), /필요/);
+        assert.doesNotMatch((await (await screenBox(p, '/admin/report#AdminReport')).locator('.l2').textContent())!, /필요/);
         const labResult = await screenBox(p, '/lab/result#LabResult');
-        assert.doesNotMatch(await labResult.locator('.l2').textContent(), /필요/);
+        assert.doesNotMatch((await labResult.locator('.l2').textContent())!, /필요/);
         assert.deepEqual(await needLines(labResult), ['설정 SYSTEM.LAB_ENABLED 켬']);
-        assert.doesNotMatch(await (await screenBox(p, '/signin#SignIn')).locator('.l2').textContent(), /필요/);
+        assert.doesNotMatch((await (await screenBox(p, '/signin#SignIn')).locator('.l2').textContent())!, /필요/);
       }),
     ),
   );
@@ -2150,7 +2201,7 @@ test('in a browser, a screen whose links ask for different kinds has its own fil
 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), / · 불러옴 2 · 링크마다 다름$/);
+        assert.match((await (await screenBox(p, '/help#Help')).locator('.l2').textContent())!, / · 불러옴 2 · 링크마다 다름$/);
       }),
     );
   });
@@ -2161,7 +2212,7 @@ test('in a browser, the top of the right pane says what opens the chosen screen 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        const summaryOf = async (label) => {
+        const summaryOf = async (label: string) => {
           await p.click(`#screen-list li:has-text("${label}")`);
           assert.equal(await p.locator('#right-info > :first-child').evaluate((e) => e.className), 'open-needs');
           assert.equal(await p.textContent('#right .open-needs h2'), '이 화면을 열려면');
@@ -2199,8 +2250,8 @@ test('in a browser, the info part of the right pane reads in order and the mark 
         await p.locator('table.calls td.cell').first().click();
         assert.equal(await p.locator('#right-info .mark-form').count(), 0);
         assert.equal(await p.locator('#right-dock > .mark-form').count(), 1);
-        assert.match(await p.locator('#right-dock .mark-form h2').textContent(), /^표시 — /);
-        assert.match(await p.locator('#right-info h2').first().textContent(), /^서버 대조$/);
+        assert.match((await p.locator('#right-dock .mark-form h2').textContent())!, /^표시 — /);
+        assert.match((await p.locator('#right-info h2').first().textContent())!, /^서버 대조$/);
       }),
     ),
   );
@@ -2214,18 +2265,18 @@ test('in a browser, the in-screen conditions come between the incoming links and
   });
 });
 
-const openDocumentScreenInShortViewport = async (p) => {
+const openDocumentScreenInShortViewport = async (p: Page) => {
   await p.setViewportSize({ width: 1440, height: 400 });
   await p.waitForSelector('#screen-list li');
   await p.click('#screen-list li:has-text("/document/:id")');
 };
-const openHistory = async (p) => {
+const openHistory = async (p: Page) => {
   const toggle = p.locator('#right .history-toggle');
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
 };
-const scrollRightToBottom = (p) => p.locator('#right-info').evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
-const scrollRightTo = (p, top) => p.locator('#right-info').evaluate((el, y) => { el.scrollTop = y; return el.scrollTop; }, top);
-const rightScroll = (p) => p.locator('#right-info').evaluate((el) => el.scrollTop);
+const scrollRightToBottom = (p: Page) => p.locator('#right-info').evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
+const scrollRightTo = (p: Page, top: number) => p.locator('#right-info').evaluate((el, y) => { el.scrollTop = y; return el.scrollTop; }, top);
+const rightScroll = (p: Page) => p.locator('#right-info').evaluate((el) => el.scrollTop);
 
 test('in a browser, choosing another screen or call target opens the right pane at its top, and redrawing the same target keeps the scroll offset', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -2270,17 +2321,17 @@ test('in a browser, choosing another depth or option row of the same node keeps 
         const kept = await scrollRightTo(p, 100);
         assert.equal(kept, 100);
         await p.click('#center tr:has-text("API")');
-        assert.match(await p.textContent('#right .mark-form h2'), /API 깊이/);
+        assert.match((await p.textContent('#right .mark-form h2'))!, /API 깊이/);
         assert.equal(await rightScroll(p), kept);
         await p.click('#center tr:has-text("UI/E2E")');
-        assert.match(await p.textContent('#right .mark-form h2'), /UI\/E2E 깊이/);
+        assert.match((await p.textContent('#right .mark-form h2'))!, /UI\/E2E 깊이/);
         assert.equal(await rightScroll(p), kept);
 
         await p.locator('table.calls tbody tr:not(.option)').nth(0).locator('td.cell').first().click();
         const call = await scrollRightTo(p, 100);
         assert.equal(call, 100);
         await p.locator('table.calls tbody tr:not(.option)').nth(0).locator('td.cell').nth(2).click();
-        assert.match(await p.textContent('#right .mark-form h2'), / 깊이$/);
+        assert.match((await p.textContent('#right .mark-form h2'))!, / 깊이$/);
         assert.equal(await rightScroll(p), call);
         await p.locator('table.calls tbody tr:not(.option)').nth(1).locator('td.cell').first().click();
         assert.equal(await rightScroll(p), 0);
@@ -2290,7 +2341,7 @@ test('in a browser, choosing another depth or option row of the same node keeps 
         const exported = await scrollRightTo(p, 100);
         assert.equal(exported, 100);
         await p.locator('table.calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').first().click();
-        assert.match(await p.textContent('#right .mark-form h2'), /withAttachments 켬/);
+        assert.match((await p.textContent('#right .mark-form h2'))!, /withAttachments 켬/);
         assert.equal(await rightScroll(p), exported);
       }),
     ),
@@ -2318,14 +2369,14 @@ test('in a browser, selecting another story opens the right pane at its top', { 
   );
 });
 
-const insideRightPane = (p, selector) => p.evaluate((sel) => {
-  const pane = document.getElementById('right').getBoundingClientRect();
-  const box = document.querySelector(sel).getBoundingClientRect();
+const insideRightPane = (p: Page, selector: string) => p.evaluate((sel) => {
+  const pane = document.getElementById('right')!.getBoundingClientRect();
+  const box = document.querySelector(sel)!.getBoundingClientRect();
   return box.height > 0 && box.top >= pane.top - 0.5 && box.bottom <= pane.bottom + 0.5;
 }, selector);
-const topOf = (p, selector) => p.locator(selector).evaluate((e) => e.getBoundingClientRect().top);
+const topOf = (p: Page, selector: string) => p.locator(selector).evaluate((e) => e.getBoundingClientRect().top);
 
-async function assertDockStaysPut(p) {
+async function assertDockStaysPut(p: Page) {
   const info = p.locator('#right-info');
   assert.ok(await info.evaluate((e) => e.scrollHeight > e.clientHeight), 'the info part is taller than its box');
   for (const selector of ['#right .statuses', '#right button.save']) {
@@ -2380,7 +2431,7 @@ test('in a browser, the history sits behind a closed fold next to the save butto
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/document/:id")');
         const toggle = p.locator('#right-dock .save-row .history-toggle');
-        assert.equal((await toggle.textContent()).trim(), '이력 2');
+        assert.equal((await toggle.textContent())!.trim(), '이력 2');
         assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
         assert.equal(await p.locator('#right .history').isVisible(), false);
 
@@ -2427,8 +2478,8 @@ test('in a browser, the dock keeps the info part at least 120px tall on a short 
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/document/:id")');
         const geometry = () => p.evaluate(() => {
-          const rect = (id) => document.getElementById(id).getBoundingClientRect();
-          const right = document.getElementById('right');
+          const rect = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+          const right = document.getElementById('right')!;
           return { info: rect('right-info').height, dock: rect('right-dock').height, pane: rect('right'), dockBottom: rect('right-dock').bottom, overflow: right.scrollHeight - right.clientHeight };
         });
         for (const open of [false, true]) {
@@ -2456,7 +2507,7 @@ test('in a browser, on a window too short for the info part and the dock the rig
         await p.click('#screen-list li:has-text("/document/:id")');
         await p.click('#right .statuses button:has-text("없음")');
         assert.equal(await insideRightPane(p, '#right button.save'), false);
-        const heading = await p.locator('#right-dock .mark-form h2').boundingBox();
+        const heading = (await p.locator('#right-dock .mark-form h2').boundingBox())!;
         await p.mouse.move(heading.x + 10, heading.y + heading.height / 2);
         await p.mouse.wheel(0, 400);
         for (let i = 0; i < 20 && !(await insideRightPane(p, '#right button.save')); i++) await p.waitForTimeout(50);
@@ -2477,17 +2528,17 @@ test('in a browser, a save that finishes after the reviewer moved to another scr
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        let onPost;
+        let onPost: (release: () => void) => void;
         await p.route('**/api/marks', async (route) => {
-          await new Promise((release) => onPost(release));
+          await new Promise<void>((release) => onPost(release));
           await route.continue();
         });
-        const holdNextPost = () => new Promise((resolve) => { onPost = resolve; });
-        const pick = async (status, note) => {
+        const holdNextPost = () => new Promise<() => void>((resolve) => { onPost = resolve; });
+        const pick = async (status: string, note: string) => {
           await p.click(`#right .statuses button:has-text("${status}")`);
           await p.fill('#right-dock textarea', note);
         };
-        const assertForm = async (status, note) => {
+        const assertForm = async (status: string, note: string) => {
           assert.equal(await p.inputValue('#right-dock textarea'), note);
           assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), [status]);
         };
@@ -2528,11 +2579,11 @@ test('in a browser, a save that finishes after the reviewer moved to another scr
         await p.waitForSelector('#screen-list li:has-text("/lab/result") .chip.fine');
         await assertForm('충분', '');
 
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note]).sort((a, b) => a[1].localeCompare(b[1])), [
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note] as const).sort((a, b) => a[1].localeCompare(b[1])), ([
           [{ node: '/document/:id#DocumentDetail' }, 'missing', ''],
           [{ node: '/admin/report#AdminReport' }, 'needs-more', 'keep me'],
           [{ node: '/lab/result#LabResult' }, 'fine', ''],
-        ].sort((a, b) => a[1].localeCompare(b[1])));
+        ] satisfies [object, string, string][]).sort((a, b) => a[1].localeCompare(b[1])));
       }),
     ),
   );
@@ -2543,12 +2594,12 @@ test('in a browser, a save whose reload fails after the reviewer moved to anothe
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        let onPost;
+        let onPost: (release: () => void) => void;
         await p.route('**/api/marks', async (route) => {
-          await new Promise((release) => onPost(release));
+          await new Promise<void>((release) => onPost(release));
           await route.continue();
         });
-        const holdNextPost = () => new Promise((resolve) => { onPost = resolve; });
+        const holdNextPost = () => new Promise<() => void>((resolve) => { onPost = resolve; });
         await p.click('#left .views.side button:has-text("스토리")');
         const first = p.locator('#story-list li:has-text("실험실을 열어")');
         const name = await first.locator('.name > span').textContent();
@@ -2561,7 +2612,7 @@ test('in a browser, a save whose reload fails after the reviewer moved to anothe
         await p.route('**/api/data', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: 'not json' }));
         release();
         await p.waitForSelector('#right-dock .error');
-        assert.ok((await p.textContent('#right-dock .error')).startsWith(`「스토리 ${name}」 표시는 저장했지만 다시 읽지 못했습니다: `));
+        assert.ok((await p.textContent('#right-dock .error'))!.startsWith(`「스토리 ${name}」 표시는 저장했지만 다시 읽지 못했습니다: `));
 
         await p.click('#right .statuses button:has-text("없음")');
         posting = holdNextPost();
@@ -2581,7 +2632,7 @@ test('in a browser, picking a status updates the form in place, keeping the memo
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/document/:id")');
         assert.equal(await p.locator('#right button.save').isEnabled(), false);
-        const memo = await p.$('#right-dock textarea');
+        const memo = (await p.$('#right-dock textarea'))!;
         const dragged = await memo.evaluate((e) => { e.style.height = '150px'; return e.getBoundingClientRect().height; });
         await p.click('#right .statuses button:has-text("더 필요")');
         assert.ok(await memo.evaluate((e) => e === document.querySelector('#right-dock textarea')), 'the memo box is the same element');
@@ -2610,7 +2661,7 @@ test('in a browser, a save that is refused shows its message in the dock above t
         assert.equal(await p.locator('#right-dock .error').count(), 1);
         assert.equal(await p.locator('#right .error ~ .save-row button.save').count(), 1);
         const inside = async () => (await insideRightPane(p, '#right .mark-form .error')) && insideRightPane(p, '#right .mark-form button.save');
-        assert.match(await p.textContent('#right .error'), /저장하지 못했습니다: mark is refused/);
+        assert.match((await p.textContent('#right .error'))!, /저장하지 못했습니다: mark is refused/);
         assert.ok(await inside());
 
         await p.evaluate(() => {
@@ -2630,10 +2681,10 @@ test('in a browser, a save whose reload fails after the review ended raises no p
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        let reload;
-        const reloading = new Promise((resolve) => { reload = resolve; });
-        let release;
-        const gate = new Promise((resolve) => { release = resolve; });
+        let reload: () => void;
+        const reloading = new Promise<void>((resolve) => { reload = resolve; });
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
         await p.route('**/api/data', async (route) => {
           reload();
           await gate;
@@ -2662,7 +2713,7 @@ test('in a browser, the right pane starts by naming the call and the option and 
         assert.equal(await first.evaluate((e) => e.className), 'target-id');
         assert.equal(await first.locator('.mono').textContent(), 'POST:/api/v1/report/export');
         assert.match(await first.innerText(), /withAttachments 켬 · UI\/E2E 깊이/);
-        assert.match(await p.locator('#right .mark-form h2').textContent(), /^표시 — withAttachments 켬 · UI\/E2E 깊이$/);
+        assert.match((await p.locator('#right .mark-form h2').textContent())!, /^표시 — withAttachments 켬 · UI\/E2E 깊이$/);
 
         await p.locator('table.calls td.cell').first().click();
         assert.match(await p.locator('#right-info > :first-child').innerText(), /POST:\/api\/v1\/report\/export\s+호출 전체/);
@@ -2686,8 +2737,8 @@ test('in a browser, long addresses and conditions wrap inside the right pane, wh
         const labels = Array.from({ length: 5 }, (_, i) => `${LONG_WORD}-${i}`);
         await p.route('**/api/data', async (route) => {
           const text = (await (await route.fetch()).text()).replaceAll('GET:/api/v1/document/{documentId}', longId);
-          const data = JSON.parse(text);
-          const screen = data.map.screens.find((s) => s.id === '/document/:id#DocumentDetail');
+          const data: PageData = JSON.parse(text);
+          const screen = data.map.screens.find((s) => s.id === '/document/:id#DocumentDetail')!;
           const file = `components/${LONG_WORD}.js`;
           screen.componentFile = file;
           screen.routeGuards = [LONG_WORD];
@@ -2705,12 +2756,12 @@ test('in a browser, long addresses and conditions wrap inside the right pane, wh
         await toList(p);
         await p.waitForSelector('#screen-list li');
         const widths = () => p.locator('#right-info, #right-dock, #right').evaluateAll((els) => els.map((el) => ({ id: el.id, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth })));
-        const block = (heading) => p.locator('#right h2', { hasText: heading }).locator('xpath=following-sibling::*[1]');
-        const mentions = async (heading, selector) => assert.ok((await block(heading).locator(selector, { hasText: LONG_WORD }).count()) > 0, `${heading} shows the long text in ${selector}`);
+        const block = (heading: string) => p.locator('#right h2', { hasText: heading }).locator('xpath=following-sibling::*[1]');
+        const mentions = async (heading: string, selector: string) => assert.ok((await block(heading).locator(selector, { hasText: LONG_WORD }).count()) > 0, `${heading} shows the long text in ${selector}`);
 
         await p.click('#screen-list li:has-text("/document/:id")');
-        await p.locator('#right details.link-group').evaluateAll((gs) => gs.forEach((g) => { g.open = true; }));
-        await p.locator('#right details.long-guard').evaluateAll((gs) => gs.forEach((g) => { g.open = true; }));
+        await p.locator('#right details.link-group').evaluateAll((gs: HTMLDetailsElement[]) => gs.forEach((g) => { g.open = true; }));
+        await p.locator('#right details.long-guard').evaluateAll((gs: HTMLDetailsElement[]) => gs.forEach((g) => { g.open = true; }));
         await mentions('들어오는 링크', 'code.from');
         assert.ok((await p.locator('#right .access details.link-group code.full', { hasText: LONG_WORD }).count()) > 0, 'a long guard in an incoming link group');
         await mentions('화면 안 조건', 'code.full');
@@ -2725,7 +2776,7 @@ test('in a browser, long addresses and conditions wrap inside the right pane, wh
         for (const w of screen) assert.ok(w.scrollWidth <= w.clientWidth, `screen ${w.id}: ${w.scrollWidth} of ${w.clientWidth}`);
 
         await p.locator('table.calls td.cell').first().click();
-        assert.match(await p.textContent('#right .target-id'), new RegExp(LONG_WORD.replaceAll('.', '\\.')));
+        assert.match((await p.textContent('#right .target-id'))!, new RegExp(LONG_WORD.replaceAll('.', '\\.')));
         await mentions('서버 대조', 'code');
         assert.equal(await block('서버 대조').locator('.chip').innerText(), `서버에 있음 (${labels.join(', ')})`);
         await mentions('이 화면에서 부르는 곳', 'code');
@@ -2740,16 +2791,16 @@ const ADMIN_ROLE = { guard: "memberRole === 'ADMIN'", kinds: ['role'], roles: ['
 const LONG_GUARD = `globalSettings.SYSTEM.MAIN_MENU.LAB.LIST includes 'LAB_EXPERIMENTS_${'WITH_A_VERY_LONG_MENU_KEY_'.repeat(4)}END'`;
 const LONG_SETTING = { guard: LONG_GUARD, kinds: ['setting'], settings: [{ root: 'globalSettings', path: ['SYSTEM', 'MAIN_MENU', 'LAB', 'LIST'], need: 'includes', value: 'LAB_EXPERIMENTS' }] };
 const IN_SCREEN_GUARD = "location.pathname.startsWith('/lab/experiments/legacy')";
-const labLink = (from, file, line, guards) => ({ from, file, line, guards, fromKinds: [] });
+const labLink = (from: string, file: string, line: number, guards: Guard[]) => ({ from, file, line, guards, fromKinds: [] });
 
-async function withLabLinks(fn, { only } = {}) {
+async function withLabLinks(fn: (p: Page, open: () => Promise<Locator>, reverse: () => void) => Promise<void>, { only }: { only?: ReturnType<typeof labLink>[] } = {}) {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         let reversed = false;
         await p.route('**/api/data', async (route) => {
-          const data = await (await route.fetch()).json();
-          const lab = data.map.screens.find((s) => s.id === '/lab#Lab');
+          const data: PageData = await (await route.fetch()).json();
+          const lab = data.map.screens.find((s) => s.id === '/lab#Lab')!;
           lab.routeGuards = [LAB_SETTING.guard, IN_SCREEN_GUARD];
           const links = [
             labLink('/home#Home', 'components/Home.js', 19, [LAB_SETTING]),
@@ -2777,7 +2828,7 @@ async function withLabLinks(fn, { only } = {}) {
   );
 }
 
-const groupSummaries = (groups) => groups.locator(':scope > summary').allInnerTexts();
+const groupSummaries = (groups: Locator) => groups.locator(':scope > summary').allInnerTexts();
 
 test('in a browser, the incoming links with the same conditions form one group with their number, and opening it shows where each link is and its conditions as written', { skip: browserMissing }, async () => {
   await withLabLinks(async (p, open) => {
@@ -2817,7 +2868,7 @@ test('in a browser, a route condition that is neither a setting nor a role is li
 
 test('in a browser, the groups of incoming links and the links in each come in the same order however the map lists them', { skip: browserMissing }, async () => {
   await withLabLinks(async (p, open, reverse) => {
-    const order = async (groups) => {
+    const order = async (groups: Locator) => {
       const out = [];
       for (let i = 0; i < await groups.count(); i++) {
         await groups.nth(i).locator(':scope > summary').click();
@@ -2843,14 +2894,14 @@ test('in a browser, a long condition is folded and reads in full once opened', {
     await long.locator('.long-guard > summary').click();
     assert.equal(await full.isVisible(), true);
     assert.equal(await full.innerText(), LONG_GUARD);
-    const box = await full.boundingBox();
-    const pane = await p.locator('#right').boundingBox();
+    const box = (await full.boundingBox())!;
+    const pane = (await p.locator('#right').boundingBox())!;
     assert.ok(box.x + box.width <= pane.x + pane.width, 'the full condition wraps inside the pane');
   });
 });
 
 test('in a browser, links whose conditions read the same but resolve to different roles form separate groups, each summarised by its own roles', { skip: browserMissing }, async () => {
-  const canManage = (roles) => ({ guard: 'canManage', kinds: ['role'], roles });
+  const canManage = (roles: string[]) => ({ guard: 'canManage', kinds: ['role'], roles });
   await withLabLinks(async (p, open) => {
     const groups = await open();
     assert.deepEqual(await groupSummaries(groups), ['역할 ADMIN 외 1 링크 1', '역할 ADMIN 링크 1']);
@@ -2868,8 +2919,8 @@ test('in a browser, opened link groups and opened long conditions stay open when
     await groups.nth(3).locator(':scope > summary').click();
     await groups.nth(3).locator('.long-guard > summary').click();
     const openState = () => p.locator('#right .access').evaluate((a) => ({
-      groups: [...a.querySelectorAll('details.link-group')].map((g) => g.open),
-      long: [...a.querySelectorAll('details.long-guard')].map((g) => g.open),
+      groups: [...a.querySelectorAll<HTMLDetailsElement>('details.link-group')].map((g) => g.open),
+      long: [...a.querySelectorAll<HTMLDetailsElement>('details.long-guard')].map((g) => g.open),
     }));
     const expected = { groups: [true, false, false, true], long: [true] };
     assert.deepEqual(await openState(), expected);
@@ -2888,7 +2939,7 @@ test('in a browser, opened link groups and opened long conditions stay open when
 test('in a browser, the headings of the incoming links and of the in-screen conditions keep the top margin of the other right-pane headings', { skip: browserMissing }, async () => {
   await withLabLinks(async (p, open) => {
     await open();
-    const marginOf = (text) => p.locator('#right h2', { hasText: text }).first().evaluate((e) => getComputedStyle(e).marginTop);
+    const marginOf = (text: string) => p.locator('#right h2', { hasText: text }).first().evaluate((e) => getComputedStyle(e).marginTop);
     const source = await marginOf('소스 위치');
     assert.notEqual(source, '0px');
     assert.equal(await marginOf('들어오는 링크'), source);
@@ -2909,12 +2960,12 @@ test('in a browser, the chosen screen shows its calls with the server match and 
         assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['서버에 있음 (core)', '메서드 불일치']);
         const rename = p.locator('table.calls tr', { hasText: 'PUT:/api/v1/document/{documentId}/name' });
         await rename.locator('td.cell').first().click();
-        assert.match(await p.textContent('#right .mark-form h2'), /호출 전체/);
+        assert.match((await p.textContent('#right .mark-form h2'))!, /호출 전체/);
         assert.equal(await p.locator('#right .test').count(), 1);
-        assert.match(await p.textContent('#right .test'), /rename is refused by the server/);
+        assert.match((await p.textContent('#right .test'))!, /rename is refused by the server/);
 
         await rename.locator('td.cell').nth(2).click();
-        assert.match(await p.textContent('#right .mark-form h2'), /API 깊이/);
+        assert.match((await p.textContent('#right .mark-form h2'))!, /API 깊이/);
         assert.equal(await p.locator('#right .test').count(), 0);
         await p.click('#right .statuses button:has-text("없음")');
         await p.fill('#right-dock textarea', 'no API test for the rename');
@@ -2935,7 +2986,7 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/admin/report")');
-        const label = (row) => row.locator('td.call > div:first-child').innerText();
+        const label = (row: Locator) => row.locator('td.call > div:first-child').innerText();
         const rows = p.locator('table.calls tbody tr');
         const labels = [];
         for (let i = 0; i < (await rows.count()); i++) labels.push(await label(rows.nth(i)));
@@ -2953,19 +3004,19 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         assert.equal(await p.locator('table.calls tr.option.gap td.cell').first().innerText(), '테스트 없음');
         assert.deepEqual(await p.locator('table.calls tr.option:has-text("weekly") .chip').allTextContents(), ['설정', '설정']);
 
-        const exportRows = (text) => p.locator('table.calls tr.option').filter({ hasText: text }).first();
+        const exportRows = (text: string) => p.locator('table.calls tr.option').filter({ hasText: text }).first();
         assert.deepEqual(await exportRows('withHistory 켬').locator('td.cell').allInnerTexts(), ['✓2', '✓2', '—', '—', '—', '—', '—']);
         const none = exportRows('옵션 지정 없음');
         assert.equal(await none.locator('td.cell').count(), 0);
         assert.deepEqual(await none.locator('td.count').allInnerTexts(), ['✓2', '✓2', '—', '—', '—', '—', '—']);
 
         await exportRows('withHistory 켬').locator('td.cell').nth(1).click();
-        assert.match(await p.textContent('#right .mark-form h2'), /withHistory 켬 · UI\/E2E 깊이/);
+        assert.match((await p.textContent('#right .mark-form h2'))!, /withHistory 켬 · UI\/E2E 깊이/);
         assert.equal(await p.locator('#right .test').count(), 2);
         assert.match(await p.locator('#right .option-sites').innerText(), /components\/ExportDialog\.js:18/);
 
         await exportRows('withHistory 켬').locator('td.cell').nth(6).click();
-        assert.match(await p.textContent('#right .mark-form h2'), /withHistory 켬 · 산출물 깊이/);
+        assert.match((await p.textContent('#right .mark-form h2'))!, /withHistory 켬 · 산출물 깊이/);
         assert.equal(await p.locator('#right .test').count(), 0);
         await p.click('#right .statuses button:has-text("없음")');
         await p.fill('#right-dock textarea', 'Open the exported file.');
@@ -2973,7 +3024,7 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         await p.waitForSelector('table.calls td.cell.selected .chip.missing');
 
         await exportRows('withAttachments 끔').locator('td.cell').first().click();
-        assert.match(await p.textContent('#right .mark-form h2'), /withAttachments 끔$/);
+        assert.match((await p.textContent('#right .mark-form h2'))!, /withAttachments 끔$/);
         await p.click('#right .statuses button:has-text("더 필요")');
         await p.click('#right button.save');
         await p.waitForSelector('table.calls td.cell.selected .chip.needs-more');
@@ -2981,7 +3032,7 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         await p.locator('table.calls tr.option').filter({ hasText: 'weekly 켬' }).locator('td.cell').first().click();
         assert.match(await p.locator('#right .option-sites').innerText(), /설정에 적음/);
 
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]).sort((a, b) => a[1].localeCompare(b[1])), [
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true }, depth: 'output' }, 'missing'],
           [{ node: 'POST:/api/v1/report/export', option: { key: 'withAttachments', value: false } }, 'needs-more'],
         ]);
@@ -3005,7 +3056,7 @@ const RESULT_LINKS = [
   { from: 'POST:/api/v1/archive/document', to: RESULT_CALL, note: '보관본을 연다' },
   { from: 'POST:/api/v1/report/weekly', to: RESULT_CALL, note: '주간 보고서를 연다' },
 ];
-const OUTPUT_EXPORT_TESTS = [
+const OUTPUT_EXPORT_TESTS: [string, string, string][] = [
   ['results/playwright/export.json', '@call:POST:/api/v1/report/export @option:withHistory=true"', '@call:POST:/api/v1/report/export @option:withHistory=true @depth:output"'],
   ['results/playwright/export.json', '@option:withAttachments=true @option:withHistory=false"', '@option:withAttachments=true @option:withHistory=false @depth:output"'],
 ];
@@ -3026,7 +3077,7 @@ test('in a browser, a call whose result another call\'s options change shows tho
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/admin/report")');
-        const exportRow = (text) => p.locator('table.calls tr.option').filter({ hasText: text }).first();
+        const exportRow = (text: string) => p.locator('table.calls tr.option').filter({ hasText: text }).first();
         const VALUES = ['withAttachments 켬', 'withAttachments 끔', 'withHistory 켬', 'withHistory 끔'];
         const fromOutputCells = [];
         for (const v of VALUES) fromOutputCells.push(await exportRow(v).locator('td.cell').nth(6).innerText());
@@ -3034,7 +3085,7 @@ test('in a browser, a call whose result another call\'s options change shows tho
 
         await p.click('#screen-list li:has-text("/document/:id")');
         const rows = p.locator('table.calls tbody tr');
-        const label = (row) => row.locator('td.call > div:first-child').innerText();
+        const label = (row: Locator) => row.locator('td.call > div:first-child').innerText();
         const labels = [];
         for (let i = 0; i < (await rows.count()); i++) labels.push(await label(rows.nth(i)));
         assert.deepEqual(labels, [
@@ -3059,7 +3110,7 @@ test('in a browser, a call whose result another call\'s options change shows tho
         assert.deepEqual(await p.locator('table.calls tr.option.gap td.call > div').allInnerTexts(), ['withAttachments 끔']);
         const gapLook = await p.locator('table.calls tr.option.gap td.count .none').evaluate((el) => {
           const own = getComputedStyle(el);
-          const label = getComputedStyle(el.closest('tr').querySelector('td.call > div'));
+          const label = getComputedStyle(el.closest('tr')!.querySelector('td.call > div')!);
           return [own.color === label.color, own.fontWeight, label.fontWeight];
         });
         assert.deepEqual(gapLook, [true, '600', '600']);
@@ -3077,7 +3128,7 @@ test('in a browser, a call whose result another call\'s options change shows tho
         await heads.nth(1).locator('a').click();
         await p.waitForSelector('#right .target-id');
         assert.equal(await p.textContent('#right .target-id .mono'), 'POST:/api/v1/report/export');
-        assert.match(await p.textContent('#screen-list li.selected'), /\/admin\/audit/);
+        assert.match((await p.textContent('#screen-list li.selected'))!, /\/admin\/audit/);
       }),
     ),
   OUTPUT_EXPORT_TESTS);
@@ -3128,7 +3179,7 @@ test('in a browser, the output depth row comes after the other depths and takes 
         await p.click('#screen-list li:has-text("/lab/result")');
         assert.deepEqual(await p.locator('#center td.depth').allTextContents(), ['화면 전체', 'UI/E2E', 'API', '렌더링만', '코드', '데이터', '산출물']);
         await p.click('#center tr:has-text("산출물")');
-        assert.match(await p.locator('#right h2', { hasText: '표시 —' }).textContent(), /산출물 깊이/);
+        assert.match((await p.locator('#right h2', { hasText: '표시 —' }).textContent())!, /산출물 깊이/);
         await p.click('#right .statuses button:has-text("더 필요")');
         await p.click('#right button.save');
         await p.waitForSelector('#center tr.selected td.mark:has-text("더 필요")');
@@ -3138,17 +3189,17 @@ test('in a browser, the output depth row comes after the other depths and takes 
   );
 });
 
-const screenBox = async (p, id) => {
-  const i = await p.$$eval('#flow .box.screen', (els, id) => els.findIndex((e) => e.title.split('\n')[0] === id), id);
+const screenBox = async (p: Page, id: string) => {
+  const i = await p.$$eval('#flow .box.screen', (els: HTMLElement[], id) => els.findIndex((e) => e.title.split('\n')[0] === id), id);
   assert.ok(i >= 0, `box ${id} is drawn`);
   return p.locator('#flow .box.screen').nth(i);
 };
-const boxCount = async (p) => ({ screens: await p.locator('#flow .box.screen').count(), calls: await p.locator('#flow .box.call').count() });
-const flowButton = (p, label) => p.locator('.flowbar button', { hasText: label });
-const textOutside = (p) => p.$$eval('#flow .box', (els) => els.flatMap((box) => {
+const boxCount = async (p: Page) => ({ screens: await p.locator('#flow .box.screen').count(), calls: await p.locator('#flow .box.call').count() });
+const flowButton = (p: Page, label: string) => p.locator('.flowbar button', { hasText: label });
+const textOutside = (p: Page) => p.$$eval('#flow .box', (els: HTMLElement[]) => els.flatMap((box) => {
   const r = box.getBoundingClientRect();
   const cs = getComputedStyle(box);
-  const side = (s) => parseFloat(cs[`border${s}Width`]) + parseFloat(cs[`padding${s}`]);
+  const side = (s: 'Left' | 'Right' | 'Top' | 'Bottom') => parseFloat(cs[`border${s}Width`]) + parseFloat(cs[`padding${s}`]);
   const inner = { left: r.left + side('Left'), right: r.right - side('Right'), top: r.top + side('Top'), bottom: r.bottom - side('Bottom') };
   const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
@@ -3160,20 +3211,20 @@ const textOutside = (p) => p.$$eval('#flow .box', (els) => els.flatMap((box) => 
   }
   return [];
 }));
-const layoutErrors = (p) => p.$$eval('#flow .canvas', (canvases) => canvases.flatMap((canvas) => {
+const layoutErrors = (p: Page) => p.$$eval('#flow .canvas', (canvases) => canvases.flatMap((canvas) => {
   const indent = CALL_INDENT;
   const origin = canvas.getBoundingClientRect();
-  const els = new Map([...canvas.querySelectorAll('.box')].map((e) => [e.dataset.key, e]));
-  const box = (key) => {
-    const r = els.get(key).getBoundingClientRect();
+  const els = new Map([...canvas.querySelectorAll<HTMLElement>('.box')].map((e) => [e.dataset.key, e]));
+  const box = (key: string) => {
+    const r = els.get(key)!.getBoundingClientRect();
     const top = r.top - origin.top;
     const left = r.left - origin.left;
-    return { key, grouped: els.get(key).classList.contains('grouped'), left, right: left + r.width, top, bottom: top + r.height, middle: top + r.height / 2 };
+    return { key, grouped: els.get(key)!.classList.contains('grouped'), left, right: left + r.width, top, bottom: top + r.height, middle: top + r.height / 2 };
   };
-  const edges = [...canvas.querySelectorAll('svg path')].map((path) => ({
-    from: box(path.dataset.from), to: box(path.dataset.to), start: path.getPointAtLength(0), end: path.getPointAtLength(path.getTotalLength()),
+  const edges = [...canvas.querySelectorAll<SVGPathElement>('svg path')].map((path) => ({
+    from: box(path.dataset.from!), to: box(path.dataset.to!), start: path.getPointAtLength(0), end: path.getPointAtLength(path.getTotalLength()),
   }));
-  const off = (a, b) => Math.abs(a - b) > 1;
+  const off = (a: number, b: number) => Math.abs(a - b) > 1;
   const errors = [];
   for (const [key, e] of els) {
     const r = e.getBoundingClientRect();
@@ -3211,19 +3262,19 @@ test('in a browser, the flow graph opens calls and branches, folds them, and a b
         const home = await screenBox(p, '/home#Home');
         await home.locator('.calls').click();
         assert.deepEqual(await boxCount(p), { screens: 11, calls: 2 });
-        assert.match(await home.locator('.calls').textContent(), /▾/);
+        assert.match((await home.locator('.calls').textContent())!, /▾/);
         await home.locator('.calls').click();
 
         const signin = await screenBox(p, '/signin#SignIn');
         await signin.locator('button.toggle', { hasText: /^접기$/ }).click();
         assert.deepEqual(await boxCount(p), { screens: 1, calls: 0 });
         const folded = await screenBox(p, '/signin#SignIn');
-        assert.match(await folded.locator('.l2').textContent(), /하위 합/);
+        assert.match((await folded.locator('.l2').textContent())!, /하위 합/);
         await folded.locator('button.toggle', { hasText: /^펼치기$/ }).click();
 
         await flowButton(p, '모두 펼치기').click();
         assert.deepEqual(await boxCount(p), { screens: 11, calls: 14 });
-        const overlaps = await p.$$eval('#flow .box', (boxes) => boxes.flatMap((box) => {
+        const overlaps = await p.$$eval('#flow .box', (boxes: HTMLElement[]) => boxes.flatMap((box) => {
           const outer = box.getBoundingClientRect();
           return [...box.querySelectorAll('.l1, .l3, .acts')].flatMap((line) => [...line.querySelectorAll('button')].filter((b) => {
             const r = b.getBoundingClientRect();
@@ -3246,9 +3297,9 @@ test('in a browser, the flow graph opens calls and branches, folds them, and a b
   );
 });
 
-const needLines = (box) => box.locator('.need').allTextContents();
+const needLines = (box: Locator) => box.locator('.need').allTextContents();
 const PRESS_HINT = '누르면 목록에서 이 화면을 엽니다';
-const tipLines = async (box) => (await box.getAttribute('title')).split('\n').slice(1).filter((line) => line !== PRESS_HINT);
+const tipLines = async (box: Locator) => (await box.getAttribute('title'))!.split('\n').slice(1).filter((line) => line !== PRESS_HINT);
 
 test('in a browser, a flow box writes the roles and settings its screen needs, abridged on the box with the value first and in full on hover', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -3285,7 +3336,7 @@ test('in a browser, a flow box writes the roles and settings its screen needs, a
         ]);
 
         assert.deepEqual(await textOutside(p), []);
-        const boxes = await p.$$eval('#flow .box', (els) => els.map((e) => ({ id: e.title.split('\n')[0], left: e.offsetLeft, top: e.offsetTop, h: e.offsetHeight })));
+        const boxes = await p.$$eval('#flow .box', (els: HTMLElement[]) => els.map((e) => ({ id: e.title.split('\n')[0], left: e.offsetLeft, top: e.offsetTop, h: e.offsetHeight })));
         for (const a of boxes) for (const b of boxes) {
           if (a !== b && a.left === b.left) assert.ok(a.top + a.h <= b.top || b.top + b.h <= a.top, `${a.id} and ${b.id} do not overlap`);
         }
@@ -3299,10 +3350,10 @@ test('in a browser, a flow box sits midway between its first and last child and 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         const trees = await p.evaluate(() => {
-          const sizes = {};
-          const openCalls = [];
-          const call = (id) => ({ kind: 'call', id });
-          const screen = (id, height, children = [], calls = []) => {
+          const sizes: Record<string, { width: number; height: number }> = {};
+          const openCalls: string[] = [];
+          const call = (id: string) => ({ kind: 'call', id });
+          const screen = (id: string, height: number, children: object[] = [], calls: { id: string }[] = []) => {
             sizes[id] = { width: 100 + id.length * 10, height };
             for (const c of calls) sizes[`${id}>${c.id}`] = { width: 150, height: 44 };
             if (calls.length) openCalls.push(id);
@@ -3318,13 +3369,13 @@ test('in a browser, a flow box sits midway between its first and last child and 
           };
           return Object.fromEntries(Object.entries(shapes).map(([name, roots]) => {
             const { boxes, edges, height } = layoutFlow(roots, sizes, { openCalls });
-            return [name, { height, edges: edges.map((e) => [e.from, e.y1, e.y2]), boxes: boxes.map((b) => ({ id: b.key, x: b.x, y: b.y, bottom: b.y + b.height })) }];
+            return [name, { height, edges: edges.map((e): [string, number, number] => [e.from, e.y1, e.y2]), boxes: boxes.map((b) => ({ id: b.key, x: b.x, y: b.y, bottom: b.y + b.height })) }];
           }));
         });
         for (const [name, { height, edges, boxes }] of Object.entries(trees)) {
           for (const parent of new Set(edges.map(([from]) => from))) {
             const ends = edges.filter(([from]) => from === parent).map(([, , y2]) => y2);
-            const [, y1] = edges.find(([from]) => from === parent);
+            const [, y1] = edges.find(([from]) => from === parent)!;
             assert.equal(y1, (Math.min(...ends) + Math.max(...ends)) / 2, `${name}: the box at ${parent} sits midway between its children`);
           }
           for (const b of boxes) assert.ok(b.y >= 0 && b.bottom <= height, `${name}: ${b.id} is inside the canvas`);
@@ -3338,7 +3389,7 @@ test('in a browser, a flow box sits midway between its first and last child and 
 });
 
 test('in a browser, a flow box says when a setting condition could not be turned into a value', { skip: browserMissing }, async () => {
-  const edits = [
+  const edits: [string, string, string][] = [
     ['client/src/components/DocumentDetail.js', 'const helpEnabled = system.HELP_LINK_ENABLED;', 'const helpEnabled = () => system.HELP_LINK_ENABLED;'],
     ['client/src/components/DocumentDetail.js', '{helpEnabled && <Link', '{helpEnabled() && <Link'],
   ];
@@ -3360,7 +3411,7 @@ test('in a browser, "reset" opens one branch fully with its calls closed and lea
       withPage(base, async (p) => {
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        const reset = async (id) => (await screenBox(p, id)).locator('button.toggle', { hasText: /^처음으로$/ }).click();
+        const reset = async (id: string) => (await screenBox(p, id)).locator('button.toggle', { hasText: /^처음으로$/ }).click();
         await reset('/signin#SignIn');
         assert.deepEqual(await boxCount(p), { screens: 11, calls: 0 });
         await (await screenBox(p, '/signin#SignIn')).locator('.calls').click();
@@ -3381,7 +3432,7 @@ test('in a browser, "reset" opens one branch fully with its calls closed and lea
         await reset('/home#Home');
         assert.deepEqual(await boxCount(p), { screens: 10, calls: 0 });
         const bare = await p.evaluate(() => {
-          const walk = (ns) => ns.flatMap((n) => [n, ...walk(n.children)]);
+          const walk = (ns: FlowNode[]): FlowNode[] => ns.flatMap((n) => [n, ...walk(n.children)]);
           return walk(state.focus.roots).find((n) => !n.children.length && !n.calls.length)?.id;
         });
         assert.ok(bare);
@@ -3398,16 +3449,16 @@ test('in a browser, "gaps only" folds exactly the branches with no untested or f
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
         await p.evaluate(() => {
-          const walk = (ns) => ns.flatMap((n) => [n, ...walk(n.children)]);
-          const lab = walk(state.data.flow.roots).find((n) => n.id === '/lab#Lab');
+          const walk = (ns: FlowNode[]): FlowNode[] => ns.flatMap((n) => [n, ...walk(n.children)]);
+          const lab = walk(state.data.flow.roots).find((n) => n.id === '/lab#Lab')!;
           for (const n of walk([lab])) for (const x of [n, ...n.calls]) x.counts = { pass: 1, fail: 0, pending: 0 };
         });
         await flowButton(p, '빈틈만 펼치기').click();
         const lab = await screenBox(p, '/lab#Lab');
         assert.equal(await lab.locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
-        assert.match(await lab.getAttribute('class'), /s-pass/);
+        assert.match((await lab.getAttribute('class'))!, /s-pass/);
         assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
-        assert.equal(await p.$$eval('#flow .box.screen', (els) => els.some((e) => e.title.startsWith('/lab/result#'))), false);
+        assert.equal(await p.$$eval('#flow .box.screen', (els: HTMLElement[]) => els.some((e) => e.title.startsWith('/lab/result#'))), false);
       }),
     ),
   );
@@ -3420,12 +3471,12 @@ test('in a browser, the page opens on the flow with a summary line counted from 
         await p.waitForSelector('#flow .box');
         assert.equal(await p.isHidden('main'), true);
         assert.equal(await p.getAttribute('#view-flow', 'class'), 'on');
-        assert.match(await p.textContent('#meta'), /^화면 11 · 테스트 있는 화면 7 · /);
+        assert.match((await p.textContent('#meta'))!, /^화면 11 · 테스트 있는 화면 7 · /);
         assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 7/11 · 실패 5 · 태그 없는 테스트만 있는 화면 0');
         const help = await screenBox(p, '/help#Help');
-        assert.match(await help.locator('.l2').textContent(), /^✓1 ✕2 ○1 · 불러옴 2/);
-        assert.match(await help.getAttribute('class'), /s-fail/);
-        assert.doesNotMatch(await (await screenBox(p, '/admin/member#AdminMember')).locator('.l2').textContent(), /불러옴/);
+        assert.match((await help.locator('.l2').textContent())!, /^✓1 ✕2 ○1 · 불러옴 2/);
+        assert.match((await help.getAttribute('class'))!, /s-fail/);
+        assert.doesNotMatch((await (await screenBox(p, '/admin/member#AdminMember')).locator('.l2').textContent())!, /불러옴/);
       }, { view: 'flow' }),
     ),
   );
@@ -3445,14 +3496,14 @@ test('in a browser, the flow first opens only the way to untested or failing box
         assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 8/11 · 실패 5 · 태그 없는 테스트만 있는 화면 1');
         const lab = await screenBox(p, '/lab#Lab');
         assert.equal(await lab.locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
-        assert.match(await lab.getAttribute('class'), /s-pass/);
-        assert.equal(await p.$$eval('#flow .box.screen', (els) => els.some((e) => e.title.startsWith('/lab/result#'))), false);
+        assert.match((await lab.getAttribute('class'))!, /s-pass/);
+        assert.equal(await p.$$eval('#flow .box.screen', (els: HTMLElement[]) => els.some((e) => e.title.startsWith('/lab/result#'))), false);
         const group = await screenBox(p, '/admin/group#AdminGroup');
-        assert.match(await group.locator('.l2').textContent(), /^테스트 없음 · 불러옴 1/);
-        assert.match(await group.getAttribute('class'), /s-none/);
+        assert.match((await group.locator('.l2').textContent())!, /^테스트 없음 · 불러옴 1/);
+        assert.match((await group.getAttribute('class'))!, /s-none/);
         const home = await screenBox(p, '/home#Home');
         assert.equal(await home.locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
-        assert.match(await home.locator('.calls').textContent(), /▾/);
+        assert.match((await home.locator('.calls').textContent())!, /▾/);
 
         await home.locator('button.toggle', { hasText: /^접기$/ }).click();
         await p.click('#view-list');
@@ -3463,16 +3514,16 @@ test('in a browser, the flow first opens only the way to untested or failing box
         await p.waitForSelector('main:not([hidden])');
         await p.click('#view-flow');
         assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
-        assert.match(await (await screenBox(p, '/signin#SignIn')).locator('.calls').textContent(), /▾/);
+        assert.match((await (await screenBox(p, '/signin#SignIn')).locator('.calls').textContent())!, /▾/);
       }, { view: 'flow' }),
     );
   });
 });
 
-const changeData = (edit) => async (page) => {
+const changeData = (edit: (data: PageData) => void) => async (page: Page) => {
   await page.route('**/api/data', async (route) => {
     const res = await route.fetch();
-    const data = await res.json();
+    const data: PageData = await res.json();
     edit(data);
     await route.fulfill({ response: res, json: data });
   });
@@ -3483,7 +3534,7 @@ test('in a browser, when the first flow drawing fails the message stays visible 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#failed', { state: 'visible' });
-        assert.match(await p.textContent('#failed'), /^페이지를 그리지 못했습니다: ./);
+        assert.match((await p.textContent('#failed'))!, /^페이지를 그리지 못했습니다: ./);
         assert.equal(await p.isHidden('main'), true);
         assert.equal(await p.isHidden('#flow'), true);
         for (const id of ['#view-flow', '#view-list', '#view-flow']) {
@@ -3505,8 +3556,8 @@ test('in a browser, a map with no screens says so in the flow, and the entryPath
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .flowsummary');
-        assert.match(await p.textContent('#flow'), /entryPaths/);
-        assert.doesNotMatch(await p.textContent('#flow'), /화면이 없습니다\./);
+        assert.match((await p.textContent('#flow'))!, /entryPaths/);
+        assert.doesNotMatch((await p.textContent('#flow'))!, /화면이 없습니다\./);
       }, { view: 'flow', setup: changeData((data) => {
         data.flow = { ...data.flow, roots: [], unreached: [...data.flow.roots, ...data.flow.unreached] };
       }) }),
@@ -3515,8 +3566,8 @@ test('in a browser, a map with no screens says so in the flow, and the entryPath
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .flowsummary');
-        assert.match(await p.textContent('#flow'), /화면이 없습니다\./);
-        assert.doesNotMatch(await p.textContent('#flow'), /entryPaths/);
+        assert.match((await p.textContent('#flow'))!, /화면이 없습니다\./);
+        assert.doesNotMatch((await p.textContent('#flow'))!, /entryPaths/);
       }, { view: 'flow' }),
     );
   });
@@ -3526,7 +3577,7 @@ test('in a browser, a branch whose only gap is a screen with imported tests and 
   await withRebuiltFixture({}, async (config) => {
     const testsFile = path.join(config.outDir, 'tests.json');
     const tests = JSON.parse(fs.readFileSync(testsFile, 'utf8'));
-    const map = JSON.parse(fs.readFileSync(path.join(config.outDir, 'map.json'), 'utf8'));
+    const map: PageData['map'] = JSON.parse(fs.readFileSync(path.join(config.outDir, 'map.json'), 'utf8'));
     const passing = { title: 'passes', file: 'all.spec.ts', line: 1, status: 'pass' };
     for (const id of [...map.screens.map((x) => x.id), ...map.calls.map((c) => c.id)]) tests.nodes[id] = [passing];
     delete tests.nodes['/lab/result#LabResult'];
@@ -3537,18 +3588,18 @@ test('in a browser, a branch whose only gap is a screen with imported tests and 
         await p.waitForSelector('#flow .box');
         assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 10/11 · 실패 0 · 태그 없는 테스트만 있는 화면 1');
         const result = await screenBox(p, '/lab/result#LabResult');
-        assert.match(await result.getAttribute('class'), /s-none/);
-        assert.match(await result.locator('.l2').textContent(), /^테스트 없음 · 불러옴 1/);
+        assert.match((await result.getAttribute('class'))!, /s-none/);
+        assert.match((await result.locator('.l2').textContent())!, /^테스트 없음 · 불러옴 1/);
         const dead = await screenBox(p, '/document/:tab_draft_done_#DocumentList');
-        assert.match(await dead.locator('.l2').textContent(), / · 불러옴 2 · 죽은 화면$/);
+        assert.match((await dead.locator('.l2').textContent())!, / · 불러옴 2 · 죽은 화면$/);
         assert.equal(await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
         const home = await screenBox(p, '/home#Home');
         assert.equal(await home.locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
-        assert.doesNotMatch(await home.locator('.l2').textContent(), /불러옴/);
+        assert.doesNotMatch((await home.locator('.l2').textContent())!, /불러옴/);
 
         await home.locator('button.toggle', { hasText: /^접기$/ }).click();
         const folded = await screenBox(p, '/home#Home');
-        assert.match(await folded.locator('.l2').textContent(), /\(하위 합\) · 불러옴 3/);
+        assert.match((await folded.locator('.l2').textContent())!, /\(하위 합\) · 불러옴 3/);
       }, { view: 'flow' }),
     );
   });
@@ -3562,7 +3613,7 @@ test('in a browser, one branch is shown on its own, and a late answer for an ear
         await p.waitForSelector('#flow .box');
         await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
         await p.waitForSelector('.flowbar .focusing');
-        assert.match(await p.textContent('.flowbar .focusing'), /^\/home /);
+        assert.match((await p.textContent('.flowbar .focusing'))!, /^\/home /);
         assert.equal((await boxCount(p)).screens, 10);
         await flowButton(p, '전체 보기').click();
         assert.equal((await boxCount(p)).screens, 11);
@@ -3574,7 +3625,7 @@ test('in a browser, one branch is shown on its own, and a late answer for an ear
         await (await screenBox(p, '/signin#SignIn')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
         await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
         await p.waitForTimeout(800);
-        assert.match(await p.textContent('.flowbar .focusing'), /^\/lab /);
+        assert.match((await p.textContent('.flowbar .focusing'))!, /^\/lab /);
       }),
     ),
   );
@@ -3582,22 +3633,22 @@ test('in a browser, one branch is shown on its own, and a late answer for an ear
 
 const LONG_ROUTE = '/user-completed-documents/signature-requests/:documentId/participants/history';
 const LONG_COMPONENT = 'UserCompletedDocumentParticipantHistory';
-const walkFlow = (ns) => ns.flatMap((n) => [n, ...walkFlow(n.children)]);
-const withLongRoute = (data) => {
-  const help = walkFlow(data.flow.roots).find((n) => n.id === '/help#Help');
+const walkFlow = (ns: FlowNode[]): FlowNode[] => ns.flatMap((n) => [n, ...walkFlow(n.children)]);
+const withLongRoute = (data: PageData) => {
+  const help = walkFlow(data.flow.roots).find((n) => n.id === '/help#Help')!;
   help.label = LONG_ROUTE;
   help.component = LONG_COMPONENT;
   help.jumps.push({ to: '/document/:id#DocumentDetail', label: '/user-completed-documents/signature-requests/:documentId', guards: [] });
 };
-const leafEntries = (data, count) => {
+const leafEntries = (data: PageData, count: number) => {
   const leaves = walkFlow(data.flow.roots).filter((n) => !n.children.length);
   return Array.from({ length: count }, (_, i) => ({ ...structuredClone(leaves[i % leaves.length]), id: `/extra/${i}#Extra${i}`, label: `/extra/${i}`, guards: [] }));
 };
-const flowBoxes = (p) => p.$$eval('#flow .box', (els) => els.map((e) => {
+const flowBoxes = (p: Page) => p.$$eval('#flow .box', (els: HTMLElement[]) => els.map((e) => {
   const r = e.getBoundingClientRect();
   return { id: e.title.split('\n')[0], left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, grouped: e.classList.contains('grouped') };
 }));
-const overlapping = (boxes) => boxes.flatMap((a, i) => boxes.slice(i + 1)
+const overlapping = (boxes: Awaited<ReturnType<typeof flowBoxes>>) => boxes.flatMap((a, i) => boxes.slice(i + 1)
   .filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
   .map((b) => `${a.id} / ${b.id}`));
 const WIDE_COMPONENT = 'UserCompletedDocumentSignatureRequestParticipantHistoryOverview';
@@ -3634,22 +3685,22 @@ test('in a browser, a column is as wide as a component name longer than 360px ne
         await p.waitForSelector('#flow .box');
         await flowButton(p, '모두 펼치기').click();
         const home = await (await screenBox(p, '/home#Home')).evaluate((box) => {
-          const text = box.querySelector('.l1 .text').getBoundingClientRect();
-          const name = box.querySelector('.l1 .component');
+          const text = box.querySelector('.l1 .text')!.getBoundingClientRect();
+          const name = box.querySelector('.l1 .component')!;
           return { width: box.getBoundingClientRect().width, text: text.width, name: name.getBoundingClientRect().width, nameLines: name.getClientRects().length };
         });
         assert.ok(home.width > 360, 'the box is wider than 360px');
         assert.equal(home.nameLines, 1);
         assert.ok(Math.abs(home.text - home.name) <= 1, 'the box is no wider than the name needs');
         const boxes = await flowBoxes(p);
-        const left = boxes.find((b) => b.id === '/home#Home').left;
+        const left = boxes.find((b) => b.id === '/home#Home')!.left;
         assert.deepEqual([...new Set(boxes.filter((b) => b.left === left).map((b) => b.width))], [home.width]);
         assert.deepEqual(await layoutErrors(p), []);
         assert.deepEqual(await textOutside(p), []);
         assert.deepEqual(overlapping(boxes), []);
       }, { view: 'flow', setup: changeData((data) => {
         withLongRoute(data);
-        walkFlow(data.flow.roots).find((n) => n.id === '/home#Home').component = WIDE_COMPONENT;
+        walkFlow(data.flow.roots).find((n) => n.id === '/home#Home')!.component = WIDE_COMPONENT;
       }) }),
     ),
   );
@@ -3660,17 +3711,17 @@ test('in a browser, opening the API calls of a gathered entry screen leaves ever
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .group-head');
-        const cells = () => p.$$eval('#flow .box.screen.grouped', (els) => els.map((e) => ({ id: e.title.split('\n')[0], left: e.offsetLeft, width: e.offsetWidth, top: e.offsetTop })));
+        const cells = () => p.$$eval('#flow .box.screen.grouped', (els: HTMLElement[]) => els.map((e) => ({ id: e.title.split('\n')[0], left: e.offsetLeft, width: e.offsetWidth, top: e.offsetTop })));
         const calls = () => p.locator('#flow .box.screen.grouped').first().locator('.calls');
-        if ((await calls().textContent()).includes('▾')) await calls().click();
+        if ((await calls().textContent())!.includes('▾')) await calls().click();
         const closed = await cells();
         assert.equal(closed[0].id, '/extra/0#Extra0');
         await calls().click();
-        assert.match(await calls().textContent(), /▾/);
+        assert.match((await calls().textContent())!, /▾/);
         const open = await cells();
         assert.deepEqual(open.map(({ id, left, width }) => ({ id, left, width })), closed.map(({ id, left, width }) => ({ id, left, width })));
         assert.equal(open[0].top, closed[0].top);
-        const callWidths = await p.$$eval('#flow .box.call.grouped', (els) => els.filter((e) => e.dataset.key.startsWith('/extra/0#Extra0>')).map((e) => e.offsetWidth));
+        const callWidths = await p.$$eval('#flow .box.call.grouped', (els: HTMLElement[]) => els.filter((e) => e.dataset.key!.startsWith('/extra/0#Extra0>')).map((e) => e.offsetWidth));
         assert.ok(callWidths.length > 0);
         assert.deepEqual([...new Set(callWidths)], [closed[0].width - (await p.evaluate(() => CALL_INDENT))]);
         assert.deepEqual(await textOutside(p), []);
@@ -3691,9 +3742,9 @@ test('in a browser, a call under a gathered entry screen wraps every line inside
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .group-head');
         const toggle = (await screenBox(p, '/extra/0#Extra0')).locator('.calls');
-        if (!(await toggle.textContent()).includes('▾')) await toggle.click();
+        if (!(await toggle.textContent())!.includes('▾')) await toggle.click();
         const call = p.locator('#flow .box.call.grouped[data-key^="/extra/0#Extra0>"]').first();
-        assert.match(await call.locator('.l2').textContent(), /UserCompletedDocumentSignatureRequestController\.getParticipantHistoryOverview/);
+        assert.match((await call.locator('.l2').textContent())!, /UserCompletedDocumentSignatureRequestController\.getParticipantHistoryOverview/);
         assert.ok(await call.evaluate((e) => e.scrollWidth <= e.clientWidth), 'the call box holds its second line');
         assert.deepEqual(await textOutside(p), []);
         assert.deepEqual(overlapping(await flowBoxes(p)), []);
@@ -3710,7 +3761,7 @@ test('in a browser, resizing the window after the review ended throws nothing', 
   await withRebuiltFixture({}, async (config) => {
     const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => {} });
     try {
-      await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
+      await withPage(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async (p) => {
         await p.waitForSelector('#flow .group-head');
         await p.click('header button:has-text("리뷰 끝")');
         await p.waitForSelector('#ended');
@@ -3724,14 +3775,14 @@ test('in a browser, resizing the window after the review ended throws nothing', 
 });
 
 test('in a browser, the flow is drawn again on a resize only when gathered entry screens are shown and the number of cells in a row changes', { skip: browserMissing }, async () => {
-  const frames = (p) => p.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-  const mark = (p) => p.evaluate(() => { document.querySelector('#flow .box').dataset.before = ''; });
-  const kept = (p) => p.evaluate(() => document.querySelector('#flow .box[data-before]') !== null);
-  const resize = async (p, width, height) => {
+  const frames = (p: Page) => p.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  const mark = (p: Page) => p.evaluate(() => { document.querySelector<HTMLElement>('#flow .box')!.dataset.before = ''; });
+  const kept = (p: Page) => p.evaluate(() => document.querySelector('#flow .box[data-before]') !== null);
+  const resize = async (p: Page, width: number, height: number) => {
     await p.setViewportSize({ width, height });
     await frames(p);
   };
-  const perRow = (p) => p.evaluate(() => drawnGrid.per);
+  const perRow = (p: Page) => p.evaluate(() => drawnGrid!.per);
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -3772,9 +3823,9 @@ test('in a browser, a flow box with a long route breaks it only before a slash, 
         await p.waitForSelector('#flow .box');
         await flowButton(p, '모두 펼치기').click();
         const help = await (await screenBox(p, '/help#Help')).evaluate((box, [route, component]) => {
-          const texts = [];
-          const walker = document.createTreeWalker(box.querySelector('.l1 .text'), NodeFilter.SHOW_TEXT);
-          while (walker.nextNode()) texts.push(walker.currentNode);
+          const texts: Text[] = [];
+          const walker = document.createTreeWalker(box.querySelector('.l1 .text')!, NodeFilter.SHOW_TEXT);
+          while (walker.nextNode()) texts.push(walker.currentNode as Text);
           const chars = texts.flatMap((node) => [...node.data].map((ch, i) => {
             const range = document.createRange();
             range.setStart(node, i);
@@ -3800,7 +3851,7 @@ test('in a browser, a flow box with a long route breaks it only before a slash, 
         assert.equal(help.componentLines, 1);
         assert.match(help.text, /→ \/user-completed-documents\/signature-requests\/:documentId/);
 
-        const cut = await p.$$eval('#flow .box', (els) => els
+        const cut = await p.$$eval('#flow .box', (els: HTMLElement[]) => els
           .filter((box) => box.textContent.includes('…') || [box, ...box.querySelectorAll('*')].some((e) => getComputedStyle(e).textOverflow === 'ellipsis'))
           .map((box) => box.title.split('\n')[0]));
         assert.deepEqual(cut, []);
@@ -3816,7 +3867,7 @@ test('in a browser, the fold and branch buttons of a flow box carry a word and a
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
         await flowButton(p, '모두 펼치기').click();
-        const labels = (box) => box.locator('button.toggle').evaluateAll((els) => els.map((e) => [e.textContent, e.title]));
+        const labels = (box: Locator) => box.locator('button.toggle').evaluateAll((els: HTMLElement[]) => els.map((e) => [e.textContent, e.title]));
         const signin = await labels(await screenBox(p, '/signin#SignIn'));
         assert.deepEqual(signin.map(([word]) => word), ['접기', '전부 펼치기', '처음으로', '이 가지만']);
         assert.ok(signin.every(([word, title]) => title.length > word.length), 'each title explains more than the word');
@@ -3835,8 +3886,8 @@ test('in a browser, the fold and branch buttons of a flow box carry a word and a
 });
 
 test('in a browser, a flow box with buttons still shows its whole route and component name, with the buttons on a line of their own', { skip: browserMissing }, async () => {
-  const longName = (data) => {
-    const signin = walkFlow(data.flow.roots).find((n) => n.id === '/signin#SignIn');
+  const longName = (data: PageData) => {
+    const signin = walkFlow(data.flow.roots).find((n) => n.id === '/signin#SignIn')!;
     signin.label = LONG_ROUTE;
     signin.component = WIDE_COMPONENT;
   };
@@ -3847,14 +3898,14 @@ test('in a browser, a flow box with buttons still shows its whole route and comp
         await flowButton(p, '모두 펼치기').click();
         assert.ok(await (await screenBox(p, '/signin#SignIn')).locator('button.toggle').count() >= 3);
         assert.deepEqual(await textOutside(p), []);
-        const cut = await p.$$eval('#flow .box', (els) => els
+        const cut = await p.$$eval('#flow .box', (els: HTMLElement[]) => els
           .filter((box) => box.textContent.includes('…') || [box, ...box.querySelectorAll('*')].some((e) => getComputedStyle(e).textOverflow === 'ellipsis'))
           .map((box) => box.title.split('\n')[0]));
         assert.deepEqual(cut, []);
         const lines = await (await screenBox(p, '/signin#SignIn')).evaluate((box) => {
-          const name = box.querySelector('.l1').getBoundingClientRect();
-          const acts = box.querySelector('.acts').getBoundingClientRect();
-          return { componentRects: box.querySelector('.component').getClientRects().length, below: acts.top >= name.bottom - 0.5, boxWidth: box.getBoundingClientRect().width, componentWidth: box.querySelector('.component').getBoundingClientRect().width };
+          const name = box.querySelector('.l1')!.getBoundingClientRect();
+          const acts = box.querySelector('.acts')!.getBoundingClientRect();
+          return { componentRects: box.querySelector('.component')!.getClientRects().length, below: acts.top >= name.bottom - 0.5, boxWidth: box.getBoundingClientRect().width, componentWidth: box.querySelector('.component')!.getBoundingClientRect().width };
         });
         assert.equal(lines.componentRects, 1);
         assert.ok(lines.below, 'the buttons sit under the name line');
@@ -3878,7 +3929,7 @@ test('in a browser, the explanation above the flow is hidden on opening and an i
 
         await info.hover();
         assert.equal(await legend.isVisible(), true);
-        assert.match(await legend.textContent(), /불러옴 N/);
+        assert.match((await legend.textContent())!, /불러옴 N/);
         await p.mouse.move(600, 600);
         assert.equal(await legend.isVisible(), false);
 
@@ -3922,7 +3973,7 @@ test('in a browser, the explanation shows on hover after a keyboard close and ne
         const info = p.locator('.flowbar button.flowinfo-button');
         const legend = p.locator('#flowlegend');
         assert.equal(await info.getAttribute('title'), null);
-        const fold = await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).getAttribute('title');
+        const fold = (await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).getAttribute('title'))!;
         assert.match(fold, /이 화면에 딸린 것을 숨깁니다/);
         assert.doesNotMatch(fold, /API/);
 
@@ -3966,9 +4017,9 @@ test('in a browser, the explanation stays inside the flow area at a narrow windo
         await p.waitForSelector('#flow .box');
         await p.locator('.flowbar button.flowinfo-button').hover();
         const edges = await p.evaluate(() => {
-          const flow = document.getElementById('flow').getBoundingClientRect();
-          const legend = document.getElementById('flowlegend').getBoundingClientRect();
-          return { left: legend.left - flow.left, right: legend.right - flow.left, width: document.getElementById('flow').clientWidth };
+          const flow = document.getElementById('flow')!.getBoundingClientRect();
+          const legend = document.getElementById('flowlegend')!.getBoundingClientRect();
+          return { left: legend.left - flow.left, right: legend.right - flow.left, width: document.getElementById('flow')!.clientWidth };
         });
         assert.ok(edges.left >= 0, `left edge ${edges.left}`);
         assert.ok(edges.right <= edges.width, `right edge ${edges.right} within ${edges.width}`);
@@ -4008,7 +4059,7 @@ test('in a browser, pressing Escape after the review ended throws nothing', { sk
   await withRebuiltFixture({}, async (config) => {
     const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => {} });
     try {
-      await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
+      await withPage(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async (p) => {
         await p.waitForSelector('#flow .box');
         await p.click('header button:has-text("리뷰 끝")');
         await p.waitForSelector('#ended');
@@ -4029,11 +4080,11 @@ test('in a browser, the info icon stands at the right end of the bar apart from 
         await p.waitForSelector('#flow .box');
         const info = p.locator('.flowbar button.flowinfo-button');
         assert.equal(await info.getAttribute('aria-label'), '흐름도 읽는 법');
-        assert.match((await info.textContent()).trim(), /^(i|ⓘ)$/, 'the only visible text is the icon glyph');
+        assert.match((await info.textContent())!.trim(), /^(i|ⓘ)$/, 'the only visible text is the icon glyph');
         const gaps = await p.evaluate(() => {
-          const bar = document.querySelector('.flowbar').getBoundingClientRect();
-          const icon = document.querySelector('.flowinfo-button').getBoundingClientRect();
-          const last = [...document.querySelectorAll('.flowbar button')].find((b) => b.textContent === '빈틈만 펼치기').getBoundingClientRect();
+          const bar = document.querySelector('.flowbar')!.getBoundingClientRect();
+          const icon = document.querySelector('.flowinfo-button')!.getBoundingClientRect();
+          const last = [...document.querySelectorAll('.flowbar button')].find((b) => b.textContent === '빈틈만 펼치기')!.getBoundingClientRect();
           const controls = [...document.querySelectorAll('.flowbar button')].map((b) => b.getBoundingClientRect());
           return { gap: icon.left - last.right, toBarEdge: bar.right - icon.right, rightmost: Math.max(...controls.map((r) => r.right)) === icon.right, round: Math.abs(icon.width - icon.height) < 0.5 && icon.width <= 28 };
         });
@@ -4055,7 +4106,7 @@ test('in a browser, the info icon is the last control of its row when a branch i
         await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
         await p.waitForSelector('.flowbar .focusing');
         const rows = await p.evaluate(() => {
-          const icon = document.querySelector('.flowinfo-button').getBoundingClientRect();
+          const icon = document.querySelector('.flowinfo-button')!.getBoundingClientRect();
           const same = [...document.querySelectorAll('.flowbar button, .flowbar .focusing')].filter((e) => {
             const r = e.getBoundingClientRect();
             return r.top < icon.bottom && r.bottom > icon.top;
@@ -4067,10 +4118,10 @@ test('in a browser, the info icon is the last control of its row when a branch i
         await p.setViewportSize({ width: 700, height: 600 });
         await flowButton(p, '전체 보기').click();
         await flowButton(p, '모두 펼치기').click();
-        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 300; });
+        await p.evaluate(() => { document.getElementById('flow')!.scrollLeft = 300; });
         const m = await p.evaluate(() => {
-          const flow = document.getElementById('flow');
-          const bar = document.querySelector('.flowbar').getBoundingClientRect();
+          const flow = document.getElementById('flow')!;
+          const bar = document.querySelector('.flowbar')!.getBoundingClientRect();
           const box = flow.getBoundingClientRect();
           return { scrollWidth: flow.scrollWidth, clientWidth: flow.clientWidth, barLeft: bar.left - box.left, barRight: bar.right - box.left };
         });
@@ -4092,12 +4143,12 @@ test('in a browser, the legend samples, the info icon and its explanation stay i
         const info = p.locator('.flowbar button.flowinfo-button');
         const frames = () => p.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
         const edges = () => p.evaluate(() => {
-          const flow = document.getElementById('flow');
+          const flow = document.getElementById('flow')!;
           const box = flow.getBoundingClientRect();
-          const rel = (r) => ({ left: r.left - box.left, right: r.right - box.left });
-          return { visible: flow.clientWidth, scrolled: flow.scrollLeft, scrollWidth: flow.scrollWidth, icon: rel(document.querySelector('.flowinfo-button').getBoundingClientRect()), legend: rel(document.getElementById('flowlegend').getBoundingClientRect()), key: [...document.querySelectorAll('.flowkey li')].map((li) => rel(li.getBoundingClientRect())) };
+          const rel = (r: DOMRect) => ({ left: r.left - box.left, right: r.right - box.left });
+          return { visible: flow.clientWidth, scrolled: flow.scrollLeft, scrollWidth: flow.scrollWidth, icon: rel(document.querySelector('.flowinfo-button')!.getBoundingClientRect()), legend: rel(document.getElementById('flowlegend')!.getBoundingClientRect()), key: [...document.querySelectorAll('.flowkey li')].map((li) => rel(li.getBoundingClientRect())) };
         });
-        const within = (e, { legendOpen = true } = {}) => {
+        const within = (e: Awaited<ReturnType<typeof edges>>, { legendOpen = true }: { legendOpen?: boolean } = {}) => {
           assert.equal(e.scrolled, 300, `the flow is scrolled sideways (${e.scrolled} of ${e.scrollWidth})`);
           assert.ok(e.icon.left >= 0 && e.icon.right <= e.visible, `icon ${e.icon.left}..${e.icon.right} within ${e.visible}`);
           if (legendOpen) {
@@ -4108,21 +4159,21 @@ test('in a browser, the legend samples, the info icon and its explanation stay i
           for (const r of e.key) assert.ok(r.left >= 0 && r.right <= e.visible, `sample ${r.left}..${r.right} within ${e.visible}`);
         };
 
-        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 300; });
+        await p.evaluate(() => { document.getElementById('flow')!.scrollLeft = 300; });
         await frames();
         assert.equal(await p.locator('#flowlegend').isVisible(), false);
         within(await edges(), { legendOpen: false });
 
         await info.click();
         await p.mouse.move(600, 500);
-        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 300; });
+        await p.evaluate(() => { document.getElementById('flow')!.scrollLeft = 300; });
         await frames();
         assert.equal(await p.locator('#flowlegend').isVisible(), true);
         within(await edges());
 
         await info.click();
         await p.mouse.move(600, 500);
-        await p.evaluate(() => { document.getElementById('flow').scrollLeft = 300; });
+        await p.evaluate(() => { document.getElementById('flow')!.scrollLeft = 300; });
         await frames();
         await info.hover();
         await frames();
@@ -4133,11 +4184,11 @@ test('in a browser, the legend samples, the info icon and its explanation stay i
   );
 });
 
-const travelDown = async (p, info, legend, column = 'center') => {
+const travelDown = async (p: Page, info: Locator, legend: Locator, column: 'left' | 'center' | 'right' = 'center') => {
   await info.hover();
   assert.equal(await legend.isVisible(), true);
-  const button = await info.boundingBox();
-  const text = await legend.boundingBox();
+  const button = (await info.boundingBox())!;
+  const text = (await legend.boundingBox())!;
   const x = button.x + { left: 0.5, center: button.width / 2, right: button.width - 0.5 }[column];
   const from = button.y + button.height / 2;
   const to = text.y + 20;
@@ -4146,7 +4197,7 @@ const travelDown = async (p, info, legend, column = 'center') => {
     await p.mouse.move(x, y);
     assert.equal(await legend.isVisible(), true, `the explanation is gone with the pointer at x=${x}, y=${y} (icon bottom ${button.y + button.height}, explanation top ${text.y})`);
   }
-  assert.equal(await p.evaluate(() => document.getElementById('flowlegend').matches(':hover')), true, 'the pointer is on the explanation');
+  assert.equal(await p.evaluate(() => document.getElementById('flowlegend')!.matches(':hover')), true, 'the pointer is on the explanation');
 };
 
 test('in a browser, the pointer can travel from the info icon down into the explanation without it disappearing', { skip: browserMissing }, async () => {
@@ -4154,7 +4205,7 @@ test('in a browser, the pointer can travel from the info icon down into the expl
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
-        for (const column of ['center', 'left', 'right']) await travelDown(p, p.locator('.flowbar button.flowinfo-button'), p.locator('#flowlegend'), column);
+        for (const column of ['center', 'left', 'right'] as const) await travelDown(p, p.locator('.flowbar button.flowinfo-button'), p.locator('#flowlegend'), column);
       }, { view: 'flow' }),
     ),
   );
@@ -4173,10 +4224,10 @@ test('in a browser, the pointer can travel from the info icon into the explanati
         const info = p.locator('.flowbar button.flowinfo-button');
         await travelDown(p, info, p.locator('#flowlegend'));
         const e = await p.evaluate(() => {
-          const flow = document.getElementById('flow');
+          const flow = document.getElementById('flow')!;
           const box = flow.getBoundingClientRect();
-          const legend = document.getElementById('flowlegend').getBoundingClientRect();
-          const icon = document.querySelector('.flowinfo-button').getBoundingClientRect();
+          const legend = document.getElementById('flowlegend')!.getBoundingClientRect();
+          const icon = document.querySelector('.flowinfo-button')!.getBoundingClientRect();
           return { visible: flow.clientWidth, left: legend.left - box.left, right: legend.right - box.left, iconRight: icon.right - box.left, iconBottom: icon.bottom, legendTop: legend.top };
         });
         assert.ok(e.left >= 0 && e.right <= e.visible, `legend ${e.left}..${e.right} within ${e.visible}`);
@@ -4202,20 +4253,20 @@ test('in a browser, the flow bar always shows a legend of five samples between t
         assert.equal(await key.locator('li [aria-hidden="true"]').count(), 5, 'every drawn sample is hidden from a screen reader');
         assert.deepEqual(await key.locator('li').evaluateAll((items) => items.map((li) => li.textContent.trim())), ['테두리 통과', '테두리 실패', '테두리 보류', '테두리 테스트 없음', '조건 걸린 링크']);
         const m = await p.evaluate(() => {
-          const rect = (e) => e.getBoundingClientRect();
+          const rect = (e: Element) => e.getBoundingClientRect();
           const items = [...document.querySelectorAll('.flowkey li')].map(rect);
-          const icon = rect(document.querySelector('.flowinfo-button'));
-          const last = rect([...document.querySelectorAll('.flowbar button')].find((b) => b.textContent === '빈틈만 펼치기'));
-          return { left: Math.min(...items.map((r) => r.left)), right: Math.max(...items.map((r) => r.right)), tops: new Set(items.map((r) => Math.round(r.top + r.height / 2))).size, iconLeft: icon.left, lastRight: last.right, legendShown: getComputedStyle(document.getElementById('flowlegend')).display };
+          const icon = rect(document.querySelector('.flowinfo-button')!);
+          const last = rect([...document.querySelectorAll('.flowbar button')].find((b) => b.textContent === '빈틈만 펼치기')!);
+          return { left: Math.min(...items.map((r) => r.left)), right: Math.max(...items.map((r) => r.right)), tops: new Set(items.map((r) => Math.round(r.top + r.height / 2))).size, iconLeft: icon.left, lastRight: last.right, legendShown: getComputedStyle(document.getElementById('flowlegend')!).display };
         });
         assert.ok(m.left > m.lastRight, `the legend starts at ${m.left}, right of 「빈틈만 펼치기」 ending at ${m.lastRight}`);
         assert.ok(m.right <= m.iconLeft, `the legend ends at ${m.right}, left of the icon at ${m.iconLeft}`);
         assert.ok(m.iconLeft - m.right <= 16, 'the legend sits next to the icon');
         assert.equal(m.tops, 1, 'the five samples are on one line at 1440px');
         assert.equal(m.legendShown, 'none', 'the samples show without opening the explanation');
-        const before = await p.evaluate(() => document.querySelector('.canvas').getBoundingClientRect().top);
+        const before = await p.evaluate(() => document.querySelector('.canvas')!.getBoundingClientRect().top);
         await p.locator('.flowbar button.flowinfo-button').click();
-        assert.equal(await p.evaluate(() => document.querySelector('.canvas').getBoundingClientRect().top), before, 'opening the explanation does not move the diagram');
+        assert.equal(await p.evaluate(() => document.querySelector('.canvas')!.getBoundingClientRect().top), before, 'opening the explanation does not move the diagram');
         assert.deepEqual(await key.locator('li .key-label').allTextContents(), KEY_LABELS);
       }, { view: 'flow' }),
     ),
@@ -4228,22 +4279,22 @@ test('in a browser, each legend sample is drawn with the border of the boxes and
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
         const { pairs, dashes } = await p.evaluate(() => {
-          const border = (e) => { const c = getComputedStyle(e); return [c.borderTopColor, c.borderTopStyle, c.borderTopWidth].join(' '); };
-          const canvas = document.querySelector('.canvas');
-          const out = {};
+          const border = (e: Element) => { const c = getComputedStyle(e); return [c.borderTopColor, c.borderTopStyle, c.borderTopWidth].join(' '); };
+          const canvas = document.querySelector('.canvas')!;
+          const out: Record<string, string[]> = {};
           for (const cls of ['s-pass', 's-fail', 's-pending', 's-none']) {
             const box = document.createElement('div');
             box.className = `box ${cls}`;
             canvas.append(box);
-            out[cls] = [border(document.querySelector(`.flowkey .swatch.${cls}`)), border(box)];
+            out[cls] = [border(document.querySelector(`.flowkey .swatch.${cls}`)!), border(box)];
             box.remove();
           }
           const edge = document.createElementNS('http://www.w3.org/2000/svg', 'path');
           edge.setAttribute('class', 'guarded');
-          canvas.querySelector('svg').append(edge);
-          const stroke = (e) => { const c = getComputedStyle(e); return [c.stroke, c.strokeDasharray, c.strokeWidth].join(' '); };
-          out.guarded = [stroke(document.querySelector('.flowkey svg path')), stroke(edge)];
-          const dashes = [document.querySelector('.flowkey svg path'), edge].map((e) => getComputedStyle(e).strokeDasharray);
+          canvas.querySelector('svg')!.append(edge);
+          const stroke = (e: Element) => { const c = getComputedStyle(e); return [c.stroke, c.strokeDasharray, c.strokeWidth].join(' '); };
+          out.guarded = [stroke(document.querySelector('.flowkey svg path')!), stroke(edge)];
+          const dashes = [document.querySelector('.flowkey svg path')!, edge].map((e) => getComputedStyle(e).strokeDasharray);
           edge.remove();
           return { pairs: out, dashes };
         });
@@ -4272,10 +4323,10 @@ test('in a browser, the explanation behind the info icon holds only the jump and
         const page = await p.evaluate(() => document.body.textContent);
         for (const old of ['진입 화면에서 링크를 따라', '처음 닿은 자리에 한 번만', '상자의 「API」 단추로', '점선: 설정·역할 조건이 걸린 링크', '상자 테두리: 붙은 테스트']) assert.equal(page.includes(old), false, old);
         const box = await p.evaluate(() => {
-          const flow = document.getElementById('flow').getBoundingClientRect();
-          const e = document.getElementById('flowlegend');
+          const flow = document.getElementById('flow')!.getBoundingClientRect();
+          const e = document.getElementById('flowlegend')!;
           const r = e.getBoundingClientRect();
-          return { left: r.left - flow.left, right: r.right - flow.left, width: r.width, visible: document.getElementById('flow').clientWidth, overflowing: [...e.querySelectorAll('li')].filter((li) => li.scrollWidth > li.clientWidth).length };
+          return { left: r.left - flow.left, right: r.right - flow.left, width: r.width, visible: document.getElementById('flow')!.clientWidth, overflowing: [...e.querySelectorAll('li')].filter((li) => li.scrollWidth > li.clientWidth).length };
         });
         assert.ok(box.width <= 320, `the explanation is ${box.width}px wide`);
         assert.ok(box.left >= 0 && box.right <= box.visible, `explanation ${box.left}..${box.right} within ${box.visible}`);
@@ -4301,16 +4352,16 @@ test('in a browser, at a 500px window the bar with its legend stays within the f
         await p.waitForSelector('#flow .box');
         await p.locator('.flowbar button.flowinfo-button').click();
         const m = await p.evaluate(() => {
-          const flow = document.getElementById('flow');
+          const flow = document.getElementById('flow')!;
           const box = flow.getBoundingClientRect();
-          const bar = document.querySelector('.flowbar');
-          const rel = (e) => { const r = e.getBoundingClientRect(); return { left: r.left - box.left, right: r.right - box.left, top: r.top, bottom: r.bottom }; };
-          const icon = rel(document.querySelector('.flowinfo-button'));
+          const bar = document.querySelector('.flowbar')!;
+          const rel = (e: Element) => { const r = e.getBoundingClientRect(); return { left: r.left - box.left, right: r.right - box.left, top: r.top, bottom: r.bottom }; };
+          const icon = rel(document.querySelector('.flowinfo-button')!);
           const sameLine = [...bar.querySelectorAll('button, .flowkey li')].map(rel).filter((r) => r.top < icon.bottom && r.bottom > icon.top);
           return {
             visible: flow.clientWidth, barScroll: bar.scrollWidth, barClient: bar.clientWidth,
             labels: [...document.querySelectorAll('.flowkey .key-label')].map((e) => [e.textContent, e.getClientRects().length]),
-            items: [...document.querySelectorAll('.flowkey li')].map(rel), icon, legend: rel(document.getElementById('flowlegend')),
+            items: [...document.querySelectorAll('.flowkey li')].map(rel), icon, legend: rel(document.getElementById('flowlegend')!),
             iconIsLast: Math.max(...sameLine.map((r) => r.right)) === icon.right,
           };
         });
@@ -4329,7 +4380,7 @@ test('in a browser, a screen box says on hover that pressing it opens the screen
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
-        const titles = await p.locator('#flow .box.screen').evaluateAll((boxes) => boxes.map((b) => b.getAttribute('title').split('\n').at(-1)));
+        const titles = await p.locator('#flow .box.screen').evaluateAll((boxes) => boxes.map((b) => b.getAttribute('title')!.split('\n').at(-1)));
         assert.ok(titles.length > 3);
         assert.deepEqual([...new Set(titles)], [PRESS_HINT]);
         const home = await screenBox(p, '/home#Home');
@@ -4353,7 +4404,7 @@ test('in a browser, the buttons of a flow box never wrap onto a second row, at a
           await p.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
           const rows = await p.$$eval('#flow .box .acts', (acts) => acts.map((row) => {
             const buttons = [...row.querySelectorAll('button')].map((b) => b.getBoundingClientRect());
-            const box = row.closest('.box').getBoundingClientRect();
+            const box = row.closest('.box')!.getBoundingClientRect();
             return { rows: new Set(buttons.map((b) => Math.round(b.top))).size, over: Math.max(...buttons.map((b) => b.right)) - box.right, widest: Math.max(...buttons.map((b) => b.right)) - Math.min(...buttons.map((b) => b.left)) };
           }));
           assert.ok(rows.length > 0);
@@ -4373,7 +4424,7 @@ test('in a browser, flow boxes stand in columns by how many links they are from 
         await flowButton(p, '모두 펼치기').click();
         const boxes = await flowBoxes(p);
         const byId = Object.fromEntries(boxes.map((b) => [b.id, b]));
-        const columns = new Map();
+        const columns = new Map<number, typeof boxes>();
         for (const b of boxes) columns.set(b.left, [...(columns.get(b.left) ?? []), b]);
         for (const [left, column] of columns) assert.equal(new Set(column.map((b) => b.width)).size, 1, `the boxes at ${left} share one width`);
         assert.equal(byId['/home#Home'].left, byId['/help#Help'].left);
@@ -4394,7 +4445,7 @@ test('in a browser, entry screens that lead nowhere are gathered under 「더 �
         assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 8');
         const boxes = await flowBoxes(p);
         const grouped = boxes.filter((b) => b.grouped);
-        const groupedScreens = await p.$$eval('#flow .box.screen.grouped', (els) => els.map((e) => e.title.split('\n')[0]));
+        const groupedScreens = await p.$$eval('#flow .box.screen.grouped', (els: HTMLElement[]) => els.map((e) => e.title.split('\n')[0]));
         assert.deepEqual(groupedScreens.sort(), Array.from({ length: 8 }, (_, i) => `/extra/${i}#Extra${i}`).sort());
         const head = await p.$eval('#flow .group-head', (e) => e.getBoundingClientRect().toJSON());
         const tree = boxes.filter((b) => !b.grouped);
@@ -4405,11 +4456,11 @@ test('in a browser, entry screens that lead nowhere are gathered under 「더 �
         assert.deepEqual(overlapping(boxes), []);
 
         const failing = await screenBox(p, '/extra/7#Extra7');
-        assert.match(await failing.getAttribute('class'), /s-fail/);
-        assert.match(await failing.locator('.l2').textContent(), /^✓1 ✕2 ○1 · 불러옴 2/);
+        assert.match((await failing.getAttribute('class'))!, /s-fail/);
+        assert.match((await failing.locator('.l2').textContent())!, /^✓1 ✕2 ○1 · 불러옴 2/);
         assert.deepEqual(await needLines(await screenBox(p, '/extra/3#Extra3')), ['역할 ADMIN미확인 1']);
         const linked = await screenBox(p, '/extra/0#Extra0');
-        assert.match(await linked.locator('.l3').textContent(), /→ /);
+        assert.match((await linked.locator('.l3').textContent())!, /→ /);
         const callsBefore = (await boxCount(p)).calls;
         await linked.locator('.calls').click();
         assert.notEqual((await boxCount(p)).calls, callsBefore);
@@ -4438,11 +4489,11 @@ test('in a browser, the gathered entry screens take fewer columns once the windo
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .group-head');
-        const columns = () => p.$$eval('#flow .box.screen.grouped', (els) => new Set(els.map((e) => e.offsetLeft)).size);
+        const columns = () => p.$$eval('#flow .box.screen.grouped', (els: HTMLElement[]) => new Set(els.map((e) => e.offsetLeft)).size);
         const wide = await columns();
         assert.ok(wide > 1);
         await p.setViewportSize({ width: 700, height: 900 });
-        await p.waitForFunction((n) => new Set([...document.querySelectorAll('#flow .box.screen.grouped')].map((e) => e.offsetLeft)).size < n, wide);
+        await p.waitForFunction((n) => new Set([...document.querySelectorAll<HTMLElement>('#flow .box.screen.grouped')].map((e) => e.offsetLeft)).size < n, wide);
         assert.equal(await p.locator('#flow .box.screen.grouped').count(), 8);
         assert.deepEqual(overlapping(await flowBoxes(p)), []);
       }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
@@ -4456,13 +4507,13 @@ test('in a browser, redrawing the flow keeps the place the reviewer scrolled to'
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .group-head');
         const scrolled = await p.evaluate(() => {
-          const flow = document.getElementById('flow');
+          const flow = document.getElementById('flow')!;
           flow.scrollTop = 200;
           return flow.scrollTop;
         });
         assert.equal(scrolled, 200);
         await flowButton(p, '모두 펼치기').click();
-        assert.equal(await p.evaluate(() => document.getElementById('flow').scrollTop), 200);
+        assert.equal(await p.evaluate(() => document.getElementById('flow')!.scrollTop), 200);
       }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
     ),
   );
@@ -4490,7 +4541,7 @@ test('in a browser, the flow layout is worked out from the trees, the box sizes 
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
         const [first, second, columns] = await p.evaluate(() => {
-          const screen = (id, children = [], calls = []) => ({ kind: 'screen', id, children, calls, guards: [] });
+          const screen = (id: string, children: object[] = [], calls: object[] = []) => ({ kind: 'screen', id, children, calls, guards: [] });
           const roots = [screen('A', [screen('B'), screen('C')]), screen('D', [], [{ kind: 'call', id: 'GET:/d' }]), screen('E')];
           const sizes = {
             A: { width: 100, height: 40 }, B: { width: 120, height: 30 }, C: { width: 80, height: 50 },
@@ -4529,10 +4580,10 @@ test('in a browser, the flow layout is worked out from the trees, the box sizes 
 const WALK = ['/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/help#Help', '/lab#Lab', '/lab/result#LabResult', '/settings#Settings'];
 const WALK_ON_MAP = WALK.slice(0, 7);
 
-async function withPathStories(stories, fn, edits = []) {
+async function withPathStories(stories: Record<string, string[]>, fn: (p: Page, ctx: { base: string; errors: string[]; writeStory: (id: string, screens: string[]) => void; storyFile: (id: string) => string }) => Promise<void>, edits: [string, string, string][] = []) {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, async (config, copy) => {
-    const storyFile = (id) => path.join(copy, 'example-stories', `${id}.json`);
-    const writeStory = (id, screens) => fs.writeFileSync(storyFile(id), JSON.stringify({ name: `${id} 이야기`, screens, author: 'reviewer', date: '2026-10-05' }));
+    const storyFile = (id: string) => path.join(copy, 'example-stories', `${id}.json`);
+    const writeStory = (id: string, screens: string[]) => fs.writeFileSync(storyFile(id), JSON.stringify({ name: `${id} 이야기`, screens, author: 'reviewer', date: '2026-10-05' }));
     for (const [id, screens] of Object.entries(stories)) writeStory(id, screens);
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -4542,18 +4593,18 @@ async function withPathStories(stories, fn, edits = []) {
   }, edits);
 }
 
-const flowPlace = (p) => p.evaluate(() => decodeURIComponent(location.hash));
-const pickPathStory = (p, id) => p.selectOption('.story-pick select', id);
-const drawnScreens = (p) => p.$$eval('#flow .box.screen', (els) => els.map((e) => e.dataset.key).sort());
-const pathMarks = (p, cls) => p.$$eval(`#flow .canvas > .${cls}`, (els) => els.map((e) => [e.dataset.at, e.textContent, ...[...e.classList].filter((c) => /^(l-.*|exit|entry)$/.test(c))]));
-const pathEdges = (p) => p.$$eval('#flow .canvas svg path.story-edge', (els) => els.map((e) => [e.dataset.from, e.dataset.to, [...e.classList].find((c) => c.startsWith('l-'))]).sort());
-const ringed = (p) => p.$$eval('#flow .box.story-ring', (els) => els.map((e) => e.dataset.key));
-const stripCurrent = (p) => p.$$eval('.story-strip .story-step.current .story-badge', (els) => els.map((e) => e.textContent));
-const inView = (p, key) => p.evaluate((k) => {
-  const flow = document.getElementById('flow');
-  const r = flow.querySelector(`.box.screen[data-key="${CSS.escape(k)}"]`).getBoundingClientRect();
+const flowPlace = (p: Page) => p.evaluate(() => decodeURIComponent(location.hash));
+const pickPathStory = (p: Page, id: string) => p.selectOption('.story-pick select', id);
+const drawnScreens = (p: Page) => p.$$eval('#flow .box.screen', (els) => els.map((e) => e.dataset.key).sort());
+const pathMarks = (p: Page, cls: string) => p.$$eval(`#flow .canvas > .${cls}`, (els) => els.map((e) => [e.dataset.at, e.textContent, ...[...e.classList].filter((c) => /^(l-.*|exit|entry)$/.test(c))]));
+const pathEdges = (p: Page) => p.$$eval('#flow .canvas svg path.story-edge', (els) => els.map((e) => [e.dataset.from, e.dataset.to, [...e.classList].find((c) => c.startsWith('l-'))]).sort());
+const ringed = (p: Page) => p.$$eval('#flow .box.story-ring', (els) => els.map((e) => e.dataset.key));
+const stripCurrent = (p: Page) => p.$$eval('.story-strip .story-step.current .story-badge', (els) => els.map((e) => e.textContent));
+const inView = (p: Page, key: string) => p.evaluate((k) => {
+  const flow = document.getElementById('flow')!;
+  const r = flow.querySelector(`.box.screen[data-key="${CSS.escape(k)}"]`)!.getBoundingClientRect();
   const view = flow.getBoundingClientRect();
-  return r.top >= flow.querySelector('.flowbar').getBoundingClientRect().bottom && r.top < view.bottom && r.left >= view.left && r.left < view.right;
+  return r.top >= flow.querySelector('.flowbar')!.getBoundingClientRect().bottom && r.top < view.bottom && r.left >= view.left && r.left < view.right;
 }, key);
 
 test('in a browser, the flow lays out a story\'s step marks only in the gaps that hold them, beside their boxes and off the lines, and keeps room under a box for its hidden-screen count', { skip: browserMissing }, async () => {
@@ -4563,7 +4614,7 @@ test('in a browser, the flow lays out a story\'s step marks only in the gaps tha
         await p.waitForSelector('#flow .box');
         assert.equal(await p.locator('.story-pick').count(), 0, 'no story picker without stories');
         const out = await p.evaluate(() => {
-          const screen = (id, children = []) => ({ kind: 'screen', id, children, calls: [], guards: [] });
+          const screen = (id: string, children: object[] = []) => ({ kind: 'screen', id, children, calls: [], guards: [] });
           const roots = [screen('A', [screen('B'), screen('C', [screen('D')])])];
           const sizes = { A: { width: 100, height: 40 }, B: { width: 120, height: 50 }, C: { width: 80, height: 30 }, D: { width: 90, height: 30 } };
           const marks = [
@@ -4579,16 +4630,16 @@ test('in a browser, the flow lays out a story\'s step marks only in the gaps tha
         assert.deepEqual(out.plain, [0, 150, 320]);
         assert.deepEqual(out.xs, [0, 100 + 54 + 32 + 44, 230 + 120 + 50]);
         const box = Object.fromEntries(out.layout.boxes.map((b) => [b.key, b]));
-        const [badge, chip, hidden, tag] = out.layout.marks;
+        const [badge, chip, hidden, tag] = out.layout.marks!;
         assert.deepEqual(hidden, { x: 8, y: box.A.y + 40 + 6 });
         assert.deepEqual(badge, { x: 230 - 6 - 22, y: box.B.y - 2 });
         assert.equal(chip.x, 110);
         assert.equal(tag.y, box.C.y + 15 - 9, 'the tag sits on the line into its box');
         assert.equal(tag.x, 230 - 10 - 30);
-        assert.equal(Math.min(...out.layout.boxes.map((b) => b.y), ...out.layout.marks.map((m) => m.y)), 0, 'a badge raised above the top box moves the drawing down');
-        const a = out.layout.edges.find((e) => e.to === 'B');
+        assert.equal(Math.min(...out.layout.boxes.map((b) => b.y), ...out.layout.marks!.map((m) => m.y)), 0, 'a badge raised above the top box moves the drawing down');
+        const a = out.layout.edges.find((e) => e.to === 'B')!;
         assert.deepEqual([a.ex, a.nx], [100 + 54, 230 - 44]);
-        for (const [m, height, lines] of [[chip, 20, out.layout.edges.filter((e) => e.from === 'A').map((e) => e.y1)], [badge, 22, [a.y2]]]) {
+        for (const [m, height, lines] of [[chip, 20, out.layout.edges.filter((e) => e.from === 'A').map((e) => e.y1)], [badge, 22, [a.y2]]] satisfies [{ x: number; y: number }, number, number[]][]) {
           for (const line of lines) assert.ok(line < m.y - 4 || line > m.y + height + 4, `mark ${m.y}..${m.y + height} keeps off the line at ${line}`);
         }
         assert.ok(out.layout.height >= hidden.y + 16, 'the canvas is tall enough for the hidden-screen count');
@@ -4599,8 +4650,8 @@ test('in a browser, the flow lays out a story\'s step marks only in the gaps tha
 
 test('in a browser, a story picked in the flow bar leaves only its screens and their ancestors with numbered badges and the hidden screens counted, closes API calls, and turning it off brings back the flow the reviewer had', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
-    const stories = await p.evaluate(() => state.data.stories.list.map((st) => [st.id, st.name]));
-    assert.deepEqual(await p.$$eval('.story-pick option', (os) => os.map((o) => [o.value, o.textContent])), [['', '고르기'], ...stories]);
+    const stories = await p.evaluate(() => state.data.stories.list.map((st: Story) => [st.id, st.name]));
+    assert.deepEqual(await p.$$eval('.story-pick option', (os: HTMLOptionElement[]) => os.map((o) => [o.value, o.textContent])), [['', '고르기'], ...stories]);
     assert.equal(await p.locator('.flowbar .path-off').count(), 0);
 
     await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^접기$/ }).click();
@@ -4633,7 +4684,7 @@ test('in a browser, a story hop from a box to its child is drawn on that link in
       ['/lab#Lab', '/lab/result#LabResult', 'l-open'],
       ['/signin#SignIn', '/home#Home', 'l-open'],
     ]);
-    const stroke = (from, to) => p.$eval(`#flow svg path[data-from="${from}"][data-to="${to}"]`, (e) => { const c = getComputedStyle(e); return [c.strokeWidth, c.strokeDasharray, c.opacity]; });
+    const stroke = (from: string, to: string) => p.$eval(`#flow svg path[data-from="${from}"][data-to="${to}"]`, (e) => { const c = getComputedStyle(e); return [c.strokeWidth, c.strokeDasharray, c.opacity]; });
     assert.deepEqual(await stroke('/signin#SignIn', '/home#Home'), ['3.2px', 'none', '1']);
     assert.deepEqual(await stroke('/signin#SignIn', '/help#Help'), ['1.3px', 'none', '0.35'], 'a guarded link that no hop takes is a thin grey line');
     assert.deepEqual(await pathMarks(p, 'story-chip'), [
@@ -4652,7 +4703,7 @@ test('in a browser, a story hop from a box to its child is drawn on that link in
     assert.deepEqual(await p.$$eval('#flow .story-chip.hovered', (els) => els.map((e) => e.dataset.at)), ['/document/:id#DocumentDetail', '/help#Help']);
     await p.mouse.move(5, 890);
     assert.equal(await p.locator('#flow .story-chip.hovered').count(), 0);
-    await p.evaluate(() => { document.getElementById('flow').scrollTop = 0; });
+    await p.evaluate(() => { document.getElementById('flow')!.scrollTop = 0; });
     await toHelp.click();
     assert.deepEqual(await ringed(p), ['/help#Help']);
     assert.deepEqual(await stripCurrent(p), ['5']);
@@ -4675,7 +4726,7 @@ test('in a browser, the step strip in the flow bar lists the steps with their ro
     assert.deepEqual(await p.$$eval('.story-strip .story-join', (els) => els.map((e) => [[...e.classList].find((c) => c.startsWith('l-')), e.textContent])), [
       ['l-open', ''], ['l-open', ''], ['l-open', ''], ['l-conditioned', '조건'], ['l-broken', '링크 없음'], ['l-open', ''], ['l-off-map', ''],
     ]);
-    assert.equal(await p.evaluate(() => document.querySelector('.story-strip').closest('.flowbar') !== null), true);
+    assert.equal(await p.evaluate(() => document.querySelector('.story-strip')!.closest('.flowbar') !== null), true);
 
     await p.locator('.story-strip .story-step', { hasText: '/lab/result' }).click();
     assert.deepEqual(await ringed(p), ['/lab/result#LabResult']);
@@ -4687,7 +4738,7 @@ test('in a browser, the step strip in the flow bar lists the steps with their ro
 
     await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).click();
     const foldedOnPath = await (await screenBox(p, '/home#Home')).locator('.l2').textContent();
-    assert.deepEqual(await p.$$eval('.story-strip .story-step:has(.note)', (els) => els.map((e) => e.querySelector('.note').textContent + e.querySelector('.story-badge').textContent)), ['접힘3', '접힘4', '접힘6', '접힘7', '맵에 없는 화면8']);
+    assert.deepEqual(await p.$$eval('.story-strip .story-step:has(.note)', (els) => els.map((e) => e.querySelector('.note')!.textContent + e.querySelector('.story-badge')!.textContent)), ['접힘3', '접힘4', '접힘6', '접힘7', '맵에 없는 화면8']);
     assert.equal(await p.locator('#flow .story-chip[data-hop="2"]').count(), 0, 'a hop whose ends are folded away has no chips');
     await p.locator('.story-strip .story-step', { hasText: '/document/:id' }).click();
     assert.deepEqual(await ringed(p), ['/document/:id#DocumentDetail']);
@@ -4711,12 +4762,12 @@ test('in a browser, the story path view numbers a screen visited twice with both
   await withPathStories(stories, async (p) => {
     await pickPathStory(p, 'twice');
     assert.deepEqual(await pathMarks(p, 'story-badge'), [['/signin#SignIn', '1'], ['/home#Home', '2·4'], ['/help#Help', '3']]);
-    assert.deepEqual((await pathMarks(p, 'story-chip')).map(([at, text, end]) => [at, text.match(/→ \d+|\d+ →/)[0], end]), [
+    assert.deepEqual((await pathMarks(p, 'story-chip')).map(([at, text, end]) => [at, text!.match(/→ \d+|\d+ →/)![0], end]), [
       ['/home#Home', '→ 3', 'exit'], ['/help#Help', '2 →', 'entry'], ['/help#Help', '→ 4', 'exit'], ['/home#Home', '3 →', 'entry'],
     ]);
 
     await p.evaluate(() => {
-      const { flow } = state.data;
+      const { flow }: PageData = state.data;
       flow.unreached.push(...flow.roots.splice(flow.roots.findIndex((r) => r.id === '/admin/group#AdminGroup'), 1));
     });
     await pickPathStory(p, 'far');
@@ -4761,7 +4812,7 @@ test('in a browser, the picked story is kept in the address through reloads and 
     assert.deepEqual(await drawnScreens(p), [...WALK_ON_MAP].sort(), 'the path is cut from the whole flow, not from the branch');
     await flowButton(p, '경로 끄기').click();
     assert.equal(await flowPlace(p), '#flow?from=/home#Home', 'turning the path off goes back to the branch');
-    assert.match(await p.textContent('.flowbar .focusing'), /^\/home /);
+    assert.match((await p.textContent('.flowbar .focusing'))!, /^\/home /);
 
     await pickPathStory(p, 'walk-around');
     await p.click('.flowbar .story-only button');
@@ -4805,27 +4856,27 @@ test('in a browser, a picked story whose file changes while the page is open is 
 test('in a browser, no chip, tag or badge of a story path covers a box or another mark, no thick line crosses a box, and no line runs under a chip or badge, also with every API call open', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
     const problems = () => p.evaluate(() => {
-      const R = (e) => e.getBoundingClientRect();
-      const boxes = [...document.querySelectorAll('#flow .canvas > .box')];
-      const marks = [...document.querySelectorAll('#flow .canvas > .mark')];
-      const hit = (a, b) => a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
+      const R = (e: Element) => e.getBoundingClientRect();
+      const boxes = [...document.querySelectorAll<HTMLElement>('#flow .canvas > .box')];
+      const marks = [...document.querySelectorAll<HTMLElement>('#flow .canvas > .mark')];
+      const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
       const out = [];
       for (const m of marks) {
         for (const b of boxes) if (hit(R(m), R(b))) out.push(`${m.textContent} covers ${b.dataset.key}`);
-        if (R(m).right > R(m.parentElement).right + 0.5) out.push(`${m.textContent} sticks out of its canvas`);
+        if (R(m).right > R(m.parentElement!).right + 0.5) out.push(`${m.textContent} sticks out of its canvas`);
       }
       marks.forEach((m, i) => marks.slice(i + 1).forEach((o) => { if (hit(R(m), R(o))) out.push(`${m.textContent} covers ${o.textContent}`); }));
-      for (const line of document.querySelectorAll('#flow .canvas svg path')) {
-        const ctm = line.getScreenCTM();
+      for (const line of document.querySelectorAll<SVGPathElement>('#flow .canvas svg path')) {
+        const ctm = line.getScreenCTM()!;
         const len = line.getTotalLength();
         const thick = line.classList.contains('story-edge');
         for (let at = 2; at < len - 2; at += 2) {
           const q = line.getPointAtLength(at);
           const x = ctm.a * q.x + ctm.e;
           const y = ctm.d * q.y + ctm.f;
-          const inside = (e) => { const r = R(e); return x > r.left + 1 && x < r.right - 1 && y > r.top + 1 && y < r.bottom - 1; };
+          const inside = (e: Element) => { const r = R(e); return x > r.left + 1 && x < r.right - 1 && y > r.top + 1 && y < r.bottom - 1; };
           const box = thick && boxes.find(inside);
-          const under = marks.find((m) => !m.classList.contains('story-tag') && inside(m));
+          const under = marks.find((m) => !m.classList.contains('story-tag') && inside(m))!;
           if (box || under) {
             out.push(`${line.dataset.from} → ${line.dataset.to} runs ${box ? `across ${box.dataset.key}` : `under ${under.textContent}`}`);
             break;
@@ -4859,15 +4910,15 @@ test('in a browser, the info icon of the story picker opens a legend of the path
       '단계 번호', '이어짐 · 설정에 적은 이동', '조건', '5단계로 감', '4단계에서 옴', '링크 없음', '맵에 없는 화면', '판정 못 함', '경로 밖 화면',
     ]);
     assert.equal(await legend.locator('li > .sample').count(), 9);
-    const look = (sel) => p.$eval(sel, (e) => { const c = getComputedStyle(e); return [c.borderTopStyle, c.borderTopColor, c.color, c.height].join(' '); });
+    const look = (sel: string) => p.$eval(sel, (e) => { const c = getComputedStyle(e); return [c.borderTopStyle, c.borderTopColor, c.color, c.height].join(' '); });
     assert.equal(await look('#pathlegend .story-chip.l-broken'), await look('#flow .canvas .story-chip.l-broken'));
     assert.equal(await look('#pathlegend .story-badge'), await look('#flow .canvas .story-badge'));
     await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).click();
     assert.equal(await legend.isVisible(), true, 'a redraw keeps the legend open');
     const edges = await p.evaluate(() => {
-      const flow = document.getElementById('flow').getBoundingClientRect();
-      const r = document.getElementById('pathlegend').getBoundingClientRect();
-      return { left: r.left - flow.left, right: r.right - flow.left, visible: document.getElementById('flow').clientWidth };
+      const flow = document.getElementById('flow')!.getBoundingClientRect();
+      const r = document.getElementById('pathlegend')!.getBoundingClientRect();
+      return { left: r.left - flow.left, right: r.right - flow.left, visible: document.getElementById('flow')!.clientWidth };
     });
     assert.ok(edges.left >= 0 && edges.right <= edges.visible, `legend ${edges.left}..${edges.right} within ${edges.visible}`);
     await p.keyboard.press('Escape');
@@ -4881,11 +4932,11 @@ test('in a browser, 「리뷰 끝」 ends the review and the page says so', { sk
     let ends = 0;
     const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => { ends++; } });
     try {
-      await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
+      await withPage(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('header button:has-text("리뷰 끝")');
         await p.waitForSelector('#ended');
-        assert.match(await p.textContent('#ended'), /리뷰를 끝냈습니다/);
+        assert.match((await p.textContent('#ended'))!, /리뷰를 끝냈습니다/);
         assert.equal(await p.locator('main, #flow, header button').count(), 0);
         assert.equal(ends, 1);
       });
@@ -4900,7 +4951,7 @@ test('in a browser, 「리뷰 끝」 asks before throwing away a mark that was p
     let ends = 0;
     const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => { ends++; } });
     try {
-      await withPage(`http://127.0.0.1:${server.address().port}`, async (p) => {
+      await withPage(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#right .statuses button:has-text("없음")');
         await p.fill('#right-dock textarea', 'draft note');
@@ -4938,7 +4989,7 @@ test('in a browser, 「리뷰 끝」 asks before throwing away a mark that was p
 test('in a browser, 「리뷰 끝」 after the review already ended elsewhere says so rather than reporting a failure', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
     const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => () => server.close() });
-    const base = `http://127.0.0.1:${server.address().port}`;
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const browser = await chromium.launch();
     try {
       const p = await browser.newPage();
@@ -4950,7 +5001,7 @@ test('in a browser, 「리뷰 끝」 after the review already ended elsewhere sa
 
       await p.click('header button:has-text("리뷰 끝")');
       await p.waitForSelector('#ended');
-      assert.match(await p.textContent('#ended'), /이미/);
+      assert.match((await p.textContent('#ended'))!, /이미/);
       assert.equal(await p.locator('#end-error').count(), 0);
     } finally {
       await browser.close();
@@ -4999,9 +5050,9 @@ test('in a browser, the chosen screen shows the logged-in app in a frame above i
             await p.click('#screen-list li:has-text("/home")');
             const { app } = await (await fetch(`${base}/api/data`)).json();
             const bar = p.locator('#center .frame-bar');
-            assert.match(await bar.textContent(), new RegExp(`${app.url}/home`));
-            assert.match(await bar.textContent(), /duru-admin/);
-            assert.match(await bar.textContent(), /맵에 없는 signedOutPaths: \/login/);
+            assert.match((await bar.textContent())!, new RegExp(`${app.url}/home`));
+            assert.match((await bar.textContent())!, /duru-admin/);
+            assert.match((await bar.textContent())!, /맵에 없는 signedOutPaths: \/login/);
             assert.equal(await bar.locator('a:has-text("새 창")').getAttribute('href'), `${app.url}/home`);
             assert.equal(await bar.locator('a:has-text("새 창")').getAttribute('target'), '_blank');
 
@@ -5018,21 +5069,21 @@ test('in a browser, the chosen screen shows the logged-in app in a frame above i
             await p.waitForSelector('#center tr.selected .chip.missing');
             assert.equal(await frame.locator('#pressed').textContent(), 'pressed');
 
-            const frameBox = await p.locator('#center iframe.app').boundingBox();
-            const tableBox = await p.locator('#center table').first().boundingBox();
+            const frameBox = (await p.locator('#center iframe.app').boundingBox())!;
+            const tableBox = (await p.locator('#center table').first().boundingBox())!;
             assert.ok(tableBox.y > frameBox.y + frameBox.height - 1);
             assert.ok(await p.locator('#right').isVisible());
 
             await p.click('#screen-list li:has-text("/signin")');
-            assert.match(await bar.textContent(), /로그아웃 상태/);
-            assert.doesNotMatch(await bar.textContent(), /duru-admin/);
+            assert.match((await bar.textContent())!, /로그아웃 상태/);
+            assert.doesNotMatch((await bar.textContent())!, /duru-admin/);
             await p.frameLocator('#center iframe.app').locator('#path:has-text("/signin")').waitFor();
             const signedOutFrame = p.frameLocator('#center iframe.app');
             assert.equal(await signedOutFrame.locator('#who').textContent(), '로그인 전');
             assert.equal(await bar.locator('a:has-text("새 창")').getAttribute('href'),
               `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent('/signin')}`);
 
-            const appFrameHandle = p.frames().find((f) => f.url().startsWith(`${app.signedOutUrl}/signin`));
+            const appFrameHandle = p.frames().find((f) => f.url().startsWith(`${app.signedOutUrl}/signin`))!;
             await appFrameHandle.evaluate(() => {
               localStorage.setItem('FAKE_AUTH', JSON.stringify({ accessToken: 't-123' }));
               location.reload();
@@ -5062,7 +5113,7 @@ test('in a browser, a screen with path variables opens filled with its fixed val
             await frame.locator('#path:has-text("/document/draft")').waitFor();
             assert.equal(await frame.locator('#who').textContent(), '로그인 전');
             assert.equal(await bar.locator('.mono').textContent(), `${app.signedOutUrl}/document/draft`);
-            assert.match(await bar.textContent(), /로그아웃 상태/);
+            assert.match((await bar.textContent())!, /로그아웃 상태/);
             assert.equal(await newWindow(), `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent('/document/draft')}`);
             assert.equal(await bar.locator('input[name=tab]').inputValue(), 'draft');
 
@@ -5071,7 +5122,7 @@ test('in a browser, a screen with path variables opens filled with its fixed val
             await frame.locator('#who:has-text("두루 관리자")').waitFor();
             assert.equal(await bar.locator('input[name=id]').inputValue(), '17');
             assert.equal(await newWindow(), `${app.url}/document/17`);
-            assert.doesNotMatch(await bar.textContent(), /목록에서 골라/);
+            assert.doesNotMatch((await bar.textContent())!, /목록에서 골라/);
             assert.deepEqual(listCalls, ['GET /api/v1/documents']);
 
             await bar.locator('input[name=id]').fill('42');
@@ -5120,20 +5171,20 @@ test('in a browser, a screen without its values opens its list screen with a not
             await p.click('#screen-list li:has-text("/document/:id")');
             await frame.locator('#path:has-text("/home")').waitFor();
             assert.equal(await bar.locator('.mono').textContent(), `${app.url}/home`);
-            assert.match(await bar.textContent(), /목록에서 골라 들어가세요/);
-            assert.match(await bar.textContent(), /맵에 없는 pathValues: \/docs\/:id/);
+            assert.match((await bar.textContent())!, /목록에서 골라 들어가세요/);
+            assert.match((await bar.textContent())!, /맵에 없는 pathValues: \/docs\/:id/);
             assert.equal(await bar.locator('.path-values .error').count(), 0);
             assert.equal(await bar.locator('input[name=id]').inputValue(), '');
 
             await bar.locator('input[name=id]').fill('42');
             await bar.locator('input[name=id]').press('Enter');
             await frame.locator('#path:has-text("/document/42")').waitFor();
-            assert.doesNotMatch(await bar.textContent(), /목록에서 골라/);
+            assert.doesNotMatch((await bar.textContent())!, /목록에서 골라/);
 
             await p.click('#screen-list li:has-text("/document/:tab")');
             await frame.locator('#path:has-text("/home")').waitFor();
-            assert.match(await bar.textContent(), /목록에서 골라 들어가세요/);
-            assert.match(await bar.locator('.path-values .error').textContent(), /^tab: 목록 API GET \/api\/v1\/documents\/broken 요청이 500 로 실패했습니다$/);
+            assert.match((await bar.textContent())!, /목록에서 골라 들어가세요/);
+            assert.match((await bar.locator('.path-values .error').textContent())!, /^tab: 목록 API GET \/api\/v1\/documents\/broken 요청이 500 로 실패했습니다$/);
           }),
         ),
       ),
@@ -5153,7 +5204,7 @@ test('in a browser, a screen without its values falls back to a list screen open
             await p.click('#screen-list li:has-text("/document/:id")');
             await p.frameLocator('#center iframe.app').locator('#path:has-text("/document/draft")').waitFor();
             assert.equal(await bar.locator('.mono').textContent(), `${app.url}/document/draft`);
-            assert.match(await bar.textContent(), /목록에서 골라 들어가세요/);
+            assert.match((await bar.textContent())!, /목록에서 골라 들어가세요/);
           }),
         ),
       ),
@@ -5200,7 +5251,7 @@ test('in a browser, a value the reviewer clears does not fall back to a list scr
             await bar.locator('input[name=id]').press('Enter');
             await p.locator('#center .frame-note:has-text("id 값이 없어 이 화면을 띄울 수 없습니다")').waitFor();
             assert.equal(await p.locator('#center iframe.app').count(), 0);
-            assert.doesNotMatch(await bar.textContent(), /목록에서 골라/);
+            assert.doesNotMatch((await bar.textContent())!, /목록에서 골라/);
 
             await bar.locator('input[name=id]').fill('43');
             await bar.locator('input[name=id]').press('Enter');
@@ -5334,7 +5385,7 @@ test('in a browser, 「새 창으로 열기」 and 「다시 띄우기」 ask fo
               const [tab] = await Promise.all([p.context().waitForEvent('page'), bar.locator('a:has-text("새 창")').click()]);
               return tab;
             };
-            const reopen = async (name, value) => {
+            const reopen = async (name: string, value: string) => {
               await bar.locator(`input[name=${name}]`).fill(value);
               await bar.locator('button:has-text("다시 띄우기")').click();
             };
@@ -5372,7 +5423,7 @@ test('in a browser, 「새 창으로 열기」 and 「다시 띄우기」 ask fo
             await typed.close();
             assert.equal(issued(), 3);
 
-            let held;
+            let held!: Route;
             await p.route('**/api/path-values', (r) => { held = r; });
             await bar.locator('input[name=code]').fill('c-3');
             await reopen('id', '45');
@@ -5401,7 +5452,7 @@ test('in a browser, a screen whose address needs an issued query token opens wit
             const issued = () => requests.filter((r) => r === 'POST /api/v1/view-token/create').length;
             const bar = p.locator('#center .frame-bar');
             const frame = p.frameLocator('#center iframe.app');
-            const field = (name) => bar.locator(`input[name="${name}"]`);
+            const field = (name: string) => bar.locator(`input[name="${name}"]`);
             await p.waitForSelector('#screen-list li');
             await p.click('#screen-list li:has-text("/view/:documentId")');
             await frame.locator('#path:has-text("/view/01a1?token=t-01a1-1")').waitFor();
@@ -5479,7 +5530,7 @@ test('in a browser, the sign-out path lands on the signed-out address whatever p
   );
 });
 
-const frameWho = (p, name) => p.frameLocator('#center iframe.app').locator(`#who:has-text("${name}")`).waitFor();
+const frameWho = (p: Page, name: string) => p.frameLocator('#center iframe.app').locator(`#who:has-text("${name}")`).waitFor();
 
 test('in a browser, a screen under a role condition opens as the first configured role that meets it, and a role picked in the bar reloads the frame and stays picked on other screens', { skip: browserMissing }, async () => {
   await withFakeApi((api) =>
@@ -5499,7 +5550,7 @@ test('in a browser, a screen under a role condition opens as the first configure
               ['자동', '기본 계정 (duru-admin)', 'ADMIN (duru-boss)', 'AUDITOR (duru-auditor)', 'OWNER — 계정 없음']);
             assert.equal(await picker.locator('option:has-text("OWNER")').isDisabled(), true);
             assert.equal(await picker.inputValue(), 'auto');
-            assert.match(await bar.textContent(), /ADMIN 역할 duru-boss 로 로그인/);
+            assert.match((await bar.textContent())!, /ADMIN 역할 duru-boss 로 로그인/);
             assert.equal(await frameSrc(), `${admin.url}/admin/member`);
             assert.equal(await bar.locator('a:has-text("새 창")').getAttribute('href'), `${admin.url}/admin/member`);
             await frameWho(p, '두루 대표');
@@ -5508,22 +5559,22 @@ test('in a browser, a screen under a role condition opens as the first configure
             await frameWho(p, '두루 감사');
             assert.equal(await frameSrc(), `${auditor.url}/admin/member`);
             assert.equal(await bar.locator('a:has-text("새 창")').getAttribute('href'), `${auditor.url}/admin/member`);
-            assert.match(await bar.textContent(), /AUDITOR 역할 duru-auditor 로 로그인/);
+            assert.match((await bar.textContent())!, /AUDITOR 역할 duru-auditor 로 로그인/);
             assert.match(await bar.locator('.error').allTextContents().then((t) => t.join('\n')), /이 역할은 화면 조건\(ADMIN\)을 채우지 못합니다/);
 
             await p.click('#screen-list li:has-text("/admin/report")');
             assert.equal(await picker.inputValue(), 'role:AUDITOR');
             assert.equal(await frameSrc(), `${auditor.url}/admin/report`);
-            assert.match(await bar.textContent(), /이 역할은 화면 조건\(ADMIN, OWNER\)을 채우지 못합니다/);
+            assert.match((await bar.textContent())!, /이 역할은 화면 조건\(ADMIN, OWNER\)을 채우지 못합니다/);
 
             await p.click('#screen-list li:has-text("/admin/audit")');
             assert.equal(await frameSrc(), `${auditor.url}/admin/audit`);
-            assert.doesNotMatch(await bar.textContent(), /채우지 못합니다/);
+            assert.doesNotMatch((await bar.textContent())!, /채우지 못합니다/);
 
             await picker.selectOption({ label: '기본 계정 (duru-admin)' });
             await frameWho(p, '두루 관리자');
             assert.equal(await frameSrc(), `${app.url}/admin/audit`);
-            assert.match(await bar.textContent(), /duru-admin 로 로그인/);
+            assert.match((await bar.textContent())!, /duru-admin 로 로그인/);
 
             await picker.selectOption({ label: '자동' });
             await frameWho(p, '두루 대표');
@@ -5531,7 +5582,7 @@ test('in a browser, a screen under a role condition opens as the first configure
 
             await p.click('#screen-list li:has-text("/home")');
             assert.equal(await frameSrc(), `${app.url}/home`);
-            assert.match(await bar.textContent(), /duru-admin 로 로그인/);
+            assert.match((await bar.textContent())!, /duru-admin 로 로그인/);
           }),
         ),
       ),
@@ -5548,9 +5599,9 @@ test('in a browser, a narrow center column puts the address above the role picke
             await p.setViewportSize({ width: 1000, height: 900 });
             await p.waitForSelector('#screen-list li');
             await p.click('#screen-list li:has-text("/admin/member")');
-            const bar = await p.locator('#center .frame-bar').boundingBox();
-            const address = await p.locator('#center .frame-bar .mono').boundingBox();
-            const picker = await p.locator('#center .frame-bar select').boundingBox();
+            const bar = (await p.locator('#center .frame-bar').boundingBox())!;
+            const address = (await p.locator('#center .frame-bar .mono').boundingBox())!;
+            const picker = (await p.locator('#center .frame-bar select').boundingBox())!;
             assert.ok(address.width > bar.width * 0.8, `address ${address.width}px in a ${bar.width}px bar`);
             assert.ok(picker.x + picker.width <= bar.x + bar.width, 'the role picker fits in the bar');
           }),
@@ -5575,20 +5626,20 @@ test('in a browser, a screen whose role has no account or cannot be read from th
 
             await p.click('#screen-list li:has-text("/admin/member")');
             assert.deepEqual(await bar.locator('select option[disabled]').allTextContents(), ['ADMIN — 계정 없음', 'OWNER — 계정 없음']);
-            assert.match(await bar.locator('.error').textContent(), /조건을 채우는 역할\(ADMIN\)에 계정이 없습니다/);
-            assert.match(await bar.textContent(), /duru-admin 로 로그인/);
+            assert.match((await bar.locator('.error').textContent())!, /조건을 채우는 역할\(ADMIN\)에 계정이 없습니다/);
+            assert.match((await bar.textContent())!, /duru-admin 로 로그인/);
             assert.equal(await p.locator('#center iframe.app').getAttribute('src'), `${app.url}/admin/member`);
 
             await p.click('#screen-list li:has-text("/admin/group")');
-            assert.match(await bar.locator('.error').textContent(), /어느 역할이 조건을 채우는지 맵에서 정할 수 없습니다: isAdmin/);
+            assert.match((await bar.locator('.error').textContent())!, /어느 역할이 조건을 채우는지 맵에서 정할 수 없습니다: isAdmin/);
             assert.equal(await p.locator('#center iframe.app').getAttribute('src'), `${app.url}/admin/group`);
 
             await bar.locator('select').selectOption({ label: 'AUDITOR (duru-auditor)' });
-            assert.match(await bar.locator('.error').first().textContent(), new RegExp(AUDITOR_PASSWORD_ENV));
-            assert.doesNotMatch(await bar.textContent(), /AUDITOR 역할 duru-auditor 로 로그인/);
+            assert.match((await bar.locator('.error').first().textContent())!, new RegExp(AUDITOR_PASSWORD_ENV));
+            assert.doesNotMatch((await bar.textContent())!, /AUDITOR 역할 duru-auditor 로 로그인/);
 
             await p.click('#screen-list li:has-text("/signin")');
-            assert.match(await bar.textContent(), /로그아웃 상태/);
+            assert.match((await bar.textContent())!, /로그아웃 상태/);
             assert.equal(await bar.locator('select').count(), 0);
           }),
         );
@@ -5614,11 +5665,11 @@ test('in a browser, a screen opens as a role that logged in before one whose log
             await p.click('#screen-list li:has-text("/admin/report")');
             await frameWho(p, '두루 대표');
             assert.equal(await p.locator('#center iframe.app').getAttribute('src'), `${app.roles[1].url}/admin/report`);
-            assert.match(await bar.textContent(), /OWNER 역할 duru-boss 로 로그인/);
+            assert.match((await bar.textContent())!, /OWNER 역할 duru-boss 로 로그인/);
 
             await p.click('#screen-list li:has-text("/admin/group")');
-            assert.match(await bar.locator('.error').first().textContent(), new RegExp(AUDITOR_PASSWORD_ENV));
-            assert.match(await bar.textContent(), /읽지 못한 역할 조건도 있습니다: isAdmin\b/);
+            assert.match((await bar.locator('.error').first().textContent())!, new RegExp(AUDITOR_PASSWORD_ENV));
+            assert.match((await bar.textContent())!, /읽지 못한 역할 조건도 있습니다: isAdmin\b/);
           }),
         ),
       ),
@@ -5626,10 +5677,10 @@ test('in a browser, a screen opens as a role that logged in before one whose log
   );
 });
 
-const chooseScreen = (p, routePath) =>
+const chooseScreen = (p: Page, routePath: string) =>
   p.locator('#screen-list li').filter({ has: p.locator('.name > span:first-child', { hasText: new RegExp(`^${routePath}$`) }) }).click();
-const overridesOf = async (base) => (await (await fetch(`${base}/api/data`)).json()).app.settings.overrides;
-const settingRow = (p, name) => p.locator('#settings-bar .setting', { has: p.locator('code', { hasText: new RegExp(`^${name}$`) }) });
+const overridesOf = async (base: string) => (await (await fetch(`${base}/api/data`)).json()).app.settings.overrides;
+const settingRow = (p: Page, name: string) => p.locator('#settings-bar .setting', { has: p.locator('code', { hasText: new RegExp(`^${name}$`) }) });
 
 test('in a browser, choosing a screen behind a setting opens the frame with the setting on, a toggle reloads it with the new value, and 「기본값으로」 puts every setting back', { skip: browserMissing }, async () => {
   await withFakeApi((api, presses, logins, listCalls, requests) =>
@@ -5651,19 +5702,19 @@ test('in a browser, choosing a screen behind a setting opens the frame with the 
             assert.equal(await frame.locator('#help').textContent(), 'true');
             assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
             const bar = p.locator('#settings-bar');
-            assert.match(await bar.getAttribute('class'), /overridden/);
+            assert.match((await bar.getAttribute('class'))!, /overridden/);
             const lab = settingRow(p, 'SYSTEM.LAB_ENABLED');
             assert.equal(await lab.count(), 1);
-            assert.match(await lab.getAttribute('class'), /changed/);
-            assert.match(await lab.locator('button.on').textContent(), /켜기/);
-            assert.match(await lab.getAttribute('title'), /라우트 · \/home#Home 에서 오는 링크/);
+            assert.match((await lab.getAttribute('class'))!, /changed/);
+            assert.match((await lab.locator('button.on').textContent())!, /켜기/);
+            assert.match((await lab.getAttribute('title'))!, /라우트 · \/home#Home 에서 오는 링크/);
 
             await lab.locator('button:has-text("끄기")').click();
             await frame.locator('#lab:has-text("false")').waitFor();
             assert.deepEqual(await overridesOf(base), []);
-            assert.doesNotMatch(await bar.getAttribute('class'), /overridden/);
-            assert.doesNotMatch(await lab.getAttribute('class'), /changed/);
-            assert.match(await lab.locator('button.on').textContent(), /끄기/);
+            assert.doesNotMatch((await bar.getAttribute('class'))!, /overridden/);
+            assert.doesNotMatch((await lab.getAttribute('class'))!, /changed/);
+            assert.match((await lab.locator('button.on').textContent())!, /끄기/);
 
             await lab.locator('button:has-text("켜기")').click();
             await frame.locator('#lab:has-text("true")').waitFor();
@@ -5671,7 +5722,7 @@ test('in a browser, choosing a screen behind a setting opens the frame with the 
             await frame.locator('#path:has-text("/home")').waitFor();
             assert.equal(await frame.locator('#lab').textContent(), 'true');
             assert.equal(await bar.isVisible(), true);
-            assert.match(await bar.locator('.others').textContent(), /SYSTEM\.LAB_ENABLED = true/);
+            assert.match((await bar.locator('.others').textContent())!, /SYSTEM\.LAB_ENABLED = true/);
 
             await bar.locator('button:has-text("기본값으로")').click();
             await frame.locator('#lab:has-text("false")').waitFor();
@@ -5746,7 +5797,7 @@ test('in a browser, picking in the select the value a setting seems to have keep
             await p.waitForFunction(() => document.querySelector('#settings-bar .setting.changed'));
             assert.deepEqual(await overridesOf(base), modeA);
             const select = settingRow(p, 'SYSTEM.MODE').locator('select');
-            assert.doesNotMatch(await select.locator('option').first().textContent(), /"a"/);
+            assert.doesNotMatch((await select.locator('option').first().textContent())!, /"a"/);
 
             await select.selectOption({ index: 0 });
             await p.waitForFunction(() => !document.querySelector('#settings-bar .setting.changed'));
@@ -5779,7 +5830,7 @@ test('in a browser, coming back to a screen whose setting the reviewer took away
             await chooseScreen(p, '/admin/report');
             await frame.locator('#menu:has-text("ADMIN_REPORT")').waitFor();
             assert.deepEqual(await overridesOf(base), []);
-            assert.doesNotMatch(await p.locator('#settings-bar').getAttribute('class'), /overridden/);
+            assert.doesNotMatch((await p.locator('#settings-bar').getAttribute('class'))!, /overridden/);
           }),
         ),
       ),
@@ -5854,8 +5905,8 @@ test('in a browser, a screen that falls back to its list screen sets what the li
             const frame = p.frameLocator('#center iframe.app');
             await frame.locator('#path:has-text("/document/draft")').waitFor();
             await frame.locator('#lab:has-text("true")').waitFor();
-            assert.match(await p.locator('#center .frame-bar').textContent(), /목록에서 골라 들어가세요/);
-            assert.match(await settingRow(p, 'SYSTEM.LAB_ENABLED').getAttribute('class'), /changed/);
+            assert.match((await p.locator('#center .frame-bar').textContent())!, /목록에서 골라 들어가세요/);
+            assert.match((await settingRow(p, 'SYSTEM.LAB_ENABLED').getAttribute('class'))!, /changed/);
             assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
           }),
         );
@@ -5873,8 +5924,8 @@ test('in a browser, path values that arrive after the reviewer moved to the stor
         rebuild(copy);
         await withServer(config, 'reviewer', (base) =>
           withPage(base, async (p) => {
-            let release;
-            const held = new Promise((resolve) => (release = resolve));
+            let release!: () => void;
+            const held = new Promise<void>((resolve) => (release = resolve));
             await p.route('**/api/path-values?*', async (route) => {
               await held;
               await route.continue();
@@ -5917,16 +5968,16 @@ test('in a browser, a screen reached through a menu built from a settings list t
             assert.deepEqual(await overridesOf(base), []);
 
             const entry = settingRow(p, 'SYSTEM.MAIN_MENU.ADMIN.LIST');
-            assert.match(await entry.textContent(), /"ADMIN_REPORT".*목록에 넣기/);
+            assert.match((await entry.textContent())!, /"ADMIN_REPORT".*목록에 넣기/);
             assert.equal(await entry.locator('input[type=checkbox]').isChecked(), true);
-            assert.match(await settingRow(p, 'SYSTEM.MAIN_MENU.ADMIN').textContent(), /기본값에 있음/);
+            assert.match((await settingRow(p, 'SYSTEM.MAIN_MENU.ADMIN').textContent())!, /기본값에 있음/);
 
             await entry.locator('input[type=checkbox]').uncheck();
             await frame.locator('#menu:has-text("ADMIN_ARCHIVE")').waitFor();
             await p.waitForFunction(() => document.querySelector('#settings-bar .setting.changed'));
             assert.equal(await frame.locator('#menu').textContent(), 'ADMIN_ARCHIVE');
             assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'MAIN_MENU', 'ADMIN', 'LIST'], item: 'ADMIN_REPORT', value: false }]);
-            assert.match(await entry.getAttribute('class'), /changed/);
+            assert.match((await entry.getAttribute('class'))!, /changed/);
 
             await entry.locator('input[type=checkbox]').check();
             await frame.locator('#menu:has-text("ADMIN_REPORT,ADMIN_ARCHIVE")').waitFor();
@@ -5949,7 +6000,7 @@ test('in a browser, a setting in a section the app does not take from the settin
             const frame = p.frameLocator('#center iframe.app');
             await frame.locator('#path:has-text("/lab")').waitFor();
             const lab = settingRow(p, 'SYSTEM.LAB_ENABLED');
-            assert.match(await lab.locator('.reason').textContent(), /SYSTEM 섹션을 읽지 않아 바꿀 수 없습니다/);
+            assert.match((await lab.locator('.reason').textContent())!, /SYSTEM 섹션을 읽지 않아 바꿀 수 없습니다/);
             assert.equal(await lab.locator('button:has-text("켜기")').isDisabled(), true);
             assert.equal(await frame.locator('#lab').textContent(), 'false');
             assert.deepEqual(await overridesOf(base), []);
@@ -5977,14 +6028,14 @@ test('in a browser, a setting read through another settings root and a guard who
             const rows = settingRow(p, 'SYSTEM.LAB_ENABLED');
             assert.equal(await rows.count(), 2);
             assert.equal(await rows.nth(0).locator('button:has-text("끄기")').isDisabled(), false);
-            assert.match(await rows.nth(1).locator('.reason').textContent(), /appSettings 로 읽는 설정이라/);
+            assert.match((await rows.nth(1).locator('.reason').textContent())!, /appSettings 로 읽는 설정이라/);
             assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }]);
 
             await chooseScreen(p, '/help');
             await p.waitForFunction(() => document.querySelectorAll('#settings-bar > .setting.changed').length === 1 && document.querySelector('#settings-bar .others'));
             const unreadable = settingRow(p, 'helpEnabled !== false');
-            assert.match(await unreadable.locator('.reason').textContent(), /같지 않음/);
-            assert.match(await unreadable.getAttribute('title'), /\/document\/:id#DocumentDetail/);
+            assert.match((await unreadable.locator('.reason').textContent())!, /같지 않음/);
+            assert.match((await unreadable.getAttribute('title'))!, /\/document\/:id#DocumentDetail/);
             assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'LAB_ENABLED'], value: true }, { path: ['SYSTEM', 'HELP_LINK_ENABLED'], value: true }]);
           }),
         );
@@ -6007,14 +6058,14 @@ test('in a browser, a setting the settings file already turns on shows as on, a 
             await frame.locator('#help:has-text("false")').waitFor();
             assert.deepEqual(await overridesOf(base), [{ path: ['SYSTEM', 'HELP_LINK_ENABLED'], value: false }]);
             const help = settingRow(p, 'SYSTEM.HELP_LINK_ENABLED');
-            assert.match(await help.getAttribute('class'), /changed/);
-            assert.match(await help.locator('button.on').textContent(), /끄기/);
+            assert.match((await help.getAttribute('class'))!, /changed/);
+            assert.match((await help.locator('button.on').textContent())!, /끄기/);
 
             await help.locator('button:has-text("켜기")').click();
             await frame.locator('#help:has-text("true")').waitFor();
             await p.waitForFunction(() => !document.querySelector('#settings-bar .setting.changed'));
             assert.deepEqual(await overridesOf(base), []);
-            assert.match(await help.locator('button.on').textContent(), /켜기/);
+            assert.match((await help.locator('button.on').textContent())!, /켜기/);
 
             fs.writeFileSync(path.join(copy, 'build/settings.js'), 'window.FAKE_SETTINGS = { SYSTEM: { HELP_LINK_ENABLED: document.title !== null } };\n');
             await p.reload();
@@ -6022,7 +6073,7 @@ test('in a browser, a setting the settings file already turns on shows as on, a 
             await p.waitForSelector('#screen-list li');
             await chooseScreen(p, '/lab');
             await p.waitForSelector('#settings-bar .file-error');
-            assert.match(await p.locator('#settings-bar .file-error').textContent(), /맵의 기본값으로 판단합니다.*document/);
+            assert.match((await p.locator('#settings-bar .file-error').textContent())!, /맵의 기본값으로 판단합니다.*document/);
           }),
         );
       }),
@@ -6042,7 +6093,7 @@ test('in a browser, a list inside a default the source does not show in full can
             await chooseScreen(p, '/admin/report');
             const entry = settingRow(p, 'SYSTEM.MAIN_MENU.ADMIN.LIST');
             await entry.waitFor();
-            assert.match(await entry.locator('.reason').textContent(), /SYSTEM\.MAIN_MENU 기본값을 소스에서 다 읽지 못해/);
+            assert.match((await entry.locator('.reason').textContent())!, /SYSTEM\.MAIN_MENU 기본값을 소스에서 다 읽지 못해/);
             assert.equal(await entry.locator('input[type=checkbox]').isDisabled(), true);
           }),
         );
@@ -6064,8 +6115,8 @@ test('in a browser, a setting that only has to be present is not met by an empty
             await chooseScreen(p, '/lab');
             const banner = settingRow(p, 'SYSTEM.BANNER');
             await banner.waitFor();
-            assert.doesNotMatch(await banner.textContent(), /기본값에 있음/);
-            assert.match(await banner.locator('.reason').textContent(), /넣을 수 없습니다/);
+            assert.doesNotMatch((await banner.textContent())!, /기본값에 있음/);
+            assert.match((await banner.locator('.reason').textContent())!, /넣을 수 없습니다/);
           }),
         );
       }),
@@ -6149,14 +6200,14 @@ test('in a browser, a screen shows the unit tests that import its source files a
         assert.deepEqual(await p.locator('#screen-list li:has-text("/document/:id") .count').allTextContents(), ['테스트 11', '불러옴 1']);
 
         await help.click();
-        const ownCount = await p.textContent('#center tbody tr:first-child td:nth-child(2)');
+        const ownCount = (await p.textContent('#center tbody tr:first-child td:nth-child(2)'))!;
         assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 2');
         assert.deepEqual(await p.locator('#center .importers .test').allTextContents(), [
           '코드통과 renders the help text components/Help.spec.js:4불러오는 파일 components/Help.js',
           '코드통과 shows the day the help was last updated components/Help.spec.js:8불러오는 파일 components/Help.js',
         ]);
         assert.match(ownCount, /^테스트 \d+개$/);
-        assert.doesNotMatch(await p.textContent('#center table'), /renders the help text/);
+        assert.doesNotMatch((await p.textContent('#center table'))!, /renders the help text/);
 
         await p.click('#screen-list li:has-text("/admin/member")');
         assert.equal(await p.locator('#center .importers').count(), 0);
@@ -6169,20 +6220,21 @@ const LAB_RESULT = '/lab/result#LabResult';
 const OWNER_ROLE = { guard: "memberRole === 'OWNER'", kinds: ['role'], roles: ['OWNER'] };
 const UNREAD_ROLE = { guard: 'canManage(member)', kinds: ['role'], roles: null };
 const UNREAD_SETTING = { guard: 'settingOf(key)', kinds: ['setting'], settings: null, settingsReason: '설정 키를 읽지 못했습니다' };
-const settingGuard = (guard, path, need, value, root = 'globalSettings') => ({ guard, kinds: ['setting'], settings: [{ root, path, need, ...(value === undefined ? {} : { value }) }] });
+type Way = { file: string; line: number; conditions: Guard[] };
+type Reach = { kind: 'route'; screen: string; file: string; line: number; guards: object[] } | { kind: 'link'; from: string; to: string; ways: Way[] } | { kind: 'start'; screen: string; kinds: string[]; roleValues: string[] | null };
+const settingGuard = (guard: string, path: string[], need: string, value?: unknown, root = 'globalSettings') => ({ guard, kinds: ['setting'], settings: [{ root, path, need, ...(value === undefined ? {} : { value }) }] });
 const LAB_OFF = settingGuard('!globalSettings.SYSTEM.LAB_ENABLED', ['SYSTEM', 'LAB_ENABLED'], 'off');
-const reachRoute = (guards, screen = LAB) => ({ kind: 'route', screen, file: 'Routes.js', line: 44, guards });
-const reachLink = (...ways) => ({ kind: 'link', from: HOME, to: LAB, ways: ways.map((conditions, i) => ({ file: 'components/Home.js', line: 19 + i, conditions })) });
+const reachRoute = (guards: object[], screen = LAB): Reach => ({ kind: 'route', screen, file: 'Routes.js', line: 44, guards });
+const reachLink = (...ways: Guard[][]): Reach => ({ kind: 'link', from: HOME, to: LAB, ways: ways.map((conditions, i) => ({ file: 'components/Home.js', line: 19 + i, conditions })) });
 
-// 핸들러에서 물려받은 조건이 없는 길이면 맵은 길의 조건 중 설정이나 역할 조건만 도착 화면의 들어오는 링크에 적는다.
-async function withStoryReach(reach, fn, { access = {} } = {}) {
+async function withStoryReach(reach: Reach[], fn: (p: Page) => Promise<void>, { access = {} }: { access?: Record<string, object> } = {}) {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.route('**/api/data', async (route) => {
-          const data = await (await route.fetch()).json();
-          const screen = (id) => data.map.screens.find((s) => s.id === id);
-          data.stories.list.find((s) => s.id === 'run-lab').reach = reach;
+          const data: PageData = await (await route.fetch()).json();
+          const screen = (id: string) => data.map.screens.find((s) => s.id === id)!;
+          data.stories.list.find((s) => s.id === 'run-lab')!.reach = reach;
           for (const r of reach.filter((x) => x.kind === 'link')) {
             assert.ok(r.ways.every((w) => w.conditions.every((g) => !g.via)), 'a link step with inherited conditions needs a rebuilt map');
             const to = screen(r.to);
@@ -6202,7 +6254,7 @@ async function withStoryReach(reach, fn, { access = {} } = {}) {
   );
 }
 
-async function withStoryMap(edits, story, fn) {
+async function withStoryMap(edits: [string, string, string][], story: string, fn: (p: Page) => Promise<void>) {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -6216,9 +6268,9 @@ async function withStoryMap(edits, story, fn) {
 
 const RUN_LAB = '실험실을 열어';
 const READ_REPORTS = '관리자가 보고서를 본다';
-const storyScreens = (screens) => ['example-stories/read-reports.json', '["/admin/report#AdminReport"]', JSON.stringify(screens)];
+const storyScreens = (screens: string[]): [string, string, string] => ['example-stories/read-reports.json', '["/admin/report#AdminReport"]', JSON.stringify(screens)];
 const LAB_FILE = 'client/src/components/Lab.js';
-const resultHandler = (buttons, body = 'history.push(Option.ROUTE_PATH.LAB_RESULT)') => [
+const resultHandler = (buttons: (string | null)[], body = 'history.push(Option.ROUTE_PATH.LAB_RESULT)'): [string, string, string][] => [
   [LAB_FILE, "import { Link } from 'react-router-dom';", "import { useHistory } from 'react-router-dom';"],
   [LAB_FILE, 'export default function Lab() {', `export default function Lab({ memberRole, globalSettings, loaded }) {\n  const history = useHistory();\n  const openResult = () => ${body};`],
   [LAB_FILE, '<Link to={Option.ROUTE_PATH.LAB_RESULT}>Results</Link>', buttons.map((guard, i) => {
@@ -6227,8 +6279,8 @@ const resultHandler = (buttons, body = 'history.push(Option.ROUTE_PATH.LAB_RESUL
   }).join('\n      ')],
 ];
 
-const readSummary = (p) => p.locator('#right .reach-summary').evaluate((el) => {
-  const text = (e) => [...e.childNodes].map((c) => c.textContent).join(' ');
+const readSummary = (p: Page) => p.locator('#right .reach-summary').evaluate((el) => {
+  const text = (e: Element) => [...e.childNodes].map((c) => c.textContent).join(' ');
   return {
     lines: [...el.querySelectorAll(':scope > .need, :scope > .step-roles > li, :scope > .none')].map(text),
     leftOut: [...el.querySelectorAll(':scope > .left-out li')].map(text),
@@ -6239,13 +6291,13 @@ test('in a browser, a story that needs a setting and a role shows them as two su
   await withStoryReach([reachLink([LAB_SETTING]), reachRoute([LAB_SETTING, ADMIN_ROLE])], async (p) => {
     assert.deepEqual(await p.locator('#right-info > *').evaluateAll((els) => els.slice(0, 3).map((e) => e.textContent.slice(0, 5))), ['도달 가능', '사전 조건', '역할 AD']);
     assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN', '설정 SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
-    assert.equal(await p.locator('#right details.reach-raw').evaluate((d) => d.open), false);
+    assert.equal(await p.locator('#right details.reach-raw').evaluate((d: HTMLDetailsElement) => d.open), false);
     assert.equal(await p.locator('#right .reach-raw .reach').isVisible(), false);
     assert.equal(await p.locator('#right .reach-summary .reach').count(), 0);
     await p.click('#right .reach-raw > summary');
     assert.equal(await p.locator('#right .reach-raw .reach').isVisible(), true);
-    assert.match(await p.textContent('#right .reach-link'), /components\/Home\.js:19.*globalSettings\.SYSTEM\.LAB_ENABLED/);
-    assert.match(await p.textContent('#right .reach-route'), /Routes\.js:44.*memberRole === 'ADMIN'/);
+    assert.match((await p.textContent('#right .reach-link'))!, /components\/Home\.js:19.*globalSettings\.SYSTEM\.LAB_ENABLED/);
+    assert.match((await p.textContent('#right .reach-route'))!, /Routes\.js:44.*memberRole === 'ADMIN'/);
     assert.equal(await p.locator('#right-info .mark-form').count(), 0);
     assert.equal(await p.locator('#right-dock > .mark-form').count(), 1);
   });
@@ -6271,7 +6323,7 @@ test('in a browser, a condition inherited from a handler counts in the story sum
 test('in a browser, a link whose handler is also used without a role condition adds no role to the story summary, while the fold still shows the role condition as written', { skip: browserMissing }, async () => {
   await withStoryMap(resultHandler(["memberRole === 'ADMIN'", 'loaded']), RUN_LAB, async (p) => {
     assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트', '/lab → /lab/result']);
-    assert.match(await p.locator('#right .reach-link').nth(1).textContent(), /memberRole === 'ADMIN'/);
+    assert.match((await p.locator('#right .reach-link').nth(1).textContent())!, /memberRole === 'ADMIN'/);
     assert.deepEqual(await readSummary(p), { lines: ['설정 SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
   });
 });
@@ -6299,7 +6351,7 @@ test('in a browser, conditions inherited from a handler used in several places, 
 
 test('in a browser, a story whose only conditions are inherited from a handler used in several places does not say that nothing blocks it', { skip: browserMissing }, async () => {
   const home = 'client/src/components/Home.js';
-  const edits = [
+  const edits: [string, string, string][] = [
     [home, "import { Link } from 'react-router-dom';", "import { Link, useHistory } from 'react-router-dom';"],
     [home, "const isAdmin = memberRole === 'ADMIN';", "const isAdmin = memberRole === 'ADMIN';\n  const history = useHistory();\n  const openAudit = () => history.push(Option.ROUTE_PATH.ADMIN_AUDIT);"],
     [home, "{session['member.role'] === 'AUDITOR' && <Link to={Option.ROUTE_PATH.ADMIN_AUDIT}>Audit</Link>}",
@@ -6317,11 +6369,11 @@ test('in a browser, the first screen of a story needs from its incoming links on
     assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['첫 화면 /help']);
     assert.deepEqual(await readSummary(p), { lines: ['설정 SYSTEM.HELP_LINK_ENABLED 켬'], leftOut: [] });
   });
-  const signIn = ['client/src/components/SignIn.js', 'globalSettings.SYSTEM.HELP_LINK_ENABLED &&', 'globalSettings.SYSTEM.LAB_ENABLED &&'];
+  const signIn: [string, string, string] = ['client/src/components/SignIn.js', 'globalSettings.SYSTEM.HELP_LINK_ENABLED &&', 'globalSettings.SYSTEM.LAB_ENABLED &&'];
   await withStoryMap([signIn, storyScreens(['/help#Help'])], READ_REPORTS, async (p) => {
     assert.deepEqual(await readSummary(p), { lines: ['첫 화면 /help 링크마다 다름'], leftOut: [] });
   });
-  const either = [
+  const either: [string, string, string][] = [
     [LAB_FILE, 'export default function Lab() {', 'export default function Lab({ globalSettings }) {'],
     [LAB_FILE, '<Link to={Option.ROUTE_PATH.LAB_RESULT}>Results</Link>',
       '{globalSettings.SYSTEM.MODE_ON ? <Link to={Option.ROUTE_PATH.LAB_RESULT}>Results</Link> : <Link to={Option.ROUTE_PATH.LAB_RESULT}>Back</Link>}'],
@@ -6393,7 +6445,7 @@ test('in a browser, a story whose steps allow roles that do not overlap says tha
 });
 
 const MODE = ['SYSTEM', 'MODE'];
-const modeIs = (value) => settingGuard(`globalSettings.SYSTEM.MODE === ${JSON.stringify(value)}`, MODE, 'equals', value);
+const modeIs = (value: unknown) => settingGuard(`globalSettings.SYSTEM.MODE === ${JSON.stringify(value)}`, MODE, 'equals', value);
 
 test('in a browser, a story whose steps need the same setting both on and off, or with two different values, says those needs contradict each other instead of listing them as needed', { skip: browserMissing }, async () => {
   await withStoryReach([reachRoute([LAB_SETTING, modeIs('A'), LONG_SETTING]), reachRoute([LAB_OFF, modeIs('B')], LAB_RESULT)], async (p) => {
@@ -6432,7 +6484,7 @@ test('in a browser, setting needs that a loose comparison can satisfy together a
 });
 
 test('in a browser, a story whose settings come from two settings roots names the root of each setting and keeps the same path of two roots apart', { skip: browserMissing }, async () => {
-  const appLab = (need) => settingGuard(`${need === 'off' ? '!' : ''}appSettings.SYSTEM.LAB_ENABLED`, ['SYSTEM', 'LAB_ENABLED'], need, undefined, 'appSettings');
+  const appLab = (need: string) => settingGuard(`${need === 'off' ? '!' : ''}appSettings.SYSTEM.LAB_ENABLED`, ['SYSTEM', 'LAB_ENABLED'], need, undefined, 'appSettings');
   await withStoryReach([reachRoute([appLab('on')]), reachRoute([LAB_SETTING], LAB_RESULT)], async (p) => {
     assert.deepEqual(await readSummary(p), { lines: ['설정 appSettings.SYSTEM.LAB_ENABLED 켬', '설정 globalSettings.SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
   });
@@ -6480,8 +6532,8 @@ test('in a browser, the fold of a story\'s raw conditions and its long condition
     await p.click('#right .reach-raw > summary');
     await p.locator('#right .reach-link .long-guard > summary').click();
     const openState = () => p.locator('#right').evaluate((r) => ({
-      fold: r.querySelector('details.reach-raw').open,
-      long: [...r.querySelectorAll('details.long-guard')].map((g) => g.open),
+      fold: r.querySelector<HTMLDetailsElement>('details.reach-raw')!.open,
+      long: [...r.querySelectorAll<HTMLDetailsElement>('details.long-guard')].map((g) => g.open),
     }));
     const expected = { fold: true, long: [true, false] };
     assert.deepEqual(await openState(), expected);
@@ -6500,7 +6552,7 @@ test('in a browser, the fold of a story\'s raw conditions and its long condition
 
 test('in a browser, the story pane and the screen pane keep what is open apart: another story leaves a screen\'s link group open, and another screen leaves a story\'s fold open', { skip: browserMissing }, async () => {
   await withStoryReach([reachLink([LONG_SETTING]), reachRoute([LAB_SETTING])], async (p) => {
-    const sideTab = (label) => p.click(`#left .views.side button:has-text("${label}")`);
+    const sideTab = (label: string) => p.click(`#left .views.side button:has-text("${label}")`);
     await sideTab('화면');
     await p.click('#screen-list li:has-text("/lab")');
     await p.locator('#right details.link-group > summary').first().click();
@@ -6508,12 +6560,12 @@ test('in a browser, the story pane and the screen pane keep what is open apart: 
     await p.click('#story-list li:has-text("보고서")');
     await p.click('#story-list li:has-text("실험실을 열어")');
     await sideTab('화면');
-    assert.equal(await p.locator('#right details.link-group').first().evaluate((d) => d.open), true);
+    assert.equal(await p.locator('#right details.link-group').first().evaluate((d: HTMLDetailsElement) => d.open), true);
 
     await sideTab('스토리');
     await p.click('#right .reach-raw > summary');
     await p.locator('#right .reach-link .long-guard > summary').click();
-    const storyOpen = () => p.locator('#right').evaluate((r) => [r.querySelector('details.reach-raw').open, r.querySelector('.reach-link details.long-guard').open]);
+    const storyOpen = () => p.locator('#right').evaluate((r) => [r.querySelector<HTMLDetailsElement>('details.reach-raw')!.open, r.querySelector<HTMLDetailsElement>('.reach-link details.long-guard')!.open]);
     for (const step of [0, 1]) {
       await p.locator('#center .step.on-map').nth(step).click();
       await p.waitForSelector('#screen-list li.selected');
@@ -6526,7 +6578,7 @@ test('in a browser, the story pane and the screen pane keep what is open apart: 
 const CHIP = '서버 대조 안 함';
 const CHIP_EXPLANATION = '서버 API 목록(serverEndpoints)이 없거나 비어 있어 API 호출을 서버와 견주지 않았습니다. 목록을 채우고 duru rebuild 를 다시 하면 견줍니다.';
 
-const withoutServerList = (fn) => withRebuiltFixture({}, async (config, copy) => {
+const withoutServerList = (fn: (config: Config, copy: string) => Promise<void>) => withRebuiltFixture({}, async (config, copy) => {
   fs.writeFileSync(path.join(copy, 'server-endpoints.txt'), '');
   fs.writeFileSync(path.join(copy, 'server-endpoints-lab.txt'), '');
   rebuild(copy);
@@ -6538,12 +6590,12 @@ test('in a browser, with no server API list the header line carries a 「서버 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        const box = (sel) => p.evaluate((q) => { const r = document.querySelector(q).getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; }, sel);
+        const box = (sel: string) => p.evaluate((q) => { const r = document.querySelector(q)!.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height }; }, sel);
         assert.equal(await p.locator('#meta .state').isVisible(), true);
         assert.equal(await p.textContent('#meta .state'), CHIP);
         assert.match(await p.innerText('#meta'), /^화면 \d+ · 테스트 있는 화면 \d+ · 맵 .+ · 테스트 연결 .+서버 대조 안 함$/);
         assert.equal(await p.locator('#server-notice').count(), 0);
-        assert.equal(await p.evaluate(() => document.body.firstElementChild.tagName), 'HEADER');
+        assert.equal(await p.evaluate(() => document.body.firstElementChild!.tagName), 'HEADER');
         assert.equal((await box('header')).top, 0);
         assert.equal((await box('main')).top, (await box('header')).bottom);
         assert.equal((await box('main')).height, 900 - 49);
@@ -6554,9 +6606,9 @@ test('in a browser, with no server API list the header line carries a 「서버 
         assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['판정 불가', '대조 안 함']);
         assert.equal(await p.locator('table.calls td.call .chip.v-unchecked').count(), 1);
         assert.deepEqual(await p.locator('#center .list-absent').allTextContents(), ['서버 목록 없음']);
-        assert.match(await p.textContent('#center h2:has(.list-absent)'), /^API 호출 \d+ 서버 목록 없음$/);
+        assert.match((await p.textContent('#center h2:has(.list-absent)'))!, /^API 호출 \d+ 서버 목록 없음$/);
         await p.locator('table.calls tr:has(.chip.v-unchecked) td.cell').first().click();
-        assert.match(await p.textContent('#right'), /서버 대조 목록 없음\s*대조 안 함/);
+        assert.match((await p.textContent('#right'))!, /서버 대조 목록 없음\s*대조 안 함/);
         assert.deepEqual(await p.locator('#right .list-absent').allTextContents(), ['목록 없음']);
         assert.equal(await p.textContent('#right h2:has(.list-absent)'), '서버 대조 목록 없음');
         const text = () => p.innerText('body');
@@ -6593,14 +6645,14 @@ test('in a browser, the 「서버 대조 안 함」 chip explains itself on hove
         assert.equal(await tip.textContent(), CHIP_EXPLANATION);
         assert.equal(await tip.isVisible(), false);
 
-        const inside = async (width) => {
+        const inside = async (width: number) => {
           const r = await tip.evaluate((el) => { const b = el.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, h: innerHeight }; });
           assert.ok(r.left >= 16 && r.right <= width - 16 && r.bottom <= r.h, JSON.stringify(r));
           const chipLeft = await chip.evaluate((el) => el.getBoundingClientRect().left);
           assert.ok(Math.abs(r.left - Math.max(16, Math.min(chipLeft, width - 16 - (r.right - r.left)))) < 1, `${JSON.stringify(r)} chip ${chipLeft}`);
-          const header = await p.evaluate(() => document.querySelector('header').getBoundingClientRect().bottom);
+          const header = await p.evaluate(() => document.querySelector('header')!.getBoundingClientRect().bottom);
           assert.ok(r.top >= header, `popover ${r.top} sits over the header ${header}`);
-          assert.equal(await p.evaluate(() => { const b = document.getElementById('server-state-tip').getBoundingClientRect(); return document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2).closest('#server-state-tip') !== null; }), true);
+          assert.equal(await p.evaluate(() => { const b = document.getElementById('server-state-tip')!.getBoundingClientRect(); return document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2)!.closest('#server-state-tip') !== null; }), true);
         };
 
         for (const width of [1440, 1100, 800, 600]) {
@@ -6615,14 +6667,14 @@ test('in a browser, the 「서버 대조 안 함」 chip explains itself on hove
           await chip.focus();
           assert.equal(await tip.isVisible(), true, `focus at ${width}`);
           await inside(width);
-          await p.evaluate(() => document.activeElement.blur());
+          await p.evaluate(() => (document.activeElement as HTMLElement).blur());
           assert.equal(await tip.isVisible(), false);
         }
 
         await p.setViewportSize({ width: 1440, height: 900 });
         await p.focus('#view-flow');
         await p.keyboard.press('Tab');
-        assert.equal(await p.evaluate(() => document.activeElement.className), 'chip state');
+        assert.equal(await p.evaluate(() => document.activeElement!.className), 'chip state');
         assert.equal(await tip.isVisible(), true);
       })));
 });
@@ -6633,12 +6685,12 @@ test('in a browser, with a server API list the page has no chip, no 「목록 �
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         assert.equal(await p.locator('#meta .state, #server-state-tip, #server-notice').count(), 0);
-        assert.doesNotMatch(await p.textContent('#meta'), /서버 대조 안 함/);
+        assert.doesNotMatch((await p.textContent('#meta'))!, /서버 대조 안 함/);
         assert.equal(await p.locator('input[name=dead]').count(), 1);
         assert.equal(await p.locator('#left input[type=checkbox]').count(), 6);
         await p.click('#screen-list li:has-text("/document/:tab")');
         assert.equal(await p.locator('.list-absent').count(), 0);
-        assert.doesNotMatch(await p.textContent('#center'), /목록 없음/);
+        assert.doesNotMatch((await p.textContent('#center'))!, /목록 없음/);
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
         assert.equal(await p.locator('#meta .state').count(), 0);
@@ -6684,20 +6736,20 @@ test('in a browser, a screen shows the untagged browser tests that passed throug
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        const testedBefore = await p.textContent('#meta');
+        const testedBefore = (await p.textContent('#meta'))!;
         const help = p.locator('#screen-list li:has-text("/help")');
         assert.equal(await help.locator('.passed-count').textContent(), '지나감 6');
         await help.click();
         assert.equal(await p.textContent('#center .passed h2'), '지나간 테스트 6');
-        assert.deepEqual(await p.locator('#center .passed .test').evaluateAll((list) => list.map((el) => el.querySelector('.chip').textContent)), ['확인함', '조작함', '조작함', '조작함', '조작함', '지나감']);
-        const first = await p.textContent('#center .passed .test >> nth=0');
+        assert.deepEqual(await p.locator('#center .passed .test').evaluateAll((list) => list.map((el) => el.querySelector('.chip')!.textContent)), ['확인함', '조작함', '조작함', '조작함', '조작함', '지나감']);
+        const first = (await p.textContent('#center .passed .test >> nth=0'))!;
         assert.match(first, /확인함 통과 follows a link while waiting for the new address visits\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/visits\.json/);
         assert.deepEqual(await p.locator('#center .passed .pair-test').first().locator('button').allTextContents(), ['제외', '포함']);
         assert.deepEqual(await p.$$eval('#center-body > table, #center .passed, #center .importers', (list) => list.map((el) => el.className || el.localName)), ['table', 'passed', 'importers']);
         assert.match(testedBefore, /테스트 있는 화면 7/);
 
         await p.click('#view-flow');
-        assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), /불러옴 2 · 지나감 6/);
+        assert.match((await (await screenBox(p, '/help#Help')).locator('.l2').textContent())!, /불러옴 2 · 지나감 6/);
       })));
 });
 
@@ -6707,16 +6759,16 @@ test('in a browser, a call shows the untagged browser tests that sent it apart f
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await chooseScreen(p, '/home');
-        const row = (id) => p.locator('table.calls tbody tr:not(.option)', { hasText: id });
+        const row = (id: string) => p.locator('table.calls tbody tr:not(.option)', { hasText: id });
         assert.equal(await row('GET:/api/v1/document/list').locator('.sent-count').textContent(), '호출함 1');
         assert.equal(await row('POST:/api/v1/archive/document').locator('.sent-count').count(), 0);
-        assert.match(await row('GET:/api/v1/document/list').locator('td.cell').first().textContent(), /^✓1\s*$/);
+        assert.match((await row('GET:/api/v1/document/list').locator('td.cell').first().textContent())!, /^✓1\s*$/);
 
         await row('GET:/api/v1/document/list').locator('td.cell').first().click();
         const headings = await p.locator('#right-info h2').allTextContents();
         assert.deepEqual(headings.slice(headings.indexOf('테스트 1'), headings.indexOf('테스트 1') + 2), ['테스트 1', '호출한 테스트 1']);
         assert.equal(await p.locator('#right-info .passed .test').count(), 1);
-        assert.match(await p.textContent('#right-info .passed .test'), /^호출함 통과 lists the documents calls\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/calls\.json$/);
+        assert.match((await p.textContent('#right-info .passed .test'))!, /^호출함 통과 lists the documents calls\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/calls\.json$/);
         assert.deepEqual(await p.locator('#right-info .passed button').allTextContents(), ['제외', '포함']);
 
         await row('POST:/api/v1/archive/document').locator('td.cell').first().click();
@@ -6758,10 +6810,10 @@ test('a judgment posted from the page is saved as a new file with the server-sid
       const { judgments } = loadJudgments(config.judgmentsDir);
       assert.deepEqual(judgments.map((j) => [j.test, j.node, j.kind, j.reason, j.author]), [[HELP_TEST, '/help#Help', 'discard', 'only renders a shared header', 'reviewer']]);
 
-      const data = await (await fetch(`${base}/api/data`)).json();
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual(data.tests.importers['/help#Help'].map((t) => t.title), ['shows the day the help was last updated']);
       assert.deepEqual(data.tests.discarded['/help#Help'].map((t) => [t.title, t.judgment.reason]), [['renders the help text', 'only renders a shared header']]);
-      const importedAt = (roots) => walkFlow(roots).find((n) => n.id === '/help#Help').imported;
+      const importedAt = (roots: FlowNode[]) => walkFlow(roots).find((n) => n.id === '/help#Help')!.imported;
       const branch = await (await fetch(`${base}/api/flow?from=${encodeURIComponent('/home#Home')}`)).json();
       assert.deepEqual([importedAt(data.flow.roots), importedAt(branch.roots)], [1, 1]);
     }),
@@ -6775,7 +6827,7 @@ test('in a browser, a branch shown on its own counts the importing tests again a
         const helpLine = async () => (await screenBox(p, '/help#Help')).locator('.l2').textContent();
         await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
         await p.waitForSelector('.flowbar .focusing');
-        assert.match(await helpLine(), /불러옴 2/);
+        assert.match((await helpLine())!, /불러옴 2/);
 
         await p.click('#view-list');
         await p.click('#screen-list li:has-text("/help")');
@@ -6785,7 +6837,7 @@ test('in a browser, a branch shown on its own counts the importing tests again a
 
         await p.click('#view-flow');
         await p.waitForSelector('.flowbar .focusing');
-        assert.match(await helpLine(), /불러옴 1/);
+        assert.match((await helpLine())!, /불러옴 1/);
       }, { view: 'flow' })));
 });
 
@@ -6805,7 +6857,7 @@ test('in a browser, a test importing a screen is discarded with a reason, stays 
         assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 1');
         assert.equal(await p.locator('#screen-list li:has-text("/help") .importer-count').textContent(), '불러옴 1');
         assert.equal(await p.textContent('#center .discarded h2'), '제외한 짝 1');
-        assert.match(await p.textContent('#center .discarded .importer'), /renders the help text.*only renders a shared header · \d/s);
+        assert.match((await p.textContent('#center .discarded .importer'))!, /renders the help text.*only renders a shared header · \d/s);
 
         execFileSync(process.execPath, [CLI, 'rebuild', path.join(copy, 'config.json')], { encoding: 'utf8' });
         await p.reload();
@@ -6832,7 +6884,7 @@ test('in a browser, the window asking why a pair is excluded names the pair, and
         await first.locator('button.discard').click();
         assert.equal(await p.locator(asked).evaluate((el) => el.matches(':modal')), true);
         assert.equal(await p.textContent(`${asked} h2`), '이 짝을 제외합니다');
-        assert.match(await p.textContent(`${asked} .pairs`), /테스트renders the help text.*Help\.spec\.js.*화면\/help Help/s);
+        assert.match((await p.textContent(`${asked} .pairs`))!, /테스트renders the help text.*Help\.spec\.js.*화면\/help Help/s);
         assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '제외']);
         assert.equal(await askedFocused(p), true);
         assert.equal(await p.locator(`${asked} button.discard`).isDisabled(), true);
@@ -6870,15 +6922,15 @@ test('in a browser, Enter breaks the line of the reason and Ctrl+Enter sends it 
 
 const asked = '#exclude';
 const why = `${asked} textarea`;
-const askedFocused = (p) => p.evaluate((sel) => document.activeElement.matches(sel), why);
+const askedFocused = (p: Page) => p.evaluate((sel) => document.activeElement!.matches(sel), why);
 
-async function excludeIn(row, reason) {
+async function excludeIn(row: Locator, reason: string) {
   await row.locator('button.discard').click();
   await row.page().fill(why, reason);
   await row.page().click(`${asked} button.discard`);
 }
 
-async function excludePicked(p, reason) {
+async function excludePicked(p: Page, reason: string) {
   await p.click('#center .bulk-bar button.discard');
   await p.fill(why, reason);
   await p.click(`${asked} button.discard`);
@@ -6927,7 +6979,7 @@ test('in a browser, choosing a story clears a judgment error that failed to save
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
-        let held;
+        let held!: Route;
         await p.route('**/api/judgments', (route) => { held = route; });
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
@@ -6947,7 +6999,7 @@ test('in a browser, a judgment that fails to save after another screen was selec
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
-        let held;
+        let held!: Route;
         await p.route('**/api/judgments', (route) => { held = route; });
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
@@ -6959,7 +7011,7 @@ test('in a browser, a judgment that fails to save after another screen was selec
         await held.fulfill({ status: 500, body: 'disk full' });
         await p.locator('#center .judgment-error').waitFor();
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);
-        assert.match(await p.textContent('#center .judgment-error'), /저장하지 못했습니다: disk full/);
+        assert.match((await p.textContent('#center .judgment-error'))!, /저장하지 못했습니다: disk full/);
         assert.equal(await p.locator('#center .judgment-error').count(), 1);
 
         await p.click('#screen-list li:has-text("/help")');
@@ -6985,8 +7037,8 @@ test('in a browser, a pair included with one press waits for its tag apart from 
         assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 1');
         assert.equal(await p.locator('#screen-list li:has-text("/help") .importer-count').textContent(), '불러옴 1');
         assert.equal(await p.textContent('#center .awaiting-tag h2'), '태그 대기 1');
-        assert.match(await p.textContent('#center .awaiting-tag .importer'), /renders the help text/);
-        assert.doesNotMatch(await p.textContent('#center .awaiting-tag .importer'), /reviewer/);
+        assert.match((await p.textContent('#center .awaiting-tag .importer'))!, /renders the help text/);
+        assert.doesNotMatch((await p.textContent('#center .awaiting-tag .importer'))!, /reviewer/);
         assert.equal(await p.locator('#center .discarded').count(), 0);
 
         await p.click('#center .awaiting-tag button.undo');
@@ -7003,7 +7055,7 @@ test('in a browser, a hand-over saved with a note shows the note while it waits 
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
-        assert.match(await p.textContent('#center .awaiting-tag .importer'), /renders the help text.*메모 checks the help screen.*earlier reviewer/s);
+        assert.match((await p.textContent('#center .awaiting-tag .importer'))!, /renders the help text.*메모 checks the help screen.*earlier reviewer/s);
       }));
   });
 });
@@ -7017,8 +7069,8 @@ test('in a browser, a hand-over whose test is no longer found shows apart and is
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
         assert.equal(await p.textContent('#center .detached h2'), '떨어져 나감 1');
-        assert.match(await p.textContent('#center .detached p.muted'), /결과에서 찾을 수 없/);
-        assert.match(await p.textContent('#center .detached .importer'), /components\/Help\.spec\.js.*a title that was renamed.*was about the help text.*someone/s);
+        assert.match((await p.textContent('#center .detached p.muted'))!, /결과에서 찾을 수 없/);
+        assert.match((await p.textContent('#center .detached .importer'))!, /components\/Help\.spec\.js.*a title that was renamed.*was about the help text.*someone/s);
         assert.equal(await p.locator('#center .awaiting-tag').count(), 0);
         assert.equal(await p.textContent('#center .importers h2'), '불러오는 테스트 2');
 
@@ -7035,10 +7087,10 @@ const DETAIL_TEST = { source: 'results/vitest/client-unit.json', file: 'componen
 test('the data carries the untagged tests with the reference a judgment points at them by', async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      const { tests } = await (await fetch(`${base}/api/data`)).json();
+      const { tests }: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.equal(tests.untaggedCount, 13);
-      assert.equal(tests.untagged.length, 13);
-      assert.deepEqual(tests.untagged.find((t) => t.title === DOCUMENT_TABLE.title).ref, DOCUMENT_TABLE);
+      assert.equal(tests.untagged!.length, 13);
+      assert.deepEqual(tests.untagged!.find((t) => t.title === DOCUMENT_TABLE.title)!.ref, DOCUMENT_TABLE);
     }),
   );
 });
@@ -7053,7 +7105,7 @@ test('in a browser, the untagged tab lists every untagged test and a search box 
         assert.equal(await p.locator('#untagged-list li').count(), 13);
         const detail = p.locator('#untagged-list li', { hasText: 'loads the detail screen only when it is needed' });
         assert.equal(await detail.textContent(), '통과loads the detail screen only when it is needed components/DocumentDetail.spec.js:1');
-        assert.match(await p.textContent('#untagged-list li:has-text("DocumentTable")'), /^실패/);
+        assert.match((await p.textContent('#untagged-list li:has-text("DocumentTable")'))!, /^실패/);
         await p.fill('#left input[type=search]', 'help');
         assert.deepEqual(await p.locator('#untagged-list li .title').allTextContents(), ['renders the help text', 'shows the day the help was last updated']);
         await p.fill('#left input[type=search]', 'nothing like this');
@@ -7097,8 +7149,8 @@ test('in a browser, a discarded pair and a handed-over pair show their state und
         const pairs = p.locator('#center .test-pairs .pair');
         assert.deepEqual(await pairs.locator('.screen-path').allTextContents(), ['/document/:tab(draft|done)', '/home']);
         assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['태그 대기', '제외한 짝']);
-        assert.match(await pairs.nth(0).textContent(), /covers the list · \d/s);
-        assert.match(await pairs.nth(1).textContent(), /only lists documents · \d/s);
+        assert.match((await pairs.nth(0).textContent())!, /covers the list · \d/s);
+        assert.match((await pairs.nth(1).textContent())!, /only lists documents · \d/s);
         assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면·호출의 짝 2');
       })));
 });
@@ -7121,7 +7173,7 @@ test('in a browser, an untagged test whose imports were not read says why instea
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click(untaggedTab);
-        const say = async (title) => {
+        const say = async (title: string) => {
           await p.click(`#untagged-list li:has-text("${title}")`);
           assert.equal(await p.locator('#center .pair').count(), 0);
           return p.textContent('#center .no-screens');
@@ -7148,10 +7200,10 @@ test('in a browser, a tests.json without the untagged list shows the count and a
         await p.waitForSelector('#screen-list li');
         assert.equal(await p.textContent(untaggedTab), '태그 없음 13');
         await p.click(untaggedTab);
-        assert.match(await p.textContent('#center-body'), /태그 없는 테스트 목록이 없습니다.*duru rebuild/s);
-        assert.doesNotMatch(await p.textContent('#center-body'), /태그 없는 테스트가 없습니다/);
+        assert.match((await p.textContent('#center-body'))!, /태그 없는 테스트 목록이 없습니다.*duru rebuild/s);
+        assert.doesNotMatch((await p.textContent('#center-body'))!, /태그 없는 테스트가 없습니다/);
         assert.equal(await p.locator('#untagged-list li:not(.muted)').count(), 0);
-        assert.doesNotMatch(await p.textContent('#untagged-list'), /해당하는 테스트가 없습니다/);
+        assert.doesNotMatch((await p.textContent('#untagged-list'))!, /해당하는 테스트가 없습니다/);
       })));
 });
 
@@ -7161,7 +7213,7 @@ test('in a browser, a pair for a screen that is no longer on the map shows as an
       withPage(base, async (p) => {
         await p.route('**/api/data', async (route) => {
           const res = await route.fetch();
-          const data = await res.json();
+          const data: PageData = await res.json();
           data.map.screens = data.map.screens.filter((s) => s.id !== '/home#Home');
           await route.fulfill({ response: res, json: data });
         });
@@ -7174,12 +7226,12 @@ test('in a browser, a pair for a screen that is no longer on the map shows as an
         assert.equal(await pairs.count(), 2);
         const off = pairs.filter({ hasText: '/home#Home' });
         assert.equal(await off.count(), 1);
-        assert.match(await off.getAttribute('class'), /off-map/);
-        assert.doesNotMatch(await off.getAttribute('class'), /on-map/);
+        assert.match((await off.getAttribute('class'))!, /off-map/);
+        assert.doesNotMatch((await off.getAttribute('class'))!, /on-map/);
         assert.equal(await off.getAttribute('title'), null);
-        assert.match(await off.textContent(), /맵에 없음/);
-        assert.match(await off.textContent(), /components\/DocumentTable\.js/);
-        assert.match(await pairs.filter({ hasText: '/document/:tab' }).getAttribute('class'), /on-map/);
+        assert.match((await off.textContent())!, /맵에 없음/);
+        assert.match((await off.textContent())!, /components\/DocumentTable\.js/);
+        assert.match((await pairs.filter({ hasText: '/document/:tab' }).getAttribute('class'))!, /on-map/);
         await off.click();
         assert.equal(await p.textContent('#left .views.side button.on'), '태그 없음 13');
         assert.equal(await p.textContent('#center h3'), 'DocumentTable › lists the documents it is given');
@@ -7203,7 +7255,7 @@ test('in a browser, a hand-over of a test that no longer imports the screen show
         assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면·호출의 짝 1');
         assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['떨어져 나감']);
         assert.equal(await pairs.locator('.screen-path').textContent(), '/help');
-        assert.match(await pairs.textContent(), /메모 was about the help date.*someone/s);
+        assert.match((await pairs.textContent())!, /메모 was about the help date.*someone/s);
         assert.equal(await pairs.locator('.via').count(), 0);
         assert.equal(await p.locator('#center .no-screens').count(), 0);
       }));
@@ -7230,7 +7282,7 @@ test('in a browser, the imported-only filter keeps the screens with importing te
         assert.equal(await p.locator('#left .filters label:has-text("지나간 테스트만 있음")').count(), 1);
         await p.check('#left input[name="imported-only"]');
         assert.deepEqual(await p.locator('#screen-list li .name > span:first-child').allTextContents(), ['/document/:tab(draft|done)', '/help']);
-        const counts = async (path) => (await p.locator('#screen-list li', { hasText: path }).locator('.count').allTextContents()).join('');
+        const counts = async (path: string) => (await p.locator('#screen-list li', { hasText: path }).locator('.count').allTextContents()).join('');
         assert.equal(await counts('/document/:tab'), '테스트 없음태그 대기 1');
         assert.equal(await counts('/help'), '테스트 없음불러옴 2');
         await p.uncheck('#left input[name="imported-only"]');
@@ -7243,13 +7295,13 @@ const HOME_NODE = '/home#Home';
 const pick = '#center .pair-row input.pick';
 const bulk = '#center .bulk-bar';
 
-async function openDocumentTable(p) {
+async function openDocumentTable(p: Page) {
   await p.waitForSelector('#screen-list li');
   await p.click(untaggedTab);
   await p.click('#untagged-list li:has-text("DocumentTable")');
 }
 
-const untilSet = async (get, what, ms = 10_000) => {
+const untilSet = async <T>(get: () => T, what: string, ms = 10_000) => {
   const deadline = Date.now() + ms;
   while (!get()) {
     if (Date.now() > deadline) throw new Error(`timed out after ${ms} ms waiting for ${what}`);
@@ -7258,7 +7310,7 @@ const untilSet = async (get, what, ms = 10_000) => {
   return get();
 };
 
-const judgedBy = (config) => loadJudgments(config.judgmentsDir).judgments.map((j) => [j.node, j.kind, j.reason, j.author]).sort();
+const judgedBy = (config: Config) => loadJudgments(config.judgmentsDir).judgments.map((j) => [j.node, j.kind, j.reason, j.author]).sort();
 
 test('in a browser, only the pairs that still import get a checkbox, the bulk buttons stay disabled until a pair is picked and say how many are', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -7314,7 +7366,7 @@ test('in a browser, a pair whose screen is not on the map has no checkbox and is
       withPage(base, async (p) => {
         await p.route('**/api/data', async (route) => {
           const res = await route.fetch();
-          const data = await res.json();
+          const data: PageData = await res.json();
           data.map.screens = data.map.screens.filter((s) => s.id !== HOME_NODE);
           await route.fulfill({ response: res, json: data });
         });
@@ -7342,15 +7394,15 @@ test('in a browser, several pairs of one untagged test are included in one go, e
           [LIST_NODE, 'hand-over', '', 'reviewer'],
           [HOME_NODE, 'hand-over', '', 'reviewer'],
         ]);
-        const files = fs.readdirSync(config.judgmentsDir, { recursive: true }).filter((f) => f.endsWith('.json'));
+        const files = (fs.readdirSync(config.judgmentsDir, { recursive: true }) as string[]).filter((f) => f.endsWith('.json'));
         assert.equal(files.length, 2);
         assert.deepEqual(await p.locator('#center .pair .pair-state').allTextContents(), ['태그 대기', '태그 대기']);
         assert.equal(await p.locator(pick).count(), 0);
         assert.equal(await p.locator(bulk).count(), 0);
 
         await p.locator('#center .pair', { hasText: '/home' }).click();
-        assert.match(await p.textContent('#center .awaiting-tag'), /DocumentTable › lists the documents it is given/);
-        assert.doesNotMatch(await p.textContent('#center'), /불러오는 테스트/);
+        assert.match((await p.textContent('#center .awaiting-tag'))!, /DocumentTable › lists the documents it is given/);
+        assert.doesNotMatch((await p.textContent('#center'))!, /불러오는 테스트/);
       })));
 });
 
@@ -7362,7 +7414,7 @@ test('in a browser, several pairs of one untagged test are discarded in one go w
         await p.check(`${bulk} input.pick-all`);
         await p.click(`${bulk} button.discard`);
         assert.equal(await p.textContent(`${asked} h2`), '짝 2개를 제외합니다');
-        assert.match(await p.textContent(`${asked} .pairs`), /lists the documents it is given.*DocumentTable/s);
+        assert.match((await p.textContent(`${asked} .pairs`))!, /lists the documents it is given.*DocumentTable/s);
         assert.deepEqual(await p.locator(`${asked} .pairs li`).allTextContents(), ['/document/:tab(draft|done) DocumentList', '/home Home']);
         assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '제외 (2)']);
         assert.equal(await askedFocused(p), true);
@@ -7393,7 +7445,7 @@ test('in a browser, the window asking for a reason is put away with 「취소」
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await openDocumentTable(p);
-        const focusedButton = () => p.evaluate(() => [document.activeElement.closest('.bulk-bar, .judge-row')?.className, document.activeElement.className]);
+        const focusedButton = () => p.evaluate(() => [document.activeElement!.closest('.bulk-bar, .judge-row')?.className, document.activeElement!.className]);
         await p.check(`${bulk} input.pick-all`);
         await p.click(`${bulk} button.discard`);
         await p.fill(why, 'typed and dropped');
@@ -7424,7 +7476,7 @@ test('in a browser, while a discard is being saved the window stays open and loc
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        let held;
+        let held!: Route;
         let calls = 0;
         await p.route('**/api/judgments', (route) => {
           calls += 1;
@@ -7438,8 +7490,8 @@ test('in a browser, while a discard is being saved the window stays open and loc
         await p.press(why, 'Control+Enter');
         await untilSet(() => held, 'the judgment request');
 
-        assert.deepEqual(await p.$$eval(`${asked} button`, (list) => list.map((b) => b.disabled)), [true, true]);
-        assert.equal(await p.locator(why).evaluate((el) => el.readOnly), true);
+        assert.deepEqual(await p.$$eval(`${asked} button`, (list: HTMLButtonElement[]) => list.map((b) => b.disabled)), [true, true]);
+        assert.equal(await p.locator(why).evaluate((el: HTMLTextAreaElement) => el.readOnly), true);
         await p.keyboard.press('Control+Enter');
         await p.keyboard.press('Escape');
         await p.keyboard.press('Escape');
@@ -7460,7 +7512,7 @@ test('in a browser, a discard that fails to save leaves the window open with its
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
-        const refuse = (route) => route.fulfill({ status: 500, body: 'disk full' });
+        const refuse = (route: Route) => route.fulfill({ status: 500, body: 'disk full' });
         await p.route('**/api/judgments', refuse);
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
@@ -7489,7 +7541,7 @@ test('in a browser, 「제외」 does not ask for a reason while the 「포함�
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        let held;
+        let held!: Route;
         await p.route('**/api/judgments', (route) => { held = route; });
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
@@ -7507,7 +7559,7 @@ test('in a browser, a judgment of another row that ends while a reason is being 
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
-        let held;
+        let held!: Route;
         await p.route('**/api/judgments', (route) => { held = route; });
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
@@ -7579,7 +7631,7 @@ test('in a browser, a bulk save that fails midway stops, keeps the unsaved pairs
       withPage(base, async (p, errors) => {
         await openDocumentTable(p);
         let calls = 0;
-        const refuse = async (route) => {
+        const refuse = async (route: Route) => {
           calls += 1;
           if (calls === 2) await route.fulfill({ status: 500, body: 'disk full' });
           else await route.continue();
@@ -7592,7 +7644,7 @@ test('in a browser, a bulk save that fails midway stops, keeps the unsaved pairs
         assert.equal(calls, 2);
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);
         assert.deepEqual(judgedBy(config), [[LIST_NODE, 'hand-over', '', 'reviewer']]);
-        const message = await p.textContent(`${bulk} .bulk-error`);
+        const message = (await p.textContent(`${bulk} .bulk-error`))!;
         assert.match(message, /^저장하지 못했습니다: disk full\n저장한 짝 1: /);
         assert.match(message, /저장한 짝.*\/document\/:tab\(draft\|done\)/s);
         assert.match(message, /저장하지 못한 짝.*\/home/s);
@@ -7618,7 +7670,7 @@ test('in a browser, the bulk controls stay disabled while the requests are in fl
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await openDocumentTable(p);
-        let held;
+        let held!: Route;
         let calls = 0;
         await p.route('**/api/judgments', (route) => {
           calls += 1;
@@ -7631,7 +7683,7 @@ test('in a browser, the bulk controls stay disabled while the requests are in fl
         for (const sel of [`${bulk} button.discard`, `${bulk} button.hand-over`, `${bulk} input.pick-all`, pick, `${asked} button.discard`, `${asked} button.cancel`]) {
           assert.equal(await p.locator(sel).first().isDisabled(), true, sel);
         }
-        assert.equal(await p.locator(why).evaluate((el) => el.readOnly), true);
+        assert.equal(await p.locator(why).evaluate((el: HTMLTextAreaElement) => el.readOnly), true);
         await p.locator(`${asked} button.discard`).click({ force: true });
         await p.press(why, 'Control+Enter');
         await p.press(why, 'Escape');
@@ -7648,9 +7700,9 @@ test('in a browser, nothing leaves the test while a bulk is in flight, and the r
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         await openDocumentTable(p);
-        const ended = [];
+        const ended: string[] = [];
         p.on('request', (r) => r.url().endsWith('/api/end') && ended.push(r.url()));
-        let held;
+        let held!: Route;
         let calls = 0;
         await p.route('**/api/judgments', (route) => {
           calls += 1;
@@ -7664,7 +7716,7 @@ test('in a browser, nothing leaves the test while a bulk is in flight, and the r
         for (const sel of ['#left .views.side button', '#view-list', '#view-flow', '#end-review']) {
           for (const el of await p.locator(sel).all()) assert.equal(await el.isDisabled(), true, sel);
         }
-        const style = (sel, prop) => p.locator(sel).first().evaluate((el, name) => getComputedStyle(el)[name], prop);
+        const style = (sel: string, prop: keyof CSSStyleDeclaration) => p.locator(sel).first().evaluate((el, name) => getComputedStyle(el)[name], prop);
         const otherTest = '#untagged-list li:has-text("loads the detail screen only when it is needed")';
         const homePair = '#center .pair:has-text("/home")';
         for (const sel of [otherTest, homePair]) {
@@ -7693,7 +7745,7 @@ test('in a browser, nothing leaves the test while a bulk is in flight, and the r
         await held.continue();
         await p.locator(`${bulk} .bulk-error`).waitFor();
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);
-        assert.match(await p.textContent(`${bulk} .bulk-error`), /저장한 짝 1.*\/document\/:tab\(draft\|done\).*저장하지 못한 짝 1.*\/home/s);
+        assert.match((await p.textContent(`${bulk} .bulk-error`))!, /저장한 짝 1.*\/document\/:tab\(draft\|done\).*저장하지 못한 짝 1.*\/home/s);
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
         assert.equal(await p.locator('#end-review').isDisabled(), false);
         assert.equal(await p.locator('#view-flow').isDisabled(), false);
@@ -7709,9 +7761,9 @@ test('in a browser, while the end request is pending a bulk cannot start and the
         await openDocumentTable(p);
         const ended = [];
         p.on('request', (r) => r.url().endsWith('/api/end') && ended.push(r.url()));
-        const judged = [];
+        const judged: string[] = [];
         p.on('request', (r) => r.url().endsWith('/api/judgments') && judged.push(r.url()));
-        let held;
+        let held!: Route;
         await p.route('**/api/end', (route) => { held = route; });
         await p.check(`${bulk} input.pick-all`);
         await p.click('#end-review');
@@ -7727,8 +7779,8 @@ test('in a browser, while the end request is pending a bulk cannot start and the
         assert.equal(ended.length, 1);
 
         await held.fulfill({ status: 500, body: 'cannot end' });
-        await p.waitForFunction(() => !document.getElementById('end-review').disabled);
-        assert.match(await p.textContent('#end-error'), /cannot end/);
+        await p.waitForFunction(() => !(document.getElementById('end-review') as HTMLButtonElement).disabled);
+        assert.match((await p.textContent('#end-error'))!, /cannot end/);
         assert.equal(await p.locator(`${bulk} button.hand-over`).isDisabled(), false);
         assert.equal(await p.locator(`${bulk} button.discard`).isDisabled(), false);
         errors.splice(0);
@@ -7744,7 +7796,7 @@ test('in a browser, the page that was told the review ended shows the ended scre
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await openDocumentTable(p);
-        let held;
+        let held!: Route;
         await p.route('**/api/end', (route) => { held = route; });
         await p.check(`${bulk} input.pick-all`);
         await p.click('#end-review');
@@ -7752,7 +7804,7 @@ test('in a browser, the page that was told the review ended shows the ended scre
         await p.locator(`${bulk} button.hand-over`).click({ force: true });
         await held.continue();
         await p.locator('#ended').waitFor();
-        assert.match(await p.textContent('#ended'), /리뷰를 끝냈습니다/);
+        assert.match((await p.textContent('#ended'))!, /리뷰를 끝냈습니다/);
         assert.deepEqual(judgedBy(config), []);
       })));
 });
@@ -7767,22 +7819,23 @@ test('in a browser, a page that could not read its data still ends the review', 
         await p.route('**/api/data', (route) => route.fulfill({ status: 500, body: 'data gone' }));
         await p.reload();
         await p.locator('#failed').waitFor();
-        assert.match(await p.textContent('#failed'), /data gone/);
+        assert.match((await p.textContent('#failed'))!, /data gone/);
         await p.click('#end-review');
         await p.locator('#ended').waitFor({ timeout: 5000 });
-        assert.match(await p.textContent('#ended'), /리뷰를 끝냈습니다/);
+        assert.match((await p.textContent('#ended'))!, /리뷰를 끝냈습니다/);
         assert.equal(ended.length, 1);
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);
       })));
 });
 
-const watchDataSettled = (p) => p.addInitScript(() => {
+type DataSettled = { dataSettled: boolean };
+const watchDataSettled = (p: Page) => p.addInitScript(() => {
   const fetch = window.fetch;
   window.fetch = (...args) => {
     const sent = fetch(...args);
     if (String(args[0]).endsWith('/api/data')) {
       // 페이지가 이 응답을 받아 하는 일이 모두 끝난 뒤에 표시하도록 타이머로 미룬다.
-      const settled = () => setTimeout(() => { window.dataSettled = true; });
+      const settled = () => setTimeout(() => { (window as unknown as DataSettled).dataSettled = true; });
       sent.then((res) => {
         const json = res.json.bind(res);
         res.json = () => {
@@ -7804,15 +7857,15 @@ test('in a browser, 「리뷰 끝」 pressed before the data arrived ends the re
         const data = await (await fetch(`${base}/api/data`)).text();
         const ended = [];
         p.on('request', (r) => r.url().endsWith('/api/end') && ended.push(r.url()));
-        let held;
+        let held!: Route | null;
         await p.route('**/api/data', (route) => { held = route; });
         await p.route('**/api/end', (route) => route.fulfill({ status: 500, body: 'cannot end' }));
         await p.reload();
         await untilSet(() => held, 'the data request');
         await p.click('#end-review');
-        await p.waitForFunction(() => /cannot end/.test(document.getElementById('end-error').textContent), null, { timeout: 5000 });
+        await p.waitForFunction(() => /cannot end/.test(document.getElementById('end-error')!.textContent), null, { timeout: 5000 });
         assert.equal(await p.locator('#end-review').isDisabled(), false);
-        await held.fulfill({ status: 200, contentType: 'application/json', body: data });
+        await held!.fulfill({ status: 200, contentType: 'application/json', body: data });
         await toList(p);
         await p.waitForSelector('#screen-list li');
         assert.equal(await p.locator('#end-review').isDisabled(), false);
@@ -7826,10 +7879,10 @@ test('in a browser, 「리뷰 끝」 pressed before the data arrived ends the re
         await untilSet(() => held, 'the data request');
         await p.click('#end-review');
         await p.locator('#ended').waitFor({ timeout: 5000 });
-        assert.match(await p.textContent('#ended'), /리뷰를 끝냈습니다/);
+        assert.match((await p.textContent('#ended'))!, /리뷰를 끝냈습니다/);
         assert.equal(ended.length, 2);
-        await held.fulfill({ status: 200, contentType: 'application/json', body: data });
-        await p.waitForFunction(() => window.dataSettled);
+        await held!.fulfill({ status: 200, contentType: 'application/json', body: data });
+        await p.waitForFunction(() => (window as unknown as DataSettled).dataSettled);
         assert.equal(await p.locator('#ended').count(), 1);
       })));
 });
@@ -7839,7 +7892,7 @@ test('in a browser, the data failing to arrive after the review ended leaves the
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         await p.waitForSelector('#screen-list li');
-        let held;
+        let held!: Route;
         await p.route('**/api/data', (route) => { held = route; });
         await watchDataSettled(p);
         await p.reload();
@@ -7847,8 +7900,8 @@ test('in a browser, the data failing to arrive after the review ended leaves the
         await p.click('#end-review');
         await p.locator('#ended').waitFor({ timeout: 5000 });
         await held.abort();
-        await p.waitForFunction(() => window.dataSettled);
-        assert.match(await p.textContent('#ended'), /리뷰를 끝냈습니다/);
+        await p.waitForFunction(() => (window as unknown as DataSettled).dataSettled);
+        assert.match((await p.textContent('#ended'))!, /리뷰를 끝냈습니다/);
         assert.deepEqual(errors.splice(0), ['Failed to load resource: net::ERR_FAILED']);
       })));
 });
@@ -7860,23 +7913,23 @@ test('in a browser, the bulk buttons are locked in place while 「리뷰 끝」 
         await openDocumentTable(p);
         const buttons = `${bulk} button`;
         const picked = `${pick}[data-pair="${LIST_NODE}"]`;
-        const disabled = () => p.$$eval(buttons, (list) => list.map((b) => b.disabled));
-        let held;
+        const disabled = () => p.$$eval(buttons, (list: HTMLButtonElement[]) => list.map((b) => b.disabled));
+        let held!: Route | null;
         await p.route('**/api/end', (route) => { held = route; });
         const refuseEnd = async () => {
           held = null;
-          await p.evaluate(() => document.getElementById('end-review').click());
+          await p.evaluate(() => document.getElementById('end-review')!.click());
           await untilSet(() => held, 'the end request');
           assert.deepEqual(await disabled(), [true, true]);
-          await held.fulfill({ status: 500, body: 'cannot end' });
-          await p.waitForFunction(() => /cannot end/.test(document.getElementById('end-error').textContent));
+          await held!.fulfill({ status: 500, body: 'cannot end' });
+          await p.waitForFunction(() => /cannot end/.test(document.getElementById('end-error')!.textContent));
         };
 
         await p.check(picked);
-        await p.$eval(picked, (el) => { el.kept = true; });
+        await p.$eval(picked, (el: HTMLInputElement & Kept) => { el.kept = true; });
         await refuseEnd();
         assert.deepEqual(await disabled(), [false, false]);
-        assert.equal(await p.evaluate((sel) => document.activeElement.matches(sel) && document.activeElement.kept, picked), true);
+        assert.equal(await p.evaluate((sel) => document.activeElement!.matches(sel) && (document.activeElement as Element & Kept).kept, picked), true);
 
         await p.uncheck(picked);
         await refuseEnd();
@@ -7895,18 +7948,18 @@ test('in a browser, a refused end in the flow view leaves the diagram as it was 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box.screen');
         const scrollTop = await p.evaluate(() => {
-          for (const box of document.querySelectorAll('#flow .box')) box.dataset.drawn = 'before';
-          const flow = document.getElementById('flow');
+          for (const box of document.querySelectorAll<HTMLElement>('#flow .box')) box.dataset.drawn = 'before';
+          const flow = document.getElementById('flow')!;
           flow.scrollTop = 60;
           return flow.scrollTop;
         });
         assert.ok(scrollTop > 0);
         await p.route('**/api/end', (route) => route.fulfill({ status: 500, body: 'cannot end' }));
         await p.click('#end-review');
-        await p.waitForFunction(() => /cannot end/.test(document.getElementById('end-error').textContent));
+        await p.waitForFunction(() => /cannot end/.test(document.getElementById('end-error')!.textContent));
         assert.ok(await p.locator('#flow .box[data-drawn=before]').count() > 0);
         assert.equal(await p.locator('#flow .box:not([data-drawn=before])').count(), 0);
-        assert.equal(await p.evaluate(() => document.getElementById('flow').scrollTop), scrollTop);
+        assert.equal(await p.evaluate(() => document.getElementById('flow')!.scrollTop), scrollTop);
         assert.equal(await p.locator('#end-review').isDisabled(), false);
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);
       })));
@@ -7917,8 +7970,8 @@ test('in a browser, the keyboard focus goes back to the bulk button that was pre
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         await openDocumentTable(p);
-        const active = () => p.evaluate(() => document.activeElement.className);
-        const pressEnterOn = async (sel) => {
+        const active = () => p.evaluate(() => document.activeElement!.className);
+        const pressEnterOn = async (sel: string) => {
           await p.focus(sel);
           await p.keyboard.press('Enter');
         };
@@ -7932,12 +7985,12 @@ test('in a browser, the keyboard focus goes back to the bulk button that was pre
         await pressEnterOn(`${bulk} button.discard`);
         assert.equal(await askedFocused(p), true);
 
-        const refuse = (route) => route.fulfill({ status: 500, body: 'disk full' });
+        const refuse = (route: Route) => route.fulfill({ status: 500, body: 'disk full' });
         await p.route('**/api/judgments', refuse);
         await p.keyboard.type('only lists documents');
         await p.keyboard.press('Control+Enter');
         await p.locator(`${asked} .error`).waitFor();
-        assert.match(await p.textContent(`${asked} .error`), /disk full/);
+        assert.match((await p.textContent(`${asked} .error`))!, /disk full/);
         assert.equal(await askedFocused(p), true);
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);
         await p.keyboard.press('Escape');
@@ -7949,7 +8002,7 @@ test('in a browser, the keyboard focus goes back to the bulk button that was pre
         await p.keyboard.press('Control+Enter');
         await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.muted').length === 1);
         assert.equal(await p.locator(bulk).count(), 0);
-        assert.equal(await p.evaluate(() => document.activeElement.matches('#center .test-pairs h2')), true);
+        assert.equal(await p.evaluate(() => document.activeElement!.matches('#center .test-pairs h2')), true);
       })));
 });
 
@@ -7958,7 +8011,7 @@ test('in a browser, a bulk that ends while the reviewer types in the search box 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         await openDocumentTable(p);
-        let held;
+        let held!: Route;
         let calls = 0;
         await p.route('**/api/judgments', (route) => {
           calls += 1;
@@ -7971,10 +8024,10 @@ test('in a browser, a bulk that ends while the reviewer types in the search box 
         const search = '#left input[type=search]';
         await p.click(search);
         await p.keyboard.type('Document');
-        await p.$eval(search, (el) => { el.kept = true; });
+        await p.$eval(search, (el: HTMLInputElement & Kept) => { el.kept = true; });
         await held.continue();
         await p.locator(`${bulk} .bulk-error`).waitFor();
-        assert.equal(await p.evaluate((sel) => document.activeElement.matches(sel) && document.activeElement.kept, search), true);
+        assert.equal(await p.evaluate((sel) => document.activeElement!.matches(sel) && (document.activeElement as Element & Kept).kept, search), true);
         await p.keyboard.type(' Table');
         assert.equal(await p.inputValue(search), 'Document Table');
         assert.equal(calls, 2);
@@ -7992,7 +8045,7 @@ test('in a browser, a bulk that judges every pair moves the keyboard focus to th
         await p.keyboard.press('Enter');
         await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
         assert.equal(await p.locator(bulk).count(), 0);
-        assert.equal(await p.evaluate(() => document.activeElement.matches('#center .test-pairs h2')), true);
+        assert.equal(await p.evaluate(() => document.activeElement!.matches('#center .test-pairs h2')), true);
       })));
 });
 
@@ -8002,12 +8055,12 @@ test('in a browser, a pair saved by a bulk is not picked any more even when read
       withPage(base, async (p, errors) => {
         await openDocumentTable(p);
         let calls = 0;
-        const refuse = (route) => {
+        const refuse = (route: Route) => {
           calls += 1;
           if (calls === 2) route.fulfill({ status: 500, body: 'disk full' });
           else route.continue();
         };
-        const unreadable = (route) => route.fulfill({ status: 500, body: 'data gone' });
+        const unreadable = (route: Route) => route.fulfill({ status: 500, body: 'data gone' });
         await p.route('**/api/judgments', refuse);
         await p.route('**/api/data', unreadable);
         await p.check(`${bulk} input.pick-all`);
@@ -8015,7 +8068,7 @@ test('in a browser, a pair saved by a bulk is not picked any more even when read
         await p.locator(`${bulk} .bulk-error`).waitFor();
 
         assert.equal(errors.splice(0).length, 2);
-        const message = await p.textContent(`${bulk} .bulk-error`);
+        const message = (await p.textContent(`${bulk} .bulk-error`))!;
         assert.match(message, /저장했지만 다시 읽지 못했습니다: data gone/);
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 1);
         assert.equal(await p.locator('#center .pair-row', { hasText: '/home' }).locator('input.pick').isChecked(), true);
@@ -8023,7 +8076,7 @@ test('in a browser, a pair saved by a bulk is not picked any more even when read
 
         await p.unroute('**/api/judgments', refuse);
         await p.unroute('**/api/data', unreadable);
-        const sent = [];
+        const sent: string[] = [];
         await p.route('**/api/judgments', (route) => {
           sent.push(route.request().postDataJSON().node);
           route.continue();
@@ -8047,7 +8100,7 @@ test('in a browser, the message of a failed bulk puts the report in its own line
         await p.locator(`${bulk} .bulk-error`).waitFor();
 
         errors.splice(0);
-        const lines = (await p.textContent(`${bulk} .bulk-error`)).split('\n');
+        const lines = (await p.textContent(`${bulk} .bulk-error`))!.split('\n');
         assert.equal(lines.length, 3);
         assert.match(lines[0], /^저장하지 못했습니다: disk full$/);
         assert.match(lines[1], /^저장한 짝 0: 없음\. 저장하지 못한 짝 2: /);
@@ -8062,7 +8115,7 @@ test('in a browser, a bulk discard that fails midway leaves the window open with
       withPage(base, async (p, errors) => {
         await openDocumentTable(p);
         let calls = 0;
-        const refuse = async (route) => {
+        const refuse = async (route: Route) => {
           calls += 1;
           if (calls === 2) await route.fulfill({ status: 500, body: 'disk full' });
           else await route.continue();
@@ -8073,7 +8126,7 @@ test('in a browser, a bulk discard that fails midway leaves the window open with
         await p.locator(`${asked} .error`).waitFor();
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);
 
-        const message = await p.textContent(`${asked} .error`);
+        const message = (await p.textContent(`${asked} .error`))!;
         assert.match(message, /^저장하지 못했습니다: disk full\n저장한 짝 1: .*저장하지 못한 짝 1: \/home/s);
         assert.equal(await p.textContent(`${bulk} .bulk-error`), message);
         assert.equal(await p.textContent(`${asked} h2`), '이 짝을 제외합니다');
@@ -8130,25 +8183,25 @@ test('in a browser, picking a pair redraws only the middle and keeps the keyboar
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await openDocumentTable(p);
-        await p.evaluate(() => { document.querySelector('#untagged-list li').dataset.kept = 'yes'; });
+        await p.evaluate(() => { document.querySelector<HTMLElement>('#untagged-list li')!.dataset.kept = 'yes'; });
         await p.locator(pick).nth(1).focus();
         await p.keyboard.press('Space');
         assert.equal(await p.evaluate(() => {
-          const el = document.activeElement;
+          const el = document.activeElement as HTMLInputElement;
           return el.matches('input.pick') && el.checked && [...document.querySelectorAll('input.pick')].indexOf(el);
         }), 1);
         assert.equal(await p.textContent(`${bulk} button.discard`), '제외 (1)');
-        assert.equal(await p.evaluate(() => document.querySelector('#untagged-list li').dataset.kept), 'yes');
+        assert.equal(await p.evaluate(() => document.querySelector<HTMLElement>('#untagged-list li')!.dataset.kept), 'yes');
 
         await p.locator(`${bulk} input.pick-all`).focus();
         await p.keyboard.press('Space');
-        assert.equal(await p.evaluate(() => document.activeElement.matches('input.pick-all')), true);
+        assert.equal(await p.evaluate(() => document.activeElement!.matches('input.pick-all')), true);
         assert.equal(await p.locator('#center .pair-row input.pick:checked').count(), 2);
       })));
 });
 
-const placeOf = (p) => p.evaluate(() => decodeURIComponent(location.hash));
-const openAt = async (p, url) => {
+const placeOf = (p: Page) => p.evaluate(() => decodeURIComponent(location.hash));
+const openAt = async (p: Page, url: string) => {
   await p.goto('about:blank');
   await p.goto(url);
 };
@@ -8198,11 +8251,11 @@ test('in a browser, the back and forward buttons go through the screens that wer
         await p.goBack();
         await p.goBack();
         assert.equal(await placeOf(p), '#screens?screen=/signin#SignIn');
-        assert.match(await p.textContent('#screen-list li.selected'), /\/signin/);
+        assert.match((await p.textContent('#screen-list li.selected'))!, /\/signin/);
         await p.goBack();
         assert.equal(await placeOf(p), '#screens?screen=/help#Help');
-        assert.match(await p.textContent('#screen-list li.selected'), /\/help/);
-        assert.match(await p.textContent('#center'), /\/help/);
+        assert.match((await p.textContent('#screen-list li.selected'))!, /\/help/);
+        assert.match((await p.textContent('#center'))!, /\/help/);
 
         await p.goForward();
         assert.deepEqual((await chosen()).slice(0, 3), ['list', 'screens', '/signin#SignIn']);
@@ -8248,7 +8301,7 @@ test('in a browser, while a branch named in the address is being read, a redraw 
         await p.goBack();
         await p.waitForSelector('.flowbar .focusing', { state: 'detached' });
         const steps = await p.evaluate(() => history.length);
-        let held;
+        let held!: Route | null;
         await p.route('**/api/flow?from=*', (route) => { held = route; });
 
         await p.goForward();
@@ -8256,7 +8309,7 @@ test('in a browser, while a branch named in the address is being read, a redraw 
         await flowButton(p, '모두 접기').click();
         assert.equal(await p.evaluate(() => history.length), steps);
         assert.equal(await placeOf(p), '#flow?from=/home#Home');
-        await held.continue();
+        await held!.continue();
         await p.waitForSelector('.flowbar .focusing');
         assert.equal(await p.evaluate(() => history.length), steps);
 
@@ -8269,12 +8322,12 @@ test('in a browser, while a branch named in the address is being read, a redraw 
         assert.equal(await p.locator('main').isVisible(), true);
         await p.click('#screen-list li:has-text("/signin")');
         const answered = p.waitForResponse('**/api/flow?from=*');
-        await held.continue();
+        await held!.continue();
         await answered;
         await p.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
         assert.equal(await placeOf(p), '#screens?screen=/signin#SignIn');
         assert.equal(await p.locator('main').isVisible(), true);
-        assert.match(await p.textContent('#screen-list li.selected'), /\/signin/);
+        assert.match((await p.textContent('#screen-list li.selected'))!, /\/signin/);
       }, { view: 'flow' })));
 });
 
@@ -8286,12 +8339,12 @@ test('in a browser, a page opened or loaded again with a place in its address sh
         await p.click('#screen-list li:has-text("/help")');
         await p.reload();
         await p.waitForSelector('#screen-list li.selected');
-        assert.match(await p.textContent('#screen-list li.selected'), /\/help/);
+        assert.match((await p.textContent('#screen-list li.selected'))!, /\/help/);
         assert.equal(await p.locator('main').isVisible(), true);
 
         await openAt(p, `${base}/#flow?from=${encodeURIComponent('/home#Home')}`);
         await p.waitForSelector('.flowbar .focusing');
-        assert.match(await p.textContent('.flowbar .focusing'), /\/home/);
+        assert.match((await p.textContent('.flowbar .focusing'))!, /\/home/);
 
         await openAt(p, `${base}/#screens?screen=${encodeURIComponent('/gone#Gone')}`);
         await p.waitForSelector('#screen-list li.selected');
@@ -8316,7 +8369,7 @@ test('in a browser, going back to a screen drops a mark that was not saved, as c
         await p.fill('#right-dock textarea', 'not saved');
         await p.goBack();
         await p.goForward();
-        assert.match(await p.textContent('#screen-list li.selected'), /\/signin/);
+        assert.match((await p.textContent('#screen-list li.selected'))!, /\/signin/);
         assert.equal(await p.inputValue('#right-dock textarea'), '');
       })));
 });
@@ -8329,7 +8382,7 @@ test('in a browser, the back button does not leave the test while a bulk is in f
         await p.click('#screen-list li:has-text("/help")');
         await openDocumentTable(p);
         const place = await placeOf(p);
-        let held;
+        let held!: Route;
         await p.route('**/api/judgments', (route) => { if (held) route.continue(); else held = route; });
         await p.check(`${bulk} input.pick-all`);
         await p.click(`${bulk} button.hand-over`);
@@ -8341,7 +8394,7 @@ test('in a browser, the back button does not leave the test while a bulk is in f
         await held.continue();
         await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
         await p.goBack();
-        await p.waitForFunction((title) => document.querySelector('#center h3').textContent !== title, DOCUMENT_TABLE.title);
+        await p.waitForFunction((title) => document.querySelector('#center h3')!.textContent !== title, DOCUMENT_TABLE.title);
         assert.match(await placeOf(p), /^#untagged\?test=/);
       })));
 });
@@ -8354,25 +8407,25 @@ test('in a browser, a browser test that passed through a screen is included with
         await p.waitForSelector('#screen-list li');
         const help = p.locator('#screen-list li:has-text("/help")');
         await help.click();
-        const row = (title) => p.locator('#center .passed .pair-test', { hasText: title });
+        const row = (title: string) => p.locator('#center .passed .pair-test', { hasText: title });
         await row('opens home and then help').locator('button.hand-over').click();
         await p.waitForSelector('#center .awaiting-tag');
         assert.equal(await p.textContent('#center .passed h2'), '지나간 테스트 5');
         assert.equal(await help.locator('.passed-count').textContent(), '지나감 5');
         assert.equal(await help.locator('.awaiting-count').textContent(), '태그 대기 1');
-        assert.match(await p.textContent('#center .awaiting-tag .pair-test'), /^지나감 통과 opens home and then help visits\.spec\.ts:\d+ · chromium/);
+        assert.match((await p.textContent('#center .awaiting-tag .pair-test'))!, /^지나감 통과 opens home and then help visits\.spec\.ts:\d+ · chromium/);
 
         await excludeIn(row('hovers and uses the keyboard on help'), 'only hovers');
         await p.waitForSelector('#center .discarded');
         assert.equal(await p.textContent('#center .passed h2'), '지나간 테스트 4');
-        assert.match(await p.textContent('#center .discarded .pair-test'), /^조작함 통과 hovers and uses the keyboard on help.*only hovers · \d/s);
+        assert.match((await p.textContent('#center .discarded .pair-test'))!, /^조작함 통과 hovers and uses the keyboard on help.*only hovers · \d/s);
         assert.deepEqual(loadJudgments(config.judgmentsDir).judgments.map((j) => [j.test.source, j.test.file, j.test.title, j.node, j.kind, j.author]).sort(), [
           ['results/playwright-traced/visits.json', 'visits.spec.ts', 'hovers and uses the keyboard on help', '/help#Help', 'discard', 'reviewer'],
           ['results/playwright-traced/visits.json', 'visits.spec.ts', 'opens home and then help', '/help#Help', 'hand-over', 'reviewer'],
         ]);
 
         await p.click('#view-flow');
-        assert.match(await (await screenBox(p, '/help#Help')).locator('.l2').textContent(), /지나감 4/);
+        assert.match((await (await screenBox(p, '/help#Help')).locator('.l2').textContent())!, /지나감 4/);
         await p.click('#view-list');
 
         await p.click('#center .awaiting-tag button.undo');
@@ -8393,9 +8446,9 @@ test('in a browser, the buttons that judge a pair sit at the right end of the ro
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
-        const boxes = (group, control) => p.locator(`#center ${group} .pair-test`).first().evaluate((row, selector) => {
-          const box = (el) => el.getBoundingClientRect();
-          const [whole, test, buttons] = [row, row.querySelector('.test'), row.querySelector(selector)].map(box);
+        const boxes = (group: string, control: string) => p.locator(`#center ${group} .pair-test`).first().evaluate((row, selector) => {
+          const box = (el: Element) => el.getBoundingClientRect();
+          const [whole, test, buttons] = [row, row.querySelector('.test')!, row.querySelector(selector)!].map(box);
           return { gapOnRight: whole.right - buttons.right, sameLine: Math.abs(buttons.top - test.top) < 4, afterTest: buttons.left >= test.right };
         }, control);
         assert.deepEqual(await boxes('.passed', '.judge-row'), { gapOnRight: 0, sameLine: true, afterTest: true });
@@ -8407,10 +8460,10 @@ test('in a browser, the buttons that judge a pair sit at the right end of the ro
         await p.click('#screen-list li:has-text("/document/:id")');
         await p.locator('table.calls tr', { hasText: 'GET:/api/v1/document/{documentId}' }).first().click();
         await p.waitForSelector('#right .pair-test .judge-row');
-        assert.equal(await p.locator('#right .pair-test').first().evaluate((row) => row.querySelector('.judge-row').getBoundingClientRect().top >= row.querySelector('.test').getBoundingClientRect().bottom), true);
+        assert.equal(await p.locator('#right .pair-test').first().evaluate((row) => row.querySelector('.judge-row')!.getBoundingClientRect().top >= row.querySelector('.test')!.getBoundingClientRect().bottom), true);
         await p.locator('#right .pair-test button.hand-over').first().click();
         await p.waitForSelector('#right .awaiting-tag button.undo');
-        assert.equal(await p.locator('#right .awaiting-tag .pair-test').first().evaluate((row) => row.querySelector(':scope > button.undo').getBoundingClientRect().top >= row.querySelector(':scope > .detail').getBoundingClientRect().bottom), true);
+        assert.equal(await p.locator('#right .awaiting-tag .pair-test').first().evaluate((row) => row.querySelector(':scope > button.undo')!.getBoundingClientRect().top >= row.querySelector(':scope > .detail')!.getBoundingClientRect().bottom), true);
       })));
 });
 
@@ -8424,16 +8477,16 @@ test('in a browser, a browser test that sent a call is excluded and included in 
         await callRow.locator('td.cell').first().click();
         const sent = p.locator('#right-info .passed .pair-test', { hasText: 'lists the documents' });
         assert.deepEqual(await sent.locator('button').allTextContents(), ['제외', '포함']);
-        assert.match(await sent.locator('button.discard').getAttribute('title'), /^이 테스트와 이 호출의 짝/);
+        assert.match((await sent.locator('button.discard').getAttribute('title'))!, /^이 테스트와 이 호출의 짝/);
 
         await sent.locator('button.discard').click();
-        assert.match(await p.textContent(`${asked} .pairs`), /테스트lists the documents.*calls\.spec\.ts.*호출GET:\/api\/v1\/document\/list$/s);
+        assert.match((await p.textContent(`${asked} .pairs`))!, /테스트lists the documents.*calls\.spec\.ts.*호출GET:\/api\/v1\/document\/list$/s);
         await p.fill(why, 'only loads the page');
         await p.click(`${asked} button.discard`);
         await p.waitForSelector('#right-info .discarded');
         assert.equal(await p.locator('#right-info .passed').count(), 0);
         assert.equal(await callRow.locator('.sent-count').count(), 0);
-        assert.match(await p.textContent('#right-info .discarded .pair-test'), /^호출함 통과 lists the documents.*only loads the page · \d/s);
+        assert.match((await p.textContent('#right-info .discarded .pair-test'))!, /^호출함 통과 lists the documents.*only loads the page · \d/s);
         assert.deepEqual(judgedBy(config), [[LIST_CALL, 'discard', 'only loads the page', 'reviewer']]);
         assert.equal(await p.locator('#center .judgment-error').count(), 0);
 
@@ -8458,14 +8511,14 @@ test('in a browser, a chosen untagged browser test shows the screens it opened a
         assert.equal(await p.textContent('#center .test-pairs h2'), '이 테스트와 화면·호출의 짝 2');
         const pairs = p.locator('#center .test-pairs .pair');
         assert.deepEqual(await pairs.locator('.pair-state').allTextContents(), ['지나감', '호출함']);
-        assert.match(await pairs.nth(0).textContent(), /^\/home Home/);
-        assert.match(await pairs.nth(1).textContent(), /^GET:\/api\/v1\/document\/\{documentId\}/);
+        assert.match((await pairs.nth(0).textContent())!, /^\/home Home/);
+        assert.match((await pairs.nth(1).textContent())!, /^GET:\/api\/v1\/document\/\{documentId\}/);
         assert.equal(await p.locator('#center .unmatched').count(), 0);
 
         await p.check(`${bulk} input.pick-all`);
         await p.click(`${bulk} button.discard`);
         assert.equal(await p.textContent(`${asked} h2`), '짝 2개를 제외합니다');
-        assert.match(await p.textContent(`${asked} .pairs`), /화면과 호출\/home Home.*GET:\/api\/v1\/document\/\{documentId\}$/s);
+        assert.match((await p.textContent(`${asked} .pairs`))!, /화면과 호출\/home Home.*GET:\/api\/v1\/document\/\{documentId\}$/s);
         await p.click(`${asked} button.cancel`);
         await p.click(`${bulk} button.hand-over`);
         await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
@@ -8477,7 +8530,7 @@ test('in a browser, a chosen untagged browser test shows the screens it opened a
         await pairs.nth(1).click();
         assert.equal(await p.textContent('#screen-list li.selected .name'), '/document/:id DocumentDetail');
         assert.match(await p.locator('#right-info .target-id').innerText(), /GET:\/api\/v1\/document\/\{documentId\}\s+호출 전체/);
-        assert.match(await p.textContent('#right-info .awaiting-tag'), /reads a document from the server/);
+        assert.match((await p.textContent('#right-info .awaiting-tag'))!, /reads a document from the server/);
       })));
 });
 
@@ -8487,7 +8540,7 @@ test('in a browser, an untagged browser test lists the addresses it opened that 
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click(untaggedTab);
-        const said = async (title) => {
+        const said = async (title: string) => {
           await p.click(`#untagged-list li:has-text("${title}")`);
           return p.textContent('#center .no-screens');
         };
@@ -8516,7 +8569,7 @@ test('in a browser, a browser test handed over for a screen goes on waiting for 
         await toList(p);
         await p.click('#screen-list li:has-text("/help")');
         assert.equal(await p.textContent('#center .awaiting-tag h2'), '태그 대기 1');
-        assert.match(await p.textContent('#center .awaiting-tag .pair-test'), /^확인 못 함 통과 opens help without a trace untraced\.spec\.ts:5결과 파일 results\/playwright-traced\/visits\.json/);
+        assert.match((await p.textContent('#center .awaiting-tag .pair-test'))!, /^확인 못 함 통과 opens help without a trace untraced\.spec\.ts:5결과 파일 results\/playwright-traced\/visits\.json/);
         assert.equal(await p.locator('#center .detached').count(), 0);
         await p.click('#center .awaiting-tag button.undo');
         await p.waitForSelector('#center .awaiting-tag', { state: 'detached' });
@@ -8530,8 +8583,8 @@ test('in a browser, a skipped browser test with no pairs says that it did not ru
       withPage(base, async (p) => {
         await p.route('**/api/data', async (route) => {
           const res = await route.fetch();
-          const data = await res.json();
-          data.tests.untagged.find((t) => t.title.startsWith('loads without errors')).status = 'pending';
+          const data: PageData = await res.json();
+          data.tests.untagged!.find((t) => t.title.startsWith('loads without errors'))!.status = 'pending';
           await route.fulfill({ response: res, json: data });
         });
         await p.reload();
@@ -8542,14 +8595,14 @@ test('in a browser, a skipped browser test with no pairs says that it did not ru
       })));
 });
 
-const postJson = (base, url, body) => fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const postJson = (base: string, url: string, body: unknown) => fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 const CANDIDATES = { storiesDir: 'example-stories', visitRecords: ['example-visits'] };
 const HELP_RECORD = 'example-visits/open-help.json';
 
 test('the data carries the story candidates from the visit records, checked against the map, and the files that could not be read', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      const { candidates } = await (await fetch(`${base}/api/data`)).json();
+      const { candidates }: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual(candidates.list.map((c) => [c.name, c.source.record, c.screens.length, c.links.map((l) => l.verdict)]), [
         ['open-help', HELP_RECORD, 4, ['open', 'off-map', 'off-map']],
         ['publish-document', 'example-visits/publish-document.json', 4, ['open', 'open', 'conditioned']],
@@ -8567,7 +8620,7 @@ test('a candidate accepted through the page becomes a story file with the server
       const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
       assert.equal(saved.author, 'reviewer');
       assert.deepEqual(saved.source, { record: HELP_RECORD, steps: [1, 5] });
-      const data = await (await fetch(`${base}/api/data`)).json();
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.ok(data.stories.list.some((s) => s.id === 'open-help' && s.name === '홈에서 도움말을 연다'));
       assert.deepEqual(data.candidates.list.map((c) => c.name), ['publish-document']);
 
@@ -8591,7 +8644,7 @@ test('a candidate discarded through the page is kept in the discarded folder wit
     assert.deepEqual([saved.reason, saved.author], ['베타 화면', 'reviewer']);
     rebuild(copy);
     await withServer(config, 'reviewer', async (base) => {
-      const data = await (await fetch(`${base}/api/data`)).json();
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual(data.candidates.list.map((c) => c.name), ['publish-document']);
       assert.ok(!data.stories.list.some((s) => s.name === 'open-help'));
     });
@@ -8623,7 +8676,7 @@ test('story writes that are not JSON requests are refused', async () => {
   );
 });
 
-const chipsIn = (p, list) => p.locator(`${list} li`).evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent)));
+const chipsIn = (p: Page, list: string) => p.locator(`${list} li`).evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent)));
 const storiesTab = '#left .views.side button:has-text("스토리")';
 const BAD_REQUEST = 'Failed to load resource: the server responded with a status of 400 (Bad Request)';
 
@@ -8633,11 +8686,11 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
-        assert.match(await p.textContent('#left'), /후보 2/);
+        assert.match((await p.textContent('#left'))!, /후보 2/);
         assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['open-help', 'publish-document']);
         assert.deepEqual(await chipsIn(p, '#candidate-list'), [['화면 없음'], []]);
         assert.deepEqual(await p.locator('#candidate-notices li code').allTextContents(), ['example-visits/broken-record.json']);
-        assert.match(await p.textContent('#left'), /건너뛴 파일 1/);
+        assert.match((await p.textContent('#left'))!, /건너뛴 파일 1/);
 
         await p.click('#candidate-list li:has-text("open-help")');
         assert.equal(await p.locator('#story-list li.selected').count(), 0);
@@ -8657,7 +8710,7 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
         await p.waitForSelector('#story-list li.selected:has-text("open-help")');
         assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['publish-document']);
         assert.equal(await p.textContent('#center h3'), 'open-help');
-        assert.match(await p.textContent('#center .source'), /^example-visits\/open-help\.json · 단계 1–5$/);
+        assert.match((await p.textContent('#center .source'))!, /^example-visits\/open-help\.json · 단계 1–5$/);
         const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
         assert.deepEqual([saved.name, saved.author, saved.screens.length], ['open-help', 'reviewer', 4]);
 
@@ -8669,7 +8722,7 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
         assert.equal(await p.isVisible('#accept-ask .invalid'), false);
         await p.keyboard.press('Escape');
         assert.equal(await p.isVisible('#accept-ask'), false);
-        assert.equal(await p.evaluate(() => document.activeElement.className), 'accept-edited');
+        assert.equal(await p.evaluate(() => document.activeElement!.className), 'accept-edited');
 
         await p.click('#right button.accept-edited');
         await p.fill('#accept-name', ' ');
@@ -8707,7 +8760,7 @@ test('in a browser, accepting a candidate asks for an ID in a window only when t
         assert.equal(await p.isDisabled(`${ask} button.accept`), true);
         await p.keyboard.press('Escape');
         assert.equal(await p.isVisible(ask), false);
-        assert.equal(await p.evaluate(() => document.activeElement.className), 'accept');
+        assert.equal(await p.evaluate(() => document.activeElement!.className), 'accept');
         assert.deepEqual(fs.readdirSync(config.storiesDir).filter((f) => f.startsWith('open-help')), ['open-help.json']);
 
         await p.click('#right button.accept');
@@ -8728,11 +8781,11 @@ test('in a browser, accepting a candidate asks for an ID in a window only when t
         await p.click('#candidate-list li:has-text("publish-document")');
         const writes = holdRequests(p, '**/api/candidates/accept');
         await p.click('#right button.accept');
-        await p.waitForFunction(() => document.querySelector('#right .story-form').disabled);
+        await p.waitForFunction(() => document.querySelector<HTMLFieldSetElement>('#right .story-form')!.disabled);
         await p.click('#story-list li:has-text("실험실을 열어")');
-        writes.release();
+        writes.release!();
         await p.waitForSelector('#right .story-error');
-        assert.match(await p.textContent('#right .story-error'), /저장하지 못했습니다: 스토리 ID publish-document 는 .+ 이미 씁니다/);
+        assert.match((await p.textContent('#right .story-error'))!, /저장하지 못했습니다: 스토리 ID publish-document 는 .+ 이미 씁니다/);
         assert.equal(await p.isVisible(ask), false);
         assert.deepEqual(errors.splice(0), [BAD_REQUEST]);
         await p.unroute('**/api/candidates/accept');
@@ -8740,11 +8793,11 @@ test('in a browser, accepting a candidate asks for an ID in a window only when t
         await p.click('#candidate-list li:has-text("publish-document")');
         await p.click('#right button.accept');
         await p.waitForSelector(`${ask}[open]`);
-        assert.match(await p.textContent(`${ask} .error`), /저장하지 못했습니다: 스토리 ID publish-document 는 .+ 이미 씁니다/);
+        assert.match((await p.textContent(`${ask} .error`))!, /저장하지 못했습니다: 스토리 ID publish-document 는 .+ 이미 씁니다/);
         assert.equal(await p.locator('#right .story-error').count(), 0);
         assert.equal(await p.inputValue('#accept-id'), 'publish-document');
         await p.click(`${ask} button.accept`);
-        await p.waitForFunction(() => /저장하지 못했습니다/.test(document.querySelector('#accept-ask .error').textContent) && !document.querySelector('#accept-ask button.cancel').disabled);
+        await p.waitForFunction(() => /저장하지 못했습니다/.test(document.querySelector('#accept-ask .error')!.textContent) && !document.querySelector<HTMLButtonElement>('#accept-ask button.cancel')!.disabled);
         assert.deepEqual(errors.splice(0), [BAD_REQUEST, BAD_REQUEST]);
         await p.fill('#accept-id', 'publish-document-again');
         await p.click(`${ask} button.accept`);
@@ -8779,7 +8832,7 @@ test('in a browser, discarding a candidate takes a reason, writes the discarded 
         await p.fill('#discard-reason', '중복');
         await p.click('#right button.discard');
         await p.waitForSelector('#candidate-list', { state: 'detached' });
-        assert.match(await p.textContent('#left'), /후보 0/);
+        assert.match((await p.textContent('#left'))!, /후보 0/);
         assert.equal(await p.locator('#story-list li.selected').count(), 1);
       }),
     ),
@@ -8808,13 +8861,13 @@ test('in a browser, after a candidate is accepted the name and memo form and the
   );
 });
 
-const enabledControls = (p) => p.locator('#right-info input, #right-info textarea, #right-info button').evaluateAll((els) => els.filter((e) => !e.matches(':disabled')).map((e) => e.id || e.className));
+const enabledControls = (p: Page) => p.locator('#right-info input, #right-info textarea, #right-info button').evaluateAll((els) => els.filter((e) => !e.matches(':disabled')).map((e) => e.id || e.className));
 
-function holdRequests(p, pattern) {
-  const held = { sent: [], gates: [] };
+function holdRequests(p: Page, pattern: string) {
+  const held: { sent: string[]; gates: (() => void)[]; done?: Promise<unknown>; release?: () => void } = { sent: [], gates: [] };
   held.done = p.route(pattern, async (route) => {
     held.sent.push(new URL(route.request().url()).pathname);
-    await new Promise((resolve) => held.gates.push(resolve));
+    await new Promise<void>((resolve) => held.gates.push(resolve));
     await route.continue();
   });
   held.release = () => held.gates.splice(0).forEach((open) => open());
@@ -8832,27 +8885,27 @@ test('in a browser, the whole 받기, 버리기 and 이름 · 메모 form stays 
         const writes = holdRequests(p, '**/api/{candidates/*,stories/edit}');
         await writes.done;
         await p.click('#right button.accept');
-        await p.waitForFunction(() => document.querySelector('#right button.accept').matches(':disabled'));
+        await p.waitForFunction(() => document.querySelector('#right button.accept')!.matches(':disabled'));
         assert.deepEqual(await enabledControls(p), []);
         const reloads = holdRequests(p, '**/api/data');
         await reloads.done;
-        writes.release();
+        writes.release!();
         await untilSet(() => reloads.sent.length === 1, 'the reload after the accept');
         assert.deepEqual(await enabledControls(p), []);
-        reloads.release();
+        reloads.release!();
         await p.waitForSelector('#story-list li.selected:has-text("open-help")');
         assert.deepEqual(writes.sent, ['/api/candidates/accept']);
         assert.ok((await enabledControls(p)).includes('story-name'));
 
         await p.fill('#story-name', '도움말을 연다');
         await p.click('#right button.save-story');
-        await p.waitForFunction(() => document.querySelector('#story-name').matches(':disabled'));
+        await p.waitForFunction(() => document.querySelector('#story-name')!.matches(':disabled'));
         assert.deepEqual(await enabledControls(p), []);
         await untilSet(() => writes.sent.length === 2, 'the edit request');
-        writes.release();
+        writes.release!();
         await untilSet(() => reloads.sent.length === 2, 'the reload after the edit');
         assert.deepEqual(await enabledControls(p), []);
-        reloads.release();
+        reloads.release!();
         await p.waitForSelector('#story-list li.selected:has-text("도움말을 연다")');
         assert.deepEqual(writes.sent, ['/api/candidates/accept', '/api/stories/edit']);
         assert.equal(await p.inputValue('#story-name'), '도움말을 연다');
@@ -8874,7 +8927,7 @@ test('in a browser, with visit records and a map built before links carried thei
       await withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
-        assert.match(await p.textContent('#candidates-stale'), /후보를 맞춰 보지 못했습니다/);
+        assert.match((await p.textContent('#candidates-stale'))!, /후보를 맞춰 보지 못했습니다/);
         assert.equal(await p.locator('#candidate-list').count(), 0);
       });
     });
@@ -8956,7 +9009,7 @@ test('a screen order sent for checking comes back judged like a story, and one t
     withServer(config, 'reviewer', async (base) => {
       const res = await postJson(base, '/api/stories/check', { screens: HELP_PATH });
       assert.equal(res.status, 200);
-      const checked = await res.json();
+      const checked: Story = await res.json();
       assert.deepEqual([checked.screens, checked.links.map((l) => l.verdict), checked.broken, checked.detached], [HELP_PATH, ['open', 'broken'], true, false]);
       for (const screens of [[], 'x', undefined, ['/home#Home', 3]]) assert.equal((await postJson(base, '/api/stories/check', { screens })).status, 400);
       const offMap = await postJson(base, '/api/stories/check', { screens: ['/home#Home', '/gone#Gone'] });
@@ -8976,10 +9029,10 @@ test('a new story posted from the page is written with its screens, name, memo a
       const { date, ...saved } = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'help-from-signin.json'), 'utf8'));
       assert.deepEqual(saved, { name: '로그인해 도움말을 연다', screens: HELP_PATH, memo: '홈에 링크가 없다.', author: 'reviewer' });
       assert.match(date, /^\d{4}-\d{2}-\d{2}T/);
-      const data = await (await fetch(`${base}/api/data`)).json();
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual(data.stories.list.map((st) => [st.id, st.broken]), [['help-from-signin', true]]);
 
-      const refused = async (body, why) => {
+      const refused = async (body: object, why: RegExp) => {
         const r = await postJson(base, '/api/stories/add', { id: 'another', name: 'x', screens: ['/home#Home'], ...body });
         assert.equal(r.status, 400, JSON.stringify(body));
         assert.match(await r.text(), why);
@@ -8997,14 +9050,14 @@ test('a new story posted from the page is written with its screens, name, memo a
   );
 });
 
-const pickScreen = (p, routePath) => p.locator('#pick-list li').filter({ has: p.locator('.name > span:first-child', { hasText: new RegExp(`^${routePath}$`) }) }).click();
-const composeSteps = (p) => p.locator('#center .compose-step .screen-path').allTextContents();
-const composeLinks = (p) => p.locator('#center .story-path .link > .chip').allTextContents();
-const untilJudged = (p, links) => p.waitForFunction((n) => document.querySelectorAll('#center .story-path .link > .chip').length === n && !document.querySelector('#center .link.l-pending'), links);
-const stepButton = (step, cls) => `#center .compose-step[data-step="${step}"] button.${cls}`;
-const focusedStepButton = (p) => p.evaluate(() => [document.activeElement.closest('.compose-step')?.dataset.step, document.activeElement.className]);
+const pickScreen = (p: Page, routePath: string) => p.locator('#pick-list li').filter({ has: p.locator('.name > span:first-child', { hasText: new RegExp(`^${routePath}$`) }) }).click();
+const composeSteps = (p: Page) => p.locator('#center .compose-step .screen-path').allTextContents();
+const composeLinks = (p: Page) => p.locator('#center .story-path .link > .chip').allTextContents();
+const untilJudged = (p: Page, links: number) => p.waitForFunction((n) => document.querySelectorAll('#center .story-path .link > .chip').length === n && !document.querySelector('#center .link.l-pending'), links);
+const stepButton = (step: number, cls: string) => `#center .compose-step[data-step="${step}"] button.${cls}`;
+const focusedStepButton = (p: Page) => p.evaluate(() => [document.activeElement!.closest<HTMLElement>('.compose-step')?.dataset.step, document.activeElement!.className]);
 
-async function startNewStory(p) {
+async function startNewStory(p: Page) {
   await p.waitForSelector('#screen-list li');
   await p.click(storiesTab);
   await p.click('#left button.new-story');
@@ -9080,7 +9133,7 @@ test('in a browser, moving a step of a new story with 「위로」 or 「아래�
         assert.deepEqual(await composeSteps(p), ['/signin', '/home']);
 
         await p.click(stepButton(1, 'insert-before'));
-        assert.match(await p.textContent('#center .insert-mark'), /^다음에 고르는 화면이 여기 들어갑니다/);
+        assert.match((await p.textContent('#center .insert-mark'))!, /^다음에 고르는 화면이 여기 들어갑니다/);
         await pickScreen(p, '/help');
         await pickScreen(p, '/lab');
         await untilJudged(p, 3);
@@ -9105,13 +9158,13 @@ test('in a browser, a step of a new story is dragged onto another step to take i
         await startNewStory(p);
         for (const routePath of ['/signin', '/home', '/help']) await pickScreen(p, routePath);
         await untilJudged(p, 2);
-        const name = await p.$('#compose-name');
+        const name = (await p.$('#compose-name'))!;
         await p.fill('#compose-name', '끌어서 옮긴다');
 
         await p.evaluate(() => {
           const dropped = new DataTransfer();
           dropped.setData('text/plain', '0');
-          document.querySelector('#center .compose-step[data-step="1"]').dispatchEvent(new DragEvent('drop', { dataTransfer: dropped, bubbles: true, cancelable: true }));
+          document.querySelector('#center .compose-step[data-step="1"]')!.dispatchEvent(new DragEvent('drop', { dataTransfer: dropped, bubbles: true, cancelable: true }));
         });
         assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
 
@@ -9120,7 +9173,7 @@ test('in a browser, a step of a new story is dragged onto another step to take i
         await untilJudged(p, 2);
         assert.deepEqual(await composeSteps(p), ['/help', '/signin', '/home']);
         assert.deepEqual(await composeLinks(p), ['링크 없음', '이어짐']);
-        assert.equal(await name.evaluate((el) => el.isConnected && el.value), '끌어서 옮긴다');
+        assert.equal(await name.evaluate((el: HTMLInputElement) => el.isConnected && el.value), '끌어서 옮긴다');
         assert.equal(await p.textContent('#center h3'), '끌어서 옮긴다');
       }),
     ),
@@ -9145,13 +9198,13 @@ test('in a browser, a new story being written is a place in the address and is k
         assert.deepEqual(await composeSteps(p), ['/home']);
         assert.equal(await p.inputValue('#compose-name'), '쓰다 만 스토리');
 
-        let asked = null;
+        let asked: string | null = null;
         p.once('dialog', (dialog) => {
           asked = dialog.message();
           dialog.dismiss();
         });
         await p.click('#end-review');
-        assert.match(asked, /^저장하지 않은 새 스토리가 있습니다/);
+        assert.match(asked!, /^저장하지 않은 새 스토리가 있습니다/);
         assert.equal(await p.locator('#ended').count(), 0);
 
         await p.click('#right button.drop-draft');
@@ -9179,13 +9232,13 @@ test('in a browser, the notice that the same screen cannot follow itself stays w
         assert.equal(await p.textContent('#center .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
         assert.equal(await p.textContent('#center .link.l-pending'), '맞춰 보는 중');
         await untilSet(() => checks.sent.length === 2, 'the two checks');
-        checks.release();
+        checks.release!();
         await untilJudged(p, 1);
         assert.equal(await p.textContent('#center .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
         await pickScreen(p, '/help');
         assert.equal(await p.locator('#center .compose-error').count(), 0);
         await untilSet(() => checks.sent.length === 3, 'the third check');
-        checks.release();
+        checks.release!();
         await untilJudged(p, 2);
       }),
     ),
