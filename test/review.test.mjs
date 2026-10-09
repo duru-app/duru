@@ -8148,6 +8148,10 @@ test('in a browser, picking a pair redraws only the middle and keeps the keyboar
 });
 
 const placeOf = (p) => p.evaluate(() => decodeURIComponent(location.hash));
+const openAt = async (p, url) => {
+  await p.goto('about:blank');
+  await p.goto(url);
+};
 const NOT_FOUND = 'Failed to load resource: the server responded with a status of 404 (Not Found)';
 
 test('in a browser, the first drawing writes the place into the address without adding a step to the history, and a redraw of the same place adds none', { skip: browserMissing }, async () => {
@@ -8285,22 +8289,20 @@ test('in a browser, a page opened or loaded again with a place in its address sh
         assert.match(await p.textContent('#screen-list li.selected'), /\/help/);
         assert.equal(await p.locator('main').isVisible(), true);
 
-        await p.goto(`${base}/#flow?from=${encodeURIComponent('/home#Home')}`);
-        await p.reload();
+        await openAt(p, `${base}/#flow?from=${encodeURIComponent('/home#Home')}`);
         await p.waitForSelector('.flowbar .focusing');
         assert.match(await p.textContent('.flowbar .focusing'), /\/home/);
 
-        await p.goto(`${base}/#screens?screen=${encodeURIComponent('/gone#Gone')}`);
-        await p.reload();
+        await openAt(p, `${base}/#screens?screen=${encodeURIComponent('/gone#Gone')}`);
         await p.waitForSelector('#screen-list li.selected');
         assert.equal(await placeOf(p), `#screens?screen=${await p.evaluate(() => state.selected)}`);
         assert.notEqual(await p.evaluate(() => state.selected), '/gone#Gone');
 
-        await p.goto(`${base}/#flow?from=${encodeURIComponent('/gone#Gone')}`);
-        await p.reload();
+        await openAt(p, `${base}/#flow?from=${encodeURIComponent('/gone#Gone')}`);
         await p.waitForSelector('#flow .box.screen');
         assert.equal(await placeOf(p), '#flow');
-        assert.deepEqual(errors.splice(0), [NOT_FOUND, NOT_FOUND]);
+        await untilSet(() => errors.includes(NOT_FOUND), 'the 404');
+        assert.deepEqual(errors.splice(0), [NOT_FOUND]);
       })));
 });
 
