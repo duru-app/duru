@@ -162,6 +162,20 @@ export function loadConfig(configPath: string) {
   if (!Array.isArray(callLinks) || !callLinks.every(isCallLink)) {
     throw new Error(`callLinks must be a list of { "from", "to", "note" }, with the note on one line, joining a call whose on/off options change what another call gives back ("from") to that other call ("to"), with two different call IDs as in the map, such as [{ "from": "POST:/api/v1/report/export", "to": "GET:/api/v1/report/{reportId}/file", "note": "내보내기가 만든 파일을 내려받는다" }], not ${JSON.stringify(raw.callLinks)}`);
   }
+  const constants = raw.constants ?? {};
+  if (!isPlainObject(constants) || !Object.values(constants).every(isText)) {
+    throw new Error(`constants must map each name the app's code imports a constants module by to its file as a path from srcRoot, such as { "Option": "_define/Option.js" }, not ${JSON.stringify(raw.constants)}`);
+  }
+  if (raw.routeConstant != null && raw.routeConstant !== '') {
+    if (!isText(raw.routeConstant) || !DOTTED_NAME.test(raw.routeConstant)) {
+      throw new Error(`routeConstant must be the dotted name of the object that holds the route paths, such as "Option.ROUTE_PATH", not ${JSON.stringify(raw.routeConstant)}`);
+    }
+    const name = raw.routeConstant.split('.')[0];
+    if (!Object.hasOwn(constants, name)) {
+      const names = Object.keys(constants);
+      throw new Error(`routeConstant "${raw.routeConstant}" starts with "${name}", which is not a name in constants (${names.length ? names.map((n) => JSON.stringify(n)).join(', ') : 'none'}); add it to constants, or leave routeConstant out when the route paths are written in place`);
+    }
+  }
   const settingsDefaults: Record<string, any> = raw.settingsDefaults ?? {};
   for (const [root, entry] of Object.entries(settingsDefaults)) {
     if (!(raw.settingsRoots ?? []).includes(root)) throw new Error(`settingsDefaults root "${root}" is not listed in settingsRoots`);
@@ -174,7 +188,7 @@ export function loadConfig(configPath: string) {
         throw new Error(`settingsDefaults.${root}.constant must be a constants name, or a dotted path starting with one, such as "Settings.defaults", not ${JSON.stringify(entry.constant)}`);
       }
       const name = entry.constant.split('.')[0];
-      if (!Object.hasOwn(raw.constants ?? {}, name)) {
+      if (!Object.hasOwn(constants, name)) {
         throw new Error(`settingsDefaults.${root}.constant "${entry.constant}" starts with "${name}", which is not a name in constants`);
       }
       continue;
@@ -231,6 +245,8 @@ export function loadConfig(configPath: string) {
   const outDir = at(raw.outDir ?? '.');
   return {
     ...raw,
+    constants,
+    routeConstant: raw.routeConstant || null,
     configDir,
     author: raw.author?.trim() ?? null,
     srcRoot: at(raw.srcRoot),
