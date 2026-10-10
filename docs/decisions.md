@@ -856,6 +856,34 @@ left out of such an `export { … }`.
 Measured: the two example maps and the into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time
 they were written.
 
+**Requests a `calledApiModules` run sends with the global `fetch` are recorded with their method and address, and
+`requestFunction` may be left out.**
+On mattermost every request of `Client4` goes through `fetch(url, options)`, so no request function of the app's own
+could be named, and the one the #169 measurement named (`Client4` as a request object) replaced the very class that
+builds the addresses. With `fetch` recorded and `requestFunction` left out, the mattermost run with `sourcePackages`
+records 667 API functions and 533 calls, 483 of them reached from screens; with the #169 `requestFunction` kept, it
+records none, before and after this change.
+Alternatives compared:
+- A config value naming `fetch` (a `requestFunction` of `{ "fetch": true }` or similar): one more line for every
+  app that sends this way, and an app that forgets it sends the requests to Node's real `fetch`.
+Reason: `fetch` is one global with one shape, `fetch(input, init)`, whose method and address duru can read without
+being told where they are, and in a run Node's own `fetch` only tries the network. A `Request` given to `fetch`
+gives its method and address. The fake answer is the same value the request function recorder gives. Apps whose
+API code does not call `fetch` give the same requests as before. Without `requestFunction`, a listed file none of
+whose methods sent a request with `fetch`, itself or through an object another listed file exports, is named in the
+summary (`silentApiModules`), so an app that sends through axios and forgot the key is told which files gave
+nothing, while the files that did send keep their calls; when no listed file sent one, the run stops with an error,
+as a missing `requestFunction` did before. Stopping only in that case, and not naming files, was tried first: one
+file sending with `fetch` was then enough to let the others pass in silence. The error also gives the cause for each
+listed file that did not run, since otherwise it points at `requestFunction` while the cause is a file that failed
+to load. Letting a run with such a file go on and print its `did not run` line was compared: it showed the cause too,
+but an app that sends through axios, left out `requestFunction` and has one file that fails to load then got an
+empty map and a success exit, where a missing `requestFunction` used to stop. A value duru made up and passed as
+the options of `fetch` counts as no options, so a wrapper handing its options through records `GET`; a made-up
+`method` inside options the app wrote stays unknown, since a real caller may pass any method there.
+Measured: the two example maps and the into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time
+they were written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

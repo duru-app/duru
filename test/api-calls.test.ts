@@ -390,9 +390,48 @@ test('sourcePackages that is not an object of package names and folders, or name
   assert.throws(() => loadConfig(fixtureCopy({ sourcePackages: { '@acme/remote-api': 'packages/none' } })), /sourcePackages @acme\/remote-api: packages\/none is not a folder/);
 });
 
-test('the new keys are refused when one comes without the other, a file is in both API lists, a place is not a number followed by keys, or a relative import names no file', async () => {
+const FETCHED_API = [
+  'export const fetchedApi = {',
+  '  load: (id: string) => fetch(`/fetched/${id}`).then((r) => r.json()),',
+  "  save: (id: string) => fetch(`/fetched/${id}`, { method: 'PUT', body: JSON.stringify({ id }) }),",
+  "  remove: () => fetch(new Request('http://localhost/fetched/all', { method: 'DELETE' })),",
+  '  pass: (id: string, init?: RequestInit) => fetch(`/passed/${id}`, init),',
+  '  inner: (id: string, options?: { method?: string }) => fetch(`/inner/${id}`, { headers: {}, method: options?.method }),',
+  "  win: () => window.fetch('/window'),",
+  '  fetch,',
+  '};',
+  '',
+].join('\n');
+const fetchedRequests = (map: ScreenMap) => ['load', 'save', 'remove', 'pass', 'inner', 'win'].map((m) => map.apiFunctions[`fetchedApi.${m}`].endpoints.map((e) => `${e.method} ${e.url}`));
+
+test('a request a listed file sends with the global fetch is recorded with its method and address, with requestFunction or without it, and without requestFunction a listed file none of whose methods sent one is named, and a run where none sent one stops', async () => {
+  const fetched = { 'contracts/api/fetched.ts': FETCHED_API };
+  const both = await build(fixtureCopy({ ...CALLED, calledApiModules: ['contracts/api/fetched.ts', ...CALLED.calledApiModules] }, fetched));
+  const sent = [['GET /fetched/{?}'], ['PUT /fetched/{?}'], ['DELETE /fetched/all'], ['GET /passed/{?}'], ['null /inner/{?}'], ['GET /window']];
+  assert.deepEqual(fetchedRequests(both), sent);
+  assert.equal('silentApiModules' in both, false);
+  assert.equal('fetchedApi.fetch' in both.apiFunctions, false);
+  assert.equal(both.apiFunctions['contractApi.loadList'].endpoints.length, 1);
+  const alone = await build(fixtureCopy({ calledApiModules: ['contracts/api/fetched.ts'] }, fetched));
+  assert.deepEqual(fetchedRequests(alone), sent);
+  const mixedConfig = fixtureCopy({ calledApiModules: ['contracts/api/fetched.ts', ...CALLED.calledApiModules] }, fetched);
+  assert.deepEqual((await build(mixedConfig)).silentApiModules, ['contracts/api/index.ts']);
+  const reExported = fixtureCopy({ calledApiModules: ['contracts/api/fetched.ts', 'contracts/api/again.ts'] }, { ...fetched, 'contracts/api/again.ts': "export { fetchedApi } from './fetched';\n" });
+  assert.equal('silentApiModules' in await build(reExported), false);
+  await assert.rejects(build(fixtureCopy({ calledApiModules: CALLED.calledApiModules })), /calledApiModules has no requestFunction and no listed file sent a request with fetch/);
+  const broken = { 'contracts/api/broken.ts': "throw new Error('no session');\nexport const brokenApi = { load: () => fetch('/x') };\n" };
+  await assert.rejects(build(fixtureCopy({ calledApiModules: ['contracts/api/broken.ts'] }, broken)), /no request was recorded.*; contracts\/api\/broken\.ts did not run: .*no session/);
+  await assert.rejects(build(fixtureCopy({ calledApiModules: ['contracts/api/broken.ts', ...CALLED.calledApiModules] }, broken)), /no request was recorded.*; contracts\/api\/broken\.ts did not run: .*no session/);
+  await assert.rejects(build(fixtureCopy({ calledApiModules: ['contracts/api/missing.ts', ...CALLED.calledApiModules] })), /no request was recorded.*; contracts\/api\/missing\.ts did not run/);
+  const brokenAndSending = await build(fixtureCopy({ calledApiModules: ['contracts/api/broken.ts', 'contracts/api/fetched.ts'] }, { ...fetched, ...broken }));
+  assert.deepEqual(brokenAndSending.unrunApiModules!.map((m) => m.file), ['contracts/api/broken.ts']);
+  const result = spawnSync(process.execPath, [CLI, 'extract', mixedConfig], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('recorded no request')), ['  calledApiModules contracts/api/index.ts recorded no request; without requestFunction only requests sent with fetch are recorded']);
+});
+
+test('requestFunction is refused without calledApiModules, as is a file in both API lists, a place that is not a number followed by keys, or a relative import that names no file', async () => {
   const refused = (keys: Record<string, unknown>) => assert.throws(() => loadConfig(fixtureCopy(keys)));
-  refused({ calledApiModules: CALLED.calledApiModules });
   refused({ requestFunction: CALLED.requestFunction });
   refused({ ...CALLED, calledApiModules: ['_ajax/AjaxFunc.ts'] });
   refused({ ...CALLED, requestFunction: { ...CALLED.requestFunction, url: 'url' } });

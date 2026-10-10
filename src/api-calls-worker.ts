@@ -123,6 +123,14 @@ const WITH_DATA = new Set(['post', 'put', 'patch']);
 const SCHEME = new RegExp(scheme, 'i');
 const standIns = new WeakSet<object>();
 const duruValues = new WeakSet<object>([fake, idsAsText, globalThis.__duruNothing]);
+const recordedFetch = (input: unknown, init?: { method?: unknown }) => {
+  const asked = input instanceof Request ? input : null;
+  const options = init && duruValues.has(init) ? undefined : init;
+  return keep(text(options?.method) ?? asked?.method ?? 'GET', asked ? asked.url : text(input));
+};
+standIns.add(recordedFetch);
+(globalThis as { fetch: unknown }).fetch = recordedFetch;
+(browserGlobals.window as { fetch?: unknown }).fetch = recordedFetch;
 // 요청 메서드와 create 가 아닌 속성은 아무 일도 하지 않는 값이라, interceptors 같은 설정 코드가 멈추지 않는다.
 function requestObject(base: unknown): unknown {
   const baseOf = (config: unknown) => {

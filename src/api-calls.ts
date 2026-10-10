@@ -146,9 +146,9 @@ function runWorker(workerData: WorkerData, onMessage: (m: ReportedMessage) => vo
 
 // functions 는 「export 한 이름.메서드」마다 { file, line, endpoints, error? }, keyOf 는 (파일, export 한 이름) 에서 그 이름을 돌려준다.
 export async function recordApiCalls(config: any, resolve: ImportResolver['resolve'], taken = new Set<string>()) {
-  const { import: from, name, method, url, body, object } = config.requestFunction;
-  const relative = from.startsWith('.');
-  const target = resolve(path.join(config.srcRoot, 'index.js'), from);
+  const { import: from, name, method, url, body, object } = config.requestFunction ?? {};
+  const relative = Boolean(from?.startsWith('.'));
+  const target = from ? resolve(path.join(config.srcRoot, 'index.js'), from) : null;
   if (relative && !target) throw new Error(`requestFunction.import ${from} names no file under srcRoot ${config.srcRoot}`);
   let recorded = false;
   const recorder = `const record = globalThis.${object ? '__duruRequestObject' : '__duruRecorder'};\nexport { record as ${name === 'default' ? 'default' : JSON.stringify(name)} };`;
@@ -156,7 +156,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
     label: 'calledApiModules',
     fillMissing: true,
     replacement: (spec, resolved) => {
-      if (!((!relative && spec === from) || (target && resolved === target))) return null;
+      if (!from || !((!relative && spec === from) || (target && resolved === target))) return null;
       recorded = true;
       return recorder;
     },
@@ -174,7 +174,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       }
     }
     copier.finish();
-    if (modules.length && !recorded) {
+    if (from && modules.length && !recorded) {
       throw new Error(`requestFunction.import ${from} is imported by none of the files that calledApiModules runs, so no request would be recorded`);
     }
 
@@ -190,13 +190,23 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       else if (m.type === 'classes') classes.set(`${m.file}\n${m.exportName}`, m.locations);
     };
     for (;;) {
-      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url, body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, scheme: SCHEME.source }, onMessage);
+      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, scheme: SCHEME.source }, onMessage);
       if (outcome.done) break;
       if (!outcome.unit) throw new Error(`calledApiModules: the run stopped outside any module or method: ${firstLine(outcome.error.message)}`);
       skip.add(outcome.unit);
       const [kind, file, exportName, member] = outcome.unit.split('\n');
       if (kind === 'load') failedModules.push({ file: rel(file), error: firstLine(copier.rename(outcome.error.message)) });
       else called.push({ file, exportName, member: member || null, location: outcome.location ?? null, requests: [], error: outcome.error });
+    }
+    const failed = new Set(failedModules.map((f) => f.file));
+    const sent = called.filter((c) => c.requests.length);
+    const sentOwners = new Set(sent.map((c) => `${c.file}\n${c.exportName}`));
+    const sendingFiles = new Set([...sent.map((c) => c.file), ...[...same].filter(([, owner]) => sentOwners.has(owner)).map(([alias]) => alias.split('\n')[0])]);
+    const ran = [...new Set(modules.map((m) => m.file))].filter((file) => !failed.has(rel(file)));
+    const silentModules = from ? [] : ran.filter((file) => !sendingFiles.has(file)).map(rel);
+    if (!from && !sendingFiles.size && (ran.length || failedModules.length)) {
+      const unrun = failedModules.map((f) => `; ${f.file} did not run: ${f.error}`).join('');
+      throw new Error(`calledApiModules has no requestFunction and no listed file sent a request with fetch, so no request was recorded; name the function the API code sends its requests through in requestFunction${unrun}`);
     }
 
     const owners = new Map<string, Set<string>>();
@@ -270,7 +280,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       outside.get(spec)!.importedBy.add(rel(from));
     }
     const outsideStandIns = [...outside.values()].map((s) => ({ ...s, importedBy: [...s.importedBy].sort() }));
-    return { functions, keyOf: (file: string, exportName: string) => keyOf.get(`${file}\n${exportName}`) ?? prefixOf(file, exportName), failedModules, bodyTypeNotices, outsideStandIns };
+    return { functions, keyOf: (file: string, exportName: string) => keyOf.get(`${file}\n${exportName}`) ?? prefixOf(file, exportName), failedModules, bodyTypeNotices, outsideStandIns, silentModules };
   } finally {
     copier.cleanup();
   }
