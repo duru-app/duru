@@ -109,6 +109,60 @@ test('an API object imported through a file that re-exports it is joined to its 
   assert.deepEqual(screen(map, '/notes#Notes').apiCalls[0].endpoints!.map((e) => e.url), ['{?}/internal/v2/note/list']);
 });
 
+test('the static methods of an exported class, its own and those it takes from the classes above it, are called as API functions and joined where a screen calls them, while private ones, classes kept in static fields and the methods of its instances are not, and they are called after the other exports so a static setter does not change their addresses', async () => {
+  const userApi = [
+    "import { executeRequest } from './request';",
+    '',
+    'class BaseApi {',
+    '  static get(url: string) {',
+    "    return executeRequest({ endpoint: { method: 'GET', path: '' }, url });",
+    '  }',
+    '}',
+    '',
+    'export class UserApi extends BaseApi {',
+    '  static fetchUser(id: string) {',
+    '    return BaseApi.get(`/users/${id}`);',
+    '  }',
+    '  private static secret() {',
+    "    return BaseApi.get('/secret');",
+    '  }',
+    '  load() {',
+    "    return BaseApi.get('/instance');",
+    '  }',
+    '}',
+    '',
+    'export default class ProfileApi extends UserApi {}',
+    '',
+    'export class Http {',
+    "  static base = '/api';",
+    '  static Failure = class extends Error {};',
+    '  static setBase(url: string) {',
+    '    Http.base = url;',
+    '  }',
+    '}',
+    '',
+    "export const http = { list: () => executeRequest({ endpoint: { method: 'GET', path: '' }, url: `${Http.base}/list` }) };",
+    '',
+  ].join('\n');
+  const map = await build(fixtureCopy(
+    { ...CALLED, calledApiModules: ['contracts/api/user.api.ts', ...CALLED.calledApiModules] },
+    {
+      'contracts/api/user.api.ts': userApi,
+      'contracts/Notes.tsx': "import { UserApi } from './api/user.api';\n\nexport default function Notes() {\n  return <main onLoad={() => UserApi.fetchUser('u1')} />;\n}\n",
+    },
+  ));
+  const sent = Object.entries(map.apiFunctions).filter(([, f]) => f.file === 'contracts/api/user.api.ts').map(([name, f]) => [name, f.line, f.endpoints.map((e) => `${e.method} ${e.url}`)]);
+  assert.deepEqual(sent, [
+    ['http.list', 31, ['GET /api/list']],
+    ['Http.setBase', 26, []],
+    ['UserApi.fetchUser', 10, ['GET /users/{?}']],
+    ['UserApi.get', 4, ['GET {?}']],
+    ['default.fetchUser', 10, ['GET /users/{?}']],
+    ['default.get', 4, ['GET {?}']],
+  ]);
+  assert.deepEqual(sitesOf(map, '/notes#Notes'), [['UserApi.fetchUser', 'contracts/Notes.tsx', 4]]);
+});
+
 test('a file that re-exports an imported API function makes no call of it, but a constant holding it that the file itself hands over does', async () => {
   const map = await build(fixtureCopy(CALLED, {
     'contracts/shared/index.ts': "import { fetchNotices } from '../api';\nexport { noteApi } from '../api';\nexport { fetchNotices };\nconst notices = fetchNotices;\nexport const load = () => [notices];\n",

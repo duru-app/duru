@@ -808,6 +808,26 @@ other `process.env` names stay unset as before.
 Measured: the two example maps and the into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time
 they were written.
 
+**The static methods of a class a `calledApiModules` file exports are called as API functions, those the class
+declares and those it takes from the classes above it, named `<export>.<method>` like the methods of an exported
+object.**
+Before, an exported class was skipped, so an API file of `class UserApi extends Api { static fetchUser() { … } }`
+gave no call. On appsmith every API file has this shape, and the class a screen imports is often an empty
+subclass (`class UserApi extends CE_UserApi {}` in `ee/api/UserApi.tsx`), whose static methods all come from above.
+Alternatives compared:
+- Only the static methods the class declares itself: the empty subclass then gives nothing. On appsmith, with the
+  listed files as they are, the calls are the same 115 either way; taking the ones from above adds 44 API functions
+  (`get`, `post` and the like of the shared base class under each subclass), whose addresses are the same `{?}`.
+Reason: methods of an exported object are already taken from its classes above, and a screen calls a static method
+through the class it imports, whichever class declares it. A `private` or `protected` static method is left out as
+an instance one is, and instance methods of a class are not called, since duru does not make an instance. Static
+methods are called after every other export of every listed file, because some set what other calls read
+(`static setBaseURL(url)`); called first with a fake value, they changed the address of an exported object that
+main read right. A class kept in a static field is not called.
+Measured on appsmith: API functions go from 0 to 169, calls from 0 to 115, and calls a screen reaches from 0 to 6.
+The two example maps and the into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time they were
+written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
