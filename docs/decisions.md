@@ -1119,6 +1119,103 @@ to the screen without that condition. Saga code is followed by names like a scre
 member of a class reaches every member: appsmith's logout calls one static method of its usage pulse class and
 gets the page fetch and the `fetch` of the pulse that other methods of the class send.
 
+**A request sent inside a method of the class a React context hook gives, of a class held in one of its fields,
+or of their parent classes, is a call of the screens that use that method, found from the TypeScript types of the
+source. A screen that gets the store only from the hook reaches those methods, though the store files do not join
+its sources.**
+Before, a class was reached whole by its name. On outline the 23 screens whose sources hold the store files, through
+the global `stores` instance the command menu's actions import, each carried all 58 requests written in the store
+files, and the 7 screens that know the stores only through `useStores()`, whose return type is imported with
+`import type`, carried none. Now a function named `use…` that calls `useContext` and is typed to return a class
+instance names a root class (on outline `RootStore`, and two classes of the sidebar and the selection with no
+request in them); that class, the classes typed on its fields (the 34 stores) and their
+parent classes (`Store`, `IndexedStore`) are split into one region per method, getter, setter and function-valued
+field, and a region is reached only where the screen's code reads that member. Which class a read means is asked of
+the TypeScript checker: `documents.fetch`, `const { documents } = useStores()`, `this.rootStore.documents.fetch()`,
+`this[key].clear()` over a union of stores. A member read on a parent class's type reaches the definition found
+going up and every child class's override; inside a method reached that way, `this` is the class it was read on.
+A member read by a computed name (`folders[action]()`) reaches every member of the class; writing to a computed
+name (`this[key] = value`) reads none. Constructors, field values and static members stay with the class, so
+making the store still runs them.
+Alternatives compared:
+- Attaching a store's requests to every screen that uses the store at all, or to every screen whose sources hold
+  the store file: the #193 measurement found these put 55–59 more requests on each screen behind the login and
+  gave `Logout`, which calls only `auth.logout()`, all nine requests of the auth store. Driver's decision in #193:
+  only screens that call the method.
+- Following the type annotations by hand instead of the checker: the receiver's type comes through destructuring,
+  generic parents (`Store<T>`), unions from `this[key]` and `instanceof` narrowing, which the checker already
+  answers and `src/body-types.ts` already uses. Measured cost on outline: 6.2 → 12.4–12.8 s per extract, of which
+  making the TypeScript program took 2.6 s in an earlier run; no program is made when no file that calls
+  `useContext`, nor a file it imports or one that file imports, declares a class, so the into-sign and example maps
+  take the same time as before (1.5.0 7.3 s both, 2.0.0 11.7 → 11.3 s).
+- A value the checker cannot type. The outline copy has no `node_modules`, so a package type such as `Optional<…>`
+  in `createAction` is `any` and the actions' `({ stores }) => stores.notifications.markAllAsRead()` lose their
+  types. Dropping such reads: 1,711 screen–call pairs, and the screens behind the login lose the requests their
+  command menu actions send (6 each, `markAllAsRead` among them), which main had. Matching the member name on
+  every followed class: 1,835, with `params.delete`, `DecorationSet.create` and `debounced.cancel` taken for
+  store methods, and `DesktopRedirect`, which only reads the auth store, getting a call. Chosen: the value counts as
+  a store when the name it is read under is a field of the root class (`stores.notifications`, `documents`):
+  1,815.
+- A value whose type holds no followed class under another name: an untyped prop (`({ store }) => store.create()`
+  in a `.jsx` file), an untyped parameter, or a value typed by an interface. Main reached these methods, because
+  a screen that imports the store reached the whole class; leaving them out, as 1,815 did, drops those requests.
+  Chosen: such a value counts as every followed class its type can hold (all of them when untyped; for a typed
+  value, the classes whose instance is assignable to that type, so `{ archive: boolean }` takes no store), and the
+  method is followed only in a store file the screen imports, so a screen that knows the store only through the
+  hook gets nothing from a bare name: 1,827. The 12 pairs added come from `move`, `duplicate` and `search` read on
+  values the checker cannot type, and main had all of them. Taking a computed name (`obj[key]`) on such a value as
+  every member of every followed class as well: 1,995, every one of the 23 screens back at main's count, because
+  `obj[key]` on untyped values is everywhere; such a read is not followed.
+- Loading the store files a screen reaches only through the hook, as an import would: `AuthStore.logout` calls
+  `deleteAllDatabases`, whose file imports the global instance, so loading runs `new RootStore()`, every store's
+  constructor, every model class those constructors are given, and every store method a model calls. `Logout`
+  went 0 → 44 calls, `DesktopRedirect` 0 → 44, `Login` 8 → 51. Not loading them: the screen follows only the
+  members it reads and the names they use; `Logout` 0 → 1 (`POST /auth.delete`), `DesktopRedirect` stays 0.
+  The app made those stores at start, not the screen.
+- Following a store method called from inside a class read whole (a model, a class component) into a store file
+  the screen does not import: `Login` reaches the `User` model by name, its parent `Model.save()` calls
+  `this.store.save()` typed as the parent `Store`, and that reaches every store's `create`; `Login` went 8 → 27.
+  Followed only in files the screen imports: `Login` 8 → 9, the one added being `auth.fetchConfig()`, which it
+  calls.
+- Taking a computed write for a read: `UiStore.set` writes `this[key] = data[key]`, which brought every `UiStore`
+  member and, through them, the `Document` model; `TemplateNew` got 6 calls against 1 (`templates.create`).
+Known limits: model classes and every class not reached from the hook are still read whole, so a store method a
+model method calls comes with the model, whether or not the screen calls that model method. Leaving out every
+member read written inside a class read whole, as a measure of this, takes 306 screen–call pairs off the 23 screens
+(12 to 18 each, `GroupMembers` 45 → 28); some of them the screens do send through a model (`document.move()`).
+Following the model classes by type belongs to the model-method issue: they read their own fields by computed names
+(`this[key]` in `Model`), which reaches every member. A value whose type holds no followed class is followed only
+in store files the screen imports, and a computed name read on it is not followed. In such a file, a name that only
+matches a store method is taken for it: a callback prop destructured from untyped props (`({ create }) => …`) or
+`this.save()` in a plain JavaScript function brings every followed store's `create` or `save`, and so does a value
+typed by a type parameter whose constraint a store fits (`<T extends { rename(): unknown }>`) even when only plain
+objects are passed to it. A union that holds a followed class as well as an interface (`FolderStore | Reader`) is
+read as that class alone. A method inherited from a parent is walked once for each followed class that inherits it.
+A method taken out of an instance in a way other than `a.b`, `a['b']` or destructuring, and a member a framework
+calls by itself are not followed. A store reached only through a global instance, with no context hook in the app,
+is read whole as before. The types are read only when a class is declared in a file that calls `useContext`, in a
+file it imports, in a file that one imports, or in a file those re-export with `export … from`; when none is, every
+store of the app is read whole. Setting reads and links written in a store file the screen reaches only through the
+hook are not on the screen. A plain assignment to a member (`store.load = fn`) counts as reading it.
+Measured on the #169 outline copy (`requestFunction` naming `client`), main 59fb9d7 against the branch:
+screen–call pairs 1,990 → 1,827 and calls 81 → 80 (`POST /collections.import`, which nothing in the app calls,
+leaves every screen). Each of the 23 screens loses 2 to 26 requests: `GroupMembers` 72 → 46, `Template` 79 → 63,
+`Shared` 83 → 72, the screens behind the login 87–92 → 83–90; the 7 others gain at most one each, the request of
+the store method they call (`Login` `auth.fetchConfig()`, `Logout` `auth.logout()`, `TemplateNew`
+`templates.create()`). The screens' `sourceFiles`, links and setting reads are unchanged. Of the 168 screen–call
+pairs that left, none has a call of that method on its store (`documents.search`, `{ search } = documents`) in the
+screen's source files. The two example maps and the into-sign 1.5.0 and 2.0.0 maps are identical to main's apart
+from the time they were written, and the appsmith map apart from the `?v=` value appsmith puts in one address with
+`+new Date()`.
+Measured again after the redux-saga change reached main (c428464): the two example maps, the into-sign 1.5.0 and
+2.0.0 maps and the appsmith map are identical to main's apart from those same values, and outline keeps 1,827
+screen–call pairs. A request both the screen and a saga waiting for the screen's action reach is the screen's own
+call and is not listed again under the saga. A saga handler is still walked without the store types, as on main, so
+a handler that calls back into the store instance reads every store whole and the screens that dispatch its action
+get those stores' requests. An action dispatched in a store file the screen gets only through the hook is not read,
+so that whole read does not also reach every screen that calls the dispatching method; the saga's requests are then
+missing from those screens, as they are on main.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
