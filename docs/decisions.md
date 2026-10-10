@@ -131,7 +131,8 @@ Alternatives compared:
   dependency for what Node already ships, and its compile options have to be kept in step with the client's.
 Reason: transform mode comes with the same Node 22.13 that duru already needs and runs what stripping refused. It
 prints the code anew, so lines move, and the source map puts a failure's line back on the source; a failure on a
-line that has no mapping of its own names the file without a line. JSX still stops the extraction in both modes,
+line that has no mapping of its own names the file without a line. JSX still stops the extraction in both modes
+(a file holding it that a `calledApiModules` file only reaches by import is now stood in, as written below),
 and a CommonJS `import x = require(…)` or `export =` is stopped before running with its line, since transform
 mode turns it into `require` and `module.exports`, which the module duru runs cannot use; an `import type x =
 require(…)` is let through, because transform mode drops it. Measured: the two examples, the into-sign 1.5.0 map
@@ -728,12 +729,9 @@ recovered, so it goes on. `decoratorAutoAccessors` is on with it, for `@observab
 takes with standard decorators; a field or method named `accessor` still reads as before. The plugins only add
 grammar; what duru reads from a file without decorators does not change.
 Reading is not running: Node cannot run a decorator. A decorated file that a `constants` module imports still stops
-the map, and one that a `calledApiModules` file imports still leaves that file unrun. The error names the file, line
-and column of the first decorator, and every listed file that reaches the decorated file, directly or through
-another module, gets the same error; before, only the first got the parse error and the others `Cannot find module`.
-The one exception is an import cycle through the failing module: a module of the cycle that finished first still
-points at the copy that was never written, so a later file reaching the decorated file through it gets
-`Cannot find module`.
+the map, with the file, line and column of the first decorator. A decorated file that a `calledApiModules` file
+reaches by import is run as a stand-in instead (see below); a listed file with a decorator of its own gets that
+error.
 Measured with @babel/parser 7.29.9: the two files that stopped the map of outline (`DocumentContext.tsx`) and
 appsmith (`WidgetProvider/factory/index.tsx`) parse with either plugin; over the 852 app files and 368 shared files
 of outline, the 4579 client files of appsmith and the 4307 webapp files of mattermost, both plugins give no
@@ -782,6 +780,33 @@ expected. A loader that wraps the import (`() => retry(() => import('./X'))`) is
 Measured: on outline the routes without a component file go from 16 to 2; the two left are a component declared in
 the route file and a route built from a list of settings entries (`config.component`). The two example maps and the
 into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time they were written.
+
+**A file that a `calledApiModules` file reaches by import and that holds JSX or a decorator is run as a stand-in:
+each name it exports, and each name imported from it, is a value that does nothing. A `require()` of a package reads
+as such a value too, and the worker gives the app `process.env.NODE_ENV` as `"production"` and `self` as the global
+object.**
+Node runs neither JSX nor a decorator, and a file of the app reaching one of them, often an icon or a widget far
+down the imports, left every API file above it unrun. Measured on appsmith, whose ten API files all stopped: the
+first stop was a `.tsx` icon file, then a decorated widget factory, then `require("path-to-regexp")`, then
+`process.env.NODE_ENV.slice`, then `self.setTimeout`; with the five handled, all ten run.
+Alternatives compared:
+- Turning JSX into calls, with TypeScript's `transpileModule` and the stand-in as the element factory, and running
+  the file: the file's own values stay real, but it reaches further into the app, where it met an `.svg` file read
+  as code; with that also stood in, the calls recorded on appsmith (counted with static methods called) were the
+  same 115 as with the stand-in, apart from a time stamp in one address. It costs a second way of turning files into
+  JavaScript, with its own source maps.
+- Standing in for the whole file that calls a package with `require()`: the file's other values are lost for one
+  call, and in the measurement, made before a stand-in carried the names of its file, a file re-exporting from it
+  missed names (`does not provide an export named`), which stopped every API file again.
+Reason: a file of components or decorated classes rarely holds a piece of an address, and a stand-in is how duru
+already treats a package. A listed file holding JSX or a decorator itself is still reported, since its own functions
+are the ones to call. The stand-in leaves out the names Babel marks as types, since an index exporting `*` from it
+and from a file with a value of the same name would otherwise make that name ambiguous. A `require()` naming a file
+of the app fails with its line when it runs, because its values may matter and a stand-in would hide them; one in a
+function the module never calls does not stop it, as on main. `NODE_ENV` is the one variable every bundler fills in;
+other `process.env` names stay unset as before.
+Measured: the two example maps and the into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time
+they were written.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
