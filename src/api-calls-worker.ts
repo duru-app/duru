@@ -3,8 +3,6 @@ import inspector from 'node:inspector';
 import { parentPort, workerData } from 'node:worker_threads';
 
 declare global {
-  var window: { location: { protocol: string; host: string; origin: string } };
-  var document: { getElementById: () => null };
   var __duruNothing: () => void;
   var __duruRecorder: unknown;
   var __duruRequestObject: unknown;
@@ -58,8 +56,9 @@ const send = (message: object) => parentPort!.postMessage(message);
 // 호출해 본 메서드가 나중에 throw 하거나 reject 돼도 worker 가 멈추지 않게 한다.
 process.on('uncaughtException', () => {});
 process.on('unhandledRejection', () => {});
-globalThis.window ??= { location: { protocol: 'http:', host: 'localhost', origin: 'http://localhost' } };
-globalThis.document ??= { getElementById: () => null };
+const browserGlobals = globalThis as { window?: unknown; document?: unknown };
+browserGlobals.window ??= { location: { protocol: 'http:', host: 'localhost', origin: 'http://localhost' } };
+browserGlobals.document ??= { getElementById: () => null };
 
 // 스텁에 없는 외부 패키지 이름을 채우는 값. 문자열로 바꾸면 mark 가 되어 URL 에서 {?} 로 남는다.
 globalThis.__duruNothing = new Proxy(function () {}, {

@@ -8,7 +8,7 @@
   "scripts": {
     "extract": "node src/cli.ts extract",
     "rebuild": "node src/cli.ts rebuild",
-    "test": "tsc --noEmit && node --test \"test/*.test.{mjs,ts}\""
+    "test": "tsc --noEmit && tsc --noEmit -p tsconfig.browser-tests.json && node --test \"test/*.test.ts\""
   },
   "engines": {
     "node": "^22.18.0 || >=23.6.0"

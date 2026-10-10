@@ -626,18 +626,34 @@ Alternatives compared:
   Node API missing from the lowest version is reported.
 Reason: measured on a module importing a `.ts` file that imports an `.mjs` one, run directly, from a test file of
 each kind and inside a worker thread. Node 22.13.0 and 22.17.1 stop with `ERR_UNKNOWN_FILE_EXTENSION`; 22.18.0 is
-the first 22 release that runs them without a flag, and prints no warning. On Node 23, 23.5.0 stops the same way
-and 23.6.0 runs them with an experimental warning; 24.14.0 runs them without one. The lowest version is
-therefore `^22.18.0 || >=23.6.0`. A `.ts` file imports others with their `.ts` ending
-(`allowImportingTsExtensions`), and syntax that cannot just be dropped, such as `enum`, is refused by
-`erasableSyntaxOnly`. `allowJs` lets a `.ts` file import an `.mjs` one; `checkJs` stays off, so `.mjs` files are
-only parsed, and a function from one is typed loosely: calling it with an argument missing is not reported until
-it is moved. Every file under `src` is `.ts` now; the test files are still `.mjs`, so `allowJs` keeps them in the
-type check's program, where they are parsed but not checked. Not covered: Node does not drop types from files under `node_modules`; duru linked there from its
-clone runs, since Node follows the link, but a copy installed from a packed `.tgz` stops with
-`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`. The type check adds about 3 s to `npm test`.
+the first 22 release that runs them without a flag, and prints no warning. On Node 23, 23.5.0 stops the same way and
+23.6.0 runs them with an experimental warning; 24.14.0 runs them without one. The lowest version is therefore
+`^22.18.0 || >=23.6.0`. A `.ts` file imports others with their `.ts` ending (`allowImportingTsExtensions`), and
+syntax that cannot just be dropped, such as `enum`, is refused by `erasableSyntaxOnly`. While the two kinds lived
+side by side, `allowJs` let a `.ts` file import an `.mjs` one and `checkJs` stayed off; no `.mjs` file is left
+outside `test/fixtures`, so both are gone (the page script inside `src/review-page.html` stays JavaScript). The
+example apps under `test/fixtures` stay JavaScript and TypeScript as they are, since they are what duru reads. Not
+covered: Node does not drop types from files under `node_modules`; duru linked there from its clone runs, since Node
+follows the link, but a copy installed from a packed `.tgz` stops with
+`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`. The type check took about 3 s when it was added; with `src` and the
+tests moved it takes about 19 s, and the browser tests add a second program of about the same time, below.
 Measured on main 38f87f3 against the branch: the into-sign 1.5.0 and 2.0.0 maps and the two example maps are
 identical apart from the time they were written.
+
+**The browser tests are type-checked in a program of their own, `tsconfig.browser-tests.json`, which adds the DOM
+types; `src` and the other tests are checked without them.**
+The review page tests run code inside the page (`p.evaluate(() => document…)`), which needs `document`, `window`
+and the element types. Alternatives compared:
+- Adding `dom` to the one `tsconfig.json`: one check, but every file under `src` is then checked as if browser
+  globals were there, so a Node module reading `document` or `location` by mistake is no longer reported.
+- Writing narrow types for the page by hand in the test file: no second check, but nothing compares those types
+  with the real DOM, so a wrong one stays unnoticed.
+Reason: the code duru runs is checked against what Node has, and the page code against the real DOM. The second
+program also reads every `src` file the test imports, so `src` has to pass under the DOM types too: the stand-ins
+for `window` and `document` that `src/constants.ts` and `src/api-calls-worker.ts` put on the global object are typed
+in those files instead of being declared for the whole program, where they clashed with the DOM's. `npm test` runs
+the type check twice; measured one after the other on this change, each takes about 19 s. Measured: the into-sign
+1.5.0 and 2.0.0 maps and the two example maps are identical to main's apart from the time they were written.
 
 **The on/off values a request body carries are read from the TypeScript type of the body each API method sends,
 with the TypeScript checker, and become options of the method's calls named by their path in the body.**

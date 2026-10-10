@@ -293,8 +293,9 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
 // 상수 모듈은 브라우저 전역에 기대므로 최소한의 window·document 를 깔고 실제로 실행해 값을 얻는다.
 export async function loadConstants(config: ConstantsConfig, resolve: ImportResolver['resolve'] = importResolver(config).resolve) {
   const copier = moduleCopier(config, resolve);
-  globalThis.window ??= { location: { protocol: 'http:', host: 'localhost', origin: 'http://localhost' } };
-  globalThis.document ??= { getElementById: () => null };
+  const browserGlobals = globalThis as { window?: unknown; document?: unknown };
+  browserGlobals.window ??= { location: { protocol: 'http:', host: 'localhost', origin: 'http://localhost' } };
+  browserGlobals.document ??= { getElementById: () => null };
 
   const loaded: Record<string, unknown> = {};
   try {
