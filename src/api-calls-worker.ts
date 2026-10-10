@@ -57,7 +57,7 @@ const send = (message: object) => parentPort!.postMessage(message);
 process.on('uncaughtException', () => {});
 process.on('unhandledRejection', () => {});
 const browserGlobals = globalThis as { window?: unknown; document?: unknown; self?: unknown };
-browserGlobals.window ??= { location: { protocol: 'http:', host: 'localhost', origin: 'http://localhost' } };
+browserGlobals.window ??= {};
 browserGlobals.document ??= { getElementById: () => null };
 // 번들러가 채워 넣는 NODE_ENV 와 브라우저에만 있는 self 를 앱 코드가 모듈을 불러올 때 읽는다.
 process.env.NODE_ENV ??= 'production';
@@ -131,6 +131,55 @@ const recordedFetch = (input: unknown, init?: { method?: unknown }) => {
 standIns.add(recordedFetch);
 (globalThis as { fetch: unknown }).fetch = recordedFetch;
 (browserGlobals.window as { fetch?: unknown }).fetch = recordedFetch;
+
+const NOT_SENT = /^(?:(?!https?:)[a-z][a-z\d+.-]*:|[#?])/i;
+const TOKEN_KEY = /token$/i;
+function sentAddress(url: string) {
+  const [sent] = url.split('#');
+  const query = sent.indexOf('?');
+  if (query < 0) return sent;
+  const kept = sent.slice(query + 1).split('&').filter((pair) => !TOKEN_KEY.test(pair.split('=')[0]));
+  return sent.slice(0, query) + (kept.length ? `?${kept.join('&')}` : '');
+}
+const FAKES = [mark, String(markNumber)];
+function placeUnknown(url: string) {
+  const path = url.replace(/^[a-z][a-z\d+.-]*:\/\/[^/]*/i, '').split(/[?#]/)[0];
+  if (FAKES.some((fake) => path.split(fake).slice(0, -1).some((before) => !before.endsWith('/')))) return true;
+  return !/[^/]/.test(FAKES.reduce((rest, fake) => rest.replaceAll(fake, ''), path));
+}
+function navigate(address: unknown) {
+  const url = text(address);
+  if (url && !NOT_SENT.test(url) && !placeUnknown(url)) keep('GET', sentAddress(url));
+}
+// 현재 페이지 URL 은 알 수 없어 가짜 값으로 둔다.
+const location = Object.defineProperty(
+  { protocol: 'http:', host: 'localhost', origin: 'http://localhost', pathname: mark, search: mark, hash: mark, toString: () => mark, assign: navigate, replace: navigate },
+  'href',
+  { get: () => mark, set: navigate, enumerable: true },
+);
+const page = browserGlobals.window as { open?: unknown };
+const locationProperty = { get: () => location, set: navigate, enumerable: true, configurable: true };
+Object.defineProperty(page, 'location', locationProperty);
+Object.defineProperty(globalThis, 'location', locationProperty);
+page.open = (address: unknown) => {
+  navigate(address);
+  return null;
+};
+function element(tag: unknown) {
+  const own: Record<string | symbol, unknown> = {
+    href: '',
+    style: {},
+    setAttribute: (name: unknown, value: unknown) => {
+      own[String(name)] = text(value) ?? '';
+    },
+    getAttribute: (name: unknown) => own[String(name)] ?? null,
+    click: () => {
+      if (String(tag).toLowerCase() === 'a') navigate(own.href);
+    },
+  };
+  return new Proxy(own, { get: (t, k) => (k in t ? t[k] : typeof k === 'symbol' || k === 'then' ? undefined : globalThis.__duruNothing) });
+}
+Object.assign(browserGlobals.document as object, { createElement: element, body: element('body') });
 // 요청 메서드와 create 가 아닌 속성은 아무 일도 하지 않는 값이라, interceptors 같은 설정 코드가 멈추지 않는다.
 function requestObject(base: unknown): unknown {
   const baseOf = (config: unknown) => {

@@ -61,17 +61,18 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - API code whose methods find their address in a table, or get a prefix when the request is sent, is read through
   `calledApiModules` and `requestFunction`: duru calls each method with fake values and records the request it hands
   to the app's request function, or to `get`, `post`, `put`, `patch` and `delete` of the app's request object when
-  `requestFunction` has `"object": true`, and every request sent with the global `fetch` (for API code that sends
-  only through `fetch`, `requestFunction` is left out). An `api method <name> ← <file>:<line>: <error>` line in the
-  summary names a method that gave no address, so its calls are missing from the map and from every screen that
-  calls it; a `calledApiModules <file> did not run` line means none of that file's methods are on the map, and a
+  `requestFunction` has `"object": true`, every request sent with the global `fetch` (for API code that sends
+  only through `fetch`, `requestFunction` is left out), and every link a method clicks, `window.open` or address
+  given to `location`, as a `GET`. An `api method <name> ← <file>:<line>: <error>` line in the summary names a
+  method that gave no address, so its calls are missing from the map and from every screen that calls it; a
+  `calledApiModules <file> did not run` line means none of that file's methods are on the map, and a
   `calledApiModules ran <import> as a stand-in, though it is <path> outside srcRoot` line names a package of the
   repository whose API code was not run; ask the user to add its folder to `sourcePackages`. A `calledApiModules
-  <file> recorded no request` line means that file sent nothing with `fetch` while `requestFunction` is left out:
-  check whether it sends through something `requestFunction` should name. Tell the user which methods are missing;
-  do not write tests or fixes for them as if their endpoints were gone. Most come from the fake values, for example
-  a method that checks a value it is given or picks its address by it. A `{?}` in a call's address is a piece that
-  came from a fake value, a path variable.
+  <file> recorded no request` line means that file sent nothing with `fetch` or by moving the browser while
+  `requestFunction` is left out: check whether it sends through something `requestFunction` should name. Tell the
+  user which methods are missing; do not write tests or fixes for them as if their endpoints were gone. Most come
+  from the fake values, for example a method that checks a value it is given or picks its address by it. A `{?}` in
+  a call's address is a piece that came from a fake value, a path variable.
 - On/off options read from request body types: with `tsconfig`, `bodyArgKeys` (such as `["body"]`) and
   `requestFunction.body` (such as `"0.body"`), a call gets an option for each true/false field of the body its API
   method sends, named by the field's path in the body. A `body type <name>: <field> goes with <other field>` line names a field that

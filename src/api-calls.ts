@@ -206,7 +206,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
     const silentModules = from ? [] : ran.filter((file) => !sendingFiles.has(file)).map(rel);
     if (!from && !sendingFiles.size && (ran.length || failedModules.length)) {
       const unrun = failedModules.map((f) => `; ${f.file} did not run: ${f.error}`).join('');
-      throw new Error(`calledApiModules has no requestFunction and no listed file sent a request with fetch, so no request was recorded; name the function the API code sends its requests through in requestFunction${unrun}`);
+      throw new Error(`calledApiModules has no requestFunction and no listed file sent a request with fetch or by moving the browser, so no request was recorded; name the function the API code sends its requests through in requestFunction${unrun}`);
     }
 
     const owners = new Map<string, Set<string>>();
