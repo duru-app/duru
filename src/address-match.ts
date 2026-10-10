@@ -2,15 +2,16 @@ import { UNKNOWN } from './client.ts';
 import { routePattern } from './path-values.ts';
 import { toSegments } from './server.ts';
 
-interface MapScreen {
-  id: string;
-  path: string;
-}
-
 interface MapEndpoint {
   callId?: string | null;
   method: string | null;
   url: string | null;
+}
+
+interface MapScreen {
+  id: string;
+  path: string;
+  apiCalls?: { direct?: boolean; endpoints?: MapEndpoint[] | null }[];
 }
 
 interface AddressMap {
@@ -45,10 +46,11 @@ export function screenFinder(map: AddressMap) {
 }
 
 // 맞는 호출이 없으면 null 이다. 여러 호출에 맞으면 변수 자리가 가장 적은 호출을 고른다. document/list 요청은 document/{0} 보다 document/list 에 가깝다.
-export function callFinder(map: Pick<AddressMap, 'apiFunctions'>) {
+export function callFinder(map: Partial<AddressMap>) {
   const variables = (e: CallRoute) => e.segments.filter((s) => s === '*').length;
-  const endpoints = Object.values(map.apiFunctions ?? {})
-    .flatMap((fn) => fn.endpoints)
+  const direct = (map.screens ?? []).flatMap((s) => s.apiCalls ?? []).filter((c) => c.direct);
+  const sent = [...Object.values(map.apiFunctions ?? {}), ...direct].flatMap((fn) => fn.endpoints ?? []);
+  const endpoints = [...new Map(sent.map((e) => [`${e.callId}\n${e.method}\n${e.url}`, e])).values()]
     .filter((e) => e.callId)
     .map((e) => ({ id: e.callId, method: e.method, segments: toSegments(e.url!) }))
     .sort((a, b) => variables(a) - variables(b));

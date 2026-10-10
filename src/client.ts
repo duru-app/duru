@@ -4,14 +4,16 @@ import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
 import type { CallExpression, Expression, Identifier, ImportDeclaration, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import type { Constants, GuardInit, GuardSetting } from './access.ts';
-import { recordApiCalls } from './api-calls.ts';
+import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
 import { ROUTES_FILE } from './config.ts';
 import { loadConstants } from './constants.ts';
 import { inTypePosition, nameFollower } from './follow-names.ts';
 import type { Origin } from './follow-names.ts';
 import { parseSource } from './parse.ts';
+import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
+import { screenRequestReader } from './screen-requests.ts';
 import { settingNeeds } from './setting-needs.ts';
 import { addCallDefaults, findSettingsCalls, settingsResultFinder } from './settings-functions.ts';
 
@@ -55,7 +57,7 @@ interface Site {
 }
 
 type BodyOption = { key: string; line: number };
-type ApiCallSite = Site & { fn: string; options: BodyOption[] };
+type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: true }; navigation?: true };
 type SettingRead = Site & { key: string };
 type RouteRef = Site & { route: string; tail?: string };
 
@@ -114,6 +116,8 @@ function sliceText(src: string, node: Span) {
   const text = src.slice(node.start!, node.end!).replace(/\s+/g, ' ').trim();
   return text.length > GUARD_TEXT_LIMIT ? text.slice(0, GUARD_TEXT_LIMIT) + '…' : text;
 }
+
+export const keyName = (node: { key: object }) => String((node.key as NameNode).name ?? (node.key as NameNode).value);
 
 export function lookupConstant(constants: Constants, chain: string[] | null | undefined) {
   if (!chain || !Object.hasOwn(constants, chain[0])) return undefined;
@@ -487,7 +491,6 @@ export async function extractClient(config: any) {
     return init ? objectLiteral(init, seen) : null;
   }
 
-  const keyName = (node: ObjectProperty) => String((node.key as NameNode).name ?? (node.key as NameNode).value);
   const propertyKey = (prop: NodePath<any>) => (prop.isObjectProperty() && !prop.node.computed ? keyName(prop.node) : undefined);
   const isUseState = (callee: CallExpression['callee']) =>
     (callee.type === 'Identifier' && callee.name === 'useState') || (callee.type === 'MemberExpression' && !callee.computed && (callee.property as Identifier).name === 'useState');
@@ -689,6 +692,24 @@ export async function extractClient(config: any) {
     return origins.get(key);
   };
 
+  const requestFile = requestFunctionFile(config, imports.resolve);
+  const requestImports = new Map<string, boolean>();
+  const screenRequests = screenRequestReader({
+    requestFunction: config.requestFunction,
+    evaluate,
+    objectLiteral,
+    server: config.app?.server ?? null,
+    isRequestFunction(file, spec, name) {
+      const { import: from, name: exported } = config.requestFunction;
+      if (!from.startsWith('.') && spec === from && name === exported) return true;
+      if (!requestFile) return false;
+      const resolved = imports.resolve(file, spec);
+      const key = `${resolved}\0${name}`;
+      if (!requestImports.has(key)) requestImports.set(key, follower.origin(resolved, name, (f) => f === requestFile)?.name === exported);
+      return requestImports.get(key)!;
+    },
+  });
+
   function fileFacts(file: string): Facts {
     if (factCache.has(file)) return factCache.get(file)!;
     const { src, ast } = parse(file);
@@ -751,6 +772,12 @@ export async function extractClient(config: any) {
       },
     });
 
+    function recordRequest(found: ReturnType<typeof screenRequests.call>, at: NodePath) {
+      if (!found) return;
+      const { fn, navigation, ...request } = found;
+      record('apiCalls', { fn, options: [], request, ...(navigation && { navigation }) }, at);
+    }
+
     // import 한 API 함수 `f(…)`, API 객체의 메서드 `o.m(…)`, 네임스페이스로 import 한 것 `ns.f(…)` · `ns.o.m(…)`
     function calledFunction(callee: NodePath) {
       const chain = memberChain(callee.node);
@@ -776,7 +803,14 @@ export async function extractClient(config: any) {
         } else {
           const fn = calledFunction(p.get('callee'));
           if (fn) record('apiCalls', { fn, options: bodyOptions(p) }, p);
+          else recordRequest(screenRequests.call(p, file), p);
         }
+      },
+      AssignmentExpression(p) {
+        recordRequest(screenRequests.assignment(p), p);
+      },
+      JSXAttribute(p) {
+        recordRequest(screenRequests.attribute(p), p);
       },
       // 부르지 않고 값으로 넘긴 API 함수나 메서드 `queryFn: fetchNotices` · `queryFn: api.load`
       Identifier(p) {
@@ -994,18 +1028,25 @@ export async function extractClient(config: any) {
   if (!config.routeFiles.length) throw new Error(`the config has no routesFile, which takes ${ROUTES_FILE}`);
   const extracted = (config.routeFiles as string[]).flatMap(extractScreens);
   const screenFiles = new Set(extracted.map((s) => s.componentFile).filter(Boolean));
+  // POST 가 아닌 페이지 이동의 주소가 앱의 라우트와 맞으면 서버가 아니라 앱의 다른 화면이 열린다. 고정 문자열 부분이 없는 라우트는 어떤 주소에나 맞으므로 견주지 않는다.
+  const screenRoutes = extracted.filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
+  const opensScreen = (url: string) => screenRoutes.some((route) => route.test(url.replaceAll(UNKNOWN, '\0').split(/[?#]/)[0]));
   const screens = extracted.map(({ wrapperFiles, ...s }) => {
     const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
     const isOtherScreen = (f: string) => screenFiles.has(f) && !entryFiles.includes(f);
     const files = [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))];
     const inSources = new Set<string | null>(files);
-    const reached = follower.reach(entryFiles.map((file) => ({ file, name: null })), (f) => inSources.has(f));
+    const starts = entryFiles.map((file) => ({ file, name: null }));
+    const reached = follower.reach(starts, (f) => inSources.has(f));
+    // 요청 함수의 파일을 거쳐야만 이어지는 요청은 그 함수가 받은 주소로 보내는 것이라, 화면 코드에서 나가는 요청이 아니다.
+    const outsideRequestFunction = inSources.has(requestFile) ? follower.reach(starts, (f) => inSources.has(f) && f !== requestFile) : reached;
+    const sends = (c: ApiCallSite) => !c.request || (outsideRequestFunction.has(c) && !(c.navigation && c.request.method !== 'POST' && opensScreen(c.request.url!)));
     const apiCalls: (ApiCallSite & { file: string | null })[] = [];
     const settingReads: (SettingRead & { file: string | null })[] = [];
     const links: (Omit<RouteRef, 'tail'> & { to: unknown; tail?: string; file: string | null })[] = [];
     for (const f of files) {
       const facts = fileFacts(f);
-      for (const c of facts.apiCalls) if (reached.has(c)) apiCalls.push({ ...c, file: rel(f) });
+      for (const c of facts.apiCalls) if (reached.has(c) && sends(c)) apiCalls.push({ ...c, file: rel(f) });
       for (const r of facts.settingReads) settingReads.push({ ...r, file: rel(f) });
       for (const { tail, ...r } of facts.routeRefs) {
         const value = routeValues[r.route];

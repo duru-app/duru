@@ -140,6 +140,16 @@ client with example results and a config to start from.
   ```
 
   to get `GET /api/v2/invoices` and `DELETE /api/v2/invoices/{?}`.
+
+  A request a screen sends from its own source, with no API file in between, is read from the source without
+  running it: a call of the global `fetch`, of axios, or of the function or object `requestFunction` names, in a
+  file the screen reaches. `requestFunction` alone is enough for this, without `calledApiModules`. Such a request
+  is a call of the screen, marked `"direct": true` among its `apiCalls`, with how it is sent (`fetch`,
+  `axios.post`, `<form action>`) where an API function's name would be, and it joins `calls` by its method and
+  address like the calls of API functions. A piece of the address that the source takes from a value is written
+  `{?}`. A form that posts is read the same way. Any other move of the browser written in a screen source is a
+  call only when the config shows that its path goes to the server: the server list holds the path, or the path
+  starts with one of `app.apiPaths`. An address on another host is read only when that host is `app.server`.
 - `sourcePackages` — packages of the same repository whose source duru reads like the app's own (optional),
   each package name with its source folder as a path from the config file. An import of a package that is not
   listed here runs as a value that does nothing, as an outside package does. For a client whose API class lives in
@@ -319,6 +329,15 @@ listing the places whose value the source does not show in full.
   the browser. Its API code may send through a function or object that `requestFunction` should name, or its
   methods may have stopped on the fake values (`silentApiModules`). When no listed file sends one, the run stops
   with an error that also gives the cause for each listed file that did not run.
+- `requests and navigations written in screen sources N | address not read N` — the requests and the moves of
+  the browser read from the sources of the screens, and how many of them gave no address. Printed when there is
+  one.
+- `request <how> ← <file>:<line>: address not read` — a request in a screen source whose address is not written
+  where it is sent, such as an address the function is given or one a function of the app builds; `, only <text>`
+  follows when a part of it was read. The request stays on the screen without an address and is in no call
+  (`unreadRequests`). When the line points into a function of the app that its other requests go through, name
+  that function in `requestFunction`. A request to an address on another host is printed the same way, with the
+  address in full after `only`: when that host is the app's server, give it in `app.server`.
 - `calledApiModules ran <import> as a stand-in, though it is <path> outside srcRoot, imported by <files>` — an
   import the listed files reach that duru ran as a value doing nothing, although it is a file or folder of the
   repository outside `srcRoot`, reached through a tsconfig alias or a workspace link under `node_modules`. What it

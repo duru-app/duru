@@ -73,6 +73,16 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   user which methods are missing; do not write tests or fixes for them as if their endpoints were gone. Most come
   from the fake values, for example a method that checks a value it is given or picks its address by it. A `{?}` in
   a call's address is a piece that came from a fake value, a path variable.
+- A request a screen sends from its own source, by `fetch`, axios or the function or object `requestFunction`
+  names, is among that screen's `apiCalls` with `"direct": true` and how it is sent (`fetch`, `axios.post`,
+  `<form action>`) where an API function's name would be. A form that posts is there too, and another move of the
+  browser (`href`, `window.open`, an address given to `location`) only when the server list holds its path or
+  `app.apiPaths` covers it. A `request <how> ← <file>:<line>: address not read` line in the summary names a request
+  whose address the source does not give where it is sent; it is on the screen without an address, in no call, and
+  listed under `unreadRequests`. Tell the user which requests those are. When the line points into a function of
+  the app that other requests go through, ask the user to name that function in `requestFunction`. A line with a
+  whole address on another host after `only` is a request duru does not take for one of the app's server; when
+  that host is the app's server, ask the user to give it in `app.server`.
 - On/off options read from request body types: with `tsconfig`, `bodyArgKeys` (such as `["body"]`) and
   `requestFunction.body` (such as `"0.body"`), a call gets an option for each true/false field of the body its API
   method sends, named by the field's path in the body. A `body type <name>: <field> goes with <other field>` line names a field that

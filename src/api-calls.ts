@@ -9,6 +9,7 @@ import { moduleCopier } from './constants.ts';
 import { parseSource } from './parse.ts';
 import { outsideSource } from './resolve.ts';
 import type { ImportResolver } from './resolve.ts';
+import { SCHEME } from './sent-address.ts';
 
 type NameNode = { name?: string; value?: string };
 type Failure = { message: string; stack: string };
@@ -60,7 +61,6 @@ const STUCK_GRACE_MS = 2000;
 const FAKE_MARK = '__duru_fake__';
 // 1보다 작은 수라, 이 값만큼 도는 반복은 많아야 한 번 돈다.
 const FAKE_NUMBER = 0.7310595213;
-const SCHEME = /^[a-z][a-z\d+.-]*:\/\//i;
 
 const firstLine = (text: string) => text.split('\n')[0];
 const unmarked = (text: string) => text.replaceAll(FAKE_MARK, UNKNOWN).replaceAll(String(FAKE_NUMBER), UNKNOWN);
@@ -144,12 +144,19 @@ function runWorker(workerData: WorkerData, onMessage: (m: ReportedMessage) => vo
   });
 }
 
+// requestFunction.import 가 패키지면 null 이다.
+export function requestFunctionFile(config: any, resolve: ImportResolver['resolve']) {
+  const from: string | undefined = config.requestFunction?.import;
+  const target = from ? resolve(path.join(config.srcRoot, 'index.js'), from) : null;
+  if (from?.startsWith('.') && !target) throw new Error(`requestFunction.import ${from} names no file under srcRoot ${config.srcRoot}`);
+  return target;
+}
+
 // functions 는 「export 한 이름.메서드」마다 { file, line, endpoints, error? }, keyOf 는 (파일, export 한 이름) 에서 그 이름을 돌려준다.
 export async function recordApiCalls(config: any, resolve: ImportResolver['resolve'], taken = new Set<string>()) {
   const { import: from, name, method, url, body, object } = config.requestFunction ?? {};
   const relative = Boolean(from?.startsWith('.'));
-  const target = from ? resolve(path.join(config.srcRoot, 'index.js'), from) : null;
-  if (relative && !target) throw new Error(`requestFunction.import ${from} names no file under srcRoot ${config.srcRoot}`);
+  const target = requestFunctionFile(config, resolve);
   let recorded = false;
   const recorder = `const record = globalThis.${object ? '__duruRequestObject' : '__duruRecorder'};\nexport { record as ${name === 'default' ? 'default' : JSON.stringify(name)} };`;
   const copier = moduleCopier(config, resolve, {
@@ -190,7 +197,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       else if (m.type === 'classes') classes.set(`${m.file}\n${m.exportName}`, m.locations);
     };
     for (;;) {
-      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER, scheme: SCHEME.source }, onMessage);
+      const outcome = await runWorker({ modules, skip: [...skip], request: { method: method ?? null, url: url ?? '0', body: body ?? null }, timeoutMs: CALL_TIMEOUT_MS, mark: FAKE_MARK, markNumber: FAKE_NUMBER }, onMessage);
       if (outcome.done) break;
       if (!outcome.unit) throw new Error(`calledApiModules: the run stopped outside any module or method: ${firstLine(outcome.error.message)}`);
       skip.add(outcome.unit);
