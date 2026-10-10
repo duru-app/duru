@@ -55,18 +55,6 @@ test('each screen box carries the roles and settings its screen needs, and an op
   assert.deepEqual([...new Set(report.settings!.flatMap((x) => x.needs.map((n) => n.path.join('.'))))].sort(), ['SYSTEM.MAIN_MENU.ADMIN', 'SYSTEM.MAIN_MENU.ADMIN.LIST']);
 });
 
-test('a flow grown from one screen reaches every screen below it, including ones the full flow placed under another branch', () => {
-  const focused = buildFlow(map, linkTests(config, map), { from: '/document/:tab_draft_done_#DocumentList' });
-  assert.deepEqual(focused.roots.flatMap((r) => outline(r)), [
-    '/document/:tab(draft|done)',
-    '  /document/:id → /admin/report',
-    '    /help [helpEnabled]',
-    "  /admin/report [globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT' & ['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1 & MENUS.ADMIN]",
-  ]);
-  assert.deepEqual(focused.unreached, []);
-  assert.throws(() => buildFlow(map, { nodes: {} }, { from: '/nowhere#Nowhere' }), /unknown screen/);
-});
-
 test('screens no entry screen reaches are grown into their own trees', () => {
   const withoutEntries = buildFlow({ ...map, entries: [] }, { nodes: {} });
   assert.deepEqual(withoutEntries.roots, []);

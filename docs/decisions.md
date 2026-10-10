@@ -987,6 +987,49 @@ given. With `client` named as the request object, outline has 100 such places in
 screens import among them, and 85 of them give an address. The two example maps and the into-sign 1.5.0 and
 2.0.0 maps are identical to main's apart from the time they were written.
 
+**The flow draws each screen as one line, a picked screen keeps only its paths strong and opens the list
+view's own middle and right panes beside the drawing, and the bar counts the screens by status on buttons.**
+Three drafts were drawn on the into-sign map (45 screens) and compared side by side:
+- A, grouped cards (from the GitHub Actions run graph): screens that lead nowhere become rows of one card, API
+  calls open inside a row. Closest to the old code and the flow stays visible, but a group of 16 rows is still
+  tall and the whole map fits only at 30%, and where 「이 가지만」 would go was left open.
+- B, path focus (from the dbt Explorer and Dagster lineage graphs): a screen is a one-line pill, pressing one
+  dims what is not connected to it, and a side pane shows the details. 45 screens nearly fit one screen height
+  and it looked the tidiest, but conditions and API calls are seen one screen at a time, and the side pane did
+  the work of the list's middle and right panes.
+- C, status table (from the Airflow grid and the Cypress views list, with the counted filter buttons of the
+  Playwright report): the fastest way to find a gap, one press of 「테스트 없음 18」 or 「실패 5」, but it is not a flow
+  diagram: a link into another branch is only a text tag, and it repeats the left list.
+With a story path drawn on each, B was the shortest: the path took 215px against 629px for A, 672px for C and
+1,328px before, and showed all 11 of its screens on the first screen against 5 before.
+Reason: B keeps the picture of where each screen leads and fits the most on one screen; C's counted buttons
+give the one-press gap finding B lacked; the overlap of B's pane with the list is gone because the pane is the
+list's panes. Measured on the into-sign map with sample test statuses (26 of 45 screens tested) at 1440×900:
+the flow first opens 1,082px tall with 31 of 45 screens fully in view, against 32,603px and 2 before (the old
+「빈틈만 펼치기」 start opened every untested API call); 「맞춤」 shows all 45 at 68%; the story path is 259px tall
+against 1,340px, with 8 of its 11 screens fully in view against 5 (the path is 1,201px wide in a 1,080px area).
+How it is built, and what each choice was weighed against:
+- The side of the drawing is the list's `#center` and `#right` sections themselves, filled by the same
+  functions, over a new panel like the drafts': the panes stay one thing to keep right. A picked screen also
+  becomes the list's chosen screen. Against showing only the 360px right pane, which keeps the drawing wider
+  but leaves the screen's tests and API calls in the list; with both panes the drawing gets half of what is
+  left (540px at 1440px).
+- A story's step numbers and the chips to steps further away sit inside the pill, as in the story draft of B,
+  over the lanes beside the boxes the old boxes used: with one-line pills there is no room in the lanes, and on
+  into-sign five step numbers piled up under their column.
+- A pill is an element with the button role, not a `<button>`, because the chips inside it are buttons.
+- The status buttons and the search fade the screens they leave out over removing them: a tree with screens
+  taken out loses the paths between the ones that stay, and every screen keeps its place.
+- The condition tag names the kind (역할, 설정, 역할·설정, 링크마다 다름) over the values the old box wrote, so a
+  screen stays one line; the values are in the hover text and the right pane.
+- Zoom scales the finished drawing and gives its outer box the scaled size, over laying it out at the zoomed
+  size: the layout measures each box on the page, which a scale would distort, so the layout code is the same
+  at every level.
+- Folding, API call boxes, 「이 가지만」 and the `/api/flow?from=` request it used are gone: the per-box buttons
+  were their only callers, and a picked screen's paths take the place of a branch shown alone. A screen has no
+  buttons of its own, so the question of words or icons on them is closed; the zoom buttons are symbols with a
+  name for screen readers.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

@@ -185,12 +185,6 @@ export async function startReviewServer(config: any, { port = 0, author = review
         return send(res, 200, 'application/json', JSON.stringify(reviewData(config, author, app, fileSettings)));
       }
       const url = new URL(req.url!, 'http://host');
-      if (req.method === 'GET' && url.pathname === '/api/flow' && url.searchParams.has('from')) {
-        const map = readMap(mapFile);
-        const from = url.searchParams.get('from') as string;
-        if (!map.screens.some((s: any) => s.id === from)) return send(res, 404, 'text/plain', `unknown screen "${from}"`);
-        return send(res, 200, 'application/json', JSON.stringify(buildFlow(map, judgedTests(config), { from })));
-      }
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {
         return await sendPathValues(res, url.searchParams.get('screen'), url.searchParams.get('role'));
       }

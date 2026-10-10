@@ -334,7 +334,7 @@ test('a map that turns old or unreadable while the review server runs is reporte
     const map: ScreenMap = JSON.parse(good);
     const old = JSON.stringify({ ...map, screens: map.screens.map(({ routeFile, ...s }) => s) });
     const asked = async (base: string) => {
-      const replies = [await fetch(`${base}/api/data`), await fetch(`${base}/api/flow?from=${encodeURIComponent('/home#Home')}`), await fetch(`${base}/api/path-values?screen=${encodeURIComponent('/home#Home')}`)];
+      const replies = [await fetch(`${base}/api/data`), await fetch(`${base}/api/path-values?screen=${encodeURIComponent('/home#Home')}`)];
       return Promise.all(replies.map(async (r) => [r.status, await r.text()] as [number, string]));
     };
     const withServer = async (fn: (base: string) => Promise<void>) => {

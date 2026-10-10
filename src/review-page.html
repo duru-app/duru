@@ -32,6 +32,8 @@
   #end-review:disabled { opacity: .5; cursor: default; }
   #ended, #failed { padding: 16px; }
   main { display: grid; grid-template-columns: 300px minmax(0, 1fr) 360px; height: calc(100vh - 49px); }
+  main.flow { grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr); }
+  main.flow.picked { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 360px; }
   section { overflow: auto; padding: 12px 16px; }
   section + section { border-left: 1px solid var(--line); }
   h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 16px 0 6px; }
@@ -46,10 +48,10 @@
   .screens li:hover { background: var(--bg); }
   .screens li.selected { background: var(--selected); }
   .screens .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  #screen-list li { flex-direction: column; align-items: stretch; gap: 2px; }
-  #screen-list .name { overflow: clip; }
-  #screen-list .component, #screen-list .seg { white-space: nowrap; }
-  #screen-list .badges { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+  :is(#screen-list, .gap-list) li { flex-direction: column; align-items: stretch; gap: 2px; }
+  :is(#screen-list, .gap-list) .name { overflow: clip; }
+  :is(#screen-list, .gap-list) :is(.component, .seg) { white-space: nowrap; }
+  :is(#screen-list, .gap-list) .badges { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
   .screens .count { font-size: 12px; color: var(--muted); white-space: nowrap; }
   .screens .count.none { color: var(--fail); }
   .chip { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; border: 1px solid currentColor; white-space: nowrap; }
@@ -182,13 +184,14 @@
   .views button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
   .views button:disabled { cursor: default; opacity: .6; }
   /* 상자를 재는 순간에는 내용이 짧아 스크롤바가 없으므로, 그때 잰 폭이 다 그린 뒤와 같도록 스크롤바 자리를 늘 비워 둔다. */
-  #flow { height: calc(100vh - 49px); overflow: auto; scrollbar-gutter: stable; padding: 16px; }
+  #flow { overflow: auto; scrollbar-gutter: stable; padding: 16px; }
   #flow h2 { margin: 20px 0 8px; }
+  #gaps .lead { margin: 0; font-size: 12px; }
+  #gaps h3 { margin: 14px 0 0; font-size: 13px; }
   .flowguide { align-self: stretch; display: flex; align-items: center; gap: 10px; margin-left: auto; max-width: 100%; }
   .flowkey { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 2px 12px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
   .flowkey li { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
   .flowkey li.apart { padding-left: 12px; border-left: 1px solid var(--line); }
-  .flowkey .swatch { width: 22px; height: 14px; border-radius: 4px; }
   .flowkey svg { width: 26px; height: 6px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .flowinfo, .pathinfo { align-self: stretch; display: flex; align-items: center; }
@@ -199,12 +202,17 @@
   :is(.flowlegend, .pathlegend) li { display: grid; grid-template-columns: max-content 1fr; column-gap: 8px; }
   .flowlegend li { grid-template-columns: 1fr; }
   :is(.flowlegend, .pathlegend) .sample { color: var(--text); }
+  .flowlegend .sample { display: flex; flex-wrap: wrap; gap: 4px; }
+  .flowlegend .sample .box { position: static; }
   .flowlegend small { display: block; font-size: 11px; }
   .flowlegend::before { content: ''; position: absolute; left: -1px; right: -1px; top: calc(-1 * var(--bar-pad) - 2px); height: calc(var(--bar-pad) + 8px); }
-  .canvas { position: relative; }
+  .canvas { position: relative; transform-origin: 0 0; }
   .canvas svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
   .canvas svg path, .flowkey svg path { fill: none; stroke: var(--muted); stroke-width: 1.3; opacity: .7; }
   .canvas svg path.guarded, .flowkey svg path.guarded { stroke: var(--accent); stroke-dasharray: 5 4; opacity: .9; }
+  .canvas svg path.on { stroke: var(--text); stroke-width: 2; opacity: 1; }
+  .canvas svg path.on.guarded { stroke: var(--accent); }
+  .canvas svg path.dim { opacity: .12; }
   .canvas.story svg path { stroke: var(--muted); stroke-dasharray: none; opacity: .35; }
   :is(.canvas.story, .pathlegend) svg path.story-edge { stroke: var(--text); stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: none; opacity: 1; }
   :is(.canvas.story, .pathlegend) svg path.story-edge.l-conditioned { stroke: var(--accent); stroke-dasharray: 8 5; }
@@ -214,34 +222,36 @@
   .box.on-story { box-shadow: 0 0 0 2px var(--text); }
   .box.story-ring { box-shadow: 0 0 0 2.5px var(--text), 0 0 0 5px var(--selected); }
   #flow .canvas .group-head { position: absolute; margin: 0; line-height: 28px; white-space: nowrap; }
-  .box, .flowkey .swatch { box-sizing: border-box; border: 1.5px solid var(--line); background: var(--panel); }
-  .box { position: absolute; border-radius: 6px; padding: 4px 8px; font-size: 12px; line-height: 1.35; }
+  .box { position: absolute; display: flex; align-items: center; gap: 6px; box-sizing: border-box; margin: 0; padding: 3px 8px 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; line-height: 1.35; text-align: left; cursor: pointer; transition: opacity .15s; }
   .box.measuring { left: 0; top: 0; width: max-content; max-width: 360px; min-width: min-content; visibility: hidden; }
-  .box.screen { cursor: pointer; }
-  .box.screen:hover { border-color: var(--accent); }
-  .box .seg, .box .component { white-space: nowrap; }
-  .box.call.grouped { overflow-wrap: anywhere; }
-  .box.call.grouped .seg { display: inline-block; max-width: 100%; white-space: normal; }
-  .box .need .text, .box .l3 .text { overflow-wrap: anywhere; }
-  .box .l1 { font-weight: 600; }
-  .box .l2, .box .l3, .box .need { color: var(--muted); }
-  .box .need { display: flex; align-items: baseline; gap: 6px; }
-  .box .need .flag { flex: none; color: var(--pending); }
-  .box .l3 { display: flex; align-items: flex-start; gap: 4px; }
-  .box .text { flex: 1 1 auto; }
-  .box.s-pass, .flowkey .s-pass { border-color: var(--pass); }
-  .box.s-fail, .flowkey .s-fail { border-color: var(--fail); }
-  .box.s-pending, .flowkey .s-pending { border-color: var(--pending); }
-  .box.s-none, .flowkey .s-none { border-style: dashed; }
-  .box.call { background: var(--bg); }
-  .box .calls { flex: none; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--muted); font: inherit; font-size: 11px; line-height: 1.1; padding: 0 5px; cursor: pointer; }
-  .box .acts { display: flex; column-gap: 4px; margin-top: 3px; }
-  .box .toggle { flex: none; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--muted); font: inherit; font-size: 11px; font-weight: normal; line-height: 1.3; padding: 0 6px; white-space: nowrap; cursor: pointer; }
-  .box .toggle:hover { border-color: var(--accent); color: var(--text); }
-  .flowbar { position: sticky; top: -16px; left: -16px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; --bar-pad: 8px; margin: -16px -16px 10px; padding: 12px 16px var(--bar-pad); background: var(--bg); border-bottom: 1px solid var(--line); }
+  .box:hover { border-color: var(--accent); }
+  .box .path { flex: 1 1 auto; min-width: 0; }
+  .box .seg { white-space: nowrap; }
+  .box .tag { flex: none; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 10px; line-height: 14px; white-space: nowrap; }
+  .box .tag.need { border-color: currentColor; color: var(--pending); }
+  .box .tag.dead { border-color: currentColor; color: var(--fail); }
+  .box.picked { outline: 2px solid var(--text); outline-offset: 1px; background: var(--selected); }
+  .box.jump { border-style: dashed; border-color: var(--accent); }
+  .box.dim { opacity: .3; }
+  .box.off { opacity: .12; }
+  .sq { flex: none; display: inline-block; box-sizing: border-box; width: 11px; height: 11px; border-radius: 3px; }
+  :is(.box.s-pass .sq, .sq.s-pass) { background: var(--pass); }
+  :is(.box.s-fail .sq, .sq.s-fail) { background: var(--fail); }
+  :is(.box.s-pending .sq, .sq.s-pending) { background: var(--pending); }
+  :is(.box.s-none .sq, .sq.s-none) { border: 1.5px dashed var(--muted); }
+  .flowbar { grid-column: 1 / -1; position: relative; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; --bar-pad: 8px; padding: 10px 16px var(--bar-pad); background: var(--bg); border-bottom: 1px solid var(--line); }
   .flowbar button { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
-  .flowbar :is(.focusing, .story-only) { margin-left: 8px; font-size: 12px; }
-  .flowbar .flowsummary { flex-basis: 100%; font-size: 13px; }
+  .flowbar .flowsummary { font-size: 13px; }
+  .flowbar .picking { font-size: 12px; }
+  .flow-filters { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); overflow: hidden; }
+  .flowbar .flow-filters button { border: 0; border-left: 1px solid var(--line); border-radius: 0; white-space: nowrap; }
+  .flowbar .flow-filters button:first-child { border-left: 0; }
+  .flowbar .flow-filters button.on { background: var(--selected); font-weight: 600; }
+  .flow-filters .count { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 8px; background: var(--line); font-size: 11px; font-weight: 600; line-height: 16px; text-align: center; }
+  .flowbar .flow-search { flex: none; width: 180px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; }
+  .zoom { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+  .flowbar .zoom button { border: 0; border-radius: 0; background: none; padding: 2px 8px; }
+  .zoom-label { min-width: 40px; font-size: 12px; text-align: center; color: var(--muted); }
   .story-pick { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; padding-left: 10px; border-left: 1px solid var(--line); font-size: 12px; }
   .story-pick select { max-width: 300px; padding: 2px 4px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }
   .pathinfo { position: relative; }
@@ -249,8 +259,6 @@
   .pathlegend::before { content: ''; position: absolute; left: -1px; right: -1px; top: -8px; height: 10px; }
   .pathlegend li { align-items: center; column-gap: 10px; }
   .pathlegend .sample { display: inline-flex; align-items: center; gap: 4px; }
-  .pathlegend .sample .story-chip.exit { margin-left: 10px; }
-  .pathlegend .sample .story-chip.entry { margin-right: 10px; }
   .pathlegend svg { width: 40px; height: 8px; overflow: visible; }
   .pathlegend svg path { fill: none; }
   .story-strip { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; row-gap: 4px; margin: 4px 0 0; padding: 6px 0 2px; list-style: none; border-top: 1px dashed var(--line); font-size: 12px; }
@@ -275,21 +283,16 @@
   .story-join.l-broken .jtag { color: var(--fail); font-weight: 600; }
   .story-join.l-unknown .jtag { color: var(--more); }
   .story-badge { display: inline-block; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--text); color: var(--panel); font: 600 12px/22px system-ui, sans-serif; text-align: center; white-space: nowrap; }
-  /* ::before 는 상자 가장자리에서 표시까지 잇는 짧은 선이다. */
-  .story-chip { position: relative; display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 6px; border: 1.5px solid var(--text); border-radius: 10px; background: var(--panel); color: var(--text); font: 600 11px/17px system-ui, sans-serif; white-space: nowrap; }
+  .story-chip { display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 6px; border: 1.5px solid var(--text); border-radius: 10px; background: var(--panel); color: var(--text); font: 600 11px/17px system-ui, sans-serif; white-space: nowrap; }
   button.story-chip { cursor: pointer; }
-  .story-chip::before { content: ''; position: absolute; top: calc(50% - 1px); width: 10px; border-top: 2px solid currentColor; }
-  .story-chip.exit::before { right: calc(100% + 1.5px); }
-  .story-chip.entry::before { left: calc(100% + 1.5px); }
   .story-chip small { font-size: 10px; font-weight: 400; }
   .story-chip b { font-size: 10px; }
   .story-chip.l-conditioned { border-style: dashed; color: var(--accent); }
-  .story-chip.l-conditioned::before { border-top-style: dashed; }
   .story-chip.l-broken { border-style: dashed; color: var(--fail); }
-  .story-chip.l-broken::before { border-top-style: dashed; }
   .story-chip:is(.l-off-map, .l-unknown) { border-style: dotted; color: var(--more); }
-  .story-chip:is(.l-off-map, .l-unknown)::before { border-top-style: dotted; }
   .story-chip.hovered { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px currentColor; }
+  :is(.box, .pathlegend) :is(.story-badge, .story-chip) { flex: none; height: 18px; line-height: 15px; }
+  :is(.box, .pathlegend) .story-badge { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; }
   .story-tag { display: inline-block; padding: 0 6px; border: 1px solid currentColor; border-radius: 4px; background: var(--panel); font-size: 11px; line-height: 16px; white-space: nowrap; }
   .story-tag.l-conditioned { color: var(--accent); }
   .story-tag.l-broken { color: var(--fail); font-weight: 600; }
@@ -374,11 +377,13 @@
   <button id="end-review" title="표시를 다 남겼으면 눌러 주세요. 작업 목록이 리뷰 페이지를 띄운 터미널로 넘어갑니다">리뷰 끝</button>
 </header>
 <main>
+  <div id="flow-bar" class="flowbar" hidden></div>
+  <div id="flow" hidden></div>
   <section id="left"></section>
   <section id="center"><div id="center-head"></div><div id="center-body"></div></section>
   <section id="right"><div id="right-info"></div><div id="right-dock"></div></section>
+  <section id="gaps" hidden></section>
 </main>
-<div id="flow" hidden></div>
 <p id="failed" class="error" hidden></p>
 <dialog id="exclude" closedby="none" aria-labelledby="exclude-title">
   <h2 id="exclude-title"></h2>
@@ -432,7 +437,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', collapsed: new Set(), openCalls: new Set(), focus: null, flowError: null, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -485,15 +490,9 @@ async function load() {
   const res = await fetch('/api/data');
   if (!res.ok) throw new Error(await res.text());
   state.data = await res.json();
-  // 스토리 경로를 보는 동안의 가지는 경로를 끄면 되돌릴 값 안에 들어 있다.
-  const holder = () => (state.storyPath ? state.storyPath.saved : state);
-  if (holder().focus) {
-    const { id } = holder().focus;
-    const roots = await branchRoots(id).catch(() => null);
-    if (holder().focus?.id === id) holder().focus = roots && { id, roots };
-  }
   if (state.storyPath && !pathStoryOf()) leaveStoryPath();
   const { screens } = state.data.map;
+  if (!screens.some((s) => s.id === state.selected)) state.flowPicked = false;
   const screen = screens.find((s) => s.id === state.selected) ?? screens[0];
   state.selected = screen?.id ?? null;
   const t = state.target;
@@ -518,7 +517,9 @@ async function load() {
   }
 }
 
-function select(id, target = { node: id }) {
+const screenPanesShown = () => state.side === 'screens' && (state.view === 'list' || state.flowPicked);
+
+function setSelected(id, target = { node: id }) {
   for (const [key, kept] of state.pathValues) {
     if (key.startsWith(`${id}\n`) && !kept.pending && kept.errors.length && !kept.opened) state.pathValues.delete(key);
   }
@@ -531,6 +532,10 @@ function select(id, target = { node: id }) {
   state.draft = null;
   state.error = null;
   state.judgmentError = null;
+}
+
+function select(id, target) {
+  setSelected(id, target);
   render();
 }
 
@@ -570,6 +575,7 @@ function selectUntaggedTest(key) {
 
 function setSide(side) {
   state.side = side;
+  if (side !== 'screens') state.flowPicked = false;
   state.error = null;
   state.judgmentError = null;
   render();
@@ -708,22 +714,24 @@ function markList(title, cls, marks, label, empty, pick = null) {
 
 const routeSegments = (path) => path.split(/(?=\/)/).flatMap((seg, i) => [i ? h('wbr') : null, h('span', { class: 'seg' }, seg)]);
 
+function screenItem(s, { selected, onclick }) {
+  const n = testsOf(s.id).length;
+  const waiting = awaitingTagOf(s.id).length;
+  return h('li', { class: selected ? 'selected' : '', title: `${s.path} ${s.component}`, onclick },
+    h('span', { class: 'name' }, h('span', {}, routeSegments(s.path)), ' ', h('span', { class: 'muted component' }, s.component)),
+    h('span', { class: 'badges' },
+      s.dead ? h('span', { class: 'chip dead', title: '서버에 없는 호출이 있습니다' }, '죽은 화면') : null,
+      markChip(markOf({ node: s.id })),
+      h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'),
+      importersOf(s.id).length ? h('span', { class: 'count importer-count', title: '이 화면의 소스 파일을 불러오는 단위 테스트' }, `불러옴 ${importersOf(s.id).length}`) : null,
+      passedOf(s.id).length ? h('span', { class: 'count passed-count', title: '이 화면의 태그 없이, 도는 동안 이 화면을 연 브라우저 테스트' }, `지나감 ${passedOf(s.id).length}`) : null,
+      waiting ? h('span', { class: 'count awaiting-count', title: '이 화면의 테스트로 포함해 태그를 기다리는 테스트' }, `태그 대기 ${waiting}`) : null));
+}
+
 function renderLeftList() {
   const visible = visibleScreens();
   const list = document.getElementById('screen-list');
-  fill(list, ...visible.map((s) => {
-    const n = testsOf(s.id).length;
-    const waiting = awaitingTagOf(s.id).length;
-    return h('li', { class: s.id === state.selected ? 'selected' : '', title: `${s.path} ${s.component}`, onclick: () => select(s.id) },
-      h('span', { class: 'name' }, h('span', {}, routeSegments(s.path)), ' ', h('span', { class: 'muted component' }, s.component)),
-      h('span', { class: 'badges' },
-        s.dead ? h('span', { class: 'chip dead', title: '서버에 없는 호출이 있습니다' }, '죽은 화면') : null,
-        markChip(markOf({ node: s.id })),
-        h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'),
-        importersOf(s.id).length ? h('span', { class: 'count importer-count', title: '이 화면의 소스 파일을 불러오는 단위 테스트' }, `불러옴 ${importersOf(s.id).length}`) : null,
-        passedOf(s.id).length ? h('span', { class: 'count passed-count', title: '이 화면의 태그 없이, 도는 동안 이 화면을 연 브라우저 테스트' }, `지나감 ${passedOf(s.id).length}`) : null,
-        waiting ? h('span', { class: 'count awaiting-count', title: '이 화면의 테스트로 포함해 태그를 기다리는 테스트' }, `태그 대기 ${waiting}`) : null));
-  }));
+  fill(list, ...visible.map((s) => screenItem(s, { selected: s.id === state.selected, onclick: () => select(s.id) })));
   if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 화면이 없습니다.'));
 }
 
@@ -1118,7 +1126,7 @@ async function loadPathValues(id, role) {
     Object.assign(entry, { parts: null, values: {}, queryNames: [], errors: [`경로 변수 값을 가져오지 못했습니다: ${err.message}`], fallback: null });
   }
   Object.assign(entry, { pending: false, draft: { ...entry.values }, filled: { ...entry.values }, opened: 0 });
-  if (state.side === 'screens' && state.selected === id && state.view === 'list') renderCenterHead(state.data.map.screens.find((x) => x.id === id));
+  if (screenPanesShown() && state.selected === id) renderCenterHead(state.data.map.screens.find((x) => x.id === id));
 }
 
 async function newIssued(s, entry, values) {
@@ -1149,7 +1157,7 @@ function takeIssued(entry, got) {
   entry.used = false;
 }
 
-const stillShown = (s, entry) => state.side === 'screens' && state.view === 'list' && state.selected === s.id
+const stillShown = (s, entry) => screenPanesShown() && state.selected === s.id
   && state.pathValues.get(pathValueKey(s.id, frameAccount(s).role)) === entry;
 
 function showPathValueError(message) {
@@ -2563,8 +2571,9 @@ async function saveBulk(t, bulk, kind, reason) {
   return failure ? bulk.error : null;
 }
 
-const GAP = 12, COL_GAP = 50, CELL_GAP = 24, CALL_INDENT = 16, GROUP_SPACE = 24, GROUP_HEAD_H = 28;
-const STUB = 10, BADGE_GAP = 6, LANE_PAD = 4, LANE_CURVE = 32, UNDER_GAP = 6;
+const GAP = 8, COL_GAP = 50, CELL_GAP = 24, GROUP_SPACE = 24, GROUP_HEAD_H = 28;
+const STUB = 10, LANE_PAD = 4, LANE_CURVE = 32, UNDER_GAP = 6;
+const ZOOM_MIN = 0.3, ZOOM_MAX = 1.5, ZOOM_STEP = 0.1;
 
 function svg(tag, attrs, ...children) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -2574,60 +2583,28 @@ function svg(tag, attrs, ...children) {
 }
 
 const screensIn = (roots) => roots.flatMap((n) => [n, ...screensIn(n.children)]);
-function expandAll(roots) {
-  for (const n of screensIn(roots)) {
-    state.collapsed.delete(n.id);
-    if (n.calls.length) state.openCalls.add(n.id);
-  }
-}
-function resetBranch(roots) {
-  for (const n of screensIn(roots)) {
-    state.collapsed.delete(n.id);
-    state.openCalls.delete(n.id);
-  }
-}
-function collapseAll(roots) {
-  for (const n of screensIn(roots)) {
-    if (n.children.length) state.collapsed.add(n.id);
-    state.openCalls.delete(n.id);
-  }
-}
-// 접힌 상자는 하위 상자까지 합친 결과로 색이 정해져 자기 빈틈이 가려지므로, 자기와 하위 어디에도 빈틈이 없는 가지만 접는다.
-const isGap = (c) => c.fail > 0 || c.pass + c.fail + c.pending === 0;
-function openGapsOnly(roots) {
-  const walk = (n) => {
-    const below = n.children.map(walk).some(Boolean);
-    const callGap = n.calls.some((c) => isGap(c.counts));
-    const any = below || callGap || isGap(n.counts);
-    if (any) state.collapsed.delete(n.id); else if (n.children.length) state.collapsed.add(n.id);
-    if (callGap) state.openCalls.add(n.id); else state.openCalls.delete(n.id);
-    return any;
-  };
-  roots.forEach(walk);
-}
-const flowTrees = () => {
-  const st = pathStoryOf();
-  if (st) {
-    const { roots, unreached } = storyTrees(state.data.flow, st);
-    return [...roots, ...unreached];
-  }
-  return state.focus ? state.focus.roots : [...state.data.flow.roots, ...state.data.flow.unreached];
-};
 
 const pathStories = () => (state.data.stories.stale ? [] : state.data.stories.list);
 const pathStoryOf = () => (state.storyPath && pathStories().find((st) => st.id === state.storyPath.id)) ?? null;
 
+// 스토리 경로를 보는 동안에는 경로의 화면과 그 위 화면만 남는다.
+function drawnTrees() {
+  const st = pathStoryOf();
+  if (!st) return { roots: state.data.flow.roots, unreached: state.data.flow.unreached, path: null };
+  const path = storyTrees(state.data.flow, st);
+  return { roots: path.roots, unreached: path.unreached, path };
+}
+const drawnScreens = () => {
+  const { roots, unreached } = drawnTrees();
+  return screensIn([...roots, ...unreached]);
+};
+
 function showStoryPath(id) {
-  if (!state.storyPath) state.storyPath = { saved: { collapsed: state.collapsed, openCalls: state.openCalls, focus: state.focus } };
-  Object.assign(state.storyPath, { id, ring: null });
-  Object.assign(state, { collapsed: new Set(), openCalls: new Set(), focus: null });
-  focusRequest = null;
+  state.storyPath = { id, ring: null };
 }
 
-function leaveStoryPath({ whole = false } = {}) {
-  const { saved } = state.storyPath;
+function leaveStoryPath() {
   state.storyPath = null;
-  Object.assign(state, { collapsed: saved.collapsed, openCalls: saved.openCalls, focus: whole ? null : saved.focus });
 }
 
 function storyTrees(flow, st) {
@@ -2645,54 +2622,15 @@ function storyTrees(flow, st) {
   const prune = (n) => {
     const kids = n.children.filter((c) => keep.has(c.id));
     if (kids.length < n.children.length) hidden.set(n.id, n.children.length - kids.length);
-    return { ...n, children: kids.map(prune), whole: n };
+    return { ...n, children: kids.map(prune) };
   };
   const cut = (trees) => trees.filter((r) => keep.has(r.id)).map(prune);
-  return { roots: cut(flow.roots), unreached: cut(flow.unreached), hidden, parentOf };
+  return { roots: cut(flow.roots), unreached: cut(flow.unreached), hidden };
 }
 
-let focusRequest = null;
-async function branchRoots(id) {
-  const res = await fetch(`/api/flow?from=${encodeURIComponent(id)}`);
-  if (!res.ok) throw new Error(await res.text());
-  return (await res.json()).roots;
-}
-
-async function focusOn(id) {
-  focusRequest = id;
-  state.flowError = null;
-  try {
-    const roots = await branchRoots(id);
-    if (focusRequest !== id) return;
-    if (state.storyPath) leaveStoryPath();
-    state.focus = { id, roots };
-  } catch (err) {
-    if (focusRequest !== id) return;
-    state.flowError = `이 가지를 불러오지 못했습니다: ${err.message}`;
-  }
-  renderFlow();
-  if (!state.flowError) document.getElementById('flow').scrollTop = 0;
-}
-
-const addCounts = (a, b) => ({ pass: a.pass + b.pass, fail: a.fail + b.fail, pending: a.pending + b.pending });
-function subtreeCounts(root) {
-  const calls = new Map();
-  let total = { pass: 0, fail: 0, pending: 0 };
-  let imported = 0;
-  let passed = 0;
-  const walk = (n) => {
-    total = addCounts(total, n.counts);
-    imported += n.imported;
-    passed += n.passed;
-    for (const c of n.calls) calls.set(c.id, c.counts);
-    n.children.forEach(walk);
-  };
-  walk(root);
-  for (const c of calls.values()) total = addCounts(total, c);
-  return { ...total, imported, passed };
-}
 const NO_TESTS = '테스트 없음';
 const statusOf = (c) => (c.fail ? 's-fail' : c.pending ? 's-pending' : c.pass ? 's-pass' : 's-none');
+const STATUS_WORD = { 's-pass': TEST_STATUS.pass, 's-fail': TEST_STATUS.fail, 's-pending': TEST_STATUS.pending, 's-none': NO_TESTS };
 const countText = (c) => (c.pass + c.fail + c.pending
   ? [c.pass ? h('span', { class: 'ok' }, `✓${c.pass} `) : null, c.fail ? h('span', { class: 'ng' }, `✕${c.fail} `) : null, c.pending ? h('span', { class: 'wait' }, `○${c.pending}`) : null]
   : NO_TESTS);
@@ -2947,124 +2885,64 @@ function storySummary(reach) {
 const needLine = (l) => h('div', { class: 'need' }, h('span', { class: 'text' }, l.text), l.flag ? h('span', { class: 'flag' }, l.flag) : null);
 const bareLine = (text) => h('div', { class: 'need bare' }, text);
 
-const callKey = (screen, call) => `${screen.id}>${call.id}`;
-const isFolded = (node, collapsed) => node.kind === 'screen' && collapsed.has(node.id) && node.children.length > 0;
-function shownKids(node, collapsed, openCalls) {
-  if (node.kind !== 'screen' || isFolded(node, collapsed)) return [];
-  return [
-    ...node.children.map((n) => ({ key: n.id, node: n })),
-    ...(openCalls.has(node.id) ? node.calls.map((c) => ({ key: callKey(node, c), node: c })) : []),
-  ];
-}
-
-function flowBoxes(roots, { collapsed = [], openCalls = [] }) {
-  const folded = new Set(collapsed);
-  const open = new Set(openCalls);
+function flowBoxes(roots) {
   const out = [];
-  const walk = (key, node, parent) => {
-    out.push({ key, node, parent, collapsed: isFolded(node, folded) });
-    for (const k of shownKids(node, folded, open)) walk(k.key, k.node, key);
+  const walk = (node, parent) => {
+    out.push({ key: node.id, node, parent });
+    for (const c of node.children) walk(c, node.id);
   };
-  for (const r of roots) walk(r.id, r, null);
+  for (const r of roots) walk(r, null);
   return out;
 }
 
-// 칸 폭은 모은 화면 상자만으로 정하므로 API 호출을 펼쳐도 칸이 움직이지 않는다. 높이는 이 결과로 폭이 정해진 뒤에 재므로 sizes[key].height 는 아직 없어도 된다.
+// 높이는 이 결과로 폭이 정해진 뒤에 재므로 sizes[key].height 는 아직 없어도 된다.
 const cellsPerRow = (count, cellW, width) => Math.max(1, Math.min(count, Math.floor((width + CELL_GAP) / (cellW + CELL_GAP))));
 
-// marks 는 상자 곁에 붙일 스토리 단계 표시다.
-function flowColumns(roots, sizes, { collapsed = [], openCalls = [], group = false, width = 0, marks = [] } = {}) {
-  const folded = new Set(collapsed);
-  const open = new Set(openCalls);
+// marks 는 스토리 경로에서 상자 곁에 두는 선의 「조건」 같은 표지와 숨긴 화면 수다.
+function flowColumns(roots, sizes, { group = false, width = 0, marks = [] } = {}) {
   const gathered = group ? roots.filter((r) => !r.children.length) : [];
   const trees = group ? roots.filter((r) => r.children.length) : roots;
   const depths = new Map();
-  const walk = (key, node, depth) => {
-    depths.set(key, depth);
-    for (const k of shownKids(node, folded, open)) walk(k.key, k.node, depth + 1);
+  const walk = (node, depth) => {
+    depths.set(node.id, depth);
+    for (const c of node.children) walk(c, depth + 1);
   };
-  for (const r of trees) walk(r.id, r, 0);
+  for (const r of trees) walk(r, 0);
   const colWidths = [];
   for (const [key, d] of depths) colWidths[d] = Math.max(colWidths[d] ?? 0, sizes[key].width);
-  const exitW = colWidths.map(() => 0);
   const entryW = colWidths.map(() => 0);
   for (const m of marks) {
     const d = depths.get(m.key);
-    if (d === undefined || m.kind === 'hidden') continue;
-    const lane = m.side === 'exit' ? exitW : entryW;
-    lane[d] = Math.max(lane[d], laneWidth(m));
+    if (d !== undefined && m.kind === 'tag') entryW[d] = Math.max(entryW[d], laneWidth(m));
   }
   const xs = colWidths.map(() => entryW[0] ?? 0);
-  for (let d = 1; d < colWidths.length; d += 1) xs[d] = xs[d - 1] + colWidths[d - 1] + Math.max(COL_GAP, exitW[d - 1] + LANE_CURVE + entryW[d]);
+  for (let d = 1; d < colWidths.length; d += 1) xs[d] = xs[d - 1] + colWidths[d - 1] + Math.max(COL_GAP, LANE_CURVE + entryW[d]);
   const cellW = Math.max(0, ...gathered.map((r) => sizes[r.id].width));
-  const per = cellsPerRow(gathered.length, cellW, width);
   const sized = {};
   for (const [key, d] of depths) sized[key] = colWidths[d];
-  const grid = gathered.map((r) => ({ screen: r, calls: shownKids(r, folded, open) }));
-  for (const { screen, calls } of grid) {
-    sized[screen.id] = cellW;
-    for (const k of calls) sized[k.key] = cellW - CALL_INDENT;
-  }
+  for (const r of gathered) sized[r.id] = cellW;
   return {
     widths: sized,
-    grouped: new Set(grid.flatMap(({ screen, calls }) => [screen.id, ...calls.map((k) => k.key)])),
-    trees, depths, xs, grid, cellW, per, exitW, entryW,
-    span: colWidths.length ? xs[colWidths.length - 1] + colWidths[colWidths.length - 1] + exitW[colWidths.length - 1] : 0,
+    grouped: new Set(gathered.map((r) => r.id)),
+    trees, depths, xs, grid: gathered, cellW, per: cellsPerRow(gathered.length, cellW, width), entryW,
+    span: colWidths.length ? xs[colWidths.length - 1] + colWidths[colWidths.length - 1] : 0,
   };
 }
 
-// 칸 사이의 왼쪽 가장자리는 나가는 표시가, 오른쪽 가장자리는 들어오는 표시가 쓰고, 선은 그 가운데에서만 굽는다.
-const laneWidth = (m) => m.width + (m.kind === 'badge' ? BADGE_GAP : STUB) + LANE_PAD;
+// 선의 「조건」 같은 표지는 선이 상자에 닿는 자리 바로 앞에, 숨긴 화면 수는 상자 아래에 둔다.
+const laneWidth = (m) => m.width + STUB + LANE_PAD;
 
-function laneMarks(placed, edges, cols, marks) {
+function laneMarks(placed, marks) {
   const byKey = new Map(placed.map((b) => [b.key, b]));
-  const lanes = new Map();
-  const lane = (d, side) => {
-    const k = `${d} ${side}`;
-    if (!lanes.has(k)) lanes.set(k, { lines: [], taken: [] });
-    return lanes.get(k);
-  };
-  for (const e of edges) {
-    if (e.grouped) continue;
-    lane(cols.depths.get(e.from), 'exit').lines.push(e.y1);
-    lane(cols.depths.get(e.to), 'entry').lines.push(e.y2);
-  }
-  const clear = (l, y, height) => !l.taken.some(([top, bottom]) => y < bottom + 3 && y + height > top - 3)
-    && !l.lines.some((line) => line > y - 5 && line < y + height + 5);
-  // 번호는 상자 위쪽 모서리 곁에 있어야 어느 상자의 것인지 읽히므로 위로도 조금 찾아본다.
-  const BADGE_TRIES = [0, -2, -4, -6, -8, -10];
-  const KIND_ORDER = { tag: 0, badge: 1, chip: 2 };
-  const order = marks.map((m, i) => i).filter((i) => marks[i].kind !== 'hidden')
-    .sort((a, b) => KIND_ORDER[marks[a].kind] - KIND_ORDER[marks[b].kind] || byKey.get(marks[a].key).y - byKey.get(marks[b].key).y || a - b);
-  const spots = marks.map((m) => {
+  return marks.map((m) => {
     const b = byKey.get(m.key);
-    return m.kind === 'hidden' ? { x: b.x + 8, y: b.y + b.height + UNDER_GAP } : null;
+    return m.kind === 'hidden' ? { x: b.x + 8, y: b.y + b.height + UNDER_GAP } : { x: b.x - m.width - STUB, y: b.y + b.height / 2 - m.height / 2 };
   });
-  for (const i of order) {
-    const m = marks[i];
-    const b = byKey.get(m.key);
-    const l = lane(cols.depths.get(m.key), m.side);
-    let y = m.kind === 'tag' ? b.y + b.height / 2 - m.height / 2 : b.y + 2;
-    if (m.kind !== 'tag') {
-      const start = y;
-      const tries = m.kind === 'badge' ? BADGE_TRIES : [];
-      for (let k = 0; ; k += 1) {
-        y = k < tries.length ? start + tries[k] : start + 2 * (k - tries.length + 1);
-        if (clear(l, y, m.height)) break;
-      }
-    }
-    l.taken.push([y, y + m.height]);
-    spots[i] = { x: m.side === 'exit' ? b.x + b.width + STUB : b.x - m.width - (m.kind === 'badge' ? BADGE_GAP : STUB), y };
-  }
-  return spots;
 }
 
 // sizes[key] 는 { width: 본래 폭, height: flowColumns 가 정한 폭으로 그려 잰 높이 } 이다. cols 는 같은 sizes 와 view 로 이미 구한 flowColumns 결과다.
-// 모은 상자의 API 호출은 칸이 넓어지지 않도록 오른쪽이 아니라 상자 아래에 들여 쌓는다.
 function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, view)) {
-  const { collapsed = [], openCalls = [], marks } = view;
-  const folded = new Set(collapsed);
-  const open = new Set(openCalls);
+  const { marks } = view;
   const middle = (b) => b.y + b.height / 2;
   const below = new Map((marks ?? []).filter((m) => m.kind === 'hidden').map((m) => [m.key, UNDER_GAP + m.height]));
   const placed = [];
@@ -3073,11 +2951,12 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
     for (const b of placed.slice(from)) b.y += by;
     cursor += by;
   };
-  const place = (key, node, parent) => {
+  const place = (node, parent) => {
+    const key = node.id;
     const { height } = sizes[key];
     const top = cursor;
     const from = placed.length;
-    const kids = shownKids(node, folded, open).map((k) => place(k.key, k.node, key));
+    const kids = node.children.map((c) => place(c, key));
     let y = top;
     if (kids.length) {
       y = (middle(kids[0]) + middle(kids[kids.length - 1])) / 2 - height / 2;
@@ -3091,7 +2970,7 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
     cursor = Math.max(cursor, y + height + (below.get(key) ?? 0) + GAP);
     return self;
   };
-  for (const r of cols.trees) place(r.id, r, null);
+  for (const r of cols.trees) place(r, null);
   let height = cursor;
   let span = cols.span;
   let heading = null;
@@ -3101,15 +2980,9 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
     let rowY = top + GROUP_HEAD_H;
     for (let i = 0; i < grid.length; i += per) {
       let rowBottom = rowY;
-      grid.slice(i, i + per).forEach(({ screen, calls }, j) => {
-        const x = j * (cellW + CELL_GAP);
-        let y = rowY + sizes[screen.id].height;
-        placed.push({ key: screen.id, node: screen, parent: null, x, y: rowY, width: cellW, height: sizes[screen.id].height, grouped: true });
-        for (const k of calls) {
-          placed.push({ key: k.key, node: k.node, parent: screen.id, x: x + CALL_INDENT, y: y + GAP, width: cols.widths[k.key], height: sizes[k.key].height, grouped: true });
-          y += GAP + sizes[k.key].height;
-        }
-        rowBottom = Math.max(rowBottom, y);
+      grid.slice(i, i + per).forEach((screen, j) => {
+        placed.push({ key: screen.id, node: screen, parent: null, x: j * (cellW + CELL_GAP), y: rowY, width: cellW, height: sizes[screen.id].height, grouped: true });
+        rowBottom = Math.max(rowBottom, rowY + sizes[screen.id].height);
       });
       rowY = rowBottom + GAP;
     }
@@ -3120,27 +2993,10 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
   const byKey = new Map(placed.map((b) => [b.key, b]));
   const edges = placed.filter((b) => b.parent !== null).map((b) => {
     const from = byKey.get(b.parent);
-    const guards = b.node.kind === 'screen' ? b.node.guards : [];
-    return b.grouped
-      ? { from: b.parent, to: b.key, x1: from.x + CALL_INDENT / 2, y1: from.y + from.height, x2: b.x, y2: middle(b), guards, grouped: true }
-      : { from: b.parent, to: b.key, x1: from.x + from.width, y1: middle(from), x2: b.x, y2: middle(b), guards, grouped: false };
+    return { from: b.parent, to: b.key, x1: from.x + from.width, y1: middle(from), x2: b.x, y2: middle(b), guards: b.node.guards };
   });
-  if (marks) {
-    for (const e of edges) {
-      if (e.grouped) continue;
-      e.ex = e.x1 + cols.exitW[cols.depths.get(e.from)];
-      e.nx = e.x2 - cols.entryW[cols.depths.get(e.to)];
-    }
-  }
-  const spots = marks && laneMarks(placed, edges, cols, marks);
-  const lift = spots ? Math.max(0, ...spots.map((s) => -s.y)) : 0;
-  if (lift) {
-    for (const b of placed) b.y += lift;
-    for (const e of edges) Object.assign(e, { y1: e.y1 + lift, y2: e.y2 + lift });
-    for (const s of spots) s.y += lift;
-    if (heading) heading.y += lift;
-    height += lift;
-  }
+  if (marks) for (const e of edges) e.nx = e.x2 - cols.entryW[cols.depths.get(e.to)];
+  const spots = marks && laneMarks(placed, marks);
   marks?.forEach((m, i) => {
     height = Math.max(height, spots[i].y + m.height + GAP);
     span = Math.max(span, spots[i].x + m.width);
@@ -3158,88 +3014,64 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
 // 주소는 「/」 앞에서만 줄이 바뀌도록 조각마다 묶는다.
 const pathText = (path) => path.split(/(?=\/)/).flatMap((seg, i) => [i ? h('wbr') : null, h('span', { class: 'seg' }, seg)]);
 
-function screenBox(b) {
-  const n = b.node;
-  const hasKids = n.children.length > 0;
-  const callsOpen = state.openCalls.has(n.id);
-  const counts = b.collapsed ? subtreeCounts(n.whole ?? n) : n.counts;
-  const imported = b.collapsed ? counts.imported : n.imported;
-  const passed = b.collapsed ? counts.passed : n.passed;
-  const showCalls = n.calls.length > 0 && !b.collapsed;
-  const guardLabel = n.guards.length ? guardText(n.guards) : null;
-  const l3text = [guardLabel ? `조건 ${guardLabel}` : null, ...n.jumps.map((j) => `→ ${j.label}`)].filter(Boolean).join(' · ');
-  const needs = openNeeds({ access: { ...n.access, kinds: n.kinds, restricted: n.restricted } });
-  const badges = [n.dead ? '죽은 화면' : null, needs.bare].filter(Boolean).join(' · ');
-  return h('div', {
-    class: `box screen ${statusOf(counts)}`,
-    title: [n.id, guardLabel ? `이 링크의 조건: ${guardLabel}` : '', ...needs.tips, ...n.jumps.map((j) => `→ ${j.label}${j.guards.length ? ` (${guardText(j.guards)})` : ''}`), '누르면 목록에서 이 화면을 엽니다'].filter(Boolean).join('\n'),
-    onclick: () => { state.view = 'list'; openScreen(n.id); },
-  },
-    h('div', { class: 'l1' },
-      h('span', { class: 'text' }, pathText(n.label), ' ', h('span', { class: 'muted component' }, n.component))),
-    hasKids || n.calls.length ? h('div', { class: 'acts' },
-      hasKids ? h('button', { class: 'toggle', title: b.collapsed ? '이 화면에 딸린 것을 접기 전 모습대로 다시 보입니다' : '이 화면에 딸린 것을 숨깁니다', onclick: (e) => {
-        e.stopPropagation();
-        if (state.collapsed.has(n.id)) state.collapsed.delete(n.id); else state.collapsed.add(n.id);
-        renderFlow();
-      } }, b.collapsed ? '펼치기' : '접기') : null,
-      h('button', { class: 'toggle', title: '이 가지 전부 펼치기(화면과 API 호출)', onclick: (e) => {
-        e.stopPropagation();
-        expandAll([n]);
-        renderFlow();
-      } }, '전부 펼치기'),
-      h('button', { class: 'toggle', title: '이 가지의 화면은 모두 펼치고 API 호출은 접기', onclick: (e) => {
-        e.stopPropagation();
-        resetBranch([n]);
-        renderFlow();
-      } }, '처음으로'),
-      hasKids && state.focus?.id !== n.id ? h('button', { class: 'toggle', title: '이 가지만 보기', onclick: (e) => {
-        e.stopPropagation();
-        focusOn(n.id);
-      } }, '이 가지만') : null) : null,
-    h('div', { class: 'l2' }, countText(counts), b.collapsed ? h('span', {}, ' (하위 합)') : null, imported ? ` · 불러옴 ${imported}` : '', passed ? ` · 지나감 ${passed}` : '', badges ? ` · ${badges}` : ''),
-    needs.lines.map(needLine),
-    l3text || showCalls
-      ? h('div', { class: 'l3' },
-        h('span', { class: 'text' }, l3text),
-        showCalls ? h('button', { class: 'calls', title: callsOpen ? 'API 호출 접기' : 'API 호출 펼치기', onclick: (e) => {
-          e.stopPropagation();
-          if (callsOpen) state.openCalls.delete(n.id); else state.openCalls.add(n.id);
-          renderFlow();
-        } }, `API ${n.calls.length} ${callsOpen ? '▾' : '▸'}`) : null)
-      : null);
-}
+// 여는 조건은 종류만 배지에 적고, 무엇이 필요한지는 마우스를 올리면 보인다.
+const needTag = (n) => (!n.restricted ? null : n.kinds.length ? n.kinds.map((k) => KIND_LABEL[k]).join('·') : MIXED_KINDS);
+const PICK_TIP = '누르면 이 화면에 이어진 길만 진하게 남기고 이 화면을 엽니다';
 
-function callBox(b) {
-  const c = b.node;
-  return h('div', { class: `box call ${statusOf(c.counts)}`, title: c.id },
-    h('div', { class: 'l1 mono' }, pathText(c.label)),
-    h('div', { class: 'l2' }, countText(c.counts), c.passed ? ` · 호출함 ${c.passed}` : '', ` · ${serverText(c.server)}`));
+function screenPill(n) {
+  const status = statusOf(n.counts);
+  const guardLabel = n.guards.length ? guardText(n.guards) : null;
+  const needs = openNeeds({ access: { ...n.access, kinds: n.kinds, restricted: n.restricted } });
+  const need = needTag(n);
+  return h('div', {
+    role: 'button',
+    tabindex: '0',
+    class: `box screen ${status}`,
+    title: [
+      n.id,
+      `${STATUS_WORD[status]}${n.imported ? ` · 불러옴 ${n.imported}` : ''}${n.passed ? ` · 지나감 ${n.passed}` : ''}`,
+      guardLabel ? `이 링크의 조건: ${guardLabel}` : '',
+      ...needs.tips,
+      needs.bare ?? '',
+      PICK_TIP,
+    ].filter(Boolean).join('\n'),
+    'aria-pressed': 'false',
+    onclick: () => pickScreen(n.id),
+    onkeydown: (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      pickScreen(n.id);
+    },
+  },
+    h('span', { class: 'sq' }), h('span', { class: 'sr-only' }, STATUS_WORD[status]),
+    h('span', { class: 'path' }, pathText(n.label)),
+    n.calls.length ? h('span', { class: 'tag api' }, `API ${n.calls.length}`) : null,
+    need ? h('span', { class: 'tag need' }, need) : null,
+    n.dead ? h('span', { class: 'tag dead' }, '죽은 화면') : null);
 }
 
 const PATH_TAG = { conditioned: LINK_VERDICT.conditioned, broken: LINK_VERDICT.broken, unknown: LINK_VERDICT.unknown, 'off-map': '맵에 없는 화면' };
 const hopTitle = (l, i) => [`단계 ${i + 1} → ${i + 2}`, PATH_TAG[l.verdict] ?? LINK_VERDICT[l.verdict], LINK_VERDICT_TITLE[l.verdict]].filter(Boolean).join(' · ');
 const pathChip = (tag, attrs, verdict, end, ...text) => h(tag, { ...attrs, class: `story-chip ${end} l-${verdict}` }, verdict === 'broken' ? h('b', {}, '✕') : null, ...text);
 
+// 단계 번호와 떨어진 단계로 가는 표지는 상자 안에 넣고, 이웃 단계로 가는 선의 표지와 숨긴 화면 수만 상자 곁에 둔다.
 function storyMarks({ st, hidden, ring }, boxes, els) {
   const parentOf = new Map(boxes.map((b) => [b.key, b.parent]));
   const marks = [];
   const edges = new Map();
-  const mark = (key, side, kind, el) => {
+  const mark = (key, kind, el) => {
     el.classList.add('mark');
     el.dataset.at = key;
     el.style.visibility = 'hidden';
-    marks.push({ key, side, kind, el });
+    marks.push({ key, kind, el });
   };
   const numbers = new Map();
   st.steps.forEach((s, i) => {
     if (s.onMap && els.has(s.screen)) numbers.set(s.screen, [...(numbers.get(s.screen) ?? []), i + 1]);
   });
-  for (const [id, nums] of numbers) {
-    els.get(id).classList.add('on-story');
-    if (ring !== null && st.steps[ring].screen === id) els.get(id).classList.add('story-ring');
-    mark(id, 'entry', 'badge', h('span', { class: 'story-badge' }, nums.join('·')));
-  }
+  const before = new Map();
+  const after = new Map();
+  const add = (into, id, el) => into.set(id, [...(into.get(id) ?? []), el]);
   const hover = (i, on) => () => {
     for (const c of document.querySelectorAll(`#flow .story-chip[data-hop="${i}"]`)) c.classList.toggle('hovered', on);
   };
@@ -3249,18 +3081,30 @@ function storyMarks({ st, hidden, ring }, boxes, els) {
     const tag = PATH_TAG[l.verdict];
     if (from && to && parentOf.get(to) === from) {
       const key = `${from}\n${to}`;
-      if (!edges.has(key) && tag) mark(to, 'entry', 'tag', h('span', { class: `story-tag l-${l.verdict}`, title: hopTitle(l, i) }, tag));
+      if (!edges.has(key) && tag) mark(to, 'tag', h('span', { class: `story-tag l-${l.verdict}`, title: hopTitle(l, i) }, tag));
       edges.set(key, l.verdict);
       return;
     }
     const chip = (end, other, ...text) => pathChip('button', {
       type: 'button', title: hopTitle(l, i), 'data-hop': i,
-      onclick: () => ringStep(other), onmouseenter: hover(i, true), onmouseleave: hover(i, false), onfocus: hover(i, true), onblur: hover(i, false),
+      onclick: (e) => {
+        e.stopPropagation();
+        ringStep(other);
+      },
+      onkeydown: (e) => e.stopPropagation(),
+      onmouseenter: hover(i, true), onmouseleave: hover(i, false), onfocus: hover(i, true), onblur: hover(i, false),
     }, l.verdict, end, ...text);
-    if (from) mark(from, 'exit', 'chip', chip('exit', i + 1, `→ ${i + 2}`, tag ? h('small', {}, tag) : null));
-    if (to) mark(to, 'entry', 'chip', chip('entry', i, `${i + 1} →`));
+    if (from) add(after, from, chip('exit', i + 1, `→ ${i + 2}`, tag ? h('small', {}, tag) : null));
+    if (to) add(before, to, chip('entry', i, `${i + 1} →`));
   });
-  for (const [id, n] of hidden) if (els.has(id)) mark(id, 'exit', 'hidden', h('span', { class: 'story-hidden' }, `다른 화면 ${n} 숨김`));
+  for (const [id, nums] of numbers) {
+    const pill = els.get(id);
+    pill.classList.add('on-story');
+    if (ring !== null && st.steps[ring].screen === id) pill.classList.add('story-ring');
+    pill.prepend(...(before.get(id) ?? []), h('span', { class: 'story-badge' }, nums.join('·')));
+    pill.append(...(after.get(id) ?? []));
+  }
+  for (const [id, n] of hidden) if (els.has(id)) mark(id, 'hidden', h('span', { class: 'story-hidden' }, `다른 화면 ${n} 숨김`));
   return { marks, edges };
 }
 
@@ -3291,7 +3135,7 @@ function storyPicker(st) {
     legendInfo('path', '스토리 경로 읽는 법', pathLegend()));
 }
 
-function storyStrip(st, drawn) {
+function storyStrip(st) {
   const { ring } = state.storyPath;
   return h('ol', { class: 'story-strip', 'aria-label': '스토리 단계' }, st.steps.flatMap((s, i) => {
     const l = st.links[i - 1];
@@ -3302,7 +3146,7 @@ function storyStrip(st, drawn) {
       h('li', {}, h('button', { type: 'button', class: `story-step${s.onMap ? '' : ' off'}${ring === i ? ' current' : ''}`, title: s.screen, onclick: () => ringStep(i) },
         h('span', { class: 'story-badge' }, i + 1),
         h('span', { class: 'name' }, s.onMap ? screenLabel(s.screen) : s.screen),
-        !s.onMap ? h('span', { class: 'note' }, '맵에 없는 화면') : drawn.has(s.screen) ? null : h('span', { class: 'note' }, '접힘'))),
+        s.onMap ? null : h('span', { class: 'note' }, '맵에 없는 화면'))),
     ];
   }));
 }
@@ -3310,55 +3154,75 @@ function storyStrip(st, drawn) {
 function pickStory(id) {
   if (id) showStoryPath(id);
   else if (state.storyPath) leaveStoryPath();
-  renderFlow();
+  render();
   if (id) Object.assign(document.getElementById('flow'), { scrollTop: 0, scrollLeft: 0 });
   document.querySelector('.story-pick select')?.focus();
+}
+
+// 이미 고른 화면을 다시 누르면 오른쪽 칸에 쓰던 표시를 그대로 둔다.
+function openPicked(id) {
+  const again = state.flowPicked && state.target?.node === id;
+  state.flowPicked = true;
+  state.side = 'screens';
+  if (again) render();
+  else select(id);
+  showBox(id);
+}
+
+function ringScreen(id) {
+  const st = pathStoryOf();
+  if (!st || st.steps[state.storyPath.ring]?.screen === id) return;
+  const i = st.steps.findIndex((s) => s.onMap && s.screen === id);
+  state.storyPath.ring = i < 0 ? null : i;
+}
+
+function pickScreen(id) {
+  ringScreen(id);
+  openPicked(id);
+}
+
+function unpickScreen() {
+  state.flowPicked = false;
+  if (state.storyPath) state.storyPath.ring = null;
+  render();
 }
 
 function ringStep(i) {
   const st = pathStoryOf();
   if (!st) return;
   state.storyPath.ring = i;
-  const step = st.steps[i];
-  if (step.onMap) {
-    const { parentOf } = storyTrees(state.data.flow, st);
-    for (let id = parentOf.get(step.screen); id != null; id = parentOf.get(id)) state.collapsed.delete(id);
-  }
-  renderFlow();
-  if (step.onMap) showBox(step.screen);
+  if (!st.steps[i].onMap) return renderFlow();
+  openPicked(st.steps[i].screen);
 }
 
-// 위쪽 막대가 붙어 있어 상자가 그 밑에 가려지지 않도록, 옮긴 뒤 한 번 더 재어 맞춘다.
 function showBox(key) {
   const flow = document.getElementById('flow');
   const box = flow.querySelector(`.box.screen[data-key="${CSS.escape(key)}"]`);
   if (!box) return;
-  const bar = flow.querySelector('.flowbar');
-  for (let pass = 0; pass < 2; pass += 1) {
-    const view = flow.getBoundingClientRect();
-    const r = box.getBoundingClientRect();
-    const top = bar.getBoundingClientRect().bottom;
-    if (r.top < top + 8 || r.bottom > view.bottom - 8) flow.scrollTop += r.top - top - 32;
-    if (r.left < view.left + 8 || r.right > view.right - 8) flow.scrollLeft += r.left - view.left - 56;
-  }
+  const view = flow.getBoundingClientRect();
+  const r = box.getBoundingClientRect();
+  const by = (start, end, from, to) => (start < from || end - start > to - from ? start - from : end > to ? end - to : 0);
+  flow.scrollTop += by(r.top, r.bottom, view.top + 16, view.bottom - 16);
+  flow.scrollLeft += by(r.left, r.right, view.left + 16, view.right - 32);
 }
 
 // 상자는 페이지에 붙은 뒤에야 잴 수 있으므로, 상자를 붙인 쪽이 measureWidths → fit → measureHeights → place 순서로 불러 위치를 정한다.
+// 확대·축소는 배치를 마친 그림을 통째로 키우거나 줄이고, 그림을 감싼 칸이 바뀐 크기만큼 자리를 차지한다.
 function canvas(roots, { group = false, story = null } = {}) {
-  const shown = { collapsed: state.collapsed, openCalls: state.openCalls };
-  const boxes = flowBoxes(roots, shown);
-  const els = new Map(boxes.map((b) => [b.key, b.node.kind === 'screen' ? screenBox(b) : callBox(b)]));
+  const boxes = flowBoxes(roots);
+  const els = new Map(boxes.map((b) => [b.key, screenPill(b.node)]));
   for (const [key, box] of els) {
     box.classList.add('measuring');
     box.dataset.key = key;
   }
   const path = story && storyMarks(story, boxes, els);
-  const view = { ...shown, group, marks: path?.marks };
+  const view = { group, marks: path?.marks };
   const el = h('div', { class: story ? 'canvas story' : 'canvas' }, [...els.values()], path?.marks.map((m) => m.el));
+  const holder = h('div', { class: 'zoom-box' }, el);
   const sizes = {};
   let cols;
   return {
-    el,
+    el: holder,
     measureWidths() {
       for (const [key, box] of els) sizes[key] = { width: Math.ceil(box.getBoundingClientRect().width) };
       for (const m of path?.marks ?? []) {
@@ -3382,10 +3246,9 @@ function canvas(roots, { group = false, story = null } = {}) {
       for (const b of out.boxes) Object.assign(els.get(b.key).style, { left: `${b.x}px`, top: `${b.y}px` });
       const lines = svg('svg', { width: out.width, height: out.height });
       for (const e of out.edges) {
-        const mx = e.ex === undefined ? (e.x1 + e.x2) / 2 : (e.ex + e.nx) / 2;
-        const d = e.grouped ? `M${e.x1},${e.y1} V${e.y2} H${e.x2}`
-          : e.ex === undefined ? `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${e.x2},${e.y2}`
-            : `M${e.x1},${e.y1} H${e.ex} C${mx},${e.y1} ${mx},${e.y2} ${e.nx},${e.y2} H${e.x2}`;
+        const end = e.nx ?? e.x2;
+        const mx = (e.x1 + end) / 2;
+        const d = `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${end},${e.y2}${end === e.x2 ? '' : ` H${e.x2}`}`;
         const hop = path?.edges.get(`${e.from}\n${e.to}`);
         const cls = [e.guards.length ? 'guarded' : '', hop ? `story-edge l-${hop}` : ''].filter(Boolean).join(' ');
         lines.append(svg('path', { d, class: cls, 'data-from': e.from, 'data-to': e.to }));
@@ -3396,7 +3259,9 @@ function canvas(roots, { group = false, story = null } = {}) {
         const { x, y, height, count } = out.group;
         el.append(h('h2', { class: 'group-head', style: `left:${x}px;top:${y}px;height:${height}px` }, `더 뻗지 않는 진입 화면 ${count}`));
       }
-      Object.assign(el.style, { width: `${out.width}px`, height: `${out.height}px` });
+      const z = state.zoom;
+      Object.assign(el.style, { width: `${out.width}px`, height: `${out.height}px`, transform: z === 1 ? '' : `scale(${z})` });
+      Object.assign(holder.style, { width: `${out.width * z}px`, height: `${out.height * z}px` });
       return out.group && { count: out.group.count, cellW: cols.cellW, per: cols.per };
     },
   };
@@ -3428,8 +3293,10 @@ function setLegend(info, open) {
   applyLegend(info);
 }
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || document.getElementById('flow')?.hidden !== false) return;
-  for (const info of document.querySelectorAll('#flow [data-legend]')) if (legendShown(info)) setLegend(info, false);
+  if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || document.getElementById('flow')?.hidden !== false || document.querySelector('dialog[open]')) return;
+  const open = [...document.querySelectorAll('#flow-bar [data-legend]')].filter(legendShown);
+  for (const info of open) setLegend(info, false);
+  if (!open.length && state.flowPicked && !(e.target instanceof Element && e.target.closest('input, select, textarea, #center, #right'))) unpickScreen();
 });
 
 // key 는 'flow' 또는 'path' 로, 단추와 설명 상자의 이름에도 쓴다.
@@ -3445,14 +3312,172 @@ function legendInfo(key, label, items) {
   return info;
 }
 
-const KEY_BORDERS = [...['pass', 'fail', 'pending'].map((s) => [`s-${s}`, TEST_STATUS[s]]), ['s-none', NO_TESTS]];
+const KEY_STATUS = [...['pass', 'fail', 'pending'].map((s) => [`s-${s}`, TEST_STATUS[s]]), ['s-none', NO_TESTS]];
 
 function flowKey() {
   return h('ul', { class: 'flowkey', 'aria-label': '흐름도 범례' },
-    KEY_BORDERS.map(([status, label]) => h('li', {},
-      h('span', { class: `swatch ${status}`, 'aria-hidden': 'true' }), h('span', { class: 'sr-only' }, '테두리 '), h('span', { class: 'key-label' }, label))),
+    KEY_STATUS.map(([status, label]) => h('li', {}, h('span', { class: `sq ${status}`, 'aria-hidden': 'true' }), h('span', { class: 'key-label' }, label))),
     h('li', { class: 'apart' },
       svg('svg', { viewBox: '0 0 26 6', 'aria-hidden': 'true' }, svg('path', { class: 'guarded', d: 'M0 3H26' })), h('span', { class: 'key-label' }, '조건 걸린 링크')));
+}
+
+const legendPill = (cls, ...tags) => h('span', { class: `box s-none${cls}`, 'aria-hidden': 'true' }, h('span', { class: 'sq' }), h('span', { class: 'path' }, '/주소'), ...tags);
+
+function flowLegendItems() {
+  return [
+    h('li', {}, h('span', { class: 'sample' }, legendPill('', h('span', { class: 'tag api' }, 'API 8'))), h('span', {}, '이 화면에서 부르는 API 호출의 수. 화면을 누르면 오른쪽에 호출마다 테스트가 보입니다')),
+    h('li', {}, h('span', { class: 'sample' }, legendPill('', h('span', { class: 'tag need' }, KIND_LABEL.role)), legendPill('', h('span', { class: 'tag need' }, KIND_LABEL.setting))),
+      h('span', {}, '특정 역할이나 설정에서만 열리는 화면. 무엇이 필요한지는 마우스를 올리면 보입니다')),
+    h('li', {}, h('span', { class: 'sample' }, legendPill(' jump')), h('span', {}, '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크가 닿는 화면')),
+    h('li', {}, h('span', { class: 'sample' }, '불러옴 N · 지나감 N'), h('span', {}, '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 연 브라우저 테스트. 마우스를 올리면 보입니다', h('small', {}, '상태 색과 테스트 수에는 넣지 않음'))),
+  ];
+}
+
+const FLOW_FILTERS = [
+  { key: 'all', label: '전체', keep: () => true },
+  { key: 'none', label: NO_TESTS, keep: (n) => statusOf(n.counts) === 's-none' },
+  { key: 'imported', label: '태그 없는 테스트만', title: '태그 붙은 테스트는 없고, 이 화면을 불러오는 단위 테스트나 도는 동안 이 화면을 연 브라우저 테스트만 있는 화면', keep: (n) => statusOf(n.counts) === 's-none' && n.imported + n.passed > 0 },
+  { key: 'fail', label: TEST_STATUS.fail, keep: (n) => n.counts.fail > 0 },
+  { key: 'pending', label: TEST_STATUS.pending, keep: (n) => statusOf(n.counts) === 's-pending' },
+  { key: 'pass', label: TEST_STATUS.pass, keep: (n) => statusOf(n.counts) === 's-pass' },
+];
+
+function syncFlowFilters() {
+  for (const button of document.querySelectorAll('#flow-bar .flow-filters button')) {
+    const on = button.dataset.filter === state.flowFilter;
+    button.classList.toggle('on', on);
+    button.setAttribute('aria-pressed', String(on));
+  }
+}
+
+function setFlowFilter(key) {
+  state.flowFilter = state.flowFilter === key ? 'all' : key;
+  syncFlowFilters();
+  applyFlowEmphasis();
+}
+
+// 검색 입력창을 새로 만들면 조합 중이던 한글이 끊기고 포커스도 사라지므로 한 번 만든 입력창을 다시 붙인다.
+let flowSearchInput = null;
+function flowSearch() {
+  flowSearchInput ??= h('input', {
+    type: 'search',
+    class: 'flow-search',
+    placeholder: '화면 찾기',
+    'aria-label': '그림에서 화면 찾기',
+    title: 'Enter 를 누르면 찾은 첫 화면을 고릅니다',
+    oninput: (e) => {
+      state.flowQuery = e.target.value;
+      applyFlowEmphasis();
+    },
+    onkeydown: (e) => {
+      if (e.key !== 'Enter' || e.isComposing || !state.flowQuery.trim()) return;
+      const first = document.querySelector('#flow .box.screen:not(.off)');
+      if (first) pickScreen(first.dataset.key);
+    },
+  });
+  if (flowSearchInput.value !== state.flowQuery) flowSearchInput.value = state.flowQuery;
+  return flowSearchInput;
+}
+
+function setZoom(z, focus) {
+  state.zoom = Math.floor(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100 + 1e-6) / 100;
+  renderFlow();
+  if (focus) document.querySelector(`#flow-bar .zoom .${focus}`)?.focus();
+}
+
+// 진입 화면을 모은 칸은 폭에 따라 줄 수가 바뀌어 높이도 바뀌므로 한 번 더 맞춘다.
+function fitZoom() {
+  const flow = document.getElementById('flow');
+  for (let pass = 0; pass < 2; pass += 1) {
+    const canvases = [...flow.querySelectorAll('.canvas')];
+    if (!canvases.length) return;
+    const pad = getComputedStyle(flow);
+    const headings = [...flow.querySelectorAll(':scope > h2')].reduce((sum, el) => {
+      const m = getComputedStyle(el);
+      return sum + el.offsetHeight + parseFloat(m.marginTop) + parseFloat(m.marginBottom);
+    }, 0);
+    const room = { width: flowInnerWidth(flow), height: flow.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom) - headings };
+    const width = Math.max(...canvases.map((c) => c.offsetWidth));
+    const height = canvases.reduce((sum, c) => sum + c.offsetHeight, 0);
+    setZoom(Math.min(1, room.width / width, room.height / height));
+  }
+  document.querySelector('#flow-bar .zoom .zoom-fit')?.focus();
+}
+
+function zoomControls() {
+  return h('span', { class: 'zoom', role: 'group', 'aria-label': '확대와 축소' },
+    h('button', { type: 'button', class: 'zoom-fit', title: '그림 전체가 보이게 맞춥니다', 'aria-label': '그림 전체가 보이게 맞춤', onclick: fitZoom }, '⛶'),
+    h('button', { type: 'button', class: 'zoom-out', title: '축소', 'aria-label': '축소', disabled: state.zoom <= ZOOM_MIN, onclick: () => setZoom(state.zoom - ZOOM_STEP, 'zoom-out') }, '−'),
+    h('span', { class: 'zoom-label' }, `${Math.round(state.zoom * 100)}%`),
+    h('button', { type: 'button', class: 'zoom-in', title: '확대', 'aria-label': '확대', disabled: state.zoom >= ZOOM_MAX, onclick: () => setZoom(state.zoom + ZOOM_STEP, 'zoom-in') }, '+'));
+}
+
+function renderFlowBar(st, screens) {
+  const bar = document.getElementById('flow-bar');
+  const searching = flowSearchInput !== null && document.activeElement === flowSearchInput;
+  const tested = screens.filter((n) => statusOf(n.counts) !== 's-none').length;
+  const picked = state.flowPicked ? screenOf(state.selected) : null;
+  fill(bar,
+    h('strong', { class: 'flowsummary' }, `테스트 있는 화면 ${tested}/${screens.length}`),
+    h('span', { class: 'flow-filters', role: 'group', 'aria-label': '상태로 거르기' }, FLOW_FILTERS.map((f) => h('button', { type: 'button', 'data-filter': f.key, title: f.title, onclick: () => setFlowFilter(f.key) },
+      f.label, ' ', h('span', { class: 'count' }, String(screens.filter(f.keep).length))))),
+    flowSearch(),
+    storyPicker(st),
+    picked ? h('span', { class: 'picking' }, '고른 화면 ', h('strong', {}, picked.path), ' ', h('button', { type: 'button', class: 'unpick', onclick: unpickScreen }, '선택 해제')) : null,
+    h('div', { class: 'flowguide' }, flowKey(), legendInfo('flow', '흐름도 읽는 법', flowLegendItems()), zoomControls()),
+    st ? storyStrip(st) : null);
+  syncFlowFilters();
+  if (searching) flowSearchInput.focus();
+}
+
+// 스토리 경로를 보는 동안에는 경로 표시가 이미 같은 일을 하므로 흐리게 하지 않는다.
+function applyFlowEmphasis() {
+  const flow = document.getElementById('flow');
+  const { roots, unreached, path } = drawnTrees();
+  const screens = screensIn([...roots, ...unreached]);
+  const byId = new Map(screens.map((n) => [n.id, n]));
+  const picked = state.flowPicked ? byId.get(state.selected) ?? null : null;
+  let related = null;
+  let jumps = new Set();
+  if (picked && !path) {
+    const parentOf = new Map(screens.flatMap((n) => n.children.map((c) => [c.id, n.id])));
+    related = new Set(screensIn([picked]).map((n) => n.id));
+    for (let id = parentOf.get(picked.id); id !== undefined; id = parentOf.get(id)) related.add(id);
+    jumps = new Set(picked.jumps.map((j) => j.to).filter((id) => !related.has(id)));
+  }
+  const filter = FLOW_FILTERS.find((f) => f.key === state.flowFilter);
+  const q = state.flowQuery.trim().toLowerCase();
+  const found = (n) => !q || `${n.label}\n${n.component}\n${n.id}`.toLowerCase().includes(q);
+  for (const box of flow.querySelectorAll('.box.screen')) {
+    const n = byId.get(box.dataset.key);
+    box.classList.toggle('picked', n === picked);
+    box.setAttribute('aria-pressed', String(n === picked));
+    box.classList.toggle('dim', related !== null && !related.has(n.id) && !jumps.has(n.id));
+    box.classList.toggle('jump', jumps.has(n.id));
+    box.classList.toggle('off', !filter.keep(n) || !found(n));
+  }
+  for (const line of flow.querySelectorAll('.canvas svg path[data-from]')) {
+    const on = related !== null && related.has(line.dataset.from) && related.has(line.dataset.to);
+    line.classList.toggle('on', on);
+    line.classList.toggle('dim', related !== null && !on);
+  }
+}
+
+function renderGaps() {
+  const screens = drawnScreens();
+  const failing = screens.filter((n) => n.counts.fail > 0);
+  const untested = screens.filter((n) => statusOf(n.counts) === 's-none');
+  const group = (title, list) => (list.length
+    ? [h('h3', {}, `${title} ${list.length}`), h('ul', { class: 'screens gap-list' }, list.map((n) => screenItem({ id: n.id, path: n.label, component: n.component, dead: n.dead }, { selected: false, onclick: () => pickScreen(n.id) })))]
+    : null);
+  fill(document.getElementById('gaps'),
+    h('h2', {}, `빈틈 ${failing.length + untested.length}`),
+    h('p', { class: 'muted lead' }, pathStoryOf()
+      ? '이 스토리의 경로에 그린 화면 가운데 실패했거나 테스트가 없는 화면입니다. 누르면 그 화면을 엽니다.'
+      : '실패했거나 테스트가 없는 화면입니다. 누르면 그림에서 그 화면에 이어진 길만 진하게 남기고 그 화면을 엽니다.'),
+    group(TEST_STATUS.fail, failing),
+    group(NO_TESTS, untested),
+    failing.length + untested.length ? null : h('p', { class: 'muted' }, '빈틈이 없습니다.'));
 }
 
 function renderFlow() {
@@ -3466,50 +3491,25 @@ function renderFlow() {
     canvases.push(c);
     return c.el;
   };
-  const { roots, unreached, summary } = state.data.flow;
-  const act = (fn) => () => { fn(flowTrees()); renderFlow(); };
-  const focused = state.focus && screensIn(state.data.flow.roots.concat(unreached)).find((n) => n.id === state.focus.id);
   const st = pathStoryOf();
   if (st && state.storyPath.ring >= st.steps.length) state.storyPath.ring = null;
-  const path = st && storyTrees(state.data.flow, st);
+  const { roots, unreached, path } = drawnTrees();
   const story = st && { st, hidden: path.hidden, ring: state.storyPath.ring };
-  const drawn = st && new Set(flowBoxes([...path.roots, ...path.unreached], { collapsed: state.collapsed, openCalls: state.openCalls }).map((b) => b.key));
+  const { summary } = state.data.flow;
+  renderFlowBar(st, screensIn([...roots, ...unreached]));
   fill(flow,
-    h('div', { class: 'flowbar' },
-      h('strong', { class: 'flowsummary' }, `테스트 있는 화면 ${summary.tested}/${summary.screens} · 실패 ${summary.failing} · 태그 없는 테스트만 있는 화면 ${summary.importedOnly}`),
-      h('button', { onclick: act(expandAll) }, '모두 펼치기'),
-      h('button', { onclick: act(collapseAll) }, '모두 접기'),
-      h('button', { title: '테스트가 없거나 실패한 상자까지 가는 길만 펼치고 나머지는 접습니다', onclick: act(openGapsOnly) }, '빈틈만 펼치기'),
-      st
-        ? h('span', { class: 'story-only' }, '스토리 경로만 보는 중 ',
-          h('button', { onclick: () => { leaveStoryPath({ whole: true }); renderFlow(); document.getElementById('flow').scrollTop = 0; } }, '전체 보기'))
-        : state.focus
-          ? h('span', { class: 'focusing' }, h('strong', {}, focused?.label ?? state.focus.id), ' 가지만 보는 중 ',
-            h('button', { onclick: () => { state.focus = null; renderFlow(); document.getElementById('flow').scrollTop = 0; } }, '전체 보기'))
-          : null,
-      state.flowError ? h('span', { class: 'error' }, state.flowError) : null,
-      storyPicker(st),
-      h('div', { class: 'flowguide' }, flowKey(), legendInfo('flow', '흐름도 읽는 법', [
-        h('li', {}, h('span', { class: 'sample' }, '→ /주소'), h('span', {}, '다른 가지에 이미 그린 화면으로 가는 링크')),
-        h('li', {}, h('span', { class: 'sample' }, '불러옴 N · 지나감 N · 호출함 N'), h('span', {}, '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 열거나 이 호출을 보낸 브라우저 테스트', h('small', {}, '테두리와 테스트 수에는 넣지 않음'))),
-      ])),
-      st ? storyStrip(st, drawn) : null),
-    st ? [
-      path.roots.length ? draw(path.roots, { story }) : null,
-      ...(path.unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(path.unreached).length}`), draw(path.unreached, { story })] : []),
-    ]
-      : state.focus ? draw(state.focus.roots)
-        : roots.length ? draw(roots, { group: true })
-          : h('p', { class: 'muted' }, summary.screens ? '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.' : '화면이 없습니다.'),
-    !st && !state.focus && unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(unreached).length}`), draw(unreached)] : null);
+    roots.length ? draw(roots, { group: !st, story })
+      : st ? null : h('p', { class: 'muted' }, summary.screens ? '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.' : '화면이 없습니다.'),
+    unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(unreached).length}`), draw(unreached, { story })] : null);
   // 단계마다 모든 캔버스를 다 읽은 뒤에 쓰므로, 한 캔버스에 쓴 것 때문에 다음 캔버스를 읽다가 레이아웃을 다시 계산하지 않는다.
-  const width = flowInnerWidth(flow);
+  const width = flowInnerWidth(flow) / state.zoom;
   for (const c of canvases) c.measureWidths();
   for (const c of canvases) c.fit(width);
   for (const c of canvases) c.measureHeights();
   drawnGrid = canvases.map((c) => c.place()).find(Boolean) ?? null;
+  applyFlowEmphasis();
   Object.assign(flow, { scrollTop, scrollLeft });
-  for (const info of flow.querySelectorAll('[data-legend]')) applyLegend(info);
+  for (const info of document.querySelectorAll('#flow-bar [data-legend]')) applyLegend(info);
   recordPlace();
 }
 
@@ -3530,15 +3530,25 @@ function render() {
   if (state.ended || state.failed) return;
   renderHeader();
   const flow = state.view === 'flow';
-  document.querySelector('main').hidden = flow;
-  document.getElementById('flow').hidden = !flow;
+  // 고른 화면이 그림에 없으면 오른쪽 칸과 그림이 서로 다른 화면을 가리키므로 선택을 해제한다.
+  if (flow && state.flowPicked && !drawnScreens().some((n) => n.id === state.selected)) state.flowPicked = false;
+  const picked = flow && state.flowPicked;
+  const main = document.querySelector('main');
+  main.classList.toggle('flow', flow);
+  main.classList.toggle('picked', picked);
+  for (const id of ['flow-bar', 'flow']) document.getElementById(id).hidden = !flow;
+  document.getElementById('left').hidden = flow;
+  for (const id of ['center', 'right']) document.getElementById(id).hidden = flow && !picked;
+  document.getElementById('gaps').hidden = !flow || picked;
   document.getElementById('view-list').className = flow ? '' : 'on';
   document.getElementById('view-flow').className = flow ? 'on' : '';
   syncHeaderLocks();
-  if (flow) return renderFlow();
-  renderLeft();
-  renderCenter();
-  renderRight();
+  if (flow) renderFlow();
+  else renderLeft();
+  if (picked || !flow) {
+    renderCenter();
+    renderRight();
+  } else renderGaps();
   recordPlace();
 }
 
@@ -3548,7 +3558,7 @@ function placeHash() {
   const p = new URLSearchParams();
   if (state.view === 'flow') {
     if (state.storyPath) p.set('story', state.storyPath.id);
-    else if (state.focus) p.set('from', state.focus.id);
+    if (state.flowPicked) p.set('screen', state.selected);
   } else if (state.side === 'stories') {
     if (state.composing) p.set('new', '1');
     else if (state.candidate !== null) p.set('candidate', state.candidate);
@@ -3562,50 +3572,44 @@ function placeHash() {
 }
 
 let shownPlace = null;
-let placeTurn = 0;
 let applyingPlace = false;
 
-// 주소가 아니라 앞서 그린 자리와 견주므로, 주소에 적힌 가지를 읽어 오는 동안 같은 자리를 다시 그려도 기록이 늘지 않는다.
+// 주소창이 아니라 직전에 그린 자리와 비교하므로, 같은 자리를 다시 그려도 방문 기록이 늘지 않는다.
 function recordPlace() {
   const hash = placeHash();
   if (applyingPlace || shownPlace === null) {
     if (hash !== location.hash) history.replaceState(null, '', hash);
   } else if (hash !== shownPlace) {
-    placeTurn += 1;
     if (hash !== location.hash) history.pushState(null, '', hash);
   }
   shownPlace = hash;
 }
 
 // 화면에서 그 자리를 누른 것과 같게 움직인다.
-// 가지를 읽어 오는 동안 검토자가 다른 자리를 고르면 그쪽을 따른다.
-async function applyPlace() {
-  const turn = ++placeTurn;
+function applyPlace() {
   const [head, query] = location.hash.slice(1).split('?');
   const p = new URLSearchParams(query ?? '');
   let go = render;
   if (head === 'flow') {
-    const from = p.get('from');
     const story = pathStories().some((st) => st.id === p.get('story')) ? p.get('story') : null;
-    let focus = state.storyPath ? state.storyPath.saved.focus : state.focus;
-    if (!story && from !== (focus?.id ?? null)) {
-      const roots = from ? await branchRoots(from).catch(() => null) : null;
-      if (turn !== placeTurn) return;
-      focus = roots && { id: from, roots };
-    }
+    const screen = p.get('screen');
     go = () => {
       if (story) {
         if (state.storyPath?.id !== story) showStoryPath(story);
-      } else {
-        if (state.storyPath) leaveStoryPath();
-        state.focus = focus;
-      }
+      } else if (state.storyPath) leaveStoryPath();
+      state.flowPicked = screen !== null && drawnScreens().some((n) => n.id === screen);
+      if (state.flowPicked) {
+        state.side = 'screens';
+        if (screen !== state.selected) setSelected(screen);
+        ringScreen(screen);
+      } else if (state.storyPath) state.storyPath.ring = null;
       state.view = 'flow';
       render();
     };
   } else if (PLACE_TABS.includes(head)) {
     state.view = 'list';
     state.side = head;
+    if (head !== 'screens') state.flowPicked = false;
     const screen = p.get('screen');
     const story = p.get('story');
     const candidate = p.get('candidate');
@@ -3683,15 +3687,12 @@ window.addEventListener('resize', () => {
     resizeFrame = null;
     const flow = document.getElementById('flow');
     if (state.ended || flow.hidden || drawnGrid === null) return;
-    if (cellsPerRow(drawnGrid.count, drawnGrid.cellW, flowInnerWidth(flow)) !== drawnGrid.per) renderFlow();
+    if (cellsPerRow(drawnGrid.count, drawnGrid.cellW, flowInnerWidth(flow) / state.zoom) !== drawnGrid.per) renderFlow();
   });
 });
 
 // 리뷰를 끝낸 뒤에 늦게 실패한 읽기만 알리지 않고, 그리다 난 오류는 그대로 알린다.
-load().then(() => {
-  openGapsOnly(flowTrees());
-  return applyPlace();
-}, (err) => {
+load().then(applyPlace, (err) => {
   if (!state.ended) throw err;
 }).catch((err) => {
   state.failed = true;
