@@ -828,6 +828,34 @@ Measured on appsmith: API functions go from 0 to 169, calls from 0 to 115, and c
 The two example maps and the into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time they were
 written.
 
+
+**A package of the repository outside `srcRoot` is read from the folder `sourcePackages` gives it, and a
+`calledApiModules` run that stands in for a real file or folder outside `srcRoot` says so.**
+On mattermost the API class `Client4` is in the workspace package `@mattermost/client` (`webapp/platform/client`),
+and `channels/src/packages/mattermost-redux/src/client/index.ts`, inside `srcRoot`, makes the instance the app
+calls. duru took the package name for an outside package and ran a value doing nothing in its place, with nothing
+printed. Alternatives compared, on that checkout with a link under `node_modules` made as an install makes it and
+global `fetch` recorded as in the #169 measurement:
+- A wider `srcRoot` (`webapp`): the import is a package name, not a path, so it still did not reach the folder;
+  0 calls, as before. Every path in the config also moves.
+- A list of folders read beside `srcRoot`: the same, since nothing ties the name `@mattermost/client` to a folder.
+- `sourcePackages`, a package name with its folder: `Client4` runs, with 667 API functions and 533 calls.
+Reason: only the name-to-folder pair reaches the class, and it is the same pair a workspace link or a tsconfig
+alias holds. An import of a listed package, or of a path under it, is read from that folder everywhere duru reads
+imports, as an alias is.
+The notice covers two kinds of import duru stands in for although they lead to the repository's own files: a
+tsconfig alias whose first target holding a source file is outside `srcRoot` and outside every `node_modules`, so a
+catch-all `"*": ["node_modules/*"]` alias names no library, and a package whose entry under `node_modules` is a link
+to a folder outside every `node_modules`, as a workspace install makes. Other packages are not named, because the
+summary would list every library: 48 on appsmith, and two on into-sign 2.0.0, whose map would then change. The
+notice lives in the map as `outsideStandIns` only when there is one, so maps of apps without such an import stay as
+they were.
+A file running `Client4` also met `export { WebSocketMessages }` of a name imported with
+`import type * as`, which TypeScript drops and Node's type stripping keeps; a name imported only as a type is now
+left out of such an `export { … }`.
+Measured: the two example maps and the into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time
+they were written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

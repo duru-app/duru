@@ -4,6 +4,7 @@ import path from 'node:path';
 export interface AliasRule {
   name: string;
   targets: string[];
+  anywhere?: boolean;
 }
 
 interface AliasMatch {
@@ -72,6 +73,7 @@ const hasDeclaration = (base: string) => DECLARATIONS.some((ext) => fs.existsSyn
 const holdsSomething = (base: string) => fs.existsSync(base) || Boolean(firstFile(base)) || hasDeclaration(base);
 
 function aliasTarget(srcRoot: string, { rule, captured }: AliasMatch): AliasTargetResult {
+  if (rule.anywhere) return { file: firstFile(rule.targets[0].replace('*', () => captured)), quiet: true };
   let quiet = false;
   for (const target of rule.targets) {
     const base = underSrcRoot(srcRoot, target.replace('*', () => captured));
@@ -100,6 +102,31 @@ function resolveDetailed(srcRoot: string, fromFile: string, spec: string, aliase
 // 상대 경로, tsconfig 의 paths 별칭, srcRoot 바로 아래 폴더 이름으로 시작하는 경로 순으로 찾는다. 외부 패키지와 srcRoot 밖의 파일은 null.
 export function resolveImport(srcRoot: string, fromFile: string, spec: string, aliases: AliasRule[] | null = null): string | null {
   return resolveDetailed(srcRoot, fromFile, spec, aliases).file;
+}
+
+const inNodeModules = (file: string) => file.split(path.sep).includes('node_modules');
+const packageName = (spec: string) => spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/');
+
+export function outsideSource(srcRoot: string, fromFile: string, spec: string, aliases: AliasRule[] | null): string | null {
+  if (spec.startsWith('.')) return null;
+  const matched = aliases && matchRule(aliases, spec);
+  if (matched && !matched.rule.anywhere) {
+    for (const target of matched.rule.targets) {
+      const base = underSrcRoot(srcRoot, target.replace('*', () => matched.captured));
+      const file = isInside(srcRoot, base) ? null : firstFile(base);
+      if (file) return inNodeModules(fs.realpathSync(file)) ? null : file;
+    }
+  }
+  for (let dir = path.dirname(fromFile); ; dir = path.dirname(dir)) {
+    const link = path.join(dir, 'node_modules', packageName(spec));
+    if (fs.existsSync(link)) {
+      if (!fs.lstatSync(link).isSymbolicLink()) return null;
+      const real = fs.realpathSync(link);
+      const realRoot = fs.existsSync(srcRoot) ? fs.realpathSync(srcRoot) : srcRoot;
+      return inNodeModules(real) || isInside(realRoot, real) ? null : path.join(srcRoot, path.relative(realRoot, real));
+    }
+    if (path.dirname(dir) === dir) return null;
+  }
 }
 
 export function importResolver({ srcRoot, aliases = null }: { srcRoot: string; aliases?: AliasRule[] | null }): ImportResolver {

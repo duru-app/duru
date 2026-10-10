@@ -335,6 +335,61 @@ test('a listed file that calls require() for a package, reads process.env.NODE_E
   assert.deepEqual(map.unrunApiModules, [{ file: 'contracts/api/local.ts', error }]);
 });
 
+const REMOTE_API = "import { executeRequest } from '../../../client/src/contracts/api/request';\nimport type * as Shapes from './shapes';\n\nexport { Shapes };\nexport class RemoteApi {\n  load() {\n    return executeRequest({ endpoint: { method: 'GET', path: '' }, url: '/remote' });\n  }\n}\n";
+const remoteCopy = (keys: Record<string, unknown>, files: Record<string, string>) => {
+  const configFile = fixtureCopy({ ...CALLED, ...keys }, files);
+  const remote = path.join(path.dirname(configFile), 'packages/remote-api/src');
+  fs.mkdirSync(remote, { recursive: true });
+  fs.writeFileSync(path.join(remote, 'index.ts'), REMOTE_API);
+  return configFile;
+};
+
+test('a package named in sourcePackages is read from its folder outside srcRoot, so an API class there runs and gives its requests, even when the package exports again a name imported only as a type', async () => {
+  const configFile = remoteCopy(
+    { calledApiModules: ['contracts/api/remote.ts', ...CALLED.calledApiModules], sourcePackages: { '@acme/remote-api': 'packages/remote-api/src' } },
+    { 'contracts/api/remote.ts': "import { RemoteApi } from '@acme/remote-api';\n\nexport const remoteApi = new RemoteApi();\n" },
+  );
+  const map = await build(configFile);
+  assert.deepEqual(endpointsOf(map, 'remoteApi.load').map(([method, url]) => `${method} ${url}`), ['GET /remote']);
+  assert.equal('outsideStandIns' in map, false);
+  assert.equal('unresolvedAliasImports' in map, false);
+});
+
+test('a package linked to a folder outside srcRoot, or an alias pointing outside srcRoot, that runs as a stand-in is reported with where it is and the files importing it, while a library an alias points at in node_modules is not', async () => {
+  const configFile = remoteCopy(
+    { calledApiModules: ['contracts/api/remote.ts', 'contracts/api/aliased.ts', ...CALLED.calledApiModules], tsconfig: 'client/tsconfig.json' },
+    {
+      'contracts/api/remote.ts': "import { RemoteApi } from '@acme/remote-api';\nimport pad from 'left-pad';\n\nexport const remoteApi = new RemoteApi(pad);\n",
+      'contracts/api/aliased.ts': "import { RemoteApi } from '@remote/index';\n\nexport const aliasedApi = new RemoteApi();\n",
+    },
+  );
+  const copy = path.dirname(configFile);
+  fs.writeFileSync(path.join(copy, 'client/tsconfig.json'), JSON.stringify({ compilerOptions: { baseUrl: 'src', paths: { '@remote/*': ['../../packages/remote-api/src/*'], '*': ['../../node_modules/*', '../../types/*'] } } }));
+  fs.mkdirSync(path.join(copy, 'types'), { recursive: true });
+  fs.writeFileSync(path.join(copy, 'types/left-pad.d.ts'), 'export default function pad(s: string): string;\n');
+  fs.mkdirSync(path.join(copy, 'node_modules/left-pad'), { recursive: true });
+  fs.writeFileSync(path.join(copy, 'node_modules/left-pad/index.js'), 'module.exports = (s) => s;\n');
+  fs.mkdirSync(path.join(copy, 'node_modules/@acme'), { recursive: true });
+  fs.symlinkSync(path.join(copy, 'packages/remote-api'), path.join(copy, 'node_modules/@acme/remote-api'));
+  const map = await build(configFile);
+  assert.deepEqual(map.outsideStandIns, [
+    { spec: '@acme/remote-api', file: '../../packages/remote-api', importedBy: ['contracts/api/remote.ts'] },
+    { spec: '@remote/index', file: '../../packages/remote-api/src/index.ts', importedBy: ['contracts/api/aliased.ts'] },
+  ]);
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('as a stand-in')), [
+    '  calledApiModules ran @acme/remote-api as a stand-in, though it is ../../packages/remote-api outside srcRoot, imported by contracts/api/remote.ts',
+    '  calledApiModules ran @remote/index as a stand-in, though it is ../../packages/remote-api/src/index.ts outside srcRoot, imported by contracts/api/aliased.ts',
+  ]);
+});
+
+test('sourcePackages that is not an object of package names and folders, or names a folder that is not there, is refused', () => {
+  assert.throws(() => loadConfig(fixtureCopy({ sourcePackages: ['packages'] })), /^Error: sourcePackages must map package names/);
+  assert.throws(() => loadConfig(fixtureCopy({ sourcePackages: { 'not a name': 'packages' } })), /^Error: sourcePackages must map package names/);
+  assert.throws(() => loadConfig(fixtureCopy({ sourcePackages: { '@acme/remote-api': 'packages/none' } })), /sourcePackages @acme\/remote-api: packages\/none is not a folder/);
+});
+
 test('the new keys are refused when one comes without the other, a file is in both API lists, a place is not a number followed by keys, or a relative import names no file', async () => {
   const refused = (keys: Record<string, unknown>) => assert.throws(() => loadConfig(fixtureCopy(keys)));
   refused({ calledApiModules: CALLED.calledApiModules });

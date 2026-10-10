@@ -7,6 +7,7 @@ import type { BodyMethod, BodyTypeNotice } from './body-types.ts';
 import { UNKNOWN } from './client.ts';
 import { moduleCopier } from './constants.ts';
 import { parseSource } from './parse.ts';
+import { outsideSource } from './resolve.ts';
 import type { ImportResolver } from './resolve.ts';
 
 type NameNode = { name?: string; value?: string };
@@ -261,7 +262,15 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       for (const m of bodyMethods) if (fields.has(m.key)) for (const e of m.endpoints) e.bodyOptions = fields.get(m.key);
       bodyTypeNotices.push(...notices);
     }
-    return { functions, keyOf: (file: string, exportName: string) => keyOf.get(`${file}\n${exportName}`) ?? prefixOf(file, exportName), failedModules, bodyTypeNotices };
+    const outside = new Map<string, { spec: string; file: string; importedBy: Set<string> }>();
+    for (const { spec, from } of copier.standIns()) {
+      const file = outsideSource(config.srcRoot, from, spec, config.aliases);
+      if (!file) continue;
+      if (!outside.has(spec)) outside.set(spec, { spec, file: rel(file), importedBy: new Set() });
+      outside.get(spec)!.importedBy.add(rel(from));
+    }
+    const outsideStandIns = [...outside.values()].map((s) => ({ ...s, importedBy: [...s.importedBy].sort() }));
+    return { functions, keyOf: (file: string, exportName: string) => keyOf.get(`${file}\n${exportName}`) ?? prefixOf(file, exportName), failedModules, bodyTypeNotices, outsideStandIns };
   } finally {
     copier.cleanup();
   }

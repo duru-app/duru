@@ -48,6 +48,7 @@ interface CopyNode {
   end: number;
   loc: { start: { line: number } };
   importKind?: string;
+  exportKind?: string;
   specifiers: CopySpecifier[];
   source: { value: string; start: number; end: number };
   moduleReference: { type: string };
@@ -169,6 +170,7 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
   const transformed = new Map<string, Transformed>();
   const stubs = Object.assign(Object.create(null), config.constantStubs);
   const standIns = new Map<string, string[] | null>();
+  const filled: { spec: string; from: string }[] = [];
 
   // JSX 나 데코레이터는 Node 가 실행하지 못하므로, import 로 닿은 그런 파일은 그 파일이 export 하는 이름마다 아무 일도 하지 않는 값을 준다.
   // 실행할 수 있는 파일이면 null 이다.
@@ -272,6 +274,7 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
       const target = replacing !== null ? stubFile(absFile, spec, replacing, names)
         : exported ? stubFile(absFile, spec, '', [...exported, ...names])
         : resolved ? copy(resolved) : stubFile(absFile, spec, stubs[spec] ?? (fillMissing ? '' : 'export default {};'), names);
+      if (replacing === null && !resolved && !(spec in stubs)) filled.push({ spec, from: absFile });
       edits.push([node.source.start, node.source.end, JSON.stringify(target)]);
     }
     if (fillMissing && src.includes('require')) {
@@ -284,6 +287,15 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
           edits.push([p.node.start!, p.node.end!, `${value}${lines(p.node.start!, p.node.end!)}`]);
         },
       });
+    }
+    if (TYPESCRIPT.test(absFile)) {
+      // 타입으로만 가져온 이름을 export { X } 로 다시 내보내면 TypeScript 는 지우지만 Node 의 type stripping 은 그대로 둬서 오류가 난다.
+      const typeNames = new Set((ast.program.body as unknown as CopyNode[]).flatMap((n) => (n.type === 'ImportDeclaration' ? n.specifiers.filter((sp) => n.importKind === 'type' || sp.importKind === 'type').map((sp) => sp.local.name) : [])));
+      for (const node of ast.program.body as unknown as CopyNode[]) {
+        if (!typeNames.size || node.type !== 'ExportNamedDeclaration' || node.source || node.exportKind === 'type' || !node.specifiers.length) continue;
+        const kept = node.specifiers.filter((sp) => !typeNames.has(sp.local.name));
+        if (kept.length < node.specifiers.length) edits.push([node.start, node.end, kept.length ? `export { ${kept.map((sp) => src.slice(sp.start, sp.end)).join(', ')} };${lines(node.start, node.end)}` : removed(node)[2]]);
+      }
     }
     if (fillMissing && src.includes('import.meta')) {
       // 빌드 도구가 채우는 환경 값은 실행할 때 없으므로 아무 일도 하지 않는 값으로 읽는다.
@@ -337,6 +349,7 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
     rename,
     explain,
     finish: writeStubs,
+    standIns: () => filled,
     cleanup: () => fs.rmSync(dir, { recursive: true, force: true }),
   };
 }
