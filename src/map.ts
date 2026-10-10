@@ -23,6 +23,7 @@ interface MapConfig extends AccessConfig {
   callLinks?: CallLink[];
   moves?: { from: string; to: string; reason: string }[];
   settingsFunctions: unknown[];
+  app?: { apiPaths: string[] } | null;
   tsconfig?: string | null;
   aliases?: AliasRule[] | null;
 }
@@ -50,7 +51,7 @@ interface ApiFunctions {
 
 export type MapScreen = Omit<ClientScreen, 'apiCalls' | 'links'> & {
   id: string;
-  apiCalls: (ClientScreen['apiCalls'][number] & { endpoints: Endpoint[] | null })[];
+  apiCalls: (Omit<ClientScreen['apiCalls'][number], 'request' | 'navigation'> & { direct?: true; endpoints: Endpoint[] | null })[];
   links: (ClientScreen['links'][number] & { conditions: Access['linkConditions'][number][number] })[];
   access: Access['access'][number];
   dead: boolean;
@@ -91,6 +92,7 @@ export type ScreenMap = {
   unrunApiModules?: NonNullable<Client['unrunApiModules']>;
   outsideStandIns?: Client['outsideStandIns'];
   silentApiModules?: Client['silentApiModules'];
+  unreadRequests?: { fn: string; file: string | null; line: number; url: string | null }[];
   bodyTypeNotices?: NonNullable<Client['bodyTypeNotices']>;
   deadCalls: { screen: string; fn: string; method: string | null; url: string | null; callSite: string }[];
   duplicateIds: { id: string; places: { file: string; line: number }[] }[];
@@ -160,20 +162,26 @@ const OPTION_SOURCES = ['source', 'type', 'config'];
 function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: string, bodyOptions: Record<string, string[]>, bodyTypeExclusions: Record<string, string[]>) {
   const calls = new Map<string, any>();
   const typeFields = new Map<string, Set<string>>();
+  const nodeOf = (e: Endpoint) => {
+    const call = callOf(e, apiPathPrefix);
+    if (!call) return null;
+    if (!calls.has(call.id)) {
+      calls.set(call.id, { ...call, server: { ...e.server }, apiFunctions: new Set(), screens: new Set(), options: new Map() });
+      typeFields.set(call.id, new Set());
+    }
+    const node = calls.get(call.id);
+    if (e.server.candidates) node.server.candidates = [...new Set([...node.server.candidates, ...e.server.candidates])].sort();
+    return node;
+  };
   for (const [name, fn] of Object.entries(apiFunctions)) {
     for (const e of fn.endpoints) {
-      const call = callOf(e, apiPathPrefix);
-      if (!call) continue;
-      if (!calls.has(call.id)) {
-        calls.set(call.id, { ...call, server: { ...e.server }, apiFunctions: new Set(), screens: new Set(), options: new Map() });
-        typeFields.set(call.id, new Set());
-      }
-      const node = calls.get(call.id);
+      const node = nodeOf(e);
+      if (!node) continue;
       node.apiFunctions.add(name);
-      for (const key of e.bodyOptions ?? []) typeFields.get(call.id)!.add(key);
-      if (e.server.candidates) node.server.candidates = [...new Set([...node.server.candidates, ...e.server.candidates])].sort();
+      for (const key of e.bodyOptions ?? []) typeFields.get(node.id)!.add(key);
     }
   }
+  for (const s of screens) for (const c of s.apiCalls) if (c.direct) c.endpoints.forEach(nodeOf);
   const optionOf = (node: any, key: string): CallOption => {
     if (!node.options.has(key)) node.options.set(key, { sources: new Set(), sites: new Map() });
     return node.options.get(key);
@@ -233,11 +241,29 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     }
   }
 
+  // POST 가 아닌 페이지 이동은 앱의 화면이 열리는 것일 수 있어, 서버 목록에 그 경로가 있거나 app.apiPaths 로 시작할 때만 서버로 가는 요청으로 본다.
+  // 서버 목록은 apiPathPrefix 를 뗀 경로라, 그 접두사 없이 적힌 주소가 목록과 맞는 것은 같은 경로가 아니다.
+  const listed = (e: { url: string | null; server: EndpointMatch }) => ['match', 'method-mismatch'].includes(e.server.status) && e.url!.startsWith(apiPathPrefix);
+  const goesToServer = (e: { url: string | null; server: EndpointMatch }) => listed(e) || (config.app?.apiPaths ?? []).some((prefix) => e.url!.startsWith(prefix));
   const mapped: any[] = screens.map((s) => ({
     id: screenId(s.path, s.component),
     ...s,
-    apiCalls: s.apiCalls.map((c) => ({ ...c, endpoints: apiFunctions[c.fn]?.endpoints ?? null })),
+    apiCalls: s.apiCalls.flatMap(({ request, navigation, ...c }) => {
+      if (!request) return [{ ...c, endpoints: apiFunctions[c.fn]?.endpoints ?? null }];
+      const { unresolved, ...sent } = request;
+      const e = { ...sent, line: c.line, server: unresolved ? { status: 'unresolved' as const } : matchEndpoint(server, sent.method, sent.url, apiPathPrefix), callId: null as string | null };
+      if (navigation && sent.method !== 'POST' && !goesToServer(e)) return [];
+      e.callId = callOf(e, apiPathPrefix)?.id ?? null;
+      return [{ ...c, direct: true, endpoints: [e] }];
+    }),
   }));
+  const unread = new Map<string, NonNullable<ScreenMap['unreadRequests']>[number]>();
+  for (const s of mapped) {
+    for (const c of s.apiCalls) {
+      if (c.direct && !c.endpoints[0].callId) unread.set(`${c.file}\n${c.line}\n${c.fn}\n${c.endpoints[0].url}`, { fn: c.fn, file: c.file, line: c.line, url: c.endpoints[0].url });
+    }
+  }
+  const unreadRequests = [...unread.values()].sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.fn, b.fn) || compare(a.url ?? '', b.url ?? ''));
   const { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
   mapped.forEach((s, i) => {
     s.access = access[i];
@@ -269,6 +295,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(unrunApiModules && { unrunApiModules }),
     ...(outsideStandIns.length && { outsideStandIns }),
     ...(silentApiModules.length && { silentApiModules }),
+    ...(unreadRequests.length && { unreadRequests }),
     ...(bodyTypeNotices && { bodyTypeNotices }),
     deadCalls,
     duplicateIds,

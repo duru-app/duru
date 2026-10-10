@@ -923,6 +923,70 @@ that sets the address of the window it opened stops there.
 Measured: the two example maps and the into-sign 1.5.0 map are identical to main's apart from the time they were
 written; the 2.0.0 map differs only in those nine methods, their nine calls and the screens that call them.
 
+**A request a screen sends from its own source, by `fetch`, axios or the function or object `requestFunction`
+names, is read from the source and put on that screen as a call of its own, with no API function. A form that
+posts is read the same way; another move of the browser is a call only when the server list or `app.apiPaths`
+shows that its path goes to the server.**
+The #169 measurement counted 23 requests that outline sends from scenes, components and hooks, 7 in mattermost,
+and 34 moves of the browser written in the screen files of outline, appsmith and mattermost. duru read none of
+them: a screen's calls were only the API functions its sources call by name. The requests are now read in every
+file a screen reaches, as API calls are, without running the file, so the address is what the source spells there:
+text, a template, a concatenation, a local constant, with `{?}` for a piece taken from a value.
+Alternatives compared:
+- An entry in `apiFunctions` for each such request, under a name made of its file and line: every reader of the
+  map would work unchanged, but the list of API functions and its count would hold places in screen files, and a
+  name with a line in it changes with any edit above that line. The screen's own `apiCalls` entry carries the
+  endpoint instead, marked `direct`, with how the request is sent where the function name would be; `calls`, the
+  server match, the dead calls and the matching of browser test requests read endpoints from both places.
+- A config key of its own for the function screens send through: it is the same function the API files send
+  through, so `requestFunction` names it, and no longer needs `calledApiModules` beside it.
+- Leaving out every file the request function's file imports: into-sign 2.0.0 sends again with `axios(config)`
+  in the file behind its request function, and that request has no address of its own. But a request function
+  that imports a store for the token would take the requests of every file the store reaches with it. A request
+  is left out only when no screen file reaches it except through the request function's file.
+- Recording every move to a path that is no route of the app, as the moves inside API methods are: on the measured
+  apps this put `GET /admin_console/system_attributes/membership_policies` on the mattermost map and
+  `GET /settings/ai` on the appsmith map, both screens of the app whose routes duru had not read, and with a
+  server list each would be a dead call on its screen. A form that posts cannot open a screen, so it is always a
+  request; for the rest duru cannot tell a screen from a server address, so the config has to.
+- Reading `"/api/v1/" + LOGIN_SUBMIT_PATH`, with the name imported, as `/api/v1/{?}`: four forms of appsmith
+  became one call `POST /api/v1/{?}`, a path variable where there is a fixed word. Following the import to the
+  constant was compared: it is a reading of named constants across files, which route paths and conditions would
+  use too, and belongs to a change of its own. An address with a piece from an imported name, or from a function
+  imported by name, counts as not read.
+- Listing the moves duru could not read beside the requests: an `href` or a `window.open` given a value is mostly
+  a link to another site or to a screen, and the lines would bury the requests. Only requests and posting forms
+  are listed.
+Reason: a request whose address was not read stays on its screen without an address and is listed in
+`unreadRequests` and in the summary, since a request missing without a word reads as a screen that sends nothing.
+Known limits: the address is judged from its text. An address chosen by a condition
+(`client.post(on ? '/a' : '/b')`) is not read and is listed. A request sent through a function of the app that
+`requestFunction` does not name is listed once, inside that function, and the addresses its callers give are
+not read. `XMLHttpRequest`, `sendBeacon`, other request libraries and a `fetch` imported from a package are
+neither read nor listed. The address is as the source writes it: a base address the request object gets in its
+own file is not in front (`/documents.list` on outline, where the server has `/api/documents.list`). An address
+on another host is a call only when the host is `app.server`, and is listed as not read otherwise: taking the
+host off every such address, as the API files' requests have it, made a request to another service a dead call
+on its screen, so an app that writes its own server's host into its requests needs `app.server` to see them. A
+value joined to a word of a path (`/api/users${query}`, `/api/v${n}/users`) leaves the address not read, since
+the word with the value after it matched whatever path of that length the server list had first. An API function written in
+the same file as the request object it sends through is behind the request function and left out. An options
+object kept in a constant and given its `method` afterwards reads as `GET`. A form on an element that hangs off a
+value the file does not import (`fetcher.Form`, a local `S.Form`) is not read, since it may be a Form of the
+router. Without a server list and without `app.apiPaths`, no move by `GET` is a call (`/auth/passkey` on outline), and with a server list a download link
+whose endpoint the server no longer has is left out, not shown as dead; with `apiPathPrefix`, the list counts
+only for an address that starts with the prefix.
+Measured on the #169 copies: of the 23 outline requests 18 are calls, 4 are listed as not read (three places: an
+image address from a value, an address chosen by a condition, the `action` of the form being submitted) and 1 is
+absent (`client.batch`); of the 7 mattermost requests 6 are listed as not read, their address starting with what
+a `Client4` method returns, and 1 is absent (`XMLHttpRequest`). Of the 34 moves 4 are calls (outline's posting
+forms), 4 are listed as not read (appsmith's posting forms, whose path ends in an imported name) and 26 are
+absent: 13 in mattermost start with what a `Client4` method returns, and the rest take their address from a
+server answer, a prop or a function, sit in a saga no screen reaches, or are `GET` moves with no server list
+given. With `client` named as the request object, outline has 100 such places in all, the stores and models its
+screens import among them, and 85 of them give an address. The two example maps and the into-sign 1.5.0 and
+2.0.0 maps are identical to main's apart from the time they were written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

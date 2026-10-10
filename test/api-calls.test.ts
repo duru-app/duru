@@ -484,9 +484,8 @@ test('a link a listed method makes and clicks, window.open and an address given 
   });
 });
 
-test('requestFunction is refused without calledApiModules, as is a file in both API lists, a place that is not a number followed by keys, or a relative import that names no file', async () => {
+test('a file in both API lists is refused, as is a place that is not a number followed by keys, or a relative import that names no file', async () => {
   const refused = (keys: Record<string, unknown>) => assert.throws(() => loadConfig(fixtureCopy(keys)));
-  refused({ requestFunction: CALLED.requestFunction });
   refused({ ...CALLED, calledApiModules: ['_ajax/AjaxFunc.ts'] });
   refused({ ...CALLED, requestFunction: { ...CALLED.requestFunction, url: 'url' } });
   refused({ ...CALLED, requestFunction: { ...CALLED.requestFunction, body: 'body' } });

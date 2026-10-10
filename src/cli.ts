@@ -71,6 +71,9 @@ if (command === 'tasks') {
   if (map.serverNotCompared) console.log(`  ${SERVER_NOT_COMPARED}`);
   for (const m of map.unrunApiModules ?? []) console.log(`  calledApiModules ${m.file} did not run: ${m.error}`);
   for (const f of map.silentApiModules ?? []) console.log(`  calledApiModules ${f} recorded no request; without requestFunction only requests sent with fetch or by moving the browser are recorded`);
+  const direct = new Map<string, any>(map.screens.flatMap((s: any) => s.apiCalls.filter((c: any) => c.direct).map((c: any) => [`${c.file}\n${c.line}\n${c.fn}\n${c.endpoints[0].method} ${c.endpoints[0].url}`, c])));
+  if (direct.size) console.log(`requests and navigations written in screen sources ${direct.size} | address not read ${map.unreadRequests?.length ?? 0}`);
+  for (const r of map.unreadRequests ?? []) console.log(`  request ${r.fn} ← ${r.file}:${r.line}: address not read${r.url === null ? '' : `, only ${r.url}`}`);
   for (const s of map.outsideStandIns ?? []) console.log(`  calledApiModules ran ${s.spec} as a stand-in, though it is ${s.file} outside srcRoot, imported by ${s.importedBy.join(', ')}`);
   for (const n of map.bodyTypeNotices ?? []) {
     console.log(`  body type ${n.method}: ${n.field ? `${n.field} goes with ${n.beside}, so it is not taken as an on/off option` : n.reason}`);

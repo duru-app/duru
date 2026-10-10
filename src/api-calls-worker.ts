@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import inspector from 'node:inspector';
 import { parentPort, workerData } from 'node:worker_threads';
+import { placeUnknown, sentAddress, staysInBrowser, VERBS, WITH_DATA, withBase } from './sent-address.ts';
 
 declare global {
   var __duruNothing: () => void;
@@ -16,7 +17,6 @@ export interface WorkerData {
   timeoutMs: number;
   mark: string;
   markNumber: number;
-  scheme: string;
 }
 
 export interface SentRequest {
@@ -49,7 +49,7 @@ export interface FunctionLocation {
 
 type Callable = Function;
 
-const { modules, skip, request, timeoutMs, mark, markNumber, scheme }: WorkerData = workerData;
+const { modules, skip, request, timeoutMs, mark, markNumber }: WorkerData = workerData;
 const skipped = new Set(skip);
 const send = (message: object) => parentPort!.postMessage(message);
 
@@ -118,9 +118,6 @@ const keep = (method: string | null, url: string | null, body?: boolean) => {
 const recorder = (...args: unknown[]) => keep(request.method ? text(at(args, request.method)) : null, text(at(args, request.url)), request.body ? at(args, request.body) != null : undefined);
 globalThis.__duruRecorder = recorder;
 
-const VERBS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'];
-const WITH_DATA = new Set(['post', 'put', 'patch']);
-const SCHEME = new RegExp(scheme, 'i');
 const standIns = new WeakSet<object>();
 const duruValues = new WeakSet<object>([fake, idsAsText, globalThis.__duruNothing]);
 const recordedFetch = (input: unknown, init?: { method?: unknown }) => {
@@ -132,24 +129,10 @@ standIns.add(recordedFetch);
 (globalThis as { fetch: unknown }).fetch = recordedFetch;
 (browserGlobals.window as { fetch?: unknown }).fetch = recordedFetch;
 
-const NOT_SENT = /^(?:(?!https?:)[a-z][a-z\d+.-]*:|[#?])/i;
-const TOKEN_KEY = /token$/i;
-function sentAddress(url: string) {
-  const [sent] = url.split('#');
-  const query = sent.indexOf('?');
-  if (query < 0) return sent;
-  const kept = sent.slice(query + 1).split('&').filter((pair) => !TOKEN_KEY.test(pair.split('=')[0]));
-  return sent.slice(0, query) + (kept.length ? `?${kept.join('&')}` : '');
-}
 const FAKES = [mark, String(markNumber)];
-function placeUnknown(url: string) {
-  const path = url.replace(/^[a-z][a-z\d+.-]*:\/\/[^/]*/i, '').split(/[?#]/)[0];
-  if (FAKES.some((fake) => path.split(fake).slice(0, -1).some((before) => !before.endsWith('/')))) return true;
-  return !/[^/]/.test(FAKES.reduce((rest, fake) => rest.replaceAll(fake, ''), path));
-}
 function navigate(address: unknown) {
   const url = text(address);
-  if (url && !NOT_SENT.test(url) && !placeUnknown(url)) keep('GET', sentAddress(url));
+  if (url && !staysInBrowser(url) && !placeUnknown(url, FAKES)) keep('GET', sentAddress(url));
 }
 // 현재 페이지 URL 은 알 수 없어 가짜 값으로 둔다.
 const location = Object.defineProperty(
@@ -189,12 +172,11 @@ function requestObject(base: unknown): unknown {
     if (!given) return null;
     return typeof given === 'string' ? given : mark;
   };
-  const join = (url: string | null, from: unknown) => (typeof from !== 'string' || url === null || SCHEME.test(url) ? url : url ? `${from.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}` : from);
   type Config = { method?: unknown; url?: unknown; baseURL?: unknown };
-  const fromConfig = (config: Config | undefined) => keep(text(config?.method) ?? 'get', join(text(config?.url), baseOf(config)));
+  const fromConfig = (config: Config | undefined) => keep(text(config?.method) ?? 'get', withBase(text(config?.url), baseOf(config)));
   const sendAny = (first: string | Config | undefined, second?: Config) => (typeof first === 'string' ? fromConfig({ ...second, url: first }) : fromConfig(first));
   const verbs: Record<string | symbol, (...args: never[]) => unknown> = Object.fromEntries(
-    VERBS.map((verb) => [verb, (url: unknown, ...rest: unknown[]) => keep(verb, join(text(url), baseOf(rest[WITH_DATA.has(verb) ? 1 : 0])))]),
+    VERBS.map((verb) => [verb, (url: unknown, ...rest: unknown[]) => keep(verb, withBase(text(url), baseOf(rest[WITH_DATA.has(verb) ? 1 : 0])))]),
   );
   verbs.request = sendAny;
   verbs.create = (options?: { baseURL?: unknown }) => requestObject(options?.baseURL === undefined ? base : options.baseURL);
