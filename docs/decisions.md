@@ -744,6 +744,29 @@ Measured with `test/fixtures/app` and its route file rewritten to literal paths:
 two example maps and the into-sign 1.5.0 and 2.0.0 maps, which set both keys, are identical to main's apart from the
 time they were written.
 
+**A route written as a property of what a call returns (`Drafts.Component`, with `const Drafts =
+createLazyComponent(() => import('./Drafts'))`) points at the file that the function given to the call loads,
+whatever the property is called.**
+The call is read the way a call around a loader already is: by its first argument, never by the name of the function
+called. With a property left over, the function counts only when what it returns is the loaded module, the test
+already used for a component the route file imports by name (the import, awaited, with `.catch` or `.finally`, or
+`.then` giving `{ default: … }`), since a function that builds a table of loaders (`definePages(() => ({ Archive:
+lazy(…), … }))`) also holds dynamic imports, and the last one there belongs to another screen. Before, the property
+name left over at the loader stopped the lookup, so outline, which wraps every screen in `createLazyComponent`
+returning `{ Component, preload }`, had 16 of its 30 routes without a component file.
+Alternatives compared:
+- A config item naming the functions whose result holds the component: it takes only the names listed, so each
+  app needs one more line, and an app that forgets it gets the same silence as before.
+Reason: the first argument already decides the file of `lazy(…)` and its wrappers without a name, and the property
+only says which part of the result the route uses. The price is that a route written with a property that is not a
+component (`X.preload`) also gets the loaded file, and that a table spreading such a call (`{ Archive: …,
+...extra(() => import('./Profile')) }`) gives its file to the names written before the spread and to names the table
+does not hold; a route never renders such a property, and a lazy component is not spread into a table, so neither is
+expected. A loader that wraps the import (`() => retry(() => import('./X'))`) is not read with a property left over.
+Measured: on outline the routes without a component file go from 16 to 2; the two left are a component declared in
+the route file and a route built from a list of settings entries (`config.component`). The two example maps and the
+into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time they were written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

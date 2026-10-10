@@ -285,8 +285,11 @@ export function componentFileFinder(resolve: Resolve) {
       const first = value.get('arguments')[0];
       return first && !first.isSpreadElement() ? fromValue(first, keys, file, ctx, true) : LOST;
     }
+    if (value.isFunction()) {
+      const found = viaCall ? loadedBy(value, file, ctx.strict || keys.length > 0) : null;
+      return found ?? (keys.length ? LOST : made(file));
+    }
     if (keys.length) return LOST;
-    if (value.isFunction()) return (viaCall && loadedBy(value, file, ctx.strict)) || made(file);
     return value.isClass() || value.isTaggedTemplateExpression() ? made(file) : LOST;
   }
 

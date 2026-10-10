@@ -820,6 +820,32 @@ test('a table entry is followed through a wrapping call holding the dynamic impo
   }
 });
 
+test('a route written as a property of what a call returns points at the file that the function given to the call returns the import of, at no file when that function wraps the import in another call, and not at the file of another screen when it builds a table of screens', async () => {
+  const declared = [
+    [PAGE_ROUTES, 'const { Archive } = LazyPage;', "const { Archive } = LazyPage;\nconst Drafts = createLazyComponent(() => import('../screens/Archive'));"],
+    [PAGE_ROUTES, '<Archive />', '<Drafts.Component />'],
+  ];
+  await inCopy(declared, async (copy) => {
+    const archive = pageAt(await buildFixture(copy), '/archive');
+    assert.deepEqual([archive.id, archive.componentFile], ['/archive#Drafts.Component', 'screens/Archive.tsx']);
+  });
+  await inCopy([[TABLE, 'Archive: lazy(loadPage.Archive),', 'Archive: createLazyComponent(loadPage.Archive),'], [PAGE_ROUTES, '<Archive />', '<Archive.Component />']], async (copy) => {
+    const archive = pageAt(await buildFixture(copy), '/archive');
+    assert.deepEqual([archive.id, archive.componentFile], ['/archive#Archive.Component', 'screens/Archive.tsx']);
+  });
+  await inCopy([[TABLE, 'Archive: lazy(loadPage.Archive),', 'Archive: register(() => Later),'], [PAGE_ROUTES, '<Archive />', '<Archive.Component />']], async (copy) => {
+    assert.equal(pageAt(await buildFixture(copy), '/archive').componentFile, null);
+  });
+  const builtByCall = "export const LazyPage = definePages(() => ({ Archive: lazy(loadPage.Archive), Profile: lazy(() => import('../screens/Profile')) }));";
+  await inCopy([[TABLE, 'export const LazyPage = {\n  Archive: lazy(loadPage.Archive),\n  Profile: lazy(loadPage.Profile),\n} satisfies Record<keyof typeof loadPage, unknown>;', builtByCall]], async (copy) => {
+    assert.equal(pageAt(await buildFixture(copy), '/archive').componentFile, null);
+  });
+  const wrapped = [declared[0][0], declared[0][1], declared[0][2].replace("() => import('../screens/Archive')", "() => retry(() => import('../screens/Archive'))")];
+  await inCopy([wrapped, declared[1]], async (copy) => {
+    assert.equal(pageAt(await buildFixture(copy), '/archive').componentFile, null);
+  });
+});
+
 test('a name taken out of a table under another name, or out of a table inside a table, keeps the name written at the route and finds the same file', async () => {
   await inCopy([[PAGE_ROUTES, 'const { Archive } = LazyPage;', 'const { Archive: Old = null } = LazyPage;'], [PAGE_ROUTES, '<Archive />', '<Old />']], async (copy) => {
     const archive = pageAt(await buildFixture(copy), '/archive');
