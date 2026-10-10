@@ -150,6 +150,10 @@ client with example results and a config to start from.
   `{?}`. A form that posts is read the same way. Any other move of the browser written in a screen source is a
   call only when the config shows that its path goes to the server: the server list holds the path, or the path
   starts with one of `app.apiPaths`. An address on another host is read only when that host is `app.server`.
+
+  In an app that uses redux-saga, a request a saga sends is a call of each screen that dispatches an action the
+  saga waits for, among the sagas the app runs with a `createSagaMiddleware()` result. No key turns this on. The
+  requests are those of the API functions and of `requestFunction` that the saga reaches, as a screen's are.
 - `sourcePackages` — packages of the same repository whose source duru reads like the app's own (optional),
   each package name with its source folder as a path from the config file. An import of a package that is not
   listed here runs as a value that does nothing, as an outside package does. For a client whose API class lives in
@@ -296,6 +300,8 @@ usable as a test tag. It lists its route file and line, its component file, its 
 reaches, the settings it reads, and its links to other screens with the conditions guarding them. The settings
 and links come from every file in `sourceFiles`. The API calls are only those the screen's code reaches, so a file
 in `sourceFiles` can hold calls the screen does not list; each call names the file and line where it is written.
+A call a saga makes for the screen names the line in the saga and lists under `actions` each action type that
+leads to it, with the places the screen dispatches that type (`dispatchedAt`).
 A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
 inside it.
 
@@ -336,14 +342,20 @@ listing the places whose value the source does not show in full.
   methods may have stopped on the fake values (`silentApiModules`). When no listed file sends one, the run stops
   with an error that also gives the cause for each listed file that did not run.
 - `requests and navigations written in screen sources N | address not read N` — the requests and the moves of
-  the browser read from the sources of the screens, and how many of them gave no address. Printed when there is
-  one.
+  the browser read from the sources of the screens and of the sagas that send for them, and how many of them gave
+  no address. Printed when there is one.
 - `request <how> ← <file>:<line>: address not read` — a request in a screen source whose address is not written
   where it is sent, such as an address the function is given or one a function of the app builds; `, only <text>`
   follows when a part of it was read. The request stays on the screen without an address and is in no call
   (`unreadRequests`). When the line points into a function of the app that its other requests go through, name
   that function in `requestFunction`. A request to an address on another host is printed the same way, with the
   address in full after `only`: when that host is the app's server, give it in `app.server`.
+- `redux-saga runs from <file>:<line> | watchers N | requests of sagas on screens N` — where the app runs its
+  sagas, how many pairs of an action type and the saga code waiting for it those runs reach, and how many
+  requests written in sagas come to a screen through an action it dispatches (`sagas` on the map). Printed when
+  a source file names redux-saga.
+- `redux-saga is imported, but no run of a createSagaMiddleware() result was found, so no request of a saga is put on a screen`
+  — the sources name redux-saga, but duru found no `run` of a saga middleware, so no saga request is on the map.
 - `calledApiModules ran <import> as a stand-in, though it is <path> outside srcRoot, imported by <files>` — an
   import the listed files reach that duru ran as a value doing nothing, although it is a file or folder of the
   repository outside `srcRoot`, reached through a tsconfig alias or a workspace link under `node_modules`. What it

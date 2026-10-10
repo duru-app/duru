@@ -1064,6 +1064,61 @@ How it is built, and what each choice was weighed against:
   buttons of its own, so the question of words or icons on them is closed; the zoom buttons are symbols with a
   name for screen readers.
 
+**A request a redux-saga saga sends is a call of each screen that dispatches an action type the saga's watcher
+waits for. No config key turns this on: the sagas are those a `createSagaMiddleware()` result runs, and a type
+matches when the screen and the watcher name the same declared constant, or the same text.**
+The #194 measurement found 186 requests that appsmith sends only from sagas, and duru put none of them on a
+screen: the sagas sit in files the screens do not import, and a screen reaches them only through `dispatch`. duru
+now reads, in every file a screen reaches, what the screen gives `dispatch` (an object, or a call of an action
+creator that returns one) and the action creators it hands to `connect`, and finds the watchers waiting for that
+type: `takeEvery`, `takeLatest`, `takeLeading`, `debounce`, `throttle`, a `take` repeated in a loop (from an
+`actionChannel` too), and an object keyed by action type whose values a watcher picks. The saga code a watcher
+starts is followed by names, as a screen's code is, to the API functions and requests it reaches.
+Alternatives compared:
+- A config key naming the saga root or the effect functions: the import from `redux-saga/effects` already names
+  the effects and `createSagaMiddleware()` from `redux-saga` names the root, so a key would repeat the source.
+  `@redux-saga/core` and the effects of typed-redux-saga are read under their own package names.
+- Every watcher in the files that name redux-saga, instead of those a run reaches: on appsmith both give the same
+  388 watchers. The run is kept because a watcher no run starts never listens, and without a run the summary can
+  say why no saga request is on the map. Test files are left out of the search for a run. The middleware may be
+  made in one file and run in another, so the search also reads the files that call a `run`.
+- Matching by the value of the type (`"FETCH_ALL_WORKSPACES_INIT"`) instead of where it is declared: appsmith's
+  `ReduxActionTypes` is about seventy objects spread into one, and reading its values means evaluating them.
+  Matching by declaration makes `ReduxActionTypes.X` imported from `ee/` and from `ce/` one type, since `ee/`
+  re-exports `ce/`. A constant that holds a single string also matches its text, so `dispatch({ type: 'X' })`
+  meets `takeLatest(X, …)` when `const X = 'X'`.
+- A `take` outside a loop counted as a watcher, with the code after it as what it starts: it is where a running
+  saga waits, not where one starts. Counting it adds 85 watchers on appsmith and no request on any screen.
+- Attaching every saga in a screen's import closure, or counting every action creator defined in a screen's files
+  as dispatched: measured in #194, the first puts all 186 requests on 4 screens and none on the other 20, the
+  second makes the requests per screen 4.7 times as many.
+- One entry per pair of a request and an action type in the screen's `apiCalls`: on appsmith with the measured
+  config, 4251 entries, 830 of them on the editor for 33 API functions. One entry per request with its action types
+  under `actions` gives 570.
+Measured on appsmith 4f8e991. With the config of the measurement (10 API files in `calledApiModules`), the screens'
+`apiCalls` go from 22 entries to 570 and the calls with a screen from 6 to 39; 92 requests written in sagas reach
+a screen, 55 of them `Api.get`, `Api.post` and the like inside API classes that are not listed, which a saga
+reaches whole when it uses one of their methods. With all 25 API class files listed, the calls with a screen go
+from 12 to 134, and 143 requests in sagas (123 calls) reach a screen: workspace settings 0 to 9 calls, admin
+settings 10 to 24, password reset 0 to 2, the application list 1 to 58, the editor 1 to 96; the landing, login
+and signup screens stay at 0. #194 counted 129 of the 186 with a script that took whole files as a screen's
+scope; duru follows names, so its counts per screen are smaller and the two sets are not the same list. Outline,
+the two example maps and the into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time they
+were written; two runs of extract on appsmith took 22.4 s and 24.9 s on main, 24.5 s and 24.7 s with sagas.
+Known limits: Redux Toolkit slice actions (`x.actions.y()`, `[x.y.type]`) and a saga that another saga starts with
+`put` are not followed (#194 counted 26 and 13 to 18 more requests there). A `dispatch` under another name, an
+action creator that does not return an object literal (a thunk, `createAction`), effects imported as a namespace,
+and a type written as text on one side and as a constant holding something else on the other are not read.
+With `apiModules`, a saga that hands an API function to `call` sends nothing on the map, as a screen that passes
+one as a value does; `calledApiModules` reads it. Two `take`s of different types in one loop give the code after
+the second to the first type as well. A file that holds the saga run, or the middleware it runs, and cannot be
+parsed is passed over, and the summary then says no run was found; so is a middleware run as a member of another
+value (`store.sagaMiddleware.run(…)`). A
+watcher registered only under a condition (appsmith's admin sagas run only for a super user) gives its requests
+to the screen without that condition. Saga code is followed by names like a screen's, so a saga that uses one
+member of a class reaches every member: appsmith's logout calls one static method of its usage pulse class and
+gets the page fetch and the `fetch` of the pulse that other methods of the class send.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

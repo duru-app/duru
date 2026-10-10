@@ -6,13 +6,15 @@ import type { CallExpression, Expression, Identifier, ImportDeclaration, ImportS
 import type { Constants, GuardInit, GuardSetting } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
-import { ROUTES_FILE } from './config.ts';
+import { compare, ROUTES_FILE } from './config.ts';
 import { loadConstants } from './constants.ts';
 import { inTypePosition, nameFollower } from './follow-names.ts';
 import type { Origin } from './follow-names.ts';
 import { parseSource } from './parse.ts';
 import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
+import { sagaFiles, sagaReader } from './saga-requests.ts';
+import type { ActionType, Handler, Watch } from './saga-requests.ts';
 import { screenRequestReader } from './screen-requests.ts';
 import { settingNeeds } from './setting-needs.ts';
 import { addCallDefaults, findSettingsCalls, settingsResultFinder } from './settings-functions.ts';
@@ -57,13 +59,18 @@ interface Site {
 }
 
 type BodyOption = { key: string; line: number };
-type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: true }; navigation?: true };
+type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: true }; navigation?: true; actions?: { type: string; dispatchedAt: string[] }[] };
+type DispatchSite = { line: number; types: () => ActionType[] };
+type WatcherSite = { watches: Watch[] };
+type FollowedSite = ApiCallSite | DispatchSite | WatcherSite;
 type SettingRead = Site & { key: string };
 type RouteRef = Site & { route: string; tail?: string };
 
 interface Facts {
   imports: string[];
   apiCalls: ApiCallSite[];
+  dispatches: DispatchSite[];
+  watchers: WatcherSite[];
   settingReads: SettingRead[];
   routeRefs: RouteRef[];
   dynamicOnly?: Set<string>;
@@ -683,8 +690,17 @@ export async function extractClient(config: any) {
     if (!parsed.has(file)) parsed.set(file, parseSource(file));
     return parsed.get(file)!;
   };
-  const siteStart = new WeakMap<Site, number>();
-  const follower = nameFollower({ parse, resolve: imports.resolve, sitesOf: (file) => fileFacts(file).apiCalls.map((site) => ({ start: siteStart.get(site)!, site })) });
+  const siteStart = new WeakMap<FollowedSite, number>();
+  const siteFile = new WeakMap<ApiCallSite, string>();
+  const follower = nameFollower<FollowedSite>({
+    parse,
+    resolve: imports.resolve,
+    sitesOf: (file) => {
+      const { apiCalls, dispatches, watchers } = fileFacts(file);
+      return [...apiCalls, ...dispatches, ...watchers].map((site) => ({ start: siteStart.get(site)!, site }));
+    },
+  });
+  const sagas = sagaReader({ parse, resolve: imports.resolve, declaration: follower.declaration });
   const origins = new Map<string, Origin | null>();
   const calledOrigin = (file: string | null | undefined, name: string) => {
     const key = `${file}\0${name}`;
@@ -714,7 +730,7 @@ export async function extractClient(config: any) {
     if (factCache.has(file)) return factCache.get(file)!;
     const { src, ast } = parse(file);
     programFile.set(ast.program, file);
-    const facts: Facts = { imports: [], apiCalls: [], settingReads: [], routeRefs: [] };
+    const facts: Facts = { imports: [], apiCalls: [], dispatches: [], watchers: [], settingReads: [], routeRefs: [] };
     const apiNamed = new Map<string, string>();
     const apiNamespaces = new Set<string>();
     const calledNamed = new Map<string, { file: string; exportName: string }>();
@@ -727,7 +743,8 @@ export async function extractClient(config: any) {
       const guards = [...ownGuards, ...guardsOf(nodePath, src, note)];
       const owner = enclosingFunctionName(nodePath);
       const item = { ...entry, line: nodePath.node.loc!.start.line, guards };
-      siteStart.set(item, nodePath.node.start!);
+      siteStart.set(item as ApiCallSite, nodePath.node.start!);
+      if (kind === 'apiCalls') siteFile.set(item as ApiCallSite, file);
       (facts[kind] as Site[]).push(item);
       if (owner) {
         if (!localFnRefs.has(owner.name)) localFnRefs.set(owner.name, { fnPath: owner.fnPath, items: [] });
@@ -795,6 +812,18 @@ export async function extractClient(config: any) {
 
     traverse(ast, {
       CallExpression(p) {
+        const types = sagas.dispatched(p, file);
+        if (types) {
+          const site = { line: p.node.loc!.start.line, types };
+          siteStart.set(site, p.node.start!);
+          facts.dispatches.push(site);
+        }
+        const watches = sagas.watches(p, file);
+        if (watches?.length) {
+          const site = { watches };
+          siteStart.set(site, p.node.start!);
+          facts.watchers.push(site);
+        }
         const callee = p.node.callee;
         if (callee.type === 'Identifier' && apiNamed.has(callee.name)) {
           record('apiCalls', { fn: apiNamed.get(callee.name), options: bodyOptions(p) }, p);
@@ -1031,6 +1060,38 @@ export async function extractClient(config: any) {
   // POST 가 아닌 페이지 이동의 주소가 앱의 라우트와 맞으면 서버가 아니라 앱의 다른 화면이 열린다. 고정 문자열 부분이 없는 라우트는 어떤 주소에나 맞으므로 견주지 않는다.
   const screenRoutes = extracted.filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
   const opensScreen = (url: string) => screenRoutes.some((route) => route.test(url.replaceAll(UNKNOWN, '\0').split(/[?#]/)[0]));
+  const isApiCall = (site: FollowedSite): site is ApiCallSite => 'fn' in site;
+  const sends = (c: ApiCallSite, outsideRequestFunction: Set<FollowedSite>) => !c.request || (outsideRequestFunction.has(c) && !(c.navigation && c.request.method !== 'POST' && opensScreen(c.request.url!)));
+
+  // saga 는 화면이 import 하지 않는 파일에 있어도 돈다. API · 상수 파일은 화면에서와 같이 그 안으로 들어가지 않는다.
+  const sagaScope = (f: string | null) => !apiModuleFiles.has(f!) && !calledFiles.has(f!) && !constantFiles.has(f!);
+  const sagaSources = sagaFiles(config.srcRoot);
+  const runs = sagaSources.flatMap((file) => {
+    try {
+      return sagas.runs(file);
+    } catch {
+      return [];
+    }
+  });
+  const watchesOf = new Map<string, Watch[]>();
+  if (runs.length) {
+    for (const site of follower.reach(runs, sagaScope)) {
+      if (!('watches' in site)) continue;
+      for (const w of site.watches) watchesOf.set(w.type.key, [...(watchesOf.get(w.type.key) ?? []), w]);
+    }
+  }
+  const handled = new Map<string, ApiCallSite[]>();
+  const sentByHandler = ({ file, span }: Handler) => {
+    const key = `${file}\0${span.join('-')}`;
+    if (!handled.has(key)) {
+      const starts = [{ file, span }];
+      const reached = follower.reach(starts, sagaScope);
+      const outside = requestFile && sagaScope(requestFile) ? follower.reach(starts, (f) => sagaScope(f) && f !== requestFile) : reached;
+      handled.set(key, [...reached].filter(isApiCall).filter((c) => sends(c, outside)));
+    }
+    return handled.get(key)!;
+  };
+
   const screens = extracted.map(({ wrapperFiles, ...s }) => {
     const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
     const isOtherScreen = (f: string) => screenFiles.has(f) && !entryFiles.includes(f);
@@ -1040,21 +1101,45 @@ export async function extractClient(config: any) {
     const reached = follower.reach(starts, (f) => inSources.has(f));
     // 요청 함수의 파일을 거쳐야만 이어지는 요청은 그 함수가 받은 주소로 보내는 것이라, 화면 코드에서 나가는 요청이 아니다.
     const outsideRequestFunction = inSources.has(requestFile) ? follower.reach(starts, (f) => inSources.has(f) && f !== requestFile) : reached;
-    const sends = (c: ApiCallSite) => !c.request || (outsideRequestFunction.has(c) && !(c.navigation && c.request.method !== 'POST' && opensScreen(c.request.url!)));
     const apiCalls: (ApiCallSite & { file: string | null })[] = [];
+    const own = new Set<ApiCallSite>();
+    const dispatched = new Map<string, { type: ActionType; at: Set<string> }>();
     const settingReads: (SettingRead & { file: string | null })[] = [];
     const links: (Omit<RouteRef, 'tail'> & { to: unknown; tail?: string; file: string | null })[] = [];
     for (const f of files) {
       const facts = fileFacts(f);
-      for (const c of facts.apiCalls) if (reached.has(c) && sends(c)) apiCalls.push({ ...c, file: rel(f) });
+      for (const c of facts.apiCalls) {
+        if (!reached.has(c) || !sends(c, outsideRequestFunction)) continue;
+        own.add(c);
+        apiCalls.push({ ...c, file: rel(f) });
+      }
+      for (const d of watchesOf.size ? facts.dispatches : []) {
+        if (!reached.has(d)) continue;
+        for (const type of d.types()) {
+          if (!dispatched.has(type.key)) dispatched.set(type.key, { type, at: new Set() });
+          dispatched.get(type.key)!.at.add(`${rel(f)}:${d.line}`);
+        }
+      }
       for (const r of facts.settingReads) settingReads.push({ ...r, file: rel(f) });
       for (const { tail, ...r } of facts.routeRefs) {
         const value = routeValues[r.route];
         links.push(typeof value === 'string' && tail ? { ...r, to: value + tail, tail, file: rel(f) } : { ...r, to: value ?? UNKNOWN, file: rel(f) });
       }
     }
-    return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls, settingReads, links };
+    const bySaga = new Map<ApiCallSite, NonNullable<ApiCallSite['actions']>>();
+    for (const { type, at } of dispatched.values()) {
+      const sent = new Set((watchesOf.get(type.key) ?? []).flatMap((w) => sentByHandler(w.handler)));
+      for (const c of sent) {
+        if (own.has(c)) continue;
+        if (!bySaga.has(c)) bySaga.set(c, []);
+        bySaga.get(c)!.push({ type: type.name, dispatchedAt: [...at].sort() });
+      }
+    }
+    const sagaCalls = [...bySaga].map(([c, actions]) => ({ ...c, file: rel(siteFile.get(c)), actions: actions.sort((a, b) => compare(a.type, b.type) || compare(a.dispatchedAt[0], b.dispatchedAt[0])) }));
+    sagaCalls.sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.fn, b.fn));
+    return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls: [...apiCalls, ...sagaCalls], settingReads, links };
   });
 
-  return { screens, apiFunctions, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
+  const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
+  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
 }
