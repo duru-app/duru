@@ -418,7 +418,7 @@ test('a request a listed file sends with the global fetch is recorded with its m
   assert.deepEqual((await build(mixedConfig)).silentApiModules, ['contracts/api/index.ts']);
   const reExported = fixtureCopy({ calledApiModules: ['contracts/api/fetched.ts', 'contracts/api/again.ts'] }, { ...fetched, 'contracts/api/again.ts': "export { fetchedApi } from './fetched';\n" });
   assert.equal('silentApiModules' in await build(reExported), false);
-  await assert.rejects(build(fixtureCopy({ calledApiModules: CALLED.calledApiModules })), /calledApiModules has no requestFunction and no listed file sent a request with fetch/);
+  await assert.rejects(build(fixtureCopy({ calledApiModules: CALLED.calledApiModules })), /calledApiModules has no requestFunction and no listed file sent a request with fetch or by moving the browser/);
   const broken = { 'contracts/api/broken.ts': "throw new Error('no session');\nexport const brokenApi = { load: () => fetch('/x') };\n" };
   await assert.rejects(build(fixtureCopy({ calledApiModules: ['contracts/api/broken.ts'] }, broken)), /no request was recorded.*; contracts\/api\/broken\.ts did not run: .*no session/);
   await assert.rejects(build(fixtureCopy({ calledApiModules: ['contracts/api/broken.ts', ...CALLED.calledApiModules] }, broken)), /no request was recorded.*; contracts\/api\/broken\.ts did not run: .*no session/);
@@ -427,7 +427,61 @@ test('a request a listed file sends with the global fetch is recorded with its m
   assert.deepEqual(brokenAndSending.unrunApiModules!.map((m) => m.file), ['contracts/api/broken.ts']);
   const result = spawnSync(process.execPath, [CLI, 'extract', mixedConfig], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('recorded no request')), ['  calledApiModules contracts/api/index.ts recorded no request; without requestFunction only requests sent with fetch are recorded']);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('recorded no request')), ['  calledApiModules contracts/api/index.ts recorded no request; without requestFunction only requests sent with fetch or by moving the browser are recorded']);
+});
+
+const NAVIGATED_API = [
+  'export const navigatedApi = {',
+  '  link: (id: string) => {',
+  "    const link = document.createElement('a');",
+  '    link.href = `http://localhost/files/${id}/download?name=all&token=secret`;',
+  "    link.style.display = 'none';",
+  '    document.body.appendChild(link);',
+  '    link.click();',
+  '    link.remove();',
+  '  },',
+  "  attribute: (id: string) => { const link = document.createElement('a'); link.setAttribute('href', `/files/${id}?access_token=t`); link.click(); },",
+  '  opened: (id: string) => { window.open(`/opened/${id}?accessToken=t#top`); },',
+  '  assigned: (id: string) => { window.location.href = `/assigned/${id}`; },',
+  "  bareAssigned: () => { (globalThis as any).location = '/bare-assigned'; },",
+  "  bare: () => { location.assign('/bare?token=t'); },",
+  "  replaced: () => { (window as any).location = '/replaced'; },",
+  "  blob: () => { const link = document.createElement('a'); link.href = 'blob:http://localhost/1'; link.click(); },",
+  "  button: () => { const button = document.createElement('button'); button.setAttribute('href', '/button'); button.click(); },",
+  "  saved: (url: string) => { const link = document.createElement('a'); link.href = url; link.click(); },",
+  "  paged: () => { location.href = '?page=2'; },",
+  "  fileUrl: (file: { url: string }) => { const link = document.createElement('a'); link.href = file.url; link.click(); },",
+  '  destructured: ({ url }: { url: string }) => { window.open(url); },',
+  "  based: (url: string) => { window.open('/api' + url); },",
+  "  tabbed: () => { window.location.href = window.location.pathname + '?tab=2'; },",
+  '  reloaded: () => { window.location.href = window.location.href; },',
+  '  reopened: () => { window.open(window.location as any); },',
+  '};',
+  '',
+].join('\n');
+
+test('a link a listed method makes and clicks, window.open and an address given to location are recorded as GET requests to that address, without the query values whose name ends in token and without what follows #, and a blob address, an address that is only a query, an address whose path the arguments of the method or the current page decide, or a click on another element is not', async () => {
+  const map = await build(fixtureCopy({ calledApiModules: ['contracts/api/navigated.ts'] }, { 'contracts/api/navigated.ts': NAVIGATED_API }));
+  const requests = Object.fromEntries(Object.entries(map.apiFunctions).filter(([name]) => name.startsWith('navigatedApi.')).map(([name, f]) => [name, [f.endpoints.map((e) => `${e.method} ${e.url}`), f.error ?? null]]));
+  assert.deepEqual(requests, {
+    'navigatedApi.link': [['GET /files/{?}/download?name=all'], null],
+    'navigatedApi.attribute': [['GET /files/{?}'], null],
+    'navigatedApi.opened': [['GET /opened/{?}'], null],
+    'navigatedApi.assigned': [['GET /assigned/{?}'], null],
+    'navigatedApi.bareAssigned': [['GET /bare-assigned'], null],
+    'navigatedApi.bare': [['GET /bare'], null],
+    'navigatedApi.replaced': [['GET /replaced'], null],
+    'navigatedApi.blob': [[], null],
+    'navigatedApi.button': [[], null],
+    'navigatedApi.saved': [[], null],
+    'navigatedApi.paged': [[], null],
+    'navigatedApi.fileUrl': [[], null],
+    'navigatedApi.destructured': [[], null],
+    'navigatedApi.based': [[], null],
+    'navigatedApi.tabbed': [[], null],
+    'navigatedApi.reloaded': [[], null],
+    'navigatedApi.reopened': [[], null],
+  });
 });
 
 test('requestFunction is refused without calledApiModules, as is a file in both API lists, a place that is not a number followed by keys, or a relative import that names no file', async () => {

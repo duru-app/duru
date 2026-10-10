@@ -884,6 +884,45 @@ the options of `fetch` counts as no options, so a wrapper handing its options th
 Measured: the two example maps and the into-sign 1.5.0 and 2.0.0 maps are identical to main's apart from the time
 they were written.
 
+**A request a `calledApiModules` method sends by moving the browser — a link it makes and clicks, `window.open`, an
+address given to `location` — is recorded as a `GET` to that address, without the query values whose name ends in
+`token` and without what follows `#`.**
+into-sign 2.0.0 downloads zip files with `downloadByNavigation`, which builds a link with the access token in its
+query and clicks it, since a navigation cannot carry the header the request function would add. Its methods stopped
+at `document.createElement` and the map kept only the error of the first try. With the link recorded, nine methods
+give their download address: the seven the #169 measurement listed, and the signer's and viewer's zip download,
+which reach the same function with a participant token.
+Alternatives compared:
+- Keeping the whole query, as other recorded requests do: the token value would be in the call ID and in the map
+  file, and it is a value of the run, not of the call. Other requests carry their token in a header, so only
+  navigation loses it.
+- Dropping every query value of a navigation: `domains` and `ids` in the into-sign download addresses are part of
+  what the server is asked for, as the query of a `fetch` address is.
+- Reading the navigations written in screen files (`<a href>`, `window.open` in a component, `location.href` in a
+  saga) as well: those are what the #169 measurement counted in outline, appsmith and mattermost, but reading them
+  means reading screen files without running them, the work #171 does, so they go with #171.
+Reason: the browser globals were already stand-ins in the run; a click, `open` and the `location` setters now record,
+and an address with another scheme (`blob:`, `data:`, `mailto:`) or starting with `#` is not a request to the
+server, so a clicked link that saves a file already downloaded records nothing. The path of the current page is
+unknown in the run, so its `location` reads give the fake value, and an address starting with `?`, which goes to
+the current page, is not recorded. Nor is an address with no path left once the fake values are taken out
+(`window.open(url)`, `window.open(file.url)`, `location.href = location.href`, and so `'/'` too), or with a fake
+value at the start of the path or right after something other than `/` (`'/api' + url`). Such a helper opens what
+its caller gives it, and recording it would put a `GET {?}` on the map where there was none; a fake value right
+after a `/` of a fixed path (`/files/{?}/download`) is a path variable and stays. A click on an element other than a link records nothing.
+`window.open` and `location` are not used in the API files of outline, appsmith, mattermost or into-sign 2.0.0;
+they are recorded because they are the same request as a clicked link.
+Known limits: the address is judged from its text, so the rule above has cases each way. A helper that adds a
+slash before what it is given (`'/api/' + path`) records `GET /api/{?}`, which reads the same as a path variable;
+an endpoint whose last piece has fixed text before the id (`/export/report-{?}.xlsx`) or whose base comes from the
+build environment is left out. A method that moves to a screen of the app (`location.href = '/login'` after a
+logout) gets that screen's address as a call, which the server list then shows unmatched. Dropping addresses that
+match a route was compared and left out: a catch-all route matches every download address too. A download fired
+by `dispatchEvent`, an `iframe` or a submitted form is not recorded, and `window.open` returns `null`, so a method
+that sets the address of the window it opened stops there.
+Measured: the two example maps and the into-sign 1.5.0 map are identical to main's apart from the time they were
+written; the 2.0.0 map differs only in those nine methods, their nine calls and the screens that call them.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
