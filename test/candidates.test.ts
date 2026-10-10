@@ -36,7 +36,7 @@ const withStoryCopy = (fn: (dir: string) => void) => withFolder({}, (dir: string
   return fn(dir);
 });
 
-const candidatesOf = (patch: Record<string, unknown> = {}, onMap = map, mapFile = path.join(config.outDir, 'map.json')) => storyCandidates({ ...config, visitRecords: [EXAMPLE_VISITS], storiesDir: EXAMPLE_STORIES, ...patch }, onMap, mapFile);
+const candidatesOf = (patch: Record<string, unknown> = {}, onMap: object = map, mapFile = path.join(config.outDir, 'map.json')) => storyCandidates({ ...config, visitRecords: [EXAMPLE_VISITS], storiesDir: EXAMPLE_STORIES, ...patch }, onMap, mapFile);
 const recordsIn = (records: Record<string, string[]>) => Object.fromEntries(Object.entries(records).map(([name, steps]) => [name, steps.map((url: string) => ({ url }))]));
 
 test('visit record sources default to none and are read as paths relative to the config file', () => {
@@ -273,7 +273,7 @@ test('a discarded entry in the stories folder that is a file, or a discarded fol
 });
 
 test('with a map built before links carried their conditions, visit records give no candidate and a request to rebuild, while without records there is no such request', () => {
-  const stale = structuredClone(map);
+  const stale: { screens: { links: { conditions?: unknown }[] }[] } = structuredClone(map);
   for (const s of stale.screens) for (const l of s.links) delete l.conditions;
   withFolder({}, (dir: string) => {
     const empty = { storiesDir: path.join(dir, 'stories') };

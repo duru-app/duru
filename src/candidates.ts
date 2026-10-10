@@ -20,7 +20,7 @@ function recordFiles(source: string): { reason?: string; files: string[] } {
   }
 }
 
-function readRecord(file: string) {
+function readRecord(file: string): { reason: string } | Pick<VisitRecord, 'addresses' | 'stepCount'> {
   let record;
   try {
     record = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -67,10 +67,10 @@ export function loadVisitRecords(sources: string[], configDir: string) {
     files.push(...found.files);
   }
   for (const file of [...new Set(files)].sort((a, b) => compare(relative(configDir, a), relative(configDir, b)))) {
-    const { addresses, stepCount, reason } = readRecord(file) as Pick<VisitRecord, 'addresses' | 'stepCount'> & { reason?: string };
+    const read = readRecord(file);
     const record = relative(configDir, file);
-    if (reason) notices.push({ file: record, reason });
-    else records.push({ record, name: path.basename(file, '.json'), addresses, stepCount });
+    if ('reason' in read) notices.push({ file: record, reason: read.reason });
+    else records.push({ record, name: path.basename(file, '.json'), ...read });
   }
   return { records, notices };
 }
@@ -130,10 +130,10 @@ export function loadDiscarded(dir: string) {
   return { discarded, notices };
 }
 
-export const acceptCandidate = (dir: string, candidate: Candidate, { id, name, author }: { id: string; name: string; author: string }, now = new Date()) =>
+export const acceptCandidate = (dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) =>
   addStory(dir, { id, name, screens: candidate.screens, author, source: candidate.source }, now);
 
-export function discardCandidate(dir: string, candidate: Candidate, { reason, author }: { reason: string; author: string }, now = new Date()) {
+export function discardCandidate(dir: string, candidate: Candidate, { reason, author }: { reason: unknown; author: unknown }, now = new Date()) {
   if (!isText(reason)) throw new Error('버리는 까닭이 필요합니다');
   if (!isText(author)) throw new Error('작성자가 필요합니다');
   writableStoriesFolder(dir);

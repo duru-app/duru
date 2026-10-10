@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment } from '../src/judgments.ts';
+import type { ScreenMap } from '../src/map.ts';
 import { addMark } from '../src/marks.ts';
 import { reviewData } from '../src/review.ts';
 import { taggingLines } from '../src/tasks.ts';
@@ -530,8 +531,8 @@ test('a note over several lines stays inside its mark, and a call whose API func
     const config = loadConfig(configFile);
     addMark(config.marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: 'Check the start.\n## /fake#Fake\n- tests: none', author: 'a' }, new Date('2026-09-30T05:00:00Z'));
     const mapFile = path.join(copy, 'out/map.json');
-    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
-    map.screens.find((s: { id: string }) => s.id === '/lab#Lab').apiCalls[0].endpoints = null;
+    const map: ScreenMap = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    map.screens.find((s) => s.id === '/lab#Lab')!.apiCalls[0].endpoints = null;
     fs.writeFileSync(mapFile, JSON.stringify(map));
 
     const lab = cli('tasks').split('## /lab#Lab\n')[1].split('\n## ')[0];
@@ -684,9 +685,9 @@ test('screens that share an ID each keep the options they send themselves', () =
   withFixtureCopy(({ copy, configFile, cli }) => {
     cli('rebuild');
     const mapFile = path.join(copy, 'out/map.json');
-    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
-    const report = map.screens.find((s: { id: string; apiCalls: { fn: string }[] }) => s.id === '/admin/report#AdminReport');
-    const plainExport = { ...report.apiCalls.find((c: { fn: string }) => c.fn === 'ajaxReportExport'), options: [] };
+    const map: ScreenMap = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    const report = map.screens.find((s) => s.id === '/admin/report#AdminReport')!;
+    const plainExport = { ...report.apiCalls.find((c) => c.fn === 'ajaxReportExport')!, options: [] };
     map.screens.push({ ...report, line: 99, apiCalls: [plainExport] });
     fs.writeFileSync(mapFile, JSON.stringify(map));
     addMark(loadConfig(configFile).marksDir, { target: { node: '/admin/report#AdminReport' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));

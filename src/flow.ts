@@ -1,3 +1,4 @@
+import type { SettingSource } from './access.ts';
 import type { EndpointMatch } from './server.ts';
 
 export interface FlowCounts {
@@ -14,9 +15,9 @@ export interface FlowAccess {
   restricted: boolean;
   kinds: string[];
   links: { from: string; guards: FlowGuard[] }[];
-  roleValues?: unknown;
-  unreadableRoleGuards?: unknown;
-  settings?: unknown;
+  roleValues?: string[] | null;
+  unreadableRoleGuards?: string[];
+  settings?: SettingSource[];
 }
 
 export interface FlowMapScreen {
@@ -25,7 +26,7 @@ export interface FlowMapScreen {
   component: string;
   dead?: boolean;
   access: FlowAccess;
-  apiCalls: { endpoints?: { callId: string }[] }[];
+  apiCalls: { endpoints?: { callId: string | null }[] | null }[];
 }
 
 export interface FlowMap {
@@ -118,7 +119,7 @@ export function buildFlow(map: FlowMap, tests: FlowTests, { from }: { from?: str
     const c = callsById.get(id)!;
     return { kind: 'call', id, label: id, server: c.server, counts: countOf(tests.nodes[id]), passed: tests.passed?.[id]?.length ?? 0 };
   };
-  const callIdsOf = (s: FlowMapScreen) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))].sort();
+  const callIdsOf = (s: FlowMapScreen) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter((id): id is string => Boolean(id)))].sort();
 
   const accessOf = ({ roleValues, unreadableRoleGuards, settings }: FlowAccess): FlowScreenNode['access'] => ({
     ...(roleValues !== undefined ? { roleValues, unreadableRoleGuards } : {}),

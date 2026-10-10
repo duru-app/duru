@@ -34,10 +34,7 @@ test('an address that fits no route, one that cannot be read and a screen whose 
   assert.equal(screenAt('/x/settings'), null);
 });
 
-type CallMap = Parameters<typeof callFinder>[0];
-type Endpoint = NonNullable<CallMap['apiFunctions']>[string]['endpoints'][number];
-const endpoint = (callId: string | null, method: string | null, url: string | null) =>
-  ({ callId, method, url }) as unknown as Endpoint;
+const endpoint = (callId: string | null, method: string | null, url: string | null) => ({ callId, method, url });
 const calls = {
   apiFunctions: {
     documentList: { endpoints: [endpoint('GET:/api/v1/document/list', 'GET', '/api/v1/document/list')] },
@@ -47,7 +44,7 @@ const calls = {
     ping: { endpoints: [endpoint('{?}:/api/v1/ping', null, '/api/v1/ping')] },
     download: { endpoints: [endpoint(null, 'GET', null)] },
   },
-} as unknown as CallMap;
+};
 const callAt = callFinder(calls);
 
 test('a request finds the call with its method and path, whatever value fills a variable and whatever query follows', () => {
@@ -75,7 +72,7 @@ test('a request is matched to the address the client code sends, not to the call
       detail: { endpoints: [endpoint('GET:/document/{documentId}', 'GET', '/api/v1/document/{0}')] },
       token: { endpoints: [endpoint('POST:/oauth/token', 'POST', '/oauth/token')] },
     },
-  } as unknown as CallMap);
+  });
   assert.equal(under('GET', 'http://127.0.0.1:4598/api/v1/document/42'), 'GET:/document/{documentId}');
   assert.equal(under('GET', 'http://127.0.0.1:4598/document/42'), null);
   assert.equal(under('POST', '/oauth/token'), 'POST:/oauth/token');
@@ -83,5 +80,5 @@ test('a request is matched to the address the client code sends, not to the call
 });
 
 test('a map without API functions finds nothing', () => {
-  assert.equal(callFinder({ screens: [] })('GET', '/api/v1/document/42'), null);
+  assert.equal(callFinder({})('GET', '/api/v1/document/42'), null);
 });

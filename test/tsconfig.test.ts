@@ -6,11 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { importLinker } from '../src/import-links.ts';
+import type { LinkResult } from '../src/import-links.ts';
 import { buildMap } from '../src/map.ts';
+import type { ScreenMap } from '../src/map.ts';
 import { linkTests } from '../src/test-links.ts';
-
-type BuiltMap = Awaited<ReturnType<typeof buildMap>>;
-type Linked = Extract<ReturnType<ReturnType<typeof importLinker>>, { file: string }>;
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
@@ -21,7 +20,11 @@ const TSCONFIG = `{
   },
 }
 `;
-const screen = (map: BuiltMap, id: string) => map.screens.find((s: { id: string }) => s.id === id);
+const screen = (map: ScreenMap, id: string) => map.screens.find((s) => s.id === id)!;
+const screensOf = (result: LinkResult) => {
+  assert.ok('file' in result);
+  return [...result.screens.keys()];
+};
 const withoutRun = ({ meta, ...rest }: { meta?: unknown; [key: string]: unknown }) => rest;
 
 async function inApp(callback: (dir: string) => void | Promise<void>, { rewrite = false, tsconfig = true }: { rewrite?: boolean; tsconfig?: boolean } = {}) {
@@ -82,9 +85,9 @@ test('a screen takes the API calls, settings reads and links of a file it import
     const expected = screen(baseline, '/home#Home');
     assert.deepEqual(screen(map, '/home#Home'), expected);
     assert.ok(expected.sourceFiles.includes('components/DocumentTable.js'));
-    assert.ok(expected.apiCalls.some((c: { file: string }) => c.file === 'components/DocumentTable.js'));
-    assert.ok(expected.settingReads.some((r: { file: string }) => r.file === 'components/DocumentTable.js'));
-    assert.ok(expected.links.some((l: { file: string }) => l.file === 'components/DocumentTable.js'));
+    assert.ok(expected.apiCalls.some((c) => c.file === 'components/DocumentTable.js'));
+    assert.ok(expected.settingReads.some((r) => r.file === 'components/DocumentTable.js'));
+    assert.ok(expected.links.some((l) => l.file === 'components/DocumentTable.js'));
   });
 });
 
@@ -94,7 +97,7 @@ test('a constants module that imports through an alias still gets the values it 
     fs.writeFileSync(option, fs.readFileSync(option, 'utf8').replace("'./Enum'", "'@app/_define/Enum'"));
     const map = await buildMap(loadConfig(path.join(dir, 'config.json')));
     assert.deepEqual(withoutRun(map).apiFunctions, withoutRun(baseline).apiFunctions);
-    assert.deepEqual(map.screens.map((s: { id: string }) => s.id), baseline.screens.map((s: { id: string }) => s.id));
+    assert.deepEqual(map.screens.map((s) => s.id), baseline.screens.map((s) => s.id));
   });
 });
 
@@ -106,7 +109,7 @@ test('a constantStubs entry for an import is used even when a tsconfig alias wou
     const enumSource = fs.readFileSync(path.join(FIXTURE, 'client/src/_define/Enum.js'), 'utf8');
     edit(path.join(dir, 'config.json'), ({ constants: { Option }, ...config }: { constants: { Option: unknown } }) => ({ ...config, constants: { Option }, constantStubs: { '@app/_define/Enum': enumSource } }));
     const map = await buildMap(loadConfig(path.join(dir, 'config.json')));
-    assert.deepEqual(map.screens.map((s: { path: string }) => s.path), baseline.screens.map((s: { path: string }) => s.path));
+    assert.deepEqual(map.screens.map((s) => s.path), baseline.screens.map((s) => s.path));
   });
 });
 
@@ -114,7 +117,7 @@ test('a constantStubs entry for a relative import is not used while the file it 
   await inApp(async (dir: string) => {
     edit(path.join(dir, 'config.json'), (config) => ({ ...config, constantStubs: { './Enum': "throw new Error('the stub was run');" } }));
     const map = await buildMap(loadConfig(path.join(dir, 'config.json')));
-    assert.deepEqual(map.screens.map((s: { path: string }) => s.path), baseline.screens.map((s: { path: string }) => s.path));
+    assert.deepEqual(map.screens.map((s) => s.path), baseline.screens.map((s) => s.path));
   });
 });
 
@@ -130,8 +133,8 @@ test('a unit test that imports a screen file through an alias is linked to the s
     assert.deepEqual(links.importNotices, expected.importNotices);
 
     const spec = path.join(config.srcRoot, 'components/Help.spec.js');
-    assert.deepEqual([...(importLinker(config.srcRoot, map, config.aliases) as (testFile: string) => Linked)(spec).screens.keys()], ['/help#Help']);
-    assert.deepEqual([...(importLinker(config.srcRoot, map) as (testFile: string) => Linked)(spec).screens.keys()], []);
+    assert.deepEqual(screensOf(importLinker(config.srcRoot, map, config.aliases)(spec)), ['/help#Help']);
+    assert.deepEqual(screensOf(importLinker(config.srcRoot, map)(spec)), []);
   }, { rewrite: true });
 });
 

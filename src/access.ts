@@ -2,9 +2,10 @@ import { lookupConstant, memberChain, UNKNOWN, VARIABLE_SEGMENT } from './client
 import { parseRoleEntry } from './config.ts';
 import { parseFragment, plainText } from './parse.ts';
 import { pathParts, type PathPart } from './path-values.ts';
+import type { Identifier, MemberExpression, Node, OptionalMemberExpression } from '@babel/types';
 import type { SettingNeed } from './setting-needs.ts';
 
-interface AccessConfig {
+export interface AccessConfig {
   roleIdentifiers?: string[];
   settingsRoots?: string[];
   roleGuards?: Record<string, string[]>;
@@ -29,32 +30,13 @@ type GuardSettings = Map<string, Map<string, GuardSetting | null>>;
 
 export type Constants = Record<string, unknown>;
 
-interface CodeNode {
-  type: string;
-  start: number;
-  end: number;
-  name: string;
-  value: any;
-  operator: string;
-  computed: boolean;
-  object: CodeNode;
-  property: CodeNode;
-  key: CodeNode;
-  argument: CodeNode;
-  callee: CodeNode;
-  arguments: CodeNode[];
-  elements: (CodeNode | null)[];
-  left: CodeNode;
-  right: CodeNode;
-}
-
 interface Expr {
-  node: CodeNode;
+  node: Node;
   text: string;
 }
 
 interface ScreenLink {
-  to: string;
+  to: string | null;
   tail?: string;
   file: string;
   line: number;
@@ -77,7 +59,7 @@ interface AccessRedirect {
   line: number;
 }
 
-interface Described {
+export interface Described {
   guard: string;
   kinds: string[];
   roles?: string[] | null;
@@ -109,7 +91,7 @@ interface SettingParts extends RequiredSettings {
   inherited?: boolean;
 }
 
-interface SettingSource extends RequiredSettings {
+export interface SettingSource extends RequiredSettings {
   from: string;
   file?: string;
   line?: number;
@@ -165,7 +147,7 @@ function guardKinds(config: AccessConfig, guardInits: GuardInits) {
 
 const NODE_META = new Set(['type', 'start', 'end', 'loc', 'extra', 'comments', 'errors', 'leadingComments', 'trailingComments', 'innerComments']);
 
-function childNodes(node: CodeNode): CodeNode[] {
+function childNodes(node: Node): Node[] {
   if (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') return node.computed ? [node.object, node.property] : [node.object];
   if (node.type === 'ObjectProperty') return node.computed ? [node.key, node.value] : [node.value];
   return Object.entries(node)
@@ -174,14 +156,14 @@ function childNodes(node: CodeNode): CodeNode[] {
     .filter((v) => typeof v?.type === 'string');
 }
 
-const numberOf = (node: CodeNode): number | undefined =>
+const numberOf = (node: Node): number | undefined =>
   node.type === 'NumericLiteral' ? node.value
     : node.type === 'UnaryExpression' && node.operator === '-' && node.argument.type === 'NumericLiteral' ? -node.argument.value : undefined;
 // indexOf 결과를 이렇게 비교하면 목록에 들어 있다는 뜻이다.
 const FOUND: Record<string, number> = { '>': -1, '>=': 0, '!==': -1, '!=': -1 };
 const intersect = (sets: Set<string>[]) => sets.reduce((a, b) => new Set([...a].filter((v) => b.has(v))));
 
-function nameReads(node: CodeNode, names: string[]): CodeNode[] {
+function nameReads(node: Node, names: string[]): Identifier[] {
   if (node.type === 'Identifier') return names.includes(node.name) ? [node] : [];
   return childNodes(node).flatMap((child) => nameReads(child, names));
 }
@@ -190,16 +172,17 @@ function nameReads(node: CodeNode, names: string[]): CodeNode[] {
 function roleReader(config: AccessConfig, guardInits: GuardInits, constants: Constants) {
   const isRole = new RegExp(`^(?:${rolesSource(config)})$`);
   const roleNames = new Set((config.roleIdentifiers ?? []).map((e) => parseRoleEntry(e).name).filter(Boolean));
-  const isMember = (node: CodeNode) => (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') && !node.computed;
-  const isProps = (node: CodeNode): boolean =>
+  const isMember = (node: Node): node is (MemberExpression | OptionalMemberExpression) & { property: Identifier } =>
+    (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') && !node.computed && node.property.type === 'Identifier';
+  const isProps = (node: Node): boolean =>
     (node.type === 'Identifier' && node.name === 'props') || (isMember(node) && node.object.type === 'ThisExpression' && node.property.name === 'props');
-  const isPropsMember = (node: CodeNode) => isMember(node) && roleNames.has(node.property.name) && isProps(node.object);
+  const isPropsMember = (node: Node) => isMember(node) && roleNames.has(node.property.name) && isProps(node.object);
   const parsed = new Map<string, Expr | null>();
   const parseIn = (file: string, text: string): Expr | null => {
     const key = JSON.stringify([file, text]);
     if (!parsed.has(key)) {
       try {
-        parsed.set(key, parseFragment(text, file) as unknown as Expr);
+        parsed.set(key, parseFragment(text, file));
       } catch {
         parsed.set(key, null);
       }
@@ -217,8 +200,8 @@ function roleReader(config: AccessConfig, guardInits: GuardInits, constants: Con
       const found = inits.filter((i) => i.name === node.name);
       return found.length === 1 ? parse(found[0].init) : null;
     };
-    const at = (expr: Expr, node: CodeNode) => ({ node, text: expr.text });
-    const follow = (expr: Expr, seen: Set<string>): [Expr | null, Set<string>] => [initOf(expr, seen), new Set([...seen, expr.node.name])];
+    const at = (expr: Expr, node: Node) => ({ node, text: expr.text });
+    const follow = (expr: Expr, seen: Set<string>): [Expr | null, Set<string>] => [initOf(expr, seen), expr.node.type === 'Identifier' ? new Set([...seen, expr.node.name]) : seen];
     const inlined = (expr: Expr, seen: Set<string>): [Expr | null, Set<string>] => {
       const { node } = expr;
       if (node.type !== 'CallExpression' || node.callee.type !== 'Identifier' || seen.has(node.callee.name)) return [null, seen];
@@ -226,15 +209,15 @@ function roleReader(config: AccessConfig, guardInits: GuardInits, constants: Con
       const body = fn && node.arguments.length === fn.params.length && !node.arguments.some((a) => a.type === 'SpreadElement') && parse(fn.body);
       if (!body) return [null, seen];
       let { text } = body;
-      for (const ref of nameReads(body.node, fn.params).sort((a, b) => b.start - a.start)) {
+      for (const ref of nameReads(body.node, fn.params).sort((a, b) => b.start! - a.start!)) {
         const arg = node.arguments[fn.params.indexOf(ref.name)];
-        text = `${text.slice(0, ref.start)}(${expr.text.slice(arg.start, arg.end)})${text.slice(ref.end)}`;
+        text = `${text.slice(0, ref.start!)}(${expr.text.slice(arg.start!, arg.end!)})${text.slice(ref.end!)}`;
       }
       return [parse(text), new Set([...seen, node.callee.name])];
     };
 
     const isRoleRead = (expr: Expr, seen: Set<string>): boolean => {
-      if (isRole.test(expr.text.slice(expr.node.start, expr.node.end))) return true;
+      if (isRole.test(expr.text.slice(expr.node.start!, expr.node.end!))) return true;
       if (isPropsMember(expr.node)) return true;
       const [init, next] = follow(expr, seen);
       return Boolean(init) && isRoleRead(init!, next);
@@ -260,7 +243,7 @@ function roleReader(config: AccessConfig, guardInits: GuardInits, constants: Con
       const { node } = expr;
       if (node.type !== 'CallExpression' || node.arguments.length !== 1) return undefined;
       const { callee } = node;
-      if (callee.type !== 'MemberExpression' || callee.computed || callee.property.name !== method) return undefined;
+      if (callee.type !== 'MemberExpression' || callee.computed || callee.property.type !== 'Identifier' || callee.property.name !== method) return undefined;
       if (!isRoleRead(at(expr, node.arguments[0]), seen)) return undefined;
       const values = valueOf(at(expr, callee.object), seen);
       return Array.isArray(values) && values.every((v) => typeof v === 'string') ? new Set(values) : undefined;
@@ -358,8 +341,8 @@ export function linkTargets(screens: { path: string }[]) {
   };
   const exactly = (find: () => number[]) => ({ find, guess: false });
   const guessing = (find: () => number[]) => ({ find, guess: true });
-  return (to: string, tail?: string, from?: number) => {
-    if (unreadableTarget(to)) return [];
+  return (to: string | null, tail?: string, from?: number) => {
+    if (to === null || unreadableTarget(to)) return [];
     if (!tail) return firstFound(from, [exactly(() => samePath(to)), guessing(() => addingParameters(to))]);
     const bare = to.slice(0, -tail.length);
     return firstFound(from, [

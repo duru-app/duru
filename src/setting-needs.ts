@@ -1,6 +1,5 @@
 import type { Binding, Node, NodePath } from '@babel/traverse';
-
-type NodeOf<T extends Node['type']> = Extract<Node, { type: T }>;
+import type { NodeOf } from './parse.ts';
 type BinaryExpression = NodeOf<'BinaryExpression'>;
 type BooleanLiteral = NodeOf<'BooleanLiteral'>;
 type Identifier = NodeOf<'Identifier'>;

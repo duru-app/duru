@@ -53,7 +53,6 @@ interface CopyNode {
   moduleReference: { type: string };
 }
 
-type ParseNode = Parameters<typeof importsModule>[0];
 type Edit = [number, number, string];
 
 const traverse = _traverse.default ?? _traverse;
@@ -192,7 +191,7 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
 
   function copyAs(absFile: string, name: string): string {
     const { src, ast } = parseSource(absFile, { asWritten: true });
-    const decorator = src.includes('@') ? firstDecorator(ast.program as unknown as ParseNode) : null;
+    const decorator = src.includes('@') ? firstDecorator(ast.program) : null;
     if (decorator) throw new Error(`${label}: ${absFile}:${decorator.line}:${decorator.column + 1}: a decorator is not JavaScript that Node runs, so duru cannot run this file`);
     const edits: Edit[] = [];
     // 지운 자리의 줄바꿈을 남겨, 실행 오류의 줄 번호가 원래 파일과 맞게 한다.
@@ -206,8 +205,8 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
         : node.type === 'TSImportEqualsDeclaration' && node.importKind !== 'type' && node.moduleReference.type === 'TSExternalModuleReference' ? '`import … = require(…)`'
           : null;
       if (commonJS) throw new Error(`${label}: ${absFile}:${node.loc.start.line}: ${commonJS} is CommonJS, which duru cannot run as an ES module`);
-      if (!importsModule(node as unknown as ParseNode)) continue;
-      if (isTypeOnlyLine(node as unknown as ParseNode)) {
+      if (!importsModule(node)) continue;
+      if (isTypeOnlyLine(node)) {
         edits.push(removed(node));
         continue;
       }

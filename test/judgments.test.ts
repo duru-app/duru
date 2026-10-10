@@ -12,7 +12,6 @@ const HELP_TEST = { source: 'results/vitest/client-unit.json', file: 'components
 const REPORTED_PATH = '/builds/client/src/components/Help.spec.js';
 
 type NewJudgment = Parameters<typeof addJudgment>[1];
-type Leveled = { level?: string; project?: string; line?: number };
 type Rebuild = (line: number, reportedPath?: string, helpTitle?: string) => ReturnType<typeof linkTests>;
 
 function withJudgmentsDir(fn: (dir: string) => void) {
@@ -316,7 +315,7 @@ test('a hand-over is written with an optional note and moves the pair out of the
 
     const judged = applyJudgments(rebuild(4), loadJudgments(dir).judgments);
     assert.deepEqual(titles(judged.importers['/help#Help']), ['shows the day the help was last updated']);
-    assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => [t.title, (t as Leveled).line, t.ref, t.judgment.id]), [['renders the help text', 4, test, judgment.id]]);
+    assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => [t.title, t.line, t.ref, t.judgment.id]), [['renders the help text', 4, test, judgment.id]]);
     assert.deepEqual(judged.discarded, {});
     assert.deepEqual(judged.detachedHandOvers, {});
   });
@@ -354,8 +353,8 @@ test('a browser test that passed through a screen or sent a call is judged like 
     const judged = applyJudgments(tracedLinks, loadJudgments(dir).judgments);
     assert.equal(judged.passed[DETAIL], undefined);
     assert.equal(judged.passed[DETAIL_CALL], undefined);
-    assert.deepEqual(judged.discarded[DETAIL].map((t) => [t.title, (t as Leveled).level, t.judgment.reason]), [['checks the path of a document', 'assert', 'only reads the address']]);
-    assert.deepEqual(judged.awaitingTag[DETAIL_CALL].map((t) => [t.title, (t as Leveled).level, t.ref]), [['reads a document from the server', 'call', sent.ref]]);
+    assert.deepEqual(judged.discarded[DETAIL].map((t) => [t.title, t.level, t.judgment.reason]), [['checks the path of a document', 'assert', 'only reads the address']]);
+    assert.deepEqual(judged.awaitingTag[DETAIL_CALL].map((t) => [t.title, t.level, t.ref]), [['reads a document from the server', 'call', sent.ref]]);
     assert.ok(titles(judged.passed['/home#Home']).includes('reads a document from the server'));
     assert.deepEqual(judged.detachedHandOvers, {});
 
@@ -385,7 +384,7 @@ test('a handed-over browser test still in the results, whose trace was not read 
   const judgments = [handOver(browserTest, '/help#Help')];
   const awaiting = (tests: Record<string, unknown>) => {
     const judged = applyJudgments({ passed: {}, nodes: {}, ...tests }, judgments);
-    return [(judged.awaitingTag['/help#Help'] ?? []).map((t) => [t.title, (t as Leveled).line, t.unconfirmed]), Object.keys(judged.detachedHandOvers)];
+    return [(judged.awaitingTag['/help#Help'] ?? []).map((t) => [t.title, t.line, t.unconfirmed]), Object.keys(judged.detachedHandOvers)];
   };
   assert.deepEqual(awaiting({ untagged: [browserTest] }), [[['opens help', 3, true]], []]);
   assert.deepEqual(awaiting({ untagged: [], nodes: { '/home#Home': [browserTest] } }), [[['opens help', 3, true]], []]);
@@ -400,8 +399,8 @@ test('a judged pair of a test that ran in several Playwright projects is one pai
   const inProjects = ['chromium', 'firefox'].map((project) => ({ ...browserTest, project, level: 'visit' }));
   const tests = { passed: { '/help#Help': inProjects, '/home#Home': inProjects }, nodes: {} };
   const judged = applyJudgments(tests, [handOver(browserTest, '/help#Help'), { ...handOver(browserTest, '/lab#Lab'), kind: 'discard', reason: 'r' }]);
-  assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => (t as Leveled).project), ['chromium']);
-  assert.deepEqual(judged.passed['/home#Home'].map((t) => (t as Leveled).project), ['chromium', 'firefox']);
+  assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => t.project), ['chromium']);
+  assert.deepEqual(judged.passed['/home#Home'].map((t) => t.project), ['chromium', 'firefox']);
   const discardedTwice = applyJudgments(tests, [{ ...handOver(browserTest, '/home#Home'), kind: 'discard', reason: 'r' }]);
-  assert.deepEqual(discardedTwice.discarded['/home#Home'].map((t) => (t as Leveled).project), ['chromium']);
+  assert.deepEqual(discardedTwice.discarded['/home#Home'].map((t) => t.project), ['chromium']);
 });

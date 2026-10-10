@@ -9,6 +9,7 @@ import { chromium } from 'playwright-core';
 import type { Page } from 'playwright-core';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
+import type { ScreenMap } from '../src/map.ts';
 import { startReviewServer } from '../src/review.ts';
 import { checkStories } from '../src/story-paths.ts';
 
@@ -21,9 +22,6 @@ const SECOND = 'AdminRoutes.js';
 
 type Copy = { copy: string; configFile: string; setConfig: (change: Record<string, unknown>) => void; src: string };
 type SplitCopy = Omit<Copy, 'setConfig'> & { first: string; second: string };
-type Guard = { guard: string; kinds: string[] };
-type Screen = { id: string; routeFile?: string; line: number; routeGuards: string[]; access: { kinds: string[]; route: Guard[]; restricted: boolean } };
-type MapData = { meta: Record<string, unknown>; screens: Screen[]; entries: { screen: string }[]; duplicateIds: unknown };
 type Failure = Error & { status: number | null; stderr: string };
 
 const FIRST_ROUTES = `import { lazy } from 'react';
@@ -128,8 +126,8 @@ const withSplitCopy = (fn: (copy: SplitCopy) => unknown, { configPatch = {}, ext
   return fn({ ...rest, src, first: path.join(src, 'Routes.js'), second: path.join(src, SECOND) });
 });
 
-const mapOf = (configFile: string): Promise<MapData> => buildMap(loadConfig(configFile));
-const screen = (map: MapData, id: string) => map.screens.find((s) => s.id === id)!;
+const mapOf = (configFile: string) => buildMap(loadConfig(configFile));
+const screen = (map: ScreenMap, id: string) => map.screens.find((s) => s.id === id)!;
 const IDS = ['/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/help#Help', '/admin/member#AdminMember', '/admin/group#AdminGroup', '/lab#Lab', '/lab/result#LabResult', '/admin/audit#AdminAudit', '/admin/report#AdminReport'];
 const withoutRun = ({ meta, ...rest }: { meta: object }) => ({ ...rest, meta: { ...meta, generatedAt: null } });
 
@@ -187,7 +185,7 @@ test('a story step through a route checks that route with the guards of its own 
     const map = await mapOf(configFile);
     const [story] = checkStories(map, [{ id: 'lab', screens: ['/lab#Lab'] }]);
     const route = story.reach.find((r) => r.kind === 'route');
-    assert.deepEqual([route!.screen, route!.file, route!.line, route!.guards.map((g: Guard) => g.guard)], ['/lab#Lab', SECOND, screen(map, '/lab#Lab').line, ['globalSettings.SYSTEM.LAB_ENABLED']]);
+    assert.deepEqual([route!.screen, route!.file, route!.line, route!.guards.map((g: { guard: string }) => g.guard)], ['/lab#Lab', SECOND, screen(map, '/lab#Lab').line, ['globalSettings.SYSTEM.LAB_ENABLED']]);
   });
 });
 
@@ -229,7 +227,7 @@ test('a config with one route file written as text or as a list of one gives the
     setConfig({ routesFile: ['Routes.js'] });
     const asList = loadConfig(configFile);
     assert.deepEqual(asList.routeFiles, ['Routes.js']);
-    const [fromText, fromList]: MapData[] = await Promise.all([buildMap(asText), buildMap(asList)]);
+    const [fromText, fromList] = await Promise.all([buildMap(asText), buildMap(asList)]);
     assert.ok(fromText.screens.every((s) => s.routeFile === 'Routes.js'));
     assert.deepEqual(withoutRun({ ...fromList, meta: { ...fromList.meta, srcRoot: null } }), withoutRun({ ...fromText, meta: { ...fromText.meta, srcRoot: null } }));
     assert.deepEqual(fromText.screens.map((s) => s.id), IDS);
@@ -318,7 +316,7 @@ test('a map built before screens carried their route file stops the task list, a
   await withCopy(async ({ copy, configFile }) => {
     execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     const mapFile = path.join(copy, 'out/map.json');
-    const map: MapData = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    const map: ScreenMap = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
     fs.writeFileSync(mapFile, JSON.stringify({ ...map, screens: map.screens.map(({ routeFile, ...s }) => s) }));
     const said = (text: string) => text.includes(`${mapFile} was built by a duru that did not record the route file of each screen — run "duru rebuild"`);
     assert.throws(() => execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8', stdio: 'pipe' }), (err: Failure) => err.status !== 0 && said(err.stderr));
@@ -333,7 +331,7 @@ test('a map that turns old or unreadable while the review server runs is reporte
     execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     const mapFile = path.join(copy, 'out/map.json');
     const good = fs.readFileSync(mapFile, 'utf8');
-    const map: MapData = JSON.parse(good);
+    const map: ScreenMap = JSON.parse(good);
     const old = JSON.stringify({ ...map, screens: map.screens.map(({ routeFile, ...s }) => s) });
     const asked = async (base: string) => {
       const replies = [await fetch(`${base}/api/data`), await fetch(`${base}/api/flow?from=${encodeURIComponent('/home#Home')}`), await fetch(`${base}/api/path-values?screen=${encodeURIComponent('/home#Home')}`)];

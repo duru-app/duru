@@ -125,7 +125,7 @@ test('the first screen\'s own opening condition is gathered when the story start
 test('a link guarded through the handler it sits in carries that guard with the handler\'s name', () => {
   const [story] = checkStories(map, [{ id: 'help', screens: ['/signin#SignIn', '/help#Help'] }]);
   assert.deepEqual(story.links[0].verdict, 'conditioned');
-  assert.deepEqual(story.links[0].ways[0].conditions.map((c: { guard: string; via?: string; kinds: string[] }) => [c.guard, c.via, c.kinds]), [['globalSettings.SYSTEM.HELP_LINK_ENABLED', 'openHelp', ['setting']]]);
+  assert.deepEqual(story.links[0].ways[0].conditions.map((c) => [c.guard, c.via, c.kinds]), [['globalSettings.SYSTEM.HELP_LINK_ENABLED', 'openHelp', ['setting']]]);
 });
 
 test('a step that a move in the config joins, such as the screen opening after sign-in, is configured with the move\'s reason, not a missing link', async () => {
@@ -177,7 +177,7 @@ test('two links on one line to the same screen each keep their own conditions', 
     '/b': [],
   });
   const [story] = checkStories(tiny, [{ id: 's', screens: ['/a', '/b'] }]);
-  assert.deepEqual(story.links[0].ways.map((w: { conditions: { guard: string; kinds: string[] }[] }) => w.conditions.map((c) => [c.guard, c.kinds])), [
+  assert.deepEqual(story.links[0].ways.map((w) => w.conditions.map((c) => [c.guard, c.kinds])), [
     [['memberRole === \'ADMIN\'', ['role']]],
     [['!(memberRole === \'ADMIN\')', ['role']], ['globalSettings.SYSTEM.B', ['setting']]],
   ]);
@@ -189,7 +189,7 @@ test('when two screens have no link between them but the first has links to a pa
       { to: '/', file: 'A.js', line: 9, guards: [] },
       { to: `/doc/${UNKNOWN}`, file: 'A.js', line: 6, guards: [] },
       { to: '/c', file: 'A.js', line: 3, guards: [] },
-      { to: null as unknown as string, file: 'A.js', line: 4, guards: [] },
+      { to: null, file: 'A.js', line: 4, guards: [] },
     ],
     '/b': [],
     '/c': [],
@@ -214,7 +214,7 @@ test('a step joined by a link keeps the verdict of that link, and also lists the
   const [story] = checkStories(tiny, [{ id: 's', screens: ['/a', '/b'] }]);
   const unknownLinks = [{ file: 'A.js', line: 9, to: `/doc/${UNKNOWN}` }];
   assert.equal(story.links[0].verdict, 'conditioned');
-  assert.deepEqual((story.links[0] as { unknownLinks?: unknown[] }).unknownLinks, unknownLinks);
+  assert.deepEqual(story.links[0].unknownLinks, unknownLinks);
   assert.deepEqual(story.reach.map((r) => [r.kind, r.unknownLinks]), [['link', unknownLinks]]);
   assert.equal(story.unjudged, false);
 });
@@ -240,7 +240,7 @@ test('when two screens have no link between them and every link of the first has
 });
 
 test('a map built before links carried their conditions checks no story and says to rebuild apart from the story file notes, still naming the stories read, unless there is no story to check', () => {
-  const old = { screens: map.screens.map((s: { links: { conditions: unknown }[] }) => ({ ...s, links: s.links.map(({ conditions, ...l }) => l) })) };
+  const old = { screens: map.screens.map((s) => ({ ...s, links: s.links.map(({ conditions, ...l }) => l) })) };
   withStoriesDir({ 'ok.json': STORY, 'bad.json': '{' }, (dir) => {
     const { ids, list, notices, stale } = checkStoryFiles(old, dir, 'out/map.json');
     assert.deepEqual([ids, list], [['bad', 'ok'], []]);
@@ -261,9 +261,9 @@ test('the story IDs named are those of every story file in the folder, read or n
 });
 
 test('the map carries every link with all of its conditions, and no redirects', () => {
-  assert.equal(map.redirects, undefined);
-  const help = map.screens.find((s: { id: string }) => s.id === '/signin#SignIn').links.find((l: { to: string }) => l.to === '/help');
-  assert.deepEqual(help.conditions.map((c: { guard: string; via?: string; kinds: string[] }) => [c.guard, c.via, c.kinds]), [['globalSettings.SYSTEM.HELP_LINK_ENABLED', 'openHelp', ['setting']]]);
+  assert.equal('redirects' in map, false);
+  const help = map.screens.find((s) => s.id === '/signin#SignIn')!.links.find((l) => l.to === '/help')!;
+  assert.deepEqual(help.conditions.map((c) => [c.guard, c.via, c.kinds]), [['globalSettings.SYSTEM.HELP_LINK_ENABLED', 'openHelp', ['setting']]]);
 });
 
 const NOTICE_CASES: [string, StoryFiles, { file: string; reason: string | RegExp }[]][] = [

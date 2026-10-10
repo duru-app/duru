@@ -15,6 +15,9 @@ interface TestRef {
 }
 
 interface ResultTest extends TestRef {
+  line?: number | null;
+  level?: string;
+  project?: string | null;
   testFile?: string;
   format?: string;
   unmatched?: unknown;

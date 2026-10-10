@@ -1,7 +1,20 @@
 import { linkTargets, unreadableTarget } from './access.ts';
+import type { Described } from './access.ts';
 import { compare } from './config.ts';
 import path from 'node:path';
 import { isScreenList, loadStories, STORY_ID } from './stories.ts';
+
+interface Way {
+  file: string;
+  line: number;
+  conditions: Described[];
+}
+
+type LinkVerdict =
+  | { verdict: 'open'; ways: Way[] }
+  | { verdict: 'configured'; reasons: string[]; ways: [] }
+  | { verdict: 'conditioned' | 'unknown' | 'broken'; ways: Way[]; unknownLinks?: { file: string; line: number; to: unknown }[] }
+  | { verdict: 'off-map'; ways: [] };
 
 const byPlace = (a: { file: string; line: number }, b: { file: string; line: number }) => compare(a.file, b.file) || a.line - b.line;
 
@@ -14,7 +27,7 @@ export function checkStories<S extends { screens: string[] }>(map: any, stories:
     movesBetween.set(key, [...(movesBetween.get(key) ?? []), m.reason]);
   }
 
-  const linkBetween = (fromId: string, toId: string) => {
+  const linkBetween = (fromId: string, toId: string): LinkVerdict => {
     const fromIndex = indexOf.get(fromId)!;
     const from = map.screens[fromIndex];
     const ways = from.links
@@ -33,7 +46,7 @@ export function checkStories<S extends { screens: string[] }>(map: any, stories:
 
   return stories.map((story) => {
     const steps = story.screens.map((screen: string) => ({ screen, onMap: indexOf.has(screen) }));
-    const links = steps.slice(1).map((to: { screen: string; onMap: boolean }, i: number) => {
+    const links = steps.slice(1).map((to: { screen: string; onMap: boolean }, i: number): { from: string; to: string } & LinkVerdict => {
       const from = steps[i];
       if (!from.onMap || !to.onMap) return { from: from.screen, to: to.screen, verdict: 'off-map', ways: [] };
       return { from: from.screen, to: to.screen, ...linkBetween(from.screen, to.screen) };

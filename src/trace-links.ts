@@ -1,6 +1,5 @@
 import { callFinder, screenFinder } from './address-match.ts';
 import { readTrace } from './playwright-trace.ts';
-import type { TraceRequest, TraceStep } from './playwright-trace.ts';
 
 export const PASS_LEVELS = ['visit', 'interact', 'assert'];
 
@@ -8,8 +7,9 @@ export function traceLinker(map: any) {
   let screenAt: ReturnType<typeof screenFinder> | undefined;
   let callAt: ReturnType<typeof callFinder> | undefined;
   return (traceFile: string) => {
-    const { steps, requests, reason } = readTrace(traceFile) as { steps: TraceStep[]; requests: TraceRequest[]; reason?: string };
-    if (reason) return { reason };
+    const trace = readTrace(traceFile);
+    if ('reason' in trace) return { reason: trace.reason };
+    const { steps, requests } = trace;
     screenAt ??= screenFinder(map);
     callAt ??= callFinder(map);
     const screens = new Map<string, string>();

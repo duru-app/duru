@@ -52,7 +52,7 @@ test('each screen box carries the roles and settings its screen needs, and an op
   assert.deepEqual(find(flow.roots, '/admin/group#AdminGroup')!.access, { roleValues: ['ADMIN'], unreadableRoleGuards: ['isAdmin'] });
   const report = find(flow.roots, '/admin/report#AdminReport')!.access;
   assert.deepEqual(report.roleValues, ['ADMIN', 'OWNER']);
-  assert.deepEqual([...new Set((report.settings as { needs: { path: string[] }[] }[]).flatMap((x) => x.needs.map((n) => n.path.join('.'))))].sort(), ['SYSTEM.MAIN_MENU.ADMIN', 'SYSTEM.MAIN_MENU.ADMIN.LIST']);
+  assert.deepEqual([...new Set(report.settings!.flatMap((x) => x.needs.map((n) => n.path.join('.'))))].sort(), ['SYSTEM.MAIN_MENU.ADMIN', 'SYSTEM.MAIN_MENU.ADMIN.LIST']);
 });
 
 test('a flow grown from one screen reaches every screen below it, including ones the full flow placed under another branch', () => {

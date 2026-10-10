@@ -7,6 +7,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { readBodyFields } from '../src/body-types.ts';
 import { buildMap } from '../src/map.ts';
+import type { ScreenMap } from '../src/map.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/ts-app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
@@ -100,11 +101,9 @@ function fixtureCopy(keys: Record<string, unknown>) {
 }
 
 const build = (configFile: string) => buildMap(loadConfig(configFile));
-let readMap: ReturnType<typeof build> | undefined;
+let readMap: Promise<ScreenMap> | undefined;
 const read = () => (readMap ??= build(fixtureCopy(CALLED)));
-type CallOption = { key: string; sources: string[] };
-const optionsOf = (map: Awaited<ReturnType<typeof build>>, id: string): [string, string[]][] | undefined =>
-  map.calls.find((c: { id: string }) => c.id === id)?.options.map((o: CallOption): [string, string[]] => [o.key, o.sources]);
+const optionsOf = (map: ScreenMap, id: string) => map.calls.find((c) => c.id === id)?.options.map((o) => [o.key, o.sources]);
 
 test('the on/off fields of the body an API method sends, read from its type, come out as options of its call, with arrays written as []', async () => {
   const map = await read();
@@ -115,7 +114,7 @@ test('a field that can only be one value, or that goes with a field of fixed cho
   const map = await read();
   const keys = optionsOf(map, 'POST:/internal/v2/setting/save')?.map(([key]) => key);
   assert.ok(!keys?.includes('fixed') && !keys?.includes('expiry.enabledExpire'));
-  assert.deepEqual(map.bodyTypeNotices.filter((n: { method: string }) => n.method === 'settingApi.saveSetting'), [{ method: 'settingApi.saveSetting', field: 'expiry.enabledExpire', beside: 'expiry.expireType' }]);
+  assert.deepEqual(map.bodyTypeNotices!.filter((n) => n.method === 'settingApi.saveSetting'), [{ method: 'settingApi.saveSetting', field: 'expiry.enabledExpire', beside: 'expiry.expireType' }]);
 });
 
 test('a body given in a method this method calls is read, but not for a call that sent no body', async () => {
@@ -128,7 +127,7 @@ test('a GET call gets no body options, and a body typed with no field names is r
   const map = await read();
   assert.deepEqual(optionsOf(map, 'GET:/internal/v2/setting/load'), []);
   assert.deepEqual(optionsOf(map, 'POST:/internal/v2/loose/save'), []);
-  assert.deepEqual(map.bodyTypeNotices.filter((n: { method: string }) => n.method === 'settingApi.saveLoose'), [{ method: 'settingApi.saveLoose', reason: 'the body is typed Record<string, unknown>, which names no fields' }]);
+  assert.deepEqual(map.bodyTypeNotices!.filter((n) => n.method === 'settingApi.saveLoose'), [{ method: 'settingApi.saveLoose', reason: 'the body is typed Record<string, unknown>, which names no fields' }]);
 });
 
 test('of two requests a method sends, only the one that carried the body gets its options', async () => {
@@ -140,7 +139,7 @@ test('of two requests a method sends, only the one that carried the body gets it
 test('an object the method builds from the answer is not read as the body, and a field of texts by name is not reported', async () => {
   const map = await read();
   assert.deepEqual(optionsOf(map, 'POST:/internal/v2/label/save'), [['enabledPin', ['type']]]);
-  assert.deepEqual(map.bodyTypeNotices.filter((n: { method: string }) => n.method === 'settingApi.saveLabel'), []);
+  assert.deepEqual(map.bodyTypeNotices!.filter((n) => n.method === 'settingApi.saveLabel'), []);
 });
 
 test('without tsconfig, or without the body place of the request function, no body type is read', async () => {
