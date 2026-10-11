@@ -558,6 +558,40 @@ tags, `map.json`, `tests.json` and what `rebuild` prints for both maps are ident
 time they were written. In the task list a marked screen without a condition comes out as on main, and a marked
 screen with one gains its case lines and an empty test set for each case with no tests.
 
+**Kinds of test case the source cannot show are named in the config, a reviewer picks them per screen or call on
+the review page, and a test names its kind with `@case:`.**
+Input limits, data from an older version, failure and recovery, or time and state are cases no source shape shows,
+and which screen or call needs which of them is not in the source either. So the config only names the kinds,
+`caseKinds`, each mapped to the description the review page shows, and a kind becomes a case of a screen or call
+only where a reviewer picks it. Compared for the config: a list of names (shorter, but the page would show a bare
+name such as `boundary` with nothing saying what to test), and an object per kind that also says which screens or
+calls it applies to (puts in the config the judgment the review is for, and has to be kept up as screens are added
+or renamed). A name has no spaces, `:` or `=` so it reads as one tag, and starts with a letter, since a JSON object
+puts keys that read as whole numbers first and the author's order would be lost.
+A pick is a mark in `marksDir` with the target `{ node, case }` and the status `needed` or `not-needed`, and the
+latest mark of a node and kind is the current pick. Compared: one file of picks the page overwrites (two reviewers
+saving at once lose one another's picks, and the file keeps no author or date), and picks written by hand into the
+config (no record of who picked what when, and a reviewer would leave the page to edit a file). Marks already keep
+the author, the date and the history, merge in git without a conflict because each is a new file, and come through
+the same reader, which marks a pick detached when its node leaves the map or its kind leaves `caseKinds`.
+The buttons sit under 「경우별 테스트」 in the right pane, where the role and setting cases already show their tests,
+and for a call next to the call's details there. Compared: a column in the middle table (the table is laid out by
+depth and option value, and a kind applies to the whole screen or call), and the status buttons of the mark form
+(a pick is no judgment of the tests, and would take the place of the status the form records). The right pane is
+the same in the list and beside the flow, so a pick works the same in both.
+A picked kind alone does not put a screen or call on the task list, as a role or setting case does not: the list
+is what a reviewer marked `needs-more` or `missing`. A `@case:` tag counts for its kind on every screen and call
+the test is tagged with, whether or not a reviewer has picked the kind there, because picks are only known when the
+review page and the task list read the marks; a tag whose kind is not in `caseKinds`, or on a test with no screen
+or call tag, is reported with the tags that point at nothing. Without `caseKinds` a `@case:` tag is not read at
+all, so a project that already uses such a tag for its own runner sees nothing new until it names kinds.
+Measured on main 4fff519 against the branch with the example client: without `caseKinds`, `map.json`, `tests.json`,
+what `rebuild` prints and the task list are identical to main's apart from the time they were written; with
+`caseKinds` and no picks, the map and `tests.json` are the same, and the task list differs only in its opening
+paragraph, which names `@case:<kind>`. On into-sign 1.5.0 and 2.0.0 without `caseKinds`, the maps
+and the task lists, with five marks on three role-guarded screens, an open screen and a call, are identical to
+main's.
+
 **A method that checks its address values and also reads the body it is given gets a fourth fake value, in which
 only keys named like an id are texts.**
 On the into-sign 2.0.0 map 30 methods had no address, all printed with `Invalid V2 endpoint param: workspaceId`.

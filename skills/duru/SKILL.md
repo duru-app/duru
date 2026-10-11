@@ -139,8 +139,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    its title names that role, since the tag does not; `@setting:<path>=true` meets that setting condition and
    checks the screen opens, `=false` breaks it and checks the screen stays shut. A tag that is not one of the
    screen's cases does not attach and `rebuild` prints it as `unknown`.
+   A screen or call can also list under `cases` a kind of case a reviewer picked for it, written `@case:<kind>`
+   followed by what to test; a test of it carries that tag next to `@screen:` or `@call:` and checks what the
+   description asks. When the config names `caseKinds`, a `@case:` tag whose kind is not among them is printed as `unknown`.
    Under `empty tests`, a screen or call has one set for each open mark, a screen one more for each case with no
-   tests, and a story one set: an empty test per
+   tests, a call one more for each picked kind with no tests, and a story one set: an empty test per
    test format in the config, with those tags already in its title. Copy the one for the runner you write the
    test in and keep every tag in its title as it is (you may replace `<what it checks>` and add words around the
    tags). Each is held back so that a copy left as it is does not pass: take `.fixme` off `test.fixme`, turn

@@ -40,7 +40,8 @@ const STORY_TAG = /^story:(.+)$/;
 const DEPTH_TAG = /^depth:(.*)$/;
 const OPTION_TAG = /^option:(.*)$/;
 const OPTION_VALUE = /^([^=]+)=(true|false)$/;
-const CASE_TAG = /^(role|setting):/;
+const ACCESS_CASE_TAG = /^(role|setting):/;
+const KIND_TAG = /^case:(.*)$/;
 const byKey = (a: { key: string }, b: { key: string }) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 const shownFile = (t: { testFile?: string; file?: string | null }) => t.testFile ?? t.file ?? '';
 const byTest = (a: UntaggedTest, b: UntaggedTest) => compare(shownFile(a), shownFile(b)) || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.source, b.source);
@@ -59,6 +60,7 @@ export function linkTests(config: any, map: any) {
   const known = new Set([...map.screens.map((s: any) => `screen:${s.id}`), ...(map.calls ?? []).map((c: any) => `call:${c.id}`)]);
   const callOptions = new Map<string, Set<string>>((map.calls ?? []).map((c: any) => [c.id, new Set((c.options ?? []).map((o: any) => o.key))]));
   const screensById = new Map<string, any>(map.screens.map((s: any) => [s.id, s]));
+  const hasKinds = Object.keys(config.caseKinds).length > 0;
   const caseTagsMemo = new Map<string, Set<string>>();
   const caseTagsOf = (id: string) => {
     if (!caseTagsMemo.has(id)) caseTagsMemo.set(id, new Set(screenCases(screensById.get(id).access).map((c) => c.tag)));
@@ -114,8 +116,11 @@ export function linkTests(config: any, map: any) {
         }
         options.sort(byKey);
         const screens = nodeTags.filter((tag) => known.has(tag) && tag.startsWith('screen:')).map((tag) => tag.match(NODE_TAG)![2]);
-        const caseTags = [...new Set<string>(t.tags.filter((tag: string) => CASE_TAG.test(tag)))].sort();
+        const caseTags = [...new Set<string>(t.tags.filter((tag: string) => ACCESS_CASE_TAG.test(tag)))].sort();
         for (const tag of caseTags) if (!screens.some((id) => caseTagsOf(id).has(tag))) reportUnknown(tag, t, testKey);
+        const kindTags = hasKinds ? [...new Set<string>(t.tags.filter((tag: string) => KIND_TAG.test(tag)))].sort() : [];
+        const kindCases = screens.length || calls.length ? kindTags.filter((tag) => Object.hasOwn(config.caseKinds, tag.match(KIND_TAG)![1])) : [];
+        for (const tag of kindTags) if (!kindCases.includes(tag)) reportUnknown(tag, t, testKey);
         const storyTags = [...new Set<string>(t.tags.filter((tag: string) => STORY_TAG.test(tag)))];
         const link: ImportLink | null = source.format === 'vitest' ? linkByImports(t.file) : null;
         if (link) {
@@ -156,8 +161,8 @@ export function linkTests(config: any, map: any) {
             continue;
           }
           const [, kind, id] = tag.match(NODE_TAG)!;
-          const cases = kind === 'screen' && caseTags.length ? caseTags.filter((tag) => caseTagsOf(id).has(tag)) : [];
-          const own = kind === 'call' ? { ...entry, options: options.filter((o) => callOptions.get(id)!.has(o.key)) } : cases.length ? { ...entry, cases } : entry;
+          const cases = [...(kind === 'screen' && caseTags.length ? caseTags.filter((tag) => caseTagsOf(id).has(tag)) : []), ...kindCases];
+          const own = { ...entry, ...(kind === 'call' && { options: options.filter((o) => callOptions.get(id)!.has(o.key)) }), ...(cases.length > 0 && { cases }) };
           (nodes[id] ??= []).push(own);
         }
         for (const tag of storyTags) (stories[tag.match(STORY_TAG)![1]] ??= []).push(entry);

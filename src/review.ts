@@ -86,15 +86,26 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
   const map = readMap(mapFile);
   const tests = judgedTests(config);
   const callsById = new Map<string, any>(map.calls.map((c: any) => [c.id, c]));
+  const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
+  const kinds = Object.keys(config.caseKinds);
+  const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds);
+  const needed = new Map<string, Set<string>>();
+  for (const { target, current } of marks.attached) {
+    if (target.case === undefined || current.status !== 'needed') continue;
+    if (!needed.has(target.node!)) needed.set(target.node!, new Set());
+    needed.get(target.node!)!.add(target.case);
+  }
+  const pickedCases = (id: string) => kinds.filter((k) => needed.get(id)?.has(k)).map((k) => ({ tag: `case:${k}`, kind: 'case' }));
   for (const s of map.screens) {
     s.callOptions = screenCallOptions(s, callsById);
-    s.cases = screenCases(s.access);
+    s.cases = [...screenCases(s.access), ...pickedCases(s.id)];
   }
-  const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
+  for (const c of map.calls) c.cases = pickedCases(c.id);
   return {
     map,
     tests,
-    marks: classifyMarks(loadMarks(config.marksDir), map, storyIds),
+    marks,
+    caseKinds: config.caseKinds,
     stories,
     candidates: storyCandidates(config, map, mapFile),
     storiesDir: config.storiesDir,

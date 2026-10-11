@@ -211,6 +211,12 @@ client with example results and a config to start from.
 - `tests` — test results to attach, each `{ "format": <playwright|junit|vitest|verdict>, "path": <file or folder>, "depth": <ui|api|render|code|data|output> }`.
   A folder is searched for `.json` files (Playwright, Vitest), `.xml` files (JUnit) or `.txt` and `.log` files
   (verdict).
+- `caseKinds` — kinds of test case the source cannot show, such as input limits or data from an older version
+  (optional), each name mapped to the description the review page shows for it:
+  `{ "boundary": "입력 경계: 빈 값, 최대 길이, 특수 문자", "legacy": "옛 데이터: 이전 버전에서 만든 문서" }`. A name
+  starts with a letter followed by letters, digits, `.`, `_` or `-`, and a description is one line. The page and
+  the task list keep this order. A kind is a case of a screen or call only where a reviewer picks it on the review
+  page.
 
 ### Output and review
 
@@ -394,6 +400,10 @@ value or that a setting equals a value, the value follows a colon
 the condition is that a setting is off. A test with both tags counts for each case. A role or setting tag that is
 not a case of a screen the test is tagged with is listed with the tags that point at nothing on the map.
 
+A test of a kind from `caseKinds` declares it with `@case:<kind>` (`@screen:/home#Home @case:boundary`). It counts
+for that kind on every screen and call the test is tagged with, and shows under that case wherever a reviewer has
+picked the kind.
+
 `tests.json` lists the tests per node and per story with depth and status (pass, fail, pending; skipped and todo
 count as pending), the tags that point at nothing on the map, and the tests with no tag as `untagged`.
 
@@ -493,7 +503,9 @@ setting or a role, and screens with only untagged tests. With `app` set, the mid
 in a frame, already logged in, with a role picker, boxes for path values and a line for the settings the screen's
 conditions name, which can be turned on and off. Below come the screen's tests by depth and its API calls, with
 a row per option value. The right says what it takes to open the screen, with the tests of each role and setting
-case by depth, and lists the links into it with their guards.
+case by depth, and lists the links into it with their guards. With `caseKinds` set, 「경우별 테스트」 has a button
+per kind for every screen, and for a call once the call is chosen: pressing one makes the kind a case there, with
+its tests by depth, and pressing it again takes it out. The flow shows the same right pane for a picked screen.
 
 **Untagged tests.** An untagged test linked to a screen by its imports or its trace has 「제외」, to discard the
 pair with a reason, and 「포함」, to hand it over so a coding agent adds the tag. A handed-over pair waits under
@@ -508,6 +520,8 @@ with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」. 「�
 records a status (`needs-more`, `missing`, `fine`), a note, the author and the date. Each mark and each judgment
 is its own new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so marks made on two machines merge in
 git without a conflict and the newest is the current state. A mark whose target is gone from a rebuilt map shows
+under 「떨어져 나감」. A case kind picked or taken out on a screen or call is kept the same way, as a mark with the
+status `needed` or `not-needed`; it puts nothing on the task list, and one whose kind has left `caseKinds` shows
 under 「떨어져 나감」.
 
 **Ending.** Pressing 「리뷰 끝」, or Ctrl+C in the terminal, closes the server and prints the task list on standard
@@ -517,15 +531,16 @@ output, so a coding agent that launched the page receives it as soon as the revi
 
 `tasks` prints, as Markdown, every screen, API call and story whose current mark is `needs-more` or `missing`.
 Each screen comes with its marks, component file and route line, the app address, the settings and roles it
-needs, the tests of each role and setting case by depth and status, its API calls and the tests already attached.
-Calls follow under `# API calls` and stories under `# Stories` with their steps, link verdicts and 「사전 조건」.
+needs, the tests of each role and setting case and of each picked case kind by depth and status, its API calls and
+the tests already attached. Calls follow under `# API calls`, with their picked case kinds the same way, and
+stories under `# Stories` with their steps, link verdicts and 「사전 조건」.
 
 Each item ends with `empty tests`: one empty test per test format in the config, with the item's tags already in
 its title and held back so a copy run as it is does not pass (`test.fixme` for Playwright, `test.todo` for
 Vitest, `@Disabled` for JUnit, a verdict line with `<verdict>` for a check script). A screen gets one more set for
-each role or setting case with no tests. The writer fills in the data setup and the checks, and the test attaches
-after a `rebuild`. Pairs handed over on the review page follow under `# Tagging`, each with the test, the tag to
-add and where it goes. duru never edits a test file.
+each case with no tests, and a call one for each picked case kind with no tests. The writer fills in the data
+setup and the checks, and the test attaches after a `rebuild`. Pairs handed over on the review page follow under
+`# Tagging`, each with the test, the tag to add and where it goes. duru never edits a test file.
 
 ## Agent skill
 

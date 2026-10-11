@@ -157,6 +157,39 @@ test('the data carries each story checked against the map with its status, the t
   );
 });
 
+const CASE_KINDS = { boundary: '입력 경계: 빈 값, 최대 길이, 특수 문자', legacy: '옛 데이터: 이전 버전에서 만든 문서' };
+const BOUNDARY_ON_SIGNIN: [string, string, string] = ['results/playwright/e2e.json', '"screen:/signin#SignIn",\n            "screen:/help#Help"', '"screen:/signin#SignIn",\n            "screen:/help#Help",\n            "case:boundary"'];
+type CaseData = { caseKinds: Record<string, string>; map: { screens: { id: string; cases: { tag: string; kind: string }[] }[]; calls: { id: string; cases: { tag: string; kind: string }[] }[] } };
+const casesIn = (data: CaseData) => [...data.map.screens, ...data.map.calls].filter((n) => n.cases.length).map((n) => [n.id, n.cases.map((c) => c.tag)]);
+
+test('the data carries the configured case kinds, and the kinds picked for a screen or call in config order after its role or setting cases, as the latest pick of each says', async () => {
+  await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const data = async (): Promise<CaseData> => (await fetch(`${base}/api/data`)).json();
+      const before = casesIn(await data());
+      assert.deepEqual((await data()).caseKinds, CASE_KINDS);
+      for (const [node, kind] of [['/admin/member#AdminMember', 'legacy'], ['/admin/member#AdminMember', 'boundary'], ['GET:/api/v1/document/list', 'legacy'], ['/signin#SignIn', 'legacy']]) {
+        assert.equal((await postMark(base, { target: { node, case: kind }, status: 'needed' })).status, 201);
+      }
+      assert.equal((await postMark(base, { target: { node: '/signin#SignIn', case: 'legacy' }, status: 'not-needed' })).status, 201);
+      assert.equal((await postMark(base, { target: { node: '/signin#SignIn', case: 'legacy' }, status: 'missing' })).status, 400);
+      assert.equal((await postMark(base, { target: { node: '/signin#SignIn' }, status: 'needed' })).status, 400);
+      const after = Object.fromEntries(casesIn(await data()));
+      assert.deepEqual(after['/admin/member#AdminMember'], ['role:ADMIN', 'role:other', 'case:boundary', 'case:legacy']);
+      assert.deepEqual(after['GET:/api/v1/document/list'], ['case:legacy']);
+      assert.equal(after['/signin#SignIn'], undefined);
+      assert.deepEqual(Object.keys(after).sort(), [...before.map(([id]) => id), 'GET:/api/v1/document/list'].sort());
+    }),
+  );
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const data: CaseData = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.caseKinds, {});
+      assert.ok(data.map.calls.every((c) => c.cases.length === 0));
+    }),
+  );
+});
+
 test('a mark posted from the page is saved with the server-side author and date and is there after reopening', async () => {
   await withRebuiltFixture({}, async (config) => {
     await withServer(config, 'reviewer', async (base) => {
@@ -2104,20 +2137,76 @@ test('in a browser, a screen that opens only under a role or a setting shows its
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        const cases = p.locator('#right .open-needs .cases li');
+        const cases = p.locator('#right-info > .cases li');
         const counts = async () => (await cases.locator('.step-tests').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
         await p.click('#screen-list li:has-text("/admin/member")');
-        assert.equal(await p.textContent('#right .open-needs .cases h3'), '경우별 테스트');
+        assert.equal(await p.textContent('#right-info > .cases h3'), '경우별 테스트');
         assert.deepEqual(await cases.locator('.case').allTextContents(), ['역할 ADMIN — 열림', '여는 역할이 아닌 역할 — 막힘']);
         assert.deepEqual(await counts(), ['UI/E2E ✓1', 'UI/E2E ✓1']);
         await p.click('#screen-list li:has-text("/help")');
         assert.deepEqual(await cases.locator('.case').allTextContents(), ['설정 SYSTEM.HELP_LINK_ENABLED 맞춤 — 열림', '설정 SYSTEM.HELP_LINK_ENABLED 맞추지 않음 — 막힘']);
         assert.deepEqual(await counts(), ['UI/E2E ✕1', '테스트 없음']);
         await p.click('#screen-list li:has-text("/signin")');
-        assert.equal(await p.locator('#right .open-needs .cases').count(), 0);
+        assert.equal(await p.locator('#right-info > .cases').count(), 0);
       }),
     ),
   );
+});
+
+test('in a browser, with case kinds in the config every screen and every call shows a button per kind, and pressing one makes it a case with its tests until pressed again', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const section = p.locator('#right-info > .cases');
+        const kindButton = (text: string) => section.locator('.case-kinds button', { hasText: text });
+        const counts = async (rows: Locator) => (await rows.locator('.step-tests').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+        const picks = () => loadMarks(config.marksDir).filter((m) => m.target.case !== undefined).sort((a, b) => a.date.localeCompare(b.date)).map((m) => [m.target.node, m.target.case, m.status]);
+
+        await p.click('#screen-list li:has-text("/signin")');
+        assert.equal(await section.locator('h3').textContent(), '경우별 테스트');
+        assert.equal(await section.locator('li').count(), 0);
+        assert.deepEqual(await section.locator('.case-kinds button').allTextContents(), [CASE_KINDS.boundary, CASE_KINDS.legacy]);
+        assert.deepEqual(await section.locator('.case-kinds button').evaluateAll((els) => els.map((e) => [e.getAttribute('title'), e.getAttribute('aria-pressed')])), [['@case:boundary', 'false'], ['@case:legacy', 'false']]);
+
+        await kindButton(CASE_KINDS.boundary).click();
+        await p.waitForSelector('#right-info > .cases li');
+        assert.deepEqual(await section.locator('li .case').allTextContents(), [CASE_KINDS.boundary]);
+        assert.equal(await section.locator('li').getAttribute('title'), '@case:boundary');
+        assert.deepEqual(await counts(section.locator('li')), ['UI/E2E ✓1']);
+        assert.equal(await kindButton(CASE_KINDS.boundary).getAttribute('aria-pressed'), 'true');
+        await kindButton(CASE_KINDS.legacy).click();
+        await p.waitForSelector('#right-info > .cases li:nth-child(2)');
+        assert.deepEqual(await counts(section.locator('li')), ['UI/E2E ✓1', '테스트 없음']);
+
+        await kindButton(CASE_KINDS.boundary).click();
+        await p.waitForFunction(() => document.querySelectorAll('#right-info > .cases li').length === 1);
+        assert.deepEqual(await section.locator('li .case').allTextContents(), [CASE_KINDS.legacy]);
+
+        await p.click('#screen-list li:has-text("/admin/member")');
+        await kindButton(CASE_KINDS.legacy).click();
+        await p.waitForFunction(() => document.querySelectorAll('#right-info > .cases li').length === 3);
+        assert.deepEqual(await section.locator('li .case').allTextContents(), ['역할 ADMIN — 열림', '여는 역할이 아닌 역할 — 막힘', CASE_KINDS.legacy]);
+
+        await p.click('#screen-list li:has-text("/home")');
+        await p.locator('table.calls td.cell').first().click();
+        const callSection = p.locator('#right-info > .cases');
+        assert.deepEqual(await callSection.locator('li').count(), 0);
+        await callSection.locator('.case-kinds button', { hasText: CASE_KINDS.boundary }).click();
+        await p.waitForSelector('#right-info > .cases li');
+        assert.deepEqual(await callSection.locator('li .case').allTextContents(), [CASE_KINDS.boundary]);
+        assert.deepEqual(await counts(callSection.locator('li')), ['테스트 없음']);
+        assert.match((await p.textContent('#right-dock .mark-form h2'))!, /^표시 — 호출 전체$/);
+
+        assert.deepEqual(picks(), [
+          ['/signin#SignIn', 'boundary', 'needed'],
+          ['/signin#SignIn', 'legacy', 'needed'],
+          ['/signin#SignIn', 'boundary', 'not-needed'],
+          ['/admin/member#AdminMember', 'legacy', 'needed'],
+          ['GET:/api/v1/document/list', 'boundary', 'needed'],
+        ]);
+      }),
+    ), [BOUNDARY_ON_SIGNIN]);
 });
 
 test('in a browser, the setting and role filters keep the screens that open only under one, and the chosen screen shows why', { skip: browserMissing }, async () => {
@@ -3322,6 +3411,42 @@ test('in a browser, pressing a screen in the flow keeps strong only the paths th
       }, { view: 'flow' }),
     ),
   );
+});
+
+test('in a browser, a second press on a case kind button while the first is saving writes nothing', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/signin")');
+        await p.locator('#right-info > .cases .case-kinds button[title="@case:boundary"]').evaluate((b: HTMLButtonElement) => {
+          b.click();
+          b.click();
+        });
+        await p.waitForSelector('#right-info > .cases li');
+        await p.waitForSelector('#right-info > .cases .case-kinds button:not([disabled])');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]), [[{ node: '/signin#SignIn', case: 'boundary' }, 'needed']]);
+      }, { view: 'list' }),
+    ),
+  );
+});
+
+test('in a browser, a screen picked in the flow shows the same case kind buttons in the right pane, and a kind pressed there becomes its case while the screen stays picked', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        await (await screenBox(p, '/signin#SignIn')).click();
+        const section = p.locator('#right-info > .cases');
+        assert.deepEqual(await section.locator('.case-kinds button').allTextContents(), [CASE_KINDS.boundary, CASE_KINDS.legacy]);
+        await section.locator('.case-kinds button', { hasText: CASE_KINDS.boundary }).click();
+        await p.waitForSelector('#right-info > .cases li');
+        assert.deepEqual(await section.locator('li .case').allTextContents(), [CASE_KINDS.boundary]);
+        assert.equal((await section.locator('li .step-tests').innerText()).replace(/\s+/g, ' ').trim(), 'UI/E2E ✓1');
+        assert.deepEqual(await pickedBoxes(p), ['/signin#SignIn']);
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]), [[{ node: '/signin#SignIn', case: 'boundary' }, 'needed']]);
+      }, { view: 'flow' }),
+    ), [BOUNDARY_ON_SIGNIN]);
 });
 
 test('in a browser, with nothing picked the right column lists the failing screens and then the ones without a tagged test, in the order of the drawing, and pressing one picks it', { skip: browserMissing }, async () => {

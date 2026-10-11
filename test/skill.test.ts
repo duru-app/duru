@@ -30,6 +30,12 @@ test('the agent skill says how to tag a test of a role or setting case of a scre
   assert.match(SKILL, /a screen one more for each case with no\s+tests/);
 });
 
+test('the agent skill says how to tag a test of a kind of case a reviewer picked for a screen or call', () => {
+  assert.match(SKILL, /`@case:<kind>`/);
+  assert.match(SKILL, /carries that tag next to `@screen:` or `@call:`/);
+  assert.match(SKILL, /a call one more for each picked kind with no tests/);
+});
+
 test('the agent skill says what an unchecked server match means when there is no server API list', () => {
   assert.match(SKILL, /`unchecked`/);
   assert.match(SKILL, /no call is dead and no screen is a dead screen/);
