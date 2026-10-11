@@ -49,14 +49,13 @@ type PageData = {
   marks: { attached: Mark[]; detached: Mark[] };
   app: AppData;
 };
-type FlowView = { collapsed?: string[]; openCalls?: string[]; group?: boolean; width?: number; marks?: object[] };
+type FlowView = { group?: boolean; width?: number; marks?: object[] };
 type FlowBox = { key: string; x: number; y: number; width: number; height: number; grouped: boolean };
-type FlowEdge = { from: string; to: string; x1: number; y1: number; x2: number; y2: number; ex?: number; nx?: number; grouped: boolean };
+type FlowEdge = { from: string; to: string; x1: number; y1: number; x2: number; y2: number; nx?: number; guards: object[] };
 type FlowColumns = { widths: Record<string, number>; grouped: Set<string>; xs: number[] };
 
 declare const state: any;
 declare const GAP: number;
-declare const CALL_INDENT: number;
 declare let drawnGrid: { count: number; cellW: number; per: number } | null;
 declare function load(): Promise<void>;
 declare function render(): void;
@@ -1178,18 +1177,6 @@ test('the page reports a missing map instead of serving empty data', async () =>
   }
 });
 
-test('the flow grown from one screen is served for that screen, and an unknown screen is not found', async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', async (base) => {
-      const res = await fetch(`${base}/api/flow?from=${encodeURIComponent('/document/:tab_draft_done_#DocumentList')}`);
-      assert.equal(res.status, 200);
-      const { roots }: PageData['flow'] = await res.json();
-      assert.deepEqual([roots[0].id, ...roots[0].children.map((c) => c.id)], ['/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/admin/report#AdminReport']);
-      assert.equal((await fetch(`${base}/api/flow?from=${encodeURIComponent('/nowhere#Nowhere')}`)).status, 404);
-    }),
-  );
-});
-
 test('requests another site could send through the browser are refused', async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', async (base) => {
@@ -1616,7 +1603,9 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
 
         await p.click('#view-flow');
         await (await screenBox(p, '/lab/result#LabResult')).click();
-        await p.waitForSelector('main:not([hidden])');
+        await p.waitForSelector('#flow .box.picked');
+        assert.equal(await p.textContent('#center h3'), '/lab/result');
+        await p.click('#view-list');
         assert.equal(await p.textContent('#left .views.side button.on'), '화면 11');
         assert.equal(await p.textContent('#center h3'), '/lab/result');
       }),
@@ -2171,11 +2160,13 @@ test('in a browser, the setting and role filters keep the screens that open only
 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        assert.doesNotMatch((await (await screenBox(p, '/admin/report#AdminReport')).locator('.l2').textContent())!, /필요/);
+        const bare = async (id: string) => (await tipLines(await screenBox(p, id))).filter((t) => / 필요$/.test(t));
+        assert.deepEqual(await bare('/admin/report#AdminReport'), []);
         const labResult = await screenBox(p, '/lab/result#LabResult');
-        assert.doesNotMatch((await labResult.locator('.l2').textContent())!, /필요/);
-        assert.deepEqual(await needLines(labResult), ['설정 SYSTEM.LAB_ENABLED 켬']);
-        assert.doesNotMatch((await (await screenBox(p, '/signin#SignIn')).locator('.l2').textContent())!, /필요/);
+        assert.deepEqual(await bare('/lab/result#LabResult'), []);
+        assert.deepEqual(await needTag(labResult), ['설정']);
+        assert.deepEqual((await tipLines(labResult)).filter((t) => t.startsWith('필요한')), ['필요한 설정: SYSTEM.LAB_ENABLED 켬']);
+        assert.deepEqual(await bare('/signin#SignIn'), []);
       }),
     ),
   );
@@ -2201,13 +2192,15 @@ test('in a browser, a screen whose links ask for different kinds has its own fil
 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        assert.match((await (await screenBox(p, '/help#Help')).locator('.l2').textContent())!, / · 불러옴 2 · 링크마다 다름$/);
+        const help = await screenBox(p, '/help#Help');
+        assert.deepEqual(await needTag(help), ['링크마다 다름']);
+        assert.equal((await tipLines(help)).at(-1), '링크마다 다름');
       }),
     );
   });
 });
 
-test('in a browser, the top of the right pane says what opens the chosen screen in the words of its flow box', { skip: browserMissing }, async () => {
+test('in a browser, the top of the right pane says what opens the chosen screen, and it is the same pane when the screen is picked in the flow', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -2226,8 +2219,10 @@ test('in a browser, the top of the right pane says what opens the chosen screen 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
         assert.deepEqual(report, ['역할 ADMIN 외 1', '설정 "ADMIN_REPORT" (ADMIN.LIST 에) 외 1']);
-        assert.deepEqual(report, await needLines(await screenBox(p, '/admin/report#AdminReport')));
-        assert.deepEqual(group, await needLines(await screenBox(p, '/admin/group#AdminGroup')));
+        for (const [id, words] of [['/admin/report#AdminReport', report], ['/admin/group#AdminGroup', group]] as const) {
+          await (await screenBox(p, id)).click();
+          assert.deepEqual(await p.locator('#right .open-needs .need').allTextContents(), words);
+        }
       }),
     ),
   );
@@ -3194,8 +3189,14 @@ const screenBox = async (p: Page, id: string) => {
   assert.ok(i >= 0, `box ${id} is drawn`);
   return p.locator('#flow .box.screen').nth(i);
 };
-const boxCount = async (p: Page) => ({ screens: await p.locator('#flow .box.screen').count(), calls: await p.locator('#flow .box.call').count() });
+const boxCount = async (p: Page) => p.locator('#flow .box.screen').count();
 const flowButton = (p: Page, label: string) => p.locator('.flowbar button', { hasText: label });
+const filterButton = (p: Page, key: string) => p.locator(`.flowbar .flow-filters button[data-filter="${key}"]`);
+const pickedBoxes = (p: Page) => p.$$eval('#flow .box.screen.picked', (els: HTMLElement[]) => els.map((e) => e.dataset.key));
+const boxesWith = (p: Page, cls: string) => p.$$eval(`#flow .box.screen.${cls}`, (els: HTMLElement[]) => els.map((e) => e.dataset.key!).sort());
+const lineStates = (p: Page) => p.$$eval('#flow .canvas svg path[data-from]', (els) => Object.fromEntries(els.map((e) => [
+  `${(e as SVGElement).dataset.from} ${(e as SVGElement).dataset.to}`, ['on', 'dim'].filter((c) => e.classList.contains(c)).join(' '),
+])));
 const textOutside = (p: Page) => p.$$eval('#flow .box', (els: HTMLElement[]) => els.flatMap((box) => {
   const r = box.getBoundingClientRect();
   const cs = getComputedStyle(box);
@@ -3203,6 +3204,7 @@ const textOutside = (p: Page) => p.$$eval('#flow .box', (els: HTMLElement[]) => 
   const inner = { left: r.left + side('Left'), right: r.right - side('Right'), top: r.top + side('Top'), bottom: r.bottom - side('Bottom') };
   const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
+    if ((walker.currentNode.parentElement as HTMLElement).closest('.sr-only')) continue;
     const range = document.createRange();
     range.selectNodeContents(walker.currentNode);
     for (const t of range.getClientRects()) {
@@ -3212,14 +3214,13 @@ const textOutside = (p: Page) => p.$$eval('#flow .box', (els: HTMLElement[]) => 
   return [];
 }));
 const layoutErrors = (p: Page) => p.$$eval('#flow .canvas', (canvases) => canvases.flatMap((canvas) => {
-  const indent = CALL_INDENT;
   const origin = canvas.getBoundingClientRect();
-  const els = new Map([...canvas.querySelectorAll<HTMLElement>('.box')].map((e) => [e.dataset.key, e]));
+  const els = new Map([...canvas.querySelectorAll<HTMLElement>(':scope > .box')].map((e) => [e.dataset.key, e]));
   const box = (key: string) => {
     const r = els.get(key)!.getBoundingClientRect();
     const top = r.top - origin.top;
     const left = r.left - origin.left;
-    return { key, grouped: els.get(key)!.classList.contains('grouped'), left, right: left + r.width, top, bottom: top + r.height, middle: top + r.height / 2 };
+    return { key, left, right: left + r.width, top, bottom: top + r.height, middle: top + r.height / 2 };
   };
   const edges = [...canvas.querySelectorAll<SVGPathElement>('svg path')].map((path) => ({
     from: box(path.dataset.from!), to: box(path.dataset.to!), start: path.getPointAtLength(0), end: path.getPointAtLength(path.getTotalLength()),
@@ -3234,94 +3235,198 @@ const layoutErrors = (p: Page) => p.$$eval('#flow .canvas', (canvases) => canvas
   for (const { from, to, start, end } of edges) {
     if (off(end.y, to.middle)) errors.push(`the line to ${to.key} ends at ${end.y}, the box's middle is at ${to.middle}`);
     if (off(end.x, to.left)) errors.push(`the line to ${to.key} ends at x ${end.x}, the box's left edge is at ${to.left}`);
-    const y = from.grouped ? from.bottom : from.middle;
-    if (off(start.y, y)) errors.push(`the line from ${from.key} starts at ${start.y}, not at ${y}`);
-    const x = from.grouped ? from.left + indent / 2 : from.right;
-    if (off(start.x, x)) errors.push(`the line from ${from.key} starts at x ${start.x}, not at ${x}`);
+    if (off(start.y, from.middle)) errors.push(`the line from ${from.key} starts at ${start.y}, not at ${from.middle}`);
+    if (off(start.x, from.right)) errors.push(`the line from ${from.key} starts at x ${start.x}, not at ${from.right}`);
   }
   const parents = new Set(edges.map((e) => e.from.key));
   for (const parent of parents) {
     const kids = edges.filter((e) => e.from.key === parent).map((e) => e.to).sort((a, b) => a.top - b.top);
     const pairs = kids.slice(1).map((b, i) => [kids[i], b]).filter(([a, b]) => !parents.has(a.key) && !parents.has(b.key));
-    if (kids[0].grouped) pairs.unshift([box(parent), kids[0]]);
     for (const [a, b] of pairs) if (off(b.top - a.bottom, GAP)) errors.push(`${b.key} stands ${b.top - a.bottom}px below ${a.key}`);
   }
   return errors;
 }));
 
-test('in a browser, the flow graph opens calls and branches, folds them, and a box opens the screen in the list', { skip: browserMissing }, async () => {
+const PICK_HINT = '누르면 이 화면에 이어진 길만 진하게 남기고 이 화면을 엽니다';
+const titleLines = async (box: Locator) => (await box.getAttribute('title'))!.split('\n');
+const statusLine = async (box: Locator) => (await titleLines(box))[1];
+const tipLines = async (box: Locator) => (await titleLines(box)).slice(2).filter((line) => line !== PICK_HINT);
+const needTag = (box: Locator) => box.locator('.tag.need').allTextContents();
+const SCREEN_ORDER = [
+  '/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/admin/member#AdminMember',
+  '/admin/group#AdminGroup', '/lab#Lab', '/lab/result#LabResult', '/admin/audit#AdminAudit', '/admin/report#AdminReport', '/help#Help',
+];
+const LAB_PATHS = ['/home#Home /lab#Lab', '/lab#Lab /lab/result#LabResult', '/signin#SignIn /home#Home'];
+
+test('in a browser, pressing a screen in the flow keeps strong only the paths through it, dims the rest, and opens the screen in the list\'s own middle and right panes beside the drawing', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        const shown = () => p.evaluate(() => ['flow-bar', 'flow', 'left', 'center', 'right', 'gaps'].filter((id) => !document.getElementById(id)!.hidden));
+        assert.deepEqual(await shown(), ['flow-bar', 'flow', 'gaps']);
+        assert.deepEqual(await boxesWith(p, 'dim'), []);
+
+        await (await screenBox(p, '/lab#Lab')).click();
+        await p.waitForSelector('#flow .box.picked');
+        assert.deepEqual(await shown(), ['flow-bar', 'flow', 'center', 'right']);
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab']);
+        assert.equal(await (await screenBox(p, '/lab#Lab')).getAttribute('aria-pressed'), 'true');
+        assert.deepEqual(await boxesWith(p, 'dim'), SCREEN_ORDER.filter((id) => !['/signin#SignIn', '/home#Home', '/lab#Lab', '/lab/result#LabResult'].includes(id)).sort());
+        const lines = await lineStates(p);
+        assert.deepEqual(Object.keys(lines).filter((k) => lines[k] === 'on').sort(), LAB_PATHS);
+        assert.ok(Object.entries(lines).every(([k, v]) => LAB_PATHS.includes(k) || v === 'dim'), JSON.stringify(lines));
+        assert.equal(await p.textContent('#center h3'), '/lab');
+        assert.equal(await p.textContent('#right .open-needs h2'), '이 화면을 열려면');
+        assert.equal(await p.locator('#right-dock .mark-form').count(), 1);
+        assert.equal(await p.textContent('.flowbar .picking'), '고른 화면 /lab 선택 해제');
+        assert.equal(await p.evaluate(() => decodeURIComponent(location.hash)), '#flow?screen=/lab#Lab');
+        const columns = await p.evaluate(() => ['flow', 'center', 'right'].map((id) => Math.round(document.getElementById(id)!.getBoundingClientRect().width)));
+        assert.equal(columns[2], 360, 'the right pane keeps the width it has in the list');
+        assert.ok(Math.abs(columns[0] - columns[1]) <= 1, `the drawing and the middle pane share the rest: ${columns}`);
+
+        await p.click('#view-list');
+        assert.match((await p.textContent('#screen-list li.selected'))!, /\/lab/);
+        await p.click('#screen-list li:has-text("/help")');
         await p.click('#view-flow');
-        await p.waitForSelector('#flow .box');
-        assert.equal(await p.isHidden('main'), true);
-        await (await screenBox(p, '/signin#SignIn')).locator('button.toggle', { hasText: /^처음으로$/ }).click();
-        assert.deepEqual(await boxCount(p), { screens: 11, calls: 0 });
+        assert.deepEqual(await pickedBoxes(p), ['/help#Help'], 'the screen chosen in the list is the one picked in the flow');
 
-        const home = await screenBox(p, '/home#Home');
-        await home.locator('.calls').click();
-        assert.deepEqual(await boxCount(p), { screens: 11, calls: 2 });
-        assert.match((await home.locator('.calls').textContent())!, /▾/);
-        await home.locator('.calls').click();
+        await (await screenBox(p, '/document/:id#DocumentDetail')).click();
+        assert.deepEqual(await boxesWith(p, 'jump'), ['/admin/report#AdminReport', '/help#Help'], 'the screens its links reach in other branches are marked, not dimmed');
+        assert.deepEqual(await boxesWith(p, 'dim'), ['/admin/audit#AdminAudit', '/admin/group#AdminGroup', '/admin/member#AdminMember', '/document/:tab_draft_done_#DocumentList', '/lab#Lab', '/lab/result#LabResult']);
 
-        const signin = await screenBox(p, '/signin#SignIn');
-        await signin.locator('button.toggle', { hasText: /^접기$/ }).click();
-        assert.deepEqual(await boxCount(p), { screens: 1, calls: 0 });
-        const folded = await screenBox(p, '/signin#SignIn');
-        assert.match((await folded.locator('.l2').textContent())!, /하위 합/);
-        await folded.locator('button.toggle', { hasText: /^펼치기$/ }).click();
+        await flowButton(p, '선택 해제').click();
+        assert.deepEqual(await shown(), ['flow-bar', 'flow', 'gaps']);
+        assert.deepEqual(await boxesWith(p, 'dim'), []);
+        assert.deepEqual(await boxesWith(p, 'jump'), []);
+        assert.equal(await p.evaluate(() => decodeURIComponent(location.hash)), '#flow');
 
-        await flowButton(p, '모두 펼치기').click();
-        assert.deepEqual(await boxCount(p), { screens: 11, calls: 14 });
-        const overlaps = await p.$$eval('#flow .box', (boxes: HTMLElement[]) => boxes.flatMap((box) => {
-          const outer = box.getBoundingClientRect();
-          return [...box.querySelectorAll('.l1, .l3, .acts')].flatMap((line) => [...line.querySelectorAll('button')].filter((b) => {
-            const r = b.getBoundingClientRect();
-            const text = line.querySelector('.text')?.getBoundingClientRect();
-            return r.right > outer.right + 0.5 || r.bottom > outer.bottom + 0.5 || (text && text.right > r.left + 0.5);
-          }).map(() => box.title.split('\n')[0]));
-        }));
-        assert.deepEqual(overlaps, []);
-
-        await flowButton(p, '모두 접기').click();
-        assert.deepEqual(await boxCount(p), { screens: 1, calls: 0 });
-        await (await screenBox(p, '/signin#SignIn')).locator('button.toggle', { hasText: /^전부 펼치기$/ }).click();
-        assert.deepEqual(await boxCount(p), { screens: 11, calls: 14 });
-
-        await (await screenBox(p, '/lab/result#LabResult')).click();
-        await p.waitForSelector('main:not([hidden])');
-        assert.equal(await p.textContent('#center h3'), '/lab/result');
-      }),
+        await (await screenBox(p, '/lab#Lab')).focus();
+        await p.keyboard.press('Enter');
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab'], 'Enter on a focused screen picks it');
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.fill('#right .mark-form textarea', '아직 저장하지 않은 메모');
+        await (await screenBox(p, '/lab#Lab')).click();
+        assert.equal(await p.inputValue('#right .mark-form textarea'), '아직 저장하지 않은 메모', 'pressing the picked screen again keeps the unsaved mark');
+        await p.focus('#right .statuses button:has-text("충분")');
+        await p.keyboard.press('Escape');
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab'], 'Escape in the panes keeps the pick');
+        await p.locator('#center table.calls td.cell').first().click();
+        assert.notEqual(await p.evaluate(() => state.target.node), '/lab#Lab');
+        await (await screenBox(p, '/lab#Lab')).click();
+        assert.equal(await p.evaluate(() => state.target.node), '/lab#Lab', 'pressing the picked screen goes back from a call to the screen');
+        await (await screenBox(p, '/lab#Lab')).focus();
+        await p.keyboard.press('Escape');
+        assert.deepEqual(await pickedBoxes(p), []);
+        assert.equal(await p.locator('#gaps').isVisible(), true);
+      }, { view: 'flow' }),
     ),
   );
 });
 
-const needLines = (box: Locator) => box.locator('.need').allTextContents();
-const PRESS_HINT = '누르면 목록에서 이 화면을 엽니다';
-const tipLines = async (box: Locator) => (await box.getAttribute('title'))!.split('\n').slice(1).filter((line) => line !== PRESS_HINT);
+test('in a browser, with nothing picked the right column lists the failing screens and then the ones without a tagged test, in the order of the drawing, and pressing one picks it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const testsFile = path.join(config.outDir, 'tests.json');
+    const tests = JSON.parse(fs.readFileSync(testsFile, 'utf8'));
+    tests.importers['/admin/group#AdminGroup'] = [tests.importers['/help#Help'][0]];
+    fs.writeFileSync(testsFile, JSON.stringify(tests));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#gaps .gap-list');
+        assert.equal(await p.textContent('#gaps h2'), '빈틈 9');
+        assert.deepEqual(await p.locator('#gaps h3').allTextContents(), ['실패 5', '테스트 없음 4']);
+        const names = (n: number) => p.locator('#gaps .gap-list').nth(n).locator('li .name > span:first-child').allTextContents();
+        assert.deepEqual(await names(0), ['/home', '/document/:tab(draft|done)', '/document/:id', '/admin/member', '/help']);
+        assert.deepEqual(await names(1), ['/admin/group', '/lab/result', '/admin/audit', '/admin/report']);
+        const group = p.locator('#gaps .gap-list li', { hasText: '/admin/group' });
+        assert.deepEqual(await group.locator('.count').allTextContents(), ['테스트 없음', '불러옴 1'], 'a screen with only untagged tests is a gap and says what it has');
+        assert.equal(await p.locator('#gaps li.selected').count(), 0);
 
-test('in a browser, a flow box writes the roles and settings its screen needs, abridged on the box with the value first and in full on hover', { skip: browserMissing }, async () => {
+        await group.click();
+        assert.deepEqual(await pickedBoxes(p), ['/admin/group#AdminGroup']);
+        assert.equal(await p.textContent('#center h3'), '/admin/group');
+        assert.equal(await p.locator('#gaps').isHidden(), true);
+      }, { view: 'flow' }),
+    );
+  });
+});
+
+test('in a browser, the flow bar counts the drawn screens on one button per status, and a pressed button and the search box fade the screens they leave out without moving any', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        await p.click('#view-flow');
-        await p.waitForSelector('#flow .box');
+        await p.waitForSelector('#flow .box.screen');
+        assert.equal(await p.textContent('.flowbar .flowsummary'), '테스트 있는 화면 7/11');
+        assert.deepEqual(await p.locator('.flowbar .flow-filters button').allTextContents(), ['전체 11', '테스트 없음 4', '태그 없는 테스트만 0', '실패 5', '보류 1', '통과 1']);
+        const summary = await p.evaluate(() => state.data.flow.summary);
+        const count = async (key: string) => Number(await filterButton(p, key).locator('.count').textContent());
+        assert.deepEqual([await count('fail'), await count('imported'), 11 - await count('none')], [summary.failing, summary.importedOnly, summary.tested], 'the buttons agree with the counts the server made');
+        const pressed = () => p.$$eval('.flowbar .flow-filters button[aria-pressed=true]', (els: HTMLElement[]) => els.map((e) => e.dataset.filter));
+        assert.deepEqual(await pressed(), ['all']);
+        const before = await p.$$eval('#flow .box.screen', (els: HTMLElement[]) => els.map((e) => [e.dataset.key, e.style.left, e.style.top]));
+
+        await filterButton(p, 'fail').click();
+        assert.deepEqual(await pressed(), ['fail']);
+        assert.deepEqual(await boxesWith(p, 'off'), ['/admin/audit#AdminAudit', '/admin/group#AdminGroup', '/admin/report#AdminReport', '/lab#Lab', '/lab/result#LabResult', '/signin#SignIn']);
+        await filterButton(p, 'pending').click();
+        assert.deepEqual(await pressed(), ['pending'], 'one status at a time');
+        assert.deepEqual(SCREEN_ORDER.filter((id) => !(id === '/lab#Lab')).sort(), await boxesWith(p, 'off'));
+        await filterButton(p, 'pending').click();
+        assert.deepEqual(await pressed(), ['all'], 'pressing the pressed button again shows every screen');
+        assert.deepEqual(await boxesWith(p, 'off'), []);
+
+        const search = p.locator('.flowbar input.flow-search');
+        await search.fill('admin/');
+        assert.deepEqual(SCREEN_ORDER.filter((id) => !id.startsWith('/admin/')).sort(), await boxesWith(p, 'off'));
+        await filterButton(p, 'none').click();
+        assert.deepEqual(SCREEN_ORDER.filter((id) => !['/admin/group#AdminGroup', '/admin/audit#AdminAudit', '/admin/report#AdminReport'].includes(id)).sort(), await boxesWith(p, 'off'), 'the search and the button both apply');
+        assert.equal(await search.evaluate((e) => e === document.activeElement), false);
+        await search.focus();
+        await p.keyboard.press('Enter');
+        assert.deepEqual(await pickedBoxes(p), ['/admin/group#AdminGroup'], 'Enter picks the first screen still shown');
+        assert.equal(await search.inputValue(), 'admin/', 'the search stays as typed across the redraw');
+        await search.fill('');
+        await filterButton(p, 'none').click();
+        await flowButton(p, '선택 해제').click();
+        assert.deepEqual(await p.$$eval('#flow .box.screen', (els: HTMLElement[]) => els.map((e) => [e.dataset.key, e.style.left, e.style.top])), before, 'fading and picking leave every screen where it was');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, a screen in the flow is one line with its status as a square, its API calls as a count and the kind of condition that opens it, with the rest on hover', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        const home = await screenBox(p, '/home#Home');
+        assert.equal(await home.locator('.path').textContent(), '/home');
+        assert.deepEqual(await home.locator('.tag').allTextContents(), ['API 2', '죽은 화면']);
+        assert.match((await home.getAttribute('class'))!, /s-fail/);
+        assert.equal(await home.locator('.sr-only').textContent(), '실패');
+        assert.equal(await statusLine(home), '실패 · 불러옴 1');
+        assert.deepEqual(await tipLines(home), []);
+        assert.equal(await home.locator('button').count(), 0, 'a screen carries no buttons of its own');
 
         const audit = await screenBox(p, '/admin/audit#AdminAudit');
-        assert.deepEqual(await needLines(audit), ['역할 ADMIN 외 1']);
+        assert.deepEqual(await needTag(audit), ['역할']);
         assert.deepEqual((await tipLines(audit)).filter((t) => t.startsWith('필요한')), ['필요한 역할: ADMIN, AUDITOR']);
-
+        assert.equal(await statusLine(audit), '테스트 없음');
         const group = await screenBox(p, '/admin/group#AdminGroup');
-        assert.deepEqual(await needLines(group), ['역할 ADMIN미확인 1']);
         assert.deepEqual((await tipLines(group)).filter((t) => /역할/.test(t)), ['필요한 역할: ADMIN', '읽지 못한 역할 조건: isAdmin']);
-
         const lab = await screenBox(p, '/lab#Lab');
-        assert.deepEqual(await needLines(lab), ['설정 SYSTEM.LAB_ENABLED 켬']);
+        assert.deepEqual(await needTag(lab), ['설정']);
         assert.deepEqual((await tipLines(lab)).filter((t) => t.startsWith('필요한')), ['필요한 설정: SYSTEM.LAB_ENABLED 켬']);
-
+        assert.match((await tipLines(lab))[0], /^이 링크의 조건: globalSettings\.SYSTEM\.LAB_ENABLED$/);
         const report = await screenBox(p, '/admin/report#AdminReport');
-        assert.deepEqual(await needLines(report), ['역할 ADMIN 외 1', '설정 "ADMIN_REPORT" (ADMIN.LIST 에) 외 1']);
+        assert.deepEqual(await needTag(report), ['역할·설정']);
+        assert.deepEqual((await tipLines(report)).filter((t) => t.startsWith('필요한')), [
+          '필요한 역할: ADMIN, OWNER',
+          '필요한 설정: SYSTEM.MAIN_MENU.ADMIN.LIST 에 "ADMIN_REPORT"',
+          '필요한 설정: SYSTEM.MAIN_MENU.ADMIN 있음',
+        ]);
+        assert.match((await (await screenBox(p, '/help#Help')).getAttribute('class'))!, /s-fail/);
+        assert.equal(await statusLine(await screenBox(p, '/help#Help')), '실패 · 불러옴 2', 'untagged tests are counted apart and do not set the status');
         assert.deepEqual(await p.evaluate(() => openNeeds({ access: { settings: [{ from: 'route', unreadable: [], needs: [
           { path: ['SYSTEM', 'MENU'], need: 'present' },
           { path: ['SYSTEM', 'MENU', 'LIST'], need: 'includes', value: 'X' },
@@ -3329,18 +3434,14 @@ test('in a browser, a flow box writes the roles and settings its screen needs, a
         assert.deepEqual(await p.evaluate(() => openNeeds({ access: { roleValues: null, unreadableRoleGuards: [] } })), {
           lines: [{ kind: 'role', text: '역할 미확인' }], tips: ['필요한 역할: 미확인'], bare: null,
         });
-        assert.deepEqual((await tipLines(report)).filter((t) => t.startsWith('필요한')), [
-          '필요한 역할: ADMIN, OWNER',
-          '필요한 설정: SYSTEM.MAIN_MENU.ADMIN.LIST 에 "ADMIN_REPORT"',
-          '필요한 설정: SYSTEM.MAIN_MENU.ADMIN 있음',
-        ]);
 
+        const titles = await p.locator('#flow .box.screen').evaluateAll((boxes) => boxes.map((b) => b.getAttribute('title')!.split('\n').at(-1)));
+        assert.deepEqual([...new Set(titles)], [PICK_HINT]);
+        const heights = await p.$$eval('#flow .box.screen', (els: HTMLElement[]) => els.map((e) => e.offsetHeight));
+        assert.ok(Math.max(...heights) < 30, `every screen is one line (${Math.max(...heights)}px)`);
         assert.deepEqual(await textOutside(p), []);
-        const boxes = await p.$$eval('#flow .box', (els: HTMLElement[]) => els.map((e) => ({ id: e.title.split('\n')[0], left: e.offsetLeft, top: e.offsetTop, h: e.offsetHeight })));
-        for (const a of boxes) for (const b of boxes) {
-          if (a !== b && a.left === b.left) assert.ok(a.top + a.h <= b.top || b.top + b.h <= a.top, `${a.id} and ${b.id} do not overlap`);
-        }
-      }),
+        assert.deepEqual(await layoutErrors(p), []);
+      }, { view: 'flow' }),
     ),
   );
 });
@@ -3349,28 +3450,26 @@ test('in a browser, a flow box sits midway between its first and last child and 
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        const trees = await p.evaluate(() => {
+        const { trees, gap } = await p.evaluate(() => {
           const sizes: Record<string, { width: number; height: number }> = {};
-          const openCalls: string[] = [];
-          const call = (id: string) => ({ kind: 'call', id });
-          const screen = (id: string, height: number, children: object[] = [], calls: { id: string }[] = []) => {
+          const screen = (id: string, height: number, children: object[] = []) => {
             sizes[id] = { width: 100 + id.length * 10, height };
-            for (const c of calls) sizes[`${id}>${c.id}`] = { width: 150, height: 44 };
-            if (calls.length) openCalls.push(id);
-            return { kind: 'screen', id, children, calls, guards: [] };
+            return { kind: 'screen', id, children, calls: [], guards: [] };
           };
-          const [plain, role, both] = [60, 77, 94];
+          const [plain, tall, tallest] = [24, 41, 58];
           const shapes = {
-            plainOverCalls: [screen('root', plain, [screen('a', plain, [], [call('a1')]), screen('b', plain, [], [call('b1')])])],
-            tallOverOneCall: [screen('root', plain, [screen('tall', role, [], [call('t1')]), screen('next', plain, [screen('grandchild', plain)])])],
-            tallOverScreens: [screen('root', plain, [screen('p', both, [screen('p1', plain)]), screen('q', both, [screen('q1', plain)])])],
-            tallLast: [screen('tallest', both, [], [call('t1')])],
-            tallOverTallOverCall: [screen('root', plain, [screen('x', plain, [], [call('x1')]), screen('outer', both, [screen('inner', role, [], [call('i1')])])])],
+            plain: [screen('root', plain, [screen('a', plain), screen('b', plain)])],
+            tallFirst: [screen('root', plain, [screen('tall', tall), screen('next', plain, [screen('grandchild', plain)])])],
+            tallOverScreens: [screen('root', plain, [screen('p', tallest, [screen('p1', plain)]), screen('q', tallest, [screen('q1', plain)])])],
+            tallOverTall: [screen('root', plain, [screen('x', plain), screen('outer', tallest, [screen('inner', tall)])])],
           };
-          return Object.fromEntries(Object.entries(shapes).map(([name, roots]) => {
-            const { boxes, edges, height } = layoutFlow(roots, sizes, { openCalls });
-            return [name, { height, edges: edges.map((e): [string, number, number] => [e.from, e.y1, e.y2]), boxes: boxes.map((b) => ({ id: b.key, x: b.x, y: b.y, bottom: b.y + b.height })) }];
-          }));
+          return {
+            gap: GAP,
+            trees: Object.fromEntries(Object.entries(shapes).map(([name, roots]) => {
+              const { boxes, edges, height } = layoutFlow(roots, sizes);
+              return [name, { height, edges: edges.map((e): [string, number, number] => [e.from, e.y1, e.y2]), boxes: boxes.map((b) => ({ id: b.key, x: b.x, y: b.y, bottom: b.y + b.height })) }];
+            })),
+          };
         });
         for (const [name, { height, edges, boxes }] of Object.entries(trees)) {
           for (const parent of new Set(edges.map(([from]) => from))) {
@@ -3380,7 +3479,7 @@ test('in a browser, a flow box sits midway between its first and last child and 
           }
           for (const b of boxes) assert.ok(b.y >= 0 && b.bottom <= height, `${name}: ${b.id} is inside the canvas`);
           for (const a of boxes) for (const b of boxes) {
-            if (a !== b && a.x === b.x) assert.ok(a.bottom + 12 <= b.y || b.bottom + 12 <= a.y, `${name}: ${a.id} and ${b.id} keep a gap between them`);
+            if (a !== b && a.x === b.x) assert.ok(a.bottom + gap <= b.y || b.bottom + gap <= a.y, `${name}: ${a.id} and ${b.id} keep a gap between them`);
           }
         }
       }),
@@ -3388,7 +3487,7 @@ test('in a browser, a flow box sits midway between its first and last child and 
   );
 });
 
-test('in a browser, a flow box says when a setting condition could not be turned into a value', { skip: browserMissing }, async () => {
+test('in a browser, a screen in the flow says on hover when a setting condition could not be turned into a value', { skip: browserMissing }, async () => {
   const edits: [string, string, string][] = [
     ['client/src/components/DocumentDetail.js', 'const helpEnabled = system.HELP_LINK_ENABLED;', 'const helpEnabled = () => system.HELP_LINK_ENABLED;'],
     ['client/src/components/DocumentDetail.js', '{helpEnabled && <Link', '{helpEnabled() && <Link'],
@@ -3396,128 +3495,12 @@ test('in a browser, a flow box says when a setting condition could not be turned
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
         const help = await screenBox(p, '/help#Help');
-        assert.match((await needLines(help)).join('\n'), /미확인 1/);
+        assert.deepEqual(await needTag(help), ['설정']);
         assert.ok((await tipLines(help)).some((t) => t.startsWith('정하지 못한 설정 조건: helpEnabled()')));
-      }),
+      }, { view: 'flow' }),
     ), edits);
-});
-
-test('in a browser, "reset" opens one branch fully with its calls closed and leaves the rest alone', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.click('#view-flow');
-        await p.waitForSelector('#flow .box');
-        const reset = async (id: string) => (await screenBox(p, id)).locator('button.toggle', { hasText: /^처음으로$/ }).click();
-        await reset('/signin#SignIn');
-        assert.deepEqual(await boxCount(p), { screens: 11, calls: 0 });
-        await (await screenBox(p, '/signin#SignIn')).locator('.calls').click();
-        const signinCalls = (await boxCount(p)).calls;
-        assert.ok(signinCalls > 0);
-        await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^접기$/ }).click();
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^전부 펼치기$/ }).click();
-        assert.ok((await boxCount(p)).calls > signinCalls);
-
-        await reset('/home#Home');
-        assert.deepEqual(await boxCount(p), { screens: 11, calls: signinCalls });
-        assert.equal(await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
-
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await p.waitForSelector('.flowbar .focusing');
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^전부 펼치기$/ }).click();
-        assert.ok((await boxCount(p)).calls > 0);
-        await reset('/home#Home');
-        assert.deepEqual(await boxCount(p), { screens: 10, calls: 0 });
-        const bare = await p.evaluate(() => {
-          const walk = (ns: FlowNode[]): FlowNode[] => ns.flatMap((n) => [n, ...walk(n.children)]);
-          return walk(state.focus.roots).find((n) => !n.children.length && !n.calls.length)?.id;
-        });
-        assert.ok(bare);
-        assert.equal(await (await screenBox(p, bare)).locator('button.toggle', { hasText: /^처음으로$/ }).count(), 0);
-      }),
-    ),
-  );
-});
-
-test('in a browser, "gaps only" folds exactly the branches with no untested or failing box', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.click('#view-flow');
-        await p.waitForSelector('#flow .box');
-        await p.evaluate(() => {
-          const walk = (ns: FlowNode[]): FlowNode[] => ns.flatMap((n) => [n, ...walk(n.children)]);
-          const lab = walk(state.data.flow.roots).find((n) => n.id === '/lab#Lab')!;
-          for (const n of walk([lab])) for (const x of [n, ...n.calls]) x.counts = { pass: 1, fail: 0, pending: 0 };
-        });
-        await flowButton(p, '빈틈만 펼치기').click();
-        const lab = await screenBox(p, '/lab#Lab');
-        assert.equal(await lab.locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
-        assert.match((await lab.getAttribute('class'))!, /s-pass/);
-        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
-        assert.equal(await p.$$eval('#flow .box.screen', (els: HTMLElement[]) => els.some((e) => e.title.startsWith('/lab/result#'))), false);
-      }),
-    ),
-  );
-});
-
-test('in a browser, the page opens on the flow with a summary line counted from tagged tests, and a box with imported tests says so while its border follows its tagged tests', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .box');
-        assert.equal(await p.isHidden('main'), true);
-        assert.equal(await p.getAttribute('#view-flow', 'class'), 'on');
-        assert.match((await p.textContent('#meta'))!, /^화면 11 · 테스트 있는 화면 7 · /);
-        assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 7/11 · 실패 5 · 태그 없는 테스트만 있는 화면 0');
-        const help = await screenBox(p, '/help#Help');
-        assert.match((await help.locator('.l2').textContent())!, /^✓1 ✕2 ○1 · 불러옴 2/);
-        assert.match((await help.getAttribute('class'))!, /s-fail/);
-        assert.doesNotMatch((await (await screenBox(p, '/admin/member#AdminMember')).locator('.l2').textContent())!, /불러옴/);
-      }, { view: 'flow' }),
-    ),
-  );
-});
-
-test('in a browser, the flow first opens only the way to untested or failing boxes, counts a screen with only imported tests as a gap, and keeps the shape the reviewer leaves across trips to the list', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, async (config) => {
-    const testsFile = path.join(config.outDir, 'tests.json');
-    const tests = JSON.parse(fs.readFileSync(testsFile, 'utf8'));
-    const passing = { title: 'passes', file: 'lab.spec.ts', line: 1, status: 'pass' };
-    for (const id of ['/lab#Lab', '/lab/result#LabResult', 'GET:/api/v1/lab/experiment']) tests.nodes[id] = [passing];
-    tests.importers['/admin/group#AdminGroup'] = [tests.importers['/help#Help'][0]];
-    fs.writeFileSync(testsFile, JSON.stringify(tests));
-    await withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .box');
-        assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 8/11 · 실패 5 · 태그 없는 테스트만 있는 화면 1');
-        const lab = await screenBox(p, '/lab#Lab');
-        assert.equal(await lab.locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
-        assert.match((await lab.getAttribute('class'))!, /s-pass/);
-        assert.equal(await p.$$eval('#flow .box.screen', (els: HTMLElement[]) => els.some((e) => e.title.startsWith('/lab/result#'))), false);
-        const group = await screenBox(p, '/admin/group#AdminGroup');
-        assert.match((await group.locator('.l2').textContent())!, /^테스트 없음 · 불러옴 1/);
-        assert.match((await group.getAttribute('class'))!, /s-none/);
-        const home = await screenBox(p, '/home#Home');
-        assert.equal(await home.locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
-        assert.match((await home.locator('.calls').textContent())!, /▾/);
-
-        await home.locator('button.toggle', { hasText: /^접기$/ }).click();
-        await p.click('#view-list');
-        await p.waitForSelector('main:not([hidden])');
-        await p.click('#view-flow');
-        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
-        await (await screenBox(p, '/signin#SignIn')).locator('.l2').click();
-        await p.waitForSelector('main:not([hidden])');
-        await p.click('#view-flow');
-        assert.equal(await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^펼치기$/ }).count(), 1);
-        assert.match((await (await screenBox(p, '/signin#SignIn')).locator('.calls').textContent())!, /▾/);
-      }, { view: 'flow' }),
-    );
-  });
 });
 
 const changeData = (edit: (data: PageData) => void) => async (page: Page) => {
@@ -3543,7 +3526,7 @@ test('in a browser, when the first flow drawing fails the message stays visible 
           assert.equal(await p.isHidden('main'), true);
           assert.equal(await p.isHidden('#flow'), true);
         }
-        assert.equal(await p.locator('main section').count(), 3);
+        assert.equal(await p.locator('main section').count(), 4);
       }, { view: 'flow', setup: changeData((data) => { data.flow.roots[0].guards = null; }) }),
     ),
   );
@@ -3555,7 +3538,7 @@ test('in a browser, a map with no screens says so in the flow, and the entryPath
     const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        await p.waitForSelector('#flow .flowsummary');
+        await p.waitForSelector('.flowbar .flowsummary');
         assert.match((await p.textContent('#flow'))!, /entryPaths/);
         assert.doesNotMatch((await p.textContent('#flow'))!, /화면이 없습니다\./);
       }, { view: 'flow', setup: changeData((data) => {
@@ -3565,80 +3548,20 @@ test('in a browser, a map with no screens says so in the flow, and the entryPath
     fs.writeFileSync(mapFile, JSON.stringify({ ...map, screens: [], entries: [] }));
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        await p.waitForSelector('#flow .flowsummary');
+        await p.waitForSelector('.flowbar .flowsummary');
         assert.match((await p.textContent('#flow'))!, /화면이 없습니다\./);
         assert.doesNotMatch((await p.textContent('#flow'))!, /entryPaths/);
+        assert.equal(await p.textContent('#gaps h2'), '빈틈 0');
+        assert.equal(await p.textContent('#gaps p:last-child'), '빈틈이 없습니다.');
       }, { view: 'flow' }),
     );
   });
-});
-
-test('in a browser, a branch whose only gap is a screen with imported tests and no tagged test is open on first load, and a box lists its imported tests right after its test counts, before its badges', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, async (config) => {
-    const testsFile = path.join(config.outDir, 'tests.json');
-    const tests = JSON.parse(fs.readFileSync(testsFile, 'utf8'));
-    const map: PageData['map'] = JSON.parse(fs.readFileSync(path.join(config.outDir, 'map.json'), 'utf8'));
-    const passing = { title: 'passes', file: 'all.spec.ts', line: 1, status: 'pass' };
-    for (const id of [...map.screens.map((x) => x.id), ...map.calls.map((c) => c.id)]) tests.nodes[id] = [passing];
-    delete tests.nodes['/lab/result#LabResult'];
-    tests.importers = { '/lab/result#LabResult': [passing], '/document/:tab_draft_done_#DocumentList': [passing, passing] };
-    fs.writeFileSync(testsFile, JSON.stringify(tests));
-    await withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .box');
-        assert.equal(await p.textContent('#flow .flowsummary'), '테스트 있는 화면 10/11 · 실패 0 · 태그 없는 테스트만 있는 화면 1');
-        const result = await screenBox(p, '/lab/result#LabResult');
-        assert.match((await result.getAttribute('class'))!, /s-none/);
-        assert.match((await result.locator('.l2').textContent())!, /^테스트 없음 · 불러옴 1/);
-        const dead = await screenBox(p, '/document/:tab_draft_done_#DocumentList');
-        assert.match((await dead.locator('.l2').textContent())!, / · 불러옴 2 · 죽은 화면$/);
-        assert.equal(await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
-        const home = await screenBox(p, '/home#Home');
-        assert.equal(await home.locator('button.toggle', { hasText: /^접기$/ }).count(), 1);
-        assert.doesNotMatch((await home.locator('.l2').textContent())!, /불러옴/);
-
-        await home.locator('button.toggle', { hasText: /^접기$/ }).click();
-        const folded = await screenBox(p, '/home#Home');
-        assert.match((await folded.locator('.l2').textContent())!, /\(하위 합\) · 불러옴 3/);
-      }, { view: 'flow' }),
-    );
-  });
-});
-
-test('in a browser, one branch is shown on its own, and a late answer for an earlier click does not replace the later one', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.click('#view-flow');
-        await p.waitForSelector('#flow .box');
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await p.waitForSelector('.flowbar .focusing');
-        assert.match((await p.textContent('.flowbar .focusing'))!, /^\/home /);
-        assert.equal((await boxCount(p)).screens, 10);
-        await flowButton(p, '전체 보기').click();
-        assert.equal((await boxCount(p)).screens, 11);
-
-        await p.route('**/api/flow?from=*', async (route) => {
-          if (route.request().url().includes(encodeURIComponent('/signin#SignIn'))) await new Promise((r) => setTimeout(r, 500));
-          await route.continue();
-        });
-        await (await screenBox(p, '/signin#SignIn')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await p.waitForTimeout(800);
-        assert.match((await p.textContent('.flowbar .focusing'))!, /^\/lab /);
-      }),
-    ),
-  );
 });
 
 const LONG_ROUTE = '/user-completed-documents/signature-requests/:documentId/participants/history';
-const LONG_COMPONENT = 'UserCompletedDocumentParticipantHistory';
 const walkFlow = (ns: FlowNode[]): FlowNode[] => ns.flatMap((n) => [n, ...walkFlow(n.children)]);
 const withLongRoute = (data: PageData) => {
-  const help = walkFlow(data.flow.roots).find((n) => n.id === '/help#Help')!;
-  help.label = LONG_ROUTE;
-  help.component = LONG_COMPONENT;
-  help.jumps.push({ to: '/document/:id#DocumentDetail', label: '/user-completed-documents/signature-requests/:documentId', guards: [] });
+  walkFlow(data.flow.roots).find((n) => n.id === '/help#Help')!.label = LONG_ROUTE;
 };
 const leafEntries = (data: PageData, count: number) => {
   const leaves = walkFlow(data.flow.roots).filter((n) => !n.children.length);
@@ -3651,106 +3574,19 @@ const flowBoxes = (p: Page) => p.$$eval('#flow .box', (els: HTMLElement[]) => el
 const overlapping = (boxes: Awaited<ReturnType<typeof flowBoxes>>) => boxes.flatMap((a, i) => boxes.slice(i + 1)
   .filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
   .map((b) => `${a.id} / ${b.id}`));
-const WIDE_COMPONENT = 'UserCompletedDocumentSignatureRequestParticipantHistoryOverview';
 
-test('in a browser, a flow box without role or setting conditions has no extra line, and every box stands where the layout put it, each line ending at the middle of its box and boxes under one another keeping the layout\'s gap', { skip: browserMissing }, async () => {
+test('in a browser, every flow box stands where the layout put it, each line ending at the middle of its box and boxes under one another keeping the layout\'s gap, also with gathered entry screens', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        await p.click('#view-flow');
-        await p.waitForSelector('#flow .box');
-        const home = await screenBox(p, '/home#Home');
-        assert.equal(await home.locator('.need').count(), 0);
-        assert.deepEqual(await tipLines(home), []);
-        assert.equal(await (await screenBox(p, '/admin/audit#AdminAudit')).locator('.need').count(), 1);
-        await flowButton(p, '모두 펼치기').click();
-        assert.ok(await p.locator('#flow .box.call.grouped').count() > 0, 'a gathered entry screen shows its calls');
+        await p.waitForSelector('#flow .group-head');
         assert.deepEqual(await layoutErrors(p), []);
         assert.deepEqual(await textOutside(p), []);
-      }, { setup: changeData((data) => {
+        assert.deepEqual(overlapping(await flowBoxes(p)), []);
+      }, { view: 'flow', setup: changeData((data) => {
         withLongRoute(data);
         const extras = leafEntries(data, 3);
         extras[0].label = LONG_ROUTE;
-        extras[1].component = WIDE_COMPONENT;
-        data.flow.roots.push(...extras);
-      }) }),
-    ),
-  );
-});
-
-test('in a browser, a column is as wide as a component name longer than 360px needs, and the boxes it widens still stand where the layout put them', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .box');
-        await flowButton(p, '모두 펼치기').click();
-        const home = await (await screenBox(p, '/home#Home')).evaluate((box) => {
-          const text = box.querySelector('.l1 .text')!.getBoundingClientRect();
-          const name = box.querySelector('.l1 .component')!;
-          return { width: box.getBoundingClientRect().width, text: text.width, name: name.getBoundingClientRect().width, nameLines: name.getClientRects().length };
-        });
-        assert.ok(home.width > 360, 'the box is wider than 360px');
-        assert.equal(home.nameLines, 1);
-        assert.ok(Math.abs(home.text - home.name) <= 1, 'the box is no wider than the name needs');
-        const boxes = await flowBoxes(p);
-        const left = boxes.find((b) => b.id === '/home#Home')!.left;
-        assert.deepEqual([...new Set(boxes.filter((b) => b.left === left).map((b) => b.width))], [home.width]);
-        assert.deepEqual(await layoutErrors(p), []);
-        assert.deepEqual(await textOutside(p), []);
-        assert.deepEqual(overlapping(boxes), []);
-      }, { view: 'flow', setup: changeData((data) => {
-        withLongRoute(data);
-        walkFlow(data.flow.roots).find((n) => n.id === '/home#Home')!.component = WIDE_COMPONENT;
-      }) }),
-    ),
-  );
-});
-
-test('in a browser, opening the API calls of a gathered entry screen leaves every cell where it was, and the calls wrap inside the cell', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .group-head');
-        const cells = () => p.$$eval('#flow .box.screen.grouped', (els: HTMLElement[]) => els.map((e) => ({ id: e.title.split('\n')[0], left: e.offsetLeft, width: e.offsetWidth, top: e.offsetTop })));
-        const calls = () => p.locator('#flow .box.screen.grouped').first().locator('.calls');
-        if ((await calls().textContent())!.includes('▾')) await calls().click();
-        const closed = await cells();
-        assert.equal(closed[0].id, '/extra/0#Extra0');
-        await calls().click();
-        assert.match((await calls().textContent())!, /▾/);
-        const open = await cells();
-        assert.deepEqual(open.map(({ id, left, width }) => ({ id, left, width })), closed.map(({ id, left, width }) => ({ id, left, width })));
-        assert.equal(open[0].top, closed[0].top);
-        const callWidths = await p.$$eval('#flow .box.call.grouped', (els: HTMLElement[]) => els.filter((e) => e.dataset.key!.startsWith('/extra/0#Extra0>')).map((e) => e.offsetWidth));
-        assert.ok(callWidths.length > 0);
-        assert.deepEqual([...new Set(callWidths)], [closed[0].width - (await p.evaluate(() => CALL_INDENT))]);
-        assert.deepEqual(await textOutside(p), []);
-        assert.deepEqual(await layoutErrors(p), []);
-        assert.deepEqual(overlapping(await flowBoxes(p)), []);
-      }, { view: 'flow', setup: changeData((data) => {
-        const extras = leafEntries(data, 8);
-        extras[0].calls[0].label += '/usercompleteddocumentsignaturerequestsparticipantshistoryoverview';
-        data.flow.roots.push(...extras);
-      }) }),
-    ),
-  );
-});
-
-test('in a browser, a call under a gathered entry screen wraps every line inside its box, a long server label included', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .group-head');
-        const toggle = (await screenBox(p, '/extra/0#Extra0')).locator('.calls');
-        if (!(await toggle.textContent())!.includes('▾')) await toggle.click();
-        const call = p.locator('#flow .box.call.grouped[data-key^="/extra/0#Extra0>"]').first();
-        assert.match((await call.locator('.l2').textContent())!, /UserCompletedDocumentSignatureRequestController\.getParticipantHistoryOverview/);
-        assert.ok(await call.evaluate((e) => e.scrollWidth <= e.clientWidth), 'the call box holds its second line');
-        assert.deepEqual(await textOutside(p), []);
-        assert.deepEqual(overlapping(await flowBoxes(p)), []);
-      }, { view: 'flow', setup: changeData((data) => {
-        const extras = leafEntries(data, 8);
-        extras[0].calls[0].server = { status: 'match', labels: ['UserCompletedDocumentSignatureRequestController.getParticipantHistoryOverview'] };
         data.flow.roots.push(...extras);
       }) }),
     ),
@@ -3795,11 +3631,9 @@ test('in a browser, the flow is drawn again on a resize only when gathered entry
         await resize(p, 1000, 600);
         assert.ok(await perRow(p) < wide, 'a narrower window holds fewer cells in a row');
         assert.ok(!(await kept(p)), 'a change that alters the number of cells in a row draws the gathered entry screens again');
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await p.waitForSelector('.flowbar .focusing');
-        await mark(p);
-        await resize(p, 800, 600);
-        assert.ok(await kept(p), 'one branch shown on its own is not drawn again');
+        const narrow = await perRow(p);
+        await (await screenBox(p, '/home#Home')).click();
+        assert.ok(await perRow(p) < narrow, 'picking a screen gives the drawing less room and fewer cells in a row');
       }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
     ),
   );
@@ -3816,15 +3650,14 @@ test('in a browser, the flow is drawn again on a resize only when gathered entry
   );
 });
 
-test('in a browser, a flow box with a long route breaks it only before a slash, keeps its component name whole, and no box cuts or spills its text', { skip: browserMissing }, async () => {
+test('in a browser, a flow box with a long route breaks it only before a slash, its column grows no wider than the longest box needs, and no box cuts or spills its text', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
-        await flowButton(p, '모두 펼치기').click();
-        const help = await (await screenBox(p, '/help#Help')).evaluate((box, [route, component]) => {
+        const help = await (await screenBox(p, '/help#Help')).evaluate((box, route) => {
           const texts: Text[] = [];
-          const walker = document.createTreeWalker(box.querySelector('.l1 .text')!, NodeFilter.SHOW_TEXT);
+          const walker = document.createTreeWalker(box.querySelector('.path')!, NodeFilter.SHOW_TEXT);
           while (walker.nextNode()) texts.push(walker.currentNode as Text);
           const chars = texts.flatMap((node) => [...node.data].map((ch, i) => {
             const range = document.createRange();
@@ -3833,89 +3666,73 @@ test('in a browser, a flow box with a long route breaks it only before a slash, 
             return { ch, top: Math.round(range.getBoundingClientRect().top) };
           }));
           const whole = chars.map((c) => c.ch).join('');
-          const at = whole.indexOf(route);
-          const routeChars = chars.slice(at, at + route.length);
-          const lineStarts = routeChars.filter((c, i) => i > 0 && c.top > routeChars[i - 1].top).map((c) => c.ch);
-          const from = whole.indexOf(component);
-          return {
-            found: at >= 0 && from >= 0,
-            routeLines: new Set(routeChars.map((c) => c.top)).size,
-            lineStarts,
-            componentLines: new Set(chars.slice(from, from + component.length).map((c) => c.top)).size,
-            text: box.textContent,
-          };
-        }, [LONG_ROUTE, LONG_COMPONENT]);
-        assert.ok(help.found, 'the route and the component name are written on the box');
+          const lineStarts = chars.filter((c, i) => i > 0 && c.top > chars[i - 1].top).map((c) => c.ch);
+          return { whole, routeLines: new Set(chars.map((c) => c.top)).size, lineStarts, width: box.getBoundingClientRect().width };
+        }, LONG_ROUTE);
+        assert.equal(help.whole, LONG_ROUTE);
         assert.ok(help.routeLines > 1, 'the long route takes more than one line');
         assert.deepEqual([...new Set(help.lineStarts)], ['/']);
-        assert.equal(help.componentLines, 1);
-        assert.match(help.text, /→ \/user-completed-documents\/signature-requests\/:documentId/);
+        assert.ok(help.width <= 360, `the box stays within 360px (${help.width})`);
+        const boxes = await flowBoxes(p);
+        const left = boxes.find((b) => b.id === '/help#Help')!.left;
+        assert.deepEqual([...new Set(boxes.filter((b) => b.left === left).map((b) => b.width))], [help.width], 'the boxes of a column share its width');
 
         const cut = await p.$$eval('#flow .box', (els: HTMLElement[]) => els
           .filter((box) => box.textContent.includes('…') || [box, ...box.querySelectorAll('*')].some((e) => getComputedStyle(e).textOverflow === 'ellipsis'))
           .map((box) => box.title.split('\n')[0]));
         assert.deepEqual(cut, []);
         assert.deepEqual(await textOutside(p), []);
+        assert.deepEqual(await layoutErrors(p), []);
+        assert.deepEqual(overlapping(boxes), []);
       }, { view: 'flow', setup: changeData(withLongRoute) }),
     ),
   );
 });
 
-test('in a browser, the fold and branch buttons of a flow box carry a word and a longer explanation instead of a symbol', { skip: browserMissing }, async () => {
+test('in a browser, the zoom buttons shrink and grow the whole drawing around its layout, fit it into view, and keep the level across redraws', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        await p.waitForSelector('#flow .box');
-        await flowButton(p, '모두 펼치기').click();
-        const labels = (box: Locator) => box.locator('button.toggle').evaluateAll((els: HTMLElement[]) => els.map((e) => [e.textContent, e.title]));
-        const signin = await labels(await screenBox(p, '/signin#SignIn'));
-        assert.deepEqual(signin.map(([word]) => word), ['접기', '전부 펼치기', '처음으로', '이 가지만']);
-        assert.ok(signin.every(([word, title]) => title.length > word.length), 'each title explains more than the word');
-        assert.doesNotMatch(signin[0][1], /API/, 'the fold title names no API call: a screen with child screens may have none');
-        assert.match(signin[0][1], /딸린/);
-        await (await screenBox(p, '/signin#SignIn')).locator('button.toggle', { hasText: /^접기$/ }).click();
-        const folded = await labels(await screenBox(p, '/signin#SignIn'));
-        assert.deepEqual(folded.map(([word]) => word), ['펼치기', '전부 펼치기', '처음으로', '이 가지만']);
-        assert.doesNotMatch(folded[0][1], /API/);
-        assert.match(folded[0][1], /딸린/);
-        const symbols = await p.$$eval('#flow .box button', (els) => els.map((e) => e.textContent).filter((t) => /[−+»↺◎]/.test(t)));
-        assert.deepEqual(symbols, []);
+        await p.setViewportSize({ width: 1000, height: 300 });
+        await p.waitForSelector('#flow .box.screen');
+        const zoom = p.locator('.flowbar .zoom');
+        assert.deepEqual(await zoom.locator('button').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label'))), ['그림 전체가 보이게 맞춤', '축소', '확대']);
+        assert.equal(await zoom.locator('.zoom-label').textContent(), '100%');
+        const measure = () => p.evaluate(() => {
+          const canvas = document.querySelector<HTMLElement>('#flow .canvas')!;
+          const box = document.querySelector<HTMLElement>('#flow .box.screen')!;
+          return { layoutWidth: canvas.offsetWidth, drawnWidth: canvas.getBoundingClientRect().width, holder: canvas.parentElement!.getBoundingClientRect().width, left: box.style.left, boxWidth: box.getBoundingClientRect().width };
+        });
+        const full = await measure();
+        await zoom.locator('.zoom-out').click();
+        await zoom.locator('.zoom-out').click();
+        assert.equal(await zoom.locator('.zoom-label').textContent(), '80%');
+        assert.equal(await p.evaluate(() => document.activeElement!.className), 'zoom-out', 'the pressed button keeps the focus');
+        const small = await measure();
+        assert.equal(small.layoutWidth, full.layoutWidth, 'the layout is worked out at full size');
+        assert.equal(small.left, full.left);
+        assert.ok(Math.abs(small.drawnWidth - full.layoutWidth * 0.8) <= 1, `${small.drawnWidth} against ${full.layoutWidth}`);
+        assert.ok(Math.abs(small.holder - small.drawnWidth) <= 1, 'the room the drawing takes shrinks with it');
+        assert.ok(Math.abs(small.boxWidth - full.boxWidth * 0.8) <= 1);
+        await p.evaluate(() => renderFlow());
+        assert.equal(await zoom.locator('.zoom-label').textContent(), '80%');
+
+        await zoom.locator('.zoom-fit').click();
+        const fit = await p.evaluate(() => {
+          const flow = document.getElementById('flow')!;
+          return { level: state.zoom, scrollH: flow.scrollHeight, clientH: flow.clientHeight, scrollW: flow.scrollWidth, clientW: flow.clientWidth };
+        });
+        assert.ok(fit.level < 0.8 && fit.level >= 0.3, `fit chose ${fit.level}`);
+        assert.ok(fit.scrollH <= fit.clientH + 1 && fit.scrollW <= fit.clientW + 1, `the whole drawing is in view: ${JSON.stringify(fit)}`);
+        for (let i = 0; i < 20; i += 1) if (await zoom.locator('.zoom-in').isEnabled()) await zoom.locator('.zoom-in').click();
+        assert.equal(await zoom.locator('.zoom-label').textContent(), '150%');
+        assert.equal(await zoom.locator('.zoom-in').isDisabled(), true);
       }, { view: 'flow' }),
     ),
   );
 });
 
-test('in a browser, a flow box with buttons still shows its whole route and component name, with the buttons on a line of their own', { skip: browserMissing }, async () => {
-  const longName = (data: PageData) => {
-    const signin = walkFlow(data.flow.roots).find((n) => n.id === '/signin#SignIn')!;
-    signin.label = LONG_ROUTE;
-    signin.component = WIDE_COMPONENT;
-  };
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .box');
-        await flowButton(p, '모두 펼치기').click();
-        assert.ok(await (await screenBox(p, '/signin#SignIn')).locator('button.toggle').count() >= 3);
-        assert.deepEqual(await textOutside(p), []);
-        const cut = await p.$$eval('#flow .box', (els: HTMLElement[]) => els
-          .filter((box) => box.textContent.includes('…') || [box, ...box.querySelectorAll('*')].some((e) => getComputedStyle(e).textOverflow === 'ellipsis'))
-          .map((box) => box.title.split('\n')[0]));
-        assert.deepEqual(cut, []);
-        const lines = await (await screenBox(p, '/signin#SignIn')).evaluate((box) => {
-          const name = box.querySelector('.l1')!.getBoundingClientRect();
-          const acts = box.querySelector('.acts')!.getBoundingClientRect();
-          return { componentRects: box.querySelector('.component')!.getClientRects().length, below: acts.top >= name.bottom - 0.5, boxWidth: box.getBoundingClientRect().width, componentWidth: box.querySelector('.component')!.getBoundingClientRect().width };
-        });
-        assert.equal(lines.componentRects, 1);
-        assert.ok(lines.below, 'the buttons sit under the name line');
-        assert.ok(lines.componentWidth <= lines.boxWidth, 'the component name fits within the box');
-      }, { view: 'flow', setup: changeData(longName) }),
-    ),
-  );
-});
-
-test('in a browser, the explanation above the flow is hidden on opening and an info button shows it on hover, on click and from the keyboard', { skip: browserMissing }, async () => {
+test('in a browser, the explanation in the flow bar is hidden on opening and an info button shows it on hover, on click and from the keyboard', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -3953,19 +3770,23 @@ test('in a browser, the explanation above the flow is hidden on opening and an i
         await p.keyboard.press('Space');
         assert.equal(await legend.isVisible(), false);
 
-        await flowButton(p, '빈틈만 펼치기').focus();
+        await p.locator('.flowbar input.flow-search').focus();
         await p.keyboard.press('Tab');
         assert.equal(await info.evaluate((e) => e === document.activeElement), true, 'Tab reaches the info button');
         await p.keyboard.press('Enter');
         assert.equal(await legend.isVisible(), true);
-        await flowButton(p, '모두 접기').click();
+        await p.locator('.flowbar .zoom-out').click();
         assert.equal(await legend.isVisible(), true, 'a redraw keeps the explanation open');
+        await (await screenBox(p, '/lab#Lab')).click();
+        await p.keyboard.press('Escape');
+        assert.equal(await legend.isVisible(), false, 'Escape closes the explanation first');
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab'], 'and keeps the picked screen');
       }, { view: 'flow' }),
     ),
   );
 });
 
-test('in a browser, the explanation shows on hover after a keyboard close and never has a native tooltip, and the fold button says what it hides without claiming API calls', { skip: browserMissing }, async () => {
+test('in a browser, the explanation shows on hover after a keyboard close and never has a native tooltip', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -3973,9 +3794,6 @@ test('in a browser, the explanation shows on hover after a keyboard close and ne
         const info = p.locator('.flowbar button.flowinfo-button');
         const legend = p.locator('#flowlegend');
         assert.equal(await info.getAttribute('title'), null);
-        const fold = (await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).getAttribute('title'))!;
-        assert.match(fold, /이 화면에 딸린 것을 숨깁니다/);
-        assert.doesNotMatch(fold, /API/);
 
         await p.mouse.move(600, 600);
         await info.focus();
@@ -4009,20 +3827,25 @@ test('in a browser, the explanation shows on hover after a keyboard close and ne
   );
 });
 
-test('in a browser, the explanation stays inside the flow area at a narrow window', { skip: browserMissing }, async () => {
+const inWindow = (p: Page, selector: string) => p.evaluate((sel) => {
+  const r = document.querySelector(sel)!.getBoundingClientRect();
+  return { left: r.left, right: r.right, width: document.documentElement.clientWidth };
+}, selector);
+
+test('in a browser, the explanation stays inside the window at a narrow window, also with a screen picked', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.setViewportSize({ width: 800, height: 600 });
         await p.waitForSelector('#flow .box');
-        await p.locator('.flowbar button.flowinfo-button').hover();
-        const edges = await p.evaluate(() => {
-          const flow = document.getElementById('flow')!.getBoundingClientRect();
-          const legend = document.getElementById('flowlegend')!.getBoundingClientRect();
-          return { left: legend.left - flow.left, right: legend.right - flow.left, width: document.getElementById('flow')!.clientWidth };
-        });
-        assert.ok(edges.left >= 0, `left edge ${edges.left}`);
-        assert.ok(edges.right <= edges.width, `right edge ${edges.right} within ${edges.width}`);
+        for (const pick of [false, true]) {
+          if (pick) await (await screenBox(p, '/home#Home')).click();
+          await p.locator('.flowbar button.flowinfo-button').hover();
+          const e = await inWindow(p, '#flowlegend');
+          assert.ok(e.left >= 0, `left edge ${e.left}`);
+          assert.ok(e.right <= e.width, `right edge ${e.right} within ${e.width}`);
+          await p.mouse.move(400, 500);
+        }
       }, { view: 'flow' }),
     ),
   );
@@ -4061,6 +3884,7 @@ test('in a browser, pressing Escape after the review ended throws nothing', { sk
     try {
       await withPage(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async (p) => {
         await p.waitForSelector('#flow .box');
+        await (await screenBox(p, '/home#Home')).click();
         await p.click('header button:has-text("리뷰 끝")');
         await p.waitForSelector('#ended');
         await p.keyboard.press('Escape');
@@ -4072,7 +3896,7 @@ test('in a browser, pressing Escape after the review ended throws nothing', { sk
   });
 });
 
-test('in a browser, the info icon stands at the right end of the bar apart from the expand and fold buttons, drawn as an icon with an accessible name', { skip: browserMissing }, async () => {
+test('in a browser, the legend, the info icon and the zoom buttons stand together at the right end of the bar, which spans the whole width above the drawing and the panes', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -4081,104 +3905,62 @@ test('in a browser, the info icon stands at the right end of the bar apart from 
         const info = p.locator('.flowbar button.flowinfo-button');
         assert.equal(await info.getAttribute('aria-label'), '흐름도 읽는 법');
         assert.match((await info.textContent())!.trim(), /^(i|ⓘ)$/, 'the only visible text is the icon glyph');
-        const gaps = await p.evaluate(() => {
-          const bar = document.querySelector('.flowbar')!.getBoundingClientRect();
-          const icon = document.querySelector('.flowinfo-button')!.getBoundingClientRect();
-          const last = [...document.querySelectorAll('.flowbar button')].find((b) => b.textContent === '빈틈만 펼치기')!.getBoundingClientRect();
-          const controls = [...document.querySelectorAll('.flowbar button')].map((b) => b.getBoundingClientRect());
-          return { gap: icon.left - last.right, toBarEdge: bar.right - icon.right, rightmost: Math.max(...controls.map((r) => r.right)) === icon.right, round: Math.abs(icon.width - icon.height) < 0.5 && icon.width <= 28 };
-        });
-        assert.ok(gaps.gap > 200, `the icon is ${gaps.gap}px right of 「빈틈만 펼치기」`);
-        assert.ok(gaps.toBarEdge <= 20, `the icon is ${gaps.toBarEdge}px from the bar's right edge`);
-        assert.ok(gaps.rightmost, 'the icon is the right-most control');
-        assert.ok(gaps.round, 'a small round button');
-      }, { view: 'flow' }),
-    ),
-  );
-});
-
-test('in a browser, the info icon is the last control of its row when a branch is shown on its own, and the bar spans the visible width of the flow area', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.setViewportSize({ width: 1440, height: 800 });
-        await p.waitForSelector('#flow .box');
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await p.waitForSelector('.flowbar .focusing');
-        const rows = await p.evaluate(() => {
-          const icon = document.querySelector('.flowinfo-button')!.getBoundingClientRect();
-          const same = [...document.querySelectorAll('.flowbar button, .flowbar .focusing')].filter((e) => {
-            const r = e.getBoundingClientRect();
-            return r.top < icon.bottom && r.bottom > icon.top;
+        for (const pick of [false, true]) {
+          if (pick) await (await screenBox(p, '/home#Home')).click();
+          const m = await p.evaluate(() => {
+            const rect = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
+            const bar = rect('.flowbar');
+            const main = rect('main');
+            const icon = rect('.flowinfo-button');
+            const zoom = rect('.flowbar .zoom');
+            const key = [...document.querySelectorAll('.flowkey li')].map((li) => li.getBoundingClientRect());
+            const sameRow = [...document.querySelectorAll('.flowbar button, .flowbar input, .flowbar .zoom')].map((e) => e.getBoundingClientRect()).filter((r) => r.top < zoom.bottom && r.bottom > zoom.top);
+            return {
+              bar: [bar.left, bar.right], main: [main.left, main.right], keyRight: Math.max(...key.map((r) => r.right)), iconLeft: icon.left, iconRight: icon.right,
+              zoomLeft: zoom.left, toBarEdge: bar.right - zoom.right, zoomLast: Math.max(...sameRow.map((r) => r.right)) === zoom.right,
+              round: Math.abs(icon.width - icon.height) < 0.5 && icon.width <= 28, drawingTop: rect('#flow').top, barBottom: bar.bottom,
+            };
           });
-          const lastRight = Math.max(...same.map((e) => e.getBoundingClientRect().right));
-          return { lastRight, iconRight: icon.right };
-        });
-        assert.equal(rows.lastRight, rows.iconRight, 'nothing sits to the right of the icon on its row');
-        await p.setViewportSize({ width: 700, height: 600 });
-        await flowButton(p, '전체 보기').click();
-        await flowButton(p, '모두 펼치기').click();
-        await p.evaluate(() => { document.getElementById('flow')!.scrollLeft = 300; });
-        const m = await p.evaluate(() => {
-          const flow = document.getElementById('flow')!;
-          const bar = document.querySelector('.flowbar')!.getBoundingClientRect();
-          const box = flow.getBoundingClientRect();
-          return { scrollWidth: flow.scrollWidth, clientWidth: flow.clientWidth, barLeft: bar.left - box.left, barRight: bar.right - box.left };
-        });
-        assert.ok(m.scrollWidth > m.clientWidth, `the flow scrolls sideways (${m.scrollWidth} in ${m.clientWidth})`);
-        assert.ok(Math.abs(m.barLeft) <= 0.5, `bar left ${m.barLeft}`);
-        assert.ok(Math.abs(m.barRight - m.clientWidth) <= 0.5, `bar right ${m.barRight} against visible width ${m.clientWidth}`);
+          assert.deepEqual(m.bar, m.main, 'the bar spans the whole width');
+          assert.ok(m.keyRight <= m.iconLeft && m.iconLeft - m.keyRight <= 16, 'the legend sits just left of the icon');
+          assert.ok(m.iconRight <= m.zoomLeft && m.zoomLeft - m.iconRight <= 16, 'the zoom buttons sit just right of the icon');
+          assert.ok(m.toBarEdge <= 20, `the zoom buttons are ${m.toBarEdge}px from the bar's right edge`);
+          assert.ok(m.zoomLast, 'nothing sits right of the zoom buttons');
+          assert.ok(m.round, 'a small round button');
+          assert.ok(Math.abs(m.drawingTop - m.barBottom) <= 1, 'the drawing starts under the bar');
+        }
       }, { view: 'flow' }),
     ),
   );
 });
 
-test('in a browser, the legend samples, the info icon and its explanation stay inside the visible box of the flow area when everything is expanded and the flow is scrolled sideways', { skip: browserMissing }, async () => {
+test('in a browser, scrolling the drawing sideways leaves the bar, its legend and the explanation in place and in view', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.setViewportSize({ width: 700, height: 600 });
         await p.waitForSelector('#flow .box');
-        await flowButton(p, '모두 펼치기').click();
-        const info = p.locator('.flowbar button.flowinfo-button');
+        await (await screenBox(p, '/home#Home')).click();
         const frames = () => p.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
         const edges = () => p.evaluate(() => {
-          const flow = document.getElementById('flow')!;
-          const box = flow.getBoundingClientRect();
-          const rel = (r: DOMRect) => ({ left: r.left - box.left, right: r.right - box.left });
-          return { visible: flow.clientWidth, scrolled: flow.scrollLeft, scrollWidth: flow.scrollWidth, icon: rel(document.querySelector('.flowinfo-button')!.getBoundingClientRect()), legend: rel(document.getElementById('flowlegend')!.getBoundingClientRect()), key: [...document.querySelectorAll('.flowkey li')].map((li) => rel(li.getBoundingClientRect())) };
+          const rel = (r: DOMRect) => ({ left: r.left, right: r.right });
+          return { width: document.documentElement.clientWidth, icon: rel(document.querySelector('.flowinfo-button')!.getBoundingClientRect()), legend: rel(document.getElementById('flowlegend')!.getBoundingClientRect()), key: [...document.querySelectorAll('.flowkey li')].map((li) => rel(li.getBoundingClientRect())) };
         });
-        const within = (e: Awaited<ReturnType<typeof edges>>, { legendOpen = true }: { legendOpen?: boolean } = {}) => {
-          assert.equal(e.scrolled, 300, `the flow is scrolled sideways (${e.scrolled} of ${e.scrollWidth})`);
-          assert.ok(e.icon.left >= 0 && e.icon.right <= e.visible, `icon ${e.icon.left}..${e.icon.right} within ${e.visible}`);
-          if (legendOpen) {
-            assert.ok(e.legend.left >= 0, `legend left edge ${e.legend.left}`);
-            assert.ok(e.legend.right <= e.visible, `legend right edge ${e.legend.right} within ${e.visible}`);
-          }
-          assert.equal(e.key.length, 5);
-          for (const r of e.key) assert.ok(r.left >= 0 && r.right <= e.visible, `sample ${r.left}..${r.right} within ${e.visible}`);
-        };
-
-        await p.evaluate(() => { document.getElementById('flow')!.scrollLeft = 300; });
+        const before = await edges();
+        const scrolled = await p.evaluate(() => {
+          const flow = document.getElementById('flow')!;
+          flow.scrollLeft = 200;
+          return flow.scrollLeft;
+        });
+        assert.ok(scrolled > 0, 'the drawing scrolls sideways');
+        await p.locator('.flowbar button.flowinfo-button').click();
+        await p.mouse.move(350, 500);
         await frames();
-        assert.equal(await p.locator('#flowlegend').isVisible(), false);
-        within(await edges(), { legendOpen: false });
-
-        await info.click();
-        await p.mouse.move(600, 500);
-        await p.evaluate(() => { document.getElementById('flow')!.scrollLeft = 300; });
-        await frames();
-        assert.equal(await p.locator('#flowlegend').isVisible(), true);
-        within(await edges());
-
-        await info.click();
-        await p.mouse.move(600, 500);
-        await p.evaluate(() => { document.getElementById('flow')!.scrollLeft = 300; });
-        await frames();
-        await info.hover();
-        await frames();
-        assert.equal(await p.locator('#flowlegend').isVisible(), true);
-        within(await edges());
+        const after = await edges();
+        assert.deepEqual(after.icon, before.icon);
+        assert.deepEqual(after.key, before.key);
+        assert.equal(after.key.length, 5);
+        for (const r of [after.icon, after.legend, ...after.key]) assert.ok(r.left >= 0 && r.right <= after.width, `${r.left}..${r.right} within ${after.width}`);
       }, { view: 'flow' }),
     ),
   );
@@ -4211,27 +3993,25 @@ test('in a browser, the pointer can travel from the info icon down into the expl
   );
 });
 
-test('in a browser, the pointer can travel from the info icon into the explanation when the bar wraps onto several lines at a 500px window with one branch shown', { skip: browserMissing }, async () => {
+test('in a browser, the pointer can travel from the info icon into the explanation when the bar wraps onto several lines at a 500px window with a screen picked', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.setViewportSize({ width: 500, height: 700 });
         await p.waitForSelector('#flow .box');
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await p.waitForSelector('.flowbar .focusing');
+        await (await screenBox(p, '/home#Home')).click();
+        await p.waitForSelector('.flowbar .picking');
         const rows = await p.evaluate(() => new Set([...document.querySelectorAll('.flowbar > *')].map((e) => Math.round(e.getBoundingClientRect().top))).size);
         assert.ok(rows >= 3, `the bar wraps onto ${rows} lines`);
         const info = p.locator('.flowbar button.flowinfo-button');
         await travelDown(p, info, p.locator('#flowlegend'));
         const e = await p.evaluate(() => {
-          const flow = document.getElementById('flow')!;
-          const box = flow.getBoundingClientRect();
           const legend = document.getElementById('flowlegend')!.getBoundingClientRect();
           const icon = document.querySelector('.flowinfo-button')!.getBoundingClientRect();
-          return { visible: flow.clientWidth, left: legend.left - box.left, right: legend.right - box.left, iconRight: icon.right - box.left, iconBottom: icon.bottom, legendTop: legend.top };
+          return { width: document.documentElement.clientWidth, left: legend.left, right: legend.right, iconRight: icon.right, iconBottom: icon.bottom, legendTop: legend.top };
         });
-        assert.ok(e.left >= 0 && e.right <= e.visible, `legend ${e.left}..${e.right} within ${e.visible}`);
-        assert.ok(e.iconRight <= e.visible, 'the icon is in view');
+        assert.ok(e.left >= 0 && e.right <= e.width, `legend ${e.left}..${e.right} within ${e.width}`);
+        assert.ok(e.iconRight <= e.width, 'the icon is in view');
         assert.ok(e.legendTop >= e.iconBottom, 'the explanation opens under the icon');
       }, { view: 'flow' }),
     ),
@@ -4240,7 +4020,7 @@ test('in a browser, the pointer can travel from the info icon into the explanati
 
 const KEY_LABELS = ['통과', '실패', '보류', '테스트 없음', '조건 걸린 링크'];
 
-test('in a browser, the flow bar always shows a legend of five samples between the fold buttons and the info icon', { skip: browserMissing }, async () => {
+test('in a browser, the flow bar always shows a legend of five samples next to the info icon', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -4251,15 +4031,13 @@ test('in a browser, the flow bar always shows a legend of five samples between t
         assert.equal(await key.getAttribute('aria-label'), '흐름도 범례');
         assert.deepEqual(await key.locator('li .key-label').allTextContents(), KEY_LABELS);
         assert.equal(await key.locator('li [aria-hidden="true"]').count(), 5, 'every drawn sample is hidden from a screen reader');
-        assert.deepEqual(await key.locator('li').evaluateAll((items) => items.map((li) => li.textContent.trim())), ['테두리 통과', '테두리 실패', '테두리 보류', '테두리 테스트 없음', '조건 걸린 링크']);
+        assert.deepEqual(await key.locator('li').evaluateAll((items) => items.map((li) => li.textContent.trim())), KEY_LABELS);
         const m = await p.evaluate(() => {
           const rect = (e: Element) => e.getBoundingClientRect();
           const items = [...document.querySelectorAll('.flowkey li')].map(rect);
           const icon = rect(document.querySelector('.flowinfo-button')!);
-          const last = rect([...document.querySelectorAll('.flowbar button')].find((b) => b.textContent === '빈틈만 펼치기')!);
-          return { left: Math.min(...items.map((r) => r.left)), right: Math.max(...items.map((r) => r.right)), tops: new Set(items.map((r) => Math.round(r.top + r.height / 2))).size, iconLeft: icon.left, lastRight: last.right, legendShown: getComputedStyle(document.getElementById('flowlegend')!).display };
+          return { right: Math.max(...items.map((r) => r.right)), tops: new Set(items.map((r) => Math.round(r.top + r.height / 2))).size, iconLeft: icon.left, legendShown: getComputedStyle(document.getElementById('flowlegend')!).display };
         });
-        assert.ok(m.left > m.lastRight, `the legend starts at ${m.left}, right of 「빈틈만 펼치기」 ending at ${m.lastRight}`);
         assert.ok(m.right <= m.iconLeft, `the legend ends at ${m.right}, left of the icon at ${m.iconLeft}`);
         assert.ok(m.iconLeft - m.right <= 16, 'the legend sits next to the icon');
         assert.equal(m.tops, 1, 'the five samples are on one line at 1440px');
@@ -4273,22 +4051,19 @@ test('in a browser, the flow bar always shows a legend of five samples between t
   );
 });
 
-test('in a browser, each legend sample is drawn with the border of the boxes and the dash of the guarded links it stands for', { skip: browserMissing }, async () => {
+test('in a browser, each legend sample is drawn with the square of the screens and the dash of the guarded links it stands for', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
         const { pairs, dashes } = await p.evaluate(() => {
-          const border = (e: Element) => { const c = getComputedStyle(e); return [c.borderTopColor, c.borderTopStyle, c.borderTopWidth].join(' '); };
-          const canvas = document.querySelector('.canvas')!;
+          const look = (e: Element) => { const c = getComputedStyle(e); return [c.backgroundColor, c.borderTopStyle, c.borderTopStyle === 'none' ? '' : c.borderTopColor, c.borderTopWidth, c.width].join(' '); };
           const out: Record<string, string[]> = {};
           for (const cls of ['s-pass', 's-fail', 's-pending', 's-none']) {
-            const box = document.createElement('div');
-            box.className = `box ${cls}`;
-            canvas.append(box);
-            out[cls] = [border(document.querySelector(`.flowkey .swatch.${cls}`)!), border(box)];
-            box.remove();
+            const box = document.querySelector(`#flow .box.screen.${cls} .sq`);
+            if (box) out[cls] = [look(document.querySelector(`.flowkey .sq.${cls}`)!), look(box)];
           }
+          const canvas = document.querySelector('.canvas')!;
           const edge = document.createElementNS('http://www.w3.org/2000/svg', 'path');
           edge.setAttribute('class', 'guarded');
           canvas.querySelector('svg')!.append(edge);
@@ -4298,15 +4073,16 @@ test('in a browser, each legend sample is drawn with the border of the boxes and
           edge.remove();
           return { pairs: out, dashes };
         });
+        assert.deepEqual(Object.keys(pairs).sort(), ['guarded', 's-fail', 's-none', 's-pass', 's-pending']);
         for (const [name, [sample, real]] of Object.entries(pairs)) assert.equal(sample, real, name);
-        assert.equal(new Set(['s-pass', 's-fail', 's-pending', 's-none'].map((c) => pairs[c][0])).size, 4, 'the four border samples differ');
+        assert.equal(new Set(['s-pass', 's-fail', 's-pending', 's-none'].map((c) => pairs[c][0])).size, 4, 'the four samples differ');
         for (const dash of dashes) assert.match(dash, /^\d+(\.\d+)?(px)?,? \d+(\.\d+)?(px)?$/, `a dash of two lengths, not ${dash}`);
       }, { view: 'flow' }),
     ),
   );
 });
 
-test('in a browser, the explanation behind the info icon holds only the jump and the untagged-test samples, and no sentence of the old prose is left on the page', { skip: browserMissing }, async () => {
+test('in a browser, the explanation behind the info icon shows each tag a screen can carry, the mark of a screen reached from another branch and the untagged tests, each under its sample', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -4316,20 +4092,22 @@ test('in a browser, the explanation behind the info icon holds only the jump and
         const legend = p.locator('#flowlegend');
         assert.equal(await legend.evaluate((e) => e.tagName), 'UL');
         assert.deepEqual(await legend.locator('li').evaluateAll((items) => items.map((li) => [...li.children].map((c) => c.textContent))), [
-          ['→ /주소', '다른 가지에 이미 그린 화면으로 가는 링크'],
-          ['불러옴 N · 지나감 N · 호출함 N', '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 열거나 이 호출을 보낸 브라우저 테스트테두리와 테스트 수에는 넣지 않음'],
+          ['/주소API 8', '이 화면에서 부르는 API 호출의 수. 화면을 누르면 오른쪽에 호출마다 테스트가 보입니다'],
+          ['/주소역할/주소설정', '특정 역할이나 설정에서만 열리는 화면. 무엇이 필요한지는 마우스를 올리면 보입니다'],
+          ['/주소', '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크가 닿는 화면'],
+          ['불러옴 N · 지나감 N', '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 연 브라우저 테스트. 마우스를 올리면 보입니다상태 색과 테스트 수에는 넣지 않음'],
         ]);
-        assert.equal(await legend.locator('li small').textContent(), '테두리와 테스트 수에는 넣지 않음');
-        const page = await p.evaluate(() => document.body.textContent);
-        for (const old of ['진입 화면에서 링크를 따라', '처음 닿은 자리에 한 번만', '상자의 「API」 단추로', '점선: 설정·역할 조건이 걸린 링크', '상자 테두리: 붙은 테스트']) assert.equal(page.includes(old), false, old);
+        const look = (sel: string) => p.$eval(sel, (e) => { const c = getComputedStyle(e); return [c.borderTopStyle, c.borderTopColor, c.color, c.fontSize].join(' '); });
+        assert.equal(await look('#flowlegend .tag.api'), await look('#flow .box.screen .tag.api'));
+        assert.equal(await look('#flowlegend .tag.need'), await look('#flow .box.screen .tag.need'));
+        assert.equal(await legend.locator('.box.jump').count(), 1);
         const box = await p.evaluate(() => {
-          const flow = document.getElementById('flow')!.getBoundingClientRect();
           const e = document.getElementById('flowlegend')!;
           const r = e.getBoundingClientRect();
-          return { left: r.left - flow.left, right: r.right - flow.left, width: r.width, visible: document.getElementById('flow')!.clientWidth, overflowing: [...e.querySelectorAll('li')].filter((li) => li.scrollWidth > li.clientWidth).length };
+          return { left: r.left, right: r.right, width: r.width, window: document.documentElement.clientWidth, overflowing: [...e.querySelectorAll('li')].filter((li) => li.scrollWidth > li.clientWidth).length };
         });
         assert.ok(box.width <= 320, `the explanation is ${box.width}px wide`);
-        assert.ok(box.left >= 0 && box.right <= box.visible, `explanation ${box.left}..${box.right} within ${box.visible}`);
+        assert.ok(box.left >= 0 && box.right <= box.window, `explanation ${box.left}..${box.right} within ${box.window}`);
         assert.equal(box.overflowing, 0, 'nothing in the explanation is cut off');
         const rows = await legend.locator('li').evaluateAll((items) => items.map((li) => {
           const [sample, text] = [...li.children].map((c) => c.getBoundingClientRect());
@@ -4344,7 +4122,7 @@ test('in a browser, the explanation behind the info icon holds only the jump and
   );
 });
 
-test('in a browser, at a 500px window the bar with its legend stays within the flow area, no legend label is split inside a word and the explanation is in view', { skip: browserMissing }, async () => {
+test('in a browser, at a 500px window the bar with its legend stays within the window, no legend label is split inside a word and the explanation is in view', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -4352,65 +4130,18 @@ test('in a browser, at a 500px window the bar with its legend stays within the f
         await p.waitForSelector('#flow .box');
         await p.locator('.flowbar button.flowinfo-button').click();
         const m = await p.evaluate(() => {
-          const flow = document.getElementById('flow')!;
-          const box = flow.getBoundingClientRect();
           const bar = document.querySelector('.flowbar')!;
-          const rel = (e: Element) => { const r = e.getBoundingClientRect(); return { left: r.left - box.left, right: r.right - box.left, top: r.top, bottom: r.bottom }; };
-          const icon = rel(document.querySelector('.flowinfo-button')!);
-          const sameLine = [...bar.querySelectorAll('button, .flowkey li')].map(rel).filter((r) => r.top < icon.bottom && r.bottom > icon.top);
+          const rel = (e: Element) => { const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
           return {
-            visible: flow.clientWidth, barScroll: bar.scrollWidth, barClient: bar.clientWidth,
+            width: document.documentElement.clientWidth, barScroll: bar.scrollWidth, barClient: bar.clientWidth,
             labels: [...document.querySelectorAll('.flowkey .key-label')].map((e) => [e.textContent, e.getClientRects().length]),
-            items: [...document.querySelectorAll('.flowkey li')].map(rel), icon, legend: rel(document.getElementById('flowlegend')!),
-            iconIsLast: Math.max(...sameLine.map((r) => r.right)) === icon.right,
+            items: [...document.querySelectorAll('.flowkey li, .flowbar button, .flowbar input')].map(rel), legend: rel(document.getElementById('flowlegend')!),
           };
         });
         assert.ok(m.barScroll <= m.barClient, `the bar's content is ${m.barScroll}px wide in a ${m.barClient}px bar`);
         assert.deepEqual(m.labels.map(([label]) => label), KEY_LABELS);
         for (const [label, rects] of m.labels) assert.equal(rects, 1, `「${label}」 is on one line`);
-        for (const r of [...m.items, m.icon, m.legend]) assert.ok(r.left >= 0 && r.right <= m.visible, `${r.left}..${r.right} within ${m.visible}`);
-        assert.ok(m.iconIsLast, 'the icon is the right-most thing on its line');
-      }, { view: 'flow' }),
-    ),
-  );
-});
-
-test('in a browser, a screen box says on hover that pressing it opens the screen in the list, and its buttons keep their own tooltips', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .box');
-        const titles = await p.locator('#flow .box.screen').evaluateAll((boxes) => boxes.map((b) => b.getAttribute('title')!.split('\n').at(-1)));
-        assert.ok(titles.length > 3);
-        assert.deepEqual([...new Set(titles)], [PRESS_HINT]);
-        const home = await screenBox(p, '/home#Home');
-        for (const title of await home.locator('button').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('title')))) {
-          assert.ok(title, 'a button inside the box has its own tooltip');
-          assert.equal(title.includes(PRESS_HINT), false);
-        }
-      }, { view: 'flow' }),
-    ),
-  );
-});
-
-test('in a browser, the buttons of a flow box never wrap onto a second row, at any window width', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .box');
-        await flowButton(p, '모두 펼치기').click();
-        for (const width of [500, 900, 1440]) {
-          await p.setViewportSize({ width, height: 700 });
-          await p.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-          const rows = await p.$$eval('#flow .box .acts', (acts) => acts.map((row) => {
-            const buttons = [...row.querySelectorAll('button')].map((b) => b.getBoundingClientRect());
-            const box = row.closest('.box')!.getBoundingClientRect();
-            return { rows: new Set(buttons.map((b) => Math.round(b.top))).size, over: Math.max(...buttons.map((b) => b.right)) - box.right, widest: Math.max(...buttons.map((b) => b.right)) - Math.min(...buttons.map((b) => b.left)) };
-          }));
-          assert.ok(rows.length > 0);
-          assert.deepEqual(rows.filter((r) => r.rows !== 1 || r.over > 0), [], `at ${width}px`);
-          assert.ok(Math.max(...rows.map((r) => r.widest)) < 300, `the longest button row is ${Math.max(...rows.map((r) => r.widest))}px`);
-        }
+        for (const r of [...m.items, m.legend]) assert.ok(r.left >= 0 && r.right <= m.width, `${r.left}..${r.right} within ${m.width}`);
       }, { view: 'flow' }),
     ),
   );
@@ -4421,7 +4152,6 @@ test('in a browser, flow boxes stand in columns by how many links they are from 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
-        await flowButton(p, '모두 펼치기').click();
         const boxes = await flowBoxes(p);
         const byId = Object.fromEntries(boxes.map((b) => [b.id, b]));
         const columns = new Map<number, typeof boxes>();
@@ -4445,25 +4175,22 @@ test('in a browser, entry screens that lead nowhere are gathered under 「더 �
         assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 8');
         const boxes = await flowBoxes(p);
         const grouped = boxes.filter((b) => b.grouped);
-        const groupedScreens = await p.$$eval('#flow .box.screen.grouped', (els: HTMLElement[]) => els.map((e) => e.title.split('\n')[0]));
-        assert.deepEqual(groupedScreens.sort(), Array.from({ length: 8 }, (_, i) => `/extra/${i}#Extra${i}`).sort());
+        assert.deepEqual(grouped.map((b) => b.id).sort(), Array.from({ length: 8 }, (_, i) => `/extra/${i}#Extra${i}`).sort());
         const head = await p.$eval('#flow .group-head', (e) => e.getBoundingClientRect().toJSON());
         const tree = boxes.filter((b) => !b.grouped);
         assert.ok(tree.some((b) => b.id === '/signin#SignIn'));
         assert.ok(tree.every((b) => b.bottom <= head.top), 'the branching entry screens come first');
         assert.ok(grouped.every((b) => b.top >= head.bottom), 'the gathered boxes sit under the heading');
-        assert.ok(new Set(grouped.filter((b) => groupedScreens.includes(b.id)).map((b) => b.left)).size > 1, 'the gathered boxes stand in more than one column');
+        assert.ok(new Set(grouped.map((b) => b.left)).size > 1, 'the gathered boxes stand in more than one column');
         assert.deepEqual(overlapping(boxes), []);
 
         const failing = await screenBox(p, '/extra/7#Extra7');
         assert.match((await failing.getAttribute('class'))!, /s-fail/);
-        assert.match((await failing.locator('.l2').textContent())!, /^✓1 ✕2 ○1 · 불러옴 2/);
-        assert.deepEqual(await needLines(await screenBox(p, '/extra/3#Extra3')), ['역할 ADMIN미확인 1']);
-        const linked = await screenBox(p, '/extra/0#Extra0');
-        assert.match((await linked.locator('.l3').textContent())!, /→ /);
-        const callsBefore = (await boxCount(p)).calls;
-        await linked.locator('.calls').click();
-        assert.notEqual((await boxCount(p)).calls, callsBefore);
+        assert.equal(await statusLine(failing), '실패 · 불러옴 2');
+        assert.deepEqual(await needTag(await screenBox(p, '/extra/3#Extra3')), ['역할']);
+        await failing.click();
+        assert.deepEqual(await pickedBoxes(p), ['/extra/7#Extra7']);
+        assert.equal((await boxesWith(p, 'dim')).length, (await boxCount(p)) - 1, 'a gathered screen has no paths, so every other screen dims');
         assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 8');
         assert.deepEqual(overlapping(await flowBoxes(p)), []);
       }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
@@ -4501,10 +4228,11 @@ test('in a browser, the gathered entry screens take fewer columns once the windo
   );
 });
 
-test('in a browser, redrawing the flow keeps the place the reviewer scrolled to', { skip: browserMissing }, async () => {
+test('in a browser, redrawing the flow keeps the place the reviewer scrolled to, and picking a screen already in view does not scroll', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
+        await p.setViewportSize({ width: 1440, height: 300 });
         await p.waitForSelector('#flow .group-head');
         const scrolled = await p.evaluate(() => {
           const flow = document.getElementById('flow')!;
@@ -4512,66 +4240,52 @@ test('in a browser, redrawing the flow keeps the place the reviewer scrolled to'
           return flow.scrollTop;
         });
         assert.equal(scrolled, 200);
-        await flowButton(p, '모두 펼치기').click();
+        await p.evaluate(() => renderFlow());
+        assert.equal(await p.evaluate(() => document.getElementById('flow')!.scrollTop), 200);
+        const visible = await p.$$eval('#flow .box.screen', (els: HTMLElement[]) => {
+          const view = document.getElementById('flow')!.getBoundingClientRect();
+          return els.find((e) => { const r = e.getBoundingClientRect(); return r.top > view.top + 20 && r.bottom < view.bottom - 20 && r.left > view.left && r.right < view.left + view.width / 2; })!.dataset.key!;
+        });
+        await (await screenBox(p, visible)).click();
         assert.equal(await p.evaluate(() => document.getElementById('flow')!.scrollTop), 200);
       }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
     ),
   );
 });
 
-test('in a browser, one branch shown on its own has no gathered entry screens, and the whole view brings them back', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .group-head');
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await p.waitForSelector('.flowbar .focusing');
-        assert.equal(await p.locator('#flow .group-head').count(), 0);
-        assert.equal(await p.locator('#flow .box.grouped').count(), 0);
-        await flowButton(p, '전체 보기').click();
-        assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 2');
-      }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 2)); }) }),
-    ),
-  );
-});
-
-test('in a browser, the flow layout is worked out from the trees, the box sizes and the open state alone, the same every time, and each box\'s width from the widths alone', { skip: browserMissing }, async () => {
+test('in a browser, the flow layout is worked out from the trees and the box sizes alone, the same every time, and each box\'s width from the widths alone', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
         const [first, second, columns] = await p.evaluate(() => {
-          const screen = (id: string, children: object[] = [], calls: object[] = []) => ({ kind: 'screen', id, children, calls, guards: [] });
-          const roots = [screen('A', [screen('B'), screen('C')]), screen('D', [], [{ kind: 'call', id: 'GET:/d' }]), screen('E')];
-          const sizes = {
-            A: { width: 100, height: 40 }, B: { width: 120, height: 30 }, C: { width: 80, height: 50 },
-            D: { width: 90, height: 30 }, 'D>GET:/d': { width: 200, height: 20 }, E: { width: 70, height: 20 },
-          };
-          const view = { collapsed: [], openCalls: ['D'], group: true, width: 300 };
-          state.collapsed.add('A');
+          const screen = (id: string, children: object[] = []) => ({ kind: 'screen', id, children, calls: [], guards: [] });
+          const roots = [screen('A', [screen('B'), screen('C')]), screen('D'), screen('E')];
+          const sizes = { A: { width: 100, height: 40 }, B: { width: 120, height: 30 }, C: { width: 80, height: 50 }, D: { width: 90, height: 30 }, E: { width: 70, height: 20 } };
+          const view = { group: true, width: 300 };
+          state.flowPicked = true;
+          state.zoom = 0.5;
           const { widths, grouped } = flowColumns(roots, sizes, view);
           return [layoutFlow(roots, sizes, view), layoutFlow(roots, sizes, view), { widths, grouped: [...grouped] }];
         });
         assert.deepEqual(first, second);
-        assert.deepEqual(columns, { widths: { A: 100, B: 120, C: 120, D: 90, 'D>GET:/d': 74, E: 90 }, grouped: ['D', 'D>GET:/d', 'E'] });
+        assert.deepEqual(columns, { widths: { A: 100, B: 120, C: 120, D: 90, E: 90 }, grouped: ['D', 'E'] });
         const boxes = Object.fromEntries(first.boxes.map(({ key, ...b }) => [key, b]));
         assert.deepEqual(boxes, {
-          A: { x: 0, y: 21, width: 100, height: 40, grouped: false },
+          A: { x: 0, y: 19, width: 100, height: 40, grouped: false },
           B: { x: 150, y: 0, width: 120, height: 30, grouped: false },
-          C: { x: 150, y: 42, width: 120, height: 50, grouped: false },
-          D: { x: 0, y: 156, width: 90, height: 30, grouped: true },
-          'D>GET:/d': { x: 16, y: 198, width: 74, height: 20, grouped: true },
-          E: { x: 114, y: 156, width: 90, height: 20, grouped: true },
+          C: { x: 150, y: 38, width: 120, height: 50, grouped: false },
+          D: { x: 0, y: 148, width: 90, height: 30, grouped: true },
+          E: { x: 114, y: 148, width: 90, height: 20, grouped: true },
         });
         const edges = Object.fromEntries(first.edges.map(({ from, to, ...e }) => [`${from} ${to}`, e]));
         assert.deepEqual(edges, {
-          'A B': { x1: 100, y1: 41, x2: 150, y2: 15, guards: [], grouped: false },
-          'A C': { x1: 100, y1: 41, x2: 150, y2: 67, guards: [], grouped: false },
-          'D D>GET:/d': { x1: 8, y1: 186, x2: 16, y2: 208, guards: [], grouped: true },
+          'A B': { x1: 100, y1: 39, x2: 150, y2: 15, guards: [] },
+          'A C': { x1: 100, y1: 39, x2: 150, y2: 63, guards: [] },
         });
-        assert.deepEqual(first.group, { x: 0, y: 128, height: 28, count: 2 });
+        assert.deepEqual(first.group, { x: 0, y: 120, height: 28, count: 2 });
         assert.equal(first.width, 270);
-        assert.equal(first.height, 230);
+        assert.equal(first.height, 186);
       }, { view: 'flow' }),
     ),
   );
@@ -4596,7 +4310,8 @@ async function withPathStories(stories: Record<string, string[]>, fn: (p: Page, 
 const flowPlace = (p: Page) => p.evaluate(() => decodeURIComponent(location.hash));
 const pickPathStory = (p: Page, id: string) => p.selectOption('.story-pick select', id);
 const drawnScreens = (p: Page) => p.$$eval('#flow .box.screen', (els) => els.map((e) => e.dataset.key).sort());
-const pathMarks = (p: Page, cls: string) => p.$$eval(`#flow .canvas > .${cls}`, (els) => els.map((e) => [e.dataset.at, e.textContent, ...[...e.classList].filter((c) => /^(l-.*|exit|entry)$/.test(c))]));
+const pathMarks = (p: Page, cls: string) => p.$$eval(`#flow .canvas > .${cls}`, (els) => els.map((e) => [e.dataset.at, e.textContent, ...[...e.classList].filter((c) => /^l-/.test(c))]));
+const pillMarks = (p: Page, cls: string) => p.$$eval(`#flow .box.screen .${cls}`, (els) => els.map((e) => [e.closest<HTMLElement>('.box')!.dataset.key, e.textContent, ...[...e.classList].filter((c) => /^(l-.*|exit|entry)$/.test(c))]));
 const pathEdges = (p: Page) => p.$$eval('#flow .canvas svg path.story-edge', (els) => els.map((e) => [e.dataset.from, e.dataset.to, [...e.classList].find((c) => c.startsWith('l-'))]).sort());
 const ringed = (p: Page) => p.$$eval('#flow .box.story-ring', (els) => els.map((e) => e.dataset.key));
 const stripCurrent = (p: Page) => p.$$eval('.story-strip .story-step.current .story-badge', (els) => els.map((e) => e.textContent));
@@ -4604,10 +4319,10 @@ const inView = (p: Page, key: string) => p.evaluate((k) => {
   const flow = document.getElementById('flow')!;
   const r = flow.querySelector(`.box.screen[data-key="${CSS.escape(k)}"]`)!.getBoundingClientRect();
   const view = flow.getBoundingClientRect();
-  return r.top >= flow.querySelector('.flowbar')!.getBoundingClientRect().bottom && r.top < view.bottom && r.left >= view.left && r.left < view.right;
+  return r.top >= view.top && r.bottom <= view.bottom && r.left >= view.left && r.right <= view.right;
 }, key);
 
-test('in a browser, the flow lays out a story\'s step marks only in the gaps that hold them, beside their boxes and off the lines, and keeps room under a box for its hidden-screen count', { skip: browserMissing }, async () => {
+test('in a browser, the flow lays out a story\'s link tags just before the box their line enters and keeps room under a box for its hidden-screen count', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -4618,65 +4333,56 @@ test('in a browser, the flow lays out a story\'s step marks only in the gaps tha
           const roots = [screen('A', [screen('B'), screen('C', [screen('D')])])];
           const sizes = { A: { width: 100, height: 40 }, B: { width: 120, height: 50 }, C: { width: 80, height: 30 }, D: { width: 90, height: 30 } };
           const marks = [
-            { key: 'B', side: 'entry', kind: 'badge', width: 22, height: 22 },
-            { key: 'A', side: 'exit', kind: 'chip', width: 40, height: 20 },
-            { key: 'A', side: 'exit', kind: 'hidden', width: 80, height: 16 },
-            { key: 'C', side: 'entry', kind: 'tag', width: 30, height: 18 },
+            { key: 'A', kind: 'hidden', width: 80, height: 16 },
+            { key: 'C', kind: 'tag', width: 30, height: 18 },
           ];
-          const view = { collapsed: [], openCalls: [], marks };
+          const view = { marks };
           const cols = flowColumns(roots, sizes, view);
           return { plain: flowColumns(roots, sizes, {}).xs, xs: cols.xs, layout: layoutFlow(roots, sizes, view, cols) };
         });
         assert.deepEqual(out.plain, [0, 150, 320]);
-        assert.deepEqual(out.xs, [0, 100 + 54 + 32 + 44, 230 + 120 + 50]);
+        assert.deepEqual(out.xs, [0, 100 + 32 + 44, 176 + 120 + 50]);
         const box = Object.fromEntries(out.layout.boxes.map((b) => [b.key, b]));
-        const [badge, chip, hidden, tag] = out.layout.marks!;
+        const [hidden, tag] = out.layout.marks!;
         assert.deepEqual(hidden, { x: 8, y: box.A.y + 40 + 6 });
-        assert.deepEqual(badge, { x: 230 - 6 - 22, y: box.B.y - 2 });
-        assert.equal(chip.x, 110);
         assert.equal(tag.y, box.C.y + 15 - 9, 'the tag sits on the line into its box');
-        assert.equal(tag.x, 230 - 10 - 30);
-        assert.equal(Math.min(...out.layout.boxes.map((b) => b.y), ...out.layout.marks!.map((m) => m.y)), 0, 'a badge raised above the top box moves the drawing down');
-        const a = out.layout.edges.find((e) => e.to === 'B')!;
-        assert.deepEqual([a.ex, a.nx], [100 + 54, 230 - 44]);
-        for (const [m, height, lines] of [[chip, 20, out.layout.edges.filter((e) => e.from === 'A').map((e) => e.y1)], [badge, 22, [a.y2]]] satisfies [{ x: number; y: number }, number, number[]][]) {
-          for (const line of lines) assert.ok(line < m.y - 4 || line > m.y + height + 4, `mark ${m.y}..${m.y + height} keeps off the line at ${line}`);
-        }
+        assert.equal(tag.x, 176 - 10 - 30);
+        const toB = out.layout.edges.find((e) => e.to === 'B')!;
+        assert.equal(toB.nx, 176 - 44, 'the line bends before the tags of the column it enters');
         assert.ok(out.layout.height >= hidden.y + 16, 'the canvas is tall enough for the hidden-screen count');
       }, { view: 'flow' }),
     ),
   );
 });
 
-test('in a browser, a story picked in the flow bar leaves only its screens and their ancestors with numbered badges and the hidden screens counted, closes API calls, and turning it off brings back the flow the reviewer had', { skip: browserMissing }, async () => {
+test('in a browser, a story picked in the flow bar leaves only its screens and their ancestors with numbered badges inside them and the hidden screens counted, counts and lists only those, and turning it off brings back the whole flow', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
     const stories = await p.evaluate(() => state.data.stories.list.map((st: Story) => [st.id, st.name]));
     assert.deepEqual(await p.$$eval('.story-pick option', (os: HTMLOptionElement[]) => os.map((o) => [o.value, o.textContent])), [['', '고르기'], ...stories]);
     assert.equal(await p.locator('.flowbar .path-off').count(), 0);
-
-    await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^접기$/ }).click();
-    await (await screenBox(p, '/home#Home')).locator('.calls').click();
-    const before = { screens: await drawnScreens(p), calls: await p.locator('#flow .box.call').count() };
-    assert.ok(before.calls > 0);
+    const before = await drawnScreens(p);
 
     await pickPathStory(p, 'walk-around');
     assert.equal(await flowPlace(p), '#flow?story=walk-around');
     assert.deepEqual(await drawnScreens(p), [...WALK_ON_MAP].sort());
-    assert.equal(await p.locator('#flow .box.call').count(), 0, 'API calls start closed');
-    assert.equal(await p.textContent('.flowbar .story-only'), '스토리 경로만 보는 중 전체 보기');
-    assert.deepEqual(await pathMarks(p, 'story-badge'), WALK_ON_MAP.map((id, i) => [id, String(i + 1)]));
+    assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), WALK_ON_MAP.map((id, i) => [id, String(i + 1)]).sort());
     assert.deepEqual(await pathMarks(p, 'story-hidden'), [['/home#Home', '다른 화면 4 숨김']]);
     assert.equal(await p.locator('#flow .box.on-story').count(), 7);
+    assert.equal(await p.textContent('.flowbar .flowsummary'), '테스트 있는 화면 6/7');
+    assert.equal(await filterButton(p, 'all').textContent(), '전체 7');
+    assert.equal(await p.textContent('#gaps h2'), '빈틈 5');
+    assert.match((await p.textContent('#gaps .lead'))!, /이 스토리의 경로/);
+    assert.deepEqual(await textOutside(p), []);
 
     await flowButton(p, '경로 끄기').click();
     assert.equal(await flowPlace(p), '#flow');
-    assert.deepEqual({ screens: await drawnScreens(p), calls: await p.locator('#flow .box.call').count() }, before);
-    assert.equal(await p.locator('.story-strip, #flow .mark, #flow .box.on-story').count(), 0);
+    assert.deepEqual(await drawnScreens(p), before);
+    assert.equal(await p.locator('.story-strip, #flow .mark, #flow .box.on-story, #flow .story-badge').count(), 0);
     assert.equal(await p.inputValue('.story-pick select'), '');
   });
 });
 
-test('in a browser, a story hop from a box to its child is drawn on that link in the style of the story verdict, not of the flow conditions, and every other hop puts on both boxes a chip with the other step number', { skip: browserMissing }, async () => {
+test('in a browser, a story hop from a box to its child is drawn on that link in the style of the story verdict, not of the flow conditions, and every other hop puts in both boxes a chip with the other step number', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
     await pickPathStory(p, 'walk-around');
     assert.deepEqual(await pathEdges(p), [
@@ -4687,37 +4393,42 @@ test('in a browser, a story hop from a box to its child is drawn on that link in
     const stroke = (from: string, to: string) => p.$eval(`#flow svg path[data-from="${from}"][data-to="${to}"]`, (e) => { const c = getComputedStyle(e); return [c.strokeWidth, c.strokeDasharray, c.opacity]; });
     assert.deepEqual(await stroke('/signin#SignIn', '/home#Home'), ['3.2px', 'none', '1']);
     assert.deepEqual(await stroke('/signin#SignIn', '/help#Help'), ['1.3px', 'none', '0.35'], 'a guarded link that no hop takes is a thin grey line');
-    assert.deepEqual(await pathMarks(p, 'story-chip'), [
+    assert.deepEqual(await pillMarks(p, 'story-chip'), [
       ['/document/:tab_draft_done_#DocumentList', '→ 4', 'exit', 'l-open'],
       ['/document/:id#DocumentDetail', '3 →', 'entry', 'l-open'],
       ['/document/:id#DocumentDetail', '→ 5조건', 'exit', 'l-conditioned'],
-      ['/help#Help', '4 →', 'entry', 'l-conditioned'],
-      ['/help#Help', '✕→ 6링크 없음', 'exit', 'l-broken'],
       ['/lab#Lab', '✕5 →', 'entry', 'l-broken'],
       ['/lab/result#LabResult', '→ 8맵에 없는 화면', 'exit', 'l-off-map'],
+      ['/help#Help', '4 →', 'entry', 'l-conditioned'],
+      ['/help#Help', '✕→ 6링크 없음', 'exit', 'l-broken'],
     ]);
+    const order = await (await screenBox(p, '/document/:id#DocumentDetail')).evaluate((box) => [...box.children].map((c) => c.className.split(' ')[0]));
+    assert.deepEqual(order.filter((c) => c !== 'sr-only'), ['story-chip', 'story-badge', 'sq', 'path', 'tag', 'story-chip'], 'chips from earlier steps and the number come first, chips to later steps last');
     assert.equal(await p.locator('#flow .canvas > .story-tag').count(), 0);
 
     const toHelp = p.locator('#flow .story-chip.exit[data-hop="3"]');
     await toHelp.hover();
-    assert.deepEqual(await p.$$eval('#flow .story-chip.hovered', (els) => els.map((e) => e.dataset.at)), ['/document/:id#DocumentDetail', '/help#Help']);
+    assert.deepEqual(await p.$$eval('#flow .story-chip.hovered', (els) => els.map((e) => e.closest<HTMLElement>('.box')!.dataset.key)), ['/document/:id#DocumentDetail', '/help#Help']);
     await p.mouse.move(5, 890);
     assert.equal(await p.locator('#flow .story-chip.hovered').count(), 0);
-    await p.evaluate(() => { document.getElementById('flow')!.scrollTop = 0; });
     await toHelp.click();
     assert.deepEqual(await ringed(p), ['/help#Help']);
     assert.deepEqual(await stripCurrent(p), ['5']);
+    assert.deepEqual(await pickedBoxes(p), ['/help#Help'], 'a chip picks the step it names, not the box it sits in');
+    assert.equal(await p.textContent('#center h3'), '/help');
     assert.equal(await inView(p, '/help#Help'), true);
+    assert.deepEqual(await boxesWith(p, 'dim'), [], 'the path is not dimmed around a picked step');
 
     await pickPathStory(p, 'run-lab');
     assert.deepEqual(await pathEdges(p), [['/home#Home', '/lab#Lab', 'l-conditioned'], ['/lab#Lab', '/lab/result#LabResult', 'l-open']]);
     assert.deepEqual((await stroke('/home#Home', '/lab#Lab')).slice(0, 2), ['3.2px', '8px, 5px']);
     assert.deepEqual(await pathMarks(p, 'story-tag'), [['/lab#Lab', '조건', 'l-conditioned']]);
     assert.deepEqual(await ringed(p), [], 'another story starts with nothing ringed');
+    assert.deepEqual(await pickedBoxes(p), [], 'a picked screen the new path does not draw is let go');
   });
 });
 
-test('in a browser, the step strip in the flow bar lists the steps with their routes joined by the verdict of each link, rings and shows the box of the step pressed, opens a folded branch to reach it, and lists a step off the map with no box', { skip: browserMissing }, async () => {
+test('in a browser, the step strip in the flow bar lists the steps with their routes joined by the verdict of each link, and pressing a step rings, picks and shows its box, or only rings a step off the map', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
     await pickPathStory(p, 'walk-around');
     assert.deepEqual(await p.$$eval('.story-strip .story-step', (els) => els.map((e) => e.textContent)), [
@@ -4731,26 +4442,23 @@ test('in a browser, the step strip in the flow bar lists the steps with their ro
     await p.locator('.story-strip .story-step', { hasText: '/lab/result' }).click();
     assert.deepEqual(await ringed(p), ['/lab/result#LabResult']);
     assert.deepEqual(await stripCurrent(p), ['7']);
+    assert.deepEqual(await pickedBoxes(p), ['/lab/result#LabResult']);
+    assert.equal(await p.textContent('#center h3'), '/lab/result');
     assert.equal(await inView(p, '/lab/result#LabResult'), true);
+    assert.equal(await flowPlace(p), '#flow?story=walk-around&screen=/lab/result#LabResult');
     await p.locator('.story-strip .story-step', { hasText: '/settings#Settings' }).click();
     assert.deepEqual(await ringed(p), []);
     assert.deepEqual(await stripCurrent(p), ['8']);
 
-    await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).click();
-    const foldedOnPath = await (await screenBox(p, '/home#Home')).locator('.l2').textContent();
-    assert.deepEqual(await p.$$eval('.story-strip .story-step:has(.note)', (els) => els.map((e) => e.querySelector('.note')!.textContent + e.querySelector('.story-badge')!.textContent)), ['접힘3', '접힘4', '접힘6', '접힘7', '맵에 없는 화면8']);
-    assert.equal(await p.locator('#flow .story-chip[data-hop="2"]').count(), 0, 'a hop whose ends are folded away has no chips');
-    await p.locator('.story-strip .story-step', { hasText: '/document/:id' }).click();
-    assert.deepEqual(await ringed(p), ['/document/:id#DocumentDetail']);
-    assert.equal(await p.locator('.story-strip .note', { hasText: '접힘' }).count(), 0);
+    await (await screenBox(p, '/home#Home')).click();
+    assert.deepEqual(await stripCurrent(p), ['2'], 'pressing a box on the path rings its step');
+    await flowButton(p, '선택 해제').click();
+    assert.deepEqual(await stripCurrent(p), []);
+    assert.deepEqual(await ringed(p), []);
 
     await p.setViewportSize({ width: 700, height: 700 });
     const rows = await p.$$eval('.story-strip > li', (els) => new Set(els.map((e) => Math.round(e.getBoundingClientRect().top))).size);
     assert.ok(rows >= 2, `the strip wraps onto ${rows} rows`);
-
-    await flowButton(p, '경로 끄기').click();
-    await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).click();
-    assert.equal(foldedOnPath, await (await screenBox(p, '/home#Home')).locator('.l2').textContent(), 'a box folded on the path sums the screens the path hides too');
   });
 });
 
@@ -4761,10 +4469,14 @@ test('in a browser, the story path view numbers a screen visited twice with both
   };
   await withPathStories(stories, async (p) => {
     await pickPathStory(p, 'twice');
-    assert.deepEqual(await pathMarks(p, 'story-badge'), [['/signin#SignIn', '1'], ['/home#Home', '2·4'], ['/help#Help', '3']]);
-    assert.deepEqual((await pathMarks(p, 'story-chip')).map(([at, text, end]) => [at, text!.match(/→ \d+|\d+ →/)![0], end]), [
-      ['/home#Home', '→ 3', 'exit'], ['/help#Help', '2 →', 'entry'], ['/help#Help', '→ 4', 'exit'], ['/home#Home', '3 →', 'entry'],
+    assert.deepEqual(await pillMarks(p, 'story-badge'), [['/signin#SignIn', '1'], ['/home#Home', '2·4'], ['/help#Help', '3']]);
+    assert.deepEqual((await pillMarks(p, 'story-chip')).map(([at, text, end]) => [at, text!.match(/→ \d+|\d+ →/)![0], end]), [
+      ['/home#Home', '3 →', 'entry'], ['/home#Home', '→ 3', 'exit'], ['/help#Help', '2 →', 'entry'], ['/help#Help', '→ 4', 'exit'],
     ]);
+    await p.locator('.story-strip .story-step', { hasText: '/home' }).nth(1).click();
+    assert.deepEqual(await stripCurrent(p), ['4']);
+    await (await screenBox(p, '/home#Home')).click();
+    assert.deepEqual(await stripCurrent(p), ['4'], 'pressing the box of a screen visited twice keeps the step already rung');
 
     await p.evaluate(() => {
       const { flow }: PageData = state.data;
@@ -4773,60 +4485,54 @@ test('in a browser, the story path view numbers a screen visited twice with both
     await pickPathStory(p, 'far');
     assert.equal(await p.locator('#flow .canvas').count(), 2);
     assert.equal(await p.textContent('#flow > h2'), '진입 화면에서 닿지 않는 화면 1');
-    assert.equal(await p.$eval('#flow .canvas:last-of-type .box.screen', (e) => e.dataset.key), '/admin/group#AdminGroup');
-    assert.deepEqual(await pathMarks(p, 'story-chip'), [['/home#Home', '✕→ 2링크 없음', 'exit', 'l-broken'], ['/admin/group#AdminGroup', '✕1 →', 'entry', 'l-broken']]);
+    assert.equal(await p.$eval('#flow > .zoom-box:last-of-type .box.screen', (e) => (e as HTMLElement).dataset.key), '/admin/group#AdminGroup');
+    assert.deepEqual(await pillMarks(p, 'story-chip'), [['/home#Home', '✕→ 2링크 없음', 'exit', 'l-broken'], ['/admin/group#AdminGroup', '✕1 →', 'entry', 'l-broken']]);
 
     await pickPathStory(p, 'run-lab');
     assert.deepEqual(await drawnScreens(p), ['/home#Home', '/lab#Lab', '/lab/result#LabResult', '/signin#SignIn']);
-    assert.deepEqual((await pathMarks(p, 'story-badge')).map((m) => m[0]), ['/home#Home', '/lab#Lab', '/lab/result#LabResult']);
+    assert.deepEqual((await pillMarks(p, 'story-badge')).map((m) => m[0]), ['/home#Home', '/lab#Lab', '/lab/result#LabResult']);
 
     await pickPathStory(p, 'read-reports');
     assert.deepEqual(await drawnScreens(p), ['/admin/report#AdminReport', '/home#Home', '/signin#SignIn']);
     assert.equal(await p.locator('.story-strip .story-step').count(), 1);
-    assert.equal(await p.locator('.story-strip .story-join, #flow .canvas > .story-chip, #flow .canvas svg path.story-edge').count(), 0);
+    assert.equal(await p.locator('.story-strip .story-join, #flow .story-chip, #flow .canvas svg path.story-edge').count(), 0);
   }, [['client/src/components/Home.js', '{isAdmin && <Link to={Option.ROUTE_PATH.ADMIN_GROUP}>Groups</Link>}', '']]);
 });
 
-test('in a browser, the picked story is kept in the address through reloads and back and forward, and the path view and a branch shown on its own hand over to each other', { skip: browserMissing }, async () => {
+test('in a browser, the picked story and the picked screen are kept in the address through reloads and back and forward, and a place that is gone falls back to what is there', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p, { base, errors }) => {
     const whole = (await drawnScreens(p)).length;
+    await (await screenBox(p, '/lab#Lab')).click();
     await pickPathStory(p, 'walk-around');
+    assert.equal(await flowPlace(p), '#flow?story=walk-around&screen=/lab#Lab', 'a picked screen on the path stays picked');
     await p.reload();
     await p.waitForSelector('.story-strip');
-    assert.equal(await flowPlace(p), '#flow?story=walk-around');
+    assert.equal(await flowPlace(p), '#flow?story=walk-around&screen=/lab#Lab');
     assert.deepEqual(await drawnScreens(p), [...WALK_ON_MAP].sort());
+    assert.deepEqual(await pickedBoxes(p), ['/lab#Lab']);
+    assert.equal(await p.textContent('#center h3'), '/lab');
     await p.goBack();
     await p.waitForSelector('.story-strip', { state: 'detached' });
-    assert.equal(await flowPlace(p), '#flow');
+    assert.equal(await flowPlace(p), '#flow?screen=/lab#Lab');
     assert.equal((await drawnScreens(p)).length, whole);
     await p.goForward();
     await p.waitForSelector('.story-strip');
     assert.equal(await p.inputValue('.story-pick select'), 'walk-around');
+    await (await screenBox(p, '/home#Home')).click();
+    assert.deepEqual(await stripCurrent(p), ['2']);
+    await p.goBack();
+    await p.waitForFunction(() => decodeURIComponent(location.hash).endsWith('screen=/lab#Lab'));
+    assert.deepEqual(await stripCurrent(p), ['6'], 'going back to a picked screen rings its step');
+    assert.deepEqual(await ringed(p), ['/lab#Lab']);
 
     await flowButton(p, '경로 끄기').click();
-    await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-    await p.waitForSelector('.flowbar .focusing');
+    assert.equal(await flowPlace(p), '#flow?screen=/lab#Lab');
+    await (await screenBox(p, '/admin/group#AdminGroup')).click();
     await pickPathStory(p, 'walk-around');
-    assert.equal(await flowPlace(p), '#flow?story=walk-around');
-    assert.equal(await p.locator('.flowbar .focusing').count(), 0);
-    assert.deepEqual(await drawnScreens(p), [...WALK_ON_MAP].sort(), 'the path is cut from the whole flow, not from the branch');
-    await flowButton(p, '경로 끄기').click();
-    assert.equal(await flowPlace(p), '#flow?from=/home#Home', 'turning the path off goes back to the branch');
-    assert.match((await p.textContent('.flowbar .focusing'))!, /^\/home /);
+    assert.equal(await flowPlace(p), '#flow?story=walk-around', 'a picked screen off the path is let go');
+    assert.equal(await p.locator('#gaps').isVisible(), true);
 
-    await pickPathStory(p, 'walk-around');
-    await p.click('.flowbar .story-only button');
-    assert.equal(await flowPlace(p), '#flow');
-    assert.equal((await drawnScreens(p)).length, whole);
-
-    await pickPathStory(p, 'walk-around');
-    await (await screenBox(p, '/lab#Lab')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-    await p.waitForSelector('.flowbar .focusing');
-    assert.equal(await flowPlace(p), '#flow?from=/lab#Lab');
-    assert.equal(await p.locator('.story-strip').count(), 0);
-    assert.equal(await p.inputValue('.story-pick select'), '');
-
-    await p.goto(`${base}/#flow?story=gone`);
+    await p.goto(`${base}/#flow?story=gone&screen=${encodeURIComponent('/gone#Gone')}`);
     await p.reload();
     await p.waitForSelector('#flow .box.screen');
     assert.equal(await flowPlace(p), '#flow');
@@ -4844,6 +4550,8 @@ test('in a browser, a picked story whose file changes while the page is open is 
     assert.deepEqual(await drawnScreens(p), ['/help#Help', '/signin#SignIn']);
     assert.equal(await p.locator('.story-strip .story-step').count(), 2);
     assert.deepEqual(await stripCurrent(p), [], 'a ringed step past the new end is dropped');
+    assert.deepEqual(await pickedBoxes(p), [], 'and its screen, no longer drawn, is let go');
+    assert.equal(await p.locator('#gaps').isVisible(), true);
 
     fs.rmSync(storyFile('walk-around'));
     await p.evaluate(async () => { await load(); render(); });
@@ -4853,7 +4561,7 @@ test('in a browser, a picked story whose file changes while the page is open is 
   });
 });
 
-test('in a browser, no chip, tag or badge of a story path covers a box or another mark, no thick line crosses a box, and no line runs under a chip or badge, also with every API call open', { skip: browserMissing }, async () => {
+test('in a browser, no tag or count of a story path covers a box or another mark, no thick line crosses a box, and no line runs under a mark', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
     const problems = () => p.evaluate(() => {
       const R = (e: Element) => e.getBoundingClientRect();
@@ -4889,8 +4597,8 @@ test('in a browser, no chip, tag or badge of a story path covers a box or anothe
     assert.deepEqual(await problems(), []);
     assert.deepEqual(await textOutside(p), []);
     assert.deepEqual(await layoutErrors(p), []);
-    await flowButton(p, '모두 펼치기').click();
-    assert.ok(await p.locator('#flow .box.call').count() > 0);
+    await pickPathStory(p, 'run-lab');
+    assert.ok(await p.locator('#flow .canvas > .story-tag').count() > 0);
     assert.deepEqual(await problems(), []);
     assert.deepEqual(await layoutErrors(p), []);
   });
@@ -4913,14 +4621,10 @@ test('in a browser, the info icon of the story picker opens a legend of the path
     const look = (sel: string) => p.$eval(sel, (e) => { const c = getComputedStyle(e); return [c.borderTopStyle, c.borderTopColor, c.color, c.height].join(' '); });
     assert.equal(await look('#pathlegend .story-chip.l-broken'), await look('#flow .canvas .story-chip.l-broken'));
     assert.equal(await look('#pathlegend .story-badge'), await look('#flow .canvas .story-badge'));
-    await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^접기$/ }).click();
+    await p.evaluate(() => renderFlow());
     assert.equal(await legend.isVisible(), true, 'a redraw keeps the legend open');
-    const edges = await p.evaluate(() => {
-      const flow = document.getElementById('flow')!.getBoundingClientRect();
-      const r = document.getElementById('pathlegend')!.getBoundingClientRect();
-      return { left: r.left - flow.left, right: r.right - flow.left, visible: document.getElementById('flow')!.clientWidth };
-    });
-    assert.ok(edges.left >= 0 && edges.right <= edges.visible, `legend ${edges.left}..${edges.right} within ${edges.visible}`);
+    const e = await inWindow(p, '#pathlegend');
+    assert.ok(e.left >= 0 && e.right <= e.width, `legend ${e.left}..${e.right} within ${e.width}`);
     await p.keyboard.press('Escape');
     assert.equal(await legend.isVisible(), false);
     assert.equal(await p.locator('#flowlegend').isVisible(), false);
@@ -5150,6 +4854,26 @@ test('in a browser, a screen with path variables opens filled with its fixed val
             assert.deepEqual(listCalls, ['GET /api/v1/documents']);
             assert.equal(presses.length, 1);
           }),
+        ),
+      ),
+    ),
+  );
+});
+
+test('in a browser, a screen with path variables picked in the flow opens filled with the value its list API gives, in the same middle pane as the list', { skip: browserMissing }, async () => {
+  const pathValues = { '/document/:id': { id: LIST_API } };
+  await withFakeApi((api, _presses, _logins, listCalls) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(pathValueSettings(api, pathValues), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.waitForSelector('#flow .box.screen');
+            await (await screenBox(p, '/document/:id#DocumentDetail')).click();
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#path:has-text("/document/17")').waitFor();
+            assert.equal(await p.locator('#center .frame-bar input[name=id]').inputValue(), '17');
+            assert.deepEqual(listCalls, ['GET /api/v1/documents']);
+          }, { view: 'flow' }),
         ),
       ),
     ),
@@ -6616,15 +6340,12 @@ test('in a browser, with no server API list the header line carries a 「서버 
 
         await p.click('#view-flow');
         await p.waitForSelector('#flow .box');
-        await p.click('#flow button:has-text("모두 펼치기")');
-        await p.waitForSelector('#flow .box.call');
         assert.equal(await p.locator('#meta .state').isVisible(), true);
         assert.equal(await p.locator('#server-notice').count(), 0);
-        assert.equal((await box('#flow')).top, (await box('header')).bottom);
-        assert.equal((await box('#flow')).height, 900 - 49);
-        const labels = await p.locator('#flow .box.call .l2').allTextContents();
-        assert.ok(labels.length > 0);
-        assert.ok(labels.every((l) => l.endsWith(' · 대조 안 함')), labels.join('|'));
+        assert.equal((await box('#flow-bar')).top, (await box('header')).bottom);
+        assert.equal((await box('main')).height, 900 - 49);
+        await (await screenBox(p, '/document/:tab_draft_done_#DocumentList')).click();
+        assert.equal(await p.locator('#center table.calls td.call .chip.v-unchecked').count(), 1, 'the picked screen\'s calls say they were not compared');
         assert.doesNotMatch(await text(), /죽은 화면|서버에 없음/);
       })));
 });
@@ -6749,11 +6470,11 @@ test('in a browser, a screen shows the untagged browser tests that passed throug
         assert.match(testedBefore, /테스트 있는 화면 7/);
 
         await p.click('#view-flow');
-        assert.match((await (await screenBox(p, '/help#Help')).locator('.l2').textContent())!, /불러옴 2 · 지나감 6/);
+        assert.equal(await statusLine(await screenBox(p, '/help#Help')), '실패 · 불러옴 2 · 지나감 6');
       })));
 });
 
-test('in a browser, a call shows the untagged browser tests that sent it apart from its own tests: their number in its row and on its box, and each of them in its details', { skip: browserMissing }, async () => {
+test('in a browser, a call shows the untagged browser tests that sent it apart from its own tests: their number in its row, also with the screen picked in the flow, and each of them in its details', { skip: browserMissing }, async () => {
   await withRebuiltFixture(TRACED, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -6775,9 +6496,8 @@ test('in a browser, a call shows the untagged browser tests that sent it apart f
         assert.equal(await p.locator('#right-info .passed').count(), 0);
 
         await p.click('#view-flow');
-        await p.waitForSelector('#flow .box.call');
-        const boxes = await p.locator('#flow .box.call .l2').allTextContents();
-        assert.ok(boxes.some((text) => /^✓1\s* · 호출함 1 · /.test(text)), boxes.join(' | '));
+        await (await screenBox(p, '/home#Home')).click();
+        assert.equal(await row('GET:/api/v1/document/list').locator('.sent-count').textContent(), '호출함 1');
       })));
 });
 
@@ -6813,21 +6533,18 @@ test('a judgment posted from the page is saved as a new file with the server-sid
       const data: PageData = await (await fetch(`${base}/api/data`)).json();
       assert.deepEqual(data.tests.importers['/help#Help'].map((t) => t.title), ['shows the day the help was last updated']);
       assert.deepEqual(data.tests.discarded['/help#Help'].map((t) => [t.title, t.judgment.reason]), [['renders the help text', 'only renders a shared header']]);
-      const importedAt = (roots: FlowNode[]) => walkFlow(roots).find((n) => n.id === '/help#Help')!.imported;
-      const branch = await (await fetch(`${base}/api/flow?from=${encodeURIComponent('/home#Home')}`)).json();
-      assert.deepEqual([importedAt(data.flow.roots), importedAt(branch.roots)], [1, 1]);
+      assert.equal(walkFlow(data.flow.roots).find((n) => n.id === '/help#Help')!.imported, 1);
     }),
   );
 });
 
-test('in a browser, a branch shown on its own counts the importing tests again after a pair is discarded', { skip: browserMissing }, async () => {
+test('in a browser, the flow counts the importing tests again after a pair is discarded', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        const helpLine = async () => (await screenBox(p, '/help#Help')).locator('.l2').textContent();
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await p.waitForSelector('.flowbar .focusing');
-        assert.match((await helpLine())!, /불러옴 2/);
+        await p.waitForSelector('#flow .box.screen');
+        const helpLine = async () => statusLine(await screenBox(p, '/help#Help'));
+        assert.equal(await helpLine(), '실패 · 불러옴 2');
 
         await p.click('#view-list');
         await p.click('#screen-list li:has-text("/help")');
@@ -6836,8 +6553,7 @@ test('in a browser, a branch shown on its own counts the importing tests again a
         await p.waitForSelector('#center .discarded');
 
         await p.click('#view-flow');
-        await p.waitForSelector('.flowbar .focusing');
-        assert.match((await helpLine())!, /불러옴 1/);
+        assert.equal(await helpLine(), '실패 · 불러옴 1');
       }, { view: 'flow' })));
 });
 
@@ -8205,7 +7921,6 @@ const openAt = async (p: Page, url: string) => {
   await p.goto('about:blank');
   await p.goto(url);
 };
-const NOT_FOUND = 'Failed to load resource: the server responded with a status of 404 (Not Found)';
 
 test('in a browser, the first drawing writes the place into the address without adding a step to the history, and a redraw of the same place adds none', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -8215,7 +7930,8 @@ test('in a browser, the first drawing writes the place into the address without 
         assert.equal(await placeOf(p), '#flow');
         const steps = await p.evaluate(() => history.length);
         await p.evaluate(() => render());
-        await flowButton(p, '모두 접기').click();
+        await filterButton(p, 'fail').click();
+        await p.locator('.flowbar .zoom-out').click();
         assert.equal(await p.evaluate(() => history.length), steps);
 
         await p.click('#view-list');
@@ -8268,66 +7984,30 @@ test('in a browser, the back and forward buttons go through the screens that wer
       })));
 });
 
-test('in a browser, a branch shown on its own is a place: back shows the whole flow again and forward the branch', { skip: browserMissing }, async () => {
+test('in a browser, a screen picked in the flow is a place: back shows the flow with nothing picked and forward the pick', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box.screen');
-        const whole = (await boxCount(p)).screens;
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await p.waitForSelector('.flowbar .focusing');
-        assert.equal(await placeOf(p), '#flow?from=/home#Home');
+        await (await screenBox(p, '/home#Home')).click();
+        assert.equal(await placeOf(p), '#flow?screen=/home#Home');
+        await (await screenBox(p, '/lab#Lab')).click();
+        assert.equal(await placeOf(p), '#flow?screen=/lab#Lab');
 
         await p.goBack();
-        await p.waitForSelector('.flowbar .focusing', { state: 'detached' });
-        assert.equal(await placeOf(p), '#flow');
-        assert.equal((await boxCount(p)).screens, whole);
-        await p.goForward();
-        await p.waitForSelector('.flowbar .focusing');
-        assert.equal(await placeOf(p), '#flow?from=/home#Home');
-
-        await p.click('.flowbar .focusing button');
-        assert.equal(await placeOf(p), '#flow');
-      }, { view: 'flow' })));
-});
-
-test('in a browser, while a branch named in the address is being read, a redraw adds no step, and a screen chosen meanwhile wins over the branch', { skip: browserMissing }, async () => {
-  await withRebuiltFixture({}, (config) =>
-    withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
-        await p.waitForSelector('#flow .box.screen');
-        await (await screenBox(p, '/home#Home')).locator('button.toggle', { hasText: /^이 가지만$/ }).click();
-        await p.waitForSelector('.flowbar .focusing');
+        assert.equal(await placeOf(p), '#flow?screen=/home#Home');
+        assert.deepEqual(await pickedBoxes(p), ['/home#Home']);
         await p.goBack();
-        await p.waitForSelector('.flowbar .focusing', { state: 'detached' });
-        const steps = await p.evaluate(() => history.length);
-        let held!: Route | null;
-        await p.route('**/api/flow?from=*', (route) => { held = route; });
-
+        await p.waitForSelector('#flow .box.picked', { state: 'detached' });
+        assert.equal(await placeOf(p), '#flow');
+        assert.equal(await p.locator('#gaps').isVisible(), true);
         await p.goForward();
-        await untilSet(() => held, 'the branch request');
-        await flowButton(p, '모두 접기').click();
-        assert.equal(await p.evaluate(() => history.length), steps);
-        assert.equal(await placeOf(p), '#flow?from=/home#Home');
-        await held!.continue();
-        await p.waitForSelector('.flowbar .focusing');
-        assert.equal(await p.evaluate(() => history.length), steps);
+        await p.waitForSelector('#flow .box.picked');
+        assert.equal(await placeOf(p), '#flow?screen=/home#Home');
+        assert.equal(await p.textContent('#center h3'), '/home');
 
-        await p.click('.flowbar .focusing button');
-        await p.click('#view-list');
-        await p.click('#screen-list li:has-text("/help")');
-        held = null;
-        await p.goto(`${base}/#flow?from=${encodeURIComponent('/home#Home')}`);
-        await untilSet(() => held, 'the branch request');
-        assert.equal(await p.locator('main').isVisible(), true);
-        await p.click('#screen-list li:has-text("/signin")');
-        const answered = p.waitForResponse('**/api/flow?from=*');
-        await held!.continue();
-        await answered;
-        await p.evaluate(() => new Promise((resolve) => setTimeout(resolve, 50)));
-        assert.equal(await placeOf(p), '#screens?screen=/signin#SignIn');
-        assert.equal(await p.locator('main').isVisible(), true);
-        assert.match((await p.textContent('#screen-list li.selected'))!, /\/signin/);
+        await p.click('.flowbar .picking button');
+        assert.equal(await placeOf(p), '#flow');
       }, { view: 'flow' })));
 });
 
@@ -8342,20 +8022,21 @@ test('in a browser, a page opened or loaded again with a place in its address sh
         assert.match((await p.textContent('#screen-list li.selected'))!, /\/help/);
         assert.equal(await p.locator('main').isVisible(), true);
 
-        await openAt(p, `${base}/#flow?from=${encodeURIComponent('/home#Home')}`);
-        await p.waitForSelector('.flowbar .focusing');
-        assert.match((await p.textContent('.flowbar .focusing'))!, /\/home/);
+        await openAt(p, `${base}/#flow?screen=${encodeURIComponent('/home#Home')}`);
+        await p.waitForSelector('#flow .box.picked');
+        assert.equal(await p.textContent('.flowbar .picking strong'), '/home');
+        assert.equal(await p.textContent('#center h3'), '/home');
 
         await openAt(p, `${base}/#screens?screen=${encodeURIComponent('/gone#Gone')}`);
         await p.waitForSelector('#screen-list li.selected');
         assert.equal(await placeOf(p), `#screens?screen=${await p.evaluate(() => state.selected)}`);
         assert.notEqual(await p.evaluate(() => state.selected), '/gone#Gone');
 
-        await openAt(p, `${base}/#flow?from=${encodeURIComponent('/gone#Gone')}`);
+        await openAt(p, `${base}/#flow?screen=${encodeURIComponent('/gone#Gone')}`);
         await p.waitForSelector('#flow .box.screen');
         assert.equal(await placeOf(p), '#flow');
-        await untilSet(() => errors.includes(NOT_FOUND), 'the 404');
-        assert.deepEqual(errors.splice(0), [NOT_FOUND]);
+        assert.equal(await p.locator('#flow .box.picked').count(), 0);
+        assert.deepEqual(errors, []);
       })));
 });
 
@@ -8425,7 +8106,7 @@ test('in a browser, a browser test that passed through a screen is included with
         ]);
 
         await p.click('#view-flow');
-        assert.match((await (await screenBox(p, '/help#Help')).locator('.l2').textContent())!, /지나감 4/);
+        assert.match(await statusLine(await screenBox(p, '/help#Help')), /지나감 4$/);
         await p.click('#view-list');
 
         await p.click('#center .awaiting-tag button.undo');

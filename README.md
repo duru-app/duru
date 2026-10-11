@@ -477,10 +477,16 @@ reason, which writes a file into `discarded/` in `storiesDir` so the same order 
 only marks, judgments and story files. The page keeps the place being looked at in its address, so the back
 button, a reload and a copied address work.
 
-**Flow.** The page opens on the flow: one box per screen, in columns by how many links they are from an entry
-screen, with its tests and a dashed line for a link under a setting or role condition. 「빈틈만 펼치기」 opens only
-the way to boxes whose tests are missing or failing. A box can fold its branch, open its API calls or show its
-branch alone. The 「스토리」 picker draws one story's path on the flow.
+**Flow.** The page opens on the flow: one line per screen, in columns by how many links they are from an entry
+screen, with a square for the status of its tagged tests, the number of its API calls, and 「역할」 or 「설정」 when
+it opens only under a role or a setting; hovering shows what it needs and its untagged tests. A dashed line is a
+link under a setting or role condition. The bar above counts the drawn screens by status on buttons
+(「테스트 없음 4」, 「실패 5」 …); pressing one fades the other screens, and the search box does the same by route or
+component. With nothing picked, the right column lists the failing screens and then the ones without a tagged
+test. Pressing a screen keeps strong only the paths through it, marks the screens its links reach in other
+branches, and shows the list view's middle and right panes for it beside the drawing; 「선택 해제」 or Escape lets it
+go. The zoom buttons shrink, grow or fit the drawing. The 「스토리」 picker draws one story's path: only its screens
+and the screens above them stay, each with its step numbers, and a strip of its steps runs under the bar.
 
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
