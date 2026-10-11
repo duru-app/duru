@@ -121,12 +121,16 @@
   .guard { display: block; }
   .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
   .access > h2:first-child, .in-screen > h2:first-child { margin-top: 16px; }
-  .open-needs h3 { font-size: 13px; margin: 10px 0 4px; }
+  .open-needs h3, .cases h3 { font-size: 13px; margin: 10px 0 4px; }
   .open-needs .need, .reach-summary .need { display: flex; align-items: center; gap: 6px; font-weight: 600; }
   .open-needs .need .flag { color: var(--pending); font-weight: normal; }
   .open-needs .tips { font-size: 12px; margin-top: 4px; }
-  .open-needs .cases li { margin: 4px 0; }
-  .open-needs .cases .case { font-size: 13px; }
+  .cases li { margin: 4px 0; }
+  .cases .case { font-size: 13px; }
+  .case-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+  .case-kinds button { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; text-align: left; }
+  .case-kinds button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
+  .case-kinds button:disabled { opacity: .5; cursor: default; }
   #right { display: flex; flex-direction: column; padding: 0; overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere; }
   #right-info { flex: 1 1 auto; min-height: 120px; overflow: auto; padding: 12px 16px; }
   #right-dock { flex: none; padding: 10px 16px 12px; border-top: 1px solid var(--line); background: var(--panel); }
@@ -411,6 +415,7 @@
 const DEPTH_LABELS = { ui: 'UI/E2E', api: 'API', render: '렌더링만', code: '코드', data: '데이터', output: '산출물' };
 const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류' };
 const MARK_STATUS = { 'needs-more': '더 필요', missing: '없음', fine: '충분' };
+const CASE_STATUS = { needed: '필요', 'not-needed': '필요 없음' };
 const SERVER_STATUS = { match: '서버에 있음', 'method-mismatch': '메서드 불일치', none: '서버에 없음', unresolved: '판정 불가', unchecked: '대조 안 함' };
 const SERVER_STATE_TIP = '서버 API 목록(serverEndpoints)이 없거나 비어 있어 API 호출을 서버와 견주지 않았습니다. 목록을 채우고 duru rebuild 를 다시 하면 견줍니다.';
 const KIND_LABEL = { setting: '설정', role: '역할' };
@@ -437,7 +442,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -455,11 +460,11 @@ function fill(el, ...children) {
   el.replaceChildren(...children.flat().filter((c) => c != null && c !== false));
 }
 
-const keyOf = (t) => (t.story !== undefined ? `story(${t.story})` : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth].filter(Boolean).join(' '));
+const keyOf = (t) => (t.story !== undefined ? `story(${t.story})` : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`].filter(Boolean).join(' '));
 const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
 const targetName = (t) => (t.story !== undefined
   ? `스토리 ${state.data.stories.list.find((st) => st.id === t.story)?.name ?? t.story}`
-  : [t.node, t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`].filter(Boolean).join(' · '));
+  : [t.node, t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case] ?? t.case}`].filter(Boolean).join(' · '));
 const ownTests = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
 const testsOf = (id) => ownTests(state.data.tests.nodes, id);
 const importersOf = (id) => ownTests(state.data.tests.importers, id);
@@ -479,7 +484,7 @@ function othersSigned() {
   return [...marks.attached, ...marks.detached].flatMap((m) => m.history).concat(judged).some((record) => record.author !== author);
 }
 const signedAt = (record) => (othersSigned() ? `${record.author} · ${fmtDate(record.date)}` : fmtDate(record.date));
-const markChip = (m) => (m ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status]) : null);
+const markChip = (m) => (m ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status] ?? CASE_STATUS[m.current.status]) : null);
 const callOf = (id) => state.data.map.calls.find((c) => c.id === id);
 const nodeWord = (id) => (callOf(id) ? '호출' : '화면');
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];
@@ -672,7 +677,7 @@ function renderLeft() {
     }
     return renderUntaggedList();
   }
-  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined), (m) => m.key, h('p', { class: 'muted' }, '맵에서 사라진 노드에 달린 표시가 여기 남습니다.'));
+  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined), (m) => m.key, h('p', { class: 'muted' }, '맵에서 사라진 노드나 설정에서 빠진 경우 종류에 달린 표시가 여기 남습니다.'));
   const list = keptLeftList(left, tabs, 'screen-list');
   if (list) {
     const search = left.querySelector(':scope > .filters > input[type=search]');
@@ -2306,6 +2311,7 @@ function renderScreenRight(info, dock) {
   fill(info,
     call ? null : openSummary(s),
     call ? h('div', { class: 'target-id' }, h('div', { class: 'mono' }, call.id), h('strong', {}, targetLabel)) : null,
+    caseSection(call ?? s),
     call ? callDetails(call, s) : screenDetails(s),
   );
   fill(dock, markForm(state.target, 'draft', targetLabel));
@@ -2419,16 +2425,47 @@ const settingCaseName = (tag) => tag.slice('setting:'.length, tag.lastIndexOf('=
 const CASE_LABEL = {
   role: (c) => (c.opens ? `역할 ${c.tag.slice('role:'.length)} — 열림` : '여는 역할이 아닌 역할 — 막힘'),
   setting: (c) => `설정 ${settingCaseName(c.tag)} ${c.opens ? '맞춤 — 열림' : '맞추지 않음 — 막힘'}`,
+  case: (c) => state.data.caseKinds[c.tag.slice('case:'.length)],
 };
 
-function caseCounts(s) {
-  if (!s.cases.length) return null;
-  const tests = testsOf(s.id);
+function caseSection(node) {
+  const kinds = Object.entries(state.data.caseKinds);
+  if (!node.cases.length && !kinds.length) return null;
+  const tests = testsOf(node.id);
+  const picked = new Set(node.cases.map((c) => c.tag));
   return h('div', { class: 'cases' },
     h('h3', {}, '경우별 테스트'),
-    h('ul', { class: 'plain' }, s.cases.map((c) => h('li', { title: `@${c.tag}` },
+    node.cases.length ? h('ul', { class: 'plain' }, node.cases.map((c) => h('li', { title: `@${c.tag}` },
       h('div', { class: 'case' }, CASE_LABEL[c.kind](c)),
-      depthCounts(tests.filter((t) => t.cases?.includes(c.tag)), '테스트 없음')))));
+      depthCounts(tests.filter((t) => t.cases?.includes(c.tag)), '테스트 없음')))) : null,
+    kinds.length ? [
+      h('p', { class: 'muted' }, `이 ${nodeWord(node.id)}에서 시험할 경우 종류`),
+      h('div', { class: 'case-kinds' }, kinds.map(([kind, text]) => {
+        const on = picked.has(`case:${kind}`);
+        return h('button', { type: 'button', class: on ? 'on' : '', 'aria-pressed': String(on), title: `@case:${kind}`, disabled: state.caseSaving || state.bulkBusy, onclick: () => pickCase({ node: node.id, case: kind }, on ? 'not-needed' : 'needed') }, text);
+      })),
+    ] : null);
+}
+
+async function pickCase(target, status) {
+  if (state.caseSaving || state.bulkBusy) return;
+  state.error = null;
+  state.caseSaving = true;
+  renderRight();
+  try {
+    const res = await fetch('/api/marks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, status }) });
+    if (!res.ok) throw new Error(await res.text());
+  } catch (err) {
+    state.caseSaving = false;
+    return showSaveError(err.message, target);
+  }
+  try {
+    await load();
+  } catch (err) {
+    state.error = `「${targetName(target)}」 표시는 저장했지만 다시 읽지 못했습니다: ${err.message}`;
+  }
+  state.caseSaving = false;
+  render();
 }
 
 function openSummary(s) {
@@ -2437,7 +2474,6 @@ function openSummary(s) {
     h('h2', {}, '이 화면을 열려면'),
     s.access.restricted ? [...lines.map(needLine), bare ? bareLine(bare) : null] : h('p', { class: 'muted' }, '설정이나 역할 없이 열립니다.'),
     tips.length ? h('ul', { class: 'plain tips muted' }, tips.map((t) => h('li', {}, t))) : null,
-    caseCounts(s),
     s.access.route.length ? h('div', { class: 'route' }, h('h3', {}, '라우트에서 막는 조건'), s.access.route.map((g) => accessGuard(g, 'route'))) : null);
 }
 

@@ -517,6 +517,65 @@ test('a tagged Playwright test added for a listed screen shows on the page and i
   });
 });
 
+const CASE_KINDS = { boundary: '입력 경계: 빈 값, 최대 길이, 특수 문자', legacy: '옛 데이터: 이전 버전에서 만든 문서', retry: '실패와 복구' };
+const ARCHIVE = 'POST:/api/v1/archive/document';
+
+test('a kind of case a reviewer picked for a listed screen or call is a case of it in the task list with its tests, and gets an empty test while it has none', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    const specs = [
+      'checks the longest title @screen:/home#Home @case:boundary',
+      'retries a failed load @screen:/home#Home @case:retry',
+      `archives a document from the old version @call:${ARCHIVE} @case:legacy`,
+    ].map((title, i) => ({ title, file: 'cases.spec.ts', line: i + 1, tests: [{ status: 'expected', projectName: 'chromium' }] }));
+    fs.writeFileSync(path.join(copy, 'results/playwright/cases.json'), JSON.stringify({ suites: [{ title: 'cases.spec.ts', file: 'cases.spec.ts', specs }] }));
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    const pick = (node: string, kind: string, status = 'needed', at = '2026-10-04T01:00:00Z') => addMark(marksDir, { target: { node, case: kind }, status, author: 'a' }, new Date(at));
+    pick('/home#Home', 'legacy');
+    pick('/home#Home', 'boundary');
+    pick('/home#Home', 'retry');
+    pick('/home#Home', 'retry', 'not-needed', '2026-10-04T02:00:00Z');
+    pick(ARCHIVE, 'legacy');
+    pick(ARCHIVE, 'boundary');
+    pick('/lab#Lab', 'boundary');
+    const tasks = cli('tasks');
+    const section = (id: string) => tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0].split('\n# ')[0];
+
+    assert.match(tasks, /^# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks\n/);
+    assert.ok(tasks.includes('and the tag of each case under `cases` it checks: a role or setting case of a screen that opens only under one, or a kind of case a reviewer picked for the screen or call, tagged `@case:<kind>`)'));
+    assert.ok(tasks.includes('a screen or call gets one set for each open mark and one more for each case with no tests, and a story one set'));
+    assert.ok(!tasks.includes('\n## /lab#Lab\n'), 'a picked kind alone does not list a screen');
+    assert.ok(section('/home#Home').includes([
+      '- cases (a test of one carries its tag with `@screen:/home#Home`):',
+      `  - \`@case:boundary\` ${CASE_KINDS.boundary} — tests: ui pass 1`,
+      `  - \`@case:legacy\` ${CASE_KINDS.legacy} — no tests`,
+      '  - in no case — tests: ui pass 4, api pass 1, api pending 1, render fail 1, code pass 1, data fail 1',
+      '- calls:',
+    ].join('\n')));
+    assert.ok(section('/home#Home').endsWith(`${emptyTests(['@screen:/home#Home @depth:data', 'screen_home_Home_depth_data'], ['@screen:/home#Home @case:legacy', 'screen_home_Home_case_legacy'])}\n`));
+    assert.ok(section(ARCHIVE).includes([
+      '- server: not on the server',
+      `- cases (a test of one carries its tag with \`@call:${ARCHIVE}\`):`,
+      `  - \`@case:boundary\` ${CASE_KINDS.boundary} — no tests`,
+      `  - \`@case:legacy\` ${CASE_KINDS.legacy} — tests: ui pass 1`,
+      '  - in no case — no tests',
+      '- tests:',
+    ].join('\n')));
+    assert.ok(section(ARCHIVE).endsWith(`${emptyTests([`@call:${ARCHIVE} @depth:api`, 'call_POST_api_v1_archive_document_depth_api'], [`@call:${ARCHIVE} @case:boundary`, 'call_POST_api_v1_archive_document_case_boundary'])}\n`));
+  }, { caseKinds: CASE_KINDS });
+});
+
+test('with case kinds configured but none picked, the task list differs from one without them only in its intro', () => {
+  withFixtureCopy(({ cli }) => {
+    cli('rebuild');
+    const [head, intro, ...rest] = cli('tasks').split('\n\n');
+    const [expectedHead, expectedIntro, ...expectedRest] = EXPECTED.split('\n\n');
+    assert.equal(head, expectedHead);
+    assert.notEqual(intro, expectedIntro);
+    assert.deepEqual(rest, expectedRest);
+  }, { caseKinds: CASE_KINDS });
+});
+
 test('with no open marks the task list says so', () => {
   withFixtureCopy(({ copy, cli }) => {
     fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });

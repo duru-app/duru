@@ -64,7 +64,7 @@ const within = (text: string, indent: string) => text.replace(/\r\n?|\n/g, `\n${
 
 // 스토리 경로의 화면 태그는 메서드 이름에 넣지 않는다.
 function methodName(tags: string[], used: Set<string>) {
-  const base = tags.filter((t, i) => i === 0 || /^(option|depth|role|setting):/.test(t)).join('_').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  const base = tags.filter((t, i) => i === 0 || /^(option|depth|role|setting|case):/.test(t)).join('_').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
   let name = base;
   for (let n = 2; used.has(name); n++) name = `${base}_${n}`;
   used.add(name);
@@ -133,16 +133,18 @@ const CASE_TEXT: Record<string, (c: { opens: boolean }) => string> = {
 };
 const withCase = (tests: TestRow[] | undefined, tag: string) => (tests ?? []).filter((t) => t.cases?.includes(tag));
 
-function caseLines(screen: any, tests: TestRow[] | undefined) {
-  if (!screen.cases.length) return [];
+function caseLines(nodeTag: string, cases: any[], tests: TestRow[] | undefined, caseKinds: Record<string, string>) {
+  if (!cases.length) return [];
+  const text = (c: any) => (c.kind === 'case' ? caseKinds[c.tag.slice('case:'.length)] : CASE_TEXT[c.kind](c));
+  const tags = new Set(cases.map((c) => c.tag));
   return [
-    `- cases (a test of one carries its tag with \`@screen:${screen.id}\`):`,
-    ...screen.cases.map((c: any) => `  - \`@${c.tag}\` ${CASE_TEXT[c.kind](c)} — ${testSummary(withCase(tests, c.tag))}`),
-    `  - in no case — ${testSummary((tests ?? []).filter((t) => !t.cases?.length))}`,
+    `- cases (a test of one carries its tag with \`@${nodeTag}\`):`,
+    ...cases.map((c) => `  - \`@${c.tag}\` ${text(c)} — ${testSummary(withCase(tests, c.tag))}`),
+    `  - in no case — ${testSummary((tests ?? []).filter((t) => !t.cases?.some((tag) => tags.has(tag))))}`,
   ];
 }
 
-const untestedCases = (screen: any, tests: TestRow[] | undefined) => screen.cases.filter((c: any) => !withCase(tests, c.tag).length).map((c: any) => [`screen:${screen.id}`, c.tag]);
+const untestedCases = (nodeTag: string, cases: any[], tests: TestRow[] | undefined) => cases.filter((c) => !withCase(tests, c.tag).length).map((c) => [nodeTag, c.tag]);
 
 // 결과를 내주는 호출의 테스트는 세지 않는다.
 function resultOptionLines(map: any, tests: Record<string, TestRow[]>) {
@@ -343,11 +345,12 @@ export function taskList(config: any) {
   const relative = (p: string) => path.relative(config.configDir, p).split(path.sep).join('/');
   const formats = [...new Set<string>(config.tests.map((t: any) => t.format))];
   const resultLines = resultOptionLines(map, tests.nodes);
+  const hasKinds = Object.keys(config.caseKinds).length > 0;
 
   const out = [
     `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}`,
     '',
-    `A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and for a screen that opens only under a role or a setting the tag of each case under \`cases\` it checks), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. Under \`empty tests\`, a screen or call gets one set for each open mark, a screen one more for each case with no tests, and a story one set: an empty test for each test format in the config, with the tags already in its title and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
+    `A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and ${hasKinds ? 'the tag of each case under `cases` it checks: a role or setting case of a screen that opens only under one, or a kind of case a reviewer picked for the screen or call, tagged `@case:<kind>`' : 'for a screen that opens only under a role or a setting the tag of each case under `cases` it checks'}), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. Under \`empty tests\`, a screen or call gets one set for each open mark${hasKinds ? ' and one more for each case with no tests' : ', a screen one more for each case with no tests'}, and a story one set: an empty test for each test format in the config, with the tags already in its title and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
     '',
     `Source files are under \`${relative(config.srcRoot)}\`.`,
   ];
@@ -364,10 +367,10 @@ export function taskList(config: any) {
       `- component: ${s.componentFile}, route at ${s.routeFile}:${s.line}`,
       ...(appLinks[s.id] ? [`- app: ${appLinks[s.id]}`] : []),
       ...accessLines(s.access, restricted),
-      ...caseLines(s, tests.nodes[s.id]),
+      ...caseLines(`screen:${s.id}`, s.cases, tests.nodes[s.id], config.caseKinds),
       ...callLines(s, tests.nodes, resultLines),
       ...testLines(tests.nodes[s.id]),
-      ...emptyTestLines(formats, [...marks.map((m) => cellTags('screen', m.target as Cell)), ...untestedCases(s, tests.nodes[s.id])]),
+      ...emptyTestLines(formats, [...marks.map((m) => cellTags('screen', m.target as Cell)), ...untestedCases(`screen:${s.id}`, s.cases, tests.nodes[s.id])]),
     );
   }
   if (calls.length) out.push('', '# API calls');
@@ -382,9 +385,10 @@ export function taskList(config: any) {
       `- called from: ${c.screens.length ? c.screens.join(', ') : 'no screen'}`,
       `- server: ${serverText(c.server)}`,
       ...resultLines(c.id, ''),
+      ...caseLines(`call:${c.id}`, c.cases, tests.nodes[c.id], config.caseKinds),
       ...markedOptionLines(c, marks, tests.nodes[c.id]),
       ...testLines(tests.nodes[c.id]),
-      ...emptyTestLines(formats, marks.map((m) => cellTags('call', m.target as Cell))),
+      ...emptyTestLines(formats, [...marks.map((m) => cellTags('call', m.target as Cell)), ...untestedCases(`call:${c.id}`, c.cases, tests.nodes[c.id])]),
     );
   }
   if (storyMarks.length) out.push('', '# Stories', '', `Story files are in \`${relative(config.storiesDir)}\`.`);

@@ -120,6 +120,64 @@ test('a role tag on a test with no screen tag is reported', () => {
   });
 });
 
+const KINDS = { boundary: '입력 경계: 빈 값, 최대 길이, 특수 문자', legacy: '옛 데이터: 이전 버전에서 만든 문서' };
+const spec = (title: string, line: number) => ({ title, file: 'a.spec.ts', line, tests: [{ status: 'expected' }] });
+
+test('a @case tag of a configured kind attaches its test to that kind on every screen and call the test is tagged with, after the screen\'s role or setting cases', () => {
+  const access = { restricted: true, kinds: ['role'], roleValues: ['ADMIN'], links: [] };
+  const report = reportOf([{ title: 'a.spec.ts', specs: [
+    spec('x @screen:/report#Report @call:GET:/x @role:ADMIN @case:legacy @case:boundary', 1),
+    spec('y @call:GET:/x @case:legacy', 5),
+    spec('z @screen:/help#Help', 9),
+  ] }]);
+  withResults({ 'e2e.json': report }, (own) => {
+    const result = linkTests({ ...own, caseKinds: KINDS }, { screens: [{ id: '/report#Report', access }, { id: '/help#Help' }], calls: [{ id: 'GET:/x', options: [] }] });
+    assert.deepEqual(result.nodes['/report#Report'].map((t) => t.cases), [['role:ADMIN', 'case:boundary', 'case:legacy']]);
+    assert.deepEqual(result.nodes['GET:/x'].map((t) => t.cases), [['case:boundary', 'case:legacy'], ['case:legacy']]);
+    assert.ok(!('cases' in result.nodes['/help#Help'][0]));
+    assert.deepEqual(result.unknownTags, []);
+  });
+});
+
+test('a @case tag naming a kind the config does not list, or on a test with no screen or call tag, is reported, and its test still counts for its screen without a case; with no caseKinds the tag is ignored as before', () => {
+  const report = reportOf([{ title: 'a.spec.ts', specs: [
+    spec('x @screen:/help#Help @case:boundary', 1),
+    spec('y @screen:/help#Help @case:timing', 5),
+    spec('z @story:open-help @case:boundary', 9),
+  ] }]);
+  withResults({ 'e2e.json': report }, (own) => {
+    const configured = linkTests({ ...own, caseKinds: KINDS }, { screens: [{ id: '/help#Help' }] });
+    assert.deepEqual(configured.unknownTags.map((u) => `${u.tag} ${u.test.line}`), ['case:timing 5', 'case:boundary 9']);
+    assert.deepEqual(configured.nodes['/help#Help'].map((t) => t.cases ?? null), [['case:boundary'], null]);
+    const absent = linkTests(own, { screens: [{ id: '/help#Help' }] });
+    assert.deepEqual(absent.unknownTags, []);
+    assert.ok(absent.nodes['/help#Help'].every((t) => !('cases' in t)));
+  });
+});
+
+function withConfig<T>(raw: object, fn: (file: string) => T) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ srcRoot: 'src', ...raw }));
+    return fn(path.join(dir, 'config.json'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('case kinds keep the order the config writes them in, and a config without them has none', () => {
+  withConfig({ caseKinds: { legacy: KINDS.legacy, boundary: KINDS.boundary, 'retry.v2_x-1': '실패와 복구' } }, (file) => {
+    assert.deepEqual(Object.entries(loadConfig(file).caseKinds), [['legacy', KINDS.legacy], ['boundary', KINDS.boundary], ['retry.v2_x-1', '실패와 복구']]);
+  });
+  withConfig({}, (file) => assert.deepEqual(loadConfig(file).caseKinds, {}));
+});
+
+for (const caseKinds of [['boundary'], { 'two words': '경계' }, { 'a:b': '경계' }, { 'a=b': '경계' }, { '1st': '경계' }, { '': '경계' }, { boundary: '' }, { boundary: ' ' }, { boundary: '경계\n값' }, { boundary: 3 }]) {
+  test(`caseKinds ${JSON.stringify(caseKinds)} is refused with what it should be`, () => {
+    withConfig({ caseKinds }, (file) => assert.throws(() => loadConfig(file), (err: Error) => /^caseKinds must map each kind of test case .*"boundary"/.test(err.message) && err.message.endsWith(`not ${JSON.stringify(caseKinds)}`)));
+  });
+}
+
 test('a Playwright test tagged with a call ID attaches to that call node', () => {
   const id = 'PUT:/api/v1/document/{documentId}/name';
   assert.deepEqual(summary(id), ['chromium ui fail']);

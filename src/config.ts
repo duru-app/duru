@@ -8,6 +8,7 @@ const TEST_FORMATS = Object.keys(READERS);
 const NAME = '[A-Za-z_$][\\w$]*';
 const IDENTIFIER = new RegExp(`^${NAME}$`);
 const PACKAGE_NAME = /^(@[\w.-]+\/)?[\w.-]+$/;
+export const CASE_KIND = /^[A-Za-z][\w.-]*$/;
 const ROLE_MEMBER = new RegExp(`^(${NAME})(?:\\[(?:'([^']*)'|"([^"]*)")\\]|\\.(${NAME}))$`);
 
 export function parseRoleEntry(entry: unknown) {
@@ -154,6 +155,12 @@ export function loadConfig(configPath: string) {
   if (!isPlainObject(roleGuards) || !Object.entries(roleGuards).every(([guard, roles]) => isText(guard) && Array.isArray(roles) && roles.length > 0 && roles.every((r) => isText(r) && !/\s/.test(r)))) {
     throw new Error(`roleGuards must map role guards as in the map to the roles that pass them, such as { "menuPolicy.canAccessAdminRoutes": ["member:ADMINISTRATOR"] }, with no spaces in a role, not ${JSON.stringify(raw.roleGuards)}`);
   }
+  const caseKinds = raw.caseKinds ?? {};
+  if (!isPlainObject(caseKinds) || !Object.entries(caseKinds).every(([kind, text]) => CASE_KIND.test(kind) && isOneLine(text))) {
+    throw new Error('caseKinds must map each kind of test case a reviewer can pick for a screen or call to the description the review page shows for it, '
+      + 'with each kind starting with a letter followed by letters, digits, ".", "_" or "-", and each description on one line, '
+      + `such as { "boundary": "입력 경계: 빈 값, 최대 길이, 특수 문자" }, not ${JSON.stringify(raw.caseKinds)}`);
+  }
   const moves = raw.moves ?? [];
   const isMove = (m: any) => isPlainObject(m) && Object.keys(m).every((k) => MOVE_KEYS.includes(k)) && isRoutePath(m.from) && isRoutePath(m.to) && isOneLine(m.reason);
   if (!Array.isArray(moves) || !moves.every(isMove)) {
@@ -265,6 +272,7 @@ export function loadConfig(configPath: string) {
     tsconfig,
     aliases: tsconfig || packageRules.length ? [...packageRules, ...(tsconfig ? loadAliases(tsconfig) : [])] : null,
     roleIdentifiers: raw.roleIdentifiers ?? [],
+    caseKinds,
     roleGuards: Object.fromEntries(Object.entries<any>(roleGuards).map(([guard, roles]) => [guard, [...new Set(roles)].sort()])),
     calledApiModules,
     requestFunction,

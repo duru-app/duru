@@ -196,6 +196,40 @@ test('a mark on a story never shares its history with a mark on a call, whatever
   });
 });
 
+test('a case mark is written with only its node and kind in its target, in the node\'s folder, and the latest one of a node and kind is current, apart from the node\'s own marks', () => {
+  withMarksDir((dir: string) => {
+    const call = 'GET:/api/v1/document/list';
+    const picked = addMark(dir, { target: { case: 'boundary', node: '/home#Home' }, status: 'needed', author: 'a' }, new Date('2026-10-01T01:00:00Z'));
+    addMark(dir, { target: { node: '/home#Home', case: 'boundary' }, status: 'not-needed', author: 'b' }, new Date('2026-10-01T02:00:00Z'));
+    addMark(dir, { target: { node: '/home#Home', case: 'legacy' }, status: 'needed', author: 'a' });
+    addMark(dir, { target: { node: call, case: 'boundary' }, status: 'needed', author: 'a' });
+    addMark(dir, { target: { node: '/home#Home' }, status: 'missing', author: 'a' });
+    assert.deepEqual(picked.target, { node: '/home#Home', case: 'boundary' });
+    assert.deepEqual(Object.keys(picked.target), ['node', 'case']);
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['GET__api_v1_document_list', '_home#Home']);
+    const { attached, detached } = classifyMarks(loadMarks(dir), MAP, [], ['boundary', 'legacy']);
+    assert.deepEqual(detached, []);
+    assert.deepEqual(attached.map((m) => [m.key, m.current.status, m.history.length]), [
+      ['/home#Home', 'missing', 1],
+      ['/home#Home case:boundary', 'not-needed', 2],
+      ['/home#Home case:legacy', 'needed', 1],
+      [`${call} case:boundary`, 'needed', 1],
+    ]);
+  });
+});
+
+test('a case mark whose kind is gone from the config, or whose node is gone from the map, is detached', () => {
+  withMarksDir((dir: string) => {
+    addMark(dir, { target: { node: '/home#Home', case: 'boundary' }, status: 'needed', author: 'a' });
+    addMark(dir, { target: { node: '/home#Home', case: 'legacy' }, status: 'needed', author: 'a' });
+    addMark(dir, { target: { node: '/settings#Settings', case: 'boundary' }, status: 'needed', author: 'a' });
+    const { attached, detached } = classifyMarks(loadMarks(dir), MAP, [], ['boundary']);
+    assert.deepEqual(attached.map((m) => m.key), ['/home#Home case:boundary']);
+    assert.deepEqual(detached.map((m) => m.key), ['/home#Home case:legacy', '/settings#Settings case:boundary']);
+    assert.deepEqual(classifyMarks(loadMarks(dir), MAP).attached, []);
+  });
+});
+
 for (const [name, input] of [
   ['an unknown status', { target: { node: '/home#Home' }, status: 'done', author: 'a' }],
   ['an unknown depth', { target: { node: '/home#Home', depth: 'e2e' }, status: 'fine', author: 'a' }],
@@ -209,6 +243,15 @@ for (const [name, input] of [
   ['a story ID outside the ID rule', { target: { story: '../run-lab' }, status: 'fine', author: 'a' }],
   ['a story ID that is not text', { target: { story: 7 }, status: 'fine', author: 'a' }],
   ['no author', { target: { node: '/home#Home' }, status: 'fine', author: ' ' }],
+  ['a case status on a node', { target: { node: '/home#Home' }, status: 'needed', author: 'a' }],
+  ['a case status on a story', { target: { story: 'run-lab' }, status: 'not-needed', author: 'a' }],
+  ['a mark status on a case', { target: { node: '/home#Home', case: 'boundary' }, status: 'missing', author: 'a' }],
+  ['a case and a depth', { target: { node: '/home#Home', case: 'boundary', depth: 'ui' }, status: 'needed', author: 'a' }],
+  ['a case and an option', { target: { node: 'GET:/api/v1/document/list', case: 'boundary', option: { key: 'withHistory', value: true } }, status: 'needed', author: 'a' }],
+  ['a case and a story', { target: { story: 'run-lab', case: 'boundary' }, status: 'needed', author: 'a' }],
+  ['a case with no node', { target: { case: 'boundary' }, status: 'needed', author: 'a' }],
+  ['a case kind outside the name rule', { target: { node: '/home#Home', case: 'two words' }, status: 'needed', author: 'a' }],
+  ['a case kind that is not text', { target: { node: '/home#Home', case: 7 }, status: 'needed', author: 'a' }],
 ]) {
   test(`a mark with ${name} is refused and nothing is written`, () => {
     withMarksDir((dir: string) => {
