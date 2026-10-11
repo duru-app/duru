@@ -103,6 +103,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - A screen's API calls are the ones its code reaches, each with the file and line where it is written,
   while its `sourceFiles` hold whole files. A call written in one of those files is not the screen's when the
   screen does not use the function holding it, so do not write a test of that call for the screen.
+  A call whose file is a store class the screen gets from a React context hook (`useStores()`) can sit outside
+  `sourceFiles`: the screen calls the store method that sends it, so it is the screen's to test like any other.
 - A `component file not found` line in the `extract` summary names a screen whose component file duru could
   not find and the route it is written at. The map then holds only what the components wrapping that route
   bring: the screen's own source files, API calls, setting reads and links are missing.

@@ -1,6 +1,7 @@
 import _traverse from '@babel/traverse';
 import type { Binding, Node, NodePath, Scope } from '@babel/traverse';
 import type { ParseResult } from '@babel/parser';
+import type { TypedMembers } from './typed-members.ts';
 
 const traverse = (_traverse.default ?? _traverse) as typeof _traverse.default;
 
@@ -28,6 +29,9 @@ interface Edge {
 
 interface Region {
   edges: Edge[];
+  // 멤버 단위로 추적하는 클래스의 멤버를 참조할 수 있는 위치
+  uses: number[];
+  wholeClass?: true;
 }
 
 interface ExportEntry {
@@ -48,6 +52,8 @@ interface Analysis {
   moduleLevel: number[];
   localEdge: (name: string) => Edge | null;
   aliased: (name: string) => string;
+  // 클래스 이름이 적힌 위치 → 멤버 이름 → 그 멤버의 구역
+  memberRegions: Map<number, Map<string, number[]>>;
 }
 
 interface AstNode {
@@ -69,12 +75,16 @@ interface Walk {
   span?: Span;
   whole?: string | null;
   load?: string | null;
+  // quiet 이면 loaded 인 파일의 멤버만 추적하고, 다른 파일의 멤버는 missed 에도 넣지 않는다.
+  member?: { at: number; name: string; quiet?: boolean };
+  self?: string | null;
 }
 
 export interface NameFollowerOptions<Site> {
   parse: (file: string) => { ast: ParseResult };
   resolve: (from: string, spec: string) => string | null;
   sitesOf: (file: string) => { start: number; site: Site }[];
+  members?: TypedMembers | null;
 }
 
 type CanEnter = (file: string | null) => boolean;
@@ -154,7 +164,8 @@ function loadTimeSpans(node: Node | null): Span[] {
 
 // 파일 맨 위의 선언마다 「구역」을 하나 두고, 구역 안에서 쓰는 이름이 가리키는 구역이나 다른 파일의 이름을 모은다.
 // 선언이 아닌 맨 위 문장과, 선언이나 `X.y = …` 안에서 파일을 불러올 때 실행되는 호출은 늘 닿는 구역이 된다. `X.y = …` 의 나머지는 X 의 구역에 붙인다.
-function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], resolve: NameFollowerOptions<unknown>['resolve']): Analysis {
+// 멤버 단위로 추적하는 클래스는 멤버마다 이름부터 끝까지를 구역 하나로 떼어 두고, 그 멤버를 참조하는 곳에서만 그 구역에 닿는다.
+function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], resolve: NameFollowerOptions<unknown>['resolve'], members: TypedMembers | null): Analysis {
   const { ast } = parse(file);
   const program = ast.program;
   const regions: Region[] = [];
@@ -171,7 +182,7 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
     let at = start;
     for (const [s, e] of loadTimeSpans(runs)) {
       if (loadRegion === null) {
-        regions.push({ edges: [] });
+        regions.push({ edges: [], uses: [] });
         loadRegion = regions.length - 1;
         moduleLevel.push(loadRegion);
       }
@@ -182,9 +193,31 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
     if (at < end) ranges.push([at, end, idx]);
   };
   const newRegion = (node: Node, runs: Node | null = null) => {
-    regions.push({ edges: [] });
+    regions.push({ edges: [], uses: [] });
     place(node.start!, node.end!, regions.length - 1, runs);
     return regions.length - 1;
+  };
+  const followed = members?.classesIn(file);
+  const memberRegions = new Map<number, Map<string, number[]>>();
+  const cuts: Range[] = [];
+  const splitMembers = (node: Node, owner: number) => {
+    if (node.type !== 'ClassDeclaration' || !node.id) return owner;
+    const names = followed?.get(node.id.start!);
+    if (!names) {
+      regions[owner].wholeClass = true;
+      return owner;
+    }
+    const byName = new Map<string, number[]>();
+    for (const member of node.body.body) {
+      if ((member.type !== 'ClassMethod' && member.type !== 'ClassProperty') || member.static || member.computed) continue;
+      const name = memberKey(member.key);
+      if (name === null || !names.has(name)) continue;
+      regions.push({ edges: [], uses: [] });
+      cuts.push([member.key.start!, member.end!, regions.length - 1]);
+      byName.set(name, [...(byName.get(name) ?? []), regions.length - 1]);
+    }
+    memberRegions.set(node.id.start!, byName);
+    return owner;
   };
   const declare = (decl: Node & { id?: Node | null }, exported: boolean) => {
     if (decl.type === 'VariableDeclaration') {
@@ -195,7 +228,7 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
       }
       return;
     }
-    newRegion(decl, decl);
+    splitMembers(decl, newRegion(decl, decl));
     if (exported && decl.id?.type === 'Identifier') exports.set(decl.id.name, { local: decl.id.name });
   };
   const attachments: ExpressionStatement[] = [];
@@ -225,7 +258,7 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
         }
         break;
       case 'ExportDefaultDeclaration':
-        exports.set('default', { region: newRegion(stmt, stmt.declaration), ...(stmt.declaration.type === 'Identifier' && { local: stmt.declaration.name }) });
+        exports.set('default', { region: splitMembers(stmt.declaration, newRegion(stmt, stmt.declaration)), ...(stmt.declaration.type === 'Identifier' && { local: stmt.declaration.name }) });
         break;
       case 'VariableDeclaration':
       case 'FunctionDeclaration':
@@ -244,6 +277,12 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
       default:
         moduleLevel.push(newRegion(stmt));
     }
+  }
+  for (const [start, end, idx] of cuts) {
+    const at = ranges.findIndex(([s, e]) => s <= start && end <= e);
+    if (at < 0) continue;
+    const [s, e, owner] = ranges[at];
+    ranges.splice(at, 1, ...([[s, start, owner], [start, end, idx], [end, e, owner]] as Range[]).filter(([a, b]) => a < b));
   }
   ranges.sort((a, b) => a[0] - b[0]);
   const regionAt = (pos: number): number | null => {
@@ -291,6 +330,19 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
   const edgeOf = (binding: Binding): Edge => (binding.kind === 'module' ? importOf(binding) : { region: regionAt(binding.identifier.start!) });
   const refs: Analysis['refs'] = [];
 
+  const use = (at: number, name: string | null) => {
+    if (name === null || (name !== '*' && !members!.names.has(name))) return;
+    const region = regionAt(at);
+    if (region !== null) regions[region].uses.push(at);
+  };
+  const readsMember = (p: NodePath<Extract<Node, { type: 'MemberExpression' | 'OptionalMemberExpression' }>>) => {
+    if (!members) return;
+    const { property, computed } = p.node;
+    const written = p.parentPath.isAssignmentExpression({ operator: '=' }) && p.key === 'left';
+    // `store[key]` 처럼 이름을 계산해 참조하면 어느 멤버든 될 수 있다. 그 자리에 값을 대입하기만 하면 실행되는 멤버는 없다.
+    const name = computed && property.type !== 'StringLiteral' ? (property.type === 'NumericLiteral' || written ? null : '*') : memberKey(property);
+    use(property.start!, name);
+  };
   traverse(ast, {
     'Identifier|JSXIdentifier'(p) {
       if (!p.isReferencedIdentifier() || (p.parentPath.isJSXMemberExpression() && p.key === 'property')) return;
@@ -315,6 +367,12 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
       regions[at].edges.push({ whole: resolve(file, arg.value) });
       refs.push({ pos: p.node.start!, edge: { whole: resolve(file, arg.value) } });
     },
+    MemberExpression: readsMember,
+    OptionalMemberExpression: readsMember,
+    ObjectPattern(p) {
+      if (!members) return;
+      for (const prop of p.node.properties) if (prop.type === 'ObjectProperty' && !prop.computed) use(prop.key.start!, memberKey(prop.key));
+    },
   });
   refs.sort((a, b) => a.pos - b.pos);
 
@@ -330,8 +388,10 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
     }
     return name;
   };
-  return { regions, refs, regionAt, exports, stars, sideEffects, loads, moduleLevel, localEdge, aliased };
+  return { regions, refs, regionAt, exports, stars, sideEffects, loads, moduleLevel, localEdge, aliased, memberRegions };
 }
+
+const memberKey = (key: Node): string | null => (key.type === 'Identifier' ? key.name : key.type === 'StringLiteral' ? key.value : null);
 
 function declaredNames(id: Node): string[] {
   const found: string[] = [];
@@ -348,11 +408,11 @@ function declaredNames(id: Node): string[] {
 }
 
 // parse(file) 는 { ast }, resolve(from, spec) 는 파일 경로나 null, sitesOf(file) 는 그 파일의 호출 자리 [{ start, site }] 를 준다.
-export function nameFollower<Site>({ parse, resolve, sitesOf }: NameFollowerOptions<Site>) {
+export function nameFollower<Site>({ parse, resolve, sitesOf, members = null }: NameFollowerOptions<Site>) {
   const analyses = new Map<string, Analysis>();
   const analysis = (file: string | null | undefined): Analysis | null => {
     if (!file || !isScript(file)) return null;
-    if (!analyses.has(file)) analyses.set(file, analyze(file, parse, resolve));
+    if (!analyses.has(file)) analyses.set(file, analyze(file, parse, resolve, members));
     return analyses.get(file)!;
   };
   const unreadable = new Set<string>();
@@ -375,7 +435,7 @@ export function nameFollower<Site>({ parse, resolve, sitesOf }: NameFollowerOpti
   }
 
   // starts 의 name 이 null 이면 파일 전체에서, span 이 있으면 그 [시작, 끝) 안의 코드에서 시작한다.
-  function reach(starts: ({ file: string; name: string | null } | { file: string; span: Span })[], canEnter: CanEnter) {
+  function reach(starts: ({ file: string; name: string | null } | { file: string; span: Span })[], canEnter: CanEnter, { missed, loaded = () => true }: { missed?: Set<string>; loaded?: (file: string) => boolean } = {}) {
     const seen = new Set<string>();
     const whole = new Set<string | null>();
     const visited = new Map<string, Set<number>>();
@@ -387,6 +447,7 @@ export function nameFollower<Site>({ parse, resolve, sitesOf }: NameFollowerOpti
       if (!a) return null;
       if (!visited.has(file)) {
         visited.set(file, new Set());
+        if (!loaded(file)) return a;
         for (const idx of a.moduleLevel) stack.push({ file, region: idx });
         for (const f of a.sideEffects) stack.push({ whole: f });
         for (const f of a.loads) stack.push({ load: f });
@@ -402,8 +463,22 @@ export function nameFollower<Site>({ parse, resolve, sitesOf }: NameFollowerOpti
     };
     while (stack.length) {
       const item = stack.pop()!;
+      // 멤버 본문에서 this 가 가리키는 클래스
+      const self = item.self ?? null;
       if (item.load !== undefined) {
         enter(item.load);
+        continue;
+      }
+      if (item.member !== undefined) {
+        const key = `${item.file}\0.${item.member.at}.${item.member.name}\0${self}\0${Boolean(item.member.quiet)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (item.member.quiet && !(canEnter(item.file!) && loaded(item.file!))) continue;
+        if (!canEnter(item.file!)) missed?.add(item.file!);
+        const byName = enter(item.file)?.memberRegions.get(item.member.at);
+        if (!byName) continue;
+        const reached = item.member.name === '*' ? [...byName.values()].flat() : (byName.get(item.member.name) ?? []);
+        for (const region of reached) stack.push({ file: item.file, region, self });
         continue;
       }
       if (item.whole !== undefined) {
@@ -430,13 +505,17 @@ export function nameFollower<Site>({ parse, resolve, sitesOf }: NameFollowerOpti
         continue;
       }
       if (item.region !== undefined) {
-        const key = `${item.file}\0#${item.region}`;
+        const key = `${item.file}\0#${item.region}\0${self}`;
         if (seen.has(key)) continue;
         seen.add(key);
         const a = enter(item.file);
         if (!a) continue;
         visited.get(item.file!)!.add(item.region);
-        for (const edge of a.regions[item.region].edges) follow(item.file, edge);
+        const region = a.regions[item.region];
+        for (const edge of region.edges) follow(item.file, edge);
+        for (const at of region.uses) {
+          for (const t of members!.targets(item.file!, at, self)) stack.push({ file: t.file, member: { at: t.at, name: t.member, quiet: region.wholeClass || t.quiet }, self: t.self });
+        }
         continue;
       }
       const key = `${item.file}\0${item.name}`;
@@ -460,11 +539,12 @@ export function nameFollower<Site>({ parse, resolve, sitesOf }: NameFollowerOpti
     const sites = new Set<Site>();
     for (const [file, regions] of visited) {
       const a = analysis(file)!;
-      const always = new Set(a.moduleLevel);
+      const runs = loaded(file);
+      const always = new Set(runs ? a.moduleLevel : []);
       const inSpan = (start: number) => (spans.get(file) ?? []).some(([from, to]) => start >= from && start < to);
       for (const { start, site } of sitesOf(file)) {
         const at = a.regionAt(start);
-        if (whole.has(file) || at === null || always.has(at) || regions.has(at) || inSpan(start)) sites.add(site);
+        if (whole.has(file) || (at === null && runs) || always.has(at!) || regions.has(at!) || inSpan(start)) sites.add(site);
       }
     }
     return sites;

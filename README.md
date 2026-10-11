@@ -154,6 +154,12 @@ client with example results and a config to start from.
   In an app that uses redux-saga, a request a saga sends is a call of each screen that dispatches an action the
   saga waits for, among the sagas the app runs with a `createSagaMiddleware()` result. No key turns this on. The
   requests are those of the API functions and of `requestFunction` that the saga reaches, as a screen's are.
+
+  A request sent by a method of a store the screens get from a React context hook, such as a MobX store from
+  `useStores()`, is a call of the screens that call that method. duru reads which method is called from the
+  TypeScript types of the source, with the options of `tsconfig` when the config names one. A screen that gets the
+  store only from the hook gets those calls too, though the store files are not in its `sourceFiles` and their
+  setting reads and links are not on the screen.
 - `sourcePackages` — packages of the same repository whose source duru reads like the app's own (optional),
   each package name with its source folder as a path from the config file. An import of a package that is not
   listed here runs as a value that does nothing, as an outside package does. For a client whose API class lives in
@@ -299,9 +305,10 @@ client with example results and a config to start from.
 usable as a test tag. It lists its route file and line, its component file, its `sourceFiles`, the API calls it
 reaches, the settings it reads, and its links to other screens with the conditions guarding them. The settings
 and links come from every file in `sourceFiles`. The API calls are only those the screen's code reaches, so a file
-in `sourceFiles` can hold calls the screen does not list; each call names the file and line where it is written.
-A call a saga makes for the screen names the line in the saga and lists under `actions` each action type that
-leads to it, with the places the screen dispatches that type (`dispatchedAt`).
+in `sourceFiles` can hold calls the screen does not list, and a call sent by a method of a store the screen gets
+from a React context hook can be written in a file outside them; each call names the file and line where it is
+written. A call a saga makes for the screen names the line in the saga and lists under `actions` each action type
+that leads to it, with the places the screen dispatches that type (`dispatchedAt`).
 A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
 inside it.
 

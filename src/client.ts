@@ -16,6 +16,7 @@ import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
 import { screenRequestReader } from './screen-requests.ts';
+import { typedMembers } from './typed-members.ts';
 import { settingNeeds } from './setting-needs.ts';
 import { addCallDefaults, findSettingsCalls, settingsResultFinder } from './settings-functions.ts';
 
@@ -692,14 +693,11 @@ export async function extractClient(config: any) {
   };
   const siteStart = new WeakMap<FollowedSite, number>();
   const siteFile = new WeakMap<ApiCallSite, string>();
-  const follower = nameFollower<FollowedSite>({
-    parse,
-    resolve: imports.resolve,
-    sitesOf: (file) => {
-      const { apiCalls, dispatches, watchers } = fileFacts(file);
-      return [...apiCalls, ...dispatches, ...watchers].map((site) => ({ start: siteStart.get(site)!, site }));
-    },
-  });
+  const sitesOf = (file: string) => {
+    const { apiCalls, dispatches, watchers } = fileFacts(file);
+    return [...apiCalls, ...dispatches, ...watchers].map((site) => ({ start: siteStart.get(site)!, site }));
+  };
+  const follower = nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf });
   const sagas = sagaReader({ parse, resolve: imports.resolve, declaration: follower.declaration });
   const origins = new Map<string, Origin | null>();
   const calledOrigin = (file: string | null | undefined, name: string) => {
@@ -1092,27 +1090,45 @@ export async function extractClient(config: any) {
     return handled.get(key)!;
   };
 
-  const screens = extracted.map(({ wrapperFiles, ...s }) => {
+  const sourced = extracted.map(({ wrapperFiles, ...s }) => {
     const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
     const isOtherScreen = (f: string) => screenFiles.has(f) && !entryFiles.includes(f);
-    const files = [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))];
+    return { s, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))] };
+  });
+  const members = typedMembers(config.tsconfig, [...new Set(sourced.flatMap((x) => x.files))], imports.resolve);
+  const screenFollower = members ? nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf, members }) : follower;
+  const screens = sourced.map(({ s, entryFiles, isOtherScreen, files }) => {
     const inSources = new Set<string | null>(files);
+    // 화면이 import 하지 않고 context 훅에서 받은 스토어를 거쳐서만 닿는 파일. 화면의 소스는 아니지만, 화면이 호출한 스토어 메서드를 추적할 때 들어간다.
+    const received = new Set<string>();
+    const canEnter = (f: string | null) => inSources.has(f) || received.has(f!);
+    const loaded = (f: string) => inSources.has(f);
     const starts = entryFiles.map((file) => ({ file, name: null }));
-    const reached = follower.reach(starts, (f) => inSources.has(f));
+    let reached: Set<FollowedSite>;
+    for (;;) {
+      const missed = new Set<string>();
+      reached = screenFollower.reach(starts, canEnter, { missed, loaded });
+      const more = [...missed].flatMap((f) => closureOf(f, isOtherScreen)).filter((f) => !canEnter(f));
+      if (!more.length) break;
+      for (const f of more) received.add(f);
+    }
     // 요청 함수의 파일을 거쳐야만 이어지는 요청은 그 함수가 받은 주소로 보내는 것이라, 화면 코드에서 나가는 요청이 아니다.
-    const outsideRequestFunction = inSources.has(requestFile) ? follower.reach(starts, (f) => inSources.has(f) && f !== requestFile) : reached;
+    const outsideRequestFunction = canEnter(requestFile) ? screenFollower.reach(starts, (f) => canEnter(f) && f !== requestFile, { loaded }) : reached;
     const apiCalls: (ApiCallSite & { file: string | null })[] = [];
     const own = new Set<ApiCallSite>();
     const dispatched = new Map<string, { type: ActionType; at: Set<string> }>();
     const settingReads: (SettingRead & { file: string | null })[] = [];
     const links: (Omit<RouteRef, 'tail'> & { to: unknown; tail?: string; file: string | null })[] = [];
-    for (const f of files) {
-      const facts = fileFacts(f);
+    const takeCalls = (f: string, facts: Facts) => {
       for (const c of facts.apiCalls) {
         if (!reached.has(c) || !sends(c, outsideRequestFunction)) continue;
         own.add(c);
         apiCalls.push({ ...c, file: rel(f) });
       }
+    };
+    for (const f of files) {
+      const facts = fileFacts(f);
+      takeCalls(f, facts);
       for (const d of watchesOf.size ? facts.dispatches : []) {
         if (!reached.has(d)) continue;
         for (const type of d.types()) {
@@ -1126,6 +1142,8 @@ export async function extractClient(config: any) {
         links.push(typeof value === 'string' && tail ? { ...r, to: value + tail, tail, file: rel(f) } : { ...r, to: value ?? UNKNOWN, file: rel(f) });
       }
     }
+    // 훅으로만 받은 스토어 파일의 dispatch 는 읽지 않는다.
+    for (const f of received) takeCalls(f, fileFacts(f));
     const bySaga = new Map<ApiCallSite, NonNullable<ApiCallSite['actions']>>();
     for (const { type, at } of dispatched.values()) {
       const sent = new Set((watchesOf.get(type.key) ?? []).flatMap((w) => sentByHandler(w.handler)));
