@@ -83,6 +83,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   the app that other requests go through, ask the user to name that function in `requestFunction`. A line with a
   whole address on another host after `only` is a request duru does not take for one of the app's server; when
   that host is the app's server, ask the user to give it in `app.server`.
+- In an app that uses redux-saga, a call with `actions` is sent by a saga, written at the line it names in the
+  saga, and comes to the screen because the screen dispatches one of those action types at the places under
+  `dispatchedAt`. A test of that call for the screen does what the code at a `dispatchedAt` place answers to.
+  When the summary says `redux-saga is imported, but no run of a createSagaMiddleware() result was found`, no
+  saga request is on any screen: tell the user that the screens' requests sent through sagas are missing.
 - On/off options read from request body types: with `tsconfig`, `bodyArgKeys` (such as `["body"]`) and
   `requestFunction.body` (such as `"0.body"`), a call gets an option for each true/false field of the body its API
   method sends, named by the field's path in the body. A `body type <name>: <field> goes with <other field>` line names a field that

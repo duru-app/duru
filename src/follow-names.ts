@@ -39,6 +39,7 @@ interface ExportEntry {
 
 interface Analysis {
   regions: Region[];
+  refs: { pos: number; edge: Edge }[];
   regionAt: (pos: number) => number | null;
   exports: Map<string, ExportEntry>;
   stars: (string | null)[];
@@ -65,6 +66,7 @@ interface Walk {
   file?: string | null;
   name?: string | null;
   region?: number;
+  span?: Span;
   whole?: string | null;
   load?: string | null;
 }
@@ -287,6 +289,7 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
     return { file: target, name: spec.type === 'ImportDefaultSpecifier' ? 'default' : exportedName(spec.imported) };
   };
   const edgeOf = (binding: Binding): Edge => (binding.kind === 'module' ? importOf(binding) : { region: regionAt(binding.identifier.start!) });
+  const refs: Analysis['refs'] = [];
 
   traverse(ast, {
     'Identifier|JSXIdentifier'(p) {
@@ -302,14 +305,18 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
         edge = member ? { file: edge.file, name: exportedName(parent.node.property as Named) } : { whole: edge.file };
       }
       regions[at].edges.push(edge);
+      refs.push({ pos: p.node.start!, edge });
     },
     CallExpression(p) {
       const arg = p.node.arguments[0];
       if (p.node.callee.type !== 'Import' || arg?.type !== 'StringLiteral') return;
       const at = regionAt(p.node.start!);
-      if (at !== null) regions[at].edges.push({ whole: resolve(file, arg.value) });
+      if (at === null) return;
+      regions[at].edges.push({ whole: resolve(file, arg.value) });
+      refs.push({ pos: p.node.start!, edge: { whole: resolve(file, arg.value) } });
     },
   });
+  refs.sort((a, b) => a.pos - b.pos);
 
   const localEdge = (name: string) => {
     const binding = programScope.getBinding(name);
@@ -323,7 +330,7 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
     }
     return name;
   };
-  return { regions, regionAt, exports, stars, sideEffects, loads, moduleLevel, localEdge, aliased };
+  return { regions, refs, regionAt, exports, stars, sideEffects, loads, moduleLevel, localEdge, aliased };
 }
 
 function declaredNames(id: Node): string[] {
@@ -367,12 +374,13 @@ export function nameFollower<Site>({ parse, resolve, sitesOf }: NameFollowerOpti
     return a.exports.has(name) || a.stars.some((f) => exportsName(f, name, canEnter, seen));
   }
 
-  // starts 는 [{ file, name }] 이고 name 이 null 이면 파일 전체에서 시작한다. canEnter 가 거짓인 파일에는 들어가지 않는다.
-  function reach(starts: { file: string; name: string | null }[], canEnter: CanEnter) {
+  // starts 의 name 이 null 이면 파일 전체에서, span 이 있으면 그 [시작, 끝) 안의 코드에서 시작한다.
+  function reach(starts: ({ file: string; name: string | null } | { file: string; span: Span })[], canEnter: CanEnter) {
     const seen = new Set<string>();
     const whole = new Set<string | null>();
     const visited = new Map<string, Set<number>>();
-    const stack: Walk[] = starts.map(({ file, name }) => (name === null ? { whole: file } : { file, name }));
+    const spans = new Map<string, Span[]>();
+    const stack: Walk[] = starts.map((s) => ('span' in s ? s : s.name === null ? { whole: s.file } : { file: s.file, name: s.name }));
     const enter = (file: string | null | undefined) => {
       if (!file || !canEnter(file)) return null;
       const a = analysis(file);
@@ -410,6 +418,17 @@ export function nameFollower<Site>({ parse, resolve, sitesOf }: NameFollowerOpti
         for (const f of a.stars) stack.push({ whole: f });
         continue;
       }
+      if (item.span !== undefined) {
+        const [from, to] = item.span;
+        const key = `${item.file}\0@${from}-${to}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const a = enter(item.file);
+        if (!a) continue;
+        spans.set(item.file!, [...(spans.get(item.file!) ?? []), item.span]);
+        for (const { pos, edge } of a.refs) if (pos >= from && pos < to) follow(item.file, edge);
+        continue;
+      }
       if (item.region !== undefined) {
         const key = `${item.file}\0#${item.region}`;
         if (seen.has(key)) continue;
@@ -442,9 +461,10 @@ export function nameFollower<Site>({ parse, resolve, sitesOf }: NameFollowerOpti
     for (const [file, regions] of visited) {
       const a = analysis(file)!;
       const always = new Set(a.moduleLevel);
+      const inSpan = (start: number) => (spans.get(file) ?? []).some(([from, to]) => start >= from && start < to);
       for (const { start, site } of sitesOf(file)) {
         const at = a.regionAt(start);
-        if (whole.has(file) || at === null || always.has(at) || regions.has(at)) sites.add(site);
+        if (whole.has(file) || at === null || always.has(at) || regions.has(at) || inSpan(start)) sites.add(site);
       }
     }
     return sites;
@@ -472,5 +492,27 @@ export function nameFollower<Site>({ parse, resolve, sitesOf }: NameFollowerOpti
     return null;
   }
 
-  return { reach, origin };
+  // re-export 하는 파일과 import 를 거쳐, 그 이름을 자기 파일에서 선언하는 곳의 { file, name } 을 준다. name 이 default 면 default export 한 값이다.
+  function declaration(file: string | null | undefined, name: string, seen = new Set<string>()): Origin | null {
+    const a = file ? readable(file) : null;
+    const key = `${file}\0${name}`;
+    if (!a || seen.has(key)) return null;
+    seen.add(key);
+    const exp = a.exports.get(name);
+    if (exp?.from !== undefined) return exp.name === '*' ? null : declaration(exp.from, exp.name!, seen);
+    if (exp?.local !== undefined) {
+      const local = a.aliased(exp.local);
+      const edge = a.localEdge(local);
+      if (edge?.file !== undefined) return edge.name === '*' ? null : declaration(edge.file, edge.name!, seen);
+      return edge ? { file: file!, name: local } : null;
+    }
+    if (exp) return { file: file!, name };
+    for (const f of a.stars) {
+      const found = declaration(f, name, seen);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  return { reach, origin, declaration };
 }

@@ -74,6 +74,11 @@ if (command === 'tasks') {
   const direct = new Map<string, any>(map.screens.flatMap((s: any) => s.apiCalls.filter((c: any) => c.direct).map((c: any) => [`${c.file}\n${c.line}\n${c.fn}\n${c.endpoints[0].method} ${c.endpoints[0].url}`, c])));
   if (direct.size) console.log(`requests and navigations written in screen sources ${direct.size} | address not read ${map.unreadRequests?.length ?? 0}`);
   for (const r of map.unreadRequests ?? []) console.log(`  request ${r.fn} ← ${r.file}:${r.line}: address not read${r.url === null ? '' : `, only ${r.url}`}`);
+  if (map.sagas && !map.sagas.runs.length) console.log('redux-saga is imported, but no run of a createSagaMiddleware() result was found, so no request of a saga is put on a screen');
+  else if (map.sagas) {
+    const bySaga = new Set(map.screens.flatMap((s: any) => s.apiCalls.filter((c: any) => c.actions).map((c: any) => `${c.file}\n${c.line}\n${c.fn}`)));
+    console.log(`redux-saga runs from ${map.sagas.runs.join(', ')} | watchers ${map.sagas.watchers} | requests of sagas on screens ${bySaga.size}`);
+  }
   for (const s of map.outsideStandIns ?? []) console.log(`  calledApiModules ran ${s.spec} as a stand-in, though it is ${s.file} outside srcRoot, imported by ${s.importedBy.join(', ')}`);
   for (const n of map.bodyTypeNotices ?? []) {
     console.log(`  body type ${n.method}: ${n.field ? `${n.field} goes with ${n.beside}, so it is not taken as an on/off option` : n.reason}`);

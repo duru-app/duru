@@ -37,7 +37,13 @@ function follow(files: Record<string, string>) {
   const follower = nameFollower({ parse, resolve, sitesOf });
   const at = (file: string) => path.join(dir, file);
   const reached = (file: string, name: string | null = null, closed: string[] = []) => [...follower.reach([{ file: at(file), name }], (f) => !closed.map(at).includes(f!))].sort();
-  return { at, reached, origin: (file: string, name: string, end: string) => follower.origin(at(file), name, (f) => f === at(end)) };
+  const reachedFrom = (file: string, text: string) => {
+    const src = fs.readFileSync(at(file), 'utf8');
+    const start = src.indexOf(text);
+    return [...follower.reach([{ file: at(file), span: [start, start + text.length] }], () => true)].sort();
+  };
+  const declaration = (file: string, name: string) => follower.declaration(at(file), name);
+  return { at, reached, reachedFrom, declaration, origin: (file: string, name: string, end: string) => follower.origin(at(file), name, (f) => f === at(end)) };
 }
 
 test('a name reaches its declaration, the declarations it uses, top-level statements of its file and assignments to its members, and nothing else', () => {
@@ -213,4 +219,32 @@ test('calls in a destructuring default, a static class member, a computed member
   ];
   assert.deepEqual(reached('screen.tsx'), onImport);
   assert.deepEqual(reached('foo-screen.tsx'), [...onImport, 'assign-fn'].sort());
+});
+
+test('a stretch of code reaches what it calls and names, and the calls written inside it, but not the rest of its declaration', () => {
+  const { reachedFrom } = follow({
+    'sagas.ts': "export function* load() { send('load'); }\nexport function* save() { send('save'); }\n",
+    'root.ts': [
+      "import { load, save } from './sagas';",
+      'export function* root() {',
+      '  watch(load);',
+      "  watch(function* () { send('inline'); });",
+      '  watch(save);',
+      '}',
+      '',
+    ].join('\n'),
+  });
+  assert.deepEqual(reachedFrom('root.ts', 'watch(load)'), ['load']);
+  assert.deepEqual(reachedFrom('root.ts', "function* () { send('inline'); }"), ['inline']);
+});
+
+test('the declaration of a name is found through re-exports, export * and a constant holding an import, and is null for a name nothing declares', () => {
+  const { at, declaration } = follow({
+    'types.ts': 'export const Types = { LOAD: "LOAD" };\nexport default { SAVE: "SAVE" };\n',
+    'barrel.ts': "export * from './types';\nexport { default as Defaults } from './types';\nimport { Types } from './types';\nconst Same = Types;\nexport { Same };\n",
+  });
+  assert.deepEqual(declaration('barrel.ts', 'Types'), { file: at('types.ts'), name: 'Types' });
+  assert.deepEqual(declaration('barrel.ts', 'Defaults'), { file: at('types.ts'), name: 'default' });
+  assert.deepEqual(declaration('barrel.ts', 'Same'), { file: at('types.ts'), name: 'Types' });
+  assert.equal(declaration('barrel.ts', 'Missing'), null);
 });
