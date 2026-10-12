@@ -1319,6 +1319,45 @@ through is refused rather than read with what it has: an into-sign 1.5.0 map bui
 the current one showed 12 screens with changed conditions and 32 with changed calls, all from duru reading more and
 none from the client.
 
+**A comment can be about one part of a screen or call, kept as the screen or call target plus
+`part: { kind, key }`; the first kind is one test row, named by the result file, test file and title without tags.**
+Driver's decision in #226. The key is made only from what the map, the test results or the stories give, never from
+where the row sits on the page, so a comment stays on its test across `rebuild`s, 「떨어져 나감」 works as it does for
+a target, and the task list can place it under its screen or call. A test is named the way a judgment already names
+it, so a test is the same test to both, and a line moved above it or a tag added to its title does not lose it.
+Whether a test is still there is looked up in the links before the reviewers' judgments are applied, so a comment on
+a pair that is later discarded or handed over stays on its test. A part takes comments only: a status decides
+whether its screen or call is on the task list, and a part has no status of its own apart from that. The field is
+named `part` and not `cell`, since cell already means a depth or option cell of a call in this code.
+Alternatives compared:
+- Keeping the place pressed on the page, as a comment on a claude.ai artifact does: any spot could take a comment,
+  but a change of layout breaks the place, an agent has to read the page to learn what it is on the map, and
+  neither 「떨어져 나감」 nor the task list could place it.
+- Making a test a new kind of target on its own: smaller, but the other parts (an opening condition, an incoming
+  link, a story step) would still take none.
+Known limit: if the choice proves wrong, the shape of the saved mark files and of the line an agent reads changes;
+a mark with no part is the same as before either way.
+
+**The bottom of the right pane is one conversation with the agent, and a bubble on a row puts that row in as the
+tag of the comment being written.**
+Driver's decision in #226, after trying five ways on a clickable mock-up. The conversation holds everything left
+on the chosen screen or call, oldest first, each with its tag; the count on a row narrows it to that row, which is
+that row's thread.
+Alternatives compared:
+- Keeping the form as it was: a test row could not take a comment, and nothing showed where one could go.
+- Bubbles alone: the places show, but a comment can only ever point at one of them.
+- A thread opened under the row, as in a GitHub review: the most page work, and open threads push the list down.
+- A conversation with `@` tags alone: nothing shows where a comment can go, and whether the agent learns the place
+  depends on the reviewer adding a tag.
+Opening a row's comments under the row is left out; it changes neither the saved files nor the agent's line, so it
+can be added to the page later. A comment carries one tag until #231 adds several or none.
+
+**The line an agent gets for a comment on a test names the result file instead of carrying the failure message.**
+The Playwright, Vitest and JUnit readers keep only each test's status, and only a verdict line keeps the text after
+its verdict, which is passed on as `detail`. Reading the message of each format into `tests.json` would make that
+file grow with every failure and add a reader per format for every format added later, while the agent that gets
+the line can open the result file and find the test by its title itself.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

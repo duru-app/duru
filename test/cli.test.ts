@@ -450,6 +450,37 @@ const waitFor = (check: () => boolean, what: string) => within(new Promise<void>
   look();
 }), what);
 
+test('a comment saved on a test under a screen comes out on stderr and on open event streams with where the test is; a reply to it carries the same place', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const events = readEvents(url);
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      const key = { source: 'results/playwright/e2e.json', file: 'home.spec.ts', title: 'opens the lab' };
+      const res = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: { node: '/lab#Lab', part: { kind: 'test', key } }, note: 'Why is this pending?' }) });
+      assert.equal(res.status, 201);
+      const comment = (await res.json()) as Mark;
+      assert.deepEqual(reply(configFile, comment.id, 'It waits for the lab data.', '--server', `${url}/`), { status: 0, stderr: '' });
+      await waitFor(() => records().length === 2, 'the comment and the reply on stderr');
+      const where = { file: 'home.spec.ts', line: 20, source: 'results/playwright/e2e.json', status: 'pending', relation: 'tagged' };
+      assert.deepEqual(records()[0], { duru: 'comment', ...comment, where });
+      assert.deepEqual(records()[1].where, where);
+      assert.deepEqual(records()[1].target, comment.target);
+      await waitFor(() => events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).length === 2, 'two events on the stream');
+      assert.deepEqual(events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).map((e) => JSON.parse(e.slice('data: '.length))), records());
+
+      const refused = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: { node: '/lab#Lab', part: { kind: 'test', key } }, status: 'missing', note: 'x' }) });
+      assert.equal(refused.status, 400);
+      assert.match(await refused.text(), /takes no status/);
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  });
+});
+
 test('a reply sent with --server is saved by the running review, printed on its stderr as a "reply" line and pushed to open event streams; ending the review closes the streams and still exits with the task list', async () => {
   await withReviewFixture(async (configFile) => {
     const { child, base, closed, out } = startReview(configFile);

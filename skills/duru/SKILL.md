@@ -143,10 +143,25 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    comment's `id`; it asks for nothing. A mark with `needs-more` or `missing` will be in the task list, and you may start on it now. A
    target can also carry a `depth` or an `option` of a call, and a mark whose target has a `case` (status `needed`
    or `not-needed`) or whose status is `fine` asks for nothing by itself.
+   A comment can also be about one part of a screen or call, named in `target.part` as `{ "kind", "key" }`. Such a
+   line carries `where`, saying where that part is now, or `null` when it is no longer found or `tests.json` could
+   not be read at that moment (a `rebuild` was writing it), so check the task list before taking it as gone; a reply to the comment
+   carries the same `target` and `where`. A part takes comments only, never a status. By kind:
+   - `"kind": "test"`: one test row under the screen or call. `key` names the test by its result file (`source`),
+     test file and title without tags. `where` gives the test `file` and `line`, the result file `source`, its
+     `status`, a `detail` for a verdict line, and its `relation` to the target: `tagged` (it carries the tag),
+     `imported` (a unit test that imports a source file of the screen), `passed` (a browser test that opened the
+     screen while running) or `called` (a browser test that sent the call while running). For a failing test,
+     find the test by its title in that result file, read why it failed from that result file, find the cause
+     and fix the test or the app in the target project. For a test whose relation is `imported`, `passed` or
+     `called`, answer whether the tag may be added, judging from what the test checks, and add it only when the
+     comment asks you to, as in a `# Tagging` item.
+   After you have answered or fixed it, reply to the comment as above.
    When the reviewer presses 「리뷰 끝」 (or presses Ctrl+C in its terminal), the process exits with code 0 and its
    standard output is exactly the task list, the same text `duru tasks <config>` prints. Any other exit is an
    error: show its standard error to the user. In the task list a `reply` line sits under the `comment` line it
-   answers.
+   answers, and under an open screen or call `comments on tests` lists each test a comment was left on, with its
+   place, status, relation and result file, then those comments and their replies; act on them as above.
 3. **Write the tests.** In the target project, write tests for each screen, API call and story in the task list,
    following its marks and notes. The top of the list says how to tag a test so that it attaches to a screen or call
    (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. A test of a

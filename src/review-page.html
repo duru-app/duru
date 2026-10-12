@@ -111,7 +111,7 @@
   .chip.level-assert { color: var(--pass); } .chip.level-interact, .chip.level-call { color: var(--accent); } .chip.level-visit { color: var(--muted); }
   table.calls td.call .sent-count { font-size: 12px; color: var(--muted); white-space: nowrap; margin-left: 6px; }
   #center .pair-test { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 12px; }
-  #center .pair-test > .test { flex: 1 1 260px; min-width: 0; }
+  #center .pair-test > :is(.test, .part-row) { flex: 1 1 260px; min-width: 0; }
   #center .pair-test > .judge-row, #center .pair-test > button.undo { order: 1; flex: none; margin-left: auto; }
   #center .pair-test > .detail { order: 2; flex-basis: 100%; }
   #center .pair-test > .judgment-error { order: 3; flex-basis: 100%; }
@@ -161,6 +161,7 @@
   .statuses { display: flex; gap: 6px; margin: 6px 0; }
   .statuses button { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
   .statuses button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
+  .statuses button:disabled { opacity: .5; cursor: default; }
   textarea, input[type=text], input[type=search] { width: 100%; font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); }
   textarea { min-height: 56px; resize: vertical; }
   .mark-form textarea { max-height: 20vh; }
@@ -194,6 +195,18 @@
   .history-toggle::after { content: ' ▸'; }
   .history-toggle[aria-expanded=true]::after { content: ' ▾'; }
   .mark-form .history { max-height: min(160px, 15vh); overflow-y: auto; margin-top: 8px; }
+  .part-row { display: flex; align-items: flex-start; gap: 6px; }
+  .part-row > .test { flex: 1; min-width: 0; }
+  .bubble, .part-count { flex: none; border-radius: 10px; padding: 0 6px; font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; background: var(--panel); white-space: nowrap; }
+  .bubble { visibility: hidden; border: 1px solid var(--line); color: var(--muted); }
+  .bubble svg { width: 12px; height: 12px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+  .part-row:hover .bubble, .bubble:focus-visible { visibility: visible; }
+  .part-count { border: 1px solid var(--accent); color: var(--accent); }
+  .talk-head { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
+  .tags, .history-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
+  .history-filter { margin-top: 6px; }
+  .tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--selected); font-size: 12px; overflow-wrap: anywhere; }
+  .tag button, .tags button.retag, .history-filter button { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .error { color: var(--fail); }
   a { color: var(--accent); }
   .views { display: flex; gap: 4px; }
@@ -458,7 +471,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -476,11 +489,18 @@ function fill(el, ...children) {
   el.replaceChildren(...children.flat().filter((c) => c != null && c !== false));
 }
 
-const keyOf = (t) => (t.story !== undefined ? `story(${t.story})` : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`].filter(Boolean).join(' '));
+const keyOf = (t) => (t.story !== undefined
+  ? `story(${t.story})`
+  : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
 const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
 const targetName = (t) => (t.story !== undefined
   ? `스토리 ${state.data.stories.list.find((st) => st.id === t.story)?.name ?? t.story}`
   : [t.node, t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case] ?? t.case}`].filter(Boolean).join(' · '));
+const tagLabel = (t) => {
+  if (t.story !== undefined) return '스토리';
+  if (t.part) return `테스트 「${t.part.key.title}」`;
+  return [t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case] ?? t.case}`].filter(Boolean).join(' · ') || (callOf(t.node) ? '호출 전체' : '화면 전체');
+};
 const ownTests = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
 const testsOf = (id) => ownTests(state.data.tests.nodes, id);
 const importersOf = (id) => ownTests(state.data.tests.importers, id);
@@ -799,7 +819,7 @@ function renderLeft() {
     }
     return renderUntaggedList();
   }
-  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined), (m) => m.key, h('p', { class: 'muted' }, '맵에서 사라진 노드나 설정에서 빠진 경우 종류에 달린 코멘트가 여기 남습니다.'));
+  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined), (m) => (m.target.part ? `${m.target.node} · ${tagLabel(m.target)}` : m.key), h('p', { class: 'muted' }, '맵에서 사라진 노드, 설정에서 빠진 경우 종류, 결과에서 사라진 테스트에 달린 코멘트가 여기 남습니다.'));
   const list = keptLeftList(left, tabs, 'screen-list');
   if (list) {
     const search = left.querySelector(':scope > .filters > input[type=search]');
@@ -1002,6 +1022,47 @@ function importerItem(t) {
     viaRow(t.via));
 }
 
+const partTarget = (node, t) => ({ node, part: { kind: 'test', key: t.ref } });
+const commentsIn = (m) => (m ? m.history.filter((r) => r.replyTo === undefined).length : 0);
+const BUBBLE = () => svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, svg('path', { d: 'M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z' }));
+
+function moveTalkTo(node) {
+  if (state.target.node === node) return;
+  state.target = { node };
+  state.draft = state.draft && { status: markOf(state.target)?.current?.status ?? null, note: state.draft.note, part: null, noTag: false };
+  state.error = null;
+}
+
+function focusTalk() {
+  const field = document.querySelector('#right-dock textarea');
+  field?.focus();
+  field?.setSelectionRange(field.value.length, field.value.length);
+}
+
+function tagPart(node, t) {
+  moveTalkTo(node);
+  state.draft ??= { status: markOf(state.target)?.current?.status ?? null, note: '' };
+  Object.assign(state.draft, { part: partTarget(node, t), noTag: false });
+  render();
+  focusTalk();
+}
+
+function narrowTalk(node, t) {
+  moveTalkTo(node);
+  state.dockKey = keyOf(shownTarget());
+  state.historyFilter = keyOf(partTarget(node, t));
+  state.historyOpen = true;
+  render();
+}
+
+function partRow(item, node, t) {
+  const n = commentsIn(markOf(partTarget(node, t)));
+  return h('div', { class: 'part-row' },
+    item,
+    n ? h('button', { class: 'part-count', title: '이 테스트를 꼬리표로 붙인 말만 대화에 남깁니다', onclick: (e) => { e.stopPropagation(); narrowTalk(node, t); } }, `코멘트 ${n}`) : null,
+    h('button', { class: 'bubble', title: '이 테스트를 꼬리표로 넣고 코멘트를 씁니다', 'aria-label': `「${t.title}」에 코멘트`, onclick: (e) => { e.stopPropagation(); tagPart(node, t); } }, BUBBLE()));
+}
+
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
 const judgmentErrorOf = (key) => (state.judgmentError?.key === key ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null);
 
@@ -1169,7 +1230,7 @@ function untaggedPairs(node) {
   const awaiting = awaitingTagOf(node);
   const detached = detachedOf(node);
   const row = (t, ...rest) => h('div', { class: `pair-test ${byTrace(t) ? 'passer' : 'importer'}` }, ...rest, judgmentErrorOf(judgmentKey(t, node)));
-  const openRow = (t) => row(t, pairTestItem(t), judgmentForm(t, node));
+  const openRow = (t) => row(t, partRow(pairTestItem(t), node, t), judgmentForm(t, node));
   const judgedRow = (item, t, label) => row(t, item, judgmentMeta(t.judgment, label), undoButton(t, node));
   return [
     passed.length ? h('div', { class: 'passed' },
@@ -2273,7 +2334,7 @@ function renderCenter() {
         onclick: () => selectTarget(r.target),
       },
         h('td', { class: 'depth' }, r.label),
-        h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map(testItem) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
+        h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map((t) => partRow(testItem(t), s.id, t)) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
         h('td', { class: 'mark' }, markChip(markOf(r.target)) ?? h('span', { class: 'muted' }, '—')))))),
     strayJudgmentError(s),
     untaggedPairs(s.id),
@@ -2437,7 +2498,10 @@ function renderRight() {
   const view = state.side !== 'stories' ? `${state.selected}\n${state.target?.node}` : state.composing ? 'compose' : state.candidate ? `candidate(${state.candidate})` : `story(${state.story})`;
   const shown = shownTarget();
   const dockKey = shown ? keyOf(shown) : null;
-  if (dockKey !== state.dockKey) state.historyOpen = false;
+  if (dockKey !== state.dockKey) {
+    state.historyOpen = false;
+    state.historyFilter = null;
+  }
   state.dockKey = dockKey;
   (state.side === 'stories' ? renderStoryRight : renderScreenRight)(info, dock);
   if (view !== state.rightView) {
@@ -2465,37 +2529,68 @@ function renderScreenRight(info, dock) {
   fill(dock, markForm(state.target, 'draft', targetLabel));
 }
 
+const talkOf = (target) => [...state.data.marks.attached, ...state.data.marks.detached]
+  .filter((m) => (target.story !== undefined ? m.target.story === target.story : m.target.story === undefined && m.target.node === target.node));
+
+const byDate = (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id);
+
+function tagChip(label, remove) {
+  return h('span', { class: 'tag' }, h('span', { class: 'tag-label' }, label), remove ? h('button', { type: 'button', title: '꼬리표 빼기', 'aria-label': `${label} 꼬리표 빼기`, onclick: remove }, '×') : null);
+}
+
 function markForm(target, draftKey, label) {
   const mark = markOf(target);
   state[draftKey] ??= { status: mark?.current?.status ?? null, note: '' };
   const draft = state[draftKey];
-  const history = mark?.history.length ? mark.history : null;
-  const repliesTo = (m) => history.filter((r) => r.replyTo === m.id).reverse();
-  const answered = (r) => r.replyTo !== undefined && history.some((m) => m.id === r.replyTo);
-  const recordItem = (m) => h('li', {},
-    m.status ? h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]) : h('span', { class: `chip ${m.replyTo !== undefined ? 'reply' : 'comment'}` }, m.replyTo !== undefined ? '답' : '코멘트'),
-    ' ', h('span', { class: 'muted' }, signedAt(m)),
-    m.note ? h('div', {}, m.note) : null,
-    repliesTo(m).length ? h('ul', { class: 'plain replies' }, repliesTo(m).map(recordItem)) : null);
-  const topLevel = history?.filter((m) => !answered(m));
-  const historyList = history && h('ul', { class: 'plain history' }, topLevel.map(recordItem));
+  const talk = talkOf(target);
+  const shown = state.historyFilter ? talk.filter((m) => m.key === state.historyFilter) : talk;
+  const recordItem = (m, r) => h('li', {},
+    r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status] ?? CASE_STATUS[r.status]) : h('span', { class: `chip ${r.replyTo !== undefined ? 'reply' : 'comment'}` }, r.replyTo !== undefined ? '답' : '코멘트'),
+    ' ', r.replyTo === undefined ? [tagChip(tagLabel(m.target)), ' '] : null,
+    h('span', { class: 'muted' }, signedAt(r)),
+    r.note ? h('div', {}, r.note) : null,
+    ...repliesOf(m, r));
+  const repliesOf = (m, r) => {
+    const replies = m.history.filter((x) => x.replyTo === r.id).sort(byDate);
+    return replies.length ? [h('ul', { class: 'plain replies' }, replies.map((x) => recordItem(m, x)))] : [];
+  };
+  const answered = (m, r) => r.replyTo !== undefined && m.history.some((x) => x.id === r.replyTo);
+  const topLevel = shown.flatMap((m) => m.history.filter((r) => !answered(m, r)).map((r) => ({ m, r }))).sort((a, b) => byDate(a.r, b.r));
+  const all = talk.flatMap((m) => m.history.filter((r) => !answered(m, r)));
+  const history = all.length ? h('ul', { class: 'plain history' }, topLevel.map(({ m, r }) => recordItem(m, r))) : null;
   const historyToggle = history && h('button', { class: 'history-toggle', onclick: () => {
     state.historyOpen = !state.historyOpen;
-    applyHistoryFold(historyToggle, historyList);
-  } }, `이력 ${topLevel.length}`);
-  if (history) applyHistoryFold(historyToggle, historyList);
-  const savable = () => !!draft.status || draft.note.trim() !== '';
-  const save = h('button', { class: 'save', disabled: !savable(), onclick: () => saveMark(target, draftKey) }, '남기기');
+    applyHistoryFold(historyToggle, history);
+  } }, `대화 ${all.length}`);
+  if (history) applyHistoryFold(historyToggle, history);
+  const filter = state.historyFilter && history && h('div', { class: 'history-filter' },
+    '걸러 보는 중 ', tagChip(tagLabel(talk.find((m) => m.key === state.historyFilter)?.target ?? target)),
+    h('button', { type: 'button', onclick: () => { state.historyFilter = null; render(); } }, '모두 보기'));
+  const tag = draft.noTag ? null : draft.part ?? target;
+  const statusOn = tag === target;
+  const savable = () => tag !== null && (draft.note.trim() !== '' || (statusOn && !!draft.status));
+  const save = h('button', { class: 'save', disabled: !savable(), onclick: () => saveMark(tag, draftKey) }, '남기기');
   const statuses = Object.entries(MARK_STATUS).map(([k, text]) => {
-    const button = h('button', { class: draft.status === k ? 'on' : '', onclick: () => {
+    const button = h('button', { class: statusOn && draft.status === k ? 'on' : '', disabled: !statusOn, title: statusOn ? null : '상태는 꼬리표가 화면 · 호출 · 깊이 · 스토리 하나일 때만 매깁니다', onclick: () => {
       draft.status = draft.status === k ? null : k;
       for (const b of statuses) b.classList.toggle('on', b === button && draft.status === k);
       save.disabled = !savable();
     } }, text);
     return button;
   });
+  const untag = () => {
+    if (draft.part) draft.part = null;
+    else draft.noTag = true;
+    render();
+  };
   return h('div', { class: 'mark-form' },
-    h('h2', {}, '코멘트 — ', label),
+    h('div', { class: 'talk-head' }, h('h2', {}, '에이전트와 대화'), h('div', { class: 'tags' }, '꼬리표 ', tag
+      ? tagChip(tag === target ? label : tagLabel(tag), untag)
+      : [h('span', { class: 'muted' }, '없음'), h('button', { type: 'button', class: 'retag', onclick: () => {
+        draft.noTag = false;
+        render();
+        focusTalk();
+      } }, `${label} 다시 붙이기`)])),
     h('div', { class: 'statuses' }, statuses),
     h('textarea', { placeholder: '코멘트 — 상태 없이 글만 남겨도 됩니다', oninput: (e) => {
       draft.note = e.target.value;
@@ -2503,7 +2598,8 @@ function markForm(target, draftKey, label) {
     } }, draft.note),
     state.error ? h('p', { class: 'error' }, state.error) : null,
     h('div', { class: 'save-row' }, save, historyToggle),
-    historyList);
+    filter,
+    history);
 }
 
 function applyHistoryFold(toggle, list) {
@@ -2526,7 +2622,7 @@ function callDetails(call, s) {
     h('div', {}, verdictChip(call.server), ' ', call.server.path ? h('code', {}, call.server.path) : null),
     call.server.candidates ? h('ul', { class: 'plain' }, call.server.candidates.map((c) => h('li', {}, '서버에는 ', h('code', {}, c)))) : null,
     h('h2', {}, `테스트 ${tests.length}`),
-    tests.length ? h('div', {}, tests.map(testItem)) : h('p', { class: 'muted' }, '없음'),
+    tests.length ? h('div', {}, tests.map((t) => partRow(testItem(t), call.id, t))) : h('p', { class: 'muted' }, '없음'),
     ...untaggedPairs(call.id),
     h('h2', {}, '이 화면에서 부르는 곳'),
     h('ul', { class: 'plain' }, sites.map((c) => h('li', {}, h('code', {}, c.fn), ' ', h('span', { class: 'muted mono' }, `${c.file}:${c.line}`)))),
@@ -2699,7 +2795,7 @@ async function postMark(target, draftKey) {
     const res = await fetch('/api/marks', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ target, status: asComment(target, draft) ? null : draft.status, note: draft.note }),
+      body: JSON.stringify({ target, status: target.part || asComment(target, draft) ? null : draft.status, note: draft.note }),
     });
     if (!res.ok) throw new Error(await res.text());
     saved = await res.json();

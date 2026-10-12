@@ -8,7 +8,7 @@ import { withoutTags } from './verdict.ts';
 
 export const JUDGMENT_KINDS = ['discard', 'hand-over', 'undo'];
 
-interface TestRef {
+export interface TestRef {
   source: string;
   file: string | null;
   title: string;
@@ -72,7 +72,7 @@ const slashed = <T extends string | null>(p: T) => (typeof p === 'string' ? p.re
 
 // 줄 번호와 Playwright 프로젝트 이름은 넣지 않는다. 테스트 위에 줄이 늘거나 제목에 태그를 달아도 같은 테스트여야 하기 때문이다.
 // 결과 파일에 적힌 경로는 결과를 만든 컴퓨터마다 다르므로, srcRoot 아래에서 찾은 경로(testFile)가 있으면 그것을 쓴다.
-const reference = ({ source, file, title }: TestRef): TestRef => ({ source: slashed(source), file: slashed(file), title: typeof title === 'string' ? withoutTags(title) : title });
+export const reference = ({ source, file, title }: TestRef): TestRef => ({ source: slashed(source), file: slashed(file), title: typeof title === 'string' ? withoutTags(title) : title });
 export const testRef = (t: ResultTest) => reference({ source: t.source, file: t.testFile ?? t.file, title: t.title });
 
 const pairKey = (test: TestRef, node: string) => JSON.stringify([test.source, test.file, test.title, node]);
@@ -188,5 +188,6 @@ export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgm
   }
   for (const list of Object.values(detachedHandOvers)) list.sort((a, b) => compare(a.ref.file, b.ref.file) || compare(a.ref.title, b.ref.title) || compare(a.ref.source, b.ref.source));
   const untagged = tests.untagged?.map((t) => ({ ...t, ref: testRef(t) }));
-  return { ...tests, ...(untagged && { untagged }), importers, passed, discarded, awaitingTag, detachedHandOvers };
+  const nodes = tests.nodes && Object.fromEntries(Object.entries(tests.nodes).map(([id, list]) => [id, list.map((t) => ({ ...t, ref: testRef(t) }))]));
+  return { ...tests, ...(nodes && { nodes }), ...(untagged && { untagged }), importers, passed, discarded, awaitingTag, detachedHandOvers };
 }

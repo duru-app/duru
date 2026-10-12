@@ -73,3 +73,11 @@ test('the agent skill says how to answer a comment on the open review page and w
   assert.match(SKILL, /`duru reply <config> <the comment's id> "<answer>" --server <the review page address>`/);
   assert.match(SKILL, /`"reply"` line with `replyTo` set to the\s+comment's `id`; it asks for nothing/);
 });
+
+test('the agent skill says what a comment on a part of a screen or call carries and what to do for a comment on a test', () => {
+  assert.match(SKILL, /`target\.part`/);
+  assert.match(SKILL, /`where`[\s\S]*`relation`/);
+  assert.match(SKILL, /`"kind": "test"`[\s\S]*read\s+why\s+it\s+failed\s+from\s+that\s+result\s+file[\s\S]*fix\s+the\s+test\s+or\s+the\s+app/);
+  assert.match(SKILL, /`imported`, `passed` or\s+`called`[\s\S]*whether the tag may\s+be\s+added[\s\S]*add it only when the\s+comment asks/);
+  assert.match(SKILL, /`comments on tests`/);
+});

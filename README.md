@@ -582,9 +582,25 @@ under 「떨어져 나감」. A case kind picked or taken out on a screen or cal
 status `needed` or `not-needed`; it puts nothing on the task list, and one whose kind has left `caseKinds` shows
 under 「떨어져 나감」.
 
+**Comments on a test row.** A test row under a screen or call (its own tests, 「불러오는 테스트」, 「지나간 테스트」
+and 「호출한 테스트」) has a speech bubble that shows on hover. Pressing it puts that test in as the tag of the comment
+being written; the comment is saved with the screen or call as its target plus
+`"part": { "kind": "test", "key": { "source", "file", "title" } }`, naming the test by its result file, test file and
+title without tags, as a judgment does. A part takes a comment only: a status sent with one is refused with the
+reason, and it never changes the current status of the screen or call. A row with comments shows their number;
+pressing it narrows the conversation to that test. A comment whose test is no longer among the results after a
+`rebuild` (its title or file changed, or it left the results) shows under 「떨어져 나감」 with the test title.
+
+**Conversation.** The bottom of the right pane holds every mark, comment and reply left on the chosen screen or call
+(or story), oldest first, each with the tag of where it was left. What is chosen in the middle is the default tag,
+and its × takes it off; a status can be picked only while that one tag is on.
+
 **While the review runs.** Each mark, comment or reply is printed on standard error the moment it is saved, as one
 JSON line: `{"duru":"mark"|"comment"|"reply","id":…,"target":{…},"status":…,"replyTo":…,"note":…,"author":…,"date":…}`,
-with no `status` for a comment or a reply and `replyTo` only on a reply. A coding agent that launched the page can
+with no `status` for a comment or a reply and `replyTo` only on a reply. A comment or reply whose target has a `part`
+also carries `"where"`: for a test, `{"file","line","source","status","relation"}` with `relation` one of `tagged`,
+`imported`, `passed` or `called`, and `detail` for a verdict line, or `null` when the test is no longer found. A
+failure message is not copied in; it is read from the result file named in `source`. A coding agent that launched the page can
 act on it without waiting for the end. Every open page receives the same save at once and shows it without a
 reload, so a mark left in one window appears in another.
 
@@ -606,7 +622,9 @@ listening for new saves when the review ends.
 Each screen comes with its marks, component file and route line, the app address, the settings and roles it
 needs, the tests of each role and setting case and of each picked case kind by depth and status, its API calls and
 the tests already attached. Calls follow under `# API calls`, with their picked case kinds the same way, and
-stories under `# Stories` with their steps, link verdicts and 「사전 조건」.
+stories under `# Stories` with their steps, link verdicts and 「사전 조건」. Under an open screen or call,
+`comments on tests` lists each test a comment was left on, with its file and line, status, how it is linked and its
+result file, followed by those comments and their replies.
 
 Each item ends with `empty tests`: one empty test per test format in the config, with the item's tags already in
 its title and held back so a copy run as it is does not pass (`test.fixme` for Playwright, `test.todo` for
