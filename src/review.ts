@@ -11,6 +11,7 @@ import { isPlainObject } from './config.ts';
 import { buildFlow } from './flow.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
 import { addMark, classifyMarks, loadMarks } from './marks.ts';
+import type { Mark } from './marks.ts';
 import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.ts';
 import { addStory, editStory } from './stories.ts';
 import { checkScreens, checkStoryFiles } from './story-paths.ts';
@@ -91,7 +92,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
   const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds);
   const needed = new Map<string, Set<string>>();
   for (const { target, current } of marks.attached) {
-    if (target.case === undefined || current.status !== 'needed') continue;
+    if (target.case === undefined || current?.status !== 'needed') continue;
     if (!needed.has(target.node!)) needed.set(target.node!, new Set());
     needed.get(target.node!)!.add(target.case);
   }
@@ -154,7 +155,7 @@ function readBody(req: http.IncomingMessage) {
   });
 }
 
-export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {} }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null } = {}) {
+export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {} }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (mark: Mark) => void } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
   // 없거나 아직 쓰는 중인 맵은 페이지가 요청할 때 알리고, 예전 형식의 맵만 서버를 띄우기 전에 알린다.
   let onDisk: any = null;
@@ -171,7 +172,11 @@ export async function startReviewServer(config: any, { port = 0, author = review
   // 다른 사이트가 사용자의 브라우저로 표시를 써 넣거나 리뷰를 끝내거나(JSON 이 아닌 요청), 자기 도메인을 이 주소로 돌려 맵을 읽어 가는 것(다른 Host)을 막는다.
   const ownHosts = () => [`127.0.0.1:${(server.address() as AddressInfo).port}`, `localhost:${(server.address() as AddressInfo).port}`];
   const isJson = (req: http.IncomingMessage) => req.headers['content-type']?.startsWith('application/json');
-  const saves: Record<string, (input: any) => unknown> = { '/api/marks': (input) => addMark(config.marksDir, input), '/api/judgments': (input) => addJudgment(config.judgmentsDir, input) };
+  const saves: Record<string, (input: any) => unknown> = { '/api/marks': (input) => {
+      const mark = addMark(config.marksDir, input);
+      onMark(mark);
+      return mark;
+    }, '/api/judgments': (input) => addJudgment(config.judgmentsDir, input) };
   const sendPathValues = async (res: http.ServerResponse, id: string | null, role: string | null, typed = {}) => {
     const map = readMap(mapFile);
     const screen = map.screens.find((s: any) => s.id === id);

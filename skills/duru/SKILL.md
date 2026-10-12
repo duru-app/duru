@@ -128,6 +128,14 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    The command blocks until the reviewer ends the review, so run it in a way that lets you read its standard
    output when it exits, for example as a background command whose output you read afterwards. Do not kill it
    or treat it as hung while the user is reviewing.
+   While it runs, read its output as it grows. Each mark or comment the reviewer saves comes out on standard error
+   at once as one JSON line starting with `{"duru":`: `"comment"` (no `status`) or `"mark"`, with its `target`
+   (a screen or call ID under `node`, or a story ID under `story`), `note`, `author` and `date`. Act on a comment
+   when it arrives: it is the reviewer asking about or for something on that target, so answer the question or do
+   what it asks (a missing test is written as in step 3, with the target's tags), and tell the user in one line
+   what you did. A mark with `needs-more` or `missing` will be in the task list, and you may start on it now. A
+   target can also carry a `depth` or an `option` of a call, and a mark whose target has a `case` (status `needed`
+   or `not-needed`) or whose status is `fine` asks for nothing by itself.
    When the reviewer presses 「리뷰 끝」 (or presses Ctrl+C in its terminal), the process exits with code 0 and its
    standard output is exactly the task list, the same text `duru tasks <config>` prints. Any other exit is an
    error: show its standard error to the user.

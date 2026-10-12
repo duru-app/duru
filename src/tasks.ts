@@ -89,8 +89,10 @@ const byline = (author: string, date: string, indent: string) => `(${within(auth
 
 function markLine(mark: any, where?: string) {
   const note = quotedNote(mark.note, '    ');
-  return `  - ${mark.status}${where ? `, ${where}` : ''}${note ? ` — ${note}` : ''} ${byline(mark.author, mark.date, '    ')}`;
+  return `  - ${mark.status ?? 'comment'}${where ? `, ${where}` : ''}${note ? ` — ${note}` : ''} ${byline(mark.author, mark.date, '    ')}`;
 }
+
+const entryLines = (m: any, where?: string) => [m.current, ...m.history.slice(0, m.history.indexOf(m.current)).reverse()].map((r) => markLine(r, where));
 
 const kindsText = (kinds: string[]) => kinds.map((k) => KIND_NAMES[k]).join(' and ');
 
@@ -290,7 +292,7 @@ function storyLines(story: any, marks: any[], tests: any, mapInfo: MapInfo, form
     '',
     `- name: ${within(story.name, '  ')}`,
     '- marks:',
-    ...marks.map((m) => markLine(m.current)),
+    ...marks.flatMap((m) => entryLines(m)),
     `- story file: ${story.file} (${within(story.author, '  ')}, ${story.date.slice(0, 10)})`,
     ...(story.memo ? [`- memo: ${within(story.memo, '  ')}`] : []),
     `- status: ${STORY_STATUS[story.status]}`,
@@ -336,7 +338,7 @@ export function taggingLines(awaitingTag: Record<string, any[]>, callIds: Set<st
 
 export function taskList(config: any) {
   const { map, tests, marks, appLinks, stories } = reviewData(config, null);
-  const open = marks.attached.filter((m) => OPEN.includes(m.current.status));
+  const open = marks.attached.filter((m) => m.current && OPEN.includes(m.current.status!));
   const marked = (node: any) => open.some((m) => m.target.node === node.id);
   const screens = map.screens.filter(marked).sort((a: any, b: any) => a.id.localeCompare(b.id));
   const calls = map.calls.filter(marked);
@@ -354,6 +356,7 @@ export function taskList(config: any) {
     '',
     `Source files are under \`${relative(config.srcRoot)}\`.`,
   ];
+  if (open.some((m) => m.history[0] !== m.current)) out[2] += ' A `comment` line under a mark is a comment a reviewer left on the same target after that mark.';
   if (map.serverNotCompared) out.push('', `${SERVER_NOT_COMPARED}, so no call below is written as missing on the server.`);
   if (!open.length) out.push('', 'No open marks.');
   for (const s of screens) {
@@ -363,7 +366,7 @@ export function taskList(config: any) {
       `## ${s.id}`,
       '',
       '- marks:',
-      ...marks.map((m) => markLine(m.current, cellText(m.target, 'whole screen'))),
+      ...marks.flatMap((m) => entryLines(m, cellText(m.target, 'whole screen'))),
       `- component: ${s.componentFile}, route at ${s.routeFile}:${s.line}`,
       ...(appLinks[s.id] ? [`- app: ${appLinks[s.id]}`] : []),
       ...accessLines(s.access, restricted),
@@ -381,7 +384,7 @@ export function taskList(config: any) {
       `## ${c.id}`,
       '',
       '- marks:',
-      ...marks.map((m) => markLine(m.current, cellText(m.target, 'whole call'))),
+      ...marks.flatMap((m) => entryLines(m, cellText(m.target, 'whole call'))),
       `- called from: ${c.screens.length ? c.screens.join(', ') : 'no screen'}`,
       `- server: ${serverText(c.server)}`,
       ...resultLines(c.id, ''),
@@ -394,14 +397,14 @@ export function taskList(config: any) {
   if (storyMarks.length) out.push('', '# Stories', '', `Story files are in \`${relative(config.storiesDir)}\`.`);
   if (storyMarks.length && stories.stale) {
     out.push('', 'The map was built by a duru older than stories, so these stories are not checked against it. Run `duru rebuild` and read this list again.');
-    for (const m of storyMarks) out.push('', `## ${m.target.story}`, '', '- marks:', markLine(m.current));
+    for (const m of storyMarks) out.push('', `## ${m.target.story}`, '', '- marks:', ...entryLines(m));
   }
   const mapInfo = { screensById: new Map<string, any>(map.screens.map((s: any) => [s.id, s])), restricted };
   for (const id of [...new Set(storyMarks.map((m) => m.target.story))]) {
     const own = storyMarks.filter((m) => m.target.story === id);
     const story = stories.list.find((s) => s.id === id);
     if (story) out.push(...storyLines(story, own, tests, mapInfo, formats));
-    else if (!stories.stale) out.push('', `## ${id}`, '', '- marks:', ...own.map((m) => markLine(m.current)), '- story file: could not be read; `duru rebuild` prints why');
+    else if (!stories.stale) out.push('', `## ${id}`, '', '- marks:', ...own.flatMap((m) => entryLines(m)), '- story file: could not be read; `duru rebuild` prints why');
   }
   out.push(...taggingLines(tests.awaitingTag, new Set<string>(map.calls.map((c: any) => c.id))));
   return out.join('\n') + '\n';

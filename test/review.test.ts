@@ -1392,6 +1392,42 @@ for (const host of ['127.0.0.1', 'localhost']) {
   });
 }
 
+test('in a browser, a comment with no status is saved from the text alone, shows in the history as 「코멘트」 and leaves the current status as it was; pressing a picked status again lets it go', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await toList(p);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        await p.waitForSelector('#screen-list li.selected .chip.missing');
+
+        assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), ['없음']);
+        await p.click('#right .statuses button:has-text("없음")');
+        assert.equal(await p.locator('#right .statuses button.on').count(), 0);
+        assert.equal(await p.isDisabled('#right button.save'), true);
+        await p.fill('#right-dock textarea', 'the empty list too');
+        assert.equal(await p.isDisabled('#right button.save'), false);
+        await p.click('#right button.save');
+        await openHistory(p);
+        await p.waitForSelector('#right .history li:has-text("the empty list too")');
+        assert.equal(await p.textContent('#right .history li:has-text("the empty list too") .chip'), '코멘트');
+        assert.equal(await p.textContent('#screen-list li.selected .chip'), '없음');
+        assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), ['없음']);
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.status ?? null, m.note]).sort(), [[null, 'the empty list too'], ['missing', '']]);
+
+        await p.fill('#right-dock textarea', 'typed with the status still picked');
+        await p.click('#right button.save');
+        await p.waitForSelector('#right .history li:has-text("typed with the status still picked") .chip.comment');
+        await p.click('#right .statuses button:has-text("없음")');
+        p.once('dialog', (d) => assert.fail(`no unsaved warning expected, got: ${d.message()}`));
+        await p.click('header button:has-text("리뷰 끝")');
+        await p.waitForSelector('#ended');
+      }),
+    ),
+  );
+});
+
 type Kept = { kept?: boolean };
 
 test('in a browser, drawing the screens side again keeps the search box and its filtering, and draws the 「떨어져 나감」 block once with the marks read again', { skip: browserMissing }, async () => {
@@ -1736,7 +1772,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await p.waitForSelector('#right .history li:has-text("the story test fails")');
         assert.deepEqual(await p.locator('#right .history li .chip').allTextContents(), ['더 필요', '없음']);
         assert.equal(await p.textContent('#story-list li.selected .chip.needs-more'), '더 필요');
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note, m.author] as const).sort((a, b) => a[1].localeCompare(b[1])), [
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!, m.note, m.author] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ story: 'run-lab' }, 'missing', 'no test walks the lab', 'reviewer'],
           [{ story: 'run-lab' }, 'needs-more', 'the story test fails', 'reviewer'],
         ]);
@@ -1779,7 +1815,7 @@ test('in a browser, a failed save stays with the form that tried it and is gone 
           window.fetch = (url, init) => (String(url).includes('/api/marks') ? Promise.reject(new Error('disk full')) : real(url, init));
         });
         const failSave = async () => {
-          await p.click('#right .statuses button:has-text("없음")');
+          if (!(await p.locator('#right .statuses button.on:has-text("없음")').count())) await p.click('#right .statuses button:has-text("없음")');
           await p.click('#right button.save');
           await p.waitForSelector('#right .error');
           assert.match((await p.textContent('#right'))!, /저장하지 못했습니다: disk full/);
@@ -1829,7 +1865,7 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
         await p.waitForSelector('#right .history li:nth-child(2)');
         assert.equal(await p.textContent('#right .history li:first-child .chip'), '충분');
         assert.equal(await p.textContent('#left .unread-marks li .chip'), '충분');
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status] as const).sort((a, b) => a[1].localeCompare(b[1])), [
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ story: 'run-lab' }, 'fine'], [{ story: 'run-lab' }, 'missing'],
         ]);
       }),
@@ -2663,7 +2699,7 @@ test('in a browser, a save that finishes after the reviewer moved to another scr
         await p.waitForSelector('#screen-list li:has-text("/lab/result") .chip.fine');
         await assertForm('충분', '');
 
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note] as const).sort((a, b) => a[1].localeCompare(b[1])), ([
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!, m.note] as const).sort((a, b) => a[1].localeCompare(b[1])), ([
           [{ node: '/document/:id#DocumentDetail' }, 'missing', ''],
           [{ node: '/admin/report#AdminReport' }, 'needs-more', 'keep me'],
           [{ node: '/lab/result#LabResult' }, 'fine', ''],
@@ -3116,7 +3152,7 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         await p.locator('table.calls tr.option').filter({ hasText: 'weekly 켬' }).locator('td.cell').first().click();
         assert.match(await p.locator('#right .option-sites').innerText(), /설정에 적음/);
 
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status] as const).sort((a, b) => a[1].localeCompare(b[1])), [
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true }, depth: 'output' }, 'missing'],
           [{ node: 'POST:/api/v1/report/export', option: { key: 'withAttachments', value: false } }, 'needs-more'],
         ]);

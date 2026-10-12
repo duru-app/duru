@@ -584,6 +584,27 @@ test('with no open marks the task list says so', () => {
   });
 });
 
+test('comments left on an open target after its mark follow the mark in order, while earlier comments and a target with only comments stay off the list', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    const before = cli('tasks');
+    addMark(marksDir, { target: { node: '/lab#Lab', depth: 'ui' }, note: 'Before the mark.', author: 'a' }, new Date('2026-10-05T01:00:00Z'));
+    addMark(marksDir, { target: { node: '/lab#Lab', depth: 'ui' }, status: 'missing', note: 'No UI test.', author: 'a' }, new Date('2026-10-05T02:00:00Z'));
+    addMark(marksDir, { target: { node: '/lab#Lab', depth: 'ui' }, note: 'The empty table too.', author: 'b' }, new Date('2026-10-05T03:00:00Z'));
+    addMark(marksDir, { target: { node: '/lab#Lab', depth: 'ui' }, note: 'And the error row.', author: 'a' }, new Date('2026-10-05T04:00:00Z'));
+    addMark(marksDir, { target: { story: 'read-reports' }, note: 'Only a comment.', author: 'a' }, new Date('2026-10-05T05:00:00Z'));
+
+    const after = cli('tasks');
+    const lab = after.split('## /lab#Lab\n')[1].split('\n## ')[0];
+    assert.match(lab, /^ {2}- missing, ui depth — "No UI test\." \(a, 2026-10-05\)\n {2}- comment, ui depth — "The empty table too\." \(b, 2026-10-05\)\n {2}- comment, ui depth — "And the error row\." \(a, 2026-10-05\)$/m);
+    assert.doesNotMatch(after, /Before the mark|Only a comment/);
+    assert.match(after.split('\n')[2], / A `comment` line under a mark is a comment a reviewer left on the same target after that mark\.$/);
+    assert.doesNotMatch(before, /`comment` line/);
+    assert.equal(after.includes('## read-reports'), before.includes('## read-reports'));
+  });
+});
+
 test('a note over several lines stays inside its mark, and a call whose API function was not found still shows', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     cli('rebuild');

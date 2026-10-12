@@ -57,7 +57,7 @@
   .chip { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; border: 1px solid currentColor; white-space: nowrap; }
   .chip.pass { color: var(--pass); } .chip.fail { color: var(--fail); } .chip.pending { color: var(--pending); }
   .chip.partial { color: var(--more); } .chip.untested { color: var(--fail); border-style: dashed; }
-  .chip.needs-more { color: var(--more); } .chip.missing { color: var(--missing); } .chip.fine { color: var(--fine); }
+  .chip.needs-more { color: var(--more); } .chip.missing { color: var(--missing); } .chip.fine { color: var(--fine); } .chip.comment { color: var(--muted); }
   .title-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .title-row h3 { margin: 0; font-size: 18px; }
   .frame-bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 6px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--bg); font-size: 13px; }
@@ -486,7 +486,7 @@ function othersSigned() {
   return [...marks.attached, ...marks.detached].flatMap((m) => m.history).concat(judged).some((record) => record.author !== author);
 }
 const signedAt = (record) => (othersSigned() ? `${record.author} · ${fmtDate(record.date)}` : fmtDate(record.date));
-const markChip = (m) => (m ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status] ?? CASE_STATUS[m.current.status]) : null);
+const markChip = (m) => (m?.current ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status] ?? CASE_STATUS[m.current.status]) : null);
 const callOf = (id) => state.data.map.calls.find((c) => c.id === id);
 const nodeWord = (id) => (callOf(id) ? '호출' : '화면');
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];
@@ -714,7 +714,7 @@ function markList(title, cls, marks, label, empty, pick = null) {
     marks.length
       ? h('ul', { class: `plain ${cls}` }, marks.map((m) => h('li', pick ? { class: label(m) === state.story ? 'selected' : '', onclick: () => pick(label(m)) } : {},
           markChip(m), ' ', h('code', {}, label(m)), h('br'),
-          h('span', { class: 'muted' }, signedAt(m.current)), m.current.note ? h('div', {}, m.current.note) : null)))
+          h('span', { class: 'muted' }, signedAt(m.current ?? m.history[0])), (m.current ?? m.history[0]).note ? h('div', {}, (m.current ?? m.history[0]).note) : null)))
       : empty,
   ];
 }
@@ -2321,30 +2321,34 @@ function renderScreenRight(info, dock) {
 
 function markForm(target, draftKey, label) {
   const mark = markOf(target);
-  state[draftKey] ??= { status: mark?.current.status ?? null, note: '' };
+  state[draftKey] ??= { status: mark?.current?.status ?? null, note: '' };
   const draft = state[draftKey];
   const history = mark?.history.length ? mark.history : null;
   const historyList = history && h('ul', { class: 'plain history' }, history.map((m) => h('li', {},
-    h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]), ' ', h('span', { class: 'muted' }, signedAt(m)),
+    m.status ? h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]) : h('span', { class: 'chip comment' }, '코멘트'), ' ', h('span', { class: 'muted' }, signedAt(m)),
     m.note ? h('div', {}, m.note) : null)));
   const historyToggle = history && h('button', { class: 'history-toggle', onclick: () => {
     state.historyOpen = !state.historyOpen;
     applyHistoryFold(historyToggle, historyList);
   } }, `이력 ${history.length}`);
   if (history) applyHistoryFold(historyToggle, historyList);
-  const save = h('button', { class: 'save', disabled: !draft.status, onclick: () => saveMark(target, draftKey) }, '표시 남기기');
+  const savable = () => !!draft.status || draft.note.trim() !== '';
+  const save = h('button', { class: 'save', disabled: !savable(), onclick: () => saveMark(target, draftKey) }, '남기기');
   const statuses = Object.entries(MARK_STATUS).map(([k, text]) => {
     const button = h('button', { class: draft.status === k ? 'on' : '', onclick: () => {
-      draft.status = k;
-      for (const b of statuses) b.classList.toggle('on', b === button);
-      save.disabled = false;
+      draft.status = draft.status === k ? null : k;
+      for (const b of statuses) b.classList.toggle('on', b === button && draft.status === k);
+      save.disabled = !savable();
     } }, text);
     return button;
   });
   return h('div', { class: 'mark-form' },
     h('h2', {}, '표시 — ', label),
     h('div', { class: 'statuses' }, statuses),
-    h('textarea', { placeholder: '메모', oninput: (e) => { draft.note = e.target.value; } }, draft.note),
+    h('textarea', { placeholder: '코멘트 — 상태 없이 글만 남겨도 됩니다', oninput: (e) => {
+      draft.note = e.target.value;
+      save.disabled = !savable();
+    } }, draft.note),
     state.error ? h('p', { class: 'error' }, state.error) : null,
     h('div', { class: 'save-row' }, save, historyToggle),
     historyList);
@@ -2522,6 +2526,9 @@ function showSaveError(reason, target) {
   if (!state.ended) renderRight();
 }
 
+// 지금 상태를 다시 매기는 것은 아무것도 바꾸지 않으므로, 함께 쓴 글은 코멘트로 보낸다.
+const asComment = (target, draft) => draft.note.trim() !== '' && draft.status === (markOf(target)?.current?.status ?? null);
+
 async function saveMark(target, draftKey) {
   state.error = null;
   const draft = state[draftKey];
@@ -2529,7 +2536,7 @@ async function saveMark(target, draftKey) {
     const res = await fetch('/api/marks', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ target, status: draft.status, note: draft.note }),
+      body: JSON.stringify({ target, status: asComment(target, draft) ? null : draft.status, note: draft.note }),
     });
     if (!res.ok) throw new Error(await res.text());
   } catch (err) {
@@ -3692,7 +3699,7 @@ window.addEventListener('popstate', () => {
   applyPlace();
 });
 
-const unsaved = (target, d) => !!d && (d.status !== (markOf(target)?.current.status ?? null) || d.note.trim() !== '');
+const unsaved = (target, d) => !!d && (d.note.trim() !== '' || (d.status !== null && d.status !== (markOf(target)?.current?.status ?? null)));
 
 function hasUnsavedMark() {
   return unsaved(state.target, state.draft) || unsaved({ story: state.story }, state.storyDraft);
@@ -3712,7 +3719,7 @@ function setEnding(ending) {
 
 async function endReview() {
   if (state.compose?.screens.length && !confirm('저장하지 않은 새 스토리가 있습니다. 「스토리 저장」을 누르지 않으면 스토리 파일이 생기지 않습니다. 그래도 리뷰를 끝낼까요?')) return;
-  if (hasUnsavedMark() && !confirm('「표시 남기기」를 누르지 않은 표시가 있습니다. 이 표시는 작업 목록에 들어가지 않습니다. 그래도 리뷰를 끝낼까요?')) return;
+  if (hasUnsavedMark() && !confirm('「남기기」를 누르지 않은 표시나 코멘트가 있습니다. 남기지 않으면 작업 목록에 들어가지 않습니다. 그래도 리뷰를 끝낼까요?')) return;
   const error = document.getElementById('end-error');
   error.textContent = '';
   setEnding(true);

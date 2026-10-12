@@ -74,10 +74,26 @@ test('marking the same target again keeps the history, and the latest mark is th
     addMark(dir, { target: { node: '/home#Home', depth: 'ui' }, status: 'missing', author: 'a' }, new Date('2026-09-30T03:00:00Z'));
     const { attached, detached } = classifyMarks(loadMarks(dir), MAP);
     assert.deepEqual(detached, []);
-    assert.deepEqual(attached.map((m) => [m.key, m.current.status, m.history.map((h) => h.note)]), [
+    assert.deepEqual(attached.map((m) => [m.key, m.current!.status, m.history.map((h) => h.note)]), [
       ['/home#Home', 'fine', ['second', 'first']],
       ['/home#Home ui', 'missing', ['']],
     ]);
+  });
+});
+
+test('a comment is a mark with no status: it needs a note, keeps its place in the history, and the latest mark with a status stays current', () => {
+  withMarksDir((dir: string) => {
+    addMark(dir, { target: { node: '/home#Home' }, status: 'needs-more', note: 'first', author: 'a' }, new Date('2026-09-30T01:00:00Z'));
+    const comment = addMark(dir, { target: { node: '/home#Home' }, note: 'the empty list too', author: 'b' }, new Date('2026-09-30T02:00:00Z'));
+    addMark(dir, { target: { story: 'run-lab' }, note: 'only a comment', author: 'b' }, new Date('2026-09-30T03:00:00Z'));
+    assert.deepEqual(Object.keys(comment), ['id', 'target', 'note', 'author', 'date']);
+    const { attached } = classifyMarks(loadMarks(dir), MAP, ['run-lab']);
+    assert.deepEqual(attached.map((m) => [m.key, m.current?.status ?? null, m.history.map((h) => [h.status ?? null, h.note])]), [
+      ['/home#Home', 'needs-more', [[null, 'the empty list too'], ['needs-more', 'first']]],
+      ['story(run-lab)', null, [[null, 'only a comment']]],
+    ]);
+    assert.throws(() => addMark(dir, { target: { node: '/home#Home' }, note: '  ', author: 'a' }), /a comment needs a note/);
+    assert.throws(() => addMark(dir, { target: { node: '/home#Home', case: 'empty' }, note: 'x', author: 'a' }), /unknown case mark status/);
   });
 });
 
@@ -87,7 +103,7 @@ test('a mark whose node is gone from the map is detached, not dropped', () => {
     addMark(dir, { target: { node: '/settings#Settings' }, status: 'needs-more', note: 'renamed?', author: 'a' });
     const { attached, detached } = classifyMarks(loadMarks(dir), MAP);
     assert.deepEqual(attached.map((m) => m.key), ['/lab#Lab data']);
-    assert.deepEqual(detached.map((m) => [m.key, m.current.note]), [['/settings#Settings', 'renamed?']]);
+    assert.deepEqual(detached.map((m) => [m.key, m.current!.note]), [['/settings#Settings', 'renamed?']]);
     assert.equal(loadMarks(dir).length, 2);
   });
 });
@@ -132,7 +148,7 @@ test('marks on a call, its depth, its option values and their depths are kept ap
     addMark(dir, { target: { node, option: { key: 'withHistory', value: true }, depth: 'ui' }, status: 'missing', author: 'a' });
     const { attached, detached } = classifyMarks(loadMarks(dir), OPTION_MAP);
     assert.deepEqual(detached, []);
-    assert.deepEqual(attached.map((m) => [m.key, m.current.status, m.history.length]), [
+    assert.deepEqual(attached.map((m) => [m.key, m.current!.status, m.history.length]), [
       [node, 'fine', 1],
       [`${node} ui`, 'fine', 1],
       [`${node} withHistory=false`, 'missing', 1],
@@ -166,7 +182,7 @@ test('a mark on a story is written with only the story in its target, in that st
     ]);
     const { attached, detached } = classifyMarks(loadMarks(dir), MAP, ['run-lab']);
     assert.deepEqual(detached, []);
-    assert.deepEqual(attached.map((m) => [m.key, m.target, m.current.status, m.history.map((h) => h.note)]), [
+    assert.deepEqual(attached.map((m) => [m.key, m.target, m.current!.status, m.history.map((h) => h.note)]), [
       ['story(run-lab)', { story: 'run-lab' }, 'needs-more', ['second', 'first']],
     ]);
   });
@@ -179,7 +195,7 @@ test('a mark on a story with no story file is detached, while marks on screens s
     addMark(dir, { target: { node: '/home#Home' }, status: 'missing', author: 'a' });
     const { attached, detached } = classifyMarks(loadMarks(dir), MAP, ['run-lab']);
     assert.deepEqual(attached.map((m) => m.key), ['/home#Home', 'story(run-lab)']);
-    assert.deepEqual(detached.map((m) => [m.key, m.current.note]), [['story(old-story)', 'gone?']]);
+    assert.deepEqual(detached.map((m) => [m.key, m.current!.note]), [['story(old-story)', 'gone?']]);
   });
 });
 
@@ -189,7 +205,7 @@ test('a mark on a story never shares its history with a mark on a call, whatever
     addMark(dir, { target: { story: 'run-lab' }, status: 'missing', author: 'a' }, new Date('2026-10-01T01:00:00Z'));
     addMark(dir, { target: { node: 'story:run-lab' }, status: 'fine', author: 'a' }, new Date('2026-10-02T01:00:00Z'));
     const { attached } = classifyMarks(loadMarks(dir), map, ['run-lab']);
-    assert.deepEqual(attached.map((m) => [m.target, m.current.status, m.history.length]), [
+    assert.deepEqual(attached.map((m) => [m.target, m.current!.status, m.history.length]), [
       [{ story: 'run-lab' }, 'missing', 1],
       [{ node: 'story:run-lab' }, 'fine', 1],
     ]);
@@ -209,7 +225,7 @@ test('a case mark is written with only its node and kind in its target, in the n
     assert.deepEqual(fs.readdirSync(dir).sort(), ['GET__api_v1_document_list', '_home#Home']);
     const { attached, detached } = classifyMarks(loadMarks(dir), MAP, [], ['boundary', 'legacy']);
     assert.deepEqual(detached, []);
-    assert.deepEqual(attached.map((m) => [m.key, m.current.status, m.history.length]), [
+    assert.deepEqual(attached.map((m) => [m.key, m.current!.status, m.history.length]), [
       ['/home#Home', 'missing', 1],
       ['/home#Home case:boundary', 'not-needed', 2],
       ['/home#Home case:legacy', 'needed', 1],
