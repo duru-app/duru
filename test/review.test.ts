@@ -4124,9 +4124,9 @@ test('in a browser, the zoom buttons shrink and grow the whole drawing around it
       withPage(base, async (p) => {
         await p.setViewportSize({ width: 1000, height: 300 });
         await p.waitForSelector('#flow .box.screen');
-        const zoom = p.locator('.flowbar .zoom');
+        const zoom = p.locator('#flow-zoom');
         assert.deepEqual(await zoom.locator('button').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label'))), ['그림 전체가 보이게 맞춤', '축소', '확대']);
-        assert.equal(await zoom.locator('.zoom-label').textContent(), '100%');
+        assert.equal(await zoom.locator('.zoom-level').inputValue(), '100%');
         const measure = () => p.evaluate(() => {
           const canvas = document.querySelector<HTMLElement>('#flow .canvas')!;
           const box = document.querySelector<HTMLElement>('#flow .box.screen')!;
@@ -4135,7 +4135,7 @@ test('in a browser, the zoom buttons shrink and grow the whole drawing around it
         const full = await measure();
         await zoom.locator('.zoom-out').click();
         await zoom.locator('.zoom-out').click();
-        assert.equal(await zoom.locator('.zoom-label').textContent(), '80%');
+        assert.equal(await zoom.locator('.zoom-level').inputValue(), '80%');
         assert.equal(await p.evaluate(() => document.activeElement!.className), 'zoom-out', 'the pressed button keeps the focus');
         const small = await measure();
         assert.equal(small.layoutWidth, full.layoutWidth, 'the layout is worked out at full size');
@@ -4144,7 +4144,7 @@ test('in a browser, the zoom buttons shrink and grow the whole drawing around it
         assert.ok(Math.abs(small.holder - small.drawnWidth) <= 1, 'the room the drawing takes shrinks with it');
         assert.ok(Math.abs(small.boxWidth - full.boxWidth * 0.8) <= 1);
         await p.evaluate(() => renderFlow());
-        assert.equal(await zoom.locator('.zoom-label').textContent(), '80%');
+        assert.equal(await zoom.locator('.zoom-level').inputValue(), '80%');
 
         await zoom.locator('.zoom-fit').click();
         const fit = await p.evaluate(() => {
@@ -4154,8 +4154,172 @@ test('in a browser, the zoom buttons shrink and grow the whole drawing around it
         assert.ok(fit.level < 0.8 && fit.level >= 0.3, `fit chose ${fit.level}`);
         assert.ok(fit.scrollH <= fit.clientH + 1 && fit.scrollW <= fit.clientW + 1, `the whole drawing is in view: ${JSON.stringify(fit)}`);
         for (let i = 0; i < 20; i += 1) if (await zoom.locator('.zoom-in').isEnabled()) await zoom.locator('.zoom-in').click();
-        assert.equal(await zoom.locator('.zoom-label').textContent(), '150%');
+        assert.equal(await zoom.locator('.zoom-level').inputValue(), '150%');
         assert.equal(await zoom.locator('.zoom-in').isDisabled(), true);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, the zoom control floats at the bottom-left of the drawing pane, stays there when a picked screen narrows the pane, and leaves the last row uncovered', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        for (const width of [1920, 1440]) {
+          await p.setViewportSize({ width, height: 320 });
+          await p.waitForSelector('#flow .box.screen');
+          for (const pick of [false, true]) {
+            if (pick) await (await screenBox(p, '/home#Home')).click();
+            else if ((await pickedBoxes(p)).length) await p.locator('.flowbar .unpick').click();
+            const m = await p.evaluate(() => {
+              const flow = document.getElementById('flow')!;
+              flow.scrollTop = flow.scrollHeight;
+              flow.scrollLeft = 0;
+              const pane = flow.getBoundingClientRect();
+              const zoom = document.getElementById('flow-zoom')!.getBoundingClientRect();
+              const meets = (r: DOMRect) => r.left < zoom.right && r.right > zoom.left && r.top < zoom.bottom && r.bottom > zoom.top;
+              const others = ['.flowbar', '#center', '#right', '#gaps'].map((sel) => document.querySelector(sel)!).filter((e) => !(e as HTMLElement).hidden);
+              return {
+                toLeft: zoom.left - pane.left, toBottom: pane.bottom - zoom.bottom, inside: zoom.right < pane.right && zoom.top > pane.top, width: zoom.width,
+                scrolls: flow.scrollHeight > flow.clientHeight,
+                covered: [...flow.querySelectorAll<HTMLElement>('.box.screen, .group-head, :scope > h2')].filter((e) => meets(e.getBoundingClientRect())).map((e) => e.dataset.key ?? e.textContent),
+                overlaps: others.filter((e) => meets(e.getBoundingClientRect())).map((e) => e.id || e.className),
+              };
+            });
+            const at = `${width}px, ${pick ? 'picked' : 'not picked'}`;
+            assert.ok(m.toLeft >= 8 && m.toLeft <= 24, `${at}: ${m.toLeft}px from the pane's left edge`);
+            assert.ok(m.toBottom >= 8 && m.toBottom <= 32, `${at}: ${m.toBottom}px from the pane's bottom edge`);
+            assert.ok(m.inside, at);
+            assert.ok(m.width <= 200, `${at}: the control is ${m.width}px wide`);
+            assert.ok(m.scrolls, `${at}: the drawing is taller than the pane`);
+            assert.deepEqual(m.covered, [], `${at}: nothing in the drawing sits under the control when scrolled to the end`);
+            assert.deepEqual(m.overlaps, [], at);
+          }
+          assert.deepEqual(await pickedBoxes(p), ['/home#Home']);
+          await p.locator('#flow-zoom .zoom-in').click();
+          assert.deepEqual(await pickedBoxes(p), ['/home#Home'], 'pressing the control does not let the picked screen go');
+          await p.locator('#flow-zoom .zoom-out').click();
+          await p.locator('.flowbar .unpick').click();
+        }
+        await p.click('#view-list');
+        assert.equal(await p.locator('#flow-zoom').isVisible(), false, 'the list view has no zoom control');
+        await p.click('#view-flow');
+        assert.equal(await p.locator('#flow-zoom').isVisible(), true);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, a percent typed into the zoom control applies on Enter or on leaving it, snaps to the nearest end when out of range, and Escape or a non-number keeps the level', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        const level = p.locator('#flow-zoom .zoom-level');
+        const now = () => p.evaluate(() => {
+          const input = document.querySelector<HTMLInputElement>('#flow-zoom .zoom-level')!;
+          return { zoom: state.zoom, value: input.value, focused: document.activeElement === input, selected: input.value.slice(input.selectionStart!, input.selectionEnd!), scale: document.querySelector<HTMLElement>('#flow .canvas')!.style.transform };
+        });
+        const type = async (text: string, key: string) => {
+          await p.keyboard.press('Control+A');
+          await p.keyboard.type(text);
+          await p.keyboard.press(key);
+        };
+        assert.equal(await level.getAttribute('aria-label'), '배율 (퍼센트)');
+
+        await level.click();
+        assert.deepEqual(await now(), { zoom: 1, value: '100%', focused: true, selected: '100%', scale: '' }, 'pressing the percent selects it');
+        await type('75', 'Enter');
+        assert.deepEqual(await now(), { zoom: 0.75, value: '75%', focused: true, selected: '75%', scale: 'scale(0.75)' });
+        await type('abc', 'Enter');
+        assert.deepEqual(await now(), { zoom: 0.75, value: '75%', focused: true, selected: '75%', scale: 'scale(0.75)' }, 'a non-number goes back');
+        await type('', 'Enter');
+        assert.equal((await now()).value, '75%', 'so does an empty field');
+        await p.keyboard.type('60');
+        await p.keyboard.press('Escape');
+        assert.deepEqual(await now(), { zoom: 0.75, value: '75%', focused: true, selected: '75%', scale: 'scale(0.75)' }, 'Escape goes back');
+        await type('500', 'Enter');
+        assert.equal((await now()).value, '150%');
+        assert.equal(await p.locator('#flow-zoom .zoom-in').isDisabled(), true);
+        await type('10%', 'Enter');
+        assert.equal((await now()).value, '30%');
+        assert.equal(await p.locator('#flow-zoom .zoom-out').isDisabled(), true);
+
+        await type('90', 'Tab');
+        assert.equal((await now()).zoom, 0.9, 'leaving the field applies it');
+        await level.click();
+        await p.keyboard.type('120');
+        await p.locator('.flowbar .flowsummary').click();
+        assert.deepEqual(await now(), { zoom: 1.2, value: '120%', focused: false, selected: '', scale: 'scale(1.2)' }, 'so does pressing outside it');
+
+        await (await screenBox(p, '/home#Home')).click();
+        await level.click();
+        await p.keyboard.type('80');
+        await p.locator('#flow-zoom .zoom-in').click();
+        assert.equal((await now()).value, '90%', 'pressing + right after typing applies both');
+        await level.click();
+        await p.keyboard.press('Escape');
+        assert.deepEqual(await pickedBoxes(p), ['/home#Home'], 'Escape in the field keeps the picked screen');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, pressing a filter, a screen box, 「선택 해제」 or the story picker right after typing a percent does what it does and applies the percent', { skip: browserMissing }, async () => {
+  await withPathStories({ walk: WALK }, async (p) => {
+    const level = p.locator('#flow-zoom .zoom-level');
+    const typed = async (text: string) => {
+      await level.click();
+      await p.keyboard.type(text);
+    };
+    const zoom = () => p.evaluate(() => [state.zoom, document.querySelector<HTMLInputElement>('#flow-zoom .zoom-level')!.value]);
+
+    await typed('80');
+    await filterButton(p, 'fail').click();
+    assert.equal(await filterButton(p, 'fail').getAttribute('aria-pressed'), 'true', 'the filter is on');
+    assert.deepEqual(await zoom(), [0.8, '80%']);
+
+    await typed('70');
+    await (await screenBox(p, '/home#Home')).click();
+    assert.deepEqual(await pickedBoxes(p), ['/home#Home'], 'the screen is picked');
+    assert.deepEqual(await zoom(), [0.7, '70%']);
+
+    await typed('60');
+    await p.locator('.flowbar .unpick').click();
+    assert.deepEqual(await pickedBoxes(p), [], 'the screen is let go');
+    assert.deepEqual(await zoom(), [0.6, '60%']);
+
+    await typed('90');
+    await p.locator('.story-pick select').click();
+    assert.equal(await p.evaluate(() => document.activeElement === document.querySelector('.story-pick select')), true, 'the picker that was pressed stays on the page and has the focus');
+    assert.deepEqual(await zoom(), [0.9, '90%']);
+  });
+});
+
+test('in a browser, a percent left by a press that ends in a drag applies when the drag ends, and leaves nothing behind for the next press or Tab', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        const level = p.locator('#flow-zoom .zoom-level');
+        const zoom = () => p.evaluate(() => state.zoom);
+        await level.focus();
+        await p.keyboard.type('80');
+        await p.evaluate(() => {
+          const box = document.querySelector('#flow .box.screen')!;
+          box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          document.querySelector<HTMLInputElement>('#flow-zoom .zoom-level')!.blur();
+          box.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+        });
+        await p.waitForFunction(() => state.zoom === 0.8);
+
+        await level.focus();
+        await p.keyboard.press('Control+A');
+        await p.keyboard.type('90');
+        await p.keyboard.press('Tab');
+        assert.equal(await zoom(), 0.9, 'Tab applies at once after the drag');
+        await p.locator('#flow-zoom .zoom-in').click();
+        assert.equal(await zoom(), 1, 'no earlier percent comes back after the next press');
       }, { view: 'flow' }),
     ),
   );
@@ -4204,7 +4368,7 @@ test('in a browser, the explanation in the flow bar is hidden on opening and an 
         assert.equal(await info.evaluate((e) => e === document.activeElement), true, 'Tab reaches the info button');
         await p.keyboard.press('Enter');
         assert.equal(await legend.isVisible(), true);
-        await p.locator('.flowbar .zoom-out').click();
+        await p.locator('#flow-zoom .zoom-out').click();
         assert.equal(await legend.isVisible(), true, 'a redraw keeps the explanation open');
         await (await screenBox(p, '/lab#Lab')).click();
         await p.keyboard.press('Escape');
@@ -4325,7 +4489,7 @@ test('in a browser, pressing Escape after the review ended throws nothing', { sk
   });
 });
 
-test('in a browser, the legend, the info icon and the zoom buttons stand together at the right end of the bar, which spans the whole width above the drawing and the panes', { skip: browserMissing }, async () => {
+test('in a browser, the legend and the info icon stand together at the right end of the bar, which spans the whole width above the drawing and the panes', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -4341,20 +4505,19 @@ test('in a browser, the legend, the info icon and the zoom buttons stand togethe
             const bar = rect('.flowbar');
             const main = rect('main');
             const icon = rect('.flowinfo-button');
-            const zoom = rect('.flowbar .zoom');
             const key = [...document.querySelectorAll('.flowkey li')].map((li) => li.getBoundingClientRect());
-            const sameRow = [...document.querySelectorAll('.flowbar button, .flowbar input, .flowbar .zoom')].map((e) => e.getBoundingClientRect()).filter((r) => r.top < zoom.bottom && r.bottom > zoom.top);
+            const sameRow = [...document.querySelectorAll('.flowbar button, .flowbar input')].map((e) => e.getBoundingClientRect()).filter((r) => r.top < icon.bottom && r.bottom > icon.top);
             return {
               bar: [bar.left, bar.right], main: [main.left, main.right], keyRight: Math.max(...key.map((r) => r.right)), iconLeft: icon.left, iconRight: icon.right,
-              zoomLeft: zoom.left, toBarEdge: bar.right - zoom.right, zoomLast: Math.max(...sameRow.map((r) => r.right)) === zoom.right,
+              toBarEdge: bar.right - icon.right, iconLast: Math.max(...sameRow.map((r) => r.right)) === icon.right, zoomInBar: !!document.querySelector('.flowbar .zoom'),
               round: Math.abs(icon.width - icon.height) < 0.5 && icon.width <= 28, drawingTop: rect('#flow').top, barBottom: bar.bottom,
             };
           });
           assert.deepEqual(m.bar, m.main, 'the bar spans the whole width');
           assert.ok(m.keyRight <= m.iconLeft && m.iconLeft - m.keyRight <= 16, 'the legend sits just left of the icon');
-          assert.ok(m.iconRight <= m.zoomLeft && m.zoomLeft - m.iconRight <= 16, 'the zoom buttons sit just right of the icon');
-          assert.ok(m.toBarEdge <= 20, `the zoom buttons are ${m.toBarEdge}px from the bar's right edge`);
-          assert.ok(m.zoomLast, 'nothing sits right of the zoom buttons');
+          assert.ok(m.toBarEdge <= 20, `the icon is ${m.toBarEdge}px from the bar's right edge`);
+          assert.ok(m.iconLast, 'nothing sits right of the icon');
+          assert.equal(m.zoomInBar, false, 'the zoom buttons are not in the bar');
           assert.ok(m.round, 'a small round button');
           assert.ok(Math.abs(m.drawingTop - m.barBottom) <= 1, 'the drawing starts under the bar');
         }
@@ -8361,7 +8524,7 @@ test('in a browser, the first drawing writes the place into the address without 
         const steps = await p.evaluate(() => history.length);
         await p.evaluate(() => render());
         await filterButton(p, 'fail').click();
-        await p.locator('.flowbar .zoom-out').click();
+        await p.locator('#flow-zoom .zoom-out').click();
         assert.equal(await p.evaluate(() => history.length), steps);
 
         await p.click('#view-list');

@@ -213,8 +213,9 @@
   .views button { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
   .views button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
   .views button:disabled { cursor: default; opacity: .6; }
-  /* 상자를 재는 순간에는 내용이 짧아 스크롤바가 없으므로, 그때 잰 폭이 다 그린 뒤와 같도록 스크롤바 자리를 늘 비워 둔다. */
-  #flow { overflow: auto; scrollbar-gutter: stable; padding: 16px; }
+  /* 상자를 재는 순간에는 내용이 짧아 스크롤바가 없으므로, 그때 잰 폭이 다 그린 뒤와 같도록 스크롤바 자리를 늘 비워 둔다.
+     아래쪽을 넓게 비워, 끝까지 내렸을 때 왼쪽 아래 확대·축소 조절이 마지막 줄 상자를 가리지 않게 한다. */
+  #flow { overflow: auto; scrollbar-gutter: stable; padding: 16px 16px 60px; }
   #flow h2 { margin: 20px 0 8px; }
   #gaps .lead { margin: 0; font-size: 12px; }
   #gaps h3 { margin: 14px 0 0; font-size: 13px; }
@@ -280,9 +281,13 @@
   .flowbar .flow-filters button.on { background: var(--selected); font-weight: 600; }
   .flow-filters .count { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 8px; background: var(--line); font-size: 11px; font-weight: 600; line-height: 16px; text-align: center; }
   .flowbar .flow-search { flex: none; width: 180px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; }
-  .zoom { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
-  .flowbar .zoom button { border: 0; border-radius: 0; background: none; padding: 2px 8px; }
-  .zoom-label { min-width: 40px; font-size: 12px; text-align: center; color: var(--muted); }
+  main.flow { position: relative; }
+  .zoom { position: absolute; grid-area: 2 / 1 / 3 / 2; left: 16px; bottom: 20px; z-index: 2; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
+  main:not(.flow) .zoom { display: none; }
+  .zoom button { padding: 3px 9px; border: 0; background: none; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+  .zoom button:disabled { opacity: .4; cursor: default; }
+  .zoom .zoom-level { width: 48px; padding: 3px 0; border: 0; border-radius: 4px; background: none; color: var(--muted); font: inherit; font-size: 12px; text-align: center; }
+  .zoom .zoom-level:focus { outline: 1px solid var(--accent); color: var(--text); }
   .story-pick { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; padding-left: 10px; border-left: 1px solid var(--line); font-size: 12px; }
   .story-pick select { max-width: 300px; padding: 2px 4px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }
   .pathinfo { position: relative; }
@@ -3701,10 +3706,13 @@ function flowSearch() {
   return flowSearchInput;
 }
 
-function setZoom(z, focus) {
-  state.zoom = Math.floor(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100 + 1e-6) / 100;
-  renderFlow();
-  if (focus) document.querySelector(`#flow-bar .zoom .${focus}`)?.focus();
+const zoomLevel = (z) => Math.floor(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100 + 1e-6) / 100;
+const zoomText = () => `${Math.round(state.zoom * 100)}%`;
+
+// 위쪽 줄은 배율과 상관이 없으므로 다시 만들지 않는다. 다시 만들면 퍼센트 칸에서 빠져나오며 펼친 스토리 목록이 닫힌다.
+function setZoom(z) {
+  state.zoom = zoomLevel(z);
+  renderFlow({ bar: false });
 }
 
 // 진입 화면을 모은 칸은 폭에 따라 줄 수가 바뀌어 높이도 바뀌므로 한 번 더 맞춘다.
@@ -3723,15 +3731,71 @@ function fitZoom() {
     const height = canvases.reduce((sum, c) => sum + c.offsetHeight, 0);
     setZoom(Math.min(1, room.width / width, room.height / height));
   }
-  document.querySelector('#flow-bar .zoom .zoom-fit')?.focus();
 }
 
-function zoomControls() {
-  return h('span', { class: 'zoom', role: 'group', 'aria-label': '확대와 축소' },
-    h('button', { type: 'button', class: 'zoom-fit', title: '그림 전체가 보이게 맞춥니다', 'aria-label': '그림 전체가 보이게 맞춤', onclick: fitZoom }, '⛶'),
-    h('button', { type: 'button', class: 'zoom-out', title: '축소', 'aria-label': '축소', disabled: state.zoom <= ZOOM_MIN, onclick: () => setZoom(state.zoom - ZOOM_STEP, 'zoom-out') }, '−'),
-    h('span', { class: 'zoom-label' }, `${Math.round(state.zoom * 100)}%`),
-    h('button', { type: 'button', class: 'zoom-in', title: '확대', 'aria-label': '확대', disabled: state.zoom >= ZOOM_MAX, onclick: () => setZoom(state.zoom + ZOOM_STEP, 'zoom-in') }, '+'));
+function applyZoomInput(input, text = input.value) {
+  const typed = text.trim().replace(/\s*%$/, '');
+  const n = typed === '' ? NaN : Number(typed);
+  if (Number.isFinite(n) && zoomLevel(n / 100) !== state.zoom) setZoom(n / 100);
+  input.value = zoomText();
+}
+
+// 칸 밖을 눌러 초점이 빠질 때 바로 다시 그리면 누른 상자가 클릭이 끝나기 전에 사라지므로, 그때는 누른 것의 클릭이 끝난 뒤에 적용한다.
+// 클릭 없이 끝나는 누름은 손을 뗄 때 적용한다. 끌기를 마치거나 누른 채 메뉴가 열려 끝나는 누름에는 mouseup 이 오지 않을 수 있으므로 그때도 손을 뗀 것으로 본다.
+let pressedAt = null;
+let leftZoomText = null;
+function applyLeftZoom() {
+  if (leftZoomText === null) return;
+  const text = leftZoomText;
+  leftZoomText = null;
+  applyZoomInput(zoomBox.querySelector('.zoom-level'), text);
+}
+document.addEventListener('mousedown', (e) => { pressedAt = e.button === 0 ? e.target : null; }, true);
+for (const type of ['mouseup', 'dragend', 'contextmenu']) {
+  document.addEventListener(type, () => {
+    pressedAt = null;
+    if (leftZoomText !== null) setTimeout(applyLeftZoom);
+  }, true);
+}
+addEventListener('click', applyLeftZoom);
+function leaveZoomInput(input) {
+  if (pressedAt && !zoomBox.contains(pressedAt)) leftZoomText = input.value;
+  else applyZoomInput(input);
+}
+
+// 퍼센트 칸에 숫자를 쳐 둔 채 − 나 + 를 누르면 칸에서 초점이 빠지면서 배율이 먼저 바뀌고 그림을 다시 그린다.
+// 이때 단추를 새로 만들면 누른 것이 사라지므로, 조절은 한 번만 만들고 값만 고친다.
+let zoomBox = null;
+function syncZoom() {
+  if (!zoomBox) {
+    zoomBox = h('div', { id: 'flow-zoom', class: 'zoom', role: 'group', 'aria-label': '확대와 축소' },
+      h('button', { type: 'button', class: 'zoom-fit', title: '그림 전체가 보이게 맞춥니다', 'aria-label': '그림 전체가 보이게 맞춤', onclick: fitZoom }, '⛶'),
+      h('button', { type: 'button', class: 'zoom-out', title: '축소', 'aria-label': '축소', onclick: () => setZoom(state.zoom - ZOOM_STEP) }, '−'),
+      h('input', {
+        type: 'text',
+        class: 'zoom-level',
+        inputmode: 'numeric',
+        'aria-label': '배율 (퍼센트)',
+        title: '숫자를 치고 Enter 를 누르면 그 배율이 됩니다',
+        onfocus: (e) => e.target.select(),
+        onkeydown: (e) => {
+          if (e.isComposing) return;
+          if (e.key === 'Enter') applyZoomInput(e.target);
+          else if (e.key === 'Escape') {
+            e.preventDefault();
+            e.target.value = zoomText();
+          } else return;
+          e.target.select();
+        },
+        onblur: (e) => leaveZoomInput(e.target),
+      }),
+      h('button', { type: 'button', class: 'zoom-in', title: '확대', 'aria-label': '확대', onclick: () => setZoom(state.zoom + ZOOM_STEP) }, '+'));
+    document.getElementById('flow').after(zoomBox);
+  }
+  const input = zoomBox.querySelector('.zoom-level');
+  if (document.activeElement !== input) input.value = zoomText();
+  zoomBox.querySelector('.zoom-out').disabled = state.zoom <= ZOOM_MIN;
+  zoomBox.querySelector('.zoom-in').disabled = state.zoom >= ZOOM_MAX;
 }
 
 function renderFlowBar(st, screens) {
@@ -3746,7 +3810,7 @@ function renderFlowBar(st, screens) {
     flowSearch(),
     storyPicker(st),
     picked ? h('span', { class: 'picking' }, '고른 화면 ', h('strong', {}, picked.path), ' ', h('button', { type: 'button', class: 'unpick', onclick: unpickScreen }, '선택 해제')) : null,
-    h('div', { class: 'flowguide' }, flowKey(), legendInfo('flow', '흐름도 읽는 법', flowLegendItems()), zoomControls()),
+    h('div', { class: 'flowguide' }, flowKey(), legendInfo('flow', '흐름도 읽는 법', flowLegendItems())),
     st ? storyStrip(st) : null);
   syncFlowFilters();
   if (searching) flowSearchInput.focus();
@@ -3802,7 +3866,7 @@ function renderGaps() {
     failing.length + untested.length ? null : h('p', { class: 'muted' }, '빈틈이 없습니다.'));
 }
 
-function renderFlow() {
+function renderFlow({ bar = true } = {}) {
   const flow = document.getElementById('flow');
   if (state.ended || flow.hidden) return;
   // 상자를 재는 동안 캔버스 높이가 0 이 되어 스크롤이 맨 위로 밀리므로 위치를 정한 뒤 되돌린다.
@@ -3818,7 +3882,8 @@ function renderFlow() {
   const { roots, unreached, path } = drawnTrees();
   const story = st && { st, hidden: path.hidden, ring: state.storyPath.ring };
   const { summary } = state.data.flow;
-  renderFlowBar(st, screensIn([...roots, ...unreached]));
+  if (bar) renderFlowBar(st, screensIn([...roots, ...unreached]));
+  syncZoom();
   fill(flow,
     roots.length ? draw(roots, { group: !st, story })
       : st ? null : h('p', { class: 'muted' }, summary.screens ? '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.' : '화면이 없습니다.'),
