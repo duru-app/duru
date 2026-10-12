@@ -36,6 +36,18 @@
   main.flow.picked { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 360px; }
   section { overflow: auto; padding: 12px 16px; }
   section + section { border-left: 1px solid var(--line); }
+  main { position: relative; }
+  .sash { position: absolute; grid-row: 1; top: 0; bottom: 0; left: -4px; z-index: 2; width: 9px; cursor: col-resize; touch-action: none; }
+  #sash-left { grid-column: 2; }
+  #sash-right { grid-column: 3; }
+  main.flow .sash { grid-row: 2; }
+  main.flow:not(.picked) .sash { display: none; }
+  .sash::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; transition: background-color .1s; }
+  .sash:hover::before { background: var(--accent); transition-delay: .3s; }
+  .sash.dragging::before { background: var(--accent); transition: none; }
+  body.pane-dragging, body.pane-dragging * { cursor: col-resize; user-select: none; }
+  /* 앱 프레임이 마우스를 가져가면 그 위를 지나는 동안 끌기가 멈춘다. */
+  body.pane-dragging iframe { pointer-events: none; }
   h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 16px 0 6px; }
   h2:first-child { margin-top: 0; }
   code, .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
@@ -421,6 +433,8 @@
   <section id="center"><div id="center-head"></div><div id="center-body"></div></section>
   <section id="right"><div id="right-info"></div><div id="right-dock"></div></section>
   <section id="gaps" hidden></section>
+  <div class="sash" id="sash-left"></div>
+  <div class="sash" id="sash-right"></div>
 </main>
 <p id="failed" class="error" hidden></p>
 <dialog id="exclude" closedby="none" aria-labelledby="exclude-title">
@@ -3962,6 +3976,7 @@ function render() {
   const main = document.querySelector('main');
   main.classList.toggle('flow', flow);
   main.classList.toggle('picked', picked);
+  fitPanes();
   for (const id of ['flow-bar', 'flow']) document.getElementById(id).hidden = !flow;
   document.getElementById('left').hidden = flow;
   for (const id of ['center', 'right']) document.getElementById(id).hidden = flow && !picked;
@@ -4119,6 +4134,53 @@ window.addEventListener('resize', () => {
     if (cellsPerRow(drawnGrid.count, drawnGrid.cellW, flowInnerWidth(flow) / state.zoom) !== drawnGrid.per) renderFlow();
   });
 });
+
+const startWidths = { left: 300, graph: null, right: 360 };
+const draggedWidths = { ...startWidths };
+const PANE_MIN = { left: 300, graph: 240, center: 360, right: 320 };
+
+// 끌어서 정한 너비는 그대로 두므로 창이 다시 넓어지면 돌아온다.
+function fitPanes() {
+  const main = document.querySelector('main');
+  if (!main || main.hidden) return;
+  const flow = main.classList.contains('flow');
+  if (flow && !main.classList.contains('picked')) return main.style.removeProperty('grid-template-columns');
+  const side = flow ? 'graph' : 'left';
+  const total = main.clientWidth;
+  const want = { [side]: draggedWidths[side] ?? (total - startWidths.right) / 2, right: draggedWidths.right };
+  const room = { [side]: Math.max(0, want[side] - PANE_MIN[side]), right: Math.max(0, want.right - PANE_MIN.right) };
+  const over = Math.min(want[side] + want.right + PANE_MIN.center - total, room[side] + room.right);
+  if (over > 0) for (const key of [side, 'right']) want[key] -= over * room[key] / (room[side] + room.right);
+  main.style.gridTemplateColumns = `${want[side]}px minmax(0, 1fr) ${want.right}px`;
+}
+
+window.addEventListener('resize', fitPanes);
+
+for (const sash of document.querySelectorAll('main > .sash')) {
+  sash.addEventListener('pointerdown', (down) => {
+    if (down.button !== 0) return;
+    down.preventDefault();
+    const main = document.querySelector('main');
+    const right = sash.id === 'sash-right';
+    const key = right ? 'right' : main.classList.contains('flow') ? 'graph' : 'left';
+    const [first, , last] = getComputedStyle(main).gridTemplateColumns.split(' ').map(parseFloat);
+    const [from, other, sign] = right ? [last, first, -1] : [first, last, 1];
+    const most = main.clientWidth - other - PANE_MIN.center;
+    sash.setPointerCapture(down.pointerId);
+    sash.classList.add('dragging');
+    document.body.classList.add('pane-dragging');
+    const move = (e) => {
+      draggedWidths[key] = Math.max(PANE_MIN[key], Math.min(most, from + sign * (e.clientX - down.clientX)));
+      window.dispatchEvent(new Event('resize'));
+    };
+    sash.addEventListener('pointermove', move);
+    sash.addEventListener('lostpointercapture', () => {
+      sash.removeEventListener('pointermove', move);
+      sash.classList.remove('dragging');
+      document.body.classList.remove('pane-dragging');
+    }, { once: true });
+  });
+}
 
 const FIELDS = 'input, textarea, select';
 const fieldKey = (f) => [f.localName, f.type, f.name, f.placeholder, f.getAttribute('aria-label'), f.className, f.closest('[id]')?.id].join('|');

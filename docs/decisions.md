@@ -1289,6 +1289,28 @@ The page reads and writes only through the server's requests (`/api/data`, `/api
 files it saves do not depend on how it is drawn, so changing this later changes the page alone; what grows with
 each feature added meanwhile is the amount of page to rewrite.
 
+**The edges on either side of the review page's middle pane are dragged to change the pane widths; each stays the
+1px line it was, grabbed across a 9px strip laid over it and drawn in the accent colour only under the mouse or while
+dragged.**
+Alternatives compared: a 6px edge that is always shown, which is found without a strip over it but takes room from
+the panes and draws a heavy bar between them all the time. The thin line follows VS Code (a 4px strip, the accent
+line drawn separately, lit 300ms after the mouse rests on it), Chrome DevTools (a 1px line under a 6px clear strip)
+and JupyterLab (a clear overlay of at least 8px, darker on hover). While an edge is dragged no frame on the page
+takes the mouse, as in VS Code, since the app frame in the middle pane would otherwise take it as it passes over and
+the drag would stop there. Both views have the two edges, as the right pane is as fixed in the list as beside a
+picked screen in the flow; the right pane is one width in both, and the drawing keeps the width it was dragged to
+instead of half of what is left. Until it is dragged, the drawing takes half of what the right pane leaves at its
+starting width, so dragging the right edge moves only the middle pane while the drawing still grows with the
+window. The widths last only until the page is loaded again, since the page keeps nothing
+in browser storage, and there is no keyboard resizing. Each pane has a floor: 300px for the list, where its three
+tabs fit with three-digit counts and a classic scrollbar; 240px for the drawing, which scrolls sideways anyway;
+360px for the middle pane, where the address bar over the app frame and the screen's title fit, while the table of
+tests may still scroll sideways when a test's name holds a long unbroken word such as `@screen:/home#Home`, which no
+fixed floor could cover; 320px for the right pane, where the comment form's status buttons stay on one line and its
+placeholder fits on one line (302px measured). When the window gets too narrow for the middle pane's floor, the
+side panes give up the width they were dragged to, each in proportion to what it has above its own floor; the
+dragged widths are kept, so a window made wide again gets them back.
+
 **A Playwright test whose trace passes two screens or more gives a story candidate, and a story accepted from it
 keeps `{ "report", "tests" }` as its source.**
 duru already reads the addresses each test opened from its trace for 「지나간 시험」, so a suite that runs with traces
