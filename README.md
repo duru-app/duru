@@ -562,6 +562,13 @@ case by depth, and lists the links into it with their guards. With `caseKinds` s
 per kind for every screen, and for a call once the call is chosen: pressing one makes the kind a case there, with
 its tests by depth, and pressing it again takes it out. The flow shows the same right pane for a picked screen.
 
+**Pane widths.** The edge on either side of the middle pane, in the list and beside a picked screen in the flow,
+can be dragged to widen or narrow the panes; the line lights up when the mouse rests on it. The drawing is laid out
+again for its new width, and the app in the middle pane is shown at the percent that fits the pane's new width
+(with 「칸에 맞춤」, the app itself gets the new width). No pane can be dragged narrower than its contents need, and when the window gets too narrow
+for the middle pane, the side panes give back the width they were dragged to. The widths last until the page is
+loaded again.
+
 **Changes since a baseline.** With `baselineMap` set, the header names the baseline by its folder and path
 (「비교 기준」). A screen in the list carries 「생김」, 「조건 바뀜」 (the conditions before and after on hover) or
 「호출 +N −N」, and 「바뀐 화면만」 in the box 「<folder> 와 비교」 keeps only those. Below the list come the screens only the
