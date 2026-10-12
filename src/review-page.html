@@ -19,7 +19,7 @@
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; background: var(--bg); color: var(--text); }
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; }
   header { position: relative; z-index: 10; display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
   header h1 { font-size: 16px; margin: 0; }
   header .meta { color: var(--muted); font-size: 12px; }
@@ -31,7 +31,7 @@
   #end-review { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--accent); background: var(--panel); color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
   #end-review:disabled { opacity: .5; cursor: default; }
   #ended, #failed { padding: 16px; }
-  main { display: grid; grid-template-columns: 300px minmax(0, 1fr) 360px; height: calc(100vh - 49px); }
+  main { display: grid; grid-template-columns: 300px minmax(0, 1fr) 360px; flex: 1; min-height: 0; }
   main.flow { grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr); }
   main.flow.picked { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 360px; }
   section { overflow: auto; padding: 12px 16px; }
@@ -80,7 +80,8 @@
   .setting button, .settings-bar > button, .setting select { padding: 1px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
   .setting button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
   .setting button:disabled, .setting select:disabled, .setting input:disabled { cursor: default; opacity: .6; }
-  iframe.app { display: block; width: 100%; height: 60vh; border: 1px solid var(--line); border-radius: 0 0 6px 6px; background: #fff; }
+  .app-stage { height: 60vh; overflow: hidden; resize: vertical; border: 1px solid var(--line); border-radius: 0 0 6px 6px; background: var(--bg); }
+  iframe.app { display: block; width: 100%; height: 100%; border: 0; background: #fff; transform-origin: 0 0; }
   .frame-note { margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 6px; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; }
   th, td { text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid var(--line); }
@@ -1460,10 +1461,48 @@ function appFrame(s, { link, fallback, opens, missing }, entry) {
       ],
       unknown,
       h('a', { href: opened, target: '_blank', rel: 'noopener', onclick: entry?.issued && !fallback ? openAnew : null }, '새 창으로 열기 ↗'),
+      appWidthPicker(),
       values),
     h('div', { class: 'settings-bar', id: 'settings-bar', hidden: true }),
-    h('iframe', { class: 'app', 'data-src': opened, title: '앱 화면' }),
+    appStage(opened),
   ];
+}
+
+// ---------- 앱 너비 ----------
+
+// 0 은 칸에 맞춤이다.
+let appWidth = 1280;
+const appResized = new ResizeObserver(() => fitApp());
+
+function appWidthPicker() {
+  return h('label', {}, '앱 너비 ',
+    h('select', { class: 'app-width', onchange: (e) => { appWidth = Number(e.target.value); fitApp(); } },
+      [0, 1024, 1280, 1440].map((w) => h('option', { value: w, selected: w === appWidth }, w || '칸에 맞춤'))),
+    ' ', h('span', { class: 'app-scale muted' }));
+}
+
+function appStage(src) {
+  const frame = h('iframe', { class: 'app', 'data-src': src, title: '앱 화면', style: appWidth ? `width: ${appWidth}px` : null });
+  const stage = h('div', { class: 'app-stage' }, frame);
+  appResized.disconnect();
+  appResized.observe(stage);
+  return stage;
+}
+
+function fitApp() {
+  const stage = document.querySelector('#center .app-stage');
+  const frame = stage?.querySelector('iframe.app');
+  const note = document.querySelector('#center .app-scale');
+  if (!frame || !stage.clientWidth) return;
+  const room = stage.clientWidth;
+  if (!appWidth) {
+    Object.assign(frame.style, { width: '', height: '', transform: '' });
+    note.textContent = `칸 너비 그대로 ${room}px`;
+    return;
+  }
+  const percent = Math.max(1, Math.min(100, Math.floor((room / appWidth) * 100)));
+  Object.assign(frame.style, { width: `${appWidth}px`, height: `${(stage.clientHeight * 100) / percent}px`, transform: `scale(${percent / 100})` });
+  note.textContent = percent < 100 ? `${appWidth}px 화면을 ${percent}%로 줄여서 보여 줍니다` : `${appWidth}px 화면을 실제 크기로 보여 줍니다`;
 }
 
 // ---------- 프레임 위에 붙는 설정 줄 ----------
