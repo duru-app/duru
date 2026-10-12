@@ -509,7 +509,8 @@ button, a reload and a copied address work.
 **Flow.** The page opens on the flow: one line per screen, in columns by how many links they are from an entry
 screen, with a square for the status of its tagged tests, the number of its API calls, and 「역할」 or 「설정」 when
 it opens only under a role or a setting; hovering shows what it needs and its untagged tests. A dashed line is a
-link under a setting or role condition. The bar above counts the drawn screens by status on buttons
+link under a setting or role condition. Entry screens with no screen drawn under them are gathered below the rest under
+「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. The bar above counts the drawn screens by status on buttons
 (「테스트 없음 4」, 「실패 5」 …); pressing one fades the other screens, and the search box does the same by route or
 component. With nothing picked, the right column lists the failing screens and then the ones without a tagged
 test. Pressing a screen keeps strong only the paths through it, marks the screens its links reach in other
