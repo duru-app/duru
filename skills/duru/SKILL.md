@@ -144,7 +144,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    target can also carry a `depth` or an `option` of a call, and a mark whose target has a `case` (status `needed`
    or `not-needed`) or whose status is `fine` asks for nothing by itself.
    A comment can also be about one part of a screen or call, named in `target.part` as `{ "kind", "key" }`. Such a
-   line carries `where`, saying where that part is now, or `null` when it is no longer found; a reply to the comment
+   line carries `where`, saying where that part is now, or `null` when it is no longer found or `tests.json` could
+   not be read at that moment (a `rebuild` was writing it), so check the task list before taking it as gone; a reply to the comment
    carries the same `target` and `where`. A part takes comments only, never a status. By kind:
    - `"kind": "test"`: one test row under the screen or call. `key` names the test by its result file (`source`),
      test file and title without tags. `where` gives the test `file` and `line`, the result file `source`, its

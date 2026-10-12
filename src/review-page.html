@@ -2580,7 +2580,11 @@ function markForm(target, draftKey, label) {
   return h('div', { class: 'mark-form' },
     h('div', { class: 'talk-head' }, h('h2', {}, '에이전트와 대화'), h('div', { class: 'tags' }, '꼬리표 ', tag
       ? tagChip(tag === target ? label : tagLabel(tag), untag)
-      : [h('span', { class: 'muted' }, '없음'), h('button', { type: 'button', class: 'retag', onclick: () => { draft.noTag = false; render(); } }, `${label} 다시 붙이기`)])),
+      : [h('span', { class: 'muted' }, '없음'), h('button', { type: 'button', class: 'retag', onclick: () => {
+        draft.noTag = false;
+        render();
+        document.querySelector('#right-dock textarea')?.focus();
+      } }, `${label} 다시 붙이기`)])),
     h('div', { class: 'statuses' }, statuses),
     h('textarea', { placeholder: '코멘트 — 상태 없이 글만 남겨도 됩니다', oninput: (e) => {
       draft.note = e.target.value;

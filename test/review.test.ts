@@ -9554,6 +9554,7 @@ test('in a browser, the default tag taken off with its × comes back with the no
         await p.click('#right-dock .mark-form .tags button.retag');
         assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '화면 전체');
         assert.equal(await p.inputValue('#right-dock textarea'), 'half a thought');
+        assert.equal(await p.evaluate(() => document.activeElement?.localName), 'textarea');
         assert.equal(await p.isDisabled('#right-dock button.save'), false);
       })));
 });
