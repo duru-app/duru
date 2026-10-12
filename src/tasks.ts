@@ -97,6 +97,25 @@ const laterComments = (m: any) => m.history.slice(0, m.history.indexOf(m.current
 const repliesTo = (m: any, record: any) => m.history.filter((r: any) => r.replyTo === record.id).reverse();
 const entryLines = (m: any, where?: string) => [m.current, ...laterComments(m)].flatMap((r) => [markLine(r, where), ...repliesTo(m, r).map((reply: any) => markLine(reply, undefined, '    '))]);
 
+const RELATION_TEXT: Record<string, (word: string) => string> = {
+  tagged: (word) => `tagged with this ${word}`,
+  imported: (word) => `imports a source file of this ${word} without its tag`,
+  passed: (word) => `opened this ${word} while running, without its tag`,
+  called: (word) => `sent this ${word} while running, without its tag`,
+};
+
+function partLines(entries: any[], word: string) {
+  if (!entries.length) return [];
+  return ['- comments on tests:', ...entries.flatMap((m) => {
+    const { title } = m.target.part.key;
+    const { file, line, status, relation, source, detail } = m.where;
+    const at = file ? ` at ${line ? `${file}:${line}` : file}` : '';
+    const head = `  - test "${within(title, '    ')}"${at} — ${status}, ${RELATION_TEXT[relation](word)}, from ${source}${detail ? ` — ${within(detail, '    ')}` : ''}`;
+    const comments = [...m.history].reverse().filter((r: any) => r.replyTo === undefined);
+    return [head, ...comments.flatMap((c: any) => [markLine(c, undefined, '    '), ...repliesTo(m, c).map((reply: any) => markLine(reply, undefined, '      '))])];
+  })];
+}
+
 const kindsText = (kinds: string[]) => kinds.map((k) => KIND_NAMES[k]).join(' and ');
 
 const needsText = (kinds: string[]) => (kinds.length ? `needs ${kindsText(kinds)}` : `${MIXED_KINDS}, see each link below`);
@@ -351,6 +370,7 @@ export function taskList(config: any) {
   const formats = [...new Set<string>(config.tests.map((t: any) => t.format))];
   const resultLines = resultOptionLines(map, tests.nodes);
   const hasKinds = Object.keys(config.caseKinds).length > 0;
+  const partsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.node === id);
 
   const out = [
     `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}`,
@@ -361,6 +381,9 @@ export function taskList(config: any) {
   ];
   if (open.some((m) => laterComments(m).length)) out[2] += ' A `comment` line under a mark is a comment a reviewer left on the same target after that mark.';
   if (open.some((m) => laterComments(m).some((c: any) => repliesTo(m, c).length))) out[2] += ' A `reply` line under a comment is an answer to that comment.';
+  if ([...screens, ...calls].some((n) => partsOf(n.id).length)) {
+    out[2] += ' Under `comments on tests`, each test a reviewer left a comment on is named with its file and line, its status, how it is linked to the screen or call and the result file it was read from; read the result file for why it failed.';
+  }
   if (map.serverNotCompared) out.push('', `${SERVER_NOT_COMPARED}, so no call below is written as missing on the server.`);
   if (!open.length) out.push('', 'No open marks.');
   for (const s of screens) {
@@ -371,6 +394,7 @@ export function taskList(config: any) {
       '',
       '- marks:',
       ...marks.flatMap((m) => entryLines(m, cellText(m.target, 'whole screen'))),
+      ...partLines(partsOf(s.id), 'screen'),
       `- component: ${s.componentFile}, route at ${s.routeFile}:${s.line}`,
       ...(appLinks[s.id] ? [`- app: ${appLinks[s.id]}`] : []),
       ...accessLines(s.access, restricted),
@@ -389,6 +413,7 @@ export function taskList(config: any) {
       '',
       '- marks:',
       ...marks.flatMap((m) => entryLines(m, cellText(m.target, 'whole call'))),
+      ...partLines(partsOf(c.id), 'call'),
       `- called from: ${c.screens.length ? c.screens.join(', ') : 'no screen'}`,
       `- server: ${serverText(c.server)}`,
       ...resultLines(c.id, ''),

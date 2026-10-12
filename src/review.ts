@@ -13,6 +13,7 @@ import { buildFlow } from './flow.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
 import { addMark, addReply, classifyMarks, loadMarks, recordKind } from './marks.ts';
 import type { Mark } from './marks.ts';
+import { locatePart } from './parts.ts';
 import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.ts';
 import { addStory, editStory } from './stories.ts';
 import { checkScreens, checkStoryFiles } from './story-paths.ts';
@@ -81,16 +82,17 @@ function readMap(mapFile: string) {
   return map;
 }
 
-const judgedTests = (config: any) => applyJudgments(readJson(path.join(config.outDir, 'tests.json')), loadJudgments(config.judgmentsDir).judgments);
+const readTests = (config: any) => readJson(path.join(config.outDir, 'tests.json'));
 
 export function reviewData(config: any, author: ReviewAuthor | null, app: Awaited<ReturnType<typeof startAppHost>> | null = null, fileSettings: Record<string, unknown> | null = null) {
   const mapFile = path.join(config.outDir, 'map.json');
   const map = readMap(mapFile);
-  const { traced, ...tests } = judgedTests(config);
+  const linked = readTests(config);
+  const { traced, ...tests } = applyJudgments(linked, loadJudgments(config.judgmentsDir).judgments);
   const callsById = new Map<string, any>(map.calls.map((c: any) => [c.id, c]));
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
   const kinds = Object.keys(config.caseKinds);
-  const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds);
+  const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds, linked);
   const needed = new Map<string, Set<string>>();
   for (const { target, current } of marks.attached) {
     if (target.case === undefined || current?.status !== 'needed') continue;
@@ -156,7 +158,9 @@ function readBody(req: http.IncomingMessage) {
   });
 }
 
-export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {} }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (mark: Mark) => void } = {}) {
+export type AnnouncedMark = Mark & { duru: string; where?: ReturnType<typeof locatePart> };
+
+export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {} }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark) => void } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
   // 없거나 아직 쓰는 중인 맵은 페이지가 요청할 때 알리고, 예전 형식의 맵만 서버를 띄우기 전에 알린다.
   let onDisk: any = null;
@@ -184,8 +188,9 @@ export async function startReviewServer(config: any, { port = 0, author = review
     streams.clear();
   };
   const announce = (mark: Mark) => {
-    onMark(mark);
-    for (const stream of streams) stream.write(`data: ${JSON.stringify({ duru: recordKind(mark), ...mark })}\n\n`);
+    const line: AnnouncedMark = { duru: recordKind(mark), ...mark, ...(mark.target.part && { where: locatePart(mark.target, { tests: readTests(config) }) }) };
+    onMark(line);
+    for (const stream of streams) stream.write(`data: ${JSON.stringify(line)}\n\n`);
     return mark;
   };
   // 답글의 작성자는 페이지를 띄운 사람이 아니라 답한 에이전트다.

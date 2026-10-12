@@ -7,10 +7,10 @@ import { storyCandidates } from './candidates.ts';
 import { loadConfig } from './config.ts';
 import { buildMap } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
-import { addReply, recordKind } from './marks.ts';
-import type { Mark } from './marks.ts';
+import { addReply } from './marks.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
 import { reviewAuthor, startReviewServer } from './review.ts';
+import type { AnnouncedMark } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { checkStoryFiles } from './story-paths.ts';
 import { taskList } from './tasks.ts';
@@ -57,7 +57,7 @@ if (command === 'tasks') {
       process.stdout.write(list, () => process.exit(0));
     };
   };
-  const onMark = (mark: Mark) => console.error(JSON.stringify({ duru: recordKind(mark), ...mark }));
+  const onMark = (line: AnnouncedMark) => console.error(JSON.stringify(line));
   const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end, onMark });
   process.on('SIGINT', () => {
     try {
