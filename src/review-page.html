@@ -206,7 +206,7 @@
   .tags, .history-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
   .history-filter { margin-top: 6px; }
   .tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--selected); font-size: 12px; overflow-wrap: anywhere; }
-  .tag button, .history-filter button { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+  .tag button, .tags button.retag, .history-filter button { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; }
   .error { color: var(--fail); }
   a { color: var(--accent); }
   .views { display: flex; gap: 4px; }
@@ -1029,7 +1029,7 @@ const BUBBLE = () => svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' },
 function moveTalkTo(node) {
   if (state.target.node === node) return;
   state.target = { node };
-  state.draft = state.draft && { status: null, note: state.draft.note, part: null, noTag: false };
+  state.draft = state.draft && { status: markOf(state.target)?.current?.status ?? null, note: state.draft.note, part: null, noTag: false };
   state.error = null;
 }
 
@@ -1050,7 +1050,7 @@ function narrowTalk(node, t) {
 }
 
 function partRow(item, node, t) {
-  const n = commentsIn(markOf(partTarget(node, t)) ?? state.data.marks.detached.find((m) => m.key === keyOf(partTarget(node, t))));
+  const n = commentsIn(markOf(partTarget(node, t)));
   return h('div', { class: 'part-row' },
     item,
     n ? h('button', { class: 'part-count', title: '이 테스트를 꼬리표로 붙인 말만 대화에 남깁니다', onclick: (e) => { e.stopPropagation(); narrowTalk(node, t); } }, `코멘트 ${n}`) : null,
@@ -2539,7 +2539,7 @@ function markForm(target, draftKey, label) {
   const talk = talkOf(target);
   const shown = state.historyFilter ? talk.filter((m) => m.key === state.historyFilter) : talk;
   const recordItem = (m, r) => h('li', {},
-    r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status]) : h('span', { class: `chip ${r.replyTo !== undefined ? 'reply' : 'comment'}` }, r.replyTo !== undefined ? '답' : '코멘트'),
+    r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status] ?? CASE_STATUS[r.status]) : h('span', { class: `chip ${r.replyTo !== undefined ? 'reply' : 'comment'}` }, r.replyTo !== undefined ? '답' : '코멘트'),
     ' ', r.replyTo === undefined ? [tagChip(tagLabel(m.target)), ' '] : null,
     h('span', { class: 'muted' }, signedAt(r)),
     r.note ? h('div', {}, r.note) : null,
@@ -2578,7 +2578,9 @@ function markForm(target, draftKey, label) {
     render();
   };
   return h('div', { class: 'mark-form' },
-    h('div', { class: 'talk-head' }, h('h2', {}, '에이전트와 대화'), h('div', { class: 'tags' }, '꼬리표 ', tag ? tagChip(tag === target ? label : tagLabel(tag), untag) : h('span', { class: 'muted' }, '없음 — 남기려면 줄의 말풍선을 누르거나 가운데에서 대상을 고르세요'))),
+    h('div', { class: 'talk-head' }, h('h2', {}, '에이전트와 대화'), h('div', { class: 'tags' }, '꼬리표 ', tag
+      ? tagChip(tag === target ? label : tagLabel(tag), untag)
+      : [h('span', { class: 'muted' }, '없음'), h('button', { type: 'button', class: 'retag', onclick: () => { draft.noTag = false; render(); } }, `${label} 다시 붙이기`)])),
     h('div', { class: 'statuses' }, statuses),
     h('textarea', { placeholder: '코멘트 — 상태 없이 글만 남겨도 됩니다', oninput: (e) => {
       draft.note = e.target.value;

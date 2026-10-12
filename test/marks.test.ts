@@ -321,7 +321,7 @@ test('a test part takes a comment only: a status, an empty note, a depth, an opt
       [{ target: { node: '/home#Home', part: { kind: 'row', key: LIST_TEST } }, note: 'x' }, /unknown part kind "row" \(expected test\)/],
       [{ target: { node: '/home#Home', part: { kind: 'test', key: { file: 'e2e/list.spec.ts', title: 't' } } }, note: 'x' }, /a test part needs a result file, a test file and a title/],
       [{ target: { node: '/home#Home', part: { kind: 'test', key: { source: 'r.json', file: 'e2e/list.spec.ts', title: ' ' } } }, note: 'x' }, /a test part needs a result file, a test file and a title/],
-      [{ target: { story: 'run-lab', part }, note: 'x' }, /a story mark takes no node, option, depth or case/],
+      [{ target: { story: 'run-lab', part }, note: 'x' }, /a story mark takes no node, option, depth, case or part/],
     ];
     for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' }), message);
     assert.deepEqual(loadMarks(dir), []);

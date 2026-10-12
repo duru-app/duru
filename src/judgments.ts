@@ -65,7 +65,7 @@ interface JudgedTests {
   stories?: Record<string, ResultTest[]>;
 }
 
-export const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 
 // 경로 구분자는 / 로 통일해야 Windows 에서 적은 판단이 다른 OS 에서도 같은 테스트를 가리킨다.
 const slashed = <T extends string | null>(p: T) => (typeof p === 'string' ? p.replaceAll('\\', '/') : p) as T;

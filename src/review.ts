@@ -187,8 +187,16 @@ export async function startReviewServer(config: any, { port = 0, author = review
     for (const stream of streams) stream.end('event: end\ndata: review ended\n\n');
     streams.clear();
   };
+  // 저장은 이미 끝났으므로, rebuild 가 tests.json 을 다시 쓰는 중이라 읽지 못해도 저장 실패로 돌려주지 않는다.
+  const whereOf = (mark: Mark) => {
+    try {
+      return locatePart(mark.target, { tests: readTests(config) });
+    } catch {
+      return null;
+    }
+  };
   const announce = (mark: Mark) => {
-    const line: AnnouncedMark = { duru: recordKind(mark), ...mark, ...(mark.target.part && { where: locatePart(mark.target, { tests: readTests(config) }) }) };
+    const line: AnnouncedMark = { duru: recordKind(mark), ...mark, ...(mark.target.part && { where: whereOf(mark) }) };
     onMark(line);
     for (const stream of streams) stream.write(`data: ${JSON.stringify(line)}\n\n`);
     return mark;

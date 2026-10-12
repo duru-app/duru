@@ -2,11 +2,11 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { CASE_KIND, isPlainObject } from './config.ts';
-import { isText, reference } from './judgments.ts';
+import { reference } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
 import { locatePart } from './parts.ts';
 import type { PartContext, TestPlace } from './parts.ts';
-import { STORY_ID } from './stories.ts';
+import { isText, STORY_ID } from './stories.ts';
 import { DEPTHS } from './test-links.ts';
 
 export const MARK_STATUSES = ['needs-more', 'missing', 'fine'];
@@ -93,7 +93,7 @@ function saveMark(dir: string, mark: Mark) {
 
 function storyTarget(target: MarkTarget) {
   if (typeof target.story !== 'string' || !STORY_ID.test(target.story)) throw new Error(`"${target.story}" is not a story ID`);
-  if (['node', 'option', 'depth', 'case', 'part'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a story mark takes no node, option, depth or case');
+  if (['node', 'option', 'depth', 'case', 'part'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a story mark takes no node, option, depth, case or part');
   return { story: target.story };
 }
 

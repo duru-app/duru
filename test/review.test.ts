@@ -9529,3 +9529,49 @@ test('in a browser, a comment on a test that is no longer among the results show
       }));
   });
 });
+
+test('in a browser, a case kind picked on a screen shows in its conversation with the status the case was given', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) => {
+    const kind = Object.keys(CASE_KINDS)[0];
+    addMark(config.marksDir, { target: { node: '/lab#Lab', case: kind }, status: 'needed', author: 'reviewer' });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await chooseScreen(p, '/lab');
+        await openHistory(p);
+        assert.equal(await p.textContent('#right-dock .history > li .chip'), '필요');
+      }));
+  });
+});
+
+test('in a browser, the default tag taken off with its × comes back with the note still typed', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await chooseScreen(p, '/lab');
+        await p.fill('#right-dock textarea', 'half a thought');
+        await p.click('#right-dock .mark-form .tags .tag button');
+        assert.equal(await p.isDisabled('#right-dock button.save'), true);
+        await p.click('#right-dock .mark-form .tags button.retag');
+        assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '화면 전체');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'half a thought');
+        assert.equal(await p.isDisabled('#right-dock button.save'), false);
+      })));
+});
+
+test('a comment on a test saved while tests.json cannot be read is still saved and announced, with where as null', async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const lines: unknown[] = [];
+    const server = await startReviewServer(config, { author: signer('reviewer'), onMark: (line) => lines.push(line) });
+    try {
+      fs.writeFileSync(path.join(config.outDir, 'tests.json'), '{"nodes":');
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const res = await postMark(base, { target: partOf('/lab#Lab', 'results/playwright/e2e.json', 'home.spec.ts', 'opens the lab'), note: 'why pending?' });
+      assert.equal(res.status, 201);
+      const saved = await res.json();
+      assert.deepEqual(lines, [{ duru: 'comment', ...saved, where: null }]);
+      assert.equal(loadMarks(config.marksDir).length, 1);
+    } finally {
+      server.close();
+    }
+  });
+});
