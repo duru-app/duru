@@ -16,10 +16,11 @@ interface MarkTarget {
   case?: string;
 }
 
+// status 가 없는 표시는 코멘트다.
 export interface Mark {
   id: string;
   target: MarkTarget;
-  status: string;
+  status?: string;
   note: string;
   author: string;
   date: string;
@@ -27,7 +28,7 @@ export interface Mark {
 
 interface NewMark {
   target?: MarkTarget;
-  status: string;
+  status?: string | null;
   note?: unknown;
   author?: unknown;
 }
@@ -40,7 +41,7 @@ interface MarkableMap {
 interface MarkEntry {
   key: string;
   target: MarkTarget;
-  current: Mark;
+  current: Mark | null;
   history: Mark[];
 }
 
@@ -106,14 +107,16 @@ function caseTarget(target: MarkTarget) {
 export function addMark(dir: string, { target, status, note, author }: NewMark, now = new Date()) {
   const checked: MarkTarget = target?.story !== undefined ? storyTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target);
   const statuses = checked.case !== undefined ? CASE_STATUSES : MARK_STATUSES;
-  if (!statuses.includes(status)) {
+  const comment = (status === undefined || status === null) && checked.case === undefined;
+  if (comment && (typeof note !== 'string' || !note.trim())) throw new Error('a comment needs a note');
+  if (!comment && !statuses.includes(status!)) {
     throw new Error(`unknown ${checked.case !== undefined ? 'case mark' : 'mark'} status "${status}" (expected one of ${statuses.join(', ')})`);
   }
   if (typeof author !== 'string' || !author.trim()) throw new Error('mark needs an author');
-  const mark = {
+  const mark: Mark = {
     id: crypto.randomUUID(),
     target: checked,
-    status,
+    ...(!comment && { status: status! }),
     note: typeof note === 'string' ? note : '',
     author: author.trim(),
     date: now.toISOString(),
@@ -146,7 +149,7 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
   const detached: MarkEntry[] = [];
   for (const key of [...byTarget.keys()].sort()) {
     const history = byTarget.get(key)!;
-    const entry = { key, target: history[0].target, current: history[0], history };
+    const entry = { key, target: history[0].target, current: history.find((m) => m.status !== undefined) ?? null, history };
     (isAttached(entry.target) ? attached : detached).push(entry);
   }
   return { attached, detached };

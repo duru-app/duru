@@ -1216,6 +1216,22 @@ get those stores' requests. An action dispatched in a store file the screen gets
 so that whole read does not also reach every screen that calls the dispatching method; the saga's requests are then
 missing from those screens, as they are on main.
 
+**A comment on the review page is a mark with no status, and each mark or comment is printed on standard error as one
+JSON line the moment it is saved.**
+The status of a mark decides the task list; its note only says why. A comment needed the same target, author, date
+and file per record as a mark, and a second kind of record would have needed its own folder, its own reading and
+its own place in the history. So the note became the comment and the status became optional: the current status
+of a target is its newest mark that has one.
+Alternatives compared:
+- A comment as its own record next to the marks, with the mark's note kept: two text boxes on one form, and a
+  reviewer has to pick which one a sentence goes in. Driver's decision in #215: one live comment.
+- The live lines on standard output, as #215 first wrote: standard output is exactly the task list when the review
+  ends (`skills/duru/SKILL.md`, since #27), and an agent compares it with `duru tasks`. Standard error already
+  carries the page address; a Claude Code background command shows both streams in one output, in order.
+- Sending the agent's answer back to the page in the same change: the page reads its data once and has no way to
+  be told of a new record, so that needs a command for the agent and a push to the open page. This change carries
+  records one way, from the page to the agent.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

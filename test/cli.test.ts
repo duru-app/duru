@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { addJudgment } from '../src/judgments.ts';
+import type { Mark } from '../src/marks.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
@@ -352,7 +353,7 @@ function startReview(configFile: string) {
     });
     closed.then(() => reject(new Error(`review ended before printing its address:\n${out.stderr}`)));
   });
-  return { child, base, closed };
+  return { child, base, closed, out };
 }
 
 for (const [how, end] of [
@@ -383,6 +384,37 @@ for (const [how, end] of [
     });
   });
 }
+
+test('each mark and comment saved during the review comes out at once as one JSON line on stderr, and stdout still holds only the task list', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      const save = async (body: unknown) => {
+        const res = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+        assert.equal(res.status, 201);
+        const saved = (await res.json()) as Mark;
+        await within(new Promise<void>((resolve) => {
+          const look = () => (records().some((r) => r.id === saved.id) ? resolve() : setTimeout(look, 20));
+          look();
+        }), 'the saved record on stderr');
+        return saved;
+      };
+      const mark = await save({ target: { node: '/lab#Lab' }, status: 'missing', note: 'No test.' });
+      const comment = await save({ target: { story: 'read-reports' }, note: 'Two lines:\nthe second one.' });
+      assert.deepEqual(records(), [{ duru: 'mark', ...mark }, { duru: 'comment', ...comment }]);
+      assert.equal(out.stdout, '');
+
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const { code, stdout } = await within(closed, 'exit');
+      assert.equal(code, 0);
+      assert.equal(stdout, execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8' }));
+    } finally {
+      child.kill();
+    }
+  });
+});
 
 test('review prints the author on stderr with where the name was read from', async () => {
   await withReviewFixture(async (configFile) => {

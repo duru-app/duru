@@ -538,12 +538,19 @@ the link between each two and its 「사전 조건」, and lets its name and mem
 with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」. 「새 스토리」 puts a story together from screens of the map.
 
 **Marks.** A mark targets a screen, a call, one depth of either, one value of a call's option, or a story, and
-records a status (`needs-more`, `missing`, `fine`), a note, the author and the date. Each mark and each judgment
+records a status (`needs-more`, `missing`, `fine`), a note, the author and the date. A mark left with text and no
+status is a comment: it shows in the history as 「코멘트」, keeps the current status as it was, and in the task list
+follows the open mark it was written after. Pressing a picked status again lets it go, so a comment can be left on
+a target that already has one. Each mark and each judgment
 is its own new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so marks made on two machines merge in
 git without a conflict and the newest is the current state. A mark whose target is gone from a rebuilt map shows
 under 「떨어져 나감」. A case kind picked or taken out on a screen or call is kept the same way, as a mark with the
 status `needed` or `not-needed`; it puts nothing on the task list, and one whose kind has left `caseKinds` shows
 under 「떨어져 나감」.
+
+**While the review runs.** Each mark or comment is printed on standard error the moment it is saved, as one JSON
+line: `{"duru":"mark"|"comment","id":…,"target":{…},"status":…,"note":…,"author":…,"date":…}`, with no
+`status` for a comment. A coding agent that launched the page can act on it without waiting for the end.
 
 **Ending.** Pressing 「리뷰 끝」, or Ctrl+C in the terminal, closes the server and prints the task list on standard
 output, so a coding agent that launched the page receives it as soon as the reviewer is done.

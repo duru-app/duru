@@ -1360,7 +1360,7 @@ for (const host of ['127.0.0.1', 'localhost']) {
           await p.click('#screen-list li:has-text("/document/:id")');
           assert.equal(await p.textContent('#center h3'), '/document/:id');
           await p.click('#center tr:has-text("API")');
-          assert.match((await p.locator('#right h2', { hasText: '표시 —' }).textContent())!, /API 깊이/);
+          assert.match((await p.locator('#right h2', { hasText: '코멘트 —' }).textContent())!, /API 깊이/);
           assert.equal(await p.isDisabled('#right button.save'), true);
           await p.click('#right .statuses button:has-text("더 필요")');
           await p.fill('#right-dock textarea', 'no API test yet');
@@ -1391,6 +1391,42 @@ for (const host of ['127.0.0.1', 'localhost']) {
     );
   });
 }
+
+test('in a browser, a comment with no status is saved from the text alone, shows in the history as 「코멘트」 and leaves the current status as it was; pressing a picked status again lets it go', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await toList(p);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        await p.waitForSelector('#screen-list li.selected .chip.missing');
+
+        assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), ['없음']);
+        await p.click('#right .statuses button:has-text("없음")');
+        assert.equal(await p.locator('#right .statuses button.on').count(), 0);
+        assert.equal(await p.isDisabled('#right button.save'), true);
+        await p.fill('#right-dock textarea', 'the empty list too');
+        assert.equal(await p.isDisabled('#right button.save'), false);
+        await p.click('#right button.save');
+        await openHistory(p);
+        await p.waitForSelector('#right .history li:has-text("the empty list too")');
+        assert.equal(await p.textContent('#right .history li:has-text("the empty list too") .chip'), '코멘트');
+        assert.equal(await p.textContent('#screen-list li.selected .chip'), '없음');
+        assert.deepEqual(await p.locator('#right .statuses button.on').allTextContents(), ['없음']);
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.status ?? null, m.note]).sort(), [[null, 'the empty list too'], ['missing', '']]);
+
+        await p.fill('#right-dock textarea', 'typed with the status still picked');
+        await p.click('#right button.save');
+        await p.waitForSelector('#right .history li:has-text("typed with the status still picked") .chip.comment');
+        await p.click('#right .statuses button:has-text("없음")');
+        p.once('dialog', (d) => assert.fail(`no unsaved warning expected, got: ${d.message()}`));
+        await p.click('header button:has-text("리뷰 끝")');
+        await p.waitForSelector('#ended');
+      }),
+    ),
+  );
+});
 
 type Kept = { kept?: boolean };
 
@@ -1723,7 +1759,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await p.waitForSelector('#screen-list li');
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '표시 — 스토리']);
+        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '코멘트 — 스토리']);
         assert.equal(await p.isDisabled('#right button.save'), true);
         await p.click('#right .statuses button:has-text("없음")');
         await p.fill('#right-dock textarea', 'no test walks the lab');
@@ -1736,7 +1772,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await p.waitForSelector('#right .history li:has-text("the story test fails")');
         assert.deepEqual(await p.locator('#right .history li .chip').allTextContents(), ['더 필요', '없음']);
         assert.equal(await p.textContent('#story-list li.selected .chip.needs-more'), '더 필요');
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note, m.author] as const).sort((a, b) => a[1].localeCompare(b[1])), [
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!, m.note, m.author] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ story: 'run-lab' }, 'missing', 'no test walks the lab', 'reviewer'],
           [{ story: 'run-lab' }, 'needs-more', 'the story test fails', 'reviewer'],
         ]);
@@ -1746,7 +1782,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         assert.equal(await p.locator('#right .history li').count(), 0);
         assert.equal(await p.locator('#right .statuses button.on').count(), 0);
         await p.click('#left .views.side button:has-text("화면")');
-        assert.match((await p.locator('#right h2', { hasText: '표시 —' }).textContent())!, /^표시 — 화면 전체$/);
+        assert.match((await p.locator('#right h2', { hasText: '코멘트 —' }).textContent())!, /^코멘트 — 화면 전체$/);
         assert.equal(await p.locator('#right .history li').count(), 0);
         assert.match((await p.textContent('#left'))!, /떨어져 나감 0/);
 
@@ -1779,7 +1815,7 @@ test('in a browser, a failed save stays with the form that tried it and is gone 
           window.fetch = (url, init) => (String(url).includes('/api/marks') ? Promise.reject(new Error('disk full')) : real(url, init));
         });
         const failSave = async () => {
-          await p.click('#right .statuses button:has-text("없음")');
+          if (!(await p.locator('#right .statuses button.on:has-text("없음")').count())) await p.click('#right .statuses button:has-text("없음")');
           await p.click('#right button.save');
           await p.waitForSelector('#right .error');
           assert.match((await p.textContent('#right'))!, /저장하지 못했습니다: disk full/);
@@ -1819,7 +1855,7 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
         assert.equal(await unread.locator('code').textContent(), 'run-lab');
         await unread.click();
         assert.equal(await p.textContent('#center h3'), 'run-lab');
-        assert.equal(await p.textContent('#right h2'), '표시 — 스토리');
+        assert.equal(await p.textContent('#right h2'), '코멘트 — 스토리');
         assert.equal(await p.locator('#right-info').isVisible(), false);
         assert.ok(await p.evaluate(() => document.getElementById('right-dock')!.getBoundingClientRect().top - document.getElementById('right')!.getBoundingClientRect().top) < 1, 'the form sits at the top of the pane');
         assert.match((await p.textContent('#right .history'))!, /walk it/);
@@ -1829,7 +1865,7 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
         await p.waitForSelector('#right .history li:nth-child(2)');
         assert.equal(await p.textContent('#right .history li:first-child .chip'), '충분');
         assert.equal(await p.textContent('#left .unread-marks li .chip'), '충분');
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status] as const).sort((a, b) => a[1].localeCompare(b[1])), [
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ story: 'run-lab' }, 'fine'], [{ story: 'run-lab' }, 'missing'],
         ]);
       }),
@@ -1870,7 +1906,7 @@ test('in a browser, a failed save stays with the screen or cell that tried it, a
             : real(url, init));
         });
         await p.locator('table.calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').nth(1).click();
-        const cellLabel = (await p.textContent('#right-dock .mark-form h2'))!.replace('표시 — ', '');
+        const cellLabel = (await p.textContent('#right-dock .mark-form h2'))!.replace('코멘트 — ', '');
         assert.match(cellLabel, /^withAttachments 켬 · .+ 깊이$/);
         const cellName = `${await p.textContent('#right-info .target-id .mono')} · ${cellLabel}`;
         await p.click('#right .statuses button:has-text("없음")');
@@ -1879,7 +1915,7 @@ test('in a browser, a failed save stays with the screen or cell that tried it, a
         assert.equal(await p.locator('#right .error').count(), 0);
         await p.evaluate(() => (window as unknown as FailSave).failSave());
         await p.waitForSelector('#right-dock .error');
-        assert.equal(await p.textContent('#right-dock .error'), `「${cellName}」 표시를 저장하지 못했습니다: disk full`);
+        assert.equal(await p.textContent('#right-dock .error'), `「${cellName}」 코멘트를 저장하지 못했습니다: disk full`);
 
         await p.click('#right .statuses button:has-text("없음")');
         await p.click('#right button.save');
@@ -2196,7 +2232,7 @@ test('in a browser, with case kinds in the config every screen and every call sh
         await p.waitForSelector('#right-info > .cases li');
         assert.deepEqual(await callSection.locator('li .case').allTextContents(), [CASE_KINDS.boundary]);
         assert.deepEqual(await counts(callSection.locator('li')), ['테스트 없음']);
-        assert.match((await p.textContent('#right-dock .mark-form h2'))!, /^표시 — 호출 전체$/);
+        assert.match((await p.textContent('#right-dock .mark-form h2'))!, /^코멘트 — 호출 전체$/);
 
         assert.deepEqual(picks(), [
           ['/signin#SignIn', 'boundary', 'needed'],
@@ -2329,12 +2365,12 @@ test('in a browser, the info part of the right pane reads in order and the mark 
         assert.equal(await p.locator('#right-info .mark-form').count(), 0);
         assert.equal(await p.locator('#right > :last-child').evaluate((e) => e.id), 'right-dock');
         assert.equal(await p.locator('#right-dock > .mark-form').count(), 1);
-        assert.equal(await p.textContent('#right-dock .mark-form h2'), '표시 — 화면 전체');
+        assert.equal(await p.textContent('#right-dock .mark-form h2'), '코멘트 — 화면 전체');
 
         await p.locator('table.calls td.cell').first().click();
         assert.equal(await p.locator('#right-info .mark-form').count(), 0);
         assert.equal(await p.locator('#right-dock > .mark-form').count(), 1);
-        assert.match((await p.locator('#right-dock .mark-form h2').textContent())!, /^표시 — /);
+        assert.match((await p.locator('#right-dock .mark-form h2').textContent())!, /^코멘트 — /);
         assert.match((await p.locator('#right-info h2').first().textContent())!, /^서버 대조$/);
       }),
     ),
@@ -2345,7 +2381,7 @@ test('in a browser, the in-screen conditions come between the incoming links and
   await withLabLinks(async (p, open) => {
     await open();
     const headings = (await p.locator('#right h2').allTextContents()).map((t) => t.replace(/ \d+$/, '').replace(/^(화면 안 조건) — .*$/, '$1'));
-    assert.deepEqual(headings, ['이 화면을 열려면', '들어오는 링크', '화면 안 조건', '소스 위치', '나가는 링크', '읽는 설정값', '표시 — 화면 전체']);
+    assert.deepEqual(headings, ['이 화면을 열려면', '들어오는 링크', '화면 안 조건', '소스 위치', '나가는 링크', '읽는 설정값', '코멘트 — 화면 전체']);
   });
 });
 
@@ -2495,7 +2531,7 @@ test('in a browser, the status buttons and the save button stay in view at the b
         await p.setViewportSize({ width: 1440, height: 360 });
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.equal(await p.textContent('#right-dock .mark-form h2'), '표시 — 스토리');
+        assert.equal(await p.textContent('#right-dock .mark-form h2'), '코멘트 — 스토리');
         await assertDockStaysPut(p);
         assert.equal(await p.locator('#right-info .mark-form').count(), 0);
       }),
@@ -2663,7 +2699,7 @@ test('in a browser, a save that finishes after the reviewer moved to another scr
         await p.waitForSelector('#screen-list li:has-text("/lab/result") .chip.fine');
         await assertForm('충분', '');
 
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note] as const).sort((a, b) => a[1].localeCompare(b[1])), ([
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!, m.note] as const).sort((a, b) => a[1].localeCompare(b[1])), ([
           [{ node: '/document/:id#DocumentDetail' }, 'missing', ''],
           [{ node: '/admin/report#AdminReport' }, 'needs-more', 'keep me'],
           [{ node: '/lab/result#LabResult' }, 'fine', ''],
@@ -2696,7 +2732,7 @@ test('in a browser, a save whose reload fails after the reviewer moved to anothe
         await p.route('**/api/data', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: 'not json' }));
         release();
         await p.waitForSelector('#right-dock .error');
-        assert.ok((await p.textContent('#right-dock .error'))!.startsWith(`「스토리 ${name}」 표시는 저장했지만 다시 읽지 못했습니다: `));
+        assert.ok((await p.textContent('#right-dock .error'))!.startsWith(`「스토리 ${name}」 코멘트는 저장했지만 다시 읽지 못했습니다: `));
 
         await p.click('#right .statuses button:has-text("없음")');
         posting = holdNextPost();
@@ -2797,7 +2833,7 @@ test('in a browser, the right pane starts by naming the call and the option and 
         assert.equal(await first.evaluate((e) => e.className), 'target-id');
         assert.equal(await first.locator('.mono').textContent(), 'POST:/api/v1/report/export');
         assert.match(await first.innerText(), /withAttachments 켬 · UI\/E2E 깊이/);
-        assert.match((await p.locator('#right .mark-form h2').textContent())!, /^표시 — withAttachments 켬 · UI\/E2E 깊이$/);
+        assert.match((await p.locator('#right .mark-form h2').textContent())!, /^코멘트 — withAttachments 켬 · UI\/E2E 깊이$/);
 
         await p.locator('table.calls td.cell').first().click();
         assert.match(await p.locator('#right-info > :first-child').innerText(), /POST:\/api\/v1\/report\/export\s+호출 전체/);
@@ -3116,7 +3152,7 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         await p.locator('table.calls tr.option').filter({ hasText: 'weekly 켬' }).locator('td.cell').first().click();
         assert.match(await p.locator('#right .option-sites').innerText(), /설정에 적음/);
 
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status] as const).sort((a, b) => a[1].localeCompare(b[1])), [
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true }, depth: 'output' }, 'missing'],
           [{ node: 'POST:/api/v1/report/export', option: { key: 'withAttachments', value: false } }, 'needs-more'],
         ]);
@@ -3263,7 +3299,7 @@ test('in a browser, the output depth row comes after the other depths and takes 
         await p.click('#screen-list li:has-text("/lab/result")');
         assert.deepEqual(await p.locator('#center td.depth').allTextContents(), ['화면 전체', 'UI/E2E', 'API', '렌더링만', '코드', '데이터', '산출물']);
         await p.click('#center tr:has-text("산출물")');
-        assert.match((await p.locator('#right h2', { hasText: '표시 —' }).textContent())!, /산출물 깊이/);
+        assert.match((await p.locator('#right h2', { hasText: '코멘트 —' }).textContent())!, /산출물 깊이/);
         await p.click('#right .statuses button:has-text("더 필요")');
         await p.click('#right button.save');
         await p.waitForSelector('#center tr.selected td.mark:has-text("더 필요")');
@@ -8824,7 +8860,7 @@ test('in a browser, a chosen story\'s name and memo can be changed on the right,
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '표시 — 스토리']);
+        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '코멘트 — 스토리']);
         assert.equal(await p.inputValue('#story-name'), '실험실을 열어 결과를 본다');
         assert.equal(await p.inputValue('#story-memo'), '실험실은 고객사 설정에서 켜야 보인다.');
         assert.deepEqual(await p.locator('#right .story-form label > span:first-child').allTextContents(), ['이름', '메모']);

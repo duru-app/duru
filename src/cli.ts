@@ -6,6 +6,7 @@ import { storyCandidates } from './candidates.ts';
 import { loadConfig } from './config.ts';
 import { buildMap } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
+import type { Mark } from './marks.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
 import { reviewAuthor, startReviewServer } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
@@ -40,7 +41,8 @@ if (command === 'tasks') {
       process.stdout.write(list, () => process.exit(0));
     };
   };
-  const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end });
+  const onMark = (mark: Mark) => console.error(JSON.stringify({ duru: mark.status === undefined ? 'comment' : 'mark', ...mark }));
+  const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end, onMark });
   process.on('SIGINT', () => {
     try {
       end()?.();
