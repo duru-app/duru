@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { addJudgment } from '../src/judgments.ts';
+import { addMark } from '../src/marks.ts';
 import type { Mark } from '../src/marks.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
@@ -315,7 +316,7 @@ test('rebuild counts the story candidates from the visit records and names each 
   }
 });
 
-for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc']]) {
+for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc'], ['reply', 'x.json', 'id'], ['reply', 'x.json', 'id', 'text', '--port', '5000'], ['review', 'x.json', '--server', 'http://127.0.0.1:1/']]) {
   test(`"${args.join(' ')}" prints usage and exits with 2`, () => {
     assert.throws(
       () => execFileSync(process.execPath, [CLI, ...args], { encoding: 'utf8', stdio: 'pipe' }),
@@ -410,6 +411,95 @@ test('each mark and comment saved during the review comes out at once as one JSO
       const { code, stdout } = await within(closed, 'exit');
       assert.equal(code, 0);
       assert.equal(stdout, execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8' }));
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+function readEvents(url: string) {
+  const got = { text: '', ended: false };
+  const done = fetch(`${url}/api/events`).then(async (res) => {
+    assert.equal(res.headers.get('content-type'), 'text/event-stream; charset=utf-8');
+    const decoder = new TextDecoder();
+    for await (const chunk of res.body!) got.text += decoder.decode(chunk, { stream: true });
+    got.ended = true;
+  });
+  return { got, done };
+}
+
+const reply = (configFile: string, ...args: string[]) => {
+  try {
+    return { status: 0, stderr: execFileSync(process.execPath, [CLI, 'reply', configFile, ...args], { encoding: 'utf8', stdio: 'pipe' }) };
+  } catch (err) {
+    return err as Failure;
+  }
+};
+
+const waitFor = (check: () => boolean, what: string) => within(new Promise<void>((resolve) => {
+  const look = () => (check() ? resolve() : setTimeout(look, 20));
+  look();
+}), what);
+
+test('a reply sent with --server is saved by the running review, printed on its stderr as a "reply" line and pushed to open event streams; ending the review closes the streams and still exits with the task list', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const events = readEvents(url);
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      const post = async (body: unknown) => (await (await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json()) as Mark;
+      await post({ target: { node: '/lab#Lab' }, status: 'missing', note: 'No test.' });
+      const comment = await post({ target: { node: '/lab#Lab' }, note: 'Is the table tested?' });
+
+      assert.deepEqual(reply(configFile, comment.id, 'Not yet, writing one now.', '--server', `${url}/`), { status: 0, stderr: '' });
+      await waitFor(() => records().length === 3, 'the reply on stderr');
+      const sent = records()[2];
+      assert.deepEqual(sent, { duru: 'reply', id: sent.id, target: { node: '/lab#Lab' }, replyTo: comment.id, note: 'Not yet, writing one now.', author: 'agent', date: sent.date });
+      await waitFor(() => events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).length === 3, 'three events on the stream');
+      assert.deepEqual(events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).map((e) => JSON.parse(e.slice('data: '.length))), records());
+      assert.equal(out.stdout, '');
+
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const { code, stdout } = await within(closed, 'exit');
+      assert.equal(code, 0);
+      assert.equal(stdout, execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8' }));
+      assert.match(stdout, /^ {2}- comment, whole screen — "Is the table tested\?" .*\n {4}- reply — "Not yet, writing one now\." \(agent, /m);
+      await within(events.done, 'the end of the event stream');
+      assert.equal(events.got.ended, true);
+      assert.match(events.got.text, /event: end\ndata: review ended\n\n$/);
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+test('a reply without --server is written to the marks folder and shows in the task list; an ID that is no comment stops both ways with a message naming it', async () => {
+  await withReviewFixture(async (configFile) => {
+    const marksDir = path.join(path.dirname(configFile), 'example-marks');
+    addMark(marksDir, { target: { node: '/lab#Lab' }, status: 'missing', author: 'a' }, new Date('2026-10-05T01:00:00Z'));
+    const comment = addMark(marksDir, { target: { node: '/lab#Lab' }, note: 'Is the table tested?', author: 'a' }, new Date('2026-10-05T02:00:00Z'));
+    assert.deepEqual(reply(configFile, comment.id, 'Written.'), { status: 0, stderr: '' });
+    assert.match(execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8' }), /\n {4}- reply — "Written\." \(agent, \d{4}-\d\d-\d\d\)\n/);
+
+    const files = () => fs.readdirSync(marksDir, { recursive: true }).length;
+    const before = files();
+    const failed = reply(configFile, 'no-such-id', 'x');
+    assert.equal(failed.status, 1);
+    assert.equal(failed.stderr, 'no comment with ID "no-such-id"\n');
+
+    const { child, base, closed } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const viaServer = reply(configFile, 'no-such-id', 'x', '--server', url);
+      assert.equal(viaServer.status, 1);
+      assert.equal(viaServer.stderr, 'no comment with ID "no-such-id"\n');
+      assert.equal(files(), before);
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      await within(closed, 'exit');
+      const unreachable = reply(configFile, comment.id, 'x', '--server', url);
+      assert.equal(unreachable.status, 1);
+      assert.match(unreachable.stderr, new RegExp(`^could not reach the review page at ${url}: `));
     } finally {
       child.kill();
     }
