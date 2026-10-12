@@ -46,7 +46,7 @@ type PageData = {
   };
   stories: { list: Story[]; notices: { file: string }[]; unknownTags: { tag: string }[]; stale: string };
   storiesDir: string;
-  candidates: { list: { name: string; source: { record: unknown }; screens: string[]; links: { verdict: string }[] }[]; notices: object[] };
+  candidates: { list: { key: string; name: string; source: { record?: unknown; report?: string; tests?: string[] }; screens: string[]; links: { verdict: string }[] }[]; notices: object[] };
   marks: { attached: Mark[]; detached: Mark[] };
   app: AppData;
 };
@@ -8722,10 +8722,33 @@ test('the data carries the story candidates from the visit records, checked agai
   );
 });
 
+test('the candidates from traces come from the screen orders rebuild wrote into tests.json, so the page still offers and accepts them with the reports and traces gone, and a tests.json from an older rebuild without them gives only the visit record candidates', async () => {
+  await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, async (config, copy) => {
+    const visits = [HELP_RECORD, 'example-visits/publish-document.json'];
+    const drafts = '/home#Home > /document/:tab_draft_done_#DocumentList';
+    fs.rmSync(path.join(copy, 'results/playwright-traced'), { recursive: true });
+    await withServer(config, 'reviewer', async (base) => {
+      const { candidates }: PageData = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(candidates.list.map((c) => c.key), [...visits, '/home#Home > /help#Help', drafts]);
+      assert.deepEqual(candidates.notices, [{ file: 'example-visits/broken-record.json', reason: '2 번째 단계의 url 을 읽지 못했습니다' }]);
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: '/home#Home > /help#Help', id: 'home-help', name: 'x' })).status, 201);
+    });
+    const testsFile = path.join(config.outDir, 'tests.json');
+    const older = JSON.parse(fs.readFileSync(testsFile, 'utf8'));
+    delete older.traced;
+    fs.writeFileSync(testsFile, JSON.stringify(older));
+    await withServer(config, 'reviewer', async (base) => {
+      const { candidates }: PageData = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(candidates.list.map((c) => c.key), visits);
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: drafts, id: 'drafts', name: 'x' })).status, 404);
+    });
+  });
+});
+
 test('a candidate accepted through the page becomes a story file with the server-side author, and leaves the candidates', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      const res = await postJson(base, '/api/candidates/accept', { record: HELP_RECORD, id: 'open-help', name: '홈에서 도움말을 연다', author: 'someone else' });
+      const res = await postJson(base, '/api/candidates/accept', { key: HELP_RECORD, id: 'open-help', name: '홈에서 도움말을 연다', author: 'someone else' });
       assert.equal(res.status, 201);
       const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
       assert.equal(saved.author, 'reviewer');
@@ -8734,8 +8757,8 @@ test('a candidate accepted through the page becomes a story file with the server
       assert.ok(data.stories.list.some((s) => s.id === 'open-help' && s.name === '홈에서 도움말을 연다'));
       assert.deepEqual(data.candidates.list.map((c) => c.name), ['publish-document']);
 
-      assert.equal((await postJson(base, '/api/candidates/accept', { record: HELP_RECORD, id: 'again', name: 'x' })).status, 404);
-      const taken = await postJson(base, '/api/candidates/accept', { record: 'example-visits/publish-document.json', id: 'run-lab', name: 'x' });
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_RECORD, id: 'again', name: 'x' })).status, 404);
+      const taken = await postJson(base, '/api/candidates/accept', { key: 'example-visits/publish-document.json', id: 'run-lab', name: 'x' });
       assert.equal(taken.status, 400);
       assert.match(await taken.text(), /run-lab\.json 이 이미 씁니다/);
     }),
@@ -8745,8 +8768,8 @@ test('a candidate accepted through the page becomes a story file with the server
 test('a candidate discarded through the page is kept in the discarded folder with the server-side author and does not come back after the map is rebuilt', async () => {
   await withRebuiltFixture(CANDIDATES, async (config, copy) => {
     await withServer(config, 'reviewer', async (base) => {
-      assert.equal((await postJson(base, '/api/candidates/discard', { record: HELP_RECORD, reason: ' ' })).status, 400);
-      assert.equal((await postJson(base, '/api/candidates/discard', { record: HELP_RECORD, reason: '베타 화면', author: 'someone else' })).status, 201);
+      assert.equal((await postJson(base, '/api/candidates/discard', { key: HELP_RECORD, reason: ' ' })).status, 400);
+      assert.equal((await postJson(base, '/api/candidates/discard', { key: HELP_RECORD, reason: '베타 화면', author: 'someone else' })).status, 201);
     });
     const [file] = fs.readdirSync(path.join(config.storiesDir, 'discarded'));
     assert.match(file, /^\d{4}-\d{2}-\d{2}-reviewer-[0-9a-f]{8}\.json$/);
@@ -8944,6 +8967,47 @@ test('in a browser, discarding a candidate takes a reason, writes the discarded 
         await p.waitForSelector('#candidate-list', { state: 'detached' });
         assert.match((await p.textContent('#left'))!, /후보 0/);
         assert.equal(await p.locator('#story-list li.selected').count(), 1);
+      }),
+    ),
+  );
+});
+
+test('in a browser, the tests with a trace that passed two screens or more are candidates beside the visit records, one per screen order with the report and every test title of that order as the source and its order in the address, and accepting or discarding one keeps it from coming back', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, (config, copy) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        assert.match((await p.textContent('#left'))!, /후보 4/);
+        assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['open-help', 'publish-document', 'opens home and then help', 'moves to the drafts without loading a page']);
+        assert.deepEqual(await p.locator('#candidate-list li .name > .mono').allTextContents(), [HELP_RECORD, 'example-visits/publish-document.json', 'results/playwright-traced/visits.json', 'results/playwright-traced/visits.json']);
+
+        await p.click('#candidate-list li:has-text("opens home and then help")');
+        assert.equal(await p.textContent('#center h3'), 'opens home and then help');
+        assert.equal(await p.locator('#center .story-path .step.on-map').count(), 2);
+        assert.equal(await p.locator('#center .story-path .step .records').count(), 0);
+        assert.equal(await p.locator('#center .source').evaluate((e) => e.firstChild!.textContent), 'results/playwright-traced/visits.json');
+        const titles = ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'];
+        assert.deepEqual(await p.locator('#center .source li').allTextContents(), titles);
+        assert.equal(await placeOf(p), '#stories?candidate=/home#Home+>+/help#Help');
+        await p.reload();
+        await p.waitForSelector('#candidate-list li.selected:has-text("opens home and then help")');
+
+        await p.click('#right button.accept');
+        await p.waitForSelector('#story-list li.selected:has-text("opens home and then help")');
+        assert.deepEqual(await p.locator('#center .source li').allTextContents(), titles);
+        const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'opens-home-and-then-help.json'), 'utf8'));
+        assert.deepEqual([saved.screens, saved.source], [['/home#Home', '/help#Help'], { report: 'results/playwright-traced/visits.json', tests: titles }]);
+
+        await p.click('#candidate-list li:has-text("moves to the drafts")');
+        await p.fill('#discard-reason', '초안 탭만 연다');
+        await p.click('#right button.discard');
+        await p.waitForSelector('#candidate-list li:has-text("moves to the drafts")', { state: 'detached' });
+        assert.equal(fs.readdirSync(path.join(config.storiesDir, 'discarded')).length, 1);
+        rebuild(copy);
+        await p.reload();
+        await p.waitForSelector('#candidate-list li');
+        assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['open-help', 'publish-document']);
       }),
     ),
   );

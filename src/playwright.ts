@@ -10,6 +10,7 @@ export interface PlaywrightResult {
   tags: string[];
   status: TestStatus;
   trace: string | null;
+  traceRunPassed: boolean;
 }
 
 const STATUS: Record<string, TestStatus> = { expected: 'pass', flaky: 'pass', unexpected: 'fail', skipped: 'pending' };
@@ -51,6 +52,7 @@ export function readPlaywright(file: string): PlaywrightResult[] | null {
           tags: [...tags],
           status: STATUS[test.status] ?? 'pending',
           trace: tracePath(file, test.results),
+          traceRunPassed: test.results?.at(-1)?.status === 'passed',
         });
       }
     }
