@@ -1064,6 +1064,26 @@ How it is built, and what each choice was weighed against:
   buttons of its own, so the question of words or icons on them is closed; the zoom buttons are symbols with a
   name for screen readers.
 
+**The zoom control floats at the bottom-left corner of the drawing, and its percent is a field a level can be typed
+into.**
+At the right end of the bar above, the control stood over the right pane rather than the drawing, and an app frame
+shown scaled down would put a second percent on the page with nothing saying which was the drawing's. The
+bottom-left is where Excalidraw and tldraw put zoom, and it is away from the app frame, which a picked screen opens
+to the right of the drawing; a mock that put the control at the bottom-right was turned down for that. The field
+follows draw.io: Enter or leaving the field applies, Escape or anything not a number puts the level back, and a level
+outside 30–150% becomes the nearer end. Alternatives compared: Excalidraw's percent, a button that goes back to 100%,
+and Figma's, which opens a menu with a field in it; a field reaches any level in one step and 100% is one number
+away. The level still lasts until the page is reloaded.
+- The control sits in the same cell of the page's grid as the drawing, not inside the drawing's scrolling box, so it
+  stays put while the drawing scrolls and follows the cell when a picked screen narrows it.
+- The drawing keeps 60px empty below its last row, so scrolled to the end no screen sits under the control; 「맞춤」
+  counts that space as well.
+- A press that takes the focus out of the field applies the typed level and must still do what it does, though the
+  redraw would take the pressed thing off the page. The control is made once and a redraw changes only its values, so
+  − and + stay; a change of level redraws the drawing but not the bar above it, so a filter, 「선택 해제」 and the story
+  picker stay; and a press anywhere else applies the level only after the mouse button comes up, so a screen box gets
+  its click before it is drawn again.
+
 **A request a redux-saga saga sends is a call of each screen that dispatches an action type the saga's watcher
 waits for. No config key turns this on: the sagas are those a `createSagaMiddleware()` result runs, and a type
 matches when the screen and the watcher name the same declared constant, or the same text.**
