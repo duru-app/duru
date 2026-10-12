@@ -1378,6 +1378,28 @@ its verdict, which is passed on as `detail`. Reading the message of each format 
 file grow with every failure and add a reader per format for every format added later, while the agent that gets
 the line can open the result file and find the test by its title itself.
 
+**The review page draws the app at a width picked above the frame, 1280 at first, and shows it smaller when the
+pane is narrower, never larger than its real size.**
+With a screen picked in the flow view, the frame gave the app 747px at a 1920px window and 507px at 1440px, so an
+app laid out for a desktop width lost its right side or wrapped into a layout its users never see. The app now gets
+the picked width and is scaled down by the largest whole percent that fits the pane: 1280px at 58% at a 1920px
+window and at 39% at 1440px. This is how Chrome DevTools' device mode fits a device to the window. The app's height
+is the frame's visible height divided by the scale, so the visible part is all of the app's window. The scale is
+worked out again whenever the frame's box changes size, whether the window or a pane boundary moved.
+Alternatives compared:
+- Giving the app the pane's width, as before: nothing to build, but it is the layout above, and the reviewer judges
+  a screen the users do not get. It stays as 「칸에 맞춤」 for an app that is built to fit any width.
+- Drawing the app at its real width and letting the frame scroll sideways: text keeps its real size, but the whole
+  screen is never in view at once, and what sits on the right needs a scroll before it can be seen.
+Choices inside it:
+- The scale is shown as a sentence beside the width picker, with no percent buttons: the flow drawing's zoom already
+  shows a percent with − and +, and a second such control would read as the same zoom. Responsively App puts −,
+  percent and + in its status bar and has no fit mode; here fitting is the only mode.
+- The percent is not lowered further to make width × scale whole pixels, as DevTools does: for 1024 only multiples
+  of 25% do that, so a fit just under 100% would drop to 75% for sharper edges.
+- The picked width lasts until the page reloads, like the drawing's zoom, since the page keeps nothing in browser
+  storage.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

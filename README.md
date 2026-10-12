@@ -550,7 +550,13 @@ of its steps runs under the bar.
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
 in a frame, already logged in, with a role picker, boxes for path values and a line for the settings the screen's
-conditions name, which can be turned on and off. Below come the screen's tests by depth and its API calls, with
+conditions name, which can be turned on and off. 「앱 너비」 above the frame sets the width the app is drawn at:
+1280 at first, 1024 or 1440, or 「칸에 맞춤」 for the pane's own width. When the pane is narrower than the width
+picked, the app keeps that width and is shown smaller to fit; it is never shown larger than its real size. The
+words beside the picker say which: 「1280px 화면을 58%로 줄여서 보여 줍니다」, 「1280px 화면을 실제 크기로 보여 줍니다」 or
+「칸 너비 그대로 745px」. Dragging the frame's bottom corner makes it taller or shorter, and the app gets the height
+shown divided by that percent. The width picked stays, in both views, until the page is reloaded. Below come the
+screen's tests by depth and its API calls, with
 a row per option value. The right says what it takes to open the screen, with the tests of each role and setting
 case by depth, and lists the links into it with their guards. With `caseKinds` set, 「경우별 테스트」 has a button
 per kind for every screen, and for a call once the call is chosen: pressing one makes the kind a case there, with
