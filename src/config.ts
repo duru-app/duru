@@ -248,6 +248,9 @@ export function loadConfig(configPath: string) {
     throw new Error(`tsconfig must be the path of the tsconfig file that declares the import aliases, such as "client/tsconfig.json", not ${JSON.stringify(raw.tsconfig)}`);
   }
   const tsconfig = raw.tsconfig === undefined ? null : at(raw.tsconfig);
+  if (raw.baselineMap !== undefined && !isText(raw.baselineMap)) {
+    throw new Error(`baselineMap must be the path of a map.json written by an earlier rebuild, such as "releases/1.5.0/map.json", not ${JSON.stringify(raw.baselineMap)}`);
+  }
   const sourcePackages = raw.sourcePackages ?? {};
   if (!isPlainObject(sourcePackages) || !Object.entries(sourcePackages).every(([name, folder]) => PACKAGE_NAME.test(name) && isText(folder))) {
     throw new Error(`sourcePackages must map package names the app imports to the folders holding their source, as paths from the config file, such as { "@mattermost/client": "webapp/platform/client/src" }, not ${JSON.stringify(raw.sourcePackages)}`);
@@ -270,6 +273,7 @@ export function loadConfig(configPath: string) {
     srcRoot: at(raw.srcRoot),
     routeFiles: routesFile === undefined ? [] : routeFilesOf(routesFile, at(raw.srcRoot)),
     tsconfig,
+    baselineMap: raw.baselineMap === undefined ? null : at(raw.baselineMap),
     aliases: tsconfig || packageRules.length ? [...packageRules, ...(tsconfig ? loadAliases(tsconfig) : [])] : null,
     roleIdentifiers: raw.roleIdentifiers ?? [],
     caseKinds,

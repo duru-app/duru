@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { screenCases } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
+import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { acceptCandidate, discardCandidate, storyCandidates } from './candidates.ts';
 import { isPlainObject } from './config.ts';
 import { buildFlow } from './flow.ts';
@@ -163,6 +164,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
     onDisk = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
   } catch {}
   if (isStaleMap(onDisk)) throw staleMapError(mapFile);
+  const baseline = config.baselineMap ? readBaseline(config.baselineMap) : null;
   const rootDefaults = () => {
     const map = readMap(mapFile);
     const root = config.app.settingsFile?.root;
@@ -223,7 +225,10 @@ export async function startReviewServer(config: any, { port = 0, author = review
       }
       if (req.method === 'GET' && req.url === '/api/data') {
         const fileSettings = app && config.app.settingsFile ? await app.fileSettings() : null;
-        return send(res, 200, 'application/json', JSON.stringify(reviewData(config, author, app, fileSettings)));
+        const data = reviewData(config, author, app, fileSettings);
+        const fromConfig = baseline && path.relative(config.configDir, config.baselineMap);
+        const changes = baseline && { file: fromConfig.startsWith('..') ? config.baselineMap : fromConfig, label: baselineLabel(config.baselineMap), ...compareMaps(baseline, data.map) };
+        return send(res, 200, 'application/json', JSON.stringify({ ...data, baseline: changes }));
       }
       const url = new URL(req.url!, 'http://host');
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {

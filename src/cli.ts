@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
+import { baselineLine, compareMaps, readBaseline } from './baseline.ts';
 import { storyCandidates } from './candidates.ts';
 import { loadConfig } from './config.ts';
 import { buildMap } from './map.ts';
@@ -69,6 +70,13 @@ if (command === 'tasks') {
   console.error(`review page http://127.0.0.1:${(server.address() as AddressInfo).port}/`);
   console.error(`marks ${config.marksDir} | stories ${config.storiesDir} | author ${author.name} (${AUTHOR_SOURCES[author.source]})`);
 } else {
+  let baseline = null;
+  try {
+    if (command === 'rebuild' && config.baselineMap) baseline = readBaseline(config.baselineMap);
+  } catch (err: any) {
+    console.error(err.message);
+    process.exit(1);
+  }
   fs.mkdirSync(config.outDir, { recursive: true });
   const write = (name: string, data: unknown) => {
     const file = path.join(config.outDir, name);
@@ -81,6 +89,7 @@ if (command === 'tasks') {
     console.error(err.message);
     process.exit(1);
   });
+  const changes = baseline && baselineLine(config.baselineMap, compareMaps(baseline, map));
   console.log(`wrote ${write('map.json', map)}`);
   const allEndpoints = Object.values<any>(map.apiFunctions).flatMap((f) => f.endpoints);
   const count = (st: string) => allEndpoints.filter((e) => e.server.status === st).length;
@@ -122,6 +131,7 @@ if (command === 'tasks') {
   for (const s of map.screens.filter((s: any) => !s.componentFile)) console.log(`  component file not found for ${s.id} ← ${s.routeFile}:${s.line}`);
 
   if (command === 'rebuild') {
+    if (changes) console.log(changes);
     const links = linkTests(config, map);
     console.log(`wrote ${write('tests.json', links)}`);
     const { list, notices, stale, unknownTags: unknownStories } = checkStoryFiles(map, config.storiesDir, path.join(config.outDir, 'map.json'), links);

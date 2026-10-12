@@ -239,6 +239,10 @@ client with example results and a config to start from.
 - `storiesDir` — folder of story files, or a single story file (default: `stories` in `outDir`).
 - `visitRecords` — visit record files or folders that story candidates are made from (optional), as
   `["qa/records"]`. Playwright reports in `tests` whose tests left a trace give candidates too.
+- `baselineMap` — the `map.json` of an earlier version of the same client (optional), such as the map kept from
+  the last release. `rebuild` and the review page then show what changed since it. Build it with the same duru as
+  the current map: a map from another duru can differ for reasons in duru rather than in the client, and one from a
+  duru that did not record the roles a route guard lets through is refused.
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
   variables to it.
 - `app` — what the review page needs to show the app itself, logged in, in a frame (optional; replaces the
@@ -393,6 +397,12 @@ listing the places whose value the source does not show in full.
   (`unknownBodyTypeExclusions`), `moves` paths that match no route
   (`unknownMovePaths`), `callLinks` call IDs that are not on the map (`unknownCallLinks`) and `roleGuards`
   guards that guard no route or link with a role (`unknownRoleGuards`).
+- `changes since <file> | screens new N removed N condition N calls-changed N | calls new N removed N server N` —
+  printed by `rebuild` when the config names `baselineMap`: the screens the baseline does not have, the ones it has
+  that are gone, the screens on both whose role or setting conditions differ, the screens on both that send calls
+  they did not or no longer send the ones they did, and the same for calls, with the calls whose server match
+  differs. A `baselineMap` that is missing, unreadable or not such a map stops `rebuild` with a line naming the file,
+  before anything is written.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, and the files
   skipped, the links from untagged tests to screens and the trace or test files it could not read, the judged test
   pairs, and each judgment file it could not read or whose screen is gone from the map.
@@ -543,6 +553,14 @@ a row per option value. The right says what it takes to open the screen, with th
 case by depth, and lists the links into it with their guards. With `caseKinds` set, 「경우별 테스트」 has a button
 per kind for every screen, and for a call once the call is chosen: pressing one makes the kind a case there, with
 its tests by depth, and pressing it again takes it out. The flow shows the same right pane for a picked screen.
+
+**Changes since a baseline.** With `baselineMap` set, the header names the baseline by its folder and path
+(「비교 기준」). A screen in the list carries 「생김」, 「조건 바뀜」 (the conditions before and after on hover) or
+「호출 +N −N」, and 「바뀐 화면만」 in the box 「<folder> 와 비교」 keeps only those. Below the list come the screens only the
+baseline has, and how many screens changed their role or setting conditions and how many calls their server match.
+A changed screen opens with a line saying what changed; its call table has a column 「<folder> 와 비교」 with 「생김」 or
+「서버 대조 바뀜 (before → after)」, and the calls it no longer sends are listed struck through with 「없어짐」. A
+`baselineMap` that cannot be read stops `review` before the page is served.
 
 **Untagged tests.** An untagged test linked to a screen by its imports or its trace has 「제외」, to discard the
 pair with a reason, and 「포함」, to hand it over so a coding agent adds the tag. A handed-over pair waits under
