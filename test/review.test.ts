@@ -1,18 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import vm from 'node:vm';
 import { UNKNOWN } from '../src/client.ts';
 import { loadConfig } from '../src/config.ts';
 import { chromium } from 'playwright-core';
 import type { Locator, Page, Route } from 'playwright-core';
 import { addJudgment, loadJudgments } from '../src/judgments.ts';
-import { addMark, loadMarks } from '../src/marks.ts';
+import { addMark, addReply, loadMarks } from '../src/marks.ts';
 import { applyOverrides } from '../src/app-host.ts';
 import { reviewAuthor, startReviewServer } from '../src/review.ts';
 import type { ReviewAuthor } from '../src/review.ts';
@@ -1423,6 +1424,196 @@ test('in a browser, a comment with no status is saved from the text alone, shows
         p.once('dialog', (d) => assert.fail(`no unsaved warning expected, got: ${d.message()}`));
         await p.click('header button:has-text("리뷰 끝")');
         await p.waitForSelector('#ended');
+      }),
+    ),
+  );
+});
+
+const reply = (copy: string, ...args: string[]) => promisify(execFile)(process.execPath, [CLI, 'reply', path.join(copy, 'config.json'), ...args], { encoding: 'utf8' });
+
+test('in a browser, a reply sent with duru reply --server shows under its comment on the open page without a reload, and text being typed in the form keeps its place', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config, copy) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.fill('#right-dock textarea', 'why is the list empty?');
+        await p.click('#right button.save');
+        await openHistory(p);
+        await p.waitForSelector('#right .history li:has-text("why is the list empty?")');
+        const [comment] = loadMarks(config.marksDir);
+        await p.evaluate(() => { (window as Window & Kept).kept = true; });
+        await p.click('#right-dock textarea');
+        await p.keyboard.type('half');
+
+        await reply(copy, comment.id, 'the fixture has no rows', '--server', `${base}/`);
+        await p.waitForSelector('#right .history > li:has-text("why is the list empty?") .replies li:has-text("the fixture has no rows")');
+        assert.equal(await p.locator('#right .history > li').count(), 1);
+        assert.equal(await p.textContent('#right .history .replies li .chip'), '답');
+        assert.match((await p.textContent('#right .history .replies li .muted'))!, /^agent · /);
+        assert.equal(await p.evaluate(() => (window as Window & Kept).kept), true);
+        await p.keyboard.type(' and more');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'half and more');
+      }),
+    ),
+  );
+});
+
+test('in a browser, a record arriving while the reviewer types keeps the field and its caret, waits while a Korean syllable is being composed, and the page reads its own save once', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config, copy) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const dataReads: string[] = [];
+        p.on('request', (r) => new URL(r.url()).pathname === '/api/data' && dataReads.push(r.url()));
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.fill('#right-dock textarea', 'why is the list empty?');
+        const before = dataReads.length;
+        await p.click('#right button.save');
+        await openHistory(p);
+        await p.waitForSelector('#right .history li:has-text("why is the list empty?")');
+        await p.waitForTimeout(300);
+        assert.equal(dataReads.length - before, 1);
+        const [comment] = loadMarks(config.marksDir);
+
+        const nextEvent = () => p.evaluateHandle(() => ({
+          heard: new Promise<void>((resolve) => {
+            const events = new EventSource('/api/events');
+            events.addEventListener('message', () => { events.close(); resolve(); });
+            events.addEventListener('open', () => { (window as Window & Listening).listening = true; });
+          }),
+        }));
+        const listen = async () => {
+          await p.evaluate(() => { (window as Window & Listening).listening = false; });
+          const heard = await nextEvent();
+          await p.waitForFunction(() => (window as Window & Listening).listening);
+          return heard;
+        };
+
+        await p.click('#right-dock textarea');
+        await p.keyboard.type('abcdef');
+        for (let i = 0; i < 3; i++) await p.keyboard.press('ArrowLeft');
+        await reply(copy, comment.id, 'first answer', '--server', `${base}/`);
+        await p.waitForSelector('#right .history .replies li:has-text("first answer")');
+        await p.keyboard.type('X');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'abcXdef');
+
+        await p.dispatchEvent('#right-dock textarea', 'compositionstart');
+        const heard = await listen();
+        const reads = dataReads.length;
+        await reply(copy, comment.id, 'second answer', '--server', `${base}/`);
+        await p.evaluate((h) => h.heard, heard);
+        await p.waitForTimeout(300);
+        assert.equal(dataReads.length, reads);
+        assert.equal(await p.locator('#right .history .replies li:has-text("second answer")').count(), 0);
+        await p.dispatchEvent('#right-dock textarea', 'compositionend');
+        await p.waitForSelector('#right .history .replies li:has-text("second answer")');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'abcXdef');
+
+        await p.dispatchEvent('#right-dock textarea', 'compositionstart');
+        await p.click('#screen-list li:has-text("/home")');
+        await reply(copy, comment.id, 'third answer', '--server', `${base}/`);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await openHistory(p);
+        await p.waitForSelector('#right .history .replies li:has-text("third answer")');
+      }),
+    ),
+  );
+});
+
+type Listening = { listening?: boolean };
+
+test('in a browser, an entry under 「떨어져 나감」 with a comment and an answer shows the comment, not the answer', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const comment = addMark(config.marksDir, { target: { node: '/gone#Gone' }, note: 'is this screen gone?', author: 'a' }, new Date('2026-10-03T01:00:00Z'));
+    addReply(config.marksDir, { replyTo: comment.id, note: 'yes, it was removed' }, new Date('2026-10-03T02:00:00Z'));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#left .detached li');
+        const entry = (await p.textContent('#left .detached li'))!;
+        assert.match(entry, /is this screen gone\?/);
+        assert.doesNotMatch(entry, /removed/);
+      }),
+    );
+  });
+});
+
+test('closing the review server ends the open event streams, and a stream opened after 「리뷰 끝」 is ended at once', async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => null });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const open = await fetch(`${base}/api/events`);
+    const body = open.text();
+    await postMark(base, { target: { node: '/home#Home' }, note: 'while the stream is open' });
+    const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+    assert.match(await body, /^data: \{"duru":"comment",[^\n]*"note":"while the stream is open"[^\n]*\n\nevent: end\ndata: review ended\n\n$/);
+    await closed;
+
+    const again = await startReviewServer(config, { author: signer('reviewer'), onDone: () => null });
+    const againBase = `http://127.0.0.1:${(again.address() as AddressInfo).port}`;
+    try {
+      const early = (await fetch(`${againBase}/api/events`)).text();
+      const [end, during] = await Promise.all([
+        fetch(`${againBase}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }),
+        postMark(againBase, { target: { node: '/home#Home' }, note: 'saved as the review ends' }),
+      ]);
+      assert.deepEqual([end.status, during.status], [200, 201]);
+      assert.match(await early, /event: end\ndata: review ended\n\n$/);
+      const late = await fetch(`${againBase}/api/events`);
+      assert.equal(await late.text(), 'event: end\ndata: review ended\n\n');
+      const saved = await postMark(againBase, { target: { node: '/home#Home' }, note: 'saved after the end' });
+      assert.equal(saved.status, 201);
+    } finally {
+      again.close();
+    }
+  });
+});
+
+test('in a browser, a mark and a comment saved in one page show in a second page that is already open', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const other = await p.context().browser()!.newPage();
+        const otherErrors: string[] = [];
+        other.on('pageerror', (e) => otherErrors.push(e.message));
+        other.on('console', (m) => m.type() === 'error' && otherErrors.push(m.text()));
+        await other.goto(base);
+        await toList(other);
+        await other.click('#screen-list li:has-text("/document/:id")');
+        await other.evaluate(() => { (window as Window & Kept).kept = true; });
+
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right button.save');
+        await other.waitForSelector('#screen-list li.selected .chip.missing');
+        await p.fill('#right-dock textarea', 'from the first page');
+        await p.click('#right button.save');
+        await openHistory(other);
+        await other.waitForSelector('#right .history li:has-text("from the first page") .chip.comment');
+        assert.equal(await other.evaluate(() => (window as Window & Kept).kept), true);
+        assert.deepEqual(otherErrors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a reply written without --server is not pushed to the open page and shows once the page is loaded again', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config, copy) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.fill('#right-dock textarea', 'why is the list empty?');
+        await p.click('#right button.save');
+        await openHistory(p);
+        await p.waitForSelector('#right .history li:has-text("why is the list empty?")');
+        const [comment] = loadMarks(config.marksDir);
+
+        await reply(copy, comment.id, 'the fixture has no rows');
+        assert.equal(loadMarks(config.marksDir).length, 2);
+        assert.equal(await p.locator('#right .history .replies').count(), 0);
+        await p.reload();
+        await toList(p);
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await openHistory(p);
+        await p.waitForSelector('#right .history > li:has-text("why is the list empty?") .replies li:has-text("the fixture has no rows")');
       }),
     ),
   );

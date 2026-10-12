@@ -1232,6 +1232,43 @@ Alternatives compared:
   be told of a new record, so that needs a command for the agent and a push to the open page. This change carries
   records one way, from the page to the agent.
 
+**An agent answers a comment with `duru reply … --server <review page address>`: the running review saves the reply
+like a page save, and every open page receives each saved mark, comment and reply over Server-Sent Events.**
+A reply is a mark with no status and a `replyTo` naming the comment, so it needs no folder or reading of its own,
+and in the history and the task list it goes under the comment it answers. Without `--server` the file is written
+directly and shows on the next load; this is for a review that is no longer running.
+Alternatives compared:
+- The agent writes the reply file itself and each page asks the server for new records every few seconds: it works
+  only where the agent can write into the review's marks folder. In the shared-server mode of #42 the agent runs on
+  another machine than the server, so its file never reaches the server's folder; a request to the server reaches
+  it from anywhere, and the other reviewers' saves already go through the server. Polling also reads the whole
+  review data again when nothing changed.
+- The agent writes the file and the server watches the marks folder: the same reach problem for a remote agent, and
+  Node's documentation says `fs.watch` does not behave the same on every system, so a missed or doubled event would
+  decide what a reviewer sees.
+- A WebSocket instead of Server-Sent Events: records only flow from the server to the page, which keeps sending
+  saves as ordinary requests, so a one-way stream over plain HTTP is enough and needs no package or upgrade
+  handling. The page reads the review data again on each event rather than inserting the record, because a case
+  mark also changes the cases the server works out for a screen or call.
+Known limit: behind a reverse proxy the event stream needs response buffering turned off (`proxy_buffering off` in
+nginx, or `X-Accel-Buffering: no`), or events wait in the proxy until the buffer fills. A page that loses the
+stream reconnects and reads the data again, so saves made while it was cut off still show.
+
+**The review page keeps drawing itself with its own code; a UI library is weighed again when the shared-server mode
+of #42 is started.** Since records arrive on their own, the page redraws while a reviewer may be typing, and a
+redraw replaces the fields: the page puts the focus and caret back in the field at the same place and holds the
+redraw while a Korean syllable is being composed.
+Alternatives compared:
+- Rewriting the page with a library that redraws only what changed (React, Preact, Vue, Svelte): it keeps fields by
+  itself, but every part of the page is rewritten and a build step or a downloaded library is added, for a problem
+  that a few dozen lines solve today.
+- Keeping the drawing code and replacing the redraw with a library that patches the new page into the old one
+  (idiomorph, morphdom): the smallest step that keeps fields without restoring them by hand. Not taken while the
+  page redraws on its own only when a record arrives.
+The page reads and writes only through the server's requests (`/api/data`, `/api/events` and the saves), and the
+files it saves do not depend on how it is drawn, so changing this later changes the page alone; what grows with
+each feature added meanwhile is the amount of page to rewrite.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

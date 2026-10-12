@@ -57,7 +57,7 @@
   .chip { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; border: 1px solid currentColor; white-space: nowrap; }
   .chip.pass { color: var(--pass); } .chip.fail { color: var(--fail); } .chip.pending { color: var(--pending); }
   .chip.partial { color: var(--more); } .chip.untested { color: var(--fail); border-style: dashed; }
-  .chip.needs-more { color: var(--more); } .chip.missing { color: var(--missing); } .chip.fine { color: var(--fine); } .chip.comment { color: var(--muted); }
+  .chip.needs-more { color: var(--more); } .chip.missing { color: var(--missing); } .chip.fine { color: var(--fine); } .chip.comment, .chip.reply { color: var(--muted); }
   .title-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .title-row h3 { margin: 0; font-size: 18px; }
   .frame-bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 6px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--bg); font-size: 13px; }
@@ -177,6 +177,7 @@
   .story-path .link.l-pending { color: var(--muted); }
   #pick-list li .count { color: var(--accent); }
   .history li { font-size: 12px; }
+  .history .replies { margin: 4px 0 0 16px; }
   .history-toggle { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
   .history-toggle::after { content: ' ▸'; }
   .history-toggle[aria-expanded=true]::after { content: ' ▾'; }
@@ -493,10 +494,18 @@ const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? [
 const hasOption = (tests, key, value) => tests.filter((t) => t.options?.some((o) => o.key === key && o.value === value));
 const optionsOf = (s, callId) => s.callOptions[callId] ?? [];
 
+let loadsStarted = 0;
+let loadApplied = 0;
+
+// 늦게 시작한 읽기가 그 앞의 저장을 모두 담고 있으므로, 먼저 시작한 읽기가 늦게 돌아오면 버린다.
 async function load() {
+  const order = ++loadsStarted;
   const res = await fetch('/api/data');
   if (!res.ok) throw new Error(await res.text());
-  state.data = await res.json();
+  const data = await res.json();
+  if (order < loadApplied) return;
+  loadApplied = order;
+  state.data = data;
   if (state.storyPath && !pathStoryOf()) leaveStoryPath();
   const { screens } = state.data.map;
   if (!screens.some((s) => s.id === state.selected)) state.flowPicked = false;
@@ -708,13 +717,17 @@ function keptLeftList(left, tabs, listId) {
   return list;
 }
 
+// 상태가 없는 항목은 가장 최근의 코멘트로 보인다. 그 뒤에 달린 답은 코멘트를 대신하지 않는다.
+const summaryOf = (m) => m.current ?? m.history.find((r) => r.replyTo === undefined) ?? m.history[0];
+const summaryLines = (r) => [h('span', { class: 'muted' }, signedAt(r)), r.note ? h('div', {}, r.note) : null];
+
 function markList(title, cls, marks, label, empty, pick = null) {
   return [
     h('h2', {}, `${title} ${marks.length}`),
     marks.length
       ? h('ul', { class: `plain ${cls}` }, marks.map((m) => h('li', pick ? { class: label(m) === state.story ? 'selected' : '', onclick: () => pick(label(m)) } : {},
           markChip(m), ' ', h('code', {}, label(m)), h('br'),
-          h('span', { class: 'muted' }, signedAt(m.current ?? m.history[0])), (m.current ?? m.history[0]).note ? h('div', {}, (m.current ?? m.history[0]).note) : null)))
+          ...summaryLines(summaryOf(m)))))
       : empty,
   ];
 }
@@ -2324,13 +2337,19 @@ function markForm(target, draftKey, label) {
   state[draftKey] ??= { status: mark?.current?.status ?? null, note: '' };
   const draft = state[draftKey];
   const history = mark?.history.length ? mark.history : null;
-  const historyList = history && h('ul', { class: 'plain history' }, history.map((m) => h('li', {},
-    m.status ? h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]) : h('span', { class: 'chip comment' }, '코멘트'), ' ', h('span', { class: 'muted' }, signedAt(m)),
-    m.note ? h('div', {}, m.note) : null)));
+  const repliesTo = (m) => history.filter((r) => r.replyTo === m.id).reverse();
+  const answered = (r) => r.replyTo !== undefined && history.some((m) => m.id === r.replyTo);
+  const recordItem = (m) => h('li', {},
+    m.status ? h('span', { class: `chip ${m.status}` }, MARK_STATUS[m.status]) : h('span', { class: `chip ${m.replyTo !== undefined ? 'reply' : 'comment'}` }, m.replyTo !== undefined ? '답' : '코멘트'),
+    ' ', h('span', { class: 'muted' }, signedAt(m)),
+    m.note ? h('div', {}, m.note) : null,
+    repliesTo(m).length ? h('ul', { class: 'plain replies' }, repliesTo(m).map(recordItem)) : null);
+  const topLevel = history?.filter((m) => !answered(m));
+  const historyList = history && h('ul', { class: 'plain history' }, topLevel.map(recordItem));
   const historyToggle = history && h('button', { class: 'history-toggle', onclick: () => {
     state.historyOpen = !state.historyOpen;
     applyHistoryFold(historyToggle, historyList);
-  } }, `이력 ${history.length}`);
+  } }, `이력 ${topLevel.length}`);
   if (history) applyHistoryFold(historyToggle, historyList);
   const savable = () => !!draft.status || draft.note.trim() !== '';
   const save = h('button', { class: 'save', disabled: !savable(), onclick: () => saveMark(target, draftKey) }, '남기기');
@@ -2455,15 +2474,22 @@ function caseSection(node) {
 
 async function pickCase(target, status) {
   if (state.caseSaving || state.bulkBusy) return;
+  return trackOwnSave(() => savePick(target, status));
+}
+
+async function savePick(target, status) {
   state.error = null;
   state.caseSaving = true;
   renderRight();
+  let saved;
   try {
     const res = await fetch('/api/marks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, status }) });
     if (!res.ok) throw new Error(await res.text());
+    saved = await res.json();
   } catch (err) {
     state.caseSaving = false;
-    return showSaveError(err.message, target);
+    showSaveError(err.message, target);
+    return null;
   }
   try {
     await load();
@@ -2472,6 +2498,7 @@ async function pickCase(target, status) {
   }
   state.caseSaving = false;
   render();
+  return saved.id;
 }
 
 function openSummary(s) {
@@ -2529,9 +2556,12 @@ function showSaveError(reason, target) {
 // 지금 상태를 다시 매기는 것은 아무것도 바꾸지 않으므로, 함께 쓴 글은 코멘트로 보낸다.
 const asComment = (target, draft) => draft.note.trim() !== '' && draft.status === (markOf(target)?.current?.status ?? null);
 
-async function saveMark(target, draftKey) {
+const saveMark = (target, draftKey) => trackOwnSave(() => postMark(target, draftKey));
+
+async function postMark(target, draftKey) {
   state.error = null;
   const draft = state[draftKey];
+  let saved;
   try {
     const res = await fetch('/api/marks', {
       method: 'POST',
@@ -2539,8 +2569,10 @@ async function saveMark(target, draftKey) {
       body: JSON.stringify({ target, status: asComment(target, draft) ? null : draft.status, note: draft.note }),
     });
     if (!res.ok) throw new Error(await res.text());
+    saved = await res.json();
   } catch (err) {
-    return showSaveError(err.message, target);
+    showSaveError(err.message, target);
+    return null;
   }
   const owner = draftKey === 'storyDraft' ? { story: state.story } : state.target;
   const untouched = !!owner && keyOf(owner) === keyOf(target) && !unsaved(target, state[draftKey]);
@@ -2551,6 +2583,7 @@ async function saveMark(target, draftKey) {
     state.error = isShown(target) ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `「${targetName(target)}」 코멘트는 저장했지만 다시 읽지 못했습니다: ${err.message}`;
   }
   render();
+  return saved.id;
 }
 
 async function postJudgment(judgment) {
@@ -3730,7 +3763,10 @@ async function endReview() {
     } catch {
       return showEnded('리뷰 페이지 서버가 이미 닫혔습니다. 다른 창에서 리뷰를 끝냈거나 터미널에서 멈춘 것입니다. 이 창은 닫아도 됩니다.');
     }
-    if (res.ok) return showEnded('리뷰를 끝냈습니다. 작업 목록은 리뷰 페이지를 띄운 터미널로 넘어갔습니다. 이 창은 닫아도 됩니다.');
+    if (res.ok) {
+      events.close();
+      return showEnded('리뷰를 끝냈습니다. 작업 목록은 리뷰 페이지를 띄운 터미널로 넘어갔습니다. 이 창은 닫아도 됩니다.');
+    }
     error.textContent = `리뷰를 끝내지 못했습니다: ${await res.text()}`;
   } finally {
     if (!state.ended) setEnding(false);
@@ -3750,6 +3786,110 @@ window.addEventListener('resize', () => {
     if (cellsPerRow(drawnGrid.count, drawnGrid.cellW, flowInnerWidth(flow) / state.zoom) !== drawnGrid.per) renderFlow();
   });
 });
+
+const FIELDS = 'input, textarea, select';
+const fieldKey = (f) => [f.localName, f.type, f.name, f.placeholder, f.getAttribute('aria-label'), f.className, f.closest('[id]')?.id].join('|');
+const fieldsLike = (key) => [...document.querySelectorAll(FIELDS)].filter((f) => fieldKey(f) === key);
+
+// 다시 그리면 입력 칸이 새로 만들어지므로, 쓰던 칸과 생김새가 같은 칸으로 초점과 커서를 돌려 둔다. 같은 생김새의 칸 수가 바뀌었으면 어느 칸인지 알 수 없으므로 돌려 두지 않는다.
+function fieldPlace() {
+  const field = document.activeElement;
+  if (!field?.matches?.(FIELDS)) return null;
+  const key = fieldKey(field);
+  const alike = fieldsLike(key);
+  return { field, key, count: alike.length, index: alike.indexOf(field), caret: field.selectionStart == null ? null : [field.selectionStart, field.selectionEnd] };
+}
+
+function restoreField(place) {
+  if (!place || place.field.isConnected) return;
+  const alike = fieldsLike(place.key);
+  if (alike.length !== place.count) return;
+  const field = alike[place.index];
+  field.focus();
+  if (place.caret && field.selectionStart != null) field.setSelectionRange(...place.caret);
+}
+
+// 한글을 조합하는 중에 칸을 바꾸면 쓰던 글자가 끊긴다.
+let composingField = null;
+let pendingLive = null;
+let pendingTimer = null;
+const composingNow = () => !!composingField?.isConnected && document.activeElement === composingField;
+
+function deferLive(kind) {
+  if (pendingLive !== 'load') pendingLive = kind;
+  clearTimeout(pendingTimer);
+  pendingTimer = setTimeout(resumeLive, 500);
+}
+
+function resumeLive() {
+  clearTimeout(pendingTimer);
+  const kind = pendingLive;
+  pendingLive = null;
+  if (kind === 'load') reloadLive();
+  else if (kind === 'draw') drawLive();
+}
+
+document.addEventListener('compositionstart', (e) => { composingField = e.target; });
+document.addEventListener('compositionend', () => {
+  composingField = null;
+  if (pendingLive) setTimeout(resumeLive);
+});
+
+async function reloadLive() {
+  if (!state.data || state.ended || state.failed) return;
+  if (composingNow()) return deferLive('load');
+  try {
+    await load();
+  } catch (err) {
+    state.error = `새로 남은 코멘트를 읽지 못했습니다: ${err.message}`;
+  }
+  drawLive();
+}
+
+function drawLive() {
+  if (state.ended || state.failed) return;
+  if (composingNow()) return deferLive('draw');
+  const place = fieldPlace();
+  render();
+  restoreField(place);
+}
+
+// 이 페이지가 저장한 기록의 알림은 저장 뒤의 다시 읽기가 이미 담으므로 건너뛴다. 알림이 저장 응답보다 늦게 올 수도 있어, 아직 오지 않은 것은 기억해 둔다.
+let ownSaves = 0;
+const heardDuringSave = new Set();
+const ownNotHeard = new Set();
+
+async function trackOwnSave(save) {
+  ownSaves++;
+  let id = null;
+  try {
+    id = await save();
+  } finally {
+    ownSaves--;
+    if (id !== null && !heardDuringSave.delete(id)) ownNotHeard.add(id);
+    if (!ownSaves && heardDuringSave.size) {
+      heardDuringSave.clear();
+      reloadLive();
+    }
+  }
+}
+
+function heard(event) {
+  const { id } = JSON.parse(event.data);
+  if (ownNotHeard.delete(id)) return;
+  if (ownSaves) return heardDuringSave.add(id);
+  reloadLive();
+}
+
+// 끊겼다가 다시 이어지면 그 사이에 저장된 것을 못 받았을 수 있으므로 다시 읽는다.
+const events = new EventSource('/api/events');
+let eventsOpened = false;
+events.addEventListener('open', () => {
+  if (eventsOpened) reloadLive();
+  eventsOpened = true;
+});
+events.addEventListener('message', heard);
+events.addEventListener('end', () => events.close());
 
 // 리뷰를 끝낸 뒤에 늦게 실패한 읽기만 알리지 않고, 그리다 난 오류는 그대로 알린다.
 load().then(applyPlace, (err) => {

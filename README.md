@@ -32,6 +32,7 @@ npm run rebuild -- path/to/project-config.json   # map.json + tests.json
 npm run extract -- path/to/project-config.json   # map.json only
 node src/cli.ts review path/to/project-config.json [--port 4400]   # review page on 127.0.0.1, task list when it ends
 node src/cli.ts tasks path/to/project-config.json > tasks.md        # task list for a coding agent
+node src/cli.ts reply path/to/project-config.json <comment ID> "<text>" [--server <review page address>]   # answer a comment
 npm test
 ```
 
@@ -548,12 +549,23 @@ under 「떨어져 나감」. A case kind picked or taken out on a screen or cal
 status `needed` or `not-needed`; it puts nothing on the task list, and one whose kind has left `caseKinds` shows
 under 「떨어져 나감」.
 
-**While the review runs.** Each mark or comment is printed on standard error the moment it is saved, as one JSON
-line: `{"duru":"mark"|"comment","id":…,"target":{…},"status":…,"note":…,"author":…,"date":…}`, with no
-`status` for a comment. A coding agent that launched the page can act on it without waiting for the end.
+**While the review runs.** Each mark, comment or reply is printed on standard error the moment it is saved, as one
+JSON line: `{"duru":"mark"|"comment"|"reply","id":…,"target":{…},"status":…,"replyTo":…,"note":…,"author":…,"date":…}`,
+with no `status` for a comment or a reply and `replyTo` only on a reply. A coding agent that launched the page can
+act on it without waiting for the end. Every open page receives the same save at once and shows it without a
+reload, so a mark left in one window appears in another.
+
+**Replies.** `reply <config> <comment ID> "<text>"` answers a comment. The reply is a mark with no status, saved as
+its own new file next to the comment, with the comment's target, `replyTo` set to the comment's ID and the author
+`agent`; the page shows it as 「답」 under the comment in the history, and the task list puts it under the comment
+it answers. With `--server` and the address the review printed, the reply goes through the running review: it is
+saved, printed on standard error as a `"reply"` line and shown on every open page at once. Without `--server` the
+file is written directly and shows the next time the page is loaded. An ID that is not a comment in the marks stops
+with `no comment with ID "<id>"` and exit code 1, and nothing is written. A reply prints nothing when it is saved.
 
 **Ending.** Pressing 「리뷰 끝」, or Ctrl+C in the terminal, closes the server and prints the task list on standard
-output, so a coding agent that launched the page receives it as soon as the reviewer is done.
+output, so a coding agent that launched the page receives it as soon as the reviewer is done. Open pages stop
+listening for new saves when the review ends.
 
 ## Task list
 

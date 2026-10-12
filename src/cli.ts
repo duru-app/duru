@@ -6,6 +6,7 @@ import { storyCandidates } from './candidates.ts';
 import { loadConfig } from './config.ts';
 import { buildMap } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
+import { addReply, recordKind } from './marks.ts';
 import type { Mark } from './marks.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
 import { reviewAuthor, startReviewServer } from './review.ts';
@@ -14,14 +15,15 @@ import { checkStoryFiles } from './story-paths.ts';
 import { taskList } from './tasks.ts';
 import { linkTests } from './test-links.ts';
 
-const COMMANDS = ['extract', 'rebuild', 'review', 'tasks'];
+const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'reply'];
 const DEFAULT_PORT = 4400;
 const AUTHOR_SOURCES: Record<string, string> = { config: 'config', git: 'git user.name', user: 'computer user name' };
 const KEPT_BY: Record<string, string> = { source: 'the source', config: 'bodyOptions' };
 const [, , command, configPath, ...extra] = process.argv;
 const portArg = command === 'review' && extra[0] === '--port' && extra.length === 2 ? Number(extra[1]) : null;
-if (!COMMANDS.includes(command) || !configPath || (extra.length > 0 && !Number.isInteger(portArg))) {
-  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru review <config.json> [--port <n>]`);
+const replyArgs = command === 'reply' && (extra.length === 2 || (extra.length === 4 && extra[2] === '--server')) ? { id: extra[0], text: extra[1], server: extra[3] ?? null } : null;
+if (!COMMANDS.includes(command) || !configPath || (command === 'reply' ? !replyArgs : extra.length > 0 && !Number.isInteger(portArg))) {
+  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]`);
   process.exit(2);
 }
 
@@ -29,6 +31,19 @@ const config = loadConfig(configPath);
 
 if (command === 'tasks') {
   process.stdout.write(taskList(config));
+} else if (command === 'reply') {
+  const { id, text, server } = replyArgs!;
+  try {
+    if (!server) addReply(config.marksDir, { replyTo: id, note: text });
+    else {
+      const res = await fetch(new URL('api/replies', server), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ replyTo: id, note: text }) })
+        .catch((err) => Promise.reject(new Error(`could not reach the review page at ${server}: ${err.cause?.message ?? err.message}`)));
+      if (!res.ok) throw new Error(await res.text());
+    }
+  } catch (err: any) {
+    console.error(err.message);
+    process.exit(1);
+  }
 } else if (command === 'review') {
   const author = reviewAuthor(config);
   let ended = false;
@@ -41,7 +56,7 @@ if (command === 'tasks') {
       process.stdout.write(list, () => process.exit(0));
     };
   };
-  const onMark = (mark: Mark) => console.error(JSON.stringify({ duru: mark.status === undefined ? 'comment' : 'mark', ...mark }));
+  const onMark = (mark: Mark) => console.error(JSON.stringify({ duru: recordKind(mark), ...mark }));
   const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end, onMark });
   process.on('SIGINT', () => {
     try {

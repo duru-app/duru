@@ -7,7 +7,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment } from '../src/judgments.ts';
 import type { ScreenMap } from '../src/map.ts';
-import { addMark } from '../src/marks.ts';
+import { addMark, addReply } from '../src/marks.ts';
 import { reviewData } from '../src/review.ts';
 import { taggingLines } from '../src/tasks.ts';
 
@@ -602,6 +602,35 @@ test('comments left on an open target after its mark follow the mark in order, w
     assert.match(after.split('\n')[2], / A `comment` line under a mark is a comment a reviewer left on the same target after that mark\.$/);
     assert.doesNotMatch(before, /`comment` line/);
     assert.equal(after.includes('## read-reports'), before.includes('## read-reports'));
+  });
+});
+
+test('replies follow the comment they answer, indented under it and oldest first, and a reply to a comment before the mark stays off the list', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    const early = addMark(marksDir, { target: { node: '/lab#Lab' }, note: 'Before the mark.', author: 'a' }, new Date('2026-10-05T01:00:00Z'));
+    addMark(marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: 'No test.', author: 'a' }, new Date('2026-10-05T02:00:00Z'));
+    const first = addMark(marksDir, { target: { node: '/lab#Lab' }, note: 'Is the table tested?', author: 'b' }, new Date('2026-10-05T03:00:00Z'));
+    const second = addMark(marksDir, { target: { node: '/lab#Lab' }, note: 'And the error row.', author: 'b' }, new Date('2026-10-05T04:00:00Z'));
+    addReply(marksDir, { replyTo: first.id, note: 'Not yet.\nWriting one now.' }, new Date('2026-10-05T06:00:00Z'));
+    addReply(marksDir, { replyTo: first.id, note: 'Written.' }, new Date('2026-10-05T07:00:00Z'));
+    addReply(marksDir, { replyTo: second.id, note: 'Covered by the same test.' }, new Date('2026-10-05T05:00:00Z'));
+    addReply(marksDir, { replyTo: early.id, note: 'An early answer.' }, new Date('2026-10-05T08:00:00Z'));
+
+    const out = cli('tasks');
+    const lab = out.split('## /lab#Lab\n')[1].split('\n## ')[0];
+    assert.match(lab, new RegExp([
+      '^  - missing, whole screen — "No test\\." \\(a, 2026-10-05\\)',
+      '  - comment, whole screen — "Is the table tested\\?" \\(b, 2026-10-05\\)',
+      '    - reply — "Not yet\\.',
+      '      Writing one now\\." \\(agent, 2026-10-05\\)',
+      '    - reply — "Written\\." \\(agent, 2026-10-05\\)',
+      '  - comment, whole screen — "And the error row\\." \\(b, 2026-10-05\\)',
+      '    - reply — "Covered by the same test\\." \\(agent, 2026-10-05\\)$',
+    ].join('\n'), 'm'));
+    assert.doesNotMatch(out, /Before the mark|An early answer/);
+    assert.match(out.split('\n')[2], / A `reply` line under a comment is an answer to that comment\.$/);
   });
 });
 

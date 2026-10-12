@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { compare } from './config.ts';
+import { recordKind } from './marks.ts';
 import { reviewData } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { testsAt } from './story-paths.ts';
@@ -87,12 +88,14 @@ const cellTags = (kind: string, { node, option, depth }: Cell) => [`${kind}:${no
 const quotedNote = (note: string | null | undefined, indent: string) => (note?.trim() ? `"${within(note.trim(), indent)}"` : null);
 const byline = (author: string, date: string, indent: string) => `(${within(author, indent)}, ${date.slice(0, 10)})`;
 
-function markLine(mark: any, where?: string) {
-  const note = quotedNote(mark.note, '    ');
-  return `  - ${mark.status ?? 'comment'}${where ? `, ${where}` : ''}${note ? ` — ${note}` : ''} ${byline(mark.author, mark.date, '    ')}`;
+function markLine(mark: any, where?: string, indent = '  ') {
+  const note = quotedNote(mark.note, `${indent}  `);
+  return `${indent}- ${mark.status ?? recordKind(mark)}${where ? `, ${where}` : ''}${note ? ` — ${note}` : ''} ${byline(mark.author, mark.date, `${indent}  `)}`;
 }
 
-const entryLines = (m: any, where?: string) => [m.current, ...m.history.slice(0, m.history.indexOf(m.current)).reverse()].map((r) => markLine(r, where));
+const laterComments = (m: any) => m.history.slice(0, m.history.indexOf(m.current)).reverse().filter((r: any) => r.replyTo === undefined);
+const repliesTo = (m: any, record: any) => m.history.filter((r: any) => r.replyTo === record.id).reverse();
+const entryLines = (m: any, where?: string) => [m.current, ...laterComments(m)].flatMap((r) => [markLine(r, where), ...repliesTo(m, r).map((reply: any) => markLine(reply, undefined, '    '))]);
 
 const kindsText = (kinds: string[]) => kinds.map((k) => KIND_NAMES[k]).join(' and ');
 
@@ -356,7 +359,8 @@ export function taskList(config: any) {
     '',
     `Source files are under \`${relative(config.srcRoot)}\`.`,
   ];
-  if (open.some((m) => m.history[0] !== m.current)) out[2] += ' A `comment` line under a mark is a comment a reviewer left on the same target after that mark.';
+  if (open.some((m) => laterComments(m).length)) out[2] += ' A `comment` line under a mark is a comment a reviewer left on the same target after that mark.';
+  if (open.some((m) => laterComments(m).some((c: any) => repliesTo(m, c).length))) out[2] += ' A `reply` line under a comment is an answer to that comment.';
   if (map.serverNotCompared) out.push('', `${SERVER_NOT_COMPARED}, so no call below is written as missing on the server.`);
   if (!open.length) out.push('', 'No open marks.');
   for (const s of screens) {

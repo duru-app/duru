@@ -16,11 +16,12 @@ interface MarkTarget {
   case?: string;
 }
 
-// status 가 없는 표시는 코멘트다.
+// status 가 없는 표시는 코멘트고, 그 가운데 replyTo 가 있는 것은 그 ID 의 코멘트에 단 답글이다.
 export interface Mark {
   id: string;
   target: MarkTarget;
   status?: string;
+  replyTo?: string;
   note: string;
   author: string;
   date: string;
@@ -123,6 +124,17 @@ export function addMark(dir: string, { target, status, note, author }: NewMark, 
   };
   saveMark(dir, mark);
   return mark;
+}
+
+export const recordKind = (m: Mark) => (m.replyTo !== undefined ? 'reply' : m.status === undefined ? 'comment' : 'mark');
+
+export function addReply(dir: string, { replyTo, note, author = 'agent' }: { replyTo?: unknown; note?: unknown; author?: string }, now = new Date()) {
+  const comment = loadMarks(dir).find((m) => m.id === replyTo && recordKind(m) === 'comment');
+  if (!comment) throw new Error(`no comment with ID "${replyTo}"`);
+  if (typeof note !== 'string' || !note.trim()) throw new Error('a reply needs a note');
+  const reply: Mark = { id: crypto.randomUUID(), target: comment.target, replyTo: comment.id, note, author, date: now.toISOString() };
+  saveMark(dir, reply);
+  return reply;
 }
 
 // 화면 · 호출 ID 에는 괄호가 들어가지 않으므로(map.ts 의 TAG_FORBIDDEN) story(<ID>) 는 노드의 키가 될 수 없다.

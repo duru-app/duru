@@ -68,3 +68,8 @@ test('the agent skill gives the Node version duru needs and says a copy installe
   assert.match(SKILL, /Node\s+22\.18\s+or\s+later\s+\(23\.6\s+or\s+later\s+on\s+Node\s+23\)/);
   assert.match(SKILL, /A\s+copy\s+of\s+duru\s+installed\s+into\s+`node_modules`,\s+as\s+from\s+a\s+packed\s+`\.tgz`,\s+stops\s+on\s+its\s+first\s+`\.ts`\s+file/);
 });
+
+test('the agent skill says how to answer a comment on the open review page and what a reply line is', () => {
+  assert.match(SKILL, /`duru reply <config> <the comment's id> "<answer>" --server <the review page address>`/);
+  assert.match(SKILL, /`"reply"` line with `replyTo` set to the\s+comment's `id`; it asks for nothing/);
+});

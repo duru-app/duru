@@ -10,7 +10,7 @@ import { acceptCandidate, discardCandidate, storyCandidates } from './candidates
 import { isPlainObject } from './config.ts';
 import { buildFlow } from './flow.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
-import { addMark, classifyMarks, loadMarks } from './marks.ts';
+import { addMark, addReply, classifyMarks, loadMarks, recordKind } from './marks.ts';
 import type { Mark } from './marks.ts';
 import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.ts';
 import { addStory, editStory } from './stories.ts';
@@ -172,11 +172,26 @@ export async function startReviewServer(config: any, { port = 0, author = review
   // 다른 사이트가 사용자의 브라우저로 표시를 써 넣거나 리뷰를 끝내거나(JSON 이 아닌 요청), 자기 도메인을 이 주소로 돌려 맵을 읽어 가는 것(다른 Host)을 막는다.
   const ownHosts = () => [`127.0.0.1:${(server.address() as AddressInfo).port}`, `localhost:${(server.address() as AddressInfo).port}`];
   const isJson = (req: http.IncomingMessage) => req.headers['content-type']?.startsWith('application/json');
-  const saves: Record<string, (input: any) => unknown> = { '/api/marks': (input) => {
-      const mark = addMark(config.marksDir, input);
-      onMark(mark);
-      return mark;
-    }, '/api/judgments': (input) => addJudgment(config.judgmentsDir, input) };
+  const streams = new Set<http.ServerResponse>();
+  let streamsEnded = false;
+  // 열린 스트림이 남아 있으면 서버가 닫히지 않으므로, 끝났다고 알리고 닫는다.
+  const endStreams = () => {
+    if (streamsEnded) return;
+    streamsEnded = true;
+    for (const stream of streams) stream.end('event: end\ndata: review ended\n\n');
+    streams.clear();
+  };
+  const announce = (mark: Mark) => {
+    onMark(mark);
+    for (const stream of streams) stream.write(`data: ${JSON.stringify({ duru: recordKind(mark), ...mark })}\n\n`);
+    return mark;
+  };
+  // 답글의 작성자는 페이지를 띄운 사람이 아니라 답한 에이전트다.
+  const saves: Record<string, (input: any) => unknown> = {
+    '/api/marks': (input) => announce(addMark(config.marksDir, input)),
+    '/api/replies': (input) => announce(addReply(config.marksDir, { replyTo: input.replyTo, note: input.note })),
+    '/api/judgments': (input) => addJudgment(config.judgmentsDir, input),
+  };
   const sendPathValues = async (res: http.ServerResponse, id: string | null, role: string | null, typed = {}) => {
     const map = readMap(mapFile);
     const screen = map.screens.find((s: any) => s.id === id);
@@ -193,9 +208,19 @@ export async function startReviewServer(config: any, { port = 0, author = review
         // onDone 이 예외를 던지면 리뷰를 끝내지 않고 500 으로 응답한다.
         const finish = onDone();
         if (finish) res.on('close', finish);
-        return send(res, 200, 'text/plain', 'review ended');
+        send(res, 200, 'text/plain', 'review ended');
+        endStreams();
+        return;
       }
       if (req.method === 'GET' && req.url === '/') return send(res, 200, 'text/html', fs.readFileSync(PAGE, 'utf8'));
+      if (req.method === 'GET' && req.url === '/api/events') {
+        res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'close' });
+        if (streamsEnded) return res.end('event: end\ndata: review ended\n\n');
+        res.flushHeaders();
+        streams.add(res);
+        res.on('close', () => streams.delete(res));
+        return;
+      }
       if (req.method === 'GET' && req.url === '/api/data') {
         const fileSettings = app && config.app.settingsFile ? await app.fileSettings() : null;
         return send(res, 200, 'application/json', JSON.stringify(reviewData(config, author, app, fileSettings)));
@@ -286,6 +311,12 @@ export async function startReviewServer(config: any, { port = 0, author = review
     }
   });
   if (app) server.on('close', () => app.close());
+  // 「리뷰 끝」을 거치지 않고 서버를 닫을 때도 열린 페이지가 다시 연결하지 않게 끝을 알린다.
+  const close = server.close.bind(server);
+  server.close = ((callback?: (err?: Error) => void) => {
+    endStreams();
+    return close(callback);
+  }) as typeof server.close;
   return new Promise<http.Server>((resolve, reject) => {
     server.once('error', (err) => {
       app?.close();

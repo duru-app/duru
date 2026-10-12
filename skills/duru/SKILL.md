@@ -129,16 +129,21 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    output when it exits, for example as a background command whose output you read afterwards. Do not kill it
    or treat it as hung while the user is reviewing.
    While it runs, read its output as it grows. Each mark or comment the reviewer saves comes out on standard error
-   at once as one JSON line starting with `{"duru":`: `"comment"` (no `status`) or `"mark"`, with its `target`
-   (a screen or call ID under `node`, or a story ID under `story`), `note`, `author` and `date`. Act on a comment
-   when it arrives: it is the reviewer asking about or for something on that target, so answer the question or do
-   what it asks (a missing test is written as in step 3, with the target's tags), and tell the user in one line
-   what you did. A mark with `needs-more` or `missing` will be in the task list, and you may start on it now. A
+   at once as one JSON line starting with `{"duru":`: `"comment"` (no `status`) or `"mark"`, with its `id`,
+   `target` (a screen or call ID under `node`, or a story ID under `story`), `note`, `author` and `date`. Act on a
+   comment when it arrives: it is the reviewer asking about or for something on that target, so answer the
+   question or do what it asks (a missing test is written as in step 3, with the target's tags). Then answer it on
+   the page with `duru reply <config> <the comment's id> "<answer>" --server <the review page address>`, using the
+   address the review printed; the reply shows under the comment on the reviewer's open page at once. Keep the
+   answer to what you found or did, in a sentence or two. If `reply` exits with a non-zero code, show its standard
+   error to the user. Each reply also comes out on standard error as a `"reply"` line with `replyTo` set to the
+   comment's `id`; it asks for nothing. A mark with `needs-more` or `missing` will be in the task list, and you may start on it now. A
    target can also carry a `depth` or an `option` of a call, and a mark whose target has a `case` (status `needed`
    or `not-needed`) or whose status is `fine` asks for nothing by itself.
    When the reviewer presses 「리뷰 끝」 (or presses Ctrl+C in its terminal), the process exits with code 0 and its
    standard output is exactly the task list, the same text `duru tasks <config>` prints. Any other exit is an
-   error: show its standard error to the user.
+   error: show its standard error to the user. In the task list a `reply` line sits under the `comment` line it
+   answers.
 3. **Write the tests.** In the target project, write tests for each screen, API call and story in the task list,
    following its marks and notes. The top of the list says how to tag a test so that it attaches to a screen or call
    (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. A test of a

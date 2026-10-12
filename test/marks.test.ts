@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { addMark, classifyMarks, loadMarks } from '../src/marks.ts';
+import { addMark, addReply, classifyMarks, loadMarks } from '../src/marks.ts';
 
 const MAP = { screens: [{ id: '/home#Home' }, { id: '/lab#Lab' }], calls: [{ id: 'GET:/api/v1/document/list' }] };
 
@@ -94,6 +94,22 @@ test('a comment is a mark with no status: it needs a note, keeps its place in th
     ]);
     assert.throws(() => addMark(dir, { target: { node: '/home#Home' }, note: '  ', author: 'a' }), /a comment needs a note/);
     assert.throws(() => addMark(dir, { target: { node: '/home#Home', case: 'empty' }, note: 'x', author: 'a' }), /unknown case mark status/);
+  });
+});
+
+test('a reply is a new file in the folder of the comment it answers, with the same target, the comment ID and the author agent; only a comment takes one', () => {
+  withMarksDir((dir: string) => {
+    const comment = addMark(dir, { target: { node: '/home#Home', depth: 'ui' }, note: 'why is the list empty?', author: 'b' }, new Date('2026-09-30T02:00:00Z'));
+    const mark = addMark(dir, { target: { node: '/home#Home' }, status: 'missing', author: 'b' });
+    const reply = addReply(dir, { replyTo: comment.id, note: 'the fixture has no rows' }, new Date('2026-09-30T03:00:00Z'));
+    assert.deepEqual(reply, { id: reply.id, target: { node: '/home#Home', depth: 'ui' }, replyTo: comment.id, note: 'the fixture has no rows', author: 'agent', date: '2026-09-30T03:00:00.000Z' });
+    assert.deepEqual(fs.readdirSync(path.join(dir, '_home#Home')).sort(), [`2026-09-30-agent-${reply.id.slice(0, 8)}.json`, `2026-09-30-b-${comment.id.slice(0, 8)}.json`, `${mark.date.slice(0, 10)}-b-${mark.id.slice(0, 8)}.json`].sort());
+    const { attached } = classifyMarks(loadMarks(dir), MAP);
+    assert.deepEqual(attached.find((m) => m.key === '/home#Home ui')!.history.map((h) => [h.note, h.replyTo ?? null]), [['the fixture has no rows', comment.id], ['why is the list empty?', null]]);
+
+    for (const id of ['no-such-id', mark.id, reply.id]) assert.throws(() => addReply(dir, { replyTo: id, note: 'x' }), { message: `no comment with ID "${id}"` });
+    assert.throws(() => addReply(dir, { replyTo: comment.id, note: ' ' }), /a reply needs a note/);
+    assert.equal(loadMarks(dir).length, 3);
   });
 });
 
