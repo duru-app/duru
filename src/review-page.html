@@ -212,6 +212,7 @@
   .flowlegend::before { content: ''; position: absolute; left: -1px; right: -1px; top: calc(-1 * var(--bar-pad) - 2px); height: calc(var(--bar-pad) + 8px); }
   .canvas { position: relative; transform-origin: 0 0; }
   .canvas svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+  .canvas svg path { pointer-events: visibleStroke; }
   .canvas svg path, .flowkey svg path { fill: none; stroke: var(--muted); stroke-width: 1.3; opacity: .7; }
   .canvas svg path.guarded, .flowkey svg path.guarded { stroke: var(--accent); stroke-dasharray: 5 4; opacity: .9; }
   .canvas svg path.on { stroke: var(--text); stroke-width: 2; opacity: 1; }
@@ -3334,6 +3335,21 @@ document.addEventListener('keydown', (e) => {
   const open = [...document.querySelectorAll('#flow-bar [data-legend]')].filter(legendShown);
   for (const info of open) setLegend(info, false);
   if (!open.length && state.flowPicked && !(e.target instanceof Element && e.target.closest('input, select, textarea, #center, #right'))) unpickScreen();
+});
+// 끌었다 놓거나 스크롤바를 눌러도 click 이 오고, 상자를 누른 채 옆으로 비껴 놓으면 click 이 빈 곳으로 온다.
+const FLOW_EMPTY = '#flow, #flow .zoom-box, #flow .canvas';
+let flowPress = null;
+document.getElementById('flow').addEventListener('pointerdown', (e) => {
+  const flow = e.currentTarget;
+  const r = flow.getBoundingClientRect();
+  const inside = e.clientX - r.left - flow.clientLeft < flow.clientWidth && e.clientY - r.top - flow.clientTop < flow.clientHeight;
+  flowPress = inside && e.target.matches(FLOW_EMPTY) ? { x: e.clientX, y: e.clientY } : null;
+});
+document.getElementById('flow').addEventListener('click', (e) => {
+  const press = flowPress;
+  flowPress = null;
+  if (!state.flowPicked || !press || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 4) return;
+  if (e.target.matches(FLOW_EMPTY)) unpickScreen();
 });
 
 // key 는 'flow' 또는 'path' 로, 단추와 설명 상자의 이름에도 쓴다.

@@ -3413,6 +3413,82 @@ test('in a browser, pressing a screen in the flow keeps strong only the paths th
   );
 });
 
+test('in a browser, a click on an empty spot of the flow drawing lets the picked screen go as 「선택 해제」 does, while a click on a line or the scrollbar, a press dragged across the drawing, or a press on a screen released just beside it keeps it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        const shown = () => p.evaluate(() => ['flow-bar', 'flow', 'left', 'center', 'right', 'gaps'].filter((id) => !document.getElementById(id)!.hidden));
+        const emptySpot = () => p.evaluate(() => {
+          const empty = (x: number, y: number) => document.elementFromPoint(x, y)?.matches('#flow, #flow .zoom-box, #flow .canvas') ?? false;
+          const r = document.getElementById('flow')!.getBoundingClientRect();
+          for (let y = r.top + 20; y < r.bottom - 20; y += 8) {
+            for (let x = r.left + 20; x < r.right - 60; x += 8) if ([0, 20, 40].every((d) => empty(x + d, y))) return { x, y };
+          }
+          return null;
+        });
+        const lineSpot = () => p.evaluate(() => {
+          for (const line of document.querySelectorAll<SVGPathElement>('#flow .canvas svg path[data-from]')) {
+            const { x, y } = line.getPointAtLength(line.getTotalLength() / 2).matrixTransform(line.getScreenCTM()!);
+            if (document.elementFromPoint(x, y) === line) return { x, y };
+          }
+          return null;
+        });
+
+        await (await screenBox(p, '/lab#Lab')).click();
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab']);
+        const line = await lineSpot();
+        assert.ok(line, 'a line is drawn where nothing covers it');
+        await p.mouse.click(line.x, line.y);
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab'], 'a click on a line keeps the pick');
+
+        const spot = await emptySpot();
+        assert.ok(spot, 'the drawing has an empty spot');
+        await p.mouse.move(spot.x, spot.y);
+        await p.mouse.down();
+        await p.mouse.move(spot.x + 40, spot.y, { steps: 5 });
+        await p.mouse.up();
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab'], 'a press dragged across the drawing keeps the pick');
+
+        const edge = await p.evaluate(() => {
+          for (const box of document.querySelectorAll<HTMLElement>('#flow .box.screen')) {
+            const r = box.getBoundingClientRect();
+            const y = r.top + r.height / 2;
+            if (document.elementFromPoint(r.right - 1, y)?.closest('.box') === box && document.elementFromPoint(r.right + 2, y)?.matches('#flow .canvas')) return { x: r.right - 1, y };
+          }
+          return null;
+        });
+        assert.ok(edge, 'a screen has empty drawing just beside it');
+        await p.mouse.move(edge.x, edge.y);
+        await p.mouse.down();
+        await p.mouse.move(edge.x + 3, edge.y);
+        await p.mouse.up();
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab'], 'a press on a screen released just beside it keeps the pick');
+
+        const bar = await p.evaluate(() => {
+          const flow = document.getElementById('flow')!;
+          const r = flow.getBoundingClientRect();
+          return { x: r.left + flow.clientLeft + flow.clientWidth + 2, y: r.top + 40, gutter: r.width - flow.clientLeft - flow.clientWidth };
+        });
+        assert.ok(bar.gutter > 4, `the drawing keeps room for its scrollbar: ${bar.gutter}`);
+        await p.mouse.click(bar.x, bar.y);
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab'], 'a press on the scrollbar keeps the pick');
+
+        await p.mouse.click(spot.x, spot.y);
+        assert.deepEqual(await pickedBoxes(p), []);
+        assert.deepEqual(await shown(), ['flow-bar', 'flow', 'gaps']);
+        assert.deepEqual(await boxesWith(p, 'dim'), []);
+        assert.ok(Object.values(await lineStates(p)).every((v) => v === ''), JSON.stringify(await lineStates(p)));
+        assert.equal(await p.locator('.flowbar .picking').count(), 0);
+        assert.equal(await p.evaluate(() => decodeURIComponent(location.hash)), '#flow');
+
+        await (await screenBox(p, '/help#Help')).click();
+        assert.deepEqual(await pickedBoxes(p), ['/help#Help'], 'a click on a screen still picks it');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
 test('in a browser, a second press on a case kind button while the first is saving writes nothing', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) =>
     withServer(config, 'reviewer', (base) =>
