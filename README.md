@@ -541,7 +541,9 @@ link under a setting or role condition. Entry screens with no screen drawn under
 component. With nothing picked, the right column lists the failing screens and then the ones without a tagged
 test. Pressing a screen keeps strong only the paths through it, marks the screens its links reach in other
 branches, and shows the list view's middle and right panes for it beside the drawing; 「선택 해제」, Escape or a click
-on an empty spot of the drawing lets it go. The zoom buttons shrink, grow or fit the drawing. The 「스토리」 picker
+on an empty spot of the drawing lets it go. The zoom control at the bottom-left corner of the drawing fits, shrinks
+or grows it; a percent typed into it takes effect on Enter or on clicking elsewhere, a level below 30% or above 150%
+becomes the nearer end, and Escape or anything not a number puts the level back. The 「스토리」 picker
 draws one story's path: only its screens and the screens above them stay, each with its step numbers, and a strip
 of its steps runs under the bar.
 
