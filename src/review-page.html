@@ -1033,12 +1033,18 @@ function moveTalkTo(node) {
   state.error = null;
 }
 
+function focusTalk() {
+  const field = document.querySelector('#right-dock textarea');
+  field?.focus();
+  field?.setSelectionRange(field.value.length, field.value.length);
+}
+
 function tagPart(node, t) {
   moveTalkTo(node);
   state.draft ??= { status: markOf(state.target)?.current?.status ?? null, note: '' };
   Object.assign(state.draft, { part: partTarget(node, t), noTag: false });
   render();
-  document.querySelector('#right-dock textarea')?.focus();
+  focusTalk();
 }
 
 function narrowTalk(node, t) {
@@ -2583,7 +2589,7 @@ function markForm(target, draftKey, label) {
       : [h('span', { class: 'muted' }, '없음'), h('button', { type: 'button', class: 'retag', onclick: () => {
         draft.noTag = false;
         render();
-        document.querySelector('#right-dock textarea')?.focus();
+        focusTalk();
       } }, `${label} 다시 붙이기`)])),
     h('div', { class: 'statuses' }, statuses),
     h('textarea', { placeholder: '코멘트 — 상태 없이 글만 남겨도 됩니다', oninput: (e) => {

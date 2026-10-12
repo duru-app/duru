@@ -9543,7 +9543,7 @@ test('in a browser, a case kind picked on a screen shows in its conversation wit
   });
 });
 
-test('in a browser, the default tag taken off with its × comes back with the note still typed', { skip: browserMissing }, async () => {
+test('in a browser, the default tag taken off with its × comes back with the note still typed, and after it or after a bubble typing goes on at the end of the note', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -9554,7 +9554,13 @@ test('in a browser, the default tag taken off with its × comes back with the no
         await p.click('#right-dock .mark-form .tags button.retag');
         assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '화면 전체');
         assert.equal(await p.inputValue('#right-dock textarea'), 'half a thought');
-        assert.equal(await p.evaluate(() => document.activeElement?.localName), 'textarea');
+        await p.keyboard.type(' and the rest');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'half a thought and the rest');
+        const row = p.locator('#center-body table .part-row', { hasText: 'opens the lab @screen' });
+        await row.hover();
+        await row.locator('.bubble').click();
+        await p.keyboard.type('.');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'half a thought and the rest.');
         assert.equal(await p.isDisabled('#right-dock button.save'), false);
       })));
 });
