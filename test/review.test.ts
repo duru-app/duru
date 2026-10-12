@@ -4292,12 +4292,13 @@ test('in a browser, flow boxes stand in columns by how many links they are from 
   );
 });
 
-test('in a browser, entry screens that lead nowhere are gathered under 「더 뻗지 않는 진입 화면 N」 below the branching ones, in several columns, each box showing what any box shows', { skip: browserMissing }, async () => {
+test('in a browser, entry screens with nothing drawn under them are gathered under 「딸린 화면이 없는 진입 화면 N」 below the branching ones, its hover saying why, in several columns, each box showing what any box shows', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .group-head');
-        assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 8');
+        assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 8');
+        assert.match((await p.getAttribute('#flow .group-head', 'title'))!, /^밑으로 이어 그린 화면이 없는 진입 화면입니다\./);
         const boxes = await flowBoxes(p);
         const grouped = boxes.filter((b) => b.grouped);
         assert.deepEqual(grouped.map((b) => b.id).sort(), Array.from({ length: 8 }, (_, i) => `/extra/${i}#Extra${i}`).sort());
@@ -4316,7 +4317,7 @@ test('in a browser, entry screens that lead nowhere are gathered under 「더 �
         await failing.click();
         assert.deepEqual(await pickedBoxes(p), ['/extra/7#Extra7']);
         assert.equal((await boxesWith(p, 'dim')).length, (await boxCount(p)) - 1, 'a gathered screen has no paths, so every other screen dims');
-        assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 8');
+        assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 8');
         assert.deepEqual(overlapping(await flowBoxes(p)), []);
       }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
     ),
@@ -4325,7 +4326,7 @@ test('in a browser, entry screens that lead nowhere are gathered under 「더 �
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .group-head');
-        assert.equal(await p.textContent('#flow .group-head'), '더 뻗지 않는 진입 화면 3');
+        assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 3');
         const first = await p.$$eval('#flow .canvas', ([canvas]) => [...canvas.querySelectorAll('.box.screen')].map((e) => e.classList.contains('grouped')));
         assert.deepEqual(first, [true, true, true]);
       }, { view: 'flow', setup: changeData((data) => {
