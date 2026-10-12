@@ -188,5 +188,6 @@ export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgm
   }
   for (const list of Object.values(detachedHandOvers)) list.sort((a, b) => compare(a.ref.file, b.ref.file) || compare(a.ref.title, b.ref.title) || compare(a.ref.source, b.ref.source));
   const untagged = tests.untagged?.map((t) => ({ ...t, ref: testRef(t) }));
-  return { ...tests, ...(untagged && { untagged }), importers, passed, discarded, awaitingTag, detachedHandOvers };
+  const nodes = tests.nodes && Object.fromEntries(Object.entries(tests.nodes).map(([id, list]) => [id, list.map((t) => ({ ...t, ref: testRef(t) }))]));
+  return { ...tests, ...(nodes && { nodes }), ...(untagged && { untagged }), importers, passed, discarded, awaitingTag, detachedHandOvers };
 }

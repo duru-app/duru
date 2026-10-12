@@ -1361,7 +1361,7 @@ for (const host of ['127.0.0.1', 'localhost']) {
           await p.click('#screen-list li:has-text("/document/:id")');
           assert.equal(await p.textContent('#center h3'), '/document/:id');
           await p.click('#center tr:has-text("API")');
-          assert.match((await p.locator('#right h2', { hasText: '코멘트 —' }).textContent())!, /API 깊이/);
+          assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /API 깊이/);
           assert.equal(await p.isDisabled('#right button.save'), true);
           await p.click('#right .statuses button:has-text("더 필요")');
           await p.fill('#right-dock textarea', 'no API test yet');
@@ -1950,7 +1950,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await p.waitForSelector('#screen-list li');
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '코멘트 — 스토리']);
+        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '에이전트와 대화']);
         assert.equal(await p.isDisabled('#right button.save'), true);
         await p.click('#right .statuses button:has-text("없음")');
         await p.fill('#right-dock textarea', 'no test walks the lab');
@@ -1961,7 +1961,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await p.fill('#right-dock textarea', 'the story test fails');
         await p.click('#right button.save');
         await p.waitForSelector('#right .history li:has-text("the story test fails")');
-        assert.deepEqual(await p.locator('#right .history li .chip').allTextContents(), ['더 필요', '없음']);
+        assert.deepEqual(await p.locator('#right .history li .chip').allTextContents(), ['없음', '더 필요']);
         assert.equal(await p.textContent('#story-list li.selected .chip.needs-more'), '더 필요');
         assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!, m.note, m.author] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ story: 'run-lab' }, 'missing', 'no test walks the lab', 'reviewer'],
@@ -1973,7 +1973,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         assert.equal(await p.locator('#right .history li').count(), 0);
         assert.equal(await p.locator('#right .statuses button.on').count(), 0);
         await p.click('#left .views.side button:has-text("화면")');
-        assert.match((await p.locator('#right h2', { hasText: '코멘트 —' }).textContent())!, /^코멘트 — 화면 전체$/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /^화면 전체$/);
         assert.equal(await p.locator('#right .history li').count(), 0);
         assert.match((await p.textContent('#left'))!, /떨어져 나감 0/);
 
@@ -2046,7 +2046,7 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
         assert.equal(await unread.locator('code').textContent(), 'run-lab');
         await unread.click();
         assert.equal(await p.textContent('#center h3'), 'run-lab');
-        assert.equal(await p.textContent('#right h2'), '코멘트 — 스토리');
+        assert.equal(await p.textContent('#right h2'), '에이전트와 대화');
         assert.equal(await p.locator('#right-info').isVisible(), false);
         assert.ok(await p.evaluate(() => document.getElementById('right-dock')!.getBoundingClientRect().top - document.getElementById('right')!.getBoundingClientRect().top) < 1, 'the form sits at the top of the pane');
         assert.match((await p.textContent('#right .history'))!, /walk it/);
@@ -2054,7 +2054,7 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
         await p.click('#right button.save');
         await openHistory(p);
         await p.waitForSelector('#right .history li:nth-child(2)');
-        assert.equal(await p.textContent('#right .history li:first-child .chip'), '충분');
+        assert.equal(await p.textContent('#right .history > li:last-child .chip'), '충분');
         assert.equal(await p.textContent('#left .unread-marks li .chip'), '충분');
         assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!] as const).sort((a, b) => a[1].localeCompare(b[1])), [
           [{ story: 'run-lab' }, 'fine'], [{ story: 'run-lab' }, 'missing'],
@@ -2097,7 +2097,7 @@ test('in a browser, a failed save stays with the screen or cell that tried it, a
             : real(url, init));
         });
         await p.locator('table.calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').nth(1).click();
-        const cellLabel = (await p.textContent('#right-dock .mark-form h2'))!.replace('코멘트 — ', '');
+        const cellLabel = (await p.textContent('#right .mark-form .tags .tag-label'))!;
         assert.match(cellLabel, /^withAttachments 켬 · .+ 깊이$/);
         const cellName = `${await p.textContent('#right-info .target-id .mono')} · ${cellLabel}`;
         await p.click('#right .statuses button:has-text("없음")');
@@ -2423,7 +2423,7 @@ test('in a browser, with case kinds in the config every screen and every call sh
         await p.waitForSelector('#right-info > .cases li');
         assert.deepEqual(await callSection.locator('li .case').allTextContents(), [CASE_KINDS.boundary]);
         assert.deepEqual(await counts(callSection.locator('li')), ['테스트 없음']);
-        assert.match((await p.textContent('#right-dock .mark-form h2'))!, /^코멘트 — 호출 전체$/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /^호출 전체$/);
 
         assert.deepEqual(picks(), [
           ['/signin#SignIn', 'boundary', 'needed'],
@@ -2556,12 +2556,12 @@ test('in a browser, the info part of the right pane reads in order and the mark 
         assert.equal(await p.locator('#right-info .mark-form').count(), 0);
         assert.equal(await p.locator('#right > :last-child').evaluate((e) => e.id), 'right-dock');
         assert.equal(await p.locator('#right-dock > .mark-form').count(), 1);
-        assert.equal(await p.textContent('#right-dock .mark-form h2'), '코멘트 — 화면 전체');
+        assert.equal(await p.textContent('#right .mark-form .tags .tag-label'), '화면 전체');
 
         await p.locator('table.calls td.cell').first().click();
         assert.equal(await p.locator('#right-info .mark-form').count(), 0);
         assert.equal(await p.locator('#right-dock > .mark-form').count(), 1);
-        assert.match((await p.locator('#right-dock .mark-form h2').textContent())!, /^코멘트 — /);
+        assert.equal(await p.textContent('#right-dock .mark-form h2'), '에이전트와 대화');
         assert.match((await p.locator('#right-info h2').first().textContent())!, /^서버 대조$/);
       }),
     ),
@@ -2572,7 +2572,7 @@ test('in a browser, the in-screen conditions come between the incoming links and
   await withLabLinks(async (p, open) => {
     await open();
     const headings = (await p.locator('#right h2').allTextContents()).map((t) => t.replace(/ \d+$/, '').replace(/^(화면 안 조건) — .*$/, '$1'));
-    assert.deepEqual(headings, ['이 화면을 열려면', '들어오는 링크', '화면 안 조건', '소스 위치', '나가는 링크', '읽는 설정값', '코멘트 — 화면 전체']);
+    assert.deepEqual(headings, ['이 화면을 열려면', '들어오는 링크', '화면 안 조건', '소스 위치', '나가는 링크', '읽는 설정값', '에이전트와 대화']);
   });
 });
 
@@ -2632,17 +2632,17 @@ test('in a browser, choosing another depth or option row of the same node keeps 
         const kept = await scrollRightTo(p, 100);
         assert.equal(kept, 100);
         await p.click('#center tr:has-text("API")');
-        assert.match((await p.textContent('#right .mark-form h2'))!, /API 깊이/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /API 깊이/);
         assert.equal(await rightScroll(p), kept);
         await p.click('#center tr:has-text("UI/E2E")');
-        assert.match((await p.textContent('#right .mark-form h2'))!, /UI\/E2E 깊이/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /UI\/E2E 깊이/);
         assert.equal(await rightScroll(p), kept);
 
         await p.locator('table.calls tbody tr:not(.option)').nth(0).locator('td.cell').first().click();
         const call = await scrollRightTo(p, 100);
         assert.equal(call, 100);
         await p.locator('table.calls tbody tr:not(.option)').nth(0).locator('td.cell').nth(2).click();
-        assert.match((await p.textContent('#right .mark-form h2'))!, / 깊이$/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, / 깊이$/);
         assert.equal(await rightScroll(p), call);
         await p.locator('table.calls tbody tr:not(.option)').nth(1).locator('td.cell').first().click();
         assert.equal(await rightScroll(p), 0);
@@ -2652,7 +2652,7 @@ test('in a browser, choosing another depth or option row of the same node keeps 
         const exported = await scrollRightTo(p, 100);
         assert.equal(exported, 100);
         await p.locator('table.calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').first().click();
-        assert.match((await p.textContent('#right .mark-form h2'))!, /withAttachments 켬/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /withAttachments 켬/);
         assert.equal(await rightScroll(p), exported);
       }),
     ),
@@ -2722,7 +2722,7 @@ test('in a browser, the status buttons and the save button stay in view at the b
         await p.setViewportSize({ width: 1440, height: 360 });
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.equal(await p.textContent('#right-dock .mark-form h2'), '코멘트 — 스토리');
+        assert.equal(await p.textContent('#right .mark-form .tags .tag-label'), '스토리');
         await assertDockStaysPut(p);
         assert.equal(await p.locator('#right-info .mark-form').count(), 0);
       }),
@@ -2742,13 +2742,13 @@ test('in a browser, the history sits behind a closed fold next to the save butto
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/document/:id")');
         const toggle = p.locator('#right-dock .save-row .history-toggle');
-        assert.equal((await toggle.textContent())!.trim(), '이력 2');
+        assert.equal((await toggle.textContent())!.trim(), '대화 2');
         assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
         assert.equal(await p.locator('#right .history').isVisible(), false);
 
         await toggle.click();
         assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
-        assert.deepEqual(await p.locator('#right-dock .history li').allTextContents().then((ts) => ts.map((t) => /second look/.test(t) ? 'second' : /first look/.test(t) ? 'first' : t)), ['second', 'first']);
+        assert.deepEqual(await p.locator('#right-dock .history li').allTextContents().then((ts) => ts.map((t) => /second look/.test(t) ? 'second' : /first look/.test(t) ? 'first' : t)), ['first', 'second']);
         assert.equal(await p.locator('#right .history').isVisible(), true);
         const list = await p.locator('#right .history').evaluate((e) => ({ overflowY: getComputedStyle(e).overflowY, maxHeight: getComputedStyle(e).maxHeight }));
         assert.equal(list.overflowY, 'auto');
@@ -2759,7 +2759,8 @@ test('in a browser, the history sits behind a closed fold next to the save butto
         assert.equal(await p.locator('#right .history').isVisible(), true);
 
         await p.click('#center tr:has-text("API")');
-        assert.equal(await p.locator('#right .history-toggle').count(), 0);
+        assert.equal(await p.locator('#right .history-toggle').getAttribute('aria-expanded'), 'false');
+        await p.locator('#right .history-toggle').click();
         await p.click('#center tr:has-text("화면 전체")');
         assert.equal(await p.locator('#right .history-toggle').getAttribute('aria-expanded'), 'false');
         assert.equal(await p.locator('#right .history').isVisible(), false);
@@ -3024,7 +3025,7 @@ test('in a browser, the right pane starts by naming the call and the option and 
         assert.equal(await first.evaluate((e) => e.className), 'target-id');
         assert.equal(await first.locator('.mono').textContent(), 'POST:/api/v1/report/export');
         assert.match(await first.innerText(), /withAttachments 켬 · UI\/E2E 깊이/);
-        assert.match((await p.locator('#right .mark-form h2').textContent())!, /^코멘트 — withAttachments 켬 · UI\/E2E 깊이$/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /^withAttachments 켬 · UI\/E2E 깊이$/);
 
         await p.locator('table.calls td.cell').first().click();
         assert.match(await p.locator('#right-info > :first-child').innerText(), /POST:\/api\/v1\/report\/export\s+호출 전체/);
@@ -3271,12 +3272,12 @@ test('in a browser, the chosen screen shows its calls with the server match and 
         assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['서버에 있음 (core)', '메서드 불일치']);
         const rename = p.locator('table.calls tr', { hasText: 'PUT:/api/v1/document/{documentId}/name' });
         await rename.locator('td.cell').first().click();
-        assert.match((await p.textContent('#right .mark-form h2'))!, /호출 전체/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /호출 전체/);
         assert.equal(await p.locator('#right .test').count(), 1);
         assert.match((await p.textContent('#right .test'))!, /rename is refused by the server/);
 
         await rename.locator('td.cell').nth(2).click();
-        assert.match((await p.textContent('#right .mark-form h2'))!, /API 깊이/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /API 깊이/);
         assert.equal(await p.locator('#right .test').count(), 0);
         await p.click('#right .statuses button:has-text("없음")');
         await p.fill('#right-dock textarea', 'no API test for the rename');
@@ -3322,12 +3323,12 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         assert.deepEqual(await none.locator('td.count').allInnerTexts(), ['✓2', '✓2', '—', '—', '—', '—', '—']);
 
         await exportRows('withHistory 켬').locator('td.cell').nth(1).click();
-        assert.match((await p.textContent('#right .mark-form h2'))!, /withHistory 켬 · UI\/E2E 깊이/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /withHistory 켬 · UI\/E2E 깊이/);
         assert.equal(await p.locator('#right .test').count(), 2);
         assert.match(await p.locator('#right .option-sites').innerText(), /components\/ExportDialog\.js:18/);
 
         await exportRows('withHistory 켬').locator('td.cell').nth(6).click();
-        assert.match((await p.textContent('#right .mark-form h2'))!, /withHistory 켬 · 산출물 깊이/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /withHistory 켬 · 산출물 깊이/);
         assert.equal(await p.locator('#right .test').count(), 0);
         await p.click('#right .statuses button:has-text("없음")');
         await p.fill('#right-dock textarea', 'Open the exported file.');
@@ -3335,7 +3336,7 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         await p.waitForSelector('table.calls td.cell.selected .chip.missing');
 
         await exportRows('withAttachments 끔').locator('td.cell').first().click();
-        assert.match((await p.textContent('#right .mark-form h2'))!, /withAttachments 끔$/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /withAttachments 끔$/);
         await p.click('#right .statuses button:has-text("더 필요")');
         await p.click('#right button.save');
         await p.waitForSelector('table.calls td.cell.selected .chip.needs-more');
@@ -3430,10 +3431,10 @@ test('in a browser, a call whose result another call\'s options change shows tho
         assert.equal(await detached.locator('a').count(), 0);
         assert.equal(await detached.locator('.chip.l-off-map').innerText(), '맵에 없는 호출');
 
-        const before = await p.textContent('#right .mark-form h2');
+        const before = await p.textContent('#right .mark-form .tags .tag-label');
         await valueRows.filter({ hasText: 'withAttachments 끔' }).locator('td.count').click();
         await valueRows.filter({ hasText: 'withHistory 켬' }).locator('td.call').click();
-        assert.equal(await p.textContent('#right .mark-form h2'), before);
+        assert.equal(await p.textContent('#right .mark-form .tags .tag-label'), before);
         assert.equal(await p.locator('table.calls .selected').count(), 0);
 
         await heads.nth(1).locator('a').click();
@@ -3490,7 +3491,7 @@ test('in a browser, the output depth row comes after the other depths and takes 
         await p.click('#screen-list li:has-text("/lab/result")');
         assert.deepEqual(await p.locator('#center td.depth').allTextContents(), ['화면 전체', 'UI/E2E', 'API', '렌더링만', '코드', '데이터', '산출물']);
         await p.click('#center tr:has-text("산출물")');
-        assert.match((await p.locator('#right h2', { hasText: '코멘트 —' }).textContent())!, /산출물 깊이/);
+        assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /산출물 깊이/);
         await p.click('#right .statuses button:has-text("더 필요")');
         await p.click('#right button.save');
         await p.waitForSelector('#center tr.selected td.mark:has-text("더 필요")');
@@ -6894,7 +6895,7 @@ test('in a browser, a screen shows the untagged browser tests that passed throug
         assert.deepEqual(await p.locator('#center .passed .test').evaluateAll((list) => list.map((el) => el.querySelector('.chip')!.textContent)), ['확인함', '조작함', '조작함', '조작함', '조작함', '지나감']);
         const first = (await p.textContent('#center .passed .test >> nth=0'))!;
         assert.match(first, /확인함 통과 follows a link while waiting for the new address visits\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/visits\.json/);
-        assert.deepEqual(await p.locator('#center .passed .pair-test').first().locator('button').allTextContents(), ['제외', '포함']);
+        assert.deepEqual(await p.locator('#center .passed .pair-test').first().locator('.judge-row button').allTextContents(), ['제외', '포함']);
         assert.deepEqual(await p.$$eval('#center-body > table, #center .passed, #center .importers', (list) => list.map((el) => el.className || el.localName)), ['table', 'passed', 'importers']);
         assert.match(testedBefore, /테스트 있는 화면 7/);
 
@@ -6919,7 +6920,7 @@ test('in a browser, a call shows the untagged browser tests that sent it apart f
         assert.deepEqual(headings.slice(headings.indexOf('테스트 1'), headings.indexOf('테스트 1') + 2), ['테스트 1', '호출한 테스트 1']);
         assert.equal(await p.locator('#right-info .passed .test').count(), 1);
         assert.match((await p.textContent('#right-info .passed .test'))!, /^호출함 통과 lists the documents calls\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/calls\.json$/);
-        assert.deepEqual(await p.locator('#right-info .passed button').allTextContents(), ['제외', '포함']);
+        assert.deepEqual(await p.locator('#right-info .passed .judge-row button').allTextContents(), ['제외', '포함']);
 
         await row('POST:/api/v1/archive/document').locator('td.cell').first().click();
         assert.equal(await p.locator('#right-info .passed').count(), 0);
@@ -8586,7 +8587,7 @@ test('in a browser, a browser test that sent a call is excluded and included in 
         const callRow = p.locator('table.calls tbody tr:not(.option)', { hasText: LIST_CALL });
         await callRow.locator('td.cell').first().click();
         const sent = p.locator('#right-info .passed .pair-test', { hasText: 'lists the documents' });
-        assert.deepEqual(await sent.locator('button').allTextContents(), ['제외', '포함']);
+        assert.deepEqual(await sent.locator('.judge-row button').allTextContents(), ['제외', '포함']);
         assert.match((await sent.locator('button.discard').getAttribute('title'))!, /^이 테스트와 이 호출의 짝/);
 
         await sent.locator('button.discard').click();
@@ -9115,7 +9116,7 @@ test('in a browser, a chosen story\'s name and memo can be changed on the right,
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '코멘트 — 스토리']);
+        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '에이전트와 대화']);
         assert.equal(await p.inputValue('#story-name'), '실험실을 열어 결과를 본다');
         assert.equal(await p.inputValue('#story-memo'), '실험실은 고객사 설정에서 켜야 보인다.');
         assert.deepEqual(await p.locator('#right .story-form label > span:first-child').allTextContents(), ['이름', '메모']);
@@ -9438,5 +9439,93 @@ test('in a browser, a map built before links carried their conditions has no 「
         assert.equal(await p.locator('#pick-list').count(), 0);
       });
     });
+  });
+});
+
+const partOf = (node: string, source: string, file: string, title: string) => ({ node, part: { kind: 'test', key: { source, file, title } } });
+
+test('in a browser, the bubble of a tagged, an importing, a passing and a calling test row puts that test in as the tag, a comment saved with it shows its count on the row, also after reloading, and the status buttons stay off', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(TRACED, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        const comment = async (row: Locator, title: string, note: string) => {
+          await row.hover();
+          await row.locator('.bubble').click();
+          assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), `테스트 「${title}」`);
+          assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
+          await p.fill('#right-dock textarea', note);
+          await p.click('#right-dock button.save');
+          await row.locator('.part-count', { hasText: '코멘트 1' }).waitFor();
+        };
+        await chooseScreen(p, '/lab');
+        await comment(p.locator('#center-body table .part-row', { hasText: 'opens the lab @screen' }), 'opens the lab', 'why pending?');
+        await chooseScreen(p, '/home');
+        await comment(p.locator('#center .importers .part-row', { hasText: 'DocumentTable' }), 'DocumentTable › lists the documents it is given', 'can this carry the tag?');
+        await p.locator('table.calls tbody tr:not(.option)', { hasText: 'GET:/api/v1/document/list' }).locator('td.cell').first().click();
+        await comment(p.locator('#right-info .passed .part-row', { hasText: 'lists the documents' }), 'lists the documents', 'does it check the rows?');
+        await chooseScreen(p, '/help');
+        await comment(p.locator('#center .passed .part-row', { hasText: 'follows a link while waiting for the new address' }), 'follows a link while waiting for the new address', 'is help checked here?');
+
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status ?? null, m.note]).sort((a, b) => String(a[2]).localeCompare(String(b[2]))), [
+          [partOf('/home#Home', 'results/vitest/client-unit.json', 'components/DocumentTable.spec.js', 'DocumentTable › lists the documents it is given'), null, 'can this carry the tag?'],
+          [partOf('GET:/api/v1/document/list', 'results/playwright-traced/calls.json', 'calls.spec.ts', 'lists the documents'), null, 'does it check the rows?'],
+          [partOf('/help#Help', 'results/playwright-traced/visits.json', 'visits.spec.ts', 'follows a link while waiting for the new address'), null, 'is help checked here?'],
+          [partOf('/lab#Lab', 'results/playwright/e2e.json', 'home.spec.ts', 'opens the lab'), null, 'why pending?'],
+        ]);
+        await p.reload();
+        await chooseScreen(p, '/lab');
+        assert.equal(await p.locator('#center-body table .part-row', { hasText: 'opens the lab @screen' }).locator('.part-count').textContent(), '코멘트 1');
+        assert.deepEqual(errors, []);
+      })));
+});
+
+test('in a browser, the conversation of a screen holds the comments on it and on its tests oldest first, each with its tag; the count of a test row narrows it to that test and its replies, and the status buttons work only while the screen itself is the one tag', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const lab = partOf('/lab#Lab', 'results/playwright/e2e.json', 'home.spec.ts', 'opens the lab');
+    addMark(config.marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: 'no table test', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
+    const asked = addMark(config.marksDir, { target: lab, note: 'why pending?', author: 'reviewer' }, new Date('2026-10-12T02:00:00Z'));
+    addReply(config.marksDir, { replyTo: asked.id, note: 'it waits for the lab data' }, new Date('2026-10-12T03:00:00Z'));
+    addMark(config.marksDir, { target: { node: '/lab#Lab', depth: 'api' }, note: 'and the API?', author: 'reviewer' }, new Date('2026-10-12T04:00:00Z'));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await chooseScreen(p, '/lab');
+        await openHistory(p);
+        const said = () => p.locator('#right-dock .history > li').evaluateAll((list) => list.map((li) => [li.querySelector(':scope > .tag')?.textContent, li.querySelector(':scope > div')?.textContent]));
+        assert.deepEqual(await said(), [['화면 전체', 'no table test'], ['테스트 「opens the lab」', 'why pending?'], ['API 깊이', 'and the API?']]);
+        assert.match((await p.textContent('#right-dock .history > li:nth-child(2) .replies'))!, /it waits for the lab data/);
+
+        await p.locator('#center-body table .part-row', { hasText: 'opens the lab @screen' }).locator('.part-count').click();
+        assert.deepEqual(await said(), [['테스트 「opens the lab」', 'why pending?']]);
+        assert.equal(await p.textContent('#right-dock .history-filter .tag-label'), '테스트 「opens the lab」');
+        await p.click('#right-dock .history-filter button');
+        assert.equal((await said()).length, 3);
+
+        assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '화면 전체');
+        assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 3);
+        const row = p.locator('#center-body table .part-row', { hasText: 'opens the lab @screen' });
+        await row.hover();
+        await row.locator('.bubble').click();
+        assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
+        await p.click('#right-dock .mark-form .tags .tag button');
+        assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '화면 전체');
+        assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 3);
+        await p.click('#right-dock .mark-form .tags .tag button');
+        assert.equal(await p.locator('#right-dock .mark-form .tags .tag').count(), 0);
+        await p.fill('#right-dock textarea', 'about nothing');
+        assert.equal(await p.isDisabled('#right-dock button.save'), true);
+        assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
+      }));
+  });
+});
+
+test('in a browser, a comment on a test that is no longer among the results shows under 「떨어져 나감」 with the test title', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    addMark(config.marksDir, { target: partOf('/lab#Lab', 'results/playwright/e2e.json', 'home.spec.ts', 'opens the lab before the rename'), note: 'why pending?', author: 'reviewer' });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#left .detached li');
+        assert.match((await p.textContent('#left .detached li'))!, /\/lab#Lab · 테스트 「opens the lab before the rename」/);
+      }));
   });
 });
