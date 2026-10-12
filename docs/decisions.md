@@ -1297,6 +1297,28 @@ stops where the test failed and its order would offer a story cut short; a test 
 left out too, as duru shows it failing. A `tests.json` from a duru before this key has no `traced` and gives no
 trace candidates until the next `rebuild`.
 
+**`baselineMap` names an earlier `map.json`, and what changed since it is worked out from the two files each time it
+is shown, not stored.**
+Alternatives compared: a git ref, from which duru would check out the old source, and writing the comparison into
+`map.json`. A ref would make duru fetch the old source and the server API list of that version too, while a kept map
+is already at hand. Storing the comparison would make `map.json` and `tests.json` differ with and without a baseline;
+reading two maps when `rebuild` prints its line and when the page loads its data costs little next to reading the map
+itself. Screens are matched by ID and calls by their ID, so a component renamed in place, or a route variable made
+optional, shows as one screen gone and one added. A screen's conditions are only what stands between a user and the
+screen: whether it is restricted, the kinds, each route guard with its kinds and roles, and the set of guard texts on
+the links into it. Comparing the whole `access` object was tried on into-sign 1.4.2 → 1.5.0: it flagged 23 screens
+whose guards had only moved to other lines, and comparing links with the screen they come from flagged 17, because a
+new side menu adds a link into every screen; the guards alone flagged none, which was the true answer. A screen that
+is not `restricted` on either map has no change of conditions: the comparison takes the map's own verdict that nothing
+stands between a user and the screen, so a guard appearing, going or changing on a link into it is not counted. A
+screen on both maps whose calls differ (by each call's `screens`) is a change of its own: a call gone from the map
+does not say which screen to check again, and a call can leave a screen while staying on the map, as two calls left
+the basic publish screen in 1.5.0 while other screens still send them. A call `unchecked` on either side is not
+counted, since one side has nothing to compare. A map from a duru that did not record the roles a route guard lets
+through is refused rather than read with what it has: an into-sign 1.5.0 map built that way from the same source as
+the current one showed 12 screens with changed conditions and 32 with changed calls, all from duru reading more and
+none from the client.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

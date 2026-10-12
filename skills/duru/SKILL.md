@@ -122,6 +122,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    When it prints lines starting with `tsconfig import`, each names an import that matches an alias of the
    `tsconfig` file whose targets are inside the client source but finds no file, with the number of files that write it: the alias or the import is wrong, or
    the file is missing. Tell the user, because the screens that use those files miss what they would reach.
+   When the config names `baselineMap`, the summary also prints a `changes since <file> | …` line
+   counting what changed since that earlier map; it asks nothing of you. A run that stops with a line starting with
+   `baselineMap` names a file that is missing, unreadable or built by an older duru: tell the user.
 2. **Open the review page.** Run `duru review <config>` (add `--port <n>` if port 4400 is taken). It prints
    `review page http://127.0.0.1:<port>/` on standard error; give that address to the user and ask them to
    mark the screens and stories and press 「리뷰 끝」 when they are done.
