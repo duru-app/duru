@@ -6,6 +6,8 @@ import { jsonFiles } from './json-files.ts';
 interface RawSource {
   record?: unknown;
   steps?: unknown;
+  report?: unknown;
+  tests?: unknown;
 }
 
 interface RawStory {
@@ -24,7 +26,7 @@ export interface Story {
   memo: string;
   author: string;
   date: string;
-  source?: { record: string; steps: [number, number] };
+  source?: { record: string; steps: [number, number] } | { report: string; tests: string[] };
   file: string;
 }
 
@@ -50,8 +52,9 @@ const DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{
 export const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 export const isScreenList = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every(isText);
 const isStep = (v: number) => Number.isInteger(v) && v > 0;
-const isSource = (v: RawSource) => isPlainObject(v) && Object.keys(v).length === 2 && isText(v.record)
-  && Array.isArray(v.steps) && v.steps.length === 2 && v.steps.every(isStep) && v.steps[0] <= v.steps[1];
+const isRecordSource = (v: RawSource) => isText(v.record) && Array.isArray(v.steps) && v.steps.length === 2 && v.steps.every(isStep) && v.steps[0] <= v.steps[1];
+const isTestsSource = (v: RawSource) => isText(v.report) && Array.isArray(v.tests) && v.tests.length > 0 && v.tests.every(isText);
+const isSource = (v: RawSource) => isPlainObject(v) && Object.keys(v).length === 2 && (isRecordSource(v) || isTestsSource(v));
 // Date.parse 는 2026-02-30 을 3월 2일로 넘겨 받으므로, 날짜 부분이 그대로 되돌아오는지 본다.
 export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v))
   && new Date(`${v.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === v.slice(0, 10);
@@ -70,7 +73,7 @@ function problemOf(story: RawStory) {
   if (story.memo !== undefined && typeof story.memo !== 'string') return 'memo 는 글자여야 합니다';
   if (!isText(story.author)) return 'author 에 작성자를 적어야 합니다';
   if (!isDate(story.date)) return 'date 는 2026-10-02 같은 날짜여야 합니다';
-  if (story.source !== undefined && !isSource(story.source)) return 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] } 여야 합니다';
+  if (story.source !== undefined && !isSource(story.source)) return 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] } 나 { "report": 보고 파일, "tests": [시험 제목, ...] } 여야 합니다';
   return null;
 }
 

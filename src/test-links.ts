@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { screenCases } from './access.ts';
 import { compare } from './config.ts';
+import type { TracedTest } from './candidates.ts';
 import { importLinker } from './import-links.ts';
 import { readJunit } from './junit.ts';
 import { readPlaywright } from './playwright.ts';
@@ -78,6 +79,7 @@ export function linkTests(config: any, map: any) {
   const linkByTrace = traceLinker(map);
   const passed: Record<string, any[]> = {};
   const traceNotices = [];
+  const screenOrders: TracedTest[] = [];
   let untracedCount = 0;
   const shownPath = (file: string) => (path.relative(config.configDir, file).startsWith('..') ? file : path.relative(config.configDir, file));
   const reportUnknown = (tag: string, t: any, testKey: string) => {
@@ -134,6 +136,7 @@ export function linkTests(config: any, map: any) {
         if (trace) {
           const traced = { title: t.title, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status };
           if (trace.reason) traceNotices.push({ file: shownPath(t.trace), test: { title: t.title, file: t.file, line: t.line }, reason: trace.reason });
+          else if (t.status === 'pass' && t.traceRunPassed) screenOrders.push({ report: resultPath.split(path.sep).join('/'), title: t.title, screens: trace.order! });
           for (const [id, level] of trace.screens ?? []) {
             if (t.tags.includes(`screen:${id}`)) continue;
             (passed[id] ??= []).push({ ...traced, level });
@@ -170,5 +173,5 @@ export function linkTests(config: any, map: any) {
     }
   }
 
-  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, passed, traceNotices, untracedCount, unknownTags, untagged: [...untagged.values()].sort(byTest), untaggedCount: untagged.size, missingSources };
+  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, passed, traceNotices, traced: screenOrders, untracedCount, unknownTags, untagged: [...untagged.values()].sort(byTest), untaggedCount: untagged.size, missingSources };
 }

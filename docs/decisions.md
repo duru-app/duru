@@ -1269,6 +1269,34 @@ The page reads and writes only through the server's requests (`/api/data`, `/api
 files it saves do not depend on how it is drawn, so changing this later changes the page alone; what grows with
 each feature added meanwhile is the amount of page to rewrite.
 
+**A Playwright test whose trace passes two screens or more gives a story candidate, and a story accepted from it
+keeps `{ "report", "tests" }` as its source.**
+duru already reads the addresses each test opened from its trace for 「지나간 시험」, so a suite that runs with traces
+on needs no code of its own to write visit records. The source of a visit record candidate, `{ "record", "steps" }`,
+points at a file and a step range a reviewer can open; a trace candidate has neither, since several tests share one
+candidate and the trace steps are not numbered for a reader. The report file and the test titles are what a reviewer
+can find the tests by, so the source names those, and a story file takes either shape. duru versions before this
+shape skip such a story file as breaking the rules. Tests passing the same order give one candidate, because a suite
+whose tests all log in first would otherwise list 「로그인 → 홈 → 시험 화면」 once per test. Since the source names
+one report, the tests of a report read later with the same order are not added (reports are read in the order of
+`tests`, and by path within one entry); a run split into shards and kept as several reports names the tests of one
+shard only. A test that passed a single screen gives no candidate,
+since a story of one screen says nothing a screen does not. A candidate is chosen on the review page and in its
+address by a key, the record file for a visit record and the screen order for a trace, as two trace candidates can
+come from one report.
+
+**`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
+trace candidates from it instead of reading the reports and traces itself.**
+The candidates then change only at `rebuild`, together with the 「지나간 시험」 links read from the same traces, so
+the two never disagree about a run. Reading them in the review server would unzip every trace on each load of the
+page's data, and a page that reloads its data whenever a reviewer writes a record would repeat that for every
+record. A cache in the server's memory would avoid the repeated reads, but it would still show runs newer than the
+map and the links, and it would need its own rule for when a report changed. `rebuild` already reads each trace
+once for the links, so the order is kept from that read. Only a run that passed is kept, since a failed run's trace
+stops where the test failed and its order would offer a story cut short; a test marked to fail whose run passed is
+left out too, as duru shows it failing. A `tests.json` from a duru before this key has no `traced` and gives no
+trace candidates until the next `rebuild`.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

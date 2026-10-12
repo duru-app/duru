@@ -50,11 +50,23 @@ interface VisitRecord {
   stepCount: number;
 }
 
+export interface TracedTest {
+  report: string;
+  title: string;
+  screens: string[];
+}
+
+interface TestsSource {
+  report: string;
+  tests: string[];
+}
+
 export interface Candidate {
+  key: string;
   name: string;
   screens: string[];
-  source: { record: string; steps: number[] };
-  stepRanges: [number, number][];
+  source: { record: string; steps: number[] } | TestsSource;
+  stepRanges?: [number, number][];
 }
 
 export function loadVisitRecords(sources: string[], configDir: string) {
@@ -86,7 +98,7 @@ function candidateOf({ record, name, addresses, stepCount }: VisitRecord, screen
       stepRanges.push([step, step]);
     }
   }
-  return { name, screens, source: { record, steps: [1, stepCount] }, stepRanges };
+  return { key: record, name, screens, source: { record, steps: [1, stepCount] }, stepRanges };
 }
 
 function discardedProblemOf(d: any) {
@@ -145,12 +157,12 @@ export function discardCandidate(dir: string, candidate: Candidate, { reason, au
   return { ...discarded, file: path.join(DISCARDED, file) };
 }
 
-export function storyCandidates(config: any, map: any, mapFile: string) {
+export function storyCandidates(config: any, map: any, mapFile: string, traced: TracedTest[] = []) {
   const { records, notices } = loadVisitRecords(config.visitRecords, config.configDir);
   const { discarded, notices: discardedNotices } = loadDiscarded(config.storiesDir);
   const all = [...notices, ...discardedNotices.map((n) => ({ ...n, file: relative(config.configDir, path.join(config.storiesDir, n.file)) }))];
   if (linksWithoutConditions(map)) {
-    return { list: [], notices: all, ...(records.length && { stale: staleMapMessage(mapFile, '후보') }) };
+    return { list: [], notices: all, ...((records.length || traced.length) && { stale: staleMapMessage(mapFile, '후보') }) };
   }
   const screenAt = screenFinder(map);
   const seen = new Set([...loadStories(config.storiesDir).stories, ...discarded].map((s) => JSON.stringify(s.screens)));
@@ -161,6 +173,19 @@ export function storyCandidates(config: any, map: any, mapFile: string) {
     if (seen.has(key)) continue;
     seen.add(key);
     list.push(candidate);
+  }
+  // 출처에는 보고 파일을 하나만 적으므로, 같은 화면 순서라도 다른 보고의 시험은 붙이지 않는다.
+  const fromTraces = new Map<string, TestsSource>();
+  for (const { report, title, screens } of traced) {
+    const key = JSON.stringify(screens);
+    const source = fromTraces.get(key);
+    if (source) {
+      if (source.report === report && !source.tests.includes(title)) source.tests.push(title);
+    } else if (screens.length > 1 && !seen.has(key)) {
+      const candidate = { key: screens.join(' > '), name: title, screens, source: { report, tests: [title] } };
+      fromTraces.set(key, candidate.source);
+      list.push(candidate);
+    }
   }
   return { list: checkStories(map, list), notices: all };
 }

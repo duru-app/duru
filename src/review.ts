@@ -85,7 +85,7 @@ const judgedTests = (config: any) => applyJudgments(readJson(path.join(config.ou
 export function reviewData(config: any, author: ReviewAuthor | null, app: Awaited<ReturnType<typeof startAppHost>> | null = null, fileSettings: Record<string, unknown> | null = null) {
   const mapFile = path.join(config.outDir, 'map.json');
   const map = readMap(mapFile);
-  const tests = judgedTests(config);
+  const { traced, ...tests } = judgedTests(config);
   const callsById = new Map<string, any>(map.calls.map((c: any) => [c.id, c]));
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
   const kinds = Object.keys(config.caseKinds);
@@ -108,7 +108,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
     marks,
     caseKinds: config.caseKinds,
     stories,
-    candidates: storyCandidates(config, map, mapFile),
+    candidates: storyCandidates(config, map, mapFile, traced),
     storiesDir: config.storiesDir,
     flow: buildFlow(map, tests),
     appUrl: config.appUrl ?? null,
@@ -279,8 +279,8 @@ export async function startReviewServer(config: any, { port = 0, author = review
             return send(res, 400, 'text/plain', err.message);
           }
         }
-        const candidate = storyCandidates(config, readMap(mapFile), mapFile).list.find((c) => c.source.record === input.record);
-        if (!candidate) return send(res, 404, 'text/plain', `후보 ${input.record} 가 없습니다`);
+        const candidate = storyCandidates(config, readMap(mapFile), mapFile, readJson(path.join(config.outDir, 'tests.json')).traced).list.find((c) => c.key === input.key);
+        if (!candidate) return send(res, 404, 'text/plain', `후보 ${input.key} 가 없습니다`);
         try {
           const written = req.url === '/api/candidates/accept'
             ? acceptCandidate(config.storiesDir, candidate, { id: input.id, name: input.name, author: author.name })

@@ -7,6 +7,7 @@ import { acceptCandidate, discardCandidate, storyCandidates } from '../src/candi
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { editStory, loadStories } from '../src/stories.ts';
+import { linkTests } from '../src/test-links.ts';
 
 type Candidate = Parameters<typeof acceptCandidate>[1];
 
@@ -95,7 +96,7 @@ test('an address picks the first screen in map order whose route path matches th
 test('a record source may be a single file or a folder searched for .json files, and a source that does not exist is noted', () => {
   withFolder({ 'one.json': [{ url: '/home' }, { url: '/lab' }], 'more/deep/two.json': [{ url: '/help' }], 'more/notes.txt': 'x' }, (dir: string) => {
     const { list, notices } = candidatesOf({ configDir: dir, visitRecords: [path.join(dir, 'one.json'), path.join(dir, 'more'), path.join(dir, 'gone')], storiesDir: path.join(dir, 'stories') });
-    assert.deepEqual(list.map((c) => [c.name, c.source.record]), [['two', 'more/deep/two.json'], ['one', 'one.json']]);
+    assert.deepEqual(list.map((c) => [c.name, (c.source as { record: string }).record]), [['two', 'more/deep/two.json'], ['one', 'one.json']]);
     assert.deepEqual(notices, [{ file: 'gone', reason: '방문 기록 출처가 없습니다' }]);
   });
 });
@@ -272,7 +273,107 @@ test('a discarded entry in the stories folder that is a file, or a discarded fol
   });
 });
 
-test('with a map built before links carried their conditions, visit records give no candidate and a request to rebuild, while without records there is no such request', () => {
+const TRACED = { format: 'playwright', path: path.join(FIXTURE, 'results/playwright-traced'), depth: 'ui' };
+const HOME_HELP = ['/home#Home', '/help#Help'];
+const HOME_DRAFTS = ['/home#Home', '/document/:tab_draft_done_#DocumentList'];
+const tracedCandidatesOf = (patch: Record<string, unknown> = {}, onMap: object = map, mapFile = path.join(config.outDir, 'map.json')) => {
+  const settings = { ...config, visitRecords: [], storiesDir: EXAMPLE_STORIES, tests: [TRACED], ...patch };
+  return storyCandidates(settings, onMap, mapFile, linkTests(settings, map).traced);
+};
+
+test('the tests with a trace in the Playwright reports give one candidate per screen order they passed, with steps on the same screen merged, every test that passed that order named in the source with its report, and a test that passed a single screen or whose trace cannot be read left out', () => {
+  const { list, notices } = tracedCandidatesOf();
+  assert.deepEqual(list.map((c) => ({ name: c.name, screens: c.screens, source: c.source, stepRanges: c.stepRanges })), [
+    {
+      name: 'opens home and then help',
+      screens: HOME_HELP,
+      source: {
+        report: 'results/playwright-traced/visits.json',
+        tests: ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'],
+      },
+      stepRanges: undefined,
+    },
+    {
+      name: 'moves to the drafts without loading a page',
+      screens: HOME_DRAFTS,
+      source: {
+        report: 'results/playwright-traced/visits.json',
+        tests: ['moves to the drafts without loading a page', 'checks a text that appears after the address changes', 'types into a field and submits with the keyboard'],
+      },
+      stepRanges: undefined,
+    },
+  ]);
+  assert.deepEqual(notices, []);
+});
+
+test('candidates from the visit records come first and keep their own source, and a trace whose screen order a record already gave is not a second candidate', () => {
+  assert.deepEqual(tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS] }).list.map((c) => [c.name, c.source]), [
+    ['open-help', { record: 'example-visits/open-help.json', steps: [1, 5] }],
+    ['publish-document', { record: 'example-visits/publish-document.json', steps: [1, 7] }],
+    ['opens home and then help', { report: 'results/playwright-traced/visits.json', tests: ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'] }],
+    ['moves to the drafts without loading a page', { report: 'results/playwright-traced/visits.json', tests: ['moves to the drafts without loading a page', 'checks a text that appears after the address changes', 'types into a field and submits with the keyboard'] }],
+  ]);
+  withFolder(recordsIn({ 'help.json': ['/home', '/help'] }), (dir: string) => {
+    const { list } = tracedCandidatesOf({ visitRecords: [dir], storiesDir: path.join(dir, 'stories') });
+    assert.deepEqual(list.map((c) => c.screens), [HOME_HELP, HOME_DRAFTS]);
+    assert.equal(list[0].name, 'help');
+  });
+});
+
+test('of two reports with tests that passed the same screen order, the candidate names the tests of the first report in path order only', () => {
+  withFolder({}, (dir: string) => {
+    for (const copy of ['b', 'a']) fs.cpSync(TRACED.path, path.join(dir, copy), { recursive: true });
+    const { list } = tracedCandidatesOf({ configDir: dir, tests: [{ ...TRACED, path: dir }], storiesDir: path.join(dir, 'stories') });
+    assert.deepEqual(list.map((c) => [c.screens, (c.source as { report: string }).report]), [[HOME_HELP, 'a/visits.json'], [HOME_DRAFTS, 'a/visits.json']]);
+  });
+});
+
+test('only a test that passed in a run that passed gives a candidate: a failed test with a trace gives none, nor does one expected to fail that passed, and a test that passed on retry gives the screen order of its passing run', () => {
+  withFolder({}, (dir: string) => {
+    fs.cpSync(TRACED.path, dir, { recursive: true });
+    const file = path.join(dir, 'visits.json');
+    const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const testOf = (title: string) => {
+      const found: any[] = [];
+      const walk = (suite: any) => {
+        for (const spec of suite.specs ?? []) if (spec.title === title) found.push(spec.tests[0]);
+        for (const child of suite.suites ?? []) walk(child);
+      };
+      report.suites.forEach(walk);
+      return found[0];
+    };
+    const failed = testOf('opens home and then help');
+    Object.assign(failed, { status: 'unexpected', results: [{ ...failed.results[0], status: 'failed' }] });
+    const flaky = testOf('moves to the drafts without loading a page');
+    Object.assign(flaky, { status: 'flaky', results: [failed.results[0], ...flaky.results] });
+    Object.assign(testOf('types into a field and submits with the keyboard'), { status: 'unexpected' });
+    fs.writeFileSync(file, JSON.stringify(report));
+    const { list } = tracedCandidatesOf({ configDir: dir, tests: [{ ...TRACED, path: dir }], storiesDir: path.join(dir, 'stories') });
+    assert.deepEqual(list.map((c) => [c.screens, (c.source as { tests: string[] }).tests]), [
+      [HOME_DRAFTS, ['moves to the drafts without loading a page', 'checks a text that appears after the address changes']],
+      [HOME_HELP, ['follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes']],
+    ]);
+  });
+});
+
+test('a trace candidate accepted becomes a story file with the report and the test titles as its source that reads back as a story, and one discarded or with the screen order of a story is not offered again', () => {
+  withStoryCopy((dir: string) => {
+    const [help, drafts] = tracedCandidatesOf({ storiesDir: dir }).list;
+    acceptCandidate(dir, drafts, { id: 'open-drafts', name: '홈에서 초안을 연다', author: 'reviewer' }, new Date('2026-10-03T01:02:03Z'));
+    const source = { report: 'results/playwright-traced/visits.json', tests: ['moves to the drafts without loading a page', 'checks a text that appears after the address changes', 'types into a field and submits with the keyboard'] };
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'open-drafts.json'), 'utf8')).source, source);
+    const read = loadStories(dir);
+    assert.deepEqual(read.notices.map((n) => n.file), ['lab-shortcut.json']);
+    assert.deepEqual(read.stories.find((s) => s.id === 'open-drafts')!.source, source);
+    assert.deepEqual(tracedCandidatesOf({ storiesDir: dir }).list.map((c) => c.screens), [HOME_HELP]);
+
+    const discarded = discardCandidate(dir, help, { reason: '도움말 링크만 누른다', author: 'reviewer' });
+    assert.deepEqual(discarded.source, help.source);
+    assert.deepEqual(tracedCandidatesOf({ storiesDir: dir }).list, []);
+  });
+});
+
+test('with a map built before links carried their conditions, visit records or traces give no candidate and a request to rebuild, while without either there is no such request', () => {
   const stale: { screens: { links: { conditions?: unknown }[] }[] } = structuredClone(map);
   for (const s of stale.screens) for (const l of s.links) delete l.conditions;
   withFolder({}, (dir: string) => {
@@ -281,5 +382,6 @@ test('with a map built before links carried their conditions, visit records give
     assert.deepEqual(withRecords.list, []);
     assert.equal((withRecords as { stale?: string }).stale, `${path.join(dir, 'map.json')} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요`);
     assert.equal((candidatesOf({ ...empty, visitRecords: [] }, stale) as { stale?: string }).stale, undefined);
+    assert.deepEqual(tracedCandidatesOf(empty, stale, path.join(dir, 'map.json')), { list: [], notices: [], stale: (withRecords as { stale?: string }).stale });
   });
 });

@@ -155,8 +155,8 @@ if (command === 'tasks') {
     console.log(`stories passing ${inStatus('pass')} | failing ${inStatus('fail')} | pending ${inStatus('pending')} | partly covered ${inStatus('partial')} | no tests ${inStatus('untested')}`);
     for (const n of notices) console.log(`  story file ${n.file}: ${n.reason}`);
     if (stale) console.log(`  ${stale}`);
-    const candidates = storyCandidates(config, map, path.join(config.outDir, 'map.json'));
-    console.log(`story candidates ${candidates.list.length} | files skipped ${candidates.notices.length}`);
+    const candidates = storyCandidates(config, map, path.join(config.outDir, 'map.json'), links.traced);
+    console.log(`story candidates ${candidates.list.length} | from traces ${candidates.list.filter((c) => 'report' in c.source).length} | files skipped ${candidates.notices.length}`);
     for (const n of candidates.notices) console.log(`  ${n.file}: ${n.reason}`);
   }
 }

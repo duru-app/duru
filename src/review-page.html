@@ -566,9 +566,9 @@ function selectStory(id) {
   render();
 }
 
-function selectCandidate(record) {
-  if (record !== state.candidate) state.storyOpen.clear();
-  state.candidate = record;
+function selectCandidate(key) {
+  if (key !== state.candidate) state.storyOpen.clear();
+  state.candidate = key;
   state.candidateDraft = null;
   state.error = null;
   state.storyError = null;
@@ -769,9 +769,11 @@ function renderUntaggedList() {
 const LINK_VERDICT = { open: '이어짐', configured: '설정에 적은 이동', conditioned: '조건', broken: '링크 없음', 'off-map': '판정 못 함', unknown: '판정 못 함' };
 const LINK_VERDICT_TITLE = { configured: '설정의 moves 에 적은 이동으로 이어집니다' };
 const storyOf = () => state.data.stories.list.find((st) => st.id === state.story);
-const candidateOf = () => state.data.candidates.list.find((c) => c.source.record === state.candidate);
+const candidateOf = () => state.data.candidates.list.find((c) => c.key === state.candidate);
 const stepsText = ([first, last]) => (first === last ? `단계 ${first}` : `단계 ${first}–${last}`);
-const sourceText = (source) => `${source.record} · ${stepsText(source.steps)}`;
+const sourceView = (source, whose) => (source.record
+  ? h('div', { class: 'muted mono source', title: `${whose} 방문 기록과 단계` }, `${source.record} · ${stepsText(source.steps)}`)
+  : h('div', { class: 'muted mono source', title: `${whose} 시험 보고와 그 순서를 지나간 시험` }, source.report, h('ul', { class: 'plain' }, source.tests.map((t) => h('li', {}, t)))));
 const storyDate = (date) => (date.length > 10 ? fmtDate(date) : date);
 const unlistedMarks = () => state.data.marks.attached.filter((m) => m.target.story !== undefined && !state.data.stories.list.some((st) => st.id === m.target.story));
 const screenOf = (id) => state.data.map.screens.find((s) => s.id === id);
@@ -813,14 +815,14 @@ function storyItems() {
 function candidateGroup() {
   const { list, notices, stale } = state.data.candidates;
   return [
-    h('h2', { title: '방문 기록에서 나온 화면 순서입니다. 받으면 스토리 파일이 되고, 버리면 다시 나오지 않습니다.' }, `후보 ${list.length}`),
+    h('h2', { title: '방문 기록이나 시험의 실행 기록에서 나온 화면 순서입니다. 받으면 스토리 파일이 되고, 버리면 다시 나오지 않습니다.' }, `후보 ${list.length}`),
     stale
       ? h('p', { class: 'error', id: 'candidates-stale' }, stale)
       : list.length
-      ? h('ul', { class: 'screens', id: 'candidate-list' }, list.map((c) => h('li', { class: c.source.record === state.candidate ? 'selected' : '', onclick: () => selectCandidate(c.source.record) },
-          h('span', { class: 'name' }, h('span', {}, c.name), h('div', { class: 'muted mono' }, c.source.record), h('div', { class: 'chips' }, storyChips(c))),
+      ? h('ul', { class: 'screens', id: 'candidate-list' }, list.map((c) => h('li', { class: c.key === state.candidate ? 'selected' : '', onclick: () => selectCandidate(c.key) },
+          h('span', { class: 'name' }, h('span', {}, c.name), h('div', { class: 'muted mono' }, c.source.record ?? c.source.report), h('div', { class: 'chips' }, storyChips(c))),
           h('span', { class: 'count' }, `화면 ${c.steps.length}`))))
-      : h('p', { class: 'muted', title: '설정의 visitRecords 에 적은 방문 기록에서 나온 후보가 여기 놓입니다.' }, '없음'),
+      : h('p', { class: 'muted', title: '설정의 visitRecords 에 적은 방문 기록과, tests 에 적은 Playwright 보고의 실행 기록에서 나온 후보가 여기 놓입니다.' }, '없음'),
     ...(notices.length ? [
       h('h2', { title: '형식이 틀려 건너뛴 방문 기록과 버린 후보 파일입니다.' }, `건너뛴 파일 ${notices.length}`),
       h('ul', { class: 'plain notices', id: 'candidate-notices' }, notices.map((n) => h('li', {}, h('code', {}, n.file), h('div', { class: 'error' }, n.reason)))),
@@ -1721,7 +1723,7 @@ function renderStoryCenter() {
   if (c) {
     return fill(center,
       h('div', { class: 'title-row' }, h('h3', {}, c.name), storyChips(c)),
-      h('div', { class: 'muted mono source', title: '후보가 나온 방문 기록과 단계' }, sourceText(c.source)),
+      sourceView(c.source, '후보가 나온'),
       storyPath(c, c.stepRanges));
   }
   const st = storyOf();
@@ -1731,7 +1733,7 @@ function renderStoryCenter() {
   fill(center,
     h('div', { class: 'title-row' }, h('h3', {}, st.name), statusChip(st), storyChips(st)),
     h('div', { class: 'muted mono' }, `${st.id} · ${st.file}`),
-    st.source ? h('div', { class: 'muted mono source', title: '받은 후보가 나온 방문 기록과 단계' }, sourceText(st.source)) : null,
+    st.source ? sourceView(st.source, '받은 후보가 나온') : null,
     h('div', { class: 'muted' }, `${st.author} · ${storyDate(st.date)}`),
     st.memo ? h('p', { class: 'memo' }, st.memo) : null,
     h('div', { class: 'story-tests' }, h('h2', {}, `스토리 테스트 ${storyTests.length}`),
@@ -1836,7 +1838,7 @@ async function writeStories(url, body) {
 const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === id) ? '같은 ID 의 스토리가 이미 있습니다.' : STORY_ID.test(id) ? null : '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.');
 
 async function acceptAs(c, id, name) {
-  if (!(await writeStories('/api/candidates/accept', { record: c.source.record, id, name }))) return false;
+  if (!(await writeStories('/api/candidates/accept', { key: c.key, id, name }))) return false;
   state.candidate = null;
   state.candidateDraft = null;
   state.story = id;
@@ -1858,7 +1860,7 @@ async function acceptChosen() {
   if (!c) return;
   if (storyIdProblem(slugOf(c.name))) return askAccept(c, 'button.accept', null);
   if (await acceptAs(c, slugOf(c.name), c.name)) return;
-  if (state.candidate === c.source.record) askAccept(c, 'button.accept', takeStoryError());
+  if (state.candidate === c.key) askAccept(c, 'button.accept', takeStoryError());
 }
 
 const acceptDialog = document.getElementById('accept-ask');
@@ -1920,9 +1922,9 @@ async function discardChosen() {
   const c = candidateOf();
   if (!c) return;
   const at = state.data.candidates.list.indexOf(c);
-  if (!(await writeStories('/api/candidates/discard', { record: c.source.record, reason: state.candidateDraft.reason }))) return;
+  if (!(await writeStories('/api/candidates/discard', { key: c.key, reason: state.candidateDraft.reason }))) return;
   const { list } = state.data.candidates;
-  state.candidate = (list[at] ?? list[at - 1])?.source.record ?? null;
+  state.candidate = (list[at] ?? list[at - 1])?.key ?? null;
   state.candidateDraft = null;
   render();
 }
@@ -2128,7 +2130,7 @@ function renderStoryRight(info, dock) {
   const c = candidateOf();
   if (c) {
     fill(dock);
-    return fill(info, ...reachSection(c, `candidate\n${c.source.record}`), ...candidateActions(c));
+    return fill(info, ...reachSection(c, `candidate\n${c.key}`), ...candidateActions(c));
   }
   const st = storyOf();
   if (!st) {
@@ -3712,7 +3714,7 @@ function applyPlace() {
     if (state.composing) Object.assign(state, { compose: state.compose ?? newCompose(), candidate: null });
     if (head === 'screens' && screen !== state.selected && screenOf(screen)) go = () => select(screen);
     else if (head === 'stories' && candidate !== null) {
-      if (candidate !== state.candidate && state.data.candidates.list.some((c) => c.source.record === candidate)) go = () => selectCandidate(candidate);
+      if (candidate !== state.candidate && state.data.candidates.list.some((c) => c.key === candidate)) go = () => selectCandidate(candidate);
     } else if (head === 'stories' && state.candidate !== null) go = () => selectStory(storyKnown ? story : state.story);
     else if (head === 'stories' && story !== state.story && storyKnown) go = () => selectStory(story);
     else if (head === 'untagged' && test !== state.untaggedTest && untaggedTests().some((t) => untaggedKey(t) === test)) go = () => selectUntaggedTest(test);

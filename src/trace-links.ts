@@ -1,4 +1,4 @@
-import { callFinder, screenFinder } from './address-match.ts';
+import { callFinder, pathOf, screenFinder } from './address-match.ts';
 import { readTrace } from './playwright-trace.ts';
 
 export const PASS_LEVELS = ['visit', 'interact', 'assert'];
@@ -14,12 +14,15 @@ export function traceLinker(map: any) {
     callAt ??= callFinder(map);
     const screens = new Map<string, string>();
     const unmatched = new Set<string>();
+    const order: string[] = [];
     for (const { url, kind } of steps) {
       const id = screenAt(url);
+      const step = id ?? pathOf(url);
+      if (step && step !== order.at(-1)) order.push(step);
       if (!id) unmatched.add(url);
       else if (PASS_LEVELS.indexOf(kind) > PASS_LEVELS.indexOf(screens.get(id)!)) screens.set(id, kind);
     }
     const calls = new Set(requests.map(({ method, url }) => callAt!(method, url)).filter(Boolean) as string[]);
-    return { screens, calls, unmatched: [...unmatched] };
+    return { screens, calls, unmatched: [...unmatched], order };
   };
 }

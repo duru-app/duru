@@ -238,7 +238,7 @@ client with example results and a config to start from.
   config's folder, else the computer's user name). Leave it out of a config file a team shares.
 - `storiesDir` — folder of story files, or a single story file (default: `stories` in `outDir`).
 - `visitRecords` — visit record files or folders that story candidates are made from (optional), as
-  `["qa/records"]`.
+  `["qa/records"]`. Playwright reports in `tests` whose tests left a trace give candidates too.
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
   variables to it.
 - `app` — what the review page needs to show the app itself, logged in, in a frame (optional; replaces the
@@ -393,9 +393,9 @@ listing the places whose value the source does not show in full.
   (`unknownBodyTypeExclusions`), `moves` paths that match no route
   (`unknownMovePaths`), `callLinks` call IDs that are not on the map (`unknownCallLinks`) and `roleGuards`
   guards that guard no route or link with a role (`unknownRoleGuards`).
-- `rebuild` also prints the story and candidate counts and the files skipped, the links from untagged tests to
-  screens and the trace or test files it could not read, the judged test pairs, and each judgment file it could
-  not read or whose screen is gone from the map.
+- `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, and the files
+  skipped, the links from untagged tests to screens and the trace or test files it could not read, the judged test
+  pairs, and each judgment file it could not read or whose screen is gone from the map.
 
 ## Tests
 
@@ -425,7 +425,9 @@ for that kind on every screen and call the test is tagged with, and shows under 
 picked the kind.
 
 `tests.json` lists the tests per node and per story with depth and status (pass, fail, pending; skipped and todo
-count as pending), the tags that point at nothing on the map, and the tests with no tag as `untagged`.
+count as pending), the tags that point at nothing on the map, and the tests with no tag as `untagged`. `traced`
+lists each Playwright test that passed, with the trace of its passing run, as its report, its title and the screens
+it passed in order; an address no screen matches stays in that list as its path.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that
@@ -466,6 +468,8 @@ A story is something a user gets done, written as the screens they pass through 
 - `memo` (optional) — what the steps do not say, such as the account or the data the flow needs
 - `author`, `date` — who wrote the story and when (`2026-10-02`)
 - `source` (optional) — for a story accepted from a candidate, the visit record and its steps
+  (`{ "record", "steps" }`), or the Playwright report and the titles of its tests that passed those screens
+  (`{ "report", "tests" }`)
 
 No other keys are allowed. A file that breaks these rules is skipped and noted with its path and why.
 
@@ -497,6 +501,17 @@ duru turns each record named in `visitRecords` into a story candidate: each addr
 route path matches it, steps in a row on the same screen become one step, and an address no screen matches stays
 as it is. A candidate with the screen order of a story or of a discarded candidate is not offered. A record that
 cannot be read is skipped and noted with its path and why.
+
+A Playwright test needs no visit record when its report is listed in `tests` and the test ran with Playwright's
+`trace` option on: the screens it passed through, read from its trace by `rebuild`, become a candidate whose source
+names the report and the test titles. Only a passing run counts: a test that failed gives no candidate, and a test
+that passed on a retry gives the screens of the retry that passed. These candidates follow the limits of reading
+traces:
+
+- Only trace format version 8 is read. A trace of another version is skipped and listed with the traces
+  `rebuild` could not read.
+- Only the path of an address is matched to a screen, and what follows `#` is dropped. An app that changes screens
+  by the part after `#`, or a modal or tab that opens without changing the address, does not show as a step.
 
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
 reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back.

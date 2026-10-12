@@ -299,18 +299,27 @@ test('rebuild names an off-map hand-over by its title alone when the test has no
   });
 });
 
-test('rebuild counts the story candidates from the visit records and names each record or discarded candidate file it skipped and why', () => {
+test('rebuild counts the story candidates from the visit records and from traces, the latter also on their own, writes the screen order of each traced test into tests.json, and names each record or discarded candidate file it skipped and why', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const configFile = path.join(copy, 'config.json');
     const plain = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
-    assert.match(plain, /^story candidates 0 \| files skipped 0$/m);
+    assert.match(plain, /^story candidates 0 \| from traces 0 \| files skipped 0$/m);
 
-    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), storiesDir: 'example-stories', visitRecords: ['example-visits'] }));
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, storiesDir: 'example-stories', visitRecords: ['example-visits'] }));
     const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
-    assert.match(stdout, /^story candidates 2 \| files skipped 1$/m);
+    assert.match(stdout, /^story candidates 2 \| from traces 0 \| files skipped 1$/m);
     assert.match(stdout, /^ {2}example-visits\/broken-record\.json: 2 번째 단계의 url 을 읽지 못했습니다$/m);
+
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, storiesDir: 'example-stories', visitRecords: ['example-visits'], tests: [...config.tests, { format: 'playwright', path: 'results/playwright-traced', depth: 'ui' }] }));
+    const traced = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(traced, /^story candidates 4 \| from traces 2 \| files skipped 1$/m);
+    const orders = JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8')).traced;
+    const report = 'results/playwright-traced/visits.json';
+    assert.deepEqual(orders.find((t: { title: string }) => t.title === 'opens home and then help'), { report, title: 'opens home and then help', screens: ['/home#Home', '/help#Help'] });
+    assert.deepEqual(orders.find((t: { title: string }) => t.title === 'presses the button on home'), { report, title: 'presses the button on home', screens: ['/home#Home'] });
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
