@@ -1,7 +1,11 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { CASE_KIND } from './config.ts';
+import { CASE_KIND, isPlainObject } from './config.ts';
+import { isText, reference } from './judgments.ts';
+import type { TestRef } from './judgments.ts';
+import { locatePart } from './parts.ts';
+import type { PartContext, TestPlace } from './parts.ts';
 import { STORY_ID } from './stories.ts';
 import { DEPTHS } from './test-links.ts';
 
@@ -14,7 +18,15 @@ interface MarkTarget {
   option?: { key: string; value: boolean };
   depth?: string;
   case?: string;
+  part?: Part;
 }
+
+export interface Part {
+  kind: string;
+  key: TestRef;
+}
+
+export const PART_KINDS = ['test'];
 
 // status 가 없는 표시는 코멘트고, 그 가운데 replyTo 가 있는 것은 그 ID 의 코멘트에 단 답글이다.
 export interface Mark {
@@ -44,6 +56,7 @@ interface MarkEntry {
   target: MarkTarget;
   current: Mark | null;
   history: Mark[];
+  where?: TestPlace | null;
 }
 
 // 끝의 `.` 을 바꾸는 것은 Windows 가 그런 이름을 받지 않고, 화면 ID 가 `..` 이면 표시 폴더 밖을 가리키기 때문이다.
@@ -80,7 +93,7 @@ function saveMark(dir: string, mark: Mark) {
 
 function storyTarget(target: MarkTarget) {
   if (typeof target.story !== 'string' || !STORY_ID.test(target.story)) throw new Error(`"${target.story}" is not a story ID`);
-  if (['node', 'option', 'depth', 'case'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a story mark takes no node, option, depth or case');
+  if (['node', 'option', 'depth', 'case', 'part'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a story mark takes no node, option, depth or case');
   return { story: target.story };
 }
 
@@ -105,8 +118,18 @@ function caseTarget(target: MarkTarget) {
   return { node: target.node, case: target.case };
 }
 
+function partTarget(target: MarkTarget) {
+  if (typeof target.node !== 'string' || !target.node) throw new Error('a part mark needs a node ID');
+  if (target.option !== undefined || target.depth !== undefined || target.case !== undefined) throw new Error('a part mark takes no option, depth or case');
+  const { kind, key }: Partial<Part> = isPlainObject(target.part) ? target.part! : {};
+  if (!PART_KINDS.includes(kind!)) throw new Error(`unknown part kind "${kind}" (expected ${PART_KINDS.join(', ')})`);
+  if (!key || !isPlainObject(key) || !isText(key.source) || !(isText(key.file) || key.file === null) || !isText(key.title)) throw new Error('a test part needs a result file, a test file and a title');
+  return { node: target.node, part: { kind: kind!, key: reference(key) } };
+}
+
 export function addMark(dir: string, { target, status, note, author }: NewMark, now = new Date()) {
-  const checked: MarkTarget = target?.story !== undefined ? storyTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target);
+  const checked: MarkTarget = target?.story !== undefined ? storyTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target);
+  if (checked.part && status !== undefined && status !== null) throw new Error('a comment on a part of a screen or call takes no status; put the status on the screen or call itself');
   const statuses = checked.case !== undefined ? CASE_STATUSES : MARK_STATUSES;
   const comment = (status === undefined || status === null) && checked.case === undefined;
   if (comment && (typeof note !== 'string' || !note.trim())) throw new Error('a comment needs a note');
@@ -138,9 +161,11 @@ export function addReply(dir: string, { replyTo, note, author = 'agent' }: { rep
 }
 
 // 화면 · 호출 ID 에는 괄호가 들어가지 않으므로(map.ts 의 TAG_FORBIDDEN) story(<ID>) 는 노드의 키가 될 수 없다.
-const targetKey = (t: MarkTarget) => (t.story !== undefined ? `story(${t.story})` : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`].filter(Boolean).join(' '));
+const targetKey = (t: MarkTarget) => (t.story !== undefined
+  ? `story(${t.story})`
+  : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
 
-export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = []): { attached: MarkEntry[]; detached: MarkEntry[] } {
+export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = [], tests: PartContext['tests'] = {}): { attached: MarkEntry[]; detached: MarkEntry[] } {
   const nodes = new Map<string, Set<string>>([
     ...map.screens.map((s): [string, Set<string>] => [s.id, new Set()]),
     ...(map.calls ?? []).map((c): [string, Set<string>] => [c.id, new Set((c.options ?? []).map((o) => o.key))]),
@@ -161,8 +186,10 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
   const detached: MarkEntry[] = [];
   for (const key of [...byTarget.keys()].sort()) {
     const history = byTarget.get(key)!;
-    const entry = { key, target: history[0].target, current: history.find((m) => m.status !== undefined) ?? null, history };
-    (isAttached(entry.target) ? attached : detached).push(entry);
+    const target = history[0].target;
+    const where = target.part && nodes.has(target.node!) ? locatePart(target, { tests }) : null;
+    const entry = { key, target, current: history.find((m) => m.status !== undefined) ?? null, history, ...(target.part && { where }) };
+    (isAttached(target) && (!target.part || where) ? attached : detached).push(entry);
   }
   return { attached, detached };
 }

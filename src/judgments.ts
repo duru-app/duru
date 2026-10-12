@@ -8,7 +8,7 @@ import { withoutTags } from './verdict.ts';
 
 export const JUDGMENT_KINDS = ['discard', 'hand-over', 'undo'];
 
-interface TestRef {
+export interface TestRef {
   source: string;
   file: string | null;
   title: string;
@@ -65,14 +65,14 @@ interface JudgedTests {
   stories?: Record<string, ResultTest[]>;
 }
 
-const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+export const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 
 // 경로 구분자는 / 로 통일해야 Windows 에서 적은 판단이 다른 OS 에서도 같은 테스트를 가리킨다.
 const slashed = <T extends string | null>(p: T) => (typeof p === 'string' ? p.replaceAll('\\', '/') : p) as T;
 
 // 줄 번호와 Playwright 프로젝트 이름은 넣지 않는다. 테스트 위에 줄이 늘거나 제목에 태그를 달아도 같은 테스트여야 하기 때문이다.
 // 결과 파일에 적힌 경로는 결과를 만든 컴퓨터마다 다르므로, srcRoot 아래에서 찾은 경로(testFile)가 있으면 그것을 쓴다.
-const reference = ({ source, file, title }: TestRef): TestRef => ({ source: slashed(source), file: slashed(file), title: typeof title === 'string' ? withoutTags(title) : title });
+export const reference = ({ source, file, title }: TestRef): TestRef => ({ source: slashed(source), file: slashed(file), title: typeof title === 'string' ? withoutTags(title) : title });
 export const testRef = (t: ResultTest) => reference({ source: t.source, file: t.testFile ?? t.file, title: t.title });
 
 const pairKey = (test: TestRef, node: string) => JSON.stringify([test.source, test.file, test.title, node]);

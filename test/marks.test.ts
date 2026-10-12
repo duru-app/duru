@@ -292,3 +292,65 @@ for (const [name, input] of [
     });
   });
 }
+
+const LIST_TEST = { source: 'results/playwright/report.json', file: 'e2e/list.spec.ts', title: 'list shows rows' };
+
+test('a comment on a test under a screen is written with the test in its target, kept in the screen\'s folder and read back; the test is named by its result file, test file and title without tags', () => {
+  withMarksDir((dir: string) => {
+    const comment = addMark(dir, {
+      target: { node: '/home#Home', part: { kind: 'test', key: { title: 'list shows rows @screen:/home#Home', file: 'e2e\\list.spec.ts', source: 'results\\playwright\\report.json' } } },
+      note: 'why does this fail?',
+      author: 'a',
+    }, new Date('2026-10-12T01:00:00Z'));
+    assert.deepEqual(comment.target, { node: '/home#Home', part: { kind: 'test', key: LIST_TEST } });
+    assert.deepEqual(Object.keys((comment.target as { part: { key: object } }).part.key), ['source', 'file', 'title']);
+    assert.deepEqual(fs.readdirSync(dir), ['_home#Home']);
+    assert.deepEqual(loadMarks(dir), [comment]);
+  });
+});
+
+test('a test part takes a comment only: a status, an empty note, a depth, an option, a case, an unknown kind or a test without its result file or title is refused and nothing is written', () => {
+  withMarksDir((dir: string) => {
+    const part = { kind: 'test', key: LIST_TEST };
+    const refused: [object, RegExp][] = [
+      [{ target: { node: '/home#Home', part }, status: 'missing', note: 'x' }, /a comment on a part of a screen or call takes no status; put the status on the screen or call itself/],
+      [{ target: { node: '/home#Home', part }, note: ' ' }, /a comment needs a note/],
+      [{ target: { node: '/home#Home', depth: 'ui', part }, note: 'x' }, /a part mark takes no option, depth or case/],
+      [{ target: { node: 'GET:/api/v1/document/list', option: { key: 'k', value: true }, part }, note: 'x' }, /a part mark takes no option, depth or case/],
+      [{ target: { node: '/home#Home', case: 'empty', part }, note: 'x' }, /a part mark takes no option, depth or case/],
+      [{ target: { node: '/home#Home', part: { kind: 'row', key: LIST_TEST } }, note: 'x' }, /unknown part kind "row" \(expected test\)/],
+      [{ target: { node: '/home#Home', part: { kind: 'test', key: { file: 'e2e/list.spec.ts', title: 't' } } }, note: 'x' }, /a test part needs a result file, a test file and a title/],
+      [{ target: { node: '/home#Home', part: { kind: 'test', key: { source: 'r.json', file: 'e2e/list.spec.ts', title: ' ' } } }, note: 'x' }, /a test part needs a result file, a test file and a title/],
+      [{ target: { story: 'run-lab', part }, note: 'x' }, /a story mark takes no node, option, depth or case/],
+    ];
+    for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' }), message);
+    assert.deepEqual(loadMarks(dir), []);
+    const noFile = addMark(dir, { target: { node: '/home#Home', part: { kind: 'test', key: { source: 'results/junit/a.xml', file: null, title: 'saves' } } }, note: 'x', author: 'a' });
+    assert.deepEqual((noFile.target as { part: object }).part, { kind: 'test', key: { source: 'results/junit/a.xml', file: null, title: 'saves' } });
+  });
+});
+
+const LINKS = { nodes: { '/home#Home': [{ ...LIST_TEST, line: 8, status: 'fail', format: 'playwright', depth: 'ui' }] } };
+
+test('comments on a test of a screen are kept in their own entry with where the test is, leave the screen\'s current status alone, and are detached once the test is gone', () => {
+  withMarksDir((dir: string) => {
+    const part = { kind: 'test', key: LIST_TEST };
+    addMark(dir, { target: { node: '/home#Home' }, status: 'needs-more', author: 'a' }, new Date('2026-10-12T01:00:00Z'));
+    const comment = addMark(dir, { target: { node: '/home#Home', part }, note: 'why does this fail?', author: 'a' }, new Date('2026-10-12T02:00:00Z'));
+    const reply = addReply(dir, { replyTo: comment.id, note: 'the list API answers 500' }, new Date('2026-10-12T03:00:00Z'));
+    assert.deepEqual(reply.target, comment.target);
+    const { attached, detached } = classifyMarks(loadMarks(dir), MAP, [], [], LINKS);
+    assert.deepEqual(detached, []);
+    assert.deepEqual(attached.map((m) => [m.key, m.current?.status ?? null, m.history.map((h) => h.note)]), [
+      ['/home#Home', 'needs-more', ['']],
+      [`/home#Home part:test:${JSON.stringify(LIST_TEST)}`, null, ['the list API answers 500', 'why does this fail?']],
+    ]);
+    assert.deepEqual(attached[1].where, { file: 'e2e/list.spec.ts', line: 8, source: LIST_TEST.source, status: 'fail', relation: 'tagged' });
+    assert.equal('where' in attached[0], false);
+
+    const renamed = { nodes: { '/home#Home': [{ ...LINKS.nodes['/home#Home'][0], title: 'list shows every row' }] } };
+    const after = classifyMarks(loadMarks(dir), MAP, [], [], renamed);
+    assert.deepEqual(after.attached.map((m) => m.key), ['/home#Home']);
+    assert.deepEqual(after.detached.map((m) => [m.target, m.where]), [[{ node: '/home#Home', part }, null]]);
+  });
+});
