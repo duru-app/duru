@@ -570,10 +570,17 @@ corner makes it taller or shorter, and the app
 gets the height shown divided by the percent. The width and percent picked stay, in both views, until the page is
 reloaded. Below come the
 screen's tests by depth and its API calls, with
-a row per option value. The right says what it takes to open the screen, with the tests of each role and setting
-case by depth, and lists the links into it with their guards. With `caseKinds` set, 「경우별 테스트」 has a button
-per kind for every screen, and for a call once the call is chosen: pressing one makes the kind a case there, with
-its tests by depth, and pressing it again takes it out. The flow shows the same right pane for a picked screen.
+a row per option value. A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
+name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
+screen, links out of it and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
+the screen, then shows the tests of each role and setting case by depth under 「경우별 테스트」, the links into it
+with their guards, the conditions inside the screen, where its route and component are, the links out of it and the
+settings it reads. Once opened it stays open on other screens until it is closed. Choosing a call, in the table or
+from a link elsewhere, opens its details under the call table and scrolls the middle pane to them: where its option
+was found, the server match, its tests, untagged tests linked to it, where this screen calls it and the screens that
+use it. With `caseKinds` set, 「경우별 테스트」 has a button per kind for every screen, and for a call in its details:
+pressing one makes the kind a case there, with its tests by depth, and pressing it again takes it out. The flow
+shows the same middle and right panes for a picked screen.
 
 **Pane widths.** The edge on either side of the middle pane, in the list and beside a picked screen in the flow,
 can be dragged to widen or narrow the panes; the line lights up when the mouse rests on it. The drawing is laid out
@@ -605,7 +612,7 @@ screens of the map.
 
 **Marks.** A mark targets a screen, a call, one depth of either, one value of a call's option, or a story, and
 records a status (`needs-more`, `missing`, `fine`), a note, the author and the date. A mark left with text and no
-status is a comment: it shows in the history as 「코멘트」, keeps the current status as it was, and in the task list
+status is a comment: it shows in the conversation with no status, keeps the current status as it was, and in the task list
 follows the open mark it was written after. Pressing a picked status again lets it go, so a comment can be left on
 a target that already has one. Each mark and each judgment
 is its own new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so marks made on two machines merge in
@@ -627,9 +634,12 @@ reason, and it never changes the current status of the screen or call. A row wit
 pressing it narrows the conversation to that test. A comment whose test is no longer among the results after a
 `rebuild` (its title or file changed, or it left the results) shows under 「떨어져 나감」 with the test title.
 
-**Conversation.** The bottom of the right pane holds every mark, comment and reply left on the chosen screen or call
-(or story), oldest first, each with the tag of where it was left. What is chosen in the middle is the default tag,
-and its × takes it off; a status can be picked only while that one tag is on.
+**Conversation.** For a screen or call the right pane holds only the conversation: every mark, comment and reply
+left on it, oldest first, open from the start and filling the pane, scrolling inside it when it is longer, with the
+form to write in at the bottom. Each mark and comment carries the tag of where it was left; a reply sits under its
+comment, set apart by its author and a light background. What is chosen in the middle is the default tag, and its ×
+takes it off; a status can be picked only while that one tag is on. For a story the conversation sits under the
+form behind 「대화 N」, and each entry without a status is labelled 「코멘트」 or 「답」.
 
 **While the review runs.** Each mark, comment or reply is printed on standard error the moment it is saved, as one
 JSON line: `{"duru":"mark"|"comment"|"reply","id":…,"target":{…},"status":…,"replyTo":…,"note":…,"author":…,"date":…}`,
@@ -642,7 +652,7 @@ reload, so a mark left in one window appears in another.
 
 **Replies.** `reply <config> <comment ID> "<text>"` answers a comment. The reply is a mark with no status, saved as
 its own new file next to the comment, with the comment's target, `replyTo` set to the comment's ID and the author
-`agent`; the page shows it as 「답」 under the comment in the history, and the task list puts it under the comment
+`agent`; the page shows it under the comment in the conversation, and the task list puts it under the comment
 it answers. With `--server` and the address the review printed, the reply goes through the running review: it is
 saved, printed on standard error as a `"reply"` line and shown on every open page at once. Without `--server` the
 file is written directly and shows the next time the page is loaded. An ID that is not a comment in the marks stops

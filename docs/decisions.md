@@ -574,10 +574,11 @@ saving at once lose one another's picks, and the file keeps no author or date), 
 config (no record of who picked what when, and a reviewer would leave the page to edit a file). Marks already keep
 the author, the date and the history, merge in git without a conflict because each is a new file, and come through
 the same reader, which marks a pick detached when its node leaves the map or its kind leaves `caseKinds`.
-The buttons sit under 「경우별 테스트」 in the right pane, where the role and setting cases already show their tests,
-and for a call next to the call's details there. Compared: a column in the middle table (the table is laid out by
+The buttons sit under 「경우별 테스트」, where the role and setting cases already show their tests: for a screen in
+its screen info, and for a call in the call's details (both in the right pane until the right pane was given to the
+conversation, see below). Compared: a column in the middle table (the table is laid out by
 depth and option value, and a kind applies to the whole screen or call), and the status buttons of the mark form
-(a pick is no judgment of the tests, and would take the place of the status the form records). The right pane is
+(a pick is no judgment of the tests, and would take the place of the status the form records). The middle pane is
 the same in the list and beside the flow, so a pick works the same in both.
 A picked kind alone does not put a screen or call on the task list, as a role or setting case does not: the list
 is what a reviewer marked `needs-more` or `missing`. A `@case:` tag counts for its kind on every screen and call
@@ -1433,6 +1434,30 @@ Alternatives compared:
   depends on the reviewer adding a tag.
 Opening a row's comments under the row is left out; it changes neither the saved files nor the agent's line, so it
 can be added to the page later. A comment carries one tag until #231 adds several or none.
+
+**The right pane of a screen or call holds only the conversation; the screen info and a chosen call's details move
+under the tables of the middle pane.**
+The info above the conversation took most of the pane: on `/publish/document-basic/:id` the access summary sat at
+the top and 142 settings read below it, while the conversation was held to 160px under the form, so a long answer
+from the agent was cut after about five lines. Now the conversation fills the pane, open from the start, with the
+form at its bottom. The screen info is a fold under the call table with the link and setting counts on its closed
+line, and it stays as it was left from screen to screen; a chosen call's details open under the call table, since a
+call is chosen to be looked at. Choosing a call scrolls the middle pane to its details, which would otherwise open
+below the table out of sight; the driver compared that scroll, the call's name in the right pane's tag, and both,
+and chose the scroll. 「이 화면을 열려면」 became 「접근 조건」, and the name in the middle carries 「역할」
+or 「설정」 as the flow box does, so whether a screen is conditioned shows while the fold is closed. Replies lose the
+「답」 label and their indent and are told apart by author and a light background; the tag of where a comment was left
+stays. Figma's comment mode gives the whole right sidebar to the file's comments, Google Docs opens comments in a
+panel of their own and can show every reply unfolded, and GitHub keeps the conversation and the code in separate
+tabs: each puts the conversation where nothing else competes for its space, and shows replies unfolded. The labels
+and the name 「접근 조건」 were the driver's choice on a clickable mock-up (#244).
+Alternatives compared:
+- Keeping the info on top and giving the conversation more height: both still share one 360px pane, and the longer
+  either gets, the less of the other shows.
+- Switching between info and conversation inside the right pane: either is one click away, but the conversation is
+  hidden while the info is read, and the middle pane already has room under its tables.
+The story tab's right pane is not changed here: its steps and 「사전 조건」 stay above, and its conversation stays
+under the form behind 「대화 N」.
 
 **The line an agent gets for a comment on a test names the result file instead of carrying the failure message.**
 The Playwright, Vitest and JUnit readers keep only each test's status, and only a verdict line keeps the text after
