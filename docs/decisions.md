@@ -1588,6 +1588,48 @@ Alternatives compared:
   key of that candidate would change once its fresh twin is gone, so a copied address, or anything else that names
   it by key, would stop finding it.
 
+**A story picked in the flow is drawn as its steps alone, left to right on one line, with the link verdict on the
+line between each two; the stories are picked from a list left of the drawing.**
+Driver's decision in #250. The story view of #131 kept the main flow and cut away every screen that was neither a
+step nor above one. The main flow places each screen once, where it is first found from an entry, so a step often
+sits under a screen unrelated to the story. On into-sign 1.5.0 with its 6 stories, only one (deleting a member) ran
+straight down the tree: in three, two neighbouring steps were drawn as siblings and joined only by number chips; the
+signer's story drew `/view/:documentId`, which is not a step, because `ParticipantViewer` had been placed under that
+entry first; and the sign-in story's two steps are both entry screens, so the move written in `moves` between them
+had no line. #131 took the flow drawing as it was, and no other way was compared then. Drawing the steps alone
+gives every two neighbouring steps a line of their own, so the verdict can always be drawn there, and a screen the
+story passes twice is simply drawn twice. Where the map has no link, the drawing does not bring the tree back,
+since the tree has no path between the two screens either; it lists the screens the step before does lead to. This
+follows Maze, which draws only the expected paths, and Amplitude's funnels and Momentic's app graph, which lay
+steps out in order and mark trouble between two steps or at a step; Katalon TrueTest paints a path over the large
+map, which is what #131 did. The code that lays a story over the whole flow stays, for writing a new story by
+pressing boxes in the flow (#252), where the next step has to be picked from the whole drawing.
+The list replaces a select in the bar above the flow, which had to be opened to be seen, showed names only, cut
+long names at 300px and could not be searched. It goes on the left, as Figma's presentation view and Playwright's
+trace viewer list what can be picked on the left and show the picked one beside it, and as the list view already
+does; the right column holds the gaps list and the picked screen's panes, and is to hold the conversation with the
+agent. The list's rows, filters and search are those of the stories tab and are shared with it. It is shown only
+when there are stories, as the select was, so a flow with no story files keeps its whole width. One button folds
+and opens it, in the top corner of the drawing as the zoom buttons are in the bottom corner, so it rides the list's
+edge as the list slides and stays in the same corner of the drawing either way; the drawing starts below it.
+The picked story's name, 「경로 끄기」 and the legend sit beside that button rather than in the bar, so picking a story
+does not make the bar taller and push the list down. The strip of steps #131 put under the bar is gone: it showed
+the steps and the verdict between each two in order, which the line drawing now does itself.
+Alternatives compared:
+- Keeping the cut-down tree: nothing to build, but neighbouring steps keep landing on separate branches, and a
+  screen that is not a step keeps being drawn.
+- The select in the bar, widened and given a search box: the status and verdicts still do not show until it is
+  opened, and a native select cannot show chips on its options.
+- The list in the right column: it would push out the gaps list and the picked screen's panes it already holds.
+- Folding the list to a strip with its name written down it: Korean stands upright in vertical writing but the
+  count lies on its side, and the driver found the vertical name hard to read.
+- A button at the left end of the bar above the flow to open the folded list: the button that folded it sat at
+  the head of the list, so the place to press moved from one row to another with each fold.
+- Keeping the strip of steps in the bar: pressing a step there brought a far step of a long story into view, which
+  scrolling or zooming the drawing does as well, and the strip added a row to the bar each time a story was picked.
+Known limit: the line drawing shows no link from a step to screens outside the story; the flow, with the story
+turned off, still does.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
