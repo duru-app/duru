@@ -683,6 +683,16 @@ enter the task list, so they reach a coding agent only as the lines printed whil
 comments shows their number; pressing it opens the candidate's conversation. Once the candidate is accepted or
 discarded and leaves the list, its comments show under 「떨어져 나감」 of the stories tab with the candidate's name.
 
+**Comments on a step or a link of a story.** In the stories tab each step of the chosen story and each link between
+two of its steps has the same bubble and count, and so has each step box and each link of a story drawn in the flow;
+pressing one there opens the story in the list and puts the step or link in as the tag. A step is saved as `"part": {
+"kind": "step", "key": { "step", "screen" } }`, its number counted from 1 and its screen; a link as `"part": { "kind":
+"hop", "key": { "step", "from", "to" } }`, the number of the step it leaves and the screens it leaves and reaches,
+both with the story's ID in `target.story`. A step or link takes comments only; a status sent with one is refused with
+the reason. The comment stays while the story has that screen at that step, and shows under 「떨어져 나감」 of the stories
+tab, named with the step or link, once the story file has another screen there or is gone; while the story file cannot
+be read it stays under 「목록 밖 스토리 코멘트」.
+
 **Conversation.** For a screen or call the right pane holds only the conversation: every mark, comment and reply left
 on it, oldest first, open from the start and filling the pane, scrolling inside it when it is longer, with the form to
 write in at the bottom. Each mark and comment carries the tag of where it was left; a reply sits under its comment,
@@ -708,21 +718,26 @@ number only what carries that row as its tag, and pressing a row's number narrow
 reply saved in another window updates the numbers and dots without a reload.
 
 **While the review runs.** Each mark, comment or reply is printed on standard error the moment it is saved, as one
-JSON line: `{"duru":"mark"|"comment"|"reply","id":…,"target":{…},"status":…,"replyTo":…,"note":…,"author":…,"date":…}`,
-with no `status` for a comment or a reply and `replyTo` only on a reply. A comment or reply whose target has a `part`
-also carries `"where"`: for a test, `{"file","line","source","status","relation"}` with `relation` one of `tagged`,
+JSON line:
+`{"duru":"mark"|"comment"|"reply","id":…,"target":{…},"status":…,"replyTo":…,"note":…,"author":…,"date":…}`, with no
+`status` for a comment or a reply and `replyTo` only on a reply. A comment or reply whose target has a `part` also
+carries `"where"`: for a test, `{"file","line","source","status","relation"}` with `relation` one of `tagged`,
 `imported`, `passed` or `called`, and `detail` for a verdict line; for a condition or a link,
 `{"places":[{"from","file","line",…}]}` with each source line it is read from, `from` being `route` or the screen a
 link starts on, and for a condition the `guard` as written, `via` when it sits in a function the link calls,
-`roleGuardsKey` when `roleGuards` gave its roles, or `inherited` for a link that passes on the condition of the
-screen it starts on; or `null` when the part is no longer found. A
-failure message is not copied in; it is read from the result file named in `source`. A comment or reply on a
-`candidate` carries `"where": {"name","source","screens"}`: `screens` is the screen order, and `source` is
-`{"record","steps"}`, the visit record and its first and last step, with `stepRanges` giving the steps behind each
-screen, or `{"report","tests"}`, the result file and the titles of the tests that passed through that order. It is
-`null` once the candidate is no longer listed. A coding agent that launched the page can
-act on it without waiting for the end. Every open page receives the same save at once and shows it without a
-reload, so a mark left in one window appears in another.
+`roleGuardsKey` when `roleGuards` gave its roles, or `inherited` for a link that passes on the condition of the screen
+it starts on; or `null` when the part is no longer found. A failure message is not copied in; it is read from the
+result file named in `source`. A comment or reply on a `candidate` carries `"where": {"name","source","screens"}`:
+`screens` is the screen order, and `source` is `{"record","steps"}`, the visit record and its first and last step,
+with `stepRanges` giving the steps behind each screen, or `{"report","tests"}`, the result file and the titles of the
+tests that passed through that order. It is `null` once the candidate is no longer listed. A comment or reply on a
+`step` of a story carries `"where": {"file","screen"}`, the story file under `storiesDir` and the step's screen with
+its `componentFile`, `routeFile` and route `line` (`"onMap": false` instead when the screen is not on the map); on a
+`hop`, `{"file","from","to","verdict","ways","preconditions"}`, the two screens in the same shape, the link's verdict
+and where it is written as on the story, and the preconditions of the story that concern that link. It is `null` once
+the story no longer has that step or link, and while the story file or the map cannot be read or the map was built
+before stories. A coding agent that launched the page can act on it without waiting for the end. Every open page
+receives the same save at once and shows it without a reload, so a mark left in one window appears in another.
 
 **Replies.** `reply <config> <comment ID> "<text>"` answers a comment. The reply is a mark with no status, saved as
 its own new file next to the comment, with the comment's target, `replyTo` set to the comment's ID and the author
@@ -763,7 +778,9 @@ stories under `# Stories` with their steps, link verdicts and 「사전 조건�
 `comments on tests` lists each test a comment was left on, with its file and line, status, how it is linked and its
 result file, followed by those comments and their replies. Under an open screen, `comments on opening conditions`
 and `comments on incoming links` list each condition and link a comment was left on the same way, with the source
-lines each is read from.
+lines each is read from. Under an open story, `comments on steps` and `comments on links between steps` list each
+step and each link between two steps a comment was left on, with the screen's component file and route line, and for
+a link its verdict and where it is written.
 
 Each item ends with `empty tests`: one empty test per test format in the config, with the item's tags already in
 place (in the `tag` option for Playwright, in the title for the other formats) and held back so a copy run as it is does not pass (`test.fixme` for Playwright, `test.todo` for

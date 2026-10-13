@@ -107,6 +107,12 @@ test('the agent skill says what a comment on an opening condition or an incoming
   assert.match(SKILL, /`comments on opening conditions`[\s\S]*`comments on incoming links`/);
 });
 
+test('the agent skill says what a comment on a step or on the link between two steps of a story carries and what to do for it', () => {
+  assert.match(SKILL, /`"kind": "step"`[\s\S]*`step`[\s\S]*`screen`[\s\S]*`componentFile`[\s\S]*story's test/);
+  assert.match(SKILL, /`"kind": "hop"`[\s\S]*`from` and `to`[\s\S]*`verdict`[\s\S]*`preconditions`[\s\S]*duru defect/);
+  assert.match(SKILL, /`comments on steps` and\s+`comments on links between steps`/);
+});
+
 test('the agent skill says what a comment on a story candidate carries and that it is answered from the record or the test, outside the task list', () => {
   assert.match(SKILL, /`\{ "candidate": "<key>" \}`/);
   assert.match(SKILL, /`\{ "record", "steps" \}` with `stepRanges`[\s\S]*`\{ "report", "tests" \}`/);

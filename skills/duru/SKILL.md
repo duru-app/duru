@@ -193,6 +193,20 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    For both, read the line in the target project. If the app does not do what duru read there (a wrong role or
    setting, a link that is not there, a condition duru missed), tell the user it is a duru defect, naming the
    line and what duru read; otherwise answer with the line that shows the app does what duru read.
+   A comment can also be on one step of a story or on the link between two of its steps, with `target` set to
+   `{ "story": "<ID>", "part": … }`:
+   - `"kind": "step"`: `key` has `step`, the step's number counted from 1, and `screen`. `where` has `file`, the
+     story file under the config's `storiesDir`, and `screen` with its `componentFile`, `routeFile` and route
+     `line` (`"onMap": false` when the screen is not on the map). Add what the comment asks to check on that
+     screen to the story's test.
+   - `"kind": "hop"`: `key` has `step`, the number of the step the link leaves, and `from` and `to`, the two
+     screens. `where` has `file`, `from` and `to` in the same shape, the link's `verdict` and `ways` (where it is
+     written and its conditions) as the story shows them, and `preconditions`, the story's preconditions that
+     concern this link. Write a test that checks that move or those preconditions; if the link is not where duru
+     says or the verdict is wrong, tell the user it is a duru defect, naming the line.
+   `where` is `null` once the story no longer has that screen at that step, and while the story file or the map
+   cannot be read or the map is older than stories; then answer from the key, and tell the user what
+   `duru rebuild` reports about the story file or the map.
    A comment can also be on a story candidate, with `target` set to `{ "candidate": "<key>" }` and nothing else.
    The key is its screen IDs joined with ` > `, for a candidate from a visit record as for one from a Playwright
    trace. Its line carries `where` with the candidate's `name`, its `screens` in order and its
@@ -210,7 +224,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    answers, and under an open screen or call `comments on tests` lists each test a comment was left on, with its
    place, status, relation and result file, then those comments and their replies; under an open screen
    `comments on opening conditions` and `comments on incoming links` list each condition and link the same way,
-   with the source lines they are read from; act on them as above.
+   with the source lines they are read from; under an open story `comments on steps` and
+   `comments on links between steps` list each step and link with its screen files and the link's verdict; act
+   on them as above.
 3. **Write the tests.** In the target project, write tests for each screen, API call and story in the task list,
    following its marks and notes. The top of the list says how to tag a test so that it attaches to a screen or call
    (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. For Playwright,
