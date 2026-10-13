@@ -1723,6 +1723,23 @@ Alternatives compared:
 - The screen alone: a story may pass a screen twice, so the key would not name one step.
 - The number alone: a comment would move silently to another screen when the file is edited.
 
+**A comment on several targets or none is saved once with a `targets` list, and a comment on one target keeps
+`target`.**
+#231 asked that one comment carry several tags or none. A single file keeps one record for one question, so a reply
+answers it once and the agent answers it once; the page and the task list place it under each of its targets and count
+it once wherever it is listed. Keeping `target` for one tag leaves every mark saved before readable as it is, with no
+file moved, and a mark with one tag is still the only kind that takes a status, since a status is the verdict on one
+place. The file goes to the folder of its first target, so marks on a screen stay together in git, and a comment with
+no target goes to `general/`, beside `stories/`; which targets a mark is on is read from the file, never from its
+folder.
+Alternatives compared:
+- Always `targets`, also for one tag: one shape to read, but every mark already saved would need moving or a second
+  reader, and the status rule would turn into a length check on a list.
+- One file per target: each conversation would see a copy, a reply would land on one copy only, and the agent would
+  answer the same question several times.
+- Every comment with several targets in `general/`: the files of a screen would be split between two folders by the
+  number of tags.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

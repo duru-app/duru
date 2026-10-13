@@ -119,3 +119,9 @@ test('the agent skill says what a comment on a story candidate carries and that 
   assert.match(SKILL, /answer why that order came out,\s+citing the record and the steps behind each screen, or the test by its title/);
   assert.match(SKILL, /never appears in the task list/);
 });
+
+test('the agent skill says what a comment on several targets or none carries, that it is answered once, and where the task list puts it', () => {
+  assert.match(SKILL, /several targets or on none[\s\S]*`targets`[\s\S]*`wheres`[\s\S]*Answer it once/);
+  assert.match(SKILL, /empty `targets`[\s\S]*answer from the map, the task list and the tests/);
+  assert.match(SKILL, /`left on N targets:`[\s\S]*`# Comments with no target`/);
+});
