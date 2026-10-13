@@ -7646,7 +7646,7 @@ test('in a browser, the window asking why a pair is excluded names the pair, and
         await first.locator('button.discard').click();
         assert.equal(await p.locator(asked).evaluate((el) => el.matches(':modal')), true);
         assert.equal(await p.textContent(`${asked} h2`), '이 짝을 제외합니다');
-        assert.match((await p.textContent(`${asked} .pairs`))!, /테스트renders the help text.*Help\.spec\.js.*화면\/help Help/s);
+        assert.match((await p.textContent(`${asked} .subject`))!, /테스트renders the help text.*Help\.spec\.js.*화면\/help Help/s);
         assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '제외']);
         assert.equal(await askedFocused(p), true);
         assert.equal(await p.locator(`${asked} button.discard`).isDisabled(), true);
@@ -7682,7 +7682,7 @@ test('in a browser, Enter breaks the line of the reason and Ctrl+Enter sends it 
       })));
 });
 
-const asked = '#exclude';
+const asked = '#reason-ask';
 const why = `${asked} textarea`;
 const askedFocused = (p: Page) => p.evaluate((sel) => document.activeElement!.matches(sel), why);
 
@@ -8176,8 +8176,8 @@ test('in a browser, several pairs of one untagged test are discarded in one go w
         await p.check(`${bulk} input.pick-all`);
         await p.click(`${bulk} button.discard`);
         assert.equal(await p.textContent(`${asked} h2`), '짝 2개를 제외합니다');
-        assert.match((await p.textContent(`${asked} .pairs`))!, /lists the documents it is given.*DocumentTable/s);
-        assert.deepEqual(await p.locator(`${asked} .pairs li`).allTextContents(), ['/document/:tab(draft|done) DocumentList', '/home Home']);
+        assert.match((await p.textContent(`${asked} .subject`))!, /lists the documents it is given.*DocumentTable/s);
+        assert.deepEqual(await p.locator(`${asked} .subject li`).allTextContents(), ['/document/:tab(draft|done) DocumentList', '/home Home']);
         assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '제외 (2)']);
         assert.equal(await askedFocused(p), true);
         assert.equal(await p.locator(`${bulk} .bulk-error`).count(), 0);
@@ -8892,7 +8892,7 @@ test('in a browser, a bulk discard that fails midway leaves the window open with
         assert.match(message, /^저장하지 못했습니다: disk full\n저장한 짝 1: .*저장하지 못한 짝 1: \/home/s);
         assert.equal(await p.textContent(`${bulk} .bulk-error`), message);
         assert.equal(await p.textContent(`${asked} h2`), '이 짝을 제외합니다');
-        assert.deepEqual(await p.locator(`${asked} .pairs li`).allTextContents(), ['/home Home']);
+        assert.deepEqual(await p.locator(`${asked} .subject li`).allTextContents(), ['/home Home']);
         assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '제외']);
         assert.equal(await p.inputValue(why), 'only lists documents');
         assert.equal(await askedFocused(p), true);
@@ -9207,7 +9207,7 @@ test('in a browser, a browser test that sent a call is excluded and included in 
         assert.match((await sent.locator('button.discard').getAttribute('title'))!, /^이 테스트와 이 호출의 짝/);
 
         await sent.locator('button.discard').click();
-        assert.match((await p.textContent(`${asked} .pairs`))!, /테스트lists the documents.*calls\.spec\.ts.*호출GET:\/api\/v1\/document\/list$/s);
+        assert.match((await p.textContent(`${asked} .subject`))!, /테스트lists the documents.*calls\.spec\.ts.*호출GET:\/api\/v1\/document\/list$/s);
         await p.fill(why, 'only loads the page');
         await p.click(`${asked} button.discard`);
         await p.waitForSelector('#right-info .discarded');
@@ -9245,7 +9245,7 @@ test('in a browser, a chosen untagged browser test shows the screens it opened a
         await p.check(`${bulk} input.pick-all`);
         await p.click(`${bulk} button.discard`);
         assert.equal(await p.textContent(`${asked} h2`), '짝 2개를 제외합니다');
-        assert.match((await p.textContent(`${asked} .pairs`))!, /화면과 호출\/home Home.*GET:\/api\/v1\/document\/\{documentId\}$/s);
+        assert.match((await p.textContent(`${asked} .subject`))!, /화면과 호출\/home Home.*GET:\/api\/v1\/document\/\{documentId\}$/s);
         await p.click(`${asked} button.cancel`);
         await p.click(`${bulk} button.hand-over`);
         await p.waitForFunction(() => document.querySelectorAll('#center .pair .pair-state.wait').length === 2);
@@ -9451,9 +9451,10 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
         assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['이어짐', '판정 못 함', '판정 못 함']);
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
         assert.deepEqual(await p.locator('#right-info > *').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['판정 못 함 · 화면 없음', '사전 조건']);
-        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '받기', '버리기']);
+        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '받기']);
         assert.equal(await p.locator('#right-dock').isVisible(), false);
-        assert.deepEqual(await p.locator('#right .story-form label > span:first-child').allTextContents(), ['까닭']);
+        assert.deepEqual(await p.locator('#right .story-form button').allTextContents(), ['스토리로 받기', '고쳐서 받기', '버리기']);
+        assert.equal(await p.locator('#right .story-form :is(input, textarea)').count(), 0);
         assert.equal(await p.textContent('#right button.accept'), '스토리로 받기');
 
         await p.click('#right button.accept');
@@ -9559,31 +9560,110 @@ test('in a browser, accepting a candidate asks for an ID in a window only when t
   });
 });
 
-test('in a browser, discarding a candidate takes a reason, writes the discarded file, and moves on to the next candidate', { skip: browserMissing }, async () => {
+async function discardCandidate(p: Page, reason: string) {
+  await p.click('#right button.discard');
+  await p.fill(why, reason);
+  await p.click(`${asked} button.discard`);
+}
+
+test('in a browser, discarding a candidate asks for a reason in the same window as excluding a pair, writes the discarded file, and moves on to the next candidate', { skip: browserMissing }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("open-help")');
-        assert.equal(await p.isDisabled('#right button.discard'), true);
+        assert.equal(await p.locator(asked).isVisible(), false);
+        await p.click('#right button.discard');
+        assert.equal(await p.locator(asked).evaluate((el) => el.matches(':modal')), true);
+        assert.equal(await p.textContent(`${asked} h2`), '이 후보를 버립니다');
+        assert.match((await p.textContent(`${asked} .subject`))!, /^후보open-help.*example-visits\/open-help\.json화면 순서/s);
+        assert.deepEqual(await p.locator(`${asked} .subject ol li`).allTextContents(), ['/signin SignIn', '/home Home', '/beta/inbox', '/help Help']);
+        assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '버리기']);
+        assert.equal(await p.textContent(`${asked} .hint`), 'Ctrl+Enter 로 버리기');
+        assert.equal(await p.getAttribute(why, 'placeholder'), '버리는 까닭');
+        assert.equal(await askedFocused(p), true);
+        assert.equal(await p.locator(`${asked} button.discard`).isDisabled(), true);
+        await p.fill(why, '  \n ');
+        assert.equal(await p.locator(`${asked} button.discard`).isDisabled(), true);
+        await p.press(why, 'Control+Enter');
+        assert.equal(await p.locator(asked).isVisible(), true);
+
+        await p.press(why, 'Escape');
+        assert.equal(await p.locator(asked).isVisible(), false);
+        assert.equal(await p.evaluate(() => document.activeElement!.className), 'discard');
         assert.ok(!fs.existsSync(path.join(config.storiesDir, 'discarded')));
 
-        await p.fill('#discard-reason', '베타 화면');
         await p.click('#right button.discard');
+        assert.equal(await p.inputValue(why), '');
+        await p.keyboard.type('베타 화면');
+        await p.keyboard.press('Enter');
+        await p.keyboard.type('아직 열지 않는다 ');
+        await p.keyboard.press('Control+Enter');
         await p.waitForSelector('#candidate-list li:only-child');
+        assert.equal(await p.locator(asked).isVisible(), false);
         assert.equal(await p.textContent('#candidate-list li.selected .name > span:first-child'), 'publish-document');
         assert.equal(await p.textContent('#center h3'), 'publish-document');
-        assert.equal(await p.inputValue('#discard-reason'), '');
         const [file] = fs.readdirSync(path.join(config.storiesDir, 'discarded'));
         const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'discarded', file), 'utf8'));
-        assert.deepEqual([saved.name, saved.reason, saved.author], ['open-help', '베타 화면', 'reviewer']);
+        assert.deepEqual([saved.name, saved.reason, saved.author], ['open-help', '베타 화면\n아직 열지 않는다', 'reviewer']);
 
-        await p.fill('#discard-reason', '중복');
-        await p.click('#right button.discard');
+        await discardCandidate(p, '중복');
         await p.waitForSelector('#candidate-list', { state: 'detached' });
         assert.match((await p.textContent('#left'))!, /후보 0/);
         assert.equal(await p.locator('#story-list li.selected').count(), 1);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a candidate discard that fails to save leaves the window open with its reason and the error, and saves when sent again', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        const refuse = (route: Route) => route.fulfill({ status: 500, body: 'disk full' });
+        await p.route('**/api/candidates/discard', refuse);
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("open-help")');
+        await discardCandidate(p, '베타 화면');
+        await p.locator(`${asked} .error`).waitFor();
+        assert.deepEqual(errors.splice(0), SAVE_REFUSED);
+        assert.equal(await p.textContent(`${asked} .error`), '저장하지 못했습니다: disk full');
+        assert.equal(await p.inputValue(why), '베타 화면');
+        assert.equal(await askedFocused(p), true);
+        assert.equal(await p.locator(`${asked} button.discard`).isDisabled(), false);
+        assert.equal(await p.locator('#right .story-error').count(), 0);
+        assert.equal(await p.textContent('#candidate-list li.selected .name > span:first-child'), 'open-help');
+
+        await p.unroute('**/api/candidates/discard', refuse);
+        await p.press(why, 'Control+Enter');
+        await p.waitForSelector('#candidate-list li:only-child');
+        assert.equal(await p.locator(asked).isVisible(), false);
+        assert.equal(fs.readdirSync(path.join(config.storiesDir, 'discarded')).length, 1);
+
+        await p.click('#right button.discard');
+        assert.equal(await p.locator(`${asked} .error`).isVisible(), false);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a candidate discarded in another tab and read again while the window is open does not shift which candidate comes next', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("publish-document")');
+        await p.click('#right button.discard');
+        assert.equal((await postJson(base, '/api/candidates/discard', { key: HELP_RECORD, reason: '베타 화면' })).status, 201);
+        assert.equal((await postMark(base, { target: { node: '/lab#Lab' }, status: 'missing', note: '' })).status, 201);
+        await p.waitForSelector('#candidate-list li:has-text("open-help")', { state: 'detached' });
+        await p.fill(why, '중복');
+        await p.click(`${asked} button.discard`);
+        await p.waitForSelector('#candidate-list li:has-text("publish-document")', { state: 'detached' });
+        assert.equal(await p.textContent('#candidate-list li.selected .name > span:first-child'), 'opens home and then help');
       }),
     ),
   );
@@ -9617,8 +9697,7 @@ test('in a browser, the tests with a trace that passed two screens or more are c
         assert.deepEqual([saved.screens, saved.source], [['/home#Home', '/help#Help'], { report: 'results/playwright-traced/visits.json', tests: titles }]);
 
         await p.click('#candidate-list li:has-text("moves to the drafts")');
-        await p.fill('#discard-reason', '초안 탭만 연다');
-        await p.click('#right button.discard');
+        await discardCandidate(p, '초안 탭만 연다');
         await p.waitForSelector('#candidate-list li:has-text("moves to the drafts")', { state: 'detached' });
         assert.equal(fs.readdirSync(path.join(config.storiesDir, 'discarded')).length, 1);
         rebuild(copy);
@@ -9672,7 +9751,6 @@ test('in a browser, the whole 받기, 버리기 and 이름 · 메모 form stays 
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("open-help")');
-        await p.fill('#discard-reason', '베타 화면');
         const writes = holdRequests(p, '**/api/{candidates/*,stories/edit}');
         await writes.done;
         await p.click('#right button.accept');

@@ -383,19 +383,20 @@
   .bulk-bar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 8px 0; }
   .bulk-bar button:disabled { cursor: default; opacity: .5; }
   .bulk-bar .bulk-error { flex: 1 1 100%; margin: 0; font-size: 12px; white-space: pre-line; }
-  :is(#exclude, #accept-ask) { width: min(520px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
-  :is(#exclude, #accept-ask)::backdrop { background: rgba(0, 0, 0, .35); }
-  :is(#exclude, #accept-ask) h2 { margin: 0 0 10px; font-size: 15px; color: var(--text); }
-  #exclude .pairs { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 10px; margin-bottom: 12px; font-size: 13px; overflow-wrap: anywhere; }
-  #exclude .pairs .label { font-size: 12px; font-weight: 600; color: var(--muted); }
-  #exclude .pairs ul { max-height: 30vh; overflow: auto; }
-  #exclude textarea { min-height: 84px; max-height: 40vh; }
-  :is(#exclude, #accept-ask) .error { margin: 8px 0 0; font-size: 12px; white-space: pre-line; }
-  :is(#exclude, #accept-ask) .actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
-  #exclude .actions .hint { margin-right: auto; font-size: 12px; }
-  :is(#exclude, #accept-ask) button { padding: 4px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
-  #exclude button.discard { border-color: var(--fail); color: var(--fail); font-weight: 600; }
-  :is(#exclude, #accept-ask) button:disabled { cursor: default; opacity: .5; }
+  :is(#reason-ask, #accept-ask) { width: min(520px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
+  :is(#reason-ask, #accept-ask)::backdrop { background: rgba(0, 0, 0, .35); }
+  :is(#reason-ask, #accept-ask) h2 { margin: 0 0 10px; font-size: 15px; color: var(--text); }
+  #reason-ask .subject { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 10px; margin-bottom: 12px; font-size: 13px; overflow-wrap: anywhere; }
+  #reason-ask .subject .label { font-size: 12px; font-weight: 600; color: var(--muted); }
+  #reason-ask .subject :is(ul, ol) { max-height: 30vh; overflow: auto; }
+  #reason-ask .subject ol { margin: 0; padding-left: 20px; }
+  #reason-ask textarea { min-height: 84px; max-height: 40vh; }
+  :is(#reason-ask, #accept-ask) .error { margin: 8px 0 0; font-size: 12px; white-space: pre-line; }
+  :is(#reason-ask, #accept-ask) .actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  #reason-ask .actions .hint { margin-right: auto; font-size: 12px; }
+  :is(#reason-ask, #accept-ask) button { padding: 4px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+  #reason-ask button.discard { border-color: var(--fail); color: var(--fail); font-weight: 600; }
+  :is(#reason-ask, #accept-ask) button:disabled { cursor: default; opacity: .5; }
   #accept-ask .candidate { margin: 0 0 12px; font-size: 13px; overflow-wrap: anywhere; }
   #accept-ask .field + .field { margin-top: 8px; }
   #accept-ask .actions { justify-content: flex-end; }
@@ -442,13 +443,13 @@
   <div class="sash" id="sash-right"></div>
 </main>
 <p id="failed" class="error" hidden></p>
-<dialog id="exclude" closedby="none" aria-labelledby="exclude-title">
-  <h2 id="exclude-title"></h2>
-  <div class="pairs"></div>
-  <textarea rows="4" placeholder="제외하는 까닭" aria-label="제외하는 까닭"></textarea>
+<dialog id="reason-ask" closedby="none" aria-labelledby="reason-ask-title">
+  <h2 id="reason-ask-title"></h2>
+  <div class="subject"></div>
+  <textarea rows="4"></textarea>
   <p class="error" hidden></p>
   <div class="actions">
-    <span class="muted hint">Ctrl+Enter 로 제외</span>
+    <span class="muted hint"></span>
     <button class="cancel">취소</button>
     <button class="discard"></button>
   </div>
@@ -496,7 +497,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateDraft: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -627,7 +628,6 @@ function selectStory(id) {
 function selectCandidate(key) {
   if (key !== state.candidate) state.storyOpen.clear();
   state.candidate = key;
-  state.candidateDraft = null;
   state.error = null;
   state.storyError = null;
   state.judgmentError = null;
@@ -1106,82 +1106,100 @@ function renderKeepingJudgeRowFocus() {
   if (place) judgeRowControl(place.key, place.selector)?.focus();
 }
 
-const excludeDialog = document.getElementById('exclude');
-const excludePart = (selector) => excludeDialog.querySelector(selector);
-let excludeJob = null;
+const reasonDialog = document.getElementById('reason-ask');
+const reasonPart = (selector) => reasonDialog.querySelector(selector);
+let reasonJob = null;
 
-function syncExcludeConfirm() {
-  excludePart('button.discard').disabled = excludeJob.busy || !excludePart('textarea').value.trim();
+function syncReasonConfirm() {
+  reasonPart('button.discard').disabled = reasonJob.busy || !reasonPart('textarea').value.trim();
 }
 
-function drawExclude() {
-  const { test, nodeIds, busy, error } = excludeJob;
-  const ids = nodeIds();
-  const many = ids.length > 1;
-  excludePart('h2').textContent = many ? `짝 ${ids.length}개를 제외합니다` : '이 짝을 제외합니다';
-  fill(excludePart('.pairs'),
-    h('span', { class: 'label' }, '테스트'),
-    h('div', {}, test.title, ' ', h('span', { class: 'muted mono' }, testPlace(test))),
-    h('span', { class: 'label' }, ['화면', '호출'].filter((word) => ids.some((id) => nodeWord(id) === word)).join('과 ')),
-    h('ul', { class: 'plain' }, ids.map((id) => h('li', {}, callOf(id) ? h('span', { class: 'mono' }, id) : [screenLabel(id), ' ', h('span', { class: 'muted' }, screenOf(id)?.component)]))));
-  excludePart('textarea').readOnly = busy;
-  excludePart('button.cancel').disabled = busy;
-  excludePart('button.discard').textContent = many ? `제외 (${ids.length})` : '제외';
-  syncExcludeConfirm();
-  excludePart('.error').textContent = error ?? '';
-  excludePart('.error').hidden = !error;
+function drawReason() {
+  const { describe, busy, error } = reasonJob;
+  const { title, subject, confirm } = describe();
+  reasonPart('h2').textContent = title;
+  fill(reasonPart('.subject'), ...subject);
+  reasonPart('textarea').readOnly = busy;
+  reasonPart('button.cancel').disabled = busy;
+  reasonPart('button.discard').textContent = confirm;
+  syncReasonConfirm();
+  reasonPart('.error').textContent = error ?? '';
+  reasonPart('.error').hidden = !error;
 }
 
-function askExclude(job) {
-  excludeJob = { ...job, busy: false, error: null };
-  excludePart('textarea').value = '';
-  drawExclude();
-  excludeDialog.showModal();
-  excludePart('textarea').focus();
+function askReason(job) {
+  reasonJob = { ...job, busy: false, error: null };
+  reasonPart('textarea').value = '';
+  reasonPart('textarea').placeholder = job.reasonLabel;
+  reasonPart('textarea').setAttribute('aria-label', job.reasonLabel);
+  reasonPart('.hint').textContent = `Ctrl+Enter 로 ${job.verb}`;
+  drawReason();
+  reasonDialog.showModal();
+  reasonPart('textarea').focus();
 }
 
-function closeExclude() {
-  excludeJob = null;
-  excludeDialog.close();
+function closeReason() {
+  reasonJob = null;
+  reasonDialog.close();
   // 창을 연 단추가 그사이 다시 그려졌으면 초점이 닫힌 창 안에 남는다.
-  if (excludeDialog.contains(document.activeElement)) document.activeElement.blur();
+  if (reasonDialog.contains(document.activeElement)) document.activeElement.blur();
 }
 
-async function confirmExclude() {
-  const job = excludeJob;
+async function confirmReason() {
+  const job = reasonJob;
   Object.assign(job, { busy: true, error: null });
-  drawExclude();
-  const error = await job.save(excludePart('textarea').value.trim());
+  drawReason();
+  const error = await job.save(reasonPart('textarea').value.trim());
   if (error) {
     Object.assign(job, { busy: false, error });
-    drawExclude();
-    return excludePart('textarea').focus();
+    drawReason();
+    return reasonPart('textarea').focus();
   }
-  closeExclude();
+  closeReason();
   job.done();
 }
 
-excludePart('textarea').addEventListener('input', syncExcludeConfirm);
-excludePart('button.discard').addEventListener('click', confirmExclude);
-excludePart('button.cancel').addEventListener('click', () => {
-  const { refocus } = excludeJob;
-  closeExclude();
+reasonPart('textarea').addEventListener('input', syncReasonConfirm);
+reasonPart('button.discard').addEventListener('click', confirmReason);
+reasonPart('button.cancel').addEventListener('click', () => {
+  const { refocus } = reasonJob;
+  closeReason();
   refocus();
 });
 // Ctrl+Enter 와 Escape 는 창의 단추를 대신 누르므로, 저장하는 동안에는 단추와 똑같이 막힌다.
-excludeDialog.addEventListener('keydown', (e) => {
+reasonDialog.addEventListener('keydown', (e) => {
   const send = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
   if (e.key !== 'Escape' && !send) return;
   e.preventDefault();
   if (e.isComposing || e.repeat) return;
-  excludePart(send ? 'button.discard' : 'button.cancel').click();
+  reasonPart(send ? 'button.discard' : 'button.cancel').click();
 });
+
+function askExclude(test, nodeIds, job) {
+  askReason({
+    verb: '제외',
+    reasonLabel: '제외하는 까닭',
+    describe: () => {
+      const ids = nodeIds();
+      const many = ids.length > 1;
+      return {
+        title: many ? `짝 ${ids.length}개를 제외합니다` : '이 짝을 제외합니다',
+        subject: [
+          h('span', { class: 'label' }, '테스트'),
+          h('div', {}, test.title, ' ', h('span', { class: 'muted mono' }, testPlace(test))),
+          h('span', { class: 'label' }, ['화면', '호출'].filter((word) => ids.some((id) => nodeWord(id) === word)).join('과 ')),
+          h('ul', { class: 'plain' }, ids.map((id) => h('li', {}, callOf(id) ? h('span', { class: 'mono' }, id) : [screenLabel(id), ' ', h('span', { class: 'muted' }, screenOf(id)?.component)]))),
+        ],
+        confirm: many ? `제외 (${ids.length})` : '제외',
+      };
+    },
+    ...job,
+  });
+}
 
 function askExcludePair(t, node, key) {
   if (judgmentsInFlight.has(key)) return;
-  askExclude({
-    test: t,
-    nodeIds: () => [node],
+  askExclude(t, () => [node], {
     save: async (reason) => {
       const { failure, reloadError } = await postAndReload({ test: t.ref, node, kind: 'discard', reason }, key);
       if (!failure) state.judgmentError = reloadError ? { key, message: reloadError } : null;
@@ -1939,9 +1957,7 @@ const bulkButtonOff = (count) => state.bulkBusy || state.ending || !count;
 const pickedPairs = (t, bulk) => pairsOf(t).filter((p) => isPickable(p) && bulk.picked.has(p.id));
 
 function askExcludePicked(t, bulk) {
-  askExclude({
-    test: t,
-    nodeIds: () => pickedPairs(t, bulk).map((p) => p.id),
+  askExclude(t, () => pickedPairs(t, bulk).map((p) => p.id), {
     save: async (reason) => {
       const failure = await saveBulk(t, bulk, 'discard', reason);
       if (failure) render();
@@ -2071,17 +2087,12 @@ const field = (name, control, ...rest) => h('label', { class: 'field' }, h('span
 const storyErrorLine = () => (state.storyError ? h('p', { class: 'error story-error' }, state.storyError) : null);
 
 function candidateActions(c) {
-  const d = (state.candidateDraft ??= { reason: '' });
-  const canDiscard = () => Boolean(d.reason.trim());
   return [
     h('h2', {}, '받기'),
     storyForm(h('div', { class: 'accepts' },
       h('button', { class: 'accept', title: '이 화면 순서로 스토리 파일을 씁니다.', onclick: acceptChosen }, '스토리로 받기'),
-      h('button', { class: 'accept-edited', title: 'ID 와 이름을 고친 뒤에 받습니다.', onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기'))),
-    h('h2', {}, '버리기'),
-    storyForm(
-      field('까닭', h('input', { type: 'text', id: 'discard-reason', value: d.reason, oninput: (e) => { d.reason = e.target.value; syncButton(e, canDiscard); } })),
-      h('button', { class: 'discard', disabled: !canDiscard(), title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다.', onclick: discardChosen }, '버리기')),
+      h('button', { class: 'accept-edited', title: 'ID 와 이름을 고친 뒤에 받습니다.', onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기')),
+      h('button', { class: 'discard', title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다. 까닭을 적어야 합니다', onclick: () => askDiscard(c) }, '버리기')),
     storyErrorLine(),
   ];
 }
@@ -2124,7 +2135,6 @@ const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === i
 async function acceptAs(c, id, name) {
   if (!(await writeStories('/api/candidates/accept', { key: c.key, id, name }))) return false;
   state.candidate = null;
-  state.candidateDraft = null;
   state.story = id;
   state.storyDraft = null;
   state.error = null;
@@ -2202,15 +2212,32 @@ acceptDialog.addEventListener('keydown', (e) => {
   acceptPart(send ? 'button.accept' : 'button.cancel').click();
 });
 
-async function discardChosen() {
-  const c = candidateOf();
-  if (!c) return;
-  const at = state.data.candidates.list.indexOf(c);
-  if (!(await writeStories('/api/candidates/discard', { key: c.key, reason: state.candidateDraft.reason }))) return;
-  const { list } = state.data.candidates;
-  state.candidate = (list[at] ?? list[at - 1])?.key ?? null;
-  state.candidateDraft = null;
-  render();
+function askDiscard(c) {
+  let at = -1;
+  askReason({
+    verb: '버리기',
+    reasonLabel: '버리는 까닭',
+    describe: () => ({
+      title: '이 후보를 버립니다',
+      subject: [
+        h('span', { class: 'label' }, '후보'),
+        h('div', {}, c.name, ' ', h('span', { class: 'muted mono' }, c.source.record ?? c.source.report)),
+        h('span', { class: 'label' }, '화면 순서'),
+        h('ol', {}, c.steps.map((s) => h('li', {}, s.onMap ? [screenLabel(s.screen), ' ', h('span', { class: 'muted' }, screenOf(s.screen)?.component)] : h('span', { class: 'mono' }, s.screen)))),
+      ],
+      confirm: '버리기',
+    }),
+    save: async (reason) => {
+      at = state.data.candidates.list.findIndex((x) => x.key === c.key);
+      return (await writeStories('/api/candidates/discard', { key: c.key, reason })) ? null : takeStoryError();
+    },
+    done: () => {
+      const { list } = state.data.candidates;
+      state.candidate = (list[at] ?? list[at - 1])?.key ?? null;
+      render();
+    },
+    refocus: () => document.querySelector('#right button.discard')?.focus(),
+  });
 }
 
 async function saveStoryEdit() {

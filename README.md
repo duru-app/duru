@@ -591,13 +591,17 @@ A changed screen opens with a line saying what changed; its call table has a col
 `baselineMap` that cannot be read stops `review` before the page is served.
 
 **Untagged tests.** An untagged test linked to a screen by its imports or its trace has 「제외」, to discard the
-pair with a reason, and 「포함」, to hand it over so a coding agent adds the tag. A handed-over pair waits under
-「태그 대기」 until the tag is in the results. The 「태그 없음」 tab lists every untagged test and can judge several
-pairs at once.
+pair with a reason asked for in a window, and 「포함」, to hand it over so a coding agent adds the tag. A handed-over
+pair waits under 「태그 대기」 until the tag is in the results. The 「태그 없음」 tab lists every untagged test and can
+judge several pairs at once.
 
 **Stories.** The stories tab lists the stories with their status and link verdicts; choosing one shows its steps,
 the link between each two and its 「사전 조건」, and lets its name and memo be changed. Candidates are listed below
-with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」. 「새 스토리」 puts a story together from screens of the map.
+with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
+screen order, and the candidate is discarded only once a reason is written there. 「버리기」 in the window or Ctrl+Enter
+saves it and moves on to the next candidate; 「취소」 or Escape closes the window, and a click outside it does not. If
+the discard is not saved, the window stays open with the reason and the error. 「새 스토리」 puts a story together from
+screens of the map.
 
 **Marks.** A mark targets a screen, a call, one depth of either, one value of a call's option, or a story, and
 records a status (`needs-more`, `missing`, `fine`), a note, the author and the date. A mark left with text and no
