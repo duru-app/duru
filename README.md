@@ -558,9 +558,18 @@ test. Pressing a screen keeps strong only the paths through it, marks the screen
 branches, and shows the list view's middle and right panes for it beside the drawing; 「선택 해제」, Escape or a click
 on an empty spot of the drawing lets it go. The zoom control at the bottom-left corner of the drawing fits, shrinks
 or grows it; a percent typed into it takes effect on Enter or on clicking elsewhere, a level below 30% or above 150%
-becomes the nearer end, and Escape or anything not a number puts the level back. The 「스토리」 picker
-draws one story's path: only its screens and the screens above them stay, each with its step numbers, and a strip
-of its steps runs under the bar.
+becomes the nearer end, and Escape or anything not a number puts the level back.
+
+**Stories in the flow.** When there are story files, the stories are listed left of the drawing with the same rows
+and filters as the stories tab, and a box above them finds a story by name or ID. 「스토리 N ◀」 in the top corner of the
+drawing slides the list shut, and the same button, then 「스토리 N ▶」, opens it again. Pressing a story draws only its
+steps, left to right on one line, each a box like the flow's with its step number, so a screen the story passes
+twice is drawn twice; the story's name, 「경로 끄기」 and 「i」 sit beside 「스토리 N ◀」. The line between two steps shows how
+they are joined: solid for a link with no condition, blue dashed for a link under a condition, green dotted for a
+move written in `moves`, red dashed where the map has no link, and orange dotted where a step is not on the map or a
+link's address could not be read; the 「i」 beside 「경로 끄기」 shows these. Where the map has no link, a note below says
+which screens the step before does lead to. A story wider than the pane scrolls sideways. Pressing the story again,
+or 「경로 끄기」, brings back the whole flow where it was.
 
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
@@ -593,11 +602,12 @@ pressing one makes the kind a case there, with its tests by depth, and pressing 
 shows the same middle and right panes for a picked screen.
 
 **Pane widths.** The edge on either side of the middle pane, in the list and beside a picked screen in the flow,
-can be dragged to widen or narrow the panes; the line lights up when the mouse rests on it. The drawing is laid out
-again for its new width, and the app in the middle pane is shown at the percent that fits the pane's new width
+and the right edge of the flow's story list can be dragged to widen or narrow the panes; the line lights up when the
+mouse rests on it. The drawing is laid out again for its new width, and the app in the middle pane is shown at the
+percent that fits the pane's new width
 when 「배율」 is 「칸에 맞춤」 (with the width at 「칸에 맞춤」, the app itself gets the new width). No pane can be dragged narrower than its contents need, and when the window gets too narrow
-for the middle pane, the side panes give back the width they were dragged to. The widths last until the page is
-loaded again.
+for the middle pane, the side panes give back the width they were dragged to. The widths, and whether the story
+list is folded, last until the page is loaded again.
 
 **Changes since a baseline.** With `baselineMap` set, the header names the baseline by its folder and path
 (「비교 기준」). A screen in the list carries 「생김」, 「조건 바뀜」 (the conditions before and after on hover) or
@@ -612,7 +622,8 @@ pair with a reason asked for in a window, and 「포함」, to hand it over so a
 pair waits under 「태그 대기」 until the tag is in the results. The 「태그 없음」 tab lists every untagged test and can
 judge several pairs at once.
 
-**Stories.** The stories tab lists the stories with their status and link verdicts; choosing one shows its steps,
+**Stories.** The stories tab lists the stories with their status and link verdicts, with the same search box and
+filters as the flow's story list (what is typed or ticked in one shows in the other); choosing one shows its steps,
 the link between each two and its 「사전 조건」, and lets its name and memo be changed. Candidates are listed below
 with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the address of a chosen candidate holds its screen order, as
 `#stories?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its

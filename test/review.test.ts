@@ -31,7 +31,7 @@ type Guard = { guard: string; kinds: string[]; roles?: string[] | null; settings
 type FlowNode = { id: string; imported?: number; label: string; component: string; counts?: object; children: FlowNode[]; calls: { label: string; server?: object; counts?: object }[]; jumps: { to: string; label: string; guards: Guard[] }[]; guards: Guard[] | null };
 type ScreenLink = { from: string; file: string; line: number; guards: Guard[]; fromKinds: string[] };
 type MapScreen = { id: string; path: string; component: string; componentFile?: string; dead?: boolean; routeGuards: string[]; access: { links: ScreenLink[] }; links?: object[]; settingReads?: object[]; apiCalls: object[] };
-type Story = { id: string; name: string; screens: string[]; links: { verdict: string }[]; broken: boolean; detached: boolean; status: string; reach: Reach[] };
+type Story = { id: string; name: string; screens: string[]; links: { verdict: string }[]; broken: boolean; detached: boolean; unjudged: boolean; status: string; reach: Reach[] };
 type Mark = { key: string; target: unknown; current: { status: string; note: string; author: string } };
 type AppData = { url: string; signedOutUrl: string; roles: { role: string; account: string; error: string | null; url: string }[]; settings: { overrides: object[] } };
 type PageData = {
@@ -61,6 +61,13 @@ declare let drawnGrid: { count: number; cellW: number; per: number } | null;
 declare function load(): Promise<void>;
 declare function render(): void;
 declare function renderFlow(): void;
+declare const STORY_STATUS: Record<string, { label: string }>;
+declare function pathStories(): Story[];
+declare function storyTrees(flow: object, st: Story): { roots: object[]; hidden: Map<string, number> };
+declare function canvas(roots: object[], options: { story: object }): { el: HTMLElement; measureWidths(): void; fit(width: number): void; measureHeights(): void; place(): unknown };
+declare function flowInnerWidth(flow: HTMLElement): number;
+declare function cellsPerRow(count: number, cellW: number, width: number): number;
+declare function showBox(key: string): void;
 declare function hasUnsavedMark(): boolean;
 declare function pathValueKey(id: string, role: string | null): string;
 declare function updateSettings(change: (list: object[]) => object[] | undefined): void;
@@ -3645,7 +3652,7 @@ const screenBox = async (p: Page, id: string) => {
   return p.locator('#flow .box.screen').nth(i);
 };
 const boxCount = async (p: Page) => p.locator('#flow .box.screen').count();
-const flowButton = (p: Page, label: string) => p.locator('.flowbar button', { hasText: label });
+const flowButton = (p: Page, label: string) => p.locator(':is(.flowbar, .flow-head) button', { hasText: label });
 const filterButton = (p: Page, key: string) => p.locator(`.flowbar .flow-filters button[data-filter="${key}"]`);
 const pickedBoxes = (p: Page) => p.$$eval('#flow .box.screen.picked', (els: HTMLElement[]) => els.map((e) => e.dataset.key));
 const boxesWith = (p: Page, cls: string) => p.$$eval(`#flow .box.screen.${cls}`, (els: HTMLElement[]) => els.map((e) => e.dataset.key!).sort());
@@ -4636,7 +4643,7 @@ test('in a browser, a percent typed into the zoom control applies on Enter or on
   );
 });
 
-test('in a browser, pressing a filter, a screen box, 「선택 해제」 or the story picker right after typing a percent does what it does and applies the percent', { skip: browserMissing }, async () => {
+test('in a browser, pressing a filter, a screen box, 「선택 해제」 or a row of the story list right after typing a percent does what it does and applies the percent', { skip: browserMissing }, async () => {
   await withPathStories({ walk: WALK }, async (p) => {
     const level = p.locator('#flow-zoom .zoom-level');
     const typed = async (text: string) => {
@@ -4661,8 +4668,8 @@ test('in a browser, pressing a filter, a screen box, 「선택 해제」 or the 
     assert.deepEqual(await zoom(), [0.6, '60%']);
 
     await typed('90');
-    await p.locator('.story-pick select').click();
-    assert.equal(await p.evaluate(() => document.activeElement === document.querySelector('.story-pick select')), true, 'the picker that was pressed stays on the page and has the focus');
+    await storyRow(p, 'walk').click();
+    assert.equal(await flowPlace(p), '#flow?story=walk', 'the story is picked');
     assert.deepEqual(await zoom(), [0.9, '90%']);
   });
 });
@@ -5272,26 +5279,48 @@ async function withPathStories(stories: Record<string, string[]>, fn: (p: Page, 
 }
 
 const flowPlace = (p: Page) => p.evaluate(() => decodeURIComponent(location.hash));
-const pickPathStory = (p: Page, id: string) => p.selectOption('.story-pick select', id);
-const drawnScreens = (p: Page) => p.$$eval('#flow .box.screen', (els) => els.map((e) => e.dataset.key).sort());
+const storyRow = (p: Page, id: string) => p.locator(`#flow-story-list li[data-story="${id}"]`);
+const pickPathStory = async (p: Page, id: string) => {
+  await storyRow(p, id).click();
+  await p.waitForFunction((id) => state.storyPath?.id === id, id);
+};
+const HOME_TARGETS = ['/document/:tab(draft|done)', '/document/:id', '/admin/member', '/admin/group', '/lab', '/admin/audit', '/admin/report'];
+const HOME_GOES_TO = `2 → 3 단계: /home 에서 /help 로 가는 링크가 맵에 없습니다. /home 에서 갈 수 있는 화면: ${HOME_TARGETS.join(', ')}`;
+const drawnScreens = (p: Page) => p.$$eval('#flow .box.screen', (els) => [...new Set(els.map((e) => e.dataset.key))].sort());
+const lineSteps = (p: Page) => p.$$eval('#flow .story-line [data-step]', (els: HTMLElement[]) => els.map((e) => [e.querySelector('.story-badge')!.textContent, e.dataset.screen]));
+const lineHops = (p: Page) => p.$$eval('#flow .story-line .story-hop', (els) => els.map((e) => [e.querySelector('path')!.getAttribute('class'), e.textContent]));
+const hopLook = (p: Page, i: number) => p.$eval(`#flow .story-hop[data-hop="${i}"] path`, (e) => { const c = getComputedStyle(e); return [c.stroke, c.strokeWidth, c.strokeDasharray]; });
+const cssColor = (p: Page, name: string) => p.evaluate((name) => getComputedStyle(document.body).getPropertyValue(name).trim(), name);
 const pathMarks = (p: Page, cls: string) => p.$$eval(`#flow .canvas > .${cls}`, (els) => els.map((e) => [e.dataset.at, e.textContent, ...[...e.classList].filter((c) => /^l-/.test(c))]));
 const pillMarks = (p: Page, cls: string) => p.$$eval(`#flow .box.screen .${cls}`, (els) => els.map((e) => [e.closest<HTMLElement>('.box')!.dataset.key, e.textContent, ...[...e.classList].filter((c) => /^(l-.*|exit|entry)$/.test(c))]));
 const pathEdges = (p: Page) => p.$$eval('#flow .canvas svg path.story-edge', (els) => els.map((e) => [e.dataset.from, e.dataset.to, [...e.classList].find((c) => c.startsWith('l-'))]).sort());
-const ringed = (p: Page) => p.$$eval('#flow .box.story-ring', (els) => els.map((e) => e.dataset.key));
-const stripCurrent = (p: Page) => p.$$eval('.story-strip .story-step.current .story-badge', (els) => els.map((e) => e.textContent));
+const ringed = (p: Page) => p.$$eval('#flow .box.story-ring', (els: HTMLElement[]) => els.map((e) => [e.dataset.step, e.dataset.screen]));
+const ringBadge = (p: Page) => p.$$eval('#flow .story-line .story-ring .story-badge', (els) => els.map((e) => e.textContent));
 const inView = (p: Page, key: string) => p.evaluate((k) => {
   const flow = document.getElementById('flow')!;
   const r = flow.querySelector(`.box.screen[data-key="${CSS.escape(k)}"]`)!.getBoundingClientRect();
   const view = flow.getBoundingClientRect();
   return r.top >= view.top && r.bottom <= view.bottom && r.left >= view.left && r.right <= view.right;
 }, key);
+// No control on the page lays a story over the whole flow, so the test draws it.
+const drawOverlay = (p: Page, id: string) => p.evaluate((id) => {
+  const st = pathStories().find((s) => s.id === id)!;
+  const path = storyTrees(state.data.flow, st);
+  const flow = document.getElementById('flow')!;
+  const c = canvas(path.roots, { story: { st, hidden: path.hidden, ring: null } });
+  flow.replaceChildren(c.el);
+  c.measureWidths();
+  c.fit(flowInnerWidth(flow));
+  c.measureHeights();
+  c.place();
+}, id);
 
 test('in a browser, the flow lays out a story\'s link tags just before the box their line enters and keeps room under a box for its hidden-screen count', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#flow .box');
-        assert.equal(await p.locator('.story-pick').count(), 0, 'no story picker without stories');
+        assert.equal(await p.locator('#flow-stories').isVisible(), false, 'no story list without stories');
         const out = await p.evaluate(() => {
           const screen = (id: string, children: object[] = []) => ({ kind: 'screen', id, children, calls: [], guards: [] });
           const roots = [screen('A', [screen('B'), screen('C', [screen('D')])])];
@@ -5319,148 +5348,293 @@ test('in a browser, the flow lays out a story\'s link tags just before the box t
   );
 });
 
-test('in a browser, a story picked in the flow bar leaves only its screens and their ancestors with numbered badges inside them and the hidden screens counted, counts and lists only those, and turning it off brings back the whole flow', { skip: browserMissing }, async () => {
+test('in a browser, a story picked from the list on the left of the flow is drawn as its steps in order on one line with only its own screens, counts and lists only those, and the same row again or 「경로 끄기」 brings back the flow as it was', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
     const stories = await p.evaluate(() => state.data.stories.list.map((st: Story) => [st.id, st.name]));
-    assert.deepEqual(await p.$$eval('.story-pick option', (os: HTMLOptionElement[]) => os.map((o) => [o.value, o.textContent])), [['', '고르기'], ...stories]);
-    assert.equal(await p.locator('.flowbar .path-off').count(), 0);
+    assert.equal(await p.locator('.flowbar select').count(), 0, 'the bar above the flow has no story select');
+    assert.equal(await p.textContent('#stories-tab'), `스토리 ${stories.length} ◀`);
+    assert.deepEqual(await p.$$eval('#flow-story-list li', (els: HTMLElement[]) => els.map((e) => [e.dataset.story, e.querySelector('.name > span')!.textContent])), stories);
+    assert.deepEqual(await p.$$eval('#flow-story-list li', (els) => els.map((e) => [...e.querySelectorAll('.chips .chip')].map((c) => c.textContent))), await p.evaluate(() => {
+      const list: Story[] = state.data.stories.list;
+      return list.map((st) => [st.status === 'pass' ? null : STORY_STATUS[st.status].label, st.broken ? '링크 없음' : null, st.detached ? '화면 없음' : null, st.unjudged ? '판정 못 함' : null].filter(Boolean));
+    }), 'a row carries the status and verdict chips of the stories tab');
+    const flowBox = await p.locator('#flow').boundingBox();
+    const listBox = await p.locator('#flow-stories').boundingBox();
+    assert.ok(listBox!.x + listBox!.width <= flowBox!.x + 1, 'the list sits left of the drawing');
     const before = await drawnScreens(p);
+    await p.setViewportSize({ width: 1440, height: 400 });
+    await p.evaluate(() => Object.assign(document.getElementById('flow')!, { scrollTop: 120 }));
+    const scrolled = await p.evaluate(() => document.getElementById('flow')!.scrollTop);
+    assert.ok(scrolled > 0, 'the flow was scrolled');
 
     await pickPathStory(p, 'walk-around');
     assert.equal(await flowPlace(p), '#flow?story=walk-around');
+    assert.deepEqual(await p.$$eval('#flow-story-list li.selected', (els: HTMLElement[]) => els.map((e) => e.dataset.story)), ['walk-around']);
+    assert.deepEqual(await lineSteps(p), WALK.map((id, i) => [String(i + 1), id]));
     assert.deepEqual(await drawnScreens(p), [...WALK_ON_MAP].sort());
-    assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), WALK_ON_MAP.map((id, i) => [id, String(i + 1)]).sort());
-    assert.deepEqual(await pathMarks(p, 'story-hidden'), [['/home#Home', '다른 화면 4 숨김']]);
-    assert.equal(await p.locator('#flow .box.on-story').count(), 7);
+    const middles = await p.$$eval('#flow .story-line [data-step]', (els) => new Set(els.map((e) => { const r = e.getBoundingClientRect(); return Math.round(r.top + r.height / 2); })).size);
+    assert.equal(middles, 1, 'the steps sit on one line');
+    const lefts = await p.$$eval('#flow .story-line [data-step]', (els) => els.map((e) => e.getBoundingClientRect().left));
+    assert.deepEqual(lefts, [...lefts].sort((a, b) => a - b), 'the steps go from left to right in order');
+    assert.equal(await p.locator('#flow .story-line .box.story-off').count(), 1);
+    assert.match((await p.textContent('#flow .story-line .box.story-off'))!, /\/settings#Settings.*맵에 없는 화면/);
     assert.equal(await p.textContent('.flowbar .flowsummary'), '테스트 있는 화면 6/7');
     assert.equal(await filterButton(p, 'all').textContent(), '전체 7');
     assert.equal(await p.textContent('#gaps h2'), '빈틈 5');
     assert.match((await p.textContent('#gaps .lead'))!, /이 스토리의 경로/);
     assert.deepEqual(await textOutside(p), []);
+    assert.equal(await p.locator('#flow-bar .story-on').count(), 0);
+    assert.equal(await p.locator('#flow-head .story-on').count(), 1, 'the picked story is named in the corner of the drawing, not in the bar');
 
+    await storyRow(p, 'walk-around').click();
+    assert.equal(await flowPlace(p), '#flow');
+    assert.deepEqual(await drawnScreens(p), before);
+    assert.equal(await p.locator('#flow-head .story-on, #flow .story-line, #flow .mark, #flow .box.on-story, #flow .story-badge, #flow-story-list li.selected').count(), 0);
+    assert.equal(await p.evaluate(() => document.getElementById('flow')!.scrollTop), scrolled, 'the flow comes back where it was scrolled to');
+
+    await pickPathStory(p, 'run-lab');
+    assert.deepEqual(await lineSteps(p), [['1', '/home#Home'], ['2', '/lab#Lab'], ['3', '/lab/result#LabResult']]);
+    assert.deepEqual(await drawnScreens(p), ['/home#Home', '/lab#Lab', '/lab/result#LabResult'], 'a screen above a step in the flow is not drawn');
     await flowButton(p, '경로 끄기').click();
     assert.equal(await flowPlace(p), '#flow');
     assert.deepEqual(await drawnScreens(p), before);
-    assert.equal(await p.locator('.story-strip, #flow .mark, #flow .box.on-story, #flow .story-badge').count(), 0);
-    assert.equal(await p.inputValue('.story-pick select'), '');
   });
 });
 
-test('in a browser, a story hop from a box to its child is drawn on that link in the style of the story verdict, not of the flow conditions, and every other hop puts in both boxes a chip with the other step number', { skip: browserMissing }, async () => {
-  await withPathStories({ 'walk-around': WALK }, async (p) => {
+test('in a browser, every two neighbouring steps of a picked story are joined by a line in the style of their verdict, a missing link says where the screen before goes, and a screen visited twice is drawn at each of its steps', { skip: browserMissing }, async () => {
+  const stories = { 'walk-around': WALK, twice: ['/signin#SignIn', '/home#Home', '/help#Help', '/home#Home'] };
+  await withPathStories(stories, async (p) => {
     await pickPathStory(p, 'walk-around');
-    assert.deepEqual(await pathEdges(p), [
-      ['/home#Home', '/document/:tab_draft_done_#DocumentList', 'l-open'],
-      ['/lab#Lab', '/lab/result#LabResult', 'l-open'],
-      ['/signin#SignIn', '/home#Home', 'l-open'],
+    assert.deepEqual(await lineHops(p), [
+      ['story-edge l-open', ''], ['story-edge l-open', ''], ['story-edge l-open', ''], ['story-edge l-conditioned', '조건'],
+      ['story-edge l-broken', '링크 없음'], ['story-edge l-open', ''], ['story-edge l-off-map', '맵에 없는 화면'],
     ]);
-    const stroke = (from: string, to: string) => p.$eval(`#flow svg path[data-from="${from}"][data-to="${to}"]`, (e) => { const c = getComputedStyle(e); return [c.strokeWidth, c.strokeDasharray, c.opacity]; });
-    assert.deepEqual(await stroke('/signin#SignIn', '/home#Home'), ['3.2px', 'none', '1']);
-    assert.deepEqual(await stroke('/signin#SignIn', '/help#Help'), ['1.3px', 'none', '0.35'], 'a guarded link that no hop takes is a thin grey line');
-    assert.deepEqual(await pillMarks(p, 'story-chip'), [
-      ['/document/:tab_draft_done_#DocumentList', '→ 4', 'exit', 'l-open'],
-      ['/document/:id#DocumentDetail', '3 →', 'entry', 'l-open'],
-      ['/document/:id#DocumentDetail', '→ 5조건', 'exit', 'l-conditioned'],
-      ['/lab#Lab', '✕5 →', 'entry', 'l-broken'],
-      ['/lab/result#LabResult', '→ 8맵에 없는 화면', 'exit', 'l-off-map'],
-      ['/help#Help', '4 →', 'entry', 'l-conditioned'],
-      ['/help#Help', '✕→ 6링크 없음', 'exit', 'l-broken'],
-    ]);
-    const order = await (await screenBox(p, '/document/:id#DocumentDetail')).evaluate((box) => [...box.children].map((c) => c.className.split(' ')[0]));
-    assert.deepEqual(order.filter((c) => c !== 'sr-only'), ['story-chip', 'story-badge', 'sq', 'path', 'tag', 'story-chip'], 'chips from earlier steps and the number come first, chips to later steps last');
-    assert.equal(await p.locator('#flow .canvas > .story-tag').count(), 0);
+    assert.deepEqual(await hopLook(p, 0), [await cssColor(p, '--text').then(rgb), '3.2px', 'none']);
+    assert.deepEqual(await hopLook(p, 3), [await cssColor(p, '--accent').then(rgb), '3.2px', '8px, 5px']);
+    assert.deepEqual((await hopLook(p, 4)).slice(0, 2), [await cssColor(p, '--fail').then(rgb), '3.2px']);
+    assert.equal(await p.getAttribute('#flow .story-hop[data-hop="4"]', 'title'), '단계 5 → 6 · 링크 없음');
+    assert.deepEqual(await p.locator('#flow .story-gaps li').allTextContents(), ['5 → 6 단계: /help 에서 /lab 로 가는 링크가 맵에 없습니다. /help 에서 갈 수 있는 화면이 없습니다.']);
 
-    const toHelp = p.locator('#flow .story-chip.exit[data-hop="3"]');
-    await toHelp.hover();
-    assert.deepEqual(await p.$$eval('#flow .story-chip.hovered', (els) => els.map((e) => e.closest<HTMLElement>('.box')!.dataset.key)), ['/document/:id#DocumentDetail', '/help#Help']);
-    await p.mouse.move(5, 890);
-    assert.equal(await p.locator('#flow .story-chip.hovered').count(), 0);
-    await toHelp.click();
-    assert.deepEqual(await ringed(p), ['/help#Help']);
-    assert.deepEqual(await stripCurrent(p), ['5']);
-    assert.deepEqual(await pickedBoxes(p), ['/help#Help'], 'a chip picks the step it names, not the box it sits in');
-    assert.equal(await p.textContent('#center h3'), '/help');
-    assert.equal(await inView(p, '/help#Help'), true);
-    assert.deepEqual(await boxesWith(p, 'dim'), [], 'the path is not dimmed around a picked step');
+    await pickPathStory(p, 'help-from-home');
+    assert.deepEqual(await lineHops(p), [['story-edge l-open', ''], ['story-edge l-broken', '링크 없음']]);
+    assert.deepEqual(await p.locator('#flow .story-gaps li').allTextContents(), [HOME_GOES_TO]);
+    assert.deepEqual(await p.locator('#flow .story-gaps li .goes-to code').allTextContents(), HOME_TARGETS);
 
-    await pickPathStory(p, 'run-lab');
-    assert.deepEqual(await pathEdges(p), [['/home#Home', '/lab#Lab', 'l-conditioned'], ['/lab#Lab', '/lab/result#LabResult', 'l-open']]);
-    assert.deepEqual((await stroke('/home#Home', '/lab#Lab')).slice(0, 2), ['3.2px', '8px, 5px']);
-    assert.deepEqual(await pathMarks(p, 'story-tag'), [['/lab#Lab', '조건', 'l-conditioned']]);
-    assert.deepEqual(await ringed(p), [], 'another story starts with nothing ringed');
-    assert.deepEqual(await pickedBoxes(p), [], 'a picked screen the new path does not draw is let go');
+    await pickPathStory(p, 'twice');
+    assert.deepEqual(await lineSteps(p), stories.twice.map((id, i) => [String(i + 1), id]));
+    assert.equal(await p.locator('#flow .story-hop').count(), 3);
+    await p.locator('#flow .story-line .box.screen[data-step="3"]').click();
+    assert.deepEqual(await ringBadge(p), ['4'], 'a box rings its own step');
+    assert.deepEqual(await ringed(p), [['3', '/home#Home']]);
+    assert.equal(await p.textContent('#center h3'), '/home');
+    await p.locator('#flow .story-line .box.screen[data-step="1"]').click();
+    assert.deepEqual(await ringed(p), [['1', '/home#Home']]);
+    assert.deepEqual(await ringBadge(p), ['2']);
+    const row = (await p.locator('#flow .story-row').boundingBox())!;
+    const flow = (await p.locator('#flow').boundingBox())!;
+    await p.mouse.click(Math.max(row.x, flow.x) + 20, row.y + row.height - 4);
+    assert.deepEqual(await pickedBoxes(p), [], 'a click on an empty spot of the line lets the screen go');
   });
 });
 
-test('in a browser, the step strip in the flow bar lists the steps with their routes joined by the verdict of each link, and pressing a step rings, picks and shows its box, or only rings a step off the map', { skip: browserMissing }, async () => {
-  await withPathStories({ 'walk-around': WALK }, async (p) => {
-    await pickPathStory(p, 'walk-around');
-    assert.deepEqual(await p.$$eval('.story-strip .story-step', (els) => els.map((e) => e.textContent)), [
-      '1/signin', '2/home', '3/document/:tab(draft|done)', '4/document/:id', '5/help', '6/lab', '7/lab/result', '8/settings#Settings맵에 없는 화면',
-    ]);
-    assert.deepEqual(await p.$$eval('.story-strip .story-join', (els) => els.map((e) => [[...e.classList].find((c) => c.startsWith('l-')), e.textContent])), [
-      ['l-open', ''], ['l-open', ''], ['l-open', ''], ['l-conditioned', '조건'], ['l-broken', '링크 없음'], ['l-open', ''], ['l-off-map', ''],
-    ]);
-    assert.equal(await p.evaluate(() => document.querySelector('.story-strip')!.closest('.flowbar') !== null), true);
+test('in a browser, two steps of a picked story that a move in the config joins are drawn with a green dotted line, like the legend\'s 「설정에 적은 이동」, with the reason on hover', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories', moves: [{ from: '/signin', to: '/lab/result', reason: '로그인 뒤' }] }, (config, copy) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/signin-lab.json'), JSON.stringify({ name: '로그인해서 실험 결과를 본다', screens: ['/signin#SignIn', '/lab/result#LabResult'], author: 'a', date: '2026-10-03' }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        await pickPathStory(p, 'signin-lab');
+        assert.deepEqual(await lineHops(p), [['story-edge l-configured moved', '설정에 적은 이동']]);
+        const [stroke, width, dashes] = await hopLook(p, 0);
+        assert.deepEqual([stroke, width, dashes], [await cssColor(p, '--fine').then(rgb), '3.2px', '3px, 3px']);
+        assert.equal(await p.$eval('#flow .story-hop[data-hop="0"] path', (e) => getComputedStyle(e).strokeLinecap), 'butt', 'the dots stay apart on the thick line');
+        assert.equal(await p.getAttribute('#flow .story-hop[data-hop="0"]', 'title'), '단계 1 → 2 · 설정에 적은 이동 · 설정의 moves 에 적은 이동으로 이어집니다 · 로그인 뒤');
+        assert.equal(await p.locator('#flow .story-gaps').count(), 0);
 
-    await p.locator('.story-strip .story-step', { hasText: '/lab/result' }).click();
-    assert.deepEqual(await ringed(p), ['/lab/result#LabResult']);
-    assert.deepEqual(await stripCurrent(p), ['7']);
+        await p.locator('#flow-head button.pathinfo-button').click();
+        const sample = p.locator('#pathlegend li', { hasText: '설정에 적은 이동' }).locator('path');
+        assert.deepEqual(await sample.evaluate((e) => { const c = getComputedStyle(e); return [c.stroke, c.strokeDasharray]; }), [stroke, dashes]);
+      }, { view: 'flow' }));
+  });
+});
+
+test('in a browser, the story list of the flow finds stories by name or ID and filters them like the stories tab, sharing both with it, and keeps its search box while typing', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p) => {
+    const ids = () => p.$$eval('#flow-story-list li[data-story]', (els: HTMLElement[]) => els.map((e) => e.dataset.story));
+    const search = p.locator('#flow-stories input[type=search]');
+    assert.equal(await search.getAttribute('placeholder'), '이름이나 ID 로 찾기');
+    assert.deepEqual(await p.locator('#flow-stories fieldset').evaluateAll((els) => els.map((e) => [...e.querySelectorAll('label')].map((l) => l.textContent))),
+      [['테스트 없음', '일부 화면만 테스트', '실패'], ['링크 없음']]);
+    await search.click();
+    await p.keyboard.type('홈에서');
+    assert.deepEqual(await ids(), ['change-settings', 'help-from-home']);
+    assert.equal(await p.evaluate(() => document.activeElement === document.querySelector('#flow-stories input[type=search]')), true, 'the box keeps the focus while typing');
+    await search.fill('WALK');
+    assert.deepEqual(await ids(), ['walk-around'], 'an ID is found too, whatever the case');
+    await search.fill('');
+    await p.check('#flow-stories input[name=broken]');
+    assert.deepEqual(await ids(), await p.evaluate(() => state.data.stories.list.filter((st: Story) => st.broken).map((st: Story) => st.id)));
+    await search.fill('없는 이름');
+    assert.equal(await p.textContent('#flow-story-list li.muted'), '해당하는 스토리가 없습니다.');
+    await search.fill('홈에서');
+    assert.deepEqual(await ids(), ['help-from-home']);
+
+    await p.click('#view-list');
+    await p.click('#left .views.side button:has-text("스토리")');
+    assert.equal(await p.inputValue('#left .filters input[type=search]'), '홈에서');
+    assert.equal(await p.isChecked('#left input[name=broken]'), true);
+    assert.deepEqual(await p.locator('#story-list li .name .mono').allTextContents(), ['help-from-home']);
+    await p.uncheck('#left input[name=broken]');
+    assert.deepEqual(await p.locator('#story-list li .name .mono').allTextContents(), ['change-settings', 'help-from-home']);
+    await p.locator('#left .filters input[type=search]').click();
+    await p.keyboard.press('End');
+    await p.keyboard.type(' 바로');
+    assert.deepEqual(await p.locator('#story-list li .name .mono').allTextContents(), ['help-from-home']);
+    assert.equal(await p.evaluate(() => document.activeElement === document.querySelector('#left .filters input[type=search]')), true);
+    await p.fill('#left .filters input[type=search]', 'run-');
+    assert.deepEqual(await p.locator('#story-list li .name .mono').allTextContents(), ['run-lab']);
+
+    await p.click('#view-flow');
+    assert.equal(await search.inputValue(), 'run-');
+    assert.deepEqual(await ids(), ['run-lab']);
+  });
+});
+
+test('in a browser, the story list of the flow slides shut and open from a button in the top corner of the drawing that rides its edge and covers no box, without changing the picked story\'s drawing, its edge is dragged like the other panes, and its width and fold last until the page is loaded again', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p) => {
+    const ids = ['flow-stories', 'flow', 'gaps'];
+    assert.deepEqual(await paneWidths(p, ids), [300, 1440 - 300 - 360, 360]);
+    const fold = p.locator('#stories-tab');
+    const toggle = async () => {
+      await fold.click();
+      assert.equal(await p.locator('main').evaluate((m) => m.classList.contains('sliding')), true, 'the list slides');
+      await p.waitForFunction(() => !document.querySelector('main')!.classList.contains('sliding'));
+    };
+    await pickPathStory(p, 'walk-around');
+    const steps = await lineSteps(p);
+    const tabPlace = () => p.evaluate(() => {
+      const tab = document.getElementById('stories-tab')!.getBoundingClientRect();
+      const flow = document.getElementById('flow')!.getBoundingClientRect();
+      const first = document.querySelector('#flow .box')!.getBoundingClientRect();
+      return { left: Math.round(tab.left - flow.left), clear: tab.bottom <= first.top };
+    });
+    const count = await p.evaluate(() => pathStories().length);
+    assert.equal(await fold.textContent(), `스토리 ${count} ◀`);
+    assert.equal(await fold.getAttribute('aria-expanded'), 'true');
+    assert.deepEqual(await tabPlace(), { left: 16, clear: true });
+    await toggle();
+    assert.equal(await fold.textContent(), `스토리 ${count} ▶`);
+    assert.equal(await fold.getAttribute('aria-expanded'), 'false');
+    assert.equal(await fold.getAttribute('title'), '스토리 목록 펴기');
+    assert.equal(await fold.evaluate((e) => e === document.activeElement), true);
+    assert.deepEqual(await paneWidths(p, ids), [0, 1440 - 360, 360], 'a folded list leaves no column');
+    assert.equal(await p.locator('#flow-story-list').isVisible(), false);
+    assert.deepEqual(await tabPlace(), { left: 16, clear: true }, 'the button moves with the edge of the drawing');
+    assert.equal(await p.locator('#sash-stories').isVisible(), false, 'a folded list has no edge to drag');
+    assert.deepEqual(await lineSteps(p), steps);
+    assert.equal(await flowPlace(p), '#flow?story=walk-around');
+    await toggle();
+    assert.deepEqual(await paneWidths(p, ids), [300, 1440 - 300 - 360, 360]);
+
+    await dragEdge(p, 'sash-stories', 100);
+    assert.deepEqual(await paneWidths(p, ids), [400, 1440 - 400 - 360, 360], 'the list edge moves with the mouse');
+    await dragEdge(p, 'sash-stories', -500);
+    assert.equal((await paneWidths(p, ids))[0], 240, 'the list stops at its minimum');
+    await dragEdge(p, 'sash-stories', 60);
+    await toggle();
+    await toggle();
+    assert.equal((await paneWidths(p, ids))[0], 300, 'the width stays across a fold');
+
+    await (await screenBox(p, '/home#Home')).click();
+    const picked = ['flow-stories', 'flow', 'center', 'right'];
+    const graph = (1440 - 300 - 360) / 2;
+    assert.deepEqual(await paneWidths(p, picked), [300, graph, 1440 - 300 - 360 - graph, 360]);
+    await dragEdge(p, 'sash-left', -100, { off: -3 });
+    assert.deepEqual(await paneWidths(p, picked), [300, graph - 100, 1440 - 300 - 360 - graph + 100, 360], 'the drawing edge moves beside the list');
+    await dragEdge(p, 'sash-stories', 40);
+    assert.deepEqual(await paneWidths(p, picked), [340, graph - 100, 1440 - 340 - 360 - graph + 100, 360], 'widening the list takes from the middle pane');
+
+    await fold.click();
+    await p.reload();
+    await p.waitForSelector('#flow .story-line');
+    assert.equal(await fold.getAttribute('aria-expanded'), 'true');
+    assert.deepEqual(await paneWidths(p, picked), [300, graph, 1440 - 300 - 360 - graph, 360], 'loading the page again starts from the first widths');
+    await p.setViewportSize({ width: 600, height: 900 });
+    await nextFrame(p);
+    assert.equal(new Set(await p.$$eval('#flow-stories, #flow, #center, #right', (els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))).size, 1, 'a narrow window keeps the panes side by side');
+  });
+});
+
+test('in a browser, once the story list has slid shut or open, the gathered entry screens of the flow are laid out again for the width the drawing ends at, and a box brought into view lands below the button in the corner', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, async (config, copy) => {
+    fs.writeFileSync(path.join(copy, 'example-stories', 'walk-around.json'), JSON.stringify({ name: 'walk-around 이야기', screens: WALK, author: 'reviewer', date: '2026-10-05' }));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        const perRow = () => p.evaluate(() => drawnGrid!.per);
+        const fits = () => p.evaluate(() => cellsPerRow(drawnGrid!.count, drawnGrid!.cellW, flowInnerWidth(document.getElementById('flow')!) / state.zoom));
+        const open = await perRow();
+        for (const way of ['shut', 'open']) {
+          await p.click('#stories-tab');
+          await p.waitForFunction(() => !document.querySelector('main')!.classList.contains('sliding'));
+          assert.equal(await perRow(), await fits(), `slid ${way}`);
+        }
+        assert.equal(await perRow(), open);
+
+        await p.evaluate(() => {
+          document.getElementById('stories-tab')!.click();
+          document.querySelector<HTMLElement>('#flow .box.screen[data-key="/home#Home"]')!.click();
+        });
+        await p.waitForFunction(() => !document.querySelector('main')!.classList.contains('sliding'), null, { timeout: 2000 });
+        assert.equal(await perRow(), await fits(), 'a box picked while the list slides, which cuts the slide short, still ends it');
+        await flowButton(p, '선택 해제').click();
+        await p.click('#stories-tab');
+        await p.waitForFunction(() => !document.querySelector('main')!.classList.contains('sliding'));
+
+        await p.setViewportSize({ width: 1440, height: 400 });
+        await p.evaluate(() => { const f = document.getElementById('flow')!; f.scrollTop = f.scrollHeight; });
+        const key = await p.$eval('#flow .box.screen', (e: HTMLElement) => e.dataset.key!);
+        await p.evaluate((k) => showBox(k), key);
+        assert.equal(await p.evaluate((k) => {
+          const box = document.querySelector(`#flow .box.screen[data-key="${CSS.escape(k)}"]`)!.getBoundingClientRect();
+          return box.top >= document.getElementById('flow-head')!.getBoundingClientRect().bottom;
+        }, key), true, 'a box brought into view lands below the button and the story name, not under them');
+      }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 8)); }) }),
+    );
+  });
+});
+
+test('in a browser, picking a story leaves the bar above the flow and the list beside it where they were, pressing a step of the line rings, picks and shows its box, or only rings a step off the map, and a story wider than its pane scrolls sideways inside it', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p) => {
+    const tops = () => p.$$eval('#flow-bar, #flow-stories', (els) => els.map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.height)]; }));
+    const before = await tops();
+    await pickPathStory(p, 'walk-around');
+    assert.deepEqual(await tops(), before);
+    const step = (i: number) => p.locator(`#flow .story-line .box[data-step="${i}"]`);
+
+    await step(6).click();
+    assert.deepEqual(await ringed(p), [['6', '/lab/result#LabResult']]);
+    assert.deepEqual(await ringBadge(p), ['7']);
     assert.deepEqual(await pickedBoxes(p), ['/lab/result#LabResult']);
     assert.equal(await p.textContent('#center h3'), '/lab/result');
     assert.equal(await inView(p, '/lab/result#LabResult'), true);
     assert.equal(await flowPlace(p), '#flow?story=walk-around&screen=/lab/result#LabResult');
-    await p.locator('.story-strip .story-step', { hasText: '/settings#Settings' }).click();
-    assert.deepEqual(await ringed(p), []);
-    assert.deepEqual(await stripCurrent(p), ['8']);
+    await step(7).click();
+    assert.deepEqual(await ringed(p), [['7', '/settings#Settings']]);
+    assert.deepEqual(await ringBadge(p), ['8'], 'the box of a step off the map rings its step');
 
     await (await screenBox(p, '/home#Home')).click();
-    assert.deepEqual(await stripCurrent(p), ['2'], 'pressing a box on the path rings its step');
+    assert.deepEqual(await ringBadge(p), ['2'], 'pressing a box on the path rings its step');
     await flowButton(p, '선택 해제').click();
-    assert.deepEqual(await stripCurrent(p), []);
+    assert.deepEqual(await ringBadge(p), []);
     assert.deepEqual(await ringed(p), []);
 
-    await p.setViewportSize({ width: 700, height: 700 });
-    const rows = await p.$$eval('.story-strip > li', (els) => new Set(els.map((e) => Math.round(e.getBoundingClientRect().top))).size);
-    assert.ok(rows >= 2, `the strip wraps onto ${rows} rows`);
+    await p.setViewportSize({ width: 1280, height: 800 });
+    await p.evaluate(() => renderFlow());
+    const flow = await p.evaluate(() => { const f = document.getElementById('flow')!; return [f.scrollWidth, f.clientWidth]; });
+    assert.ok(flow[0] > flow[1], `the drawing ${flow[0]}px wide scrolls inside its ${flow[1]}px pane`);
+    assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'the page itself does not scroll sideways');
   });
-});
-
-test('in a browser, the story path view numbers a screen visited twice with both steps, reaches a step under the unreached screens with chips, and keeps the ancestors of a story that starts away from an entry without a number', { skip: browserMissing }, async () => {
-  const stories = {
-    twice: ['/signin#SignIn', '/home#Home', '/help#Help', '/home#Home'],
-    far: ['/home#Home', '/admin/group#AdminGroup'],
-  };
-  await withPathStories(stories, async (p) => {
-    await pickPathStory(p, 'twice');
-    assert.deepEqual(await pillMarks(p, 'story-badge'), [['/signin#SignIn', '1'], ['/home#Home', '2·4'], ['/help#Help', '3']]);
-    assert.deepEqual((await pillMarks(p, 'story-chip')).map(([at, text, end]) => [at, text!.match(/→ \d+|\d+ →/)![0], end]), [
-      ['/home#Home', '3 →', 'entry'], ['/home#Home', '→ 3', 'exit'], ['/help#Help', '2 →', 'entry'], ['/help#Help', '→ 4', 'exit'],
-    ]);
-    await p.locator('.story-strip .story-step', { hasText: '/home' }).nth(1).click();
-    assert.deepEqual(await stripCurrent(p), ['4']);
-    await (await screenBox(p, '/home#Home')).click();
-    assert.deepEqual(await stripCurrent(p), ['4'], 'pressing the box of a screen visited twice keeps the step already rung');
-
-    await p.evaluate(() => {
-      const { flow }: PageData = state.data;
-      flow.unreached.push(...flow.roots.splice(flow.roots.findIndex((r) => r.id === '/admin/group#AdminGroup'), 1));
-    });
-    await pickPathStory(p, 'far');
-    assert.equal(await p.locator('#flow .canvas').count(), 2);
-    assert.equal(await p.textContent('#flow > h2'), '진입 화면에서 닿지 않는 화면 1');
-    assert.equal(await p.$eval('#flow > .zoom-box:last-of-type .box.screen', (e) => (e as HTMLElement).dataset.key), '/admin/group#AdminGroup');
-    assert.deepEqual(await pillMarks(p, 'story-chip'), [['/home#Home', '✕→ 2링크 없음', 'exit', 'l-broken'], ['/admin/group#AdminGroup', '✕1 →', 'entry', 'l-broken']]);
-
-    await pickPathStory(p, 'run-lab');
-    assert.deepEqual(await drawnScreens(p), ['/home#Home', '/lab#Lab', '/lab/result#LabResult', '/signin#SignIn']);
-    assert.deepEqual((await pillMarks(p, 'story-badge')).map((m) => m[0]), ['/home#Home', '/lab#Lab', '/lab/result#LabResult']);
-
-    await pickPathStory(p, 'read-reports');
-    assert.deepEqual(await drawnScreens(p), ['/admin/report#AdminReport', '/home#Home', '/signin#SignIn']);
-    assert.equal(await p.locator('.story-strip .story-step').count(), 1);
-    assert.equal(await p.locator('.story-strip .story-join, #flow .story-chip, #flow .canvas svg path.story-edge').count(), 0);
-  }, [['client/src/components/Home.js', '{isAdmin && <Link to={Option.ROUTE_PATH.ADMIN_GROUP}>Groups</Link>}', '']]);
 });
 
 test('in a browser, the picked story and the picked screen are kept in the address through reloads and back and forward, and a place that is gone falls back to what is there', { skip: browserMissing }, async () => {
@@ -5470,24 +5644,24 @@ test('in a browser, the picked story and the picked screen are kept in the addre
     await pickPathStory(p, 'walk-around');
     assert.equal(await flowPlace(p), '#flow?story=walk-around&screen=/lab#Lab', 'a picked screen on the path stays picked');
     await p.reload();
-    await p.waitForSelector('.story-strip');
+    await p.waitForSelector('#flow .story-line');
     assert.equal(await flowPlace(p), '#flow?story=walk-around&screen=/lab#Lab');
     assert.deepEqual(await drawnScreens(p), [...WALK_ON_MAP].sort());
     assert.deepEqual(await pickedBoxes(p), ['/lab#Lab']);
     assert.equal(await p.textContent('#center h3'), '/lab');
     await p.goBack();
-    await p.waitForSelector('.story-strip', { state: 'detached' });
+    await p.waitForSelector('#flow .story-line', { state: 'detached' });
     assert.equal(await flowPlace(p), '#flow?screen=/lab#Lab');
     assert.equal((await drawnScreens(p)).length, whole);
     await p.goForward();
-    await p.waitForSelector('.story-strip');
-    assert.equal(await p.inputValue('.story-pick select'), 'walk-around');
+    await p.waitForSelector('#flow .story-line');
+    assert.deepEqual(await p.$$eval('#flow-story-list li.selected', (els: HTMLElement[]) => els.map((e) => e.dataset.story)), ['walk-around']);
     await (await screenBox(p, '/home#Home')).click();
-    assert.deepEqual(await stripCurrent(p), ['2']);
+    assert.deepEqual(await ringBadge(p), ['2']);
     await p.goBack();
     await p.waitForFunction(() => decodeURIComponent(location.hash).endsWith('screen=/lab#Lab'));
-    assert.deepEqual(await stripCurrent(p), ['6'], 'going back to a picked screen rings its step');
-    assert.deepEqual(await ringed(p), ['/lab#Lab']);
+    assert.deepEqual(await ringBadge(p), ['6'], 'going back to a picked screen rings its step');
+    assert.deepEqual(await ringed(p), [['5', '/lab#Lab']]);
 
     await flowButton(p, '경로 끄기').click();
     assert.equal(await flowPlace(p), '#flow?screen=/lab#Lab');
@@ -5508,25 +5682,52 @@ test('in a browser, a picked story whose file changes while the page is open is 
   await withPathStories({ 'walk-around': WALK }, async (p, { writeStory, storyFile }) => {
     const whole = await drawnScreens(p);
     await pickPathStory(p, 'walk-around');
-    await p.locator('.story-strip .story-step', { hasText: '/lab/result' }).click();
+    await p.locator('#flow .story-line .box[data-step="6"]').click();
     writeStory('walk-around', ['/signin#SignIn', '/help#Help']);
     await p.evaluate(async () => { await load(); render(); });
-    assert.deepEqual(await drawnScreens(p), ['/help#Help', '/signin#SignIn']);
-    assert.equal(await p.locator('.story-strip .story-step').count(), 2);
-    assert.deepEqual(await stripCurrent(p), [], 'a ringed step past the new end is dropped');
+    assert.deepEqual(await lineSteps(p), [['1', '/signin#SignIn'], ['2', '/help#Help']]);
+    assert.deepEqual(await ringBadge(p), [], 'a ringed step past the new end is dropped');
     assert.deepEqual(await pickedBoxes(p), [], 'and its screen, no longer drawn, is let go');
     assert.equal(await p.locator('#gaps').isVisible(), true);
 
     fs.rmSync(storyFile('walk-around'));
     await p.evaluate(async () => { await load(); render(); });
     assert.equal(await flowPlace(p), '#flow');
-    assert.equal(await p.locator('.story-strip').count(), 0);
+    assert.equal(await p.locator('#flow .story-line').count(), 0);
     assert.deepEqual(await drawnScreens(p), whole);
+    assert.equal(await storyRow(p, 'walk-around').count(), 0);
   });
 });
 
-test('in a browser, no tag or count of a story path covers a box or another mark, no thick line crosses a box, and no line runs under a mark', { skip: browserMissing }, async () => {
-  await withPathStories({ 'walk-around': WALK }, async (p) => {
+test('in a browser, a story path laid over the whole flow puts its hops from a box to its child on that link in the style of the story verdict and every other hop as chips with the other step number in both boxes, numbers a screen visited twice with both steps, and covers no box or mark', { skip: browserMissing }, async () => {
+  const stories = { 'walk-around': WALK, twice: ['/signin#SignIn', '/home#Home', '/help#Help', '/home#Home'] };
+  await withPathStories(stories, async (p) => {
+    await drawOverlay(p, 'walk-around');
+    assert.deepEqual(await pathEdges(p), [
+      ['/home#Home', '/document/:tab_draft_done_#DocumentList', 'l-open'],
+      ['/lab#Lab', '/lab/result#LabResult', 'l-open'],
+      ['/signin#SignIn', '/home#Home', 'l-open'],
+    ]);
+    const stroke = (from: string, to: string) => p.$eval(`#flow svg path[data-from="${from}"][data-to="${to}"]`, (e) => { const c = getComputedStyle(e); return [c.strokeWidth, c.strokeDasharray, c.opacity]; });
+    assert.deepEqual(await stroke('/signin#SignIn', '/home#Home'), ['3.2px', 'none', '1']);
+    assert.deepEqual(await stroke('/signin#SignIn', '/help#Help'), ['1.3px', 'none', '0.35'], 'a guarded link that no hop takes is a thin grey line');
+    assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), WALK_ON_MAP.map((id, i) => [id, String(i + 1)]).sort());
+    assert.deepEqual(await pathMarks(p, 'story-hidden'), [['/home#Home', '다른 화면 4 숨김']]);
+    assert.deepEqual(await pillMarks(p, 'story-chip'), [
+      ['/document/:tab_draft_done_#DocumentList', '→ 4', 'exit', 'l-open'],
+      ['/document/:id#DocumentDetail', '3 →', 'entry', 'l-open'],
+      ['/document/:id#DocumentDetail', '→ 5조건', 'exit', 'l-conditioned'],
+      ['/lab#Lab', '✕5 →', 'entry', 'l-broken'],
+      ['/lab/result#LabResult', '→ 8맵에 없는 화면', 'exit', 'l-off-map'],
+      ['/help#Help', '4 →', 'entry', 'l-conditioned'],
+      ['/help#Help', '✕→ 6링크 없음', 'exit', 'l-broken'],
+    ]);
+    const order = await (await screenBox(p, '/document/:id#DocumentDetail')).evaluate((box) => [...box.children].map((c) => c.className.split(' ')[0]));
+    assert.deepEqual(order.filter((c) => c !== 'sr-only'), ['story-chip', 'story-badge', 'sq', 'path', 'tag', 'story-chip'], 'chips from earlier steps and the number come first, chips to later steps last');
+    const toHelp = p.locator('#flow .story-chip.exit[data-hop="3"]');
+    await toHelp.hover();
+    assert.deepEqual(await p.$$eval('#flow .story-chip.hovered', (els) => els.map((e) => e.closest<HTMLElement>('.box')!.dataset.key)), ['/document/:id#DocumentDetail', '/help#Help']);
+
     const problems = () => p.evaluate(() => {
       const R = (e: Element) => e.getBoundingClientRect();
       const boxes = [...document.querySelectorAll<HTMLElement>('#flow .canvas > .box')];
@@ -5557,21 +5758,23 @@ test('in a browser, no tag or count of a story path covers a box or another mark
       }
       return out;
     });
-    await pickPathStory(p, 'walk-around');
     assert.deepEqual(await problems(), []);
     assert.deepEqual(await textOutside(p), []);
-    assert.deepEqual(await layoutErrors(p), []);
-    await pickPathStory(p, 'run-lab');
-    assert.ok(await p.locator('#flow .canvas > .story-tag').count() > 0);
+    await drawOverlay(p, 'run-lab');
+    assert.deepEqual(await pathEdges(p), [['/home#Home', '/lab#Lab', 'l-conditioned'], ['/lab#Lab', '/lab/result#LabResult', 'l-open']]);
+    assert.deepEqual(await pathMarks(p, 'story-tag'), [['/lab#Lab', '조건', 'l-conditioned']]);
     assert.deepEqual(await problems(), []);
-    assert.deepEqual(await layoutErrors(p), []);
+
+    await drawOverlay(p, 'twice');
+    assert.deepEqual(await pillMarks(p, 'story-badge'), [['/signin#SignIn', '1'], ['/home#Home', '2·4'], ['/help#Help', '3']]);
   });
 });
 
-test('in a browser, the info icon of the story picker opens a legend of the path marks drawn as small samples with short names, and Escape closes it', { skip: browserMissing }, async () => {
+test('in a browser, the info icon beside a picked story opens a legend of the step number and of each kind of line between two steps drawn as small samples with short names, and Escape closes it', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
+    assert.equal(await p.locator('#flow-head button.pathinfo-button').count(), 0, 'no legend for a story until one is picked');
     await pickPathStory(p, 'walk-around');
-    const info = p.locator('.flowbar button.pathinfo-button');
+    const info = p.locator('#flow-head button.pathinfo-button');
     const legend = p.locator('#pathlegend');
     assert.equal(await info.getAttribute('aria-label'), '스토리 경로 읽는 법');
     assert.equal(await legend.isVisible(), false);
@@ -5579,12 +5782,14 @@ test('in a browser, the info icon of the story picker opens a legend of the path
     await p.mouse.move(5, 890);
     assert.equal(await legend.isVisible(), true);
     assert.deepEqual(await legend.locator('li > span:last-child').allTextContents(), [
-      '단계 번호', '이어짐 · 설정에 적은 이동', '조건', '5단계로 감', '4단계에서 옴', '링크 없음', '맵에 없는 화면', '판정 못 함', '경로 밖 화면',
+      '단계 번호', '이어짐', '조건', '설정에 적은 이동', '링크 없음', '맵에 없는 화면 · 판정 못 함',
     ]);
-    assert.equal(await legend.locator('li > .sample').count(), 9);
-    const look = (sel: string) => p.$eval(sel, (e) => { const c = getComputedStyle(e); return [c.borderTopStyle, c.borderTopColor, c.color, c.height].join(' '); });
-    assert.equal(await look('#pathlegend .story-chip.l-broken'), await look('#flow .canvas .story-chip.l-broken'));
-    assert.equal(await look('#pathlegend .story-badge'), await look('#flow .canvas .story-badge'));
+    assert.equal(await legend.locator('li > .sample').count(), 6);
+    const look = (sel: string) => p.$eval(sel, (e) => { const c = getComputedStyle(e); return [c.stroke, c.strokeWidth, c.strokeDasharray].join(' '); });
+    assert.equal(await look('#pathlegend path.l-broken'), await look('#flow .story-hop path.l-broken'));
+    assert.equal(await look('#pathlegend path.l-conditioned'), await look('#flow .story-hop path.l-conditioned'));
+    const badge = (sel: string) => p.$eval(sel, (e) => { const c = getComputedStyle(e); return [c.color, c.backgroundColor, c.height].join(' '); });
+    assert.equal(await badge('#pathlegend .story-badge'), await badge('#flow .story-line .story-badge'));
     await p.evaluate(() => renderFlow());
     assert.equal(await legend.isVisible(), true, 'a redraw keeps the legend open');
     const e = await inWindow(p, '#pathlegend');
