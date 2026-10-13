@@ -673,23 +673,33 @@ one screen that read the same share one count. No line number is in either key, 
 lines move; it shows under 「떨어져 나감」 once a `rebuild` no longer finds the condition on the screen or such a link
 into it.
 
-**Conversation.** For a screen or call the right pane holds only the conversation: every mark, comment and reply
-left on it, oldest first, open from the start and filling the pane, scrolling inside it when it is longer, with the
-form to write in at the bottom. Each mark and comment carries the tag of where it was left; a reply sits under its
-comment, set apart by its author and a light background. What is chosen in the middle is the default tag, and its ×
-takes it off; a status can be picked only while that one tag is on. For a story the conversation sits under the
+**Comments on a candidate.** Each story candidate has a speech bubble that shows on hover. Pressing it chooses the
+candidate and puts it in as the tag of the comment being written; the comment is saved with `"target": { "candidate":
+"<key>" }` and nothing else in its target. The key is the candidate's screen IDs joined with ` > `, the same key the
+page puts in its address. The comment is written to `<marksDir>/stories/candidates/<key>/`, with each character a file
+name cannot hold replaced by `_` and a key longer than 80 characters cut and given a short hash, apart from the marks
+on stories. A candidate takes comments only: a status sent with one is refused with the reason, and its comments never
+enter the task list, so they reach a coding agent only as the lines printed while the review runs. A candidate with
+comments shows their number; pressing it opens the candidate's conversation. Once the candidate is accepted or
+discarded and leaves the list, its comments show under 「떨어져 나감」 of the stories tab with the candidate's name.
+
+**Conversation.** For a screen or call the right pane holds only the conversation: every mark, comment and reply left
+on it, oldest first, open from the start and filling the pane, scrolling inside it when it is longer, with the form to
+write in at the bottom. Each mark and comment carries the tag of where it was left; a reply sits under its comment,
+set apart by its author and a light background. What is chosen in the middle is the default tag, and its × takes it
+off; a status can be picked only while that one tag is on. For a story or a candidate the conversation sits under the
 form behind 「대화 N」, and each entry without a status is labelled 「코멘트」 or 「답」.
 
 **All comments.** Two buttons at the top of the right pane switch between 「이 화면 N」 (「이 호출」 for a call, 「이 스토리」 for a
-story), the conversation described above, and 「전체 N」, every mark and comment with text still attached anywhere; N
-counts those, leaving out replies and marks that carry only a status. 「전체」 groups them by the screen, call or story
-they were left on, the group with the latest entry first and the latest entry first in each group; a line shows the
-status, the tag, who wrote it and when, the number of replies and the first line of the text. 「답 없는 것만」 keeps the
-comments without a status that have no reply yet, and 「더 필요」, 「없음」 and 「충분」 keep, for a place whose current status is
-that one, the latest mark with that status and text. The form is hidden while 「전체」 is shown. Pressing a line opens its
-screen, call or story in 「이 화면」 and scrolls the conversation to that entry, outlined. 「전체」 and the numbers and dots it
-describes leave out what has come off its target; it stays under 「떨어져 나감」 and in the conversation of its screen or
-call.
+story, 「이 후보」 for a candidate), the conversation described above, and 「전체 N」, every mark and comment with text still
+attached anywhere; N counts those, leaving out replies and marks that carry only a status. 「전체」 groups them by the
+screen, call, story or candidate they were left on, the group with the latest entry first and the latest entry first
+in each group; a line shows the status, the tag, who wrote it and when, the number of replies and the first line of
+the text. 「답 없는 것만」 keeps the comments without a status that have no reply yet, and 「더 필요」, 「없음」 and 「충분」 keep, for a
+place whose current status is that one, the latest mark with that status and text. The form is hidden while 「전체」 is
+shown. Pressing a line opens its screen, call, story or candidate in 「이 화면」 and scrolls the conversation to that
+entry, outlined. 「전체」 and the numbers and dots it describes leave out what has come off its target; it stays under
+「떨어져 나감」 and in the conversation of its screen or call.
 
 A screen in the list and in the flow, a story in the list, a depth row and a call cell show 「코멘트 N」 when marks or
 comments with text were left there, with a red dot while one of the comments has no reply; a test, condition or link
@@ -706,7 +716,11 @@ also carries `"where"`: for a test, `{"file","line","source","status","relation"
 link starts on, and for a condition the `guard` as written, `via` when it sits in a function the link calls,
 `roleGuardsKey` when `roleGuards` gave its roles, or `inherited` for a link that passes on the condition of the
 screen it starts on; or `null` when the part is no longer found. A
-failure message is not copied in; it is read from the result file named in `source`. A coding agent that launched the page can
+failure message is not copied in; it is read from the result file named in `source`. A comment or reply on a
+`candidate` carries `"where": {"name","source","screens"}`: `screens` is the screen order, and `source` is
+`{"record","steps"}`, the visit record and its first and last step, with `stepRanges` giving the steps behind each
+screen, or `{"report","tests"}`, the result file and the titles of the tests that passed through that order. It is
+`null` once the candidate is no longer listed. A coding agent that launched the page can
 act on it without waiting for the end. Every open page receives the same save at once and shows it without a
 reload, so a mark left in one window appears in another.
 

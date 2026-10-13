@@ -193,6 +193,16 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    For both, read the line in the target project. If the app does not do what duru read there (a wrong role or
    setting, a link that is not there, a condition duru missed), tell the user it is a duru defect, naming the
    line and what duru read; otherwise answer with the line that shows the app does what duru read.
+   A comment can also be on a story candidate, with `target` set to `{ "candidate": "<key>" }` and nothing else.
+   The key is its screen IDs joined with ` > `, for a candidate from a visit record as for one from a Playwright
+   trace. Its line carries `where` with the candidate's `name`, its `screens` in order and its
+   `source`: `{ "record", "steps" }` with `stepRanges`, the steps of the record behind each screen, or
+   `{ "report", "tests" }`, the result file and the titles of the tests that passed through that order. `where` is
+   `null` once the candidate has been accepted or discarded, or when the map or `tests.json` could not be read at
+   that moment. Such a comment asks about the order before the reviewer accepts it: answer why that order came out,
+   citing the record and the steps behind each screen, or the test by its title and the steps it takes in the
+   target project. A comment on a candidate takes no status and never appears in the task list, so act on it when
+   its line arrives.
    After you have answered or fixed it, reply to the comment as above.
    When the reviewer presses 「리뷰 끝」 (or presses Ctrl+C in its terminal), the process exits with code 0 and its
    standard output is exactly the task list, the same text `duru tasks <config>` prints. Any other exit is an
