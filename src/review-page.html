@@ -72,6 +72,8 @@
   .chip.needs-more { color: var(--more); } .chip.missing { color: var(--missing); } .chip.fine { color: var(--fine); } .chip.comment, .chip.reply { color: var(--muted); }
   .title-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .title-row h3 { margin: 0; font-size: 18px; }
+  .title-row .need-kinds:empty { display: none; }
+  .title-row .need-kinds .chip { margin-left: 0; margin-right: 4px; }
   .frame-bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 6px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--bg); font-size: 13px; }
   .frame-bar .mono { flex: 1 1 24em; min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .frame-bar .error { color: var(--fail); }
@@ -150,8 +152,9 @@
   .baseline-banner { margin: 10px 0; padding: 8px 10px; border: 1px dashed var(--changed); border-radius: 6px; background: var(--changed-bg); color: var(--changed); font-size: 13px; }
   .removed-screens .gone, tr.removed-call .gone { text-decoration: line-through; }
   tr.removed-call { color: var(--muted); }
-  .access > h2:first-child, .in-screen > h2:first-child { margin-top: 16px; }
-  .open-needs h3, .cases h3 { font-size: 13px; margin: 10px 0 4px; }
+  :is(.access, .in-screen, .cases) > h2:first-child { margin-top: 16px; }
+  :is(.screen-info, .call-info) > summary + * > h2:first-child { margin-top: 0; }
+  .open-needs h3 { font-size: 13px; margin: 10px 0 4px; }
   .open-needs .need, .reach-summary .need { display: flex; align-items: center; gap: 6px; font-weight: 600; }
   .open-needs .need .flag { color: var(--pending); font-weight: normal; }
   .open-needs .tips { font-size: 12px; margin-top: 4px; }
@@ -166,7 +169,17 @@
   #right-dock { flex: none; padding: 10px 16px 12px; border-top: 1px solid var(--line); background: var(--panel); }
   #right-info:empty, #right-dock:empty { display: none; }
   #right .chip { white-space: normal; }
-  .target-id { margin-bottom: 4px; }
+  :is(.screen-info, .call-info) { margin-top: 16px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; }
+  :is(.screen-info, .call-info) > summary { cursor: pointer; }
+  :is(.screen-info, .call-info) > summary .title { font-weight: 600; }
+  :is(.screen-info, .call-info) > summary .counts { font-size: 12px; }
+  :is(.screen-info, .call-info) > summary + * { margin-top: 10px; }
+  :is(.screen-info, .call-info) .chip { white-space: normal; }
+  .call-info .target-id .mono { margin-right: 4px; }
+  .talk .history li { font-size: 13px; }
+  .talk .history > li { margin-bottom: 12px; }
+  .talk .history .replies { margin: 6px 0 0; }
+  .talk .history li.reply { margin-bottom: 6px; padding: 6px 8px; border-radius: 6px; background: var(--bg); }
   .link-group { margin-bottom: 6px; }
   .link-group > summary, .long-guard > summary { cursor: pointer; }
   .link-group > ul { margin: 6px 0 8px 16px; }
@@ -497,7 +510,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, callInfoShut: null };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -602,6 +615,8 @@ function setSelected(id, target = { node: id }) {
     state.openGroups.clear();
     state.openLong.clear();
   }
+  state.callInfoShut = null;
+  state.caseError = null;
   state.selected = id;
   state.target = target;
   state.draft = null;
@@ -620,6 +635,7 @@ function selectStory(id) {
   state.candidate = null;
   state.storyDraft = null;
   state.error = null;
+  state.caseError = null;
   state.storyError = null;
   state.judgmentError = null;
   render();
@@ -629,6 +645,7 @@ function selectCandidate(key) {
   if (key !== state.candidate) state.storyOpen.clear();
   state.candidate = key;
   state.error = null;
+  state.caseError = null;
   state.storyError = null;
   state.judgmentError = null;
   render();
@@ -643,6 +660,7 @@ function selectUntaggedTest(key) {
   if (state.bulkBusy) return;
   setUntaggedTest(key);
   state.error = null;
+  state.caseError = null;
   state.judgmentError = null;
   render();
 }
@@ -651,6 +669,7 @@ function setSide(side) {
   state.side = side;
   if (side !== 'screens') state.flowPicked = false;
   state.error = null;
+  state.caseError = null;
   state.judgmentError = null;
   render();
 }
@@ -665,14 +684,29 @@ function openCall(id) {
   if (state.bulkBusy) return;
   state.side = 'screens';
   select(callOf(id).screens[0], { node: id });
+  revealCallInfo();
 }
 
 function selectTarget(t) {
+  if (t.node !== state.target?.node) state.callInfoShut = null;
+  state.caseError = null;
   state.target = t;
   state.draft = null;
   state.error = null;
   state.judgmentError = null;
   render();
+  revealCallInfo();
+}
+
+// 호출 정보는 호출 표 아래에 있어, 고른 뒤에 칸 밖에 놓이면 가운데 칸만 그 자리로 내린다.
+function revealCallInfo() {
+  const pane = document.getElementById('center');
+  const summary = pane.querySelector('.call-info[open] > summary');
+  if (!summary) return;
+  const top = summary.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+  if (top >= 0 && top + summary.offsetHeight <= pane.clientHeight) return;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  pane.scrollTo({ top: pane.scrollTop + top - 12, behavior: still ? 'auto' : 'smooth' });
 }
 
 function placeStateTip(e) {
@@ -1061,6 +1095,7 @@ function moveTalkTo(node) {
   state.target = { node };
   state.draft = state.draft && { status: markOf(state.target)?.current?.status ?? null, note: state.draft.note, part: null, noTag: false };
   state.error = null;
+  state.caseError = null;
 }
 
 function focusTalk() {
@@ -1202,7 +1237,7 @@ function askExcludePair(t, node, key) {
   askExclude(t, () => [node], {
     save: async (reason) => {
       const { failure, reloadError } = await postAndReload({ test: t.ref, node, kind: 'discard', reason }, key);
-      if (!failure) state.judgmentError = reloadError ? { key, message: reloadError } : null;
+      if (!failure) setJudgmentError(key, reloadError);
       return failure;
     },
     done: renderKeepingJudgeRowFocus,
@@ -1249,7 +1284,7 @@ const byTrace = (t) => Boolean(t.level || t.unconfirmed);
 const pairTestItem = (t) => (byTrace(t) ? passedItem(t) : importerItem(t));
 const pairKeys = (node) => [passedOf, importersOf, discardedOf, awaitingTagOf, detachedOf].flatMap((of) => of(node)).map((t) => judgmentKey(t, node));
 
-// 화면의 짝은 가운데 칸에, 고른 호출의 짝은 오른쪽 칸에 있다.
+// 화면의 짝과 고른 호출의 짝은 오류를 저마다 제 줄 아래에 보인다.
 function strayJudgmentError(s) {
   const call = state.target.node === s.id ? [] : pairKeys(state.target.node);
   const stray = state.judgmentError && ![...pairKeys(s.id), ...call].includes(state.judgmentError.key);
@@ -1787,6 +1822,12 @@ function renderSettingsBar() {
     state.settingsError ? h('span', { class: 'error' }, state.settingsError) : null);
 }
 
+// 프레임을 다시 띄우지 않고도 다시 빌드한 맵의 조건을 따라가도록, 이름 옆 표시는 그릴 때마다 새로 채운다.
+function fillNeedKinds(head, s) {
+  const box = head.querySelector('.need-kinds');
+  if (box) fill(box, s.access.restricted ? (s.access.kinds.length ? s.access.kinds.map(kindChip) : mixedChip()) : null);
+}
+
 function renderCenterHead(s) {
   const head = document.getElementById('center-head');
   const { app, appLinks } = state.data;
@@ -1795,7 +1836,7 @@ function renderCenterHead(s) {
   let target = s && app ? frameTarget(s, entry) : null;
   // 앱을 조작하던 중에 표시를 남겨도 프레임이 다시 로드되지 않게, 고른 화면이나 띄울 주소가 바뀔 때만 다시 그린다.
   const keyOf = () => (s ? [s.id, app?.url, state.roleChoice, target?.link, entry?.pending, entry?.opened].join(' ') : '');
-  if (head.dataset.key === keyOf()) return;
+  if (head.dataset.key === keyOf()) return fillNeedKinds(head, s);
   if (entry?.issued && entry.used) {
     state.pathValues.delete(pathValueKey(s.id, frameAccount(s).role));
     entry = entryOf();
@@ -1808,12 +1849,14 @@ function renderCenterHead(s) {
   fill(head,
     h('div', { class: 'title-row' },
       h('h3', {}, s.path),
+      h('span', { class: 'need-kinds' }),
       h('span', { class: 'muted' }, s.component),
       app ? null
         : link ? h('a', { href: link, target: '_blank', rel: 'noopener' }, '실제 앱에서 열기 ↗')
           : state.data.appUrl ? h('span', { class: 'muted' }, '경로 변수가 있어 실제 앱 링크를 만들 수 없음') : null),
     h('div', { class: 'muted mono' }, s.id),
     app ? appFrame(s, target, entry) : null);
+  fillNeedKinds(head, s);
   // 값을 불러오는 동안이나 값이 비어 주소가 없을 때는 마지막으로 띄운 화면을 그대로 기억한다.
   if (!target?.link) return;
   const shownId = (target.opens ?? s).id;
@@ -2476,7 +2519,29 @@ function renderCenter() {
     strayJudgmentError(s),
     untaggedPairs(s.id),
     callTable(s),
+    callInfo(s),
+    screenInfo(s),
   );
+}
+
+const targetLabelOf = ({ option, depth }, call) => [option && optionLabel(option), depth && `${DEPTH_LABELS[depth]} 깊이`].filter(Boolean).join(' · ') || (call ? '호출 전체' : '화면 전체');
+
+function callInfo(s) {
+  const call = state.target.node === s.id ? null : callOf(state.target.node);
+  if (!call) return null;
+  return h('details', { class: 'call-info', open: state.callInfoShut !== call.id, ontoggle: (e) => { state.callInfoShut = e.currentTarget.open ? null : call.id; } },
+    h('summary', {}, h('span', { class: 'title' }, '호출 정보'), ' ', h('span', { class: 'target-id' }, h('span', { class: 'mono' }, call.id), ' ', h('strong', {}, targetLabelOf(state.target, call)))),
+    caseSection(call),
+    callDetails(call, s));
+}
+
+function screenInfo(s) {
+  return h('details', { class: 'screen-info', open: state.screenInfoOpen, ontoggle: (e) => { state.screenInfoOpen = e.currentTarget.open; } },
+    h('summary', {}, h('span', { class: 'title' }, '화면 정보'), ' ',
+      h('span', { class: 'counts muted' }, `들어오는 링크 ${s.access.links.length} · 나가는 링크 ${s.links.length} · 읽는 설정값 ${s.settingReads.length}`)),
+    openSummary(s),
+    caseSection(s),
+    screenDetails(s));
 }
 
 const serverText = (server) => (server.status === 'match' && server.labels?.length
@@ -2655,15 +2720,8 @@ function renderScreenRight(info, dock) {
     return fill(dock);
   }
   const call = state.target.node === s.id ? null : callOf(state.target.node);
-  const { option, depth } = state.target;
-  const targetLabel = [option && optionLabel(option), depth && `${DEPTH_LABELS[depth]} 깊이`].filter(Boolean).join(' · ') || (call ? '호출 전체' : '화면 전체');
-  fill(info,
-    call ? null : openSummary(s),
-    call ? h('div', { class: 'target-id' }, h('div', { class: 'mono' }, call.id), h('strong', {}, targetLabel)) : null,
-    caseSection(call ?? s),
-    call ? callDetails(call, s) : screenDetails(s),
-  );
-  fill(dock, markForm(state.target, 'draft', targetLabel));
+  fill(info, talkPanel(state.target));
+  fill(dock, markForm(state.target, 'draft', targetLabelOf(state.target, call), { folded: false }));
 }
 
 const talkOf = (target) => [...state.data.marks.attached, ...state.data.marks.detached]
@@ -2675,15 +2733,13 @@ function tagChip(label, remove) {
   return h('span', { class: 'tag' }, h('span', { class: 'tag-label' }, label), remove ? h('button', { type: 'button', title: '꼬리표 빼기', 'aria-label': `${label} 꼬리표 빼기`, onclick: remove }, '×') : null);
 }
 
-function markForm(target, draftKey, label) {
-  const mark = markOf(target);
-  state[draftKey] ??= { status: mark?.current?.status ?? null, note: '' };
-  const draft = state[draftKey];
+function talkThread(target, { labelled }) {
   const talk = talkOf(target);
   const shown = state.historyFilter ? talk.filter((m) => m.key === state.historyFilter) : talk;
-  const recordItem = (m, r) => h('li', {},
-    r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status] ?? CASE_STATUS[r.status]) : h('span', { class: `chip ${r.replyTo !== undefined ? 'reply' : 'comment'}` }, r.replyTo !== undefined ? '답' : '코멘트'),
-    ' ', r.replyTo === undefined ? [tagChip(tagLabel(m.target)), ' '] : null,
+  const recordItem = (m, r) => h('li', { class: r.replyTo !== undefined ? 'reply' : null },
+    r.status ? [h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status] ?? CASE_STATUS[r.status]), ' ']
+      : labelled ? [h('span', { class: `chip ${r.replyTo !== undefined ? 'reply' : 'comment'}` }, r.replyTo !== undefined ? '답' : '코멘트'), ' '] : null,
+    r.replyTo === undefined ? [tagChip(tagLabel(m.target)), ' '] : null,
     h('span', { class: 'muted' }, signedAt(r)),
     r.note ? h('div', {}, r.note) : null,
     ...repliesOf(m, r));
@@ -2695,14 +2751,30 @@ function markForm(target, draftKey, label) {
   const topLevel = shown.flatMap((m) => m.history.filter((r) => !answered(m, r)).map((r) => ({ m, r }))).sort((a, b) => byDate(a.r, b.r));
   const all = talk.flatMap((m) => m.history.filter((r) => !answered(m, r)));
   const history = all.length ? h('ul', { class: 'plain history' }, topLevel.map(({ m, r }) => recordItem(m, r))) : null;
-  const historyToggle = history && h('button', { class: 'history-toggle', onclick: () => {
-    state.historyOpen = !state.historyOpen;
-    applyHistoryFold(historyToggle, history);
-  } }, `대화 ${all.length}`);
-  if (history) applyHistoryFold(historyToggle, history);
   const filter = state.historyFilter && history && h('div', { class: 'history-filter' },
     '걸러 보는 중 ', tagChip(tagLabel(talk.find((m) => m.key === state.historyFilter)?.target ?? target)),
     h('button', { type: 'button', onclick: () => { state.historyFilter = null; render(); } }, '모두 보기'));
+  return { count: all.length, history, filter };
+}
+
+function talkPanel(target) {
+  const { history, filter } = talkThread(target, { labelled: false });
+  return h('div', { class: 'talk' },
+    h('h2', {}, '에이전트와 대화'),
+    filter,
+    history ?? h('p', { class: 'muted' }, '아직 대화가 없습니다.'));
+}
+
+function markForm(target, draftKey, label, { folded = true } = {}) {
+  const mark = markOf(target);
+  state[draftKey] ??= { status: mark?.current?.status ?? null, note: '' };
+  const draft = state[draftKey];
+  const { count, history, filter } = folded ? talkThread(target, { labelled: true }) : {};
+  const historyToggle = history && h('button', { class: 'history-toggle', onclick: () => {
+    state.historyOpen = !state.historyOpen;
+    applyHistoryFold(historyToggle, history);
+  } }, `대화 ${count}`);
+  if (history) applyHistoryFold(historyToggle, history);
   const tag = draft.noTag ? null : draft.part ?? target;
   const statusOn = tag === target;
   const savable = () => tag !== null && (draft.note.trim() !== '' || (statusOn && !!draft.status));
@@ -2721,7 +2793,7 @@ function markForm(target, draftKey, label) {
     render();
   };
   return h('div', { class: 'mark-form' },
-    h('div', { class: 'talk-head' }, h('h2', {}, '에이전트와 대화'), h('div', { class: 'tags' }, '꼬리표 ', tag
+    h('div', { class: 'talk-head' }, folded ? h('h2', {}, '에이전트와 대화') : null, h('div', { class: 'tags' }, '꼬리표 ', tag
       ? tagChip(tag === target ? label : tagLabel(tag), untag)
       : [h('span', { class: 'muted' }, '없음'), h('button', { type: 'button', class: 'retag', onclick: () => {
         draft.noTag = false;
@@ -2825,7 +2897,7 @@ function caseSection(node) {
   const tests = testsOf(node.id);
   const picked = new Set(node.cases.map((c) => c.tag));
   return h('div', { class: 'cases' },
-    h('h3', {}, '경우별 테스트'),
+    h('h2', {}, '경우별 테스트'),
     node.cases.length ? h('ul', { class: 'plain' }, node.cases.map((c) => h('li', { title: `@${c.tag}` },
       h('div', { class: 'case' }, CASE_LABEL[c.kind](c)),
       depthCounts(tests.filter((t) => t.cases?.includes(c.tag)), '테스트 없음')))) : null,
@@ -2835,6 +2907,7 @@ function caseSection(node) {
         const on = picked.has(`case:${kind}`);
         return h('button', { type: 'button', class: on ? 'on' : '', 'aria-pressed': String(on), title: `@case:${kind}`, disabled: state.caseSaving || state.bulkBusy, onclick: () => pickCase({ node: node.id, case: kind }, on ? 'not-needed' : 'needed') }, text);
       })),
+      state.caseError?.node === node.id ? h('p', { class: 'error' }, state.caseError.message) : null,
     ] : null);
 }
 
@@ -2845,8 +2918,9 @@ async function pickCase(target, status) {
 
 async function savePick(target, status) {
   state.error = null;
+  state.caseError = null;
   state.caseSaving = true;
-  renderRight();
+  renderCenter();
   let saved;
   try {
     const res = await fetch('/api/marks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, status }) });
@@ -2854,13 +2928,14 @@ async function savePick(target, status) {
     saved = await res.json();
   } catch (err) {
     state.caseSaving = false;
-    showSaveError(err.message, target);
+    state.caseError = { node: target.node, message: `「${targetName(target)}」 코멘트를 저장하지 못했습니다: ${err.message}` };
+    if (!state.ended) renderCenter();
     return null;
   }
   try {
     await load();
   } catch (err) {
-    state.error = `「${targetName(target)}」 코멘트는 저장했지만 다시 읽지 못했습니다: ${err.message}`;
+    state.caseError = { node: target.node, message: `「${targetName(target)}」 코멘트는 저장했지만 다시 읽지 못했습니다: ${err.message}` };
   }
   state.caseSaving = false;
   render();
@@ -2870,7 +2945,7 @@ async function savePick(target, status) {
 function openSummary(s) {
   const { lines, tips, bare } = openNeeds(s);
   return h('div', { class: 'open-needs' },
-    h('h2', {}, '이 화면을 열려면'),
+    h('h2', {}, '접근 조건'),
     s.access.restricted ? [...lines.map(needLine), bare ? bareLine(bare) : null] : h('p', { class: 'muted' }, '설정이나 역할 없이 열립니다.'),
     tips.length ? h('ul', { class: 'plain tips muted' }, tips.map((t) => h('li', {}, t))) : null,
     s.access.route.length ? h('div', { class: 'route' }, h('h3', {}, '라우트에서 막는 조건'), s.access.route.map((g) => accessGuard(g, 'route'))) : null);
@@ -2980,11 +3055,17 @@ async function postAndReload(judgment, key) {
   }
 }
 
+// 오류가 붙은 짝의 줄과 초점을 보이도록, 그 짝이 든 「호출 정보」를 다시 연다.
+function setJudgmentError(key, message) {
+  state.judgmentError = message ? { key, message } : null;
+  if (message && state.callInfoShut && pairKeys(state.callInfoShut).includes(key)) state.callInfoShut = null;
+}
+
 async function saveJudgment(judgment, key) {
   if (judgmentsInFlight.has(key)) return;
   state.judgmentError = null;
   const { failure, reloadError } = await postAndReload(judgment, key);
-  if (failure ?? reloadError) state.judgmentError = { key, message: failure ?? reloadError };
+  if (failure ?? reloadError) setJudgmentError(key, failure ?? reloadError);
   renderKeepingJudgeRowFocus();
 }
 
@@ -4119,6 +4200,7 @@ function applyPlace() {
       } else if (state.storyPath) leaveStoryPath();
       state.flowPicked = screen !== null && drawnScreens().some((n) => n.id === screen);
       if (state.flowPicked) {
+        if (state.side !== 'screens') state.caseError = null;
         state.side = 'screens';
         if (screen !== state.selected) setSelected(screen);
         ringScreen(screen);
@@ -4128,6 +4210,7 @@ function applyPlace() {
     };
   } else if (PLACE_TABS.includes(head)) {
     state.view = 'list';
+    if (state.side !== head) state.caseError = null;
     state.side = head;
     if (head !== 'screens') state.flowPicked = false;
     const screen = p.get('screen');
