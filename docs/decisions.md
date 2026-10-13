@@ -1675,6 +1675,23 @@ Alternatives compared:
 - Leaving the flow to links only: nothing to build, but a move written for the stories would say nothing in the
   flow, and a screen reached only by a move would be drawn as a tree of its own.
 
+**「전체」 groups comments by the screen, call or story they were left on, and a screen's count covers only its own
+conversation.**
+「이 화면」 already treats a call as a conversation of its own, so 「전체」 gives a call its own group and a screen's number in
+the list and the flow counts what its own conversation holds, leaving out what has come off its target as 「전체」 does;
+pressing a line or a number therefore lands on a conversation that holds every entry counted. A comment waits for a
+reply when it has no status and no reply, the rule `wait` and `GET /api/events?unanswered` already use, though those
+also count a comment that has come off its target: a status is a verdict, not a question to the agent. A mark that
+carries only a status is left out of the numbers and of 「전체」: the status chip on the same row already shows it, and
+counting it would call a pressed status button a comment.
+Alternatives compared:
+- A call's comments under its screen: a call can be called from several screens, so its comments would sit in
+  several groups or in one picked at random, and pressing them would open a conversation that does not hold them.
+- A screen's number counting the comments on its calls too: the list would show comments the screen's own
+  conversation does not show.
+- Counting a mark with no text: a screen marked 「충분」 would read 「코멘트 1」 though nothing was written, and the
+  badge would repeat what the status chip beside it says.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
