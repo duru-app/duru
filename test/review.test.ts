@@ -3786,6 +3786,46 @@ test('in a browser, pressing a screen in the flow keeps strong only the paths th
   );
 });
 
+test('in a browser, a move in the config draws a screen no link reached yet under the screen it leaves with a green dotted line, marks the screen it reaches in another branch when its screen is picked, and both screens list the move with its reason', { skip: browserMissing }, async () => {
+  const moves = [{ from: '/signin', to: '/lab/result', reason: '로그인 뒤' }, { from: '/lab/result', to: '/help', reason: '닫은 뒤' }, { from: '/signin', to: '/help', reason: '도움말 단추' }];
+  await withRebuiltFixture({ moves }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        const movedLines = () => p.$$eval('#flow .canvas svg path.moved', (els) => els.map((e) => {
+          const probe = document.createElement('span');
+          probe.style.color = 'var(--fine)';
+          document.body.append(probe);
+          const fine = getComputedStyle(probe).color;
+          probe.remove();
+          const c = getComputedStyle(e);
+          return [(e as SVGElement).dataset.from, (e as SVGElement).dataset.to, c.stroke === fine, c.strokeDasharray];
+        }).sort((a, b) => String(a[1]).localeCompare(String(b[1]))));
+        const bothMoves = [['/signin#SignIn', '/help#Help', true, '3px, 3px'], ['/signin#SignIn', '/lab/result#LabResult', true, '3px, 3px']];
+        assert.deepEqual(await movedLines(), bothMoves, 'a move over a guarded link is drawn as the move');
+        assert.ok((await tipLines(await screenBox(p, '/lab/result#LabResult'))).includes('설정에 적은 이동: 로그인 뒤'));
+        const helpTips = await tipLines(await screenBox(p, '/help#Help'));
+        assert.ok(helpTips.includes('설정에 적은 이동: 도움말 단추'));
+        assert.ok(!helpTips.some((t) => t.startsWith('이 링크의 조건')), 'the guard of the link the move is drawn over is left out');
+        assert.deepEqual(await boxesWith(p, 'jump'), []);
+
+        await (await screenBox(p, '/lab/result#LabResult')).click();
+        await p.waitForSelector('#flow .box.picked');
+        assert.deepEqual(await boxesWith(p, 'jump'), ['/help#Help'], 'the screen its move reaches in another branch is marked');
+        assert.equal((await lineStates(p))['/signin#SignIn /lab/result#LabResult'], 'on');
+        assert.deepEqual(await movedLines(), bothMoves, 'a strong move line stays green and dotted');
+        assert.match((await p.textContent('#center .screen-info > summary .counts'))!, /^들어오는 링크 2 · 나가는 링크 1 · /, 'the folded line counts the moves with the links');
+        await openScreenInfo(p);
+        assert.equal(await p.textContent('#center .access h2'), '들어오는 링크 2');
+        assert.deepEqual(await p.locator('#center .access .moves li').allTextContents(), ['/signin#SignIn 설정에 적은 이동 로그인 뒤']);
+        const outgoing = p.locator('#center .screen-info h2', { hasText: '나가는 링크' });
+        assert.equal(await outgoing.textContent(), '나가는 링크 1');
+        assert.deepEqual(await outgoing.locator('xpath=following-sibling::*[1]').locator('li').allTextContents(), ['/help#Help 설정에 적은 이동 닫은 뒤']);
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
 test('in a browser, a click on an empty spot of the flow drawing lets the picked screen go as 「선택 해제」 does, while a click on a line or the scrollbar, a press dragged across the drawing, or a press on a screen released just beside it keeps it', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
@@ -4929,7 +4969,7 @@ test('in a browser, scrolling the drawing sideways leaves the bar, its legend an
         const after = await edges();
         assert.deepEqual(after.icon, before.icon);
         assert.deepEqual(after.key, before.key);
-        assert.equal(after.key.length, 5);
+        assert.equal(after.key.length, 6);
         for (const r of [after.icon, after.legend, ...after.key]) assert.ok(r.left >= 0 && r.right <= after.width, `${r.left}..${r.right} within ${after.width}`);
       }, { view: 'flow' }),
     ),
@@ -4988,9 +5028,9 @@ test('in a browser, the pointer can travel from the info icon into the explanati
   );
 });
 
-const KEY_LABELS = ['통과', '실패', '보류', '테스트 없음', '조건 걸린 링크'];
+const KEY_LABELS = ['통과', '실패', '보류', '테스트 없음', '조건 걸린 링크', '설정에 적은 이동'];
 
-test('in a browser, the flow bar always shows a legend of five samples next to the info icon', { skip: browserMissing }, async () => {
+test('in a browser, the flow bar always shows a legend of six samples next to the info icon', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -5000,7 +5040,7 @@ test('in a browser, the flow bar always shows a legend of five samples next to t
         assert.equal(await key.isVisible(), true);
         assert.equal(await key.getAttribute('aria-label'), '흐름도 범례');
         assert.deepEqual(await key.locator('li .key-label').allTextContents(), KEY_LABELS);
-        assert.equal(await key.locator('li [aria-hidden="true"]').count(), 5, 'every drawn sample is hidden from a screen reader');
+        assert.equal(await key.locator('li [aria-hidden="true"]').count(), 6, 'every drawn sample is hidden from a screen reader');
         assert.deepEqual(await key.locator('li').evaluateAll((items) => items.map((li) => li.textContent.trim())), KEY_LABELS);
         const m = await p.evaluate(() => {
           const rect = (e: Element) => e.getBoundingClientRect();
@@ -5010,7 +5050,7 @@ test('in a browser, the flow bar always shows a legend of five samples next to t
         });
         assert.ok(m.right <= m.iconLeft, `the legend ends at ${m.right}, left of the icon at ${m.iconLeft}`);
         assert.ok(m.iconLeft - m.right <= 16, 'the legend sits next to the icon');
-        assert.equal(m.tops, 1, 'the five samples are on one line at 1440px');
+        assert.equal(m.tops, 1, 'the six samples are on one line at 1440px');
         assert.equal(m.legendShown, 'none', 'the samples show without opening the explanation');
         const before = await p.evaluate(() => document.querySelector('.canvas')!.getBoundingClientRect().top);
         await p.locator('.flowbar button.flowinfo-button').click();
@@ -5021,7 +5061,7 @@ test('in a browser, the flow bar always shows a legend of five samples next to t
   );
 });
 
-test('in a browser, each legend sample is drawn with the square of the screens and the dash of the guarded links it stands for', { skip: browserMissing }, async () => {
+test('in a browser, each legend sample is drawn with the square of the screens and the dash of the guarded links and of the moves it stands for', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -5034,16 +5074,21 @@ test('in a browser, each legend sample is drawn with the square of the screens a
             if (box) out[cls] = [look(document.querySelector(`.flowkey .sq.${cls}`)!), look(box)];
           }
           const canvas = document.querySelector('.canvas')!;
-          const edge = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-          edge.setAttribute('class', 'guarded');
-          canvas.querySelector('svg')!.append(edge);
           const stroke = (e: Element) => { const c = getComputedStyle(e); return [c.stroke, c.strokeDasharray, c.strokeWidth].join(' '); };
-          out.guarded = [stroke(document.querySelector('.flowkey svg path')!), stroke(edge)];
-          const dashes = [document.querySelector('.flowkey svg path')!, edge].map((e) => getComputedStyle(e).strokeDasharray);
-          edge.remove();
+          const dashes = [];
+          for (const cls of ['guarded', 'moved']) {
+            const edge = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            edge.setAttribute('class', cls);
+            canvas.querySelector('svg')!.append(edge);
+            const sample = document.querySelector(`.flowkey svg path.${cls}`)!;
+            out[cls] = [stroke(sample), stroke(edge)];
+            dashes.push(...[sample, edge].map((e) => getComputedStyle(e).strokeDasharray));
+            edge.remove();
+          }
           return { pairs: out, dashes };
         });
-        assert.deepEqual(Object.keys(pairs).sort(), ['guarded', 's-fail', 's-none', 's-pass', 's-pending']);
+        assert.deepEqual(Object.keys(pairs).sort(), ['guarded', 'moved', 's-fail', 's-none', 's-pass', 's-pending']);
+        assert.notEqual(pairs.guarded[0], pairs.moved[0], 'a move is drawn apart from a guarded link');
         for (const [name, [sample, real]] of Object.entries(pairs)) assert.equal(sample, real, name);
         assert.equal(new Set(['s-pass', 's-fail', 's-pending', 's-none'].map((c) => pairs[c][0])).size, 4, 'the four samples differ');
         for (const dash of dashes) assert.match(dash, /^\d+(\.\d+)?(px)?,? \d+(\.\d+)?(px)?$/, `a dash of two lengths, not ${dash}`);
@@ -5064,7 +5109,7 @@ test('in a browser, the explanation behind the info icon shows each tag a screen
         assert.deepEqual(await legend.locator('li').evaluateAll((items) => items.map((li) => [...li.children].map((c) => c.textContent))), [
           ['/주소API 8', '이 화면에서 부르는 API 호출의 수. 화면을 누르면 오른쪽에 호출마다 테스트가 보입니다'],
           ['/주소역할/주소설정', '특정 역할이나 설정에서만 열리는 화면. 무엇이 필요한지는 마우스를 올리면 보입니다'],
-          ['/주소', '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크가 닿는 화면'],
+          ['/주소', '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크나 설정에 적은 이동이 닿는 화면'],
           ['불러옴 N · 지나감 N', '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 연 브라우저 테스트. 마우스를 올리면 보입니다상태 색과 테스트 수에는 넣지 않음'],
         ]);
         const look = (sel: string) => p.$eval(sel, (e) => { const c = getComputedStyle(e); return [c.borderTopStyle, c.borderTopColor, c.color, c.fontSize].join(' '); });

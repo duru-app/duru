@@ -33,6 +33,7 @@ export interface FlowMap {
   screens: FlowMapScreen[];
   calls?: { id: string; server: EndpointMatch }[];
   entries?: { screen: string }[];
+  moves?: { from: string; to: string; reason: string }[];
 }
 
 export interface FlowTests {
@@ -54,6 +55,7 @@ export interface FlowJump {
   to: string;
   label: string;
   guards: FlowGuard[][];
+  moved?: string[];
 }
 
 export interface FlowScreenNode {
@@ -69,6 +71,7 @@ export interface FlowScreenNode {
   kinds: string[];
   access: Partial<Pick<FlowAccess, 'roleValues' | 'unreadableRoleGuards' | 'settings'>>;
   guards: FlowGuard[][];
+  moved?: string[];
   children: FlowScreenNode[];
   calls: FlowCallNode[];
   jumps: FlowJump[];
@@ -93,24 +96,27 @@ const countOf = (tests: FlowTests['nodes'][string] | undefined): FlowCounts => {
   return c;
 };
 
-// 진입 화면에서 너비 우선으로 링크를 따라가며 화면마다 처음 발견한 위치에 한 번만 둔다.
-// 이미 놓인 화면으로 가는 링크는 옮겨 그리지 않고 출발 노드의 jumps 에 남긴다.
+// 진입 화면에서 너비 우선으로 링크와 설정의 moves 를 따라가며 화면마다 처음 발견한 위치에 한 번만 둔다.
+// 이미 놓인 화면으로 가는 링크와 이동은 옮겨 그리지 않고 출발 노드의 jumps 에 남긴다.
 export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
   const byId = new Map(map.screens.map((s) => [s.id, s]));
-  const outgoing = new Map<string, Map<string, FlowGuard[][]>>(map.screens.map((s) => [s.id, new Map()]));
+  const outgoing = new Map<string, Map<string, { links: FlowGuard[][]; moves: string[] }>>(map.screens.map((s) => [s.id, new Map()]));
+  const edgeTo = (from: string, to: string) => {
+    const edges = outgoing.get(from)!;
+    if (!edges.has(to)) edges.set(to, { links: [], moves: [] });
+    return edges.get(to)!;
+  };
   for (const target of map.screens) {
-    for (const l of target.access.links) {
-      const edges = outgoing.get(l.from)!;
-      if (!edges.has(target.id)) edges.set(target.id, []);
-      edges.get(target.id)!.push(l.guards);
-    }
+    for (const l of target.access.links) edgeTo(l.from, target.id).links.push(l.guards);
   }
+  for (const m of map.moves ?? []) edgeTo(m.from, m.to).moves.push(m.reason);
   // 링크마다 조건 목록 하나. 어느 한 링크의 조건만 맞아도 들어가므로 목록끼리는 「또는」이다.
-  const edgeGuards = (from: string, to: string): FlowGuard[][] => {
-    const all = outgoing.get(from)!.get(to)!;
-    if (all.some((g) => g.length === 0)) return [];
-    const seen = new Map<string, FlowGuard[]>(all.map((g) => [g.map((x) => x.guard).join(' & '), g]));
-    return [...seen.values()];
+  const edgeOf = (from: string, to: string): { guards: FlowGuard[][]; moved?: string[] } => {
+    const { links, moves } = outgoing.get(from)!.get(to)!;
+    if (links.some((g) => g.length === 0)) return { guards: [] };
+    if (moves.length) return { guards: [], moved: moves };
+    const seen = new Map<string, FlowGuard[]>(links.map((g) => [g.map((x) => x.guard).join(' & '), g]));
+    return { guards: [...seen.values()] };
   };
 
   const callsById = new Map((map.calls ?? []).map((c) => [c.id, c]));
@@ -126,7 +132,7 @@ export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
   });
 
   const placed = new Set();
-  const screenNode = (id: string, guards: FlowGuard[][]): FlowScreenNode => {
+  const screenNode = (id: string, { guards, moved }: ReturnType<typeof edgeOf>): FlowScreenNode => {
     const s = byId.get(id)!;
     return {
       kind: 'screen',
@@ -141,6 +147,7 @@ export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
       kinds: s.access.kinds,
       access: accessOf(s.access),
       guards,
+      ...(moved ? { moved } : {}),
       children: [],
       calls: callIdsOf(s).map(callNode),
       jumps: [],
@@ -152,11 +159,11 @@ export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
       const node = queue.shift()!;
       for (const to of [...outgoing.get(node.id)!.keys()].sort((a, b) => map.screens.indexOf(byId.get(a)!) - map.screens.indexOf(byId.get(b)!))) {
         if (placed.has(to)) {
-          node.jumps.push({ to, label: byId.get(to)!.path, guards: edgeGuards(node.id, to) });
+          node.jumps.push({ to, label: byId.get(to)!.path, ...edgeOf(node.id, to) });
           continue;
         }
         placed.add(to);
-        const child = screenNode(to, edgeGuards(node.id, to));
+        const child = screenNode(to, edgeOf(node.id, to));
         node.children.push(child);
         queue.push(child);
       }
@@ -166,7 +173,7 @@ export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
   const plant = (ids: string[]) => {
     const roots = ids.filter((id) => !placed.has(id)).map((id) => {
       placed.add(id);
-      return screenNode(id, []);
+      return screenNode(id, { guards: [] });
     });
     return grow(roots);
   };

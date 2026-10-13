@@ -279,8 +279,10 @@
   .canvas svg path { pointer-events: visibleStroke; }
   .canvas svg path, .flowkey svg path { fill: none; stroke: var(--muted); stroke-width: 1.3; opacity: .7; }
   .canvas svg path.guarded, .flowkey svg path.guarded { stroke: var(--accent); stroke-dasharray: 5 4; opacity: .9; }
+  .canvas svg path.moved, .flowkey svg path.moved { stroke: var(--fine); stroke-dasharray: 3 3; opacity: .9; }
   .canvas svg path.on { stroke: var(--text); stroke-width: 2; opacity: 1; }
   .canvas svg path.on.guarded { stroke: var(--accent); }
+  .canvas svg path.on.moved { stroke: var(--fine); }
   .canvas svg path.dim { opacity: .12; }
   .canvas.story svg path { stroke: var(--muted); stroke-dasharray: none; opacity: .35; }
   :is(.canvas.story, .pathlegend) svg path.story-edge { stroke: var(--text); stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: none; opacity: 1; }
@@ -2610,7 +2612,7 @@ function callInfo(s) {
 function screenInfo(s) {
   return h('details', { class: 'screen-info', open: state.screenInfoOpen, ontoggle: (e) => { state.screenInfoOpen = e.currentTarget.open; } },
     h('summary', {}, h('span', { class: 'title' }, '화면 정보'), ' ',
-      h('span', { class: 'counts muted' }, `들어오는 링크 ${s.access.links.length} · 나가는 링크 ${s.links.length} · 읽는 설정값 ${s.settingReads.length}`)),
+      h('span', { class: 'counts muted' }, `들어오는 링크 ${s.access.links.length + movesOf('to', s.id).length} · 나가는 링크 ${s.links.length + movesOf('from', s.id).length} · 읽는 설정값 ${s.settingReads.length}`)),
     openSummary(s),
     caseSection(s),
     screenDetails(s));
@@ -3035,27 +3037,37 @@ const inScreenGuards = ({ routeGuards, access }) => {
   return routeGuards.filter((g) => !blocking.has(g));
 };
 
+const movedChip = () => h('span', { class: 'chip l-configured', title: LINK_VERDICT_TITLE.configured }, LINK_VERDICT.configured);
+const movesOf = (side, id) => (state.data.map.moves ?? []).filter((m) => m[side] === id);
+const moveItem = (end, m) => h('li', { class: 'move' }, end, ' ', movedChip(), ' ', h('span', { class: 'muted' }, m.reason));
+
 function accessDetails(s) {
   const { links } = s.access;
+  const moves = movesOf('to', s.id);
   const inScreen = inScreenGuards(s);
   return h('div', { class: 'access' },
-    h('h2', {}, `들어오는 링크 ${links.length}`),
-    links.length ? linkGroups(links).map(linkGroup) : h('p', { class: 'muted' }, '없음'),
+    h('h2', {}, `들어오는 링크 ${links.length + moves.length}`),
+    links.length ? linkGroups(links).map(linkGroup) : null,
+    moves.length ? h('ul', { class: 'plain moves' }, moves.map((m) => moveItem(h('code', { class: 'from' }, m.from), m))) : null,
+    links.length + moves.length ? null : h('p', { class: 'muted' }, '없음'),
     inScreen.length ? h('div', { class: 'in-screen' },
       h('h2', {}, '화면 안 조건 — 화면을 여는 것은 막지 않습니다'),
       inScreen.map((g) => h('div', { class: 'guard' }, guardCode(g, 'in-screen')))) : null);
 }
 
 function screenDetails(s) {
+  const moves = movesOf('from', s.id);
   return [
     accessDetails(s),
     h('h2', {}, '소스 위치'),
     h('ul', { class: 'plain' },
       h('li', {}, '라우트 ', h('code', {}, `${s.routeFile}:${s.line}`)),
       h('li', {}, '컴포넌트 ', s.componentFile ? h('code', {}, s.componentFile) : h('span', { class: 'muted' }, '찾지 못함'))),
-    h('h2', {}, `나가는 링크 ${s.links.length}`),
-    s.links.length ? h('ul', { class: 'plain' }, s.links.map((l) => h('li', {},
-      h('code', {}, l.to), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`), h('div', {}, guardList(l))))) : h('p', { class: 'muted' }, '없음'),
+    h('h2', {}, `나가는 링크 ${s.links.length + moves.length}`),
+    s.links.length + moves.length ? h('ul', { class: 'plain' },
+      s.links.map((l) => h('li', {},
+        h('code', {}, l.to), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`), h('div', {}, guardList(l)))),
+      moves.map((m) => moveItem(h('code', {}, m.to), m))) : h('p', { class: 'muted' }, '없음'),
     h('h2', {}, `읽는 설정값 ${s.settingReads.length}`),
     s.settingReads.length ? h('ul', { class: 'plain' }, s.settingReads.map((r) => h('li', {},
       h('code', {}, r.key), ' ', h('span', { class: 'muted mono' }, `${r.file}:${r.line}`)))) : h('p', { class: 'muted' }, '없음'),
@@ -3601,7 +3613,7 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
   const byKey = new Map(placed.map((b) => [b.key, b]));
   const edges = placed.filter((b) => b.parent !== null).map((b) => {
     const from = byKey.get(b.parent);
-    return { from: b.parent, to: b.key, x1: from.x + from.width, y1: middle(from), x2: b.x, y2: middle(b), guards: b.node.guards };
+    return { from: b.parent, to: b.key, x1: from.x + from.width, y1: middle(from), x2: b.x, y2: middle(b), guards: b.node.guards, ...(b.node.moved && { moved: b.node.moved }) };
   });
   if (marks) for (const e of edges) e.nx = e.x2 - cols.entryW[cols.depths.get(e.to)];
   const spots = marks && laneMarks(placed, marks);
@@ -3639,6 +3651,7 @@ function screenPill(n, pick = () => pickScreen(n.id)) {
       n.id,
       `${STATUS_WORD[status]}${n.imported ? ` · 불러옴 ${n.imported}` : ''}${n.passed ? ` · 지나감 ${n.passed}` : ''}`,
       guardLabel ? `이 링크의 조건: ${guardLabel}` : '',
+      n.moved ? `${LINK_VERDICT.configured}: ${n.moved.join(', ')}` : '',
       ...needs.tips,
       needs.bare ?? '',
       PICK_TIP,
@@ -3896,7 +3909,7 @@ function canvas(roots, { group = false, story = null } = {}) {
         const mx = (e.x1 + end) / 2;
         const d = `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${end},${e.y2}${end === e.x2 ? '' : ` H${e.x2}`}`;
         const hop = path?.edges.get(`${e.from}\n${e.to}`);
-        const cls = [e.guards.length ? 'guarded' : '', hop ? `story-edge l-${hop}` : ''].filter(Boolean).join(' ');
+        const cls = [e.guards.length ? 'guarded' : '', e.moved ? 'moved' : '', hop ? `story-edge l-${hop}` : ''].filter(Boolean).join(' ');
         lines.append(svg('path', { d, class: cls, 'data-from': e.from, 'data-to': e.to }));
       }
       el.prepend(lines);
@@ -3979,7 +3992,9 @@ function flowKey() {
   return h('ul', { class: 'flowkey', 'aria-label': '흐름도 범례' },
     KEY_STATUS.map(([status, label]) => h('li', {}, h('span', { class: `sq ${status}`, 'aria-hidden': 'true' }), h('span', { class: 'key-label' }, label))),
     h('li', { class: 'apart' },
-      svg('svg', { viewBox: '0 0 26 6', 'aria-hidden': 'true' }, svg('path', { class: 'guarded', d: 'M0 3H26' })), h('span', { class: 'key-label' }, '조건 걸린 링크')));
+      svg('svg', { viewBox: '0 0 26 6', 'aria-hidden': 'true' }, svg('path', { class: 'guarded', d: 'M0 3H26' })), h('span', { class: 'key-label' }, '조건 걸린 링크')),
+    h('li', {},
+      svg('svg', { viewBox: '0 0 26 6', 'aria-hidden': 'true' }, svg('path', { class: 'moved', d: 'M0 3H26' })), h('span', { class: 'key-label' }, LINK_VERDICT.configured)));
 }
 
 const legendPill = (cls, ...tags) => h('span', { class: `box s-none${cls}`, 'aria-hidden': 'true' }, h('span', { class: 'sq' }), h('span', { class: 'path' }, '/주소'), ...tags);
@@ -3989,7 +4004,7 @@ function flowLegendItems() {
     h('li', {}, h('span', { class: 'sample' }, legendPill('', h('span', { class: 'tag api' }, 'API 8'))), h('span', {}, '이 화면에서 부르는 API 호출의 수. 화면을 누르면 오른쪽에 호출마다 테스트가 보입니다')),
     h('li', {}, h('span', { class: 'sample' }, legendPill('', h('span', { class: 'tag need' }, KIND_LABEL.role)), legendPill('', h('span', { class: 'tag need' }, KIND_LABEL.setting))),
       h('span', {}, '특정 역할이나 설정에서만 열리는 화면. 무엇이 필요한지는 마우스를 올리면 보입니다')),
-    h('li', {}, h('span', { class: 'sample' }, legendPill(' jump')), h('span', {}, '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크가 닿는 화면')),
+    h('li', {}, h('span', { class: 'sample' }, legendPill(' jump')), h('span', {}, '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크나 설정에 적은 이동이 닿는 화면')),
     h('li', {}, h('span', { class: 'sample' }, '불러옴 N · 지나감 N'), h('span', {}, '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 연 브라우저 테스트. 마우스를 올리면 보입니다', h('small', {}, '상태 색과 테스트 수에는 넣지 않음'))),
   ];
 }
