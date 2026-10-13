@@ -4,7 +4,7 @@ import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { baselineLine, compareMaps, readBaseline } from './baseline.ts';
-import { storyCandidates } from './candidates.ts';
+import { storeCandidates, storyCandidates } from './candidates.ts';
 import { loadConfig } from './config.ts';
 import { buildMap } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
@@ -247,7 +247,8 @@ if (command === 'tasks') {
     for (const n of notices) console.log(`  story file ${n.file}: ${n.reason}`);
     if (stale) console.log(`  ${stale}`);
     const candidates = storyCandidates(config, map, path.join(config.outDir, 'map.json'), links.traced);
-    console.log(`story candidates ${candidates.list.length} | from traces ${candidates.list.filter((c) => 'report' in c.source).length} | files skipped ${candidates.notices.length}`);
+    const stored = storeCandidates(config.storiesDir, candidates.list);
+    console.log(`story candidates ${candidates.list.length} | from traces ${candidates.list.filter((c) => 'report' in c.source).length} | newly stored ${stored} | files skipped ${candidates.notices.length}`);
     for (const n of candidates.notices) console.log(`  ${n.file}: ${n.reason}`);
   }
 }

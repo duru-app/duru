@@ -1366,7 +1366,8 @@ one report, the tests of a report read later with the same order are not added (
 shard only. A test that passed a single screen gives no candidate,
 since a story of one screen says nothing a screen does not. A candidate is chosen on the review page and in its
 address by a key, the record file for a visit record and the screen order for a trace, as two trace candidates can
-come from one report.
+come from one report. Since candidates are kept in files, the key is the screen order for both; the entry on
+keeping candidates says why.
 
 **`rebuild` writes the screen order of each traced test into `tests.json` as `traced`, and the review page makes
 trace candidates from it instead of reading the reports and traces itself.**
@@ -1552,6 +1553,40 @@ runs on main, so after `package-lock.json` changes, or once GitHub deletes that 
 pull request's first run downloads the packages again.
 Alternatives compared:
 - Keeping both runs: main is tested whatever reaches it, at the cost of a second run of about ten minutes per merge.
+
+**A story candidate is kept as a file in `candidates/` in `storiesDir` from the first `rebuild` that finds it, and
+every candidate is keyed by its screen order.**
+Candidates used to be worked out on each `rebuild` and page load from the visit records and the `traced` orders in
+`tests.json`, and kept nowhere. A `rebuild` after running only part of the tests left `traced` empty and every trace
+candidate gone; that happened in the into-sign 1.5.0 check on 2026-10-13. An accepted candidate was already kept as a
+story file and a discarded one as a file in `discarded/`; only the ones not yet chosen were lost. `rebuild` now writes
+one file per screen order that has none, holding the name, the screens, the source and the date first seen, and,
+like `discarded/`, never changes or deletes one, so files written on two computers merge in git without a conflict
+(two files with the same order are listed once). A file is named by the date and eight letters of a random ID; it
+has no author, as no one chose it. The list is the files together with what the records and traces give now, and
+when both have an order the fresh one is shown, so its name follows the current test titles. Accepting or
+discarding leaves the file, and the story or the discarded file keeps the order out of the list. A candidate whose
+screen has left the map stays listed with that step off the map, as a candidate from a record already did when an
+address matched no screen.
+
+Keeping candidates is also why the key changed. A visit record candidate was keyed by its record file, but once the
+map changes a record can give a new screen order while the stored candidate from its old order stays listed, so two
+candidates would share one key and the page, the address and accepting would pick whichever came first. The screen
+order is unique in the list, since the list already offers one candidate per order, and it stays the same whether a
+candidate comes from its file or is worked out again, and when a record file is renamed. An address copied before
+the change that names a record file no longer selects the candidate.
+
+Alternatives compared:
+- Merging the `traced` orders of each `rebuild` into those of the last: candidates are worked out as before, but the
+  orders of a test that was deleted or renamed stay, and when to drop them would need a rule of its own.
+- Only showing on the page why there are no candidates: nothing about the data changes, and the candidates still
+  disappear.
+- Keeping the record file as the key of a visit record candidate and hiding a stored candidate when a record gives
+  the same key with a new order: the record's reading now replaces the old one, but a candidate whose screen left the
+  map would not stay listed with that step marked, and the hidden files pile up.
+- Keeping the record file as the key and giving a stored candidate whose key is taken its file path as the key: the
+  key of that candidate would change once its fresh twin is gone, so a copied address, or anything else that names
+  it by key, would stop finding it.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

@@ -404,8 +404,8 @@ listing the places whose value the source does not show in full.
   they did not or no longer send the ones they did, and the same for calls, with the calls whose server match
   differs. A `baselineMap` that is missing, unreadable or not such a map stops `rebuild` with a line naming the file,
   before anything is written.
-- `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, and the files
-  skipped, the links from untagged tests to screens and the trace or test files it could not read, the judged test
+- `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
+  newly stored in `candidates/`, and the files skipped, the links from untagged tests to screens and the trace or test files it could not read, the judged test
   pairs, and each judgment file it could not read or whose screen is gone from the map.
 
 ## Tests
@@ -531,6 +531,16 @@ traces:
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
 reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back.
 
+`rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
+file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
+never changed or deleted, so candidates found on two computers merge in git without a conflict; keep the folder in
+git with the stories. The candidates listed are these files together with what the records and traces give now,
+and for a screen order in both, what they give now is shown. So a candidate stays after a `rebuild` whose results
+have no traces, or once its record is gone. An accepted or discarded candidate keeps its file, and the story or the
+discarded file keeps it out of the list. When a screen of a stored candidate has left the map, the candidate stays
+listed with that step shown as a screen the map does not have. A candidate file that cannot be read is skipped and
+noted with its path and why.
+
 ## Review page
 
 `review` serves a local page that reads `map.json` and `tests.json` from `outDir` (run `rebuild` first) and writes
@@ -604,7 +614,8 @@ judge several pairs at once.
 
 **Stories.** The stories tab lists the stories with their status and link verdicts; choosing one shows its steps,
 the link between each two and its 「사전 조건」, and lets its name and memo be changed. Candidates are listed below
-with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
+with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the address of a chosen candidate holds its screen order, as
+`#stories?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
 screen order, and the candidate is discarded only once a reason is written there. 「버리기」 in the window or Ctrl+Enter
 saves it and moves on to the next candidate; 「취소」 or Escape closes the window, and a click outside it does not. If
 the discard is not saved, the window stays open with the reason and the error. 「새 스토리」 puts a story together from

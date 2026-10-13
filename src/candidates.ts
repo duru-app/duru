@@ -5,7 +5,7 @@ import { pathOf, screenFinder } from './address-match.ts';
 import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { recordName, writeNewRecord } from './marks.ts';
-import { addStory, DISCARDED, isDate, isScreenList, isText, loadStories, writableStoriesFolder } from './stories.ts';
+import { addStory, CANDIDATES, DISCARDED, isDate, isScreenList, isSource, isText, loadStories, writableStoriesFolder } from './stories.ts';
 import { checkStories, linksWithoutConditions, staleMapMessage } from './story-paths.ts';
 import { withoutTags } from './verdict.ts';
 
@@ -100,7 +100,7 @@ function candidateOf({ record, name, addresses, stepCount }: VisitRecord, screen
       stepRanges.push([step, step]);
     }
   }
-  return { key: record, name, screens, source: { record, steps: [1, stepCount] }, stepRanges };
+  return { key: screens.join(' > '), name, screens, source: { record, steps: [1, stepCount] }, stepRanges };
 }
 
 function discardedProblemOf(d: any) {
@@ -112,22 +112,36 @@ function discardedProblemOf(d: any) {
   return null;
 }
 
-const SAY = {
-  folder: (message: string) => `버린 후보 폴더를 읽지 못했습니다: ${message}`,
-  missing: () => '링크가 가리키는 파일이 없습니다',
-  link: (message: string) => `링크를 따라가지 못했습니다: ${message}`,
+function storedProblemOf(c: any) {
+  if (!isPlainObject(c)) return '스토리 후보는 JSON 객체여야 합니다';
+  if (!isText(c.name)) return 'name 에 후보 이름을 적어야 합니다';
+  if (!isScreenList(c.screens)) return 'screens 는 화면을 하나 이상 차례대로 담은 목록이어야 합니다';
+  if (!isSource(c.source)) return 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] } 나 { "report": 보고 파일, "tests": [시험 제목, ...] } 여야 합니다';
+  if (!isDate(c.date)) return 'date 는 2026-10-02 같은 날짜여야 합니다';
+  return null;
+}
+
+const FOLDERS = {
+  [DISCARDED]: { what: '버린 후보', problemOf: discardedProblemOf },
+  [CANDIDATES]: { what: '스토리 후보', problemOf: storedProblemOf },
 };
 
-export function loadDiscarded(dir: string) {
-  const folder = path.join(dir, DISCARDED);
-  if (!fs.existsSync(folder)) return { discarded: [], notices: [] };
-  if (!fs.statSync(folder).isDirectory()) return { discarded: [], notices: [{ file: DISCARDED, reason: `${DISCARDED} 는 버린 후보를 담는 폴더여야 합니다` }] };
-  const discarded: any[] = [];
+function loadFolder(dir: string, name: keyof typeof FOLDERS) {
+  const { what, problemOf } = FOLDERS[name];
+  const folder = path.join(dir, name);
+  if (!fs.existsSync(folder)) return { found: [], notices: [] };
+  if (!fs.statSync(folder).isDirectory()) return { found: [], notices: [{ file: name, reason: `${name} 는 ${what}를 담는 폴더여야 합니다` }] };
+  const say = {
+    folder: (message: string) => `${what} 폴더를 읽지 못했습니다: ${message}`,
+    missing: () => '링크가 가리키는 파일이 없습니다',
+    link: (message: string) => `링크를 따라가지 못했습니다: ${message}`,
+  };
+  const found: any[] = [];
   const notices: { file: string; reason: string }[] = [];
-  for (const found of jsonFiles(folder, SAY)) {
-    const file = path.join(DISCARDED, found.file);
-    if (found.reason) {
-      notices.push({ file: found.file === folder ? DISCARDED : file, reason: found.reason });
+  for (const entry of jsonFiles(folder, say)) {
+    const file = path.join(name, entry.file);
+    if (entry.reason) {
+      notices.push({ file: entry.file === folder ? name : file, reason: entry.reason });
       continue;
     }
     let d;
@@ -137,11 +151,37 @@ export function loadDiscarded(dir: string) {
       notices.push({ file, reason: `JSON 으로 읽지 못했습니다: ${err.message}` });
       continue;
     }
-    const problem = discardedProblemOf(d);
+    const problem = problemOf(d);
     if (problem) notices.push({ file, reason: problem });
-    else discarded.push({ ...d, file });
+    else found.push({ ...d, file });
   }
-  return { discarded, notices };
+  return { found, notices };
+}
+
+export function loadDiscarded(dir: string) {
+  const { found, notices } = loadFolder(dir, DISCARDED);
+  return { discarded: found, notices };
+}
+
+const isFolder = (file: string) => fs.existsSync(file) && fs.statSync(file).isDirectory();
+const loadStored = (dir: string) => (isFolder(dir) ? loadFolder(dir, CANDIDATES) : { found: [], notices: [] });
+
+// 쓴 파일은 고치지도 지우지도 않는다.
+export function storeCandidates(dir: string, list: Candidate[], now = new Date()) {
+  const folder = path.join(dir, CANDIDATES);
+  if (fs.existsSync(dir) && !isFolder(dir)) return 0;
+  if (fs.existsSync(folder) && !isFolder(folder)) return 0;
+  const stored = new Set(loadStored(dir).found.map((c) => JSON.stringify(c.screens)));
+  const date = now.toISOString();
+  let written = 0;
+  for (const { name, screens, source } of list) {
+    const key = JSON.stringify(screens);
+    if (stored.has(key)) continue;
+    stored.add(key);
+    writeNewRecord(path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`), { name, screens, source, date });
+    written++;
+  }
+  return written;
 }
 
 export const acceptCandidate = (dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) =>
@@ -162,9 +202,10 @@ export function discardCandidate(dir: string, candidate: Candidate, { reason, au
 export function storyCandidates(config: any, map: any, mapFile: string, traced: TracedTest[] = []) {
   const { records, notices } = loadVisitRecords(config.visitRecords, config.configDir);
   const { discarded, notices: discardedNotices } = loadDiscarded(config.storiesDir);
-  const all = [...notices, ...discardedNotices.map((n) => ({ ...n, file: relative(config.configDir, path.join(config.storiesDir, n.file)) }))];
+  const { found: stored, notices: storedNotices } = loadStored(config.storiesDir);
+  const all = [...notices, ...[...discardedNotices, ...storedNotices].map((n) => ({ ...n, file: relative(config.configDir, path.join(config.storiesDir, n.file)) }))];
   if (linksWithoutConditions(map)) {
-    return { list: [], notices: all, ...((records.length || traced.length) && { stale: staleMapMessage(mapFile, '후보') }) };
+    return { list: [], notices: all, ...((records.length || traced.length || stored.length) && { stale: staleMapMessage(mapFile, '후보') }) };
   }
   const screenAt = screenFinder(map);
   const seen = new Set([...loadStories(config.storiesDir).stories, ...discarded].map((s) => JSON.stringify(s.screens)));
@@ -188,6 +229,14 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
       fromTraces.set(key, candidate.source);
       list.push(candidate);
     }
+  }
+  for (const key of fromTraces.keys()) seen.add(key);
+  const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
+  for (const { name, screens, source } of byFirstSeen) {
+    const key = JSON.stringify(screens);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    list.push({ key: screens.join(' > '), name, screens, source });
   }
   return { list: checkStories(map, list), notices: all };
 }
