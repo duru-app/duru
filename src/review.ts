@@ -196,8 +196,14 @@ export async function startReviewServer(config: any, { port = 0, author = review
     }
     return locatePart(mark.target, { tests });
   };
+  const lineOf = (mark: Mark): AnnouncedMark => ({ duru: recordKind(mark), ...mark, ...(mark.target.part && { where: whereOf(mark) }) });
+  const unanswered = () => {
+    const marks = loadMarks(config.marksDir);
+    const answered = new Set(marks.map((m) => m.replyTo));
+    return marks.filter((m) => recordKind(m) === 'comment' && !answered.has(m.id)).sort((a, b) => a.date.localeCompare(b.date));
+  };
   const announce = (mark: Mark) => {
-    const line: AnnouncedMark = { duru: recordKind(mark), ...mark, ...(mark.target.part && { where: whereOf(mark) }) };
+    const line = lineOf(mark);
     onMark(line);
     for (const stream of streams) stream.write(`data: ${JSON.stringify(line)}\n\n`);
     return mark;
@@ -229,10 +235,12 @@ export async function startReviewServer(config: any, { port = 0, author = review
         return;
       }
       if (req.method === 'GET' && req.url === '/') return send(res, 200, 'text/html', fs.readFileSync(PAGE, 'utf8'));
-      if (req.method === 'GET' && req.url === '/api/events') {
+      if (req.method === 'GET' && (req.url === '/api/events' || req.url === '/api/events?unanswered')) {
+        const backlog = req.url.endsWith('?unanswered') ? unanswered().map(lineOf) : null;
         res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'close' });
         if (streamsEnded) return res.end('event: end\ndata: review ended\n\n');
         res.flushHeaders();
+        if (backlog) res.write(`${backlog.map((line) => `data: ${JSON.stringify(line)}\n\n`).join('')}event: unanswered-sent\ndata: \n\n`);
         streams.add(res);
         res.on('close', () => streams.delete(res));
         return;

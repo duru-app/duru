@@ -33,6 +33,7 @@ npm run extract -- path/to/project-config.json   # map.json only
 node src/cli.ts review path/to/project-config.json [--port 4400]   # review page on 127.0.0.1, task list when it ends
 node src/cli.ts tasks path/to/project-config.json > tasks.md        # task list for a coding agent
 node src/cli.ts reply path/to/project-config.json <comment ID> "<text>" [--server <review page address>]   # answer a comment
+node src/cli.ts wait path/to/project-config.json --server <review page address>   # exits with the comments not yet answered
 npm test
 ```
 
@@ -634,6 +635,17 @@ it answers. With `--server` and the address the review printed, the reply goes t
 saved, printed on standard error as a `"reply"` line and shown on every open page at once. Without `--server` the
 file is written directly and shows the next time the page is loaded. An ID that is not a comment in the marks stops
 with `no comment with ID "<id>"` and exit code 1, and nothing is written. A reply prints nothing when it is saved.
+
+**Waiting for comments.** `wait <config> --server <review page address>` connects to the running review and exits
+as soon as there is a comment with no reply. Its standard output then holds every such comment, oldest first, one
+JSON line each in the same shape as the review's standard error lines; marks, replies and answered comments are left
+out. With none, it says `waiting for a comment at <address>` on standard error and exits with the next comment
+saved. When the review ends first, it exits with code 0, nothing on standard output and `review ended` on standard
+error. It keeps trying to connect for about 10 seconds, so it can be started while the review is starting; after
+that it stops with `could not reach the review page at <address>: …` and exit code 1. When the connection drops
+without the review ending, as when the review is stopped and started again, it connects again the same way, for
+about 10 seconds. A coding agent runs it in the background, answers what it prints and runs it again, so a comment
+saved while it was not running still reaches the agent on the next run.
 
 **Ending.** Pressing 「리뷰 끝」, or Ctrl+C in the terminal, closes the server and prints the task list on standard
 output, so a coding agent that launched the page receives it as soon as the reviewer is done. Open pages stop

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
+import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { addJudgment } from '../src/judgments.ts';
@@ -325,7 +327,7 @@ test('rebuild counts the story candidates from the visit records and from traces
   }
 });
 
-for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc'], ['reply', 'x.json', 'id'], ['reply', 'x.json', 'id', 'text', '--port', '5000'], ['review', 'x.json', '--server', 'http://127.0.0.1:1/']]) {
+for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc'], ['reply', 'x.json', 'id'], ['reply', 'x.json', 'id', 'text', '--port', '5000'], ['review', 'x.json', '--server', 'http://127.0.0.1:1/'], ['wait', 'x.json'], ['wait', 'x.json', '--server'], ['wait', 'x.json', '--port', '5000']]) {
   test(`"${args.join(' ')}" prints usage and exits with 2`, () => {
     assert.throws(
       () => execFileSync(process.execPath, [CLI, ...args], { encoding: 'utf8', stdio: 'pipe' }),
@@ -350,8 +352,8 @@ async function withReviewFixture(fn: (configFile: string) => Promise<void>, patc
   }
 }
 
-function startReview(configFile: string) {
-  const child = spawn(process.execPath, [CLI, 'review', configFile, '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
+function startReview(configFile: string, port = 0) {
+  const child = spawn(process.execPath, [CLI, 'review', configFile, '--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'] });
   const out = { stdout: '', stderr: '' };
   child.stdout.setEncoding('utf8').on('data', (c) => (out.stdout += c));
   child.stderr.setEncoding('utf8').on('data', (c) => (out.stderr += c));
@@ -541,6 +543,151 @@ test('a reply without --server is written to the marks folder and shows in the t
       assert.equal(unreachable.status, 1);
       assert.match(unreachable.stderr, new RegExp(`^could not reach the review page at ${url}: `));
     } finally {
+      child.kill();
+    }
+  });
+});
+
+function startWait(configFile: string, server: string) {
+  const child = spawn(process.execPath, [CLI, 'wait', configFile, '--server', server], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const out = { stdout: '', stderr: '' };
+  child.stdout.setEncoding('utf8').on('data', (c) => (out.stdout += c));
+  child.stderr.setEncoding('utf8').on('data', (c) => (out.stderr += c));
+  const closed = new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => child.on('close', (code) => resolve({ code, ...out })));
+  return { child, closed, out };
+}
+
+const lines = (stdout: string) => stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+const endReview = (url: string) => fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+
+test('wait prints every unanswered comment already saved, oldest first, one JSON line each, and exits with 0; answered comments, marks and replies are left out', async () => {
+  await withReviewFixture(async (configFile) => {
+    const marksDir = path.join(path.dirname(configFile), 'example-marks');
+    addMark(marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: 'No test.', author: 'a' }, new Date('2026-10-05T01:00:00Z'));
+    const answered = addMark(marksDir, { target: { node: '/lab#Lab' }, note: 'Answered already?', author: 'a' }, new Date('2026-10-05T02:00:00Z'));
+    const later = addMark(marksDir, { target: { node: '/home#Home' }, note: 'Second.', author: 'a' }, new Date('2026-10-05T04:00:00Z'));
+    const earlier = addMark(marksDir, { target: { story: 'read-reports' }, note: 'First.', author: 'a' }, new Date('2026-10-05T03:00:00Z'));
+    assert.deepEqual(reply(configFile, answered.id, 'Yes.'), { status: 0, stderr: '' });
+
+    const { child, base, closed } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const { code, stdout } = await within(startWait(configFile, `${url}/`).closed, 'wait to exit');
+      assert.equal(code, 0);
+      assert.deepEqual(lines(stdout), [{ duru: 'comment', ...earlier }, { duru: 'comment', ...later }]);
+      await endReview(url);
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+test('with no unanswered comment, wait says on stderr that it is waiting, skips marks and replies saved meanwhile, and exits with the next comment on stdout', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed } = startReview(configFile);
+    const post = async (url: string, body: unknown) => (await (await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json()) as Mark;
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const first = await post(url, { target: { node: '/lab#Lab' }, note: 'Answered before waiting.' });
+      assert.deepEqual(reply(configFile, first.id, 'Done.', '--server', url), { status: 0, stderr: '' });
+      const waiting = startWait(configFile, url);
+      await waitFor(() => waiting.out.stderr.includes(`waiting for a comment at ${url}`), 'the waiting line on stderr');
+      await post(url, { target: { node: '/lab#Lab' }, status: 'missing', note: 'No test.' });
+      const key = { source: 'results/playwright/e2e.json', file: 'home.spec.ts', title: 'opens the lab' };
+      const comment = await post(url, { target: { node: '/lab#Lab', part: { kind: 'test', key } }, note: 'Why is this pending?' });
+
+      const { code, stdout } = await within(waiting.closed, 'wait to exit');
+      assert.equal(code, 0);
+      const where = { file: 'home.spec.ts', line: 20, source: 'results/playwright/e2e.json', status: 'pending', relation: 'tagged' };
+      assert.deepEqual(lines(stdout), [{ duru: 'comment', ...comment, where }]);
+      await endReview(url);
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+test('when the review ends, wait exits with 0, nothing on stdout and "review ended" on stderr; with no review page it gives up after about 10 seconds and exits with 1', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const waiting = startWait(configFile, url);
+      await waitFor(() => waiting.out.stderr.includes('waiting for a comment'), 'the waiting line on stderr');
+      await endReview(url);
+      const { code, stdout, stderr } = await within(waiting.closed, 'wait to exit');
+      assert.deepEqual({ code, stdout }, { code: 0, stdout: '' });
+      assert.match(stderr, /^review ended$/m);
+      await within(closed, 'exit');
+
+      const started = Date.now();
+      const gone = await Promise.race([startWait(configFile, url).closed, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('wait still running after 20s')), 20_000).unref())]);
+      assert.equal(gone.code, 1);
+      assert.equal(gone.stdout, '');
+      assert.match(gone.stderr, new RegExp(`^could not reach the review page at ${url}: `));
+      assert.ok(Date.now() - started >= 9_000, `gave up after ${Date.now() - started}ms`);
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+test('wait treats Ctrl+C on the review as its end, but when the review stops without ending it connects again and gets the comment saved on the restarted review', async () => {
+  await withReviewFixture(async (configFile) => {
+    const first = startReview(configFile);
+    let second: ReturnType<typeof startReview> | null = null;
+    try {
+      const url = await within(first.base, 'review page address on stderr');
+      const port = Number(new URL(url).port);
+      const waiting = startWait(configFile, url);
+      await waitFor(() => waiting.out.stderr.includes('waiting for a comment'), 'the waiting line on stderr');
+      first.child.kill('SIGKILL');
+      await within(first.closed, 'the killed review to exit');
+      second = startReview(configFile, port);
+      await within(second.base, 'restarted review page address on stderr');
+      const res = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: { node: '/home#Home' }, note: 'After the restart.' }) });
+      const comment = (await res.json()) as Mark;
+      const { code, stdout } = await within(waiting.closed, 'wait to exit');
+      assert.equal(code, 0);
+      assert.deepEqual(lines(stdout), [{ duru: 'comment', ...comment }]);
+
+      assert.deepEqual(reply(configFile, comment.id, 'Seen.', '--server', url), { status: 0, stderr: '' });
+      const again = startWait(configFile, url);
+      await waitFor(() => again.out.stderr.includes('waiting for a comment'), 'the waiting line on stderr');
+      second.child.kill('SIGINT');
+      const ended = await within(again.closed, 'wait to exit');
+      assert.deepEqual({ code: ended.code, stdout: ended.stdout }, { code: 0, stdout: '' });
+      assert.match(ended.stderr, /^review ended$/m);
+      await within(second.closed, 'exit');
+    } finally {
+      first.child.kill();
+      second?.child.kill();
+    }
+  });
+});
+
+test('wait started before the review page keeps trying and gets the comment saved once the page is up', async () => {
+  await withReviewFixture(async (configFile) => {
+    const free = net.createServer().listen(0, '127.0.0.1');
+    await new Promise((resolve) => free.on('listening', resolve));
+    const port = (free.address() as AddressInfo).port;
+    await new Promise((resolve) => free.close(resolve));
+    const waiting = startWait(configFile, `http://127.0.0.1:${port}/`);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const { child, base, closed } = startReview(configFile, port);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const res = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: { node: '/home#Home' }, note: 'Is this tested?' }) });
+      const comment = (await res.json()) as Mark;
+      const { code, stdout } = await within(waiting.closed, 'wait to exit');
+      assert.equal(code, 0);
+      assert.deepEqual(lines(stdout), [{ duru: 'comment', ...comment }]);
+      await endReview(url);
+      await within(closed, 'exit');
+    } finally {
+      waiting.child.kill();
       child.kill();
     }
   });
