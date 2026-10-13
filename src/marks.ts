@@ -30,9 +30,11 @@ export interface Part {
 export const PART_KINDS = ['test', 'condition', 'link'];
 
 // status 가 없는 표시는 코멘트고, 그 가운데 replyTo 가 있는 것은 그 ID 의 코멘트에 단 답글이다.
+// 대상이 하나면 target, 여럿이거나 없으면 targets 에 적는다.
 export interface Mark {
   id: string;
-  target: MarkTarget;
+  target?: MarkTarget;
+  targets?: MarkTarget[];
   status?: string;
   replyTo?: string;
   note: string;
@@ -42,6 +44,7 @@ export interface Mark {
 
 interface NewMark {
   target?: MarkTarget;
+  targets?: MarkTarget[];
   status?: string | null;
   note?: unknown;
   author?: unknown;
@@ -88,7 +91,9 @@ export function loadMarks(dir: string): Mark[] {
 // 표시 하나를 파일 하나로 저장하고 기존 파일은 고치지 않으므로, 두 사람이 따로 남긴 표시도 git 에서 충돌 없이 합쳐진다.
 // 어느 화면의 표시인지는 폴더 이름이 아니라 파일 안의 target 으로 정한다.
 function saveMark(dir: string, mark: Mark) {
-  const { story, candidate, node } = mark.target;
+  const [first] = targetsOf(mark);
+  if (!first) return writeNewRecord(path.join(dir, 'general', recordName(mark)), mark);
+  const { story, candidate, node } = first;
   const folder = candidate !== undefined ? path.join(dir, 'stories', 'candidates', candidateFolder(candidate)) : story ? path.join(dir, 'stories', story) : path.join(dir, fileSafe(node!));
   writeNewRecord(path.join(folder, recordName(mark)), mark);
 }
@@ -178,13 +183,25 @@ function linkPartKey(key: unknown): LinkKey {
   return byConditions ? { from, conditions: sorted(conditions as string[]) } : { from, guards: sorted(guards as string[]) };
 }
 
-export function addMark(dir: string, { target, status, note, author }: NewMark, now = new Date()) {
-  const checked: MarkTarget = target?.candidate !== undefined ? candidateTarget(target) : target?.story !== undefined ? storyTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target);
-  if (checked.story !== undefined && checked.part && status !== undefined && status !== null) throw new Error('a comment on a step or a hop of a story takes no status; put the status on the story itself');
-  if (checked.part && status !== undefined && status !== null) throw new Error('a comment on a part of a screen or call takes no status; put the status on the screen or call itself');
-  if (checked.candidate !== undefined && status !== undefined && status !== null) throw new Error('a comment on a story candidate takes no status; accept it as a story to give it one');
+const checkTarget = (target: MarkTarget | undefined): MarkTarget => (target?.candidate !== undefined ? candidateTarget(target) : target?.story !== undefined ? storyTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target));
+
+export const targetsOf = (m: { target?: MarkTarget; targets?: MarkTarget[] }) => m.targets ?? (m.target ? [m.target] : []);
+
+export function addMark(dir: string, { target, targets, status, note, author }: NewMark, now = new Date()) {
+  if (targets !== undefined && !Array.isArray(targets)) throw new Error('mark targets must be a list');
+  const all = (targets ?? [target]).map(checkTarget);
+  const hasStatus = status !== undefined && status !== null;
+  if (all.length !== 1) {
+    if (hasStatus) throw new Error('a status takes exactly one target; a comment on several targets or none takes no status');
+    if (all.some((t) => t.case !== undefined)) throw new Error('a case mark takes exactly one target');
+    if (new Set(all.map(targetKey)).size !== all.length) throw new Error('a mark names the same target twice');
+  }
+  const checked: MarkTarget = all.length === 1 ? all[0] : {};
+  if (checked.story !== undefined && checked.part && hasStatus) throw new Error('a comment on a step or a hop of a story takes no status; put the status on the story itself');
+  if (checked.part && hasStatus) throw new Error('a comment on a part of a screen or call takes no status; put the status on the screen or call itself');
+  if (checked.candidate !== undefined && hasStatus) throw new Error('a comment on a story candidate takes no status; accept it as a story to give it one');
   const statuses = checked.case !== undefined ? CASE_STATUSES : MARK_STATUSES;
-  const comment = (status === undefined || status === null) && checked.case === undefined;
+  const comment = !hasStatus && checked.case === undefined;
   if (comment && (typeof note !== 'string' || !note.trim())) throw new Error('a comment needs a note');
   if (!comment && !statuses.includes(status!)) {
     throw new Error(`unknown ${checked.case !== undefined ? 'case mark' : 'mark'} status "${status}" (expected one of ${statuses.join(', ')})`);
@@ -192,7 +209,7 @@ export function addMark(dir: string, { target, status, note, author }: NewMark, 
   if (typeof author !== 'string' || !author.trim()) throw new Error('mark needs an author');
   const mark: Mark = {
     id: crypto.randomUUID(),
-    target: checked,
+    ...(all.length === 1 ? { target: checked } : { targets: all }),
     ...(!comment && { status: status! }),
     note: typeof note === 'string' ? note : '',
     author: author.trim(),
@@ -208,10 +225,12 @@ export function addReply(dir: string, { replyTo, note, author = 'agent' }: { rep
   const comment = loadMarks(dir).find((m) => m.id === replyTo && recordKind(m) === 'comment');
   if (!comment) throw new Error(`no comment with ID "${replyTo}"`);
   if (typeof note !== 'string' || !note.trim()) throw new Error('a reply needs a note');
-  const reply: Mark = { id: crypto.randomUUID(), target: comment.target, replyTo: comment.id, note, author, date: now.toISOString() };
+  const reply: Mark = { id: crypto.randomUUID(), ...(comment.targets ? { targets: comment.targets } : { target: comment.target }), replyTo: comment.id, note, author, date: now.toISOString() };
   saveMark(dir, reply);
   return reply;
 }
+
+export const GENERAL = 'general()';
 
 // story(<ID>) 와 candidate(<후보 키>) 는 노드의 키와 겹치지 않는다(map.ts 의 TAG_FORBIDDEN).
 const targetKey = (t: MarkTarget) => (t.candidate !== undefined
@@ -235,17 +254,25 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
     ? stories.has(t.story)
     : nodes.has(t.node!) && (!t.option || nodes.get(t.node!)!.has(t.option.key)) && (t.case === undefined || kinds.has(t.case)));
   const byTarget = new Map<string, Mark[]>();
+  const targetAt = new Map<string, MarkTarget>();
   const ordered = [...marks].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   for (const m of ordered) {
-    const key = targetKey(m.target);
-    if (!byTarget.has(key)) byTarget.set(key, []);
-    byTarget.get(key)!.unshift(m);
+    const targets = targetsOf(m);
+    for (const [key, target] of targets.length ? targets.map((t): [string, MarkTarget] => [targetKey(t), t]) : [[GENERAL, {}] as [string, MarkTarget]]) {
+      if (!byTarget.has(key)) byTarget.set(key, []);
+      byTarget.get(key)!.unshift(m);
+      targetAt.set(key, target);
+    }
   }
   const attached: MarkEntry[] = [];
   const detached: MarkEntry[] = [];
   for (const key of [...byTarget.keys()].sort()) {
     const history = byTarget.get(key)!;
-    const target = history[0].target;
+    const target = targetAt.get(key)!;
+    if (key === GENERAL) {
+      attached.push({ key, target, current: null, history });
+      continue;
+    }
     const path = target.story !== undefined ? paths.get(target.story) : undefined;
     const where = !target.part ? null
       : target.story !== undefined ? path && locateStoryPart(target.part, path, map.screens)

@@ -2396,7 +2396,7 @@ test('in a browser, with case kinds in the config every screen and every call sh
         const section = p.locator('#center .screen-info > .cases');
         const kindButton = (text: string) => section.locator('.case-kinds button', { hasText: text });
         const counts = async (rows: Locator) => (await rows.locator('.step-tests').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
-        const picks = () => loadMarks(config.marksDir).filter((m) => m.target.case !== undefined).sort((a, b) => a.date.localeCompare(b.date)).map((m) => [m.target.node, m.target.case, m.status]);
+        const picks = () => loadMarks(config.marksDir).filter((m) => m.target?.case !== undefined).sort((a, b) => a.date.localeCompare(b.date)).map((m) => [m.target!.node, m.target!.case, m.status]);
 
         await p.click('#screen-list li:has-text("/signin")');
         await openScreenInfo(p);

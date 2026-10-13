@@ -146,10 +146,10 @@ test('a mark on an option value, or on one depth of it, is written with the opti
     const value = addMark(dir, { target: { node: call, option: { key: 'withHistory', value: true } }, status: 'missing', author: 'a' }, new Date('2026-10-01T01:00:00Z'));
     const depth = addMark(dir, { target: { depth: 'output', option: { value: false, key: 'withHistory' }, node: call }, status: 'needs-more', author: 'a' }, new Date('2026-10-01T02:00:00Z'));
     assert.deepEqual(value.target, { node: call, option: { key: 'withHistory', value: true } });
-    assert.deepEqual(Object.keys(depth.target), ['node', 'option', 'depth']);
+    assert.deepEqual(Object.keys(depth.target!), ['node', 'option', 'depth']);
     assert.deepEqual(Object.keys((depth.target as { option: object }).option), ['key', 'value']);
     assert.deepEqual(fs.readdirSync(dir), ['POST__api_v1_report_export']);
-    assert.deepEqual(loadMarks(dir).map((m) => m.target).sort((a: { depth?: string }, b: { depth?: string }) => (a.depth ?? '').localeCompare(b.depth ?? '')), [value.target, depth.target]);
+    assert.deepEqual(loadMarks(dir).map((m) => m.target!).sort((a: { depth?: string }, b: { depth?: string }) => (a.depth ?? '').localeCompare(b.depth ?? '')), [value.target, depth.target]);
   });
 });
 
@@ -546,5 +546,51 @@ test('a comment on a story step or link stays while the story has that screen at
     assert.deepEqual(unreadable.attached.map((m) => [m.target.part!.kind, m.where]), [['hop', null], ['step', null]]);
     const gone = classifyMarks(loadMarks(dir), LAB_SCREENS, [], [], {}, {}, [], []);
     assert.equal(gone.detached.length, 2);
+  });
+});
+
+const LAB_TEST = { node: '/lab#Lab', part: { kind: 'test', key: { source: 'results/e2e.json', file: 'lab.spec.ts', title: 'opens the lab' } } };
+
+test('a comment on several targets is written with all of them under targets in the first one\'s folder, one with none under general/, one with one target keeps target as before, and a reply carries the same targets', () => {
+  withMarksDir((dir: string) => {
+    const many = addMark(dir, { targets: [{ node: '/lab#Lab' }, LAB_TEST, { story: 'run-lab' }], note: 'do these agree?', author: 'a' });
+    const none = addMark(dir, { targets: [], note: 'what does duru not cover?', author: 'a' });
+    const one = addMark(dir, { targets: [{ node: '/home#Home' }], note: 'one place', author: 'a' });
+    assert.deepEqual([many.targets, 'target' in many], [[{ node: '/lab#Lab' }, LAB_TEST, { story: 'run-lab' }], false]);
+    assert.deepEqual([none.targets, 'target' in none], [[], false]);
+    assert.deepEqual([one.target, 'targets' in one], [{ node: '/home#Home' }, false]);
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['_home#Home', '_lab#Lab', 'general']);
+    const reply = addReply(dir, { replyTo: many.id, note: 'they do' });
+    assert.deepEqual([reply.targets, 'target' in reply], [many.targets, false]);
+    assert.equal(fs.readdirSync(path.join(dir, '_lab#Lab')).length, 2);
+  });
+});
+
+test('a mark on several targets or none takes no status, no case, and no target twice', () => {
+  withMarksDir((dir: string) => {
+    const refused: [object, RegExp][] = [
+      [{ targets: [{ node: '/lab#Lab' }, { node: '/home#Home' }], status: 'missing', note: 'x' }, /a status takes exactly one target; a comment on several targets or none takes no status/],
+      [{ targets: [], status: 'fine' }, /a status takes exactly one target/],
+      [{ targets: [{ node: '/lab#Lab', case: 'empty' }, { node: '/home#Home' }], note: 'x' }, /a case mark takes exactly one target/],
+      [{ targets: [{ node: '/lab#Lab' }, { node: '/lab#Lab' }], note: 'x' }, /a mark names the same target twice/],
+      [{ targets: [], note: ' ' }, /a comment needs a note/],
+      [{ targets: { node: '/lab#Lab' }, note: 'x' }, /mark targets must be a list/],
+    ];
+    for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' } as Parameters<typeof addMark>[1]), message);
+    assert.equal(fs.existsSync(dir), false);
+  });
+});
+
+test('a comment on several targets is in the history of each, stays on the ones still there and is detached from the one that is gone, and one with no target is in the general entry', () => {
+  withMarksDir((dir: string) => {
+    addMark(dir, { target: { node: '/lab#Lab' }, status: 'missing', author: 'a' }, new Date('2026-10-14T01:00:00Z'));
+    addMark(dir, { targets: [{ node: '/lab#Lab' }, { node: '/gone#Gone' }], note: 'both?', author: 'a' }, new Date('2026-10-14T02:00:00Z'));
+    addMark(dir, { targets: [], note: 'in general', author: 'a' }, new Date('2026-10-14T03:00:00Z'));
+    const { attached, detached } = classifyMarks(loadMarks(dir), MAP);
+    assert.deepEqual(attached.map((m) => [m.key, m.current?.status ?? null, m.history.map((h) => h.note)]), [
+      ['/lab#Lab', 'missing', ['both?', '']],
+      ['general()', null, ['in general']],
+    ]);
+    assert.deepEqual(detached.map((m) => [m.key, m.target, m.history.map((h) => h.note)]), [['/gone#Gone', { node: '/gone#Gone' }, ['both?']]]);
   });
 });
