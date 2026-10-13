@@ -104,3 +104,34 @@ test('the box of a call carries how many untagged browser tests sent it, apart f
   assert.deepEqual(built.roots[0].calls.map((c) => [c.id, c.passed, c.counts]), [['GET:/x', 2, { pass: 0, fail: 0, pending: 0 }], ['POST:/y', 0, { pass: 1, fail: 0, pending: 0 }]]);
   assert.deepEqual(built.summary, { screens: 1, tested: 0, failing: 0, importedOnly: 0 });
 });
+
+test('a move in the config places a screen no link reached yet under the screen it leaves, marked as a move with its reason', () => {
+  const screen = (id: string, links: FlowAccess['links'] = []): FlowMapScreen => ({ id, path: id, component: id, apiCalls: [], access: { restricted: false, kinds: [], links } });
+  const tiny = { screens: [screen('a'), screen('b', [{ from: 'a', guards: [] }]), screen('c', [{ from: 'b', guards: [] }])], entries: [{ screen: 'a' }], moves: [{ from: 'a', to: 'c', reason: '로그인 뒤' }] };
+  const built = buildFlow(tiny, { nodes: {} });
+  assert.deepEqual(built.roots.flatMap((r) => outline(r)), ['a', '  b → c', '  c']);
+  assert.deepEqual(built.roots[0].children.map((n) => [n.id, n.guards, n.moved]), [['b', [], undefined], ['c', [], ['로그인 뒤']]]);
+  assert.equal(built.roots[0].children[0].jumps[0].moved, undefined);
+});
+
+test('a move to a screen already placed in another branch leaves it there and is kept as a jump marked as a move, and entry screens stay entry screens', () => {
+  const screen = (id: string): FlowMapScreen => ({ id, path: `/${id}`, component: id, apiCalls: [], access: { restricted: false, kinds: [], links: [] } });
+  const tiny = { screens: [screen('signin'), screen('home')], entries: [{ screen: 'signin' }, { screen: 'home' }], moves: [{ from: 'signin', to: 'home', reason: '로그인 뒤' }, { from: 'signin', to: 'home', reason: '새로 고침 뒤' }] };
+  const built = buildFlow(tiny, { nodes: {} });
+  assert.deepEqual(built.roots.map((r) => [r.id, r.children.length]), [['signin', 0], ['home', 0]]);
+  assert.deepEqual(built.roots[0].jumps, [{ to: 'home', label: '/home', guards: [], moved: ['로그인 뒤', '새로 고침 뒤'] }]);
+});
+
+test('a link with no guard between the two screens of a move draws the link, and a move between screens joined only by a guarded link is drawn as the move without the guard of the link, also when it reaches a screen in another branch', () => {
+  const screen = (id: string, links: FlowAccess['links'] = []): FlowMapScreen => ({ id, path: id, component: id, apiCalls: [], access: { restricted: false, kinds: [], links } });
+  const guard = { guard: 'X', kinds: ['setting'] };
+  const childOf = (guards: FlowAccess['links'][number]['guards']) => {
+    const tiny = { screens: [screen('a'), screen('b', [{ from: 'a', guards }])], entries: [{ screen: 'a' }], moves: [{ from: 'a', to: 'b', reason: '로그인 뒤' }] };
+    const { guards: drawn, moved } = buildFlow(tiny, { nodes: {} }).roots[0].children[0];
+    return [drawn, moved];
+  };
+  assert.deepEqual(childOf([]), [[], undefined]);
+  assert.deepEqual(childOf([guard]), [[], ['로그인 뒤']]);
+  const elsewhere = { screens: [screen('a'), screen('b', [{ from: 'a', guards: [guard] }])], entries: [{ screen: 'a' }, { screen: 'b' }], moves: [{ from: 'a', to: 'b', reason: '로그인 뒤' }] };
+  assert.deepEqual(buildFlow(elsewhere, { nodes: {} }).roots[0].jumps, [{ to: 'b', label: 'b', guards: [], moved: ['로그인 뒤'] }]);
+});

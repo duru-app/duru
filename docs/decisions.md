@@ -1655,6 +1655,24 @@ Alternatives compared:
 Known limit: the line drawing shows no link from a step to screens outside the story; the flow, with the story
 turned off, still does.
 
+**The flow follows the moves in `moves` by the rule it follows links by, and a move never moves the screen it
+reaches.**
+Only the story verdict read `moves`, so a move written in the config left the flow as it was. Now a move places a
+screen not yet drawn under the screen it leaves, with a green dotted line, and a move to a screen already drawn in
+another branch is kept with the links into other branches: nothing is drawn, and picking the screen it leaves
+marks the screen it reaches. On into-sign 1.5.0 the move written for sign-in is of the second kind: `/signin` and
+`/user-home` are both entry screens, and `/user-home` is reached by five redirects in `Routes.js`, so it stays a
+root and picking `/signin` marks it. Between the same two screens a link with no guard is drawn as a link, and
+otherwise a move is drawn over a guarded link and the link's guard is left out, in the order the story verdict
+uses. The dotted green line is the one the story drawing is to use between two steps a move
+joins, so a move will look the same in both.
+Alternatives compared:
+- Moving the screen a move reaches under the screen it leaves, even when it is drawn elsewhere: the move would show
+  as a line, but `/user-home` would leave the root it holds for five redirects and sit under `/signin` as if it
+  were reached only from there.
+- Leaving the flow to links only: nothing to build, but a move written for the stories would say nothing in the
+  flow, and a screen reached only by a move would be drawn as a tree of its own.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

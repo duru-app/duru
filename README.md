@@ -211,7 +211,8 @@ client with example results and a config to start from.
   name when two kinds share a name, and list every role guard of a screen once you list one of them.
 - `moves` — screen moves the code shows no link for (optional), each `{ "from", "to", "reason" }` with route
   paths as in the map, such as `[{ "from": "/signin", "to": "/user-home", "reason": "로그인 뒤" }]` for an app
-  that reloads after sign-in and lets a redirect choose the screen. Story steps use them like links.
+  that reloads after sign-in and lets a redirect choose the screen. Story steps and the review page's flow use them
+  like links.
 - `callLinks` — calls whose on/off options change what another call gives back (optional), each
   `{ "from", "to", "note" }` with two call IDs as in the map, such as an export option that only shows in the
   file a download call delivers.
@@ -547,14 +548,17 @@ noted with its path and why.
 only marks, judgments and story files. The page keeps the place being looked at in its address, so the back
 button, a reload and a copied address work.
 
-**Flow.** The page opens on the flow: one line per screen, in columns by how many links they are from an entry
-screen, with a square for the status of its tagged tests, the number of its API calls, and 「역할」 or 「설정」 when
+**Flow.** The page opens on the flow: one line per screen, in columns by how many links or moves they are from an
+entry screen, with a square for the status of its tagged tests, the number of its API calls, and 「역할」 or 「설정」 when
 it opens only under a role or a setting; hovering shows what it needs and its untagged tests. A dashed line is a
-link under a setting or role condition. Entry screens with no screen drawn under them are gathered below the rest under
+link under a setting or role condition, and a green dotted line is a move written in `moves`, whose reason shows on
+hovering the screen it leads to. The flow follows a move as it follows a link: a screen not yet drawn goes under the
+screen the move leaves, and one already drawn in another branch stays where it is. Entry screens with no screen
+drawn under them are gathered below the rest under
 「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. The bar above counts the drawn screens by status on buttons
 (「테스트 없음 4」, 「실패 5」 …); pressing one fades the other screens, and the search box does the same by route or
 component. With nothing picked, the right column lists the failing screens and then the ones without a tagged
-test. Pressing a screen keeps strong only the paths through it, marks the screens its links reach in other
+test. Pressing a screen keeps strong only the paths through it, marks the screens its links and moves reach in other
 branches, and shows the list view's middle and right panes for it beside the drawing; 「선택 해제」, Escape or a click
 on an empty spot of the drawing lets it go. The zoom control at the bottom-left corner of the drawing fits, shrinks
 or grows it; a percent typed into it takes effect on Enter or on clicking elsewhere, a level below 30% or above 150%
@@ -594,12 +598,13 @@ name, as its line in the flow does. Under the tables, 「화면 정보」 starts
 screen, links out of it and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
 the screen, then shows the tests of each role and setting case by depth under 「경우별 테스트」, the links into it
 with their guards, the conditions inside the screen, where its route and component are, the links out of it and the
-settings it reads. Once opened it stays open on other screens until it is closed. Choosing a call, in the table or
-from a link elsewhere, opens its details under the call table and scrolls the middle pane to them: where its option
-was found, the server match, its tests, untagged tests linked to it, where this screen calls it and the screens that
-use it. With `caseKinds` set, 「경우별 테스트」 has a button per kind for every screen, and for a call in its details:
-pressing one makes the kind a case there, with its tests by depth, and pressing it again takes it out. The flow
-shows the same middle and right panes for a picked screen.
+settings it reads. The links into it and out of it also list the moves written in `moves` as 「설정에 적은 이동」 with their
+reason. Once opened it stays open on other screens until it is closed. Choosing a call, in the table or from a link
+elsewhere, opens its details under the call table and scrolls the middle pane to them: where its option was found,
+the server match, its tests, untagged tests linked to it, where this screen calls it and the screens that use it.
+With `caseKinds` set, 「경우별 테스트」 has a button per kind for every screen, and for a call in its details: pressing one
+makes the kind a case there, with its tests by depth, and pressing it again takes it out. The flow shows the same
+middle and right panes for a picked screen.
 
 **Pane widths.** The edge on either side of the middle pane, in the list and beside a picked screen in the flow,
 and the right edge of the flow's story list can be dragged to widen or narrow the panes; the line lights up when the
