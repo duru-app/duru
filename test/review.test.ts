@@ -5631,7 +5631,7 @@ test('in a browser, a screen picked in the flow view draws the app 1280 wide shr
             const frame = p.frameLocator('#center iframe.app');
             await frame.locator('#who:has-text("두루 관리자")').waitFor();
             const width = p.locator('#center .frame-bar select.app-width');
-            assert.deepEqual(await width.locator('option').allTextContents(), ['칸에 맞춤', '1024', '1280', '1440']);
+            assert.deepEqual(await width.locator('option').allTextContents(), ['칸에 맞춤', '375', '768', '1024', '1280', '1440', '직접 입력']);
             assert.equal(await width.inputValue(), '1280');
             let shown = await shownApp(p);
             const at1920 = assertShrunk(shown, 1280);
@@ -5660,6 +5660,7 @@ test('in a browser, a screen picked in the flow view draws the app 1280 wide shr
             assert.equal(shown.width, shown.room.width);
             assert.equal(shown.scaleText, `칸 너비 그대로 ${shown.room.width}px`);
             assertFits(shown);
+            assert.ok(await p.locator('#center .frame-bar select.app-percent').isDisabled());
             assert.equal(await frame.locator('#pressed').textContent(), 'pressed');
 
             await width.selectOption({ label: '1280' });
@@ -5721,6 +5722,123 @@ test('in a browser, the list view shrinks the app the same way, and the chosen w
             await frame.locator('#path:has-text("/home")').waitFor();
             assert.equal(await p.locator('#center .frame-bar select.app-width').inputValue(), '1280');
             assertShrunk(await shownApp(p), 1280);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+function assertScaled(shown: Awaited<ReturnType<typeof shownApp>>, width: number, percent: number) {
+  assert.equal(shown.width, width);
+  assert.ok(Math.abs(shown.box.width - (width * percent) / 100) < 0.5, `${shown.box.width} is ${width} at ${percent}%`);
+  assert.ok(Math.abs(shown.box.y - shown.room.y) < 0.5 && Math.abs(shown.box.height - shown.room.height) < 1, `app ${shown.box.y}+${shown.box.height} fills ${shown.room.y}+${shown.room.height}`);
+  assert.ok(Math.abs(shown.height - shown.room.height / shown.scale) < 1.5, `app height ${shown.height} is ${shown.room.height} / ${shown.scale}`);
+}
+
+test('in a browser, a typed app width and a picked scale draw the app at that size, an app wider than the pane scrolls sideways inside it, and the scale cannot be picked while the width fits the pane', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            await p.setViewportSize({ width: 1920, height: 1080 });
+            await p.waitForSelector('#screen-list li');
+            await p.click('#screen-list li:has-text("/home")');
+            const frame = p.frameLocator('#center iframe.app');
+            await frame.locator('#who:has-text("두루 관리자")').waitFor();
+            const stage = p.locator('#center .app-stage');
+            const width = p.locator('#center .frame-bar select.app-width');
+            const typedWidth = p.locator('#center .frame-bar input.app-width-typed');
+            const percent = p.locator('#center .frame-bar select.app-percent');
+            const typedPercent = p.locator('#center .frame-bar input.app-percent-typed');
+            const sideways = () => stage.evaluate((e) => ({ wide: e.classList.contains('wide'), overflow: e.scrollWidth - e.clientWidth }));
+            const pageSideways = () => p.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+            assert.deepEqual(await percent.locator('option').allTextContents(), ['칸에 맞춤', '25%', '50%', '75%', '100%', '150%', '직접 입력']);
+            assert.equal(await percent.inputValue(), '0');
+            assert.ok(await percent.isEnabled());
+            assert.ok(await typedWidth.isHidden());
+
+            await width.selectOption({ label: '직접 입력' });
+            assert.ok(await typedWidth.isVisible());
+            assert.equal(await typedWidth.inputValue(), '1280');
+            await typedWidth.fill('2000');
+            await typedWidth.press('Enter');
+            let shown = await shownApp(p);
+            const fit = assertShrunk(shown, 2000);
+            assert.deepEqual(await sideways(), { wide: false, overflow: 0 });
+            await typedWidth.fill('50');
+            await typedWidth.press('Enter');
+            assert.equal(await typedWidth.inputValue(), '2000');
+            assertShrunk(await shownApp(p), 2000);
+
+            await percent.selectOption({ label: '25%' });
+            shown = await shownApp(p);
+            assertScaled(shown, 2000, 25);
+            assertFits(shown);
+            assert.equal(shown.scaleText, '2000px 화면을 25%로 줄여서 보여 줍니다');
+            assert.deepEqual(await sideways(), { wide: false, overflow: 0 });
+
+            await percent.selectOption({ label: '100%' });
+            shown = await shownApp(p);
+            assertScaled(shown, 2000, 100);
+            assert.equal(shown.scaleText, '2000px 화면을 실제 크기로 보여 줍니다 · 칸을 넘는 부분은 옆으로 넘겨 봅니다');
+            const over = await sideways();
+            assert.equal(over.wide, true);
+            assert.ok(Math.abs(over.overflow - (2000 - shown.room.width)) <= 1, `scrolls ${over.overflow} past a ${shown.room.width}px pane`);
+            await stage.evaluate((e) => { e.scrollLeft = e.scrollWidth; });
+            const scrolled = await shownApp(p);
+            assert.ok(Math.abs(scrolled.box.x + scrolled.box.width - (scrolled.room.x + scrolled.room.width)) < 1, 'scrolled to the right edge of the app');
+            assert.equal(await pageOverflow(p), 0, 'the page itself does not scroll');
+            assert.equal(await pageSideways(), 0, 'the page itself does not scroll sideways');
+
+            await percent.selectOption({ label: '150%' });
+            shown = await shownApp(p);
+            assertScaled(shown, 2000, 150);
+            assert.equal(shown.scaleText, '2000px 화면을 150%로 키워서 보여 줍니다 · 칸을 넘는 부분은 옆으로 넘겨 봅니다');
+            assert.equal((await sideways()).wide, true);
+            assert.equal(await pageSideways(), 0);
+
+            await percent.selectOption({ label: '직접 입력' });
+            assert.equal(await typedPercent.inputValue(), '150');
+            await typedPercent.fill('20');
+            await typedPercent.press('Enter');
+            shown = await shownApp(p);
+            assertScaled(shown, 2000, 20);
+            assertFits(shown);
+            assert.equal(shown.scaleText, '2000px 화면을 20%로 줄여서 보여 줍니다');
+
+            await p.click('#screen-list li:has-text("/signin")');
+            await frame.locator('#path:has-text("/signin")').waitFor();
+            assert.equal(await width.inputValue(), 'typed');
+            assert.equal(await typedWidth.inputValue(), '2000');
+            assert.equal(await percent.inputValue(), 'typed');
+            assert.equal(await typedPercent.inputValue(), '20');
+            assertScaled(await shownApp(p), 2000, 20);
+
+            await width.selectOption({ label: '칸에 맞춤' });
+            shown = await shownApp(p);
+            assert.equal(shown.width, shown.room.width);
+            assert.equal(shown.scaleText, `칸 너비 그대로 ${shown.room.width}px`);
+            assertFits(shown);
+            assert.ok(await percent.isDisabled());
+            assert.ok(await typedPercent.isDisabled());
+            assert.deepEqual(await sideways(), { wide: false, overflow: 0 });
+
+            await width.selectOption({ label: '768' });
+            assert.ok(await percent.isEnabled());
+            assertScaled(await shownApp(p), 768, 20);
+            await percent.selectOption({ label: '칸에 맞춤' });
+            assert.ok(await typedPercent.isHidden());
+            await width.selectOption({ label: '1280' });
+            assert.ok(assertShrunk(await shownApp(p), 1280) > fit);
+
+            await p.reload();
+            await frame.locator('#path:has-text("/signin")').waitFor();
+            assert.equal(await width.inputValue(), '1280');
+            assert.equal(await percent.inputValue(), '0');
+            assert.ok(await typedWidth.isHidden());
+            assert.ok(await typedPercent.isHidden());
           }),
         ),
       ),

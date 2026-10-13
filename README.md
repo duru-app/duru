@@ -551,11 +551,19 @@ of its steps runs under the bar.
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
 in a frame, already logged in, with a role picker, boxes for path values and a line for the settings the screen's
 conditions name, which can be turned on and off. 「앱 너비」 above the frame sets the width the app is drawn at:
-1280 at first, 1024 or 1440, or 「칸에 맞춤」 for the pane's own width. When the pane is narrower than the width
-picked, the app keeps that width and is shown smaller to fit; it is never shown larger than its real size. The
-words beside the picker say which: 「1280px 화면을 58%로 줄여서 보여 줍니다」, 「1280px 화면을 실제 크기로 보여 줍니다」 or
-「칸 너비 그대로 745px」. Dragging the frame's bottom corner makes it taller or shorter, and the app gets the height
-shown divided by that percent. The width picked stays, in both views, until the page is reloaded. Below come the
+1280 at first, 375, 768, 1024 or 1440, 「직접 입력」 for a width from 200 to 3840 typed into the box beside it, or
+「칸에 맞춤」 for the pane's own width. 「배율」 beside it sets how large that width is shown. At 「칸에 맞춤」, the
+first choice, a pane narrower than the width shows the app smaller to fit, and a wider pane shows it at its real
+size. 25%, 50%, 75%, 100%, 150%, or a percent from 10 to 200 typed after 「직접 입력」, shows it at that size
+whatever the pane's width; when that is wider than the pane, the frame scrolls sideways while the page itself stays
+put. A typed value takes effect on Enter or on clicking elsewhere, and one outside its range goes back to the value
+before. With the width at 「칸에 맞춤」 the app is always at its real size and 「배율」 cannot be picked. The words
+beside the pickers say what is shown: 「1280px 화면을 58%로 줄여서 보여 줍니다」,
+「1280px 화면을 실제 크기로 보여 줍니다」, 「1280px 화면을 150%로 키워서 보여 줍니다」 or 「칸 너비 그대로 745px」,
+followed by 「칸을 넘는 부분은 옆으로 넘겨 봅니다」 when the frame scrolls sideways. Dragging the frame's bottom
+corner makes it taller or shorter, and the app
+gets the height shown divided by the percent. The width and percent picked stay, in both views, until the page is
+reloaded. Below come the
 screen's tests by depth and its API calls, with
 a row per option value. The right says what it takes to open the screen, with the tests of each role and setting
 case by depth, and lists the links into it with their guards. With `caseKinds` set, 「경우별 테스트」 has a button
@@ -565,7 +573,7 @@ its tests by depth, and pressing it again takes it out. The flow shows the same 
 **Pane widths.** The edge on either side of the middle pane, in the list and beside a picked screen in the flow,
 can be dragged to widen or narrow the panes; the line lights up when the mouse rests on it. The drawing is laid out
 again for its new width, and the app in the middle pane is shown at the percent that fits the pane's new width
-(with 「칸에 맞춤」, the app itself gets the new width). No pane can be dragged narrower than its contents need, and when the window gets too narrow
+when 「배율」 is 「칸에 맞춤」 (with the width at 「칸에 맞춤」, the app itself gets the new width). No pane can be dragged narrower than its contents need, and when the window gets too narrow
 for the middle pane, the side panes give back the width they were dragged to. The widths last until the page is
 loaded again.
 

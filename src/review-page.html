@@ -75,7 +75,9 @@
   .frame-bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 6px 8px; border: 1px solid var(--line); border-bottom: 0; border-radius: 6px 6px 0 0; background: var(--bg); font-size: 13px; }
   .frame-bar .mono { flex: 1 1 24em; min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .frame-bar .error { color: var(--fail); }
-  .frame-bar select { max-width: 100%; font: inherit; padding: 1px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
+  .frame-bar select, .frame-bar input[type=number] { max-width: 100%; font: inherit; padding: 1px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
+  .frame-bar input[type=number] { width: 5em; margin-left: 4px; }
+  .frame-bar select:disabled, .frame-bar input:disabled { opacity: .6; }
   .frame-bar .path-values { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
   .frame-bar .path-values input[type=text] { width: 12em; padding: 2px 6px; }
   .frame-bar .path-values button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--accent); background: var(--panel); color: var(--accent); font: inherit; cursor: pointer; }
@@ -93,6 +95,8 @@
   .setting button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
   .setting button:disabled, .setting select:disabled, .setting input:disabled { cursor: default; opacity: .6; }
   .app-stage { height: 60vh; overflow: hidden; resize: vertical; border: 1px solid var(--line); border-radius: 0 0 6px 6px; background: var(--bg); }
+  .app-stage.wide { overflow-x: auto; }
+  .app-sizer { height: 100%; overflow: hidden; }
   iframe.app { display: block; width: 100%; height: 100%; border: 0; background: #fff; transform-origin: 0 0; }
   .frame-note { margin-top: 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 6px; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; }
@@ -1484,20 +1488,51 @@ function appFrame(s, { link, fallback, opens, missing }, entry) {
 
 // ---------- 앱 너비 ----------
 
-// 0 은 칸에 맞춤이다.
-let appWidth = 1280;
+// width 와 percent 가 0 이면 칸에 맞춤이다.
+const appSize = { width: 1280, widthTyped: false, percent: 0, percentTyped: false };
 const appResized = new ResizeObserver(() => fitApp());
+const stageWidth = () => document.querySelector('#center .app-stage')?.clientWidth ?? 0;
 
-function appWidthPicker() {
-  return h('label', {}, '앱 너비 ',
-    h('select', { class: 'app-width', onchange: (e) => { appWidth = Number(e.target.value); fitApp(); } },
-      [0, 1024, 1280, 1440].map((w) => h('option', { value: w, selected: w === appWidth }, w || '칸에 맞춤'))),
-    ' ', h('span', { class: 'app-scale muted' }));
+function pickOrType({ key, name, label, presets, unit, min, max, guess }) {
+  const typedKey = `${key}Typed`;
+  const pick = (n, typed) => { Object.assign(appSize, { [key]: n, [typedKey]: typed }); fitApp(); };
+  const field = h('input', { type: 'number', class: `${name}-typed`, min, max, step: 1, hidden: !appSize[typedKey], 'aria-label': `${label} 직접 입력` });
+  field.value = appSize[key] || '';
+  field.addEventListener('change', () => {
+    const n = Number(field.value);
+    if (Number.isInteger(n) && n >= min && n <= max) pick(n, true);
+    else field.value = appSize[key] || '';
+  });
+  const select = h('select', {
+    class: name,
+    onchange: (e) => {
+      field.hidden = e.target.value !== 'typed';
+      if (field.hidden) { pick(Number(e.target.value), false); return; }
+      const n = appSize[key] || guess();
+      if (n) pick(Math.min(max, Math.max(min, n)), true);
+      field.value = appSize[key] || '';
+      field.focus();
+      field.select();
+    },
+  },
+  presets.map((v) => h('option', { value: v, selected: !appSize[typedKey] && v === appSize[key] }, v ? `${v}${unit}` : '칸에 맞춤')),
+  h('option', { value: 'typed', selected: appSize[typedKey] }, '직접 입력'));
+  return [select, field];
 }
 
+function appWidthPicker() {
+  return [
+    h('label', {}, '앱 너비 ', pickOrType({ key: 'width', name: 'app-width', label: '앱 너비', presets: [0, 375, 768, 1024, 1280, 1440], unit: '', min: 200, max: 3840, guess: stageWidth })),
+    h('label', {}, '배율 ', pickOrType({ key: 'percent', name: 'app-percent', label: '배율', presets: [0, 25, 50, 75, 100, 150], unit: '%', min: 10, max: 200, guess: () => fitPercent(stageWidth()) })),
+    h('span', { class: 'app-scale muted' }),
+  ];
+}
+
+const fitPercent = (room) => appSize.width && Math.max(1, Math.min(100, Math.floor((room / appSize.width) * 100)));
+
 function appStage(src) {
-  const frame = h('iframe', { class: 'app', 'data-src': src, title: '앱 화면', style: appWidth ? `width: ${appWidth}px` : null });
-  const stage = h('div', { class: 'app-stage' }, frame);
+  const frame = h('iframe', { class: 'app', 'data-src': src, title: '앱 화면', style: appSize.width ? `width: ${appSize.width}px` : null });
+  const stage = h('div', { class: 'app-stage' }, h('div', { class: 'app-sizer' }, frame));
   appResized.disconnect();
   appResized.observe(stage);
   return stage;
@@ -1508,15 +1543,26 @@ function fitApp() {
   const frame = stage?.querySelector('iframe.app');
   const note = document.querySelector('#center .app-scale');
   if (!frame || !stage.clientWidth) return;
-  const room = stage.clientWidth;
-  if (!appWidth) {
+  for (const pick of document.querySelectorAll('#center .app-percent, #center .app-percent-typed')) {
+    pick.disabled = !appSize.width;
+    pick.title = appSize.width ? '' : '칸에 맞춘 너비는 늘 실제 크기로 보입니다';
+  }
+  if (!appSize.width) {
+    stage.classList.remove('wide');
+    frame.parentElement.style.width = '';
     Object.assign(frame.style, { width: '', height: '', transform: '' });
-    note.textContent = `칸 너비 그대로 ${room}px`;
+    note.textContent = `칸 너비 그대로 ${stage.clientWidth}px`;
     return;
   }
-  const percent = Math.max(1, Math.min(100, Math.floor((room / appWidth) * 100)));
-  Object.assign(frame.style, { width: `${appWidth}px`, height: `${(stage.clientHeight * 100) / percent}px`, transform: `scale(${percent / 100})` });
-  note.textContent = percent < 100 ? `${appWidth}px 화면을 ${percent}%로 줄여서 보여 줍니다` : `${appWidth}px 화면을 실제 크기로 보여 줍니다`;
+  const percent = appSize.percent || fitPercent(stage.clientWidth);
+  const shownWidth = (appSize.width * percent) / 100;
+  const wide = shownWidth > stage.clientWidth + 0.5;
+  stage.classList.toggle('wide', wide);
+  frame.parentElement.style.width = `${shownWidth}px`;
+  Object.assign(frame.style, { width: `${appSize.width}px`, transform: `scale(${percent / 100})` });
+  frame.style.height = `${(stage.clientHeight * 100) / percent}px`;
+  const size = percent < 100 ? `${percent}%로 줄여서` : percent > 100 ? `${percent}%로 키워서` : '실제 크기로';
+  note.textContent = `${appSize.width}px 화면을 ${size} 보여 줍니다${wide ? ' · 칸을 넘는 부분은 옆으로 넘겨 봅니다' : ''}`;
 }
 
 // ---------- 프레임 위에 붙는 설정 줄 ----------
