@@ -352,8 +352,9 @@ async function withReviewFixture(fn: (configFile: string) => Promise<void>, patc
   }
 }
 
-function startReview(configFile: string, port = 0) {
-  const child = spawn(process.execPath, [CLI, 'review', configFile, '--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'] });
+function startReview(configFile: string, port = 0, env: Record<string, string> = {}, cwd?: string) {
+  const { CLAUDE_CODE_MESSAGING_SOCKET, CLAUDE_CODE_MESSAGING_TOKEN, ...outside } = process.env;
+  const child = spawn(process.execPath, [CLI, 'review', configFile, '--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...outside, ...env }, cwd });
   const out = { stdout: '', stderr: '' };
   child.stdout.setEncoding('utf8').on('data', (c) => (out.stdout += c));
   child.stderr.setEncoding('utf8').on('data', (c) => (out.stderr += c));
@@ -430,13 +431,16 @@ test('each mark and comment saved during the review comes out at once as one JSO
 
 function readEvents(url: string) {
   const got = { text: '', ended: false };
+  let opened!: () => void;
+  const open = new Promise<void>((resolve) => (opened = resolve));
   const done = fetch(`${url}/api/events`).then(async (res) => {
+    opened();
     assert.equal(res.headers.get('content-type'), 'text/event-stream; charset=utf-8');
     const decoder = new TextDecoder();
     for await (const chunk of res.body!) got.text += decoder.decode(chunk, { stream: true });
     got.ended = true;
   });
-  return { got, done };
+  return { got, done, open };
 }
 
 const reply = (configFile: string, ...args: string[]) => {
@@ -691,6 +695,109 @@ test('wait started before the review page keeps trying and gets the comment save
       child.kill();
     }
   });
+});
+
+function fakeSessionSocket() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-sock-'));
+  const file = path.join(dir, 'session.sock');
+  const connections: string[] = [];
+  const server = net.createServer((conn) => {
+    let text = '';
+    conn.setEncoding('utf8').on('data', (c) => (text += c));
+    conn.on('end', () => connections.push(text));
+  });
+  const ready = new Promise<void>((resolve) => server.listen(file, resolve));
+  const close = () => new Promise<void>((resolve) => server.close(() => (fs.rmSync(dir, { recursive: true, force: true }), resolve())));
+  return { file, connections, ready, close };
+}
+
+const saveMark = async (url: string, body: unknown) => {
+  const res = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal(res.status, 201);
+  return (await res.json()) as Mark;
+};
+
+test('with a Claude Code session socket in its environment, review sends each saved comment to it as one message after the auth line, naming the config by its full path, and nothing for marks or replies', async () => {
+  const session = fakeSessionSocket();
+  await session.ready;
+  try {
+    await withReviewFixture(async (configFile) => {
+      const { child, base, closed } = startReview('config.json', 0, { CLAUDE_CODE_MESSAGING_SOCKET: session.file, CLAUDE_CODE_MESSAGING_TOKEN: 'tok' }, path.dirname(configFile));
+      try {
+        const url = await within(base, 'review page address on stderr');
+        await saveMark(url, { target: { node: '/lab#Lab' }, status: 'missing', note: 'No test.' });
+        const comment = await saveMark(url, { target: { node: '/lab#Lab' }, note: 'Is the table tested?' });
+        assert.deepEqual(reply(configFile, comment.id, 'Not yet.', '--server', url), { status: 0, stderr: '' });
+        await waitFor(() => session.connections.length === 1, 'one connection on the session socket');
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        assert.equal(session.connections.length, 1);
+        const [auth, message, rest] = session.connections[0].split('\n');
+        assert.deepEqual(JSON.parse(auth), { type: 'auth', token: 'tok' });
+        assert.equal(rest, '');
+        const { type, message: { role, content } } = JSON.parse(message);
+        assert.deepEqual({ type, role }, { type: 'user', role: 'user' });
+        const [first, line] = content.split('\n');
+        assert.equal(first, `duru review comment; answer it with duru reply ${JSON.stringify(fs.realpathSync(configFile))} ${comment.id} "<answer>" --server ${url}/`);
+        assert.deepEqual(JSON.parse(line), { duru: 'comment', ...comment });
+        await endReview(url);
+        await within(closed, 'exit');
+      } finally {
+        child.kill();
+      }
+    });
+  } finally {
+    await session.close();
+  }
+});
+
+test('a session socket that review cannot reach or cannot use leaves a line on stderr while the comment still goes to open event streams and the review goes on; with no socket there is no such line', async () => {
+  const session = fakeSessionSocket();
+  await session.ready;
+  try {
+    await withReviewFixture(async (configFile) => {
+      const plain = startReview(configFile);
+      try {
+        const url = await within(plain.base, 'review page address on stderr');
+        await saveMark(url, { target: { node: '/lab#Lab' }, note: 'No session here.' });
+        await waitFor(() => plain.out.stderr.includes('No session here.'), 'the comment line on stderr');
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        assert.doesNotMatch(plain.out.stderr, /could not send the comment/);
+        await endReview(url);
+        await within(plain.closed, 'exit');
+      } finally {
+        plain.child.kill();
+      }
+
+      const gone = startReview(configFile, 0, { CLAUDE_CODE_MESSAGING_SOCKET: `${session.file}.missing` });
+      try {
+        const url = await within(gone.base, 'review page address on stderr');
+        await saveMark(url, { target: { node: '/lab#Lab' }, note: 'Still saved?' });
+        await waitFor(() => /^could not send the comment to the Claude Code session: /m.test(gone.out.stderr), 'the line on stderr');
+        await saveMark(url, { target: { node: '/home#Home' }, note: 'And this one?' });
+        await endReview(url);
+        const { code } = await within(gone.closed, 'exit');
+        assert.equal(code, 0);
+      } finally {
+        gone.child.kill();
+      }
+
+      const bad = startReview(configFile, 0, { CLAUDE_CODE_MESSAGING_SOCKET: '99999' });
+      try {
+        const url = await within(bad.base, 'review page address on stderr');
+        const events = readEvents(url);
+        await within(events.open, 'the event stream to open');
+        const saved = await saveMark(url, { target: { node: '/lab#Lab' }, note: 'Saved anyway?' });
+        await waitFor(() => /^could not send the comment to the Claude Code session: /m.test(bad.out.stderr), 'the line on stderr');
+        await waitFor(() => events.got.text.includes(saved.id), 'the comment on the event stream');
+        await endReview(url);
+        assert.equal((await within(bad.closed, 'exit')).code, 0);
+      } finally {
+        bad.child.kill();
+      }
+    });
+  } finally {
+    await session.close();
+  }
 });
 
 test('review prints the author on stderr with where the name was read from', async () => {

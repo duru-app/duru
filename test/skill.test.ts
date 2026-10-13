@@ -80,6 +80,11 @@ test('the agent skill says to keep one duru wait running for each review, answer
   assert.doesNotMatch(SKILL, /read its output as it grows/);
 });
 
+test('the agent skill says that in Claude Code comments also arrive as session messages and to keep duru wait running, answering each id once', () => {
+  assert.match(SKILL, /In Claude Code the review also sends each comment into your session as a message from another session: its first\s+line starts with `duru review comment;`/);
+  assert.match(SKILL, /keep `duru wait` running all the same; when the same comment `id` comes both\s+ways, answer it once/);
+});
+
 test('the agent skill says how to answer a comment on the open review page and what a reply line is', () => {
   assert.match(SKILL, /`duru reply <config> <the comment's id> "<answer>" --server <the review page address>`/);
   assert.match(SKILL, /on the review's standard error as a\s+`"reply"` line with `replyTo` set to the comment's `id`; it asks for nothing/);

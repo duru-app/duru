@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { baselineLine, compareMaps, readBaseline } from './baseline.ts';
@@ -115,7 +116,29 @@ if (command === 'tasks') {
       process.stdout.write(list, () => process.exit(0));
     };
   };
-  const onMark = (line: AnnouncedMark) => console.error(JSON.stringify(line));
+  // Claude Code 2.1.296 에서 세션에 들어오는 것을 확인한 비공식 메시지 형식이다.
+  const toSession = (line: AnnouncedMark) => {
+    const socket = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
+    if (!socket) return;
+    const failed = (err: Error) => console.error(`could not send the comment to the Claude Code session: ${err.message}`);
+    try {
+      const token = process.env.CLAUDE_CODE_MESSAGING_TOKEN;
+      const address = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+      const reply = `duru reply ${JSON.stringify(path.resolve(configPath))} ${line.id} "<answer>" --server ${address}`;
+      const content = `duru review comment; answer it with ${reply}\n${JSON.stringify(line)}`;
+      const conn = net.createConnection(socket, () => {
+        if (token) conn.write(`${JSON.stringify({ type: 'auth', token })}\n`);
+        conn.end(`${JSON.stringify({ type: 'user', message: { role: 'user', content } })}\n`);
+      });
+      conn.on('error', failed);
+    } catch (err: any) {
+      failed(err);
+    }
+  };
+  const onMark = (line: AnnouncedMark) => {
+    console.error(JSON.stringify(line));
+    if (line.duru === 'comment') toSession(line);
+  };
   const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end, onMark });
   process.on('SIGINT', () => {
     try {

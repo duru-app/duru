@@ -144,6 +144,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    then.
    If you start the review again, whatever the reason, start `duru wait` again on the address the new review
    prints, after stopping the earlier `duru wait` if it is still running.
+   In Claude Code the review also sends each comment into your session as a message from another session: its first
+   line starts with `duru review comment;` and names the `duru reply` to run, and its second line is the comment's
+   JSON line. Answer it as below, and keep `duru wait` running all the same; when the same comment `id` comes both
+   ways, answer it once.
    Each mark or comment the reviewer saves also comes out on the review's standard error at once, and `duru wait`
    prints comments in the same shape: one JSON line starting with `{"duru":`: `"comment"` (no `status`) or
    `"mark"`, with its `id`, `target` (a screen or call ID under `node`, or a story ID under `story`), `note`, `author`
