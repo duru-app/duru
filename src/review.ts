@@ -7,7 +7,7 @@ import path from 'node:path';
 import { screenCases, settingConditionName } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
-import { acceptCandidate, discardCandidate, storyCandidates } from './candidates.ts';
+import { acceptCandidate, candidatePlace, discardCandidate, storyCandidates } from './candidates.ts';
 import { isPlainObject } from './config.ts';
 import { buildFlow } from './flow.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
@@ -92,7 +92,8 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
   const callsById = new Map<string, any>(map.calls.map((c: any) => [c.id, c]));
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
   const kinds = Object.keys(config.caseKinds);
-  const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds, linked, config.roleGuards);
+  const candidates = storyCandidates(config, map, mapFile, traced);
+  const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key));
   const needed = new Map<string, Set<string>>();
   for (const { target, current } of marks.attached) {
     if (target.case === undefined || current?.status !== 'needed') continue;
@@ -113,7 +114,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
     marks,
     caseKinds: config.caseKinds,
     stories,
-    candidates: storyCandidates(config, map, mapFile, traced),
+    candidates,
     storiesDir: config.storiesDir,
     flow: buildFlow(map, tests),
     appUrl: config.appUrl ?? null,
@@ -160,7 +161,7 @@ function readBody(req: http.IncomingMessage) {
   });
 }
 
-export type AnnouncedMark = Mark & { duru: string; where?: ReturnType<typeof locatePart> };
+export type AnnouncedMark = Mark & { duru: string; where?: ReturnType<typeof locatePart> | ReturnType<typeof candidatePlace> | null };
 
 export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {} }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark) => void } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
@@ -201,7 +202,16 @@ export async function startReviewServer(config: any, { port = 0, author = review
     screens: (mark.target.part!.kind !== 'test' && readOrNull(() => readMap(mapFile))?.screens) || [],
     roleGuards: config.roleGuards,
   });
-  const lineOf = (mark: Mark): AnnouncedMark => ({ duru: recordKind(mark), ...mark, ...(mark.target.part && { where: whereOf(mark) }) });
+  const findCandidate = (key: unknown) => storyCandidates(config, readMap(mapFile), mapFile, readTests(config).traced).list.find((c) => c.key === key);
+  const candidateWhere = (key: string) => {
+    try {
+      const found = findCandidate(key);
+      return found ? candidatePlace(found) : null;
+    } catch {
+      return null;
+    }
+  };
+  const lineOf = (mark: Mark): AnnouncedMark => ({ duru: recordKind(mark), ...mark, ...(mark.target.part && { where: whereOf(mark) }), ...(mark.target.candidate !== undefined && { where: candidateWhere(mark.target.candidate) }) });
   const unanswered = () => {
     const marks = loadMarks(config.marksDir);
     const answered = new Set(marks.map((m) => m.replyTo));
@@ -311,7 +321,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
             return send(res, 400, 'text/plain', err.message);
           }
         }
-        const candidate = storyCandidates(config, readMap(mapFile), mapFile, readJson(path.join(config.outDir, 'tests.json')).traced).list.find((c) => c.key === input.key);
+        const candidate = findCandidate(input.key);
         if (!candidate) return send(res, 404, 'text/plain', `후보 ${input.key} 가 없습니다`);
         try {
           const written = req.url === '/api/candidates/accept'

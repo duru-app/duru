@@ -106,3 +106,10 @@ test('the agent skill says what a comment on an opening condition or an incoming
   assert.match(SKILL, /read\s+(?:the|that)\s+line[\s\S]*duru\s+defect[\s\S]*answer\s+with\s+(?:the|that)\s+line/);
   assert.match(SKILL, /`comments on opening conditions`[\s\S]*`comments on incoming links`/);
 });
+
+test('the agent skill says what a comment on a story candidate carries and that it is answered from the record or the test, outside the task list', () => {
+  assert.match(SKILL, /`\{ "candidate": "<key>" \}`/);
+  assert.match(SKILL, /`\{ "record", "steps" \}` with `stepRanges`[\s\S]*`\{ "report", "tests" \}`/);
+  assert.match(SKILL, /answer why that order came out,\s+citing the record and the steps behind each screen, or the test by its title/);
+  assert.match(SKILL, /never appears in the task list/);
+});

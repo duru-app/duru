@@ -527,6 +527,45 @@ test('a comment saved on a condition or an incoming link of a screen comes out o
   });
 });
 
+test('a comment saved on a story candidate comes out on stderr and on open event streams with its record, steps and screen order; a reply to it carries the same, a status is refused, and the task list stays as it was', async () => {
+  await withReviewFixture(async (configFile) => {
+    const tasksBefore = execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8' });
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const events = readEvents(url);
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      const target = { candidate: '/signin#SignIn > /home#Home > /beta/inbox > /help#Help' };
+      const res = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, note: 'Why does it pass the beta inbox?' }) });
+      assert.equal(res.status, 201);
+      const comment = (await res.json()) as Mark;
+      assert.deepEqual(comment.target, target);
+      assert.deepEqual(reply(configFile, comment.id, 'Steps 3 and 4 open /beta/inbox.', '--server', `${url}/`), { status: 0, stderr: '' });
+      await waitFor(() => records().length === 2, 'the comment and the reply on stderr');
+      const where = {
+        name: 'open-help',
+        source: { record: 'example-visits/open-help.json', steps: [1, 5] },
+        screens: ['/signin#SignIn', '/home#Home', '/beta/inbox', '/help#Help'],
+        stepRanges: [[1, 1], [2, 2], [3, 4], [5, 5]],
+      };
+      assert.deepEqual(records()[0], { duru: 'comment', ...comment, where });
+      assert.deepEqual([records()[1].duru, records()[1].target, records()[1].where], ['reply', target, where]);
+      await waitFor(() => events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).length === 2, 'two events on the stream');
+      assert.deepEqual(events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).map((e) => JSON.parse(e.slice('data: '.length))), records());
+
+      const refused = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, status: 'missing', note: 'x' }) });
+      assert.equal(refused.status, 400);
+      assert.match(await refused.text(), /a comment on a story candidate takes no status/);
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const { code, stdout } = await within(closed, 'exit');
+      assert.equal(code, 0);
+      assert.equal(stdout, tasksBefore);
+    } finally {
+      child.kill();
+    }
+  }, { storiesDir: 'example-stories', visitRecords: ['example-visits'] });
+});
+
 test('a reply sent with --server is saved by the running review, printed on its stderr as a "reply" line and pushed to open event streams; ending the review closes the streams and still exits with the task list', async () => {
   await withReviewFixture(async (configFile) => {
     const { child, base, closed, out } = startReview(configFile);

@@ -188,6 +188,8 @@ export function storeCandidates(dir: string, list: Candidate[], now = new Date()
   return { written };
 }
 
+export const candidatePlace = ({ name, source, screens, stepRanges }: Candidate) => ({ name, source, screens, ...(stepRanges && { stepRanges }) });
+
 export const acceptCandidate = (dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) =>
   addStory(dir, { id, name, screens: candidate.screens, author, source: candidate.source }, now);
 
@@ -214,10 +216,14 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const screenAt = screenFinder(map);
   const seen = new Set([...loadStories(config.storiesDir).stories, ...discarded].map((s) => JSON.stringify(s.screens)));
   const list: Candidate[] = [];
+  const gone: Record<string, string> = {};
   for (const record of records) {
     const candidate = candidateOf(record, screenAt);
     const key = JSON.stringify(candidate.screens);
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      gone[candidate.key] ??= candidate.name;
+      continue;
+    }
     seen.add(key);
     list.push(candidate);
   }
@@ -228,7 +234,9 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     const source = fromTraces.get(key);
     if (source) {
       if (source.report === report && !source.tests.includes(title)) source.tests.push(title);
-    } else if (screens.length > 1 && !seen.has(key)) {
+    } else if (screens.length > 1 && seen.has(key)) {
+      gone[screens.join(' > ')] ??= shownTitle(title);
+    } else if (screens.length > 1) {
       const candidate = { key: screens.join(' > '), name: shownTitle(title), screens, source: { report, tests: [title] } };
       fromTraces.set(key, candidate.source);
       list.push(candidate);
@@ -238,9 +246,12 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
   for (const { name, screens, source } of byFirstSeen) {
     const key = JSON.stringify(screens);
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      gone[screens.join(' > ')] ??= name;
+      continue;
+    }
     seen.add(key);
     list.push({ key: screens.join(' > '), name, screens, source });
   }
-  return { list: checkStories(map, list), notices: all };
+  return { list: checkStories(map, list), gone, notices: all };
 }

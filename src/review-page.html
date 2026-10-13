@@ -257,7 +257,7 @@
   .box .talk-count { font-size: 10px; line-height: 14px; }
   .bubble { visibility: hidden; border: 1px solid var(--line); color: var(--muted); }
   .bubble svg { width: 12px; height: 12px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-  .part-row:hover .bubble, .bubble:focus-visible { visibility: visible; }
+  .part-row:hover .bubble, #candidate-list li:hover .bubble, .bubble:focus-visible { visibility: visible; }
   :is(.part-count, .talk-count) { border: 1px solid var(--accent); color: var(--accent); }
   .talk-head { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
   .tags, .history-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
@@ -541,7 +541,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, callInfoShut: null, storyQuery: '', storiesFolded: false, talkScope: 'here', talkFilter: 'all', reachRecord: null };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateTalk: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, callInfoShut: null, storyQuery: '', storiesFolded: false, talkScope: 'here', talkFilter: 'all', reachRecord: null };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -559,15 +559,20 @@ function fill(el, ...children) {
   el.replaceChildren(...children.flat().filter((c) => c != null && c !== false));
 }
 
-const keyOf = (t) => (t.story !== undefined
+const keyOf = (t) => (t.candidate !== undefined
+  ? `candidate(${t.candidate})`
+  : t.story !== undefined
   ? `story(${t.story})`
   : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
 const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
-const targetName = (t) => (t.story !== undefined
+const targetName = (t) => (t.candidate !== undefined
+  ? `후보 ${candidateName(t.candidate)}`
+  : t.story !== undefined
   ? `스토리 ${state.data.stories.list.find((st) => st.id === t.story)?.name ?? t.story}`
   : [t.node, t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case] ?? t.case}`].filter(Boolean).join(' · '));
 const conditionLabel = (key) => (key.startsWith('role:') ? `역할 ${key.slice('role:'.length)}` : `설정 ${key.slice('setting:'.length)}`);
 const tagLabel = (t) => {
+  if (t.candidate !== undefined) return '후보';
   if (t.story !== undefined) return '스토리';
   if (t.part?.kind === 'condition') return conditionLabel(t.part.key);
   if (t.part?.kind === 'link') return `${t.part.key.from} 에서 오는 링크`;
@@ -630,7 +635,10 @@ async function load() {
     state.story = stories[0]?.id ?? null;
     state.storyDraft = null;
   }
-  if (!candidateOf()) state.candidate = null;
+  if (!candidateOf()) {
+    state.candidate = null;
+    state.candidateTalk = null;
+  }
   const c = state.compose;
   const onMap = c?.screens.filter((id) => screens.some((sc) => sc.id === id));
   if (c && onMap.length !== c.screens.length) {
@@ -667,6 +675,7 @@ function selectStory(id) {
   if (id !== state.story) state.storyOpen.clear();
   state.story = id;
   state.candidate = null;
+  state.candidateTalk = null;
   state.storyDraft = null;
   state.error = null;
   state.caseError = null;
@@ -676,7 +685,10 @@ function selectStory(id) {
 }
 
 function selectCandidate(key) {
-  if (key !== state.candidate) state.storyOpen.clear();
+  if (key !== state.candidate) {
+    state.storyOpen.clear();
+    state.candidateTalk = null;
+  }
   state.candidate = key;
   state.error = null;
   state.caseError = null;
@@ -912,7 +924,7 @@ function renderLeft() {
     }
     return renderUntaggedList();
   }
-  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined), (m) => (m.target.part ? `${m.target.node} · ${tagLabel(m.target)}` : m.key), h('p', { class: 'muted' }, '맵에서 사라진 노드, 설정에서 빠진 경우 종류, 결과에서 사라진 테스트, 화면에서 사라진 접근 조건과 들어오는 링크에 달린 코멘트가 여기 남습니다.'));
+  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined && m.target.candidate === undefined), (m) => (m.target.part ? `${m.target.node} · ${tagLabel(m.target)}` : m.key), h('p', { class: 'muted' }, '맵에서 사라진 노드, 설정에서 빠진 경우 종류, 결과에서 사라진 테스트, 화면에서 사라진 접근 조건과 들어오는 링크에 달린 코멘트가 여기 남습니다.'));
   const list = keptLeftList(left, tabs, 'screen-list');
   if (list) {
     const search = left.querySelector(':scope > .filters > input[type=search]');
@@ -997,6 +1009,7 @@ const LINK_VERDICT = { open: '이어짐', configured: '설정에 적은 이동',
 const LINK_VERDICT_TITLE = { configured: '설정의 moves 에 적은 이동으로 이어집니다' };
 const storyOf = () => state.data.stories.list.find((st) => st.id === state.story);
 const candidateOf = () => state.data.candidates.list.find((c) => c.key === state.candidate);
+const candidateName = (key) => state.data.candidates.list.find((c) => c.key === key)?.name ?? state.data.candidates.gone?.[key] ?? key;
 const stepsText = ([first, last]) => (first === last ? `단계 ${first}` : `단계 ${first}–${last}`);
 const sourceView = (source, whose) => (source.record
   ? h('div', { class: 'muted mono source', title: `${whose} 방문 기록과 단계` }, `${source.record} · ${stepsText(source.steps)}`)
@@ -1097,9 +1110,14 @@ function candidateGroup() {
     stale
       ? h('p', { class: 'error', id: 'candidates-stale' }, stale)
       : list.length
-      ? h('ul', { class: 'screens', id: 'candidate-list' }, list.map((c) => h('li', { class: c.key === state.candidate ? 'selected' : '', onclick: () => selectCandidate(c.key) },
-          h('span', { class: 'name' }, h('span', {}, c.name), h('div', { class: 'muted mono' }, c.source.record ?? c.source.report), h('div', { class: 'chips' }, storyChips(c))),
-          h('span', { class: 'count' }, `화면 ${c.steps.length}`))))
+      ? h('ul', { class: 'screens', id: 'candidate-list' }, list.map((c) => {
+          const n = commentsIn(markOf({ candidate: c.key }));
+          return h('li', { class: c.key === state.candidate ? 'selected' : '', onclick: () => selectCandidate(c.key) },
+            h('span', { class: 'name' }, h('span', {}, c.name), h('div', { class: 'muted mono' }, c.source.record ?? c.source.report), h('div', { class: 'chips' }, storyChips(c))),
+            n ? h('button', { class: 'part-count', title: '이 후보에 남긴 대화를 엽니다', onclick: (e) => { e.stopPropagation(); talkOnCandidate(c.key, true); } }, unansweredDot(entriesAt({ candidate: c.key })), `코멘트 ${n}`) : null,
+            h('button', { class: 'bubble', title: '이 후보에 코멘트를 씁니다', 'aria-label': `후보 「${c.name}」에 코멘트`, onclick: (e) => { e.stopPropagation(); talkOnCandidate(c.key, false); } }, BUBBLE()),
+            h('span', { class: 'count' }, `화면 ${c.steps.length}`));
+        }))
       : h('p', { class: 'muted', title: '설정의 visitRecords 에 적은 방문 기록과, tests 에 적은 Playwright 보고의 실행 기록에서 나온 후보가 여기 놓입니다.' }, '없음'),
     ...(notices.length ? [
       h('h2', { title: '형식이 틀려 건너뛴 방문 기록과 버린 후보 파일입니다.' }, `건너뛴 파일 ${notices.length}`),
@@ -1132,8 +1150,8 @@ function storyList() {
       ? storyItems()
       : [h('p', { class: 'muted' }, '스토리 파일이 없습니다. 스토리 하나를 파일 하나로 ', h('code', {}, state.data.storiesDir), ' 에 둡니다.')]),
     ...candidateGroup(),
-    ...markList('떨어져 나감', 'detached', state.data.marks.detached.filter((m) => m.target.story !== undefined), (m) => m.target.story,
-      h('p', { class: 'muted', title: '스토리 파일이 사라진 스토리에 남긴 코멘트' }, '없음')),
+    ...markList('떨어져 나감', 'detached', state.data.marks.detached.filter((m) => m.target.story !== undefined || m.target.candidate !== undefined), (m) => (m.target.candidate !== undefined ? `후보 ${candidateName(m.target.candidate)}` : m.target.story),
+      h('p', { class: 'muted', title: '스토리 파일이 사라진 스토리와, 받거나 버려 목록에서 빠진 후보에 남긴 코멘트' }, '없음')),
     h('h2', {}, `읽지 못한 스토리 파일 ${notices.length}`),
     notices.length
       ? h('ul', { class: 'plain notices' }, notices.map((n) => h('li', {}, h('code', {}, n.file), h('div', { class: 'error' }, n.reason))))
@@ -1229,6 +1247,21 @@ function narrowTalk(target) {
   state.historyFilter = keyOf(target);
   state.historyOpen = true;
   render();
+}
+
+function talkOnCandidate(key, history) {
+  state.talkScope = 'here';
+  if (key !== state.candidate) {
+    const note = state.candidateTalk?.note;
+    selectCandidate(key);
+    if (note) {
+      state.candidateTalk = { status: null, note };
+      render();
+    }
+  }
+  if (history) state.historyOpen = true;
+  render();
+  if (!history) focusTalk();
 }
 
 function slotRow(item, target, words, name = tagLabel(target)) {
@@ -2291,6 +2324,7 @@ const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === i
 async function acceptAs(c, id, name) {
   if (!(await writeStories('/api/candidates/accept', { key: c.key, id, name }))) return false;
   state.candidate = null;
+  state.candidateTalk = null;
   state.story = id;
   state.storyDraft = null;
   state.error = null;
@@ -2390,6 +2424,7 @@ function askDiscard(c) {
     done: () => {
       const { list } = state.data.candidates;
       state.candidate = (list[at] ?? list[at - 1])?.key ?? null;
+      state.candidateTalk = null;
       render();
     },
     refocus: () => document.querySelector('#right button.discard')?.focus(),
@@ -2424,6 +2459,7 @@ function startCompose() {
   state.compose ??= newCompose();
   state.composing = true;
   state.candidate = null;
+  state.candidateTalk = null;
   state.storyError = null;
   render();
 }
@@ -2596,7 +2632,7 @@ function renderStoryRight(info, dock) {
   if (state.composing) return composeRight(info, dock);
   const c = candidateOf();
   if (c) {
-    fill(dock);
+    fill(dock, markForm({ candidate: c.key }, 'candidateTalk', '후보'));
     return fill(info, ...reachSection(c, `candidate\n${c.key}`), ...candidateActions(c));
   }
   const st = storyOf();
@@ -2836,6 +2872,7 @@ function renderRight() {
 
 function hereTalk() {
   if (state.side !== 'stories') return state.target && { label: `이 ${nodeWord(state.target.node)}`, target: state.target };
+  if (state.candidate && !state.composing) return { label: '이 후보', target: { candidate: state.candidate } };
   return { label: '이 스토리', target: state.story && !state.candidate && !state.composing ? { story: state.story } : null };
 }
 
@@ -2858,8 +2895,10 @@ const TALK_FILTERS = [
   ...Object.entries(MARK_STATUS).map(([key, label]) => ({ key, label, keep: (m, r) => m.current?.status === key && saidIn(m).find((x) => x.status === key)?.id === r.id })),
 ];
 
-const groupOf = (t) => (t.story !== undefined ? `story(${t.story})` : t.node);
-const groupTitle = (t) => (t.story !== undefined
+const groupOf = (t) => (t.candidate !== undefined ? `candidate(${t.candidate})` : t.story !== undefined ? `story(${t.story})` : t.node);
+const groupTitle = (t) => (t.candidate !== undefined
+  ? `후보 ${candidateName(t.candidate)}`
+  : t.story !== undefined
   ? `스토리 ${state.data.stories.list.find((st) => st.id === t.story)?.name ?? t.story}`
   : callOf(t.node) ? `호출 ${t.node}` : screenLabel(t.node));
 const firstLine = (note) => note.split('\n').find((line) => line.trim() !== '') ?? '';
@@ -2896,23 +2935,23 @@ function allTalk() {
   return h('div', { class: 'talk all-talk' },
     filters,
     groups.size
-      ? [...groups.values()].map((group) => h('div', { class: 'talk-group' }, h('h3', { class: group[0].m.target.story === undefined ? 'mono' : null }, groupTitle(group[0].m.target)), group.map(lineItem)))
+      ? [...groups.values()].map((group) => h('div', { class: 'talk-group' }, h('h3', { class: group[0].m.target.node !== undefined ? 'mono' : null }, groupTitle(group[0].m.target)), group.map(lineItem)))
       : h('p', { class: 'muted' }, lines.length ? '거른 조건에 맞는 말이 없습니다.' : '아직 남긴 말이 없습니다.'));
 }
 
 function reachTalk(target, recordId) {
-  const screen = target.story !== undefined ? null : screenOf(target.node) ? target.node : callOf(target.node)?.screens[0];
+  const screen = target.node === undefined ? null : screenOf(target.node) ? target.node : callOf(target.node)?.screens[0];
   if (screen === undefined) return;
   state.talkScope = 'here';
   state.reachRecord = recordId;
   state.historyFilter = null;
-  if (target.story !== undefined) {
+  if (target.node === undefined) {
     state.view = 'list';
     state.side = 'stories';
     state.composing = false;
-    state.dockKey = keyOf(target);
     state.historyOpen = true;
-    return selectStory(target.story);
+    state.dockKey = keyOf(target);
+    return target.candidate !== undefined ? selectCandidate(target.candidate) : selectStory(target.story);
   }
   state.side = 'screens';
   if (state.view === 'flow' && drawnScreens().some((n) => n.id === screen)) {
@@ -2945,7 +2984,8 @@ function renderScreenRight(info, dock) {
   fill(dock, markForm(state.target, 'draft', targetLabelOf(state.target, call), { folded: false }));
 }
 
-const talkIn = (marks, target) => marks.filter((m) => (target.story !== undefined ? m.target.story === target.story : m.target.story === undefined && m.target.node === target.node));
+const talkIn = (marks, target) => marks.filter((m) => (target.candidate !== undefined ? m.target.candidate === target.candidate
+  : target.story !== undefined ? m.target.story === target.story : m.target.story === undefined && m.target.node === target.node));
 const talkOf = (target) => talkIn([...state.data.marks.attached, ...state.data.marks.detached], target);
 const attachedTalk = (target) => talkIn(state.data.marks.attached, target);
 
@@ -2998,11 +3038,11 @@ function markForm(target, draftKey, label, { folded = true } = {}) {
   } }, `대화 ${count}`);
   if (history) applyHistoryFold(historyToggle, history);
   const tag = draft.noTag ? null : draft.part ?? target;
-  const statusOn = tag === target;
+  const statusOn = tag === target && target.candidate === undefined;
   const savable = () => tag !== null && (draft.note.trim() !== '' || (statusOn && !!draft.status));
   const save = h('button', { class: 'save', disabled: !savable(), onclick: () => saveMark(tag, draftKey) }, '남기기');
   const statuses = Object.entries(MARK_STATUS).map(([k, text]) => {
-    const button = h('button', { class: statusOn && draft.status === k ? 'on' : '', disabled: !statusOn, title: statusOn ? null : '상태는 꼬리표가 화면 · 호출 · 깊이 · 스토리 하나일 때만 매깁니다', onclick: () => {
+    const button = h('button', { class: statusOn && draft.status === k ? 'on' : '', disabled: !statusOn, title: statusOn ? null : target.candidate !== undefined ? '후보에는 상태를 매기지 않습니다. 스토리로 받은 뒤에 매깁니다' : '상태는 꼬리표가 화면 · 호출 · 깊이 · 스토리 하나일 때만 매깁니다', onclick: () => {
       draft.status = draft.status === k ? null : k;
       for (const b of statuses) b.classList.toggle('on', b === button && draft.status === k);
       save.disabled = !savable();
@@ -3222,7 +3262,7 @@ function screenDetails(s) {
   ];
 }
 
-const shownTarget = () => (state.side === 'stories' ? { story: state.story } : state.target);
+const shownTarget = () => (state.side !== 'stories' ? state.target : state.candidate !== null ? { candidate: state.candidate } : { story: state.story });
 const isShown = (target) => {
   const shown = shownTarget();
   return !!shown && keyOf(shown) === keyOf(target);
@@ -3254,7 +3294,7 @@ async function postMark(target, draftKey) {
     showSaveError(err.message, target);
     return null;
   }
-  const owner = draftKey === 'storyDraft' ? { story: state.story } : state.target;
+  const owner = draftKey === 'storyDraft' ? { story: state.story } : draftKey === 'candidateTalk' ? { candidate: state.candidate } : state.target;
   const untouched = !!owner && keyOf(owner) === keyOf(target) && !unsaved(target, state[draftKey]);
   if (state[draftKey] === draft || untouched) state[draftKey] = null;
   try {
@@ -4549,7 +4589,7 @@ window.addEventListener('popstate', () => {
 const unsaved = (target, d) => !!d && (d.note.trim() !== '' || (d.status !== null && d.status !== (markOf(target)?.current?.status ?? null)));
 
 function hasUnsavedMark() {
-  return unsaved(state.target, state.draft) || unsaved({ story: state.story }, state.storyDraft);
+  return unsaved(state.target, state.draft) || unsaved({ story: state.story }, state.storyDraft) || unsaved({ candidate: state.candidate }, state.candidateTalk);
 }
 
 function showEnded(message) {

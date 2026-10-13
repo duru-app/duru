@@ -14,6 +14,7 @@ export const CASE_STATUSES = ['needed', 'not-needed'];
 
 interface MarkTarget {
   story?: string;
+  candidate?: string;
   node?: string;
   option?: { key: string; value: boolean };
   depth?: string;
@@ -73,7 +74,7 @@ export function loadMarks(dir: string): Mark[] {
   if (!fs.existsSync(dir)) return [];
   return (fs
     .readdirSync(dir, { recursive: true }) as string[])
-    .filter((f) => f.endsWith('.json'))
+    .filter((f) => f.endsWith('.json') && fs.statSync(path.join(dir, f)).isFile())
     .map((f) => {
       const file = path.join(dir, f);
       try {
@@ -87,8 +88,20 @@ export function loadMarks(dir: string): Mark[] {
 // 표시 하나를 파일 하나로 저장하고 기존 파일은 고치지 않으므로, 두 사람이 따로 남긴 표시도 git 에서 충돌 없이 합쳐진다.
 // 어느 화면의 표시인지는 폴더 이름이 아니라 파일 안의 target 으로 정한다.
 function saveMark(dir: string, mark: Mark) {
-  const { story, node } = mark.target;
-  writeNewRecord(path.join(story ? path.join(dir, 'stories', story) : path.join(dir, fileSafe(node!)), recordName(mark)), mark);
+  const { story, candidate, node } = mark.target;
+  const folder = candidate !== undefined ? path.join(dir, 'stories', 'candidates', candidateFolder(candidate)) : story ? path.join(dir, 'stories', story) : path.join(dir, fileSafe(node!));
+  writeNewRecord(path.join(folder, recordName(mark)), mark);
+}
+
+function candidateFolder(key: string) {
+  const safe = fileSafe(key);
+  return safe.length <= 80 ? safe : `${safe.slice(0, 71)}-${crypto.createHash('sha256').update(key).digest('hex').slice(0, 8)}`;
+}
+
+function candidateTarget(target: MarkTarget) {
+  if (!isText(target.candidate)) throw new Error('a candidate mark needs the key of a story candidate');
+  if (['story', 'node', 'option', 'depth', 'case', 'part'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a candidate mark takes no story, node, option, depth, case or part');
+  return { candidate: target.candidate };
 }
 
 function storyTarget(target: MarkTarget) {
@@ -149,8 +162,9 @@ function linkPartKey(key: unknown): LinkKey {
 }
 
 export function addMark(dir: string, { target, status, note, author }: NewMark, now = new Date()) {
-  const checked: MarkTarget = target?.story !== undefined ? storyTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target);
+  const checked: MarkTarget = target?.candidate !== undefined ? candidateTarget(target) : target?.story !== undefined ? storyTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target);
   if (checked.part && status !== undefined && status !== null) throw new Error('a comment on a part of a screen or call takes no status; put the status on the screen or call itself');
+  if (checked.candidate !== undefined && status !== undefined && status !== null) throw new Error('a comment on a story candidate takes no status; accept it as a story to give it one');
   const statuses = checked.case !== undefined ? CASE_STATUSES : MARK_STATUSES;
   const comment = (status === undefined || status === null) && checked.case === undefined;
   if (comment && (typeof note !== 'string' || !note.trim())) throw new Error('a comment needs a note');
@@ -181,19 +195,24 @@ export function addReply(dir: string, { replyTo, note, author = 'agent' }: { rep
   return reply;
 }
 
-// 화면 · 호출 ID 에는 괄호가 들어가지 않으므로(map.ts 의 TAG_FORBIDDEN) story(<ID>) 는 노드의 키가 될 수 없다.
-const targetKey = (t: MarkTarget) => (t.story !== undefined
+// story(<ID>) 와 candidate(<후보 키>) 는 노드의 키와 겹치지 않는다(map.ts 의 TAG_FORBIDDEN).
+const targetKey = (t: MarkTarget) => (t.candidate !== undefined
+  ? `candidate(${t.candidate})`
+  : t.story !== undefined
   ? `story(${t.story})`
   : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
 
-export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = [], tests: PartContext['tests'] = {}, roleGuards: Record<string, string[]> = {}): { attached: MarkEntry[]; detached: MarkEntry[] } {
+export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = [], tests: PartContext['tests'] = {}, roleGuards: Record<string, string[]> = {}, candidateKeys: string[] = []): { attached: MarkEntry[]; detached: MarkEntry[] } {
   const nodes = new Map<string, Set<string>>([
     ...map.screens.map((s): [string, Set<string>] => [s.id, new Set()]),
     ...(map.calls ?? []).map((c): [string, Set<string>] => [c.id, new Set((c.options ?? []).map((o) => o.key))]),
   ]);
   const stories = new Set(storyIds);
   const kinds = new Set(caseKinds);
-  const isAttached = (t: MarkTarget) => (t.story !== undefined
+  const candidates = new Set(candidateKeys);
+  const isAttached = (t: MarkTarget) => (t.candidate !== undefined
+    ? candidates.has(t.candidate)
+    : t.story !== undefined
     ? stories.has(t.story)
     : nodes.has(t.node!) && (!t.option || nodes.get(t.node!)!.has(t.option.key)) && (t.case === undefined || kinds.has(t.case)));
   const byTarget = new Map<string, Mark[]>();

@@ -1491,6 +1491,24 @@ Alternatives compared:
 - Adding the line of each condition's own expression to the map: more exact only for a condition inside another
   function, at the cost of changing the extractor and `map.json`.
 
+**A comment on a story candidate has a target of its own, `{ candidate: <key> }` with nothing else, and is saved in
+`stories/candidates/<key>/` in the marks folder, apart from the marks on stories.**
+Driver's decision on 2026-10-13, for #230. The key is the one the page already gives a candidate and puts in its
+address: the screen order joined with ` > `, for a candidate from a visit record as for one from a trace. A candidate
+is not a story yet, so a comment on it takes no status, never enters the task list, and reaches the agent only as the
+line printed while the review runs, which carries the record and its steps or the result file and the test titles,
+and the screen order. When the candidate is accepted or discarded it leaves the list, and its comments show under
+「떨어져 나감」 with the name it had, which the candidate data keeps for the candidates that left.
+Alternatives compared:
+- Putting the key in `target.story`: no new kind of target, but a story ID may hold only `a-z`, `0-9`, `-` and `_`,
+  and a screen order does not fit, so the check on every story mark would have to loosen; once it did, a key could
+  be the ID of a story, and the comments on that candidate would share one history with the marks on the story,
+  also after the candidate is accepted under that ID.
+The screen order soon passes the 255-byte limit of a folder name (six screens like
+`/settings/users/:userId/edit#UserEditPage` already do), so a key whose file-safe form is longer than 80 characters
+names its folder by the first 71 characters of that form and a short hash of the whole key; which candidate a comment
+is on is read from its target, so the folder name decides nothing else.
+
 **The review page draws the app at a width picked above the frame, 1280 at first, and by default shows it smaller
 when the pane is narrower; a percent picked beside it shows it at that size instead.**
 With a screen picked in the flow view, the frame gave the app 747px at a 1920px window and 507px at 1440px, so an
