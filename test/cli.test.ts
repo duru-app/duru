@@ -502,6 +502,33 @@ test('a comment saved on a test under a screen comes out on stderr and on open e
   });
 });
 
+test('a comment saved on several targets comes out on stderr with where each of them is, in their order, and a reply to it carries the same; a comment on no target comes out with empty lists and opens the task list', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      const post = (body: unknown) => fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const targets = [{ node: '/lab#Lab' }, { node: '/lab#Lab', part: { kind: 'test', key: { source: 'results/playwright/e2e.json', file: 'home.spec.ts', title: 'opens the lab' } } }];
+      const res = await post({ targets, note: 'Is the lab covered?' });
+      assert.equal(res.status, 201);
+      const comment = (await res.json()) as Mark;
+      assert.deepEqual(reply(configFile, comment.id, 'By one pending test.', '--server', `${url}/`), { status: 0, stderr: '' });
+      assert.equal((await post({ targets: [], note: 'Where do I start?' })).status, 201);
+      await waitFor(() => records().length === 3, 'two comments and a reply on stderr');
+      const wheres = [null, { file: 'home.spec.ts', line: 20, source: 'results/playwright/e2e.json', status: 'pending', relation: 'tagged' }];
+      assert.deepEqual(records()[0], { duru: 'comment', ...comment, wheres });
+      assert.deepEqual([records()[1].duru, records()[1].targets, records()[1].wheres], ['reply', targets, wheres]);
+      assert.deepEqual([records()[2].targets, records()[2].wheres, 'target' in records()[2]], [[], [], false]);
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      await within(closed, 'exit');
+      assert.match(out.stdout, /# Comments with no target\n\n- comment[^\n]*Where do I start\?/);
+    } finally {
+      child.kill();
+    }
+  });
+});
+
 test('a comment saved on a condition or an incoming link of a screen comes out on stderr with the source file and line the condition or link is written at', async () => {
   await withReviewFixture(async (configFile) => {
     const { child, base, closed, out } = startReview(configFile);
