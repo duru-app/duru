@@ -1835,7 +1835,7 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
         assert.deepEqual(await p.locator('#center .story-path .step .name > span:first-child').allTextContents(), ['/home', '/lab', '/lab/result']);
         assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['조건', '이어짐']);
         assert.match((await p.textContent('#center .story-path .link.l-conditioned'))!, /components\/Home\.js:19\s*globalSettings\.SYSTEM\.LAB_ENABLED\s*설정/);
-        assert.deepEqual(await p.locator('#right-info > *').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['도달 가능', '사전 조건']);
+        assert.deepEqual(await p.locator('#right-info > :not(.talk-scope)').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['도달 가능', '사전 조건']);
         assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트']);
         assert.match((await p.textContent('#right .reach-link'))!, /components\/Home\.js:19/);
         assert.match((await p.textContent('#right .reach-route'))!, /Routes\.js:44.*globalSettings\.SYSTEM\.LAB_ENABLED/);
@@ -2049,8 +2049,8 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
         await unread.click();
         assert.equal(await p.textContent('#center h3'), 'run-lab');
         assert.equal(await p.textContent('#right h2'), '에이전트와 대화');
-        assert.equal(await p.locator('#right-info').isVisible(), false);
-        assert.ok(await p.evaluate(() => document.getElementById('right-dock')!.getBoundingClientRect().top - document.getElementById('right')!.getBoundingClientRect().top) < 1, 'the form sits at the top of the pane');
+        assert.equal(await p.locator('#right-info > :not(.talk-scope)').count(), 0);
+        assert.ok(await p.evaluate(() => document.getElementById('right-dock')!.getBoundingClientRect().top - document.getElementById('right-info')!.getBoundingClientRect().bottom) < 1, 'the form sits right under the conversation buttons');
         assert.match((await p.textContent('#right .history'))!, /walk it/);
         await p.click('#right .statuses button:has-text("충분")');
         await p.click('#right button.save');
@@ -2931,6 +2931,8 @@ test('in a browser, the conversation of a screen is open from the start with no 
         assert.ok(Math.abs(g.info.bottom - g.dock.top) < 1, 'the form sits right under it');
         assert.ok(Math.abs(g.dock.bottom - g.pane.bottom) < 1, 'the form sits at the bottom of the pane');
         assert.ok(g.scrolls, 'the long conversation scrolls inside its part');
+        await p.locator('#right-info').evaluate((e) => { e.scrollTop = e.scrollHeight; });
+        assert.ok(await p.evaluate(() => Math.abs(document.querySelector('#right-info .talk-scope')!.getBoundingClientRect().top - document.getElementById('right-info')!.getBoundingClientRect().top) < 1), 'the conversation buttons stay at the top while it scrolls');
         assert.ok(await insideRightPane(p, '#right button.save'));
 
         await p.click('#right .statuses button:has-text("더 필요")');
@@ -7486,7 +7488,7 @@ const readSummary = (p: Page) => p.locator('#right .reach-summary').evaluate((el
 
 test('in a browser, a story that needs a setting and a role shows them as two summary lines under 사전 조건 in the wording of the screen summary, and the raw conditions only once the fold is opened', { skip: browserMissing }, async () => {
   await withStoryReach([reachLink([LAB_SETTING]), reachRoute([LAB_SETTING, ADMIN_ROLE])], async (p) => {
-    assert.deepEqual(await p.locator('#right-info > *').evaluateAll((els) => els.slice(0, 3).map((e) => e.textContent.slice(0, 5))), ['도달 가능', '사전 조건', '역할 AD']);
+    assert.deepEqual(await p.locator('#right-info > :not(.talk-scope)').evaluateAll((els) => els.slice(0, 3).map((e) => e.textContent.slice(0, 5))), ['도달 가능', '사전 조건', '역할 AD']);
     assert.deepEqual(await readSummary(p), { lines: ['역할 ADMIN', '설정 SYSTEM.LAB_ENABLED 켬'], leftOut: [] });
     assert.equal(await p.locator('#right details.reach-raw').evaluate((d: HTMLDetailsElement) => d.open), false);
     assert.equal(await p.locator('#right .reach-raw .reach').isVisible(), false);
@@ -9938,7 +9940,7 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
         assert.equal(await p.textContent('#center .story-path .step.off-map .mono'), '/beta/inbox');
         assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['이어짐', '판정 못 함', '판정 못 함']);
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
-        assert.deepEqual(await p.locator('#right-info > *').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['판정 못 함 · 화면 없음', '사전 조건']);
+        assert.deepEqual(await p.locator('#right-info > :not(.talk-scope)').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['판정 못 함 · 화면 없음', '사전 조건']);
         assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '받기']);
         assert.equal(await p.locator('#right-dock').isVisible(), false);
         assert.deepEqual(await p.locator('#right .story-form button').allTextContents(), ['스토리로 받기', '고쳐서 받기', '버리기']);
@@ -10735,6 +10737,93 @@ test('in a browser, the conversation of a screen holds the comments on it and on
         await p.fill('#right-dock textarea', 'about nothing');
         assert.equal(await p.isDisabled('#right-dock button.save'), true);
         assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
+      }));
+  });
+});
+
+test('in a browser, 「전체」 groups every attached comment by its screen, call or story, latest first, filters the unanswered ones and each status, hides the form, and a line opens its place in 「이 화면」 with that comment in view; the screen list, depth rows, call cells, story rows and flow boxes show the count with a red dot while a comment waits for a reply', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config, copy) => {
+    const lab = partOf('/lab#Lab', 'results/playwright/e2e.json', 'home.spec.ts', 'opens the lab');
+    addMark(config.marksDir, { target: { node: 'GET:/api/v1/document/list' }, note: 'is this paged?', author: 'reviewer' }, new Date('2026-10-12T00:30:00Z'));
+    addMark(config.marksDir, { target: partOf('/lab#Lab', 'results/playwright/e2e.json', 'home.spec.ts', 'a test that is gone'), note: 'lost one', author: 'reviewer' }, new Date('2026-10-12T00:40:00Z'));
+    addMark(config.marksDir, { target: { node: '/lab#Lab' }, status: 'needs-more', note: 'old verdict', author: 'reviewer' }, new Date('2026-10-12T00:45:00Z'));
+    addMark(config.marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: 'no table test', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
+    addMark(config.marksDir, { target: { node: '/lab#Lab' }, status: 'missing', author: 'reviewer' }, new Date('2026-10-12T01:30:00Z'));
+    const asked = addMark(config.marksDir, { target: lab, note: 'why pending?', author: 'reviewer' }, new Date('2026-10-12T02:00:00Z'));
+    addReply(config.marksDir, { replyTo: asked.id, note: 'it waits for the lab data' }, new Date('2026-10-12T03:00:00Z'));
+    addMark(config.marksDir, { target: { node: '/lab#Lab', depth: 'api' }, note: 'and the API?\nsecond line', author: 'reviewer' }, new Date('2026-10-12T04:00:00Z'));
+    const home = addMark(config.marksDir, { target: { node: '/home#Home' }, note: 'home first?', author: 'reviewer' }, new Date('2026-10-12T05:00:00Z'));
+    addMark(config.marksDir, { target: { story: 'run-lab' }, note: 'one more step?', author: 'reviewer' }, new Date('2026-10-12T06:00:00Z'));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        const badge = (row: Locator) => row.locator('.talk-count').evaluate((e) => [e.textContent, !!e.querySelector('.unanswered-dot')]);
+        const listed = (path: string) => p.locator('#screen-list li').filter({ has: p.locator('.name > span:first-child', { hasText: new RegExp(`^${path}$`) }) });
+        await p.waitForSelector('#screen-list li');
+        assert.deepEqual(await badge(listed('/lab')), ['코멘트 4', true]);
+        assert.deepEqual(await badge(listed('/home')), ['코멘트 1', true]);
+        assert.equal(await listed('/help').locator('.talk-count').count(), 0);
+
+        await chooseScreen(p, '/lab');
+        const depthRow = (label: string) => p.locator('#center-body > table tbody tr').filter({ has: p.locator('td.depth', { hasText: label }) });
+        assert.deepEqual(await badge(depthRow('화면 전체')), ['코멘트 2', false]);
+        assert.deepEqual(await badge(depthRow('API')), ['코멘트 1', true]);
+        assert.equal(await p.locator('#center-body table .part-row', { hasText: /opens the lab home\.spec\.ts/ }).locator('.part-count .unanswered-dot').count(), 0);
+        await depthRow('API').locator('.talk-count').click();
+        assert.equal(await p.textContent('#right-info .history-filter .tag-label'), 'API 깊이');
+        await chooseScreen(p, '/home');
+        assert.deepEqual(await badge(p.locator('table.calls tbody tr:not(.option)', { hasText: 'GET:/api/v1/document/list' }).locator('td.cell').first()), ['코멘트 1', true]);
+
+        const scope = p.locator('#right-info .talk-scope button');
+        assert.deepEqual(await scope.allTextContents(), ['이 화면 1', '전체 7']);
+        await scope.nth(1).click();
+        assert.equal(await p.locator('#right-dock textarea').count(), 0);
+        const groups = () => p.locator('#right-info .talk-group').evaluateAll((list) => list.map((g) => [g.querySelector('h3')!.textContent, [...g.querySelectorAll('.talk-line .first')].map((e) => e.textContent)]));
+        assert.deepEqual(await groups(), [
+          ['스토리 실험실을 열어 결과를 본다', ['one more step?']],
+          ['/home', ['home first?']],
+          ['/lab', ['and the API?', 'why pending?', 'no table test', 'old verdict']],
+          ['호출 GET:/api/v1/document/list', ['is this paged?']],
+        ]);
+        assert.match((await p.textContent('#right-info .talk-line:has-text("why pending?") .meta'))!, /테스트 「opens the lab」.*· 답 1/);
+        const filter = (label: string) => p.locator('#right-info .talk-filters button', { hasText: label });
+        assert.equal(await filter('답 없는 것만').textContent(), '답 없는 것만 4');
+        await filter('답 없는 것만').click();
+        assert.deepEqual((await groups()).map(([, lines]) => lines).flat(), ['one more step?', 'home first?', 'and the API?', 'is this paged?']);
+        await filter('없음').click();
+        assert.deepEqual(await groups(), [['/lab', ['no table test']]]);
+        await filter('더 필요').click();
+        assert.deepEqual(await groups(), []);
+        await filter('모두').click();
+        await p.locator('table.calls tbody tr:not(.option)', { hasText: 'GET:/api/v1/document/list' }).locator('td.cell').first().locator('.talk-count').click();
+        assert.equal(await scope.first().getAttribute('aria-pressed'), 'true');
+        assert.equal(await p.textContent('#right-info .history-filter .tag-label'), '호출 전체');
+        await scope.nth(1).click();
+
+        await p.click('#right-info .talk-line:has-text("and the API?")');
+        assert.deepEqual(await scope.allTextContents(), ['이 화면 4', '전체 7']);
+        assert.equal(await scope.first().getAttribute('aria-pressed'), 'true');
+        assert.match((await p.textContent('#screen-list li.selected'))!, /^\/lab/);
+        assert.match((await p.textContent('#right-info .history li.reached'))!, /and the API\?/);
+        assert.equal(await p.locator('#right-info .history-filter').count(), 0);
+
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#left button.new-story');
+        await p.click('#left .views.side button:has-text("화면")');
+        await chooseScreen(p, '/lab');
+        await scope.nth(1).click();
+        await p.click('#right-info .talk-line:has-text("one more step?")');
+        assert.equal(await p.textContent('#left .views.side button.on .tab-name'), '스토리');
+        assert.match((await p.textContent('#right-dock .history li.reached'))!, /one more step\?/);
+        assert.deepEqual(await badge(p.locator('#story-list li', { hasText: '실험실을 열어' })), ['코멘트 1', true]);
+
+        await reply(copy, home.id, 'yes, the home comes first', '--server', `${base}/`);
+        await p.click('#left .views.side button:has-text("화면")');
+        await listed('/home').locator('.talk-count:not(:has(.unanswered-dot))').waitFor();
+
+        await p.click('#view-flow');
+        assert.deepEqual(await badge(p.locator('#flow .box.screen[data-key="/lab#Lab"]')), ['코멘트 4', true]);
+        assert.deepEqual(await badge(p.locator('#flow .box.screen[data-key="/home#Home"]')), ['코멘트 1', false]);
+        assert.deepEqual(errors, []);
       }));
   });
 });

@@ -680,6 +680,23 @@ comment, set apart by its author and a light background. What is chosen in the m
 takes it off; a status can be picked only while that one tag is on. For a story the conversation sits under the
 form behind 「대화 N」, and each entry without a status is labelled 「코멘트」 or 「답」.
 
+**All comments.** Two buttons at the top of the right pane switch between 「이 화면 N」 (「이 호출」 for a call, 「이 스토리」 for a
+story), the conversation described above, and 「전체 N」, every mark and comment with text still attached anywhere; N
+counts those, leaving out replies and marks that carry only a status. 「전체」 groups them by the screen, call or story
+they were left on, the group with the latest entry first and the latest entry first in each group; a line shows the
+status, the tag, who wrote it and when, the number of replies and the first line of the text. 「답 없는 것만」 keeps the
+comments without a status that have no reply yet, and 「더 필요」, 「없음」 and 「충분」 keep, for a place whose current status is
+that one, the latest mark with that status and text. The form is hidden while 「전체」 is shown. Pressing a line opens its
+screen, call or story in 「이 화면」 and scrolls the conversation to that entry, outlined. 「전체」 and the numbers and dots it
+describes leave out what has come off its target; it stays under 「떨어져 나감」 and in the conversation of its screen or
+call.
+
+A screen in the list and in the flow, a story in the list, a depth row and a call cell show 「코멘트 N」 when marks or
+comments with text were left there, with a red dot while one of the comments has no reply; a test, condition or link
+row shows the dot on its count too. The screen's number covers its whole conversation, as 「이 화면 N」 does, a row's
+number only what carries that row as its tag, and pressing a row's number narrows the conversation to it. A comment or
+reply saved in another window updates the numbers and dots without a reload.
+
 **While the review runs.** Each mark, comment or reply is printed on standard error the moment it is saved, as one
 JSON line: `{"duru":"mark"|"comment"|"reply","id":…,"target":{…},"status":…,"replyTo":…,"note":…,"author":…,"date":…}`,
 with no `status` for a comment or a reply and `replyTo` only on a reply. A comment or reply whose target has a `part`
