@@ -1504,6 +1504,19 @@ such as 「@Valid 검증」 is left out of what is shown. The `tag` option came 
 puts the tags in the title as before. With the tags out of the title, the Playwright empty tests of one item share
 the title `<what it checks>` until the writer replaces it, which README and the agent skill ask for.
 
+**Discarding a story candidate asks for its reason in the window that excluding a test pair uses, and both use
+that one window.**
+A candidate showed a reason field and a 「버리기」 button under their own heading all the time, while 「고쳐서 받기」 and the
+pair's 「제외」 on the same page asked in a window. The window now takes what is being discarded, the button's name
+and where the reason is saved, so a later place that asks for a reason uses it too. GitHub asks for the reason only
+after 「Hide」 on a comment is pressed, and Jira shows a comment screen when a workflow button is pressed; neither keeps
+a reason field beside the item.
+Alternatives compared:
+- Keeping the field and only dropping the heading: nothing to build, but the page would still ask for a reason in
+  two ways.
+- A second window for candidates: the look, Ctrl+Enter, Escape and the error after a failed save would have to be
+  kept the same in two places by hand.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
