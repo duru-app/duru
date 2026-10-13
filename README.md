@@ -530,7 +530,9 @@ traces:
   by the part after `#`, or a modal or tab that opens without changing the address, does not show as a step.
 
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
-reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back.
+reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Undoing an
+acceptance deletes that story file, and the candidate is listed again; if `candidates/` has no file for its screen
+order yet, one is written first, under the story's ID, so it comes back even once its record is gone.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
@@ -647,8 +649,13 @@ with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the 
 `#stories?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
 screen order, and the candidate is discarded only once a reason is written there. 「버리기」 in the window or Ctrl+Enter
 saves it and moves on to the next candidate; 「취소」 or Escape closes the window, and a click outside it does not. If
-the discard is not saved, the window stays open with the reason and the error. 「새 스토리」 puts a story together from
-screens of the map, picked from the list that takes the place of the stories or from boxes in the flow.
+the discard is not saved, the window stays open with the reason and the error. A story accepted from a candidate has
+「받기 되돌리기」 below its name and memo: it deletes the story file, without asking, and the candidate is listed again
+and chosen. The comments left on that story then show under 「떨어져 나감」, as for any story file that is gone. A story
+made with 「새 스토리」 or written by hand has no such button. Below the candidates, 「버린 후보 N」 opens the discarded
+candidates, newest first, each with its name, its screens, the reason and the date; a screen order discarded more
+than once shows its latest discard. 「새 스토리」 puts a story together from screens of the map, picked from the list
+that takes the place of the stories or from boxes in the flow.
 
 **Marks.** A mark targets a screen, a call, one depth of either, one value of a call's option, or a story, and
 records a status (`needs-more`, `missing`, `fine`), a note, the author and the date. A mark left with text and no
