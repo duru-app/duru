@@ -1296,10 +1296,23 @@ Alternatives compared:
   while the review is restarted would end with nothing, and the agent would stop waiting.
 - A Monitor on the marks folder instead of the log: the files survive a restart, but the 30-minute limit and the
   watching setup stay.
-- The review writing each comment into the Claude Code session through its message socket
-  (`CLAUDE_CODE_MESSAGING_SOCKET`): the agent would need nothing running, but the documentation gives only the
-  first line of a connection, not the shape of a message, and a line sent after it did not reach the session. It
-  can be added on top of `wait` once the shape is documented.
+- The review writing each comment into the Claude Code session through its message socket instead of `wait`: it
+  is added on top of `wait`, not in its place; see the next entry.
+
+**In a Claude Code session the review also sends each comment into the session through its message socket, and the
+agent keeps `duru wait` running as well.**
+A Claude Code session passes its inbox socket to Bash commands as `CLAUDE_CODE_MESSAGING_SOCKET`, and `duru review`
+inherits it. A message there wakes the session with no command left running. The documentation
+(code.claude.com/docs/en/cross-session-messaging.md) gives the socket, an optional first auth line and a size limit,
+but not the shape of a message. On 2026-10-13 with Claude Code 2.1.296, a line
+`{"type":"user","message":{"role":"user","content":"…"}}` after the auth line reached the session, while
+`{"type":"message","text":"…"}` and a plain line did not, and the socket answered nothing in all three cases.
+So a later Claude Code that changes the shape would drop the comments without a sign to duru, and `wait` stays the
+path that is known to deliver. A comment that comes both ways is answered once by its `id`.
+Alternatives compared:
+- The socket alone in Claude Code, with no `wait`: the simplest skill, but a changed message shape would lose every
+  comment silently.
+- Asking for the shape to be documented before using it: the driver chose to measure what works and use it.
 
 **The review page keeps drawing itself with its own code; a UI library is weighed again when the shared-server mode
 of #42 is started.** Since records arrive on their own, the page redraws while a reviewer may be typing, and a

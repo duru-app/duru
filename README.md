@@ -647,6 +647,12 @@ without the review ending, as when the review is stopped and started again, it c
 about 10 seconds. A coding agent runs it in the background, answers what it prints and runs it again, so a comment
 saved while it was not running still reaches the agent on the next run.
 
+**Claude Code sessions.** When the review runs with `CLAUDE_CODE_MESSAGING_SOCKET` in its environment, as when a
+Claude Code session started it, each saved comment is also sent into that session as a message: a first line
+`duru review comment; answer it with duru reply <config> <comment ID> "<answer>" --server <review page address>`,
+then the comment's JSON line. Marks and replies are not sent. When the socket cannot be reached, the review prints
+`could not send the comment to the Claude Code session: …` on standard error and goes on.
+
 **Ending.** Pressing 「리뷰 끝」, or Ctrl+C in the terminal, closes the server and prints the task list on standard
 output, so a coding agent that launched the page receives it as soon as the reviewer is done. Open pages stop
 listening for new saves when the review ends.
