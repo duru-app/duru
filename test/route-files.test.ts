@@ -392,7 +392,7 @@ test('in a browser, the 라우트 line of a screen and the route step of a story
   await withSplitCopy(({ configFile, first, second }) => withReviewPage(configFile, async (p) => {
     const routeLine = async (component: string) => {
       await p.locator('#screen-list li', { hasText: new RegExp(`${component}(?![A-Za-z])`) }).click();
-      return p.locator('#right-info li', { hasText: /^라우트 / }).textContent();
+      return p.locator('#center .screen-info li', { hasText: /^라우트 / }).textContent();
     };
     assert.equal(await routeLine('Home'), `라우트 Routes.js:${lineOf(first, 'ROUTE_PATH.HOME')}`);
     assert.equal(await routeLine('Help'), `라우트 Routes.js:${lineOf(first, 'ROUTE_PATH.HELP')}`);
