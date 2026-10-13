@@ -5,7 +5,7 @@ import { CASE_KIND, isPlainObject } from './config.ts';
 import { reference } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
 import { locatePart } from './parts.ts';
-import type { PartContext, TestPlace } from './parts.ts';
+import type { LinkKey, PartContext, PartScreen, SourcePlaces, TestPlace } from './parts.ts';
 import { isText, STORY_ID } from './stories.ts';
 import { DEPTHS } from './test-links.ts';
 
@@ -23,10 +23,10 @@ interface MarkTarget {
 
 export interface Part {
   kind: string;
-  key: TestRef;
+  key: TestRef | string | LinkKey;
 }
 
-export const PART_KINDS = ['test'];
+export const PART_KINDS = ['test', 'condition', 'link'];
 
 // status 가 없는 표시는 코멘트고, 그 가운데 replyTo 가 있는 것은 그 ID 의 코멘트에 단 답글이다.
 export interface Mark {
@@ -47,7 +47,7 @@ interface NewMark {
 }
 
 interface MarkableMap {
-  screens: { id: string }[];
+  screens: PartScreen[];
   calls?: { id: string; options?: { key: string }[] }[];
 }
 
@@ -56,7 +56,7 @@ interface MarkEntry {
   target: MarkTarget;
   current: Mark | null;
   history: Mark[];
-  where?: TestPlace | null;
+  where?: TestPlace | SourcePlaces | null;
 }
 
 // 끝의 `.` 을 바꾸는 것은 Windows 가 그런 이름을 받지 않고, 화면 ID 가 `..` 이면 표시 폴더 밖을 가리키기 때문이다.
@@ -123,8 +123,29 @@ function partTarget(target: MarkTarget) {
   if (target.option !== undefined || target.depth !== undefined || target.case !== undefined) throw new Error('a part mark takes no option, depth or case');
   const { kind, key }: Partial<Part> = isPlainObject(target.part) ? target.part! : {};
   if (!PART_KINDS.includes(kind!)) throw new Error(`unknown part kind "${kind}" (expected ${PART_KINDS.join(', ')})`);
-  if (!key || !isPlainObject(key) || !isText(key.source) || !(isText(key.file) || key.file === null) || !isText(key.title)) throw new Error('a test part needs a result file, a test file and a title');
-  return { node: target.node, part: { kind: kind!, key: reference(key) } };
+  return { node: target.node, part: { kind: kind!, key: kind === 'condition' ? conditionKey(key) : kind === 'link' ? linkPartKey(key) : testKey(key) } };
+}
+
+function testKey(key: unknown) {
+  const k = (isPlainObject(key) ? key : {}) as Record<string, unknown>;
+  if (!isText(k.source) || !(isText(k.file) || k.file === null) || !isText(k.title)) throw new Error('a test part needs a result file, a test file and a title');
+  return reference(k as unknown as TestRef);
+}
+
+function conditionKey(key: unknown) {
+  if (typeof key !== 'string' || !/^(?:role|setting):\S/.test(key)) throw new Error('a condition part needs a key such as role:<role> or setting:<path>=on');
+  return key;
+}
+
+const textList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isText);
+
+function linkPartKey(key: unknown): LinkKey {
+  const { from, conditions, guards } = isPlainObject(key) ? key as Record<string, unknown> : {};
+  const byConditions = textList(conditions) && conditions.length > 0 && guards === undefined;
+  const byGuards = conditions === undefined && textList(guards);
+  if (!isText(from) || !(byConditions || byGuards)) throw new Error('a link part needs the screen it starts from and either the conditions read from it or its guards');
+  const sorted = (list: string[]) => [...new Set(list)].sort();
+  return byConditions ? { from, conditions: sorted(conditions as string[]) } : { from, guards: sorted(guards as string[]) };
 }
 
 export function addMark(dir: string, { target, status, note, author }: NewMark, now = new Date()) {
@@ -165,7 +186,7 @@ const targetKey = (t: MarkTarget) => (t.story !== undefined
   ? `story(${t.story})`
   : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
 
-export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = [], tests: PartContext['tests'] = {}): { attached: MarkEntry[]; detached: MarkEntry[] } {
+export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = [], tests: PartContext['tests'] = {}, roleGuards: Record<string, string[]> = {}): { attached: MarkEntry[]; detached: MarkEntry[] } {
   const nodes = new Map<string, Set<string>>([
     ...map.screens.map((s): [string, Set<string>] => [s.id, new Set()]),
     ...(map.calls ?? []).map((c): [string, Set<string>] => [c.id, new Set((c.options ?? []).map((o) => o.key))]),
@@ -187,7 +208,7 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
   for (const key of [...byTarget.keys()].sort()) {
     const history = byTarget.get(key)!;
     const target = history[0].target;
-    const where = target.part && nodes.has(target.node!) ? locatePart(target, { tests }) : null;
+    const where = target.part && nodes.has(target.node!) ? locatePart(target, { tests, screens: map.screens, roleGuards }) : null;
     const entry = { key, target, current: history.find((m) => m.status !== undefined) ?? null, history, ...(target.part && { where }) };
     (isAttached(target) && (!target.part || where) ? attached : detached).push(entry);
   }

@@ -4,7 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { screenCases } from './access.ts';
+import { screenCases, settingConditionName } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { acceptCandidate, discardCandidate, storyCandidates } from './candidates.ts';
@@ -13,7 +13,7 @@ import { buildFlow } from './flow.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
 import { addMark, addReply, classifyMarks, loadMarks, recordKind } from './marks.ts';
 import type { Mark } from './marks.ts';
-import { locatePart } from './parts.ts';
+import { linkKey, locatePart } from './parts.ts';
 import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.ts';
 import { addStory, editStory } from './stories.ts';
 import { checkScreens, checkStoryFiles } from './story-paths.ts';
@@ -92,7 +92,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
   const callsById = new Map<string, any>(map.calls.map((c: any) => [c.id, c]));
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
   const kinds = Object.keys(config.caseKinds);
-  const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds, linked);
+  const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds, linked, config.roleGuards);
   const needed = new Map<string, Set<string>>();
   for (const { target, current } of marks.attached) {
     if (target.case === undefined || current?.status !== 'needed') continue;
@@ -103,6 +103,8 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
   for (const s of map.screens) {
     s.callOptions = screenCallOptions(s, callsById);
     s.cases = [...screenCases(s.access), ...pickedCases(s.id)];
+    for (const source of s.access.settings ?? []) for (const need of source.needs) need.condition = settingConditionName(need);
+    for (const l of s.access.links) l.part = linkKey(l);
   }
   for (const c of map.calls) c.cases = pickedCases(c.id);
   return {
@@ -187,15 +189,18 @@ export async function startReviewServer(config: any, { port = 0, author = review
     for (const stream of streams) stream.end('event: end\ndata: review ended\n\n');
     streams.clear();
   };
-  const whereOf = (mark: Mark) => {
-    let tests;
+  const readOrNull = <T>(read: () => T) => {
     try {
-      tests = readTests(config);
+      return read();
     } catch {
       return null;
     }
-    return locatePart(mark.target, { tests });
   };
+  const whereOf = (mark: Mark) => locatePart(mark.target, {
+    tests: (mark.target.part!.kind === 'test' && readOrNull(() => readTests(config))) || {},
+    screens: (mark.target.part!.kind !== 'test' && readOrNull(() => readMap(mapFile))?.screens) || [],
+    roleGuards: config.roleGuards,
+  });
   const lineOf = (mark: Mark): AnnouncedMark => ({ duru: recordKind(mark), ...mark, ...(mark.target.part && { where: whereOf(mark) }) });
   const unanswered = () => {
     const marks = loadMarks(config.marksDir);

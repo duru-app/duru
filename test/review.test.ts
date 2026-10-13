@@ -3329,7 +3329,7 @@ test('in a browser, the groups of incoming links and the links in each come in t
       const out = [];
       for (let i = 0; i < await groups.count(); i++) {
         await groups.nth(i).locator(':scope > summary').click();
-        out.push([(await groupSummaries(groups))[i], await groups.nth(i).locator('li > code.from').allTextContents()]);
+        out.push([(await groupSummaries(groups))[i], await groups.nth(i).locator('li code.from').allTextContents()]);
       }
       return out;
     };
@@ -10690,6 +10690,71 @@ test('in a browser, the conversation of a screen holds the comments on it and on
         await p.fill('#right-dock textarea', 'about nothing');
         assert.equal(await p.isDisabled('#right-dock button.save'), true);
         assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
+      }));
+  });
+});
+
+test('in a browser, each role and each setting under 「접근 조건」 and each incoming link has a bubble that puts it in as the tag, a comment saved with it shows its count there, the count narrows the conversation, and the same works on a screen picked in the flow', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        const tips = p.locator('#center .open-needs .tips li');
+        const comment = async (row: Locator, tag: string, note: string) => {
+          await row.hover();
+          await row.locator('.bubble').click();
+          assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), tag);
+          assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
+          await p.fill('#right-dock textarea', note);
+          await p.click('#right-dock button.save');
+          await row.locator('.part-count', { hasText: '코멘트 1' }).waitFor();
+        };
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/admin/report');
+        await openScreenInfo(p);
+        assert.deepEqual(await tips.allInnerTexts(), [
+          '필요한 역할: ADMIN',
+          '필요한 역할: OWNER',
+          '필요한 설정: SYSTEM.MAIN_MENU.ADMIN.LIST 에 "ADMIN_REPORT"',
+          '필요한 설정: SYSTEM.MAIN_MENU.ADMIN 있음',
+        ]);
+        assert.equal(await tips.nth(0).locator('.bubble').isVisible(), false, 'a bubble shows only on hover');
+        await comment(tips.nth(1), '역할 OWNER', 'is OWNER really allowed?');
+        await comment(tips.nth(3), '설정 SYSTEM.MAIN_MENU.ADMIN=present', 'is the menu enough?');
+        await openLinkGroups(p.locator('#center .access'));
+        const home = p.locator('#center .access .link-group li .part-row', { has: p.locator('code.from', { hasText: /^\/home#Home$/ }) });
+        await comment(home, '/home#Home 에서 오는 링크', 'is this link shown?');
+
+        const node = '/admin/report#AdminReport';
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status ?? null, m.note]).sort((a, b) => String(a[2]).localeCompare(String(b[2]))), [
+          [{ node, part: { kind: 'condition', key: 'role:OWNER' } }, null, 'is OWNER really allowed?'],
+          [{ node, part: { kind: 'condition', key: 'setting:SYSTEM.MAIN_MENU.ADMIN=present' } }, null, 'is the menu enough?'],
+          [{ node, part: { kind: 'link', key: { from: '/home#Home', conditions: ['role:ADMIN', 'role:OWNER', 'setting:SYSTEM.MAIN_MENU.ADMIN.LIST:ADMIN_REPORT', 'setting:SYSTEM.MAIN_MENU.ADMIN=present'] } } }, null, 'is this link shown?'],
+        ]);
+
+        await tips.nth(1).locator('.part-count').click();
+        const said = () => p.locator('#right-info .history > li').evaluateAll((list) => list.map((li) => [li.querySelector(':scope > .tag')?.textContent, li.querySelector(':scope > div')?.textContent]));
+        assert.deepEqual(await said(), [['역할 OWNER', 'is OWNER really allowed?']]);
+
+        await p.click('#view-flow');
+        await (await screenBox(p, node)).click();
+        await p.waitForSelector('#flow .box.picked');
+        await openScreenInfo(p);
+        assert.equal(await tips.nth(1).locator('.part-count').textContent(), '코멘트 1');
+        await comment(tips.nth(0), '역할 ADMIN', 'and ADMIN?');
+        assert.deepEqual(errors, []);
+      })));
+});
+
+test('in a browser, a comment on a condition or an incoming link that is gone from the map shows under 「떨어져 나감」 with what it was on', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    addMark(config.marksDir, { target: { node: '/lab#Lab', part: { kind: 'condition', key: 'role:ADMIN' } }, note: 'admins only?', author: 'reviewer' });
+    addMark(config.marksDir, { target: { node: '/lab#Lab', part: { kind: 'link', key: { from: '/signin#SignIn', guards: [] } } }, note: 'a link from sign-in?', author: 'reviewer' });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#left .detached li');
+        const texts = await p.locator('#left .detached li').allInnerTexts();
+        assert.ok(texts.some((t) => /\/lab#Lab · 역할 ADMIN/.test(t)), texts.join('\n'));
+        assert.ok(texts.some((t) => /\/lab#Lab · \/signin#SignIn 에서 오는 링크/.test(t)), texts.join('\n'));
       }));
   });
 });

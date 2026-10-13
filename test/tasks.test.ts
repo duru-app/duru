@@ -672,6 +672,35 @@ test('comments on tests under an open screen or call follow its marks, each test
   });
 });
 
+test('comments on an opening condition and an incoming link of an open screen are listed with the source file and line each is written at, and a condition that is gone keeps its comment off the list', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    addMark(marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: 'No test.', author: 'a' }, new Date('2026-10-12T01:00:00Z'));
+    const asked = addMark(marksDir, { target: { node: '/lab#Lab', part: { kind: 'condition', key: 'setting:SYSTEM.LAB_ENABLED=on' } }, note: 'Only with the lab on?', author: 'b' }, new Date('2026-10-12T02:00:00Z'));
+    addReply(marksDir, { replyTo: asked.id, note: 'Yes, the route checks it.' }, new Date('2026-10-12T03:00:00Z'));
+    addMark(marksDir, { target: { node: '/lab#Lab', part: { kind: 'link', key: { from: '/home#Home', conditions: ['setting:SYSTEM.LAB_ENABLED=on'] } } }, note: 'Is this link shown?', author: 'b' }, new Date('2026-10-12T04:00:00Z'));
+    addMark(marksDir, { target: { node: '/lab#Lab', part: { kind: 'condition', key: 'role:ADMIN' } }, note: 'Gone.', author: 'b' }, new Date('2026-10-12T05:00:00Z'));
+
+    const out = cli('tasks');
+    const lab = out.split('## /lab#Lab\n')[1].split('\n## ')[0];
+    assert.match(lab, new RegExp([
+      '^- marks:',
+      '  - missing, whole screen — "No test\\." \\(a, 2026-10-12\\)',
+      '- comments on opening conditions:',
+      '  - condition `setting:SYSTEM\\.LAB_ENABLED=on` — route at Routes\\.js:44 \\(`globalSettings\\.SYSTEM\\.LAB_ENABLED`\\); link from /home#Home at components/Home\\.js:19 \\(`globalSettings\\.SYSTEM\\.LAB_ENABLED`\\)',
+      '    - comment — "Only with the lab on\\?" \\(b, 2026-10-12\\)',
+      '      - reply — "Yes, the route checks it\\." \\(agent, 2026-10-12\\)',
+      '- comments on incoming links:',
+      '  - link from /home#Home reading `setting:SYSTEM\\.LAB_ENABLED=on`, at components/Home\\.js:19',
+      '    - comment — "Is this link shown\\?" \\(b, 2026-10-12\\)',
+      '- component: ',
+    ].join('\n'), 'm'));
+    assert.doesNotMatch(out, /Gone\./);
+    assert.match(out.split('\n')[2], / Under `comments on opening conditions` and `comments on incoming links`, each role or setting condition and each link into the screen a reviewer left a comment on is named with the source file and line it is written at; if the app does not do what duru read there, tell the user it is a duru defect, and otherwise answer with that line\.$/);
+  });
+});
+
 test('a note over several lines stays inside its mark, and a call whose API function was not found still shows', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     cli('rebuild');
