@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { acceptCandidate, discardCandidate, storyCandidates } from '../src/candidates.ts';
-import { loadConfig } from '../src/config.ts';
+import { acceptCandidate, discardCandidate, storeCandidates, storyCandidates } from '../src/candidates.ts';
+import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { editStory, loadStories } from '../src/stories.ts';
 import { linkTests } from '../src/test-links.ts';
@@ -415,5 +415,146 @@ test('with a map built before links carried their conditions, visit records or t
     assert.equal((withRecords as { stale?: string }).stale, `${path.join(dir, 'map.json')} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요`);
     assert.equal((candidatesOf({ ...empty, visitRecords: [] }, stale) as { stale?: string }).stale, undefined);
     assert.deepEqual(tracedCandidatesOf(empty, stale, path.join(dir, 'map.json')), { list: [], notices: [], stale: (withRecords as { stale?: string }).stale });
+  });
+});
+
+const storedIn = (dir: string) => {
+  const folder = path.join(dir, 'candidates');
+  return fs.existsSync(folder) ? fs.readdirSync(folder).sort().map((f) => ({ file: f, ...JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8')) })) : [];
+};
+const leftOnlyStored = (dir: string, onMap: object = map, mapFile = path.join(config.outDir, 'map.json')) => storyCandidates({ ...config, visitRecords: [], storiesDir: dir }, onMap, mapFile, []);
+
+test('every candidate is keyed by its screen order joined with " > ", whether it comes from a visit record or from traces', () => {
+  assert.deepEqual(tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS] }).list.map((c) => c.key), [
+    '/signin#SignIn > /home#Home > /beta/inbox > /help#Help',
+    '/home#Home > /document/:tab_draft_done_#DocumentList > /document/:id#DocumentDetail > /help#Help',
+    '/home#Home > /help#Help',
+    '/home#Home > /document/:tab_draft_done_#DocumentList',
+  ]);
+});
+
+test('storing the candidates writes one new file per screen order into the candidates folder of the stories folder, with the name, screens, source and the date it was first seen, and writes nothing for an order already stored', () => {
+  withStoryCopy((dir: string) => {
+    const { list } = tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir });
+    assert.deepEqual(storeCandidates(dir, list, new Date('2026-10-13T01:02:03Z')), { written: 4 });
+    const stored = storedIn(dir);
+    assert.ok(stored.every((s) => /^2026-10-13-[0-9a-f]{8}\.json$/.test(s.file)));
+    const date = '2026-10-13T01:02:03.000Z';
+    assert.deepEqual(stored.map(({ file, ...s }) => s).sort((a, b) => a.name.localeCompare(b.name)), [
+      { name: 'moves to the drafts without loading a page', screens: HOME_DRAFTS, source: list[3].source, date },
+      { name: 'open-help', screens: list[0].screens, source: { record: 'example-visits/open-help.json', steps: [1, 5] }, date },
+      { name: 'opens home and then help', screens: HOME_HELP, source: list[2].source, date },
+      { name: 'publish-document', screens: list[1].screens, source: { record: 'example-visits/publish-document.json', steps: [1, 7] }, date },
+    ]);
+    const again = tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir }).list;
+    assert.deepEqual(storeCandidates(dir, again, new Date('2026-10-14T00:00:00Z')), { written: 0 });
+    assert.equal(storedIn(dir).length, 4);
+    assert.deepEqual(loadStories(dir).notices.map((n) => n.file), ['lab-shortcut.json']);
+  });
+});
+
+test('stored candidates stay in the list when the visit records and traces give none, keyed and named as when first seen, in the order of the day first seen and then the screen order, with the screen order checked against the map', () => {
+  withStoryCopy((dir: string) => {
+    const before = tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir }).list;
+    storeCandidates(dir, before);
+    const after = leftOnlyStored(dir).list;
+    const seen = (list: typeof after) => list.map((c) => [c.key, c.name, c.screens, c.source, c.links.map((l) => l.verdict)]);
+    assert.deepEqual(seen(after), seen([...before].sort((a, b) => compare(a.key, b.key))));
+    assert.ok(after.every((c) => c.stepRanges === undefined));
+  });
+});
+
+test('when a visit record or trace gives the screen order of a stored candidate, the list shows what they give now, and two stored files with one screen order show once', () => {
+  withStoryCopy((dir: string) => {
+    fs.mkdirSync(path.join(dir, 'candidates'));
+    const old = { name: 'an older title', screens: HOME_HELP, source: { report: 'results/old.json', tests: ['an older title'] }, date: '2026-10-01' };
+    fs.writeFileSync(path.join(dir, 'candidates', '2026-10-01-aaaaaaaa.json'), JSON.stringify(old));
+    fs.writeFileSync(path.join(dir, 'candidates', '2026-10-02-bbbbbbbb.json'), JSON.stringify({ ...old, name: 'from another computer' }));
+    assert.deepEqual(tracedCandidatesOf({ storiesDir: dir }).list.map((c) => [c.name, (c.source as { report: string }).report]), [
+      ['opens home and then help', 'results/playwright-traced/visits.json'],
+      ['moves to the drafts without loading a page', 'results/playwright-traced/visits.json'],
+    ]);
+    assert.deepEqual(leftOnlyStored(dir).list.map((c) => c.name), ['an older title']);
+  });
+});
+
+test('a stored candidate accepted or discarded leaves the list and does not come back, while its file stays', () => {
+  withStoryCopy((dir: string) => {
+    storeCandidates(dir, tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir }).list);
+    const stored = leftOnlyStored(dir).list;
+    const help = stored.find((c) => c.name === 'open-help')!;
+    const publish = stored.find((c) => c.name === 'publish-document')!;
+    acceptCandidate(dir, help, { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+    discardCandidate(dir, publish, { reason: '도움말만 연다', author: 'reviewer' });
+    const left = tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir }).list;
+    assert.deepEqual(left.map((c) => c.screens), [HOME_HELP, HOME_DRAFTS]);
+    assert.deepEqual(storeCandidates(dir, left), { written: 0 });
+    assert.deepEqual(leftOnlyStored(dir).list.map((c) => c.screens), [HOME_DRAFTS, HOME_HELP]);
+    assert.equal(storedIn(dir).length, 4);
+  });
+});
+
+test('a stored candidate whose screen has left the map stays in the list with that step marked off the map', () => {
+  withStoryCopy((dir: string) => {
+    fs.mkdirSync(path.join(dir, 'candidates'));
+    const gone = { name: 'opens a page that was removed', screens: ['/home#Home', '/gone#Gone'], source: { report: 'results/old.json', tests: ['opens a page that was removed'] }, date: '2026-10-01T00:00:00.000Z' };
+    fs.writeFileSync(path.join(dir, 'candidates', '2026-10-01-aaaaaaaa.json'), JSON.stringify(gone));
+    const [candidate] = leftOnlyStored(dir).list;
+    assert.equal(candidate.key, '/home#Home > /gone#Gone');
+    assert.deepEqual(candidate.steps, [{ screen: '/home#Home', onMap: true }, { screen: '/gone#Gone', onMap: false }]);
+    assert.deepEqual(candidate.links.map((l) => l.verdict), ['off-map']);
+    assert.equal(candidate.detached, true);
+  });
+});
+
+test('a stored candidate file that cannot be read, or a candidates entry that is a file, is noted with the candidates, and storing writes nothing there', () => {
+  withStoryCopy((dir: string) => {
+    fs.mkdirSync(path.join(dir, 'candidates'));
+    fs.writeFileSync(path.join(dir, 'candidates', 'broken.json'), '{');
+    fs.writeFileSync(path.join(dir, 'candidates', 'no-source.json'), JSON.stringify({ name: 'x', screens: HOME_HELP, date: '2026-10-01' }));
+    const { list, notices } = tracedCandidatesOf({ storiesDir: dir });
+    assert.equal(list.length, 2);
+    assert.deepEqual(notices.map((n) => n.file), ['broken.json', 'no-source.json'].map((f) => path.relative(FIXTURE, path.join(dir, 'candidates', f))));
+    assert.match(notices[0].reason, /^JSON 으로 읽지 못했습니다: /);
+    assert.match(notices[1].reason, /^source 는 /);
+  });
+  withStoryCopy((dir: string) => {
+    fs.writeFileSync(path.join(dir, 'candidates'), 'not a folder');
+    const { list, notices } = tracedCandidatesOf({ storiesDir: dir });
+    assert.deepEqual(notices, [{ file: path.relative(FIXTURE, path.join(dir, 'candidates')), reason: 'candidates 는 스토리 후보를 담는 폴더여야 합니다' }]);
+    assert.deepEqual(storeCandidates(dir, list), { written: 0 });
+    assert.equal(fs.readFileSync(path.join(dir, 'candidates'), 'utf8'), 'not a folder');
+  });
+});
+
+test('storing candidates into a stories folder that is a single story file, or with no candidate, writes nothing and makes no folder', () => {
+  withStoryCopy((dir: string) => {
+    const file = path.join(dir, 'run-lab.json');
+    const before = fs.readdirSync(dir).sort();
+    assert.deepEqual(storeCandidates(file, tracedCandidatesOf({ storiesDir: file }).list), { written: 0 });
+    assert.deepEqual(fs.readdirSync(dir).sort(), before);
+  });
+  withFolder({}, (dir: string) => {
+    assert.deepEqual(storeCandidates(path.join(dir, 'stories'), []), { written: 0 });
+    assert.deepEqual(fs.readdirSync(dir), []);
+  });
+});
+
+test('a candidate file that cannot be written stops the storing with why, instead of throwing', () => {
+  withFolder({ 'taken.txt': 'a file' }, (dir: string) => {
+    const result = storeCandidates(path.join(dir, 'taken.txt', 'stories'), tracedCandidatesOf({ storiesDir: path.join(dir, 'stories') }).list);
+    assert.equal(result.written, 0);
+    assert.match(result.reason!, /^후보 파일을 쓰지 못했습니다: ENOTDIR/);
+  });
+});
+
+test('with a map built before links carried their conditions, stored candidates alone also give a request to rebuild', () => {
+  const stale: { screens: { links: { conditions?: unknown }[] }[] } = structuredClone(map);
+  for (const s of stale.screens) for (const l of s.links) delete l.conditions;
+  withStoryCopy((dir: string) => {
+    storeCandidates(dir, tracedCandidatesOf({ storiesDir: dir }).list);
+    const result = leftOnlyStored(dir, stale, path.join(dir, 'map.json'));
+    assert.deepEqual(result.list, []);
+    assert.match((result as { stale?: string }).stale!, /예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다/);
   });
 });

@@ -47,6 +47,7 @@ interface NewStory {
 export const STORY_ID = /^[a-z0-9_-]+$/;
 const KEYS = ['name', 'screens', 'memo', 'author', 'date', 'source'];
 export const DISCARDED = 'discarded';
+export const CANDIDATES = 'candidates';
 const DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
 export const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
@@ -54,7 +55,7 @@ export const isScreenList = (v: unknown): v is string[] => Array.isArray(v) && v
 const isStep = (v: number) => Number.isInteger(v) && v > 0;
 const isRecordSource = (v: RawSource) => isText(v.record) && Array.isArray(v.steps) && v.steps.length === 2 && v.steps.every(isStep) && v.steps[0] <= v.steps[1];
 const isTestsSource = (v: RawSource) => isText(v.report) && Array.isArray(v.tests) && v.tests.length > 0 && v.tests.every(isText);
-const isSource = (v: RawSource) => isPlainObject(v) && Object.keys(v).length === 2 && (isRecordSource(v) || isTestsSource(v));
+export const isSource = (v: RawSource) => isPlainObject(v) && Object.keys(v).length === 2 && (isRecordSource(v) || isTestsSource(v));
 // Date.parse 는 2026-02-30 을 3월 2일로 넘겨 받으므로, 날짜 부분이 그대로 되돌아오는지 본다.
 export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v))
   && new Date(`${v.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === v.slice(0, 10);
@@ -85,7 +86,7 @@ const SAY = {
 
 function storyFiles(dir: string): { root: string; files: { file: string; reason?: string }[] } {
   if (!fs.statSync(dir).isDirectory()) return { root: path.dirname(dir), files: [{ file: path.basename(dir) }] };
-  return { root: dir, files: jsonFiles(dir, SAY).filter((f) => f.file.split(path.sep)[0] !== DISCARDED) };
+  return { root: dir, files: jsonFiles(dir, SAY).filter((f) => ![DISCARDED, CANDIDATES].includes(f.file.split(path.sep)[0])) };
 }
 
 export function loadStories(dir: string): { stories: Story[]; notices: Notice[] } {

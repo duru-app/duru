@@ -9560,6 +9560,8 @@ test('in a browser, a skipped browser test with no pairs says that it did not ru
 const postJson = (base: string, url: string, body: unknown) => fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 const CANDIDATES = { storiesDir: 'example-stories', visitRecords: ['example-visits'] };
 const HELP_RECORD = 'example-visits/open-help.json';
+const HELP_KEY = '/signin#SignIn > /home#Home > /beta/inbox > /help#Help';
+const PUBLISH_KEY = '/home#Home > /document/:tab_draft_done_#DocumentList > /document/:id#DocumentDetail > /help#Help';
 
 test('the data carries the story candidates from the visit records, checked against the map, and the files that could not be read', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
@@ -9574,9 +9576,9 @@ test('the data carries the story candidates from the visit records, checked agai
   );
 });
 
-test('the candidates from traces come from the screen orders rebuild wrote into tests.json, so the page still offers and accepts them with the reports and traces gone, and a tests.json from an older rebuild without them gives only the visit record candidates', async () => {
+test('the candidates from traces come from the screen orders rebuild wrote into tests.json and stored, so the page still offers and accepts them with the reports and traces gone, and also with a tests.json that has none of them', async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, async (config, copy) => {
-    const visits = [HELP_RECORD, 'example-visits/publish-document.json'];
+    const visits = [HELP_KEY, PUBLISH_KEY];
     const drafts = '/home#Home > /document/:tab_draft_done_#DocumentList';
     fs.rmSync(path.join(copy, 'results/playwright-traced'), { recursive: true });
     await withServer(config, 'reviewer', async (base) => {
@@ -9591,8 +9593,9 @@ test('the candidates from traces come from the screen orders rebuild wrote into 
     fs.writeFileSync(testsFile, JSON.stringify(older));
     await withServer(config, 'reviewer', async (base) => {
       const { candidates }: PageData = await (await fetch(`${base}/api/data`)).json();
-      assert.deepEqual(candidates.list.map((c) => c.key), visits);
-      assert.equal((await postJson(base, '/api/candidates/accept', { key: drafts, id: 'drafts', name: 'x' })).status, 404);
+      assert.deepEqual(candidates.list.map((c) => c.key), [...visits, drafts]);
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: drafts, id: 'drafts', name: 'x' })).status, 201);
+      assert.deepEqual((await (await fetch(`${base}/api/data`)).json() as PageData).candidates.list.map((c) => c.key), visits);
     });
   });
 });
@@ -9600,7 +9603,7 @@ test('the candidates from traces come from the screen orders rebuild wrote into 
 test('a candidate accepted through the page becomes a story file with the server-side author, and leaves the candidates', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      const res = await postJson(base, '/api/candidates/accept', { key: HELP_RECORD, id: 'open-help', name: '홈에서 도움말을 연다', author: 'someone else' });
+      const res = await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'open-help', name: '홈에서 도움말을 연다', author: 'someone else' });
       assert.equal(res.status, 201);
       const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'open-help.json'), 'utf8'));
       assert.equal(saved.author, 'reviewer');
@@ -9609,8 +9612,8 @@ test('a candidate accepted through the page becomes a story file with the server
       assert.ok(data.stories.list.some((s) => s.id === 'open-help' && s.name === '홈에서 도움말을 연다'));
       assert.deepEqual(data.candidates.list.map((c) => c.name), ['publish-document']);
 
-      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_RECORD, id: 'again', name: 'x' })).status, 404);
-      const taken = await postJson(base, '/api/candidates/accept', { key: 'example-visits/publish-document.json', id: 'run-lab', name: 'x' });
+      assert.equal((await postJson(base, '/api/candidates/accept', { key: HELP_KEY, id: 'again', name: 'x' })).status, 404);
+      const taken = await postJson(base, '/api/candidates/accept', { key: PUBLISH_KEY, id: 'run-lab', name: 'x' });
       assert.equal(taken.status, 400);
       assert.match(await taken.text(), /run-lab\.json 이 이미 씁니다/);
     }),
@@ -9620,8 +9623,8 @@ test('a candidate accepted through the page becomes a story file with the server
 test('a candidate discarded through the page is kept in the discarded folder with the server-side author and does not come back after the map is rebuilt', async () => {
   await withRebuiltFixture(CANDIDATES, async (config, copy) => {
     await withServer(config, 'reviewer', async (base) => {
-      assert.equal((await postJson(base, '/api/candidates/discard', { key: HELP_RECORD, reason: ' ' })).status, 400);
-      assert.equal((await postJson(base, '/api/candidates/discard', { key: HELP_RECORD, reason: '베타 화면', author: 'someone else' })).status, 201);
+      assert.equal((await postJson(base, '/api/candidates/discard', { key: HELP_KEY, reason: ' ' })).status, 400);
+      assert.equal((await postJson(base, '/api/candidates/discard', { key: HELP_KEY, reason: '베타 화면', author: 'someone else' })).status, 201);
     });
     const [file] = fs.readdirSync(path.join(config.storiesDir, 'discarded'));
     assert.match(file, /^\d{4}-\d{2}-\d{2}-reviewer-[0-9a-f]{8}\.json$/);
@@ -9892,7 +9895,7 @@ test('in a browser, a candidate discarded in another tab and read again while th
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("publish-document")');
         await p.click('#right button.discard');
-        assert.equal((await postJson(base, '/api/candidates/discard', { key: HELP_RECORD, reason: '베타 화면' })).status, 201);
+        assert.equal((await postJson(base, '/api/candidates/discard', { key: HELP_KEY, reason: '베타 화면' })).status, 201);
         assert.equal((await postMark(base, { target: { node: '/lab#Lab' }, status: 'missing', note: '' })).status, 201);
         await p.waitForSelector('#candidate-list li:has-text("open-help")', { state: 'detached' });
         await p.fill(why, '중복');
@@ -10073,7 +10076,7 @@ test('in a browser, a chosen candidate is a place in the address, and the back b
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.equal(await placeOf(p), '#stories?story=run-lab');
         await p.click('#candidate-list li:has-text("open-help")');
-        assert.equal(await placeOf(p), `#stories?candidate=${HELP_RECORD}`);
+        assert.equal(await placeOf(p), `#stories?candidate=${HELP_KEY.replaceAll(' ', '+')}`);
 
         await p.goBack();
         await p.waitForSelector('#story-list li.selected:has-text("실험실을 열어")');
