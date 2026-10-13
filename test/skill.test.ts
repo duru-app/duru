@@ -99,3 +99,10 @@ test('the agent skill says what a comment on a part of a screen or call carries 
   assert.match(SKILL, /`imported`, `passed` or\s+`called`[\s\S]*whether the tag may\s+be\s+added[\s\S]*add it only when the\s+comment asks/);
   assert.match(SKILL, /`comments on tests`/);
 });
+
+test('the agent skill says what a comment on an opening condition or an incoming link carries and what to do for it', () => {
+  assert.match(SKILL, /`"kind": "condition"`[\s\S]*`role:<role>`[\s\S]*`setting:<path>=on`[\s\S]*`places`/);
+  assert.match(SKILL, /`"kind": "link"`[\s\S]*`from`[\s\S]*`conditions`[\s\S]*`guards`/);
+  assert.match(SKILL, /read\s+(?:the|that)\s+line[\s\S]*duru\s+defect[\s\S]*answer\s+with\s+(?:the|that)\s+line/);
+  assert.match(SKILL, /`comments on opening conditions`[\s\S]*`comments on incoming links`/);
+});

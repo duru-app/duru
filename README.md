@@ -656,6 +656,18 @@ reason, and it never changes the current status of the screen or call. A row wit
 pressing it narrows the conversation to that test. A comment whose test is no longer among the results after a
 `rebuild` (its title or file changed, or it left the results) shows under 「떨어져 나감」 with the test title.
 
+**Comments on a condition or an incoming link.** Under 「접근 조건」 in 「화면 정보」, each role (「필요한 역할: …」, one
+line per role) and each setting (「필요한 설정: …」) has the same bubble and count, and so has the head line of each
+incoming link (the screen it starts on and its file and line), also when the screen is picked in the flow. A
+condition is saved as `"part": { "kind": "condition", "key": … }` with the key `role:<role>`, or for a setting its
+path with the state it asks, `setting:<path>=on`, `=off` or `=present`, or with the value for a list that must hold
+it or a setting that must equal it, `setting:<path>:<value>`. A link is saved as
+`"part": { "kind": "link", "key": { "from", "conditions" } }`, the screen it starts on and the roles and settings
+read from it in the same names, or `{ "from", "guards" }` with its guards as written when none was read; links from
+one screen that read the same share one count. No line number is in either key, so a comment stays when only the
+lines move; it shows under 「떨어져 나감」 once a `rebuild` no longer finds the condition on the screen or such a link
+into it.
+
 **Conversation.** For a screen or call the right pane holds only the conversation: every mark, comment and reply
 left on it, oldest first, open from the start and filling the pane, scrolling inside it when it is longer, with the
 form to write in at the bottom. Each mark and comment carries the tag of where it was left; a reply sits under its
@@ -667,7 +679,11 @@ form behind 「대화 N」, and each entry without a status is labelled 「코�
 JSON line: `{"duru":"mark"|"comment"|"reply","id":…,"target":{…},"status":…,"replyTo":…,"note":…,"author":…,"date":…}`,
 with no `status` for a comment or a reply and `replyTo` only on a reply. A comment or reply whose target has a `part`
 also carries `"where"`: for a test, `{"file","line","source","status","relation"}` with `relation` one of `tagged`,
-`imported`, `passed` or `called`, and `detail` for a verdict line, or `null` when the test is no longer found. A
+`imported`, `passed` or `called`, and `detail` for a verdict line; for a condition or a link,
+`{"places":[{"from","file","line",…}]}` with each source line it is read from, `from` being `route` or the screen a
+link starts on, and for a condition the `guard` as written, `via` when it sits in a function the link calls,
+`roleGuardsKey` when `roleGuards` gave its roles, or `inherited` for a link that passes on the condition of the
+screen it starts on; or `null` when the part is no longer found. A
 failure message is not copied in; it is read from the result file named in `source`. A coding agent that launched the page can
 act on it without waiting for the end. Every open page receives the same save at once and shows it without a
 reload, so a mark left in one window appears in another.
@@ -709,7 +725,9 @@ needs, the tests of each role and setting case and of each picked case kind by d
 the tests already attached. Calls follow under `# API calls`, with their picked case kinds the same way, and
 stories under `# Stories` with their steps, link verdicts and 「사전 조건」. Under an open screen or call,
 `comments on tests` lists each test a comment was left on, with its file and line, status, how it is linked and its
-result file, followed by those comments and their replies.
+result file, followed by those comments and their replies. Under an open screen, `comments on opening conditions`
+and `comments on incoming links` list each condition and link a comment was left on the same way, with the source
+lines each is read from.
 
 Each item ends with `empty tests`: one empty test per test format in the config, with the item's tags already in
 place (in the `tag` option for Playwright, in the title for the other formats) and held back so a copy run as it is does not pass (`test.fixme` for Playwright, `test.todo` for

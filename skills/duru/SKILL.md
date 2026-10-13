@@ -165,8 +165,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    target can also carry a `depth` or an `option` of a call, and a mark whose target has a `case` (status `needed`
    or `not-needed`) or whose status is `fine` asks for nothing by itself.
    A comment can also be about one part of a screen or call, named in `target.part` as `{ "kind", "key" }`. Such a
-   line carries `where`, saying where that part is now, or `null` when it is no longer found or `tests.json` could
-   not be read at that moment (a `rebuild` was writing it), so check the task list before taking it as gone; a reply to the comment
+   line carries `where`, saying where that part is now, or `null` when it is no longer found or `tests.json` (for a
+   test) or `map.json` could not be read at that moment (a `rebuild` was writing it), so check the task list before taking it as gone; a reply to the comment
    carries the same `target` and `where`. A part takes comments only, never a status. By kind:
    - `"kind": "test"`: one test row under the screen or call. `key` names the test by its result file (`source`),
      test file and title without tags. `where` gives the test `file` and `line`, the result file `source`, its
@@ -177,12 +177,30 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
      and fix the test or the app in the target project. For a test whose relation is `imported`, `passed` or
      `called`, answer whether the tag may be added, judging from what the test checks, and add it only when the
      comment asks you to, as in a `# Tagging` item.
+   - `"kind": "condition"`: one role or setting under 「접근 조건」 of a screen. `key` is `role:<role>`, or for a
+     setting its path with the state the condition asks (`setting:<path>=on`, `=off` or `=present`) or, for a
+     list that must hold a value or a setting that must equal one, the value after a colon
+     (`setting:<path>:<value>`). `where` has `places`, one for each line the condition is read from: `from` is
+     `route` (the route line of the screen) or the ID of the screen a link into it starts on, with `file`,
+     `line` and the `guard` as written there, `via` when the guard sits in a function the link calls, and
+     `roleGuardsKey` when the config's `roleGuards` gave its roles. A place with `inherited` and no `guard` is a
+     link that asks nothing itself, so the screen it starts on passes its own condition on.
+   - `"kind": "link"`: one link into the screen. `key` has `from`, the screen the link starts on, and
+     `conditions`, the roles and settings duru read from its guards in the names above, or `guards`, the guards
+     as written when duru read no role or setting from them (empty when the link has no guard). Links from one
+     screen that read the same are one part. `where` has `places`, each with `from`, `file` and `line` of such a
+     link.
+   For both, read the line in the target project. If the app does not do what duru read there (a wrong role or
+   setting, a link that is not there, a condition duru missed), tell the user it is a duru defect, naming the
+   line and what duru read; otherwise answer with the line that shows the app does what duru read.
    After you have answered or fixed it, reply to the comment as above.
    When the reviewer presses 「리뷰 끝」 (or presses Ctrl+C in its terminal), the process exits with code 0 and its
    standard output is exactly the task list, the same text `duru tasks <config>` prints. Any other exit is an
    error: show its standard error to the user. In the task list a `reply` line sits under the `comment` line it
    answers, and under an open screen or call `comments on tests` lists each test a comment was left on, with its
-   place, status, relation and result file, then those comments and their replies; act on them as above.
+   place, status, relation and result file, then those comments and their replies; under an open screen
+   `comments on opening conditions` and `comments on incoming links` list each condition and link the same way,
+   with the source lines they are read from; act on them as above.
 3. **Write the tests.** In the target project, write tests for each screen, API call and story in the task list,
    following its marks and notes. The top of the list says how to tag a test so that it attaches to a screen or call
    (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. For Playwright,
