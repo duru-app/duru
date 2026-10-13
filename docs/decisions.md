@@ -1274,6 +1274,33 @@ Known limit: behind a reverse proxy the event stream needs response buffering tu
 nginx, or `X-Accel-Buffering: no`), or events wait in the proxy until the buffer fills. A page that loses the
 stream reconnects and reads the data again, so saves made while it was cut off still show.
 
+**The agent learns of comments with `duru wait`, a background command that exits as soon as a comment has no
+reply, printing every such comment; the agent answers them and starts it again.**
+A background command wakes the agent only when it exits, so the review's own standard error lines reached the agent
+only when the review ended. Ending on each comment turns that wake-up into the delivery, needs no watching tool and
+has no time limit. Because `wait` starts by sending the comments that have no reply yet (`/api/events?unanswered`),
+a comment saved before it started, between two runs, or while the review was being restarted still arrives. It
+prints all unanswered comments at once, so a reviewer who leaves several in a row is answered in one round. The
+same shape as `gh run watch` or `kubectl wait`: a command that waits for something and ends when it happens.
+Only the review's `end` event means the review has ended. When the connection drops without it, `wait` connects
+again, so a review stopped and started again on the same address within about 10 seconds still delivers to the
+`wait` already running. The cost: a review that crashed, or takes longer than that to come back, ends `wait` with
+`could not reach the review page` and exit code 1, instead of reading as a finished review; the skill tells the agent
+to start `wait` again after starting the review again.
+Alternatives compared:
+- The review's standard error sent to a file and watched with a Claude Code Monitor (`tail -F`), as #242 first
+  wrote: on 2026-10-13 a comment saved at 09:41 was written to the log at once but reached the agent only when the
+  Monitor stopped after 30 minutes, and restarting the review overwrote the log, losing a comment saved at 09:08.
+  A Monitor also stops every 30 minutes and must be started again.
+- Taking a dropped connection as the end of the review: a crash would read as a normal end, but a `wait` running
+  while the review is restarted would end with nothing, and the agent would stop waiting.
+- A Monitor on the marks folder instead of the log: the files survive a restart, but the 30-minute limit and the
+  watching setup stay.
+- The review writing each comment into the Claude Code session through its message socket
+  (`CLAUDE_CODE_MESSAGING_SOCKET`): the agent would need nothing running, but the documentation gives only the
+  first line of a connection, not the shape of a message, and a line sent after it did not reach the session. It
+  can be added on top of `wait` once the shape is documented.
+
 **The review page keeps drawing itself with its own code; a UI library is weighed again when the shared-server mode
 of #42 is started.** Since records arrive on their own, the page redraws while a reviewer may be typing, and a
 redraw replaces the fields: the page puts the focus and caret back in the field at the same place and holds the

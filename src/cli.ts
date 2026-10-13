@@ -16,15 +16,17 @@ import { checkStoryFiles } from './story-paths.ts';
 import { taskList } from './tasks.ts';
 import { linkTests } from './test-links.ts';
 
-const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'reply'];
+const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'reply', 'wait'];
 const DEFAULT_PORT = 4400;
 const AUTHOR_SOURCES: Record<string, string> = { config: 'config', git: 'git user.name', user: 'computer user name' };
 const KEPT_BY: Record<string, string> = { source: 'the source', config: 'bodyOptions' };
 const [, , command, configPath, ...extra] = process.argv;
 const portArg = command === 'review' && extra[0] === '--port' && extra.length === 2 ? Number(extra[1]) : null;
 const replyArgs = command === 'reply' && (extra.length === 2 || (extra.length === 4 && extra[2] === '--server')) ? { id: extra[0], text: extra[1], server: extra[3] ?? null } : null;
-if (!COMMANDS.includes(command) || !configPath || (command === 'reply' ? !replyArgs : extra.length > 0 && !Number.isInteger(portArg))) {
-  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]`);
+const waitServer = command === 'wait' && extra.length === 2 && extra[0] === '--server' ? extra[1] : null;
+const argsFit = command === 'reply' ? replyArgs : command === 'wait' ? waitServer : extra.length === 0 || Number.isInteger(portArg);
+if (!COMMANDS.includes(command) || !configPath || !argsFit) {
+  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>`);
   process.exit(2);
 }
 
@@ -45,6 +47,62 @@ if (command === 'tasks') {
     console.error(err.message);
     process.exit(1);
   }
+} else if (command === 'wait') {
+  const server = waitServer!;
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 200));
+  const connect = async () => {
+    for (const until = Date.now() + 10_000; ;) {
+      try {
+        return await fetch(new URL('api/events?unanswered', server));
+      } catch (err: any) {
+        if (Date.now() >= until) {
+          console.error(`could not reach the review page at ${server}: ${err.cause?.message ?? err.message}`);
+          process.exit(1);
+        }
+        await pause();
+      }
+    }
+  };
+  let printed: string | null = null;
+  let ended = false;
+  while (printed === null && !ended) {
+    const res = await connect();
+    if (!res.ok) {
+      console.error(await res.text());
+      process.exit(1);
+    }
+    const backlog: string[] = [];
+    let live = false;
+    let buffer = '';
+    const decoder = new TextDecoder();
+    try {
+      read: for await (const chunk of res.body!) {
+        buffer += decoder.decode(chunk, { stream: true });
+        for (let cut; (cut = buffer.indexOf('\n\n')) >= 0; buffer = buffer.slice(cut + 2)) {
+          const fields = Object.fromEntries(buffer.slice(0, cut).split('\n').map((l) => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 1).trimStart()]));
+          if (fields.event === 'end') {
+            ended = true;
+            break read;
+          }
+          if (fields.event === 'unanswered-sent') {
+            if (backlog.length) {
+              printed = backlog.map((l) => `${l}\n`).join('');
+              break read;
+            }
+            live = true;
+            console.error(`waiting for a comment at ${server}`);
+          } else if (!live) backlog.push(fields.data);
+          else if (JSON.parse(fields.data).duru === 'comment') {
+            printed = `${fields.data}\n`;
+            break read;
+          }
+        }
+      }
+    } catch {}
+    if (printed === null && !ended) await pause();
+  }
+  if (printed === null) console.error('review ended');
+  process.stdout.write(printed ?? '', () => process.exit(0));
 } else if (command === 'review') {
   const author = reviewAuthor(config);
   let ended = false;

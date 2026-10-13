@@ -131,16 +131,33 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    The command blocks until the reviewer ends the review, so run it in a way that lets you read its standard
    output when it exits, for example as a background command whose output you read afterwards. Do not kill it
    or treat it as hung while the user is reviewing.
-   While it runs, read its output as it grows. Each mark or comment the reviewer saves comes out on standard error
-   at once as one JSON line starting with `{"duru":`: `"comment"` (no `status`) or `"mark"`, with its `id`,
-   `target` (a screen or call ID under `node`, or a story ID under `story`), `note`, `author` and `date`. Act on a
+   A background command wakes you only when it exits, so while a review runs, keep one
+   `duru wait <config> --server <the review page address>` running as a background command, on the address that
+   review printed. It exits as soon as there is a comment nobody has replied to, and its standard output then holds
+   every such comment, oldest first, one JSON line each. Answer each one as below, then, if the review command is
+   still running, start `duru wait` again the same way. Reply to every comment it brings, even only to say what you
+   could not do: a comment without a reply comes back at once. It also brings comments saved before it started or
+   between two runs, so none is lost while it is not running.
+   When it exits with code 0 and nothing on standard output, that review has ended; read the task list from the
+   review command and start no more `duru wait` for it. A non-zero exit means it got no comments from the review
+   page: show its standard error to the user, unless you stopped it yourself or were starting the review again just
+   then.
+   If you start the review again, whatever the reason, start `duru wait` again on the address the new review
+   prints, after stopping the earlier `duru wait` if it is still running.
+   Each mark or comment the reviewer saves also comes out on the review's standard error at once, and `duru wait`
+   prints comments in the same shape: one JSON line starting with `{"duru":`: `"comment"` (no `status`) or
+   `"mark"`, with its `id`, `target` (a screen or call ID under `node`, or a story ID under `story`), `note`, `author`
+   and `date`. Act on a
    comment when it arrives: it is the reviewer asking about or for something on that target, so answer the
    question or do what it asks (a missing test is written as in step 3, with the target's tags). Then answer it on
    the page with `duru reply <config> <the comment's id> "<answer>" --server <the review page address>`, using the
    address the review printed; the reply shows under the comment on the reviewer's open page at once. Keep the
-   answer to what you found or did, in a sentence or two. If `reply` exits with a non-zero code, show its standard
-   error to the user. Each reply also comes out on standard error as a `"reply"` line with `replyTo` set to the
-   comment's `id`; it asks for nothing. A mark with `needs-more` or `missing` will be in the task list, and you may start on it now. A
+   answer to what you found or did, in a sentence or two. Once the review has ended, as the review command exiting or
+   `duru wait` exiting with code 0 and nothing on standard output tells you, run the same `duru reply` without
+   `--server`; the reply is then written to the marks folder. If `reply` exits with a non-zero code, show its
+   standard error to the user. Each reply sent with `--server` also comes out on the review's standard error as a
+   `"reply"` line with `replyTo` set to the comment's `id`; it asks for nothing. A mark with `needs-more` or
+   `missing` will be in the task list, and you may start on it now. A
    target can also carry a `depth` or an `option` of a call, and a mark whose target has a `case` (status `needed`
    or `not-needed`) or whose status is `fine` asks for nothing by itself.
    A comment can also be about one part of a screen or call, named in `target.part` as `{ "kind", "key" }`. Such a

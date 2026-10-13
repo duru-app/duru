@@ -69,9 +69,20 @@ test('the agent skill gives the Node version duru needs and says a copy installe
   assert.match(SKILL, /A\s+copy\s+of\s+duru\s+installed\s+into\s+`node_modules`,\s+as\s+from\s+a\s+packed\s+`\.tgz`,\s+stops\s+on\s+its\s+first\s+`\.ts`\s+file/);
 });
 
+test('the agent skill says to keep one duru wait running for each review, answer what it prints and start it again, and start a new one when the review is started again', () => {
+  assert.match(SKILL, /A background command wakes you only when it exits, so while a review runs, keep one\s+`duru wait <config> --server <the review page address>` running as a background command, on the address that\s+review printed/);
+  assert.match(SKILL, /Answer each one as below, then, if the review command is\s+still running, start `duru wait` again the same way/);
+  assert.match(SKILL, /a comment without a reply\s+comes back at once/);
+  assert.match(SKILL, /When it exits with code 0 and nothing on standard output, that review has ended; read the task list from the\s+review command and start no more `duru wait` for it/);
+  assert.match(SKILL, /A non-zero exit means it got no comments from the review\s+page: show its standard error to the user, unless you stopped it yourself or were starting the review again just\s+then/);
+  assert.match(SKILL, /Once the review has ended, as the review command exiting or\s+`duru wait` exiting with code 0 and nothing on standard output tells you, run the same `duru reply` without\s+`--server`/);
+  assert.match(SKILL, /If you start the review again, whatever the reason, start `duru wait` again on the address the new review\s+prints, after stopping the earlier `duru wait` if it is still running/);
+  assert.doesNotMatch(SKILL, /read its output as it grows/);
+});
+
 test('the agent skill says how to answer a comment on the open review page and what a reply line is', () => {
   assert.match(SKILL, /`duru reply <config> <the comment's id> "<answer>" --server <the review page address>`/);
-  assert.match(SKILL, /`"reply"` line with `replyTo` set to the\s+comment's `id`; it asks for nothing/);
+  assert.match(SKILL, /on the review's standard error as a\s+`"reply"` line with `replyTo` set to the comment's `id`; it asks for nothing/);
 });
 
 test('the agent skill says what a comment on a part of a screen or call carries and what to do for a comment on a test', () => {
