@@ -1833,7 +1833,7 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
         assert.equal(await p.textContent('#center h3'), '실험실을 열어 결과를 본다');
         assert.match((await p.textContent('#center .memo'))!, /고객사 설정/);
         assert.deepEqual(await p.locator('#center .story-path .step .name > span:first-child').allTextContents(), ['/home', '/lab', '/lab/result']);
-        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['조건', '이어짐']);
+        assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['조건', '이어짐']);
         assert.match((await p.textContent('#center .story-path .link.l-conditioned'))!, /components\/Home\.js:19\s*globalSettings\.SYSTEM\.LAB_ENABLED\s*설정/);
         assert.deepEqual(await p.locator('#right-info > :not(.talk-scope)').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['도달 가능', '사전 조건']);
         assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트']);
@@ -1842,13 +1842,13 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
         assert.equal(await p.locator('#center iframe').count(), 0);
 
         await p.click('#story-list li:has-text("도움말")');
-        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['이어짐', '링크 없음']);
+        assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['이어짐', '링크 없음']);
         assert.equal(await p.textContent('#center .story-path .link.l-broken'), '링크 없음');
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
 
         await p.click('#story-list li:has-text("개인 설정")');
         assert.equal(await p.textContent('#center .story-path .step.off-map .chip'), '맵에 없는 화면');
-        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['판정 못 함']);
+        assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['판정 못 함']);
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
 
         await p.click('#story-list li:has-text("문서를 연다")');
@@ -1883,9 +1883,9 @@ test('in a browser, a step that a move in the config joins shows as 설정에 �
         await p.waitForSelector('#screen-list li');
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#story-list li:has-text("실험 결과를 본다")');
-        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['설정에 적은 이동']);
+        assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['설정에 적은 이동']);
         assert.equal(await p.textContent('#center .story-path .link.l-configured'), '설정에 적은 이동 로그인 뒤');
-        assert.match((await p.getAttribute('#center .story-path .link.l-configured > .chip', 'title'))!, /moves/);
+        assert.match((await p.getAttribute('#center .story-path .link.l-configured .link-verdict', 'title'))!, /moves/);
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 가능']);
       }),
     );
@@ -2156,14 +2156,14 @@ test('in a browser, a step whose first screen has no link to the next but has li
         ]);
 
         await p.click('#story-list li:has-text("처음으로")');
-        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['판정 못 함']);
+        assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['판정 못 함']);
         assert.deepEqual(await p.locator('#center .story-path .link.l-unknown li').allTextContents(), [`components/Lab.js:16 → ${UNKNOWN}`]);
         assert.doesNotMatch((await p.textContent('#center .story-path'))!, /리다이렉트/);
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 주소 못 읽은 링크']);
         assert.equal(await p.locator('#right .skipped').count(), 0);
 
         await p.click('#story-list li:has-text("실험 결과로")');
-        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['조건', '이어짐']);
+        assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['조건', '이어짐']);
         const skipped = (link: string) => p.locator(`#center .story-path .link.${link} .unknown-links li`).allTextContents();
         assert.deepEqual(await skipped('l-conditioned'), [`components/Home.js:20 → ${UNKNOWN}`]);
         assert.match((await p.textContent('#center .story-path .link.l-conditioned .skipped'))!, /판정에서 뺀 링크/);
@@ -2173,7 +2173,7 @@ test('in a browser, a step whose first screen has no link to the next but has li
         assert.deepEqual(await p.locator('#right .reach-link .unknown-links li').allTextContents(), [`components/Home.js:20 → ${UNKNOWN}`]);
 
         await p.click('#story-list li:has-text("실험실에서 결과로")');
-        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['이어짐']);
+        assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['이어짐']);
         assert.equal(await p.locator('#center .skipped').count(), 0);
         assert.equal(await p.locator('#right .skipped').count(), 0);
       }),
@@ -9938,7 +9938,7 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
         assert.equal(await p.textContent('#center .source'), 'example-visits/open-help.json · 단계 1–5');
         assert.deepEqual(await p.locator('#center .story-path .step .records').allTextContents(), ['단계 1', '단계 2', '단계 3–4', '단계 5']);
         assert.equal(await p.textContent('#center .story-path .step.off-map .mono'), '/beta/inbox');
-        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['이어짐', '판정 못 함', '판정 못 함']);
+        assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['이어짐', '판정 못 함', '판정 못 함']);
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
         assert.deepEqual(await p.locator('#right-info > :not(.talk-scope)').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['판정 못 함 · 화면 없음', '사전 조건']);
         assert.deepEqual(await p.locator('#right-info h2').allTextContents(), ['사전 조건', '받기']);
@@ -10411,8 +10411,8 @@ test('a new story posted from the page is written with its screens, name, memo a
 
 const pickScreen = (p: Page, routePath: string) => p.locator('#pick-list li').filter({ has: p.locator('.name > span:first-child', { hasText: new RegExp(`^${routePath}$`) }) }).click();
 const composeSteps = (p: Page) => p.locator('#center .compose-step .screen-path').allTextContents();
-const composeLinks = (p: Page) => p.locator('#center .story-path .link > .chip').allTextContents();
-const untilJudged = (p: Page, links: number) => p.waitForFunction((n) => document.querySelectorAll('#center .story-path .link > .chip').length === n && !document.querySelector('#center .link.l-pending'), links);
+const composeLinks = (p: Page) => p.locator('#center .story-path .link .link-verdict').allTextContents();
+const untilJudged = (p: Page, links: number) => p.waitForFunction((n) => document.querySelectorAll('#center .story-path .link .link-verdict').length === n && !document.querySelector('#center .link.l-pending'), links);
 const stepButton = (step: number, cls: string) => `#center .compose-step[data-step="${step}"] button.${cls}`;
 const focusedStepButton = (p: Page) => p.evaluate(() => [document.activeElement!.closest<HTMLElement>('.compose-step')?.dataset.step, document.activeElement!.className]);
 
@@ -10458,7 +10458,7 @@ test('in a browser, 「새 스토리」 turns the left column into a screen pick
         const { date, ...saved } = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'help-from-signin.json'), 'utf8'));
         assert.deepEqual(saved, { name: '로그인해 도움말을 연다', screens: HELP_PATH, memo: '홈에 링크가 없다.', author: 'reviewer' });
         assert.equal(await p.textContent('#center h3'), '로그인해 도움말을 연다');
-        assert.deepEqual(await p.locator('#center .story-path .link > .chip').allTextContents(), ['이어짐', '링크 없음']);
+        assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['이어짐', '링크 없음']);
         assert.equal(await p.textContent('#left button.new-story'), '새 스토리');
         assert.equal(await p.locator('#pick-list').count(), 0);
       }),
@@ -10478,12 +10478,12 @@ test('in a browser, moving a step of a new story with 「위로」 or 「아래�
         assert.deepEqual([await p.isDisabled(stepButton(0, 'up')), await p.isDisabled(stepButton(1, 'down'))], [true, true]);
 
         await p.click(stepButton(0, 'down'));
-        await p.waitForFunction(() => document.querySelector('#center .story-path .link > .chip')?.textContent === '링크 없음');
+        await p.waitForFunction(() => document.querySelector('#center .story-path .link .link-verdict')?.textContent === '링크 없음');
         assert.deepEqual(await composeSteps(p), ['/home', '/signin']);
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
         assert.deepEqual(await focusedStepButton(p), ['1', 'up']);
         await p.keyboard.press('Enter');
-        await p.waitForFunction(() => document.querySelector('#center .story-path .link > .chip')?.textContent === '이어짐');
+        await p.waitForFunction(() => document.querySelector('#center .story-path .link .link-verdict')?.textContent === '이어짐');
         assert.deepEqual(await composeSteps(p), ['/signin', '/home']);
         assert.deepEqual(await focusedStepButton(p), ['0', 'down']);
 
@@ -10826,6 +10826,53 @@ test('in a browser, 「전체」 groups every attached comment by its screen, ca
         assert.deepEqual(errors, []);
       }));
   });
+});
+
+test('in a browser, each step of a story and each link between two steps has a bubble that puts it in as the tag with the status buttons off, a comment saved there shows its count, the count narrows the conversation, and the bubble on a step or a link of the story drawn in the flow opens the story there', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        const comment = async (row: Locator, tag: string, note: string) => {
+          await row.locator('.part-row').hover();
+          await row.locator('.part-row .bubble').click();
+          assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), tag);
+          assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
+          await p.fill('#right-dock textarea', note);
+          await p.click('#right-dock button.save');
+          await row.locator('.part-count', { hasText: '코멘트 1' }).waitFor();
+        };
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        await comment(p.locator('#center .story-path .step').nth(1), '단계 2 /lab', 'check the result table here');
+        await comment(p.locator('#center .story-path .link').first(), '단계 1 → 2 연결', 'is this link always there?');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => m.target).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))), [
+          { story: 'run-lab', part: { kind: 'hop', key: { step: 1, from: '/home#Home', to: '/lab#Lab' } } },
+          { story: 'run-lab', part: { kind: 'step', key: { step: 2, screen: '/lab#Lab' } } },
+        ]);
+        await p.locator('#center .story-path .step').nth(1).locator('.part-count').click();
+        assert.equal(await p.textContent('#right .history-filter .tag-label'), '단계 2 /lab');
+        assert.match((await p.textContent('#right .history'))!, /check the result table here/);
+        assert.doesNotMatch((await p.textContent('#right .history'))!, /is this link always there/);
+        await p.click('#story-list li:has-text("홈에서 개인 설정을")');
+        await p.click('#right-info .talk-scope button:nth-child(2)');
+        await p.click('#right-info .talk-line:has-text("check the result table here")');
+        assert.equal(await p.locator('#right .history li.reached').isVisible(), true);
+
+        await p.click('#view-flow');
+        await p.click('#flow-story-list li[data-story="run-lab"]');
+        const third = p.locator('#flow .story-line .box[data-step="2"]');
+        await third.hover();
+        await third.locator('.bubble').click();
+        assert.equal(await p.textContent('#view-list.on'), '목록');
+        assert.equal(await p.textContent('#left .views.side button.on .tab-name'), '스토리');
+        assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '단계 3 /lab/result');
+        assert.equal(await p.evaluate(() => document.activeElement?.matches('#right-dock textarea')), true);
+        await p.click('#view-flow');
+        await p.locator('#flow .story-line .story-hop[data-hop="1"] .bubble').click();
+        assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '단계 2 → 3 연결');
+        assert.deepEqual(errors, []);
+      })));
 });
 
 test('in a browser, each role and each setting under 「접근 조건」 and each incoming link has a bubble that puts it in as the tag, a comment saved with it shows its count there, the count narrows the conversation, and the same works on a screen picked in the flow', { skip: browserMissing }, async () => {

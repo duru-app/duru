@@ -27,6 +27,7 @@ export interface PartScreen {
   id: string;
   routeFile?: string;
   line?: number;
+  componentFile?: string | null;
   access?: { restricted?: boolean; roleValues?: string[] | null; route?: Described[]; links?: LinkRow[]; settings?: SettingSource[] };
 }
 
@@ -130,4 +131,64 @@ export function locatePart({ node, part }: { node?: string; part?: Part }, conte
   const screen = context.screens?.find((s) => s.id === node);
   if (!screen) return null;
   return part!.kind === 'condition' ? locateCondition(screen, part!.key, context.screens!, context.roleGuards ?? {}) : locateLink(screen, part!.key);
+}
+
+export const STORY_PART_KINDS = ['step', 'hop'];
+
+export interface StepKey {
+  step: number;
+  screen: string;
+}
+
+export interface HopKey {
+  step: number;
+  from: string;
+  to: string;
+}
+
+interface StoryLink {
+  verdict: string;
+  ways: unknown[];
+  reasons?: string[];
+  unknownLinks?: unknown[];
+}
+
+export interface StoryPath {
+  id: string;
+  file: string;
+  screens: string[];
+  links: StoryLink[];
+  reach: { kind: string; from?: string; to?: string; screen?: string }[];
+}
+
+type ScreenPlace = { id: string; componentFile: string | null; routeFile: string | null; line: number | null } | { id: string; onMap: false };
+
+export interface StepPlace {
+  file: string;
+  screen: ScreenPlace;
+}
+
+export interface HopPlace extends StoryLink {
+  file: string;
+  from: ScreenPlace;
+  to: ScreenPlace;
+  preconditions: StoryPath['reach'];
+}
+
+function screenPlace(id: string, screens: PartScreen[]): ScreenPlace {
+  const s = screens.find((x) => x.id === id);
+  return s ? { id, componentFile: s.componentFile ?? null, routeFile: s.routeFile ?? null, line: s.line ?? null } : { id, onMap: false };
+}
+
+export function locateStoryPart(part: Part, story: StoryPath, screens: PartScreen[]): StepPlace | HopPlace | null {
+  const at = (part.key as StepKey | HopKey).step - 1;
+  if (part.kind === 'step') {
+    const { screen } = part.key as StepKey;
+    return story.screens[at] === screen ? { file: story.file, screen: screenPlace(screen, screens) } : null;
+  }
+  const { from, to } = part.key as HopKey;
+  if (story.screens[at] !== from || story.screens[at + 1] !== to) return null;
+  const { verdict, ways, reasons, unknownLinks } = story.links[at];
+  const preconditions = [...new Map(story.reach.map((r) => [JSON.stringify(r), r])).values()].filter((r) => (r.kind === 'link' && r.from === from && r.to === to) || (r.kind === 'route' && r.screen === to) || (r.kind === 'start' && at === 0 && r.screen === from));
+  return { file: story.file, from: screenPlace(from, screens), to: screenPlace(to, screens), verdict, ways, ...(reasons && { reasons }), ...(unknownLinks && { unknownLinks }), preconditions };
 }

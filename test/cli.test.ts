@@ -527,6 +527,30 @@ test('a comment saved on a condition or an incoming link of a screen comes out o
   });
 });
 
+test('a comment saved on a step or on the link between two steps of a story comes out on stderr with the story file, the screen files, and for the link its verdict and where it is written', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      const post = async (part: unknown) => (await (await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: { story: 'help-from-home', part }, note: 'Why here?' }) })).json()) as Mark;
+      await post({ kind: 'step', key: { step: 2, screen: '/home#Home' } });
+      await post({ kind: 'hop', key: { step: 1, from: '/signin#SignIn', to: '/home#Home' } });
+      await waitFor(() => records().length === 2, 'both comments on stderr');
+      const [step, hop] = records().map((r) => r.where);
+      assert.equal(step.file, 'help-from-home.json');
+      assert.deepEqual([step.screen.id, step.screen.routeFile, typeof step.screen.line], ['/home#Home', 'Routes.js', 'number']);
+      assert.deepEqual([hop.file, hop.from.id, hop.to.id, hop.verdict], ['help-from-home.json', '/signin#SignIn', '/home#Home', 'open']);
+      assert.deepEqual(hop.ways.map((w: { file: string; line: number }) => `${w.file}:${w.line}`), ['components/SignIn.js:12']);
+      assert.ok(Array.isArray(hop.preconditions));
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  }, { storiesDir: 'example-stories' });
+});
+
 test('a comment saved on a story candidate comes out on stderr and on open event streams with its record, steps and screen order; a reply to it carries the same, a status is refused, and the task list stays as it was', async () => {
   await withReviewFixture(async (configFile) => {
     const tasksBefore = execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8' });
