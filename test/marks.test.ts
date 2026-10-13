@@ -416,3 +416,59 @@ test('comments on a condition and an incoming link stay on them when only the li
     assert.deepEqual(gone.detached.map((m) => [m.target, m.where]), [[condition, null], [link, null]]);
   });
 });
+
+const TRACE_KEY = '/home#Home > /help#Help';
+const RECORD_KEY = '/signin#SignIn > /home#Home > /help#Help';
+
+test('a comment on a story candidate is written with only the candidate key in its target, in that key\'s folder under stories/candidates, and a reply to it carries the same target', () => {
+  withMarksDir((dir: string) => {
+    const fromRecord = addMark(dir, { target: { candidate: RECORD_KEY }, note: 'why does it pass the beta inbox?', author: 'Kim Min' }, new Date('2026-10-13T01:00:00Z'));
+    const fromTrace = addMark(dir, { target: { candidate: TRACE_KEY }, note: 'which test gives this?', author: 'a' }, new Date('2026-10-13T02:00:00Z'));
+    const reply = addReply(dir, { replyTo: fromRecord.id, note: 'step 3 opens it' }, new Date('2026-10-13T03:00:00Z'));
+    assert.deepEqual([fromRecord.target, fromTrace.target, reply.target], [{ candidate: RECORD_KEY }, { candidate: TRACE_KEY }, { candidate: RECORD_KEY }]);
+    assert.equal('status' in fromRecord, false);
+    assert.deepEqual(fs.readdirSync(dir), ['stories']);
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'stories', 'candidates')).sort(), ['_home#Home____help#Help', '_signin#SignIn____home#Home____help#Help']);
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'stories', 'candidates', '_signin#SignIn____home#Home____help#Help')).sort(), [
+      `2026-10-13-Kim_Min-${fromRecord.id.slice(0, 8)}.json`,
+      `2026-10-13-agent-${reply.id.slice(0, 8)}.json`,
+    ]);
+    assert.equal(loadMarks(dir).length, 3);
+  });
+});
+
+test('a comment on a story candidate is attached while the candidate is listed and detached once it is not, apart from the marks on a story of the same name', () => {
+  withMarksDir((dir: string) => {
+    addMark(dir, { target: { candidate: 'open-help' }, note: 'why this order?', author: 'a' }, new Date('2026-10-13T01:00:00Z'));
+    addMark(dir, { target: { story: 'open-help' }, status: 'missing', author: 'a' }, new Date('2026-10-13T02:00:00Z'));
+    addMark(dir, { target: { candidate: TRACE_KEY }, note: 'which test?', author: 'a' }, new Date('2026-10-13T03:00:00Z'));
+    const listed = classifyMarks(loadMarks(dir), MAP, ['open-help'], [], {}, ['open-help', TRACE_KEY]);
+    assert.deepEqual(listed.detached, []);
+    assert.deepEqual(listed.attached.map((m) => [m.key, m.current?.status ?? null, m.history.map((h) => h.note)]), [
+      [`candidate(${TRACE_KEY})`, null, ['which test?']],
+      ['candidate(open-help)', null, ['why this order?']],
+      ['story(open-help)', 'missing', ['']],
+    ]);
+    const taken = classifyMarks(loadMarks(dir), MAP, ['open-help'], [], {}, [TRACE_KEY]);
+    assert.deepEqual(taken.attached.map((m) => m.key), [`candidate(${TRACE_KEY})`, 'story(open-help)']);
+    assert.deepEqual(taken.detached.map((m) => m.target), [{ candidate: 'open-help' }]);
+  });
+});
+
+test('a comment on a story candidate takes no status, and a candidate key mixed with a story, a node or a part, or an empty one, is refused and nothing is written', () => {
+  withMarksDir((dir: string) => {
+    const refused: [object, RegExp][] = [
+      [{ target: { candidate: 'open-help' }, status: 'missing', note: 'x' }, /a comment on a story candidate takes no status; accept it as a story to give it one/],
+      [{ target: { candidate: 'open-help' }, status: 'fine' }, /a comment on a story candidate takes no status/],
+      [{ target: { candidate: 'open-help' }, note: ' ' }, /a comment needs a note/],
+      [{ target: { candidate: ' ' }, note: 'x' }, /a candidate mark needs the key of a story candidate/],
+      [{ target: { candidate: 3 }, note: 'x' }, /a candidate mark needs the key of a story candidate/],
+      [{ target: { candidate: 'open-help', story: 'open-help' }, note: 'x' }, /a candidate mark takes no story, node, option, depth, case or part/],
+      [{ target: { candidate: 'open-help', node: '/home#Home' }, note: 'x' }, /a candidate mark takes no story, node, option, depth, case or part/],
+      [{ target: { candidate: 'open-help', depth: 'ui' }, note: 'x' }, /a candidate mark takes no story, node, option, depth, case or part/],
+      [{ target: { candidate: 'open-help', part: { kind: 'test', key: LIST_TEST } }, note: 'x' }, /a candidate mark takes no story, node, option, depth, case or part/],
+    ];
+    for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' } as Parameters<typeof addMark>[1]), message);
+    assert.equal(fs.existsSync(dir), false);
+  });
+});
