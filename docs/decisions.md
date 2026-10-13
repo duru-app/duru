@@ -1400,8 +1400,8 @@ its verdict, which is passed on as `detail`. Reading the message of each format 
 file grow with every failure and add a reader per format for every format added later, while the agent that gets
 the line can open the result file and find the test by its title itself.
 
-**The review page draws the app at a width picked above the frame, 1280 at first, and shows it smaller when the
-pane is narrower, never larger than its real size.**
+**The review page draws the app at a width picked above the frame, 1280 at first, and by default shows it smaller
+when the pane is narrower; a percent picked beside it shows it at that size instead.**
 With a screen picked in the flow view, the frame gave the app 747px at a 1920px window and 507px at 1440px, so an
 app laid out for a desktop width lost its right side or wrapped into a layout its users never see. The app now gets
 the picked width and is scaled down by the largest whole percent that fits the pane: 1280px at 58% at a 1920px
@@ -1414,13 +1414,29 @@ Alternatives compared:
 - Drawing the app at its real width and letting the frame scroll sideways: text keeps its real size, but the whole
   screen is never in view at once, and what sits on the right needs a scroll before it can be seen.
 Choices inside it:
-- The scale is shown as a sentence beside the width picker, with no percent buttons: the flow drawing's zoom already
-  shows a percent with − and +, and a second such control would read as the same zoom. Responsively App puts −,
-  percent and + in its status bar and has no fit mode; here fitting is the only mode.
+- The scale is shown as a sentence beside the pickers, and the percent is a select rather than − and + buttons: the
+  flow drawing's zoom already shows a percent with − and +, and a second such control would read as the same zoom.
+  Responsively App puts −, percent and + in its status bar and has no fit mode; here fitting is the first choice.
 - The percent is not lowered further to make width × scale whole pixels, as DevTools does: for 1024 only multiples
   of 25% do that, so a fit just under 100% would drop to 75% for sharper edges.
-- The picked width lasts until the page reloads, like the drawing's zoom, since the page keeps nothing in browser
-  storage.
+- The picked width and percent last until the page reloads, like the drawing's zoom, since the page keeps nothing in
+  browser storage.
+
+**The width can be typed, and the percent can be picked: 「칸에 맞춤」 first, then 25, 50, 75, 100, 150% or a typed
+one, with the frame scrolling sideways when the app is wider than the pane.**
+Fitting alone left a 1280px app at 38% in a 486px middle pane, too small to read, and 1024, 1280 and 1440 gave no
+way to see a phone or tablet layout. The width list gains 375 and 768 and a typed width; the percent list starts at
+「칸에 맞춤」, which keeps the fitting above, and a picked percent holds whatever the pane's width. Unreadable text
+weighs more than the worry above that a percent control reads as the flow drawing's zoom, so the percent is now
+pickable, as a select beside the width rather than − and + buttons. When the width is 「칸에 맞춤」 the percent cannot be
+picked, since the app is the pane's own width and only its real size fits. The frame scrolls sideways inside itself
+and the page does not, and the app's height still follows the frame's. The scrollable width is the app's shown
+width, not its drawn width, so a percent below 100 does not leave blank room to scroll into.
+Alternatives compared:
+- Typing a width only, with the scale still worked out from the pane: a phone width would fit, but a desktop width
+  in a narrow pane stays as small as before.
+- Leaving it as it was: nothing to build, but a 1280px screen in a narrow pane stays unreadable and a phone layout
+  cannot be seen.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
