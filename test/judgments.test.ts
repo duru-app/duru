@@ -6,6 +6,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment, applyJudgments, loadJudgments } from '../src/judgments.ts';
 import { buildMap } from '../src/map.ts';
+import { addMark, classifyMarks, loadMarks } from '../src/marks.ts';
 import { linkTests } from '../src/test-links.ts';
 
 const HELP_TEST = { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' };
@@ -364,6 +365,35 @@ test('a browser test that passed through a screen or sent a call is judged like 
     assert.deepEqual(undone.passed, before.passed);
     assert.deepEqual([undone.discarded, undone.awaitingTag], [{}, {}]);
   });
+});
+
+test('moving the tags of a test from its title into the tag option keeps the comment on it and the judgment of its pair', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    const results = path.join(dir, 'results');
+    fs.cpSync(path.join(config.configDir, 'results/playwright-traced'), results, { recursive: true });
+    const report = path.join(results, 'visits.json');
+    const original = fs.readFileSync(report, 'utf8');
+    const rebuild = (from: string, to: string) => {
+      fs.writeFileSync(report, original.replace(from, to));
+      return linkTests({ ...config, tests: [{ format: 'playwright', path: results, depth: 'ui' }] }, map);
+    };
+    const inTitle = rebuild('"title": "checks the path of a document"', '"title": "checks the path of a document @screen:/home#Home @depth:ui"');
+    const [tagged] = applyJudgments(inTitle, []).nodes['/home#Home'].filter((t) => t.title.startsWith('checks the path'));
+    const [opened] = applyJudgments(inTitle, []).passed[DETAIL];
+    assert.deepEqual(tagged.ref, opened.ref);
+    addMark(path.join(dir, 'marks'), { target: { node: '/home#Home', part: { kind: 'test', key: tagged.ref } }, note: 'why only the path?', author: 'a' }, new Date('2026-10-04T01:00:00Z'));
+    addJudgment(path.join(dir, 'judgments'), { test: opened.ref, node: DETAIL, kind: 'discard', reason: 'only reads the address', author: 'a' }, new Date('2026-10-04T01:00:00Z'));
+
+    const inOption = rebuild('"title": "checks the path of a document",\n          "ok": true,\n          "tags": []', '"title": "checks the path of a document",\n          "ok": true,\n          "tags": ["screen:/home#Home", "depth:ui"]');
+    assert.ok(inOption.nodes['/home#Home'].some((t: { title: string }) => t.title === 'checks the path of a document'));
+    const { attached, detached } = classifyMarks(loadMarks(path.join(dir, 'marks')), map, [], [], inOption);
+    assert.deepEqual([attached.map((m) => [m.target.part?.key, m.where?.relation]), detached], [[[tagged.ref, 'tagged']], []]);
+    const judged = applyJudgments(inOption, loadJudgments(path.join(dir, 'judgments')).judgments);
+    assert.deepEqual(judged.discarded[DETAIL].map((t) => [t.ref, t.judgment.reason]), [[opened.ref, 'only reads the address']]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('a handed-over browser test that no longer passes through the screen is shown as detached, and one that does is not', () => {

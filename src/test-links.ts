@@ -20,6 +20,7 @@ interface Reader {
 
 interface UntaggedTest {
   title: string;
+  tags: string[];
   file: string | null;
   line: number | null;
   source: string;
@@ -129,12 +130,12 @@ export function linkTests(config: any, map: any) {
           if (link.reason && !importNotices.some((n) => n.file === t.file)) importNotices.push({ file: t.file, reason: link.reason });
           for (const [id, via] of link.screens ?? []) {
             if (t.tags.includes(`screen:${id}`)) continue;
-            (importers[id] ??= []).push({ title: t.title, file: t.file, line: t.line, source: resultPath, format: source.format, depth, status: t.status, testFile: link.file, via });
+            (importers[id] ??= []).push({ title: t.title, tags: t.tags, file: t.file, line: t.line, source: resultPath, format: source.format, depth, status: t.status, testFile: link.file, via });
           }
         }
         const trace = t.trace ? linkByTrace(t.trace) : null;
         if (trace) {
-          const traced = { title: t.title, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status };
+          const traced = { title: t.title, tags: t.tags, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status };
           if (trace.reason) traceNotices.push({ file: shownPath(t.trace), test: { title: t.title, file: t.file, line: t.line }, reason: trace.reason });
           else if (t.status === 'pass' && t.traceRunPassed) screenOrders.push({ report: resultPath.split(path.sep).join('/'), title: t.title, screens: trace.order! });
           for (const [id, level] of trace.screens ?? []) {
@@ -149,14 +150,14 @@ export function linkTests(config: any, map: any) {
         }
         if (nodeTags.length === 0 && storyTags.length === 0) {
           const seen = untagged.get(testKey);
-          if (!seen) untagged.set(testKey, { title: t.title, file: t.file, line: t.line, source: resultPath, format: source.format, status: t.status, ...(link?.file && { testFile: link.file }), ...(trace?.unmatched && { unmatched: trace.unmatched }) });
+          if (!seen) untagged.set(testKey, { title: t.title, tags: t.tags, file: t.file, line: t.line, source: resultPath, format: source.format, status: t.status, ...(link?.file && { testFile: link.file }), ...(trace?.unmatched && { unmatched: trace.unmatched }) });
           else {
             if (STATUS_RANK[t.status] > STATUS_RANK[seen.status]) seen.status = t.status;
             if (trace?.unmatched) seen.unmatched = [...new Set([...(seen.unmatched ?? []), ...trace.unmatched])];
           }
           continue;
         }
-        const test = { title: t.title, file: t.file, line: t.line, project: t.project };
+        const test = { title: t.title, tags: t.tags, file: t.file, line: t.line, project: t.project };
         const entry = { ...test, source: resultPath, format: source.format, depth, status: t.status, ...(link?.file && { testFile: link.file }), ...(t.detail && { detail: t.detail }), ...(trace?.unmatched && { unmatched: trace.unmatched }) };
         for (const tag of nodeTags) {
           if (!known.has(tag)) {

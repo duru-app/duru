@@ -1923,7 +1923,7 @@ test('in a browser, the story list shows only the statuses that need a look, fil
         assert.deepEqual(await p.locator('#center .story-tests .test').evaluateAll((items) => items.map((t) => [...t.querySelectorAll('.depth, .chip')].map((e) => e.textContent))), [
           ['API', '실패'], ['API', '통과'],
         ]);
-        assert.match((await p.locator('#center .story-tests .test').first().textContent())!, /Lab flow › runs the lab and reads the result @story:run-lab/);
+        assert.match((await p.locator('#center .story-tests .test').first().textContent())!, /Lab flow › runs the lab and reads the result com\.example/);
         const stepTests = () => p.locator('#center .story-path .step').evaluateAll((steps) => steps.map((s) => [...s.querySelectorAll('.step-tests > span')].map((e) => e.textContent.trim())));
         assert.deepEqual(await stepTests(), [['UI/E2E ✓3', 'API ✓1 ○1', '렌더링만 ✕1', '코드 ✓1', '데이터 ✕1'], ['UI/E2E ✓2 ○1', '코드 ○1'], ['화면 테스트 없음']]);
         assert.match((await p.getAttribute('#center .story-path .step:nth-child(3) .step-tests > span:first-child', 'title'))!, /opens the lab @screen:\/lab#Lab/);
@@ -10075,7 +10075,7 @@ test('in a browser, the bubble of a tagged, an importing, a passing and a callin
           await row.locator('.part-count', { hasText: '코멘트 1' }).waitFor();
         };
         await chooseScreen(p, '/lab');
-        await comment(p.locator('#center-body table .part-row', { hasText: 'opens the lab @screen' }), 'opens the lab', 'why pending?');
+        await comment(p.locator('#center-body table .part-row', { hasText: /opens the lab home\.spec\.ts/ }), 'opens the lab', 'why pending?');
         await chooseScreen(p, '/home');
         await comment(p.locator('#center .importers .part-row', { hasText: 'DocumentTable' }), 'DocumentTable › lists the documents it is given', 'can this carry the tag?');
         await p.locator('table.calls tbody tr:not(.option)', { hasText: 'GET:/api/v1/document/list' }).locator('td.cell').first().click();
@@ -10091,9 +10091,48 @@ test('in a browser, the bubble of a tagged, an importing, a passing and a callin
         ]);
         await p.reload();
         await chooseScreen(p, '/lab');
-        assert.equal(await p.locator('#center-body table .part-row', { hasText: 'opens the lab @screen' }).locator('.part-count').textContent(), '코멘트 1');
+        assert.equal(await p.locator('#center-body table .part-row', { hasText: /opens the lab home\.spec\.ts/ }).locator('.part-count').textContent(), '코멘트 1');
         assert.deepEqual(errors, []);
       })));
+});
+
+test('in a browser, a test row shows the title without its tags, and without a part of it that held only tags, hides the tags of the screen, call, story and depth it sits under, and shows each other tag, from the title or the tag option, as a label of its own; a tests.json without tags reads them from the title', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const row = async (selector: string, hasText: string) => {
+          const item = p.locator(`${selector} .test`, { hasText }).first();
+          return { text: (await item.evaluate((e) => [...e.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join('').trim())), tags: await item.locator('.test-tag').allTextContents() };
+        };
+        await chooseScreen(p, '/lab');
+        assert.deepEqual(await row('#center-body table .part-row', 'opens the lab'), { text: 'opens the lab', tags: ['smoke', 'screen:/home#Home', 'role:ADMIN'] });
+        await chooseScreen(p, '/home');
+        assert.deepEqual(await row('#center-body table .part-row', 'opens the lab'), { text: 'opens the lab', tags: ['screen:/lab#Lab', 'smoke', 'role:ADMIN'] });
+        await chooseScreen(p, '/admin/member');
+        assert.deepEqual(await row('#center-body table .part-row', 'lists members for an admin'), { text: 'lists members for an admin', tags: ['role:ADMIN'] });
+        await chooseScreen(p, '/admin/report');
+        await p.locator('table.calls td.cell').first().click();
+        assert.deepEqual(await row('#right-info .part-row', 'exports with history'), { text: 'exports with history', tags: ['option:withHistory=true'] });
+
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.deepEqual(await row('#center .story-tests', 'runs the lab'), { text: 'Lab flow › runs the lab and reads the result', tags: ['role:ADMIN'] });
+
+        const testsFile = path.join(config.outDir, 'tests.json');
+        const tests = JSON.parse(fs.readFileSync(testsFile, 'utf8'));
+        for (const list of Object.values(tests.nodes) as { tags?: string[] }[][]) for (const t of list) delete t.tags;
+        fs.writeFileSync(testsFile, JSON.stringify(tests));
+        await p.reload();
+        await p.click('#left .views.side button:has-text("화면")');
+        await chooseScreen(p, '/lab');
+        assert.deepEqual(await row('#center-body table .part-row', 'opens the lab'), { text: 'opens the lab', tags: ['smoke', 'screen:/home#Home', 'role:ADMIN'] });
+        await chooseScreen(p, '/admin/member');
+        assert.deepEqual(await row('#center-body table .part-row', 'lists members for an admin'), { text: 'lists members for an admin', tags: [] });
+      })), [
+    ['results/playwright/e2e.json', '"title": "opens the lab @screen:/lab#Lab"', '"title": "@smoke › opens the lab @screen:/lab#Lab @depth:ui @screen:/home#Home @role:ADMIN"'],
+    ['results/junit/services.xml', 'runs the lab and reads the result @story:run-lab"', 'runs the lab and reads the result @story:run-lab @depth:api @role:ADMIN"'],
+  ]);
 });
 
 test('in a browser, the conversation of a screen holds the comments on it and on its tests oldest first, each with its tag; the count of a test row narrows it to that test and its replies, and the status buttons work only while the screen itself is the one tag', { skip: browserMissing }, async () => {
@@ -10111,7 +10150,7 @@ test('in a browser, the conversation of a screen holds the comments on it and on
         assert.deepEqual(await said(), [['화면 전체', 'no table test'], ['테스트 「opens the lab」', 'why pending?'], ['API 깊이', 'and the API?']]);
         assert.match((await p.textContent('#right-dock .history > li:nth-child(2) .replies'))!, /it waits for the lab data/);
 
-        await p.locator('#center-body table .part-row', { hasText: 'opens the lab @screen' }).locator('.part-count').click();
+        await p.locator('#center-body table .part-row', { hasText: /opens the lab home\.spec\.ts/ }).locator('.part-count').click();
         assert.deepEqual(await said(), [['테스트 「opens the lab」', 'why pending?']]);
         assert.equal(await p.textContent('#right-dock .history-filter .tag-label'), '테스트 「opens the lab」');
         await p.click('#right-dock .history-filter button');
@@ -10119,7 +10158,7 @@ test('in a browser, the conversation of a screen holds the comments on it and on
 
         assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '화면 전체');
         assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 3);
-        const row = p.locator('#center-body table .part-row', { hasText: 'opens the lab @screen' });
+        const row = p.locator('#center-body table .part-row', { hasText: /opens the lab home\.spec\.ts/ });
         await row.hover();
         await row.locator('.bubble').click();
         assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
@@ -10172,7 +10211,7 @@ test('in a browser, the default tag taken off with its × comes back with the no
         assert.equal(await p.inputValue('#right-dock textarea'), 'half a thought');
         await p.keyboard.type(' and the rest');
         assert.equal(await p.inputValue('#right-dock textarea'), 'half a thought and the rest');
-        const row = p.locator('#center-body table .part-row', { hasText: 'opens the lab @screen' });
+        const row = p.locator('#center-body table .part-row', { hasText: /opens the lab home\.spec\.ts/ });
         await row.hover();
         await row.locator('.bubble').click();
         await p.keyboard.type('.');

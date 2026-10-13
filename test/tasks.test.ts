@@ -33,7 +33,7 @@ function withFixtureCopy<T>(fn: (ctx: Ctx) => T, configPatch: Record<string, unk
 
 // 형식은 가짜 클라이언트 설정의 테스트 출처 순서(playwright, junit, vitest, verdict)로 나온다.
 const emptyTests = (...cells: string[][]) => ['- empty tests:', ...cells.flatMap(([tags, method]) => [
-  `  - playwright: \`test.fixme("<what it checks> ${tags}", async ({ page }) => {});\``,
+  `  - playwright: \`test.fixme("<what it checks>", { tag: [${tags.split(' ').map((t) => JSON.stringify(t)).join(', ')}] }, async ({ page }) => {});\``,
   `  - junit: \`@Test @Disabled @DisplayName("<what it checks> ${tags}") void ${method}() {}\``,
   `  - vitest: \`test.todo("<what it checks> ${tags}");\``,
   `  - verdict: \`VERDICT <what it checks>: <verdict> — <what was seen> ${tags}\``,
@@ -45,7 +45,7 @@ const AUDIT_CASES = ['role:ADMIN', 'role:AUDITOR', 'role:other'];
 
 const EXPECTED = `# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks
 
-A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and for a screen that opens only under a role or a setting the tag of each case under \`cases\` it checks), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. Under \`empty tests\`, a screen or call gets one set for each open mark, a screen one more for each case with no tests, and a story one set: an empty test for each test format in the config, with the tags already in its title and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.
+A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` on each test, in its \`tag\` option for Playwright and in its title for the other formats (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and for a screen that opens only under a role or a setting the tag of each case under \`cases\` it checks), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` on it as well. Under \`empty tests\`, a screen or call gets one set for each open mark, a screen one more for each case with no tests, and a story one set: an empty test for each test format in the config, with the tags already in place and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, put what the test checks in place of \`<what it checks>\` (the Playwright ones of an item all carry that title), remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.
 
 Source files are under \`client/src\`.
 
@@ -365,9 +365,12 @@ const fillIn = (code: string) => code
   .replace('@Disabled ', '')
   .replace(/^test\.todo\((.*)\);$/, 'test($1, () => { expect(1).toBe(1); });');
 
+// Playwright 의 JSON 리포트는 tag 필드의 태그를 앞의 @ 를 뗀 채 spec.tags 에 적는다.
+const tagOption = (code: string) => (JSON.parse(code.match(/\{ tag: (\[.*?\]) \}/)![1]) as string[]).map((t) => t.slice(1));
+
 const xmlText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-test('an empty test from the task list, filled in with its title tags kept, attaches to its screen, call cell or story after a rebuild in every configured format', () => {
+test('an empty test from the task list, filled in with its tags kept, attaches to its screen, call cell or story after a rebuild in every configured format', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     cli('rebuild');
     addMark(loadConfig(configFile).marksDir, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true }, depth: 'output' }, status: 'missing', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
@@ -381,7 +384,7 @@ test('an empty test from the task list, filled in with its title tags kept, atta
     assert.doesNotMatch(Object.values(copied).flat().join('\n'), /\.fixme|\.todo|@Disabled|<verdict>/);
     const titles = (format: string) => copied[format].map((code) => JSON.parse(code.match(/"(?:[^"\\]|\\.)*"/)![0]));
     fs.writeFileSync(path.join(copy, 'results/playwright/filled.json'), JSON.stringify({
-      suites: [{ title: 'filled.spec.ts', file: 'filled.spec.ts', specs: titles('playwright').map((title, i) => ({ title, file: 'filled.spec.ts', line: i + 1, tests: [{ status: 'expected', projectName: 'chromium' }] })) }],
+      suites: [{ title: 'filled.spec.ts', file: 'filled.spec.ts', specs: copied.playwright.map((code, i) => ({ title: titles('playwright')[i], tags: tagOption(code), file: 'filled.spec.ts', line: i + 1, tests: [{ status: 'expected', projectName: 'chromium' }] })) }],
     }));
     fs.writeFileSync(path.join(copy, 'results/junit/filled.xml'), `<testsuites><testsuite>${titles('junit').map((t) => `<testcase classname="Filled" name="${xmlText(t)}"/>`).join('')}</testsuite></testsuites>`);
     fs.writeFileSync(path.join(copy, 'results/vitest/filled.json'), JSON.stringify({
@@ -427,7 +430,7 @@ test('an empty Playwright, Vitest or JUnit test run as the task list gives it re
     const title = (format: string) => JSON.parse(code(format).match(/"(?:[^"\\]|\\.)*"/)![0]);
     fs.writeFileSync(path.join(copy, 'results/playwright/unfilled.json'), JSON.stringify({
       suites: [{ title: 'unfilled.spec.ts', file: 'unfilled.spec.ts', specs: [{
-        title: title('playwright'), ok: true, tags: [], file: 'unfilled.spec.ts', line: 3, column: 5,
+        title: title('playwright'), ok: true, tags: tagOption(code('playwright')), file: 'unfilled.spec.ts', line: 3, column: 5,
         tests: [{ timeout: 30000, annotations: [{ type: 'fixme' }], expectedStatus: 'skipped', projectName: 'chromium', results: [{ status: 'skipped', duration: 0 }], status: 'skipped' }],
       }] }],
     }));
@@ -445,7 +448,7 @@ test('an empty Playwright, Vitest or JUnit test run as the task list gives it re
     const { nodes } = JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8'));
     const unfilled = nodes['/help#Help'].filter((t: Row) => /unfilled|Unfilled/.test(t.source)).map((t: Row) => [t.format, t.title, t.status]);
     assert.deepEqual(unfilled, [
-      ['playwright', '<what it checks> @screen:/help#Help @depth:api', 'pending'],
+      ['playwright', '<what it checks>', 'pending'],
       ['junit', 'com.example.UnfilledTest › <what it checks> @screen:/help#Help @depth:api', 'pending'],
       ['vitest', '<what it checks> @screen:/help#Help @depth:api', 'pending'],
     ]);

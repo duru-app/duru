@@ -62,6 +62,7 @@ test('the verdicts of one script attach separately to the nodes they name', () =
   assert.deepEqual(lines(DETAIL), [4, 5, 7, 8, 10]);
   assert.deepEqual(byTitle('empty form save'), {
     title: 'empty form save',
+    tags: ['screen:/document/:id#DocumentDetail'],
     file: 'document-checks.log',
     line: 4,
     project: null,

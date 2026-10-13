@@ -7,8 +7,10 @@ import { jsonFiles } from './json-files.ts';
 import { recordName, writeNewRecord } from './marks.ts';
 import { addStory, DISCARDED, isDate, isScreenList, isText, loadStories, writableStoriesFolder } from './stories.ts';
 import { checkStories, linksWithoutConditions, staleMapMessage } from './story-paths.ts';
+import { withoutTags } from './verdict.ts';
 
 const relative = (configDir: string, file: string) => path.relative(configDir, file).split(path.sep).join('/');
+const shownTitle = (title: string) => title.split(' › ').map(withoutTags).filter(Boolean).join(' › ') || title;
 
 function recordFiles(source: string): { reason?: string; files: string[] } {
   if (!fs.existsSync(source)) return { reason: '방문 기록 출처가 없습니다', files: [] };
@@ -182,7 +184,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     if (source) {
       if (source.report === report && !source.tests.includes(title)) source.tests.push(title);
     } else if (screens.length > 1 && !seen.has(key)) {
-      const candidate = { key: screens.join(' > '), name: title, screens, source: { report, tests: [title] } };
+      const candidate = { key: screens.join(' > '), name: shownTitle(title), screens, source: { report, tests: [title] } };
       fromTraces.set(key, candidate.source);
       list.push(candidate);
     }
