@@ -7,7 +7,7 @@ import path from 'node:path';
 import { screenCases, settingConditionName } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
-import { acceptCandidate, candidatePlace, discardCandidate, storyCandidates } from './candidates.ts';
+import { acceptCandidate, candidatePlace, discardCandidate, storyCandidates, unacceptStory } from './candidates.ts';
 import { isPlainObject } from './config.ts';
 import { buildFlow } from './flow.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
@@ -22,7 +22,7 @@ import { DEPTHS } from './test-links.ts';
 
 const PAGE = path.join(import.meta.dirname, 'review-page.html');
 const BODY_LIMIT = 64 * 1024;
-const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit', '/api/stories/check', '/api/stories/add'];
+const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add'];
 
 function gitUserName(cwd: string) {
   try {
@@ -317,9 +317,10 @@ export async function startReviewServer(config: any, { port = 0, author = review
           return send(res, 400, 'text/plain', err.message);
         }
         if (!isPlainObject(input)) return send(res, 400, 'text/plain', 'expected a JSON object');
-        if (req.url === '/api/stories/edit') {
+        if (req.url === '/api/stories/edit' || req.url === '/api/stories/unaccept') {
           try {
-            return send(res, 200, 'application/json', JSON.stringify(editStory(config.storiesDir, input.id, input)));
+            const written = req.url === '/api/stories/edit' ? editStory(config.storiesDir, input.id, input) : unacceptStory(config.storiesDir, input.id);
+            return send(res, 200, 'application/json', JSON.stringify(written));
           } catch (err: any) {
             return send(res, 400, 'text/plain', err.message);
           }
