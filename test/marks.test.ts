@@ -437,19 +437,33 @@ test('a comment on a story candidate is written with only the candidate key in i
   });
 });
 
+test('a comment on a candidate whose screen order is too long for a folder name is saved in a folder cut short with a hash of the whole key, and read back with its full key', () => {
+  withMarksDir((dir: string) => {
+    const screens = Array.from({ length: 12 }, (_, i) => `/settings/users/:userId/step${i}#UserEditPage`);
+    const key = screens.join(' > ');
+    const other = [...screens.slice(0, 11), '/settings/users/:userId/last#UserEditPage'].join(' > ');
+    const comment = addMark(dir, { target: { candidate: key }, note: 'why so long?', author: 'a' });
+    addMark(dir, { target: { candidate: other }, note: 'and this one?', author: 'a' });
+    const folders = fs.readdirSync(path.join(dir, 'stories', 'candidates'));
+    assert.equal(folders.length, 2);
+    for (const f of folders) assert.match(f, /^_settings_users__userId_step0#UserEditPage____settings_users__userId_st-[0-9a-f]{8}$/);
+    assert.deepEqual(loadMarks(dir).find((m) => m.id === comment.id)!.target, { candidate: key });
+  });
+});
+
 test('a comment on a story candidate is attached while the candidate is listed and detached once it is not, apart from the marks on a story of the same name', () => {
   withMarksDir((dir: string) => {
     addMark(dir, { target: { candidate: 'open-help' }, note: 'why this order?', author: 'a' }, new Date('2026-10-13T01:00:00Z'));
     addMark(dir, { target: { story: 'open-help' }, status: 'missing', author: 'a' }, new Date('2026-10-13T02:00:00Z'));
     addMark(dir, { target: { candidate: TRACE_KEY }, note: 'which test?', author: 'a' }, new Date('2026-10-13T03:00:00Z'));
-    const listed = classifyMarks(loadMarks(dir), MAP, ['open-help'], [], {}, ['open-help', TRACE_KEY]);
+    const listed = classifyMarks(loadMarks(dir), MAP, ['open-help'], [], {}, {}, ['open-help', TRACE_KEY]);
     assert.deepEqual(listed.detached, []);
     assert.deepEqual(listed.attached.map((m) => [m.key, m.current?.status ?? null, m.history.map((h) => h.note)]), [
       [`candidate(${TRACE_KEY})`, null, ['which test?']],
       ['candidate(open-help)', null, ['why this order?']],
       ['story(open-help)', 'missing', ['']],
     ]);
-    const taken = classifyMarks(loadMarks(dir), MAP, ['open-help'], [], {}, [TRACE_KEY]);
+    const taken = classifyMarks(loadMarks(dir), MAP, ['open-help'], [], {}, {}, [TRACE_KEY]);
     assert.deepEqual(taken.attached.map((m) => m.key), [`candidate(${TRACE_KEY})`, 'story(open-help)']);
     assert.deepEqual(taken.detached.map((m) => m.target), [{ candidate: 'open-help' }]);
   });

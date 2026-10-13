@@ -1504,6 +1504,10 @@ Alternatives compared:
   and a screen order does not fit, so the check on every story mark would have to loosen; once it did, a key could
   be the ID of a story, and the comments on that candidate would share one history with the marks on the story,
   also after the candidate is accepted under that ID.
+The screen order soon passes the 255-byte limit of a folder name (six screens like
+`/settings/users/:userId/edit#UserEditPage` already do), so a key whose file-safe form is longer than 80 characters
+names its folder by the first 71 characters of that form and a short hash of the whole key; which candidate a comment
+is on is read from its target, so the folder name decides nothing else.
 
 **The review page draws the app at a width picked above the frame, 1280 at first, and by default shows it smaller
 when the pane is narrower; a percent picked beside it shows it at that size instead.**

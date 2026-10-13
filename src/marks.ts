@@ -89,8 +89,13 @@ export function loadMarks(dir: string): Mark[] {
 // 어느 화면의 표시인지는 폴더 이름이 아니라 파일 안의 target 으로 정한다.
 function saveMark(dir: string, mark: Mark) {
   const { story, candidate, node } = mark.target;
-  const folder = candidate !== undefined ? path.join(dir, 'stories', 'candidates', fileSafe(candidate)) : story ? path.join(dir, 'stories', story) : path.join(dir, fileSafe(node!));
+  const folder = candidate !== undefined ? path.join(dir, 'stories', 'candidates', candidateFolder(candidate)) : story ? path.join(dir, 'stories', story) : path.join(dir, fileSafe(node!));
   writeNewRecord(path.join(folder, recordName(mark)), mark);
+}
+
+function candidateFolder(key: string) {
+  const safe = fileSafe(key);
+  return safe.length <= 80 ? safe : `${safe.slice(0, 71)}-${crypto.createHash('sha256').update(key).digest('hex').slice(0, 8)}`;
 }
 
 function candidateTarget(target: MarkTarget) {

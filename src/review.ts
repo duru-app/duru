@@ -202,9 +202,10 @@ export async function startReviewServer(config: any, { port = 0, author = review
     screens: (mark.target.part!.kind !== 'test' && readOrNull(() => readMap(mapFile))?.screens) || [],
     roleGuards: config.roleGuards,
   });
+  const findCandidate = (key: unknown) => storyCandidates(config, readMap(mapFile), mapFile, readTests(config).traced).list.find((c) => c.key === key);
   const candidateWhere = (key: string) => {
     try {
-      const found = storyCandidates(config, readMap(mapFile), mapFile, readTests(config).traced).list.find((c) => c.key === key);
+      const found = findCandidate(key);
       return found ? candidatePlace(found) : null;
     } catch {
       return null;
@@ -320,7 +321,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
             return send(res, 400, 'text/plain', err.message);
           }
         }
-        const candidate = storyCandidates(config, readMap(mapFile), mapFile, readJson(path.join(config.outDir, 'tests.json')).traced).list.find((c) => c.key === input.key);
+        const candidate = findCandidate(input.key);
         if (!candidate) return send(res, 404, 'text/plain', `후보 ${input.key} 가 없습니다`);
         try {
           const written = req.url === '/api/candidates/accept'

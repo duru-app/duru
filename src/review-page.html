@@ -675,6 +675,7 @@ function selectStory(id) {
   if (id !== state.story) state.storyOpen.clear();
   state.story = id;
   state.candidate = null;
+  state.candidateTalk = null;
   state.storyDraft = null;
   state.error = null;
   state.caseError = null;
@@ -684,9 +685,11 @@ function selectStory(id) {
 }
 
 function selectCandidate(key) {
-  if (key !== state.candidate) state.storyOpen.clear();
+  if (key !== state.candidate) {
+    state.storyOpen.clear();
+    state.candidateTalk = null;
+  }
   state.candidate = key;
-  state.candidateTalk = null;
   state.error = null;
   state.caseError = null;
   state.storyError = null;
@@ -1248,10 +1251,17 @@ function narrowTalk(target) {
 
 function talkOnCandidate(key, history) {
   state.talkScope = 'here';
-  if (key !== state.candidate) selectCandidate(key);
-  if (!history) return focusTalk();
-  state.historyOpen = true;
+  if (key !== state.candidate) {
+    const note = state.candidateTalk?.note;
+    selectCandidate(key);
+    if (note) {
+      state.candidateTalk = { status: null, note };
+      render();
+    }
+  }
+  if (history) state.historyOpen = true;
   render();
+  if (!history) focusTalk();
 }
 
 function slotRow(item, target, words, name = tagLabel(target)) {
@@ -2449,6 +2459,7 @@ function startCompose() {
   state.compose ??= newCompose();
   state.composing = true;
   state.candidate = null;
+  state.candidateTalk = null;
   state.storyError = null;
   render();
 }
@@ -2939,12 +2950,8 @@ function reachTalk(target, recordId) {
     state.side = 'stories';
     state.composing = false;
     state.historyOpen = true;
-    if (target.candidate !== undefined) {
-      state.dockKey = keyOf(shownTarget());
-      return selectCandidate(target.candidate);
-    }
     state.dockKey = keyOf(target);
-    return selectStory(target.story);
+    return target.candidate !== undefined ? selectCandidate(target.candidate) : selectStory(target.story);
   }
   state.side = 'screens';
   if (state.view === 'flow' && drawnScreens().some((n) => n.id === screen)) {
@@ -3279,7 +3286,7 @@ async function postMark(target, draftKey) {
     const res = await fetch('/api/marks', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ target, status: target.part || target.candidate !== undefined || asComment(target, draft) ? null : draft.status, note: draft.note }),
+      body: JSON.stringify({ target, status: target.part || asComment(target, draft) ? null : draft.status, note: draft.note }),
     });
     if (!res.ok) throw new Error(await res.text());
     saved = await res.json();

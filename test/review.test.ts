@@ -10986,7 +10986,7 @@ test('a comment on a candidate from a trace is announced with its result file, t
   });
 });
 
-test('in a browser, the bubble of a candidate from a visit record and of one from a trace puts that candidate in as the one tag with the status buttons off, and a comment saved there shows its count on the candidate, also after reloading; the count opens its conversation', { skip: browserMissing }, async () => {
+test('in a browser, the bubble of a candidate from a visit record and of one from a trace puts that candidate in as the one tag with the status buttons off, keeping a note already typed, and a comment saved there shows its count on the candidate, also after reloading; the count opens its conversation', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -11005,10 +11005,11 @@ test('in a browser, the bubble of a candidate from a visit record and of one fro
           await p.locator('#candidate-list li', { hasText: name }).locator('.part-count', { hasText: '코멘트 1' }).waitFor();
         };
         await comment('open-help', 'why the beta inbox?');
+        await p.fill('#right-dock textarea', 'and here: ');
         await comment('opens home and then help', 'which test gives this?');
         assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status ?? null, m.note]).sort((a, b) => String(a[2]).localeCompare(String(b[2]))), [
-          [{ candidate: TRACE_CANDIDATE }, null, 'which test gives this?'],
-          [{ candidate: HELP_RECORD }, null, 'why the beta inbox?'],
+          [{ candidate: TRACE_CANDIDATE }, null, 'and here: which test gives this?'],
+          [{ candidate: HELP_KEY }, null, 'why the beta inbox?'],
         ]);
 
         await p.reload();
@@ -11022,9 +11023,41 @@ test('in a browser, the bubble of a candidate from a visit record and of one fro
       })));
 });
 
+test('in a browser, a comment on a story candidate shows in 「전체」 under the candidate\'s name, and pressing it opens that candidate on the stories tab with the comment in view and its own 「이 후보」 count', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) => {
+    const asked = addMark(config.marksDir, { target: { candidate: HELP_KEY }, note: 'why the beta inbox?', author: 'reviewer' });
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        await p.locator('#screen-list li').first().click();
+        await p.click('#right-info .talk-scope button:nth-child(2)');
+        const group = p.locator('#right-info .talk-group', { hasText: '후보 open-help' });
+        assert.equal(await group.locator('.talk-line .first').textContent(), 'why the beta inbox?');
+        await group.locator('.talk-line').click();
+        assert.equal(await p.textContent('#left .views.side button.on .tab-name'), '스토리');
+        await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
+        const reached = p.locator(`#right [data-record="${asked.id}"]`);
+        assert.equal(await reached.getAttribute('class'), 'reached');
+        assert.equal(await reached.isVisible(), true);
+        assert.deepEqual(await p.locator('#right-info .talk-scope button').allTextContents(), ['이 후보 1', '전체 1']);
+
+        await p.fill('#right-dock textarea', 'half a question');
+        await p.locator('#candidate-list li.selected .name').click();
+        assert.equal(await p.inputValue('#right-dock textarea'), 'half a question');
+        await p.click('#right-info .talk-scope button:nth-child(2)');
+        assert.equal(await p.locator('#right-dock textarea').count(), 0);
+        const row = p.locator('#candidate-list li.selected');
+        await row.hover();
+        await row.locator('.bubble').click();
+        assert.equal(await p.inputValue('#right-dock textarea'), 'half a question');
+        assert.deepEqual(errors, []);
+      }));
+  });
+});
+
 test('in a browser, once a candidate with comments is accepted or discarded, its comments show under 「떨어져 나감」 of the stories with the candidate name, and not under the screens', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, (config) => {
-    addMark(config.marksDir, { target: { candidate: HELP_RECORD }, note: 'why the beta inbox?', author: 'reviewer' });
+    addMark(config.marksDir, { target: { candidate: HELP_KEY }, note: 'why the beta inbox?', author: 'reviewer' });
     addMark(config.marksDir, { target: { candidate: TRACE_CANDIDATE }, note: 'which test gives this?', author: 'reviewer' });
     return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -11035,8 +11068,7 @@ test('in a browser, once a candidate with comments is accepted or discarded, its
         await p.click('#right button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("open-help")');
         await p.click('#candidate-list li:has-text("opens home and then help")');
-        await p.fill('#discard-reason', '도움말만 연다');
-        await p.click('#right button.discard');
+        await discardCandidate(p, '도움말만 연다');
         await p.waitForSelector('#candidate-list li:has-text("opens home and then help")', { state: 'detached' });
         assert.deepEqual(await p.locator('#left .detached li').evaluateAll((items) => items.map((li) => [li.querySelector('code')!.textContent, li.querySelector('div')!.textContent])), [
           ['후보 opens home and then help', 'which test gives this?'],
