@@ -10,3 +10,16 @@
 - `skills/duru/SKILL.md` is for an agent that runs duru: what to run and how to read what comes out.
 - When README and the code disagree on how a shape is judged, take the rule out of README instead of adding
   the shape to it.
+
+## Running the tests
+
+- CI runs the whole suite (`npm test`) on every pull request except one that changes only `CLAUDE.md`.
+- Locally, run the two type checks and only the tests the change touches, by file and name:
+  `npx tsc --noEmit && npx tsc --noEmit -p tsconfig.browser-tests.json`, then
+  `node --test --test-name-pattern="<part of the test name>" test/<file>.test.ts`. `node --test` alone does not
+  check types.
+- `README.md`, `skills/duru/SKILL.md` and `docs/decisions.md` are read by tests. After changing one, run the
+  tests that name it, with the changed file's name in the pattern:
+  `node --test $(grep -l 'README\.md' test/*.test.ts)`, `'SKILL\.md'` or `'decisions\.md'`.
+- Tests that open a browser need Chromium and the system libraries it loads, installed once on the machine:
+  `npx playwright-core install --with-deps chromium` (the libraries are installed with `sudo`).

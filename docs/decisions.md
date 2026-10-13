@@ -1576,6 +1576,8 @@ in GitHub stops a pull request from being merged without first moving onto the t
 protection), so that habit is what keeps main tested. The npm cache that every pull request shares is saved only by
 runs on main, so after `package-lock.json` changes, or once GitHub deletes that cache after seven days unread, each
 pull request's first run downloads the packages again.
+A pull request that changes only `CLAUDE.md` does not run CI: no test reads that file, and the run would test the
+code main already holds. `README.md`, `skills/duru/SKILL.md` and `docs/decisions.md` are read by tests and stay in.
 Alternatives compared:
 - Keeping both runs: main is tested whatever reaches it, at the cost of a second run of about ten minutes per merge.
 
