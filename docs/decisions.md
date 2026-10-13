@@ -1542,6 +1542,17 @@ Alternatives compared:
 - A second window for candidates: the look, Ctrl+Enter, Escape and the error after a failed save would have to be
   kept the same in two places by hand.
 
+**CI runs on pull requests only, not again on main after a merge.**
+Since CI was added (#183, 2026-10-09), every change has reached main through a pull request whose branch was first
+moved onto the tip of main, and its CI run tested that exact content. The run that `push` to main started after each
+merge tested the same content a second time. The costs: a commit pushed to main directly is not tested, and nothing
+in GitHub stops a pull request from being merged without first moving onto the tip of main (main has no branch
+protection), so that habit is what keeps main tested. The npm cache that every pull request shares is saved only by
+runs on main, so after `package-lock.json` changes, or once GitHub deletes that cache after seven days unread, each
+pull request's first run downloads the packages again.
+Alternatives compared:
+- Keeping both runs: main is tested whatever reaches it, at the cost of a second run of about ten minutes per merge.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
