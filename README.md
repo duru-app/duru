@@ -533,11 +533,11 @@ reason, which writes a file into `discarded/` in `storiesDir` so the same order 
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
-never changed or deleted, so candidates found on two computers merge in git without a conflict; keep the folder in
-git with the stories. The candidates listed are these files together with what the records and traces give now,
-and for a screen order in both, what they give now is shown. So a candidate stays after a `rebuild` whose results
-have no traces, or once its record is gone. An accepted or discarded candidate keeps its file, and the story or the
-discarded file keeps it out of the list. When a screen of a stored candidate has left the map, the candidate stays
+never changed or deleted; keep the folder in git with the stories. If a file cannot be written, `rebuild` stops
+storing and prints why under the candidate line. The candidates listed are these files together with what the
+records and traces give now, and for a screen order in both, what they give now is shown. So a candidate stays
+after a `rebuild` whose results have no traces, or once its record is gone. An accepted or discarded candidate keeps
+its file, and the story or the discarded file keeps it out of the list. When a screen of a stored candidate has left the map, the candidate stays
 listed with that step shown as a screen the map does not have. A candidate file that cannot be read is skipped and
 noted with its path and why.
 

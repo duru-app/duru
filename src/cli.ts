@@ -9,6 +9,7 @@ import { loadConfig } from './config.ts';
 import { buildMap } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
 import { addReply } from './marks.ts';
+import { CANDIDATES } from './stories.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
 import { reviewAuthor, startReviewServer } from './review.ts';
 import type { AnnouncedMark } from './review.ts';
@@ -248,7 +249,8 @@ if (command === 'tasks') {
     if (stale) console.log(`  ${stale}`);
     const candidates = storyCandidates(config, map, path.join(config.outDir, 'map.json'), links.traced);
     const stored = storeCandidates(config.storiesDir, candidates.list);
-    console.log(`story candidates ${candidates.list.length} | from traces ${candidates.list.filter((c) => 'report' in c.source).length} | newly stored ${stored} | files skipped ${candidates.notices.length}`);
+    console.log(`story candidates ${candidates.list.length} | from traces ${candidates.list.filter((c) => 'report' in c.source).length} | newly stored ${stored.written} | files skipped ${candidates.notices.length}`);
     for (const n of candidates.notices) console.log(`  ${n.file}: ${n.reason}`);
+    if (stored.reason) console.log(`  ${path.relative(config.configDir, path.join(config.storiesDir, CANDIDATES)).split(path.sep).join('/')}: ${stored.reason}`);
   }
 }

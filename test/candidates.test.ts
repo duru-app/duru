@@ -436,7 +436,7 @@ test('every candidate is keyed by its screen order joined with " > ", whether it
 test('storing the candidates writes one new file per screen order into the candidates folder of the stories folder, with the name, screens, source and the date it was first seen, and writes nothing for an order already stored', () => {
   withStoryCopy((dir: string) => {
     const { list } = tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir });
-    assert.equal(storeCandidates(dir, list, new Date('2026-10-13T01:02:03Z')), 4);
+    assert.deepEqual(storeCandidates(dir, list, new Date('2026-10-13T01:02:03Z')), { written: 4 });
     const stored = storedIn(dir);
     assert.ok(stored.every((s) => /^2026-10-13-[0-9a-f]{8}\.json$/.test(s.file)));
     const date = '2026-10-13T01:02:03.000Z';
@@ -447,7 +447,7 @@ test('storing the candidates writes one new file per screen order into the candi
       { name: 'publish-document', screens: list[1].screens, source: { record: 'example-visits/publish-document.json', steps: [1, 7] }, date },
     ]);
     const again = tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir }).list;
-    assert.equal(storeCandidates(dir, again, new Date('2026-10-14T00:00:00Z')), 0);
+    assert.deepEqual(storeCandidates(dir, again, new Date('2026-10-14T00:00:00Z')), { written: 0 });
     assert.equal(storedIn(dir).length, 4);
     assert.deepEqual(loadStories(dir).notices.map((n) => n.file), ['lab-shortcut.json']);
   });
@@ -488,7 +488,7 @@ test('a stored candidate accepted or discarded leaves the list and does not come
     discardCandidate(dir, publish, { reason: '도움말만 연다', author: 'reviewer' });
     const left = tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir }).list;
     assert.deepEqual(left.map((c) => c.screens), [HOME_HELP, HOME_DRAFTS]);
-    assert.equal(storeCandidates(dir, left), 0);
+    assert.deepEqual(storeCandidates(dir, left), { written: 0 });
     assert.deepEqual(leftOnlyStored(dir).list.map((c) => c.screens), [HOME_DRAFTS, HOME_HELP]);
     assert.equal(storedIn(dir).length, 4);
   });
@@ -522,7 +522,7 @@ test('a stored candidate file that cannot be read, or a candidates entry that is
     fs.writeFileSync(path.join(dir, 'candidates'), 'not a folder');
     const { list, notices } = tracedCandidatesOf({ storiesDir: dir });
     assert.deepEqual(notices, [{ file: path.relative(FIXTURE, path.join(dir, 'candidates')), reason: 'candidates 는 스토리 후보를 담는 폴더여야 합니다' }]);
-    assert.equal(storeCandidates(dir, list), 0);
+    assert.deepEqual(storeCandidates(dir, list), { written: 0 });
     assert.equal(fs.readFileSync(path.join(dir, 'candidates'), 'utf8'), 'not a folder');
   });
 });
@@ -531,12 +531,20 @@ test('storing candidates into a stories folder that is a single story file, or w
   withStoryCopy((dir: string) => {
     const file = path.join(dir, 'run-lab.json');
     const before = fs.readdirSync(dir).sort();
-    assert.equal(storeCandidates(file, tracedCandidatesOf({ storiesDir: file }).list), 0);
+    assert.deepEqual(storeCandidates(file, tracedCandidatesOf({ storiesDir: file }).list), { written: 0 });
     assert.deepEqual(fs.readdirSync(dir).sort(), before);
   });
   withFolder({}, (dir: string) => {
-    assert.equal(storeCandidates(path.join(dir, 'stories'), []), 0);
+    assert.deepEqual(storeCandidates(path.join(dir, 'stories'), []), { written: 0 });
     assert.deepEqual(fs.readdirSync(dir), []);
+  });
+});
+
+test('a candidate file that cannot be written stops the storing with why, instead of throwing', () => {
+  withFolder({ 'taken.txt': 'a file' }, (dir: string) => {
+    const result = storeCandidates(path.join(dir, 'taken.txt', 'stories'), tracedCandidatesOf({ storiesDir: path.join(dir, 'stories') }).list);
+    assert.equal(result.written, 0);
+    assert.match(result.reason!, /^후보 파일을 쓰지 못했습니다: ENOTDIR/);
   });
 });
 

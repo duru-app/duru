@@ -169,8 +169,8 @@ const loadStored = (dir: string) => (isFolder(dir) ? loadFolder(dir, CANDIDATES)
 // 쓴 파일은 고치지도 지우지도 않는다.
 export function storeCandidates(dir: string, list: Candidate[], now = new Date()) {
   const folder = path.join(dir, CANDIDATES);
-  if (fs.existsSync(dir) && !isFolder(dir)) return 0;
-  if (fs.existsSync(folder) && !isFolder(folder)) return 0;
+  if (fs.existsSync(dir) && !isFolder(dir)) return { written: 0 };
+  if (fs.existsSync(folder) && !isFolder(folder)) return { written: 0 };
   const stored = new Set(loadStored(dir).found.map((c) => JSON.stringify(c.screens)));
   const date = now.toISOString();
   let written = 0;
@@ -178,10 +178,14 @@ export function storeCandidates(dir: string, list: Candidate[], now = new Date()
     const key = JSON.stringify(screens);
     if (stored.has(key)) continue;
     stored.add(key);
-    writeNewRecord(path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`), { name, screens, source, date });
+    try {
+      writeNewRecord(path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`), { name, screens, source, date });
+    } catch (err: any) {
+      return { written, reason: `후보 파일을 쓰지 못했습니다: ${err.message}` };
+    }
     written++;
   }
-  return written;
+  return { written };
 }
 
 export const acceptCandidate = (dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) =>

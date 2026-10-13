@@ -331,6 +331,12 @@ test('rebuild counts the story candidates from the visit records and from traces
     const untraced = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     assert.match(untraced, /^story candidates 4 \| from traces 2 \| newly stored 0 \| files skipped 0$/m);
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8')).traced, []);
+
+    fs.writeFileSync(path.join(copy, 'taken.txt'), 'a file');
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, storiesDir: 'taken.txt/stories', visitRecords: ['example-visits'] }));
+    const unwritable = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(unwritable, /^story candidates [1-9]\d* \| from traces 0 \| newly stored 0 \| files skipped 1$/m);
+    assert.match(unwritable, /^ {2}taken\.txt\/stories\/candidates: 후보 파일을 쓰지 못했습니다: ENOTDIR/m);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
