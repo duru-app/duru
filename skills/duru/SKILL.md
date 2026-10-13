@@ -150,7 +150,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    ways, answer it once.
    Each mark or comment the reviewer saves also comes out on the review's standard error at once, and `duru wait`
    prints comments in the same shape: one JSON line starting with `{"duru":`: `"comment"` (no `status`) or
-   `"mark"`, with its `id`, `target` (a screen or call ID under `node`, or a story ID under `story`), `note`, `author`
+   `"mark"`, with its `id`, `target` (a screen or call ID under `node`, or a story ID under `story`; `targets` for a
+   comment on several targets or none, see below), `note`, `author`
    and `date`. Act on a
    comment when it arrives: it is the reviewer asking about or for something on that target, so answer the
    question or do what it asks (a missing test is written as in step 3, with the target's tags). Then answer it on
@@ -217,6 +218,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    citing the record and the steps behind each screen, or the test by its title and the steps it takes in the
    target project. A comment on a candidate takes no status and never appears in the task list, so act on it when
    its line arrives.
+   A comment can also be on several targets or on none. Its line then has `targets`, a list of targets in the shapes
+   above, in place of `target`, and `wheres`, the `where` of each target in the same order (`null` for one that has
+   none or is no longer found). Answer it once, covering every target it names. With an empty `targets` the reviewer
+   asks without pointing at anything: answer from the map, the task list and the tests as a whole. Such a comment
+   takes no status, and a reply to it carries the same `targets`.
    After you have answered or fixed it, reply to the comment as above.
    When the reviewer presses 「리뷰 끝」 (or presses Ctrl+C in its terminal), the process exits with code 0 and its
    standard output is exactly the task list, the same text `duru tasks <config>` prints. Any other exit is an
@@ -226,7 +232,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `comments on opening conditions` and `comments on incoming links` list each condition and link the same way,
    with the source lines they are read from; under an open story `comments on steps` and
    `comments on links between steps` list each step and link with its screen files and the link's verdict; act
-   on them as above.
+   on them as above. A comment on several targets shows under each of them that is listed, ending with
+   `left on N targets:` and all of them; answer it once. Comments with no target come first, under
+   `# Comments with no target`.
 3. **Write the tests.** In the target project, write tests for each screen, API call and story in the task list,
    following its marks and notes. The top of the list says how to tag a test so that it attaches to a screen or call
    (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. For Playwright,

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { compare } from './config.ts';
-import { recordKind } from './marks.ts';
+import { GENERAL, recordKind } from './marks.ts';
 import { reviewData } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { testsAt } from './story-paths.ts';
@@ -90,9 +90,21 @@ const cellTags = (kind: string, { node, option, depth }: Cell) => [`${kind}:${no
 const quotedNote = (note: string | null | undefined, indent: string) => (note?.trim() ? `"${within(note.trim(), indent)}"` : null);
 const byline = (author: string, date: string, indent: string) => `(${within(author, indent)}, ${date.slice(0, 10)})`;
 
+function targetText(t: any) {
+  if (t.candidate !== undefined) return `story candidate ${t.candidate}`;
+  const part = t.part && (t.part.kind === 'step' ? `step ${t.part.key.step}`
+    : t.part.kind === 'hop' ? `link from step ${t.part.key.step}`
+    : t.part.kind === 'test' ? `test "${t.part.key.title}"`
+    : t.part.kind === 'condition' ? `condition \`${t.part.key}\``
+    : `link from ${t.part.key.from}`);
+  const head = t.story !== undefined ? `story ${t.story}` : t.node;
+  return [head, t.option && `option ${optionText(t.option)}`, t.depth && `${t.depth} depth`, part].filter(Boolean).join(', ');
+}
+
 function markLine(mark: any, where?: string, indent = '  ') {
   const note = quotedNote(mark.note, `${indent}  `);
-  return `${indent}- ${mark.status ?? recordKind(mark)}${where ? `, ${where}` : ''}${note ? ` — ${note}` : ''} ${byline(mark.author, mark.date, `${indent}  `)}`;
+  const also = mark.replyTo === undefined && mark.targets?.length > 1 ? `, left on ${mark.targets.length} targets: ${within(mark.targets.map(targetText).join('; '), `${indent}  `)}` : '';
+  return `${indent}- ${mark.status ?? recordKind(mark)}${where ? `, ${where}` : ''}${also}${note ? ` — ${note}` : ''} ${byline(mark.author, mark.date, `${indent}  `)}`;
 }
 
 const laterComments = (m: any) => m.history.slice(0, m.history.indexOf(m.current)).reverse().filter((r: any) => r.replyTo === undefined);
@@ -442,6 +454,15 @@ export function taskList(config: any) {
   }
   if (partKinds.has('condition') || partKinds.has('link')) {
     out[2] += ' Under `comments on opening conditions` and `comments on incoming links`, each role or setting condition and each link into the screen a reviewer left a comment on is named with the source file and line it is written at; if the app does not do what duru read there, tell the user it is a duru defect, and otherwise answer with that line.';
+  }
+  if (marks.attached.some((m) => [...m.history].some((r: any) => r.targets?.length > 1))) {
+    out[2] += ' A comment left on several targets shows under each of them, with the list of all of them; answer it once.';
+  }
+  const general = marks.attached.find((m) => m.key === GENERAL);
+  if (general) {
+    out[2] += ' Under `# Comments with no target`, a reviewer asked something without pointing at a screen, call or story; answer it from the whole review.';
+    const comments = [...general.history].reverse().filter((r: any) => r.replyTo === undefined);
+    out.push('', '# Comments with no target', '', ...comments.flatMap((c: any) => [markLine(c, undefined, ''), ...repliesTo(general, c).map((reply: any) => markLine(reply, undefined, '  '))]));
   }
   if (map.serverNotCompared) out.push('', `${SERVER_NOT_COMPARED}, so no call below is written as missing on the server.`);
   if (!open.length) out.push('', 'No open marks.');

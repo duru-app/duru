@@ -693,11 +693,25 @@ the reason. The comment stays while the story has that screen at that step, and 
 tab, named with the step or link, once the story file has another screen there or is gone; while the story file cannot
 be read it stays under 「목록 밖 스토리 코멘트」.
 
+**Comments on several places or on none.** A comment can carry more than one tag, or none. It is saved once, with
+`"targets": [ … ]` in place of `"target"`, each entry in the shape a single target has; a comment with one tag keeps
+`"target"`, so marks saved before are read as they were. A comment with several tags is written to the folder of its
+first target, and one with no tag, saved with `"targets": []`, to `<marksDir>/general/`. Such a comment takes no
+status, and none of its targets may be a case kind or appear twice; a save that breaks this is refused with the
+reason. A reply carries the targets of the comment it answers. A comment with several tags counts once on each row,
+screen, call and story it is on and shows in each of their conversations; when a `rebuild` no longer finds one of its
+targets, it stays on the others and shows under 「떨어져 나감」 with the target that is gone.
+
 **Conversation.** For a screen or call the right pane holds only the conversation: every mark, comment and reply left
 on it, oldest first, open from the start and filling the pane, scrolling inside it when it is longer, with the form to
-write in at the bottom. Each mark and comment carries the tag of where it was left; a reply sits under its comment,
-set apart by its author and a light background. What is chosen in the middle is the default tag, and its × takes it
-off; a status can be picked only while that one tag is on. For a story or a candidate the conversation sits under the
+write in at the bottom. Each mark and comment carries the tags of where it was left; a reply sits under its comment,
+set apart by its author and a light background. A tag from another screen, call or story is shown after the name of
+that place. What is chosen in the middle is the default tag. A bubble replaces it while it is the only tag and adds
+to the tags otherwise. Typing `@` in the text lists the depths of the place and the rows with a bubble in the middle;
+one is added with the arrow keys and Enter or with a click, and Escape closes the list. Each tag's × takes it off:
+taking off the last tag that is not the default brings the default back, and taking off the default as well leaves
+「없음」, so the comment is saved with no target, until 「… 다시 붙이기」 puts the default back. A status can be picked
+only while the default tag is the one tag on. For a story or a candidate the conversation sits under the
 form behind 「대화 N」, and each entry without a status is labelled 「코멘트」 or 「답」.
 
 **All comments.** Two buttons at the top of the right pane switch between 「이 화면 N」 (「이 호출」 for a call, 「이 스토리」 for a
@@ -708,7 +722,9 @@ in each group; a line shows the status, the tag, who wrote it and when, the numb
 the text. 「답 없는 것만」 keeps the comments without a status that have no reply yet, and 「더 필요」, 「없음」 and 「충분」 keep, for a
 place whose current status is that one, the latest mark with that status and text. The form is hidden while 「전체」 is
 shown. Pressing a line opens its screen, call, story or candidate in 「이 화면」 and scrolls the conversation to that
-entry, outlined. 「전체」 and the numbers and dots it describes leave out what has come off its target; it stays under
+entry, outlined. A comment with several tags is a line in each group it is on and is counted once in N. A comment with
+no tag is listed under 「대상 없음」 with its whole text and its replies, and pressing it opens nothing. 「전체」 and the
+numbers and dots it describes leave out what has come off its target; it stays under
 「떨어져 나감」 and in the conversation of its screen or call.
 
 A screen in the list and in the flow, a story in the list, a depth row and a call cell show 「코멘트 N」 when marks or
@@ -720,7 +736,9 @@ reply saved in another window updates the numbers and dots without a reload.
 **While the review runs.** Each mark, comment or reply is printed on standard error the moment it is saved, as one
 JSON line:
 `{"duru":"mark"|"comment"|"reply","id":…,"target":{…},"status":…,"replyTo":…,"note":…,"author":…,"date":…}`, with no
-`status` for a comment or a reply and `replyTo` only on a reply. A comment or reply whose target has a `part` also
+`status` for a comment or a reply and `replyTo` only on a reply. A comment or reply on several targets or none has
+`"targets"` in place of `"target"` and `"wheres"`, one entry for each of its targets in the same order, each the
+`where` that target alone would carry below, or `null` for a target that carries none. A comment or reply whose target has a `part` also
 carries `"where"`: for a test, `{"file","line","source","status","relation"}` with `relation` one of `tagged`,
 `imported`, `passed` or `called`, and `detail` for a verdict line; for a condition or a link,
 `{"places":[{"from","file","line",…}]}` with each source line it is read from, `from` being `route` or the screen a
@@ -780,7 +798,9 @@ result file, followed by those comments and their replies. Under an open screen,
 and `comments on incoming links` list each condition and link a comment was left on the same way, with the source
 lines each is read from. Under an open story, `comments on steps` and `comments on links between steps` list each
 step and each link between two steps a comment was left on, with the screen's component file and route line, and for
-a link its verdict and where it is written.
+a link its verdict and where it is written. A comment left on several targets shows under each of them that is
+listed, followed by `left on N targets:` and all of them. Comments with no target and their replies come first, under
+`# Comments with no target`.
 
 Each item ends with `empty tests`: one empty test per test format in the config, with the item's tags already in
 place (in the `tag` option for Playwright, in the title for the other formats) and held back so a copy run as it is does not pass (`test.fixme` for Playwright, `test.todo` for
