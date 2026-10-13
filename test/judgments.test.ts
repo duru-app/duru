@@ -388,7 +388,7 @@ test('moving the tags of a test from its title into the tag option keeps the com
     const inOption = rebuild('"title": "checks the path of a document",\n          "ok": true,\n          "tags": []', '"title": "checks the path of a document",\n          "ok": true,\n          "tags": ["screen:/home#Home", "depth:ui"]');
     assert.ok(inOption.nodes['/home#Home'].some((t: { title: string }) => t.title === 'checks the path of a document'));
     const { attached, detached } = classifyMarks(loadMarks(path.join(dir, 'marks')), map, [], [], inOption);
-    assert.deepEqual([attached.map((m) => [m.target.part?.key, m.where?.relation]), detached], [[[tagged.ref, 'tagged']], []]);
+    assert.deepEqual([attached.map((m) => [m.target.part?.key, (m.where as { relation?: string } | null | undefined)?.relation]), detached], [[[tagged.ref, 'tagged']], []]);
     const judged = applyJudgments(inOption, loadJudgments(path.join(dir, 'judgments')).judgments);
     assert.deepEqual(judged.discarded[DETAIL].map((t) => [t.ref, t.judgment.reason]), [[opened.ref, 'only reads the address']]);
   } finally {

@@ -502,6 +502,31 @@ test('a comment saved on a test under a screen comes out on stderr and on open e
   });
 });
 
+test('a comment saved on a condition or an incoming link of a screen comes out on stderr with the source file and line the condition or link is written at', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      const post = async (part: unknown) => (await (await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: { node: '/admin/member#AdminMember', part }, note: 'Is this right?' }) })).json()) as Mark;
+      const condition = await post({ kind: 'condition', key: 'role:ADMIN' });
+      const link = await post({ kind: 'link', key: { from: '/home#Home', conditions: ['role:ADMIN'] } });
+      await waitFor(() => records().length === 2, 'both comments on stderr');
+      assert.deepEqual(records(), [
+        { duru: 'comment', ...condition, where: { places: [
+          { from: 'route', file: 'Routes.js', line: 42, guard: 'isAdminRole(memberRole)' },
+          { from: '/home#Home', file: 'components/Home.js', line: 17, guard: "memberRole === 'ADMIN'" },
+        ] } },
+        { duru: 'comment', ...link, where: { places: [{ from: '/home#Home', file: 'components/Home.js', line: 17 }] } },
+      ]);
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  });
+});
+
 test('a reply sent with --server is saved by the running review, printed on its stderr as a "reply" line and pushed to open event streams; ending the review closes the streams and still exits with the task list', async () => {
   await withReviewFixture(async (configFile) => {
     const { child, base, closed, out } = startReview(configFile);

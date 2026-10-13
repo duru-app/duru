@@ -318,7 +318,7 @@ test('a test part takes a comment only: a status, an empty note, a depth, an opt
       [{ target: { node: '/home#Home', depth: 'ui', part }, note: 'x' }, /a part mark takes no option, depth or case/],
       [{ target: { node: 'GET:/api/v1/document/list', option: { key: 'k', value: true }, part }, note: 'x' }, /a part mark takes no option, depth or case/],
       [{ target: { node: '/home#Home', case: 'empty', part }, note: 'x' }, /a part mark takes no option, depth or case/],
-      [{ target: { node: '/home#Home', part: { kind: 'row', key: LIST_TEST } }, note: 'x' }, /unknown part kind "row" \(expected test\)/],
+      [{ target: { node: '/home#Home', part: { kind: 'row', key: LIST_TEST } }, note: 'x' }, /unknown part kind "row" \(expected test, condition, link\)/],
       [{ target: { node: '/home#Home', part: { kind: 'test', key: { file: 'e2e/list.spec.ts', title: 't' } } }, note: 'x' }, /a test part needs a result file, a test file and a title/],
       [{ target: { node: '/home#Home', part: { kind: 'test', key: { source: 'r.json', file: 'e2e/list.spec.ts', title: ' ' } } }, note: 'x' }, /a test part needs a result file, a test file and a title/],
       [{ target: { story: 'run-lab', part }, note: 'x' }, /a story mark takes no node, option, depth, case or part/],
@@ -352,5 +352,67 @@ test('comments on a test of a screen are kept in their own entry with where the 
     const after = classifyMarks(loadMarks(dir), MAP, [], [], renamed);
     assert.deepEqual(after.attached.map((m) => m.key), ['/home#Home']);
     assert.deepEqual(after.detached.map((m) => [m.target, m.where]), [[{ node: '/home#Home', part }, null]]);
+  });
+});
+
+test('a comment on a condition or an incoming link of a screen is written with its key, the link\'s conditions or guards sorted once each, and anything else is refused with the reason', () => {
+  withMarksDir((dir: string) => {
+    const role = addMark(dir, { target: { node: '/lab#Lab', part: { kind: 'condition', key: 'role:ADMIN' } }, note: 'only admins?', author: 'a' });
+    assert.deepEqual(role.target, { node: '/lab#Lab', part: { kind: 'condition', key: 'role:ADMIN' } });
+    const link = addMark(dir, { target: { node: '/lab#Lab', part: { kind: 'link', key: { from: '/home#Home', conditions: ['setting:LAB=on', 'role:ADMIN', 'setting:LAB=on'] } } }, note: 'is this link there?', author: 'a' });
+    assert.deepEqual(link.target, { node: '/lab#Lab', part: { kind: 'link', key: { from: '/home#Home', conditions: ['role:ADMIN', 'setting:LAB=on'] } } });
+    const unread = addMark(dir, { target: { node: '/lab#Lab', part: { kind: 'link', key: { from: '/home#Home', guards: ['labOn()'] } } }, note: 'x', author: 'a' });
+    assert.deepEqual(unread.target, { node: '/lab#Lab', part: { kind: 'link', key: { from: '/home#Home', guards: ['labOn()'] } } });
+    assert.deepEqual(loadMarks(dir).length, 3);
+
+    const refused: [object, RegExp][] = [
+      [{ kind: 'condition', key: 'ADMIN' }, /a condition part needs a key such as role:<role> or setting:<path>=on/],
+      [{ kind: 'condition', key: { role: 'ADMIN' } }, /a condition part needs a key such as role:<role> or setting:<path>=on/],
+      [{ kind: 'link', key: { conditions: ['role:ADMIN'] } }, /a link part needs the screen it starts from and either the conditions read from it or its guards/],
+      [{ kind: 'link', key: { from: '/home#Home', conditions: [] } }, /a link part needs the screen it starts from and either the conditions read from it or its guards/],
+      [{ kind: 'link', key: { from: '/home#Home', conditions: ['role:ADMIN'], guards: [] } }, /a link part needs the screen it starts from and either the conditions read from it or its guards/],
+      [{ kind: 'link', key: { from: '/home#Home', guards: [7] } }, /a link part needs the screen it starts from and either the conditions read from it or its guards/],
+    ];
+    for (const [part, message] of refused) assert.throws(() => addMark(dir, { target: { node: '/lab#Lab', part } as never, note: 'x', author: 'a' }), message);
+    assert.throws(() => addMark(dir, { target: { node: '/lab#Lab', part: { kind: 'condition', key: 'role:ADMIN' } }, status: 'missing', note: 'x', author: 'a' }), /takes no status/);
+    assert.deepEqual(loadMarks(dir).length, 3);
+  });
+});
+
+const LAB_ROUTE = { guard: 'globalSettings.LAB', kinds: ['setting'], settings: [{ root: 'globalSettings', path: ['LAB'], need: 'on' }] };
+const labMap = (line: number, route = [LAB_ROUTE]) => ({
+  screens: [
+    { id: '/home#Home', access: { restricted: false, kinds: [], route: [], links: [] } },
+    {
+      id: '/lab#Lab', routeFile: 'Routes.js', line,
+      access: {
+        restricted: route.length > 0, kinds: route.length ? ['setting'] : [], route,
+        links: [{ from: '/home#Home', file: 'components/Home.js', line: line + 5, guards: route }],
+        ...(route.length && { settings: [{ from: 'route', needs: LAB_ROUTE.settings, unreadable: [] }] }),
+      },
+    },
+  ],
+  calls: [],
+});
+
+test('comments on a condition and an incoming link stay on them when only the lines move, carry where they are written, and are detached once the condition and the link\'s reading are gone', () => {
+  withMarksDir((dir: string) => {
+    const condition = { node: '/lab#Lab', part: { kind: 'condition', key: 'setting:LAB=on' } };
+    const link = { node: '/lab#Lab', part: { kind: 'link', key: { from: '/home#Home', conditions: ['setting:LAB=on'] } } };
+    addMark(dir, { target: condition, note: 'is LAB really needed?', author: 'a' });
+    addMark(dir, { target: link, note: 'and on this link?', author: 'a' });
+
+    const before = classifyMarks(loadMarks(dir), labMap(44), [], [], {});
+    assert.deepEqual(before.detached, []);
+    const moved = classifyMarks(loadMarks(dir), labMap(50), [], [], {});
+    assert.deepEqual(moved.detached, []);
+    assert.deepEqual(moved.attached.map((m) => m.where), [
+      { places: [{ from: 'route', file: 'Routes.js', line: 50, guard: 'globalSettings.LAB' }, { from: '/home#Home', file: 'components/Home.js', line: 55, guard: 'globalSettings.LAB' }] },
+      { places: [{ from: '/home#Home', file: 'components/Home.js', line: 55 }] },
+    ]);
+
+    const gone = classifyMarks(loadMarks(dir), labMap(50, []), [], [], {});
+    assert.deepEqual(gone.attached, []);
+    assert.deepEqual(gone.detached.map((m) => [m.target, m.where]), [[condition, null], [link, null]]);
   });
 });

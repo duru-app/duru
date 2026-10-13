@@ -1466,6 +1466,31 @@ its verdict, which is passed on as `detail`. Reading the message of each format 
 file grow with every failure and add a reader per format for every format added later, while the agent that gets
 the line can open the result file and find the test by its title itself.
 
+**A comment on an opening condition is keyed by the role, or by the setting's case name with the state the
+condition asks; a comment on an incoming link by the screen it starts on and the roles and settings read from it;
+the source lines go only in `where`.**
+Driver's decisions in #228, made on a page that changed the example source and showed what each choice did to a
+comment. A role is `role:<role>`, as its case tag. A setting is the name its case tags carry (the path, and the
+value after a colon for a list that must hold it or a setting that must equal it), with `=on`, `=off` or `=present`
+after a path that is asked a state. The case tag itself is not used as it is: its `=true` and `=false` say whether a
+test met the condition, not what the condition asks, so `settings.X` and `!settings.X` give the same two tags, and a
+comment on one would show on the other; reusing `=false` to mean "asks off" would make one spelling mean two things.
+A list value and an equal value share a name, as the case tags do. A link is named by what duru read from it rather
+than by its guard as written, so a guard moved into a variable or onto another line keeps its comments; only when
+nothing was read is the guard text the key, and links from one screen that read the same share one key. No line
+number is in either key, so a change that only moves lines keeps the comment, and 「떨어져 나감」 means the condition
+or the link is gone. The lines given to the agent are the route line of the screen and the line of each link the
+condition is read from: duru reads a condition only where it is written there, so that line is the evidence, and the
+map stays as it is. A guard in a function a link calls gives that function's name (`via`), and roles written in
+`roleGuards` give that key.
+Alternatives compared:
+- The case tag as it is (`setting:<path>=true`): one spelling for a comment and its test, but on, off and present
+  of one path fall into one slot.
+- The path alone: shorter, but every value of a setting with several, and on with off, share one slot.
+- A link named by its guard as written: needs no reading, but a guard moved into a variable detaches its comments.
+- Adding the line of each condition's own expression to the map: more exact only for a condition inside another
+  function, at the cost of changing the extractor and `map.json`.
+
 **The review page draws the app at a width picked above the frame, 1280 at first, and by default shows it smaller
 when the pane is narrower; a percent picked beside it shows it at that size instead.**
 With a screen picked in the flow view, the frame gave the app 747px at a 1920px window and 507px at 1440px, so an

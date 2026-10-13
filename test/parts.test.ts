@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { locatePart } from '../src/parts.ts';
+import { linkKey, locatePart } from '../src/parts.ts';
+import type { TestPlace } from '../src/parts.ts';
 
 const SCREEN = '/document/:id#DocumentDetail';
 const CALL = 'GET:/api/v1/document/:id';
@@ -20,7 +21,7 @@ const TESTS = {
   },
 };
 
-const at = (node: string, key: object) => locatePart({ node, part: { kind: 'test', key } as never }, { tests: TESTS });
+const at = (node: string, key: object) => locatePart({ node, part: { kind: 'test', key } as never }, { tests: TESTS }) as TestPlace | null;
 
 test('a test tagged with the screen is found with its test file and line, result file, status and relation, failing if it fails under any project', () => {
   assert.deepEqual(at(SCREEN, { source: 'results/playwright/report.json', file: 'e2e/detail.spec.ts', title: 'detail opens' }), {
@@ -52,4 +53,111 @@ test('a test is not found once its title or file changes, under another node, or
   assert.equal(at(SCREEN, { ...key, source: 'results/playwright/other.json' }), null);
   assert.equal(at(CALL, key), null);
   assert.equal(at('/gone#Gone', key), null);
+});
+
+const ON = (path: string[]) => ({ root: 'globalSettings', path, need: 'on' });
+const REPORT_LIST = { root: 'globalSettings', path: ['MENU', 'LIST'], need: 'includes', value: 'REPORT' };
+const SCREENS = [
+  {
+    id: '/home#Home', routeFile: 'Routes.js', line: 10,
+    access: { restricted: false, kinds: [], route: [], links: [] },
+  },
+  {
+    id: '/admin/member#AdminMember', routeFile: 'Routes.js', line: 12,
+    access: {
+      restricted: true, kinds: ['role'], roleValues: ['ADMIN'],
+      route: [{ guard: 'isAdminRole(memberRole)', kinds: ['role'], roles: ['ADMIN'] }],
+      links: [{ from: '/home#Home', file: 'components/Home.js', line: 17, guards: [{ guard: "memberRole === 'ADMIN'", kinds: ['role'], roles: ['ADMIN'] }], fromKinds: [] }],
+    },
+  },
+  {
+    id: '/admin/audit#AdminAudit', routeFile: 'Routes.js', line: 14,
+    access: {
+      restricted: true, kinds: ['role'], roleValues: ['ADMIN', 'AUDITOR'], route: [],
+      links: [
+        { from: '/admin/member#AdminMember', file: 'components/AdminMember.js', line: 14, guards: [], fromKinds: ['role'] },
+        { from: '/home#Home', file: 'components/Home.js', line: 20, guards: [{ guard: 'canAudit', kinds: ['role'], roles: ['AUDITOR'], via: 'openAudit' }], fromKinds: [] },
+      ],
+    },
+  },
+  {
+    id: '/lab#Lab', routeFile: 'Routes.js', line: 16,
+    access: {
+      restricted: true, kinds: ['setting'],
+      route: [{ guard: 'globalSettings.LAB', kinds: ['setting'], settings: [ON(['LAB'])] }],
+      links: [
+        { from: '/home#Home', file: 'components/Home.js', line: 19, guards: [{ guard: 'globalSettings.LAB', kinds: ['setting'], settings: [ON(['LAB'])] }, { guard: "menu.includes('REPORT')", kinds: ['setting'], settings: [REPORT_LIST] }], fromKinds: [] },
+        { from: '/home#Home', file: 'components/Home.js', line: 30, guards: [{ guard: "menu.includes('REPORT')", kinds: ['setting'], settings: [REPORT_LIST] }, { guard: 'labOn', kinds: ['setting'], settings: [ON(['LAB'])] }], fromKinds: [] },
+        { from: '/admin/member#AdminMember', file: 'components/AdminMember.js', line: 22, guards: [{ guard: 'checkLab()', kinds: ['setting'], settingsReason: 'call' }, { guard: 'canSee(x)', kinds: ['role'], roles: null }], fromKinds: ['role'] },
+      ],
+      settings: [
+        { from: 'route', needs: [ON(['LAB'])], unreadable: [] },
+        { from: '/home#Home', file: 'components/Home.js', line: 19, needs: [ON(['LAB']), REPORT_LIST], unreadable: [] },
+      ],
+    },
+  },
+  {
+    id: '/lab/result#LabResult', routeFile: 'Routes.js', line: 18,
+    access: {
+      restricted: true, kinds: ['setting'], route: [],
+      links: [{ from: '/lab#Lab', file: 'components/Lab.js', line: 14, guards: [], fromKinds: ['setting'] }],
+      settings: [{ from: '/lab#Lab', file: 'components/Lab.js', line: 14, inherited: true, needs: [ON(['LAB'])], unreadable: [] }],
+    },
+  },
+];
+
+const slot = (node: string, kind: string, key: unknown, roleGuards: Record<string, string[]> = {}) => locatePart({ node, part: { kind, key } as never }, { tests: {}, screens: SCREENS, roleGuards }) as { places: { line: number }[] } | null;
+
+test('a role condition is found at the route line of the screen and at each link that asks it, with the function a guard sits in and the roleGuards key that gave its roles', () => {
+  assert.deepEqual(slot('/admin/member#AdminMember', 'condition', 'role:ADMIN', { 'isAdminRole(memberRole)': ['ADMIN'] }), {
+    places: [
+      { from: 'route', file: 'Routes.js', line: 12, guard: 'isAdminRole(memberRole)', roleGuardsKey: 'isAdminRole(memberRole)' },
+      { from: '/home#Home', file: 'components/Home.js', line: 17, guard: "memberRole === 'ADMIN'" },
+    ],
+  });
+  assert.deepEqual(slot('/admin/audit#AdminAudit', 'condition', 'role:AUDITOR'), {
+    places: [{ from: '/home#Home', file: 'components/Home.js', line: 20, guard: 'canAudit', via: 'openAudit' }],
+  });
+});
+
+test('a role a screen gets from the screen its link starts on is found at that link, marked as inherited', () => {
+  assert.deepEqual(slot('/admin/audit#AdminAudit', 'condition', 'role:ADMIN'), {
+    places: [{ from: '/admin/member#AdminMember', file: 'components/AdminMember.js', line: 14, inherited: true }],
+  });
+});
+
+test('a setting condition is named by its path with the state it asks, or with the value for a list or an equality, and is found at the route and at each link that asks it', () => {
+  assert.deepEqual(slot('/lab#Lab', 'condition', 'setting:LAB=on'), {
+    places: [
+      { from: 'route', file: 'Routes.js', line: 16, guard: 'globalSettings.LAB' },
+      { from: '/home#Home', file: 'components/Home.js', line: 19, guard: 'globalSettings.LAB' },
+      { from: '/home#Home', file: 'components/Home.js', line: 30, guard: 'labOn' },
+    ],
+  });
+  assert.deepEqual(slot('/lab#Lab', 'condition', 'setting:MENU.LIST:REPORT')!.places.map((p) => p.line), [19, 30]);
+  assert.deepEqual(slot('/lab/result#LabResult', 'condition', 'setting:LAB=on'), {
+    places: [{ from: '/lab#Lab', file: 'components/Lab.js', line: 14, inherited: true }],
+  });
+});
+
+test('a condition is not found once the screen no longer asks it, asks the opposite state, or is gone', () => {
+  assert.equal(slot('/lab#Lab', 'condition', 'setting:LAB=off'), null);
+  assert.equal(slot('/lab#Lab', 'condition', 'role:ADMIN'), null);
+  assert.equal(slot('/home#Home', 'condition', 'role:ADMIN'), null);
+  assert.equal(slot('/admin/member#AdminMember', 'condition', 'role:OWNER'), null);
+  assert.equal(slot('/gone#Gone', 'condition', 'role:ADMIN'), null);
+});
+
+test('an incoming link is named by its start screen and the roles and settings read from it, so links that read the same share one slot, and by its guard text when none was read', () => {
+  assert.deepEqual(linkKey(SCREENS[3].access.links[0]), { from: '/home#Home', conditions: ['setting:LAB=on', 'setting:MENU.LIST:REPORT'] });
+  assert.deepEqual(slot('/lab#Lab', 'link', { from: '/home#Home', conditions: ['setting:LAB=on', 'setting:MENU.LIST:REPORT'] }), {
+    places: [{ from: '/home#Home', file: 'components/Home.js', line: 19 }, { from: '/home#Home', file: 'components/Home.js', line: 30 }],
+  });
+  assert.deepEqual(linkKey(SCREENS[3].access.links[2]), { from: '/admin/member#AdminMember', guards: ['canSee(x)', 'checkLab()'] });
+  assert.deepEqual(slot('/lab#Lab', 'link', { from: '/admin/member#AdminMember', guards: ['canSee(x)', 'checkLab()'] }), {
+    places: [{ from: '/admin/member#AdminMember', file: 'components/AdminMember.js', line: 22 }],
+  });
+  assert.deepEqual(linkKey(SCREENS[4].access.links[0]), { from: '/lab#Lab', guards: [] });
+  assert.equal(slot('/lab#Lab', 'link', { from: '/home#Home', conditions: ['setting:LAB=on'] }), null);
+  assert.equal(slot('/lab#Lab', 'link', { from: '/signin#SignIn', guards: [] }), null);
 });

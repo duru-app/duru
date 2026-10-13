@@ -106,16 +106,45 @@ const RELATION_TEXT: Record<string, (word: string) => string> = {
   called: (word) => `sent this ${word} while running, without its tag`,
 };
 
+function testHead(m: any, word: string) {
+  const { title } = m.target.part.key;
+  const { file, line, status, relation, source, detail } = m.where;
+  const at = file ? ` at ${line ? `${file}:${line}` : file}` : '';
+  return `  - test "${within(title, '    ')}"${at} — ${status}, ${RELATION_TEXT[relation](word)}, from ${source}${detail ? ` — ${within(detail, '    ')}` : ''}`;
+}
+
+function placeText(p: any) {
+  const at = `${p.from === 'route' ? 'route' : `link from ${p.from}`} at ${p.file}:${p.line}`;
+  if (p.inherited) return `${at}, inherited from the screen it starts on`;
+  return `${at} (\`${within(p.guard, '    ')}\`${p.via ? ` in ${p.via}` : ''}${p.roleGuardsKey ? ', roles from `roleGuards`' : ''})`;
+}
+
+function conditionHead(m: any) {
+  const { places } = m.where;
+  return `  - condition \`${m.target.part.key}\`${places.length ? ` — ${places.map(placeText).join('; ')}` : ''}`;
+}
+
+function linkHead(m: any) {
+  const { from, conditions, guards } = m.target.part.key;
+  const read = conditions ? `reading ${conditions.map((c: string) => `\`${c}\``).join(', ')}` : guards.length ? `with guards duru could not read: ${guards.map((g: string) => `\`${within(g, '    ')}\``).join(', ')}` : 'with no condition';
+  return `  - link from ${from} ${read}, at ${m.where.places.map((p: any) => `${p.file}:${p.line}`).join(', ')}`;
+}
+
+const PART_SECTIONS: [string, string, (m: any, word: string) => string][] = [
+  ['test', 'comments on tests', testHead],
+  ['condition', 'comments on opening conditions', conditionHead],
+  ['link', 'comments on incoming links', linkHead],
+];
+
 function partLines(entries: any[], word: string) {
-  if (!entries.length) return [];
-  return ['- comments on tests:', ...entries.flatMap((m) => {
-    const { title } = m.target.part.key;
-    const { file, line, status, relation, source, detail } = m.where;
-    const at = file ? ` at ${line ? `${file}:${line}` : file}` : '';
-    const head = `  - test "${within(title, '    ')}"${at} — ${status}, ${RELATION_TEXT[relation](word)}, from ${source}${detail ? ` — ${within(detail, '    ')}` : ''}`;
-    const comments = [...m.history].reverse().filter((r: any) => r.replyTo === undefined);
-    return [head, ...comments.flatMap((c: any) => [markLine(c, undefined, '    '), ...repliesTo(m, c).map((reply: any) => markLine(reply, undefined, '      '))])];
-  })];
+  return PART_SECTIONS.flatMap(([kind, title, head]) => {
+    const own = entries.filter((m) => m.target.part.kind === kind);
+    if (!own.length) return [];
+    return [`- ${title}:`, ...own.flatMap((m) => {
+      const comments = [...m.history].reverse().filter((r: any) => r.replyTo === undefined);
+      return [head(m, word), ...comments.flatMap((c: any) => [markLine(c, undefined, '    '), ...repliesTo(m, c).map((reply: any) => markLine(reply, undefined, '      '))])];
+    })];
+  });
 }
 
 const kindsText = (kinds: string[]) => kinds.map((k) => KIND_NAMES[k]).join(' and ');
@@ -383,8 +412,12 @@ export function taskList(config: any) {
   ];
   if (open.some((m) => laterComments(m).length)) out[2] += ' A `comment` line under a mark is a comment a reviewer left on the same target after that mark.';
   if (open.some((m) => laterComments(m).some((c: any) => repliesTo(m, c).length))) out[2] += ' A `reply` line under a comment is an answer to that comment.';
-  if ([...screens, ...calls].some((n) => partsOf(n.id).length)) {
+  const partKinds = new Set([...screens, ...calls].flatMap((n) => partsOf(n.id).map((m) => m.target.part!.kind)));
+  if (partKinds.has('test')) {
     out[2] += ' Under `comments on tests`, each test a reviewer left a comment on is named with its file and line, its status, how it is linked to the screen or call and the result file it was read from; read the result file for why it failed.';
+  }
+  if (partKinds.has('condition') || partKinds.has('link')) {
+    out[2] += ' Under `comments on opening conditions` and `comments on incoming links`, each role or setting condition and each link into the screen a reviewer left a comment on is named with the source file and line it is written at; if the app does not do what duru read there, tell the user it is a duru defect, and otherwise answer with that line.';
   }
   if (map.serverNotCompared) out.push('', `${SERVER_NOT_COMPARED}, so no call below is written as missing on the server.`);
   if (!open.length) out.push('', 'No open marks.');

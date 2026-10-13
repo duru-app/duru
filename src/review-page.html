@@ -233,7 +233,7 @@
   .history-toggle[aria-expanded=true]::after { content: ' ▾'; }
   .mark-form .history { max-height: min(160px, 15vh); overflow-y: auto; margin-top: 8px; }
   .part-row { display: flex; align-items: flex-start; gap: 6px; }
-  .part-row > .test { flex: 1; min-width: 0; }
+  .part-row > :is(.test, .slot-text) { flex: 1; min-width: 0; }
   .bubble, .part-count { flex: none; border-radius: 10px; padding: 0 6px; font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; background: var(--panel); white-space: nowrap; }
   .bubble { visibility: hidden; border: 1px solid var(--line); color: var(--muted); }
   .bubble svg { width: 12px; height: 12px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.6; }
@@ -544,8 +544,11 @@ const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
 const targetName = (t) => (t.story !== undefined
   ? `스토리 ${state.data.stories.list.find((st) => st.id === t.story)?.name ?? t.story}`
   : [t.node, t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case] ?? t.case}`].filter(Boolean).join(' · '));
+const conditionLabel = (key) => (key.startsWith('role:') ? `역할 ${key.slice('role:'.length)}` : `설정 ${key.slice('setting:'.length)}`);
 const tagLabel = (t) => {
   if (t.story !== undefined) return '스토리';
+  if (t.part?.kind === 'condition') return conditionLabel(t.part.key);
+  if (t.part?.kind === 'link') return `${t.part.key.from} 에서 오는 링크`;
   if (t.part) return `테스트 「${t.part.key.title}」`;
   return [t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case] ?? t.case}`].filter(Boolean).join(' · ') || (callOf(t.node) ? '호출 전체' : '화면 전체');
 };
@@ -887,7 +890,7 @@ function renderLeft() {
     }
     return renderUntaggedList();
   }
-  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined), (m) => (m.target.part ? `${m.target.node} · ${tagLabel(m.target)}` : m.key), h('p', { class: 'muted' }, '맵에서 사라진 노드, 설정에서 빠진 경우 종류, 결과에서 사라진 테스트에 달린 코멘트가 여기 남습니다.'));
+  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined), (m) => (m.target.part ? `${m.target.node} · ${tagLabel(m.target)}` : m.key), h('p', { class: 'muted' }, '맵에서 사라진 노드, 설정에서 빠진 경우 종류, 결과에서 사라진 테스트, 화면에서 사라진 접근 조건과 들어오는 링크에 달린 코멘트가 여기 남습니다.'));
   const list = keptLeftList(left, tabs, 'screen-list');
   if (list) {
     const search = left.querySelector(':scope > .filters > input[type=search]');
@@ -1147,6 +1150,13 @@ function importerItem(t) {
 }
 
 const partTarget = (node, t) => ({ node, part: { kind: 'test', key: t.ref } });
+const conditionTarget = (node, key) => ({ node, part: { kind: 'condition', key } });
+const linkTarget = (node, key) => ({ node, part: { kind: 'link', key } });
+const SLOT_WORDS = {
+  test: { add: '이 테스트를 꼬리표로 넣고 코멘트를 씁니다', narrow: '이 테스트를 꼬리표로 붙인 말만 대화에 남깁니다' },
+  condition: { add: '이 조건을 꼬리표로 넣고 코멘트를 씁니다', narrow: '이 조건을 꼬리표로 붙인 말만 대화에 남깁니다' },
+  link: { add: '이 링크를 꼬리표로 넣고 코멘트를 씁니다', narrow: '이 링크를 꼬리표로 붙인 말만 대화에 남깁니다' },
+};
 const commentsIn = (m) => (m ? m.history.filter((r) => r.replyTo === undefined).length : 0);
 const BUBBLE = () => svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, svg('path', { d: 'M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z' }));
 
@@ -1164,29 +1174,31 @@ function focusTalk() {
   field?.setSelectionRange(field.value.length, field.value.length);
 }
 
-function tagPart(node, t) {
-  moveTalkTo(node);
+function tagPart(target) {
+  moveTalkTo(target.node);
   state.draft ??= { status: markOf(state.target)?.current?.status ?? null, note: '' };
-  Object.assign(state.draft, { part: partTarget(node, t), noTag: false });
+  Object.assign(state.draft, { part: target, noTag: false });
   render();
   focusTalk();
 }
 
-function narrowTalk(node, t) {
-  moveTalkTo(node);
+function narrowTalk(target) {
+  moveTalkTo(target.node);
   state.dockKey = keyOf(shownTarget());
-  state.historyFilter = keyOf(partTarget(node, t));
+  state.historyFilter = keyOf(target);
   state.historyOpen = true;
   render();
 }
 
-function partRow(item, node, t) {
-  const n = commentsIn(markOf(partTarget(node, t)));
+function slotRow(item, target, words, name = tagLabel(target)) {
+  const n = commentsIn(markOf(target));
   return h('div', { class: 'part-row' },
     item,
-    n ? h('button', { class: 'part-count', title: '이 테스트를 꼬리표로 붙인 말만 대화에 남깁니다', onclick: (e) => { e.stopPropagation(); narrowTalk(node, t); } }, `코멘트 ${n}`) : null,
-    h('button', { class: 'bubble', title: '이 테스트를 꼬리표로 넣고 코멘트를 씁니다', 'aria-label': `「${bareTitle(t.title)}」에 코멘트`, onclick: (e) => { e.stopPropagation(); tagPart(node, t); } }, BUBBLE()));
+    n ? h('button', { class: 'part-count', title: words.narrow, onclick: (e) => { e.stopPropagation(); narrowTalk(target); } }, `코멘트 ${n}`) : null,
+    h('button', { class: 'bubble', title: words.add, 'aria-label': `「${name}」에 코멘트`, onclick: (e) => { e.stopPropagation(); tagPart(target); } }, BUBBLE()));
 }
+
+const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title));
 
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
 const judgmentErrorOf = (key) => (state.judgmentError?.key === key ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null);
@@ -2931,13 +2943,19 @@ function linkGroups(links) {
   return [...groups.values()].sort((a, b) => (b.guards.length === 0) - (a.guards.length === 0) || b.links.length - a.links.length || byText(a.text, b.text) || byText(a.key, b.key));
 }
 
+function linkHead(l) {
+  const head = h('span', { class: 'slot-text' }, h('code', { class: 'from' }, l.from), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`));
+  const target = l.part && linkTarget(state.selected, l.part);
+  return target ? slotRow(head, target, SLOT_WORDS.link) : head;
+}
+
 function linkGroup({ key, guards, links }) {
   const { lines, bare } = openNeeds({ access: linkAccess(guards) });
   const words = [...lines.map((l) => (l.flag ? `${l.text} (${l.flag})` : l.text)), bare].filter(Boolean);
   return h('details', { class: 'link-group', open: state.openGroups.has(key), ontoggle: rememberOpen(state.openGroups, key) },
     h('summary', {}, h('span', { class: 'cond' }, guards.length ? words.join(' · ') : '조건 없음'), ' ', h('span', { class: 'count muted' }, `링크 ${links.length}`)),
     h('ul', { class: 'plain' }, links.map((l) => h('li', {},
-      h('code', { class: 'from' }, l.from), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`),
+      linkHead(l),
       l.guards.map((g) => accessGuard(g, `${key}\n${l.from} ${l.file}:${l.line}`)),
       l.fromKinds.length || isRestricted(l.from)
         ? h('div', { class: 'from-kinds muted' }, '링크를 건 화면에 필요한 것 ', l.fromKinds.length ? l.fromKinds.map(kindChip) : mixedChip())
@@ -3003,11 +3021,12 @@ async function savePick(target, status) {
 }
 
 function openSummary(s) {
-  const { lines, tips, bare } = openNeeds(s);
+  const { lines, tips, bare } = openNeeds(s, { bySlot: true });
   return h('div', { class: 'open-needs' },
     h('h2', {}, '접근 조건'),
     s.access.restricted ? [...lines.map(needLine), bare ? bareLine(bare) : null] : h('p', { class: 'muted' }, '설정이나 역할 없이 열립니다.'),
-    tips.length ? h('ul', { class: 'plain tips muted' }, tips.map((t) => h('li', {}, t))) : null,
+    tips.length ? h('ul', { class: 'plain tips muted' }, tips.map((t) => h('li', {}, typeof t === 'string' ? t
+      : slotRow(h('span', { class: 'slot-text' }, t.text), conditionTarget(s.id, t.slot), SLOT_WORDS.condition)))) : null,
     s.access.route.length ? h('div', { class: 'route' }, h('h3', {}, '라우트에서 막는 조건'), s.access.route.map((g) => accessGuard(g, 'route'))) : null);
 }
 
@@ -3239,7 +3258,7 @@ const unreadRolesTip = (guards) => `읽지 못한 역할 조건: ${guards.join('
 const unsettledTip = (text) => `정하지 못한 설정 조건: ${text}`;
 
 // bare 는 문구 한 줄로 적지 못한 종류(「설정 필요」, 「링크마다 다름」)다.
-function openNeeds({ access }) {
+function openNeeds({ access }, { bySlot = false } = {}) {
   const { roleValues, unreadableRoleGuards = [], settings, kinds = [], restricted = false } = access;
   const lines = [];
   const tips = [];
@@ -3247,7 +3266,8 @@ function openNeeds({ access }) {
     const unread = unreadableRoleGuards.length ? `미확인 ${unreadableRoleGuards.length}` : null;
     if (roleValues) {
       lines.push({ kind: 'role', text: `역할 ${withMore(roleValues)}`, flag: unread });
-      tips.push(`필요한 역할: ${roleValues.join(', ')}`);
+      if (bySlot) tips.push(...roleValues.map((r) => ({ text: `필요한 역할: ${r}`, slot: `role:${r}` })));
+      else tips.push(`필요한 역할: ${roleValues.join(', ')}`);
     } else {
       lines.push({ kind: 'role', text: '역할 미확인' });
       tips.push('필요한 역할: 미확인');
@@ -3261,7 +3281,7 @@ function openNeeds({ access }) {
     const unread = [...new Set(settings.flatMap((x) => x.unreadable).map(unreadText))];
     const flag = unread.length ? `미확인 ${unread.length}` : null;
     if (needs.length || unread.length) lines.push({ kind: 'setting', text: needs.length ? `설정 ${withMore(needs.map(([, x]) => needText(x, { short: true })))}` : '설정 미확인', flag });
-    tips.push(...needs.map(([full]) => `필요한 설정: ${full}`));
+    tips.push(...needs.map(([full, x]) => (bySlot && x.condition ? { text: `필요한 설정: ${full}`, slot: x.condition } : `필요한 설정: ${full}`)));
     tips.push(...unread.map(unsettledTip));
   }
   const bareKinds = kinds.filter((k) => !lines.some((l) => l.kind === k));

@@ -566,6 +566,9 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
 }
 
 const caseName = (need: SettingNeed) => `${need.path.join('.')}${need.need === 'includes' || need.need === 'equals' ? `:${need.value}` : ''}`;
+
+// 케이스 태그의 =true · =false 는 조건을 맞췄는지 여부라서, 조건이 on · off · present 중 어느 쪽인지는 따로 붙인다.
+export const settingConditionName = (need: SettingNeed) => `setting:${caseName(need)}${need.need === 'includes' || need.need === 'equals' ? '' : `=${need.need}`}`;
 const needKey = (need: SettingNeed) => JSON.stringify([need.root, need.path, need.need, need.value]);
 
 // 링크로만 들어오는 화면은 모든 링크에 걸린 조건만 화면을 막는다. 조건이 없는 링크는 settings 에 오르지 않는다.
