@@ -124,6 +124,7 @@
   .chip.dead, .chip.v-none { color: var(--fail); } .chip.v-method-mismatch { color: var(--more); } .chip.v-match { color: var(--pass); } .chip.v-unresolved, .chip.v-unchecked { color: var(--muted); }
   .test { margin-bottom: 6px; }
   .test .detail { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .test .test-tag { display: inline-block; margin-left: 4px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
   .importers p, .detached p, .passed p { font-size: 12px; margin: 0 0 8px; }
   .chip.level-assert { color: var(--pass); } .chip.level-interact, .chip.level-call { color: var(--accent); } .chip.level-visit { color: var(--muted); }
   table.calls td.call .sent-count { font-size: 12px; color: var(--muted); white-space: nowrap; margin-left: 6px; }
@@ -1029,10 +1030,15 @@ const testPlace = (t) => filePlace(t.testFile ?? t.file, t.line);
 const viaRow = (via) => h('div', { class: 'detail' }, '불러오는 파일 ', h('span', { class: 'mono via' }, via.join(', ')));
 const screenHead = (s) => [h('span', { class: 'screen-path' }, s.path), ' ', h('span', { class: 'muted' }, s.component), h('div', { class: 'muted mono' }, s.id)];
 
-function testItem(t, { depth = false } = {}) {
+const isTagWord = (word) => /^@\S/.test(word);
+const bareTitle = (title) => title.split(' › ').map((part) => part.split(/\s+/).filter((w) => w && !isTagWord(w)).join(' ')).filter(Boolean).join(' › ') || title;
+const tagsOf = (t) => t.tags ?? t.title.split(/\s+/).filter(isTagWord).map((w) => w.slice(1));
+const titleWithTags = (t, hide = []) => [bareTitle(t.title), ...[...new Set(tagsOf(t))].filter((tag) => !hide.includes(tag)).map((tag) => h('span', { class: 'mono test-tag' }, tag))];
+
+function testItem(t, { depth = false, hide = [] } = {}) {
   return h('div', { class: 'test' },
     depth ? h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]) : null,
-    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', t.title, ' ',
+    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', titleWithTags(t, depth ? [...hide, `depth:${t.depth}`] : hide), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
     t.detail && t.status !== 'pass' ? h('div', { class: 'detail' }, t.detail) : null);
@@ -1041,7 +1047,7 @@ function testItem(t, { depth = false } = {}) {
 function importerItem(t) {
   return h('div', { class: 'test' },
     h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]),
-    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', t.title, ' ',
+    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', titleWithTags(t, [`depth:${t.depth}`]), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.testFile, t.line)),
     viaRow(t.via));
 }
@@ -1084,7 +1090,7 @@ function partRow(item, node, t) {
   return h('div', { class: 'part-row' },
     item,
     n ? h('button', { class: 'part-count', title: '이 테스트를 꼬리표로 붙인 말만 대화에 남깁니다', onclick: (e) => { e.stopPropagation(); narrowTalk(node, t); } }, `코멘트 ${n}`) : null,
-    h('button', { class: 'bubble', title: '이 테스트를 꼬리표로 넣고 코멘트를 씁니다', 'aria-label': `「${t.title}」에 코멘트`, onclick: (e) => { e.stopPropagation(); tagPart(node, t); } }, BUBBLE()));
+    h('button', { class: 'bubble', title: '이 테스트를 꼬리표로 넣고 코멘트를 씁니다', 'aria-label': `「${bareTitle(t.title)}」에 코멘트`, onclick: (e) => { e.stopPropagation(); tagPart(node, t); } }, BUBBLE()));
 }
 
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
@@ -1215,7 +1221,7 @@ function passedItem(t) {
     t.unconfirmed
       ? h('span', { class: 'chip level-visit', title: UNCONFIRMED_TITLE }, '확인 못 함')
       : h('span', { class: `chip level-${t.level}`, title: PASS_LEVEL_TITLE[t.level] }, PASS_LEVEL[t.level]), ' ',
-    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', t.title, ' ',
+    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', titleWithTags(t), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
     h('div', { class: 'detail' }, '결과 파일 ', h('span', { class: 'mono' }, t.source)));
@@ -2015,7 +2021,7 @@ function renderStoryCenter() {
     h('div', { class: 'muted' }, `${st.author} · ${storyDate(st.date)}`),
     st.memo ? h('p', { class: 'memo' }, st.memo) : null,
     h('div', { class: 'story-tests' }, h('h2', {}, `스토리 테스트 ${storyTests.length}`),
-      storyTests.length ? storyTests.map((t) => testItem(t, { depth: true })) : h('p', { class: 'muted' }, '없음')),
+      storyTests.length ? storyTests.map((t) => testItem(t, { depth: true, hide: [`story:${st.id}`] })) : h('p', { class: 'muted' }, '없음')),
     storyPath(st));
 }
 
@@ -2438,7 +2444,7 @@ function renderCenter() {
         onclick: () => selectTarget(r.target),
       },
         h('td', { class: 'depth' }, r.label),
-        h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map((t) => partRow(testItem(t), s.id, t)) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
+        h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map((t) => partRow(testItem(t, { hide: [`screen:${s.id}`, `depth:${t.depth}`] }), s.id, t)) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
         h('td', { class: 'mark' }, markChip(markOf(r.target)) ?? h('span', { class: 'muted' }, '—')))))),
     strayJudgmentError(s),
     untaggedPairs(s.id),
@@ -2726,7 +2732,7 @@ function callDetails(call, s) {
     h('div', {}, verdictChip(call.server), ' ', call.server.path ? h('code', {}, call.server.path) : null),
     call.server.candidates ? h('ul', { class: 'plain' }, call.server.candidates.map((c) => h('li', {}, '서버에는 ', h('code', {}, c)))) : null,
     h('h2', {}, `테스트 ${tests.length}`),
-    tests.length ? h('div', {}, tests.map((t) => partRow(testItem(t), call.id, t))) : h('p', { class: 'muted' }, '없음'),
+    tests.length ? h('div', {}, tests.map((t) => partRow(testItem(t, { hide: [`call:${call.id}`, ...(depth ? [`depth:${depth}`] : [])] }), call.id, t))) : h('p', { class: 'muted' }, '없음'),
     ...untaggedPairs(call.id),
     h('h2', {}, '이 화면에서 부르는 곳'),
     h('ul', { class: 'plain' }, sites.map((c) => h('li', {}, h('code', {}, c.fn), ' ', h('span', { class: 'muted mono' }, `${c.file}:${c.line}`)))),

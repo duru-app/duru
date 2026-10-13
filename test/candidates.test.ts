@@ -328,6 +328,38 @@ test('of two reports with tests that passed the same screen order, the candidate
   });
 });
 
+test('a candidate from a test whose title carries tags is named by the title without them, so the story name and ID offered from it carry none', () => {
+  withFolder({}, (dir: string) => {
+    fs.cpSync(TRACED.path, dir, { recursive: true });
+    const file = path.join(dir, 'visits.json');
+    const report = fs.readFileSync(file, 'utf8').replace('"title": "opens home and then help"', '"title": "opens home and then help @screen:/home#Home @depth:ui @role:ADMIN"');
+    fs.writeFileSync(file, report);
+    const { list } = tracedCandidatesOf({ configDir: dir, tests: [{ ...TRACED, path: dir }], storiesDir: path.join(dir, 'stories') });
+    assert.deepEqual(list.map((c) => c.name), ['opens home and then help', 'moves to the drafts without loading a page']);
+  });
+  const traced = [
+    { report: 'results/junit/TEST-Doc.xml', title: 'DocTest › 문서를 연다 @screen:/home#Home', screens: HOME_HELP },
+    { report: 'results/vitest/unit.json', title: 'drafts › 초안을 연다 @depth:code @screen:/home#Home', screens: HOME_DRAFTS },
+    { report: 'results/verdict/check.log', title: '@story:open-help 도움말을 연다', screens: ['/home#Home', '/lab#Lab'] },
+  ];
+  assert.deepEqual(storyCandidates({ ...config, visitRecords: [], storiesDir: EXAMPLE_STORIES }, map, path.join(config.outDir, 'map.json'), traced).list.map((c) => c.name), [
+    'DocTest › 문서를 연다',
+    'drafts › 초안을 연다',
+    '도움말을 연다',
+  ]);
+});
+
+test('a candidate from a test whose describe title or own title is only tags is named by the other parts, with no separator left over', () => {
+  const traced = [
+    { report: 'results/playwright/e2e.json', title: '@smoke › opens help', screens: HOME_HELP },
+    { report: 'results/playwright/e2e.json', title: 'Help › @screen:/help#Help @depth:ui', screens: HOME_DRAFTS },
+  ];
+  assert.deepEqual(storyCandidates({ ...config, visitRecords: [], storiesDir: EXAMPLE_STORIES }, map, path.join(config.outDir, 'map.json'), traced).list.map((c) => c.name), [
+    'opens help',
+    'Help',
+  ]);
+});
+
 test('only a test that passed in a run that passed gives a candidate: a failed test with a trace gives none, nor does one expected to fail that passed, and a test that passed on retry gives the screen order of its passing run', () => {
   withFolder({}, (dir: string) => {
     fs.cpSync(TRACED.path, dir, { recursive: true });

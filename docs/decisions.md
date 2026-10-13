@@ -1478,6 +1478,32 @@ Alternatives compared:
 - Leaving it as it was: nothing to build, but a 1280px screen in a narrow pane stays unreadable and a phone layout
   cannot be seen.
 
+**A story candidate's name and a test row's title leave out the test's tags; a test row shows the tags other than
+those of the place it sits under as labels of their own, read from a `tags` list each test in `tests.json` now
+carries; the Playwright empty test puts its tags in the `tag` option.**
+In #248 a candidate came out as 「… 부서는 그대로 @screen:/admin-member#AdminMember @depth:ui」, and 「고쳐서 받기」 offered
+that as the story's name and ID. The tags read as part of the title. The Playwright HTML report shows a test's tags
+as separate labels after its title, without the `@`, and Allure removes such marks from the name it shows; neither
+mixes tags into a title. Hiding the tags of the screen, call, story and depth a row sits under comes from neither:
+the row already sits there, and the driver asked why those tags were shown.
+The labels need the tags written in Playwright's `tag` option too, which the title does not hold, so `tests.json`
+carries each test's tags (driver's decision). A `tests.json` written before that has no list, and the page then
+reads the tags from the title.
+Alternatives compared:
+- Reading the labels from the title only: `tests.json` stays as it is, but a test whose tags moved into the `tag`
+  option, as the task list now asks, loses its role and setting labels.
+- Taking the tags off the title in `tests.json` itself: the title is also what judgments, comments and the untagged
+  list match on, so every match would have to change with it.
+The test's identity is unchanged: a judgment or comment names the test by its result file, test file and title
+without tags, so moving a tag from the title into the `tag` option keeps what was left on it.
+The Vitest empty test keeps its tags at the end of the title (driver's decision): the Vitest reader also reads Jest
+results, and Jest has no tag option, while Vitest's own `tags` option exists only from 4.1.0 and stops the run on a
+tag its config does not define.
+Known limits: every word starting with `@` counts as a tag, as it already did when tags were read, so a title word
+such as 「@Valid 검증」 is left out of what is shown. The `tag` option came in Playwright 1.42, so an older project
+puts the tags in the title as before. With the tags out of the title, the Playwright empty tests of one item share
+the title `<what it checks>` until the writer replaces it, which README and the agent skill ask for.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

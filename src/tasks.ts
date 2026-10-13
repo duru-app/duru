@@ -41,12 +41,14 @@ interface MapInfo {
 }
 
 const TITLE = '<what it checks>';
-const quoted = (tags: string) => JSON.stringify(`${TITLE} ${tags}`);
-const EMPTY_TEST: Record<string, (tags: string, method: string) => string> = {
-  playwright: (tags) => `test.fixme(${quoted(tags)}, async ({ page }) => {});`,
+const inTitle = (tags: string[]) => tags.join(' ');
+const quoted = (tags: string[]) => JSON.stringify(`${TITLE} ${inTitle(tags)}`);
+const tagOption = (tags: string[]) => `{ tag: [${tags.map((t) => JSON.stringify(t)).join(', ')}] }`;
+const EMPTY_TEST: Record<string, (tags: string[], method: string) => string> = {
+  playwright: (tags) => `test.fixme(${JSON.stringify(TITLE)}, ${tagOption(tags)}, async ({ page }) => {});`,
   junit: (tags, method) => `@Test @Disabled @DisplayName(${quoted(tags)}) void ${method}() {}`,
   vitest: (tags) => `test.todo(${quoted(tags)});`,
-  verdict: (tags) => `VERDICT ${TITLE}: <verdict> — <what was seen> ${tags}`,
+  verdict: (tags) => `VERDICT ${TITLE}: <verdict> — <what was seen> ${inTitle(tags)}`,
 };
 
 const count = (n: number, word: string, plural = `${word}s`) => `${n} ${n === 1 ? word : plural}`;
@@ -77,7 +79,7 @@ function emptyTestLines(formats: string[], tagSets: string[][]) {
   const used = new Set<string>();
   const lines = tagSets.flatMap((tags) => {
     const method = methodName(tags, used);
-    return formats.map((f) => `  - ${f}: \`${EMPTY_TEST[f](tags.map((t) => `@${t}`).join(' '), method)}\``);
+    return formats.map((f) => `  - ${f}: \`${EMPTY_TEST[f](tags.map((t) => `@${t}`), method)}\``);
   });
   return ['- empty tests:', ...lines];
 }
@@ -375,7 +377,7 @@ export function taskList(config: any) {
   const out = [
     `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}`,
     '',
-    `A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` in each test title (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and ${hasKinds ? 'the tag of each case under `cases` it checks: a role or setting case of a screen that opens only under one, or a kind of case a reviewer picked for the screen or call, tagged `@case:<kind>`' : 'for a screen that opens only under a role or a setting the tag of each case under `cases` it checks'}), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` in its title as well. Under \`empty tests\`, a screen or call gets one set for each open mark${hasKinds ? ' and one more for each case with no tests' : ', a screen one more for each case with no tests'}, and a story one set: an empty test for each test format in the config, with the tags already in its title and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
+    `A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` on each test, in its \`tag\` option for Playwright and in its title for the other formats (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and ${hasKinds ? 'the tag of each case under `cases` it checks: a role or setting case of a screen that opens only under one, or a kind of case a reviewer picked for the screen or call, tagged `@case:<kind>`' : 'for a screen that opens only under a role or a setting the tag of each case under `cases` it checks'}), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` on it as well. Under \`empty tests\`, a screen or call gets one set for each open mark${hasKinds ? ' and one more for each case with no tests' : ', a screen one more for each case with no tests'}, and a story one set: an empty test for each test format in the config, with the tags already in place and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, put what the test checks in place of \`<what it checks>\` (the Playwright ones of an item all carry that title), remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
     '',
     `Source files are under \`${relative(config.srcRoot)}\`.`,
   ];

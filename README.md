@@ -410,9 +410,12 @@ listing the places whose value the source does not show in full.
 
 ## Tests
 
-A test declares the node it covers by putting `@screen:<id>` or `@call:<id>` in its title — for JUnit, in the
-test's or the test class's `@DisplayName`, since `@Tag` does not reach the result XML; for Vitest, in the test
-title, a `describe` title or the test's `tags` option. A test takes the depth of its result source unless it
+A test declares the node it covers with `@screen:<id>` or `@call:<id>`. For Playwright, put the tags in the test's
+`tag` option (`test('opens help', { tag: ['@screen:/help#Help'] }, …)`) and leave the title as it is; a tag in
+the title or a `describe` title is read too, which is where the tags go before Playwright 1.42, the version that
+added the `tag` option. For JUnit, put them in the test's or the test class's
+`@DisplayName`, since `@Tag` does not reach the result XML. For Vitest or Jest, put them at the end of the test
+title; a `describe` title or Vitest's `tags` option is read too. A test takes the depth of its result source unless it
 carries `@depth:<ui|api|render|code|data|output>`. `output` is for a test that checks the content of what the app
 produces, such as an exported file.
 
@@ -435,8 +438,9 @@ A test of a kind from `caseKinds` declares it with `@case:<kind>` (`@screen:/hom
 for that kind on every screen and call the test is tagged with, and shows under that case wherever a reviewer has
 picked the kind.
 
-`tests.json` lists the tests per node and per story with depth and status (pass, fail, pending; skipped and todo
-count as pending), the tags that point at nothing on the map, and the tests with no tag as `untagged`. `traced`
+`tests.json` lists the tests per node and per story with depth, status (pass, fail, pending; skipped and todo
+count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
+nothing on the map, and the tests with no tag as `untagged`. `traced`
 lists each Playwright test that passed, with the trace of its passing run, as its report, its title and the screens
 it passed in order; an address no screen matches stays in that list as its path.
 
@@ -515,7 +519,7 @@ cannot be read is skipped and noted with its path and why.
 
 A Playwright test needs no visit record when its report is listed in `tests` and the test ran with Playwright's
 `trace` option on: the screens it passed through, read from its trace by `rebuild`, become a candidate whose source
-names the report and the test titles. Only a passing run counts: a test that failed gives no candidate, and a test
+names the report and the test titles. The candidate is named after the first of those titles without its tags. Only a passing run counts: a test that failed gives no candidate, and a test
 that passed on a retry gives the screens of the retry that passed. These candidates follow the limits of reading
 traces:
 
@@ -606,6 +610,10 @@ under 「떨어져 나감」. A case kind picked or taken out on a screen or cal
 status `needed` or `not-needed`; it puts nothing on the task list, and one whose kind has left `caseKinds` shows
 under 「떨어져 나감」.
 
+**Test rows.** A test row under a screen, call or story shows the test's title without its tags. The tags of the screen, call, story and depth
+the row sits under are left out, and every other tag (a role, a setting, a story, another screen …) follows the
+title as a small label of its own.
+
 **Comments on a test row.** A test row under a screen or call (its own tests, 「불러오는 테스트」, 「지나간 테스트」
 and 「호출한 테스트」) has a speech bubble that shows on hover. Pressing it puts that test in as the tag of the comment
 being written; the comment is saved with the screen or call as its target plus
@@ -668,10 +676,11 @@ stories under `# Stories` with their steps, link verdicts and 「사전 조건�
 result file, followed by those comments and their replies.
 
 Each item ends with `empty tests`: one empty test per test format in the config, with the item's tags already in
-its title and held back so a copy run as it is does not pass (`test.fixme` for Playwright, `test.todo` for
+place (in the `tag` option for Playwright, in the title for the other formats) and held back so a copy run as it is does not pass (`test.fixme` for Playwright, `test.todo` for
 Vitest, `@Disabled` for JUnit, a verdict line with `<verdict>` for a check script). A screen gets one more set for
-each case with no tests, and a call one for each picked case kind with no tests. The writer fills in the data
-setup and the checks, and the test attaches after a `rebuild`. Pairs handed over on the review page follow under
+each case with no tests, and a call one for each picked case kind with no tests. The writer puts what the test
+checks in place of `<what it checks>`, since the Playwright empty tests of an item all carry that same title, fills
+in the data setup and the checks, and the test attaches after a `rebuild`. Pairs handed over on the review page follow under
 `# Tagging`, each with the test, the tag to add and where it goes. duru never edits a test file.
 
 ## Agent skill

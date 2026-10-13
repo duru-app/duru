@@ -214,6 +214,16 @@ test('tagged Vitest tests attach with their status, reading the tags field and t
   assert.equal(home.source, 'results/vitest/unit.json');
 });
 
+test('each listed test carries its tags without the @, from its title and from the tags field alike', () => {
+  const tagsOf = (list: { title: string; tags: string[] }[] | undefined, title: string) => list?.find((t) => t.title === title)?.tags;
+  assert.deepEqual(tagsOf(links.nodes['/signin#SignIn'], 'remembers the last user'), ['screen:/signin#SignIn']);
+  assert.deepEqual(tagsOf(links.nodes['/home#Home'], 'Home @screen:/home#Home › renders the list'), ['screen:/home#Home']);
+  assert.deepEqual(tagsOf(links.nodes['/admin/member#AdminMember'], 'lists members for an admin'), ['screen:/admin/member#AdminMember', 'role:ADMIN']);
+  const lists = [links.nodes, links.stories, links.importers, links.passed].flatMap((byId) => Object.values(byId).flat()).concat(links.untagged);
+  assert.ok(lists.length > 0);
+  assert.ok(lists.every((t) => Array.isArray(t.tags) && t.tags.every((tag: string) => !tag.startsWith('@'))));
+});
+
 test('tests of several formats on one node each carry their own depth', () => {
   assert.deepEqual(
     links.nodes['/home#Home'].map((t) => `${t.format} ${t.depth}`),
@@ -534,6 +544,7 @@ test('an untagged list entry carries its result source, status and, for a Vitest
   const byTitle = (title: string) => links.untagged.find((t) => t.title === title);
   assert.deepEqual(byTitle('DocumentTable › lists the documents it is given'), {
     title: 'DocumentTable › lists the documents it is given',
+    tags: [],
     file: '/builds/client/src/components/DocumentTable.spec.js',
     line: 6,
     source: 'results/vitest/client-unit.json',
@@ -609,7 +620,7 @@ test('an address with a value in it or a query after it is linked to the screen 
 
 test('a passed test carries its place, its result file, its project, its depth and its status', () => {
   const [t] = tracedLinks.passed['/document/:id#DocumentDetail'];
-  assert.deepEqual(t, { title: 'checks the path of a document', file: 'visits.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/visits.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'assert' });
+  assert.deepEqual(t, { title: 'checks the path of a document', tags: [], file: 'visits.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/visits.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'assert' });
   assert.equal(typeof t.line, 'number');
 });
 
@@ -651,7 +662,7 @@ test('a browser test is linked to each call it sent a request for, whatever valu
   assert.deepEqual(passedAt('GET:/api/v1/lab/experiment'), ['call asks for the experiment without opening a page']);
   assert.equal(passedAt('GET:/api/v1/member/list')[0], 'call turns the pages of the member list');
   const [t] = tracedLinks.passed['GET:/api/v1/document/{documentId}'];
-  assert.deepEqual(t, { title: 'reads a document from the server', file: 'calls.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/calls.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'call' });
+  assert.deepEqual(t, { title: 'reads a document from the server', tags: [], file: 'calls.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/calls.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'call' });
 });
 
 test('a request with another method than the call, or for a path no call has, links the test to no call', () => {
