@@ -13,7 +13,8 @@ import { buildFlow } from './flow.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
 import { addMark, addReply, classifyMarks, loadMarks, recordKind } from './marks.ts';
 import type { Mark } from './marks.ts';
-import { linkKey, locatePart } from './parts.ts';
+import { linkKey, locatePart, locateStoryPart } from './parts.ts';
+import type { StoryPath } from './parts.ts';
 import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.ts';
 import { addStory, editStory } from './stories.ts';
 import { checkScreens, checkStoryFiles } from './story-paths.ts';
@@ -93,7 +94,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
   const kinds = Object.keys(config.caseKinds);
   const candidates = storyCandidates(config, map, mapFile, traced);
-  const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key));
+  const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key), stories.list as StoryPath[]);
   const needed = new Map<string, Set<string>>();
   for (const { target, current } of marks.attached) {
     if (target.case === undefined || current?.status !== 'needed') continue;
@@ -161,7 +162,7 @@ function readBody(req: http.IncomingMessage) {
   });
 }
 
-export type AnnouncedMark = Mark & { duru: string; where?: ReturnType<typeof locatePart> | ReturnType<typeof candidatePlace> | null };
+export type AnnouncedMark = Mark & { duru: string; where?: ReturnType<typeof locatePart> | ReturnType<typeof locateStoryPart> | ReturnType<typeof candidatePlace> | null };
 
 export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {} }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark) => void } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
@@ -197,11 +198,16 @@ export async function startReviewServer(config: any, { port = 0, author = review
       return null;
     }
   };
-  const whereOf = (mark: Mark) => locatePart(mark.target, {
+  const storyPartWhere = ({ story, part }: Mark['target']) => {
+    const map = readOrNull(() => readMap(mapFile));
+    const found = map && readOrNull(() => (checkStoryFiles(map, config.storiesDir, mapFile).list as StoryPath[]).find((s) => s.id === story));
+    return found ? locateStoryPart(part!, found, map.screens) : null;
+  };
+  const whereOf = (mark: Mark) => (mark.target.story !== undefined ? storyPartWhere(mark.target) : locatePart(mark.target, {
     tests: (mark.target.part!.kind === 'test' && readOrNull(() => readTests(config))) || {},
     screens: (mark.target.part!.kind !== 'test' && readOrNull(() => readMap(mapFile))?.screens) || [],
     roleGuards: config.roleGuards,
-  });
+  }));
   const findCandidate = (key: unknown) => storyCandidates(config, readMap(mapFile), mapFile, readTests(config).traced).list.find((c) => c.key === key);
   const candidateWhere = (key: string) => {
     try {

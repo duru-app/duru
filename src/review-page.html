@@ -257,7 +257,10 @@
   .box .talk-count { font-size: 10px; line-height: 14px; }
   .bubble { visibility: hidden; border: 1px solid var(--line); color: var(--muted); }
   .bubble svg { width: 12px; height: 12px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-  .part-row:hover .bubble, #candidate-list li:hover .bubble, .bubble:focus-visible { visibility: visible; }
+  .part-row:hover .bubble, #candidate-list li:hover .bubble, .story-line .box:hover .bubble, .bubble:focus-visible { visibility: visible; }
+  .story-path :is(.step, .link) > .part-row { flex: 1; min-width: 0; }
+  .story-line .box .bubble { padding: 0 4px; line-height: 14px; }
+  .story-hop .bubble { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); padding: 0 4px; line-height: 14px; visibility: visible; }
   :is(.part-count, .talk-count) { border: 1px solid var(--accent); color: var(--accent); }
   .talk-head { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
   .tags, .history-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
@@ -562,7 +565,7 @@ function fill(el, ...children) {
 const keyOf = (t) => (t.candidate !== undefined
   ? `candidate(${t.candidate})`
   : t.story !== undefined
-  ? `story(${t.story})`
+  ? [`story(${t.story})`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' ')
   : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
 const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
 const targetName = (t) => (t.candidate !== undefined
@@ -573,6 +576,8 @@ const targetName = (t) => (t.candidate !== undefined
 const conditionLabel = (key) => (key.startsWith('role:') ? `역할 ${key.slice('role:'.length)}` : `설정 ${key.slice('setting:'.length)}`);
 const tagLabel = (t) => {
   if (t.candidate !== undefined) return '후보';
+  if (t.part?.kind === 'step') return `단계 ${t.part.key.step} ${screenLabel(t.part.key.screen)}`;
+  if (t.part?.kind === 'hop') return `단계 ${t.part.key.step} → ${t.part.key.step + 1} 연결`;
   if (t.story !== undefined) return '스토리';
   if (t.part?.kind === 'condition') return conditionLabel(t.part.key);
   if (t.part?.kind === 'link') return `${t.part.key.from} 에서 오는 링크`;
@@ -962,7 +967,7 @@ function markList(title, cls, marks, label, empty, pick = null) {
   return [
     h('h2', {}, `${title} ${marks.length}`),
     marks.length
-      ? h('ul', { class: `plain ${cls}` }, marks.map((m) => h('li', pick ? { class: label(m) === state.story ? 'selected' : '', onclick: () => pick(label(m)) } : {},
+      ? h('ul', { class: `plain ${cls}` }, marks.map((m) => h('li', pick ? { class: m.target.story === state.story ? 'selected' : '', onclick: () => pick(m.target.story) } : {},
           markChip(m), ' ', h('code', {}, label(m)), h('br'),
           ...summaryLines(summaryOf(m)))))
       : empty,
@@ -1015,6 +1020,7 @@ const sourceView = (source, whose) => (source.record
   ? h('div', { class: 'muted mono source', title: `${whose} 방문 기록과 단계` }, `${source.record} · ${stepsText(source.steps)}`)
   : h('div', { class: 'muted mono source', title: `${whose} 시험 보고와 그 순서를 지나간 시험` }, source.report, h('ul', { class: 'plain' }, source.tests.map((t) => h('li', {}, t)))));
 const storyDate = (date) => (date.length > 10 ? fmtDate(date) : date);
+const storyMarkLabel = (m) => (m.target.part ? `${m.target.story} · ${tagLabel(m.target)}` : m.target.story);
 const unlistedMarks = () => state.data.marks.attached.filter((m) => m.target.story !== undefined && !state.data.stories.list.some((st) => st.id === m.target.story));
 const screenOf = (id) => state.data.map.screens.find((s) => s.id === id);
 const screenLabel = (id) => screenOf(id)?.path ?? id;
@@ -1150,7 +1156,7 @@ function storyList() {
       ? storyItems()
       : [h('p', { class: 'muted' }, '스토리 파일이 없습니다. 스토리 하나를 파일 하나로 ', h('code', {}, state.data.storiesDir), ' 에 둡니다.')]),
     ...candidateGroup(),
-    ...markList('떨어져 나감', 'detached', state.data.marks.detached.filter((m) => m.target.story !== undefined || m.target.candidate !== undefined), (m) => (m.target.candidate !== undefined ? `후보 ${candidateName(m.target.candidate)}` : m.target.story),
+    ...markList('떨어져 나감', 'detached', state.data.marks.detached.filter((m) => m.target.story !== undefined || m.target.candidate !== undefined), (m) => (m.target.candidate !== undefined ? `후보 ${candidateName(m.target.candidate)}` : storyMarkLabel(m)),
       h('p', { class: 'muted', title: '스토리 파일이 사라진 스토리와, 받거나 버려 목록에서 빠진 후보에 남긴 코멘트' }, '없음')),
     h('h2', {}, `읽지 못한 스토리 파일 ${notices.length}`),
     notices.length
@@ -1158,7 +1164,7 @@ function storyList() {
       : h('p', { class: 'muted' }, '형식이 틀렸거나 ID 가 겹쳐 건너뛴 파일이 여기 남습니다.'),
     unlistedMarks().length
       ? h('div', { title: '파일을 읽지 못했거나 맵이 오래되어 목록에 없는 스토리에 남은 코멘트' },
-          markList('목록 밖 스토리 코멘트', 'unread-marks', unlistedMarks(), (m) => m.target.story, null, selectStory))
+          markList('목록 밖 스토리 코멘트', 'unread-marks', unlistedMarks(), storyMarkLabel, null, selectStory))
       : null,
   ];
 }
@@ -1197,7 +1203,11 @@ const SLOT_WORDS = {
   test: { add: '이 테스트를 꼬리표로 넣고 코멘트를 씁니다', narrow: '이 테스트를 꼬리표로 붙인 말만 대화에 남깁니다' },
   condition: { add: '이 조건을 꼬리표로 넣고 코멘트를 씁니다', narrow: '이 조건을 꼬리표로 붙인 말만 대화에 남깁니다' },
   link: { add: '이 링크를 꼬리표로 넣고 코멘트를 씁니다', narrow: '이 링크를 꼬리표로 붙인 말만 대화에 남깁니다' },
+  step: { add: '이 단계를 꼬리표로 넣고 코멘트를 씁니다', narrow: '이 단계를 꼬리표로 붙인 말만 대화에 남깁니다' },
+  hop: { add: '이 연결을 꼬리표로 넣고 코멘트를 씁니다', narrow: '이 연결을 꼬리표로 붙인 말만 대화에 남깁니다' },
 };
+const stepTarget = (story, i, screen) => ({ story, part: { kind: 'step', key: { step: i + 1, screen } } });
+const hopTarget = (story, i, l) => ({ story, part: { kind: 'hop', key: { step: i + 1, from: l.from, to: l.to } } });
 const commentsIn = (m) => (m ? m.history.filter((r) => r.replyTo === undefined).length : 0);
 const saidIn = (m) => m.history.filter((r) => r.replyTo === undefined && r.note.trim() !== '');
 const unanswered = (m, r) => r.replyTo === undefined && r.status === undefined && !m.history.some((x) => x.replyTo === r.id);
@@ -1231,18 +1241,41 @@ function focusTalk() {
   field?.setSelectionRange(field.value.length, field.value.length);
 }
 
+function moveTalkToStory(id) {
+  state.view = 'list';
+  state.side = 'stories';
+  state.composing = false;
+  state.candidate = null;
+  state.candidateTalk = null;
+  state.error = null;
+  state.caseError = null;
+  state.storyError = null;
+  state.judgmentError = null;
+  if (state.story === id) return;
+  state.storyOpen.clear();
+  state.storyDraft = null;
+  state.story = id;
+}
+
 function tagPart(target) {
   state.talkScope = 'here';
-  moveTalkTo(target.node);
-  state.draft ??= { status: markOf(state.target)?.current?.status ?? null, note: '' };
-  Object.assign(state.draft, { part: target, noTag: false });
+  if (target.story !== undefined) {
+    moveTalkToStory(target.story);
+    state.storyDraft ??= { status: markOf({ story: target.story })?.current?.status ?? null, note: '' };
+    Object.assign(state.storyDraft, { part: target, noTag: false });
+  } else {
+    moveTalkTo(target.node);
+    state.draft ??= { status: markOf(state.target)?.current?.status ?? null, note: '' };
+    Object.assign(state.draft, { part: target, noTag: false });
+  }
   render();
   focusTalk();
 }
 
 function narrowTalk(target) {
   state.talkScope = 'here';
-  moveTalkTo(target.node);
+  if (target.story !== undefined) moveTalkToStory(target.story);
+  else moveTalkTo(target.node);
   state.dockKey = keyOf(shownTarget());
   state.historyFilter = keyOf(target);
   state.historyOpen = true;
@@ -1264,12 +1297,18 @@ function talkOnCandidate(key, history) {
   if (!history) focusTalk();
 }
 
+const bubbleButton = (target, words, name) => h('button', {
+  class: 'bubble', title: words.add, 'aria-label': `「${name}」에 코멘트`,
+  onclick: (e) => { e.stopPropagation(); tagPart(target); },
+  onkeydown: (e) => e.stopPropagation(),
+}, BUBBLE());
+
 function slotRow(item, target, words, name = tagLabel(target)) {
   const n = commentsIn(markOf(target));
   return h('div', { class: 'part-row' },
     item,
     n ? h('button', { class: 'part-count', title: words.narrow, onclick: (e) => { e.stopPropagation(); narrowTalk(target); } }, unansweredDot(entriesAt(target)), `코멘트 ${n}`) : null,
-    h('button', { class: 'bubble', title: words.add, 'aria-label': `「${name}」에 코멘트`, onclick: (e) => { e.stopPropagation(); tagPart(target); } }, BUBBLE()));
+    bubbleButton(target, words, name));
 }
 
 const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title));
@@ -2014,19 +2053,20 @@ function renderCenterHead(s) {
   updateSettings(moved ? (list) => autoOverrides(shown, list) : () => null);
 }
 
-function stepItem(step, i, recordSteps) {
+function stepItem(step, i, recordSteps, story) {
   const records = recordSteps ? h('span', { class: 'records muted', title: '방문 기록에서 이 화면에 머문 단계' }, stepsText(recordSteps)) : null;
+  const slot = (name) => (story ? slotRow(name, stepTarget(story, i, step.screen), SLOT_WORDS.step) : name);
   if (!step.onMap) {
     return h('div', { class: 'step off-map' },
       h('span', { class: 'no' }, i + 1),
-      h('span', { class: 'name' }, h('div', { class: 'muted mono' }, step.screen)),
+      slot(h('span', { class: 'name slot-text' }, h('div', { class: 'muted mono' }, step.screen))),
       records,
       h('span', { class: 'chip l-off-map' }, '맵에 없는 화면'));
   }
   const s = screenOf(step.screen);
   return h('div', { class: 'step on-map', title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
     h('span', { class: 'no' }, i + 1),
-    h('span', { class: 'name' }, screenHead(s), stepTests(s.id)),
+    slot(h('span', { class: 'name slot-text' }, screenHead(s), stepTests(s.id))),
     records);
 }
 
@@ -2046,12 +2086,15 @@ const wayItem = (w, scope = null) => h('li', {}, h('code', {}, `${w.file}:${w.li
 const unknownList = (links) => h('ul', { class: 'plain ways unknown-links' }, links.map((u) => h('li', {}, h('code', {}, `${u.file}:${u.line}`), ' → ', h('code', {}, u.to))));
 const skippedLinks = (links) => [h('div', { class: 'muted skipped' }, '판정에서 뺀 링크'), unknownList(links)];
 
-function linkItem(l) {
-  return h('div', { class: `link l-${l.verdict}` },
-    h('span', { class: `chip l-${l.verdict}`, title: LINK_VERDICT_TITLE[l.verdict] }, LINK_VERDICT[l.verdict]),
+function linkItem(l, story, i) {
+  const head = h('span', { class: 'slot-text' },
+    h('span', { class: `chip link-verdict l-${l.verdict}`, title: LINK_VERDICT_TITLE[l.verdict] }, LINK_VERDICT[l.verdict]),
     l.verdict === 'off-map' ? h('span', { class: 'muted' }, ' 화면 없음') : null,
     l.verdict === 'configured' ? h('span', { class: 'muted' }, ` ${l.reasons.join(', ')}`) : null,
-    l.verdict === 'unknown' ? [h('span', { class: 'muted' }, ' 주소 못 읽은 링크'), unknownList(l.unknownLinks)] : null,
+    l.verdict === 'unknown' ? h('span', { class: 'muted' }, ' 주소 못 읽은 링크') : null);
+  return h('div', { class: `link l-${l.verdict}` },
+    story ? slotRow(head, hopTarget(story, i, l), SLOT_WORDS.hop) : head,
+    l.verdict === 'unknown' ? unknownList(l.unknownLinks) : null,
     l.ways.length ? h('ul', { class: 'plain ways' }, l.ways.map((w) => wayItem(w))) : null,
     l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null);
 }
@@ -2199,9 +2242,9 @@ function renderUntaggedCenter() {
       h('ul', { class: 'plain' }, t.unmatched.map((url) => h('li', { class: 'mono' }, url)))) : null);
 }
 
-const storyPath = (st, stepRanges) => [
+const storyPath = (st, stepRanges, story) => [
   h('h2', {}, `화면 순서 ${st.steps.length}`),
-  h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1]) : null, stepItem(step, i, stepRanges?.[i])])),
+  h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1], story, i - 1) : null, stepItem(step, i, stepRanges?.[i], story)])),
 ];
 
 function renderStoryCenter() {
@@ -2227,7 +2270,7 @@ function renderStoryCenter() {
     st.memo ? h('p', { class: 'memo' }, st.memo) : null,
     h('div', { class: 'story-tests' }, h('h2', {}, `스토리 테스트 ${storyTests.length}`),
       storyTests.length ? storyTests.map((t) => testItem(t, { depth: true, hide: [`story:${st.id}`] })) : h('p', { class: 'muted' }, '없음')),
-    storyPath(st));
+    storyPath(st, null, st.id));
 }
 
 const stepLabel = (r) => (r.kind === 'start' ? `첫 화면 ${screenLabel(r.screen)}`
@@ -2950,7 +2993,7 @@ function reachTalk(target, recordId) {
     state.side = 'stories';
     state.composing = false;
     state.historyOpen = true;
-    state.dockKey = keyOf(target);
+    state.dockKey = keyOf(target.candidate !== undefined ? target : { story: target.story });
     return target.candidate !== undefined ? selectCandidate(target.candidate) : selectStory(target.story);
   }
   state.side = 'screens';
@@ -3970,13 +4013,15 @@ function storyLine(st) {
           },
         }, h('span', { class: 'path' }, s.screen), h('span', { class: 'tag off' }, PATH_TAG['off-map']));
     box.prepend(h('span', { class: 'story-badge' }, i + 1));
+    box.append(bubbleButton(stepTarget(st.id, i, s.screen), SLOT_WORDS.step, `단계 ${i + 1} ${s.onMap ? screenLabel(s.screen) : s.screen}`));
     Object.assign(box.dataset, { step: i, screen: s.screen }, s.onMap ? { key: s.screen } : {});
     box.classList.toggle('story-ring', ring === i);
     return box;
   };
   const hop = (l, i) => h('div', { class: `story-hop l-${l.verdict}`, 'data-hop': i, title: [hopTitle(l, i), ...(l.reasons ?? [])].join(' · ') },
     svg('svg', { width: HOP_WIDTH, height: 8, 'aria-hidden': 'true' }, svg('path', { class: hopClass(l.verdict), d: `M2 4H${HOP_WIDTH - 2}` })),
-    PATH_TAG[l.verdict] ? h('span', { class: `story-tag l-${l.verdict}` }, PATH_TAG[l.verdict]) : null);
+    PATH_TAG[l.verdict] ? h('span', { class: `story-tag l-${l.verdict}` }, PATH_TAG[l.verdict]) : null,
+    bubbleButton(hopTarget(st.id, i, l), SLOT_WORDS.hop, `단계 ${i + 1} → ${i + 2} 연결`));
   const gaps = st.links.flatMap((l, i) => (l.verdict === 'broken' ? [goesTo(l, i, byId)] : []));
   const el = h('div', { class: 'canvas story story-line' },
     h('div', { class: 'story-row' }, st.steps.flatMap((s, i) => [i ? hop(st.links[i - 1], i - 1) : null, step(s, i)])),

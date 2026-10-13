@@ -1710,6 +1710,19 @@ Alternatives compared:
 - Counting a mark with no text: a screen marked 「충분」 would read 「코멘트 1」 though nothing was written, and the
   badge would repeat what the status chip beside it says.
 
+**A comment on a step of a story is keyed by the step's number and its screen, and one on the link between two steps
+by the number of the step it leaves and both screens, under the story's own target as parts `step` and `hop`.**
+#229 asked for the number and the screen: duru writes a story's screens once and edits only its name and memo, so the
+number of a step does not move, and the screen beside it tells a step apart when someone edits the file by hand; a
+comment whose number now points at another screen comes off rather than moving to a step it was not written on.
+Numbers count from 1, as the page and the task list show them. The link part is named `hop`, not `link`, since
+`link` is already the part for a link into a screen. The story drawn in the flow gets the bubbles but not the counts:
+its boxes already carry the count of the screen's own conversation, and a second number on the same box would not
+say which is which.
+Alternatives compared:
+- The screen alone: a story may pass a screen twice, so the key would not name one step.
+- The number alone: a comment would move silently to another screen when the file is edited.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

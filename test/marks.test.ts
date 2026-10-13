@@ -321,7 +321,7 @@ test('a test part takes a comment only: a status, an empty note, a depth, an opt
       [{ target: { node: '/home#Home', part: { kind: 'row', key: LIST_TEST } }, note: 'x' }, /unknown part kind "row" \(expected test, condition, link\)/],
       [{ target: { node: '/home#Home', part: { kind: 'test', key: { file: 'e2e/list.spec.ts', title: 't' } } }, note: 'x' }, /a test part needs a result file, a test file and a title/],
       [{ target: { node: '/home#Home', part: { kind: 'test', key: { source: 'r.json', file: 'e2e/list.spec.ts', title: ' ' } } }, note: 'x' }, /a test part needs a result file, a test file and a title/],
-      [{ target: { story: 'run-lab', part }, note: 'x' }, /a story mark takes no node, option, depth, case or part/],
+      [{ target: { story: 'run-lab', part }, note: 'x' }, /unknown story part kind "test" \(expected step, hop\)/],
     ];
     for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' }), message);
     assert.deepEqual(loadMarks(dir), []);
@@ -484,5 +484,67 @@ test('a comment on a story candidate takes no status, and a candidate key mixed 
     ];
     for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' } as Parameters<typeof addMark>[1]), message);
     assert.equal(fs.existsSync(dir), false);
+  });
+});
+
+const STEP = { kind: 'step', key: { step: 2, screen: '/lab#Lab' } };
+const HOP = { kind: 'hop', key: { step: 1, from: '/home#Home', to: '/lab#Lab' } };
+const LAB_PATH = {
+  id: 'run-lab', file: 'run-lab.json', screens: ['/home#Home', '/lab#Lab'],
+  links: [{ verdict: 'conditioned', ways: [{ file: 'components/Home.js', line: 17, conditions: [] }] }],
+  reach: [{ kind: 'link', from: '/home#Home', to: '/lab#Lab' }, { kind: 'route', screen: '/lab#Lab' }, { kind: 'route', screen: '/home#Home' }],
+};
+const LAB_SCREENS = { screens: [{ id: '/home#Home', routeFile: 'Routes.js', line: 3, componentFile: 'components/Home.js' }, { id: '/lab#Lab', routeFile: 'Routes.js', line: 9, componentFile: null }] };
+
+test('a comment on a step or on the link between two steps of a story is written with the story and the step numbered from 1, in the story\'s folder, keyed apart from the story, and refused with a status or a malformed key', () => {
+  withMarksDir((dir: string) => {
+    const step = addMark(dir, { target: { story: 'run-lab', part: STEP }, note: 'check the result table here', author: 'a' });
+    const hop = addMark(dir, { target: { story: 'run-lab', part: HOP }, note: 'is the link really there?', author: 'a' });
+    assert.deepEqual([step.target, hop.target], [{ story: 'run-lab', part: STEP }, { story: 'run-lab', part: HOP }]);
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'stories', 'run-lab')).length, 2);
+    addMark(dir, { target: { story: 'run-lab' }, status: 'missing', author: 'a' });
+    assert.deepEqual(classifyMarks(loadMarks(dir), MAP, ['run-lab']).attached.map((m) => m.key), [
+      'story(run-lab)',
+      `story(run-lab) part:hop:${JSON.stringify(HOP.key)}`,
+      `story(run-lab) part:step:${JSON.stringify(STEP.key)}`,
+    ]);
+    const refused: [object, RegExp][] = [
+      [{ target: { story: 'run-lab', part: STEP }, status: 'missing', note: 'x' }, /a comment on a step or a hop of a story takes no status; put the status on the story itself/],
+      [{ target: { story: 'run-lab', part: { kind: 'step', key: { step: 0, screen: '/lab#Lab' } } }, note: 'x' }, /a step part needs its step number, counted from 1, and the screen of that step/],
+      [{ target: { story: 'run-lab', part: { kind: 'step', key: { step: 1.5, screen: '/lab#Lab' } } }, note: 'x' }, /a step part needs its step number/],
+      [{ target: { story: 'run-lab', part: { kind: 'step', key: { step: 2 } } }, note: 'x' }, /a step part needs its step number/],
+      [{ target: { story: 'run-lab', part: { kind: 'hop', key: { step: 1, from: '/home#Home' } } }, note: 'x' }, /a hop part needs the number of the step it leaves, counted from 1, and the screens it leaves and reaches/],
+      [{ target: { story: 'run-lab', node: '/lab#Lab', part: STEP }, note: 'x' }, /a story mark takes no node, option, depth or case/],
+      [{ target: { node: '/lab#Lab', part: STEP }, note: 'x' }, /unknown part kind "step" \(expected test, condition, link\)/],
+    ];
+    for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' } as Parameters<typeof addMark>[1]), message);
+    assert.equal(loadMarks(dir).length, 3);
+  });
+});
+
+test('a comment on a story step or link stays while the story has that screen at that step, carries the screen files or the link\'s verdict and preconditions, is detached once the story file changes there, and stays with an unreadable story', () => {
+  withMarksDir((dir: string) => {
+    addMark(dir, { target: { story: 'run-lab', part: STEP }, note: 'check the result table here', author: 'a' });
+    addMark(dir, { target: { story: 'run-lab', part: HOP }, note: 'is the link really there?', author: 'a' });
+    const same = classifyMarks(loadMarks(dir), LAB_SCREENS, ['run-lab'], [], {}, {}, [], [LAB_PATH]);
+    assert.deepEqual(same.detached, []);
+    assert.deepEqual(same.attached.map((m) => m.where), [
+      {
+        file: 'run-lab.json',
+        from: { id: '/home#Home', componentFile: 'components/Home.js', routeFile: 'Routes.js', line: 3 },
+        to: { id: '/lab#Lab', componentFile: null, routeFile: 'Routes.js', line: 9 },
+        verdict: 'conditioned',
+        ways: [{ file: 'components/Home.js', line: 17, conditions: [] }],
+        preconditions: [{ kind: 'link', from: '/home#Home', to: '/lab#Lab' }, { kind: 'route', screen: '/lab#Lab' }],
+      },
+      { file: 'run-lab.json', screen: { id: '/lab#Lab', componentFile: null, routeFile: 'Routes.js', line: 9 } },
+    ]);
+    const changed = classifyMarks(loadMarks(dir), LAB_SCREENS, ['run-lab'], [], {}, {}, [], [{ ...LAB_PATH, screens: ['/home#Home', '/help#Help'] }]);
+    assert.deepEqual(changed.attached, []);
+    assert.deepEqual(changed.detached.map((m) => [m.target.part!.kind, m.where]), [['hop', null], ['step', null]]);
+    const unreadable = classifyMarks(loadMarks(dir), LAB_SCREENS, ['run-lab'], [], {}, {}, [], []);
+    assert.deepEqual(unreadable.attached.map((m) => [m.target.part!.kind, m.where]), [['hop', null], ['step', null]]);
+    const gone = classifyMarks(loadMarks(dir), LAB_SCREENS, [], [], {}, {}, [], []);
+    assert.equal(gone.detached.length, 2);
   });
 });

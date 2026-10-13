@@ -701,6 +701,34 @@ test('comments on an opening condition and an incoming link of an open screen ar
   });
 });
 
+test('comments on a step and on the link between two steps of an open story are listed under it with the screen files, and the link with its verdict, while a comment on a step the story no longer has stays off the list', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    const asked = addMark(marksDir, { target: { story: 'help-from-home', part: { kind: 'step', key: { step: 2, screen: '/home#Home' } } }, note: 'Check the help link here.', author: 'b' }, new Date('2026-10-12T02:00:00Z'));
+    addReply(marksDir, { replyTo: asked.id, note: 'Home has none.' }, new Date('2026-10-12T03:00:00Z'));
+    addMark(marksDir, { target: { story: 'help-from-home', part: { kind: 'hop', key: { step: 1, from: '/signin#SignIn', to: '/home#Home' } } }, note: 'Signed in only?', author: 'b' }, new Date('2026-10-12T04:00:00Z'));
+    addMark(marksDir, { target: { story: 'help-from-home', part: { kind: 'step', key: { step: 3, screen: '/lab#Lab' } } }, note: 'Gone.', author: 'b' }, new Date('2026-10-12T05:00:00Z'));
+
+    const out = cli('tasks');
+    const story = out.split('## help-from-home\n')[1].split('\n## ')[0];
+    assert.match(story, new RegExp([
+      '^- marks:',
+      '  - missing — "Home has no help link; check the way through the document page\\." \\(reviewer, 2026-10-03\\)',
+      '- comments on steps:',
+      '  - step 2: /home#Home, component \\S+, route at Routes\\.js:\\d+',
+      '    - comment — "Check the help link here\\." \\(b, 2026-10-12\\)',
+      '      - reply — "Home has none\\." \\(agent, 2026-10-12\\)',
+      '- comments on links between steps:',
+      '  - step 1 → 2: from /signin#SignIn, component \\S+, route at Routes\\.js:\\d+ to /home#Home, component \\S+, route at Routes\\.js:\\d+ — open at components/SignIn\\.js:12',
+      '    - comment — "Signed in only\\?" \\(b, 2026-10-12\\)',
+      '- story file: help-from-home\\.json',
+    ].join('\n'), 'm'));
+    assert.doesNotMatch(out, /Gone\./);
+    assert.match(out.split('\n')[2], / Under `comments on steps` and `comments on links between steps`, /);
+  }, { storiesDir: 'example-stories' });
+});
+
 test('a note over several lines stays inside its mark, and a call whose API function was not found still shows', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     cli('rebuild');

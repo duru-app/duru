@@ -130,14 +130,33 @@ function linkHead(m: any) {
   return `  - link from ${from} ${read}, at ${m.where.places.map((p: any) => `${p.file}:${p.line}`).join(', ')}`;
 }
 
-const PART_SECTIONS: [string, string, (m: any, word: string) => string][] = [
+type PartSection = [string, string, (m: any, word: string) => string];
+
+const PART_SECTIONS: PartSection[] = [
   ['test', 'comments on tests', testHead],
   ['condition', 'comments on opening conditions', conditionHead],
   ['link', 'comments on incoming links', linkHead],
 ];
 
-function partLines(entries: any[], word: string) {
-  return PART_SECTIONS.flatMap(([kind, title, head]) => {
+const screenAt = (s: any) => (s.onMap === false ? `${s.id}, not on the map` : `${s.id}, component ${s.componentFile ?? 'file not found'}, route at ${s.routeFile}:${s.line}`);
+
+function stepHead(m: any) {
+  return `  - step ${m.target.part.key.step}: ${within(screenAt(m.where.screen), '    ')}`;
+}
+
+function hopHead(m: any) {
+  const { step } = m.target.part.key;
+  const { from, to } = m.where;
+  return `  - step ${step} → ${step + 1}: from ${within(screenAt(from), '    ')} to ${within(screenAt(to), '    ')} — ${linkText(m.where)}`;
+}
+
+const STORY_PART_SECTIONS: PartSection[] = [
+  ['step', 'comments on steps', stepHead],
+  ['hop', 'comments on links between steps', hopHead],
+];
+
+function partLines(entries: any[], word: string, sections = PART_SECTIONS) {
+  return sections.flatMap(([kind, title, head]) => {
     const own = entries.filter((m) => m.target.part.kind === kind);
     if (!own.length) return [];
     return [`- ${title}:`, ...own.flatMap((m) => {
@@ -337,7 +356,7 @@ function preconditionLines(r: any, { screensById, restricted }: MapInfo) {
   ];
 }
 
-function storyLines(story: any, marks: any[], tests: any, mapInfo: MapInfo, formats: string[]) {
+function storyLines(story: any, marks: any[], parts: any[], tests: any, mapInfo: MapInfo, formats: string[]) {
   const problems = reachProblems(story);
   return [
     '',
@@ -346,6 +365,7 @@ function storyLines(story: any, marks: any[], tests: any, mapInfo: MapInfo, form
     `- name: ${within(story.name, '  ')}`,
     '- marks:',
     ...marks.flatMap((m) => entryLines(m)),
+    ...partLines(parts, 'story', STORY_PART_SECTIONS),
     `- story file: ${story.file} (${within(story.author, '  ')}, ${story.date.slice(0, 10)})`,
     ...(story.memo ? [`- memo: ${within(story.memo, '  ')}`] : []),
     `- status: ${STORY_STATUS[story.status]}`,
@@ -402,6 +422,7 @@ export function taskList(config: any) {
   const resultLines = resultOptionLines(map, tests.nodes);
   const hasKinds = Object.keys(config.caseKinds).length > 0;
   const partsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.node === id);
+  const storyPartsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.story === id && m.where);
 
   const out = [
     `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}`,
@@ -415,6 +436,9 @@ export function taskList(config: any) {
   const partKinds = new Set([...screens, ...calls].flatMap((n) => partsOf(n.id).map((m) => m.target.part!.kind)));
   if (partKinds.has('test')) {
     out[2] += ' Under `comments on tests`, each test a reviewer left a comment on is named with its file and line, its status, how it is linked to the screen or call and the result file it was read from; read the result file for why it failed.';
+  }
+  if (storyMarks.some((m) => storyPartsOf(m.target.story!).length)) {
+    out[2] += ' Under `comments on steps` and `comments on links between steps`, each step of a story and each link between two of its steps a reviewer left a comment on is named with the screen\'s component file and route line, and a link also with its verdict and where it is written; add what the comment asks to the story test, and if the verdict is wrong, tell the user it is a duru defect.';
   }
   if (partKinds.has('condition') || partKinds.has('link')) {
     out[2] += ' Under `comments on opening conditions` and `comments on incoming links`, each role or setting condition and each link into the screen a reviewer left a comment on is named with the source file and line it is written at; if the app does not do what duru read there, tell the user it is a duru defect, and otherwise answer with that line.';
@@ -467,7 +491,7 @@ export function taskList(config: any) {
   for (const id of [...new Set(storyMarks.map((m) => m.target.story))]) {
     const own = storyMarks.filter((m) => m.target.story === id);
     const story = stories.list.find((s) => s.id === id);
-    if (story) out.push(...storyLines(story, own, tests, mapInfo, formats));
+    if (story) out.push(...storyLines(story, own, storyPartsOf(id!), tests, mapInfo, formats));
     else if (!stories.stale) out.push('', `## ${id}`, '', '- marks:', ...own.flatMap((m) => entryLines(m)), '- story file: could not be read; `duru rebuild` prints why');
   }
   out.push(...taggingLines(tests.awaitingTag, new Set<string>(map.calls.map((c: any) => c.id))));

@@ -4,8 +4,8 @@ import path from 'node:path';
 import { CASE_KIND, isPlainObject } from './config.ts';
 import { reference } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
-import { locatePart } from './parts.ts';
-import type { LinkKey, PartContext, PartScreen, SourcePlaces, TestPlace } from './parts.ts';
+import { locatePart, locateStoryPart, STORY_PART_KINDS } from './parts.ts';
+import type { HopKey, HopPlace, LinkKey, PartContext, PartScreen, SourcePlaces, StepKey, StepPlace, StoryPath, TestPlace } from './parts.ts';
 import { isText, STORY_ID } from './stories.ts';
 import { DEPTHS } from './test-links.ts';
 
@@ -24,7 +24,7 @@ interface MarkTarget {
 
 export interface Part {
   kind: string;
-  key: TestRef | string | LinkKey;
+  key: TestRef | string | LinkKey | StepKey | HopKey;
 }
 
 export const PART_KINDS = ['test', 'condition', 'link'];
@@ -57,7 +57,7 @@ interface MarkEntry {
   target: MarkTarget;
   current: Mark | null;
   history: Mark[];
-  where?: TestPlace | SourcePlaces | null;
+  where?: TestPlace | SourcePlaces | StepPlace | HopPlace | null;
 }
 
 // 끝의 `.` 을 바꾸는 것은 Windows 가 그런 이름을 받지 않고, 화면 ID 가 `..` 이면 표시 폴더 밖을 가리키기 때문이다.
@@ -106,8 +106,25 @@ function candidateTarget(target: MarkTarget) {
 
 function storyTarget(target: MarkTarget) {
   if (typeof target.story !== 'string' || !STORY_ID.test(target.story)) throw new Error(`"${target.story}" is not a story ID`);
-  if (['node', 'option', 'depth', 'case', 'part'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a story mark takes no node, option, depth, case or part');
-  return { story: target.story };
+  if (['node', 'option', 'depth', 'case'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a story mark takes no node, option, depth or case');
+  if (target.part === undefined) return { story: target.story };
+  const { kind, key }: Partial<Part> = isPlainObject(target.part) ? target.part! : {};
+  if (!STORY_PART_KINDS.includes(kind!)) throw new Error(`unknown story part kind "${kind}" (expected ${STORY_PART_KINDS.join(', ')})`);
+  return { story: target.story, part: { kind: kind!, key: kind === 'step' ? stepKey(key) : hopKey(key) } };
+}
+
+const stepNumber = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 1;
+
+function stepKey(key: unknown): StepKey {
+  const { step, screen } = isPlainObject(key) ? key as Record<string, unknown> : {};
+  if (!stepNumber(step) || !isText(screen)) throw new Error('a step part needs its step number, counted from 1, and the screen of that step');
+  return { step, screen };
+}
+
+function hopKey(key: unknown): HopKey {
+  const { step, from, to } = isPlainObject(key) ? key as Record<string, unknown> : {};
+  if (!stepNumber(step) || !isText(from) || !isText(to)) throw new Error('a hop part needs the number of the step it leaves, counted from 1, and the screens it leaves and reaches');
+  return { step, from, to };
 }
 
 function nodeTarget(target: MarkTarget | undefined) {
@@ -163,6 +180,7 @@ function linkPartKey(key: unknown): LinkKey {
 
 export function addMark(dir: string, { target, status, note, author }: NewMark, now = new Date()) {
   const checked: MarkTarget = target?.candidate !== undefined ? candidateTarget(target) : target?.story !== undefined ? storyTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target);
+  if (checked.story !== undefined && checked.part && status !== undefined && status !== null) throw new Error('a comment on a step or a hop of a story takes no status; put the status on the story itself');
   if (checked.part && status !== undefined && status !== null) throw new Error('a comment on a part of a screen or call takes no status; put the status on the screen or call itself');
   if (checked.candidate !== undefined && status !== undefined && status !== null) throw new Error('a comment on a story candidate takes no status; accept it as a story to give it one');
   const statuses = checked.case !== undefined ? CASE_STATUSES : MARK_STATUSES;
@@ -199,10 +217,10 @@ export function addReply(dir: string, { replyTo, note, author = 'agent' }: { rep
 const targetKey = (t: MarkTarget) => (t.candidate !== undefined
   ? `candidate(${t.candidate})`
   : t.story !== undefined
-  ? `story(${t.story})`
+  ? [`story(${t.story})`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' ')
   : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
 
-export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = [], tests: PartContext['tests'] = {}, roleGuards: Record<string, string[]> = {}, candidateKeys: string[] = []): { attached: MarkEntry[]; detached: MarkEntry[] } {
+export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[] = [], caseKinds: string[] = [], tests: PartContext['tests'] = {}, roleGuards: Record<string, string[]> = {}, candidateKeys: string[] = [], storyPaths: StoryPath[] = []): { attached: MarkEntry[]; detached: MarkEntry[] } {
   const nodes = new Map<string, Set<string>>([
     ...map.screens.map((s): [string, Set<string>] => [s.id, new Set()]),
     ...(map.calls ?? []).map((c): [string, Set<string>] => [c.id, new Set((c.options ?? []).map((o) => o.key))]),
@@ -210,6 +228,7 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
   const stories = new Set(storyIds);
   const kinds = new Set(caseKinds);
   const candidates = new Set(candidateKeys);
+  const paths = new Map(storyPaths.map((p) => [p.id, p]));
   const isAttached = (t: MarkTarget) => (t.candidate !== undefined
     ? candidates.has(t.candidate)
     : t.story !== undefined
@@ -227,9 +246,14 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
   for (const key of [...byTarget.keys()].sort()) {
     const history = byTarget.get(key)!;
     const target = history[0].target;
-    const where = target.part && nodes.has(target.node!) ? locatePart(target, { tests, screens: map.screens, roleGuards }) : null;
-    const entry = { key, target, current: history.find((m) => m.status !== undefined) ?? null, history, ...(target.part && { where }) };
-    (isAttached(target) && (!target.part || where) ? attached : detached).push(entry);
+    const path = target.story !== undefined ? paths.get(target.story) : undefined;
+    const where = !target.part ? null
+      : target.story !== undefined ? path && locateStoryPart(target.part, path, map.screens)
+      : nodes.has(target.node!) ? locatePart(target, { tests, screens: map.screens, roleGuards }) : null;
+    const entry = { key, target, current: history.find((m) => m.status !== undefined) ?? null, history, ...(target.part && { where: where ?? null }) };
+    // 읽지 못한 스토리 파일의 단계는 맞춰 볼 수 없으므로, 스토리 코멘트처럼 「목록 밖 스토리 코멘트」에 남긴다.
+    const located = !target.part || where || (target.story !== undefined && !path);
+    (isAttached(target) && located ? attached : detached).push(entry);
   }
   return { attached, detached };
 }
