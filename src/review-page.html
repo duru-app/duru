@@ -188,6 +188,13 @@
   .talk-line:hover, .talk-line:focus-visible { background: var(--selected); }
   .talk-line .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
   .talk-line .first { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag-field { position: relative; }
+  .tag-pick { position: absolute; left: 0; right: 0; bottom: 100%; z-index: 2; max-height: 220px; overflow-y: auto; margin: 0 0 4px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 12px rgba(0,0,0,.12); font-size: 13px; }
+  .tag-pick li { padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+  .tag-pick li.on, .tag-pick li[role=option]:hover { background: var(--selected); }
+  .talk-line.general { cursor: default; }
+  .talk-line.general div { white-space: pre-wrap; }
+  .talk-line.general .replies li { margin-top: 4px; padding: 4px 8px; border-radius: 6px; background: var(--bg); }
   .history li.reached { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
   .unanswered-dot { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--fail); }
   #right .chip { white-space: normal; }
@@ -1215,7 +1222,111 @@ const anyUnanswered = (entries) => entries.some((m) => m.history.some((r) => una
 const entriesAt = (t) => [markOf(t)].filter(Boolean);
 const unansweredDot = (entries) => (anyUnanswered(entries) ? h('span', { class: 'unanswered-dot', role: 'img', 'aria-label': '답 없는 코멘트 있음', title: '답 없는 코멘트가 있습니다' }) : null);
 
-const saidCount = (entries) => entries.reduce((sum, m) => sum + saidIn(m).length, 0);
+const saidCount = (entries) => new Set(entries.flatMap((m) => saidIn(m).map((r) => r.id))).size;
+
+const onlyTag = (tags, target) => tags.length === 1 && keyOf(tags[0]) === keyOf(target);
+const onceEach = (lines) => lines.filter(({ r }, i) => lines.findIndex((x) => x.r.id === r.id) === i);
+
+function addTag(draft, target, base) {
+  const tags = draft.tags ?? [base];
+  if (onlyTag(tags, base)) draft.tags = [target];
+  else if (!tags.some((t) => keyOf(t) === keyOf(target))) draft.tags = [...tags, target];
+}
+
+// 지금 대화의 화면 · 호출 · 스토리가 아닌 대상은 어디의 칸인지 앞에 붙인다.
+function chipLabel(t, here) {
+  const own = t.candidate !== undefined ? here.candidate === t.candidate : t.story !== undefined ? here.story === t.story : here.node === t.node;
+  if (own) return tagLabel(t);
+  const where = t.candidate !== undefined ? `후보 ${candidateName(t.candidate)}` : t.story !== undefined ? `스토리 ${t.story}` : `${nodeWord(t.node)} ${screenLabel(t.node)}`;
+  const whole = t.part === undefined && t.depth === undefined && t.option === undefined && t.case === undefined;
+  return whole ? where : `${where} · ${tagLabel(t)}`;
+}
+
+const recordTags = (r, here) => {
+  const targets = r.targets ?? (r.target ? [r.target] : []);
+  return targets.length ? targets.map((t) => tagChip(chipLabel(t, here))) : [tagChip('대상 없음')];
+};
+
+let pickables = [];
+const pickable = (target, name) => {
+  if (!pickables.some((p) => keyOf(p.target) === keyOf(target))) pickables.push({ target, name });
+};
+
+function pickList(tags, base) {
+  const own = base.node !== undefined
+    ? [{ target: { node: base.node }, name: nodeWord(base.node) === '호출' ? '호출 전체' : '화면 전체' }, ...state.data.depths.map((d) => ({ target: { node: base.node, depth: d }, name: `${DEPTH_LABELS[d]} 깊이` }))]
+    : [{ target: base, name: tagLabel(base) }];
+  const taken = new Set(tags.map(keyOf));
+  return [...own, ...pickables].filter((p, i, all) => !taken.has(keyOf(p.target)) && all.findIndex((x) => keyOf(x.target) === keyOf(p.target)) === i);
+}
+
+const AT_WORD = /(?:^|\s)@([^\s@]*)$/;
+
+function showPicker(picker, field, draft, tags, base) {
+  const before = field.value.slice(0, field.selectionStart);
+  const at = before.match(AT_WORD);
+  if (!at) {
+    picker.hidden = true;
+    return;
+  }
+  const start = before.length - at[1].length - 1;
+  if (picker.hidden || picker.start !== start) picker.onKey = undefined;
+  picker.start = start;
+  const query = at[1].toLowerCase();
+  const found = pickList(tags, base).filter((p) => p.name.toLowerCase().includes(query)).slice(0, 12);
+  const on = Math.max(0, found.findIndex((p) => keyOf(p.target) === picker.onKey));
+  if (found.length) picker.onKey = keyOf(found[on].target);
+  fill(picker, found.length ? found.map((p, i) => h('li', {
+    role: 'option', 'aria-selected': String(i === on), class: i === on ? 'on' : null, 'data-key': keyOf(p.target),
+    onmousedown: (e) => {
+      e.preventDefault();
+      takePick(field, draft, p.target, base);
+    },
+  }, p.name)) : h('li', { class: 'muted' }, '맞는 칸이 없습니다'));
+  picker.hidden = false;
+  picker.caret = field.selectionStart;
+  picker.takeOn = () => {
+    const i = [...picker.children].findIndex((li) => li.classList.contains('on'));
+    if (i >= 0 && found[i]) takePick(field, draft, found[i].target, base);
+  };
+}
+
+function takePick(field, draft, target, base) {
+  const end = field.selectionStart;
+  const at = field.value.slice(0, end).match(AT_WORD);
+  draft.note = at ? field.value.slice(0, end - at[1].length - 1) + field.value.slice(end) : field.value;
+  const tags = draft.tags ?? [base];
+  if (!tags.some((t) => keyOf(t) === keyOf(target))) draft.tags = [...tags, target];
+  render();
+  focusTalk();
+}
+
+function pickerKey(e, picker, field) {
+  if (picker.hidden || e.isComposing || e.keyCode === 229) return;
+  if (field.selectionStart !== picker.caret) {
+    picker.hidden = true;
+    return;
+  }
+  const items = [...picker.querySelectorAll('li[role=option]')];
+  const i = items.findIndex((li) => li.classList.contains('on'));
+  const move = (to) => {
+    items.forEach((li, k) => {
+      li.classList.toggle('on', k === to);
+      li.setAttribute('aria-selected', String(k === to));
+    });
+    picker.onKey = items[to].dataset.key;
+  };
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length) {
+    e.preventDefault();
+    move((i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length);
+  } else if (e.key === 'Enter' && items.length) {
+    e.preventDefault();
+    picker.takeOn();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    picker.hidden = true;
+  }
+}
 
 function talkCount(entries, narrow) {
   const n = saidCount(entries);
@@ -1229,8 +1340,9 @@ const BUBBLE = () => svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' },
 
 function moveTalkTo(node) {
   if (state.target.node === node) return;
+  if (state.draft?.tags && onlyTag(state.draft.tags, state.target)) state.draft.tags = undefined;
   state.target = { node };
-  state.draft = state.draft && { status: markOf(state.target)?.current?.status ?? null, note: state.draft.note, part: null, noTag: false };
+  state.draft = state.draft && { status: markOf(state.target)?.current?.status ?? null, note: state.draft.note, tags: state.draft.tags };
   state.error = null;
   state.caseError = null;
 }
@@ -1262,11 +1374,11 @@ function tagPart(target) {
   if (target.story !== undefined) {
     moveTalkToStory(target.story);
     state.storyDraft ??= { status: markOf({ story: target.story })?.current?.status ?? null, note: '' };
-    Object.assign(state.storyDraft, { part: target, noTag: false });
+    addTag(state.storyDraft, target, { story: target.story });
   } else {
     moveTalkTo(target.node);
     state.draft ??= { status: markOf(state.target)?.current?.status ?? null, note: '' };
-    Object.assign(state.draft, { part: target, noTag: false });
+    addTag(state.draft, target, state.target);
   }
   render();
   focusTalk();
@@ -1304,6 +1416,7 @@ const bubbleButton = (target, words, name) => h('button', {
 }, BUBBLE());
 
 function slotRow(item, target, words, name = tagLabel(target)) {
+  pickable(target, tagLabel(target));
   const n = commentsIn(markOf(target));
   return h('div', { class: 'part-row' },
     item,
@@ -2938,8 +3051,9 @@ const TALK_FILTERS = [
   ...Object.entries(MARK_STATUS).map(([key, label]) => ({ key, label, keep: (m, r) => m.current?.status === key && saidIn(m).find((x) => x.status === key)?.id === r.id })),
 ];
 
-const groupOf = (t) => (t.candidate !== undefined ? `candidate(${t.candidate})` : t.story !== undefined ? `story(${t.story})` : t.node);
-const groupTitle = (t) => (t.candidate !== undefined
+const noTarget = (t) => t.node === undefined && t.story === undefined && t.candidate === undefined;
+const groupOf = (t) => (noTarget(t) ? 'general()' : t.candidate !== undefined ? `candidate(${t.candidate})` : t.story !== undefined ? `story(${t.story})` : t.node);
+const groupTitle = (t) => (noTarget(t) ? '대상 없음' : t.candidate !== undefined
   ? `후보 ${candidateName(t.candidate)}`
   : t.story !== undefined
   ? `스토리 ${state.data.stories.list.find((st) => st.id === t.story)?.name ?? t.story}`
@@ -2953,9 +3067,9 @@ function allTalk() {
   for (const line of lines.filter(({ m, r }) => filter.keep(m, r)).sort((a, b) => byDate(b.r, a.r))) {
     const key = groupOf(line.m.target);
     if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(line);
+    if (!groups.get(key).some((x) => x.r.id === line.r.id)) groups.get(key).push(line);
   }
-  const unansweredCount = lines.filter(({ m, r }) => unanswered(m, r)).length;
+  const unansweredCount = onceEach(lines.filter(({ m, r }) => unanswered(m, r))).length;
   const filters = h('div', { class: 'talk-filters', role: 'group', 'aria-label': '대화 거르기' }, TALK_FILTERS.map((f) => h('button', {
     type: 'button',
     'aria-pressed': String(f.key === filter.key),
@@ -2965,15 +3079,19 @@ function allTalk() {
     },
   }, f.key === 'unanswered' ? `${f.label} ${unansweredCount}` : f.label)));
   const lineItem = ({ m, r }) => {
-    const replies = m.history.filter((x) => x.replyTo === r.id).length;
-    return h('button', { type: 'button', class: 'talk-line', 'data-record': r.id, onclick: () => reachTalk(m.target, r.id) },
-      h('span', { class: 'meta' },
-        unanswered(m, r) ? h('span', { class: 'unanswered-dot', role: 'img', 'aria-label': '답 없음', title: '답 없는 코멘트' }) : null,
-        r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status] ?? CASE_STATUS[r.status]) : null,
-        tagChip(tagLabel(m.target)),
-        h('span', {}, signedAt(r)),
-        replies ? h('span', {}, `· 답 ${replies}`) : null),
-      h('span', { class: 'first' }, firstLine(r.note)));
+    const replies = m.history.filter((x) => x.replyTo === r.id).sort(byDate);
+    const meta = h('span', { class: 'meta' },
+      unanswered(m, r) ? h('span', { class: 'unanswered-dot', role: 'img', 'aria-label': '답 없음', title: '답 없는 코멘트' }) : null,
+      r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status] ?? CASE_STATUS[r.status]) : null,
+      noTarget(m.target) ? null : tagChip(tagLabel(m.target)),
+      h('span', {}, signedAt(r)),
+      replies.length ? h('span', {}, `· 답 ${replies.length}`) : null);
+    // 대상 없는 말은 옮겨 갈 칸이 없으므로 여기서 글 전체와 답을 보인다.
+    if (noTarget(m.target)) {
+      return h('div', { class: 'talk-line general', 'data-record': r.id }, meta, h('div', {}, r.note),
+        replies.length ? h('ul', { class: 'plain replies' }, replies.map((x) => h('li', { class: 'reply' }, h('span', { class: 'muted' }, signedAt(x)), h('div', {}, x.note)))) : null);
+    }
+    return h('button', { type: 'button', class: 'talk-line', 'data-record': r.id, onclick: () => reachTalk(m.target, r.id) }, meta, h('span', { class: 'first' }, firstLine(r.note)));
   };
   return h('div', { class: 'talk all-talk' },
     filters,
@@ -3044,7 +3162,7 @@ function talkThread(target, { labelled }) {
   const recordItem = (m, r) => h('li', { class: r.replyTo !== undefined ? 'reply' : null, 'data-record': r.id },
     r.status ? [h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status] ?? CASE_STATUS[r.status]), ' ']
       : labelled ? [h('span', { class: `chip ${r.replyTo !== undefined ? 'reply' : 'comment'}` }, r.replyTo !== undefined ? '답' : '코멘트'), ' '] : null,
-    r.replyTo === undefined ? [tagChip(tagLabel(m.target)), ' '] : null,
+    r.replyTo === undefined ? [...recordTags(r, target), ' '] : null,
     h('span', { class: 'muted' }, signedAt(r)),
     r.note ? h('div', {}, r.note) : null,
     ...repliesOf(m, r));
@@ -3053,8 +3171,8 @@ function talkThread(target, { labelled }) {
     return replies.length ? [h('ul', { class: 'plain replies' }, replies.map((x) => recordItem(m, x)))] : [];
   };
   const answered = (m, r) => r.replyTo !== undefined && m.history.some((x) => x.id === r.replyTo);
-  const topLevel = shown.flatMap((m) => m.history.filter((r) => !answered(m, r)).map((r) => ({ m, r }))).sort((a, b) => byDate(a.r, b.r));
-  const all = talk.flatMap((m) => m.history.filter((r) => !answered(m, r)));
+  const topLevel = onceEach(shown.flatMap((m) => m.history.filter((r) => !answered(m, r)).map((r) => ({ m, r })))).sort((a, b) => byDate(a.r, b.r));
+  const all = onceEach(talk.flatMap((m) => m.history.filter((r) => !answered(m, r)).map((r) => ({ m, r }))));
   const history = all.length ? h('ul', { class: 'plain history' }, topLevel.map(({ m, r }) => recordItem(m, r))) : null;
   const filter = state.historyFilter && history && h('div', { class: 'history-filter' },
     '걸러 보는 중 ', tagChip(tagLabel(talk.find((m) => m.key === state.historyFilter)?.target ?? target)),
@@ -3080,36 +3198,46 @@ function markForm(target, draftKey, label, { folded = true } = {}) {
     applyHistoryFold(historyToggle, history);
   } }, `대화 ${count}`);
   if (history) applyHistoryFold(historyToggle, history);
-  const tag = draft.noTag ? null : draft.part ?? target;
-  const statusOn = tag === target && target.candidate === undefined;
-  const savable = () => tag !== null && (draft.note.trim() !== '' || (statusOn && !!draft.status));
-  const save = h('button', { class: 'save', disabled: !savable(), onclick: () => saveMark(tag, draftKey) }, '남기기');
+  const tags = draft.tags ?? [target];
+  const statusOn = onlyTag(tags, target) && target.candidate === undefined;
+  const savable = () => draft.note.trim() !== '' || (statusOn && !!draft.status);
+  const save = h('button', { class: 'save', disabled: !savable(), onclick: () => saveMark(tags, draftKey, statusOn) }, '남기기');
   const statuses = Object.entries(MARK_STATUS).map(([k, text]) => {
-    const button = h('button', { class: statusOn && draft.status === k ? 'on' : '', disabled: !statusOn, title: statusOn ? null : target.candidate !== undefined ? '후보에는 상태를 매기지 않습니다. 스토리로 받은 뒤에 매깁니다' : '상태는 꼬리표가 화면 · 호출 · 깊이 · 스토리 하나일 때만 매깁니다', onclick: () => {
+    const button = h('button', { class: statusOn && draft.status === k ? 'on' : '', disabled: !statusOn, title: statusOn ? null : target.candidate !== undefined ? '후보에는 상태를 매기지 않습니다. 스토리로 받은 뒤에 매깁니다' : '상태는 꼬리표가 화면 · 호출 · 깊이 · 스토리 하나뿐일 때만 매깁니다', onclick: () => {
       draft.status = draft.status === k ? null : k;
       for (const b of statuses) b.classList.toggle('on', b === button && draft.status === k);
       save.disabled = !savable();
     } }, text);
     return button;
   });
-  const untag = () => {
-    if (draft.part) draft.part = null;
-    else draft.noTag = true;
+  const untag = (t) => () => {
+    const rest = tags.filter((x) => keyOf(x) !== keyOf(t));
+    draft.tags = rest.length || keyOf(t) === keyOf(target) ? rest : undefined;
     render();
   };
+  const picker = h('ul', { class: 'plain tag-pick', role: 'listbox', 'aria-label': '꼬리표 고르기', hidden: true });
+  const field = h('textarea', {
+    placeholder: '코멘트 — 상태 없이 글만 남겨도 됩니다. @ 로 꼬리표를 더합니다',
+    oninput: (e) => {
+      draft.note = e.target.value;
+      save.disabled = !savable();
+      showPicker(picker, field, draft, tags, target);
+    },
+    onkeydown: (e) => pickerKey(e, picker, field),
+    onkeyup: () => { if (!picker.hidden && field.selectionStart !== picker.caret) showPicker(picker, field, draft, tags, target); },
+    onclick: () => showPicker(picker, field, draft, tags, target),
+    onblur: () => { picker.hidden = true; },
+  }, draft.note);
   return h('div', { class: 'mark-form' },
-    h('div', { class: 'talk-head' }, folded ? h('h2', {}, '에이전트와 대화') : null, h('div', { class: 'tags' }, '꼬리표 ', tag
-      ? tagChip(tag === target ? label : tagLabel(tag), untag)
-      : [h('span', { class: 'muted' }, '없음'), h('button', { type: 'button', class: 'retag', onclick: () => {
-        draft.noTag = false;
+    h('div', { class: 'talk-head' }, folded ? h('h2', {}, '에이전트와 대화') : null, h('div', { class: 'tags' }, '꼬리표 ', tags.length
+      ? tags.map((t) => tagChip(keyOf(t) === keyOf(target) ? label : chipLabel(t, target), untag(t)))
+      : [h('span', { class: 'muted', title: '어느 칸에도 붙이지 않고 묻습니다. 「전체」의 「대상 없음」에 나옵니다' }, '없음'), h('button', { type: 'button', class: 'retag', onclick: () => {
+        draft.tags = undefined;
         render();
         focusTalk();
       } }, `${label} 다시 붙이기`)])),
     h('div', { class: 'statuses' }, statuses),
-    h('textarea', { placeholder: '코멘트 — 상태 없이 글만 남겨도 됩니다', oninput: (e) => {
-      draft.note = e.target.value;
-      save.disabled = !savable();
-    } }, draft.note),
+    h('div', { class: 'tag-field' }, field, picker),
     state.error ? h('p', { class: 'error' }, state.error) : null,
     h('div', { class: 'save-row' }, save, historyToggle),
     filter,
@@ -3319,17 +3447,22 @@ function showSaveError(reason, target) {
 // 지금 상태를 다시 매기는 것은 아무것도 바꾸지 않으므로, 함께 쓴 글은 코멘트로 보낸다.
 const asComment = (target, draft) => draft.note.trim() !== '' && draft.status === (markOf(target)?.current?.status ?? null);
 
-const saveMark = (target, draftKey) => trackOwnSave(() => postMark(target, draftKey));
+const ownerOf = (draftKey) => (draftKey === 'storyDraft' ? { story: state.story } : draftKey === 'candidateTalk' ? { candidate: state.candidate } : state.target);
+const saveMark = (tags, draftKey, statusOn) => trackOwnSave(() => postMark(tags, draftKey, statusOn));
 
-async function postMark(target, draftKey) {
+async function postMark(tags, draftKey, statusOn) {
   state.error = null;
   const draft = state[draftKey];
+  const owner = ownerOf(draftKey);
+  const target = tags.length === 1 ? tags[0] : owner;
   let saved;
   try {
     const res = await fetch('/api/marks', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ target, status: target.part || asComment(target, draft) ? null : draft.status, note: draft.note }),
+      body: JSON.stringify(tags.length === 1
+        ? { target, status: statusOn && !asComment(target, draft) ? draft.status : null, note: draft.note }
+        : { targets: tags, note: draft.note }),
     });
     if (!res.ok) throw new Error(await res.text());
     saved = await res.json();
@@ -3337,8 +3470,8 @@ async function postMark(target, draftKey) {
     showSaveError(err.message, target);
     return null;
   }
-  const owner = draftKey === 'storyDraft' ? { story: state.story } : draftKey === 'candidateTalk' ? { candidate: state.candidate } : state.target;
-  const untouched = !!owner && keyOf(owner) === keyOf(target) && !unsaved(target, state[draftKey]);
+  const here = ownerOf(draftKey);
+  const untouched = !!here && keyOf(here) === keyOf(target) && !unsaved(target, state[draftKey]);
   if (state[draftKey] === draft || untouched) state[draftKey] = null;
   try {
     await load();
@@ -4502,6 +4635,7 @@ function syncHeaderLocks() {
 
 function render() {
   if (state.ended || state.failed) return;
+  pickables = [];
   renderHeader();
   const flow = state.view === 'flow';
   // 고른 화면이 그림에 없으면 오른쪽 칸과 그림이 서로 다른 화면을 가리키므로 선택을 해제한다.

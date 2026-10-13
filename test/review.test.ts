@@ -10703,7 +10703,7 @@ test('in a browser, a test row shows the title without its tags, and without a p
   ]);
 });
 
-test('in a browser, the conversation of a screen holds the comments on it and on its tests oldest first, each with its tag; the count of a test row narrows it to that test and its replies, and the status buttons work only while the screen itself is the one tag', { skip: browserMissing }, async () => {
+test('in a browser, the conversation of a screen holds the comments on it and on its tests oldest first, each with its tag; the count of a test row narrows it to that test and its replies, and the status buttons work only while the screen itself is the one tag; with every tag taken off the comment is saved with no target', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) => {
     const lab = partOf('/lab#Lab', 'results/playwright/e2e.json', 'home.spec.ts', 'opens the lab');
     addMark(config.marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: 'no table test', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
@@ -10735,8 +10735,155 @@ test('in a browser, the conversation of a screen holds the comments on it and on
         await p.click('#right-dock .mark-form .tags .tag button');
         assert.equal(await p.locator('#right-dock .mark-form .tags .tag').count(), 0);
         await p.fill('#right-dock textarea', 'about nothing');
-        assert.equal(await p.isDisabled('#right-dock button.save'), true);
         assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
+        await p.click('#right-dock button.save');
+        await p.locator('#right-dock .mark-form .tags .tag-label', { hasText: '화면 전체' }).waitFor();
+        assert.deepEqual(loadMarks(config.marksDir).filter((m) => m.note === 'about nothing').map((m) => [m.target, m.targets]), [[undefined, []]]);
+      }));
+  });
+});
+
+test('in a browser, a comment takes more tags from bubbles and typed after @ and is saved once with every target: it counts once on each row it is on and once in 「전체」, shows with its reply whichever row narrows the conversation, shows its tags with the screen of a tag from elsewhere, and a status is refused for it; a comment with no target is listed in 「전체」 under 「대상 없음」 with its whole text and replies', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    const lab = partOf('/lab#Lab', 'results/playwright/e2e.json', 'home.spec.ts', 'opens the lab');
+    addMark(config.marksDir, { targets: [{ node: '/home#Home' }, partOf('/lab#Lab', 'results/playwright/e2e.json', 'home.spec.ts', 'a test that is gone')], note: 'half lost', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
+    const loose = addMark(config.marksDir, { targets: [], note: 'what about the tour?\nsecond line', author: 'reviewer' }, new Date('2026-10-12T02:00:00Z'));
+    addReply(config.marksDir, { replyTo: loose.id, note: 'no tour yet' }, new Date('2026-10-12T03:00:00Z'));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#left .detached li');
+        assert.match((await p.textContent('#left .detached li'))!, /a test that is gone/);
+        const said = () => p.locator('#right-info .history > li').evaluateAll((list) => list.map((li) => [[...li.querySelectorAll(':scope > .tag')].map((t) => t.textContent), li.querySelector(':scope > div')?.textContent]));
+        await chooseScreen(p, '/home');
+        assert.deepEqual(await said(), [[['화면 전체', '화면 /lab · 테스트 「a test that is gone」'], 'half lost']]);
+
+        await chooseScreen(p, '/lab');
+        const row = p.locator('#center-body table .part-row', { hasText: /opens the lab home\.spec\.ts/ });
+        const notice = p.locator('#center-body .part-row', { hasText: 'shows the lab notice' });
+        for (const r of [row, notice]) {
+          await r.hover();
+          await r.locator('.bubble').click();
+        }
+        const field = p.locator('#right-dock textarea');
+        await field.pressSequentially('@API');
+        assert.equal(await p.locator('#right-dock .tag-pick li[role=option]').first().textContent(), 'API 깊이');
+        await field.press('Enter');
+        const tags = ['테스트 「opens the lab」', '테스트 「shows the lab notice」', 'API 깊이'];
+        assert.deepEqual(await p.locator('#right-dock .mark-form .tags .tag-label').allTextContents(), tags);
+        assert.equal(await field.inputValue(), '');
+        assert.equal(await p.locator('#right-dock .tag-pick').isHidden(), true);
+        assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
+        await field.pressSequentially('both of these');
+        await p.click('#right-dock button.save');
+        await row.locator('.part-count', { hasText: '코멘트 1' }).waitFor();
+        assert.equal(await notice.locator('.part-count').textContent(), '코멘트 1');
+        const saved = loadMarks(config.marksDir).filter((m) => m.note === 'both of these');
+        assert.deepEqual(saved.map((m) => [m.target, m.status, m.targets!.map((t) => (t.part?.key as { title?: string } | undefined)?.title ?? t.depth)]), [[undefined, undefined, ['opens the lab', 'shows the lab notice', 'api']]]);
+        assert.deepEqual(saved[0].targets![0], lab);
+        await p.evaluate(async (replyTo) => {
+          await fetch('/api/replies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ replyTo, note: 'answered once' }) });
+        }, saved[0].id);
+        await p.locator('#right-info .history .replies', { hasText: 'answered once' }).waitFor();
+
+        const depthRow = (label: string) => p.locator('#center-body > table tbody tr').filter({ has: p.locator('td.depth', { hasText: label }) });
+        assert.equal(await depthRow('API').locator('.talk-count').textContent(), '코멘트 1');
+        const scope = p.locator('#right-info .talk-scope button');
+        assert.deepEqual(await scope.allTextContents(), ['이 화면 1', '전체 3']);
+        assert.deepEqual(await said(), [[['화면 /home', '테스트 「a test that is gone」'], 'half lost'], [tags, 'both of these']]);
+        for (const narrow of [depthRow('API').locator('.talk-count'), row.locator('.part-count'), notice.locator('.part-count')]) {
+          await narrow.click();
+          assert.deepEqual(await said(), [[tags, 'both of these']]);
+          assert.match((await p.textContent('#right-info .history .replies'))!, /answered once/);
+          await p.click('#right-info .history-filter button');
+        }
+
+        const res = await fetch(`${base}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targets: [{ node: '/lab#Lab' }, { node: '/home#Home' }], status: 'missing', note: 'both missing' }) });
+        assert.deepEqual([res.status, await res.text()], [400, 'a status takes exactly one target; a comment on several targets or none takes no status']);
+
+        await scope.nth(1).click();
+        assert.equal(await p.locator('#right-info .talk-line', { hasText: 'both of these' }).count(), 1);
+        const general = p.locator('#right-info .talk-group', { has: p.locator('h3', { hasText: '대상 없음' }) });
+        assert.equal(await general.locator('button.talk-line').count(), 0);
+        assert.match((await general.locator('.talk-line').textContent())!, /what about the tour\?\nsecond line[\s\S]*no tour yet/);
+        assert.deepEqual(errors, []);
+      }));
+  });
+});
+
+test('in a browser, the @ list closes when the caret leaves the @ word and keeps the item picked with the arrows while the caret stays, an Enter that ends a composition does not pick, and a list closed with Escape stays closed; a status picked for the screen is not saved on the one tag left once the screen tag is taken off', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    addMark(config.marksDir, { target: { node: '/lab#Lab' }, status: 'needs-more', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await chooseScreen(p, '/lab');
+        const field = p.locator('#right-dock textarea');
+        const picker = p.locator('#right-dock .tag-pick');
+        const tags = () => p.locator('#right-dock .mark-form .tags .tag-label').allTextContents();
+        await p.click('#right-dock .statuses button:has-text("없음")');
+        await field.pressSequentially('check @AP');
+        await field.press('Home');
+        assert.equal(await picker.isHidden(), true);
+        await field.press('Enter');
+        assert.deepEqual(await tags(), ['화면 전체']);
+        await field.press('End');
+        assert.equal(await picker.isHidden(), true);
+        await field.press('Backspace');
+        await field.press('Backspace');
+        assert.deepEqual((await picker.locator('li[role=option]').allTextContents()).slice(0, 2), ['UI/E2E 깊이', 'API 깊이']);
+        assert.equal(await picker.locator('li.on').textContent(), 'API 깊이');
+        await p.keyboard.down('Shift');
+        await p.keyboard.up('Shift');
+        await field.press('End');
+        assert.equal(await picker.locator('li.on').textContent(), 'API 깊이');
+        await field.pressSequentially('u');
+        assert.equal(await picker.locator('li.on').textContent(), 'UI/E2E 깊이');
+        await field.press('Backspace');
+        assert.equal(await picker.locator('li.on').textContent(), 'UI/E2E 깊이');
+        await field.press('ArrowDown');
+        await field.pressSequentially('q');
+        assert.equal(await picker.locator('li[role=option]').count(), 0);
+        await field.press('Backspace');
+        assert.equal(await picker.locator('li.on').textContent(), 'API 깊이');
+        await field.pressSequentially('i');
+        assert.deepEqual((await picker.locator('li[role=option]').allTextContents()).slice(0, 2), ['UI/E2E 깊이', 'API 깊이']);
+        assert.equal(await picker.locator('li.on').textContent(), 'API 깊이');
+        await field.press('Enter');
+        assert.deepEqual(await tags(), ['화면 전체', 'API 깊이']);
+        assert.equal(await field.inputValue(), '\ncheck ');
+
+        await field.pressSequentially('@');
+        await field.press('ArrowDown');
+        await field.press('Escape');
+        await field.pressSequentially(' @');
+        assert.equal(await picker.locator('li.on').textContent(), 'UI/E2E 깊이');
+        await field.press('Backspace');
+        await field.press('Backspace');
+        await field.evaluate((e) => e.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true })));
+        assert.deepEqual(await tags(), ['화면 전체', 'API 깊이']);
+        assert.equal(await picker.isVisible(), true);
+        await field.pressSequentially('zz');
+        assert.equal(await picker.locator('li[role=option]').count(), 0);
+        await field.press('ArrowUp');
+        assert.equal(await field.evaluate((e: HTMLTextAreaElement) => e.selectionStart), 0);
+        assert.equal(await picker.isHidden(), true);
+        await field.press('ArrowDown');
+        await field.press('End');
+        await field.press('Backspace');
+        await field.press('Backspace');
+        await field.press('Escape');
+        await field.press('ArrowLeft');
+        await field.press('ArrowRight');
+        assert.equal(await picker.isHidden(), true);
+        assert.equal(await field.inputValue(), '\ncheck @');
+
+        await p.locator('#right-dock .mark-form .tags .tag', { hasText: '화면 전체' }).locator('button').click();
+        assert.deepEqual(await tags(), ['API 깊이']);
+        assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
+        await p.fill('#right-dock textarea', 'depth only');
+        await p.click('#right-dock button.save');
+        await p.locator('#right-info .history li', { hasText: 'depth only' }).waitFor();
+        assert.deepEqual(loadMarks(config.marksDir).filter((m) => m.note === 'depth only').map((m) => [m.target, m.status]), [[{ node: '/lab#Lab', depth: 'api' }, undefined]]);
+        assert.deepEqual(errors, []);
       }));
   });
 });
@@ -10870,7 +11017,7 @@ test('in a browser, each step of a story and each link between two steps has a b
         assert.equal(await p.evaluate(() => document.activeElement?.matches('#right-dock textarea')), true);
         await p.click('#view-flow');
         await p.locator('#flow .story-line .story-hop[data-hop="1"] .bubble').click();
-        assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '단계 2 → 3 연결');
+        assert.deepEqual(await p.locator('#right-dock .mark-form .tags .tag-label').allTextContents(), ['단계 3 /lab/result', '단계 2 → 3 연결']);
         assert.deepEqual(errors, []);
       })));
 });
@@ -10963,14 +11110,14 @@ test('in a browser, a case kind picked on a screen shows in its conversation wit
   });
 });
 
-test('in a browser, the default tag taken off with its × comes back with the note still typed, and after it or after a bubble typing goes on at the end of the note', { skip: browserMissing }, async () => {
+test('in a browser, the default tag taken off with its × leaves a note that can be saved with no target, comes back with the note still typed, and after it or after a bubble typing goes on at the end of the note', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await chooseScreen(p, '/lab');
         await p.fill('#right-dock textarea', 'half a thought');
         await p.click('#right-dock .mark-form .tags .tag button');
-        assert.equal(await p.isDisabled('#right-dock button.save'), true);
+        assert.equal(await p.isDisabled('#right-dock button.save'), false);
         await p.click('#right-dock .mark-form .tags button.retag');
         assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '화면 전체');
         assert.equal(await p.inputValue('#right-dock textarea'), 'half a thought');
