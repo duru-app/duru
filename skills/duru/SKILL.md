@@ -185,7 +185,12 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    place, status, relation and result file, then those comments and their replies; act on them as above.
 3. **Write the tests.** In the target project, write tests for each screen, API call and story in the task list,
    following its marks and notes. The top of the list says how to tag a test so that it attaches to a screen or call
-   (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. A test of a
+   (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. For Playwright,
+   put the tags in the test's `tag` option (`test('<what it checks>', { tag: ['@screen:<screen ID>'] }, …)`) and
+   keep them out of the title (before Playwright 1.42, which has no `tag` option, put them at the end of the
+   title); for Vitest put them at the end of the test's own title, for JUnit at the end of its
+   `@DisplayName`, and for a check script at the end of the `VERDICT` line. The review page and the story
+   candidates show a title without its tags either way. A test of a
    call that sets an on/off option listed under it also carries `@option:<key>=true|false`; a mark on an
    option value (`withHistory=true at output depth`) asks for a test with that option tag at that depth.
    Under a call, `options that change this result — set on <call ID>` lists the options of that other call
@@ -203,9 +208,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    description asks. When the config names `caseKinds`, a `@case:` tag whose kind is not among them is printed as `unknown`.
    Under `empty tests`, a screen or call has one set for each open mark, a screen one more for each case with no
    tests, a call one more for each picked kind with no tests, and a story one set: an empty test per
-   test format in the config, with those tags already in its title. Copy the one for the runner you write the
-   test in and keep every tag in its title as it is (you may replace `<what it checks>` and add words around the
-   tags). Each is held back so that a copy left as it is does not pass: take `.fixme` off `test.fixme`, turn
+   test format in the config, with those tags already in place: in the `tag` option for Playwright, in the title for
+   the other formats. Copy the one for the runner you write the test in and keep every tag where it is (you may
+   add words around the tags in a title). Replace `<what it checks>` with what the test checks: the Playwright
+   empty tests of an item all carry that same title, and no two tests in a file should share one. Each is held back so that a copy left as it is does not pass: take `.fixme` off `test.fixme`, turn
    `test.todo` into `test` with a function, remove `@Disabled` (while it stays, the class needs
    `import org.junit.jupiter.api.Disabled;`), then fill in the data setup and the checks. For a check script,
    print the `VERDICT` line with what was seen and a word in place of `<verdict>` (`UPHOLDS`, `FIXED`, `HEALTHY`
@@ -213,8 +219,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    pending); the test name runs up to the first `: `, so keep `: ` out of it.
    The items under `# Stories` are stories. For each, write one test that goes through its `screens` in that
    order and meets its `preconditions` (the settings, roles and link conditions it lists, with where each is
-   checked), and put `@story:<story ID>` in its title together with the `@screen:` tags of every screen on its
-   path that is on the map, as its empty test has them.
+   checked), and give it `@story:<story ID>` together with the `@screen:` tags of every screen on its path that is
+   on the map, in the place its format takes tags, as its empty test has them.
    The items under `# Tagging` (they can be listed even when no mark is open) are tests the reviewer judged to
    check a screen or API call they carry no tag for. For each, open the test at its file and line and add exactly
    the tag in `tag to add`, in the place its `where` line names, and change nothing else in the test: not its
