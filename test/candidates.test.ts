@@ -201,7 +201,7 @@ test('discarding a candidate writes a file of its own into the discarded folder 
     });
     assert.deepEqual(loadStories(dir).notices.map((n) => n.file), ['lab-shortcut.json']);
     assert.deepEqual(candidatesOf({ storiesDir: dir }).list.map((c) => c.name), ['publish-document']);
-    assert.throws(() => discardCandidate(dir, help, { reason: ' ', author: 'reviewer' }), /버리는 까닭이 필요합니다/);
+    assert.throws(() => discardCandidate(dir, help, { reason: ' ', author: 'reviewer' }), /버리는 이유가 필요합니다/);
     assert.throws(() => discardCandidate(dir, help, { reason: 'x', author: '' }), /작성자가 필요합니다/);
   });
 });
@@ -290,7 +290,7 @@ test('a discarded candidate file that cannot be read is noted with the candidate
     assert.equal(list.length, 2);
     assert.deepEqual(notices.map((n) => [n.file, n.reason]), [
       ['example-visits/broken-record.json', '2 번째 단계의 url 을 읽지 못했습니다'],
-      [path.relative(FIXTURE, path.join(dir, 'discarded/bad.json')), 'reason 에 버린 까닭을 적어야 합니다'],
+      [path.relative(FIXTURE, path.join(dir, 'discarded/bad.json')), 'reason 에 버린 이유를 적어야 합니다'],
     ]);
   });
 });

@@ -107,7 +107,7 @@ function discardedProblemOf(d: any) {
   if (!isPlainObject(d)) return '버린 후보는 JSON 객체여야 합니다';
   if (!isScreenList(d.screens)) return 'screens 는 화면을 하나 이상 차례대로 담은 목록이어야 합니다';
   if (d.kind !== undefined && d.kind !== 'undo') return 'kind 는 버린 기록이면 적지 않고, 되돌린 기록이면 "undo" 여야 합니다';
-  if (d.kind === undefined && !isText(d.reason)) return 'reason 에 버린 까닭을 적어야 합니다';
+  if (d.kind === undefined && !isText(d.reason)) return 'reason 에 버린 이유를 적어야 합니다';
   if (!isText(d.author)) return 'author 에 작성자를 적어야 합니다';
   if (!isDate(d.date)) return 'date 는 2026-10-02 같은 날짜여야 합니다';
   return null;
@@ -219,7 +219,7 @@ export function unacceptStory(dir: string, id: unknown) {
 }
 
 export function discardCandidate(dir: string, candidate: Candidate, { reason, author }: { reason: unknown; author: unknown }, now = new Date()) {
-  if (!isText(reason)) throw new Error('버리는 까닭이 필요합니다');
+  if (!isText(reason)) throw new Error('버리는 이유가 필요합니다');
   if (!isText(author)) throw new Error('작성자가 필요합니다');
   writableStoriesFolder(dir);
   const folder = path.join(dir, DISCARDED);

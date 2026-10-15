@@ -1155,7 +1155,7 @@ function discardedGroup(discarded) {
     h('ul', { class: 'plain', id: 'discarded-list' }, discarded.map((d) => h('li', {},
       h('div', {}, d.name),
       h('div', { class: 'steps mono' }, d.screens.map(screenLabel).join(' → ')),
-      judgmentMeta(d, '까닭'),
+      judgmentMeta(d, '이유'),
       h('button', { class: 'undiscard', disabled: state.storyWriting, title: '되돌린 기록을 버린 기록 옆에 남기고, 이 화면 순서를 후보 목록에 다시 올립니다.', onclick: () => undiscard(d) }, '되돌리기')))),
     state.undiscardError ? h('p', { class: 'error undiscard-error' }, state.undiscardError) : null);
 }
@@ -1568,7 +1568,7 @@ reasonDialog.addEventListener('keydown', (e) => {
 function askExclude(test, nodeIds, job) {
   askReason({
     verb: '제외',
-    reasonLabel: '제외하는 까닭',
+    reasonLabel: '제외하는 이유',
     describe: () => {
       const ids = nodeIds();
       const many = ids.length > 1;
@@ -1604,7 +1604,7 @@ function judgmentForm(t, node) {
   const key = judgmentKey(t, node);
   const word = nodeWord(node);
   return h('div', { class: 'judge-row', 'data-pair': key },
-    h('button', { class: 'discard', title: `이 테스트와 이 ${word}의 짝을 다시 보이지 않게 합니다. 까닭을 적어야 합니다`, onclick: () => askExcludePair(t, node, key) }, '제외'),
+    h('button', { class: 'discard', title: `이 테스트와 이 ${word}의 짝을 다시 보이지 않게 합니다. 이유를 적어야 합니다`, onclick: () => askExcludePair(t, node, key) }, '제외'),
     h('button', { class: 'hand-over', title: `이 ${word}의 테스트로 보고, 테스트에 이 ${word}의 태그를 달도록 작업 목록에 올립니다`, onclick: () => saveJudgment({ test: t.ref, node, kind: 'hand-over', reason: '' }, key) }, '포함'));
 }
 
@@ -1688,7 +1688,7 @@ function untaggedPairs(node) {
       detached.map((t) => judgedRow(detachedItem(t), t, '메모'))) : null,
     discarded.length ? h('div', { class: 'discarded' },
       h('h2', {}, `제외한 짝 ${discarded.length}`),
-      discarded.map((t) => judgedRow(pairTestItem(t), t, '까닭'))) : null,
+      discarded.map((t) => judgedRow(pairTestItem(t), t, '이유'))) : null,
   ];
 }
 
@@ -2282,7 +2282,7 @@ const PAIR_STATES = [
   { list: 'passed', cls: 'config' },
   { list: 'awaitingTag', label: '태그 대기', cls: 'wait', noteLabel: '메모' },
   { list: 'detachedHandOvers', label: '떨어져 나감', cls: 'wait', noteLabel: '메모' },
-  { list: 'discarded', label: '제외한 짝', cls: 'muted', noteLabel: '까닭' },
+  { list: 'discarded', label: '제외한 짝', cls: 'muted', noteLabel: '이유' },
 ];
 
 function pairsOf(t) {
@@ -2376,7 +2376,7 @@ function bulkBar(t, pickable, bulk) {
   return h('div', { class: 'bulk-bar' },
     h('label', {}, h('input', { type: 'checkbox', class: 'pick-all', checked: count === pickable.length, disabled: state.bulkBusy,
       onchange: (e) => { bulk.picked = new Set(e.target.checked ? pickable.map((p) => p.id) : []); redrawBulk('input.pick-all'); } }), ' 모두 고르기'),
-    h('button', { class: 'discard', title: '고른 짝을 다시 보이지 않게 합니다. 까닭을 적어야 합니다', disabled: off, onclick: () => askExcludePicked(t, bulk) }, `제외 (${count})`),
+    h('button', { class: 'discard', title: '고른 짝을 다시 보이지 않게 합니다. 이유를 적어야 합니다', disabled: off, onclick: () => askExcludePicked(t, bulk) }, `제외 (${count})`),
     h('button', { class: 'hand-over', title: '고른 짝을 그 화면이나 호출의 테스트로 보고, 태그를 달도록 작업 목록에 올립니다', disabled: off, onclick: async () => { await saveBulk(t, bulk, 'hand-over', ''); showBulkResult('hand-over'); } }, `포함 (${count})`),
     bulk.error ? h('p', { class: 'error bulk-error' }, bulk.error) : null);
 }
@@ -2494,7 +2494,7 @@ function candidateActions(c) {
     storyForm(h('div', { class: 'accepts' },
       h('button', { class: 'accept', title: '이 화면 순서로 스토리 파일을 씁니다.', onclick: acceptChosen }, '스토리로 받기'),
       h('button', { class: 'accept-edited', title: 'ID 와 이름을 고친 뒤에 받습니다.', onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기')),
-      h('button', { class: 'discard', title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다. 까닭을 적어야 합니다', onclick: () => askDiscard(c) }, '버리기')),
+      h('button', { class: 'discard', title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다. 이유를 적어야 합니다', onclick: () => askDiscard(c) }, '버리기')),
     storyErrorLine(),
   ];
 }
@@ -2621,7 +2621,7 @@ function askDiscard(c) {
   let at = -1;
   askReason({
     verb: '버리기',
-    reasonLabel: '버리는 까닭',
+    reasonLabel: '버리는 이유',
     describe: () => ({
       title: '이 후보를 버립니다',
       subject: [

@@ -10070,7 +10070,7 @@ test('in a browser, discarding a candidate asks for a reason in the same window 
         assert.deepEqual(await p.locator(`${asked} .subject ol li`).allTextContents(), ['/signin SignIn', '/home Home', '/beta/inbox', '/help Help']);
         assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '버리기']);
         assert.equal(await p.textContent(`${asked} .hint`), 'Ctrl+Enter 로 버리기');
-        assert.equal(await p.getAttribute(why, 'placeholder'), '버리는 까닭');
+        assert.equal(await p.getAttribute(why, 'placeholder'), '버리는 이유');
         assert.equal(await askedFocused(p), true);
         assert.equal(await p.locator(`${asked} button.discard`).isDisabled(), true);
         await p.fill(why, '  \n ');
@@ -11479,8 +11479,8 @@ test('in a browser, the candidates are followed by 「버린 후보 N」, shut u
           ['publish-document', '/home → /document/:tab(draft|done) → /document/:id → /help'],
           ['open-help', '/signin → /home → /beta/inbox → /help'],
         ]);
-        assert.match(listed[0][2]!, /^까닭 문서 쪽은 따로 본다 · \d/);
-        assert.match(listed[1][2]!, /^까닭 베타 받은편지함은 맵에 없다 · \d/);
+        assert.match(listed[0][2]!, /^이유 문서 쪽은 따로 본다 · \d/);
+        assert.match(listed[1][2]!, /^이유 베타 받은편지함은 맵에 없다 · \d/);
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.equal(await group.evaluate((d: HTMLDetailsElement) => d.open), true);
       }),
