@@ -608,7 +608,7 @@ they are joined: solid for a link with no condition, blue dashed for a link unde
 move written in `moves`, red dashed where the map has no link, and orange dotted where a step is not on the map or a
 link's address could not be read; the 「i」 beside 「경로 끄기」 shows these. Where the map has no link, a note below says
 which screens the step before does lead to. A step with `needs` or `expects` in the story file carries their count,
-such as 「조건 1 · 기대 2」, and the story's own `needs` and `expects` are counted beside its name after 「스토리 전체」;
+such as 「조건 1 · 기대 2」, and the story's own `needs` and `expects` are counted beside its name;
 hovering over a count shows the lines. A story wider than the pane scrolls sideways. Pressing the story again,
 or 「경로 끄기」, brings back the whole flow where it was.
 
@@ -679,8 +679,8 @@ judge several pairs at once.
 **Stories.** The stories tab lists the stories with their status and link verdicts, with the same search box and
 filters as the flow's story list (what is typed or ticked in one shows in the other); choosing one shows its steps,
 the link between each two and its 「사전 조건」, and lets its name and memo be changed. The story's own `needs` and
-`expects` show in a 「스토리 전체」 box marked 「사람이 적음」, since a person wrote them, apart from the 「사전 조건」 duru
-found in the code, and a step's own ones show inside its card. 「스토리 파일」 at the bottom unfolds the story in the shape
+`expects` show in a 「스토리」 box, apart from the 「사전 조건」 duru found in the code, and a step's own ones show inside
+its card. 「스토리 파일」 at the bottom unfolds the story in the shape
 of its file, with the steps that have needs or expects written as objects. Candidates are listed below
 with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the address of a chosen candidate holds its screen order, as
 `#stories?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its

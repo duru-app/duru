@@ -1817,8 +1817,9 @@ line is plain text: duru carries it to the page and the task list and judges not
 setup file, conditions on the link into a step and input values come later on the same shape. The story read from
 the file keeps `screens` as the list of screen IDs, and the step objects' lines go into a list beside it, since the
 candidate comparison, the place of a comment on a step and the path check all read the screen order as that list
-and stay as they were. On the page the 「스토리 전체」 box shows only when the story has lines of its own, and is
-marked 「사람이 적음」 to keep it apart from 「사전 조건」, which duru reads from the code.
+and stay as they were. On the page the 「스토리」 box shows only when the story has lines of its own; its own labels
+(「조건」, 「끝난 뒤 기대 결과」) and its place in the center keep it apart from 「사전 조건」, which duru reads from the code
+and shows on the right.
 This follows three tools read on 2026-10-15. TestRail keeps a test's preconditions in one text field
 (`custom_preconds`), and its 「Test Case (Steps)」 template keeps the steps as an ordered list of
 `{content, expected, ...}` objects, so the expected result sits in the step

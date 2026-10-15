@@ -2030,7 +2030,7 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
   );
 });
 
-test('in a browser, the needs and expects written in a story file show in a 「스토리 전체」 box marked as written by a person and in each step card, the flow\'s one-line story counts them with the lines on hover, the file shows folded at the bottom, and a story without them shows none of this', { skip: browserMissing }, async () => {
+test('in a browser, the needs and expects written in a story file show in a 「스토리」 box and in each step card, the flow\'s one-line story counts them with the lines on hover, the file shows folded at the bottom, and a story without them shows none of this', { skip: browserMissing }, async () => {
   const written = {
     name: '실험 결과를 확인한다',
     needs: ['실험이 한 번 이상 돌았다'],
@@ -2047,7 +2047,7 @@ test('in a browser, the needs and expects written in a story file show in a 「�
         await p.waitForSelector('#screen-list li');
         await p.click('#left .views.side button:has-text("스토리")');
         await p.click('#story-list li:has-text("실험 결과를 확인한다")');
-        assert.equal(await p.textContent('#center .story-wide h2'), '스토리 전체 사람이 적음');
+        assert.equal(await p.textContent('#center .story-wide h2'), '스토리');
         assert.deepEqual(await p.locator('#center .story-wide .written-row').evaluateAll((rows) => rows.map((r) => [r.querySelector('.written-label')!.textContent, [...r.querySelectorAll('li')].map((li) => li.textContent)])), [
           ['조건', ['실험이 한 번 이상 돌았다']],
           ['끝난 뒤 기대 결과', ['마지막 실행 결과가 보인다']],
@@ -2078,7 +2078,7 @@ test('in a browser, the needs and expects written in a story file show in a 「�
         await p.waitForFunction(() => state.storyPath?.id === 'lab-notes');
         assert.deepEqual(await p.$$eval('#flow .story-line [data-step]', (els) => els.map((e) => e.querySelector('.written-count')?.textContent ?? null)), [null, '조건 1 · 기대 2', null]);
         assert.equal(await p.getAttribute('#flow .story-line [data-step="1"] .written-count', 'title'), '조건: 실험실 설정을 켠다\n기대: 실험 목록이 보인다\n기대: 「실행」 단추가 보인다');
-        assert.equal(await p.textContent('#flow-head .story-on .written-count'), '스토리 전체 조건 1 · 기대 1');
+        assert.equal(await p.textContent('#flow-head .story-on .written-count'), '조건 1 · 기대 1');
         assert.equal(await p.getAttribute('#flow-head .story-on .written-count', 'title'), '조건: 실험이 한 번 이상 돌았다\n기대: 마지막 실행 결과가 보인다');
         await p.click('#flow-story-list li[data-story="run-lab"]');
         await p.waitForFunction(() => state.storyPath?.id === 'run-lab');
