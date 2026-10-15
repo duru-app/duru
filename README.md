@@ -564,8 +564,9 @@ on an empty spot of the drawing lets it go. The zoom control at the bottom-left 
 or grows it; a percent typed into it takes effect on Enter or on clicking elsewhere, a level below 30% or above 150%
 becomes the nearer end, and Escape or anything not a number puts the level back.
 
-**Stories in the flow.** When there are story files, the stories are listed left of the drawing with the same rows
-and filters as the stories tab, and a box above them finds a story by name or ID. 「스토리 N ◀」 in the top corner of the
+**Stories in the flow.** When there are story files, the stories are listed left of the drawing under 「새 스토리」,
+with the same rows and filters as the stories tab, and a box above them finds a story by name or ID; with none yet,
+「새 스토리」 sits in the bar above the drawing. 「스토리 N ◀」 in the top corner of the
 drawing slides the list shut, and the same button, then 「스토리 N ▶」, opens it again. Pressing a story draws only its
 steps, left to right on one line, each a box like the flow's with its step number, so a screen the story passes
 twice is drawn twice; the story's name, 「경로 끄기」 and 「i」 sit beside 「스토리 N ◀」. The line between two steps shows how
@@ -574,6 +575,18 @@ move written in `moves`, red dashed where the map has no link, and orange dotted
 link's address could not be read; the 「i」 beside 「경로 끄기」 shows these. Where the map has no link, a note below says
 which screens the step before does lead to. A story wider than the pane scrolls sideways. Pressing the story again,
 or 「경로 끄기」, brings back the whole flow where it was.
+
+**A new story in the flow.** While 「새 스토리」 is open (「새 스토리 이어 쓰기」 once it has steps), pressing a box in the
+drawing, a screen in the right column, or Enter in the search box for the first screen it finds, adds that screen
+as the next step instead of opening it, and the drawing scrolls to keep the box pressed in place where it can. The whole flow
+stays drawn, and each chosen box carries its step number. Two neighbouring steps are joined in the style of their
+verdict: on the link itself when the second box hangs under the first, otherwise by a mark in each of the two boxes
+with the other step's number. The list left of the drawing becomes the steps, which move with 「위로」, 「아래로」 or by
+dragging, go in before another step with 「앞에 넣기」 and come out with 「빼기」, then the verdict, and ID, name and memo
+with 「스토리 저장」. The same screen twice in a row is refused as in the list; a box already chosen is added again,
+since a story can pass a screen twice. A new story begun in the list goes on in the flow, and back. 「스토리 목록」
+brings back the story list, and a box opens its screen again. A story saved in the flow is drawn as if it had been
+pressed in the list.
 
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
@@ -635,7 +648,7 @@ with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the 
 screen order, and the candidate is discarded only once a reason is written there. 「버리기」 in the window or Ctrl+Enter
 saves it and moves on to the next candidate; 「취소」 or Escape closes the window, and a click outside it does not. If
 the discard is not saved, the window stays open with the reason and the error. 「새 스토리」 puts a story together from
-screens of the map.
+screens of the map, picked from the list that takes the place of the stories or from boxes in the flow.
 
 **Marks.** A mark targets a screen, a call, one depth of either, one value of a call's option, or a story, and
 records a status (`needs-more`, `missing`, `fine`), a note, the author and the date. A mark left with text and no
