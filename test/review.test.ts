@@ -9906,7 +9906,7 @@ test('a story name and memo edited through the page are written into its file', 
 test('story writes that are not JSON requests are refused', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit']) {
+      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit', '/api/stories/unaccept']) {
         const res = await fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
         assert.equal(res.status, 415, url);
       }
@@ -11421,6 +11421,71 @@ test('in a browser, a comment on a story candidate shows in 「전체」 under t
         assert.deepEqual(errors, []);
       }));
   });
+});
+
+test('in a browser, a story accepted from a candidate has 「받기 되돌리기」, which removes its story file and offers the candidate again picked, with the comments left on the story moved under 「떨어져 나감」 as for a story file gone, while a story not accepted from a candidate has none', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.equal(await p.locator('#right button.unaccept').count(), 0);
+        await p.click('#candidate-list li:has-text("open-help")');
+        await p.click('#right button.accept');
+        await p.waitForSelector('#story-list li.selected:has-text("open-help")');
+        await p.fill('#right-dock textarea', 'is the beta inbox needed?');
+        await p.click('#right-dock button.save');
+        await untilSet(() => loadMarks(config.marksDir).length === 1, 'the comment');
+        assert.deepEqual(await p.locator('#right-info h2').evaluateAll((els) => els.slice(-2).map((e) => e.textContent)), ['이름 · 메모', '받기 되돌리기']);
+
+        await p.click('#right button.unaccept');
+        await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
+        assert.equal(fs.existsSync(path.join(config.storiesDir, 'open-help.json')), false);
+        assert.equal(await p.locator('#story-list li:has-text("open-help")').count(), 0);
+        assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['open-help', 'publish-document']);
+        assert.equal(await p.textContent('#center h3'), 'open-help');
+        assert.deepEqual(await p.locator('#right .accepts button').allTextContents(), ['스토리로 받기', '고쳐서 받기']);
+        assert.deepEqual(await p.locator('#left .detached li').evaluateAll((items) => items.map((li) => [li.querySelector('code')!.textContent, li.querySelector('div')!.textContent])), [
+          ['open-help', 'is the beta inbox needed?'],
+        ]);
+        assert.equal((await postJson(base, '/api/stories/unaccept', { id: 'run-lab' })).status, 400);
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, the candidates are followed by 「버린 후보 N」, shut until opened and staying open across a redraw, listing each discarded screen order once with its name, steps, reason and date, the latest discard first', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        assert.equal(await p.locator('#left details.discarded-candidates').count(), 0);
+        for (const [name, reason] of [['open-help', '베타 받은편지함은 맵에 없다'], ['publish-document', '문서 쪽은 따로 본다']]) {
+          await p.click(`#candidate-list li:has-text("${name}")`);
+          await discardCandidate(p, reason);
+          await p.waitForSelector(`#candidate-list li:has-text("${name}")`, { state: 'detached' });
+        }
+        const group = p.locator('#left details.discarded-candidates');
+        assert.equal(await p.textContent('#left details.discarded-candidates > summary'), '버린 후보 2');
+        assert.equal(await group.evaluate((d: HTMLDetailsElement) => d.open), false);
+        assert.equal(await p.isVisible('#discarded-list'), false);
+        await p.click('#left details.discarded-candidates > summary');
+        const rows = () => p.locator('#discarded-list > li').evaluateAll((items) => items.map((li) => [...li.children].map((c) => c.textContent)));
+        const listed = await rows();
+        assert.deepEqual(listed.map(([name, steps]) => [name, steps]), [
+          ['publish-document', '/home → /document/:tab(draft|done) → /document/:id → /help'],
+          ['open-help', '/signin → /home → /beta/inbox → /help'],
+        ]);
+        assert.match(listed[0][2]!, /^까닭 문서 쪽은 따로 본다 · \d/);
+        assert.match(listed[1][2]!, /^까닭 베타 받은편지함은 맵에 없다 · \d/);
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.equal(await group.evaluate((d: HTMLDetailsElement) => d.open), true);
+      }),
+    ),
+  );
 });
 
 test('in a browser, once a candidate with comments is accepted or discarded, its comments show under 「떨어져 나감」 of the stories with the candidate name, and not under the screens', { skip: browserMissing }, async () => {

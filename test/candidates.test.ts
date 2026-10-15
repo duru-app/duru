@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { acceptCandidate, discardCandidate, storeCandidates, storyCandidates } from '../src/candidates.ts';
+import { acceptCandidate, discardCandidate, storeCandidates, storyCandidates, unacceptStory } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { editStory, loadStories } from '../src/stories.ts';
@@ -203,6 +203,36 @@ test('discarding a candidate writes a file of its own into the discarded folder 
     assert.deepEqual(candidatesOf({ storiesDir: dir }).list.map((c) => c.name), ['publish-document']);
     assert.throws(() => discardCandidate(dir, help, { reason: ' ', author: 'reviewer' }), /버리는 까닭이 필요합니다/);
     assert.throws(() => discardCandidate(dir, help, { reason: 'x', author: '' }), /작성자가 필요합니다/);
+  });
+});
+
+test('undoing an accepted candidate removes its story file, after which the candidate is offered again, and a story not accepted from a candidate, an unknown story or a single story file for storiesDir is refused', () => {
+  withStoryCopy((dir: string) => {
+    const help = candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help')!;
+    acceptCandidate(dir, help, { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+    assert.deepEqual(unacceptStory(dir, 'open-help'), { id: 'open-help', screens: help.screens, file: 'open-help.json' });
+    assert.equal(fs.existsSync(path.join(dir, 'open-help.json')), false);
+    assert.deepEqual(candidatesOf({ storiesDir: dir }).list.map((c) => c.name), ['open-help', 'publish-document']);
+    const before = fs.readdirSync(dir, { recursive: true }).sort();
+    assert.throws(() => unacceptStory(dir, 'run-lab'), /스토리 run-lab 는 후보에서 받은 스토리가 아닙니다/);
+    assert.throws(() => unacceptStory(dir, 'open-help'), /스토리 open-help 를 찾지 못했습니다/);
+    assert.throws(() => unacceptStory(path.join(dir, 'run-lab.json'), 'run-lab'), /가 폴더가 아니라 스토리 파일을 지울 수 없습니다/);
+    assert.deepEqual(fs.readdirSync(dir, { recursive: true }).sort(), before);
+  });
+});
+
+test('the candidates name each screen order discarded once, by its latest discard, the latest first', () => {
+  withStoryCopy((dir: string) => {
+    const [help, publish] = ['open-help', 'publish-document'].map((name) => candidatesOf({ storiesDir: dir }).list.find((c) => c.name === name)!);
+    discardCandidate(dir, help, { reason: '먼저 버림', author: 'kim' }, new Date('2026-10-01T00:00:00Z'));
+    discardCandidate(dir, publish, { reason: '문서 쪽은 따로 본다', author: 'lee' }, new Date('2026-10-02T00:00:00Z'));
+    discardCandidate(dir, help, { reason: '다시 버림', author: 'park' }, new Date('2026-10-03T00:00:00Z'));
+    const { list, discarded } = candidatesOf({ storiesDir: dir });
+    assert.deepEqual(list, []);
+    assert.deepEqual(discarded, [
+      { name: 'open-help', screens: help.screens, reason: '다시 버림', author: 'park', date: '2026-10-03T00:00:00.000Z' },
+      { name: 'publish-document', screens: publish.screens, reason: '문서 쪽은 따로 본다', author: 'lee', date: '2026-10-02T00:00:00.000Z' },
+    ]);
   });
 });
 
@@ -414,7 +444,7 @@ test('with a map built before links carried their conditions, visit records or t
     assert.deepEqual(withRecords.list, []);
     assert.equal((withRecords as { stale?: string }).stale, `${path.join(dir, 'map.json')} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요`);
     assert.equal((candidatesOf({ ...empty, visitRecords: [] }, stale) as { stale?: string }).stale, undefined);
-    assert.deepEqual(tracedCandidatesOf(empty, stale, path.join(dir, 'map.json')), { list: [], notices: [], stale: (withRecords as { stale?: string }).stale });
+    assert.deepEqual(tracedCandidatesOf(empty, stale, path.join(dir, 'map.json')), { list: [], discarded: [], notices: [], stale: (withRecords as { stale?: string }).stale });
   });
 });
 
@@ -491,6 +521,30 @@ test('a stored candidate accepted or discarded leaves the list and does not come
     assert.deepEqual(storeCandidates(dir, left), { written: 0 });
     assert.deepEqual(leftOnlyStored(dir).list.map((c) => c.screens), [HOME_DRAFTS, HOME_HELP]);
     assert.equal(storedIn(dir).length, 4);
+  });
+});
+
+test('a candidate accepted before it was stored comes back when the acceptance is undone after its visit record is gone, from the candidate file written on undoing, under the story ID', () => {
+  withStoryCopy((dir: string) => {
+    const help = candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help')!;
+    acceptCandidate(dir, help, { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+    unacceptStory(dir, 'open-help');
+    assert.deepEqual(storedIn(dir).map(({ name, screens, source }) => ({ name, screens, source })), [{ name: 'open-help', screens: help.screens, source: help.source }]);
+    assert.deepEqual(leftOnlyStored(dir).list.map((c) => c.key), [help.key]);
+    acceptCandidate(dir, leftOnlyStored(dir).list[0], { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+    unacceptStory(dir, 'open-help');
+    assert.equal(storedIn(dir).length, 1, 'an order already stored is not stored twice');
+  });
+});
+
+test('an accepted stored candidate comes back when the acceptance is undone, with no visit record or trace left', () => {
+  withStoryCopy((dir: string) => {
+    storeCandidates(dir, tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS], storiesDir: dir }).list);
+    const help = leftOnlyStored(dir).list.find((c) => c.name === 'open-help')!;
+    acceptCandidate(dir, help, { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' });
+    assert.equal(leftOnlyStored(dir).list.some((c) => c.key === help.key), false);
+    unacceptStory(dir, 'open-help');
+    assert.equal(leftOnlyStored(dir).list.find((c) => c.key === help.key)?.name, 'open-help');
   });
 });
 

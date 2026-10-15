@@ -1633,6 +1633,27 @@ Alternatives compared:
   key of that candidate would change once its fresh twin is gone, so a copied address, or anything else that names
   it by key, would stop finding it.
 
+**Undoing an accepted candidate deletes its story file; the discarded candidates are listed, folded, below the
+candidates.**
+#249 asked for a way back from 「스토리로 받기」 and 「버리기」. A story file is already rewritten in place when its name
+or memo is edited, so it is not an add-only folder, and deleting it is what undoes the acceptance: the candidate comes
+back from its records, its traces or its file in `candidates/`, and the comments on the story come off their target
+as they do for any story file that is gone, so they show under 「떨어져 나감」. Only a story whose file has a `source` has
+the button, since a story written by hand or with 「새 스토리」 came from no candidate. The page does not ask first, like
+Dependabot's and code scanning's 「Reopen」. The discarded candidates are listed below the candidates, folded, like the
+closed alerts on GitHub that are hidden until 「Closed」 is opened, with each screen order once, by its latest discard,
+since the latest record of an order is its state.
+If `candidates/` has no file for the order yet, which happens when a candidate was accepted before a `rebuild` stored
+it, undoing writes one before deleting the story, so the candidate still comes back once its record or trace is gone.
+It is named by the story's ID: the ID was made from the candidate's name and stays a valid ID, while the story's name
+is often Korean and would give 「스토리로 받기」 an empty ID. If writing that file fails, the undo is refused and the
+story file stays; when `candidates` in `storiesDir` is a file, nothing is written there, as `rebuild` writes nothing
+there either, and the undo goes on.
+Alternatives compared:
+- Writing a record that the acceptance was undone, in a folder that is only added to: a story file is not
+  add-only, so nothing would merge better, and every place that reads stories (the story list, the task list, the
+  stories of the flow) would have to leave the undone ones out.
+
 **A story picked in the flow is drawn as its steps alone, left to right on one line, with the link verdict on the
 line between each two; the stories are picked from a list left of the drawing.**
 Driver's decision in #250. The story view of #131 kept the main flow and cut away every screen that was neither a

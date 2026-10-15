@@ -163,6 +163,16 @@ export function loadDiscarded(dir: string) {
   return { discarded: found, notices };
 }
 
+function latestDiscarded(discarded: any[]) {
+  const latest = new Map<string, any>();
+  for (const d of discarded) {
+    const key = JSON.stringify(d.screens);
+    const kept = latest.get(key);
+    if (!kept || compare(kept.date, d.date) < 0 || (kept.date === d.date && compare(kept.file, d.file) < 0)) latest.set(key, d);
+  }
+  return [...latest.values()].sort((a, b) => compare(b.date, a.date) || compare(a.file, b.file)).map(({ name, screens, reason, author, date }) => ({ name, screens, reason, author, date }));
+}
+
 const isFolder = (file: string) => fs.existsSync(file) && fs.statSync(file).isDirectory();
 const loadStored = (dir: string) => (isFolder(dir) ? loadFolder(dir, CANDIDATES) : { found: [], notices: [] });
 
@@ -193,6 +203,17 @@ export const candidatePlace = ({ name, source, screens, stepRanges }: Candidate)
 export const acceptCandidate = (dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) =>
   addStory(dir, { id, name, screens: candidate.screens, author, source: candidate.source }, now);
 
+export function unacceptStory(dir: string, id: unknown) {
+  if (!isFolder(dir)) throw new Error(`스토리 폴더 ${dir} 가 폴더가 아니라 스토리 파일을 지울 수 없습니다`);
+  const story = loadStories(dir).stories.find((s) => s.id === id);
+  if (!story) throw new Error(`스토리 ${id} 를 찾지 못했습니다`);
+  if (!story.source) throw new Error(`스토리 ${id} 는 후보에서 받은 스토리가 아닙니다`);
+  const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source: story.source }]);
+  if (kept.reason) throw new Error(kept.reason);
+  fs.rmSync(path.join(dir, story.file));
+  return { id: story.id, screens: story.screens, file: story.file };
+}
+
 export function discardCandidate(dir: string, candidate: Candidate, { reason, author }: { reason: unknown; author: unknown }, now = new Date()) {
   if (!isText(reason)) throw new Error('버리는 까닭이 필요합니다');
   if (!isText(author)) throw new Error('작성자가 필요합니다');
@@ -210,8 +231,9 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const { discarded, notices: discardedNotices } = loadDiscarded(config.storiesDir);
   const { found: stored, notices: storedNotices } = loadStored(config.storiesDir);
   const all = [...notices, ...[...discardedNotices, ...storedNotices].map((n) => ({ ...n, file: relative(config.configDir, path.join(config.storiesDir, n.file)) }))];
+  const shown = latestDiscarded(discarded);
   if (linksWithoutConditions(map)) {
-    return { list: [], notices: all, ...((records.length || traced.length || stored.length) && { stale: staleMapMessage(mapFile, '후보') }) };
+    return { list: [], discarded: shown, notices: all, ...((records.length || traced.length || stored.length) && { stale: staleMapMessage(mapFile, '후보') }) };
   }
   const screenAt = screenFinder(map);
   const seen = new Set([...loadStories(config.storiesDir).stories, ...discarded].map((s) => JSON.stringify(s.screens)));
@@ -253,5 +275,5 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     seen.add(key);
     list.push({ key: screens.join(' > '), name, screens, source });
   }
-  return { list: checkStories(map, list), gone, notices: all };
+  return { list: checkStories(map, list), discarded: shown, gone, notices: all };
 }
