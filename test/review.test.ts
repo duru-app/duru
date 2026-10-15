@@ -9906,7 +9906,7 @@ test('a story name and memo edited through the page are written into its file', 
 test('story writes that are not JSON requests are refused', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit', '/api/stories/unaccept']) {
+      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/unaccept']) {
         const res = await fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
         assert.equal(res.status, 415, url);
       }
@@ -10070,7 +10070,7 @@ test('in a browser, discarding a candidate asks for a reason in the same window 
         assert.deepEqual(await p.locator(`${asked} .subject ol li`).allTextContents(), ['/signin SignIn', '/home Home', '/beta/inbox', '/help Help']);
         assert.deepEqual(await p.locator(`${asked} button`).allTextContents(), ['취소', '버리기']);
         assert.equal(await p.textContent(`${asked} .hint`), 'Ctrl+Enter 로 버리기');
-        assert.equal(await p.getAttribute(why, 'placeholder'), '버리는 까닭');
+        assert.equal(await p.getAttribute(why, 'placeholder'), '버리는 이유');
         assert.equal(await askedFocused(p), true);
         assert.equal(await p.locator(`${asked} button.discard`).isDisabled(), true);
         await p.fill(why, '  \n ');
@@ -11479,10 +11479,42 @@ test('in a browser, the candidates are followed by 「버린 후보 N」, shut u
           ['publish-document', '/home → /document/:tab(draft|done) → /document/:id → /help'],
           ['open-help', '/signin → /home → /beta/inbox → /help'],
         ]);
-        assert.match(listed[0][2]!, /^까닭 문서 쪽은 따로 본다 · \d/);
-        assert.match(listed[1][2]!, /^까닭 베타 받은편지함은 맵에 없다 · \d/);
+        assert.match(listed[0][2]!, /^이유 문서 쪽은 따로 본다 · \d/);
+        assert.match(listed[1][2]!, /^이유 베타 받은편지함은 맵에 없다 · \d/);
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.equal(await group.evaluate((d: HTMLDetailsElement) => d.open), true);
+      }),
+    ),
+  );
+});
+
+test('in a browser, 「되돌리기」 on a discarded candidate writes one undo record beside the discard even when double-clicked, offers the candidate again picked and drops it from 「버린 후보 N」, and a refused undo says why under the list', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        for (const [name, reason] of [['open-help', '베타 받은편지함은 맵에 없다'], ['publish-document', '문서 쪽은 따로 본다']]) {
+          await p.click(`#candidate-list li:has-text("${name}")`);
+          await discardCandidate(p, reason);
+          await p.waitForSelector(`#candidate-list li:has-text("${name}")`, { state: 'detached' });
+        }
+        await p.click('#left details.discarded-candidates > summary');
+        await p.dblclick('#discarded-list > li:has-text("open-help") button.undiscard');
+        await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
+        assert.equal(await p.locator('#left .undiscard-error').count(), 0);
+        assert.equal(await p.textContent('#left details.discarded-candidates > summary'), '버린 후보 1');
+        assert.deepEqual(await p.locator('#discarded-list > li > div:first-child').allTextContents(), ['publish-document']);
+        assert.equal(await p.textContent('#center h3'), 'open-help');
+        const records = fs.readdirSync(path.join(config.storiesDir, 'discarded')).map((f) => JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'discarded', f), 'utf8')));
+        assert.deepEqual(records.filter((r) => r.kind === 'undo').map(({ screens, author }) => [screens.join(' > '), author]), [[HELP_KEY, 'reviewer']]);
+
+        fs.rmSync(path.join(config.storiesDir, 'discarded'), { recursive: true });
+        await p.click('#discarded-list > li:has-text("publish-document") button.undiscard');
+        await p.waitForSelector('#left .undiscard-error');
+        assert.match(await p.textContent('#left .undiscard-error') ?? '', /^저장하지 못했습니다: 버린 후보 .* 가 없습니다$/);
+        assert.equal((await postJson(base, '/api/candidates/undiscard', { screens: ['/home#Home'] })).status, 400);
+        assert.deepEqual(errors.splice(0), [BAD_REQUEST]);
       }),
     ),
   );

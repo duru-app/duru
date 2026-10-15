@@ -532,7 +532,11 @@ traces:
 On the review page a candidate is accepted, which writes a story file into `storiesDir`, or discarded with a
 reason, which writes a file into `discarded/` in `storiesDir` so the same order does not come back. Undoing an
 acceptance deletes that story file, and the candidate is listed again; if `candidates/` has no file for its screen
-order yet, one is written first, under the story's ID, so it comes back even once its record is gone.
+order yet, one is written first, under the story's ID, so it comes back even once its record is gone. Undoing a
+discard writes another file into `discarded/`, `{ "screens", "kind": "undo", "author", "date" }`, with no reason, and
+leaves the discard as it is: the latest file of a screen order in `discarded/` is its state, so the order is offered
+again until it is discarded again. If `candidates/` has no file for that order, one is written first under the name
+the discard kept.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
@@ -654,7 +658,8 @@ the discard is not saved, the window stays open with the reason and the error. A
 and chosen. The comments left on that story then show under 「떨어져 나감」, as for any story file that is gone. A story
 made with 「새 스토리」 or written by hand has no such button. Below the candidates, 「버린 후보 N」 opens the discarded
 candidates, newest first, each with its name, its screens, the reason and the date; a screen order discarded more
-than once shows its latest discard. 「새 스토리」 puts a story together from screens of the map, picked from the list
+than once shows its latest discard. Each has 「되돌리기」: it writes the undo file, without asking, and the
+candidate is listed again and chosen; if the undo is refused, why shows under the list. 「새 스토리」 puts a story together from screens of the map, picked from the list
 that takes the place of the stories or from boxes in the flow.
 
 **Marks.** A mark targets a screen, a call, one depth of either, one value of a call's option, or a story, and

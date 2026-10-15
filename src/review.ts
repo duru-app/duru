@@ -7,7 +7,7 @@ import path from 'node:path';
 import { screenCases, settingConditionName } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
-import { acceptCandidate, candidatePlace, discardCandidate, storyCandidates, unacceptStory } from './candidates.ts';
+import { acceptCandidate, candidatePlace, discardCandidate, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
 import { isPlainObject } from './config.ts';
 import { buildFlow } from './flow.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
@@ -22,7 +22,7 @@ import { DEPTHS } from './test-links.ts';
 
 const PAGE = path.join(import.meta.dirname, 'review-page.html');
 const BODY_LIMIT = 64 * 1024;
-const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/stories/edit', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add'];
+const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add'];
 
 function gitUserName(cwd: string) {
   try {
@@ -331,6 +331,13 @@ export async function startReviewServer(config: any, { port = 0, author = review
             if (req.url === '/api/stories/check') return send(res, 200, 'application/json', JSON.stringify(checked));
             const { id, name, memo, screens } = input;
             return send(res, 201, 'application/json', JSON.stringify(addStory(config.storiesDir, { id, name, memo, screens, author: author.name })));
+          } catch (err: any) {
+            return send(res, 400, 'text/plain', err.message);
+          }
+        }
+        if (req.url === '/api/candidates/undiscard') {
+          try {
+            return send(res, 201, 'application/json', JSON.stringify(undiscardCandidate(config.storiesDir, input.screens, { author: author.name })));
           } catch (err: any) {
             return send(res, 400, 'text/plain', err.message);
           }
