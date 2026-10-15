@@ -93,7 +93,8 @@ if (command === 'tasks') {
             }
             live = true;
             console.error(`waiting for a comment at ${server}`);
-          } else if (!live) backlog.push(fields.data);
+          } else if (fields.event !== undefined) continue;
+          else if (!live) backlog.push(fields.data);
           else if (JSON.parse(fields.data).duru === 'comment') {
             printed = `${fields.data}\n`;
             break read;

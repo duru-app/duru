@@ -743,6 +743,35 @@ test('with no unanswered comment, wait says on stderr that it is waiting, skips 
   });
 });
 
+test('a change to the stories folder reaches open event streams but neither wait nor the JSON lines on the review\'s stderr: wait stays on its first connection and exits with the next comment', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const events = readEvents(url);
+      await events.open;
+      const waiting = startWait(configFile, url);
+      await waitFor(() => waiting.out.stderr.includes('waiting for a comment'), 'the waiting line on stderr');
+      const storiesDir = path.join(path.dirname(configFile), 'example-stories');
+      fs.writeFileSync(path.join(storiesDir, 'read-reports.json'), JSON.stringify({ name: '보고서를 고쳐 본다', screens: ['/admin/report#AdminReport'], author: 'a', date: '2026-10-03' }));
+      await waitFor(() => events.got.text.includes('event: stories\n'), 'the stories event on the open stream');
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.equal(waiting.out.stdout, '');
+
+      const comment = (await (await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: { node: '/lab#Lab' }, note: 'After the stories changed.' }) })).json()) as Mark;
+      const { code, stdout, stderr } = await within(waiting.closed, 'wait to exit');
+      assert.equal(code, 0);
+      assert.deepEqual(lines(stdout), [{ duru: 'comment', ...comment }]);
+      assert.equal(stderr.match(/waiting for a comment/g)!.length, 1);
+      assert.deepEqual(out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l).id), [comment.id]);
+      await endReview(url);
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  }, { storiesDir: 'example-stories' });
+});
+
 test('when the review ends, wait exits with 0, nothing on stdout and "review ended" on stderr; with no review page it gives up after about 10 seconds and exits with 1', async () => {
   await withReviewFixture(async (configFile) => {
     const { child, base, closed } = startReview(configFile);
