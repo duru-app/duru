@@ -106,7 +106,8 @@ function candidateOf({ record, name, addresses, stepCount }: VisitRecord, screen
 function discardedProblemOf(d: any) {
   if (!isPlainObject(d)) return '버린 후보는 JSON 객체여야 합니다';
   if (!isScreenList(d.screens)) return 'screens 는 화면을 하나 이상 차례대로 담은 목록이어야 합니다';
-  if (!isText(d.reason)) return 'reason 에 버린 까닭을 적어야 합니다';
+  if (d.kind !== undefined && d.kind !== 'undo') return 'kind 는 버린 기록이면 적지 않고, 되돌린 기록이면 "undo" 여야 합니다';
+  if (d.kind === undefined && !isText(d.reason)) return 'reason 에 버린 까닭을 적어야 합니다';
   if (!isText(d.author)) return 'author 에 작성자를 적어야 합니다';
   if (!isDate(d.date)) return 'date 는 2026-10-02 같은 날짜여야 합니다';
   return null;
@@ -163,15 +164,18 @@ export function loadDiscarded(dir: string) {
   return { discarded: found, notices };
 }
 
-function latestDiscarded(discarded: any[]) {
+function discardedNow(records: any[]) {
   const latest = new Map<string, any>();
-  for (const d of discarded) {
+  for (const d of records) {
     const key = JSON.stringify(d.screens);
     const kept = latest.get(key);
     if (!kept || compare(kept.date, d.date) < 0 || (kept.date === d.date && compare(kept.file, d.file) < 0)) latest.set(key, d);
   }
-  return [...latest.values()].sort((a, b) => compare(b.date, a.date) || compare(a.file, b.file)).map(({ name, screens, reason, author, date }) => ({ name, screens, reason, author, date }));
+  return [...latest.values()].filter((d) => d.kind !== 'undo');
 }
+
+const shownDiscarded = (discarded: any[]) =>
+  [...discarded].sort((a, b) => compare(b.date, a.date) || compare(a.file, b.file)).map(({ name, screens, reason, author, date }) => ({ name, screens, reason, author, date }));
 
 const isFolder = (file: string) => fs.existsSync(file) && fs.statSync(file).isDirectory();
 const loadStored = (dir: string) => (isFolder(dir) ? loadFolder(dir, CANDIDATES) : { found: [], notices: [] });
@@ -226,17 +230,33 @@ export function discardCandidate(dir: string, candidate: Candidate, { reason, au
   return { ...discarded, file: path.join(DISCARDED, file) };
 }
 
+export function undiscardCandidate(dir: string, screens: unknown, { author }: { author: unknown }, now = new Date()) {
+  if (!isText(author)) throw new Error('작성자가 필요합니다');
+  const key = JSON.stringify(screens);
+  const discarded = discardedNow(loadDiscarded(dir).discarded).find((d) => JSON.stringify(d.screens) === key);
+  if (!discarded) throw new Error(`버린 후보 ${Array.isArray(screens) ? screens.join(' > ') : screens} 가 없습니다`);
+  if (isText(discarded.name) && isSource(discarded.source)) {
+    const kept = storeCandidates(dir, [{ key: discarded.screens.join(' > '), name: discarded.name, screens: discarded.screens, source: discarded.source }]);
+    if (kept.reason) throw new Error(kept.reason);
+  }
+  const undone = { screens: discarded.screens, kind: 'undo', author: author.trim(), date: now.toISOString() };
+  const file = recordName({ ...undone, id: crypto.randomUUID() });
+  writeNewRecord(path.join(dir, DISCARDED, file), undone);
+  return { ...undone, file: path.join(DISCARDED, file) };
+}
+
 export function storyCandidates(config: any, map: any, mapFile: string, traced: TracedTest[] = []) {
   const { records, notices } = loadVisitRecords(config.visitRecords, config.configDir);
   const { discarded, notices: discardedNotices } = loadDiscarded(config.storiesDir);
   const { found: stored, notices: storedNotices } = loadStored(config.storiesDir);
   const all = [...notices, ...[...discardedNotices, ...storedNotices].map((n) => ({ ...n, file: relative(config.configDir, path.join(config.storiesDir, n.file)) }))];
-  const shown = latestDiscarded(discarded);
+  const current = discardedNow(discarded);
+  const shown = shownDiscarded(current);
   if (linksWithoutConditions(map)) {
     return { list: [], discarded: shown, notices: all, ...((records.length || traced.length || stored.length) && { stale: staleMapMessage(mapFile, '후보') }) };
   }
   const screenAt = screenFinder(map);
-  const seen = new Set([...loadStories(config.storiesDir).stories, ...discarded].map((s) => JSON.stringify(s.screens)));
+  const seen = new Set([...loadStories(config.storiesDir).stories, ...current].map((s) => JSON.stringify(s.screens)));
   const list: Candidate[] = [];
   const gone: Record<string, string> = {};
   for (const record of records) {

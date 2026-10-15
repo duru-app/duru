@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { acceptCandidate, discardCandidate, storeCandidates, storyCandidates, unacceptStory } from '../src/candidates.ts';
+import { acceptCandidate, discardCandidate, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { editStory, loadStories } from '../src/stories.ts';
@@ -232,6 +232,52 @@ test('the candidates name each screen order discarded once, by its latest discar
     assert.deepEqual(discarded, [
       { name: 'open-help', screens: help.screens, reason: '다시 버림', author: 'park', date: '2026-10-03T00:00:00.000Z' },
       { name: 'publish-document', screens: publish.screens, reason: '문서 쪽은 따로 본다', author: 'lee', date: '2026-10-02T00:00:00.000Z' },
+    ]);
+  });
+});
+
+test('undoing a discard writes an undo record of its own beside the discard, after which the candidate is offered again and leaves the discarded list until discarded again, and a screen order not discarded now or no author is refused', () => {
+  withStoryCopy((dir: string) => {
+    const help = candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help')!;
+    discardCandidate(dir, help, { reason: '먼저 버림', author: 'kim' }, new Date('2026-10-01T00:00:00Z'));
+    const undone = undiscardCandidate(dir, help.screens, { author: 'lee' }, new Date('2026-10-02T00:00:00Z'));
+    assert.deepEqual({ ...undone, file: undefined }, { screens: help.screens, kind: 'undo', author: 'lee', date: '2026-10-02T00:00:00.000Z', file: undefined });
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, undone.file), 'utf8')), { screens: help.screens, kind: 'undo', author: 'lee', date: '2026-10-02T00:00:00.000Z' });
+    assert.equal(fs.readdirSync(path.join(dir, 'discarded')).length, 2);
+    const back = candidatesOf({ storiesDir: dir });
+    assert.deepEqual(back.list.map((c) => c.name), ['open-help', 'publish-document']);
+    assert.deepEqual(back.discarded, []);
+    assert.deepEqual(back.notices.map((n) => n.file), ['example-visits/broken-record.json']);
+
+    const before = fs.readdirSync(dir, { recursive: true }).sort();
+    assert.throws(() => undiscardCandidate(dir, help.screens, { author: 'lee' }), /버린 후보 \/signin#SignIn > \/home#Home > \/beta\/inbox > \/help#Help 가 없습니다/);
+    assert.throws(() => undiscardCandidate(dir, ['/home#Home'], { author: 'lee' }), /버린 후보 \/home#Home 가 없습니다/);
+    assert.deepEqual(fs.readdirSync(dir, { recursive: true }).sort(), before);
+
+    discardCandidate(dir, help, { reason: '다시 버림', author: 'park' }, new Date('2026-10-03T00:00:00Z'));
+    assert.deepEqual(candidatesOf({ storiesDir: dir }).discarded.map((d) => d.reason), ['다시 버림']);
+    assert.throws(() => undiscardCandidate(dir, help.screens, { author: ' ' }), /작성자가 필요합니다/);
+  });
+});
+
+test('a discard undone after its visit record is gone comes back from the candidate file written on undoing, under the name the discard kept', () => {
+  withStoryCopy((dir: string) => {
+    const help = candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help')!;
+    discardCandidate(dir, help, { reason: '먼저 버림', author: 'kim' }, new Date('2026-10-01T00:00:00Z'));
+    undiscardCandidate(dir, help.screens, { author: 'kim' }, new Date('2026-10-02T00:00:00Z'));
+    assert.deepEqual(storedIn(dir).map(({ name, screens, source }) => ({ name, screens, source })), [{ name: 'open-help', screens: help.screens, source: help.source }]);
+    assert.deepEqual(leftOnlyStored(dir).list.map((c) => [c.key, c.name]), [[help.key, 'open-help']]);
+  });
+});
+
+test('a hand-written discard record with a kind other than undo is noted with the candidates, while an undo record needs no reason', () => {
+  withStoryCopy((dir: string) => {
+    fs.mkdirSync(path.join(dir, 'discarded'));
+    fs.writeFileSync(path.join(dir, 'discarded', 'restore.json'), JSON.stringify({ screens: ['/home#Home'], kind: 'restore', author: 'a', date: '2026-10-03' }));
+    fs.writeFileSync(path.join(dir, 'discarded', 'undo.json'), JSON.stringify({ screens: ['/home#Home', '/help#Help'], kind: 'undo', author: 'a', date: '2026-10-03' }));
+    assert.deepEqual(candidatesOf({ storiesDir: dir }).notices.map((n) => [n.file, n.reason]), [
+      ['example-visits/broken-record.json', '2 번째 단계의 url 을 읽지 못했습니다'],
+      [path.relative(FIXTURE, path.join(dir, 'discarded/restore.json')), 'kind 는 버린 기록이면 적지 않고, 되돌린 기록이면 "undo" 여야 합니다'],
     ]);
   });
 });

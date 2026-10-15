@@ -1654,6 +1654,21 @@ Alternatives compared:
   add-only, so nothing would merge better, and every place that reads stories (the story list, the task list, the
   stories of the flow) would have to leave the undone ones out.
 
+**Undoing a discard writes an undo record into `discarded/`, with `"kind": "undo"` and no reason.**
+Driver's decision in #249. `discarded/` is only added to, so files written on two computers merge in git without a
+conflict, and the undo keeps that: it writes a new file beside the discard instead of deleting it, the latest file of
+a screen order is its state, and the reason the order was discarded stays in its file. The record is marked with
+`"kind": "undo"`, the name the pair judgments already use for their 「되돌리기」, so one word reads the same in both
+folders; a discard keeps having no `kind`. No reason is asked, like Dependabot's and code scanning's 「Reopen」. As
+undoing an acceptance does, the undo writes the order into `candidates/` first, under the name the discard kept, so
+the candidate comes back once its record or trace is gone. A duru older than this reads an undo record as a discard
+with no reason, skips it, and keeps the order out of its list.
+Alternatives compared:
+- `"undo": true` on the record: leaves the discard's shape as it is, but writes the same undo in two ways across
+  the pair judgments and the discards.
+- A separate `restored/` folder: leaves `discarded/` alone, but the latest record of an order would have to be found
+  across two folders, and there would be one more folder to read.
+
 **A story picked in the flow is drawn as its steps alone, left to right on one line, with the link verdict on the
 line between each two; the stories are picked from a list left of the drawing.**
 Driver's decision in #250. The story view of #131 kept the main flow and cut away every screen that was neither a
