@@ -472,7 +472,7 @@ A story is something a user gets done, written as the screens they pass through 
 {
   "name": "로그인해 문서 목록에서 문서를 연다",
   "screens": ["/signin#SignIn", "/home#Home", "/document/:tab_draft_done_#DocumentList", "/document/:id#DocumentDetail"],
-  "memo": "초안 탭에 문서가 하나 이상 있어야 한다.",
+  "memo": "문서를 처음 여는 사람이 가장 자주 지나는 길이다.",
   "author": "Kim Min",
   "date": "2026-10-02"
 }
@@ -481,13 +481,41 @@ A story is something a user gets done, written as the screens they pass through 
 - `name` — what the user gets done, in one short sentence
 - `screens` — the screen IDs of the steps, first step first, one entry per screen the user lands on, so the same
   screen never comes twice in a row
-- `memo` (optional) — what the steps do not say, such as the account or the data the flow needs
+- `memo` (optional) — a free note on the story that fits none of the other keys; what has to hold before the story
+  starts goes in `needs`
 - `author`, `date` — who wrote the story and when (`2026-10-02`)
 - `source` (optional) — for a story accepted from a candidate, the visit record and its steps
   (`{ "record", "steps" }`), or the Playwright report and the titles of its tests that passed those screens
   (`{ "report", "tests" }`)
+- `needs` (optional) — a list of texts, each a thing that has to hold before the story starts
+- `expects` (optional) — a list of texts, each a thing that should hold once the last step is done
 
-No other keys are allowed. A file that breaks these rules is skipped and noted with its path and why.
+A step of `screens` that has its own needs or expected results is written as an object instead of the screen ID:
+`{ "screen": "<screen ID>", "needs": [...], "expects": [...] }`, where `screen` is required and the other two are
+optional lists of texts in the same way. A step without them stays a screen ID.
+
+```json
+{
+  "name": "로그인해 문서 목록에서 문서를 연다",
+  "needs": ["완료된 문서가 하나 있다"],
+  "screens": [
+    "/signin#SignIn",
+    "/home#Home",
+    { "screen": "/document/:tab_draft_done_#DocumentList", "needs": ["「완료」 탭을 고른다"] },
+    { "screen": "/document/:id#DocumentDetail", "expects": ["문서 제목과 서명자 목록이 보인다"] }
+  ],
+  "expects": ["열람 기록에 이 문서가 한 줄 늘어난다"],
+  "memo": "",
+  "author": "Kim Min",
+  "date": "2026-10-02"
+}
+```
+
+duru does not check these lines against the code: the review page shows them and the task list carries them to
+whoever writes the story's test.
+
+No other keys are allowed, at the top or in a step object. A file that breaks these rules is skipped and noted with its
+path and why.
 
 Each story is checked against the map. Between two neighbouring steps the link is `open` when a map link without
 a condition joins them, `conditioned` when every such link has a condition, `configured` when only a move in
@@ -579,7 +607,9 @@ twice is drawn twice; the story's name, 「경로 끄기」 and 「i」 sit besi
 they are joined: solid for a link with no condition, blue dashed for a link under a condition, green dotted for a
 move written in `moves`, red dashed where the map has no link, and orange dotted where a step is not on the map or a
 link's address could not be read; the 「i」 beside 「경로 끄기」 shows these. Where the map has no link, a note below says
-which screens the step before does lead to. A story wider than the pane scrolls sideways. Pressing the story again,
+which screens the step before does lead to. A step with `needs` or `expects` in the story file carries their count,
+such as 「조건 1 · 기대 2」, and the story's own `needs` and `expects` are counted beside its name after 「스토리 전체」;
+hovering over a count shows the lines. A story wider than the pane scrolls sideways. Pressing the story again,
 or 「경로 끄기」, brings back the whole flow where it was.
 
 **A new story in the flow.** While 「새 스토리」 is open (「새 스토리 이어 쓰기」 once it has steps), pressing a box in the
@@ -648,7 +678,10 @@ judge several pairs at once.
 
 **Stories.** The stories tab lists the stories with their status and link verdicts, with the same search box and
 filters as the flow's story list (what is typed or ticked in one shows in the other); choosing one shows its steps,
-the link between each two and its 「사전 조건」, and lets its name and memo be changed. Candidates are listed below
+the link between each two and its 「사전 조건」, and lets its name and memo be changed. The story's own `needs` and
+`expects` show in a 「스토리 전체」 box marked 「사람이 적음」, since a person wrote them, apart from the 「사전 조건」 duru
+found in the code, and a step's own ones show inside its card. 「스토리 파일」 at the bottom unfolds the story in the shape
+of its file, with the steps that have needs or expects written as objects. Candidates are listed below
 with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the address of a chosen candidate holds its screen order, as
 `#stories?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
 screen order, and the candidate is discarded only once a reason is written there. 「버리기」 in the window or Ctrl+Enter
@@ -825,7 +858,9 @@ listening for new saves when the review ends.
 Each screen comes with its marks, component file and route line, the app address, the settings and roles it
 needs, the tests of each role and setting case and of each picked case kind by depth and status, its API calls and
 the tests already attached. Calls follow under `# API calls`, with their picked case kinds the same way, and
-stories under `# Stories` with their steps, link verdicts and 「사전 조건」. Under an open screen or call,
+stories under `# Stories` with their steps, link verdicts and 「사전 조건」. A story's `needs` lines come before its
+steps, each step's `need` and `expect` lines follow that step, and `expects at the end` follows the last step; a
+story without them gets none of these lines. Under an open screen or call,
 `comments on tests` lists each test a comment was left on, with its file and line, status, how it is linked and its
 result file, followed by those comments and their replies. Under an open screen, `comments on opening conditions`
 and `comments on incoming links` list each condition and link a comment was left on the same way, with the source
