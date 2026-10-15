@@ -12,17 +12,27 @@ interface RawSource {
 
 interface RawStory {
   name?: unknown;
+  needs?: unknown;
   screens?: unknown;
+  expects?: unknown;
   memo?: unknown;
   author?: unknown;
   date?: unknown;
   source?: RawSource;
 }
 
+export interface StepFields {
+  needs?: string[];
+  expects?: string[];
+}
+
 export interface Story {
   id: string;
   name: string;
+  needs?: string[];
   screens: string[];
+  stepFields?: StepFields[];
+  expects?: string[];
   memo: string;
   author: string;
   date: string;
@@ -45,13 +55,17 @@ interface NewStory {
 }
 
 export const STORY_ID = /^[a-z0-9_-]+$/;
-const KEYS = ['name', 'screens', 'memo', 'author', 'date', 'source'];
+const FIELD_KEYS = ['needs', 'expects'] as const;
+const KEYS = ['name', 'screens', ...FIELD_KEYS, 'memo', 'author', 'date', 'source'];
+const STEP_KEYS = ['screen', ...FIELD_KEYS];
+const FIELD_WORDS = { needs: '조건을', expects: '기대 결과를' };
 export const DISCARDED = 'discarded';
 export const CANDIDATES = 'candidates';
 const DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
 export const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 export const isScreenList = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every(isText);
+const isTextList = (v: unknown) => Array.isArray(v) && v.every(isText);
 const isStep = (v: number) => Number.isInteger(v) && v > 0;
 const isRecordSource = (v: RawSource) => isText(v.record) && Array.isArray(v.steps) && v.steps.length === 2 && v.steps.every(isStep) && v.steps[0] <= v.steps[1];
 const isTestsSource = (v: RawSource) => isText(v.report) && Array.isArray(v.tests) && v.tests.length > 0 && v.tests.every(isText);
@@ -60,6 +74,22 @@ export const isSource = (v: RawSource) => isPlainObject(v) && Object.keys(v).len
 export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v))
   && new Date(`${v.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === v.slice(0, 10);
 
+const screenOf = (step: any) => (isPlainObject(step) ? step.screen : step);
+
+function fieldsProblem(fields: { needs?: unknown; expects?: unknown }, where: string) {
+  const bad = FIELD_KEYS.find((key) => fields[key] !== undefined && !isTextList(fields[key]));
+  return bad ? `${where}${bad} 는 ${FIELD_WORDS[bad]} 하나씩 글로 적은 목록이어야 합니다` : null;
+}
+
+function stepProblem(step: any, where: string) {
+  if (isText(step)) return null;
+  if (!isPlainObject(step)) return `${where}는 화면 ID 글자나 { "screen", "needs", "expects" } 객체여야 합니다`;
+  const unknown = Object.keys(step).filter((k) => !STEP_KEYS.includes(k));
+  if (unknown.length) return `${where}에 모르는 항목이 있습니다: ${unknown.join(', ')}`;
+  if (!isText(step.screen)) return `${where}의 screen 에 화면 ID 를 적어야 합니다`;
+  return fieldsProblem(step, `${where}의 `);
+}
+
 function problemOf(story: RawStory) {
   if (!isPlainObject(story)) return '스토리는 JSON 객체여야 합니다';
   const unknown = Object.keys(story).filter((k) => !KEYS.includes(k));
@@ -67,15 +97,40 @@ function problemOf(story: RawStory) {
     return `모르는 항목이 있습니다: ${unknown.join(', ')}${unknown.includes('id') ? ' (스토리 ID 는 파일 이름에서 정합니다)' : ''}`;
   }
   if (!isText(story.name)) return 'name 에 스토리 이름을 적어야 합니다';
+  const fields = fieldsProblem(story, '');
+  if (fields) return fields;
   const { screens } = story;
-  if (!isScreenList(screens)) return 'screens 는 화면 ID 를 하나 이상 차례대로 담은 목록이어야 합니다';
-  const repeated = screens.findIndex((s, i) => i > 0 && s === screens[i - 1]);
+  if (!Array.isArray(screens) || !screens.length) return 'screens 는 화면 ID 를 하나 이상 차례대로 담은 목록이어야 합니다';
+  for (const [i, step] of screens.entries()) {
+    const problem = stepProblem(step, `screens 의 ${i + 1} 번째 단계`);
+    if (problem) return problem;
+  }
+  const ids = screens.map(screenOf);
+  const repeated = ids.findIndex((s, i) => i > 0 && s === ids[i - 1]);
   if (repeated > 0) return `screens 의 ${repeated} 번째와 ${repeated + 1} 번째가 같은 화면입니다`;
   if (story.memo !== undefined && typeof story.memo !== 'string') return 'memo 는 글자여야 합니다';
   if (!isText(story.author)) return 'author 에 작성자를 적어야 합니다';
   if (!isDate(story.date)) return 'date 는 2026-10-02 같은 날짜여야 합니다';
   if (story.source !== undefined && !isSource(story.source)) return 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] } 나 { "report": 보고 파일, "tests": [시험 제목, ...] } 여야 합니다';
   return null;
+}
+
+const fieldsOf = (raw: any): StepFields => Object.fromEntries(FIELD_KEYS.filter((key) => raw[key] !== undefined).map((key) => [key, raw[key]]));
+
+function storyOf(story: any) {
+  const steps: any[] = story.screens;
+  const stepFields = steps.some(isPlainObject) ? { stepFields: steps.map((s) => (isPlainObject(s) ? fieldsOf(s) : {})) } : {};
+  return {
+    name: story.name,
+    ...(story.needs && { needs: story.needs }),
+    screens: steps.map(screenOf) as string[],
+    ...stepFields,
+    ...(story.expects && { expects: story.expects }),
+    memo: story.memo ?? '',
+    author: story.author,
+    date: story.date,
+    ...(story.source && { source: story.source }),
+  };
 }
 
 const SAY = {
@@ -122,7 +177,7 @@ export function loadStories(dir: string): { stories: Story[]; notices: Notice[] 
       notices.push({ file, reason: problem });
       continue;
     }
-    stories.push({ id, name: story.name, screens: story.screens, memo: story.memo ?? '', author: story.author, date: story.date, ...(story.source && { source: story.source }), file });
+    stories.push({ id, ...storyOf(story), file });
   }
   return { stories: stories.sort((a, b) => compare(a.id, b.id)), notices };
 }

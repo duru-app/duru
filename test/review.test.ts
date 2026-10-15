@@ -2030,6 +2030,64 @@ test('in a browser, the story list sits next to the screen list, and a chosen st
   );
 });
 
+test('in a browser, the needs and expects written in a story file show in a 「스토리 전체」 box marked as written by a person and in each step card, the flow\'s one-line story counts them with the lines on hover, the file shows folded at the bottom, and a story without them shows none of this', { skip: browserMissing }, async () => {
+  const written = {
+    name: '실험 결과를 확인한다',
+    needs: ['실험이 한 번 이상 돌았다'],
+    screens: ['/home#Home', { screen: '/lab#Lab', needs: ['실험실 설정을 켠다'], expects: ['실험 목록이 보인다', '「실행」 단추가 보인다'] }, '/lab/result#LabResult'],
+    expects: ['마지막 실행 결과가 보인다'],
+    memo: '',
+    author: 'reviewer',
+    date: '2026-10-05',
+  };
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config, copy) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/lab-notes.json'), JSON.stringify(written));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험 결과를 확인한다")');
+        assert.equal(await p.textContent('#center .story-wide h2'), '스토리 전체 사람이 적음');
+        assert.deepEqual(await p.locator('#center .story-wide .written-row').evaluateAll((rows) => rows.map((r) => [r.querySelector('.written-label')!.textContent, [...r.querySelectorAll('li')].map((li) => li.textContent)])), [
+          ['조건', ['실험이 한 번 이상 돌았다']],
+          ['끝난 뒤 기대 결과', ['마지막 실행 결과가 보인다']],
+        ]);
+        assert.deepEqual(await p.locator('#center .story-path .step').evaluateAll((steps) => steps.map((s) => [...s.querySelectorAll('.step-written .written-row')].map((r) => [r.querySelector('.written-label')!.textContent, [...r.querySelectorAll('li')].map((li) => li.textContent)]))), [
+          [],
+          [['조건', ['실험실 설정을 켠다']], ['기대 결과', ['실험 목록이 보인다', '「실행」 단추가 보인다']]],
+          [],
+        ]);
+        await p.click('#center .step-written li:has-text("실험 목록이 보인다")');
+        assert.equal(await p.textContent('#center h3'), '실험 결과를 확인한다', 'pressing the written lines does not open the screen');
+        assert.deepEqual(await p.locator('#right-info > :not(.talk-scope)').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['도달 가능', '사전 조건']);
+        assert.equal(await p.textContent('#center details.story-file summary'), '스토리 파일 lab-notes.json');
+        assert.equal(await p.locator('#center details.story-file[open]').count(), 0);
+        await p.click('#center details.story-file summary');
+        assert.deepEqual(JSON.parse((await p.textContent('#center details.story-file pre'))!), written);
+        // details 의 toggle 이벤트는 다음 틱에 발생하므로, 그 뒤에 다시 그린다.
+        await p.evaluate(() => new Promise((done) => setTimeout(done)).then(() => render()));
+        assert.equal(await p.locator('#center details.story-file[open]').count(), 1, 'the opened file stays open when the page is drawn again');
+
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        assert.equal(await p.locator('#center .story-wide, #center .step-written').count(), 0);
+        assert.deepEqual(JSON.parse((await p.textContent('#center details.story-file pre'))!), JSON.parse(fs.readFileSync(path.join(copy, 'example-stories/run-lab.json'), 'utf8')));
+
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box.screen');
+        await p.click('#flow-story-list li[data-story="lab-notes"]');
+        await p.waitForFunction(() => state.storyPath?.id === 'lab-notes');
+        assert.deepEqual(await p.$$eval('#flow .story-line [data-step]', (els) => els.map((e) => e.querySelector('.written-count')?.textContent ?? null)), [null, '조건 1 · 기대 2', null]);
+        assert.equal(await p.getAttribute('#flow .story-line [data-step="1"] .written-count', 'title'), '조건: 실험실 설정을 켠다\n기대: 실험 목록이 보인다\n기대: 「실행」 단추가 보인다');
+        assert.equal(await p.textContent('#flow-head .story-on .written-count'), '스토리 전체 조건 1 · 기대 1');
+        assert.equal(await p.getAttribute('#flow-head .story-on .written-count', 'title'), '조건: 실험이 한 번 이상 돌았다\n기대: 마지막 실행 결과가 보인다');
+        await p.click('#flow-story-list li[data-story="run-lab"]');
+        await p.waitForFunction(() => state.storyPath?.id === 'run-lab');
+        assert.equal(await p.locator('#flow .written-count, #flow-head .written-count').count(), 0);
+      }),
+    );
+  });
+});
+
 test('in a browser, a step that a move in the config joins shows as 설정에 적은 이동 with its reason, and the story is reachable', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories', moves: [{ from: '/signin', to: '/lab/result', reason: '로그인 뒤' }] }, (config, copy) => {
     fs.writeFileSync(path.join(copy, 'example-stories/signin-lab.json'), JSON.stringify({ name: '로그인해서 실험 결과를 본다', screens: ['/signin#SignIn', '/lab/result#LabResult'], author: 'a', date: '2026-10-03' }));

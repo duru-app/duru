@@ -166,6 +166,22 @@ test('accepting a candidate writes a story file with the given ID and name, its 
   });
 });
 
+test('a story whose steps are objects with needs and expects keeps its screen order from being a candidate, like the same story with screen IDs', () => {
+  withStoryCopy((dir: string) => {
+    const screens = ['/signin#SignIn', '/home#Home', '/beta/inbox', '/help#Help'];
+    fs.writeFileSync(path.join(dir, 'open-help.json'), JSON.stringify({
+      name: '홈에서 도움말을 연다',
+      needs: ['로그인할 계정이 있다'],
+      screens: [screens[0], { screen: screens[1], expects: ['홈이 보인다'] }, screens[2], { screen: screens[3] }],
+      author: 'reviewer',
+      date: '2026-10-03',
+    }));
+    const { list, gone } = candidatesOf({ storiesDir: dir });
+    assert.deepEqual(list.map((c) => c.name), ['publish-document']);
+    assert.equal(gone![screens.join(' > ')], 'open-help');
+  });
+});
+
 test('accepting a candidate needs an ID within the story ID rule that no story file uses yet, a name and an author, and writes nothing otherwise', () => {
   withStoryCopy((dir: string) => {
     const [candidate] = candidatesOf({ storiesDir: dir }).list;

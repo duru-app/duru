@@ -323,6 +323,58 @@ test('a marked story step that a move in the config joins reads as that move wit
   }, { storiesDir: 'example-stories', moves: [{ from: '/signin', to: '/lab/result', reason: '로그인 뒤' }] });
 });
 
+test('a marked story carries the needs and expects a person wrote for the whole story and under each step, after the step line and before its link, and the intro says what they are', () => {
+  withFixtureCopy(({ copy, cli }) => {
+    const file = path.join(copy, 'example-stories/help-from-home.json');
+    const story = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({
+      ...story,
+      needs: ['로그인할 계정이 있다', '도움말 글이 하나\n이상 있다'],
+      screens: [{ screen: '/signin#SignIn', expects: ['로그인하면 홈으로 간다'] }, '/home#Home', { screen: '/help#Help', needs: ['도움말 설정을 켠다'], expects: ['도움말 목록이 보인다'] }],
+      expects: ['열어 본 도움말이 기록된다'],
+    }));
+    cli('rebuild');
+    const tasks = cli('tasks');
+    const item = tasks.split('\n## help-from-home\n')[1].split('\n## ')[0];
+    assert.equal(item.slice(item.indexOf('- story tests:'), item.indexOf('- reach:')), [
+      '- story tests:',
+      '  - code pending — goes from home to help @story:help-from-home — /work/app/src/home/home.test.js:19',
+      '- needs:',
+      '  - 로그인할 계정이 있다',
+      '  - 도움말 글이 하나',
+      '    이상 있다',
+      '- screens:',
+      '  1. /signin#SignIn — tests: ui pass 1, code pass 1',
+      '     - expect: 로그인하면 홈으로 간다',
+      '     - to /home#Home: open at components/SignIn.js:12',
+      `  2. /home#Home — ${HOME_TESTS}`,
+      '     - to /help#Help: no link',
+      '  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1',
+      '     - need: 도움말 설정을 켠다',
+      '     - expect: 도움말 목록이 보인다',
+      '- expects at the end:',
+      '  - 열어 본 도움말이 기록된다',
+      '',
+    ].join('\n'));
+    assert.match(tasks.split('\n')[2], / A person wrote the `needs` and `expects at the end` lines of a story and the `need` and `expect` lines under a step: .* duru only carries them and does not check them against the code; set up each need in the story test and check each expect there\./);
+  }, { storiesDir: 'example-stories' });
+});
+
+test('a marked story whose steps are written as objects with nothing more gives the same task list as with screen IDs, comments on its steps and links included', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    addMark(marksDir, { target: { story: 'help-from-home', part: { kind: 'step', key: { step: 2, screen: '/home#Home' } } }, note: 'Check the help link here.', author: 'b' }, new Date('2026-10-12T02:00:00Z'));
+    addMark(marksDir, { target: { story: 'help-from-home', part: { kind: 'hop', key: { step: 1, from: '/signin#SignIn', to: '/home#Home' } } }, note: 'Signed in only?', author: 'b' }, new Date('2026-10-12T04:00:00Z'));
+    const before = cli('tasks');
+    assert.match(before, /- comments on steps:\n {2}- step 2: \/home#Home/);
+    const file = path.join(copy, 'example-stories/help-from-home.json');
+    const story = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({ ...story, screens: story.screens.map((screen: string) => ({ screen })) }));
+    assert.equal(cli('tasks'), before);
+  }, { storiesDir: 'example-stories' });
+});
+
 test('a marked story whose file is still in the folder but cannot be read keeps its marks in the task list, under a note that the file could not be read', () => {
   withFixtureCopy(({ copy, cli }) => {
     fs.writeFileSync(path.join(copy, 'example-stories/run-lab.json'), '{');
