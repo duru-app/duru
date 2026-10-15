@@ -662,6 +662,14 @@ than once shows its latest discard. Each has 「되돌리기」: it writes the u
 candidate is listed again and chosen; if the undo is refused, why shows under the list. 「새 스토리」 puts a story together from screens of the map, picked from the list
 that takes the place of the stories or from boxes in the flow.
 
+**Changes to the stories folder.** While the review runs it watches `storiesDir` and every folder in it, such as
+`candidates/` and `discarded/`, and every open page reads the stories again a moment after files there change from
+outside the page: edited in an editor, brought in by `git pull`, or written by another duru command. A story file
+added or deleted comes and goes in the lists, and the chosen story and the flow follow its new content, with no
+reload. A name or memo being typed keeps what was typed, while one not touched shows the file's new value, and while
+a Korean syllable is being composed the page waits until it is done. A `storiesDir` that does not exist yet is
+watched once it is made. These changes are not printed on standard error, and `wait` does not exit for them.
+
 **Marks.** A mark targets a screen, a call, one depth of either, one value of a call's option, or a story, and
 records a status (`needs-more`, `missing`, `fine`), a note, the author and the date. A mark left with text and no
 status is a comment: it shows in the conversation with no status, keeps the current status as it was, and in the task list

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -22,6 +23,7 @@ import { DEPTHS } from './test-links.ts';
 
 const PAGE = path.join(import.meta.dirname, 'review-page.html');
 const BODY_LIMIT = 64 * 1024;
+const STORIES_SETTLE_MS = 100;
 const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add'];
 
 function gitUserName(cwd: string) {
@@ -162,6 +164,84 @@ function readBody(req: http.IncomingMessage) {
   });
 }
 
+function storiesTree(dir: string) {
+  const folders: string[] = [];
+  const files: string[] = [];
+  const walk = (folder: string) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(folder, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    folders.push(folder);
+    for (const entry of entries) {
+      const found = path.join(folder, entry.name);
+      if (entry.isDirectory()) walk(found);
+      else files.push(found);
+    }
+  };
+  walk(dir);
+  return { folders, files };
+}
+
+function storiesVersion(dir: string) {
+  const hash = crypto.createHash('sha1');
+  const add = (file: string, name: string) => {
+    try {
+      const text = fs.readFileSync(file);
+      hash.update(`${name}\0${text.length}\0`).update(text);
+    } catch {}
+  };
+  try {
+    if (!fs.statSync(dir).isDirectory()) add(dir, '');
+    else for (const file of storiesTree(dir).files.sort()) add(file, path.relative(dir, file));
+  } catch {}
+  return hash.digest('hex');
+}
+
+function watchStories(dir: string, changed: () => void) {
+  const watchers = new Map<string, fs.FSWatcher>();
+  let below = dir;
+  const forget = (folder: string) => {
+    watchers.get(folder)?.close();
+    watchers.delete(folder);
+  };
+  const heard = (folder: string, name: string | null) => {
+    if (folder === path.dirname(below) && name !== null && name !== path.basename(below)) return;
+    const named = name === null ? null : path.join(folder, name);
+    for (const watched of [...watchers.keys()]) {
+      if (named === null || watched === named || watched.startsWith(named + path.sep)) forget(watched);
+    }
+    rewatch();
+    changed();
+  };
+  const folders = () => {
+    below = dir;
+    while (path.dirname(below) !== below && !fs.existsSync(path.dirname(below))) below = path.dirname(below);
+    return [path.dirname(below), ...storiesTree(dir).folders];
+  };
+  const rewatch = () => {
+    const wanted = new Set(folders());
+    for (const folder of [...watchers.keys()]) if (!wanted.has(folder)) forget(folder);
+    for (const folder of wanted) {
+      if (watchers.has(folder)) continue;
+      try {
+        const watcher = fs.watch(folder, (_, name) => heard(folder, name));
+        watcher.on('error', () => {
+          watcher.close();
+          if (watchers.get(folder) === watcher) watchers.delete(folder);
+        });
+        watchers.set(folder, watcher);
+      } catch {}
+    }
+  };
+  rewatch();
+  return () => {
+    for (const watcher of watchers.values()) watcher.close();
+  };
+}
+
 type Where = ReturnType<typeof locatePart> | ReturnType<typeof locateStoryPart> | ReturnType<typeof candidatePlace> | null;
 type Target = NonNullable<Mark['target']>;
 export type AnnouncedMark = Mark & { duru: string; where?: Where; wheres?: Where[] };
@@ -230,6 +310,18 @@ export async function startReviewServer(config: any, { port = 0, author = review
     const answered = new Set(marks.map((m) => m.replyTo));
     return marks.filter((m) => recordKind(m) === 'comment' && !answered.has(m.id)).sort((a, b) => a.date.localeCompare(b.date));
   };
+  // 스토리 폴더의 변화는 이름을 붙인 이벤트로 보내, 이름 없는 코멘트 줄만 읽는 duru wait 에 섞이지 않게 한다.
+  let storiesSent = storiesVersion(config.storiesDir);
+  let settling: NodeJS.Timeout | undefined;
+  const stopWatching = watchStories(config.storiesDir, () => {
+    clearTimeout(settling);
+    settling = setTimeout(() => {
+      const version = storiesVersion(config.storiesDir);
+      if (version === storiesSent) return;
+      storiesSent = version;
+      for (const stream of streams) stream.write(`event: stories\ndata: ${version}\n\n`);
+    }, STORIES_SETTLE_MS);
+  });
   const announce = (mark: Mark) => {
     const line = lineOf(mark);
     onMark(line);
@@ -275,10 +367,12 @@ export async function startReviewServer(config: any, { port = 0, author = review
       }
       if (req.method === 'GET' && req.url === '/api/data') {
         const fileSettings = app && config.app.settingsFile ? await app.fileSettings() : null;
+        // 해시를 데이터보다 먼저 구해 두어야, 그 사이에 바뀐 스토리가 다른 해시의 이벤트로 와서 다시 읽힌다.
+        const version = storiesVersion(config.storiesDir);
         const data = reviewData(config, author, app, fileSettings);
         const fromConfig = baseline && path.relative(config.configDir, config.baselineMap);
         const changes = baseline && { file: fromConfig.startsWith('..') ? config.baselineMap : fromConfig, label: baselineLabel(config.baselineMap), ...compareMaps(baseline, data.map) };
-        return send(res, 200, 'application/json', JSON.stringify({ ...data, baseline: changes }));
+        return send(res, 200, 'application/json', JSON.stringify({ ...data, baseline: changes, storiesVersion: version }));
       }
       const url = new URL(req.url!, 'http://host');
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {
@@ -377,11 +471,14 @@ export async function startReviewServer(config: any, { port = 0, author = review
   // 「리뷰 끝」을 거치지 않고 서버를 닫을 때도 열린 페이지가 다시 연결하지 않게 끝을 알린다.
   const close = server.close.bind(server);
   server.close = ((callback?: (err?: Error) => void) => {
+    stopWatching();
+    clearTimeout(settling);
     endStreams();
     return close(callback);
   }) as typeof server.close;
   return new Promise<http.Server>((resolve, reject) => {
     server.once('error', (err) => {
+      stopWatching();
       app?.close();
       reject(err);
     });

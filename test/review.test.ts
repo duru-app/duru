@@ -1572,6 +1572,161 @@ test('closing the review server ends the open event streams, and a stream opened
   });
 });
 
+async function listenTo(url: string) {
+  const res = await fetch(url);
+  const got = { text: '' };
+  (async () => {
+    const decoder = new TextDecoder();
+    for await (const chunk of res.body!) got.text += decoder.decode(chunk, { stream: true });
+  })();
+  return { got, stories: () => [...got.text.matchAll(/^event: stories\ndata: (.*)$/gm)].map((m) => m[1]) };
+}
+
+const until = async (check: () => boolean, what: string) => {
+  for (const end = Date.now() + 5_000; !check(); await new Promise((resolve) => setTimeout(resolve, 20))) {
+    if (Date.now() > end) throw new Error(`no ${what} within 5s`);
+  }
+};
+
+const storyJson = (name: string) => JSON.stringify({ name, screens: ['/home#Home'], author: 'a', date: '2026-10-03' });
+
+test('a change under the stories folder, in any of its sub-folders, or to a folder made only after the server started, is sent once per burst on the event streams as a stories event carrying the version the data then reports, and never as a comment line or to onMark', async () => {
+  await withRebuiltFixture({ storiesDir: 'later-stories' }, async (config) => {
+    const lines: unknown[] = [];
+    const server = await startReviewServer(config, { author: signer('reviewer'), onMark: (line) => lines.push(line) });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const version = async () => ((await (await fetch(`${base}/api/data`)).json()) as { storiesVersion: string }).storiesVersion;
+    try {
+      const stream = await listenTo(`${base}/api/events`);
+      const missing = await version();
+      fs.mkdirSync(config.storiesDir);
+      for (const id of ['one', 'two', 'three']) fs.writeFileSync(path.join(config.storiesDir, `${id}.json`), storyJson(id));
+      await until(() => stream.stories().length === 1, 'stories event for the new folder');
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      assert.deepEqual(stream.stories(), [await version()]);
+      assert.notEqual(stream.stories()[0], missing);
+      assert.equal(((await (await fetch(`${base}/api/data`)).json()) as PageData).stories.list.length, 3);
+
+      fs.writeFileSync(path.join(config.storiesDir, 'one.json'), storyJson('one'));
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      assert.equal(stream.stories().length, 1, 'writing the same content again changes nothing');
+
+      fs.mkdirSync(path.join(config.storiesDir, 'candidates', 'later'), { recursive: true });
+      fs.writeFileSync(path.join(config.storiesDir, 'candidates', 'later', 'note.txt'), 'x');
+      await until(() => stream.stories().length === 2, 'stories event for a file in a new sub-folder');
+
+      fs.rmSync(config.storiesDir, { recursive: true });
+      await until(() => stream.stories().length === 3, 'stories event for the removed folder');
+      assert.equal(stream.stories()[2], missing);
+      fs.mkdirSync(config.storiesDir);
+      fs.writeFileSync(path.join(config.storiesDir, 'two.json'), storyJson('two'));
+      await until(() => stream.stories().length === 4, 'stories event for the folder made again');
+      fs.writeFileSync(path.join(config.storiesDir, 'two.json'), storyJson('two again'));
+      await until(() => stream.stories().length === 5, 'stories event for a file in the folder made again');
+      assert.equal(stream.stories()[4], await version());
+
+      assert.match(stream.got.text, /^(event: stories\ndata: [0-9a-f]+\n\n)+$/);
+      assert.deepEqual(lines, []);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+test('a stories setting that names one story file sends a stories event when that file is written or replaced, and nothing for its neighbours', async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories/run-lab.json' }, async (config) => {
+    const server = await startReviewServer(config, { author: signer('reviewer') });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const stream = await listenTo(`${base}/api/events`);
+      fs.writeFileSync(path.join(path.dirname(config.storiesDir), 'read-reports.json'), storyJson('neighbour'));
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      assert.deepEqual(stream.stories(), []);
+
+      fs.writeFileSync(config.storiesDir, storyJson('edited in place'));
+      await until(() => stream.stories().length === 1, 'stories event for the file written');
+      const replacement = `${config.storiesDir}.tmp`;
+      fs.writeFileSync(replacement, storyJson('replaced'));
+      fs.renameSync(replacement, config.storiesDir);
+      await until(() => stream.stories().length === 2, 'stories event for the file replaced');
+      const data = (await (await fetch(`${base}/api/data`)).json()) as PageData & { storiesVersion: string };
+      assert.deepEqual(data.stories.list.map((s) => s.name), ['replaced']);
+      assert.equal(stream.stories()[1], data.storiesVersion);
+    } finally {
+      server.close();
+    }
+  });
+});
+
+test('a sub-folder of the stories folder that cannot be read leaves the other story files watched', { skip: process.getuid?.() === 0 && 'root reads a folder whatever its permissions' }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, async (config) => {
+    const locked = path.join(config.storiesDir, 'locked');
+    fs.mkdirSync(locked);
+    let server: http.Server | null = null;
+    try {
+      fs.chmodSync(locked, 0o000);
+      assert.throws(() => fs.readdirSync(locked));
+      server = await startReviewServer(config, { author: signer('reviewer') });
+      const stream = await listenTo(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/events`);
+      fs.writeFileSync(path.join(config.storiesDir, 'run-lab.json'), storyJson('next to a locked folder'));
+      await until(() => stream.stories().length === 1, 'stories event for the story file');
+    } finally {
+      server?.close();
+      fs.chmodSync(locked, 0o755);
+    }
+  });
+});
+
+test('a story file in the stories folder or in a sub-folder sends a stories event for every later write after it was replaced by a rename, deleted and written again, or its sub-folder was made again', async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, async (config) => {
+    const server = await startReviewServer(config, { author: signer('reviewer') });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const stream = await listenTo(`${base}/api/events`);
+      let writes = 0;
+      const expectEvent = async (what: string, write: () => void) => {
+        write();
+        writes += 1;
+        const { storiesVersion } = (await (await fetch(`${base}/api/data`)).json()) as { storiesVersion: string };
+        await until(() => stream.stories().at(-1) === storiesVersion, `stories event after ${what}`);
+      };
+      const replace = (file: string) => () => {
+        fs.writeFileSync(`${file}.tmp`, storyJson(`replaced ${writes}`));
+        fs.renameSync(`${file}.tmp`, file);
+      };
+      const inPlace = (file: string) => () => fs.writeFileSync(file, storyJson(`in place ${writes}`));
+      const story = path.join(config.storiesDir, 'run-lab.json');
+      await expectEvent('a first rename over the file', replace(story));
+      await expectEvent('a second rename over the file', replace(story));
+      await expectEvent('a write in place after the renames', inPlace(story));
+      await expectEvent('deleting and writing the file again', () => {
+        fs.rmSync(story);
+        fs.writeFileSync(story, storyJson('written again'));
+      });
+      await expectEvent('a write in place after it was written again', inPlace(story));
+
+      const below = path.join(config.storiesDir, 'candidates');
+      const candidate = path.join(below, 'later.json');
+      await expectEvent('a new sub-folder with a file', () => {
+        fs.mkdirSync(below);
+        fs.writeFileSync(candidate, storyJson('candidate'));
+      });
+      await expectEvent('a first rename over the file in the sub-folder', replace(candidate));
+      await expectEvent('a second rename over the file in the sub-folder', replace(candidate));
+      await expectEvent('the sub-folder made again', () => {
+        fs.rmSync(below, { recursive: true });
+        fs.mkdirSync(below);
+        fs.writeFileSync(candidate, storyJson('candidate again'));
+      });
+      await expectEvent('a write in place in the sub-folder made again', inPlace(candidate));
+      const data = (await (await fetch(`${base}/api/data`)).json()) as { storiesVersion: string };
+      assert.equal(stream.stories().at(-1), data.storiesVersion);
+    } finally {
+      server.close();
+    }
+  });
+});
+
 test('in a browser, a mark and a comment saved in one page show in a second page that is already open', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
@@ -10313,6 +10468,47 @@ test('in a browser, a chosen story\'s name and memo can be changed on the right,
         assert.equal(await p.textContent('#center .memo'), '실험실 설정을 켠다.');
         const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'));
         assert.deepEqual([saved.name, saved.memo, saved.author, saved.date], ['실험실 결과를 본다', '실험실 설정을 켠다.', 'Kim Min', '2026-10-01']);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a story file changed, added or removed outside the page shows without reloading it, the name being typed keeps its text and caret while the untouched memo follows the file, and the page\'s own save is read once', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const dataReads: string[] = [];
+        p.on('request', (r) => new URL(r.url()).pathname === '/api/data' && dataReads.push(r.url()));
+        const rewrite = (id: string, change: object) => {
+          const file = path.join(config.storiesDir, `${id}.json`);
+          fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), ...change }));
+        };
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#story-list li:has-text("실험실을 열어")');
+        await p.evaluate(() => { (window as Window & Kept).kept = true; });
+        await p.fill('#story-name', '실험실 결과 본다');
+        for (let i = 0; i < 3; i++) await p.keyboard.press('ArrowLeft');
+
+        rewrite('run-lab', { memo: '파일에서 고친 메모' });
+        rewrite('read-reports', { name: '관리자가 보고서를 내려받는다' });
+        await p.waitForSelector('#story-list li:has-text("관리자가 보고서를 내려받는다")');
+        await p.waitForSelector('#center .memo:has-text("파일에서 고친 메모")');
+        assert.equal(await p.inputValue('#story-memo'), '파일에서 고친 메모');
+        await p.keyboard.type('를');
+        assert.equal(await p.inputValue('#story-name'), '실험실 결과를 본다');
+
+        fs.writeFileSync(path.join(config.storiesDir, 'from-outside.json'), storyJson('밖에서 쓴 스토리'));
+        await p.waitForSelector('#story-list li:has-text("밖에서 쓴 스토리")');
+        fs.rmSync(path.join(config.storiesDir, 'from-outside.json'));
+        await p.waitForFunction(() => !document.querySelector('#story-list')!.textContent!.includes('밖에서 쓴 스토리'));
+        assert.equal(await p.evaluate(() => (window as Window & Kept).kept), true);
+
+        const before = dataReads.length;
+        await p.click('#right button.save-story');
+        await p.waitForSelector('#story-list li.selected:has-text("실험실 결과를 본다")');
+        await p.waitForTimeout(600);
+        assert.equal(dataReads.length - before, 1);
       }),
     ),
   );

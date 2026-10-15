@@ -1776,6 +1776,36 @@ Alternatives compared:
 - Every comment with several targets in `general/`: the files of a screen would be split between two folders by the
   number of tags.
 
+**The review server watches the stories folder and tells the open pages over the same event stream, as a named
+`stories` event that carries a hash of the folder's contents; a page skips the event when the data it last read has
+the same hash.**
+Story files change from outside the page as part of the work: edited in an editor, brought in by `git pull`, written
+by another duru command. Unlike a reply, which an agent sends through the server, those changes never pass through
+it, so watching the folder is the only way to hear of them. The worry noted against watching the marks folder (that
+`fs.watch` does not behave the same on every system) costs less here: a missed event leaves a page showing the old
+stories until the next change or load, and nothing is lost. A burst of writes is told once, 100ms after the last.
+A named event goes to the page's own listener, so the comment lines stay as they were: `duru wait` reads only events
+without a name (before this it would have failed to read the line and connected again), `onMark` and the review's
+standard error are not called, and the agent sees no folder change. Each folder is watched on its own, and the
+nearest folder above `storiesDir` that exists is watched for its name, so a folder made later, or deleted and made
+again, is watched again; `storiesDir` naming one file is watched through its folder the same way. One recursive
+watch is not used: on Linux Node keeps it on each file, so after `git checkout` or an editor's save by rename
+replaces a file, no later change to that file is heard, while a folder's own watch reports every name in it.
+A folder deleted and made again is told by its path being reported by the folder above, not by its inode number:
+on Linux the folder made again can get the same number.
+A page's own story save is skipped on the page: the server sends the hash of the folder with each event and with
+`/api/data` (measured before the data is read), and the page ignores an event whose hash equals that of the data it
+holds, or, during its own save, compares after the save's own reading. Comparing contents rather than remembering
+who saved keeps a second open page updated by the first page's save, and makes an editor that writes the same
+content again send nothing.
+Alternatives compared:
+- Skipping on the server, by holding back the notice while a story save is being handled: the saving page reads the
+  data again anyway, but every other open page would miss the change.
+- Polling `/api/data` every few seconds: it reads the whole review data again when nothing changed, as noted for
+  the replies.
+- Unnamed `data:` lines with a `duru` kind of their own: `duru wait` and any other reader of the comment lines would
+  have to learn to skip them.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

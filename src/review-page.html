@@ -2500,8 +2500,12 @@ function candidateActions(c) {
 }
 
 function storyEdit(st) {
-  if (state.storyEdit?.id !== st.id) state.storyEdit = { id: st.id, name: st.name, memo: st.memo };
+  if (state.storyEdit?.id !== st.id) state.storyEdit = { id: st.id, name: st.name, memo: st.memo, read: { name: st.name, memo: st.memo } };
   const d = state.storyEdit;
+  for (const key of ['name', 'memo']) {
+    if (d[key] === d.read[key]) d[key] = st[key];
+    d.read[key] = st[key];
+  }
   const canSave = () => Boolean(d.name.trim());
   return [
     h('h2', {}, '이름 · 메모'),
@@ -2527,6 +2531,9 @@ async function writeStories(url, body) {
     state.storyError = written ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `저장하지 못했습니다: ${err.message}`;
   } finally {
     state.storyWriting = false;
+    const heard = storiesHeardWhileWriting;
+    storiesHeardWhileWriting = null;
+    if (heard !== null && heard !== state.data.storiesVersion) reloadLive();
   }
   if (!written) renderStoryForms();
   return written;
@@ -5055,7 +5062,7 @@ async function reloadLive() {
   try {
     await load();
   } catch (err) {
-    state.error = `새로 남은 코멘트를 읽지 못했습니다: ${err.message}`;
+    state.error = `새로 남은 코멘트나 바뀐 스토리를 읽지 못했습니다: ${err.message}`;
   }
   drawLive();
 }
@@ -5095,6 +5102,14 @@ function heard(event) {
   reloadLive();
 }
 
+// 이 페이지가 스토리를 저장하고 다시 읽는 중에 온 이벤트는 그 읽기가 끝난 뒤에 견준다.
+let storiesHeardWhileWriting = null;
+
+function storiesChanged(event) {
+  if (state.storyWriting) storiesHeardWhileWriting = event.data;
+  else if (event.data !== state.data?.storiesVersion) reloadLive();
+}
+
 // 끊겼다가 다시 이어지면 그 사이에 저장된 것을 못 받았을 수 있으므로 다시 읽는다.
 const events = new EventSource('/api/events');
 let eventsOpened = false;
@@ -5103,6 +5118,7 @@ events.addEventListener('open', () => {
   eventsOpened = true;
 });
 events.addEventListener('message', heard);
+events.addEventListener('stories', storiesChanged);
 events.addEventListener('end', () => events.close());
 
 // 리뷰를 끝낸 뒤에 늦게 실패한 읽기만 알리지 않고, 그리다 난 오류는 그대로 알린다.
