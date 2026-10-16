@@ -74,7 +74,7 @@ test('in a browser, the story list has its own tab beside the list and the flow,
   );
 });
 
-test('in a browser, the needs and expects written in a story file show in a 「스토리」 box and in each step card, the file shows folded at the bottom, and a story without them shows none of this', { skip: browserMissing }, async () => {
+test('in a browser, the needs and expects written in a story file show in a 「스토리 전체」 box and in each step card, the file shows folded at the bottom, and a story without them shows none of this', { skip: browserMissing }, async () => {
   const written = {
     name: '실험 결과를 확인한다',
     needs: ['실험이 한 번 이상 돌았다'],
@@ -91,7 +91,7 @@ test('in a browser, the needs and expects written in a story file show in a 「�
         await p.waitForSelector('#screen-list li');
         await p.click('#view-story');
         await p.click('#story-list li:has-text("실험 결과를 확인한다")');
-        assert.equal(await p.textContent('#center .story-wide h2'), '스토리');
+        assert.equal(await p.textContent('#center .story-wide h2'), '스토리 전체');
         assert.deepEqual(await p.locator('#center .story-wide .written-row').evaluateAll((rows) => rows.map((r) => [r.querySelector('.written-label')!.textContent, [...r.querySelectorAll('li')].map((li) => li.textContent)])), [
           ['조건', ['실험이 한 번 이상 돌았다']],
           ['끝난 뒤 기대 결과', ['마지막 실행 결과가 보인다']],
@@ -195,7 +195,7 @@ test('in a browser, a step that a move in the config joins shows as 설정에 �
         await p.click('#view-story');
         await p.click('#story-list li:has-text("실험 결과를 본다")');
         assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['설정에 적은 이동']);
-        assert.equal(await p.textContent('#center .story-path .link.l-configured'), '설정에 적은 이동 로그인 뒤');
+        assert.equal(await p.textContent('#center .story-path .link.l-configured .slot-text'), '설정에 적은 이동 로그인 뒤');
         assert.match((await p.getAttribute('#center .story-path .link.l-configured .link-verdict', 'title'))!, /moves/);
         assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 가능']);
       }),
@@ -268,7 +268,7 @@ test('in a browser, the right of a story gives a verdict line for missing links 
   });
 });
 
-test('in a browser, a need that picks a need file shows as 공통 조건 with its name, its file and text on hover, in the 「스토리」 box, in the step card, a pick of a file that is not there or could not be read shows as such while the story is still read, and pressing a picked need opens it', { skip: browserMissing }, async () => {
+test('in a browser, a need that picks a need file shows as 공통 조건 with its name, its file and text on hover, in the 「스토리 전체」 box, in the step card, a pick of a file that is not there or could not be read shows as such while the story is still read, and pressing a picked need opens it', { skip: browserMissing }, async () => {
   const picking = {
     name: '실험 결과를 확인한다',
     needs: [{ use: 'member-account.json' }, '실험이 한 번 이상 돌았다'],

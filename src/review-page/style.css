@@ -474,6 +474,28 @@
   .chip.input-unchecked { color: var(--muted); border-style: dashed; font-size: 11px; }
   .story-wide { margin: 12px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--written); border-radius: 6px; background: var(--panel); }
   .story-wide h2 { margin: 0 0 6px; }
+  .story-wide-head { display: flex; align-items: baseline; gap: 8px; }
+  .story-wide-blank { display: grid; gap: 4px; margin: 12px 0 4px; }
+  .story-wide-blank h2 { margin: 0; font-size: 12px; color: var(--muted); }
+  button.edit-fields, .fields-edit button { padding: 1px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  button.edit-fields { margin-left: auto; align-self: flex-start; }
+  button.edit-fields:disabled, .fields-edit fieldset:disabled button { opacity: .5; cursor: default; }
+  .link > button.edit-fields { display: block; margin: 4px 0 0; }
+  .fields-edit { flex-basis: 100%; margin: 6px 0 0 calc(1.6em + 10px); padding-top: 6px; border-top: 1px dashed var(--line); cursor: auto; }
+  .link > .fields-edit, .story-wide > .fields-edit { margin-left: 0; }
+  .fields-edit fieldset { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+  .fields-part h4 { margin: 0 0 2px; font-size: 12px; color: var(--written); }
+  .fields-part table { border-collapse: collapse; font-size: 13px; }
+  .fields-part th { padding: 0 6px 2px 0; font-size: 11px; font-weight: 600; color: var(--muted); text-align: left; }
+  .fields-part td { padding: 2px 6px 2px 0; border: 0; vertical-align: top; }
+  .fields-part input, .fields-part select { font: inherit; font-size: 13px; }
+  .fields-part .line-text input { width: min(420px, 60vw); }
+  .fields-part input[type="number"] { width: 4em; }
+  .input-word { display: flex; gap: 4px; margin-bottom: 2px; }
+  .fields-edit .add-line, .fields-edit .add-word { margin-top: 2px; }
+  .fields-acts { display: flex; gap: 8px; }
+  .fields-edit button.save-fields { border-color: var(--accent); background: var(--accent); color: #fff; }
+  .fields-saved { flex-basis: 100%; margin: 4px 0 0; font-size: 12px; }
   .story-file { margin-top: 16px; }
   .story-file summary { cursor: pointer; font-weight: 600; }
   .story-file pre { margin: 6px 0 0; padding: 8px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }

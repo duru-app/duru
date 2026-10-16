@@ -3,11 +3,13 @@ const storyPath = (st, stepRanges, story) => [
   h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1], story, i - 1, st.stepFields?.[i]) : null, stepItem(step, i, stepRanges?.[i], story, st.stepFields?.[i])])),
 ];
 
-const storyWide = (st) => (hasWritten(st)
-  ? h('div', { class: 'story-wide written' },
-      h('h2', {}, '스토리'),
-      writtenRows(st, '조건', '끝난 뒤 기대 결과'))
-  : null);
+function storyWide(st) {
+  const place = { kind: 'story' };
+  const written = hasWritten(st);
+  return h('div', { class: written || editingAt(st.id, place) ? 'story-wide written' : 'story-wide-blank' },
+    h('div', { class: 'story-wide-head' }, h('h2', { class: 'story-wide-name' }, '스토리 전체'), fieldsButton(st.id, place, written)),
+    fieldsBelow(st.id, place, written ? writtenRows(st, '조건', '끝난 뒤 기대 결과') : null));
+}
 
 function savedStory(st) {
   const screens = st.steps.map((step, i) => (hasWritten(st.stepFields?.[i]) || st.stepFields?.[i]?.linkNeeds?.length ? { screen: step.screen, ...st.stepFields[i] } : step.screen));
@@ -222,24 +224,32 @@ function storyEdit(st) {
   ];
 }
 
-async function writeStories(url, body) {
-  state.storyError = null;
+async function whileWritingStories(write) {
   state.storyWriting = true;
-  renderStoryForms();
-  let written = false;
   try {
-    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(await res.text());
-    written = true;
-    await load();
-  } catch (err) {
-    state.storyError = written ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `저장하지 못했습니다: ${err.message}`;
+    await write();
   } finally {
     state.storyWriting = false;
     const heard = storiesHeardWhileWriting;
     storiesHeardWhileWriting = null;
     if (heard !== null && heard !== state.data.storiesVersion) reloadLive();
   }
+}
+
+async function writeStories(url, body) {
+  state.storyError = null;
+  let written = null;
+  await whileWritingStories(async () => {
+    renderStoryForms();
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(await res.text());
+      written = await res.json();
+      await load();
+    } catch (err) {
+      state.storyError = written ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `저장하지 못했습니다: ${err.message}`;
+    }
+  });
   if (!written) renderStoryForms();
   return written;
 }
@@ -374,7 +384,11 @@ async function unacceptChosen() {
 
 async function saveStoryEdit() {
   const st = storyOf();
-  if (!st || !(await writeStories('/api/stories/edit', { id: st.id, name: state.storyEdit.name, memo: state.storyEdit.memo }))) return;
+  if (!st) return;
+  const written = await writeStories('/api/stories/edit', { id: st.id, name: state.storyEdit.name, memo: state.storyEdit.memo });
+  if (!written) return;
+  const table = openTable();
+  if (table?.story === st.id && table.contentHash === written.previousHash) table.contentHash = written.contentHash;
   state.storyEdit = null;
   render();
 }

@@ -35,6 +35,7 @@ export const PAGE_PARTS = [
   'script-app-pane.js',
   'script-settings-bar.js',
   'script-step-cards.js',
+  'script-story-fields.js',
   'script-untagged-center.js',
   'script-story-center.js',
   'script-new-story.js',
