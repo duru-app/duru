@@ -131,6 +131,65 @@ test('in a browser, the needs and expects written in a story file show in a 「�
   });
 });
 
+test('in a browser, the conditions written for the link into a step show on the link row before that step and under the line before its box in the flow\'s one-line story, cut short there when long with every line on hover', { skip: browserMissing }, async () => {
+  const written = {
+    name: '실험 결과로 들어간다',
+    screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: ['반려된 경우'] }, { screen: '/lab/result#LabResult', expects: ['결과가 보인다'], linkNeeds: ['실행이 끝나 결과 화면으로 넘어가는 경우', '결과가 하나 이상인 경우'] }],
+    memo: '',
+    author: 'reviewer',
+    date: '2026-10-05',
+  };
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config, copy) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/lab-links.json'), JSON.stringify(written));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험 결과로 들어간다")');
+        assert.deepEqual(await p.locator('#center .story-path .link').evaluateAll((links) => links.map((l) => [
+          l.querySelector('.link-verdict')!.textContent,
+          [...l.querySelectorAll('.link-written .written-row')].map((r) => [r.querySelector('.written-label')!.textContent, [...r.querySelectorAll('li')].map((li) => li.textContent)]),
+        ])), [
+          ['조건', [['들어오는 링크 조건', ['반려된 경우']]]],
+          ['이어짐', [['들어오는 링크 조건', ['실행이 끝나 결과 화면으로 넘어가는 경우', '결과가 하나 이상인 경우']]]],
+        ]);
+        assert.deepEqual(await p.locator('#center .story-path .step').evaluateAll((steps) => steps.map((s) => [...s.querySelectorAll('.step-written .written-label')].map((l) => l.textContent))), [[], [], ['기대 결과']], 'the link conditions stay out of the step cards');
+        await p.click('#center details.story-file summary');
+        assert.deepEqual(JSON.parse((await p.textContent('#center details.story-file pre'))!), written);
+
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box.screen');
+        await p.click('#flow-story-list li[data-story="lab-links"]');
+        await p.waitForFunction(() => state.storyPath?.id === 'lab-links');
+        assert.deepEqual(await p.$$eval('#flow .story-line [data-step]', (els) => els.map((e) => e.querySelector('.written-count')?.textContent ?? null)), [null, null, '기대 1'], 'the step boxes do not count the link conditions');
+        const needs = () => p.$$eval('#flow .story-line .story-hop', (hops) => hops.map((hop) => {
+          const need = hop.querySelector<HTMLElement>('.hop-need');
+          if (!need) return null;
+          const line = hop.querySelector('svg')!.getBoundingClientRect();
+          const r = need.getBoundingClientRect();
+          const tag = hop.querySelector('.story-tag')?.getBoundingClientRect();
+          return {
+            text: need.textContent,
+            title: need.title,
+            cut: need.scrollWidth > need.clientWidth,
+            under: r.top >= line.bottom && (!tag || r.top >= tag.bottom),
+            within: r.left >= line.left - 0.5 && r.right <= line.right + 0.5,
+          };
+        }));
+        assert.deepEqual(await needs(), [
+          { text: '반려된 경우', title: '들어오는 링크 조건\n반려된 경우', cut: false, under: true, within: true },
+          { text: '실행이 끝나 결과 화면으로 넘어가는 경우 · 결과가 하나 이상인 경우', title: '들어오는 링크 조건\n실행이 끝나 결과 화면으로 넘어가는 경우\n결과가 하나 이상인 경우', cut: true, under: true, within: true },
+        ]);
+        assert.ok(await p.$eval('#flow .story-line .story-row', (row) => [...row.querySelectorAll('.hop-need')].every((n) => n.getBoundingClientRect().bottom <= row.getBoundingClientRect().bottom + 0.5)), 'the conditions under the lines stay inside the story row');
+
+        await p.click('#flow-story-list li[data-story="run-lab"]');
+        await p.waitForFunction(() => state.storyPath?.id === 'run-lab');
+        assert.equal(await p.locator('#flow .hop-need').count(), 0);
+      }),
+    );
+  });
+});
+
 test('in a browser, a step that a move in the config joins shows as 설정에 적은 이동 with its reason, and the story is reachable', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories', moves: [{ from: '/signin', to: '/lab/result', reason: '로그인 뒤' }] }, (config, copy) => {
     fs.writeFileSync(path.join(copy, 'example-stories/signin-lab.json'), JSON.stringify({ name: '로그인해서 실험 결과를 본다', screens: ['/signin#SignIn', '/lab/result#LabResult'], author: 'a', date: '2026-10-03' }));

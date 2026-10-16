@@ -1,6 +1,6 @@
 const storyPath = (st, stepRanges, story) => [
   h('h2', {}, `화면 순서 ${st.steps.length}`),
-  h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1], story, i - 1) : null, stepItem(step, i, stepRanges?.[i], story, st.stepFields?.[i])])),
+  h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1], story, i - 1, st.stepFields?.[i]) : null, stepItem(step, i, stepRanges?.[i], story, st.stepFields?.[i])])),
 ];
 
 const storyWide = (st) => (hasWritten(st)
@@ -10,14 +10,14 @@ const storyWide = (st) => (hasWritten(st)
   : null);
 
 function savedStory(st) {
-  const screens = st.steps.map((step, i) => (hasWritten(st.stepFields?.[i]) ? { screen: step.screen, ...st.stepFields[i] } : step.screen));
+  const screens = st.steps.map((step, i) => (hasWritten(st.stepFields?.[i]) || st.stepFields?.[i]?.linkNeeds?.length ? { screen: step.screen, ...st.stepFields[i] } : step.screen));
   const { needs, expects, memo, author, date, source } = st;
   return { name: st.name, needs, screens, expects, memo, author, date, source };
 }
 
 const storyFile = (st) => h('details', { class: 'story-file', open: state.storyFileOpen, ontoggle: (e) => { state.storyFileOpen = e.target.open; } },
   h('summary', {}, `스토리 파일 ${st.file}`),
-  h('p', { class: 'muted' }, 'duru 가 읽은 내용을 파일 모양으로 다시 적었습니다. 조건이나 기대 결과가 있는 단계는 { "screen", "needs", "expects" } 객체로, 없는 단계는 화면 ID 글자로 적습니다.'),
+  h('p', { class: 'muted' }, 'duru 가 읽은 내용을 파일 모양으로 다시 적었습니다. 조건, 들어오는 링크 조건이나 기대 결과가 있는 단계는 { "screen", "needs", "linkNeeds", "expects" } 객체로, 없는 단계는 화면 ID 글자로 적습니다.'),
   h('pre', { class: 'mono' }, JSON.stringify(savedStory(st), null, 2)));
 
 function renderStoryCenter() {

@@ -115,6 +115,7 @@ function storyOn(st) {
 }
 
 const HOP_WIDTH = 104;
+const hopNeeds = (lines) => (lines?.length ? h('span', { class: 'hop-need', title: [LINK_NEEDS_LABEL, ...lines].join('\n') }, lines.join(' · ')) : null);
 
 function goesTo(l, i, byId) {
   const n = byId.get(l.from);
@@ -153,6 +154,7 @@ function storyLine(st) {
   const hop = (l, i) => h('div', { class: `story-hop l-${l.verdict}`, 'data-hop': i, title: [hopTitle(l, i), ...(l.reasons ?? [])].join(' · ') },
     svg('svg', { width: HOP_WIDTH, height: 8, 'aria-hidden': 'true' }, svg('path', { class: hopClass(l.verdict), d: `M2 4H${HOP_WIDTH - 2}` })),
     PATH_TAG[l.verdict] ? h('span', { class: `story-tag l-${l.verdict}` }, PATH_TAG[l.verdict]) : null,
+    hopNeeds(st.stepFields?.[i + 1]?.linkNeeds),
     bubbleButton(hopTarget(st.id, i, l), SLOT_WORDS.hop, `단계 ${i + 1} → ${i + 2} 연결`));
   const gaps = st.links.flatMap((l, i) => (l.verdict === 'broken' ? [goesTo(l, i, byId)] : []));
   const el = h('div', { class: 'canvas story story-line' },

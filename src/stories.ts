@@ -23,6 +23,7 @@ interface RawStory {
 
 export interface StepFields {
   needs?: string[];
+  linkNeeds?: string[];
   expects?: string[];
 }
 
@@ -57,8 +58,9 @@ interface NewStory {
 export const STORY_ID = /^[a-z0-9_-]+$/;
 const FIELD_KEYS = ['needs', 'expects'] as const;
 const KEYS = ['name', 'screens', ...FIELD_KEYS, 'memo', 'author', 'date', 'source'];
-const STEP_KEYS = ['screen', ...FIELD_KEYS];
-const FIELD_WORDS = { needs: '조건을', expects: '기대 결과를' };
+const STEP_FIELD_KEYS = ['needs', 'linkNeeds', 'expects'] as const;
+const STEP_KEYS = ['screen', ...STEP_FIELD_KEYS];
+const FIELD_WORDS = { needs: '조건을', linkNeeds: '들어오는 링크 조건을', expects: '기대 결과를' };
 export const DISCARDED = 'discarded';
 export const CANDIDATES = 'candidates';
 const DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
@@ -76,18 +78,19 @@ export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !
 
 const screenOf = (step: any) => (isPlainObject(step) ? step.screen : step);
 
-function fieldsProblem(fields: { needs?: unknown; expects?: unknown }, where: string) {
-  const bad = FIELD_KEYS.find((key) => fields[key] !== undefined && !isTextList(fields[key]));
+function fieldsProblem(fields: { needs?: unknown; linkNeeds?: unknown; expects?: unknown }, where: string, keys: readonly (keyof typeof FIELD_WORDS)[] = FIELD_KEYS) {
+  const bad = keys.find((key) => fields[key] !== undefined && !isTextList(fields[key]));
   return bad ? `${where}${bad} 는 ${FIELD_WORDS[bad]} 하나씩 글로 적은 목록이어야 합니다` : null;
 }
 
-function stepProblem(step: any, where: string) {
+function stepProblem(step: any, where: string, first: boolean) {
   if (isText(step)) return null;
-  if (!isPlainObject(step)) return `${where}는 화면 ID 글자나 { "screen", "needs", "expects" } 객체여야 합니다`;
+  if (!isPlainObject(step)) return `${where}는 화면 ID 글자나 { "screen", "needs", "linkNeeds", "expects" } 객체여야 합니다`;
   const unknown = Object.keys(step).filter((k) => !STEP_KEYS.includes(k));
   if (unknown.length) return `${where}에 모르는 항목이 있습니다: ${unknown.join(', ')}`;
   if (!isText(step.screen)) return `${where}의 screen 에 화면 ID 를 적어야 합니다`;
-  return fieldsProblem(step, `${where}의 `);
+  if (first && step.linkNeeds !== undefined) return `${where}에는 앞 단계가 없어 linkNeeds(들어오는 링크 조건)를 둘 수 없습니다`;
+  return fieldsProblem(step, `${where}의 `, STEP_FIELD_KEYS);
 }
 
 function problemOf(story: RawStory) {
@@ -102,7 +105,7 @@ function problemOf(story: RawStory) {
   const { screens } = story;
   if (!Array.isArray(screens) || !screens.length) return 'screens 는 화면 ID 를 하나 이상 차례대로 담은 목록이어야 합니다';
   for (const [i, step] of screens.entries()) {
-    const problem = stepProblem(step, `screens 의 ${i + 1} 번째 단계`);
+    const problem = stepProblem(step, `screens 의 ${i + 1} 번째 단계`, i === 0);
     if (problem) return problem;
   }
   const ids = screens.map(screenOf);
@@ -115,7 +118,7 @@ function problemOf(story: RawStory) {
   return null;
 }
 
-const fieldsOf = (raw: any): StepFields => Object.fromEntries(FIELD_KEYS.filter((key) => raw[key] !== undefined).map((key) => [key, raw[key]]));
+const fieldsOf = (raw: any): StepFields => Object.fromEntries(STEP_FIELD_KEYS.filter((key) => raw[key] !== undefined).map((key) => [key, raw[key]]));
 
 function storyOf(story: any) {
   const steps: any[] = story.screens;

@@ -288,6 +288,10 @@ const NOTICE_CASES: [string, StoryFiles, { file: string; reason: string | RegExp
   ['a step need that is not text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', needs: [3] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 needs 는 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
   ['a step expect that is empty text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', expects: [''] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다' }]],
   ['a step that is neither a screen ID nor an object', { 'a.json': { ...STORY, screens: ['/home#Home', ['/lab#Lab']] } }, [{ file: 'a.json', reason: /^screens 의 2 번째 단계는 / }]],
+  ['conditions on the link into the first step, which no link comes into', { 'a.json': { ...STORY, screens: [{ screen: '/home#Home', linkNeeds: ['반려된 경우'] }, '/lab#Lab'] } }, [{ file: 'a.json', reason: 'screens 의 1 번째 단계에는 앞 단계가 없어 linkNeeds(들어오는 링크 조건)를 둘 수 없습니다' }]],
+  ['a condition on the link into a step that is empty text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: ['반려된 경우', ''] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 linkNeeds 는 들어오는 링크 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
+  ['conditions on the link into a step that are not a list', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: '반려된 경우' }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 linkNeeds 는 들어오는 링크 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
+  ['conditions on an incoming link at the top of the story', { 'a.json': { ...STORY, linkNeeds: ['반려된 경우'] } }, [{ file: 'a.json', reason: '모르는 항목이 있습니다: linkNeeds' }]],
   ['the same screen twice in a row, once inside a step object', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/home#Home', expects: ['x'] }] } }, [{ file: 'a.json', reason: /1 번째와 2 번째가 같은 화면/ }]],
   ['an ID two files share', { 'docs/a.json': STORY, 'lab/a.json': STORY }, [{ file: 'lab/a.json', reason: '스토리 ID a 는 docs/a.json 에서 이미 썼습니다' }]],
   ['an ID that a malformed file earlier in path order has', { 'docs/a.json': '{', 'lab/a.json': STORY }, [
@@ -385,6 +389,18 @@ test('a story may carry needs and expects for the whole story and for each step 
       date: '2026-10-02',
       file: 'a.json',
     }]);
+  });
+});
+
+test('a step from the second on may carry the conditions of the link that comes into it from the step before, read beside its own needs and expects', () => {
+  const story = { ...WRITTEN, screens: ['/home#Home', { screen: '/lab#Lab', needs: ['실험실 설정을 켠다'], linkNeeds: ['실험실 메뉴를 누른 경우'] }, { screen: '/lab/result#LabResult', linkNeeds: ['실행이 끝난 경우', '결과가 하나 이상인 경우'] }] };
+  withStoriesDir({ 'a.json': story }, (dir) => {
+    const { stories, notices } = loadStories(dir);
+    assert.deepEqual(notices, []);
+    assert.deepEqual(stories[0].screens, ['/home#Home', '/lab#Lab', '/lab/result#LabResult']);
+    assert.deepEqual(stories[0].stepFields, [{}, { needs: ['실험실 설정을 켠다'], linkNeeds: ['실험실 메뉴를 누른 경우'] }, { linkNeeds: ['실행이 끝난 경우', '결과가 하나 이상인 경우'] }]);
+    editStory(dir, 'a', { name: '실험을 돌린다', memo: '' });
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'a.json'), 'utf8')).screens, story.screens, 'editing the name keeps the link conditions in the file');
   });
 });
 
