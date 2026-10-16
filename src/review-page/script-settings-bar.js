@@ -76,7 +76,7 @@ function autoOverrides(s, list) {
 // 한 단계가 실패해도 다음 단계는 돌고 프레임은 언제나 열린다.
 let settingsQueue = Promise.resolve();
 function updateSettings(change) {
-  const frame = document.querySelector('#center iframe.app');
+  const frame = /** @type {HTMLIFrameElement} */ (document.querySelector('#center iframe.app'));
   settingsQueue = settingsQueue.then(async () => {
     state.settingsError = null;
     try {

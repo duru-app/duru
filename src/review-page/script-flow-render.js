@@ -33,7 +33,7 @@ function applyFlowEmphasis() {
   const filter = FLOW_FILTERS.find((f) => f.key === state.flowFilter);
   const q = state.flowQuery.trim().toLowerCase();
   const found = (n) => !q || `${n.label}\n${n.component}\n${n.id}`.toLowerCase().includes(q);
-  for (const box of flow.querySelectorAll('.box.screen')) {
+  for (const box of /** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll('.box.screen'))) {
     const n = byId.get(box.dataset.key);
     box.classList.toggle('picked', n === picked);
     box.setAttribute('aria-pressed', String(n === picked));
@@ -41,7 +41,7 @@ function applyFlowEmphasis() {
     box.classList.toggle('jump', jumps.has(n.id));
     box.classList.toggle('off', !filter.keep(n) || !found(n));
   }
-  for (const line of flow.querySelectorAll('.canvas svg path[data-from]')) {
+  for (const line of /** @type {NodeListOf<SVGPathElement>} */ (flow.querySelectorAll('.canvas svg path[data-from]'))) {
     const on = related !== null && related.has(line.dataset.from) && related.has(line.dataset.to);
     line.classList.toggle('on', on);
     line.classList.toggle('dim', related !== null && !on);

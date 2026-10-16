@@ -101,7 +101,7 @@ function openNeeds({ access }, { bySlot = false } = {}) {
   if (settings) {
     const hasValue = (x) => x.need === 'includes' || x.need === 'equals';
     const needs = [...new Map(settings.flatMap((x) => x.needs).map((x) => [needText(x), x]))]
-      .sort(([, a], [, b]) => hasValue(b) - hasValue(a));
+      .sort(([, a], [, b]) => Number(hasValue(b)) - Number(hasValue(a)));
     const unread = [...new Set(settings.flatMap((x) => x.unreadable).map(unreadText))];
     const flag = unread.length ? `미확인 ${unread.length}` : null;
     if (needs.length || unread.length) lines.push({ kind: 'setting', text: needs.length ? `설정 ${withMore(needs.map(([, x]) => needText(x, { short: true })))}` : '설정 미확인', flag });

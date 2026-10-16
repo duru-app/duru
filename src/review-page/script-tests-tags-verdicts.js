@@ -170,7 +170,7 @@ function moveTalkTo(node) {
 }
 
 function focusTalk() {
-  const field = document.querySelector('#right-dock textarea');
+  const field = /** @type {HTMLTextAreaElement} */ (document.querySelector('#right-dock textarea'));
   field?.focus();
   field?.setSelectionRange(field.value.length, field.value.length);
 }
@@ -252,17 +252,17 @@ const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
 const judgmentErrorOf = (key) => (state.judgmentError?.key === key ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null);
 
-const judgeRowControl = (key, selector) => document.querySelector(`.judge-row[data-pair="${CSS.escape(key)}"] ${selector}`);
+const judgeRowControl = (key, selector) => /** @type {HTMLElement} */ (document.querySelector(`.judge-row[data-pair="${CSS.escape(key)}"] ${selector}`));
 
 function renderKeepingJudgeRowFocus() {
   const focused = document.activeElement;
-  const row = focused?.closest?.('.judge-row');
+  const row = /** @type {HTMLElement} */ (focused?.closest?.('.judge-row'));
   const place = row && { key: row.dataset.pair, selector: `${focused.localName}.${focused.className}` };
   render();
   if (place) judgeRowControl(place.key, place.selector)?.focus();
 }
 
-const reasonDialog = document.getElementById('reason-ask');
+const reasonDialog = /** @type {HTMLDialogElement} */ (document.getElementById('reason-ask'));
 const reasonPart = (selector) => reasonDialog.querySelector(selector);
 let reasonJob = null;
 
@@ -298,7 +298,7 @@ function closeReason() {
   reasonJob = null;
   reasonDialog.close();
   // 창을 연 단추가 그사이 다시 그려졌으면 초점이 닫힌 창 안에 남는다.
-  if (reasonDialog.contains(document.activeElement)) document.activeElement.blur();
+  if (reasonDialog.contains(document.activeElement)) /** @type {HTMLElement} */ (document.activeElement).blur();
 }
 
 async function confirmReason() {

@@ -11,9 +11,9 @@ function setView(view) {
 
 // 데이터를 읽지 못한 페이지에서도 리뷰를 끝낼 수 있어야 하므로, 위쪽 단추의 잠금은 읽어 온 데이터 없이 맞춘다.
 function syncHeaderLocks() {
-  document.getElementById('view-list').disabled = state.bulkBusy;
-  document.getElementById('view-flow').disabled = state.bulkBusy;
-  document.getElementById('end-review').disabled = state.bulkBusy || state.ending;
+  /** @type {HTMLButtonElement} */ (document.getElementById('view-list')).disabled = state.bulkBusy;
+  /** @type {HTMLButtonElement} */ (document.getElementById('view-flow')).disabled = state.bulkBusy;
+  /** @type {HTMLButtonElement} */ (document.getElementById('end-review')).disabled = state.bulkBusy || state.ending;
 }
 
 function render() {
@@ -170,7 +170,7 @@ function showEnded(message) {
 function setEnding(ending) {
   state.ending = ending;
   syncHeaderLocks();
-  for (const button of document.querySelectorAll('#center .bulk-bar button')) button.disabled = bulkButtonOff(state.bulk?.picked.size);
+  for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('#center .bulk-bar button'))) button.disabled = bulkButtonOff(state.bulk?.picked.size);
 }
 
 async function endReview() {
@@ -244,7 +244,7 @@ function fitPanes() {
 window.addEventListener('resize', fitPanes);
 document.getElementById('stories-tab').addEventListener('click', foldStories);
 
-for (const sash of document.querySelectorAll('main > .sash')) {
+for (const sash of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('main > .sash'))) {
   sash.addEventListener('pointerdown', (down) => {
     if (down.button !== 0) return;
     down.preventDefault();
@@ -276,18 +276,20 @@ for (const sash of document.querySelectorAll('main > .sash')) {
 }
 
 const FIELDS = 'input, textarea, select';
+/** @typedef {HTMLInputElement | HTMLTextAreaElement} TextField */
 const fieldKey = (f) => [f.localName, f.type, f.name, f.placeholder, f.getAttribute('aria-label'), f.className, f.closest('[id]')?.id].join('|');
-const fieldsLike = (key) => [...document.querySelectorAll(FIELDS)].filter((f) => fieldKey(f) === key);
+const fieldsLike = (key) => [.../** @type {NodeListOf<TextField>} */ (document.querySelectorAll(FIELDS))].filter((f) => fieldKey(f) === key);
 
 // 다시 그리면 입력 칸이 새로 만들어지므로, 쓰던 칸과 생김새가 같은 칸으로 초점과 커서를 돌려 둔다. 같은 생김새의 칸 수가 바뀌었으면 어느 칸인지 알 수 없으므로 돌려 두지 않는다.
 function fieldPlace() {
-  const field = document.activeElement;
+  const field = /** @type {TextField} */ (document.activeElement);
   if (!field?.matches?.(FIELDS)) return null;
   const key = fieldKey(field);
   const alike = fieldsLike(key);
-  return { field, key, count: alike.length, index: alike.indexOf(field), caret: field.selectionStart == null ? null : [field.selectionStart, field.selectionEnd] };
+  return { field, key, count: alike.length, index: alike.indexOf(field), caret: field.selectionStart == null ? null : /** @type {[number, number]} */ ([field.selectionStart, field.selectionEnd]) };
 }
 
+/** @param {ReturnType<typeof fieldPlace>} place */
 function restoreField(place) {
   if (!place || place.field.isConnected) return;
   const alike = fieldsLike(place.key);

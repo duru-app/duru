@@ -80,7 +80,7 @@ async function checkCompose(focus, pressed = null) {
   Object.assign(c, { checked, error });
   const focused = document.activeElement;
   const steps = composeStepsAt();
-  const step = focused?.closest?.(`${steps} .compose-step`);
+  const step = /** @type {HTMLElement} */ (focused?.closest?.(`${steps} .compose-step`));
   renderCompose(step ? [`.compose-step[data-step="${step.dataset.step}"] button.${focused.className}`] : focused?.matches?.(`${steps} .story-path`) ? ['.story-path'] : null, { drawing: true, pressed });
 }
 

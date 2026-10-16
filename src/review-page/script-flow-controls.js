@@ -33,16 +33,16 @@ document.addEventListener('keydown', (e) => {
 const FLOW_EMPTY = '#flow, #flow .zoom-box, #flow .canvas, #flow .story-row, #flow .story-hop';
 let flowPress = null;
 document.getElementById('flow').addEventListener('pointerdown', (e) => {
-  const flow = e.currentTarget;
+  const flow = /** @type {HTMLElement} */ (e.currentTarget);
   const r = flow.getBoundingClientRect();
   const inside = e.clientX - r.left - flow.clientLeft < flow.clientWidth && e.clientY - r.top - flow.clientTop < flow.clientHeight;
-  flowPress = inside && e.target.matches(FLOW_EMPTY) ? { x: e.clientX, y: e.clientY } : null;
+  flowPress = inside && /** @type {Element} */ (e.target).matches(FLOW_EMPTY) ? { x: e.clientX, y: e.clientY } : null;
 });
 document.getElementById('flow').addEventListener('click', (e) => {
   const press = flowPress;
   flowPress = null;
   if (!state.flowPicked || !press || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 4) return;
-  if (e.target.matches(FLOW_EMPTY)) unpickScreen();
+  if (/** @type {Element} */ (e.target).matches(FLOW_EMPTY)) unpickScreen();
 });
 
 // key 는 'flow' 또는 'path' 로, 단추와 설명 상자의 이름에도 쓴다.
@@ -91,7 +91,7 @@ const FLOW_FILTERS = [
 ];
 
 function syncFlowFilters() {
-  for (const button of document.querySelectorAll('#flow-bar .flow-filters button')) {
+  for (const button of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('#flow-bar .flow-filters button'))) {
     const on = button.dataset.filter === state.flowFilter;
     button.classList.toggle('on', on);
     button.setAttribute('aria-pressed', String(on));
@@ -118,7 +118,7 @@ function flowSearch() {
     },
     onkeydown: (e) => {
       if (e.key !== 'Enter' || e.isComposing || !state.flowQuery.trim()) return;
-      const first = document.querySelector('#flow .box.screen:not(.off)');
+      const first = /** @type {HTMLElement} */ (document.querySelector('#flow .box.screen:not(.off)'));
       if (first) pickScreen(first.dataset.key);
     },
   });
@@ -140,10 +140,10 @@ function setZoom(z) {
 function fitZoom() {
   const flow = document.getElementById('flow');
   for (let pass = 0; pass < 2; pass += 1) {
-    const canvases = [...flow.querySelectorAll('.canvas')];
+    const canvases = [.../** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll('.canvas'))];
     if (!canvases.length) return;
     const pad = getComputedStyle(flow);
-    const headings = [...flow.querySelectorAll(':scope > h2')].reduce((sum, el) => {
+    const headings = [.../** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll(':scope > h2'))].reduce((sum, el) => {
       const m = getComputedStyle(el);
       return sum + el.offsetHeight + parseFloat(m.marginTop) + parseFloat(m.marginBottom);
     }, 0);

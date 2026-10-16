@@ -1930,6 +1930,25 @@ Alternatives compared:
   byte for byte. Cut in place, a few shared helpers stay in the file of the area they stood in, such as the test status
   words and the story path state in the first flow file.
 
+**The review page script stays JavaScript and is type-checked from type comments, against the type of what the server
+sends for `/api/data`; `test/review-page-types.test.ts` checks each file, and the files joined in the order they are
+sent.** The server's data is `PageData` in `src/review.ts`, and the page's `state.data` is declared with it, so a page
+that reads a field the server does not send fails the check. The map in it is `ScreenMap` with no field made optional
+for older maps: a map built by the duru of 2026-10-05, the first whose maps the server accepts, has every field the
+type requires on both example apps, and an older map has no route file on its screens and is refused before it is
+read. `tsconfig.review-page.json` turns strict checking off, since with it on the page has 1,620 errors, most of them
+parameters with no type; the server files the page's types come from would read differently with it off, so the test
+counts only errors in the page files, and `tsc` keeps checking the server files strictly. Checked one by one, the
+files cannot show a constant used at the top level of a file before a later file defines it, which stops the page as
+it loads; the joined check reports it at the file and line of the use.
+Alternatives compared:
+- Writing the page in TypeScript and turning it into JavaScript when the server sends it: it catches the same faults,
+  adds a transform to every request and a rewrite of every file, and the page sent is no longer the source. That
+  agents write TypeScript more easily than type comments was not measured; if agents writing the story tab keep
+  casting wrongly or leave types empty to pass the check, the page moves to it, keeping this configuration, the
+  server's types and the joined check.
+- A UI library and a build step: not needed for type checking, and weighed again with the shared-server mode of #42.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

@@ -50,7 +50,7 @@ function linkGroups(links) {
     groups.get(key).links.push(l);
   }
   for (const g of groups.values()) g.links.sort((a, b) => byText(a.from, b.from) || byText(a.file, b.file) || a.line - b.line);
-  return [...groups.values()].sort((a, b) => (b.guards.length === 0) - (a.guards.length === 0) || b.links.length - a.links.length || byText(a.text, b.text) || byText(a.key, b.key));
+  return [...groups.values()].sort((a, b) => Number(b.guards.length === 0) - Number(a.guards.length === 0) || b.links.length - a.links.length || byText(a.text, b.text) || byText(a.key, b.key));
 }
 
 function linkHead(l) {

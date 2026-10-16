@@ -112,6 +112,7 @@ function pathValuesOf(s, role) {
   return state.pathValues.get(key);
 }
 
+/** @returns {{ link?: string, fallback?: boolean, opens?: PageData['map']['screens'][number], missing?: string[] }} */
 function frameTarget(s, entry) {
   const { app, appLinks, map } = state.data;
   const at = (routePath, path) => (app.signedOutPaths.includes(routePath) ? app.signedOutUrl : app.url) + path;
@@ -155,6 +156,10 @@ function pathValueBar(s, entry, fallback) {
     entry.errors.map((e) => h('span', { class: 'error' }, e)));
 }
 
+/**
+ * @param {PageData['map']['screens'][number]} s
+ * @param {ReturnType<typeof frameTarget>} target
+ */
 function appFrame(s, { link, fallback, opens, missing }, entry) {
   const { app } = state.data;
   if (entry?.pending) return h('div', { class: 'frame-note muted' }, '경로 변수 값을 준비하고 있습니다.');
@@ -260,10 +265,10 @@ function appStage(src) {
 
 function fitApp() {
   const stage = document.querySelector('#center .app-stage');
-  const frame = stage?.querySelector('iframe.app');
+  const frame = /** @type {HTMLIFrameElement} */ (stage?.querySelector('iframe.app'));
   const note = document.querySelector('#center .app-scale');
   if (!frame || !stage.clientWidth) return;
-  for (const pick of document.querySelectorAll('#center .app-percent, #center .app-percent-typed')) {
+  for (const pick of /** @type {NodeListOf<HTMLInputElement>} */ (document.querySelectorAll('#center .app-percent, #center .app-percent-typed'))) {
     pick.disabled = !appSize.width;
     pick.title = appSize.width ? '' : '칸에 맞춘 너비는 늘 실제 크기로 보입니다';
   }

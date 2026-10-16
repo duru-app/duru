@@ -106,9 +106,8 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
   const byKey = new Map(placed.map((b) => [b.key, b]));
   const edges = placed.filter((b) => b.parent !== null).map((b) => {
     const from = byKey.get(b.parent);
-    return { from: b.parent, to: b.key, x1: from.x + from.width, y1: middle(from), x2: b.x, y2: middle(b), guards: b.node.guards, ...(b.node.moved && { moved: b.node.moved }) };
+    return { from: b.parent, to: b.key, x1: from.x + from.width, y1: middle(from), x2: b.x, y2: middle(b), guards: b.node.guards, ...(b.node.moved && { moved: b.node.moved }), ...(marks && { nx: b.x - cols.entryW[cols.depths.get(b.key)] }) };
   });
-  if (marks) for (const e of edges) e.nx = e.x2 - cols.entryW[cols.depths.get(e.to)];
   const spots = marks && laneMarks(placed, marks);
   marks?.forEach((m, i) => {
     height = Math.max(height, spots[i].y + m.height + GAP);

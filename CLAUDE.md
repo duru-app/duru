@@ -18,8 +18,19 @@
   `npx tsc --noEmit && npx tsc --noEmit -p tsconfig.browser-tests.json`, then
   `node --test --test-name-pattern="<part of the test name>" test/<file>.test.ts`. `node --test` alone does not
   check types.
+- After changing a file in `src/review-page/` or the data the review server sends, run
+  `node --test test/review-page-types.test.ts`: the page is JavaScript checked from its type comments, and `tsc`
+  does not read it.
 - `README.md`, `skills/duru/SKILL.md` and `docs/decisions.md` are read by tests. After changing one, run the
   tests that name it, with the changed file's name in the pattern:
   `node --test $(grep -l 'README\.md' test/*.test.ts)`, `'SKILL\.md'` or `'decisions\.md'`.
 - Tests that open a browser need Chromium and the system libraries it loads, installed once on the machine:
   `npx playwright-core install --with-deps chromium` (the libraries are installed with `sudo`).
+
+## Writing the review page
+
+- The data from `/api/data` has the type `PageData` in `src/review.ts`. Give a new field the server sends a type
+  there, not a cast in the page.
+- A field repeated in a list or a table gets a `name` that stays the same for its row when rows are added or
+  removed. The page redraws while a reviewer types and puts the focus back in a field that looks the same, so fields
+  that look alike lose the focus as soon as the number of rows changes.
