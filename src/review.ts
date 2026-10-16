@@ -11,6 +11,7 @@ import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { acceptCandidate, candidatePlace, discardCandidate, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
 import { isPlainObject } from './config.ts';
 import { buildFlow } from './flow.ts';
+import type { MapCall, MapScreen, ScreenMap } from './map.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
 import { addMark, addReply, classifyMarks, loadMarks, recordKind } from './marks.ts';
 import { checkNeeds } from './needs.ts';
@@ -82,6 +83,8 @@ export function reviewAuthor(config: any, { gitName = gitUserName, userName = co
   return { name: userName(), source: 'user' };
 }
 
+type AppHost = Awaited<ReturnType<typeof startAppHost>>;
+
 function readJson(file: string) {
   if (!fs.existsSync(file)) throw new Error(`${file} does not exist — run "duru rebuild" first`);
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -92,22 +95,22 @@ function appLink(appUrl: string | null | undefined, routePath: string, given: an
   return appUrl.replace(/\/+$/, '') + asIsPath(routePath, given);
 }
 
-function screenCallOptions(screen: any, callsById: Map<string, any>) {
+function screenCallOptions(screen: MapScreen, callsById: Map<string, MapCall>) {
   const sent = new Map<string, Set<string>>();
-  for (const c of screen.apiCalls as any[]) {
+  for (const c of screen.apiCalls) {
     for (const e of c.endpoints ?? []) {
       if (!e.callId) continue;
       if (!sent.has(e.callId)) sent.set(e.callId, new Set());
       for (const o of c.options ?? []) sent.get(e.callId)!.add(o.key);
     }
   }
-  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id).options.filter((o: any) => keys.has(o.key) || o.sources.includes('type') || o.sources.includes('config'))]));
+  return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id)!.options.filter((o) => keys.has(o.key) || o.sources.includes('type') || o.sources.includes('config'))]));
 }
 
 const isStaleMap = (map: any) => Array.isArray(map?.screens) && map.screens.some((s: any) => !s.routeFile);
 const staleMapError = (mapFile: string) => new Error(`${mapFile} was built by a duru that did not record the route file of each screen — run "duru rebuild"`);
 
-function readMap(mapFile: string) {
+function readMap(mapFile: string): ScreenMap {
   const map = readJson(mapFile);
   if (isStaleMap(map)) throw staleMapError(mapFile);
   return map;
@@ -115,12 +118,12 @@ function readMap(mapFile: string) {
 
 const readTests = (config: any) => readJson(path.join(config.outDir, 'tests.json'));
 
-export function reviewData(config: any, author: ReviewAuthor | null, app: Awaited<ReturnType<typeof startAppHost>> | null = null, fileSettings: Record<string, unknown> | null = null) {
+export function reviewData(config: any, author: ReviewAuthor | null, app: AppHost | null = null, fileSettings: Awaited<ReturnType<AppHost['fileSettings']>> | null = null) {
   const mapFile = path.join(config.outDir, 'map.json');
   const map = readMap(mapFile);
   const linked = readTests(config);
   const { traced, ...tests } = applyJudgments(linked, loadJudgments(config.judgmentsDir).judgments);
-  const callsById = new Map<string, any>(map.calls.map((c: any) => [c.id, c]));
+  const callsById = new Map(map.calls.map((c) => [c.id, c]));
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
   const kinds = Object.keys(config.caseKinds);
   const candidates = storyCandidates(config, map, mapFile, traced);
@@ -132,15 +135,20 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
     needed.get(target.node!)!.add(target.case);
   }
   const pickedCases = (id: string) => kinds.filter((k) => needed.get(id)?.has(k)).map((k) => ({ tag: `case:${k}`, kind: 'case' }));
-  for (const s of map.screens) {
-    s.callOptions = screenCallOptions(s, callsById);
-    s.cases = [...screenCases(s.access), ...pickedCases(s.id)];
-    for (const source of s.access.settings ?? []) for (const need of source.needs) need.condition = settingConditionName(need);
-    for (const l of s.access.links) l.part = linkKey(l);
-  }
-  for (const c of map.calls) c.cases = pickedCases(c.id);
+  const screens = map.screens.map((s) => ({
+    ...s,
+    callOptions: screenCallOptions(s, callsById),
+    cases: [...screenCases(s.access), ...pickedCases(s.id)],
+    access: {
+      ...s.access,
+      ...(s.access.settings && { settings: s.access.settings.map((source) => ({ ...source, needs: source.needs.map((need) => ({ ...need, condition: settingConditionName(need) })) })) }),
+      links: s.access.links.map((l) => ({ ...l, part: linkKey(l) })),
+    },
+  }));
+  const calls = map.calls.map((c) => ({ ...c, cases: pickedCases(c.id) }));
+  const reviewMap = { ...map, screens, calls };
   return {
-    map,
+    map: reviewMap,
     tests,
     marks,
     caseKinds: config.caseKinds,
@@ -148,7 +156,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
     needs: checkNeeds(config.storiesDir, stories.list),
     candidates,
     storiesDir: config.storiesDir,
-    flow: buildFlow(map, tests),
+    flow: buildFlow(reviewMap, tests),
     appUrl: config.appUrl ?? null,
     app: app && {
       url: app.url,
@@ -171,6 +179,14 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
     authorSource: author?.source ?? null,
   };
 }
+
+function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: ReturnType<typeof readBaseline> | null, version: ReturnType<typeof storiesVersion>) {
+  const fromConfig = baseline && path.relative(config.configDir, config.baselineMap);
+  const changes = baseline && { file: fromConfig!.startsWith('..') ? config.baselineMap : fromConfig, label: baselineLabel(config.baselineMap), ...compareMaps(baseline, data.map) };
+  return { ...data, baseline: changes, storiesVersion: version };
+}
+
+export type PageData = ReturnType<typeof pageData>;
 
 function send(res: http.ServerResponse, status: number, type: string, body: string) {
   res.writeHead(status, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' });
@@ -398,10 +414,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
         const fileSettings = app && config.app.settingsFile ? await app.fileSettings() : null;
         // 해시를 데이터보다 먼저 구해 두어야, 그 사이에 바뀐 스토리가 다른 해시의 이벤트로 와서 다시 읽힌다.
         const version = storiesVersion(config.storiesDir);
-        const data = reviewData(config, author, app, fileSettings);
-        const fromConfig = baseline && path.relative(config.configDir, config.baselineMap);
-        const changes = baseline && { file: fromConfig.startsWith('..') ? config.baselineMap : fromConfig, label: baselineLabel(config.baselineMap), ...compareMaps(baseline, data.map) };
-        return send(res, 200, 'application/json', JSON.stringify({ ...data, baseline: changes, storiesVersion: version }));
+        return send(res, 200, 'application/json', JSON.stringify(pageData(config, reviewData(config, author, app, fileSettings), baseline, version)));
       }
       const url = new URL(req.url!, 'http://host');
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {
