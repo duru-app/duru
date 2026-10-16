@@ -14,12 +14,12 @@ import { buildFlow } from './flow.ts';
 import type { MapCall, MapScreen, ScreenMap } from './map.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
 import { addMark, addReply, classifyMarks, loadMarks, recordKind } from './marks.ts';
-import { checkNeeds } from './needs.ts';
+import { addNeed, checkNeeds, editNeed } from './needs.ts';
 import type { Mark } from './marks.ts';
 import { linkKey, locatePart, locateStoryPart } from './parts.ts';
 import type { StoryPath } from './parts.ts';
 import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.ts';
-import { addStory, editStory, StoryChanged, writeStoryFields } from './stories.ts';
+import { addStory, editStory, FileChanged, writeStoryFields } from './stories.ts';
 import { checkScreens, checkStoryFiles } from './story-paths.ts';
 import { DEPTHS } from './test-links.ts';
 
@@ -54,7 +54,7 @@ export const PAGE_PARTS = [
 ];
 const BODY_LIMIT = 64 * 1024;
 const STORIES_SETTLE_MS = 100;
-const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add'];
+const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add', '/api/needs/add', '/api/needs/edit'];
 
 function gitUserName(cwd: string) {
   try {
@@ -454,11 +454,19 @@ export async function startReviewServer(config: any, { port = 0, author = review
           return send(res, 400, 'text/plain', err.message);
         }
         if (!isPlainObject(input)) return send(res, 400, 'text/plain', 'expected a JSON object');
-        if (req.url === '/api/stories/fields') {
+        if (req.url === '/api/stories/fields' || req.url === '/api/needs/edit') {
           try {
-            return send(res, 200, 'application/json', JSON.stringify(writeStoryFields(config.storiesDir, input.id, input)));
+            const written = req.url === '/api/needs/edit' ? editNeed(config.storiesDir, input) : writeStoryFields(config.storiesDir, input.id, input);
+            return send(res, 200, 'application/json', JSON.stringify(written));
           } catch (err: any) {
-            return send(res, err instanceof StoryChanged ? 409 : 400, 'text/plain', err.message);
+            return send(res, err instanceof FileChanged ? 409 : 400, 'text/plain', err.message);
+          }
+        }
+        if (req.url === '/api/needs/add') {
+          try {
+            return send(res, 201, 'application/json', JSON.stringify(addNeed(config.storiesDir, input)));
+          } catch (err: any) {
+            return send(res, 400, 'text/plain', err.message);
           }
         }
         if (req.url === '/api/stories/edit' || req.url === '/api/stories/unaccept') {

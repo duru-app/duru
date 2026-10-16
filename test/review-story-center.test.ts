@@ -479,10 +479,64 @@ test('a field write is refused with its reason when a field is wrong, when the s
   );
 });
 
+const MEMBER = { name: '일반 회원 계정', text: '역할 USER 로 가입한 계정' };
+
+test('a need file is made and then edited through the page with the mark of the file it read, and each reply is the need read back', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const file = path.join(config.storiesDir, 'needs/member-account.json');
+      const added = await postJson(base, '/api/needs/add', { file: 'member-account.json', ...MEMBER });
+      assert.equal(added.status, 201);
+      assert.deepEqual(await added.json(), { file: 'member-account.json', ...MEMBER, stories: [], contentHash: sha256(file) });
+      assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), MEMBER);
+
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
+      const read = data.needs.list.find((n) => n.file === 'member-account.json')!.contentHash;
+      assert.equal(read, sha256(file));
+      const edited = await postJson(base, '/api/needs/edit', { file: 'member-account.json', name: '회원 계정', text: MEMBER.text, contentHash: read });
+      assert.equal(edited.status, 200);
+      assert.deepEqual(await edited.json(), { file: 'member-account.json', name: '회원 계정', text: MEMBER.text, stories: [], contentHash: sha256(file), previousHash: read });
+    }),
+  );
+});
+
+test('a need write is refused with its reason when the file name is wrong or taken, when the need file changed since the page read it or the mark is missing, when the body is not an object, or when it comes from another host, and the file stays as it was', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const file = path.join(config.storiesDir, 'needs/member-account.json');
+      fs.mkdirSync(path.dirname(file));
+      fs.writeFileSync(file, JSON.stringify(MEMBER));
+      const read = sha256(file);
+      const bad = await postJson(base, '/api/needs/add', { file: 'Member.json', ...MEMBER });
+      assert.deepEqual([bad.status, await bad.text()], [400, '공통 조건 파일 이름은 영문 소문자 · 숫자 · - · _ 로 쓰고 .json 을 붙입니다']);
+      const taken = await postJson(base, '/api/needs/add', { file: 'member-account.json', name: '다른 계정', text: '다른 내용' });
+      assert.deepEqual([taken.status, await taken.text()], [400, '공통 조건 파일 needs/member-account.json 이 이미 있습니다']);
+      const unmarked = await postJson(base, '/api/needs/edit', { file: 'member-account.json', ...MEMBER });
+      assert.deepEqual([unmarked.status, await unmarked.text()], [400, 'contentHash 에 페이지가 읽은 공통 조건 파일 내용의 SHA-256 을 보내야 합니다']);
+      assert.equal((await postJson(base, '/api/needs/edit', ['member-account.json'])).status, 400);
+      assert.equal((await postJson(base, '/api/needs/add', null)).status, 400);
+
+      fs.writeFileSync(file, JSON.stringify({ ...MEMBER, text: '다른 곳에서 고쳤다' }));
+      const changed = fs.readFileSync(file, 'utf8');
+      const stale = await postJson(base, '/api/needs/edit', { file: 'member-account.json', ...MEMBER, contentHash: read });
+      assert.deepEqual([stale.status, await stale.text()], [409, '공통 조건 파일 needs/member-account.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다']);
+
+      const port = new URL(base).port;
+      const body = JSON.stringify({ file: 'member-account.json', ...MEMBER, contentHash: sha256(file) });
+      const host = await new Promise((resolve, reject) => {
+        http.request({ host: '127.0.0.1', port, path: '/api/needs/edit', method: 'POST', headers: { host: `attacker.example:${port}`, 'content-type': 'application/json' } }, (r) => resolve(r.statusCode)).on('error', reject).end(body);
+      });
+      assert.equal(host, 403);
+      assert.equal(fs.readFileSync(file, 'utf8'), changed);
+      assert.deepEqual(fs.readdirSync(path.dirname(file)), ['member-account.json']);
+    }),
+  );
+});
+
 test('story writes that are not JSON requests are refused', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/unaccept']) {
+      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/unaccept', '/api/needs/add', '/api/needs/edit']) {
         const res = await fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
         assert.equal(res.status, 415, url);
       }

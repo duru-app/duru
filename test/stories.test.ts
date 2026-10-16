@@ -8,7 +8,7 @@ import { screenAccess } from '../src/access.ts';
 import { UNKNOWN } from '../src/client.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
-import { editStory, loadStories, StoryChanged, writeStoryFields } from '../src/stories.ts';
+import { editStory, FileChanged, loadStories, writeStoryFields } from '../src/stories.ts';
 import { checkStories, checkStoryFiles } from '../src/story-paths.ts';
 import type { StoryTests } from '../src/story-paths.ts';
 import { linkTests } from '../src/test-links.ts';
@@ -591,7 +591,7 @@ for (const [name, place, fields, reason] of REFUSED_FIELDS) {
     withStoriesDir({ 'a.json': LINKED }, (dir) => {
       const before = fs.readFileSync(path.join(dir, 'a.json'), 'utf8');
       const contentHash = name === 'a missing mark of the file read' ? null : hashOf(path.join(dir, 'a.json'));
-      assert.throws(() => writeFields(dir, place, fields, contentHash), (err: Error) => !(err instanceof StoryChanged) && err.message === reason);
+      assert.throws(() => writeFields(dir, place, fields, contentHash), (err: Error) => !(err instanceof FileChanged) && err.message === reason);
       assert.equal(fs.readFileSync(path.join(dir, 'a.json'), 'utf8'), before);
     });
   });
@@ -603,7 +603,7 @@ test('a story file changed since its mark was read is not written over, and the 
     const read = hashOf(file);
     fs.writeFileSync(file, JSON.stringify({ ...LINKED, memo: '다른 곳에서 고쳤다' }));
     const before = fs.readFileSync(file, 'utf8');
-    assert.throws(() => writeFields(dir, { kind: 'story' }, { needs: ['x'] }, read), (err: Error) => err instanceof StoryChanged && err.message === '스토리 파일 a.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다');
+    assert.throws(() => writeFields(dir, { kind: 'story' }, { needs: ['x'] }, read), (err: Error) => err instanceof FileChanged && err.message === '스토리 파일 a.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다');
     assert.equal(fs.readFileSync(file, 'utf8'), before);
     assert.throws(() => writeStoryFields(dir, 'nope', { place: { kind: 'story' }, fields: {}, contentHash: read }), /^Error: 스토리 nope 를 찾지 못했습니다$/);
   });
