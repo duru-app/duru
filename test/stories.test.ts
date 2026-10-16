@@ -7,7 +7,7 @@ import { screenAccess } from '../src/access.ts';
 import { UNKNOWN } from '../src/client.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
-import { loadStories } from '../src/stories.ts';
+import { editStory, loadStories } from '../src/stories.ts';
 import { checkStories, checkStoryFiles } from '../src/story-paths.ts';
 import type { StoryTests } from '../src/story-paths.ts';
 import { linkTests } from '../src/test-links.ts';
@@ -281,6 +281,14 @@ const NOTICE_CASES: [string, StoryFiles, { file: string; reason: string | RegExp
   ['a source whose last step comes before its first', { 'a.json': { ...STORY, source: { record: 'qa/a.json', steps: [3, 2] } } }, [{ file: 'a.json', reason: /^source / }]],
   ['a source from a report without test titles', { 'a.json': { ...STORY, source: { report: 'results/e2e.json', tests: [] } } }, [{ file: 'a.json', reason: /^source / }]],
   ['a source that mixes a record and a report', { 'a.json': { ...STORY, source: { report: 'results/e2e.json', tests: ['opens home'], steps: [1, 2] } } }, [{ file: 'a.json', reason: /^source / }]],
+  ['a need that is empty text', { 'a.json': { ...STORY, needs: ['반려된 문서가 하나 있다', ' '] } }, [{ file: 'a.json', reason: 'needs 는 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
+  ['expects that are not a list', { 'a.json': { ...STORY, expects: '문서가 열린다' } }, [{ file: 'a.json', reason: 'expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다' }]],
+  ['a step object without its screen', { 'a.json': { ...STORY, screens: ['/home#Home', { needs: ['x'] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 screen 에 화면 ID 를 적어야 합니다' }]],
+  ['a step object with a key it does not know', { 'a.json': { ...STORY, screens: [{ screen: '/home#Home', inputs: [] }, '/lab#Lab'] } }, [{ file: 'a.json', reason: 'screens 의 1 번째 단계에 모르는 항목이 있습니다: inputs' }]],
+  ['a step need that is not text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', needs: [3] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 needs 는 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
+  ['a step expect that is empty text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', expects: [''] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다' }]],
+  ['a step that is neither a screen ID nor an object', { 'a.json': { ...STORY, screens: ['/home#Home', ['/lab#Lab']] } }, [{ file: 'a.json', reason: /^screens 의 2 번째 단계는 / }]],
+  ['the same screen twice in a row, once inside a step object', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/home#Home', expects: ['x'] }] } }, [{ file: 'a.json', reason: /1 번째와 2 번째가 같은 화면/ }]],
   ['an ID two files share', { 'docs/a.json': STORY, 'lab/a.json': STORY }, [{ file: 'lab/a.json', reason: '스토리 ID a 는 docs/a.json 에서 이미 썼습니다' }]],
   ['an ID that a malformed file earlier in path order has', { 'docs/a.json': '{', 'lab/a.json': STORY }, [
     { file: 'docs/a.json', reason: /^JSON 으로 읽지 못했습니다: / },
@@ -348,6 +356,52 @@ test('a story subfolder that cannot be listed is reported with why while the oth
     } finally {
       fs.chmodSync(locked, 0o700);
     }
+  });
+});
+
+const WRITTEN = {
+  name: '문서를 연다',
+  needs: ['완료된 문서가 하나 있다'],
+  screens: ['/home#Home', { screen: '/lab#Lab', needs: ['실험실 설정을 켠다'], expects: ['실험 목록이 보인다', '「실행」 단추가 보인다'] }, { screen: '/lab/result#LabResult' }],
+  expects: ['실행 기록이 한 줄 늘어난다'],
+  memo: '',
+  author: 'a',
+  date: '2026-10-02',
+};
+
+test('a story may carry needs and expects for the whole story and for each step written as an object, and reads with its screen IDs in order and the step fields beside them', () => {
+  withStoriesDir({ 'a.json': WRITTEN }, (dir) => {
+    const { stories, notices } = loadStories(dir);
+    assert.deepEqual(notices, []);
+    assert.deepEqual(stories, [{
+      id: 'a',
+      name: '문서를 연다',
+      needs: ['완료된 문서가 하나 있다'],
+      screens: ['/home#Home', '/lab#Lab', '/lab/result#LabResult'],
+      stepFields: [{}, { needs: ['실험실 설정을 켠다'], expects: ['실험 목록이 보인다', '「실행」 단추가 보인다'] }, {}],
+      expects: ['실행 기록이 한 줄 늘어난다'],
+      memo: '',
+      author: 'a',
+      date: '2026-10-02',
+      file: 'a.json',
+    }]);
+  });
+});
+
+test('a story whose steps are objects is checked against the map step by step exactly like the same story with screen IDs', () => {
+  withStoriesDir({ 'a.json': WRITTEN, 'b.json': { ...WRITTEN, screens: ['/home#Home', '/lab#Lab', '/lab/result#LabResult'] } }, (dir) => {
+    const [a, b] = checkStoryFiles(map, dir, 'out/map.json').list;
+    for (const key of ['screens', 'steps', 'links', 'reach', 'detached', 'broken', 'unjudged', 'status'] as const) assert.deepEqual(a[key], b[key], key);
+    assert.deepEqual(verdicts(a), ['/home#Home → /lab#Lab conditioned', '/lab#Lab → /lab/result#LabResult open']);
+  });
+});
+
+test('editing a story\'s name and memo keeps its needs, expects and step objects in the file as they were', () => {
+  withStoriesDir({ 'a.json': WRITTEN }, (dir) => {
+    const edited = editStory(dir, 'a', { name: '실험을 돌린다', memo: '메모' });
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'a.json'), 'utf8')), { ...WRITTEN, name: '실험을 돌린다', memo: '메모' });
+    assert.deepEqual(edited, { ...loadStories(dir).stories[0] });
+    assert.deepEqual(edited.stepFields?.[1], { needs: ['실험실 설정을 켠다'], expects: ['실험 목록이 보인다', '「실행」 단추가 보인다'] });
   });
 });
 

@@ -113,6 +113,11 @@ test('the agent skill says what a comment on a step or on the link between two s
   assert.match(SKILL, /`comments on steps` and\s+`comments on links between steps`/);
 });
 
+test('the agent skill says how to read the needs and expects a person wrote for a story and its steps in the task list', () => {
+  assert.match(SKILL, /`needs` before `screens`[\s\S]*a `need` line under a step[\s\S]*an `expect` line under a step[\s\S]*`expects at the end`/);
+  assert.match(SKILL, /Set up each need[\s\S]*check each expect[\s\S]*tell the user which one/);
+});
+
 test('the agent skill says what a comment on a story candidate carries and that it is answered from the record or the test, outside the task list', () => {
   assert.match(SKILL, /`\{ "candidate": "<key>" \}`/);
   assert.match(SKILL, /`\{ "record", "steps" \}` with `stepRanges`[\s\S]*`\{ "report", "tests" \}`/);

@@ -1806,6 +1806,37 @@ Alternatives compared:
 - Unnamed `data:` lines with a `duru` kind of their own: `duru wait` and any other reader of the comment lines would
   have to learn to skip them.
 
+**A story's needs and expected results are written in its own file: `needs` and `expects` at the top for the whole
+story, and the same two inside a step, which is then an object `{ "screen", "needs", "expects" }` in `screens`.**
+Driver's decision in #275, built in #279. The memo of #66 already carried what the code does not show, such as the
+data a flow needs, but as one free text the task list could only pass on whole. A need or an expected result is now
+a line of its own, placed on the whole story or on one step. Putting them inside the step keeps each with its step
+when steps are added or removed, and a screen the story passes twice has a separate object for each pass. A step
+with nothing written stays a screen ID, so every story file written before reads as it did. In this first part a
+line is plain text: duru carries it to the page and the task list and judges nothing; pointing a need at a shared
+setup file, conditions on the link into a step and input values come later on the same shape. The story read from
+the file keeps `screens` as the list of screen IDs, and the step objects' lines go into a list beside it, since the
+candidate comparison, the place of a comment on a step and the path check all read the screen order as that list
+and stay as they were. On the page the 「스토리」 box shows only when the story has lines of its own; its own labels
+(「조건」, 「끝난 뒤 기대 결과」) and its place in the center keep it apart from 「사전 조건」, which duru reads from the code
+and shows on the right.
+This follows three tools read on 2026-10-15. TestRail keeps a test's preconditions in one text field
+(`custom_preconds`), and its 「Test Case (Steps)」 template keeps the steps as an ordered list of
+`{content, expected, ...}` objects, so the expected result sits in the step
+(https://support.testrail.com/hc/en-us/articles/15760060756116). Gherkin puts preconditions that several scenarios
+share in a Background and a scenario's own in its Given steps (https://cucumber.io/docs/gherkin/reference/). Xray
+treats a test's precondition as its 「step 0」 (https://docs.getxray.app/display/XRAYCLOUD/Precondition). Hence
+fields at the top of the story, which is one test, and inside each step, with the expected result in the step as
+TestRail has it.
+Alternatives compared:
+- Lines kept apart from `screens` and pointing at a step by its number (`at`, `between`): `screens` stays a list of
+  IDs, but whoever edits the file by hand has to renumber them when a step is added or removed.
+- Lines kept apart and pointing at a step by its screen ID: no numbers to keep, but a story that passes a screen
+  twice cannot say which pass is meant.
+- BPMN, Gherkin or a language of our own: each would need its own extension to hold screen IDs and the lines on
+  steps and links, and brings the rest of the borrowed format along; Gherkin steps are free sentences, so the same
+  shape could not be filled without an agent.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
