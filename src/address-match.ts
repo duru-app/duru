@@ -1,5 +1,4 @@
-import { UNKNOWN } from './client.ts';
-import { routePattern } from './path-values.ts';
+import { readableRoute, routePattern } from './path-values.ts';
 import { toSegments } from './server.ts';
 
 interface MapEndpoint {
@@ -38,7 +37,7 @@ export function pathOf(url: string) {
 }
 
 export function screenFinder(map: AddressMap) {
-  const routes = map.screens.filter((s) => !s.path.includes(UNKNOWN)).map((s) => ({ id: s.id, pattern: routePattern(s.path) }));
+  const routes = map.screens.filter((s) => readableRoute(s.path)).map((s) => ({ id: s.id, pattern: routePattern(s.path) }));
   return (url: string) => {
     const address = pathOf(url);
     return (address !== null && routes.find((r) => r.pattern.test(address))?.id) || null;

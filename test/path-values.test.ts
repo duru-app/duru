@@ -22,6 +22,11 @@ test('a route path is split into text and its variables, with optional ones and 
   assert.deepEqual(pathParts('/a\\:b'), ['/a:b']);
 });
 
+test('a variable whose pattern could not be read is split as a variable written without a pattern, keeping its modifier', () => {
+  assert.deepEqual(pathParts('/:team({?})/drafts'), [{ name: 'team', prefix: '/', optional: false, pattern: null }, '/drafts']);
+  assert.deepEqual(pathParts('/:t({?})?'), [{ name: 't', prefix: '/', optional: true, pattern: null }]);
+});
+
 test('a path is filled with encoded values, and an optional variable without a value is left out with its slash', () => {
   assert.equal(fillPath('/document/:id', { id: '17' }), '/document/17');
   assert.equal(fillPath('/document/:tab(draft|done)', { tab: 'draft' }), '/document/draft');

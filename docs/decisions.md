@@ -1976,6 +1976,24 @@ Alternatives compared:
   and keeping a pressed step marked meant telling a scroll the reviewer made from one the page made, where every rule
   tried had cases that marked the wrong step.
 
+**A route variable whose pattern duru could not read (`/:team({?})/drafts`) takes what a variable written without a
+pattern takes, both when a link address is matched to a route and when a browser test
+address is matched to a screen.** Before, the `{?}` went into the regular expression as the pattern, so the variable
+took only `}` or `{}`, and an address finding its screen skipped every route with `{?}` anywhere in it. A route with
+`{?}` in its fixed text (`/{?}/settings`) still takes no address, and one with `{?}` in a group without a name
+(`/lab({?})`) still takes no browser test address. A browser test address goes to the first route in the map's
+screen list that fits the whole address. That list joins the route files in order, and a React Router v5 `<Switch>`
+renders a route without `exact` when only the start of the address fits, so the screen can differ from the one the
+app renders. The stand-in is not the real pattern either, so such a route can take an address the app sends to
+another route, or miss one the app renders on it.
+Alternatives compared:
+- Leaving such routes unmatched: no link address and no browser test address ever reaches the screen.
+- Guessing from the other routes, as a tail that fits no route falls back to what the route constant alone reaches:
+  the link went to the list screen (`/lab`) where the app goes to the detail screen.
+- Trying such a route only after every other route, or only when the other route that fits is `*`: each order kept
+  some addresses on the screen they reached before and moved others, and which route is narrower cannot be told
+  from the path text alone, so every rule had cases where it picked a screen the app would not render.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

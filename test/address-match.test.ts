@@ -8,6 +8,8 @@ const map = {
     { id: 'list', path: '/document/:tab(draft|done)' },
     { id: 'detail', path: '/document/:id' },
     { id: 'unread', path: '/{?}/settings' },
+    { id: 'unread tail', path: '/:team({?})/{?}' },
+    { id: 'drafts', path: '/:team({?})/drafts' },
   ],
 };
 const screenAt = screenFinder(map);
@@ -32,6 +34,27 @@ test('an address that fits no route, one that cannot be read and a screen whose 
   assert.equal(screenAt('/home/more'), null);
   assert.equal(screenAt('http://['), null);
   assert.equal(screenAt('/x/settings'), null);
+  assert.equal(screenAt('/myteam/x'), null);
+});
+
+test('a variable whose pattern could not be read takes any one segment', () => {
+  assert.equal(screenAt('/myteam/drafts'), 'drafts');
+  assert.equal(screenAt('/a/b/drafts'), null);
+});
+
+test('a route with a variable whose pattern could not be read takes an address in map order, as the first route that fits wins in the app', () => {
+  const at = screenFinder({ screens: [{ id: 'login', path: '/login' }, { id: 'team', path: '/:team({?})' }, { id: 'any', path: '*' }] });
+  assert.equal(at('/login'), 'login');
+  assert.equal(at('/myteam'), 'team');
+  assert.equal(at('/a/b'), 'any');
+  const behind = screenFinder({ screens: [{ id: 'any', path: '*' }, { id: 'drafts', path: '/team/:team({?})/drafts' }] });
+  assert.equal(behind('/team/myteam/drafts'), 'any');
+});
+
+test('a group without a name whose pattern could not be read finds nothing, as a path that was not read', () => {
+  const at = screenFinder({ screens: [{ id: 'lab', path: '/lab({?})' }] });
+  assert.equal(at('/laboratory'), null);
+  assert.equal(at('/lab}'), null);
 });
 
 const endpoint = (callId: string | null, method: string | null, url: string | null) => ({ callId, method, url });
