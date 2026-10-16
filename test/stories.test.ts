@@ -284,7 +284,7 @@ const NOTICE_CASES: [string, StoryFiles, { file: string; reason: string | RegExp
   ['a need that is empty text', { 'a.json': { ...STORY, needs: ['반려된 문서가 하나 있다', ' '] } }, [{ file: 'a.json', reason: 'needs 는 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
   ['expects that are not a list', { 'a.json': { ...STORY, expects: '문서가 열린다' } }, [{ file: 'a.json', reason: 'expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다' }]],
   ['a step object without its screen', { 'a.json': { ...STORY, screens: ['/home#Home', { needs: ['x'] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 screen 에 화면 ID 를 적어야 합니다' }]],
-  ['a step object with a key it does not know', { 'a.json': { ...STORY, screens: [{ screen: '/home#Home', inputs: [] }, '/lab#Lab'] } }, [{ file: 'a.json', reason: 'screens 의 1 번째 단계에 모르는 항목이 있습니다: inputs' }]],
+  ['a step object with a key it does not know', { 'a.json': { ...STORY, screens: [{ screen: '/home#Home', clicks: [] }, '/lab#Lab'] } }, [{ file: 'a.json', reason: 'screens 의 1 번째 단계에 모르는 항목이 있습니다: clicks' }]],
   ['a step need that is not text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', needs: [3] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 needs 는 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
   ['a step expect that is empty text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', expects: [''] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다' }]],
   ['a step that is neither a screen ID nor an object', { 'a.json': { ...STORY, screens: ['/home#Home', ['/lab#Lab']] } }, [{ file: 'a.json', reason: /^screens 의 2 번째 단계는 / }]],
@@ -292,6 +292,18 @@ const NOTICE_CASES: [string, StoryFiles, { file: string; reason: string | RegExp
   ['a condition on the link into a step that is empty text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: ['반려된 경우', ''] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 linkNeeds 는 들어오는 링크 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
   ['conditions on the link into a step that are not a list', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: '반려된 경우' }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 linkNeeds 는 들어오는 링크 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
   ['conditions on an incoming link at the top of the story', { 'a.json': { ...STORY, linkNeeds: ['반려된 경우'] } }, [{ file: 'a.json', reason: '모르는 항목이 있습니다: linkNeeds' }]],
+  ['inputs that are not a list', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: { box: { label: '이름' }, value: '실험' } }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 inputs 는 입력값을 { "box", "value" } 객체로 하나씩 적은 목록이어야 합니다' }]],
+  ['an input written as one line of text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: ['이름 칸에 실험'] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 1 번째 입력값은 { "box", "value" } 객체여야 합니다' }]],
+  ['an input with a key it does not know', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: [{ box: { label: '이름' }, value: '실험', press: 'Enter' }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 1 번째 입력값에 모르는 항목이 있습니다: press' }]],
+  ['an input without its box', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: [{ value: '실험' }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 1 번째 입력값의 box 에 상자를 찾는 말(placeholder, label, testId)을 하나 이상 적어야 합니다' }]],
+  ['an empty box', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: [{ box: { label: '이름' }, value: '실험' }, { box: {}, value: '실험' }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 2 번째 입력값의 box 에 상자를 찾는 말(placeholder, label, testId)을 하나 이상 적어야 합니다' }]],
+  ['a box with only its number', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: [{ box: { nth: 2 }, value: '실험' }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 1 번째 입력값의 box 에 상자를 찾는 말(placeholder, label, testId)을 하나 이상 적어야 합니다' }]],
+  ['a box found by a kind duru does not know', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: [{ box: { label: '이름', css: '#name' }, value: '실험' }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 1 번째 입력값의 box 에 모르는 종류가 있습니다: css (상자를 찾는 말은 placeholder, label, testId 가운데서 고릅니다)' }]],
+  ['a box whose words are empty', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: [{ box: { placeholder: ' ', testId: 'lab-name' }, value: '실험' }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 1 번째 입력값의 box 의 placeholder 에 화면에 보이는 문구를 적어야 합니다' }]],
+  ['a box number below 1', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: [{ box: { label: '서명자 메모', nth: 0 }, value: '확인했습니다' }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 1 번째 입력값의 box 의 nth 는 1 이상의 정수여야 합니다' }]],
+  ['a box number that is not a whole number', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: [{ box: { label: '서명자 메모', nth: '2' }, value: '확인했습니다' }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 1 번째 입력값의 box 의 nth 는 1 이상의 정수여야 합니다' }]],
+  ['an input without its value', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: [{ box: { label: '이름' }, value: 3 }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 1 번째 입력값의 value 에 넣을 값을 글로 적어야 합니다' }]],
+  ['inputs at the top of the story', { 'a.json': { ...STORY, inputs: [{ box: { label: '이름' }, value: '실험' }] } }, [{ file: 'a.json', reason: '모르는 항목이 있습니다: inputs' }]],
   ['the same screen twice in a row, once inside a step object', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/home#Home', expects: ['x'] }] } }, [{ file: 'a.json', reason: /1 번째와 2 번째가 같은 화면/ }]],
   ['an ID two files share', { 'docs/a.json': STORY, 'lab/a.json': STORY }, [{ file: 'lab/a.json', reason: '스토리 ID a 는 docs/a.json 에서 이미 썼습니다' }]],
   ['an ID that a malformed file earlier in path order has', { 'docs/a.json': '{', 'lab/a.json': STORY }, [
@@ -401,6 +413,22 @@ test('a step from the second on may carry the conditions of the link that comes 
     assert.deepEqual(stories[0].stepFields, [{}, { needs: ['실험실 설정을 켠다'], linkNeeds: ['실험실 메뉴를 누른 경우'] }, { linkNeeds: ['실행이 끝난 경우', '결과가 하나 이상인 경우'] }]);
     editStory(dir, 'a', { name: '실험을 돌린다', memo: '' });
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'a.json'), 'utf8')).screens, story.screens, 'editing the name keeps the link conditions in the file');
+  });
+});
+
+test('a step may carry the boxes to fill and the values to put in them, each box found by one or more words on the screen and by its number among boxes found by the same words, read as written', () => {
+  const inputs = [
+    { box: { placeholder: '이메일', testId: 'login-email' }, value: 'member@example.com' },
+    { box: { label: '서명자 메모', nth: 2 }, value: '확인했습니다' },
+  ];
+  const story = { ...WRITTEN, screens: ['/home#Home', { screen: '/lab#Lab', inputs, expects: ['실험 목록이 보인다'] }, { screen: '/lab/result#LabResult', linkNeeds: ['실행이 끝난 경우'], inputs: [] }] };
+  withStoriesDir({ 'a.json': story }, (dir) => {
+    const { stories, notices } = loadStories(dir);
+    assert.deepEqual(notices, []);
+    assert.deepEqual(stories[0].screens, ['/home#Home', '/lab#Lab', '/lab/result#LabResult']);
+    assert.deepEqual(stories[0].stepFields, [{}, { inputs, expects: ['실험 목록이 보인다'] }, { linkNeeds: ['실행이 끝난 경우'], inputs: [] }]);
+    editStory(dir, 'a', { name: '실험을 돌린다', memo: '' });
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'a.json'), 'utf8')).screens, story.screens, 'editing the name keeps the inputs in the file');
   });
 });
 

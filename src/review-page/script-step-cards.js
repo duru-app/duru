@@ -1,14 +1,25 @@
 const LINK_NEEDS_LABEL = '들어오는 링크 조건';
 const writtenRow = (cls, label, lines) => (lines?.length ? h('div', { class: `written-row ${cls}` }, h('span', { class: 'written-label' }, label), h('ul', {}, lines.map((x) => h('li', {}, x)))) : null);
-const writtenRows = (fields, needLabel, expectLabel) => [writtenRow('needs', needLabel, fields?.needs), writtenRow('expects', expectLabel, fields?.expects)].filter(Boolean);
+const BOX_WORDS = { placeholder: '안내 글', label: '라벨', testId: '테스트 ID' };
+const boxWords = (box) => Object.keys(BOX_WORDS).filter((k) => box[k] !== undefined).map((k) => `${BOX_WORDS[k]} 「${box[k]}」`).join(' 또는 ') + (box.nth ? ` · ${box.nth} 번째` : '');
+const inputRow = (input) => h('tr', {},
+  h('td', { class: 'input-box' }, boxWords(input.box)),
+  h('td', { class: 'input-value mono' }, input.value),
+  h('td', {}, h('span', { class: 'chip input-unchecked', title: 'duru 가 코드에서 이 상자를 찾아보지 않았습니다' }, '확인 안 됨')));
+const inputsRow = (inputs) => (inputs?.length ? h('div', { class: 'written-row inputs' }, h('span', { class: 'written-label' }, '입력값'), h('table', { class: 'written-inputs' }, h('tbody', {}, inputs.map(inputRow)))) : null);
+const writtenRows = (fields, needLabel, expectLabel) => [writtenRow('needs', needLabel, fields?.needs), inputsRow(fields?.inputs), writtenRow('expects', expectLabel, fields?.expects)].filter(Boolean);
 const linkWritten = (fields) => (fields?.linkNeeds?.length ? h('div', { class: 'link-written written' }, writtenRow('link-needs', LINK_NEEDS_LABEL, fields.linkNeeds)) : null);
 
-const hasWritten = (fields) => Boolean(fields?.needs?.length || fields?.expects?.length);
+const hasWritten = (fields) => Boolean(fields?.needs?.length || fields?.inputs?.length || fields?.expects?.length);
 
 function writtenCount(fields) {
   if (!hasWritten(fields)) return null;
-  const counts = [fields.needs?.length && `조건 ${fields.needs.length}`, fields.expects?.length && `기대 ${fields.expects.length}`].filter(Boolean);
-  const tip = [...(fields.needs ?? []).map((x) => `조건: ${x}`), ...(fields.expects ?? []).map((x) => `기대: ${x}`)].join('\n');
+  const counts = [fields.needs?.length && `조건 ${fields.needs.length}`, fields.inputs?.length && `입력 ${fields.inputs.length}`, fields.expects?.length && `기대 ${fields.expects.length}`].filter(Boolean);
+  const tip = [
+    ...(fields.needs ?? []).map((x) => `조건: ${x}`),
+    ...(fields.inputs ?? []).map((x) => `입력: ${boxWords(x.box)} → ${x.value}`),
+    ...(fields.expects ?? []).map((x) => `기대: ${x}`),
+  ].join('\n');
   return h('span', { class: 'written-count', title: tip }, counts.join(' · '));
 }
 

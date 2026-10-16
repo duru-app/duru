@@ -360,6 +360,45 @@ test('a marked story carries the needs and expects a person wrote for the whole 
   }, { storiesDir: 'example-stories' });
 });
 
+test('a marked story carries under each step the inputs a person wrote, after its needs, with the words each box is found by, its number, the value and that duru did not check the box against the code, and the intro says how to read them', () => {
+  withFixtureCopy(({ copy, cli }) => {
+    const file = path.join(copy, 'example-stories/help-from-home.json');
+    const story = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({
+      ...story,
+      screens: [
+        { screen: '/signin#SignIn', inputs: [{ box: { testId: 'login-email', placeholder: '이메일' }, value: 'member@example.com' }, { box: { label: '비밀번호' }, value: 'test 1234 ' }] },
+        '/home#Home',
+        { screen: '/help#Help', needs: ['도움말 설정을 켠다'], inputs: [{ box: { label: '서명자 "메모"', nth: 2 }, value: '확인했습니다\n고맙습니다' }], expects: ['도움말 목록이 보인다'] },
+      ],
+    }));
+    cli('rebuild');
+    const tasks = cli('tasks');
+    const item = tasks.split('\n## help-from-home\n')[1].split('\n## ')[0];
+    assert.equal(item.slice(item.indexOf('- screens:'), item.indexOf('- reach:')), [
+      '- screens:',
+      '  1. /signin#SignIn — tests: ui pass 1, code pass 1',
+      '     - input: placeholder "이메일" or testId "login-email" → "member@example.com" (not checked against the code)',
+      '     - input: label "비밀번호" → "test 1234 " (not checked against the code)',
+      '     - to /home#Home: open at components/SignIn.js:12',
+      `  2. /home#Home — ${HOME_TESTS}`,
+      '     - to /help#Help: no link',
+      '  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1',
+      '     - need: 도움말 설정을 켠다',
+      '     - input: label "서명자 \\"메모\\"", number 2 → "확인했습니다\\n고맙습니다" (not checked against the code)',
+      '     - expect: 도움말 목록이 보인다',
+      '',
+    ].join('\n'));
+    assert.match(tasks.split('\n')[2], / An `input` line under a step names a box to fill at that step by the words on the screen it is found by, `placeholder`, `label` or `testId` \(several joined by `or` find the same box\), with `number N` when it is the Nth of the boxes those words find, and the value to put in it as a JSON string\. duru did not look for the box in the code; if the test cannot find it, suspect the story first and tell the user which input it is\./);
+
+    fs.writeFileSync(file, JSON.stringify({ ...story, screens: [{ screen: '/signin#SignIn', inputs: [{ box: { label: '비밀번호' }, value: 'test1234' }] }, '/home#Home', '/help#Help'] }));
+    cli('rebuild');
+    const intro = cli('tasks').split('\n')[2];
+    assert.match(intro, / An `input` line under a step names a box/);
+    assert.doesNotMatch(intro, /A person wrote the `needs`/, 'a story with only inputs does not get the intro for lines it does not have');
+  }, { storiesDir: 'example-stories' });
+});
+
 test('a marked story carries under each step the conditions a person wrote for the link into it, before the step\'s own needs, and the intro says what they are', () => {
   withFixtureCopy(({ copy, cli }) => {
     const file = path.join(copy, 'example-stories/help-from-home.json');
