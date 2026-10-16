@@ -21,7 +21,14 @@ import { addStory, editStory } from './stories.ts';
 import { checkScreens, checkStoryFiles } from './story-paths.ts';
 import { DEPTHS } from './test-links.ts';
 
-const PAGE = path.join(import.meta.dirname, 'review-page.html');
+const PAGE_DIR = path.join(import.meta.dirname, 'review-page');
+export const PAGE_PARTS = [
+  'start.html',
+  'style.css',
+  'body.html',
+  'script.js',
+  'end.html',
+];
 const BODY_LIMIT = 64 * 1024;
 const STORIES_SETTLE_MS = 100;
 const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add'];
@@ -354,7 +361,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
         endStreams();
         return;
       }
-      if (req.method === 'GET' && req.url === '/') return send(res, 200, 'text/html', fs.readFileSync(PAGE, 'utf8'));
+      if (req.method === 'GET' && req.url === '/') return send(res, 200, 'text/html', PAGE_PARTS.map((part) => fs.readFileSync(path.join(PAGE_DIR, part), 'utf8')).join(''));
       if (req.method === 'GET' && (req.url === '/api/events' || req.url === '/api/events?unanswered')) {
         const backlog = req.url.endsWith('?unanswered') ? unanswered().map(lineOf) : null;
         res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'close' });

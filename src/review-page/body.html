@@ -1,0 +1,49 @@
+</style>
+</head>
+<body>
+<header>
+  <h1>duru 리뷰</h1>
+  <span class="views"><button id="view-list">목록</button><button id="view-flow">흐름</button></span>
+  <span class="meta" id="meta"></span>
+  <span class="baseline" id="baseline" hidden></span>
+  <span class="author" id="author"></span>
+  <span class="error" id="end-error"></span>
+  <button id="end-review" title="코멘트를 다 남겼으면 눌러 주세요. 작업 목록이 리뷰 페이지를 띄운 터미널로 넘어갑니다">리뷰 끝</button>
+</header>
+<main>
+  <div id="flow-bar" class="flowbar" hidden></div>
+  <aside id="flow-stories" aria-label="스토리 목록" hidden></aside>
+  <div id="flow-head" class="flow-head" hidden><button type="button" id="stories-tab" class="stories-tab" aria-controls="flow-stories"></button><span id="flow-story-on"></span></div>
+  <div id="flow" hidden></div>
+  <section id="left"></section>
+  <section id="center"><div id="center-head"></div><div id="center-body"></div></section>
+  <section id="right"><div id="right-info"></div><div id="right-dock"></div></section>
+  <section id="gaps" hidden></section>
+  <div class="sash" id="sash-left"></div>
+  <div class="sash" id="sash-right"></div>
+  <div class="sash" id="sash-stories"></div>
+</main>
+<p id="failed" class="error" hidden></p>
+<dialog id="reason-ask" closedby="none" aria-labelledby="reason-ask-title">
+  <h2 id="reason-ask-title"></h2>
+  <div class="subject"></div>
+  <textarea rows="4"></textarea>
+  <p class="error" hidden></p>
+  <div class="actions">
+    <span class="muted hint"></span>
+    <button class="cancel">취소</button>
+    <button class="discard"></button>
+  </div>
+</dialog>
+<dialog id="accept-ask" closedby="none" aria-labelledby="accept-ask-title">
+  <h2 id="accept-ask-title">ID 와 이름을 정해 스토리로 받습니다</h2>
+  <p class="candidate"></p>
+  <label class="field"><span>ID</span><input type="text" id="accept-id"><small class="invalid" hidden></small></label>
+  <label class="field"><span>이름</span><input type="text" id="accept-name"></label>
+  <p class="error" hidden></p>
+  <div class="actions">
+    <button class="cancel">취소</button>
+    <button class="accept">스토리로 받기</button>
+  </div>
+</dialog>
+<script>

@@ -667,7 +667,7 @@ the first 22 release that runs them without a flag, and prints no warning. On No
 `^22.18.0 || >=23.6.0`. A `.ts` file imports others with their `.ts` ending (`allowImportingTsExtensions`), and
 syntax that cannot just be dropped, such as `enum`, is refused by `erasableSyntaxOnly`. While the two kinds lived
 side by side, `allowJs` let a `.ts` file import an `.mjs` one and `checkJs` stayed off; no `.mjs` file is left
-outside `test/fixtures`, so both are gone (the page script inside `src/review-page.html` stays JavaScript). The
+outside `test/fixtures`, so both are gone (the page script in `src/review-page/` stays JavaScript). The
 example apps under `test/fixtures` stay JavaScript and TypeScript as they are, since they are what duru reads. Not
 covered: Node does not drop types from files under `node_modules`; duru linked there from its clone runs, since Node
 follows the link, but a copy installed from a packed `.tgz` stops with
@@ -1836,6 +1836,20 @@ Alternatives compared:
 - BPMN, Gherkin or a language of our own: each would need its own extension to hold screen IDs and the lines on
   steps and links, and brings the rest of the borrowed format along; Gherkin steps are free sentences, so the same
   shape could not be filled without an agent.
+
+**The review page is kept as several files in `src/review-page/`, and the review server joins them, in the order
+listed once in `src/review.ts`, into the one page it sends for `GET /`.**
+One file of more than 5,000 lines meant that two changes to the page, made at the same time, touched the same file.
+The first split only moves text: the HTML around the style and the script, the style, and the script, which is still
+one file. The joined page is the old file byte for byte, which is how the split is checked, and nothing in the
+browser changes: the script still runs as one classic script, so its top-level names still reach each other. A later
+file is one more line in the list. The files are read again on every request, as the one file was, so an edit shows
+on the next load. No build step and no dependency is added.
+Alternatives compared:
+- The browser loading each file itself, as modules: every file would have to import and export the names it shares,
+  so hundreds of top-level functions and constants would be edited, and the split would no longer be a move only.
+- A bundling step, as Playwright builds its HTML report: the page script could then be type-checked, but duru would
+  no longer run straight from its source without a build.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
