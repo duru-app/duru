@@ -69,6 +69,7 @@ function placeHash() {
   } else if (state.side === 'stories') {
     if (state.composing) p.set('new', '1');
     else if (state.candidate !== null) p.set('candidate', state.candidate);
+    else if (state.need !== null) p.set('need', state.need);
     else if (state.story !== null) p.set('story', state.story);
   } else if (state.side === 'untagged') {
     if (state.untaggedTest !== null) p.set('test', state.untaggedTest);
@@ -125,6 +126,7 @@ function applyPlace() {
     const screen = p.get('screen');
     const story = p.get('story');
     const candidate = p.get('candidate');
+    const need = p.get('need');
     const test = p.get('test');
     const storyKnown = state.data.stories.list.some((st) => st.id === story) || unlistedMarks().some((m) => m.target.story === story);
     state.composing = head === 'stories' && p.has('new') && !oldMap();
@@ -132,7 +134,9 @@ function applyPlace() {
     if (head === 'screens' && screen !== state.selected && screenOf(screen)) go = () => select(screen);
     else if (head === 'stories' && candidate !== null) {
       if (candidate !== state.candidate && state.data.candidates.list.some((c) => c.key === candidate)) go = () => selectCandidate(candidate);
-    } else if (head === 'stories' && state.candidate !== null) go = () => selectStory(storyKnown ? story : state.story);
+    } else if (head === 'stories' && need !== null) {
+      if (need !== state.need && state.data.needs.list.some((n) => n.file === need)) go = () => selectNeed(need);
+    } else if (head === 'stories' && (state.candidate !== null || state.need !== null)) go = () => selectStory(storyKnown ? story : state.story);
     else if (head === 'stories' && story !== state.story && storyKnown) go = () => selectStory(story);
     else if (head === 'untagged' && test !== state.untaggedTest && untaggedTests().some((t) => untaggedKey(t) === test)) go = () => selectUntaggedTest(test);
   }

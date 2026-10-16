@@ -181,6 +181,7 @@ function moveTalkToStory(id) {
   state.composing = false;
   state.candidate = null;
   state.candidateTalk = null;
+  state.need = null;
   state.error = null;
   state.caseError = null;
   state.storyError = null;

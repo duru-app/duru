@@ -314,3 +314,47 @@ test('in a browser, the right of a story gives a verdict line for missing links 
     );
   });
 });
+
+test('in a browser, a need that picks a need file shows as 준비물 with its name, its file and text on hover, in the 「스토리」 box, in the step card and next to the story\'s name in the flow, a pick of a file that is not there or could not be read shows as such while the story is still read, and pressing a picked need opens it', { skip: browserMissing }, async () => {
+  const picking = {
+    name: '실험 결과를 확인한다',
+    needs: [{ use: 'member-account.json' }, '실험이 한 번 이상 돌았다'],
+    screens: ['/home#Home', { screen: '/lab#Lab', needs: [{ use: 'old-admin.json' }, { use: 'broken.json' }] }, '/lab/result#LabResult'],
+    memo: '',
+    author: 'reviewer',
+    date: '2026-10-05',
+  };
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config, copy) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/lab-notes.json'), JSON.stringify(picking));
+    fs.mkdirSync(path.join(copy, 'example-stories/needs'));
+    fs.writeFileSync(path.join(copy, 'example-stories/needs/member-account.json'), JSON.stringify({ name: '일반 회원 계정', text: '역할 USER 로 가입한 계정' }));
+    fs.writeFileSync(path.join(copy, 'example-stories/needs/broken.json'), JSON.stringify({ name: '이름만 있다' }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험 결과를 확인한다")');
+        assert.deepEqual(await p.locator('#center .story-wide .written-row.needs li').allTextContents(), ['준비물 일반 회원 계정', '실험이 한 번 이상 돌았다']);
+        assert.equal(await p.getAttribute('#center .story-wide .need-use', 'title'), 'needs/member-account.json\n역할 USER 로 가입한 계정');
+        assert.deepEqual(await p.locator('#center .story-path .step-written .written-row.needs li').allTextContents(), ['needs/old-admin.json 없음', 'needs/broken.json 읽지 못함']);
+        assert.equal(await p.getAttribute('#center .step-written .need-missing', 'title'), '준비물 폴더에 이 파일이 없습니다');
+        assert.equal(await p.getAttribute('#center .step-written .need-unread', 'title'), '준비물 파일을 읽지 못했습니다: text 에 준비물 내용을 적어야 합니다');
+
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box.screen');
+        await p.click('#flow-story-list li[data-story="lab-notes"]');
+        await p.waitForFunction(() => state.storyPath?.id === 'lab-notes');
+        assert.deepEqual(await p.locator('#flow-head .story-on .need-use').allTextContents(), ['준비물 일반 회원 계정']);
+        assert.equal(await p.getAttribute('#flow-head .story-on .written-count', 'title'), '조건: 일반 회원 계정\n조건: 실험이 한 번 이상 돌았다');
+        assert.equal(await p.getAttribute('#flow .story-line [data-step="1"] .written-count', 'title'), '조건: needs/old-admin.json 없음\n조건: needs/broken.json 읽지 못함');
+        await p.click('#flow-head .story-on .need-use');
+        assert.equal(await p.textContent('#center h3'), '일반 회원 계정');
+        assert.equal(await p.locator('#left .views.side button.on').textContent(), '스토리 6');
+
+        await p.click('#story-list li:has-text("실험 결과를 확인한다")');
+        await p.click('#center .story-wide .need-use');
+        assert.equal(await p.textContent('#center h3'), '일반 회원 계정');
+      }),
+    );
+  });
+});

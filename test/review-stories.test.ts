@@ -411,3 +411,53 @@ test('in a browser, 「되돌리기」 on a discarded candidate writes one undo 
     ),
   );
 });
+
+test('in a browser, the need files show under the story list with each one\'s name, file and how many stories pick it, the need files that could not be read with why, and pressing one shows its name, text, the stories that pick it and its file in the middle, from where a story opens', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config, copy) => {
+    const stories = path.join(copy, 'example-stories');
+    fs.mkdirSync(path.join(stories, 'needs'));
+    fs.writeFileSync(path.join(stories, 'needs/member-account.json'), JSON.stringify({ name: '일반 회원 계정', text: '역할 USER 로 가입한 계정.\n이메일 member@example.com' }));
+    fs.writeFileSync(path.join(stories, 'needs/done-document.json'), JSON.stringify({ name: '완료된 문서 하나', text: '서명이 끝난 문서가 하나 있다' }));
+    fs.writeFileSync(path.join(stories, 'needs/broken.json'), '{');
+    for (const id of ['run-lab', 'open-document']) {
+      const story = JSON.parse(fs.readFileSync(path.join(stories, `${id}.json`), 'utf8'));
+      fs.writeFileSync(path.join(stories, `${id}.json`), JSON.stringify({ ...story, needs: [{ use: 'member-account.json' }] }));
+    }
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        assert.equal(await p.textContent('#left h2.needs-head'), '준비물 2');
+        assert.equal(await p.textContent('#left .needs-hint'), `${config.storiesDir}/needs/ 에 준비물마다 파일 하나`);
+        assert.deepEqual(await p.locator('#need-list li').evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.name > *, .count')].map((e) => e.textContent))), [
+          ['완료된 문서 하나', 'needs/done-document.json', '쓰는 스토리 0'],
+          ['일반 회원 계정', 'needs/member-account.json', '쓰는 스토리 2'],
+        ]);
+        assert.equal(await p.textContent('#left h2.need-notices-head'), '읽지 못한 준비물 파일 1');
+        assert.match((await p.textContent('#need-notices'))!, /needs\/broken\.json\s*JSON 으로 읽지 못했습니다: /);
+        assert.deepEqual(await p.locator('#story-list li .name .muted.mono').allTextContents(), ['change-settings', 'help-from-home', 'open-document', 'read-reports', 'run-lab']);
+
+        await p.click('#need-list li:has-text("일반 회원 계정")');
+        assert.equal(await p.getAttribute('#need-list li:has-text("일반 회원 계정")', 'class'), 'selected');
+        assert.equal(await p.locator('#story-list li.selected').count(), 0);
+        assert.deepEqual(await p.locator('#center .title-row > *').allTextContents(), ['일반 회원 계정', '준비물']);
+        assert.equal(await p.textContent('#center .need-place'), `${config.storiesDir}/needs/member-account.json`);
+        assert.equal(await p.textContent('#center .memo'), '역할 USER 로 가입한 계정.\n이메일 member@example.com');
+        assert.equal(await p.textContent('#center h2.need-stories-head'), '이 준비물을 쓰는 스토리 2');
+        assert.deepEqual(await p.locator('#need-stories li').allTextContents(), ['로그인해 문서 목록에서 문서를 연다open-document', '실험실을 열어 결과를 본다run-lab']);
+        assert.equal(await p.textContent('#center details.need-file summary'), '준비물 파일 needs/member-account.json');
+        assert.deepEqual(JSON.parse((await p.textContent('#center details.need-file pre'))!), { name: '일반 회원 계정', text: '역할 USER 로 가입한 계정.\n이메일 member@example.com' });
+        assert.equal(await p.locator('#center button, #center textarea, #center input').count(), 0, 'a need is only shown, not edited');
+        assert.equal(await p.locator('#right-dock textarea').count(), 0);
+        assert.equal(await p.evaluate(() => location.hash), '#stories?need=member-account.json');
+
+        await p.click('#need-stories li:has-text("run-lab")');
+        assert.equal(await p.textContent('#center h3'), '실험실을 열어 결과를 본다');
+        assert.equal(await p.locator('#need-list li.selected').count(), 0);
+        await p.goBack();
+        await p.waitForSelector('#center .need-place');
+        assert.equal(await p.textContent('#center h3'), '일반 회원 계정');
+      }),
+    );
+  });
+});

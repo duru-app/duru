@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { compare } from './config.ts';
 import { GENERAL, recordKind } from './marks.ts';
+import { findNeed, needPath } from './needs.ts';
 import { reviewData } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { BOX_WORDS } from './stories.ts';
@@ -341,13 +342,23 @@ const writtenList = (head: string, lines: string[] | undefined) => (lines?.lengt
 const boxText = (box: any) => BOX_WORDS.filter((k) => box[k] !== undefined).map((k) => `${k} ${JSON.stringify(box[k])}`).join(' or ') + (box.nth ? `, number ${box.nth}` : '');
 const inputLines = (inputs: any[] | undefined, indent: string) => (inputs ?? []).map((x) => `${indent}- input: ${boxText(x.box)} → ${JSON.stringify(x.value)} (not checked against the code)`);
 
-function stepLines(story: any, tests: any) {
+function needText(need: any, needs: any) {
+  if (typeof need === 'string') return need;
+  const found = findNeed(needs, need.use);
+  if (!found) return `${needPath(need.use)} — the file is missing`;
+  if ('unread' in found) return `${needPath(need.use)} — the file could not be read; \`duru rebuild\` prints why`;
+  return `${found.need.name} (${needPath(need.use)}): ${found.need.text}`;
+}
+
+const needTexts = (list: any[] | undefined, needs: any) => list?.map((n) => needText(n, needs));
+
+function stepLines(story: any, tests: any, needs: any) {
   return story.steps.flatMap((step: any, i: number) => {
     const no = `${i + 1}. `;
     const indent = ' '.repeat(2 + no.length);
     const line = `  ${no}${within(step.screen, indent)} — ${step.onMap ? testSummary(testsAt(tests.nodes, step.screen)) : 'not on the map'}`;
     const fields = story.stepFields?.[i] ?? {};
-    const written = [...writtenLines(`link need from step ${i}: `, fields.linkNeeds, indent), ...writtenLines('need: ', fields.needs, indent), ...inputLines(fields.inputs, indent), ...writtenLines('expect: ', fields.expects, indent)];
+    const written = [...writtenLines(`link need from step ${i}: `, fields.linkNeeds, indent), ...writtenLines('need: ', needTexts(fields.needs, needs), indent), ...inputLines(fields.inputs, indent), ...writtenLines('expect: ', fields.expects, indent)];
     const link = story.links[i];
     return [line, ...written, ...(link ? [`${indent}- to ${within(link.to, `${indent}  `)}: ${linkText(link)}`] : [])];
   });
@@ -356,6 +367,7 @@ function stepLines(story: any, tests: any) {
 const isWritten = (fields: any) => Boolean(fields?.needs?.length || fields?.linkNeeds?.length || fields?.expects?.length);
 const hasInputs = (story: any) => Boolean(story.stepFields?.some((f: any) => f.inputs?.length));
 const hasWritten = (story: any) => isWritten(story) || Boolean(story.stepFields?.some(isWritten));
+const picksNeedFile = (story: any) => [...(story.needs ?? []), ...(story.stepFields ?? []).flatMap((f: any) => f.needs ?? [])].some((n) => typeof n !== 'string');
 
 function reachProblems(story: any) {
   const broken = story.links.filter((l: any) => l.verdict === 'broken').length;
@@ -380,7 +392,7 @@ function preconditionLines(r: any, { screensById, restricted }: MapInfo) {
   ];
 }
 
-function storyLines(story: any, marks: any[], parts: any[], tests: any, mapInfo: MapInfo, formats: string[]) {
+function storyLines(story: any, marks: any[], parts: any[], tests: any, needs: any, mapInfo: MapInfo, formats: string[]) {
   const problems = reachProblems(story);
   return [
     '',
@@ -394,9 +406,9 @@ function storyLines(story: any, marks: any[], parts: any[], tests: any, mapInfo:
     ...(story.memo ? [`- memo: ${within(story.memo, '  ')}`] : []),
     `- status: ${STORY_STATUS[story.status]}`,
     ...testLines(testsAt(tests.stories, story.id), 'story tests'),
-    ...writtenList('- needs:', story.needs),
+    ...writtenList('- needs:', needTexts(story.needs, needs)),
     '- screens:',
-    ...stepLines(story, tests),
+    ...stepLines(story, tests, needs),
     ...writtenList('- expects at the end:', story.expects),
     `- reach: ${problems.length ? problems.join('; ') : 'reachable'}`,
     ...(story.reach.length
@@ -436,7 +448,7 @@ export function taggingLines(awaitingTag: Record<string, any[]>, callIds: Set<st
 }
 
 export function taskList(config: any) {
-  const { map, tests, marks, appLinks, stories } = reviewData(config, null);
+  const { map, tests, marks, appLinks, stories, needs } = reviewData(config, null);
   const open = marks.attached.filter((m) => m.current && OPEN.includes(m.current.status!));
   const marked = (node: any) => open.some((m) => m.target.node === node.id);
   const screens = map.screens.filter(marked).sort((a: any, b: any) => a.id.localeCompare(b.id));
@@ -471,6 +483,9 @@ export function taskList(config: any) {
   }
   if (stories.list.some((s) => storyMarks.some((m) => m.target.story === s.id) && hasInputs(s))) {
     out[2] += ' An `input` line under a step names a box to fill at that step by the words on the screen it is found by, `placeholder`, `label` or `testId` (several joined by `or` find the same box), with `number N` when it is the Nth of the boxes those words find, and the value to put in it as a JSON string. duru did not look for the box in the code; if the test cannot find it, suspect the story first and tell the user which input it is.';
+  }
+  if (stories.list.some((s) => storyMarks.some((m) => m.target.story === s.id) && picksNeedFile(s))) {
+    out[2] += ' A need written `<name> (needs/<file>): <text>` is one a person keeps as a file in the `needs` folder of the story folder and picks for several stories: set it up from its text the same way in every story test that has it. A need that says the file is missing or could not be read points at a need file duru did not find or could not read; tell the user and do not guess what it holds.';
   }
   if (partKinds.has('condition') || partKinds.has('link')) {
     out[2] += ' Under `comments on opening conditions` and `comments on incoming links`, each role or setting condition and each link into the screen a reviewer left a comment on is named with the source file and line it is written at; if the app does not do what duru read there, tell the user it is a duru defect, and otherwise answer with that line.';
@@ -532,7 +547,7 @@ export function taskList(config: any) {
   for (const id of [...new Set(storyMarks.map((m) => m.target.story))]) {
     const own = storyMarks.filter((m) => m.target.story === id);
     const story = stories.list.find((s) => s.id === id);
-    if (story) out.push(...storyLines(story, own, storyPartsOf(id!), tests, mapInfo, formats));
+    if (story) out.push(...storyLines(story, own, storyPartsOf(id!), tests, needs, mapInfo, formats));
     else if (!stories.stale) out.push('', `## ${id}`, '', '- marks:', ...own.flatMap((m) => entryLines(m)), '- story file: could not be read; `duru rebuild` prints why');
   }
   out.push(...taggingLines(tests.awaitingTag, new Set<string>(map.calls.map((c: any) => c.id))));

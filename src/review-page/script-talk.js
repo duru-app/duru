@@ -1,6 +1,7 @@
 function hereTalk() {
   if (state.side !== 'stories') return state.target && { label: `이 ${nodeWord(state.target.node)}`, target: state.target };
   if (state.candidate && !state.composing) return { label: '이 후보', target: { candidate: state.candidate } };
+  if (state.need && !state.composing) return null;
   return { label: '이 스토리', target: state.story && !state.candidate && !state.composing ? { story: state.story } : null };
 }
 

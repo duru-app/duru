@@ -3,6 +3,10 @@ function renderStoryRight(info, dock) {
     fill(dock);
     return fill(info, ...composeForm());
   }
+  if (needOf()) {
+    fill(dock);
+    return fill(info);
+  }
   const c = candidateOf();
   if (c) {
     fill(dock, markForm({ candidate: c.key }, 'candidateTalk', '후보'));
@@ -221,7 +225,7 @@ function renderRight() {
     return fill(dock);
   }
   const all = state.talkScope === 'all';
-  const view = all ? 'all' : state.side !== 'stories' ? `${state.selected}\n${state.target?.node}` : state.composing ? 'compose' : state.candidate ? `candidate(${state.candidate})` : `story(${state.story})`;
+  const view = all ? 'all' : state.side !== 'stories' ? `${state.selected}\n${state.target?.node}` : state.composing ? 'compose' : state.candidate ? `candidate(${state.candidate})` : state.need ? `need(${state.need})` : `story(${state.story})`;
   const shown = shownTarget();
   const dockKey = shown ? keyOf(shown) : null;
   if (dockKey !== state.dockKey) {

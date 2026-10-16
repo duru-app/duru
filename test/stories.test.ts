@@ -281,11 +281,14 @@ const NOTICE_CASES: [string, StoryFiles, { file: string; reason: string | RegExp
   ['a source whose last step comes before its first', { 'a.json': { ...STORY, source: { record: 'qa/a.json', steps: [3, 2] } } }, [{ file: 'a.json', reason: /^source / }]],
   ['a source from a report without test titles', { 'a.json': { ...STORY, source: { report: 'results/e2e.json', tests: [] } } }, [{ file: 'a.json', reason: /^source / }]],
   ['a source that mixes a record and a report', { 'a.json': { ...STORY, source: { report: 'results/e2e.json', tests: ['opens home'], steps: [1, 2] } } }, [{ file: 'a.json', reason: /^source / }]],
-  ['a need that is empty text', { 'a.json': { ...STORY, needs: ['반려된 문서가 하나 있다', ' '] } }, [{ file: 'a.json', reason: 'needs 는 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
+  ['a need that is empty text', { 'a.json': { ...STORY, needs: ['반려된 문서가 하나 있다', ' '] } }, [{ file: 'a.json', reason: 'needs 는 조건을 하나씩 글이나 { "use": 준비물 파일 이름 } 으로 적은 목록이어야 합니다' }]],
+  ['a need that uses no file', { 'a.json': { ...STORY, needs: [{ use: ' ' }] } }, [{ file: 'a.json', reason: 'needs 는 조건을 하나씩 글이나 { "use": 준비물 파일 이름 } 으로 적은 목록이어야 합니다' }]],
+  ['a need that uses a file and says more', { 'a.json': { ...STORY, needs: [{ use: 'member-account.json', as: 'admin' }] } }, [{ file: 'a.json', reason: 'needs 는 조건을 하나씩 글이나 { "use": 준비물 파일 이름 } 으로 적은 목록이어야 합니다' }]],
   ['expects that are not a list', { 'a.json': { ...STORY, expects: '문서가 열린다' } }, [{ file: 'a.json', reason: 'expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다' }]],
   ['a step object without its screen', { 'a.json': { ...STORY, screens: ['/home#Home', { needs: ['x'] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 screen 에 화면 ID 를 적어야 합니다' }]],
   ['a step object with a key it does not know', { 'a.json': { ...STORY, screens: [{ screen: '/home#Home', clicks: [] }, '/lab#Lab'] } }, [{ file: 'a.json', reason: 'screens 의 1 번째 단계에 모르는 항목이 있습니다: clicks' }]],
-  ['a step need that is not text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', needs: [3] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 needs 는 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
+  ['a step need that is not text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', needs: [3] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 needs 는 조건을 하나씩 글이나 { "use": 준비물 파일 이름 } 으로 적은 목록이어야 합니다' }]],
+  ['a step need written as an object without use', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', needs: [{ file: 'member-account.json' }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 needs 는 조건을 하나씩 글이나 { "use": 준비물 파일 이름 } 으로 적은 목록이어야 합니다' }]],
   ['a step expect that is empty text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', expects: [''] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다' }]],
   ['a step that is neither a screen ID nor an object', { 'a.json': { ...STORY, screens: ['/home#Home', ['/lab#Lab']] } }, [{ file: 'a.json', reason: /^screens 의 2 번째 단계는 / }]],
   ['conditions on the link into the first step, which no link comes into', { 'a.json': { ...STORY, screens: [{ screen: '/home#Home', linkNeeds: ['반려된 경우'] }, '/lab#Lab'] } }, [{ file: 'a.json', reason: 'screens 의 1 번째 단계에는 앞 단계가 없어 linkNeeds(들어오는 링크 조건)를 둘 수 없습니다' }]],
@@ -429,6 +432,24 @@ test('a step may carry the boxes to fill and the values to put in them, each box
     assert.deepEqual(stories[0].stepFields, [{}, { inputs, expects: ['실험 목록이 보인다'] }, { linkNeeds: ['실행이 끝난 경우'], inputs: [] }]);
     editStory(dir, 'a', { name: '실험을 돌린다', memo: '' });
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'a.json'), 'utf8')).screens, story.screens, 'editing the name keeps the inputs in the file');
+  });
+});
+
+test('a need may pick a file of the needs folder with { "use" }, for the whole story or a step, and reads as written whether or not the file is there', () => {
+  const story = { ...STORY, needs: [{ use: 'member-account.json' }, '완료된 문서가 하나 있다'], screens: ['/home#Home', { screen: '/lab#Lab', needs: [{ use: 'old-admin.json' }] }] };
+  withStoriesDir({ 'a.json': story, 'needs/member-account.json': { name: '일반 회원 계정', text: '역할 USER 계정' } }, (dir) => {
+    const { stories, notices } = loadStories(dir);
+    assert.deepEqual(notices, []);
+    assert.deepEqual(stories[0].needs, [{ use: 'member-account.json' }, '완료된 문서가 하나 있다']);
+    assert.deepEqual(stories[0].stepFields, [{}, { needs: [{ use: 'old-admin.json' }] }]);
+  });
+});
+
+test('the files in the needs folder are neither stories nor story files that could not be read', () => {
+  withStoriesDir({ 'ok.json': STORY, 'needs/member-account.json': { name: '일반 회원 계정', text: '역할 USER 계정' }, 'needs/broken.json': '{', 'needs/more/x.json': STORY }, (dir) => {
+    const { stories, notices } = loadStories(dir);
+    assert.deepEqual(stories.map((s) => s.id), ['ok']);
+    assert.deepEqual(notices, []);
   });
 });
 

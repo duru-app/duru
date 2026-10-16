@@ -357,6 +357,7 @@ test('a marked story carries the needs and expects a person wrote for the whole 
       '',
     ].join('\n'));
     assert.match(tasks.split('\n')[2], / A person wrote the `needs` and `expects at the end` lines of a story and the `link need from step N`, `need` and `expect` lines under a step: .* duru only carries them and does not check them against the code; set up each need and each link need from a step in the story test and check each expect there\./);
+    assert.doesNotMatch(tasks, /A need written `<name>/);
   }, { storiesDir: 'example-stories' });
 });
 
@@ -425,6 +426,40 @@ test('a marked story carries under each step the conditions a person wrote for t
       '',
     ].join('\n'));
     assert.match(tasks.split('\n')[2], / A person wrote the `needs` and `expects at the end` lines of a story and the `link need from step N`, `need` and `expect` lines under a step: .*what has to hold on the link from step N, the step before, for the story to take it into this step.* duru only carries them and does not check them against the code; set up each need and each link need from a step in the story test and check each expect there\./);
+  }, { storiesDir: 'example-stories' });
+});
+
+test('a marked story carries each need it picks from the needs folder with its name, file and text, a pick of a file that is not there or could not be read says so, and the intro says how to read them', () => {
+  withFixtureCopy(({ copy, cli }) => {
+    const file = path.join(copy, 'example-stories/help-from-home.json');
+    const story = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.mkdirSync(path.join(copy, 'example-stories/needs'));
+    fs.writeFileSync(path.join(copy, 'example-stories/needs/member-account.json'), JSON.stringify({ name: '일반 회원 계정', text: '역할 USER 로 가입한 계정.\n이메일 member@example.com' }));
+    fs.writeFileSync(path.join(copy, 'example-stories/needs/broken.json'), '{');
+    fs.writeFileSync(file, JSON.stringify({
+      ...story,
+      needs: [{ use: 'member-account.json' }, '도움말 글이 하나 있다'],
+      screens: [{ screen: '/signin#SignIn', needs: [{ use: 'old-admin.json' }] }, '/home#Home', { screen: '/help#Help', needs: [{ use: 'broken.json' }] }],
+    }));
+    cli('rebuild');
+    const tasks = cli('tasks');
+    const item = tasks.split('\n## help-from-home\n')[1].split('\n## ')[0];
+    assert.equal(item.slice(item.indexOf('- needs:'), item.indexOf('- reach:')), [
+      '- needs:',
+      '  - 일반 회원 계정 (needs/member-account.json): 역할 USER 로 가입한 계정.',
+      '    이메일 member@example.com',
+      '  - 도움말 글이 하나 있다',
+      '- screens:',
+      '  1. /signin#SignIn — tests: ui pass 1, code pass 1',
+      '     - need: needs/old-admin.json — the file is missing',
+      '     - to /home#Home: open at components/SignIn.js:12',
+      `  2. /home#Home — ${HOME_TESTS}`,
+      '     - to /help#Help: no link',
+      '  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1',
+      '     - need: needs/broken.json — the file could not be read; `duru rebuild` prints why',
+      '',
+    ].join('\n'));
+    assert.match(tasks.split('\n')[2], / A need written `<name> \(needs\/<file>\): <text>` is one a person keeps as a file in the `needs` folder of the story folder and picks for several stories: .* A need that says the file is missing or could not be read points at a need file duru did not find or could not read; tell the user and do not guess what it holds\./);
   }, { storiesDir: 'example-stories' });
 });
 

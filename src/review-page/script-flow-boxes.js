@@ -109,6 +109,7 @@ function storyOn(st) {
   if (!st) return null;
   return h('span', { class: 'story-on' },
     h('strong', { class: 'story-name', title: st.id }, st.name),
+    (st.needs ?? []).filter((n) => typeof n !== 'string').map(needItem),
     writtenCount(st),
     h('button', { class: 'path-off', onclick: () => pickStory('') }, '경로 끄기'),
     legendInfo('path', '스토리 경로 읽는 법', pathLegend()));
