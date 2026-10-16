@@ -17,11 +17,23 @@ const EDIT = '.fields-edit';
 
 const readStory = (config: Config) => JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'));
 const editLabels = (p: Page, at: string) => p.locator(`${at} button.edit-fields`).evaluateAll((bs) => bs.map((b) => b.getAttribute('aria-label')));
+const lineValues = (rows: Element[]) => rows.map((r) => {
+  const kind = r.querySelector<HTMLSelectElement>('select[aria-label="조건 적는 법"]')!;
+  const use = r.querySelector<HTMLSelectElement>('select[aria-label="공통 조건"]');
+  return [kind.selectedOptions[0].textContent, use ? use.selectedOptions[0].textContent : r.querySelector<HTMLInputElement>('input')!.value];
+});
+const MEMBER = { name: '일반 회원 계정', text: '역할 USER 로 가입한 계정' };
+const DONE = { name: '완료된 문서 하나', text: '서명이 끝난 문서가 하나 있다' };
+const NEEDS = { 'member-account.json': MEMBER, 'done-document.json': DONE };
 const shownRows = (p: Page, at: string) => p.locator(`${at} .written-row`).evaluateAll((rows) => rows.map((r) => [r.querySelector('.written-label')!.textContent, [...r.querySelectorAll('li, tr')].map((li) => li.textContent)]));
 
-async function withLabStory(fn: (p: Page, config: Config, errors: string[]) => Promise<void>, story?: object) {
+async function withLabStory(fn: (p: Page, config: Config, errors: string[]) => Promise<void>, story?: object, needs: Record<string, object> = {}) {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) => {
     if (story) fs.writeFileSync(path.join(config.storiesDir, 'run-lab.json'), JSON.stringify(story, null, 2));
+    for (const [file, need] of Object.entries(needs)) {
+      fs.mkdirSync(path.join(config.storiesDir, 'needs'), { recursive: true });
+      fs.writeFileSync(path.join(config.storiesDir, 'needs', file), JSON.stringify(need));
+    }
     return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         await p.waitForSelector('#screen-list li');
@@ -138,7 +150,7 @@ test('in a browser, the link into a step and the 「스토리 전체」 box are 
     assert.deepEqual(await shownRows(p, '#center .story-wide'), [['조건', ['실험이 한 번 이상 돌았다']], ['끝난 뒤 기대 결과', ['마지막 실행 결과가 보인다']]]);
 
     await p.click(`${STEP_2} button.edit-fields`);
-    assert.deepEqual(await p.locator(`${STEP_2} ${EDIT} .fields-part.needs tr`).evaluateAll((rows) => rows.map((r) => r.querySelector('input')?.value ?? r.querySelector('.need-missing, .need-use')!.textContent)), ['needs/member-account.json 없음', '실험실 설정을 켠다']);
+    assert.deepEqual(await p.locator(`${STEP_2} ${EDIT} .fields-part.needs tr`).evaluateAll(lineValues), [['공통 조건 고르기', 'member-account.json (없음)'], ['글로 적기', '실험실 설정을 켠다']]);
     await p.locator(`${STEP_2} ${EDIT} .fields-part.needs input`).fill('실험실 설정을 켠 뒤');
     await p.click(`${STEP_2} button.save-fields`);
     await p.waitForSelector(`${STEP_2} .fields-saved`);
@@ -331,4 +343,122 @@ test('in a browser, an open table whose step shows another screen after the file
     assert.equal(await p.locator('#center button.edit-fields[disabled]').count(), 0);
     assert.deepEqual(readStory(config), elsewhere);
   });
+});
+
+const KIND = 'select[aria-label="조건 적는 법"]';
+const USE = 'select[aria-label="공통 조건"]';
+
+test('in a browser, each condition line chooses 「글로 적기」 or 「공통 조건 고르기」, picking lists the need files with 「새 공통 조건 만들기…」 last, going back to writing keeps the text, and 「저장」 writes the pick as { "use" } into the story file', { skip: browserMissing }, async () => {
+  await withLabStory(async (p, config) => {
+    await p.click(`${STEP_2} button.edit-fields`);
+    const edit = p.locator(`${STEP_2} ${EDIT}`);
+    await edit.locator('button:has-text("조건 더하기")').click();
+    await p.keyboard.type('실험실 설정을 켠다');
+    assert.deepEqual(await edit.locator(`${KIND} option`).allTextContents(), ['글로 적기', '공통 조건 고르기']);
+    await edit.locator(KIND).selectOption({ label: '공통 조건 고르기' });
+    assert.deepEqual(await edit.locator(`${USE} option`).allTextContents(), ['고르지 않음', '완료된 문서 하나 (done-document.json)', '일반 회원 계정 (member-account.json)', '새 공통 조건 만들기…']);
+    await edit.locator(KIND).selectOption({ label: '글로 적기' });
+    assert.equal(await edit.locator('.fields-part.needs input').inputValue(), '실험실 설정을 켠다');
+    await edit.locator('button:has-text("조건 더하기")').click();
+    await edit.locator(KIND).nth(1).selectOption({ label: '공통 조건 고르기' });
+    await edit.locator(USE).selectOption({ label: '일반 회원 계정 (member-account.json)' });
+    await edit.locator('button:has-text("조건 더하기")').click();
+    await edit.locator(KIND).nth(2).selectOption({ label: '공통 조건 고르기' });
+    assert.deepEqual(await edit.locator('.fields-part.needs tr').evaluateAll(lineValues), [['글로 적기', '실험실 설정을 켠다'], ['공통 조건 고르기', '일반 회원 계정 (member-account.json)'], ['공통 조건 고르기', '고르지 않음']]);
+
+    await edit.locator('button.save-fields').click();
+    await p.waitForSelector(`${STEP_2} .fields-saved`);
+    assert.deepEqual(readStory(config).screens[1], { screen: '/lab#Lab', needs: ['실험실 설정을 켠다', { use: 'member-account.json' }] });
+    assert.deepEqual(await shownRows(p, STEP_2), [['조건', ['실험실 설정을 켠다', '공통 조건 일반 회원 계정']]]);
+  }, undefined, NEEDS);
+});
+
+test('in a browser, 「새 공통 조건 만들기…」 opens fields for a file name, a name and a text in the line, 「만들기」 writes the need file and the line picks it, a refused file keeps what was typed with why, and 「그만두기」 closes the fields', { skip: browserMissing }, async () => {
+  await withLabStory(async (p, config, errors) => {
+    await p.click(`${STEP_2} button.edit-fields`);
+    const edit = p.locator(`${STEP_2} ${EDIT}`);
+    await edit.locator('button:has-text("조건 더하기")').click();
+    await edit.locator(KIND).selectOption({ label: '공통 조건 고르기' });
+    await edit.locator(USE).selectOption({ label: '새 공통 조건 만들기…' });
+    const make = edit.locator('.new-need');
+    assert.equal(await p.evaluate(() => (document.activeElement as HTMLInputElement).getAttribute('aria-label')), '새 공통 조건 파일 이름');
+    assert.equal(await edit.locator('button.save-fields').isDisabled(), true, 'the table waits until the need is made or dropped');
+    await make.locator('button.drop-need').click();
+    assert.equal(await edit.locator('.new-need').count(), 0);
+    assert.deepEqual(await edit.locator('.fields-part.needs tr').evaluateAll(lineValues), [['공통 조건 고르기', '고르지 않음']]);
+
+    await edit.locator(USE).selectOption({ label: '새 공통 조건 만들기…' });
+    await make.locator('input[aria-label="새 공통 조건 파일 이름"]').fill('member-account');
+    await make.locator('input[aria-label="새 공통 조건 이름"]').fill('관리자 계정');
+    await make.locator('textarea[aria-label="새 공통 조건 내용"]').fill('역할 ADMIN 으로 가입한 계정');
+    await make.locator('button.make-need').click();
+    await p.waitForSelector(`${STEP_2} .new-need .error`);
+    assert.equal(await p.textContent(`${STEP_2} .new-need .error`), '만들지 못했습니다: 공통 조건 파일 needs/member-account.json 이 이미 있습니다');
+    assert.deepEqual(errors.splice(0), [BAD_REQUEST]);
+    assert.equal(await make.locator('textarea').inputValue(), '역할 ADMIN 으로 가입한 계정');
+
+    await make.locator('input[aria-label="새 공통 조건 파일 이름"]').fill('admin-account');
+    await make.locator('button.make-need').click();
+    await p.waitForSelector(`${STEP_2} ${EDIT} .new-need`, { state: 'detached' });
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'needs/admin-account.json'), 'utf8')), { name: '관리자 계정', text: '역할 ADMIN 으로 가입한 계정' });
+    assert.deepEqual(await edit.locator('.fields-part.needs tr').evaluateAll(lineValues), [['공통 조건 고르기', '관리자 계정 (admin-account.json)']]);
+    assert.ok((await p.locator('#need-list li').allTextContents()).some((t) => t.includes('관리자 계정')));
+    assert.equal(readStory(config).screens[1], '/lab#Lab', 'making a need does not write the story');
+
+    await edit.locator('button.save-fields').click();
+    await p.waitForSelector(`${STEP_2} .fields-saved`);
+    assert.deepEqual(readStory(config).screens[1], { screen: '/lab#Lab', needs: [{ use: 'admin-account.json' }] });
+  }, undefined, { 'member-account.json': MEMBER });
+});
+
+test('in a browser, only condition lines choose between writing and picking a need file, and an expected result line is text only', { skip: browserMissing }, async () => {
+  await withLabStory(async (p) => {
+    await p.click(`${STEP_2} button.edit-fields`);
+    const edit = p.locator(`${STEP_2} ${EDIT}`);
+    await edit.locator('button:has-text("조건 더하기")').click();
+    await edit.locator('button:has-text("기대 결과 더하기")').click();
+    assert.equal(await edit.locator(`.fields-part.needs ${KIND}`).count(), 1);
+    assert.equal(await edit.locator('.fields-part.expects select').count(), 0);
+    assert.equal(await edit.locator('.fields-part.expects input').count(), 1);
+    await edit.locator('button.cancel-fields').click();
+    await p.click(`${HOP_INTO_3} button.edit-fields`);
+    await p.click(`${HOP_INTO_3} button:has-text("조건 더하기")`);
+    assert.equal(await p.locator(`${HOP_INTO_3} ${EDIT} .fields-part.link-needs ${KIND}`).count(), 1);
+  }, undefined, NEEDS);
+});
+
+test('in a browser, a written condition switched to 「공통 조건 고르기」 and left without a pick is not saved: the table stays open and names the line, and a blank line is still left out', { skip: browserMissing }, async () => {
+  const story = { name: LAB, screens: ['/home#Home', { screen: '/lab#Lab', needs: ['실험실 설정을 켠다'] }, '/lab/result#LabResult'], memo: '', author: 'Kim Min', date: '2026-10-01' };
+  await withLabStory(async (p, config, errors) => {
+    const before = fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8');
+    await p.click(`${STEP_2} button.edit-fields`);
+    const edit = p.locator(`${STEP_2} ${EDIT}`);
+    await edit.locator('button:has-text("조건 더하기")').click();
+    await edit.locator(KIND).nth(1).selectOption({ label: '공통 조건 고르기' });
+    await edit.locator(KIND).nth(1).selectOption({ label: '글로 적기' });
+    await edit.locator(KIND).first().selectOption({ label: '공통 조건 고르기' });
+    await edit.locator('button.save-fields').click();
+    assert.equal(await p.textContent(`${STEP_2} .fields-error`), '저장하지 않았습니다: 조건의 1 번째 줄에서 공통 조건을 고르지 않았습니다');
+    assert.equal(await p.locator(`${STEP_2} ${EDIT}`).count(), 1);
+    assert.equal(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'), before);
+    assert.deepEqual(errors, []);
+
+    await edit.locator(KIND).first().selectOption({ label: '글로 적기' });
+    await edit.locator('button.save-fields').click();
+    await p.waitForSelector(`${STEP_2} .fields-saved`);
+    assert.deepEqual(readStory(config).screens[1], { screen: '/lab#Lab', needs: ['실험실 설정을 켠다'] });
+  }, story, NEEDS);
+});
+
+test('in a browser, a line picking a need file that is not there shows 「(없음)」 and can pick another need file instead', { skip: browserMissing }, async () => {
+  const story = { name: LAB, screens: ['/home#Home', { screen: '/lab#Lab', needs: [{ use: 'old-admin.json' }] }, '/lab/result#LabResult'], memo: '', author: 'Kim Min', date: '2026-10-01' };
+  await withLabStory(async (p, config) => {
+    await p.click(`${STEP_2} button.edit-fields`);
+    const edit = p.locator(`${STEP_2} ${EDIT}`);
+    assert.deepEqual(await edit.locator(`${USE} option`).allTextContents(), ['old-admin.json (없음)', '완료된 문서 하나 (done-document.json)', '일반 회원 계정 (member-account.json)', '새 공통 조건 만들기…']);
+    await edit.locator(USE).selectOption({ label: '완료된 문서 하나 (done-document.json)' });
+    await edit.locator('button.save-fields').click();
+    await p.waitForSelector(`${STEP_2} .fields-saved`);
+    assert.deepEqual(readStory(config).screens[1], { screen: '/lab#Lab', needs: [{ use: 'done-document.json' }] });
+  }, story, NEEDS);
 });
