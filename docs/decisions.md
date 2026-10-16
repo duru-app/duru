@@ -1837,6 +1837,30 @@ Alternatives compared:
   steps and links, and brings the rest of the borrowed format along; Gherkin steps are free sentences, so the same
   shape could not be filled without an agent.
 
+**A condition on the link into a step is written in that step as `linkNeeds`, a list of texts beside its `needs` and
+`expects`, and the first step cannot have it.**
+Driver's decision in #275, built in #280. The same two screens can be joined in more than one case, such as 「반려된
+경우」, and which case the story takes belongs to the link, not to either screen. Camunda keeps a condition inside the
+link (`conditionExpression` in a `sequenceFlow`,
+https://docs.camunda.org/manual/7.16/reference/bpmn20/gateways/sequence-flow), Stately puts a guard on the
+transition and its editor writes the guards on the arrow in the order they are checked
+(https://stately.ai/docs/guards, https://stately.ai/docs/editor-states-and-transitions), and GraphWalker's model
+JSON gives the edge its own `guard`
+(https://github.com/GraphWalker/graphwalker-project/wiki/JSON-file-format:-edge), all read on 2026-10-15. Hence the
+condition on the link rather than on the step before, and written under the line in the flow's one-line story as
+Stately's editor shows it. In all three the condition is an expression the tool runs; no tool was found that hangs a
+condition a person writes in words on a link, and duru keeps it as text because it judges nothing. A story file has
+no object for a link, so the link's lines sit in the step the link comes into: they move with that step, and the
+first step, which nothing comes into, has none. The task list puts them first under their step, before the step's
+own needs, in the order a test meets them. On the page they show on the link row of the stories tab and not in the
+step card, and the step's count in the flow leaves them out, since they are already written under the line before
+the box.
+Alternatives compared:
+- `linkNeeds` on the step the link leaves: the line would show under the step before, and a step with two ways out in
+  two stories could not say which link it means.
+- A list of links beside `screens` pointing at a step by its number: whoever edits the file by hand has to renumber
+  it when a step is added or removed, the reason step lines went into the step objects.
+
 **The review page is kept as several files in `src/review-page/`, and the review server joins them, in the order
 listed once in `src/review.ts`, into the one page it sends for `GET /`.**
 One file of more than 5,000 lines meant that two changes to the page, made at the same time, touched the same file.

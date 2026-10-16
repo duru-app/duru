@@ -274,11 +274,13 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    checked), and give it `@story:<story ID>` together with the `@screen:` tags of every screen on its path that is
    on the map, in the place its format takes tags, as its empty test has them.
    A story item may also carry lines a person wrote in the story file, which duru does not check against the
-   code: `needs` before `screens` lists what has to hold before the story starts, a `need` line under a step what
-   has to hold at that step, an `expect` line under a step what should be seen there, and `expects at the end`
-   what should hold once the last step is done. Set up each need in the test's data setup or its steps before the
-   step it belongs to, check each expect at that step or at the end, and when one cannot be set up or checked in
-   the app, tell the user which one instead of leaving it out.
+   code: `needs` before `screens` lists what has to hold before the story starts, a `link need from step N` line
+   under a step what has to hold on the link from step N, the step before, for the story to come into this step
+   (which of several ways between the same two screens it takes), a `need` line under a step what has to hold at
+   that step, an `expect` line under a step what should be seen there, and `expects at the end` what should hold
+   once the last step is done. Set up each need in the test's data setup or its steps before the step it belongs
+   to, make the test take the link a `link need from step N` line names, check each expect at that step or at the
+   end, and when one cannot be set up or checked in the app, tell the user which one instead of leaving it out.
    The items under `# Tagging` (they can be listed even when no mark is open) are tests the reviewer judged to
    check a screen or API call they carry no tag for. For each, open the test at its file and line and add exactly
    the tag in `tag to add`, in the place its `where` line names, and change nothing else in the test: not its
