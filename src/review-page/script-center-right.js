@@ -18,11 +18,11 @@ function renderStoryRight(info, dock) {
     return fill(dock, state.story ? markForm({ story: state.story }, 'storyDraft', '스토리') : null);
   }
   fill(dock, markForm({ story: st.id }, 'storyDraft', '스토리'));
-  fill(info, ...reachSection(st, `story\n${st.id}`), ...storyEdit(st), ...(st.source ? unacceptAction() : []));
+  fill(info, ...reachSection(st, `story\n${st.id}`), storyGaps(st), ...storyEdit(st), ...(st.source ? unacceptAction() : []));
 }
 
 function renderCenter() {
-  if (state.side === 'stories') return renderStoryCenter();
+  if (state.view === 'story') return renderStoryCenter();
   if (state.side === 'untagged') return renderUntaggedCenter();
   const center = document.getElementById('center-body');
   const s = state.data.map.screens.find((x) => x.id === state.selected);
@@ -220,12 +220,12 @@ function guardList(item) {
 function renderRight() {
   const info = document.getElementById('right-info');
   const dock = document.getElementById('right-dock');
-  if (state.side === 'untagged') {
+  if (state.view !== 'story' && state.side === 'untagged') {
     fill(info);
     return fill(dock);
   }
   const all = state.talkScope === 'all';
-  const view = all ? 'all' : state.side !== 'stories' ? `${state.selected}\n${state.target?.node}` : state.composing ? 'compose' : state.candidate ? `candidate(${state.candidate})` : state.need ? `need(${state.need})` : `story(${state.story})`;
+  const view = all ? 'all' : state.view !== 'story' ? `${state.selected}\n${state.target?.node}` : state.composing ? 'compose' : state.candidate ? `candidate(${state.candidate})` : state.need ? `need(${state.need})` : `story(${state.story})`;
   const shown = shownTarget();
   const dockKey = shown ? keyOf(shown) : null;
   if (dockKey !== state.dockKey) {
@@ -236,7 +236,7 @@ function renderRight() {
   if (all) {
     fill(info, allTalk());
     fill(dock);
-  } else (state.side === 'stories' ? renderStoryRight : renderScreenRight)(info, dock);
+  } else (state.view === 'story' ? renderStoryRight : renderScreenRight)(info, dock);
   const scope = scopeButtons();
   if (scope) info.prepend(scope);
   if (view !== state.rightView) {

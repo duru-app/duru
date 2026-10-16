@@ -158,8 +158,8 @@ test('in a browser, a judgment that fails to save shows its error beside the tes
         assert.equal(await p.locator('#center .judgment-error').count(), 0);
 
         await failToSave();
-        await p.click('#left .views.side button:has-text("스토리")');
-        await p.click('#left .views.side button:has-text("화면")');
+        await p.click('#view-story');
+        await p.click('#view-list');
         assert.equal(await errorOf(), null);
         assert.equal(await p.locator('#center .judgment-error').count(), 0);
 
@@ -183,7 +183,7 @@ test('in a browser, choosing a story clears a judgment error that failed to save
         const first = p.locator('#center .importers .importer').first();
         await first.locator('button.hand-over').click();
         await untilSet(() => held, 'the first judgment request');
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await held.fulfill({ status: 500, body: 'disk full' });
         await p.waitForFunction(() => state.judgmentError !== null);
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);

@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
 import { startReviewServer } from '../src/review.ts';
-import { withRebuiltFixture, signer, withServer, browserMissing, withPage, openScreenInfo, screenBox, boxCount, flowButton, filterButton, pickedBoxes, textOutside, PICK_HINT, statusLine, tipLines, needTag, changeData, walkFlow, leafEntries, WALK, withPathStories, flowPlace, storyRow } from './review-helpers.ts';
+import { withRebuiltFixture, signer, withServer, browserMissing, withPage, openScreenInfo, screenBox, boxCount, flowButton, filterButton, pickedBoxes, textOutside, PICK_HINT, statusLine, tipLines, needTag, changeData, walkFlow, leafEntries, WALK, withPathStories, flowPlace } from './review-helpers.ts';
 import type { PageData, FlowView, FlowBox, FlowEdge, FlowColumns } from './review-helpers.ts';
 
 declare const state: any;
@@ -738,7 +738,7 @@ test('in a browser, a percent typed into the zoom control applies on Enter or on
   );
 });
 
-test('in a browser, pressing a filter, a screen box, 「선택 해제」 or a row of the story list right after typing a percent does what it does and applies the percent', { skip: browserMissing }, async () => {
+test('in a browser, pressing a filter, a screen box, 「선택 해제」 or 「새 스토리」 right after typing a percent does what it does and applies the percent', { skip: browserMissing }, async () => {
   await withPathStories({ walk: WALK }, async (p) => {
     const level = p.locator('#flow-zoom .zoom-level');
     const typed = async (text: string) => {
@@ -763,8 +763,8 @@ test('in a browser, pressing a filter, a screen box, 「선택 해제」 or a ro
     assert.deepEqual(await zoom(), [0.6, '60%']);
 
     await typed('90');
-    await storyRow(p, 'walk').click();
-    assert.equal(await flowPlace(p), '#flow?story=walk', 'the story is picked');
+    await p.locator('.flowbar .new-story').click();
+    assert.equal(await flowPlace(p), '#flow?new=1', 'a new story is started');
     assert.deepEqual(await zoom(), [0.9, '90%']);
   });
 });

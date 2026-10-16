@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { loadMarks } from '../src/marks.ts';
 import { startReviewServer } from '../src/review.ts';
-import { withRebuiltFixture, signer, withServer, postMark, browserMissing, toList, withPage, reply, pickedBoxes, WALK, withPathStories, flowPlace, storyRow, pickPathStory, drawnScreens, lineSteps, ringBadge, CANDIDATES, storiesTab } from './review-helpers.ts';
+import { withRebuiltFixture, signer, withServer, postMark, browserMissing, toList, withPage, reply, pickedBoxes, WALK, withPathStories, flowPlace, storyRow, pickPathStory, lineSteps, nowStep, CANDIDATES, storiesTab } from './review-helpers.ts';
 import type { PageData, Kept } from './review-helpers.ts';
 
 declare const state: any;
@@ -339,24 +339,31 @@ test('in a browser, a reply written without --server is not pushed to the open p
   );
 });
 
-test('in a browser, a picked story whose file changes while the page is open is drawn again from its new steps, and one whose file is removed turns the path view off', { skip: browserMissing }, async () => {
+test('in a browser, a story shown in the story tab whose file changes while the page is open is drawn again from its new steps, and one whose file is removed gives way to the first story', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p, { writeStory, storyFile }) => {
-    const whole = await drawnScreens(p);
     await pickPathStory(p, 'walk-around');
-    await p.locator('#flow .story-line .box[data-step="6"]').click();
+    await p.locator('#center .story-line .box[data-step="1"]').click();
+    writeStory('walk-around', ['/signin#SignIn', '/home#Home', '/help#Help']);
+    await p.evaluate(async () => { await load(); render(); });
+    assert.deepEqual(await nowStep(p), ['2'], 'a pressed step whose screen stays in place stays marked');
+    writeStory('walk-around', ['/signin#SignIn', '/help#Help', '/home#Home']);
+    await p.evaluate(async () => { await load(); render(); });
+    assert.deepEqual(await nowStep(p), [], 'a pressed step whose screen changed is no longer marked');
+
+    writeStory('walk-around', WALK);
+    await p.evaluate(async () => { await load(); render(); });
+    await p.locator('#center .story-line .box[data-step="6"]').click();
     writeStory('walk-around', ['/signin#SignIn', '/help#Help']);
     await p.evaluate(async () => { await load(); render(); });
     assert.deepEqual(await lineSteps(p), [['1', '/signin#SignIn'], ['2', '/help#Help']]);
-    assert.deepEqual(await ringBadge(p), [], 'a ringed step past the new end is dropped');
-    assert.deepEqual(await pickedBoxes(p), [], 'and its screen, no longer drawn, is let go');
-    assert.equal(await p.locator('#gaps').isVisible(), true);
+    assert.equal(await p.locator('#center .story-path > .step').count(), 2);
+    assert.equal((await nowStep(p)).every((n) => Number(n) <= 2), true, 'a marked step past the new end is dropped');
 
     fs.rmSync(storyFile('walk-around'));
     await p.evaluate(async () => { await load(); render(); });
-    assert.equal(await flowPlace(p), '#flow');
-    assert.equal(await p.locator('#flow .story-line').count(), 0);
-    assert.deepEqual(await drawnScreens(p), whole);
     assert.equal(await storyRow(p, 'walk-around').count(), 0);
+    const first = await p.evaluate(() => state.data.stories.list[0].id);
+    assert.equal(await flowPlace(p), `#story?story=${first}`);
   });
 });
 

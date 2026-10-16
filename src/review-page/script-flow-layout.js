@@ -11,7 +11,6 @@ function flowBoxes(roots) {
 // 높이는 이 결과로 폭이 정해진 뒤에 재므로 sizes[key].height 는 아직 없어도 된다.
 const cellsPerRow = (count, cellW, width) => Math.max(1, Math.min(count, Math.floor((width + CELL_GAP) / (cellW + CELL_GAP))));
 
-// marks 는 스토리 경로에서 상자 곁에 두는 선의 「조건」 같은 표지와 숨긴 화면 수다.
 function flowColumns(roots, sizes, { group = false, width = 0, marks = [] } = {}) {
   const gathered = group ? roots.filter((r) => !r.children.length) : [];
   const trees = group ? roots.filter((r) => r.children.length) : roots;
@@ -26,7 +25,7 @@ function flowColumns(roots, sizes, { group = false, width = 0, marks = [] } = {}
   const entryW = colWidths.map(() => 0);
   for (const m of marks) {
     const d = depths.get(m.key);
-    if (d !== undefined && m.kind === 'tag') entryW[d] = Math.max(entryW[d], laneWidth(m));
+    if (d !== undefined) entryW[d] = Math.max(entryW[d], laneWidth(m));
   }
   const xs = colWidths.map(() => entryW[0] ?? 0);
   for (let d = 1; d < colWidths.length; d += 1) xs[d] = xs[d - 1] + colWidths[d - 1] + Math.max(COL_GAP, LANE_CURVE + entryW[d]);
@@ -42,14 +41,14 @@ function flowColumns(roots, sizes, { group = false, width = 0, marks = [] } = {}
   };
 }
 
-// 선의 「조건」 같은 표지는 선이 상자에 닿는 자리 바로 앞에, 숨긴 화면 수는 상자 아래에 둔다.
+// 「조건」 같은 표시는 그 선이 들어가는 상자 바로 앞에 놓는다.
 const laneWidth = (m) => m.width + STUB + LANE_PAD;
 
 function laneMarks(placed, marks) {
   const byKey = new Map(placed.map((b) => [b.key, b]));
   return marks.map((m) => {
     const b = byKey.get(m.key);
-    return m.kind === 'hidden' ? { x: b.x + 8, y: b.y + b.height + UNDER_GAP } : { x: b.x - m.width - STUB, y: b.y + b.height / 2 - m.height / 2 };
+    return { x: b.x - m.width - STUB, y: b.y + b.height / 2 - m.height / 2 };
   });
 }
 
@@ -57,7 +56,6 @@ function laneMarks(placed, marks) {
 function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, view)) {
   const { marks } = view;
   const middle = (b) => b.y + b.height / 2;
-  const below = new Map((marks ?? []).filter((m) => m.kind === 'hidden').map((m) => [m.key, UNDER_GAP + m.height]));
   const placed = [];
   let cursor = 0;
   const lower = (from, by) => {
@@ -80,7 +78,7 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
     }
     const self = { key, node, parent, x: cols.xs[cols.depths.get(key)], y, width: cols.widths[key], height, grouped: false };
     placed.push(self);
-    cursor = Math.max(cursor, y + height + (below.get(key) ?? 0) + GAP);
+    cursor = Math.max(cursor, y + height + GAP);
     return self;
   };
   for (const r of cols.trees) place(r, null);

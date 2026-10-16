@@ -3,7 +3,7 @@
 <body>
 <header>
   <h1>duru 리뷰</h1>
-  <span class="views"><button id="view-list">목록</button><button id="view-flow">흐름</button></span>
+  <span class="views"><button id="view-list">목록</button><button id="view-flow">흐름</button><button id="view-story">스토리</button></span>
   <span class="meta" id="meta"></span>
   <span class="baseline" id="baseline" hidden></span>
   <span class="author" id="author"></span>
@@ -12,8 +12,7 @@
 </header>
 <main>
   <div id="flow-bar" class="flowbar" hidden></div>
-  <aside id="flow-stories" aria-label="스토리 목록" hidden></aside>
-  <div id="flow-head" class="flow-head" hidden><button type="button" id="stories-tab" class="stories-tab" aria-controls="flow-stories"></button><span id="flow-story-on"></span></div>
+  <aside id="flow-stories" aria-label="새 스토리" hidden></aside>
   <div id="flow" hidden></div>
   <section id="left"></section>
   <section id="center"><div id="center-head"></div><div id="center-body"></div></section>

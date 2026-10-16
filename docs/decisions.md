@@ -1949,6 +1949,33 @@ Alternatives compared:
   server's types and the joined check.
 - A UI library and a build step: not needed for type checking, and weighed again with the shared-server mode of #42.
 
+**The review page has three tabs at the top, 목록, 흐름 and 스토리, and a story is read only in the story tab: its steps on
+one line kept at the top and its cards below.** Before, one story was split over two places: picked in the flow, it
+was drawn as a line of steps with nothing below it, while its cards and its conversation were in the list's story
+pane, so a story comment pressed in the flow moved to the list. The line shows only the step number, the screen, its
+test status and where a link is missing, since the cards right below say the rest; the counts of written lines and the
+link conditions it showed before repeated them. The flow tab keeps everything about screens and starting a new story
+by pressing boxes; the pane beside it opens only while a story is written there. The step marked on the line is the
+one pressed, and the cards scroll only when its card is out of view. The pressed step is kept in the address, so that
+the same address always marks the same step, after a reload or a fresh visit too: kept only in the open page, it
+stayed after a tab change or going back but was lost on a reload. It is dropped when another story, a candidate or a
+need file is shown, and when the story file changes so that the step is gone or holds another screen. This follows
+Playwright's trace viewer, a strip of actions over the details of the one chosen
+(https://playwright.dev/docs/trace-viewer), and the step bar of a form in several steps, which shows only where each
+step is and how it stands. Addresses saved before, `#stories?story=<ID>` and `#flow?story=<ID>`, open the story in the
+story tab, so that links kept from earlier reviews still reach it.
+Alternatives compared:
+- Cards under the line in the flow tab: the flow tab would switch between two layouts, and the story list would sit
+  beside a drawing replaced by the line.
+- The flow cut down to the story's screens and the screens above them, as the flow drew a picked story before, or a
+  button putting the whole flow with the story laid over it in place of the cards: a story laid over the flow drew
+  screens that are not steps and lost the line between two entry screens, which is why the line of steps replaced it;
+  the whole flow is drawn under a story only while a new one is written, where the next step is picked from it.
+- Marking the first step card in view as the cards scroll: the last cards cannot scroll up to the line, so a blank
+  had to follow the cards, which made a short story scroll; a smooth scroll to a far step marked each step it passed;
+  and keeping a pressed step marked meant telling a scroll the reviewer made from one the page made, where every rule
+  tried had cases that marked the wrong step.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

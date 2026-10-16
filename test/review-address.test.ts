@@ -1,48 +1,108 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Page, Route } from 'playwright-core';
-import { withRebuiltFixture, withServer, browserMissing, withPage, untaggedTab, screenBox, flowButton, filterButton, pickedBoxes, WALK, WALK_ON_MAP, withPathStories, flowPlace, pickPathStory, drawnScreens, ringed, ringBadge, DOCUMENT_TABLE, bulk, openDocumentTable, untilSet, placeOf, CANDIDATES, HELP_KEY, storiesTab } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, browserMissing, withPage, untaggedTab, screenBox, filterButton, pickedBoxes, WALK, withPathStories, flowPlace, pickPathStory, lineSteps, DOCUMENT_TABLE, bulk, openDocumentTable, untilSet, placeOf, CANDIDATES, HELP_KEY, storiesTab, nowStep } from './review-helpers.ts';
 
 declare const state: any;
 declare function render(): void;
 
-test('in a browser, the picked story and the picked screen are kept in the address through reloads and back and forward, and a place that is gone falls back to what is there', { skip: browserMissing }, async () => {
+test('in a browser, a step pressed on the story line is kept in the address: the same address marks the same step through tab changes, back, a reload and a fresh visit, scrolling its card into view, pressing another step replaces the address rather than adding to the history, another story drops it, and a step past the end is dropped', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p, { base }) => {
+    await p.emulateMedia({ reducedMotion: 'reduce' });
+    await p.setViewportSize({ width: 1440, height: 600 });
+    await pickPathStory(p, 'walk-around');
+    const steps = await p.evaluate(() => history.length);
+    await p.click('#center .story-line .box[data-step="2"]');
+    await p.click('#center .story-line .box[data-step="6"]');
+    assert.equal(await flowPlace(p), '#story?story=walk-around&step=7');
+    assert.equal(await p.evaluate(() => history.length), steps, 'pressing steps adds nothing to the history');
+    assert.deepEqual(await nowStep(p), ['7']);
+
+    await p.click('#view-flow');
+    await p.click('#view-story');
+    assert.equal(await flowPlace(p), '#story?story=walk-around&step=7', 'back on the story tab');
+    assert.deepEqual(await nowStep(p), ['7']);
+    await p.click('#view-flow');
+    await p.goBack();
+    await p.waitForFunction(() => location.hash === '#story?story=walk-around&step=7');
+    assert.deepEqual(await nowStep(p), ['7'], 'after going back');
+
+    await p.reload();
+    await p.waitForSelector('#center .story-line .box.now');
+    assert.deepEqual(await nowStep(p), ['7'], 'after a reload');
+    const cardInView = () => p.evaluate(() => {
+      const r = document.querySelector('#center .story-path > .step[data-step="6"]')!.getBoundingClientRect();
+      return r.top >= document.querySelector('#center .story-top')!.getBoundingClientRect().bottom - 1 && r.bottom <= document.getElementById('center')!.getBoundingClientRect().bottom + 1;
+    });
+    assert.equal(await cardInView(), true, 'the marked card is scrolled into view');
+
+    await p.goto('about:blank');
+    await p.goto(`${base}/#story?story=walk-around&step=7`);
+    await p.waitForSelector('#center .story-line .box.now');
+    assert.deepEqual(await nowStep(p), ['7'], 'on a fresh visit to the address');
+    assert.equal(await cardInView(), true);
+
+    const other = await p.$eval('#story-list li:not(.selected)[data-story]', (e: HTMLElement) => e.dataset.story!);
+    await pickPathStory(p, other);
+    assert.equal(await flowPlace(p), `#story?story=${other}`);
+    await pickPathStory(p, 'walk-around');
+    assert.equal(await flowPlace(p), '#story?story=walk-around', 'coming back through another story leaves no step');
+    assert.deepEqual(await nowStep(p), []);
+
+    await p.click('#center .story-line .box[data-step="2"]');
+    await p.click('#left .new-story');
+    await p.click('#left .leave-compose');
+    await pickPathStory(p, 'walk-around');
+    assert.equal(await flowPlace(p), '#story?story=walk-around', 'coming back through a new story leaves no step');
+    assert.deepEqual(await nowStep(p), []);
+
+    await p.evaluate(() => {
+      state.story = 'unread-file';
+      state.storyStep = { of: 'story\nunread-file', step: 1, screen: null };
+      render();
+    });
+    assert.equal(await flowPlace(p), '#story?story=unread-file', 'a story the page cannot read keeps no step');
+
+    await p.goto('about:blank');
+    await p.goto(`${base}/#story?story=walk-around&step=${WALK.length + 1}`);
+    await p.waitForSelector('#center .story-line');
+    assert.equal(await flowPlace(p), '#story?story=walk-around', 'a step past the end is dropped');
+    assert.deepEqual(await nowStep(p), []);
+  });
+});
+
+test('in a browser, a story picked in the story tab is kept in the address through reloads and back and forward, its earlier addresses open it in the story tab, and a story that is gone falls back to what is there', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p, { base, errors }) => {
-    const whole = (await drawnScreens(p)).length;
     await (await screenBox(p, '/lab#Lab')).click();
+    assert.equal(await flowPlace(p), '#flow?screen=/lab#Lab');
     await pickPathStory(p, 'walk-around');
-    assert.equal(await flowPlace(p), '#flow?story=walk-around&screen=/lab#Lab', 'a picked screen on the path stays picked');
+    assert.equal(await flowPlace(p), '#story?story=walk-around');
     await p.reload();
-    await p.waitForSelector('#flow .story-line');
-    assert.equal(await flowPlace(p), '#flow?story=walk-around&screen=/lab#Lab');
-    assert.deepEqual(await drawnScreens(p), [...WALK_ON_MAP].sort());
+    await p.waitForSelector('#center .story-line');
+    assert.equal(await flowPlace(p), '#story?story=walk-around');
+    assert.deepEqual(await lineSteps(p), WALK.map((id, i) => [String(i + 1), id]));
+    await p.goBack();
+    await p.waitForFunction(() => location.hash.startsWith('#story?story=') && !location.hash.endsWith('walk-around'));
+    await p.goBack();
+    await p.waitForSelector('#flow .box.screen.picked');
+    assert.equal(await flowPlace(p), '#flow?screen=/lab#Lab');
     assert.deepEqual(await pickedBoxes(p), ['/lab#Lab']);
-    assert.equal(await p.textContent('#center h3'), '/lab');
-    await p.goBack();
-    await p.waitForSelector('#flow .story-line', { state: 'detached' });
-    assert.equal(await flowPlace(p), '#flow?screen=/lab#Lab');
-    assert.equal((await drawnScreens(p)).length, whole);
     await p.goForward();
-    await p.waitForSelector('#flow .story-line');
-    assert.deepEqual(await p.$$eval('#flow-story-list li.selected', (els: HTMLElement[]) => els.map((e) => e.dataset.story)), ['walk-around']);
-    await (await screenBox(p, '/home#Home')).click();
-    assert.deepEqual(await ringBadge(p), ['2']);
-    await p.goBack();
-    await p.waitForFunction(() => decodeURIComponent(location.hash).endsWith('screen=/lab#Lab'));
-    assert.deepEqual(await ringBadge(p), ['6'], 'going back to a picked screen rings its step');
-    assert.deepEqual(await ringed(p), [['5', '/lab#Lab']]);
+    await p.goForward();
+    await p.waitForFunction(() => location.hash === '#story?story=walk-around');
+    assert.deepEqual(await p.$$eval('#story-list li.selected', (els: HTMLElement[]) => els.map((e) => e.dataset.story)), ['walk-around']);
 
-    await flowButton(p, '경로 끄기').click();
-    assert.equal(await flowPlace(p), '#flow?screen=/lab#Lab');
-    await (await screenBox(p, '/admin/group#AdminGroup')).click();
-    await pickPathStory(p, 'walk-around');
-    assert.equal(await flowPlace(p), '#flow?story=walk-around', 'a picked screen off the path is let go');
-    assert.equal(await p.locator('#gaps').isVisible(), true);
+    for (const old of ['#stories?story=walk-around', '#flow?story=walk-around', `#flow?story=walk-around&screen=${encodeURIComponent('/lab#Lab')}`]) {
+      await p.goto('about:blank');
+      await p.goto(`${base}/${old}`);
+      await p.waitForSelector('#center .story-line');
+      assert.equal(await flowPlace(p), '#story?story=walk-around', `${old} opens the story in the story tab`);
+    }
 
+    await p.goto('about:blank');
     await p.goto(`${base}/#flow?story=gone&screen=${encodeURIComponent('/gone#Gone')}`);
-    await p.reload();
-    await p.waitForSelector('#flow .box.screen');
-    assert.equal(await flowPlace(p), '#flow');
+    await p.waitForSelector('#view-story.on');
+    assert.match(await flowPlace(p), /^#story\?story=(?!gone)/);
     assert.deepEqual(errors, []);
   });
 });
@@ -72,7 +132,7 @@ test('in a browser, the first drawing writes the place into the address without 
       }, { view: 'flow' })));
 });
 
-test('in a browser, the back and forward buttons go through the screens that were chosen, the left tabs and the two views', { skip: browserMissing }, async () => {
+test('in a browser, the back and forward buttons go through the screens that were chosen, the left tabs and the three views', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -80,9 +140,10 @@ test('in a browser, the back and forward buttons go through the screens that wer
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
         await p.click('#screen-list li:has-text("/signin")');
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await p.click('#story-list li >> nth=1');
         const story = await p.evaluate(() => state.story);
+        await p.click('#view-list');
         await p.click(untaggedTab);
         await p.click('#view-flow');
         assert.equal(await placeOf(p), '#flow');
@@ -91,7 +152,9 @@ test('in a browser, the back and forward buttons go through the screens that wer
         assert.match(await placeOf(p), /^#untagged\?test=/);
         assert.equal(await p.locator('#untagged-list li.selected').count(), 1);
         await p.goBack();
-        assert.equal(await placeOf(p), `#stories?story=${story}`);
+        assert.equal(await placeOf(p), '#screens?screen=/signin#SignIn');
+        await p.goBack();
+        assert.equal(await placeOf(p), `#story?story=${story}`);
         assert.equal(await p.locator('#story-list li.selected').count(), 1);
         await p.goBack();
         await p.goBack();
@@ -104,10 +167,7 @@ test('in a browser, the back and forward buttons go through the screens that wer
 
         await p.goForward();
         assert.deepEqual((await chosen()).slice(0, 3), ['list', 'screens', '/signin#SignIn']);
-        await p.goForward();
-        await p.goForward();
-        await p.goForward();
-        await p.goForward();
+        for (let i = 0; i < 5; i++) await p.goForward();
         assert.equal(await placeOf(p), '#flow');
         assert.equal(await p.locator('#flow').isVisible(), true);
       })));
@@ -216,9 +276,9 @@ test('in a browser, a chosen candidate is a place in the address, and the back b
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.equal(await placeOf(p), '#stories?story=run-lab');
+        assert.equal(await placeOf(p), '#story?story=run-lab');
         await p.click('#candidate-list li:has-text("open-help")');
-        assert.equal(await placeOf(p), `#stories?candidate=${HELP_KEY.replaceAll(' ', '+')}`);
+        assert.equal(await placeOf(p), `#story?candidate=${HELP_KEY.replaceAll(' ', '+')}`);
 
         await p.goBack();
         await p.waitForSelector('#story-list li.selected:has-text("실험실을 열어")');

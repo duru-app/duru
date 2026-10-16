@@ -1,4 +1,4 @@
-function renderFlowBar(st, screens) {
+function renderFlowBar(screens) {
   const bar = document.getElementById('flow-bar');
   const searching = flowSearchInput !== null && document.activeElement === flowSearchInput;
   const tested = screens.filter((n) => statusOf(n.counts) !== 's-none').length;
@@ -7,24 +7,22 @@ function renderFlowBar(st, screens) {
     h('strong', { class: 'flowsummary' }, `테스트 있는 화면 ${tested}/${screens.length}`),
     h('span', { class: 'flow-filters', role: 'group', 'aria-label': '상태로 거르기' }, FLOW_FILTERS.map((f) => h('button', { type: 'button', 'data-filter': f.key, title: f.title, onclick: () => setFlowFilter(f.key) },
       f.label, ' ', h('span', { class: 'count' }, String(screens.filter(f.keep).length))))),
-    storiesListed() ? null : newStoryButton(),
+    flowComposing() ? null : newStoryButton(),
     flowSearch(),
     picked ? h('span', { class: 'picking' }, '고른 화면 ', h('strong', {}, picked.path), ' ', h('button', { type: 'button', class: 'unpick', onclick: unpickScreen }, '선택 해제')) : null,
     h('div', { class: 'flowguide' }, flowKey(), legendInfo('flow', '흐름도 읽는 법', flowLegendItems())));
-  fill(document.getElementById('flow-story-on'), storyOn(st));
   syncFlowFilters();
   if (searching) flowSearchInput.focus();
 }
 
-// 스토리 경로를 보는 동안에는 경로 표시가 이미 같은 일을 하므로 흐리게 하지 않는다.
 function applyFlowEmphasis() {
   const flow = document.getElementById('flow');
-  const screens = drawnScreens();
+  const screens = flowScreens();
   const byId = new Map(screens.map((n) => [n.id, n]));
   const picked = state.flowPicked ? byId.get(state.selected) ?? null : null;
   let related = null;
   let jumps = new Set();
-  if (picked && !pathStoryOf()) {
+  if (picked) {
     const parentOf = new Map(screens.flatMap((n) => n.children.map((c) => [c.id, n.id])));
     related = new Set(screensIn([picked]).map((n) => n.id));
     for (let id = parentOf.get(picked.id); id !== undefined; id = parentOf.get(id)) related.add(id);
@@ -48,30 +46,31 @@ function applyFlowEmphasis() {
   }
 }
 
-function renderGaps() {
-  const screens = drawnScreens();
+function gapLists(screens, pick) {
   const failing = screens.filter((n) => n.counts.fail > 0);
   const untested = screens.filter((n) => statusOf(n.counts) === 's-none');
   const group = (title, list) => (list.length
-    ? [h('h3', {}, `${title} ${list.length}`), h('ul', { class: 'screens gap-list' }, list.map((n) => screenItem({ id: n.id, path: n.label, component: n.component, dead: n.dead }, { selected: false, onclick: () => pickScreen(n.id) })))]
+    ? [h('h3', {}, `${title} ${list.length}`), h('ul', { class: 'screens gap-list' }, list.map((n) => screenItem({ id: n.id, path: n.label, component: n.component, dead: n.dead }, { selected: false, onclick: () => pick(n) })))]
     : null);
+  return { count: failing.length + untested.length, groups: [group(TEST_STATUS.fail, failing), group(NO_TESTS, untested)] };
+}
+
+function renderGaps() {
+  const gaps = gapLists(flowScreens(), (n) => pickScreen(n.id));
   fill(document.getElementById('gaps'),
-    h('h2', {}, `빈틈 ${failing.length + untested.length}`),
-    h('p', { class: 'muted lead' }, pathStoryOf()
-      ? '이 스토리의 경로에 그린 화면 가운데 실패했거나 테스트가 없는 화면입니다. 누르면 그 화면을 엽니다.'
-      : flowComposing()
+    h('h2', {}, `빈틈 ${gaps.count}`),
+    h('p', { class: 'muted lead' }, flowComposing()
       ? '실패했거나 테스트가 없는 화면입니다. 누르면 새 스토리의 단계로 넣습니다.'
       : '실패했거나 테스트가 없는 화면입니다. 누르면 그림에서 그 화면에 이어진 길만 진하게 남기고 그 화면을 엽니다.'),
-    group(TEST_STATUS.fail, failing),
-    group(NO_TESTS, untested),
-    failing.length + untested.length ? null : h('p', { class: 'muted' }, '빈틈이 없습니다.'));
+    ...gaps.groups,
+    gaps.count ? null : h('p', { class: 'muted' }, '빈틈이 없습니다.'));
 }
 
 function composeOverlay() {
   const c = flowComposing() ? state.compose : null;
   if (!c?.screens.length) return null;
   const st = checkedCompose(c) ?? { steps: c.screens.map((screen) => ({ screen, onMap: true })), links: [] };
-  return { st, hidden: new Map(), composing: true };
+  return { st };
 }
 
 function keepPressedBox(flow, pressed) {
@@ -94,30 +93,20 @@ function renderFlow({ bar = true, pressed = null } = {}) {
     canvases.push(c);
     return c.el;
   };
-  const st = pathStoryOf();
-  if (st && state.storyPath.ring >= st.steps.length) state.storyPath.ring = null;
-  if (bar) renderFlowBar(st, drawnScreens());
+  if (bar) renderFlowBar(flowScreens());
   syncZoom();
-  if (st) {
-    const line = storyLine(st);
-    fill(flow, line.el);
-    line.place();
-    drawnGrid = null;
-  } else {
-    const { roots, unreached } = drawnTrees();
-    const { summary } = state.data.flow;
-    const story = composeOverlay();
-    fill(flow,
-      roots.length ? draw(roots, { group: true, story })
-        : h('p', { class: 'muted' }, summary.screens ? '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.' : '화면이 없습니다.'),
-      unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(unreached).length}`), draw(unreached, { story })] : null);
-    // 단계마다 모든 캔버스를 다 읽은 뒤에 쓰므로, 한 캔버스에 쓴 것 때문에 다음 캔버스를 읽다가 레이아웃을 다시 계산하지 않는다.
-    const width = flowInnerWidth(flow) / state.zoom;
-    for (const c of canvases) c.measureWidths();
-    for (const c of canvases) c.fit(width);
-    for (const c of canvases) c.measureHeights();
-    drawnGrid = canvases.map((c) => c.place()).find(Boolean) ?? null;
-  }
+  const { roots, unreached, summary } = state.data.flow;
+  const story = composeOverlay();
+  fill(flow,
+    roots.length ? draw(roots, { group: true, story })
+      : h('p', { class: 'muted' }, summary.screens ? '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.' : '화면이 없습니다.'),
+    unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(unreached).length}`), draw(unreached, { story })] : null);
+  // 단계마다 모든 캔버스를 다 읽은 뒤에 쓰므로, 한 캔버스에 쓴 것 때문에 다음 캔버스를 읽다가 레이아웃을 다시 계산하지 않는다.
+  const width = flowInnerWidth(flow) / state.zoom;
+  for (const c of canvases) c.measureWidths();
+  for (const c of canvases) c.fit(width);
+  for (const c of canvases) c.measureHeights();
+  drawnGrid = canvases.map((c) => c.place()).find(Boolean) ?? null;
   applyFlowEmphasis();
   Object.assign(flow, { scrollTop, scrollLeft });
   if (pressed && flowComposing()) keepPressedBox(flow, pressed);

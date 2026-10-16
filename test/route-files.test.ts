@@ -399,7 +399,7 @@ test('in a browser, the 라우트 line of a screen and the route step of a story
     assert.equal(await routeLine('Lab'), `라우트 ${SECOND}:${lineOf(second, 'ROUTE_PATH.LAB}')}`);
     assert.equal(await routeLine('AdminMember'), `라우트 ${SECOND}:${lineOf(second, 'ROUTE_PATH.ADMIN_MEMBER')}`);
 
-    await p.click('#left .views.side button:has-text("스토리")');
+    await p.click('#view-story');
     await p.click('#story-list li:has-text("실험실을 열어")');
     await p.click('#right .reach-raw > summary');
     assert.equal(await p.locator('#right .reach-route > code').textContent(), `${SECOND}:${lineOf(second, 'ROUTE_PATH.LAB}')}`);

@@ -38,9 +38,7 @@
   #sash-stories { grid-column: 2; display: none; }
   main.with-stories #sash-left { grid-column: 3; }
   main.with-stories #sash-right { grid-column: 4; }
-  main.with-stories:not(.stories-folded) #sash-stories { display: block; }
-  main.sliding { transition: grid-template-columns .2s ease; }
-  @media (prefers-reduced-motion: reduce) { main.sliding { transition: none; } }
+  main.with-stories #sash-stories { display: block; }
   main.flow .sash { grid-row: 2; }
   main.flow:not(.picked) :is(#sash-left, #sash-right) { display: none; }
   .sash::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; transition: background-color .1s; }
@@ -267,10 +265,8 @@
   .box .talk-count { font-size: 10px; line-height: 14px; }
   .bubble { visibility: hidden; border: 1px solid var(--line); color: var(--muted); }
   .bubble svg { width: 12px; height: 12px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-  .part-row:hover .bubble, #candidate-list li:hover .bubble, .story-line .box:hover .bubble, .bubble:focus-visible { visibility: visible; }
+  .part-row:hover .bubble, #candidate-list li:hover .bubble, .bubble:focus-visible { visibility: visible; }
   .story-path :is(.step, .link) > .part-row { flex: 1; min-width: 0; }
-  .story-line .box .bubble { padding: 0 4px; line-height: 14px; }
-  .story-hop .bubble { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); padding: 0 4px; line-height: 14px; visibility: visible; }
   :is(.part-count, .talk-count) { border: 1px solid var(--accent); color: var(--accent); }
   .talk-head { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
   .tags, .history-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
@@ -296,8 +292,8 @@
   .flowkey svg { width: 26px; height: 6px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .flowinfo, .pathinfo { align-self: stretch; display: flex; align-items: center; }
-  :is(.flowbar, .flow-head) :is(.flowinfo-button, .pathinfo-button) { width: 20px; height: 20px; padding: 0; border-radius: 50%; font: italic bold 12px/1 Georgia, serif; color: var(--muted); }
-  :is(.flowbar, .flow-head) :is(.flowinfo-button, .pathinfo-button):is(:hover, :focus-visible), .flowinfo.shown .flowinfo-button, .pathinfo.shown .pathinfo-button { border-color: var(--accent); color: var(--text); }
+  :is(.flowbar, .story-top-bar) :is(.flowinfo-button, .pathinfo-button) { width: 20px; height: 20px; padding: 0; border-radius: 50%; font: italic bold 12px/1 Georgia, serif; color: var(--muted); }
+  :is(.flowbar, .story-top-bar) :is(.flowinfo-button, .pathinfo-button):is(:hover, :focus-visible), .flowinfo.shown .flowinfo-button, .pathinfo.shown .pathinfo-button { border-color: var(--accent); color: var(--text); }
   .flowlegend, .pathlegend { display: none; position: absolute; right: 16px; top: 100%; width: min(320px, calc(100% - 32px)); box-sizing: border-box; flex-direction: column; gap: 6px; margin: 0; padding: 10px 12px; list-style: none; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.5; color: var(--muted); }
   .flowinfo.shown .flowlegend, .pathinfo.shown .pathlegend { display: flex; }
   :is(.flowlegend, .pathlegend) li { display: grid; grid-template-columns: max-content 1fr; column-gap: 8px; }
@@ -317,28 +313,35 @@
   .canvas svg path.on.guarded { stroke: var(--accent); }
   .canvas svg path.on.moved { stroke: var(--fine); }
   .canvas svg path.dim { opacity: .12; }
-  .canvas.story:not(.composing) svg path { stroke: var(--muted); stroke-dasharray: none; opacity: .35; }
-  :is(.canvas.story, .pathlegend) svg path.story-edge { stroke: var(--text); stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: none; opacity: 1; }
-  :is(.canvas.story, .pathlegend) svg path.story-edge.l-conditioned { stroke: var(--accent); stroke-dasharray: 8 5; }
-  :is(.canvas.story, .pathlegend) svg path.story-edge.l-broken { stroke: var(--fail); stroke-dasharray: 8 5; }
-  :is(.canvas.story, .pathlegend) svg path.story-edge:is(.l-off-map, .l-unknown) { stroke: var(--more); stroke-dasharray: 2 5; }
-  :is(.canvas.story, .pathlegend) svg path.story-edge.moved { stroke: var(--fine); stroke-dasharray: 3 3; stroke-linecap: butt; }
-  .canvas.story-line { width: max-content; }
-  .story-line .story-row { display: flex; align-items: center; padding: 4px 0 28px; }
-  .story-line .box { position: relative; flex: none; max-width: 360px; }
+  :is(.canvas.story, .pathlegend, .story-line) svg path.story-edge { stroke: var(--text); stroke-width: 3.2; stroke-linecap: round; stroke-dasharray: none; opacity: 1; }
+  :is(.canvas.story, .pathlegend, .story-line) svg path.story-edge.l-conditioned { stroke: var(--accent); stroke-dasharray: 8 5; }
+  :is(.canvas.story, .pathlegend, .story-line) svg path.story-edge.l-broken { stroke: var(--fail); stroke-dasharray: 8 5; }
+  :is(.canvas.story, .pathlegend, .story-line) svg path.story-edge:is(.l-off-map, .l-unknown) { stroke: var(--more); stroke-dasharray: 2 5; }
+  :is(.canvas.story, .pathlegend, .story-line) svg path.story-edge.moved { stroke: var(--fine); stroke-dasharray: 3 3; stroke-linecap: butt; }
+  /* 가운데 칸의 안쪽 여백까지 덮어야 스크롤한 카드가 위쪽 여백 틈으로 보이지 않는다. */
+  .story-top { position: sticky; top: 0; z-index: 3; margin: -12px -16px 8px; padding: 10px 16px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .story-top-bar { display: flex; align-items: center; gap: 10px; }
+  .story-top-bar .pathinfo { margin-left: auto; }
+  .story-top-bar .pathinfo-button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; }
+  .story-line { overflow-x: auto; }
+  .story-line .story-row { display: flex; align-items: center; width: max-content; padding: 10px 2px 24px; }
+  .story-line .box { position: relative; flex: none; max-width: 240px; }
+  .story-line .box.now { outline: 2px solid var(--text); outline-offset: 1px; background: var(--selected); }
+  #center .story-path > .step.now { outline: 2px solid var(--text); outline-offset: 1px; }
   .story-line .box.story-off { border-style: dashed; border-color: var(--more); }
   .story-line .box .tag.off { border-color: currentColor; color: var(--more); }
-  .story-hop { position: relative; flex: none; width: 104px; height: 8px; }
-  .story-line svg { position: static; display: block; }
-  .story-hop .story-tag { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); }
-  .story-hop .hop-need { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); box-sizing: border-box; max-width: 100px; overflow: hidden; text-overflow: ellipsis; padding: 0 5px; border: 1px solid var(--written); border-radius: 4px; background: var(--panel); color: var(--written); font-size: 11px; line-height: 16px; white-space: nowrap; cursor: help; }
-  .story-hop .story-tag + .hop-need { top: 32px; }
-  .story-line .story-row:has(.story-tag + .hop-need) { padding-bottom: 48px; }
-  .story-gaps { max-width: 640px; font-size: 13px; }
-  .story-gaps li { padding: 8px 12px; border: 1px dashed var(--fail); border-radius: 6px; overflow-wrap: anywhere; }
+  .story-hop { position: relative; flex: none; width: 64px; height: 20px; padding: 6px 0; border: 0; background: none; cursor: pointer; }
+  .story-hop:hover svg path, .story-hop:focus-visible svg path { stroke-width: 4.5; }
+  .story-line svg { position: static; display: block; overflow: visible; }
+  .story-line svg path { fill: none; }
+  .story-hop .story-tag { position: absolute; top: 22px; left: 50%; transform: translateX(-50%); }
+  .goes-on { margin-top: 4px; font-size: 12px; }
+  .story-gaps { margin: 12px 0; }
+  .story-gaps summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .story-gaps .lead { margin: 6px 0 0; font-size: 12px; }
+  .story-gaps h3 { margin: 10px 0 0; font-size: 13px; }
   .canvas > .mark { position: absolute; }
   .box.on-story { box-shadow: 0 0 0 2px var(--text); }
-  .box.story-ring { box-shadow: 0 0 0 2.5px var(--text), 0 0 0 5px var(--selected); }
   #flow .canvas .group-head { position: absolute; margin: 0; line-height: 28px; white-space: nowrap; }
   .box { position: absolute; display: flex; align-items: center; gap: 6px; box-sizing: border-box; margin: 0; padding: 3px 8px 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; line-height: 1.35; text-align: left; cursor: pointer; transition: opacity .15s; }
   .box.measuring { left: 0; top: 0; width: max-content; max-width: 360px; min-width: min-content; visibility: hidden; }
@@ -358,7 +361,7 @@
   :is(.box.s-pending .sq, .sq.s-pending) { background: var(--pending); }
   :is(.box.s-none .sq, .sq.s-none) { border: 1.5px dashed var(--muted); }
   .flowbar { grid-column: 1 / -1; position: relative; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; --bar-pad: 8px; padding: 10px 16px var(--bar-pad); background: var(--bg); border-bottom: 1px solid var(--line); }
-  :is(.flowbar, .flow-head) button { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+  .flowbar button { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
   .flowbar .flowsummary { font-size: 13px; }
   .flowbar .picking { font-size: 12px; }
   .flow-filters { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); overflow: hidden; }
@@ -375,15 +378,7 @@
   .zoom button:disabled { opacity: .4; cursor: default; }
   .zoom .zoom-level { width: 48px; padding: 3px 0; border: 0; border-radius: 4px; background: none; color: var(--muted); font: inherit; font-size: 12px; text-align: center; }
   .zoom .zoom-level:focus { outline: 1px solid var(--accent); color: var(--text); }
-  .story-on { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 2px 4px 2px 8px; border-radius: 6px; background: var(--bg); font-size: 12px; }
-  .story-on .story-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .story-on > :not(.story-name) { flex: none; white-space: nowrap; }
   #flow-stories { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--line); background: var(--panel); }
-  main.stories-folded #flow-stories { visibility: hidden; border-right: 0; }
-  .flow-head { position: absolute; grid-area: 2 / 2 / 3 / 3; left: 16px; right: 24px; top: 10px; z-index: 2; display: flex; align-items: center; gap: 10px; min-width: 0; pointer-events: none; }
-  .flow-head > * { pointer-events: auto; }
-  .flow-head .stories-tab { flex: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
-  main.with-stories #flow { padding-top: 48px; }
   #flow-stories .stories-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 12px 12px; }
   .pathinfo { position: relative; }
   .pathlegend { position: absolute; right: -8px; top: calc(100% + 6px); z-index: 2; width: max-content; max-width: min(340px, calc(100vw - 48px)); flex-direction: column; gap: 8px; margin: 0; padding: 10px 12px; list-style: none; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.5; color: var(--muted); }
@@ -407,7 +402,6 @@
   .story-tag.l-configured { color: var(--fine); }
   .story-tag.l-broken { color: var(--fail); font-weight: 600; }
   .story-tag:is(.l-off-map, .l-unknown) { color: var(--more); }
-  .story-hidden { display: inline-block; padding: 0 6px; border: 1px dashed var(--line); border-radius: 4px; background: var(--bg); color: var(--muted); font-size: 11px; line-height: 16px; white-space: nowrap; }
   .views.side { margin-bottom: 10px; }
   .views.side button { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; padding: 4px 1px; white-space: nowrap; }
   .views.side .tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -421,8 +415,8 @@
   .story-path .step.off-map { border-style: dashed; border-color: var(--more); }
   .story-path .step .no { flex: none; width: 1.6em; font-weight: 600; color: var(--muted); }
   .story-path .step .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  :is(#story-list, #flow-story-list) .chips { display: flex; flex-wrap: wrap; gap: 4px; }
-  :is(#story-list, #flow-story-list) .chips:not(:empty) { margin-top: 2px; }
+  #story-list .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  #story-list .chips:not(:empty) { margin-top: 2px; }
   .step-tests { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; }
   .step-tests .none { color: var(--fail); }
   #untagged-list li { align-items: flex-start; }
@@ -480,7 +474,6 @@
   .chip.input-unchecked { color: var(--muted); border-style: dashed; font-size: 11px; }
   .story-wide { margin: 12px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--written); border-radius: 6px; background: var(--panel); }
   .story-wide h2 { margin: 0 0 6px; }
-  .written-count { flex: none; padding: 0 5px; border-radius: 4px; font-size: 11px; color: var(--written); background: var(--written-bg); white-space: nowrap; cursor: help; }
   .story-file { margin-top: 16px; }
   .story-file summary { cursor: pointer; font-weight: 600; }
   .story-file pre { margin: 6px 0 0; padding: 8px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }

@@ -37,7 +37,7 @@ async function withStoryReach(reach: Reach[], fn: (p: Page) => Promise<void>, { 
         await p.reload();
         await toList(p);
         await p.waitForSelector('#screen-list li');
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await p.click('#story-list li:has-text("실험실을 열어")');
         await fn(p);
       }),
@@ -50,7 +50,7 @@ async function withStoryMap(edits: [string, string, string][], story: string, fn
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await p.click(`#story-list li:has-text("${story}")`);
         await fn(p);
       }),
@@ -343,7 +343,7 @@ test('in a browser, the fold of a story\'s raw conditions and its long condition
 
 test('in a browser, the story pane and the screen pane keep what is open apart: another story leaves a screen\'s link group open, and another screen leaves a story\'s fold open', { skip: browserMissing }, async () => {
   await withStoryReach([reachLink([LONG_SETTING]), reachRoute([LAB_SETTING])], async (p) => {
-    const sideTab = (label: string) => p.click(`#left .views.side button:has-text("${label}")`);
+    const sideTab = (label: string) => p.click(label === '화면' ? '#view-list' : '#view-story');
     await sideTab('화면');
     await p.click('#screen-list li:has-text("/lab")');
     await openScreenInfo(p);

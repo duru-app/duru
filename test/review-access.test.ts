@@ -280,8 +280,8 @@ test('in a browser, a case kind pick that fails to save or to reload shows its e
         assert.equal(await section.locator('.error').textContent(), `「/signin#SignIn · 경우 ${CASE_KINDS.boundary}」 코멘트를 저장하지 못했습니다: disk full`);
         assert.equal(await p.locator('#right .error').count(), 0);
         assert.equal(await section.locator('.case-kinds button', { hasText: CASE_KINDS.boundary }).isEnabled(), true);
-        await p.click('#left .views.side button:has-text("스토리")');
-        await p.click('#left .views.side button:has-text("화면")');
+        await p.click('#view-story');
+        await p.click('#view-list');
         assert.equal(await p.locator('#center .cases .error').count(), 0, 'a tab switch clears the error');
 
         await p.evaluate(() => {

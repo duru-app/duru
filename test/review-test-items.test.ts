@@ -548,7 +548,7 @@ test('in a browser, a test row shows the title without its tags, and without a p
         await p.locator('table.calls td.cell').first().click();
         assert.deepEqual(await row('#center .call-info .part-row', 'exports with history'), { text: 'exports with history', tags: ['option:withHistory=true'] });
 
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.deepEqual(await row('#center .story-tests', 'runs the lab'), { text: 'Lab flow › runs the lab and reads the result', tags: ['role:ADMIN'] });
 
@@ -557,7 +557,7 @@ test('in a browser, a test row shows the title without its tags, and without a p
         for (const list of Object.values(tests.nodes) as { tags?: string[] }[][]) for (const t of list) delete t.tags;
         fs.writeFileSync(testsFile, JSON.stringify(tests));
         await p.reload();
-        await p.click('#left .views.side button:has-text("화면")');
+        await p.click('#view-list');
         await chooseScreen(p, '/lab');
         assert.deepEqual(await row('#center-body table .part-row', 'opens the lab'), { text: 'opens the lab', tags: ['smoke', 'screen:/home#Home', 'role:ADMIN'] });
         await chooseScreen(p, '/admin/member');

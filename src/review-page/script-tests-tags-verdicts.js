@@ -176,8 +176,7 @@ function focusTalk() {
 }
 
 function moveTalkToStory(id) {
-  state.view = 'list';
-  state.side = 'stories';
+  state.view = 'story';
   state.composing = false;
   state.candidate = null;
   state.candidateTalk = null;

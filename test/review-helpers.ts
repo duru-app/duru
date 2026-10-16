@@ -354,7 +354,7 @@ export const screenBox = async (p: Page, id: string) => {
   return p.locator('#flow .box.screen').nth(i);
 };
 export const boxCount = async (p: Page) => p.locator('#flow .box.screen').count();
-export const flowButton = (p: Page, label: string) => p.locator(':is(.flowbar, .flow-head) button', { hasText: label });
+export const flowButton = (p: Page, label: string) => p.locator('.flowbar button', { hasText: label });
 export const filterButton = (p: Page, key: string) => p.locator(`.flowbar .flow-filters button[data-filter="${key}"]`);
 export const pickedBoxes = (p: Page) => p.$$eval('#flow .box.screen.picked', (els: HTMLElement[]) => els.map((e) => e.dataset.key));
 export const textOutside = (p: Page) => p.$$eval('#flow .box', (els: HTMLElement[]) => els.flatMap((box) => {
@@ -429,18 +429,18 @@ export async function withPathStories(stories: Record<string, string[]>, fn: (p:
 }
 
 export const flowPlace = (p: Page) => p.evaluate(() => decodeURIComponent(location.hash));
-export const storyRow = (p: Page, id: string) => p.locator(`#flow-story-list li[data-story="${id}"]`);
+export const storyRow = (p: Page, id: string) => p.locator(`#story-list li[data-story="${id}"]`);
 export const pickPathStory = async (p: Page, id: string) => {
+  if (!(await p.locator('#view-story.on').count())) await p.click('#view-story');
   await storyRow(p, id).click();
-  await p.waitForFunction((id) => state.storyPath?.id === id, id);
+  await p.waitForFunction((id) => state.view === 'story' && state.story === id && state.candidate === null && state.need === null, id);
 };
 export const drawnScreens = (p: Page) => p.$$eval('#flow .box.screen', (els) => [...new Set(els.map((e) => e.dataset.key))].sort());
-export const lineSteps = (p: Page) => p.$$eval('#flow .story-line [data-step]', (els: HTMLElement[]) => els.map((e) => [e.querySelector('.story-badge')!.textContent, e.dataset.screen]));
+export const lineSteps = (p: Page) => p.$$eval('#center .story-line [data-step]', (els: HTMLElement[]) => els.map((e) => [e.querySelector('.story-badge')!.textContent, e.dataset.screen]));
 export const pathMarks = (p: Page, cls: string) => p.$$eval(`#flow .canvas > .${cls}`, (els) => els.map((e) => [e.dataset.at, e.textContent, ...[...e.classList].filter((c) => /^l-/.test(c))]));
 export const pillMarks = (p: Page, cls: string) => p.$$eval(`#flow .box.screen .${cls}`, (els) => els.map((e) => [e.closest<HTMLElement>('.box')!.dataset.key, e.textContent, ...[...e.classList].filter((c) => /^(l-.*|exit|entry)$/.test(c))]));
 export const pathEdges = (p: Page) => p.$$eval('#flow .canvas svg path.story-edge', (els) => els.map((e) => [e.dataset.from, e.dataset.to, [...e.classList].find((c) => c.startsWith('l-'))]).sort());
-export const ringed = (p: Page) => p.$$eval('#flow .box.story-ring', (els: HTMLElement[]) => els.map((e) => [e.dataset.step, e.dataset.screen]));
-export const ringBadge = (p: Page) => p.$$eval('#flow .story-line .story-ring .story-badge', (els) => els.map((e) => e.textContent));
+export const nowStep = (p: Page) => p.$$eval('#center .story-line .box.now .story-badge', (els) => els.map((e) => e.textContent));
 
 export const chooseScreen = (p: Page, routePath: string) =>
   p.locator('#screen-list li').filter({ has: p.locator('.name > span:first-child', { hasText: new RegExp(`^${routePath}$`) }) }).click();
@@ -507,7 +507,7 @@ export const CANDIDATES = { storiesDir: 'example-stories', visitRecords: ['examp
 export const HELP_RECORD = 'example-visits/open-help.json';
 export const HELP_KEY = '/signin#SignIn > /home#Home > /beta/inbox > /help#Help';
 export const PUBLISH_KEY = '/home#Home > /document/:tab_draft_done_#DocumentList > /document/:id#DocumentDetail > /help#Help';
-export const storiesTab = '#left .views.side button:has-text("스토리")';
+export const storiesTab = '#view-story';
 export const BAD_REQUEST = 'Failed to load resource: the server responded with a status of 400 (Bad Request)';
 
 export async function discardCandidate(p: Page, reason: string) {

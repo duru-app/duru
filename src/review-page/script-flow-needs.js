@@ -1,5 +1,5 @@
 const GAP = 8, COL_GAP = 50, CELL_GAP = 24, GROUP_SPACE = 24, GROUP_HEAD_H = 28;
-const STUB = 10, LANE_PAD = 4, LANE_CURVE = 32, UNDER_GAP = 6;
+const STUB = 10, LANE_PAD = 4, LANE_CURVE = 32;
 const ZOOM_MIN = 0.3, ZOOM_MAX = 1.5, ZOOM_STEP = 0.1;
 
 function svg(tag, attrs, ...children) {
@@ -11,53 +11,7 @@ function svg(tag, attrs, ...children) {
 
 const screensIn = (roots) => roots.flatMap((n) => [n, ...screensIn(n.children)]);
 
-const pathStories = () => (state.data.stories.stale ? [] : state.data.stories.list);
-const storiesListed = () => pathStories().length > 0 || state.composing;
-const pathStoryOf = () => (state.storyPath && pathStories().find((st) => st.id === state.storyPath.id)) ?? null;
-
-// 스토리 경로를 보는 동안에는 경로의 화면과 그 위 화면만 남는다.
-function drawnTrees() {
-  const st = pathStoryOf();
-  if (!st) return { roots: state.data.flow.roots, unreached: state.data.flow.unreached, path: null };
-  const path = storyTrees(state.data.flow, st);
-  return { roots: path.roots, unreached: path.unreached, path };
-}
 const flowScreens = () => screensIn([...state.data.flow.roots, ...state.data.flow.unreached]);
-function drawnScreens() {
-  const st = pathStoryOf();
-  if (!st) return flowScreens();
-  const byId = new Map(flowScreens().map((n) => [n.id, n]));
-  return [...new Set(st.steps.filter((s) => s.onMap).map((s) => s.screen))].map((id) => byId.get(id));
-}
-
-function showStoryPath(id) {
-  state.storyPath = { id, ring: null };
-}
-
-function leaveStoryPath() {
-  state.storyPath = null;
-}
-
-function storyTrees(flow, st) {
-  const parentOf = new Map();
-  const walk = (n, parent) => {
-    parentOf.set(n.id, parent);
-    n.children.forEach((c) => walk(c, n.id));
-  };
-  [...flow.roots, ...flow.unreached].forEach((r) => walk(r, null));
-  const keep = new Set();
-  for (const step of st.steps) {
-    for (let id = step.onMap ? step.screen : null; id != null && !keep.has(id); id = parentOf.get(id)) keep.add(id);
-  }
-  const hidden = new Map();
-  const prune = (n) => {
-    const kids = n.children.filter((c) => keep.has(c.id));
-    if (kids.length < n.children.length) hidden.set(n.id, n.children.length - kids.length);
-    return { ...n, children: kids.map(prune) };
-  };
-  const cut = (trees) => trees.filter((r) => keep.has(r.id)).map(prune);
-  return { roots: cut(flow.roots), unreached: cut(flow.unreached), hidden };
-}
 
 const NO_TESTS = '테스트 없음';
 const statusOf = (c) => (c.fail ? 's-fail' : c.pending ? 's-pending' : c.pass ? 's-pass' : 's-none');

@@ -302,7 +302,7 @@ test('in a browser, selecting another story opens the right pane at its top', { 
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.setViewportSize({ width: 1440, height: 360 });
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         const stories = p.locator('#story-list li');
         await stories.nth(0).click();
         assert.ok((await scrollRightToBottom(p)) > 0);
@@ -351,7 +351,7 @@ test('in a browser, the status buttons and the save button stay in view at the b
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.setViewportSize({ width: 1440, height: 360 });
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.equal(await p.textContent('#right .mark-form .tags .tag-label'), '스토리');
         await assertDockStaysPut(p);

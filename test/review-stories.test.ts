@@ -90,7 +90,7 @@ test('in a browser, a map.json built before links carried their conditions shows
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         assert.match((await p.textContent('#left'))!, /duru rebuild 로 맵을 다시 만드세요/);
         assert.doesNotMatch((await p.textContent('#left'))!, /스토리 파일이 없습니다/);
         assert.equal(await p.locator('#story-list li').count(), 0);
@@ -107,7 +107,7 @@ test('in a browser, the story list shows only the statuses that need a look, fil
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         assert.equal(await p.getAttribute('#story-list li:has-text("보고서") .chip', 'title'), '스토리 테스트도, 경로의 화면에 붙은 테스트도 없습니다');
 
         const ids = () => p.locator('#story-list li .name .mono').allTextContents();
@@ -162,7 +162,7 @@ test('in a browser, a story whose ID is the name of an object member shows like 
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await p.click('#story-list li:has-text("이상한 ID")');
         assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['일부 화면만 테스트']);
         assert.equal(await p.textContent('#center .story-tests h2'), '스토리 테스트 0');
@@ -306,7 +306,7 @@ test('in a browser, the tests with a trace that passed two screens or more are c
         assert.equal(await p.locator('#center .source').evaluate((e) => e.firstChild!.textContent), 'results/playwright-traced/visits.json');
         const titles = ['opens home and then help', 'follows a link while waiting for the new address', 'uses the mouse right after the address changes', 'clicks a button that appears after the address changes'];
         assert.deepEqual(await p.locator('#center .source li').allTextContents(), titles);
-        assert.equal(await placeOf(p), '#stories?candidate=/home#Home+>+/help#Help');
+        assert.equal(await placeOf(p), '#story?candidate=/home#Home+>+/help#Help');
         await p.reload();
         await p.waitForSelector('#candidate-list li.selected:has-text("opens home and then help")');
 
@@ -449,7 +449,7 @@ test('in a browser, the need files show under the story list with each one\'s na
         assert.deepEqual(JSON.parse((await p.textContent('#center details.need-file pre'))!), { name: '일반 회원 계정', text: '역할 USER 로 가입한 계정.\n이메일 member@example.com' });
         assert.equal(await p.locator('#center button, #center textarea, #center input').count(), 0, 'a need is only shown, not edited');
         assert.equal(await p.locator('#right-dock textarea').count(), 0);
-        assert.equal(await p.evaluate(() => location.hash), '#stories?need=member-account.json');
+        assert.equal(await p.evaluate(() => location.hash), '#story?need=member-account.json');
 
         await p.click('#need-stories li:has-text("run-lab")');
         assert.equal(await p.textContent('#center h3'), '실험실을 열어 결과를 본다');
