@@ -3,6 +3,6 @@
   "compilerOptions": {
     "lib": ["es2024", "dom", "dom.iterable"]
   },
-  "include": ["test/review.test.ts"],
+  "include": ["test/review-*.ts"],
   "exclude": []
 }
