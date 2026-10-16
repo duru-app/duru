@@ -8,7 +8,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { loadJudgments } from '../src/judgments.ts';
 import { loadMarks } from '../src/marks.ts';
-import { reviewAuthor } from '../src/review.ts';
+import { PAGE_PARTS, reviewAuthor } from '../src/review.ts';
 import { FIXTURE, CLI, withRebuiltFixture, withServer, postMark, postJudgment, initGitRepoNamed } from './review-helpers.ts';
 import type { Config, PageData } from './review-helpers.ts';
 
@@ -189,6 +189,16 @@ test('requests another site could send through the browser are refused', async (
       });
       assert.equal(status, 403);
       assert.equal(fs.existsSync(config.marksDir), false);
+    }),
+  );
+});
+
+test('the page served at / is every file of src/review-page joined in the order the server lists them', async () => {
+  const dir = path.join(import.meta.dirname, '../src/review-page');
+  assert.deepEqual(fs.readdirSync(dir).sort(), [...PAGE_PARTS].sort());
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal(await (await fetch(`${base}/`)).text(), PAGE_PARTS.map((part) => fs.readFileSync(path.join(dir, part), 'utf8')).join(''));
     }),
   );
 });
