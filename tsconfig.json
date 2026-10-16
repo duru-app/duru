@@ -12,5 +12,5 @@
     "skipLibCheck": true
   },
   "include": ["src", "test"],
-  "exclude": ["test/fixtures", "test/review.test.ts"]
+  "exclude": ["test/fixtures", "test/review-*.ts"]
 }
