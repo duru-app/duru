@@ -2,6 +2,8 @@ const LINK_VERDICT = { open: '이어짐', configured: '설정에 적은 이동',
 const LINK_VERDICT_TITLE = { configured: '설정의 moves 에 적은 이동으로 이어집니다' };
 const storyOf = () => state.data.stories.list.find((st) => st.id === state.story);
 const candidateOf = () => state.data.candidates.list.find((c) => c.key === state.candidate);
+const needOf = () => state.data.needs.list.find((n) => n.file === state.need);
+const needPath = (use) => `needs/${use}`;
 const candidateName = (key) => state.data.candidates.list.find((c) => c.key === key)?.name ?? state.data.candidates.gone?.[key] ?? key;
 const stepsText = ([first, last]) => (first === last ? `단계 ${first}` : `단계 ${first}–${last}`);
 const sourceView = (source, whose) => (source.record
@@ -49,7 +51,7 @@ function storyRows(row) {
   return visible.length ? visible.map(row) : [h('li', { class: 'muted' }, '해당하는 스토리가 없습니다.')];
 }
 
-const tabStoryRow = (st) => storyRow(st, { class: st.id === state.story && !state.candidate ? 'selected' : '', onclick: () => selectStory(st.id) });
+const tabStoryRow = (st) => storyRow(st, { class: st.id === state.story && !state.candidate && !state.need ? 'selected' : '', onclick: () => selectStory(st.id) });
 
 function storyItems() {
   return [
@@ -184,6 +186,23 @@ function renderPickList() {
   if (!visible.length) list.append(h('li', { class: 'muted' }, '해당하는 화면이 없습니다.'));
 }
 
+function needGroup() {
+  const { list, notices } = state.data.needs;
+  return [
+    h('h2', { class: 'needs-head', title: '여러 스토리가 함께 쓰는 계정이나 미리 있어야 할 데이터입니다. 스토리의 조건에서 { "use": 파일 이름 } 으로 고릅니다.' }, `공통 조건 ${list.length}`),
+    h('p', { class: 'muted needs-hint' }, h('code', {}, `${state.data.storiesDir}/needs/`), ' 에 공통 조건마다 파일 하나'),
+    list.length
+      ? h('ul', { class: 'screens', id: 'need-list' }, list.map((n) => h('li', { class: n.file === state.need ? 'selected' : '', onclick: () => selectNeed(n.file) },
+          h('span', { class: 'name' }, h('span', {}, n.name), h('div', { class: 'muted mono' }, needPath(n.file))),
+          h('span', { class: 'count' }, `쓰는 스토리 ${n.stories.length}`))))
+      : h('p', { class: 'muted' }, '없음'),
+    ...(notices.length ? [
+      h('h2', { class: 'need-notices-head' }, `읽지 못한 공통 조건 파일 ${notices.length}`),
+      h('ul', { class: 'plain notices', id: 'need-notices' }, notices.map((n) => h('li', {}, h('code', {}, n.file), h('div', { class: 'error' }, n.reason)))),
+    ] : []),
+  ];
+}
+
 function storyList() {
   const { list, notices, stale } = state.data.stories;
   return [
@@ -204,6 +223,7 @@ function storyList() {
       ? h('div', { title: '파일을 읽지 못했거나 맵이 오래되어 목록에 없는 스토리에 남은 코멘트' },
           markList('목록 밖 스토리 코멘트', 'unread-marks', unlistedMarks(), storyMarkLabel, null, selectStory))
       : null,
+    ...needGroup(),
   ];
 }
 

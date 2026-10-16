@@ -406,7 +406,8 @@ listing the places whose value the source does not show in full.
   differs. A `baselineMap` that is missing, unreadable or not such a map stops `rebuild` with a line naming the file,
   before anything is written.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
-  newly stored in `candidates/`, and the files skipped, the links from untagged tests to screens and the trace or test files it could not read, the judged test
+  newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
+  file that is not there and each need file it could not read with why, the links from untagged tests to screens and the trace or test files it could not read, the judged test
   pairs, and each judgment file it could not read or whose screen is gone from the map.
 
 ## Tests
@@ -487,15 +488,17 @@ A story is something a user gets done, written as the screens they pass through 
 - `source` (optional) — for a story accepted from a candidate, the visit record and its steps
   (`{ "record", "steps" }`), or the Playwright report and the titles of its tests that passed those screens
   (`{ "report", "tests" }`)
-- `needs` (optional) — a list of texts, each a thing that has to hold before the story starts
+- `needs` (optional) — a list of things that have to hold before the story starts, each a text or a need file
+  picked as `{ "use": "<file name>" }` (see below)
 - `expects` (optional) — a list of texts, each a thing that should hold once the last step is done
 
 A step of `screens` that has its own needs or expected results is written as an object instead of the screen ID:
 `{ "screen": "<screen ID>", "needs": [...], "linkNeeds": [...], "inputs": [...], "expects": [...] }`, where `screen`
-is required and the others are optional. `needs`, `linkNeeds` and `expects` are lists of texts in the same way.
-`linkNeeds` holds what has to hold on the link from the step before for the story to come into this step, such as
-「반려된 경우」 when the same two screens are joined in more than one case; the first step has no link coming into it, so
-it cannot have `linkNeeds`. A step without any of them stays a screen ID.
+is required and the others are optional. `needs` and `linkNeeds` are lists of texts or picked need files, as the
+story's own `needs` is, and `expects` is a list of texts. `linkNeeds` holds what has to hold on the link from the
+step before for the story to come into this step, such as 「반려된 경우」 when the same two screens are joined in more
+than one case; the first step has no link coming into it, so it cannot have `linkNeeds`. A step without any of them
+stays a screen ID.
 
 `inputs` lists the boxes to fill at that step, each as `{ "box": { ... }, "value": "<what to type>" }`. `box` finds
 the box by what the screen shows: `placeholder` (the hint text inside the box), `label` (its label) or `testId` (its
@@ -507,7 +510,7 @@ duru does not look for the box in the code, so the page and the task list mark e
 ```json
 {
   "name": "로그인해 문서 목록에서 문서를 연다",
-  "needs": ["완료된 문서가 하나 있다"],
+  "needs": [{ "use": "member-account.json" }, "완료된 문서가 하나 있다"],
   "screens": [
     { "screen": "/signin#SignIn", "inputs": [
       { "box": { "placeholder": "이메일", "testId": "login-email" }, "value": "member@example.com" },
@@ -526,6 +529,20 @@ duru does not look for the box in the code, so the page and the task list mark e
 
 duru does not check these lines against the code: the review page shows them and the task list carries them to
 whoever writes the story's test.
+
+What several stories need alike, such as an account to sign in with or data that has to be there, is kept once in
+the `needs` folder inside `storiesDir`, one JSON file per need, with a `name` and a `text` and nothing else:
+
+```json
+{ "name": "일반 회원 계정", "text": "역할 USER 로 가입한 계정. 이메일 member@example.com, 비밀번호 test1234" }
+```
+
+Its file name follows the story ID rule, and a condition, at the top of the story or in a step, picks it by its path
+under `needs/`, as `{ "use": "member-account.json" }` for `needs/member-account.json`, so its `name` can change
+without breaking the stories that pick it. The files in `needs/` are not read as stories. A condition
+that picks a file that is not there, or one that could not be read, does not stop the story from being read: the
+condition alone shows as 「needs/… 없음」 or 「needs/… 읽지 못함」. A need file that breaks these rules is skipped and
+noted with its path and why.
 
 No other keys are allowed, at the top or in a step object. A file that breaks these rules is skipped and noted with its
 path and why.
@@ -621,8 +638,8 @@ they are joined: solid for a link with no condition, blue dashed for a link unde
 move written in `moves`, red dashed where the map has no link, and orange dotted where a step is not on the map or a
 link's address could not be read; the 「i」 beside 「경로 끄기」 shows these. Where the map has no link, a note below says
 which screens the step before does lead to. A step with `needs`, `inputs` or `expects` in the story file carries
-their count, such as 「조건 1 · 입력 2 · 기대 2」, and the story's own `needs` and `expects` are counted beside its name;
-hovering over a count shows the lines. A step's `linkNeeds` are written under the line that comes into its box, cut
+their count, such as 「조건 1 · 입력 2 · 기대 2」, and the story's own `needs` and `expects` are counted beside its name,
+after the need files the story picks; hovering over a count shows the lines. A step's `linkNeeds` are written under the line that comes into its box, cut
 short when longer than the line; hovering over them shows every line. A story wider than the pane scrolls sideways.
 Pressing the story again, or 「경로 끄기」, brings back the whole flow where it was.
 
@@ -696,7 +713,11 @@ the link between each two and its 「사전 조건」, and lets its name and mem
 `expects` show in a 「스토리」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs`
 show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. Each input reads like
 「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」:
-duru has not looked for that box in the code. 「스토리 파일」 at the bottom unfolds
+duru has not looked for that box in the code.
+A picked need file shows as 「공통 조건」 and its name, hovering shows its file and text, and pressing it opens it.
+At the bottom of the stories tab, 「공통 조건 N」 lists the need files with their name, file and how many stories pick them, followed
+by the need files that could not be read and why. Pressing one shows its name, its text, the stories that pick it and
+the file itself in the middle, with its file name in the address, as `#stories?need=member-account.json`. 「스토리 파일」 at the bottom unfolds
 the story in the shape of its file, with the steps that have any of these lines written as objects. Candidates are
 listed below with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the address of a chosen candidate holds its screen order, as
 `#stories?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
@@ -878,7 +899,9 @@ stories under `# Stories` with their steps, link verdicts and 「사전 조건�
 steps, each step's `link need from step N` (the link from the step before), `need`, `input` and `expect` lines follow
 that step, and `expects at the end` follows the last step; a story without them gets none of these lines. An
 `input` line reads like `input: placeholder "이메일" or testId "login-email", number 2 → "member@example.com" (not
-checked against the code)`, with `number N` only when the input has `nth`. Under an open
+checked against the code)`, with `number N` only when the input has `nth`. A picked need file is written as
+`<name> (needs/<file>): <text>`, and one that is not there or could not be read as `needs/<file> — the file is
+missing` or `needs/<file> — the file could not be read`. Under an open
 screen or call, `comments on tests` lists each test a comment was left on, with its file and line, status, how it is
 linked and its result file, followed by those comments and their replies. Under an open screen, `comments on opening conditions`
 and `comments on incoming links` list each condition and link a comment was left on the same way, with the source

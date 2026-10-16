@@ -33,9 +33,11 @@ export interface StepInput {
   value: string;
 }
 
+export type Need = string | { use: string };
+
 export interface StepFields {
-  needs?: string[];
-  linkNeeds?: string[];
+  needs?: Need[];
+  linkNeeds?: Need[];
   inputs?: StepInput[];
   expects?: string[];
 }
@@ -43,7 +45,7 @@ export interface StepFields {
 export interface Story {
   id: string;
   name: string;
-  needs?: string[];
+  needs?: Need[];
   screens: string[];
   stepFields?: StepFields[];
   expects?: string[];
@@ -77,14 +79,19 @@ const STEP_KEYS = ['screen', ...STEP_FIELDS];
 const INPUT_KEYS = ['box', 'value'];
 export const BOX_WORDS = ['placeholder', 'label', 'testId'] as const;
 const BOX_KEYS: string[] = [...BOX_WORDS, 'nth'];
-const FIELD_WORDS = { needs: '조건을', linkNeeds: '들어오는 링크 조건을', expects: '기대 결과를' };
 export const DISCARDED = 'discarded';
 export const CANDIDATES = 'candidates';
+export const NEEDS = 'needs';
 const DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
 export const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 export const isScreenList = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every(isText);
-const isTextList = (v: unknown) => Array.isArray(v) && v.every(isText);
+const isNeed = (v: any) => isText(v) || (isPlainObject(v) && Object.keys(v).length === 1 && isText(v.use));
+const FIELD_RULES = {
+  needs: { fits: isNeed, words: '조건을 하나씩 글이나 { "use": 공통 조건 파일 이름 } 으로' },
+  linkNeeds: { fits: isNeed, words: '들어오는 링크 조건을 하나씩 글이나 { "use": 공통 조건 파일 이름 } 으로' },
+  expects: { fits: isText, words: '기대 결과를 하나씩 글로' },
+};
 const isStep = (v: number) => Number.isInteger(v) && v > 0;
 const isRecordSource = (v: RawSource) => isText(v.record) && Array.isArray(v.steps) && v.steps.length === 2 && v.steps.every(isStep) && v.steps[0] <= v.steps[1];
 const isTestsSource = (v: RawSource) => isText(v.report) && Array.isArray(v.tests) && v.tests.length > 0 && v.tests.every(isText);
@@ -95,9 +102,10 @@ export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !
 
 const screenOf = (step: any) => (isPlainObject(step) ? step.screen : step);
 
-function fieldsProblem(fields: { needs?: unknown; linkNeeds?: unknown; expects?: unknown }, where: string, keys: readonly (keyof typeof FIELD_WORDS)[] = FIELD_KEYS) {
-  const bad = keys.find((key) => fields[key] !== undefined && !isTextList(fields[key]));
-  return bad ? `${where}${bad} 는 ${FIELD_WORDS[bad]} 하나씩 글로 적은 목록이어야 합니다` : null;
+function fieldsProblem(fields: { needs?: unknown; linkNeeds?: unknown; expects?: unknown }, where: string, keys: readonly (keyof typeof FIELD_RULES)[] = FIELD_KEYS) {
+  const fits = (key: keyof typeof FIELD_RULES, v: unknown) => Array.isArray(v) && v.every(FIELD_RULES[key].fits);
+  const bad = keys.find((key) => fields[key] !== undefined && !fits(key, fields[key]));
+  return bad ? `${where}${bad} 는 ${FIELD_RULES[bad].words} 적은 목록이어야 합니다` : null;
 }
 
 function stepProblem(step: any, where: string, first: boolean) {
@@ -189,7 +197,7 @@ const SAY = {
 
 function storyFiles(dir: string): { root: string; files: { file: string; reason?: string }[] } {
   if (!fs.statSync(dir).isDirectory()) return { root: path.dirname(dir), files: [{ file: path.basename(dir) }] };
-  return { root: dir, files: jsonFiles(dir, SAY).filter((f) => ![DISCARDED, CANDIDATES].includes(f.file.split(path.sep)[0])) };
+  return { root: dir, files: jsonFiles(dir, SAY).filter((f) => ![DISCARDED, CANDIDATES, NEEDS].includes(f.file.split(path.sep)[0])) };
 }
 
 export function loadStories(dir: string): { stories: Story[]; notices: Notice[] } {

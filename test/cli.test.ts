@@ -218,6 +218,30 @@ test('rebuild counts the stories with broken paths or screens gone from the map,
   }
 });
 
+test('rebuild counts the need files, the needs that pick a need file that is not there and the need files it skipped, and names each skipped one and why', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), storiesDir: 'example-stories' }));
+    const plain = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(plain, /^need files 0 \| needs picking a need file that is not there 0 \| need files skipped 0$/m);
+
+    const stories = path.join(copy, 'example-stories');
+    fs.mkdirSync(path.join(stories, 'needs'));
+    fs.writeFileSync(path.join(stories, 'needs/member-account.json'), JSON.stringify({ name: '일반 회원 계정', text: '역할 USER 계정' }));
+    fs.writeFileSync(path.join(stories, 'needs/broken.json'), JSON.stringify({ name: '이름만 있다' }));
+    const story = JSON.parse(fs.readFileSync(path.join(stories, 'run-lab.json'), 'utf8'));
+    fs.writeFileSync(path.join(stories, 'run-lab.json'), JSON.stringify({ ...story, needs: [{ use: 'member-account.json' }, { use: 'old-admin.json' }, { use: 'broken.json' }], screens: [{ screen: story.screens[0], needs: [{ use: 'old-admin.json' }] }, ...story.screens.slice(1)] }));
+    const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.match(stdout, /^need files 1 \| needs picking a need file that is not there 2 \| need files skipped 1$/m);
+    assert.match(stdout, /^ {2}need file needs\/broken\.json: text 에 공통 조건 내용을 적어야 합니다$/m);
+    assert.match(stdout, /^stories 5 \| broken paths 1 \| detached 1 \| unjudged steps 0 \| story files skipped 1$/m);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
 test('rebuild leaves discarded pairs out of the links made by imports, and names each judgment file it could not read without stopping', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {

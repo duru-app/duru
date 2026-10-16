@@ -13,6 +13,7 @@ import { isPlainObject } from './config.ts';
 import { buildFlow } from './flow.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
 import { addMark, addReply, classifyMarks, loadMarks, recordKind } from './marks.ts';
+import { checkNeeds } from './needs.ts';
 import type { Mark } from './marks.ts';
 import { linkKey, locatePart, locateStoryPart } from './parts.ts';
 import type { StoryPath } from './parts.ts';
@@ -144,6 +145,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: Awaite
     marks,
     caseKinds: config.caseKinds,
     stories,
+    needs: checkNeeds(config.storiesDir, stories.list),
     candidates,
     storiesDir: config.storiesDir,
     flow: buildFlow(map, tests),

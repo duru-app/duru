@@ -9,6 +9,7 @@ import { loadConfig } from './config.ts';
 import { buildMap } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
 import { addReply } from './marks.ts';
+import { checkNeeds } from './needs.ts';
 import { CANDIDATES } from './stories.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
 import { reviewAuthor, startReviewServer } from './review.ts';
@@ -248,6 +249,9 @@ if (command === 'tasks') {
     console.log(`stories passing ${inStatus('pass')} | failing ${inStatus('fail')} | pending ${inStatus('pending')} | partly covered ${inStatus('partial')} | no tests ${inStatus('untested')}`);
     for (const n of notices) console.log(`  story file ${n.file}: ${n.reason}`);
     if (stale) console.log(`  ${stale}`);
+    const needs = checkNeeds(config.storiesDir, list);
+    console.log(`need files ${needs.list.length} | needs picking a need file that is not there ${needs.missing} | need files skipped ${needs.notices.length}`);
+    for (const n of needs.notices) console.log(`  need file ${n.file}: ${n.reason}`);
     const candidates = storyCandidates(config, map, path.join(config.outDir, 'map.json'), links.traced);
     const stored = storeCandidates(config.storiesDir, candidates.list);
     console.log(`story candidates ${candidates.list.length} | from traces ${candidates.list.filter((c) => 'report' in c.source).length} | newly stored ${stored.written} | files skipped ${candidates.notices.length}`);

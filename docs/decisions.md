@@ -1837,7 +1837,7 @@ Alternatives compared:
   steps and links, and brings the rest of the borrowed format along; Gherkin steps are free sentences, so the same
   shape could not be filled without an agent.
 
-**A condition on the link into a step is written in that step as `linkNeeds`, a list of texts beside its `needs` and
+**A condition on the link into a step is written in that step as `linkNeeds`, a list beside its `needs` and
 `expects`, and the first step cannot have it.**
 Driver's decision in #275, built in #280. The same two screens can be joined in more than one case, such as 「반려된
 경우」, and which case the story takes belongs to the link, not to either screen. Camunda keeps a condition inside the
@@ -1849,7 +1849,8 @@ JSON gives the edge its own `guard`
 (https://github.com/GraphWalker/graphwalker-project/wiki/JSON-file-format:-edge), all read on 2026-10-15. Hence the
 condition on the link rather than on the step before, and written under the line in the flow's one-line story as
 Stately's editor shows it. In all three the condition is an expression the tool runs; no tool was found that hangs a
-condition a person writes in words on a link, and duru keeps it as text because it judges nothing. A story file has
+condition a person writes in words on a link, and duru keeps it as text, or as a pick of a need file like a step's
+own need, because it judges nothing. A story file has
 no object for a link, so the link's lines sit in the step the link comes into: they move with that step, and the
 first step, which nothing comes into, has none. The task list puts them first under their step, before the step's
 own needs, in the order a test meets them. On the page they show on the link row of the stories tab and not in the
@@ -1886,6 +1887,28 @@ Alternatives compared:
 - The field names of the request the screen sends: into-sign 1.5.0 has no TypeScript, so duru cannot read the body
   types, and a box whose value is never sent to the server could not be written.
 - A CSS or XPath selector: a reviewer cannot write it from the screen, and Playwright advises against it.
+
+**What several stories need alike is kept once, one file per need in `needs/` inside the story folder, and a
+condition picks it by its path under that folder: `{ "use": "member-account.json" }`.**
+Driver's decision in #275, built in #282. Stories pick the file, not the need's `name`, so renaming a need breaks
+nothing. A need has no parameters: two accounts are two needs, and a story picks the one it starts with. The file name
+follows the story ID rule, and `use` is the path as written, with `.json`, as the approved mock-up has it. `needs/` is
+left out of the stories the way `candidates/` and `discarded/` are. A condition that picks a file that is not there
+leaves the story readable and only that condition is shown as missing, as a broken link is shown rather than refused;
+`rebuild` counts such conditions. A pick of a file that exists but could not be read is shown as 「읽지 못함」 rather
+than 「없음」, because the file is there and the reason is listed with the need files that could not be read, so the
+two counts do not overlap. A condition on the link into a step picks a need file the same way, as it is a condition
+too. In this first part the page only shows a need; writing one comes later on the same shape.
+This follows three tools read on 2026-10-15. Xray keeps a precondition as an item of its own that many tests link to
+(https://docs.getxray.app/display/XRAYCLOUD/Precondition). Playwright's setup project saves a signed-in state per role
+as a storageState file that each test picks (https://playwright.dev/docs/auth). Cypress keeps shared data as JSON
+files in its fixtures folder, loaded by their path (https://docs.cypress.io/api/commands/fixture).
+Alternatives compared:
+- Picking a need by its name: shorter to write, but renaming the need would break every story that picks it.
+- A need with parameters, such as one account need taking a role: one file fewer per account, but a story would no
+  longer say in one word what it starts with, and the task list would have to fill the text in.
+- Refusing a story whose need file is missing: the file would be found sooner, but a story would vanish from the list
+  over one line, and a need file renamed by hand would hide every story that picks it.
 
 **The review page is kept as several files in `src/review-page/`, and the review server joins them, in the order
 listed once in `src/review.ts`, into the one page it sends for `GET /`.**

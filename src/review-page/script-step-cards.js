@@ -1,5 +1,28 @@
 const LINK_NEEDS_LABEL = '들어오는 링크 조건';
-const writtenRow = (cls, label, lines) => (lines?.length ? h('div', { class: `written-row ${cls}` }, h('span', { class: 'written-label' }, label), h('ul', {}, lines.map((x) => h('li', {}, x)))) : null);
+
+function findNeed(use) {
+  const { list, notices } = state.data.needs;
+  const need = list.find((n) => n.file === use);
+  if (need) return { need };
+  const notice = notices.find((n) => n.file === needPath(use));
+  return notice ? { unread: notice.reason } : null;
+}
+
+function needWord(n) {
+  if (typeof n === 'string') return n;
+  const found = findNeed(n.use);
+  return found?.need ? found.need.name : `${needPath(n.use)} ${found ? '읽지 못함' : '없음'}`;
+}
+
+function needItem(n) {
+  if (typeof n === 'string') return n;
+  const found = findNeed(n.use);
+  if (!found) return h('span', { class: 'need-missing', title: '공통 조건 폴더에 이 파일이 없습니다' }, needWord(n));
+  if (!found.need) return h('span', { class: 'need-unread', title: `공통 조건 파일을 읽지 못했습니다: ${found.unread}` }, needWord(n));
+  return h('button', { type: 'button', class: 'need-use', title: `${needPath(n.use)}\n${found.need.text}`, onclick: () => openNeed(n.use) },
+    h('span', { class: 'need-kind' }, '공통 조건'), ' ', found.need.name);
+}
+
 const BOX_WORDS = { placeholder: '안내 글', label: '라벨', testId: '테스트 ID' };
 const boxWords = (box) => Object.keys(BOX_WORDS).filter((k) => box[k] !== undefined).map((k) => `${BOX_WORDS[k]} 「${box[k]}」`).join(' 또는 ') + (box.nth ? ` · ${box.nth} 번째` : '');
 const inputRow = (input) => h('tr', {},
@@ -7,8 +30,9 @@ const inputRow = (input) => h('tr', {},
   h('td', { class: 'input-value mono' }, input.value),
   h('td', {}, h('span', { class: 'chip input-unchecked', title: 'duru 가 코드에서 이 상자를 찾아보지 않았습니다' }, '확인 안 됨')));
 const inputsRow = (inputs) => (inputs?.length ? h('div', { class: 'written-row inputs' }, h('span', { class: 'written-label' }, '입력값'), h('table', { class: 'written-inputs' }, h('tbody', {}, inputs.map(inputRow)))) : null);
-const writtenRows = (fields, needLabel, expectLabel) => [writtenRow('needs', needLabel, fields?.needs), inputsRow(fields?.inputs), writtenRow('expects', expectLabel, fields?.expects)].filter(Boolean);
-const linkWritten = (fields) => (fields?.linkNeeds?.length ? h('div', { class: 'link-written written' }, writtenRow('link-needs', LINK_NEEDS_LABEL, fields.linkNeeds)) : null);
+const writtenRow = (cls, label, lines, item = (x) => x) => (lines?.length ? h('div', { class: `written-row ${cls}` }, h('span', { class: 'written-label' }, label), h('ul', {}, lines.map((x) => h('li', {}, item(x))))) : null);
+const writtenRows = (fields, needLabel, expectLabel) => [writtenRow('needs', needLabel, fields?.needs, needItem), inputsRow(fields?.inputs), writtenRow('expects', expectLabel, fields?.expects)].filter(Boolean);
+const linkWritten = (fields) => (fields?.linkNeeds?.length ? h('div', { class: 'link-written written' }, writtenRow('link-needs', LINK_NEEDS_LABEL, fields.linkNeeds, needItem)) : null);
 
 const hasWritten = (fields) => Boolean(fields?.needs?.length || fields?.inputs?.length || fields?.expects?.length);
 
@@ -16,7 +40,7 @@ function writtenCount(fields) {
   if (!hasWritten(fields)) return null;
   const counts = [fields.needs?.length && `조건 ${fields.needs.length}`, fields.inputs?.length && `입력 ${fields.inputs.length}`, fields.expects?.length && `기대 ${fields.expects.length}`].filter(Boolean);
   const tip = [
-    ...(fields.needs ?? []).map((x) => `조건: ${x}`),
+    ...(fields.needs ?? []).map((x) => `조건: ${needWord(x)}`),
     ...(fields.inputs ?? []).map((x) => `입력: ${boxWords(x.box)} → ${x.value}`),
     ...(fields.expects ?? []).map((x) => `기대: ${x}`),
   ].join('\n');

@@ -20,10 +20,28 @@ const storyFile = (st) => h('details', { class: 'story-file', open: state.storyF
   h('p', { class: 'muted' }, 'duru 가 읽은 내용을 파일 모양으로 다시 적었습니다. 조건, 들어오는 링크 조건, 입력값이나 기대 결과가 있는 단계는 { "screen", "needs", "linkNeeds", "inputs", "expects" } 객체로, 없는 단계는 화면 ID 글자로 적습니다.'),
   h('pre', { class: 'mono' }, JSON.stringify(savedStory(st), null, 2)));
 
+const storyName = (id) => state.data.stories.list.find((st) => st.id === id)?.name ?? id;
+
+const needCenter = (n) => [
+  h('div', { class: 'title-row' }, h('h3', {}, n.name), h('span', { class: 'chip need-chip' }, '공통 조건')),
+  h('div', { class: 'muted mono need-place' }, `${state.data.storiesDir}/${needPath(n.file)}`),
+  h('p', { class: 'memo' }, n.text),
+  h('h2', { class: 'need-stories-head' }, `이 공통 조건을 쓰는 스토리 ${n.stories.length}`),
+  n.stories.length
+    ? h('ul', { class: 'screens', id: 'need-stories' }, n.stories.map((id) => h('li', { onclick: () => selectStory(id) },
+        h('span', { class: 'name' }, h('span', {}, storyName(id)), h('div', { class: 'muted mono' }, id)))))
+    : h('p', { class: 'muted' }, '없음'),
+  h('details', { class: 'need-file', open: true },
+    h('summary', {}, `공통 조건 파일 ${needPath(n.file)}`),
+    h('pre', { class: 'mono' }, JSON.stringify({ name: n.name, text: n.text }, null, 2))),
+];
+
 function renderStoryCenter() {
   clearCenterHead();
   const center = document.getElementById('center-body');
   if (state.composing) return fill(center, composeCenter());
+  const need = needOf();
+  if (need) return fill(center, needCenter(need));
   const c = candidateOf();
   if (c) {
     return fill(center,

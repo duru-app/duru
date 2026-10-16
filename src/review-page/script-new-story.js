@@ -14,6 +14,7 @@ function startCompose() {
   state.composing = true;
   state.candidate = null;
   state.candidateTalk = null;
+  state.need = null;
   state.storyError = null;
   if (state.view === 'flow') {
     state.flowPicked = false;

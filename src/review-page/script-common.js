@@ -29,7 +29,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateTalk: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, discardedOpen: false, undiscardError: null, callInfoShut: null, storyQuery: '', storiesFolded: false, talkScope: 'here', talkFilter: 'all', reachRecord: null, storyFileOpen: false };
+const state = { data: null, selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, storyPath: null, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateTalk: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, discardedOpen: false, undiscardError: null, callInfoShut: null, storyQuery: '', storiesFolded: false, talkScope: 'here', talkFilter: 'all', reachRecord: null, storyFileOpen: false, need: null };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -129,6 +129,7 @@ async function load() {
     state.candidate = null;
     state.candidateTalk = null;
   }
+  if (!needOf()) state.need = null;
   const c = state.compose;
   const onMap = c?.screens.filter((id) => screens.some((sc) => sc.id === id));
   if (c && onMap.length !== c.screens.length) {
@@ -166,6 +167,7 @@ function selectStory(id) {
   state.story = id;
   state.candidate = null;
   state.candidateTalk = null;
+  state.need = null;
   state.storyDraft = null;
   state.error = null;
   state.caseError = null;
@@ -180,11 +182,29 @@ function selectCandidate(key) {
     state.candidateTalk = null;
   }
   state.candidate = key;
+  state.need = null;
   state.error = null;
   state.caseError = null;
   state.storyError = null;
   state.judgmentError = null;
   render();
+}
+
+function selectNeed(file) {
+  state.need = file;
+  state.candidate = null;
+  state.candidateTalk = null;
+  state.error = null;
+  state.caseError = null;
+  state.storyError = null;
+  state.judgmentError = null;
+  render();
+}
+
+function openNeed(file) {
+  state.view = 'list';
+  state.side = 'stories';
+  selectNeed(file);
 }
 
 function setUntaggedTest(key) {

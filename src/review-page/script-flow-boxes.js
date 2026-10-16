@@ -109,13 +109,17 @@ function storyOn(st) {
   if (!st) return null;
   return h('span', { class: 'story-on' },
     h('strong', { class: 'story-name', title: st.id }, st.name),
+    (st.needs ?? []).filter((n) => typeof n !== 'string').map(needItem),
     writtenCount(st),
     h('button', { class: 'path-off', onclick: () => pickStory('') }, '경로 끄기'),
     legendInfo('path', '스토리 경로 읽는 법', pathLegend()));
 }
 
 const HOP_WIDTH = 104;
-const hopNeeds = (lines) => (lines?.length ? h('span', { class: 'hop-need', title: [LINK_NEEDS_LABEL, ...lines].join('\n') }, lines.join(' · ')) : null);
+const hopNeeds = (needs) => {
+  const lines = needs?.map(needWord);
+  return lines?.length ? h('span', { class: 'hop-need', title: [LINK_NEEDS_LABEL, ...lines].join('\n') }, lines.join(' · ')) : null;
+};
 
 function goesTo(l, i, byId) {
   const n = byId.get(l.from);
