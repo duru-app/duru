@@ -358,7 +358,7 @@ function stepLines(story: any, tests: any, needs: any) {
     const indent = ' '.repeat(2 + no.length);
     const line = `  ${no}${within(step.screen, indent)} — ${step.onMap ? testSummary(testsAt(tests.nodes, step.screen)) : 'not on the map'}`;
     const fields = story.stepFields?.[i] ?? {};
-    const written = [...writtenLines(`link need from step ${i}: `, fields.linkNeeds, indent), ...writtenLines('need: ', needTexts(fields.needs, needs), indent), ...inputLines(fields.inputs, indent), ...writtenLines('expect: ', fields.expects, indent)];
+    const written = [...writtenLines(`link need from step ${i}: `, needTexts(fields.linkNeeds, needs), indent), ...writtenLines('need: ', needTexts(fields.needs, needs), indent), ...inputLines(fields.inputs, indent), ...writtenLines('expect: ', fields.expects, indent)];
     const link = story.links[i];
     return [line, ...written, ...(link ? [`${indent}- to ${within(link.to, `${indent}  `)}: ${linkText(link)}`] : [])];
   });
@@ -367,7 +367,7 @@ function stepLines(story: any, tests: any, needs: any) {
 const isWritten = (fields: any) => Boolean(fields?.needs?.length || fields?.linkNeeds?.length || fields?.expects?.length);
 const hasInputs = (story: any) => Boolean(story.stepFields?.some((f: any) => f.inputs?.length));
 const hasWritten = (story: any) => isWritten(story) || Boolean(story.stepFields?.some(isWritten));
-const picksNeedFile = (story: any) => [...(story.needs ?? []), ...(story.stepFields ?? []).flatMap((f: any) => f.needs ?? [])].some((n) => typeof n !== 'string');
+const picksNeedFile = (story: any) => [...(story.needs ?? []), ...(story.stepFields ?? []).flatMap((f: any) => [...(f.needs ?? []), ...(f.linkNeeds ?? [])])].some((n) => typeof n !== 'string');
 
 function reachProblems(story: any) {
   const broken = story.links.filter((l: any) => l.verdict === 'broken').length;
@@ -485,7 +485,7 @@ export function taskList(config: any) {
     out[2] += ' An `input` line under a step names a box to fill at that step by the words on the screen it is found by, `placeholder`, `label` or `testId` (several joined by `or` find the same box), with `number N` when it is the Nth of the boxes those words find, and the value to put in it as a JSON string. duru did not look for the box in the code; if the test cannot find it, suspect the story first and tell the user which input it is.';
   }
   if (stories.list.some((s) => storyMarks.some((m) => m.target.story === s.id) && picksNeedFile(s))) {
-    out[2] += ' A need written `<name> (needs/<file>): <text>` is one a person keeps as a file in the `needs` folder of the story folder and picks for several stories: set it up from its text the same way in every story test that has it. A need that says the file is missing or could not be read points at a need file duru did not find or could not read; tell the user and do not guess what it holds.';
+    out[2] += ' A need written `<name> (needs/<file>): <text>` is one a person keeps as a file in the `needs` folder of the story folder and picks for several stories: set it up from its text the same way in every story test that has it, and on a `link need from step N` line set it up before step N so the test can take that link. A need that says the file is missing or could not be read points at a need file duru did not find or could not read; tell the user and do not guess what it holds.';
   }
   if (partKinds.has('condition') || partKinds.has('link')) {
     out[2] += ' Under `comments on opening conditions` and `comments on incoming links`, each role or setting condition and each link into the screen a reviewer left a comment on is named with the source file and line it is written at; if the app does not do what duru read there, tell the user it is a duru defect, and otherwise answer with that line.';

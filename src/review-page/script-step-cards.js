@@ -32,7 +32,7 @@ const inputRow = (input) => h('tr', {},
 const inputsRow = (inputs) => (inputs?.length ? h('div', { class: 'written-row inputs' }, h('span', { class: 'written-label' }, '입력값'), h('table', { class: 'written-inputs' }, h('tbody', {}, inputs.map(inputRow)))) : null);
 const writtenRow = (cls, label, lines, item = (x) => x) => (lines?.length ? h('div', { class: `written-row ${cls}` }, h('span', { class: 'written-label' }, label), h('ul', {}, lines.map((x) => h('li', {}, item(x))))) : null);
 const writtenRows = (fields, needLabel, expectLabel) => [writtenRow('needs', needLabel, fields?.needs, needItem), inputsRow(fields?.inputs), writtenRow('expects', expectLabel, fields?.expects)].filter(Boolean);
-const linkWritten = (fields) => (fields?.linkNeeds?.length ? h('div', { class: 'link-written written' }, writtenRow('link-needs', LINK_NEEDS_LABEL, fields.linkNeeds)) : null);
+const linkWritten = (fields) => (fields?.linkNeeds?.length ? h('div', { class: 'link-written written' }, writtenRow('link-needs', LINK_NEEDS_LABEL, fields.linkNeeds, needItem)) : null);
 
 const hasWritten = (fields) => Boolean(fields?.needs?.length || fields?.inputs?.length || fields?.expects?.length);
 

@@ -494,10 +494,11 @@ A story is something a user gets done, written as the screens they pass through 
 
 A step of `screens` that has its own needs or expected results is written as an object instead of the screen ID:
 `{ "screen": "<screen ID>", "needs": [...], "linkNeeds": [...], "inputs": [...], "expects": [...] }`, where `screen`
-is required and the others are optional. `needs`, `linkNeeds` and `expects` are lists in the same way.
-`linkNeeds` holds what has to hold on the link from the step before for the story to come into this step, such as
-「반려된 경우」 when the same two screens are joined in more than one case; the first step has no link coming into it, so
-it cannot have `linkNeeds`. A step without any of them stays a screen ID.
+is required and the others are optional. `needs` and `linkNeeds` are lists of texts or picked need files, as the
+story's own `needs` is, and `expects` is a list of texts. `linkNeeds` holds what has to hold on the link from the
+step before for the story to come into this step, such as 「반려된 경우」 when the same two screens are joined in more
+than one case; the first step has no link coming into it, so it cannot have `linkNeeds`. A step without any of them
+stays a screen ID.
 
 `inputs` lists the boxes to fill at that step, each as `{ "box": { ... }, "value": "<what to type>" }`. `box` finds
 the box by what the screen shows: `placeholder` (the hint text inside the box), `label` (its label) or `testId` (its

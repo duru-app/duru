@@ -1837,7 +1837,7 @@ Alternatives compared:
   steps and links, and brings the rest of the borrowed format along; Gherkin steps are free sentences, so the same
   shape could not be filled without an agent.
 
-**A condition on the link into a step is written in that step as `linkNeeds`, a list of texts beside its `needs` and
+**A condition on the link into a step is written in that step as `linkNeeds`, a list beside its `needs` and
 `expects`, and the first step cannot have it.**
 Driver's decision in #275, built in #280. The same two screens can be joined in more than one case, such as 「반려된
 경우」, and which case the story takes belongs to the link, not to either screen. Camunda keeps a condition inside the
@@ -1849,7 +1849,8 @@ JSON gives the edge its own `guard`
 (https://github.com/GraphWalker/graphwalker-project/wiki/JSON-file-format:-edge), all read on 2026-10-15. Hence the
 condition on the link rather than on the step before, and written under the line in the flow's one-line story as
 Stately's editor shows it. In all three the condition is an expression the tool runs; no tool was found that hangs a
-condition a person writes in words on a link, and duru keeps it as text because it judges nothing. A story file has
+condition a person writes in words on a link, and duru keeps it as text, or as a pick of a need file like a step's
+own need, because it judges nothing. A story file has
 no object for a link, so the link's lines sit in the step the link comes into: they move with that step, and the
 first step, which nothing comes into, has none. The task list puts them first under their step, before the step's
 own needs, in the order a test meets them. On the page they show on the link row of the stories tab and not in the
@@ -1896,7 +1897,8 @@ left out of the stories the way `candidates/` and `discarded/` are. A condition 
 leaves the story readable and only that condition is shown as missing, as a broken link is shown rather than refused;
 `rebuild` counts such conditions. A pick of a file that exists but could not be read is shown as 「읽지 못함」 rather
 than 「없음」, because the file is there and the reason is listed with the need files that could not be read, so the
-two counts do not overlap. In this first part the page only shows a need; writing one comes later on the same shape.
+two counts do not overlap. A condition on the link into a step picks a need file the same way, as it is a condition
+too. In this first part the page only shows a need; writing one comes later on the same shape.
 This follows three tools read on 2026-10-15. Xray keeps a precondition as an item of its own that many tests link to
 (https://docs.getxray.app/display/XRAYCLOUD/Precondition). Playwright's setup project saves a signed-in state per role
 as a storageState file that each test picks (https://playwright.dev/docs/auth). Cypress keeps shared data as JSON

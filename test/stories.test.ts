@@ -292,8 +292,9 @@ const NOTICE_CASES: [string, StoryFiles, { file: string; reason: string | RegExp
   ['a step expect that is empty text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', expects: [''] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다' }]],
   ['a step that is neither a screen ID nor an object', { 'a.json': { ...STORY, screens: ['/home#Home', ['/lab#Lab']] } }, [{ file: 'a.json', reason: /^screens 의 2 번째 단계는 / }]],
   ['conditions on the link into the first step, which no link comes into', { 'a.json': { ...STORY, screens: [{ screen: '/home#Home', linkNeeds: ['반려된 경우'] }, '/lab#Lab'] } }, [{ file: 'a.json', reason: 'screens 의 1 번째 단계에는 앞 단계가 없어 linkNeeds(들어오는 링크 조건)를 둘 수 없습니다' }]],
-  ['a condition on the link into a step that is empty text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: ['반려된 경우', ''] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 linkNeeds 는 들어오는 링크 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
-  ['conditions on the link into a step that are not a list', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: '반려된 경우' }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 linkNeeds 는 들어오는 링크 조건을 하나씩 글로 적은 목록이어야 합니다' }]],
+  ['a condition on the link into a step that is empty text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: ['반려된 경우', ''] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 linkNeeds 는 들어오는 링크 조건을 하나씩 글이나 { "use": 공통 조건 파일 이름 } 으로 적은 목록이어야 합니다' }]],
+  ['a condition on the link into a step that uses no file', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: [{ use: ' ' }] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 linkNeeds 는 들어오는 링크 조건을 하나씩 글이나 { "use": 공통 조건 파일 이름 } 으로 적은 목록이어야 합니다' }]],
+  ['conditions on the link into a step that are not a list', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: '반려된 경우' }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 linkNeeds 는 들어오는 링크 조건을 하나씩 글이나 { "use": 공통 조건 파일 이름 } 으로 적은 목록이어야 합니다' }]],
   ['conditions on an incoming link at the top of the story', { 'a.json': { ...STORY, linkNeeds: ['반려된 경우'] } }, [{ file: 'a.json', reason: '모르는 항목이 있습니다: linkNeeds' }]],
   ['inputs that are not a list', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: { box: { label: '이름' }, value: '실험' } }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 inputs 는 입력값을 { "box", "value" } 객체로 하나씩 적은 목록이어야 합니다' }]],
   ['an input written as one line of text', { 'a.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', inputs: ['이름 칸에 실험'] }] } }, [{ file: 'a.json', reason: 'screens 의 2 번째 단계의 1 번째 입력값은 { "box", "value" } 객체여야 합니다' }]],
@@ -442,6 +443,15 @@ test('a need may pick a file of the needs folder with { "use" }, for the whole s
     assert.deepEqual(notices, []);
     assert.deepEqual(stories[0].needs, [{ use: 'member-account.json' }, '완료된 문서가 하나 있다']);
     assert.deepEqual(stories[0].stepFields, [{}, { needs: [{ use: 'old-admin.json' }] }]);
+  });
+});
+
+test('a condition on the link into a step may pick a file of the needs folder with { "use" } as well', () => {
+  const story = { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: [{ use: 'member-account.json' }, '반려된 경우'] }] };
+  withStoriesDir({ 'a.json': story }, (dir) => {
+    const { stories, notices } = loadStories(dir);
+    assert.deepEqual(notices, []);
+    assert.deepEqual(stories[0].stepFields, [{}, { linkNeeds: [{ use: 'member-account.json' }, '반려된 경우'] }]);
   });
 });
 

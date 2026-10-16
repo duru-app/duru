@@ -77,7 +77,7 @@ function loadNeeds(dir: string) {
   return { found, notices };
 }
 
-const picks = (story: PickingStory) => [...(story.needs ?? []), ...(story.stepFields ?? []).flatMap((f) => f.needs ?? [])]
+const picks = (story: PickingStory) => [...(story.needs ?? []), ...(story.stepFields ?? []).flatMap((f) => [...(f.needs ?? []), ...(f.linkNeeds ?? [])])]
   .flatMap((n) => (typeof n === 'string' ? [] : [n.use]));
 
 export function findNeed(needs: Needs, use: string): { need: NeedFile } | { unread: string } | null {

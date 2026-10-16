@@ -37,7 +37,7 @@ export type Need = string | { use: string };
 
 export interface StepFields {
   needs?: Need[];
-  linkNeeds?: string[];
+  linkNeeds?: Need[];
   inputs?: StepInput[];
   expects?: string[];
 }
@@ -89,7 +89,7 @@ export const isScreenList = (v: unknown): v is string[] => Array.isArray(v) && v
 const isNeed = (v: any) => isText(v) || (isPlainObject(v) && Object.keys(v).length === 1 && isText(v.use));
 const FIELD_RULES = {
   needs: { fits: isNeed, words: '조건을 하나씩 글이나 { "use": 공통 조건 파일 이름 } 으로' },
-  linkNeeds: { fits: isText, words: '들어오는 링크 조건을 하나씩 글로' },
+  linkNeeds: { fits: isNeed, words: '들어오는 링크 조건을 하나씩 글이나 { "use": 공통 조건 파일 이름 } 으로' },
   expects: { fits: isText, words: '기대 결과를 하나씩 글로' },
 };
 const isStep = (v: number) => Number.isInteger(v) && v > 0;

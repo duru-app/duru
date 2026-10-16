@@ -48,6 +48,15 @@ test('each file in the needs folder is a need with its name and text, named by i
   });
 });
 
+test('a condition on the link into a step that picks a need file counts the story among the stories that pick it, and a pick of a file that is not there counts as missing', () => {
+  withStoriesDir({
+    'open.json': { ...STORY, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: [{ use: 'member-account.json' }, { use: 'old-admin.json' }] }] },
+    'needs/member-account.json': MEMBER,
+  }, (dir) => {
+    assert.deepEqual(needsOf(dir), { list: [{ file: 'member-account.json', ...MEMBER, stories: ['open'] }], notices: [], missing: 1 });
+  });
+});
+
 test('a story folder without a needs folder, or one that is not there, has no needs, and a pick in it counts as missing', () => {
   withStoriesDir({ 'a.json': { ...STORY, needs: [{ use: 'member-account.json' }] } }, (dir) => {
     assert.deepEqual(needsOf(dir), { list: [], notices: [], missing: 1 });

@@ -463,6 +463,31 @@ test('a marked story carries each need it picks from the needs folder with its n
   }, { storiesDir: 'example-stories' });
 });
 
+test('a marked story carries a need file picked by a condition on the link into a step on that step\'s link need line, and the intro says how to read it', () => {
+  withFixtureCopy(({ copy, cli }) => {
+    const file = path.join(copy, 'example-stories/help-from-home.json');
+    const story = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.mkdirSync(path.join(copy, 'example-stories/needs'));
+    fs.writeFileSync(path.join(copy, 'example-stories/needs/member-account.json'), JSON.stringify({ name: '일반 회원 계정', text: '역할 USER 로 가입한 계정' }));
+    fs.writeFileSync(file, JSON.stringify({ ...story, screens: ['/signin#SignIn', { screen: '/home#Home', linkNeeds: [{ use: 'member-account.json' }] }, { screen: '/help#Help', linkNeeds: [{ use: 'old-admin.json' }] }] }));
+    cli('rebuild');
+    const tasks = cli('tasks');
+    const item = tasks.split('\n## help-from-home\n')[1].split('\n## ')[0];
+    assert.equal(item.slice(item.indexOf('- screens:'), item.indexOf('- reach:')), [
+      '- screens:',
+      '  1. /signin#SignIn — tests: ui pass 1, code pass 1',
+      '     - to /home#Home: open at components/SignIn.js:12',
+      `  2. /home#Home — ${HOME_TESTS}`,
+      '     - link need from step 1: 일반 회원 계정 (needs/member-account.json): 역할 USER 로 가입한 계정',
+      '     - to /help#Help: no link',
+      '  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1',
+      '     - link need from step 2: needs/old-admin.json — the file is missing',
+      '',
+    ].join('\n'));
+    assert.match(tasks.split('\n')[2], / A need written `<name> \(needs\/<file>\): <text>` is one a person keeps as a file.* on a `link need from step N` line set it up before step N so the test can take that link\./);
+  }, { storiesDir: 'example-stories' });
+});
+
 test('a marked story whose steps are written as objects with nothing more gives the same task list as with screen IDs, comments on its steps and links included', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     cli('rebuild');

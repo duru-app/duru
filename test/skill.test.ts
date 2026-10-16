@@ -132,6 +132,7 @@ test('the agent skill says how to read the inputs a person wrote for a step in t
 
 test('the agent skill says how to read a need file a story picks in the task list, and what to do when the file is missing or could not be read', () => {
   assert.match(SKILL, /`<name> \(needs\/<file>\): <text>`[\s\S]*set it up from its text, and the same way in every story test/);
+  assert.match(SKILL, /on a `link need from step N` line, set it up before step N so the test can take that link/);
   assert.match(SKILL, /`needs\/<file> — the file is missing` or `— the file could not be read`[\s\S]*tell the user which one rather than guess/);
 });
 

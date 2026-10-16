@@ -358,3 +358,36 @@ test('in a browser, a need that picks a need file shows as 공통 조건 with it
     );
   });
 });
+
+test('in a browser, a condition on the link into a step that picks a need file shows as 공통 조건 with its name on the link row, and by its name under the line in the flow\'s one-line story', { skip: browserMissing }, async () => {
+  const linking = {
+    name: '회원으로 실험실에 들어간다',
+    screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: [{ use: 'member-account.json' }, '실험실 메뉴를 누른 경우'] }, { screen: '/lab/result#LabResult', linkNeeds: [{ use: 'old-admin.json' }] }],
+    memo: '',
+    author: 'reviewer',
+    date: '2026-10-05',
+  };
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config, copy) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/lab-member.json'), JSON.stringify(linking));
+    fs.mkdirSync(path.join(copy, 'example-stories/needs'));
+    fs.writeFileSync(path.join(copy, 'example-stories/needs/member-account.json'), JSON.stringify({ name: '일반 회원 계정', text: '역할 USER 로 가입한 계정' }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("회원으로 실험실에 들어간다")');
+        assert.deepEqual(await p.locator('#center .story-path .link').evaluateAll((links) => links.map((l) => [...l.querySelectorAll('.link-written li')].map((li) => li.textContent))), [
+          ['공통 조건 일반 회원 계정', '실험실 메뉴를 누른 경우'],
+          ['needs/old-admin.json 없음'],
+        ]);
+        assert.equal(await p.getAttribute('#center .link-written .need-use', 'title'), 'needs/member-account.json\n역할 USER 로 가입한 계정');
+
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box.screen');
+        await p.click('#flow-story-list li[data-story="lab-member"]');
+        await p.waitForFunction(() => state.storyPath?.id === 'lab-member');
+        assert.deepEqual(await p.locator('#flow .story-line .hop-need').allTextContents(), ['일반 회원 계정 · 실험실 메뉴를 누른 경우', 'needs/old-admin.json 없음']);
+      }),
+    );
+  });
+});
