@@ -1843,13 +1843,19 @@ One file of more than 5,000 lines meant that two changes to the page, made at th
 The first split only moves text: the HTML around the style and the script, the style, and the script, which is still
 one file. The joined page is the old file byte for byte, which is how the split is checked, and nothing in the
 browser changes: the script still runs as one classic script, so its top-level names still reach each other. A later
-file is one more line in the list. The files are read again on every request, as the one file was, so an edit shows
-on the next load. No build step and no dependency is added.
+file is one more line in the list. The script is then cut the same way, in its own order, at the boundaries between
+areas of the page, into files named for their area, so that changes to different areas touch different files. The
+files are read again on every request, as the one file was, so an edit shows on the next load. No build step and no
+dependency is added.
 Alternatives compared:
 - The browser loading each file itself, as modules: every file would have to import and export the names it shares,
   so hundreds of top-level functions and constants would be edited, and the split would no longer be a move only.
 - A bundling step, as Playwright builds its HTML report: the page script could then be type-checked, but duru would
   no longer run straight from its source without a build.
+- Gathering the helpers several areas share into the common file before cutting the script: each file would then hold
+  only its own area, but lines would change order, so the joined page could no longer be checked against the old file
+  byte for byte. Cut in place, a few shared helpers stay in the file of the area they stood in, such as the test status
+  words and the story path state in the first flow file.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
