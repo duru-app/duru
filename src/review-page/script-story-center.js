@@ -46,6 +46,13 @@ function needEditor(n) {
       h('button', { type: 'button', class: 'cancel-need', title: '공통 조건 파일은 그대로 둡니다', onclick: cancelNeedEdit }, '취소')))];
 }
 
+function dropLostNeed() {
+  if (needOf()) return;
+  const edit = state.need !== null && state.needEdit?.file === state.need ? state.needEdit : null;
+  Object.assign(state, { need: null, needEdit: null });
+  if (edit) state.storyError = `공통 조건 파일 ${needPath(edit.file)} ${findNeed(edit.file) ? '을 읽지 못하게 되어' : '이 없어져'} 고치던 칸을 닫았습니다. 적던 이름과 내용은 저장하지 않았습니다.`;
+}
+
 function openNeedEdit(n) {
   state.needEdit = { file: n.file, name: n.name, text: n.text, contentHash: n.contentHash, changedHash: null, error: null, saving: false };
   state.needSaved = null;

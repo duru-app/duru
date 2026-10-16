@@ -110,7 +110,7 @@ const MAKE_NEED = ':new';
 function useOptions(row) {
   const { list } = state.data.needs;
   const picked = !row.making && row.use;
-  const lost = picked && !list.some((n) => n.file === row.use) ? `${row.use} (${findNeed(row.use) ? '읽지 못함' : '없음'})` : null;
+  const lost = picked && !list.some((n) => n.file === row.use) ? needWord({ use: row.use }) : null;
   return [
     lost ? h('option', { value: row.use, selected: true }, lost) : h('option', { value: '', selected: !picked && !row.making }, '고르지 않음'),
     ...list.map((n) => h('option', { value: n.file, selected: picked === n.file }, `${n.name} (${n.file})`)),

@@ -722,7 +722,7 @@ changed file and drops what was typed, and 「덮어쓰기」 writes what was ty
 saved as `{ "use": "<file>" }`. The last choice, 「새 공통 조건 만들기…」, opens fields there for a file name (`.json` is
 added), a name and a text: 「만들기」 writes the need file and the line picks it, and 「그만두기」 closes the fields. A file name
 that breaks the story ID rule or is already in `needs/` is refused with why. A line picking a file that is not there
-shows 「<file> (없음)」 and can pick another need file or be removed. A link row where the map has no link lists the
+shows 「needs/… 없음」 and can pick another need file or be removed. A link row where the map has no link lists the
 screens the step before leads to, here and while a new story is written. Each input reads like
 「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」:
 duru has not looked for that box in the code.
@@ -732,7 +732,8 @@ by the need files that could not be read and why. Pressing one shows its name, i
 the file itself in the middle, with its file name in the address, as `#story?need=member-account.json`. 「고치기」 there
 opens its name and text; 「저장」 writes them into the need file, and every story that picks it shows the new name and
 text, since stories pick it by its file name. If the need file changed elsewhere since it was opened, the save is
-refused and 「새로 읽기」 and 「덮어쓰기」 are offered, as in the story table. 「스토리 파일」 at the bottom unfolds
+refused and 「새로 읽기」 and 「덮어쓰기」 are offered, as in the story table. If it is deleted or can no longer be
+read, the editor closes with a note that what was typed was not saved. 「스토리 파일」 at the bottom unfolds
 the story in the shape of its file, with the steps that have any of these lines written as objects. Candidates are
 listed below with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the address of a chosen candidate holds its screen order, as
 `#story?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its

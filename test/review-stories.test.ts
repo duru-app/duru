@@ -532,3 +532,41 @@ test('in a browser, a need chosen in the list is edited in the middle: 「고치
     );
   });
 });
+
+test('in a browser, a need file deleted or made unreadable elsewhere while its editor is open closes the editor with a notice that what was typed was not saved, and nothing is written', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) => {
+    const needs = path.join(config.storiesDir, 'needs');
+    fs.mkdirSync(needs);
+    fs.writeFileSync(path.join(needs, 'member-account.json'), JSON.stringify({ name: '일반 회원 계정', text: '역할 USER 로 가입한 계정' }));
+    fs.writeFileSync(path.join(needs, 'done-document.json'), JSON.stringify({ name: '완료된 문서 하나', text: '서명이 끝난 문서가 하나 있다' }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#need-list li:has-text("일반 회원 계정")');
+        await p.click('#center button.edit-need');
+        await p.fill('#need-name', '회원 계정');
+        fs.rmSync(path.join(needs, 'member-account.json'));
+        await p.waitForSelector('#right .story-error');
+        assert.equal(await p.textContent('#right .story-error'), '공통 조건 파일 needs/member-account.json 이 없어져 고치던 칸을 닫았습니다. 적던 이름과 내용은 저장하지 않았습니다.');
+        assert.equal(await p.locator('#need-name').count(), 0);
+        assert.equal(await p.locator('#need-list li.selected').count(), 0);
+        assert.ok(!fs.existsSync(path.join(needs, 'member-account.json')));
+
+        await p.click('#need-list li:has-text("완료된 문서 하나")');
+        assert.equal(await p.locator('#right .story-error').count(), 0);
+        await p.click('#center button.edit-need');
+        await p.fill('#need-text', '서명이 끝난 문서가 두 개 있다');
+        fs.writeFileSync(path.join(needs, 'done-document.json'), '{');
+        await p.waitForSelector('#right .story-error');
+        assert.equal(await p.textContent('#right .story-error'), '공통 조건 파일 needs/done-document.json 을 읽지 못하게 되어 고치던 칸을 닫았습니다. 적던 이름과 내용은 저장하지 않았습니다.');
+        assert.equal(fs.readFileSync(path.join(needs, 'done-document.json'), 'utf8'), '{');
+
+        await p.click('#story-list li:has-text("실험실을 열어 결과를 본다")');
+        fs.writeFileSync(path.join(needs, 'admin-account.json'), JSON.stringify({ name: '관리자 계정', text: '역할 ADMIN 계정' }));
+        await p.waitForSelector('#need-list li:has-text("관리자 계정")');
+        assert.equal(await p.locator('#right .story-error').count(), 0, 'the notice does not come back once another place is chosen');
+      }),
+    );
+  });
+});

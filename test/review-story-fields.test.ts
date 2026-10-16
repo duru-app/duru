@@ -150,7 +150,7 @@ test('in a browser, the link into a step and the 「스토리 전체」 box are 
     assert.deepEqual(await shownRows(p, '#center .story-wide'), [['조건', ['실험이 한 번 이상 돌았다']], ['끝난 뒤 기대 결과', ['마지막 실행 결과가 보인다']]]);
 
     await p.click(`${STEP_2} button.edit-fields`);
-    assert.deepEqual(await p.locator(`${STEP_2} ${EDIT} .fields-part.needs tr`).evaluateAll(lineValues), [['공통 조건 고르기', 'member-account.json (없음)'], ['글로 적기', '실험실 설정을 켠다']]);
+    assert.deepEqual(await p.locator(`${STEP_2} ${EDIT} .fields-part.needs tr`).evaluateAll(lineValues), [['공통 조건 고르기', 'needs/member-account.json 없음'], ['글로 적기', '실험실 설정을 켠다']]);
     await p.locator(`${STEP_2} ${EDIT} .fields-part.needs input`).fill('실험실 설정을 켠 뒤');
     await p.click(`${STEP_2} button.save-fields`);
     await p.waitForSelector(`${STEP_2} .fields-saved`);
@@ -450,12 +450,12 @@ test('in a browser, a written condition switched to 「공통 조건 고르기�
   }, story, NEEDS);
 });
 
-test('in a browser, a line picking a need file that is not there shows 「(없음)」 and can pick another need file instead', { skip: browserMissing }, async () => {
+test('in a browser, a line picking a need file that is not there shows 「needs/… 없음」 as a step card does, and can pick another need file instead', { skip: browserMissing }, async () => {
   const story = { name: LAB, screens: ['/home#Home', { screen: '/lab#Lab', needs: [{ use: 'old-admin.json' }] }, '/lab/result#LabResult'], memo: '', author: 'Kim Min', date: '2026-10-01' };
   await withLabStory(async (p, config) => {
     await p.click(`${STEP_2} button.edit-fields`);
     const edit = p.locator(`${STEP_2} ${EDIT}`);
-    assert.deepEqual(await edit.locator(`${USE} option`).allTextContents(), ['old-admin.json (없음)', '완료된 문서 하나 (done-document.json)', '일반 회원 계정 (member-account.json)', '새 공통 조건 만들기…']);
+    assert.deepEqual(await edit.locator(`${USE} option`).allTextContents(), ['needs/old-admin.json 없음', '완료된 문서 하나 (done-document.json)', '일반 회원 계정 (member-account.json)', '새 공통 조건 만들기…']);
     await edit.locator(USE).selectOption({ label: '완료된 문서 하나 (done-document.json)' });
     await edit.locator('button.save-fields').click();
     await p.waitForSelector(`${STEP_2} .fields-saved`);

@@ -129,7 +129,7 @@ async function load() {
     state.candidate = null;
     state.candidateTalk = null;
   }
-  if (!needOf()) Object.assign(state, { need: null, needEdit: null });
+  dropLostNeed();
   const c = state.compose;
   const onMap = c?.screens.filter((id) => screens.some((sc) => sc.id === id));
   if (c && onMap.length !== c.screens.length) {
