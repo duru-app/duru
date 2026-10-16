@@ -1887,6 +1887,27 @@ Alternatives compared:
   types, and a box whose value is never sent to the server could not be written.
 - A CSS or XPath selector: a reviewer cannot write it from the screen, and Playwright advises against it.
 
+**What several stories need alike is kept once, one file per need in `needs/` inside the story folder, and a
+condition picks it by its path under that folder: `{ "use": "member-account.json" }`.**
+Driver's decision in #275, built in #282. Stories pick the file, not the need's `name`, so renaming a need breaks
+nothing. A need has no parameters: two accounts are two needs, and a story picks the one it starts with. The file name
+follows the story ID rule, and `use` is the path as written, with `.json`, as the approved mock-up has it. `needs/` is
+left out of the stories the way `candidates/` and `discarded/` are. A condition that picks a file that is not there
+leaves the story readable and only that condition is shown as missing, as a broken link is shown rather than refused;
+`rebuild` counts such conditions. A pick of a file that exists but could not be read is shown as 「읽지 못함」 rather
+than 「없음」, because the file is there and the reason is listed with the need files that could not be read, so the
+two counts do not overlap. In this first part the page only shows a need; writing one comes later on the same shape.
+This follows three tools read on 2026-10-15. Xray keeps a precondition as an item of its own that many tests link to
+(https://docs.getxray.app/display/XRAYCLOUD/Precondition). Playwright's setup project saves a signed-in state per role
+as a storageState file that each test picks (https://playwright.dev/docs/auth). Cypress keeps shared data as JSON
+files in its fixtures folder, loaded by their path (https://docs.cypress.io/api/commands/fixture).
+Alternatives compared:
+- Picking a need by its name: shorter to write, but renaming the need would break every story that picks it.
+- A need with parameters, such as one account need taking a role: one file fewer per account, but a story would no
+  longer say in one word what it starts with, and the task list would have to fill the text in.
+- Refusing a story whose need file is missing: the file would be found sooner, but a story would vanish from the list
+  over one line, and a need file renamed by hand would hide every story that picks it.
+
 **The review page is kept as several files in `src/review-page/`, and the review server joins them, in the order
 listed once in `src/review.ts`, into the one page it sends for `GET /`.**
 One file of more than 5,000 lines meant that two changes to the page, made at the same time, touched the same file.

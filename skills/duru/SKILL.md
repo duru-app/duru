@@ -288,6 +288,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    Nth match when there is a number), fill in the value at that step, and do not swap the words for a CSS or XPath
    selector. duru did not look for the box in the code, so the story may name a box the screen does not have:
    when the test cannot find the box, tell the user which input it is instead of guessing another box.
+   A need written `<name> (needs/<file>): <text>` is a need file of the story folder that several stories pick,
+   such as an account to sign in with: set it up from its text, and the same way in every story test that picks the
+   same file. A need written `needs/<file> — the file is missing` or `— the file could not be read` points at a need
+   file duru did not find or could not read; tell the user which one rather than guess what it holds.
    The items under `# Tagging` (they can be listed even when no mark is open) are tests the reviewer judged to
    check a screen or API call they carry no tag for. For each, open the test at its file and line and add exactly
    the tag in `tag to add`, in the place its `where` line names, and change nothing else in the test: not its

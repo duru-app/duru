@@ -130,6 +130,11 @@ test('the agent skill says how to read the inputs a person wrote for a step in t
   assert.match(SKILL, /when the test cannot find the box, tell the user which input it is/);
 });
 
+test('the agent skill says how to read a need file a story picks in the task list, and what to do when the file is missing or could not be read', () => {
+  assert.match(SKILL, /`<name> \(needs\/<file>\): <text>`[\s\S]*set it up from its text, and the same way in every story test/);
+  assert.match(SKILL, /`needs\/<file> — the file is missing` or `— the file could not be read`[\s\S]*tell the user which one rather than guess/);
+});
+
 test('the agent skill says what a comment on a story candidate carries and that it is answered from the record or the test, outside the task list', () => {
   assert.match(SKILL, /`\{ "candidate": "<key>" \}`/);
   assert.match(SKILL, /`\{ "record", "steps" \}` with `stepRanges`[\s\S]*`\{ "report", "tests" \}`/);
