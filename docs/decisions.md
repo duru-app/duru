@@ -1994,6 +1994,17 @@ Alternatives compared:
   some addresses on the screen they reached before and moved others, and which route is narrower cannot be told
   from the path text alone, so every rule had cases where it picked a screen the app would not render.
 
+**A write of a story's conditions, inputs or expected results carries the SHA-256 of the story file the page read, and
+the server writes only while the file still has it; otherwise it answers 409 and leaves the file as it is.** The hash
+is sent with each story in `/api/data` as `contentHash`, taken from the same bytes the story was read from, so a page
+drawn from one content cannot pass with the hash of another. The write itself is checked by the rules a story file is
+read by, so a field the page could save is a field the next read accepts.
+Alternatives compared:
+- The file's modification time: cheaper to read, but a file written again with the same text would refuse a save for
+  nothing, and two writes within the time resolution of the file system could share one time and let a change pass.
+- No guard, the last write winning: a change made in an editor or pulled with git while the table was open would be
+  lost without a word, which #275 asks to prevent.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

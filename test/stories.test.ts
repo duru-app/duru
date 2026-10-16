@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,7 +8,7 @@ import { screenAccess } from '../src/access.ts';
 import { UNKNOWN } from '../src/client.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
-import { editStory, loadStories } from '../src/stories.ts';
+import { editStory, loadStories, StoryChanged, writeStoryFields } from '../src/stories.ts';
 import { checkStories, checkStoryFiles } from '../src/story-paths.ts';
 import type { StoryTests } from '../src/story-paths.ts';
 import { linkTests } from '../src/test-links.ts';
@@ -38,6 +39,8 @@ function withStoriesDir<T>(files: StoryFiles, fn: (dir: string) => T) {
   }
 }
 
+const hashOf = (file: string) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+
 const STORY = { name: '문서를 연다', screens: ['/home#Home', '/lab#Lab'], memo: '', author: 'a', date: '2026-10-02' };
 
 test('the story folder defaults to stories in the output folder', () => {
@@ -55,6 +58,7 @@ test('each story file becomes a story whose ID is its file name, sorted by ID', 
     author: 'Kim Min',
     date: '2026-10-01',
     file: 'run-lab.json',
+    contentHash: hashOf(path.join(EXAMPLES, 'run-lab.json')),
   });
 });
 
@@ -333,7 +337,7 @@ for (const [name, files, notices] of NOTICE_CASES) {
 
 test('a story folder that is a file is read as the only story file, and a subfolder whose name ends in .json is searched like any other', () => {
   withStoriesDir({ 'one.json': STORY, 'two.json/b.json': STORY }, (dir) => {
-    assert.deepEqual(loadStories(path.join(dir, 'one.json')), { stories: [{ id: 'one', ...STORY, file: 'one.json' }], notices: [] });
+    assert.deepEqual(loadStories(path.join(dir, 'one.json')), { stories: [{ id: 'one', ...STORY, file: 'one.json', contentHash: hashOf(path.join(dir, 'one.json')) }], notices: [] });
     const { stories, notices } = loadStories(dir);
     assert.deepEqual(notices, []);
     assert.deepEqual(stories.map((s) => [s.id, s.file]), [['b', path.join('two.json', 'b.json')], ['one', 'one.json']]);
@@ -404,6 +408,7 @@ test('a story may carry needs and expects for the whole story and for each step 
       author: 'a',
       date: '2026-10-02',
       file: 'a.json',
+      contentHash: hashOf(path.join(dir, 'a.json')),
     }]);
   });
 });
@@ -473,10 +478,134 @@ test('a story whose steps are objects is checked against the map step by step ex
 
 test('editing a story\'s name and memo keeps its needs, expects and step objects in the file as they were', () => {
   withStoriesDir({ 'a.json': WRITTEN }, (dir) => {
+    const before = hashOf(path.join(dir, 'a.json'));
     const edited = editStory(dir, 'a', { name: '실험을 돌린다', memo: '메모' });
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'a.json'), 'utf8')), { ...WRITTEN, name: '실험을 돌린다', memo: '메모' });
-    assert.deepEqual(edited, { ...loadStories(dir).stories[0] });
+    assert.deepEqual(edited, { ...loadStories(dir).stories[0], previousHash: before }, 'the reply carries the mark of the file it wrote over, beside the mark of the file it wrote');
     assert.deepEqual(edited.stepFields?.[1], { needs: ['실험실 설정을 켠다'], expects: ['실험 목록이 보인다', '「실행」 단추가 보인다'] });
+  });
+});
+
+test('each story read carries a mark of its file content, which changes when the file changes', () => {
+  withStoriesDir({ 'a.json': STORY }, (dir) => {
+    const file = path.join(dir, 'a.json');
+    const before = loadStories(dir).stories[0].contentHash;
+    assert.equal(before, hashOf(file));
+    fs.writeFileSync(file, JSON.stringify({ ...STORY, memo: '다른 곳에서 고쳤다' }));
+    assert.notEqual(loadStories(dir).stories[0].contentHash, before);
+  });
+});
+
+const fileOf = (dir: string) => JSON.parse(fs.readFileSync(path.join(dir, 'a.json'), 'utf8'));
+const LINKED_SCREENS = ['/home#Home', '/lab#Lab', '/lab/result#LabResult'];
+const at = (kind: 'step' | 'link', step: number) => ({ kind, step, screen: LINKED_SCREENS[step - 1] });
+const writeFields = (dir: string, place: unknown, fields: unknown, contentHash: unknown = hashOf(path.join(dir, 'a.json'))) => writeStoryFields(dir, 'a', { place, fields, contentHash });
+
+test('the needs and expects of the whole story are written into a story file that had none, and the story then reads with them', () => {
+  withStoriesDir({ 'a.json': STORY }, (dir) => {
+    const needs = ['완료된 문서가 하나 있다', { use: 'member-account.json' }];
+    const before = hashOf(path.join(dir, 'a.json'));
+    const written = writeFields(dir, { kind: 'story' }, { needs, expects: ['열람 기록이 한 줄 는다'] });
+    assert.deepEqual(fileOf(dir), { ...STORY, needs, expects: ['열람 기록이 한 줄 는다'] });
+    assert.equal(written.file, 'a.json');
+    assert.deepEqual(written, { ...loadStories(dir).stories[0], previousHash: before });
+    assert.equal(written.contentHash, hashOf(path.join(dir, 'a.json')));
+  });
+});
+
+const LINKED = { ...WRITTEN, screens: ['/home#Home', { screen: '/lab#Lab', linkNeeds: ['실험실 메뉴를 누른 경우'], needs: ['실험실 설정을 켠다'] }, '/lab/result#LabResult'] };
+
+test('the needs, inputs and expects sent for one step replace that step\'s own, turning a screen ID into a step object, while the fields not sent, its link conditions and the other steps stay as they were', () => {
+  withStoriesDir({ 'a.json': LINKED }, (dir) => {
+    const inputs = [{ box: { label: '이름', testId: 'lab-name', nth: 2 }, value: '실험' }];
+    writeFields(dir, at('step', 3), { needs: ['실행이 끝났다'], inputs, expects: ['결과가 보인다'] });
+    writeFields(dir, at('step', 2), { expects: ['실험 목록이 보인다'] });
+    assert.deepEqual(fileOf(dir).screens, [
+      '/home#Home',
+      { screen: '/lab#Lab', linkNeeds: ['실험실 메뉴를 누른 경우'], needs: ['실험실 설정을 켠다'], expects: ['실험 목록이 보인다'] },
+      { screen: '/lab/result#LabResult', needs: ['실행이 끝났다'], inputs, expects: ['결과가 보인다'] },
+    ]);
+    assert.deepEqual({ ...fileOf(dir), screens: [] }, { ...LINKED, screens: [] });
+  });
+});
+
+test('the conditions of the link into a step replace that step\'s link conditions, and its own fields stay as they were', () => {
+  withStoriesDir({ 'a.json': LINKED }, (dir) => {
+    writeFields(dir, at('link', 2), { linkNeeds: ['반려된 경우', { use: 'member-account.json' }] });
+    writeFields(dir, at('link', 3), { linkNeeds: ['실행이 끝난 경우'] });
+    assert.deepEqual(fileOf(dir).screens, [
+      '/home#Home',
+      { screen: '/lab#Lab', linkNeeds: ['반려된 경우', { use: 'member-account.json' }], needs: ['실험실 설정을 켠다'] },
+      { screen: '/lab/result#LabResult', linkNeeds: ['실행이 끝난 경우'] },
+    ]);
+  });
+});
+
+test('a step whose fields are all emptied goes back to its screen ID, and an emptied list is left out of the file', () => {
+  withStoriesDir({ 'a.json': LINKED }, (dir) => {
+    writeFields(dir, at('step', 2), { needs: [], inputs: [], expects: [] });
+    assert.deepEqual(fileOf(dir).screens[1], { screen: '/lab#Lab', linkNeeds: ['실험실 메뉴를 누른 경우'] });
+    writeFields(dir, at('link', 2), { linkNeeds: [] });
+    writeFields(dir, { kind: 'story' }, { needs: [], expects: [] });
+    const { needs, expects, ...plain } = LINKED;
+    assert.deepEqual(fileOf(dir), { ...plain, screens: ['/home#Home', '/lab#Lab', '/lab/result#LabResult'] });
+    assert.deepEqual(Object.keys(fileOf(dir)), ['name', 'screens', 'memo', 'author', 'date']);
+    assert.equal(loadStories(dir).stories[0].stepFields, undefined);
+  });
+});
+
+test('a field left out of what is sent keeps what the file has, and an empty list clears it', () => {
+  withStoriesDir({ 'a.json': LINKED }, (dir) => {
+    writeFields(dir, { kind: 'story' }, { needs: ['N2'] });
+    assert.deepEqual([fileOf(dir).needs, fileOf(dir).expects], [['N2'], LINKED.expects]);
+    writeFields(dir, { kind: 'story' }, { expects: [] });
+    assert.deepEqual([fileOf(dir).needs, fileOf(dir).expects], [['N2'], undefined]);
+    writeFields(dir, at('step', 2), { inputs: [{ box: { label: '이름' }, value: '실험' }] });
+    assert.deepEqual(fileOf(dir).screens[1], { screen: '/lab#Lab', linkNeeds: ['실험실 메뉴를 누른 경우'], needs: ['실험실 설정을 켠다'], inputs: [{ box: { label: '이름' }, value: '실험' }] });
+  });
+});
+
+const REFUSED_FIELDS: [string, unknown, unknown, string][] = [
+  ['a need that is empty text', at('step', 2), { needs: ['실험실 설정을 켠다', ' '] }, 'screens 의 2 번째 단계의 needs 는 조건을 하나씩 글이나 { "use": 공통 조건 파일 이름 } 으로 적은 목록이어야 합니다'],
+  ['a need that uses no file', { kind: 'story' }, { needs: [{ use: '' }] }, 'needs 는 조건을 하나씩 글이나 { "use": 공통 조건 파일 이름 } 으로 적은 목록이어야 합니다'],
+  ['expects that are not a list', { kind: 'story' }, { expects: '문서가 열린다' }, 'expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다'],
+  ['a box with no words to find it by', at('step', 2), { inputs: [{ box: { nth: 2 }, value: '실험' }] }, 'screens 의 2 번째 단계의 1 번째 입력값의 box 에 상자를 찾는 말(placeholder, label, testId)을 하나 이상 적어야 합니다'],
+  ['a box whose words are empty', at('step', 2), { inputs: [{ box: { label: '이름' }, value: '실험' }, { box: { placeholder: ' ' }, value: '실험' }] }, 'screens 의 2 번째 단계의 2 번째 입력값의 box 의 placeholder 에 화면에 보이는 문구를 적어야 합니다'],
+  ['a box number below 1', at('step', 2), { inputs: [{ box: { label: '서명자 메모', nth: 0 }, value: '확인했습니다' }] }, 'screens 의 2 번째 단계의 1 번째 입력값의 box 의 nth 는 1 이상의 정수여야 합니다'],
+  ['an input without its value', at('step', 2), { inputs: [{ box: { label: '이름' }, value: '' }] }, 'screens 의 2 번째 단계의 1 번째 입력값의 value 에 넣을 값을 글로 적어야 합니다'],
+  ['conditions on the link into the first step', at('link', 1), { linkNeeds: ['반려된 경우'] }, 'screens 의 1 번째 단계에는 앞 단계가 없어 linkNeeds(들어오는 링크 조건)를 둘 수 없습니다'],
+  ['inputs for the whole story', { kind: 'story' }, { inputs: [{ box: { label: '이름' }, value: '실험' }] }, '스토리 전체에는 needs, expects 만 적을 수 있습니다: inputs'],
+  ['link conditions sent as a step\'s own fields', at('step', 2), { linkNeeds: ['반려된 경우'] }, 'screens 의 2 번째 단계에는 needs, inputs, expects 만 적을 수 있습니다: linkNeeds'],
+  ['a step\'s own fields sent for the link into it', at('link', 2), { expects: ['실험 목록이 보인다'] }, 'screens 의 2 번째 단계로 들어오는 링크에는 linkNeeds 만 적을 수 있습니다: expects'],
+  ['a step the story does not have', { kind: 'step', step: 4, screen: '/lab#Lab' }, { expects: ['x'] }, '스토리 a 에는 4 번째 단계가 없습니다'],
+  ['a place that is neither the story, a step nor a link', { kind: 'hop', step: 2 }, {}, 'place 는 { "kind": "story" } 나 { "kind": "step" 또는 "link", "step": 단계 번호, "screen": 그 단계의 화면 ID } 여야 합니다'],
+  ['a step place that does not name its screen', { kind: 'step', step: 2 }, { expects: ['x'] }, 'place 는 { "kind": "story" } 나 { "kind": "step" 또는 "link", "step": 단계 번호, "screen": 그 단계의 화면 ID } 여야 합니다'],
+  ['a step whose screen is no longer the one the page read', { kind: 'step', step: 2, screen: '/lab/result#LabResult' }, { expects: ['x'] }, '스토리 a 의 2 번째 단계는 /lab/result#LabResult 이 아니라 /lab#Lab 화면이라 쓰지 않았습니다'],
+  ['the link into a step whose screen is no longer the one the page read', { kind: 'link', step: 3, screen: '/lab#Lab' }, { linkNeeds: ['x'] }, '스토리 a 의 3 번째 단계는 /lab#Lab 이 아니라 /lab/result#LabResult 화면이라 쓰지 않았습니다'],
+  ['a missing mark of the file read', { kind: 'story' }, { needs: ['x'] }, 'contentHash 에 페이지가 읽은 스토리 파일 내용의 SHA-256 을 보내야 합니다'],
+  ['fields that are not an object', { kind: 'story' }, ['x'], 'fields 는 칸 이름마다 목록을 담은 객체여야 합니다'],
+];
+
+for (const [name, place, fields, reason] of REFUSED_FIELDS) {
+  test(`writing ${name} is refused with the reason reading would give, and the file stays as it was`, () => {
+    withStoriesDir({ 'a.json': LINKED }, (dir) => {
+      const before = fs.readFileSync(path.join(dir, 'a.json'), 'utf8');
+      const contentHash = name === 'a missing mark of the file read' ? null : hashOf(path.join(dir, 'a.json'));
+      assert.throws(() => writeFields(dir, place, fields, contentHash), (err: Error) => !(err instanceof StoryChanged) && err.message === reason);
+      assert.equal(fs.readFileSync(path.join(dir, 'a.json'), 'utf8'), before);
+    });
+  });
+}
+
+test('a story file changed since its mark was read is not written over, and the refusal says so', () => {
+  withStoriesDir({ 'a.json': LINKED }, (dir) => {
+    const file = path.join(dir, 'a.json');
+    const read = hashOf(file);
+    fs.writeFileSync(file, JSON.stringify({ ...LINKED, memo: '다른 곳에서 고쳤다' }));
+    const before = fs.readFileSync(file, 'utf8');
+    assert.throws(() => writeFields(dir, { kind: 'story' }, { needs: ['x'] }, read), (err: Error) => err instanceof StoryChanged && err.message === '스토리 파일 a.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다');
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+    assert.throws(() => writeStoryFields(dir, 'nope', { place: { kind: 'story' }, fields: {}, contentHash: read }), /^Error: 스토리 nope 를 찾지 못했습니다$/);
   });
 });
 
