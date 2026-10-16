@@ -189,15 +189,15 @@ function renderPickList() {
 function needGroup() {
   const { list, notices } = state.data.needs;
   return [
-    h('h2', { class: 'needs-head', title: '여러 스토리가 함께 쓰는 계정이나 미리 있어야 할 데이터입니다. 스토리의 조건에서 { "use": 파일 이름 } 으로 고릅니다.' }, `준비물 ${list.length}`),
-    h('p', { class: 'muted needs-hint' }, h('code', {}, `${state.data.storiesDir}/needs/`), ' 에 준비물마다 파일 하나'),
+    h('h2', { class: 'needs-head', title: '여러 스토리가 함께 쓰는 계정이나 미리 있어야 할 데이터입니다. 스토리의 조건에서 { "use": 파일 이름 } 으로 고릅니다.' }, `공통 조건 ${list.length}`),
+    h('p', { class: 'muted needs-hint' }, h('code', {}, `${state.data.storiesDir}/needs/`), ' 에 공통 조건마다 파일 하나'),
     list.length
       ? h('ul', { class: 'screens', id: 'need-list' }, list.map((n) => h('li', { class: n.file === state.need ? 'selected' : '', onclick: () => selectNeed(n.file) },
           h('span', { class: 'name' }, h('span', {}, n.name), h('div', { class: 'muted mono' }, needPath(n.file))),
           h('span', { class: 'count' }, `쓰는 스토리 ${n.stories.length}`))))
       : h('p', { class: 'muted' }, '없음'),
     ...(notices.length ? [
-      h('h2', { class: 'need-notices-head' }, `읽지 못한 준비물 파일 ${notices.length}`),
+      h('h2', { class: 'need-notices-head' }, `읽지 못한 공통 조건 파일 ${notices.length}`),
       h('ul', { class: 'plain notices', id: 'need-notices' }, notices.map((n) => h('li', {}, h('code', {}, n.file), h('div', { class: 'error' }, n.reason)))),
     ] : []),
   ];

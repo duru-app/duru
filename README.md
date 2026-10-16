@@ -713,8 +713,8 @@ the link between each two and its 「사전 조건」, and lets its name and mem
 show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. Each input reads like
 「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」:
 duru has not looked for that box in the code.
-A picked need file shows as 「준비물」 and its name, hovering shows its file and text, and pressing it opens it.
-At the bottom of the stories tab, 「준비물 N」 lists the need files with their name, file and how many stories pick them, followed
+A picked need file shows as 「공통 조건」 and its name, hovering shows its file and text, and pressing it opens it.
+At the bottom of the stories tab, 「공통 조건 N」 lists the need files with their name, file and how many stories pick them, followed
 by the need files that could not be read and why. Pressing one shows its name, its text, the stories that pick it and
 the file itself in the middle, with its file name in the address, as `#stories?need=member-account.json`. 「스토리 파일」 at the bottom unfolds
 the story in the shape of its file, with the steps that have any of these lines written as objects. Candidates are

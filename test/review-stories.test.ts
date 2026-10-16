@@ -427,25 +427,25 @@ test('in a browser, the need files show under the story list with each one\'s na
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
-        assert.equal(await p.textContent('#left h2.needs-head'), '준비물 2');
-        assert.equal(await p.textContent('#left .needs-hint'), `${config.storiesDir}/needs/ 에 준비물마다 파일 하나`);
+        assert.equal(await p.textContent('#left h2.needs-head'), '공통 조건 2');
+        assert.equal(await p.textContent('#left .needs-hint'), `${config.storiesDir}/needs/ 에 공통 조건마다 파일 하나`);
         assert.deepEqual(await p.locator('#need-list li').evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.name > *, .count')].map((e) => e.textContent))), [
           ['완료된 문서 하나', 'needs/done-document.json', '쓰는 스토리 0'],
           ['일반 회원 계정', 'needs/member-account.json', '쓰는 스토리 2'],
         ]);
-        assert.equal(await p.textContent('#left h2.need-notices-head'), '읽지 못한 준비물 파일 1');
+        assert.equal(await p.textContent('#left h2.need-notices-head'), '읽지 못한 공통 조건 파일 1');
         assert.match((await p.textContent('#need-notices'))!, /needs\/broken\.json\s*JSON 으로 읽지 못했습니다: /);
         assert.deepEqual(await p.locator('#story-list li .name .muted.mono').allTextContents(), ['change-settings', 'help-from-home', 'open-document', 'read-reports', 'run-lab']);
 
         await p.click('#need-list li:has-text("일반 회원 계정")');
         assert.equal(await p.getAttribute('#need-list li:has-text("일반 회원 계정")', 'class'), 'selected');
         assert.equal(await p.locator('#story-list li.selected').count(), 0);
-        assert.deepEqual(await p.locator('#center .title-row > *').allTextContents(), ['일반 회원 계정', '준비물']);
+        assert.deepEqual(await p.locator('#center .title-row > *').allTextContents(), ['일반 회원 계정', '공통 조건']);
         assert.equal(await p.textContent('#center .need-place'), `${config.storiesDir}/needs/member-account.json`);
         assert.equal(await p.textContent('#center .memo'), '역할 USER 로 가입한 계정.\n이메일 member@example.com');
-        assert.equal(await p.textContent('#center h2.need-stories-head'), '이 준비물을 쓰는 스토리 2');
+        assert.equal(await p.textContent('#center h2.need-stories-head'), '이 공통 조건을 쓰는 스토리 2');
         assert.deepEqual(await p.locator('#need-stories li').allTextContents(), ['로그인해 문서 목록에서 문서를 연다open-document', '실험실을 열어 결과를 본다run-lab']);
-        assert.equal(await p.textContent('#center details.need-file summary'), '준비물 파일 needs/member-account.json');
+        assert.equal(await p.textContent('#center details.need-file summary'), '공통 조건 파일 needs/member-account.json');
         assert.deepEqual(JSON.parse((await p.textContent('#center details.need-file pre'))!), { name: '일반 회원 계정', text: '역할 USER 로 가입한 계정.\n이메일 member@example.com' });
         assert.equal(await p.locator('#center button, #center textarea, #center input').count(), 0, 'a need is only shown, not edited');
         assert.equal(await p.locator('#right-dock textarea').count(), 0);

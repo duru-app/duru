@@ -30,7 +30,7 @@ interface PickingStory {
 
 const KEYS = ['name', 'text'];
 const SAY = {
-  folder: (message: string) => `준비물 폴더를 읽지 못했습니다: ${message}`,
+  folder: (message: string) => `공통 조건 폴더를 읽지 못했습니다: ${message}`,
   missing: () => '링크가 가리키는 파일이 없습니다',
   link: (message: string) => `링크를 따라가지 못했습니다: ${message}`,
 };
@@ -38,11 +38,11 @@ const SAY = {
 export const needPath = (use: string) => `${NEEDS}/${use}`;
 
 function problemOf(need: any) {
-  if (!isPlainObject(need)) return '준비물은 { "name", "text" } JSON 객체여야 합니다';
+  if (!isPlainObject(need)) return '공통 조건은 { "name", "text" } JSON 객체여야 합니다';
   const unknown = Object.keys(need).filter((k) => !KEYS.includes(k));
   if (unknown.length) return `모르는 항목이 있습니다: ${unknown.join(', ')}`;
-  if (!isText(need.name)) return 'name 에 준비물 이름을 적어야 합니다';
-  if (!isText(need.text)) return 'text 에 준비물 내용을 적어야 합니다';
+  if (!isText(need.name)) return 'name 에 공통 조건 이름을 적어야 합니다';
+  if (!isText(need.text)) return 'text 에 공통 조건 내용을 적어야 합니다';
   return null;
 }
 
@@ -51,7 +51,7 @@ function loadNeeds(dir: string) {
   const found: Omit<NeedFile, 'stories'>[] = [];
   const notices: Notice[] = [];
   if (!fs.existsSync(folder)) return { found, notices };
-  if (!fs.statSync(folder).isDirectory()) return { found, notices: [{ file: NEEDS, reason: `${NEEDS} 는 준비물 파일을 담는 폴더여야 합니다` }] };
+  if (!fs.statSync(folder).isDirectory()) return { found, notices: [{ file: NEEDS, reason: `${NEEDS} 는 공통 조건 파일을 담는 폴더여야 합니다` }] };
   for (const entry of jsonFiles(folder, SAY)) {
     const use = entry.file.split(path.sep).join('/');
     const file = entry.file === folder ? NEEDS : needPath(use);

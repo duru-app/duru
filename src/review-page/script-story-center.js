@@ -23,16 +23,16 @@ const storyFile = (st) => h('details', { class: 'story-file', open: state.storyF
 const storyName = (id) => state.data.stories.list.find((st) => st.id === id)?.name ?? id;
 
 const needCenter = (n) => [
-  h('div', { class: 'title-row' }, h('h3', {}, n.name), h('span', { class: 'chip need-chip' }, '준비물')),
+  h('div', { class: 'title-row' }, h('h3', {}, n.name), h('span', { class: 'chip need-chip' }, '공통 조건')),
   h('div', { class: 'muted mono need-place' }, `${state.data.storiesDir}/${needPath(n.file)}`),
   h('p', { class: 'memo' }, n.text),
-  h('h2', { class: 'need-stories-head' }, `이 준비물을 쓰는 스토리 ${n.stories.length}`),
+  h('h2', { class: 'need-stories-head' }, `이 공통 조건을 쓰는 스토리 ${n.stories.length}`),
   n.stories.length
     ? h('ul', { class: 'screens', id: 'need-stories' }, n.stories.map((id) => h('li', { onclick: () => selectStory(id) },
         h('span', { class: 'name' }, h('span', {}, storyName(id)), h('div', { class: 'muted mono' }, id)))))
     : h('p', { class: 'muted' }, '없음'),
   h('details', { class: 'need-file', open: true },
-    h('summary', {}, `준비물 파일 ${needPath(n.file)}`),
+    h('summary', {}, `공통 조건 파일 ${needPath(n.file)}`),
     h('pre', { class: 'mono' }, JSON.stringify({ name: n.name, text: n.text }, null, 2))),
 ];
 

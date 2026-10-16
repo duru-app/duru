@@ -88,7 +88,7 @@ export const isText = (v: unknown): v is string => typeof v === 'string' && v.tr
 export const isScreenList = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every(isText);
 const isNeed = (v: any) => isText(v) || (isPlainObject(v) && Object.keys(v).length === 1 && isText(v.use));
 const FIELD_RULES = {
-  needs: { fits: isNeed, words: '조건을 하나씩 글이나 { "use": 준비물 파일 이름 } 으로' },
+  needs: { fits: isNeed, words: '조건을 하나씩 글이나 { "use": 공통 조건 파일 이름 } 으로' },
   linkNeeds: { fits: isText, words: '들어오는 링크 조건을 하나씩 글로' },
   expects: { fits: isText, words: '기대 결과를 하나씩 글로' },
 };

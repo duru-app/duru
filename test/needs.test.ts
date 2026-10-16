@@ -34,13 +34,13 @@ test('each file in the needs folder is a need with its name and text, named by i
     'plain.json': STORY,
     'needs/member-account.json': MEMBER,
     'needs/docs/done.json': DONE,
-    'needs/unused.json': { name: '쓰지 않는 준비물', text: '아무도 고르지 않는다' },
+    'needs/unused.json': { name: '쓰지 않는 공통 조건', text: '아무도 고르지 않는다' },
   }, (dir) => {
     assert.deepEqual(needsOf(dir), {
       list: [
         { file: 'docs/done.json', ...DONE, stories: ['open'] },
         { file: 'member-account.json', ...MEMBER, stories: ['open', 'run'] },
-        { file: 'unused.json', name: '쓰지 않는 준비물', text: '아무도 고르지 않는다', stories: [] },
+        { file: 'unused.json', name: '쓰지 않는 공통 조건', text: '아무도 고르지 않는다', stories: [] },
       ],
       notices: [],
       missing: 2,
@@ -58,9 +58,9 @@ test('a story folder without a needs folder, or one that is not there, has no ne
 
 const NOTICE_CASES: [string, Files, { file: string; reason: string | RegExp }][] = [
   ['not valid JSON', { 'needs/a.json': '{' }, { file: 'needs/a.json', reason: /^JSON 으로 읽지 못했습니다: / }],
-  ['a list instead of an object', { 'needs/a.json': '[]' }, { file: 'needs/a.json', reason: '준비물은 { "name", "text" } JSON 객체여야 합니다' }],
-  ['no name', { 'needs/a.json': { text: '역할 USER 계정' } }, { file: 'needs/a.json', reason: 'name 에 준비물 이름을 적어야 합니다' }],
-  ['empty text', { 'needs/a.json': { name: '일반 회원 계정', text: ' ' } }, { file: 'needs/a.json', reason: 'text 에 준비물 내용을 적어야 합니다' }],
+  ['a list instead of an object', { 'needs/a.json': '[]' }, { file: 'needs/a.json', reason: '공통 조건은 { "name", "text" } JSON 객체여야 합니다' }],
+  ['no name', { 'needs/a.json': { text: '역할 USER 계정' } }, { file: 'needs/a.json', reason: 'name 에 공통 조건 이름을 적어야 합니다' }],
+  ['empty text', { 'needs/a.json': { name: '일반 회원 계정', text: ' ' } }, { file: 'needs/a.json', reason: 'text 에 공통 조건 내용을 적어야 합니다' }],
   ['a key it does not know', { 'needs/a.json': { ...MEMBER, role: 'USER' } }, { file: 'needs/a.json', reason: '모르는 항목이 있습니다: role' }],
   ['a file name outside the story ID rule', { 'needs/Member Account.json': MEMBER }, { file: 'needs/Member Account.json', reason: '파일 이름이 스토리 ID 와 같은 규칙(영문 소문자 · 숫자 · - · _)에 맞지 않습니다' }],
 ];
@@ -82,6 +82,6 @@ for (const [name, files, notice] of NOTICE_CASES) {
 
 test('a needs folder that is a file is reported as such', () => {
   withStoriesDir({ needs: 'x', 'a.json': STORY }, (dir) => {
-    assert.deepEqual(needsOf(dir), { list: [], notices: [{ file: 'needs', reason: 'needs 는 준비물 파일을 담는 폴더여야 합니다' }], missing: 0 });
+    assert.deepEqual(needsOf(dir), { list: [], notices: [{ file: 'needs', reason: 'needs 는 공통 조건 파일을 담는 폴더여야 합니다' }], missing: 0 });
   });
 });

@@ -235,7 +235,7 @@ test('rebuild counts the need files, the needs that pick a need file that is not
     fs.writeFileSync(path.join(stories, 'run-lab.json'), JSON.stringify({ ...story, needs: [{ use: 'member-account.json' }, { use: 'old-admin.json' }, { use: 'broken.json' }], screens: [{ screen: story.screens[0], needs: [{ use: 'old-admin.json' }] }, ...story.screens.slice(1)] }));
     const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     assert.match(stdout, /^need files 1 \| needs picking a need file that is not there 2 \| need files skipped 1$/m);
-    assert.match(stdout, /^ {2}need file needs\/broken\.json: text 에 준비물 내용을 적어야 합니다$/m);
+    assert.match(stdout, /^ {2}need file needs\/broken\.json: text 에 공통 조건 내용을 적어야 합니다$/m);
     assert.match(stdout, /^stories 5 \| broken paths 1 \| detached 1 \| unjudged steps 0 \| story files skipped 1$/m);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });

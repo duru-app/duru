@@ -17,10 +17,10 @@ function needWord(n) {
 function needItem(n) {
   if (typeof n === 'string') return n;
   const found = findNeed(n.use);
-  if (!found) return h('span', { class: 'need-missing', title: '준비물 폴더에 이 파일이 없습니다' }, needWord(n));
-  if (!found.need) return h('span', { class: 'need-unread', title: `준비물 파일을 읽지 못했습니다: ${found.unread}` }, needWord(n));
+  if (!found) return h('span', { class: 'need-missing', title: '공통 조건 폴더에 이 파일이 없습니다' }, needWord(n));
+  if (!found.need) return h('span', { class: 'need-unread', title: `공통 조건 파일을 읽지 못했습니다: ${found.unread}` }, needWord(n));
   return h('button', { type: 'button', class: 'need-use', title: `${needPath(n.use)}\n${found.need.text}`, onclick: () => openNeed(n.use) },
-    h('span', { class: 'need-kind' }, '준비물'), ' ', found.need.name);
+    h('span', { class: 'need-kind' }, '공통 조건'), ' ', found.need.name);
 }
 
 const BOX_WORDS = { placeholder: '안내 글', label: '라벨', testId: '테스트 ID' };
