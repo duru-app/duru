@@ -491,18 +491,28 @@ A story is something a user gets done, written as the screens they pass through 
 - `expects` (optional) — a list of texts, each a thing that should hold once the last step is done
 
 A step of `screens` that has its own needs or expected results is written as an object instead of the screen ID:
-`{ "screen": "<screen ID>", "needs": [...], "linkNeeds": [...], "expects": [...] }`, where `screen` is required and
-the others are optional lists of texts in the same way. `linkNeeds` holds what has to hold on the link from the step
-before for the story to come into this step, such as 「반려된 경우」 when the same two screens are joined in more than one
-case; the first step has no link coming into it, so it cannot have `linkNeeds`. A step without any of them stays a
-screen ID.
+`{ "screen": "<screen ID>", "needs": [...], "linkNeeds": [...], "inputs": [...], "expects": [...] }`, where `screen`
+is required and the others are optional. `needs`, `linkNeeds` and `expects` are lists of texts in the same way.
+`linkNeeds` holds what has to hold on the link from the step before for the story to come into this step, such as
+「반려된 경우」 when the same two screens are joined in more than one case; the first step has no link coming into it, so
+it cannot have `linkNeeds`. A step without any of them stays a screen ID.
+
+`inputs` lists the boxes to fill at that step, each as `{ "box": { ... }, "value": "<what to type>" }`. `box` finds
+the box by what the screen shows: `placeholder` (the hint text inside the box), `label` (its label) or `testId` (its
+test ID). Write the words as they read on the screen, not a translation key; give one or more of the three, all
+pointing at the same box, so the box can still be found when one of them changes. When those words find more than
+one box, such as one memo box per signer, `nth` says which one, counting from 1. `value` is the text to put in.
+duru does not look for the box in the code, so the page and the task list mark each input as not checked.
 
 ```json
 {
   "name": "로그인해 문서 목록에서 문서를 연다",
   "needs": ["완료된 문서가 하나 있다"],
   "screens": [
-    "/signin#SignIn",
+    { "screen": "/signin#SignIn", "inputs": [
+      { "box": { "placeholder": "이메일", "testId": "login-email" }, "value": "member@example.com" },
+      { "box": { "placeholder": "비밀번호" }, "value": "test1234" }
+    ] },
     "/home#Home",
     { "screen": "/document/:tab_draft_done_#DocumentList", "needs": ["「완료」 탭을 고른다"] },
     { "screen": "/document/:id#DocumentDetail", "linkNeeds": ["상태가 「완료」인 줄을 누른 경우"], "expects": ["문서 제목과 서명자 목록이 보인다"] }
@@ -610,8 +620,8 @@ twice is drawn twice; the story's name, 「경로 끄기」 and 「i」 sit besi
 they are joined: solid for a link with no condition, blue dashed for a link under a condition, green dotted for a
 move written in `moves`, red dashed where the map has no link, and orange dotted where a step is not on the map or a
 link's address could not be read; the 「i」 beside 「경로 끄기」 shows these. Where the map has no link, a note below says
-which screens the step before does lead to. A step with `needs` or `expects` in the story file carries their count,
-such as 「조건 1 · 기대 2」, and the story's own `needs` and `expects` are counted beside its name;
+which screens the step before does lead to. A step with `needs`, `inputs` or `expects` in the story file carries
+their count, such as 「조건 1 · 입력 2 · 기대 2」, and the story's own `needs` and `expects` are counted beside its name;
 hovering over a count shows the lines. A step's `linkNeeds` are written under the line that comes into its box, cut
 short when longer than the line; hovering over them shows every line. A story wider than the pane scrolls sideways.
 Pressing the story again, or 「경로 끄기」, brings back the whole flow where it was.
@@ -683,8 +693,10 @@ judge several pairs at once.
 **Stories.** The stories tab lists the stories with their status and link verdicts, with the same search box and
 filters as the flow's story list (what is typed or ticked in one shows in the other); choosing one shows its steps,
 the link between each two and its 「사전 조건」, and lets its name and memo be changed. The story's own `needs` and
-`expects` show in a 「스토리」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones show inside
-its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. 「스토리 파일」 at the bottom unfolds
+`expects` show in a 「스토리」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs`
+show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. Each input reads like
+「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」:
+duru has not looked for that box in the code. 「스토리 파일」 at the bottom unfolds
 the story in the shape of its file, with the steps that have any of these lines written as objects. Candidates are
 listed below with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the address of a chosen candidate holds its screen order, as
 `#stories?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
@@ -863,8 +875,10 @@ Each screen comes with its marks, component file and route line, the app address
 needs, the tests of each role and setting case and of each picked case kind by depth and status, its API calls and
 the tests already attached. Calls follow under `# API calls`, with their picked case kinds the same way, and
 stories under `# Stories` with their steps, link verdicts and 「사전 조건」. A story's `needs` lines come before its
-steps, each step's `link need from step N` (the link from the step before), `need` and `expect` lines follow that
-step, and `expects at the end` follows the last step; a story without them gets none of these lines. Under an open
+steps, each step's `link need from step N` (the link from the step before), `need`, `input` and `expect` lines follow
+that step, and `expects at the end` follows the last step; a story without them gets none of these lines. An
+`input` line reads like `input: placeholder "이메일" or testId "login-email", number 2 → "member@example.com" (not
+checked against the code)`, with `number N` only when the input has `nth`. Under an open
 screen or call, `comments on tests` lists each test a comment was left on, with its file and line, status, how it is
 linked and its result file, followed by those comments and their replies. Under an open screen, `comments on opening conditions`
 and `comments on incoming links` list each condition and link a comment was left on the same way, with the source
