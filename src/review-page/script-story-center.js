@@ -17,7 +17,7 @@ function savedStory(st) {
 
 const storyFile = (st) => h('details', { class: 'story-file', open: state.storyFileOpen, ontoggle: (e) => { state.storyFileOpen = e.target.open; } },
   h('summary', {}, `스토리 파일 ${st.file}`),
-  h('p', { class: 'muted' }, 'duru 가 읽은 내용을 파일 모양으로 다시 적었습니다. 조건, 들어오는 링크 조건이나 기대 결과가 있는 단계는 { "screen", "needs", "linkNeeds", "expects" } 객체로, 없는 단계는 화면 ID 글자로 적습니다.'),
+  h('p', { class: 'muted' }, 'duru 가 읽은 내용을 파일 모양으로 다시 적었습니다. 조건, 들어오는 링크 조건, 입력값이나 기대 결과가 있는 단계는 { "screen", "needs", "linkNeeds", "inputs", "expects" } 객체로, 없는 단계는 화면 ID 글자로 적습니다.'),
   h('pre', { class: 'mono' }, JSON.stringify(savedStory(st), null, 2)));
 
 function renderStoryCenter() {

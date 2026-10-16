@@ -3,6 +3,7 @@ import { compare } from './config.ts';
 import { GENERAL, recordKind } from './marks.ts';
 import { reviewData } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
+import { BOX_WORDS } from './stories.ts';
 import { testsAt } from './story-paths.ts';
 import { DEPTHS } from './test-links.ts';
 
@@ -337,6 +338,8 @@ function linkText(link: any) {
 
 const writtenLines = (label: string, lines: string[] | undefined, indent: string) => (lines ?? []).map((text) => `${indent}- ${label}${within(text, `${indent}  `)}`);
 const writtenList = (head: string, lines: string[] | undefined) => (lines?.length ? [head, ...writtenLines('', lines, '  ')] : []);
+const boxText = (box: any) => BOX_WORDS.filter((k) => box[k] !== undefined).map((k) => `${k} ${JSON.stringify(box[k])}`).join(' or ') + (box.nth ? `, number ${box.nth}` : '');
+const inputLines = (inputs: any[] | undefined, indent: string) => (inputs ?? []).map((x) => `${indent}- input: ${boxText(x.box)} → ${JSON.stringify(x.value)} (not checked against the code)`);
 
 function stepLines(story: any, tests: any) {
   return story.steps.flatMap((step: any, i: number) => {
@@ -344,13 +347,14 @@ function stepLines(story: any, tests: any) {
     const indent = ' '.repeat(2 + no.length);
     const line = `  ${no}${within(step.screen, indent)} — ${step.onMap ? testSummary(testsAt(tests.nodes, step.screen)) : 'not on the map'}`;
     const fields = story.stepFields?.[i] ?? {};
-    const written = [...writtenLines(`link need from step ${i}: `, fields.linkNeeds, indent), ...writtenLines('need: ', fields.needs, indent), ...writtenLines('expect: ', fields.expects, indent)];
+    const written = [...writtenLines(`link need from step ${i}: `, fields.linkNeeds, indent), ...writtenLines('need: ', fields.needs, indent), ...inputLines(fields.inputs, indent), ...writtenLines('expect: ', fields.expects, indent)];
     const link = story.links[i];
     return [line, ...written, ...(link ? [`${indent}- to ${within(link.to, `${indent}  `)}: ${linkText(link)}`] : [])];
   });
 }
 
 const isWritten = (fields: any) => Boolean(fields?.needs?.length || fields?.linkNeeds?.length || fields?.expects?.length);
+const hasInputs = (story: any) => Boolean(story.stepFields?.some((f: any) => f.inputs?.length));
 const hasWritten = (story: any) => isWritten(story) || Boolean(story.stepFields?.some(isWritten));
 
 function reachProblems(story: any) {
@@ -464,6 +468,9 @@ export function taskList(config: any) {
   }
   if (stories.list.some((s) => storyMarks.some((m) => m.target.story === s.id) && hasWritten(s))) {
     out[2] += ' A person wrote the `needs` and `expects at the end` lines of a story and the `link need from step N`, `need` and `expect` lines under a step: what has to hold before the story or the step starts, what has to hold on the link from step N, the step before, for the story to take it into this step, what should be seen at that step, and what should hold once the last step is done. duru only carries them and does not check them against the code; set up each need and each link need from a step in the story test and check each expect there.';
+  }
+  if (stories.list.some((s) => storyMarks.some((m) => m.target.story === s.id) && hasInputs(s))) {
+    out[2] += ' An `input` line under a step names a box to fill at that step by the words on the screen it is found by, `placeholder`, `label` or `testId` (several joined by `or` find the same box), with `number N` when it is the Nth of the boxes those words find, and the value to put in it as a JSON string. duru did not look for the box in the code; if the test cannot find it, suspect the story first and tell the user which input it is.';
   }
   if (partKinds.has('condition') || partKinds.has('link')) {
     out[2] += ' Under `comments on opening conditions` and `comments on incoming links`, each role or setting condition and each link into the screen a reviewer left a comment on is named with the source file and line it is written at; if the app does not do what duru read there, tell the user it is a duru defect, and otherwise answer with that line.';

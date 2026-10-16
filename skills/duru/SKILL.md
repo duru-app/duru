@@ -281,6 +281,13 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    once the last step is done. Set up each need in the test's data setup or its steps before the step it belongs
    to, make the test take the link a `link need from step N` line names, check each expect at that step or at the
    end, and when one cannot be set up or checked in the app, tell the user which one instead of leaving it out.
+   An `input` line under a step names a box to fill at that step and the value to put in it. The box is named by
+   the words the screen shows: `placeholder` (the hint inside the box), `label` or `testId`, several joined by `or`
+   all pointing at the same box, with `number N` when it is the Nth box those words find; the value is a JSON
+   string. Find the box in the test by those words as they are (a placeholder, label or test ID locator, taking the
+   Nth match when there is a number), fill in the value at that step, and do not swap the words for a CSS or XPath
+   selector. duru did not look for the box in the code, so the story may name a box the screen does not have:
+   when the test cannot find the box, tell the user which input it is instead of guessing another box.
    The items under `# Tagging` (they can be listed even when no mark is open) are tests the reviewer judged to
    check a screen or API call they carry no tag for. For each, open the test at its file and line and add exactly
    the tag in `tag to add`, in the place its `where` line names, and change nothing else in the test: not its

@@ -190,6 +190,49 @@ test('in a browser, the conditions written for the link into a step show on the 
   });
 });
 
+test('in a browser, the inputs written for a step show in its card with the words its box is found by, its number, the value and 확인 안 됨 on each line, and the flow\'s one-line story counts them with the lines on hover', { skip: browserMissing }, async () => {
+  const written = {
+    name: '실험 이름을 적어 돌린다',
+    screens: [
+      '/home#Home',
+      { screen: '/lab#Lab', needs: ['실험실 설정을 켠다'], inputs: [{ box: { testId: 'lab-name', placeholder: '실험 이름' }, value: '첫 실험' }, { box: { label: '서명자 메모', nth: 2 }, value: '확인했습니다' }], expects: ['「실행」 단추가 보인다'] },
+      { screen: '/lab/result#LabResult', inputs: [{ box: { label: '검색어' }, value: '계약서' }] },
+    ],
+    memo: '',
+    author: 'reviewer',
+    date: '2026-10-05',
+  };
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config, copy) => {
+    fs.writeFileSync(path.join(copy, 'example-stories/lab-inputs.json'), JSON.stringify(written));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#story-list li:has-text("실험 이름을 적어 돌린다")');
+        assert.deepEqual(await p.locator('#center .story-path .step').evaluateAll((steps) => steps.map((s) => [...s.querySelectorAll('.step-written .written-label')].map((l) => l.textContent))), [[], ['조건', '입력값', '기대 결과'], ['입력값']]);
+        const rows = () => p.locator('#center .story-path .step').evaluateAll((steps) => steps.map((s) => [...s.querySelectorAll('.step-written .written-row.inputs tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent))));
+        assert.deepEqual(await rows(), [
+          [],
+          [['안내 글 「실험 이름」 또는 테스트 ID 「lab-name」', '첫 실험', '확인 안 됨'], ['라벨 「서명자 메모」 · 2 번째', '확인했습니다', '확인 안 됨']],
+          [['라벨 「검색어」', '계약서', '확인 안 됨']],
+        ]);
+        assert.equal(await p.getAttribute('#center .step-written .input-unchecked >> nth=0', 'title'), 'duru 가 코드에서 이 상자를 찾아보지 않았습니다');
+        await p.click('#center .step-written td:has-text("계약서")');
+        assert.equal(await p.textContent('#center h3'), '실험 이름을 적어 돌린다', 'pressing an input line does not open the screen');
+        await p.click('#center details.story-file summary');
+        assert.deepEqual(JSON.parse((await p.textContent('#center details.story-file pre'))!), written);
+
+        await p.click('#view-flow');
+        await p.waitForSelector('#flow .box.screen');
+        await p.click('#flow-story-list li[data-story="lab-inputs"]');
+        await p.waitForFunction(() => state.storyPath?.id === 'lab-inputs');
+        assert.deepEqual(await p.$$eval('#flow .story-line [data-step]', (els) => els.map((e) => e.querySelector('.written-count')?.textContent ?? null)), [null, '조건 1 · 입력 2 · 기대 1', '입력 1']);
+        assert.equal(await p.getAttribute('#flow .story-line [data-step="1"] .written-count', 'title'), '조건: 실험실 설정을 켠다\n입력: 안내 글 「실험 이름」 또는 테스트 ID 「lab-name」 → 첫 실험\n입력: 라벨 「서명자 메모」 · 2 번째 → 확인했습니다\n기대: 「실행」 단추가 보인다');
+      }),
+    );
+  });
+});
+
 test('in a browser, a step that a move in the config joins shows as 설정에 적은 이동 with its reason, and the story is reachable', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories', moves: [{ from: '/signin', to: '/lab/result', reason: '로그인 뒤' }] }, (config, copy) => {
     fs.writeFileSync(path.join(copy, 'example-stories/signin-lab.json'), JSON.stringify({ name: '로그인해서 실험 결과를 본다', screens: ['/signin#SignIn', '/lab/result#LabResult'], author: 'a', date: '2026-10-03' }));

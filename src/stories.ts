@@ -21,9 +21,22 @@ interface RawStory {
   source?: RawSource;
 }
 
+export interface InputBox {
+  placeholder?: string;
+  label?: string;
+  testId?: string;
+  nth?: number;
+}
+
+export interface StepInput {
+  box: InputBox;
+  value: string;
+}
+
 export interface StepFields {
   needs?: string[];
   linkNeeds?: string[];
+  inputs?: StepInput[];
   expects?: string[];
 }
 
@@ -59,7 +72,11 @@ export const STORY_ID = /^[a-z0-9_-]+$/;
 const FIELD_KEYS = ['needs', 'expects'] as const;
 const KEYS = ['name', 'screens', ...FIELD_KEYS, 'memo', 'author', 'date', 'source'];
 const STEP_FIELD_KEYS = ['needs', 'linkNeeds', 'expects'] as const;
-const STEP_KEYS = ['screen', ...STEP_FIELD_KEYS];
+const STEP_FIELDS = ['needs', 'linkNeeds', 'inputs', 'expects'];
+const STEP_KEYS = ['screen', ...STEP_FIELDS];
+const INPUT_KEYS = ['box', 'value'];
+export const BOX_WORDS = ['placeholder', 'label', 'testId'] as const;
+const BOX_KEYS: string[] = [...BOX_WORDS, 'nth'];
 const FIELD_WORDS = { needs: '조건을', linkNeeds: '들어오는 링크 조건을', expects: '기대 결과를' };
 export const DISCARDED = 'discarded';
 export const CANDIDATES = 'candidates';
@@ -85,12 +102,40 @@ function fieldsProblem(fields: { needs?: unknown; linkNeeds?: unknown; expects?:
 
 function stepProblem(step: any, where: string, first: boolean) {
   if (isText(step)) return null;
-  if (!isPlainObject(step)) return `${where}는 화면 ID 글자나 { "screen", "needs", "linkNeeds", "expects" } 객체여야 합니다`;
+  if (!isPlainObject(step)) return `${where}는 화면 ID 글자나 { "screen", "needs", "linkNeeds", "inputs", "expects" } 객체여야 합니다`;
   const unknown = Object.keys(step).filter((k) => !STEP_KEYS.includes(k));
   if (unknown.length) return `${where}에 모르는 항목이 있습니다: ${unknown.join(', ')}`;
   if (!isText(step.screen)) return `${where}의 screen 에 화면 ID 를 적어야 합니다`;
   if (first && step.linkNeeds !== undefined) return `${where}에는 앞 단계가 없어 linkNeeds(들어오는 링크 조건)를 둘 수 없습니다`;
-  return fieldsProblem(step, `${where}의 `, STEP_FIELD_KEYS);
+  return fieldsProblem(step, `${where}의 `, STEP_FIELD_KEYS) ?? inputsProblem(step.inputs, where);
+}
+
+function boxProblem(box: any, where: string) {
+  const missing = `${where}의 box 에 상자를 찾는 말(${BOX_WORDS.join(', ')})을 하나 이상 적어야 합니다`;
+  if (!isPlainObject(box)) return missing;
+  const unknown = Object.keys(box).filter((k) => !BOX_KEYS.includes(k));
+  if (unknown.length) return `${where}의 box 에 모르는 종류가 있습니다: ${unknown.join(', ')} (상자를 찾는 말은 ${BOX_WORDS.join(', ')} 가운데서 고릅니다)`;
+  const words = BOX_WORDS.filter((k) => box[k] !== undefined);
+  if (!words.length) return missing;
+  const empty = words.find((k) => !isText(box[k]));
+  if (empty) return `${where}의 box 의 ${empty} 에 화면에 보이는 문구를 적어야 합니다`;
+  if (box.nth !== undefined && !isStep(box.nth)) return `${where}의 box 의 nth 는 1 이상의 정수여야 합니다`;
+  return null;
+}
+
+function inputsProblem(inputs: unknown, where: string) {
+  if (inputs === undefined) return null;
+  if (!Array.isArray(inputs)) return `${where}의 inputs 는 입력값을 { "box", "value" } 객체로 하나씩 적은 목록이어야 합니다`;
+  for (const [i, input] of inputs.entries()) {
+    const at = `${where}의 ${i + 1} 번째 입력값`;
+    if (!isPlainObject(input)) return `${at}은 { "box", "value" } 객체여야 합니다`;
+    const unknown = Object.keys(input).filter((k) => !INPUT_KEYS.includes(k));
+    if (unknown.length) return `${at}에 모르는 항목이 있습니다: ${unknown.join(', ')}`;
+    const problem = boxProblem(input.box, at);
+    if (problem) return problem;
+    if (!isText(input.value)) return `${at}의 value 에 넣을 값을 글로 적어야 합니다`;
+  }
+  return null;
 }
 
 function problemOf(story: RawStory) {
@@ -118,7 +163,7 @@ function problemOf(story: RawStory) {
   return null;
 }
 
-const fieldsOf = (raw: any): StepFields => Object.fromEntries(STEP_FIELD_KEYS.filter((key) => raw[key] !== undefined).map((key) => [key, raw[key]]));
+const fieldsOf = (raw: any): StepFields => Object.fromEntries(STEP_FIELDS.filter((key) => raw[key] !== undefined).map((key) => [key, raw[key]]));
 
 function storyOf(story: any) {
   const steps: any[] = story.screens;

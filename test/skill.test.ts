@@ -123,6 +123,13 @@ test('the agent skill says how to read the conditions a person wrote for the lin
   assert.match(SKILL, /make the test take the link a\s+`link need from step N` line names/);
 });
 
+test('the agent skill says how to read the inputs a person wrote for a step in the task list and what to do when the test cannot find the box', () => {
+  assert.match(SKILL, /An `input` line under a step names a box to fill at that step and the value to put in it/);
+  assert.match(SKILL, /`placeholder`[\s\S]*`label`[\s\S]*`testId`[\s\S]*`number N` when it is the Nth box those words find/);
+  assert.match(SKILL, /Find the box in the test by those\s+words as they are/);
+  assert.match(SKILL, /when the test cannot find the box, tell the user which input it is/);
+});
+
 test('the agent skill says what a comment on a story candidate carries and that it is answered from the record or the test, outside the task list', () => {
   assert.match(SKILL, /`\{ "candidate": "<key>" \}`/);
   assert.match(SKILL, /`\{ "record", "steps" \}` with `stepRanges`[\s\S]*`\{ "report", "tests" \}`/);

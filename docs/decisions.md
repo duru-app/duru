@@ -1861,6 +1861,32 @@ Alternatives compared:
 - A list of links beside `screens` pointing at a step by its number: whoever edits the file by hand has to renumber
   it when a step is added or removed, the reason step lines went into the step objects.
 
+**An input a person writes for a step is a box and a value, `{ "box": { "placeholder" | "label" | "testId", "nth"? },
+"value" }`, and duru shows and carries it as not checked against the code.**
+Driver's decision in #275, built in #281. Both directions that will use an input later, filling a candidate's inputs
+from a test record and drafting a test from a story, need "which box, found by what, gets which value" as it is; a
+line of text such as 「이메일 칸에 member@example.com」 is easier to write, but each direction would have to guess the
+box out of the sentence. The mockup showed both, and the box shape was chosen. The box is found by the words the
+screen shows, because a reviewer writes it while looking at the screen and does not know translation keys or code
+names: Playwright recommends finding a box by its label or placeholder rather than by CSS or XPath
+(https://playwright.dev/docs/locators), and Testing Library ranks role, label, placeholder and, last, test ID
+(https://testing-library.com/docs/queries/about/). Writing which kind of words they are lets a test pick
+`getByPlaceholder`, `getByLabel` or `getByTestId` without guessing. Several kinds may be written for one box, as the
+Chrome DevTools Recorder keeps several selectors for one step
+(https://developer.chrome.com/docs/devtools/recorder/reference), so the box can still be found when one of them
+changes. `nth`, counted from 1, names one of several boxes the same words find, as Maestro picks the Nth match
+(https://docs.maestro.dev/api-reference/selectors); all read on 2026-10-15. A file with a box that has no words,
+empty words, a kind duru does not know, or an `nth` below 1 is not read, like any other malformed story file, so
+a test never gets a box it cannot look for. duru does not yet look for the box in the code, so every input shows
+「확인 안 됨」 on the page and `(not checked against the code)` in the task list; reading the boxes from the code can
+later turn that into found or gone without changing the file. The task list writes the words and the value as JSON
+strings, so spaces at the ends of a value and quotes inside the words stay visible.
+Alternatives compared:
+- One line of text per input: easier to write, but a test or a record would have to turn the sentence into a box.
+- The field names of the request the screen sends: into-sign 1.5.0 has no TypeScript, so duru cannot read the body
+  types, and a box whose value is never sent to the server could not be written.
+- A CSS or XPath selector: a reviewer cannot write it from the screen, and Playwright advises against it.
+
 **The review page is kept as several files in `src/review-page/`, and the review server joins them, in the order
 listed once in `src/review.ts`, into the one page it sends for `GET /`.**
 One file of more than 5,000 lines meant that two changes to the page, made at the same time, touched the same file.
