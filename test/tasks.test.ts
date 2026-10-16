@@ -356,7 +356,36 @@ test('a marked story carries the needs and expects a person wrote for the whole 
       '  - 열어 본 도움말이 기록된다',
       '',
     ].join('\n'));
-    assert.match(tasks.split('\n')[2], / A person wrote the `needs` and `expects at the end` lines of a story and the `need` and `expect` lines under a step: .* duru only carries them and does not check them against the code; set up each need in the story test and check each expect there\./);
+    assert.match(tasks.split('\n')[2], / A person wrote the `needs` and `expects at the end` lines of a story and the `link need from step N`, `need` and `expect` lines under a step: .* duru only carries them and does not check them against the code; set up each need and each link need from a step in the story test and check each expect there\./);
+  }, { storiesDir: 'example-stories' });
+});
+
+test('a marked story carries under each step the conditions a person wrote for the link into it, before the step\'s own needs, and the intro says what they are', () => {
+  withFixtureCopy(({ copy, cli }) => {
+    const file = path.join(copy, 'example-stories/help-from-home.json');
+    const story = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, JSON.stringify({
+      ...story,
+      screens: ['/signin#SignIn', { screen: '/home#Home', linkNeeds: ['로그인에 성공한 경우'] }, { screen: '/help#Help', needs: ['도움말 설정을 켠다'], linkNeeds: ['도움말 링크를\n누른 경우'], expects: ['도움말 목록이 보인다'] }],
+    }));
+    cli('rebuild');
+    const tasks = cli('tasks');
+    const item = tasks.split('\n## help-from-home\n')[1].split('\n## ')[0];
+    assert.equal(item.slice(item.indexOf('- screens:'), item.indexOf('- reach:')), [
+      '- screens:',
+      '  1. /signin#SignIn — tests: ui pass 1, code pass 1',
+      '     - to /home#Home: open at components/SignIn.js:12',
+      `  2. /home#Home — ${HOME_TESTS}`,
+      '     - link need from step 1: 로그인에 성공한 경우',
+      '     - to /help#Help: no link',
+      '  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1',
+      '     - link need from step 2: 도움말 링크를',
+      '       누른 경우',
+      '     - need: 도움말 설정을 켠다',
+      '     - expect: 도움말 목록이 보인다',
+      '',
+    ].join('\n'));
+    assert.match(tasks.split('\n')[2], / A person wrote the `needs` and `expects at the end` lines of a story and the `link need from step N`, `need` and `expect` lines under a step: .*what has to hold on the link from step N, the step before, for the story to take it into this step.* duru only carries them and does not check them against the code; set up each need and each link need from a step in the story test and check each expect there\./);
   }, { storiesDir: 'example-stories' });
 });
 

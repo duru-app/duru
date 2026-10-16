@@ -344,13 +344,13 @@ function stepLines(story: any, tests: any) {
     const indent = ' '.repeat(2 + no.length);
     const line = `  ${no}${within(step.screen, indent)} — ${step.onMap ? testSummary(testsAt(tests.nodes, step.screen)) : 'not on the map'}`;
     const fields = story.stepFields?.[i] ?? {};
-    const written = [...writtenLines('need: ', fields.needs, indent), ...writtenLines('expect: ', fields.expects, indent)];
+    const written = [...writtenLines(`link need from step ${i}: `, fields.linkNeeds, indent), ...writtenLines('need: ', fields.needs, indent), ...writtenLines('expect: ', fields.expects, indent)];
     const link = story.links[i];
     return [line, ...written, ...(link ? [`${indent}- to ${within(link.to, `${indent}  `)}: ${linkText(link)}`] : [])];
   });
 }
 
-const isWritten = (fields: any) => Boolean(fields?.needs?.length || fields?.expects?.length);
+const isWritten = (fields: any) => Boolean(fields?.needs?.length || fields?.linkNeeds?.length || fields?.expects?.length);
 const hasWritten = (story: any) => isWritten(story) || Boolean(story.stepFields?.some(isWritten));
 
 function reachProblems(story: any) {
@@ -463,7 +463,7 @@ export function taskList(config: any) {
     out[2] += ' Under `comments on steps` and `comments on links between steps`, each step of a story and each link between two of its steps a reviewer left a comment on is named with the screen\'s component file and route line, and a link also with its verdict and where it is written; add what the comment asks to the story test, and if the verdict is wrong, tell the user it is a duru defect.';
   }
   if (stories.list.some((s) => storyMarks.some((m) => m.target.story === s.id) && hasWritten(s))) {
-    out[2] += ' A person wrote the `needs` and `expects at the end` lines of a story and the `need` and `expect` lines under a step: what has to hold before the story or the step starts, what should be seen at that step, and what should hold once the last step is done. duru only carries them and does not check them against the code; set up each need in the story test and check each expect there.';
+    out[2] += ' A person wrote the `needs` and `expects at the end` lines of a story and the `link need from step N`, `need` and `expect` lines under a step: what has to hold before the story or the step starts, what has to hold on the link from step N, the step before, for the story to take it into this step, what should be seen at that step, and what should hold once the last step is done. duru only carries them and does not check them against the code; set up each need and each link need from a step in the story test and check each expect there.';
   }
   if (partKinds.has('condition') || partKinds.has('link')) {
     out[2] += ' Under `comments on opening conditions` and `comments on incoming links`, each role or setting condition and each link into the screen a reviewer left a comment on is named with the source file and line it is written at; if the app does not do what duru read there, tell the user it is a duru defect, and otherwise answer with that line.';

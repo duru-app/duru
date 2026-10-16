@@ -331,6 +331,9 @@
   .story-hop { position: relative; flex: none; width: 104px; height: 8px; }
   .story-line svg { position: static; display: block; }
   .story-hop .story-tag { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); }
+  .story-hop .hop-need { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); box-sizing: border-box; max-width: 100px; overflow: hidden; text-overflow: ellipsis; padding: 0 5px; border: 1px solid var(--written); border-radius: 4px; background: var(--panel); color: var(--written); font-size: 11px; line-height: 16px; white-space: nowrap; cursor: help; }
+  .story-hop .story-tag + .hop-need { top: 32px; }
+  .story-line .story-row:has(.story-tag + .hop-need) { padding-bottom: 48px; }
   .story-gaps { max-width: 640px; font-size: 13px; }
   .story-gaps li { padding: 8px 12px; border: 1px dashed var(--fail); border-radius: 6px; overflow-wrap: anywhere; }
   .canvas > .mark { position: absolute; }
@@ -471,6 +474,7 @@
   .written-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; align-items: baseline; }
   .written-label { font-size: 12px; font-weight: 600; color: var(--written); }
   .written-row ul { margin: 0; padding-left: 16px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .link-written { margin-top: 4px; }
   .story-wide { margin: 12px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--written); border-radius: 6px; background: var(--panel); }
   .story-wide h2 { margin: 0 0 6px; }
   .written-count { flex: none; padding: 0 5px; border-radius: 4px; font-size: 11px; color: var(--written); background: var(--written-bg); white-space: nowrap; cursor: help; }

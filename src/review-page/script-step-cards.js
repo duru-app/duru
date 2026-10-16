@@ -1,7 +1,7 @@
-const writtenRows = (fields, needLabel, expectLabel) => [
-  fields?.needs?.length ? h('div', { class: 'written-row needs' }, h('span', { class: 'written-label' }, needLabel), h('ul', {}, fields.needs.map((x) => h('li', {}, x)))) : null,
-  fields?.expects?.length ? h('div', { class: 'written-row expects' }, h('span', { class: 'written-label' }, expectLabel), h('ul', {}, fields.expects.map((x) => h('li', {}, x)))) : null,
-].filter(Boolean);
+const LINK_NEEDS_LABEL = '들어오는 링크 조건';
+const writtenRow = (cls, label, lines) => (lines?.length ? h('div', { class: `written-row ${cls}` }, h('span', { class: 'written-label' }, label), h('ul', {}, lines.map((x) => h('li', {}, x)))) : null);
+const writtenRows = (fields, needLabel, expectLabel) => [writtenRow('needs', needLabel, fields?.needs), writtenRow('expects', expectLabel, fields?.expects)].filter(Boolean);
+const linkWritten = (fields) => (fields?.linkNeeds?.length ? h('div', { class: 'link-written written' }, writtenRow('link-needs', LINK_NEEDS_LABEL, fields.linkNeeds)) : null);
 
 const hasWritten = (fields) => Boolean(fields?.needs?.length || fields?.expects?.length);
 
@@ -49,7 +49,7 @@ const wayItem = (w, scope = null) => h('li', {}, h('code', {}, `${w.file}:${w.li
 const unknownList = (links) => h('ul', { class: 'plain ways unknown-links' }, links.map((u) => h('li', {}, h('code', {}, `${u.file}:${u.line}`), ' → ', h('code', {}, u.to))));
 const skippedLinks = (links) => [h('div', { class: 'muted skipped' }, '판정에서 뺀 링크'), unknownList(links)];
 
-function linkItem(l, story, i) {
+function linkItem(l, story, i, fields) {
   const head = h('span', { class: 'slot-text' },
     h('span', { class: `chip link-verdict l-${l.verdict}`, title: LINK_VERDICT_TITLE[l.verdict] }, LINK_VERDICT[l.verdict]),
     l.verdict === 'off-map' ? h('span', { class: 'muted' }, ' 화면 없음') : null,
@@ -59,6 +59,7 @@ function linkItem(l, story, i) {
     story ? slotRow(head, hopTarget(story, i, l), SLOT_WORDS.hop) : head,
     l.verdict === 'unknown' ? unknownList(l.unknownLinks) : null,
     l.ways.length ? h('ul', { class: 'plain ways' }, l.ways.map((w) => wayItem(w))) : null,
-    l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null);
+    l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null,
+    linkWritten(fields));
 }
 
