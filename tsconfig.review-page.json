@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "allowJs": true,
+    "checkJs": true,
+    "strict": false,
+    "moduleDetection": "legacy"
+  },
+  "include": ["src/review-page/*.js"],
+  "exclude": []
+}

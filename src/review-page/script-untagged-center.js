@@ -62,14 +62,14 @@ const isPickable = (p) => !p.entry.judgment && opensOnPage(p.id);
 
 function redrawBulk(focusSelector) {
   renderUntaggedCenter();
-  document.querySelector(`#center ${focusSelector}`)?.focus();
+  /** @type {HTMLElement} */ (document.querySelector(`#center ${focusSelector}`))?.focus();
 }
 
 // 고를 짝이 남지 않아 단추 줄이 사라지면 짝 묶음의 제목으로 간다.
 function focusBulk(kind) {
   const pairs = document.querySelector('#center .test-pairs');
   const bar = pairs?.querySelector('.bulk-bar');
-  (bar ? bar.querySelector(`button.${kind}:enabled`) ?? bar.querySelector('input') : pairs?.querySelector('h2'))?.focus();
+  /** @type {HTMLElement} */ (bar ? bar.querySelector(`button.${kind}:enabled`) ?? bar.querySelector('input') : pairs?.querySelector('h2'))?.focus();
 }
 
 // 찾기 칸처럼 다시 그려도 남는 칸의 초점은 단추로 가져오지 않는다. 가져오면 치던 Space 나 Enter 가 단추를 다시 누른다.
@@ -95,7 +95,7 @@ function askExcludePicked(t, bulk) {
       return failure;
     },
     done: () => showBulkResult('discard'),
-    refocus: () => document.querySelector('#center .bulk-bar button.discard')?.focus(),
+    refocus: () => /** @type {HTMLElement} */ (document.querySelector('#center .bulk-bar button.discard'))?.focus(),
   });
 }
 

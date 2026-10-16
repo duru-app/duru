@@ -9,7 +9,7 @@ function pickStory(id) {
   render();
   Object.assign(flow, id ? { scrollTop: 0, scrollLeft: 0 } : mainScroll ?? {});
   if (!id) mainScroll = null;
-  document.querySelector(`#flow-story-list li[data-story="${CSS.escape(id || was || '')}"]`)?.focus();
+  /** @type {HTMLElement} */ (document.querySelector(`#flow-story-list li[data-story="${CSS.escape(id || was || '')}"]`))?.focus();
 }
 
 // 이미 고른 화면을 다시 누르면 오른쪽 칸에 쓰던 표시를 그대로 둔다.

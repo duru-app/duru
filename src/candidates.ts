@@ -253,7 +253,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const current = discardedNow(discarded);
   const shown = shownDiscarded(current);
   if (linksWithoutConditions(map)) {
-    return { list: [], discarded: shown, notices: all, ...((records.length || traced.length || stored.length) && { stale: staleMapMessage(mapFile, '후보') }) };
+    return { list: [], discarded: shown, notices: all, stale: records.length || traced.length || stored.length ? staleMapMessage(mapFile, '후보') : undefined };
   }
   const screenAt = screenFinder(map);
   const seen = new Set([...loadStories(config.storiesDir).stories, ...current].map((s) => JSON.stringify(s.screens)));

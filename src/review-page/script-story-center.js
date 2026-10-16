@@ -192,7 +192,7 @@ async function acceptChosen() {
   if (state.candidate === c.key) askAccept(c, 'button.accept', takeStoryError());
 }
 
-const acceptDialog = document.getElementById('accept-ask');
+const acceptDialog = /** @type {HTMLDialogElement} */ (document.getElementById('accept-ask'));
 const acceptPart = (selector) => acceptDialog.querySelector(selector);
 let acceptJob = null;
 
@@ -223,7 +223,7 @@ function closeAccept() {
   const { opener } = acceptJob;
   acceptJob = null;
   acceptDialog.close();
-  document.querySelector(`#right ${opener}`)?.focus();
+  /** @type {HTMLElement} */ (document.querySelector(`#right ${opener}`))?.focus();
 }
 
 async function confirmAccept() {
@@ -240,7 +240,7 @@ acceptDialog.addEventListener('input', drawAccept);
 acceptPart('button.accept').addEventListener('click', confirmAccept);
 acceptPart('button.cancel').addEventListener('click', closeAccept);
 acceptDialog.addEventListener('keydown', (e) => {
-  const send = e.key === 'Enter' && e.target.matches('input');
+  const send = e.key === 'Enter' && /** @type {Element} */ (e.target).matches('input');
   if ((e.key !== 'Escape' && !send) || e.isComposing) return;
   e.preventDefault();
   if (e.repeat) return;
@@ -272,7 +272,7 @@ function askDiscard(c) {
       state.candidateTalk = null;
       render();
     },
-    refocus: () => document.querySelector('#right button.discard')?.focus(),
+    refocus: () => /** @type {HTMLElement} */ (document.querySelector('#right button.discard'))?.focus(),
   });
 }
 
