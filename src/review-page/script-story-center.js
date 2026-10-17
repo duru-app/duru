@@ -142,10 +142,10 @@ function storyGaps(st) {
   });
   const gaps = gapLists([...firstStep.keys()].map((id) => byId.get(id)), (n) => revealStoryPart({ kind: 'step', key: { step: firstStep.get(n.id) + 1 } }));
   return h('details', { class: 'story-gaps', open: state.storyGapsOpen, ontoggle: (e) => { state.storyGapsOpen = e.currentTarget.open; } },
-    h('summary', {}, h('span', { class: 'title' }, `빈틈 ${gaps.count}`)),
+    h('summary', {}, h('span', { class: 'title' }, `손볼 화면 ${gaps.count}`)),
     h('p', { class: 'muted lead' }, '이 스토리의 경로에 있는 화면 가운데 실패했거나 테스트가 없는 화면입니다. 누르면 그 단계 카드로 내려갑니다.'),
     ...gaps.groups,
-    gaps.count ? null : h('p', { class: 'muted' }, '빈틈이 없습니다.'));
+    gaps.count ? null : h('p', { class: 'muted' }, '손볼 화면이 없습니다.'));
 }
 
 const stepLabel = (r) => (r.kind === 'start' ? `첫 화면 ${screenLabel(r.screen)}`

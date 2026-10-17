@@ -291,7 +291,7 @@ test('in a browser, the right pane of a story in the story tab lists, folded, th
       const of = (id: string) => nodes.find((n) => n.id === id).counts;
       return { fail: ids.filter((id: string) => of(id).fail > 0), none: ids.filter((id: string) => { const c = of(id); return !c.fail && !c.pending && !c.pass; }) };
     }, WALK_ON_MAP);
-    assert.equal(await gaps.locator('summary').textContent(), `빈틈 ${expected.fail.length + expected.none.length}`);
+    assert.equal(await gaps.locator('summary').textContent(), `손볼 화면 ${expected.fail.length + expected.none.length}`);
     await gaps.locator('summary').click();
     await p.waitForFunction(() => state.storyGapsOpen);
     assert.deepEqual(await gaps.locator('h3').allTextContents(), [`실패 ${expected.fail.length}`, `테스트 없음 ${expected.none.length}`].filter((t) => !t.endsWith(' 0')));

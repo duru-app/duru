@@ -249,7 +249,7 @@ test('in a browser, with nothing picked the right column lists the failing scree
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#gaps .gap-list');
-        assert.equal(await p.textContent('#gaps h2'), '빈틈 9');
+        assert.equal(await p.textContent('#gaps h2'), '손볼 화면 9');
         assert.deepEqual(await p.locator('#gaps h3').allTextContents(), ['실패 5', '테스트 없음 4']);
         const names = (n: number) => p.locator('#gaps .gap-list').nth(n).locator('li .name > span:first-child').allTextContents();
         assert.deepEqual(await names(0), ['/home', '/document/:tab(draft|done)', '/document/:id', '/admin/member', '/help']);
@@ -458,8 +458,8 @@ test('in a browser, a map with no screens says so in the flow, and the entryPath
         await p.waitForSelector('.flowbar .flowsummary');
         assert.match((await p.textContent('#flow'))!, /화면이 없습니다\./);
         assert.doesNotMatch((await p.textContent('#flow'))!, /entryPaths/);
-        assert.equal(await p.textContent('#gaps h2'), '빈틈 0');
-        assert.equal(await p.textContent('#gaps p:last-child'), '빈틈이 없습니다.');
+        assert.equal(await p.textContent('#gaps h2'), '손볼 화면 0');
+        assert.equal(await p.textContent('#gaps p:last-child'), '손볼 화면이 없습니다.');
       }, { view: 'flow' }),
     );
   });

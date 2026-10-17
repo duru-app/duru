@@ -638,8 +638,8 @@ could not be read; the 「i」 above the line shows these. Pressing a box outlin
 cards only when that card is out of view; pressing the line between two steps brings that link's row into view. The
 outline stays on the pressed step while the cards scroll, and a line wider than the pane slides sideways to keep it in
 view. Below the line are the story's cards: its name, tests, 「스토리」 box, then each step and the link into it. The right
-column has the story's 「사전 조건」, a folded 「빈틈 N」 listing the failing and untested screens on its path, each bringing up
-its step card, then the name and memo and the conversation. The address of a story is `#story?story=<ID>`, with
+column has the story's 「사전 조건」, a folded 「손볼 화면 N」 listing the failing and untested screens on its path, each bringing
+up its step card, then the name and memo and the conversation. The address of a story is `#story?story=<ID>`, with
 `&step=<N>` added while step N is outlined, so opening that address, going back to it or reloading it outlines the
 same step and brings its card into view. Pressing another step changes the address without adding to the browser
 history.

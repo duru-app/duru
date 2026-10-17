@@ -58,12 +58,12 @@ function gapLists(screens, pick) {
 function renderGaps() {
   const gaps = gapLists(flowScreens(), (n) => pickScreen(n.id));
   fill(document.getElementById('gaps'),
-    h('h2', {}, `빈틈 ${gaps.count}`),
+    h('h2', {}, `손볼 화면 ${gaps.count}`),
     h('p', { class: 'muted lead' }, flowComposing()
       ? '실패했거나 테스트가 없는 화면입니다. 누르면 새 스토리의 단계로 넣습니다.'
       : '실패했거나 테스트가 없는 화면입니다. 누르면 그림에서 그 화면에 이어진 길만 진하게 남기고 그 화면을 엽니다.'),
     ...gaps.groups,
-    gaps.count ? null : h('p', { class: 'muted' }, '빈틈이 없습니다.'));
+    gaps.count ? null : h('p', { class: 'muted' }, '손볼 화면이 없습니다.'));
 }
 
 function composeOverlay() {
