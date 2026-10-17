@@ -712,8 +712,9 @@ judge several pairs at once.
 filters by status and missing links; choosing one shows its steps,
 the link between each two and its 「사전 조건」, and lets its name and memo be changed. The story's own `needs` and
 `expects` show in a 「스토리 전체」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs`
-show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. 「고치기」 on the box, a
-card or a link row (「적기」 where nothing is written yet) opens a table there to add, change and remove these lines;
+show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. The pencil on the box, a
+card or a link row, shown while the pointer is over it or the keyboard is on it and always on a touch screen, opens a
+table there to add, change and remove these lines;
 「저장」 writes them into the story file and names the file, and 「취소」 leaves the file as it is. If the file changed
 elsewhere after the table opened, the save is refused and what was typed stays; 「새로 읽기」 then fills the table from the
 changed file and drops what was typed, and 「덮어쓰기」 writes what was typed over the change. A need file already picked

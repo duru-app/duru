@@ -6,10 +6,12 @@ const FIELD_PARTS = {
 const ADD_LINE = { needs: '조건 더하기', linkNeeds: '조건 더하기', inputs: '입력값 더하기', expects: '기대 결과 더하기' };
 const LINE_NAME = { needs: 'need', linkNeeds: 'link-need', expects: 'expect' };
 const FIELDS_TITLE = {
-  story: '스토리 전체에 걸리는 조건과 스토리가 끝난 뒤의 기대 결과를 표에서 적습니다',
-  step: '이 단계의 조건, 입력값, 기대 결과를 표에서 적습니다',
-  link: '앞 단계에서 이 단계로 들어오는 링크의 조건을 표에서 적습니다',
+  story: '스토리 전체에 걸리는 조건과 스토리가 끝난 뒤의 기대 결과를 표에서',
+  step: '이 단계의 조건, 입력값, 기대 결과를 표에서',
+  link: '앞 단계에서 이 단계로 들어오는 링크의 조건을 표에서',
 };
+const FIELDS_LABEL = { story: '스토리 전체의 조건 · 기대 결과', step: '이 단계의 조건 · 입력값 · 기대 결과', link: '들어오는 링크의 조건' };
+const PENCIL = () => svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, svg('path', { d: 'M10.5 2.5l3 3-8 8-3.5.5.5-3.5zM9 4l3 3' }));
 
 let lastRowKey = 0;
 const nextRowKey = () => ++lastRowKey;
@@ -66,12 +68,13 @@ function fieldsButton(story, place, written) {
     type: 'button',
     class: 'edit-fields',
     disabled: busy,
-    title: busy ? '열린 표를 저장하거나 취소한 뒤에 고칩니다' : FIELDS_TITLE[place.kind],
+    title: busy ? '열린 표를 저장하거나 취소한 뒤에 고칩니다' : `${FIELDS_TITLE[place.kind]} ${written ? '고칩니다' : '적습니다'}`,
+    'aria-label': `${FIELDS_LABEL[place.kind]} ${written ? '고치기' : '적기'}`,
     onclick: (e) => {
       e.stopPropagation();
       openFields(story, place);
     },
-  }, written ? '고치기' : '적기');
+  }, PENCIL());
 }
 
 const savedLine = (story, place) => (state.fieldsSaved?.story === story && sameFieldsPlace(state.fieldsSaved.place, place)

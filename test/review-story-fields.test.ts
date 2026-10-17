@@ -16,6 +16,7 @@ const STORY_BOX = '#center :is(.story-wide, .story-wide-blank)';
 const EDIT = '.fields-edit';
 
 const readStory = (config: Config) => JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'));
+const editLabels = (p: Page, at: string) => p.locator(`${at} button.edit-fields`).evaluateAll((bs) => bs.map((b) => b.getAttribute('aria-label')));
 const shownRows = (p: Page, at: string) => p.locator(`${at} .written-row`).evaluateAll((rows) => rows.map((r) => [r.querySelector('.written-label')!.textContent, [...r.querySelectorAll('li, tr')].map((li) => li.textContent)]));
 
 async function withLabStory(fn: (p: Page, config: Config, errors: string[]) => Promise<void>, story?: object) {
@@ -31,9 +32,9 @@ async function withLabStory(fn: (p: Page, config: Config, errors: string[]) => P
   });
 }
 
-test('in a browser, a step card with nothing written shows only 「적기」, whose table takes conditions, inputs found by one or more words and expected results, keeps what is typed when the page is drawn again, and 「저장」 writes them into the story file and draws the card again', { skip: browserMissing }, async () => {
+test('in a browser, a step card with nothing written shows only a pencil to write, whose table takes conditions, inputs found by one or more words and expected results, keeps what is typed when the page is drawn again, and 「저장」 writes them into the story file and draws the card again', { skip: browserMissing }, async () => {
   await withLabStory(async (p, config) => {
-    assert.deepEqual(await p.locator(`${STEP_2} button.edit-fields`).allTextContents(), ['적기']);
+    assert.deepEqual(await editLabels(p, STEP_2), ['이 단계의 조건 · 입력값 · 기대 결과 적기']);
     assert.equal(await p.locator(`${STEP_2} .step-written`).count(), 0);
     await p.click(`${STEP_2} button.edit-fields`);
     const edit = p.locator(`${STEP_2} ${EDIT}`);
@@ -83,7 +84,24 @@ test('in a browser, a step card with nothing written shows only 「적기」, wh
       ['기대 결과', ['실험 목록이 보인다']],
     ]);
     assert.equal(await p.textContent(`${STEP_2} .fields-saved`), '스토리 파일 run-lab.json 에 썼습니다');
-    assert.deepEqual(await p.locator(`${STEP_2} button.edit-fields`).allTextContents(), ['고치기']);
+    assert.deepEqual(await editLabels(p, STEP_2), ['이 단계의 조건 · 입력값 · 기대 결과 고치기']);
+  });
+});
+
+test('in a browser, the pencil of a step card, a link row and the 「스토리 전체」 box shows only while the pointer is over its place or the keyboard is on it', { skip: browserMissing }, async () => {
+  await withLabStory(async (p) => {
+    const shown = (at: string) => p.locator(`${at} button.edit-fields`).evaluate((b) => getComputedStyle(b).opacity);
+    for (const at of [STEP_2, HOP_INTO_3, STORY_BOX]) assert.equal(await shown(at), '0', at);
+    await p.hover(STEP_2);
+    assert.deepEqual([await shown(STEP_2), await shown(HOP_INTO_3)], ['1', '0']);
+    await p.hover(HOP_INTO_3);
+    assert.deepEqual([await shown(STEP_2), await shown(HOP_INTO_3)], ['0', '1']);
+    await p.hover(STORY_BOX);
+    assert.equal(await shown(STORY_BOX), '1');
+    await p.mouse.move(0, 0);
+    const target = `${STEP_2} button.edit-fields`;
+    for (let i = 0; i < 300 && !(await p.evaluate((sel) => document.activeElement?.matches(sel), target)); i += 1) await p.keyboard.press('Tab');
+    assert.equal(await shown(STEP_2), '1');
   });
 });
 
@@ -96,7 +114,7 @@ test('in a browser, the link into a step and the 「스토리 전체」 box are 
     date: '2026-10-01',
   };
   await withLabStory(async (p, config, errors) => {
-    assert.deepEqual(await p.locator(`${HOP_INTO_3} button.edit-fields`).allTextContents(), ['적기']);
+    assert.deepEqual(await editLabels(p, HOP_INTO_3), ['들어오는 링크의 조건 적기']);
     await p.click(`${HOP_INTO_3} button.edit-fields`);
     assert.deepEqual(await p.locator(`${HOP_INTO_3} ${EDIT} .fields-part h4`).allTextContents(), ['들어오는 링크 조건']);
     await p.click(`${HOP_INTO_3} button:has-text("조건 더하기")`);
@@ -107,7 +125,7 @@ test('in a browser, the link into a step and the 「스토리 전체」 box are 
     assert.equal(await p.textContent(`${HOP_INTO_3} .fields-saved`), '스토리 파일 run-lab.json 에 썼습니다');
 
     assert.equal(await p.textContent(`${STORY_BOX} .story-wide-name`), '스토리 전체');
-    assert.deepEqual(await p.locator(`${STORY_BOX} button.edit-fields`).allTextContents(), ['적기']);
+    assert.deepEqual(await editLabels(p, STORY_BOX), ['스토리 전체의 조건 · 기대 결과 적기']);
     await p.click(`${STORY_BOX} button.edit-fields`);
     assert.deepEqual(await p.locator(`${STORY_BOX} ${EDIT} .fields-part h4`).allTextContents(), ['조건', '끝난 뒤 기대 결과']);
     await p.click(`${STORY_BOX} button:has-text("조건 더하기")`);
@@ -131,7 +149,7 @@ test('in a browser, the link into a step and the 「스토리 전체」 box are 
     await p.click(`${STEP_2} button.save-fields`);
     await p.waitForSelector(`${STEP_2} .fields-saved`);
     assert.equal(readStory(config).screens[1], '/lab#Lab');
-    assert.deepEqual(await p.locator(`${STEP_2} button.edit-fields`).allTextContents(), ['적기']);
+    assert.deepEqual(await editLabels(p, STEP_2), ['이 단계의 조건 · 입력값 · 기대 결과 적기']);
 
     await p.click(`${STORY_BOX} button.edit-fields`);
     await p.click(`${STORY_BOX} .fields-part.needs button:has-text("빼기")`);
@@ -151,7 +169,7 @@ test('in a browser, 「취소」 closes the table and leaves the story file as i
     await p.click(`${STEP_2} button.cancel-fields`);
     assert.equal(await p.locator(EDIT).count(), 0);
     assert.equal(await p.locator(`${STEP_2} .step-written`).count(), 0);
-    assert.deepEqual(await p.locator(`${STEP_2} button.edit-fields`).allTextContents(), ['적기']);
+    assert.deepEqual(await editLabels(p, STEP_2), ['이 단계의 조건 · 입력값 · 기대 결과 적기']);
     await p.waitForTimeout(300);
     assert.equal(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'), before);
   });
