@@ -54,7 +54,7 @@ function openFields(story, place) {
   const st = storyById(story);
   const fields = (place.kind === 'story' ? st : st.stepFields?.[place.step - 1]) ?? {};
   const rows = Object.fromEntries(FIELD_PARTS[place.kind].map(([key]) => [key, (fields[key] ?? []).map(key === 'inputs' ? inputRowOf : lineRowOf)]));
-  state.fieldsEdit = { story, place, contentHash: st.contentHash, rows, error: null, saving: false };
+  state.fieldsEdit = { story, place, contentHash: st.contentHash, changedHash: null, rows, error: null, saving: false };
   state.fieldsSaved = null;
   renderCenter();
 }
@@ -157,8 +157,19 @@ function fieldsEditor() {
       FIELD_PARTS[edit.place.kind].map(([key, label]) => fieldsPart(key, label, edit.rows[key])),
       edit.error ? h('p', { class: 'error fields-error' }, edit.error) : null,
       h('div', { class: 'fields-acts' },
-        h('button', { type: 'button', class: 'save-fields', title: '이 자리의 칸만 스토리 파일에 고쳐 씁니다', onclick: saveFields }, '저장'),
+        edit.changedHash === null
+          ? h('button', { type: 'button', class: 'save-fields', title: '이 자리의 칸만 스토리 파일에 고쳐 씁니다', onclick: saveFields }, '저장')
+          : [
+            h('button', { type: 'button', class: 'reread-fields', title: '바뀐 스토리 파일의 이 자리 칸을 표에 불러오고, 표에 적던 내용은 버립니다', onclick: () => openFields(edit.story, edit.place) }, '새로 읽기'),
+            h('button', { type: 'button', class: 'overwrite-fields', title: '다른 곳에서 바뀐 이 자리의 칸을 표에 적은 내용으로 덮어씁니다', onclick: overwriteFields }, '덮어쓰기'),
+          ],
         h('button', { type: 'button', class: 'cancel-fields', title: '스토리 파일은 그대로 둡니다', onclick: cancelFields }, '취소'))));
+}
+
+function overwriteFields() {
+  const edit = state.fieldsEdit;
+  edit.contentHash = edit.changedHash;
+  saveFields();
 }
 
 function cancelFields() {
@@ -177,7 +188,7 @@ function fieldsToSend(rows) {
 
 async function saveFields() {
   const edit = state.fieldsEdit;
-  Object.assign(edit, { error: null, saving: true });
+  Object.assign(edit, { error: null, changedHash: null, saving: true });
   renderCenter();
   /** @type {{ file: string } | null} */
   let written = null;
@@ -207,8 +218,8 @@ async function saveFields() {
     state.fieldsSaved = { story: edit.story, place: edit.place, file: written.file };
     state.error = failed;
   } else if (refused && !failed) {
-    if (refused.changed) edit.contentHash = storyById(edit.story)?.contentHash ?? edit.contentHash;
-    edit.error = `저장하지 않았습니다: ${refused.reason}${refused.changed ? '. 다시 저장하면 지금 적은 내용으로 덮어씁니다.' : ''}`;
+    if (refused.changed) edit.changedHash = storyById(edit.story)?.contentHash ?? null;
+    edit.error = `저장하지 않았습니다: ${refused.reason}${edit.changedHash !== null ? '. 바뀐 파일을 새로 읽거나, 지금 적은 내용으로 덮어쓸 수 있습니다.' : ''}`;
   } else {
     edit.error = failed;
   }

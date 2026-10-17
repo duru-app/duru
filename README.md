@@ -715,9 +715,10 @@ the link between each two and its 「사전 조건」, and lets its name and mem
 show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. 「고치기」 on the box, a
 card or a link row (「적기」 where nothing is written yet) opens a table there to add, change and remove these lines;
 「저장」 writes them into the story file and names the file, and 「취소」 leaves the file as it is. If the file changed
-elsewhere after the table opened, the save is refused and what was typed stays; pressing 「저장」 again writes it over
-the change. A need file already picked stays as it is and can be removed. A link row where the
-map has no link lists the screens the step before leads to, here and while a new story is written. Each input reads like
+elsewhere after the table opened, the save is refused and what was typed stays; 「새로 읽기」 then fills the table from the
+changed file and drops what was typed, and 「덮어쓰기」 writes what was typed over the change. A need file already picked
+stays as it is and can be removed. A link row where the map has no link lists the screens the step before leads to,
+here and while a new story is written. Each input reads like
 「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」:
 duru has not looked for that box in the code.
 A picked need file shows as 「공통 조건」 and its name, hovering shows its file and text, and pressing it opens it.

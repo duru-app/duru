@@ -157,7 +157,7 @@ test('in a browser, 「취소」 closes the table and leaves the story file as i
   });
 });
 
-test('in a browser, a story file changed elsewhere after the table opened is redrawn around the table without losing what is typed, the save is refused with why, and saving again writes what is typed over the change', { skip: browserMissing }, async () => {
+test('in a browser, a story file changed elsewhere after the table opened is redrawn around the table without losing what is typed, the save is refused with why, and 「덮어쓰기」 writes what is typed over the change', { skip: browserMissing }, async () => {
   await withLabStory(async (p, config, errors) => {
     const file = path.join(config.storiesDir, 'run-lab.json');
     await p.click(`${STEP_2} button.edit-fields`);
@@ -170,14 +170,43 @@ test('in a browser, a story file changed elsewhere after the table opened is red
 
     await p.click(`${STEP_2} button.save-fields`);
     await p.waitForSelector(`${STEP_2} .fields-error`);
-    assert.equal(await p.textContent(`${STEP_2} .fields-error`), '저장하지 않았습니다: 스토리 파일 run-lab.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다. 다시 저장하면 지금 적은 내용으로 덮어씁니다.');
+    assert.equal(await p.textContent(`${STEP_2} .fields-error`), '저장하지 않았습니다: 스토리 파일 run-lab.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다. 바뀐 파일을 새로 읽거나, 지금 적은 내용으로 덮어쓸 수 있습니다.');
+    assert.deepEqual(await p.locator(`${STEP_2} .fields-acts button`).allTextContents(), ['새로 읽기', '덮어쓰기', '취소']);
     assert.equal(await p.locator(`${STEP_2} ${EDIT} .fields-part.needs input`).inputValue(), '실험실 설정을 켠다');
     assert.deepEqual(readStory(config), elsewhere);
     assert.deepEqual(errors.splice(0), ['Failed to load resource: the server responded with a status of 409 (Conflict)']);
 
-    await p.click(`${STEP_2} button.save-fields`);
+    await p.click(`${STEP_2} button.overwrite-fields`);
     await p.waitForSelector(`${STEP_2} .fields-saved`);
     assert.deepEqual(readStory(config), { ...elsewhere, screens: ['/home#Home', { screen: '/lab#Lab', needs: ['실험실 설정을 켠다'] }, '/lab/result#LabResult'] });
+  });
+});
+
+test('in a browser, after a save refused because the file changed elsewhere, 「새로 읽기」 fills the table from the changed file, drops what was typed, and the next 「저장」 writes over nothing', { skip: browserMissing }, async () => {
+  await withLabStory(async (p, config, errors) => {
+    const file = path.join(config.storiesDir, 'run-lab.json');
+    await p.click(`${STEP_2} button.edit-fields`);
+    await p.click(`${STEP_2} button:has-text("조건 더하기")`);
+    await p.keyboard.type('실험실 설정을 켠다');
+    const story = readStory(config);
+    const elsewhere = { ...story, screens: [story.screens[0], { screen: '/lab#Lab', needs: ['다른 곳에서 적은 조건'] }, story.screens[2]] };
+    fs.writeFileSync(file, JSON.stringify(elsewhere, null, 2));
+    await p.click(`${STEP_2} button.save-fields`);
+    await p.waitForSelector(`${STEP_2} button.reread-fields`);
+    assert.deepEqual(errors.splice(0), ['Failed to load resource: the server responded with a status of 409 (Conflict)']);
+
+    await p.click(`${STEP_2} button.reread-fields`);
+    assert.deepEqual(await p.locator(`${STEP_2} ${EDIT} .fields-part.needs input`).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value)), ['다른 곳에서 적은 조건']);
+    assert.equal(await p.locator(`${STEP_2} .fields-error`).count(), 0);
+    assert.deepEqual(await p.locator(`${STEP_2} .fields-acts button`).allTextContents(), ['저장', '취소']);
+    assert.deepEqual(readStory(config), elsewhere);
+
+    await p.click(`${STEP_2} button:has-text("조건 더하기")`);
+    await p.keyboard.type('실험실 설정을 켠다');
+    await p.click(`${STEP_2} button.save-fields`);
+    await p.waitForSelector(`${STEP_2} .fields-saved`);
+    assert.deepEqual(readStory(config).screens[1], { screen: '/lab#Lab', needs: ['다른 곳에서 적은 조건', '실험실 설정을 켠다'] });
+    assert.deepEqual(errors, []);
   });
 });
 

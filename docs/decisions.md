@@ -1999,8 +1999,9 @@ the server writes only while the file still has it; otherwise it answers 409 and
 is sent with each story in `/api/data` as `contentHash`, taken from the same bytes the story was read from, so a page
 drawn from one content cannot pass with the hash of another. The write itself is checked by the rules a story file is
 read by, so a field the page could save is a field the next read accepts. On a refusal the page keeps what was typed,
-reads the stories again and takes the new hash, so pressing 「저장」 a second time writes over the change knowingly,
-rather than leaving the reviewer to cancel and type it all again.
+reads the stories again and offers 「새로 읽기」, which fills the table from the changed file, and 「덮어쓰기」, which writes what
+was typed over the change with the new hash. The names say which happens, where pressing 「저장」 a second time to
+overwrite looked the same as the save that was refused.
 Alternatives compared:
 - The file's modification time: cheaper to read, but a file written again with the same text would refuse a save for
   nothing, and two writes within the time resolution of the file system could share one time and let a change pass.
