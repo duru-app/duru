@@ -136,22 +136,21 @@ function setZoom(z) {
   renderFlow({ bar: false });
 }
 
-// 진입 화면을 모은 칸은 폭에 따라 줄 수가 바뀌어 높이도 바뀌므로 한 번 더 맞춘다.
+// 진입 화면을 모은 칸은 배율이 작을수록 한 줄에 놓이는 칸이 늘어 높이가 줄어든다.
 function fitZoom() {
   const flow = document.getElementById('flow');
-  for (let pass = 0; pass < 2; pass += 1) {
-    const canvases = [.../** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll('.canvas'))];
-    if (!canvases.length) return;
-    const pad = getComputedStyle(flow);
-    const headings = [.../** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll(':scope > h2'))].reduce((sum, el) => {
-      const m = getComputedStyle(el);
-      return sum + el.offsetHeight + parseFloat(m.marginTop) + parseFloat(m.marginBottom);
-    }, 0);
-    const room = { width: flowInnerWidth(flow), height: flow.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom) - headings };
-    const width = Math.max(...canvases.map((c) => c.offsetWidth));
-    const height = canvases.reduce((sum, c) => sum + c.offsetHeight, 0);
-    setZoom(Math.min(1, room.width / width, room.height / height));
+  if (!flow.querySelector('.canvas')) return;
+  const fits = (z) => {
+    setZoom(z);
+    return flow.scrollWidth <= flow.clientWidth && flow.scrollHeight <= flow.clientHeight;
+  };
+  let low = Math.round(ZOOM_MIN * 100), high = 100;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (fits(mid / 100)) low = mid;
+    else high = mid - 1;
   }
+  if (state.zoom !== low / 100) setZoom(low / 100);
 }
 
 function applyZoomInput(input, text = input.value) {
