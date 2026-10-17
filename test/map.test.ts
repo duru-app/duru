@@ -1549,6 +1549,16 @@ test('a fixed tail reaches a parameter only when it fits the pattern written in 
   assert.equal(fromHome('/document/:id#DocumentDetail'), 2);
 });
 
+test('a fixed tail reaches a parameter whose pattern could not be read, as one segment of any value', async () => {
+  const map = await buildCopy((rewrite) => {
+    addRoutes(rewrite, [['`${Option.ROUTE_PATH.LAB}/:team(${TEAM_PATTERN})/drafts`', 'LabResult']]);
+    addToHome(rewrite, "      <Link to={Option.ROUTE_PATH.LAB + '/myteam/drafts'}>drafts</Link>");
+  });
+  assert.equal(screen(map, '/lab/:team_{?}_/drafts#LabResult').path, '/lab/:team({?})/drafts');
+  assert.equal(linksTo(map, '/lab/:team_{?}_/drafts#LabResult').length, 1);
+  assert.equal(linksTo(map, '/lab#Lab').length, 1);
+});
+
 test('a fixed tail is compared to the route without letter case, as React Router does', async () => {
   const map = await buildCopy((rewrite) => {
     addRoutes(rewrite, [['`${Option.ROUTE_PATH.LAB}/Result/:id`', 'LabResult']]);

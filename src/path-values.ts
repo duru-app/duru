@@ -55,6 +55,9 @@ const API_TIMEOUT_MS = 15_000;
 
 const isVariable = (part: PathPart): part is PathVariable => typeof part !== 'string';
 
+// 이름 붙은 변수의 패턴을 읽지 못했으면 패턴 없이 적힌 변수처럼 그 자리의 아무 값 하나와 맞는다.
+const patternOrNone = (written: string | undefined): string | null => (written === undefined || written.includes(UNKNOWN) ? null : written);
+
 export function pathParts(routePath: string): PathPart[] {
   const parts: PathPart[] = [];
   let text = '';
@@ -71,7 +74,7 @@ export function pathParts(routePath: string): PathPart[] {
     if (text) parts.push(text);
     text = '';
     const repeat = modifier === '+' || modifier === '*';
-    parts.push({ name: name ?? String(unnamed++), prefix, optional: modifier === '?' || modifier === '*', pattern: pattern ?? group ?? (asterisk ? '.*' : null), ...(repeat ? { repeat } : {}) });
+    parts.push({ name: name ?? String(unnamed++), prefix, optional: modifier === '?' || modifier === '*', pattern: asterisk ? '.*' : name ? patternOrNone(pattern) : group, ...(repeat ? { repeat } : {}) });
   }
   text += routePath.slice(last);
   if (text) parts.push(text);
@@ -89,6 +92,8 @@ function fill(parts: PathPart[], values: Record<string, unknown>) {
   }
   return out || '/';
 }
+
+export const readableRoute = (routePath: string) => pathParts(routePath).every((p) => !(isVariable(p) ? p.pattern?.includes(UNKNOWN) : p.includes(UNKNOWN)));
 
 export const fillPath = (routePath: string, values: Record<string, unknown>) => fill(pathParts(routePath), values);
 
