@@ -63,12 +63,12 @@ function openFields(story, place) {
 
 function fieldsButton(story, place, written) {
   if (editingAt(story, place)) return null;
-  const busy = Boolean(openTable());
+  const busy = openTable() ? '열린 표를 저장하거나 취소한 뒤에 고칩니다' : openSteps() ? '화면 순서를 저장하거나 취소한 뒤에 고칩니다' : null;
   return h('button', {
     type: 'button',
     class: 'edit-fields',
-    disabled: busy,
-    title: busy ? '열린 표를 저장하거나 취소한 뒤에 고칩니다' : `${FIELDS_TITLE[place.kind]} ${written ? '고칩니다' : '적습니다'}`,
+    disabled: Boolean(busy),
+    title: busy ?? `${FIELDS_TITLE[place.kind]} ${written ? '고칩니다' : '적습니다'}`,
     'aria-label': `${FIELDS_LABEL[place.kind]} ${written ? '고치기' : '적기'}`,
     onclick: (e) => {
       e.stopPropagation();
@@ -287,6 +287,7 @@ function fieldsToSend(rows) {
 /**
  * @typedef {{
  *   '/api/stories/fields': ReturnType<typeof import('../stories.ts').writeStoryFields>,
+ *   '/api/stories/steps': ReturnType<typeof import('../stories.ts').writeStorySteps>,
  *   '/api/needs/edit': ReturnType<typeof import('../needs.ts').editNeed>,
  * }} GuardedReplies
  */

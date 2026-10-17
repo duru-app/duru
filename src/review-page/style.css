@@ -238,7 +238,7 @@
   :is(.story-form, #accept-ask) .field .invalid { font-size: 12px; color: var(--fail); }
   .story-path .step .records { flex: none; font-size: 12px; }
   .compose-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-  button.new-story, .compose-head button, .step-acts button, .insert-mark button, .story-form button.drop-draft { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  button.new-story, .compose-head button, .step-acts button, .insert-mark button, .story-form button.drop-draft, button.reorder, .remove-warn button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
   button.new-story { margin-bottom: 8px; }
   .flowbar button.new-story { margin-bottom: 0; }
   .step-acts button:disabled { opacity: .5; cursor: default; }
@@ -249,6 +249,19 @@
   #flow-stories .story-path .step.compose-step .step-acts { flex-basis: 100%; justify-content: flex-start; }
   .story-path .insert-mark { display: flex; align-items: center; gap: 8px; margin: 4px 0; padding: 4px 8px; border: 1px dashed var(--accent); border-radius: 6px; font-size: 12px; color: var(--accent); }
   .story-path .link.l-pending { color: var(--muted); }
+  .path-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 16px 0 6px; }
+  .path-head h2 { margin: 0; }
+  button.reorder:disabled { opacity: .5; cursor: default; }
+  .path-head .editing-note { font-size: 12px; color: var(--accent); }
+  .story-path .step.order-step { align-items: center; }
+  .story-path .step.order-step.new-step { border-color: var(--accent); }
+  .remove-warn { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 0 calc(1.6em + 10px); font-size: 12px; color: var(--fail); }
+  .remove-warn button.remove-anyway { color: var(--fail); border-color: var(--fail); }
+  .story-path .link-lost, .story-path .step > .link-lost { margin: 4px 0 0; font-size: 12px; }
+  .story-path .step > .link-lost { flex-basis: 100%; margin-left: calc(1.6em + 10px); }
+  .steps-top { display: grid; gap: 6px; margin-bottom: 4px; }
+  .steps-top p { margin: 0; }
+  .story-form .accepts button.cancel-steps { padding: 6px 14px; font-size: inherit; }
   #pick-list li .count { color: var(--accent); }
   .history li { font-size: 12px; }
   .history .replies { margin: 4px 0 0 16px; }

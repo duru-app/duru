@@ -18,7 +18,9 @@ function renderStoryRight(info, dock) {
     return fill(dock, state.story ? markForm({ story: state.story }, 'storyDraft', '스토리') : null);
   }
   fill(dock, markForm({ story: st.id }, 'storyDraft', '스토리'));
-  fill(info, ...reachSection(st, `story\n${st.id}`), storyGaps(st), ...storyEdit(st), ...(st.source ? unacceptAction() : []));
+  const steps = openSteps();
+  const order = steps ? [h('div', { id: 'steps-reach' }, ...stepsReach(steps))] : [...reachSection(st, `story\n${st.id}`), storyGaps(st)];
+  fill(info, ...order, ...storyEdit(st), ...(st.source ? unacceptAction(st) : []));
 }
 
 function renderCenter() {
