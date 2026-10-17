@@ -256,13 +256,16 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     return { list: [], discarded: shown, notices: all, stale: records.length || traced.length || stored.length ? staleMapMessage(mapFile, '후보') : undefined };
   }
   const screenAt = screenFinder(map);
-  const seen = new Set([...loadStories(config.storiesDir).stories, ...current].map((s) => JSON.stringify(s.screens)));
+  const stories = loadStories(config.storiesDir).stories;
+  const seen = new Set([...stories, ...current].map((s) => JSON.stringify(s.screens)));
+  // 받은 뒤 화면 순서를 고친 스토리도 그 출처의 후보를 다시 올리지 않는다.
+  const taken = new Set(stories.flatMap((s) => (s.source ? [JSON.stringify(s.source)] : [])));
   const list: Candidate[] = [];
   const gone: Record<string, string> = {};
   for (const record of records) {
     const candidate = candidateOf(record, screenAt);
     const key = JSON.stringify(candidate.screens);
-    if (seen.has(key)) {
+    if (seen.has(key) || taken.has(JSON.stringify(candidate.source))) {
       gone[candidate.key] ??= candidate.name;
       continue;
     }
@@ -288,7 +291,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
   for (const { name, screens, source } of byFirstSeen) {
     const key = JSON.stringify(screens);
-    if (seen.has(key)) {
+    if (seen.has(key) || taken.has(JSON.stringify(source))) {
       gone[screens.join(' > ')] ??= name;
       continue;
     }

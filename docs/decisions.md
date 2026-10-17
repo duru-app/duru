@@ -2008,6 +2008,29 @@ Alternatives compared:
 - No guard, the last write winning: a change made in an editor or pulled with git while the table was open would be
   lost without a word, which #275 asks to prevent.
 
+**A saved story's steps are changed only by putting a step in before another or at the end and by taking one out;
+a step is never moved, and the steps kept stay in the order the file had them.**
+Driver's decision in #283 (2026-10-16). Moving one step changes the links on both sides of it, which usually breaks
+them, and an order that is really wrong is fixed by taking the step out and putting it in again at the right place. A
+screen the app added in between, or a screen of a detour mixed into a record, is fixed the same way. The Chrome DevTools
+Recorder offers the same two, 「Add step before」 and 「Remove step」, and no move
+(https://developer.chrome.com/docs/devtools/recorder/reference, read on 2026-10-15). 「새 스토리」 keeps 「위로」,
+「아래로」 and dragging, since a story being put together has nothing written on its steps yet and loses nothing by a
+move. The page sends the new order as the kept steps by their number and screen, `{ "step", "screen" }`, and the new
+ones by their screen alone, `{ "screen" }`, with the `contentHash` of the file it read, as a write of the fields does.
+The server takes each kept step from the file, so its `needs`, `inputs` and `expects` go with it and a new step has
+none; it refuses a kept step whose number now holds another screen, one named twice, or one out of the file's order. A
+kept step's `linkNeeds` stay only while the step before it is the step it had: the conditions were written on the link
+from that step, and after another step comes in front, or the step before is taken out, that link is gone. The page
+says so on the link row before the order is saved. A comment on a step or a link follows the rule it already has: one
+whose number no longer holds its screen goes under 「떨어져 나감」.
+Alternatives compared:
+- 「위로」 · 「아래로」 and dragging, as BrowserStack and Testiny give each test step: each move would break the links on
+  both sides, and two ways to reach the same order would be one more thing to keep in step with the fields.
+- Sending the whole new `screens` with every step object: a page holding fields read before a change made elsewhere
+  would write them back over that change when the reviewer chose to overwrite only the order.
+- Keeping `linkNeeds` on a step whose step before changed: they would describe a link the story no longer takes.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

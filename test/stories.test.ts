@@ -8,7 +8,7 @@ import { screenAccess } from '../src/access.ts';
 import { UNKNOWN } from '../src/client.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
-import { editStory, FileChanged, loadStories, writeStoryFields } from '../src/stories.ts';
+import { editStory, FileChanged, loadStories, writeStoryFields, writeStorySteps } from '../src/stories.ts';
 import { checkStories, checkStoryFiles } from '../src/story-paths.ts';
 import type { StoryTests } from '../src/story-paths.ts';
 import { linkTests } from '../src/test-links.ts';
@@ -606,6 +606,82 @@ test('a story file changed since its mark was read is not written over, and the 
     assert.throws(() => writeFields(dir, { kind: 'story' }, { needs: ['x'] }, read), (err: Error) => err instanceof FileChanged && err.message === '스토리 파일 a.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다');
     assert.equal(fs.readFileSync(file, 'utf8'), before);
     assert.throws(() => writeStoryFields(dir, 'nope', { place: { kind: 'story' }, fields: {}, contentHash: read }), /^Error: 스토리 nope 를 찾지 못했습니다$/);
+  });
+});
+
+const writeSteps = (dir: string, steps: unknown, contentHash: unknown = hashOf(path.join(dir, 'a.json'))) => writeStorySteps(dir, 'a', { steps, contentHash });
+const kept = (step: number) => ({ step, screen: LINKED_SCREENS[step - 1] });
+const FILLED = {
+  ...WRITTEN,
+  screens: ['/home#Home', { screen: '/lab#Lab', needs: ['실험실 설정을 켠다'], expects: ['실험 목록이 보인다'] }, { screen: '/lab/result#LabResult', inputs: [{ box: { label: '이름' }, value: '실험' }], expects: ['결과가 보인다'] }],
+};
+
+test('a step put in before another or at the end changes the screens of the story file, and every kept step keeps its own fields while a new step has none', () => {
+  withStoriesDir({ 'a.json': FILLED }, (dir) => {
+    const before = hashOf(path.join(dir, 'a.json'));
+    const written = writeSteps(dir, [kept(1), { screen: '/help#Help' }, kept(2), kept(3), { screen: '/home#Home' }]);
+    assert.deepEqual(fileOf(dir).screens, ['/home#Home', '/help#Help', FILLED.screens[1], FILLED.screens[2], '/home#Home']);
+    assert.deepEqual({ ...fileOf(dir), screens: [] }, { ...FILLED, screens: [] });
+    assert.deepEqual(written, { ...loadStories(dir).stories[0], previousHash: before });
+    assert.deepEqual(written.screens, ['/home#Home', '/help#Help', '/lab#Lab', '/lab/result#LabResult', '/home#Home']);
+  });
+});
+
+test('a step taken out leaves the story file, and the steps after it keep their own fields', () => {
+  withStoriesDir({ 'a.json': FILLED }, (dir) => {
+    writeSteps(dir, [kept(1), kept(3)]);
+    assert.deepEqual(fileOf(dir).screens, ['/home#Home', FILLED.screens[2]]);
+  });
+});
+
+test('the conditions of the link into a kept step stay only while the step before it is the one it had, since otherwise that link is gone', () => {
+  const screens = ['/home#Home', { screen: '/lab#Lab', linkNeeds: ['실험실 메뉴를 누른 경우'], needs: ['실험실 설정을 켠다'] }, { screen: '/lab/result#LabResult', linkNeeds: ['실행이 끝난 경우'] }];
+  withStoriesDir({ 'a.json': { ...WRITTEN, screens } }, (dir) => {
+    writeSteps(dir, [kept(1), { screen: '/help#Help' }, kept(2), kept(3)]);
+    assert.deepEqual(fileOf(dir).screens, ['/home#Home', '/help#Help', { screen: '/lab#Lab', needs: ['실험실 설정을 켠다'] }, screens[2]]);
+  });
+  withStoriesDir({ 'a.json': { ...WRITTEN, screens } }, (dir) => {
+    writeSteps(dir, [kept(2), kept(3)]);
+    assert.deepEqual(fileOf(dir).screens, [{ screen: '/lab#Lab', needs: ['실험실 설정을 켠다'] }, screens[2]], 'a step that becomes the first has no link coming into it');
+  });
+  withStoriesDir({ 'a.json': { ...WRITTEN, screens } }, (dir) => {
+    writeSteps(dir, [kept(1), kept(3)]);
+    assert.deepEqual(fileOf(dir).screens, ['/home#Home', '/lab/result#LabResult'], 'a step left with nothing but its screen goes back to its screen ID');
+  });
+});
+
+const REFUSED_STEPS: [string, unknown, string][] = [
+  ['no steps at all', [], 'steps 에 단계를 하나 이상 차례대로 담아야 합니다'],
+  ['steps that are not a list', '/home#Home', 'steps 에 단계를 하나 이상 차례대로 담아야 합니다'],
+  ['a step that is a bare screen ID', [kept(1), '/lab#Lab'], 'steps 의 2 번째는 남길 단계의 { "step": 단계 번호, "screen": 그 단계의 화면 ID } 나 새로 넣을 단계의 { "screen": 화면 ID } 여야 합니다'],
+  ['a new step that brings fields of its own', [kept(1), { screen: '/help#Help', needs: ['x'] }], 'steps 의 2 번째는 남길 단계의 { "step": 단계 번호, "screen": 그 단계의 화면 ID } 나 새로 넣을 단계의 { "screen": 화면 ID } 여야 합니다'],
+  ['the same screen twice in a row', [kept(1), { screen: '/home#Home' }, kept(2)], 'screens 의 1 번째와 2 번째가 같은 화면입니다'],
+  ['a kept step the story does not have', [kept(1), { step: 4, screen: '/lab#Lab' }], '스토리 a 에는 4 번째 단계가 없습니다'],
+  ['a kept step whose screen is no longer the one the page read', [kept(1), { step: 2, screen: '/help#Help' }], '스토리 a 의 2 번째 단계는 /help#Help 이 아니라 /lab#Lab 화면이라 쓰지 않았습니다'],
+  ['a step kept twice', [kept(1), kept(2), { screen: '/help#Help' }, kept(2)], '2 번째 단계를 두 번 남길 수 없습니다'],
+  ['a step moved before another kept step', [kept(1), kept(3), kept(2)], '남기는 단계는 파일에 있던 차례대로 적어야 하는데, 2 번째 단계가 3 번째 단계 뒤에 왔습니다'],
+  ['a missing mark of the file read', [kept(1)], 'contentHash 에 페이지가 읽은 스토리 파일 내용의 SHA-256 을 보내야 합니다'],
+];
+
+for (const [name, steps, reason] of REFUSED_STEPS) {
+  test(`writing an order with ${name} is refused with why, and the file stays as it was`, () => {
+    withStoriesDir({ 'a.json': FILLED }, (dir) => {
+      const before = fs.readFileSync(path.join(dir, 'a.json'), 'utf8');
+      const contentHash = name === 'a missing mark of the file read' ? null : hashOf(path.join(dir, 'a.json'));
+      assert.throws(() => writeSteps(dir, steps, contentHash), (err: Error) => !(err instanceof FileChanged) && err.message === reason);
+      assert.equal(fs.readFileSync(path.join(dir, 'a.json'), 'utf8'), before);
+    });
+  });
+}
+
+test('an order is not written over a story file changed since its mark was read', () => {
+  withStoriesDir({ 'a.json': FILLED }, (dir) => {
+    const file = path.join(dir, 'a.json');
+    const read = hashOf(file);
+    fs.writeFileSync(file, JSON.stringify({ ...FILLED, memo: '다른 곳에서 고쳤다' }));
+    const before = fs.readFileSync(file, 'utf8');
+    assert.throws(() => writeSteps(dir, [kept(1), kept(3)], read), (err: Error) => err instanceof FileChanged && err.message === '스토리 파일 a.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다');
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
   });
 });
 

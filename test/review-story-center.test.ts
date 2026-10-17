@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import type { Page, Route } from 'playwright-core';
 import { loadMarks } from '../src/marks.ts';
-import { withRebuiltFixture, withServer, rebuild, browserMissing, toList, withPage, openScreenInfo, openHistory, LAB_SETTING, ADMIN_ROLE, LONG_SETTING, asked, why, askedFocused, SAVE_REFUSED, untilSet, postJson, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, holdRequests } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, rebuild, browserMissing, toList, withPage, openScreenInfo, openHistory, LAB_SETTING, ADMIN_ROLE, LONG_SETTING, asked, why, askedFocused, SAVE_REFUSED, untilSet, postJson, postMark, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, holdRequests } from './review-helpers.ts';
 import type { Guard, PageData, Reach } from './review-helpers.ts';
 
 const HOME = '/home#Home';
@@ -481,6 +481,37 @@ test('a field write is refused with its reason when a field is wrong, when the s
 
 const MEMBER = { name: '일반 회원 계정', text: '역할 USER 로 가입한 계정' };
 
+test('the order of a story\'s steps is written through the page with the mark of the file it read, each kept step keeps its fields, and a comment on a step or a link whose number now points at other screens goes under 「떨어져 나감」', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const file = path.join(config.storiesDir, 'run-lab.json');
+      const read = sha256(file);
+      const fields = await postJson(base, '/api/stories/fields', { id: 'run-lab', place: { kind: 'step', step: 3, screen: LAB_RESULT }, fields: { expects: ['결과 표가 보인다'] }, contentHash: read });
+      const filled = (await fields.json()).contentHash;
+      const onStep = (step: number, screen: string) => ({ story: 'run-lab', part: { kind: 'step', key: { step, screen } } });
+      const onHop = { story: 'run-lab', part: { kind: 'hop', key: { step: 1, from: HOME, to: LAB } } };
+      for (const target of [onStep(1, HOME), onStep(2, LAB), onHop]) assert.equal((await postMark(base, { target, note: 'here?' })).status, 201);
+
+      const res = await postJson(base, '/api/stories/steps', { id: 'run-lab', steps: [{ step: 1, screen: HOME }, { screen: '/help#Help' }, { step: 2, screen: LAB }, { step: 3, screen: LAB_RESULT }], contentHash: filled });
+      assert.equal(res.status, 200);
+      const written = await res.json();
+      assert.deepEqual([written.file, written.contentHash, written.previousHash], ['run-lab.json', sha256(file), filled]);
+      assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).screens, [HOME, '/help#Help', LAB, { screen: LAB_RESULT, expects: ['결과 표가 보인다'] }]);
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.marks.attached.map((m) => m.target), [onStep(1, HOME)]);
+      assert.deepEqual(data.marks.detached.map((m) => m.target).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))), [onHop, onStep(2, LAB)]);
+
+      const stale = await postJson(base, '/api/stories/steps', { id: 'run-lab', steps: [{ step: 1, screen: HOME }], contentHash: filled });
+      assert.deepEqual([stale.status, await stale.text()], [409, '스토리 파일 run-lab.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다']);
+      const repeated = await postJson(base, '/api/stories/steps', { id: 'run-lab', steps: [{ step: 1, screen: HOME }, { screen: HOME }, { step: 3, screen: LAB }], contentHash: sha256(file) });
+      assert.deepEqual([repeated.status, await repeated.text()], [400, 'screens 의 1 번째와 2 번째가 같은 화면입니다']);
+      const empty = await postJson(base, '/api/stories/steps', { id: 'run-lab', steps: [], contentHash: sha256(file) });
+      assert.deepEqual([empty.status, await empty.text()], [400, 'steps 에 단계를 하나 이상 차례대로 담아야 합니다']);
+      assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).screens.length, 4);
+    }),
+  );
+});
+
 test('a need file is made and then edited through the page with the mark of the file it read, and each reply is the need read back', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
@@ -536,7 +567,7 @@ test('a need write is refused with its reason when the file name is wrong or tak
 test('story writes that are not JSON requests are refused', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/unaccept', '/api/needs/add', '/api/needs/edit']) {
+      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/steps', '/api/stories/unaccept', '/api/needs/add', '/api/needs/edit']) {
         const res = await fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
         assert.equal(res.status, 415, url);
       }

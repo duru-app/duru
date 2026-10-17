@@ -6,7 +6,7 @@ import path from 'node:path';
 import { acceptCandidate, discardCandidate, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
-import { editStory, loadStories } from '../src/stories.ts';
+import { editStory, loadStories, writeStorySteps } from '../src/stories.ts';
 import { linkTests } from '../src/test-links.ts';
 
 type Candidate = Parameters<typeof acceptCandidate>[1];
@@ -162,6 +162,17 @@ test('accepting a candidate writes a story file with the given ID and name, its 
     const read = loadStories(dir);
     assert.deepEqual(read.notices.map((n) => n.file), ['lab-shortcut.json']);
     assert.deepEqual(read.stories.find((s) => s.id === 'open-help')!.source, { record: 'example-visits/open-help.json', steps: [1, 5] });
+    assert.deepEqual(candidatesOf({ storiesDir: dir }).list.map((c) => c.name), ['publish-document']);
+  });
+});
+
+test('a story accepted from a candidate keeps that candidate away after a step is taken out of its order', () => {
+  withStoryCopy((dir: string) => {
+    const help = candidatesOf({ storiesDir: dir }).list.find((c) => c.name === 'open-help')!;
+    acceptCandidate(dir, help, { id: 'open-help', name: '홈에서 도움말을 연다', author: 'reviewer' }, new Date('2026-10-03T01:02:03Z'));
+    const story = loadStories(dir).stories.find((s) => s.id === 'open-help')!;
+    writeStorySteps(dir, 'open-help', { steps: [{ step: 1, screen: '/signin#SignIn' }, { step: 2, screen: '/home#Home' }, { step: 4, screen: '/help#Help' }], contentHash: story.contentHash });
+    assert.deepEqual(loadStories(dir).stories.find((s) => s.id === 'open-help')!.screens, ['/signin#SignIn', '/home#Home', '/help#Help']);
     assert.deepEqual(candidatesOf({ storiesDir: dir }).list.map((c) => c.name), ['publish-document']);
   });
 });
