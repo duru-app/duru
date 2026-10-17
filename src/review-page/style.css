@@ -318,8 +318,8 @@
   :is(.canvas.story, .pathlegend, .story-line) svg path.story-edge.l-broken { stroke: var(--fail); stroke-dasharray: 8 5; }
   :is(.canvas.story, .pathlegend, .story-line) svg path.story-edge:is(.l-off-map, .l-unknown) { stroke: var(--more); stroke-dasharray: 2 5; }
   :is(.canvas.story, .pathlegend, .story-line) svg path.story-edge.moved { stroke: var(--fine); stroke-dasharray: 3 3; stroke-linecap: butt; }
-  /* 가운데 칸의 안쪽 여백까지 덮어야 스크롤한 카드가 위쪽 여백 틈으로 보이지 않는다. */
-  .story-top { position: sticky; top: 0; z-index: 3; margin: -12px -16px 8px; padding: 10px 16px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
+  /* sticky 는 가운데 칸의 padding 안쪽에 붙으므로, 스크롤한 카드가 그 padding 으로 비치지 않게 top 도 padding 만큼 올린다. */
+  .story-top { position: sticky; top: -12px; z-index: 3; margin: -12px -16px 8px; padding: 10px 16px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
   .story-top-bar { display: flex; align-items: center; gap: 10px; }
   .story-top-bar .pathinfo { margin-left: auto; }
   .story-top-bar .pathinfo-button { border: 1px solid var(--line); background: var(--panel); cursor: pointer; }

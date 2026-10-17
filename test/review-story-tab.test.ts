@@ -161,6 +161,28 @@ test('in a browser, the pane where a new story is written in the flow tab opens 
   });
 });
 
+test('in a browser, the line kept at the top of a story covers the pane up to its top edge while the cards scroll, so no card shows above it', { skip: browserMissing }, async () => {
+  await withPathStories({ 'walk-around': WALK }, async (p) => {
+    await p.setViewportSize({ width: 1440, height: 600 });
+    await pickPathStory(p, 'walk-around');
+    await p.evaluate(() => { document.getElementById('center')!.scrollTop = 200; });
+    await nextFrame(p);
+    const above = await p.evaluate(() => {
+      const center = document.getElementById('center')!.getBoundingClientRect();
+      const top = document.querySelector('#center .story-top')!.getBoundingClientRect();
+      const shown = [];
+      for (let y = Math.ceil(center.top); y < top.top; y++) {
+        for (let x = center.left + 8; x < center.right - 8; x += 40) {
+          const e = document.elementFromPoint(x, y);
+          if (e && e.closest('#center') && !e.closest('#center .story-top') && e.textContent!.trim() && !['center', 'center-body'].includes(e.id)) shown.push(`${y}: ${e.textContent!.trim().slice(0, 20)}`);
+        }
+      }
+      return { gap: top.top - center.top, shown: [...new Set(shown)] };
+    });
+    assert.deepEqual(above, { gap: 0, shown: [] });
+  });
+});
+
 test('in a browser, pressing a box on the line marks that step on the line and its card, scrolling only as far as brings the card into view, pressing a line between two steps brings its link card into view and marks no step, the mark stays where it is while the cards scroll and through a redraw, the line slides sideways to keep it in view, and a step of a story the page cannot read leads nowhere', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
     await p.emulateMedia({ reducedMotion: 'reduce' });
