@@ -380,7 +380,7 @@ test('in a browser, the candidates are followed by 「버린 후보 N」, shut u
   );
 });
 
-test('in a browser, 「되돌리기」 on a discarded candidate writes one undo record beside the discard even when double-clicked, offers the candidate again picked and drops it from 「버린 후보 N」, and a refused undo says why under the list', { skip: browserMissing }, async () => {
+test('in a browser, 「되돌리기」 on a discarded candidate writes one undo record beside the discard even when double-clicked, offers the candidate again picked and drops it from 「버린 후보 N」, and a refused undo says why under the list', { skip: browserMissing || ((process.getuid?.() === 0 || process.platform === 'win32') && 'permissions do not stop this user from writing into the folder') }, async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -401,11 +401,18 @@ test('in a browser, 「되돌리기」 on a discarded candidate writes one undo 
         const records = fs.readdirSync(path.join(config.storiesDir, 'discarded')).map((f) => JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'discarded', f), 'utf8')));
         assert.deepEqual(records.filter((r) => r.kind === 'undo').map(({ screens, author }) => [screens.join(' > '), author]), [[HELP_KEY, 'reviewer']]);
 
-        fs.rmSync(path.join(config.storiesDir, 'discarded'), { recursive: true });
-        await p.click('#discarded-list > li:has-text("publish-document") button.undiscard');
-        await p.waitForSelector('#left .undiscard-error');
-        assert.match(await p.textContent('#left .undiscard-error') ?? '', /^저장하지 못했습니다: 버린 후보 .* 가 없습니다$/);
-        assert.equal((await postJson(base, '/api/candidates/undiscard', { screens: ['/home#Home'] })).status, 400);
+        const discardedFolder = path.join(config.storiesDir, 'discarded');
+        fs.chmodSync(discardedFolder, 0o555);
+        try {
+          await p.click('#discarded-list > li:has-text("publish-document") button.undiscard');
+          await p.waitForSelector('#left .undiscard-error');
+          assert.match(await p.textContent('#left .undiscard-error') ?? '', /^저장하지 못했습니다: EACCES/);
+          assert.equal(await p.textContent('#left details.discarded-candidates > summary'), '버린 후보 1');
+        } finally {
+          fs.chmodSync(discardedFolder, 0o755);
+        }
+        const gone = await postJson(base, '/api/candidates/undiscard', { screens: ['/home#Home'] });
+        assert.deepEqual([gone.status, await gone.text()], [400, '버린 후보 /home#Home 가 없습니다']);
         assert.deepEqual(errors.splice(0), [BAD_REQUEST]);
       }),
     ),
