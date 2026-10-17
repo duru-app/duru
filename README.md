@@ -628,32 +628,33 @@ on an empty spot of the drawing lets it go. The zoom control at the bottom-left 
 or grows it; a percent typed into it takes effect on Enter or on clicking elsewhere, a level below 30% or above 150%
 becomes the nearer end, and Escape or anything not a number puts the level back.
 
-**Stories in the flow.** When there are story files, the stories are listed left of the drawing under 「새 스토리」,
-with the same rows and filters as the stories tab, and a box above them finds a story by name or ID; with none yet,
-「새 스토리」 sits in the bar above the drawing. 「스토리 N ◀」 in the top corner of the
-drawing slides the list shut, and the same button, then 「스토리 N ▶」, opens it again. Pressing a story draws only its
-steps, left to right on one line, each a box like the flow's with its step number, so a screen the story passes
-twice is drawn twice; the story's name, 「경로 끄기」 and 「i」 sit beside 「스토리 N ◀」. The line between two steps shows how
-they are joined: solid for a link with no condition, blue dashed for a link under a condition, green dotted for a
-move written in `moves`, red dashed where the map has no link, and orange dotted where a step is not on the map or a
-link's address could not be read; the 「i」 beside 「경로 끄기」 shows these. Where the map has no link, a note below says
-which screens the step before does lead to. A step with `needs`, `inputs` or `expects` in the story file carries
-their count, such as 「조건 1 · 입력 2 · 기대 2」, and the story's own `needs` and `expects` are counted beside its name,
-after the need files the story picks; hovering over a count shows the lines. A step's `linkNeeds` are written under the line that comes into its box, cut
-short when longer than the line; hovering over them shows every line. A story wider than the pane scrolls sideways.
-Pressing the story again, or 「경로 끄기」, brings back the whole flow where it was.
+**Story tab.** The third tab at the top, 「스토리」, shows one story at a time. The left column lists the stories, the
+candidates and the need files. In the middle, the chosen story's steps are drawn left to right on one line that stays
+at the top while the rest scrolls: each step is a box with its step number, its screen and the colour of its test
+status, and a step not on the map is drawn dashed. The line between two steps shows how they are joined: solid for a
+link with no condition, blue dashed for a link under a condition, green dotted for a move written in `moves`, red
+dashed with 「링크 없음」 where the map has no link, and orange dotted where a step is not on the map or a link's address
+could not be read; the 「i」 above the line shows these. Pressing a box outlines it and that step's card, scrolling the
+cards only when that card is out of view; pressing the line between two steps brings that link's row into view. The
+outline stays on the pressed step while the cards scroll, and a line wider than the pane slides sideways to keep it in
+view. Below the line are the story's cards: its name, tests, 「스토리」 box, then each step and the link into it. The right
+column has the story's 「사전 조건」, a folded 「손볼 화면 N」 listing the failing and untested screens on its path, each bringing
+up its step card, then the name and memo and the conversation. The address of a story is `#story?story=<ID>`, with
+`&step=<N>` added while step N is outlined, so opening that address, going back to it or reloading it outlines the
+same step and brings its card into view. Pressing another step changes the address without adding to the browser
+history.
 
 **A new story in the flow.** While 「새 스토리」 is open (「새 스토리 이어 쓰기」 once it has steps), pressing a box in the
 drawing, a screen in the right column, or Enter in the search box for the first screen it finds, adds that screen
 as the next step instead of opening it, and the drawing scrolls to keep the box pressed in place where it can. The whole flow
 stays drawn, and each chosen box carries its step number. Two neighbouring steps are joined in the style of their
 verdict: on the link itself when the second box hangs under the first, otherwise by a mark in each of the two boxes
-with the other step's number. The list left of the drawing becomes the steps, which move with 「위로」, 「아래로」 or by
+with the other step's number. A column opens left of the drawing with the steps, which move with 「위로」, 「아래로」 or by
 dragging, go in before another step with 「앞에 넣기」 and come out with 「빼기」, then the verdict, and ID, name and memo
 with 「스토리 저장」. The same screen twice in a row is refused as in the list; a box already chosen is added again,
-since a story can pass a screen twice. A new story begun in the list goes on in the flow, and back. 「스토리 목록」
-brings back the story list, and a box opens its screen again. A story saved in the flow is drawn as if it had been
-pressed in the list.
+since a story can pass a screen twice. A new story begun in the story tab goes on in the flow, and back. 「닫기」
+closes that column and keeps the steps for 「새 스토리 이어 쓰기」, and a box opens its screen again. A story saved in
+the flow opens in the story tab.
 
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
@@ -686,13 +687,13 @@ With `caseKinds` set, 「경우별 테스트」 has a button per kind for every 
 makes the kind a case there, with its tests by depth, and pressing it again takes it out. The flow shows the same
 middle and right panes for a picked screen.
 
-**Pane widths.** The edge on either side of the middle pane, in the list and beside a picked screen in the flow,
-and the right edge of the flow's story list can be dragged to widen or narrow the panes; the line lights up when the
+**Pane widths.** The edge on either side of the middle pane, in the list, in the story tab and beside a picked screen
+in the flow, and the right edge of the column where a new story is written in the flow can be dragged to widen or narrow the panes; the line lights up when the
 mouse rests on it. The drawing is laid out again for its new width, and the app in the middle pane is shown at the
 percent that fits the pane's new width
 when 「배율」 is 「칸에 맞춤」 (with the width at 「칸에 맞춤」, the app itself gets the new width). No pane can be dragged narrower than its contents need, and when the window gets too narrow
-for the middle pane, the side panes give back the width they were dragged to. The widths, and whether the story
-list is folded, last until the page is loaded again.
+for the middle pane, the side panes give back the width they were dragged to. The widths last until the page is
+loaded again.
 
 **Changes since a baseline.** With `baselineMap` set, the header names the baseline by its folder and path
 (「비교 기준」). A screen in the list carries 「생김」, 「조건 바뀜」 (the conditions before and after on hover) or
@@ -707,20 +708,21 @@ pair with a reason asked for in a window, and 「포함」, to hand it over so a
 pair waits under 「태그 대기」 until the tag is in the results. The 「태그 없음」 tab lists every untagged test and can
 judge several pairs at once.
 
-**Stories.** The stories tab lists the stories with their status and link verdicts, with the same search box and
-filters as the flow's story list (what is typed or ticked in one shows in the other); choosing one shows its steps,
+**Stories.** The story tab lists the stories with their status and link verdicts, a search box by name or ID and
+filters by status and missing links; choosing one shows its steps,
 the link between each two and its 「사전 조건」, and lets its name and memo be changed. The story's own `needs` and
 `expects` show in a 「스토리」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs`
-show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. Each input reads like
+show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. A link row where the
+map has no link lists the screens the step before leads to, here and while a new story is written. Each input reads like
 「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」:
 duru has not looked for that box in the code.
 A picked need file shows as 「공통 조건」 and its name, hovering shows its file and text, and pressing it opens it.
-At the bottom of the stories tab, 「공통 조건 N」 lists the need files with their name, file and how many stories pick them, followed
+At the bottom of the story tab, 「공통 조건 N」 lists the need files with their name, file and how many stories pick them, followed
 by the need files that could not be read and why. Pressing one shows its name, its text, the stories that pick it and
-the file itself in the middle, with its file name in the address, as `#stories?need=member-account.json`. 「스토리 파일」 at the bottom unfolds
+the file itself in the middle, with its file name in the address, as `#story?need=member-account.json`. 「스토리 파일」 at the bottom unfolds
 the story in the shape of its file, with the steps that have any of these lines written as objects. Candidates are
 listed below with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the address of a chosen candidate holds its screen order, as
-`#stories?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
+`#story?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
 screen order, and the candidate is discarded only once a reason is written there. 「버리기」 in the window or Ctrl+Enter
 saves it and moves on to the next candidate; 「취소」 or Escape closes the window, and a click outside it does not. If
 the discard is not saved, the window stays open with the reason and the error. A story accepted from a candidate has
@@ -784,11 +786,11 @@ name cannot hold replaced by `_` and a key longer than 80 characters cut and giv
 on stories. A candidate takes comments only: a status sent with one is refused with the reason, and its comments never
 enter the task list, so they reach a coding agent only as the lines printed while the review runs. A candidate with
 comments shows their number; pressing it opens the candidate's conversation. Once the candidate is accepted or
-discarded and leaves the list, its comments show under 「떨어져 나감」 of the stories tab with the candidate's name.
+discarded and leaves the list, its comments show under 「떨어져 나감」 of the story tab with the candidate's name.
 
-**Comments on a step or a link of a story.** In the stories tab each step of the chosen story and each link between
-two of its steps has the same bubble and count, and so has each step box and each link of a story drawn in the flow;
-pressing one there opens the story in the list and puts the step or link in as the tag. A step is saved as `"part": {
+**Comments on a step or a link of a story.** In the story tab each step of the chosen story and each link between
+two of its steps has the same bubble and count. Pressing such a comment under 「전체」 opens the story and brings its
+card up under the line. A step is saved as `"part": {
 "kind": "step", "key": { "step", "screen" } }`, its number counted from 1 and its screen; a link as `"part": { "kind":
 "hop", "key": { "step", "from", "to" } }`, the number of the step it leaves and the screens it leaves and reaches,
 both with the story's ID in `target.story`. A step or link takes comments only; a status sent with one is refused with
@@ -830,7 +832,7 @@ no tag is listed under 「대상 없음」 with its whole text and its replies, 
 numbers and dots it describes leave out what has come off its target; it stays under
 「떨어져 나감」 and in the conversation of its screen or call.
 
-A screen in the list and in the flow, a story in the list, a depth row and a call cell show 「코멘트 N」 when marks or
+A screen in the list and in the flow, a story in the story tab, a depth row and a call cell show 「코멘트 N」 when marks or
 comments with text were left there, with a red dot while one of the comments has no reply; a test, condition or link
 row shows the dot on its count too. The screen's number covers its whole conversation, as 「이 화면 N」 does, a row's
 number only what carries that row as its tag, and pressing a row's number narrows the conversation to it. A comment or

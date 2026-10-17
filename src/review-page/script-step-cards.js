@@ -36,24 +36,13 @@ const linkWritten = (fields) => (fields?.linkNeeds?.length ? h('div', { class: '
 
 const hasWritten = (fields) => Boolean(fields?.needs?.length || fields?.inputs?.length || fields?.expects?.length);
 
-function writtenCount(fields) {
-  if (!hasWritten(fields)) return null;
-  const counts = [fields.needs?.length && `조건 ${fields.needs.length}`, fields.inputs?.length && `입력 ${fields.inputs.length}`, fields.expects?.length && `기대 ${fields.expects.length}`].filter(Boolean);
-  const tip = [
-    ...(fields.needs ?? []).map((x) => `조건: ${needWord(x)}`),
-    ...(fields.inputs ?? []).map((x) => `입력: ${boxWords(x.box)} → ${x.value}`),
-    ...(fields.expects ?? []).map((x) => `기대: ${x}`),
-  ].join('\n');
-  return h('span', { class: 'written-count', title: tip }, counts.join(' · '));
-}
-
 function stepItem(step, i, recordSteps, story, fields) {
   const records = recordSteps ? h('span', { class: 'records muted', title: '방문 기록에서 이 화면에 머문 단계' }, stepsText(recordSteps)) : null;
   const slot = (name) => (story ? slotRow(name, stepTarget(story, i, step.screen), SLOT_WORDS.step) : name);
   // 적힌 글을 선택하려고 클릭해도 화면이 열리지 않게 이벤트 전파를 막는다.
   const written = hasWritten(fields) ? h('div', { class: 'step-written written', title: '', onclick: (e) => e.stopPropagation() }, writtenRows(fields, '조건', '기대 결과')) : null;
   if (!step.onMap) {
-    return h('div', { class: `step off-map${written ? ' has-written' : ''}` },
+    return h('div', { class: `step off-map${written ? ' has-written' : ''}`, 'data-step': i },
       h('span', { class: 'no' }, i + 1),
       slot(h('span', { class: 'name slot-text' }, h('div', { class: 'muted mono' }, step.screen))),
       records,
@@ -61,7 +50,7 @@ function stepItem(step, i, recordSteps, story, fields) {
       written);
   }
   const s = screenOf(step.screen);
-  return h('div', { class: `step on-map${written ? ' has-written' : ''}`, title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
+  return h('div', { class: `step on-map${written ? ' has-written' : ''}`, 'data-step': i, title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
     h('span', { class: 'no' }, i + 1),
     slot(h('span', { class: 'name slot-text' }, screenHead(s), stepTests(s.id))),
     records,
@@ -90,8 +79,9 @@ function linkItem(l, story, i, fields) {
     l.verdict === 'off-map' ? h('span', { class: 'muted' }, ' 화면 없음') : null,
     l.verdict === 'configured' ? h('span', { class: 'muted' }, ` ${l.reasons.join(', ')}`) : null,
     l.verdict === 'unknown' ? h('span', { class: 'muted' }, ' 주소 못 읽은 링크') : null);
-  return h('div', { class: `link l-${l.verdict}` },
+  return h('div', { class: `link l-${l.verdict}`, 'data-hop': i },
     story ? slotRow(head, hopTarget(story, i, l), SLOT_WORDS.hop) : head,
+    l.verdict === 'broken' ? goesOn(l.from) : null,
     l.verdict === 'unknown' ? unknownList(l.unknownLinks) : null,
     l.ways.length ? h('ul', { class: 'plain ways' }, l.ways.map((w) => wayItem(w))) : null,
     l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null,

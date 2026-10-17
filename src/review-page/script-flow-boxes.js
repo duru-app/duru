@@ -43,16 +43,15 @@ function screenPill(n, pick = () => pickScreen(n.id)) {
 const PATH_TAG = { conditioned: LINK_VERDICT.conditioned, configured: LINK_VERDICT.configured, broken: LINK_VERDICT.broken, unknown: LINK_VERDICT.unknown, 'off-map': '맵에 없는 화면' };
 const hopTitle = (l, i) => [`단계 ${i + 1} → ${i + 2}`, PATH_TAG[l.verdict] ?? LINK_VERDICT[l.verdict], LINK_VERDICT_TITLE[l.verdict]].filter(Boolean).join(' · ');
 
-// 단계 번호와 떨어진 단계로 가는 표지는 상자 안에 넣고, 이웃 단계로 가는 선의 표지와 숨긴 화면 수만 상자 곁에 둔다.
-function storyMarks({ st, hidden }, boxes, els) {
+function storyMarks({ st }, boxes, els) {
   const parentOf = new Map(boxes.map((b) => [b.key, b.parent]));
   const marks = [];
   const edges = new Map();
-  const mark = (key, kind, el) => {
+  const mark = (key, el) => {
     el.classList.add('mark');
     el.dataset.at = key;
     el.style.visibility = 'hidden';
-    marks.push({ key, kind, el });
+    marks.push({ key, el });
   };
   const numbers = new Map();
   st.steps.forEach((s, i) => {
@@ -70,7 +69,7 @@ function storyMarks({ st, hidden }, boxes, els) {
     const tag = PATH_TAG[l.verdict];
     if (from && to && parentOf.get(to) === from) {
       const key = `${from}\n${to}`;
-      if (!edges.has(key) && tag) mark(to, 'tag', h('span', { class: `story-tag l-${l.verdict}`, title: hopTitle(l, i) }, tag));
+      if (!edges.has(key) && tag) mark(to, h('span', { class: `story-tag l-${l.verdict}`, title: hopTitle(l, i) }, tag));
       edges.set(key, l.verdict);
       return;
     }
@@ -86,7 +85,6 @@ function storyMarks({ st, hidden }, boxes, els) {
     pill.prepend(...(before.get(id) ?? []), h('span', { class: 'story-badge' }, nums.join('·')));
     pill.append(...(after.get(id) ?? []));
   }
-  for (const [id, n] of hidden) if (els.has(id)) mark(id, 'hidden', h('span', { class: 'story-hidden' }, `다른 화면 ${n} 숨김`));
   return { marks, edges };
 }
 
@@ -105,73 +103,39 @@ function pathLegend() {
   ];
 }
 
-function storyOn(st) {
-  if (!st) return null;
-  return h('span', { class: 'story-on' },
-    h('strong', { class: 'story-name', title: st.id }, st.name),
-    (st.needs ?? []).filter((n) => typeof n !== 'string').map(needItem),
-    writtenCount(st),
-    h('button', { class: 'path-off', onclick: () => pickStory('') }, '경로 끄기'),
-    legendInfo('path', '스토리 경로 읽는 법', pathLegend()));
-}
+const HOP_WIDTH = 64;
 
-const HOP_WIDTH = 104;
-const hopNeeds = (needs) => {
-  const lines = needs?.map(needWord);
-  return lines?.length ? h('span', { class: 'hop-need', title: [LINK_NEEDS_LABEL, ...lines].join('\n') }, lines.join(' · ')) : null;
-};
-
-function goesTo(l, i, byId) {
-  const n = byId.get(l.from);
-  const ids = new Set([...n.children.map((c) => c.id), ...n.jumps.map((j) => j.to)]);
+const goesOn = (from) => {
+  const n = flowScreens().find((x) => x.id === from);
+  const ids = new Set([...(n?.children ?? []).map((c) => c.id), ...(n?.jumps ?? []).map((j) => j.to)]);
   const targets = state.data.map.screens.filter((s) => ids.has(s.id));
-  const from = () => h('code', {}, screenLabel(l.from));
-  return h('li', {}, `${i + 1} → ${i + 2} 단계: `, from(), ' 에서 ', h('code', {}, screenLabel(l.to)), ' 로 가는 링크가 맵에 없습니다. ',
+  return h('div', { class: 'goes-on muted' }, h('code', {}, screenLabel(from)),
     targets.length
-      ? [from(), ' 에서 갈 수 있는 화면: ', h('span', { class: 'goes-to' }, targets.flatMap((s, k) => [k ? ', ' : null, h('code', { title: s.id }, s.path)]))]
-      : [from(), ' 에서 갈 수 있는 화면이 없습니다.']);
-}
+      ? [' 에서 갈 수 있는 화면: ', h('span', { class: 'goes-to' }, targets.flatMap((s, k) => [k ? ', ' : null, h('code', { title: s.id }, s.path)]))]
+      : ' 에서 갈 수 있는 화면이 없습니다.');
+};
 
 function storyLine(st) {
   const byId = new Map(flowScreens().map((n) => [n.id, n]));
-  const { ring } = state.storyPath;
   const step = (s, i) => {
-    const box = s.onMap
-      ? screenPill({ ...byId.get(s.screen), guards: [] }, () => ringStep(i))
-      : h('div', {
-          role: 'button', tabindex: '0', class: 'box story-off', title: `${s.screen}\n${PATH_TAG['off-map']}`,
-          onclick: () => ringStep(i),
-          onkeydown: (e) => {
-            if (e.key !== 'Enter' && e.key !== ' ') return;
-            e.preventDefault();
-            ringStep(i);
-          },
-        }, h('span', { class: 'path' }, s.screen), h('span', { class: 'tag off' }, PATH_TAG['off-map']));
-    box.prepend(h('span', { class: 'story-badge' }, i + 1));
-    const written = writtenCount(st.stepFields?.[i]);
-    if (written) box.append(written);
-    box.append(bubbleButton(stepTarget(st.id, i, s.screen), SLOT_WORDS.step, `단계 ${i + 1} ${s.onMap ? screenLabel(s.screen) : s.screen}`));
-    Object.assign(box.dataset, { step: i, screen: s.screen }, s.onMap ? { key: s.screen } : {});
-    box.classList.toggle('story-ring', ring === i);
-    return box;
-  };
-  const hop = (l, i) => h('div', { class: `story-hop l-${l.verdict}`, 'data-hop': i, title: [hopTitle(l, i), ...(l.reasons ?? [])].join(' · ') },
-    svg('svg', { width: HOP_WIDTH, height: 8, 'aria-hidden': 'true' }, svg('path', { class: hopClass(l.verdict), d: `M2 4H${HOP_WIDTH - 2}` })),
-    PATH_TAG[l.verdict] ? h('span', { class: `story-tag l-${l.verdict}` }, PATH_TAG[l.verdict]) : null,
-    hopNeeds(st.stepFields?.[i + 1]?.linkNeeds),
-    bubbleButton(hopTarget(st.id, i, l), SLOT_WORDS.hop, `단계 ${i + 1} → ${i + 2} 연결`));
-  const gaps = st.links.flatMap((l, i) => (l.verdict === 'broken' ? [goesTo(l, i, byId)] : []));
-  const el = h('div', { class: 'canvas story story-line' },
-    h('div', { class: 'story-row' }, st.steps.flatMap((s, i) => [i ? hop(st.links[i - 1], i - 1) : null, step(s, i)])),
-    gaps.length ? h('ul', { class: 'plain story-gaps' }, gaps) : null);
-  const holder = h('div', { class: 'zoom-box' }, el);
-  return {
-    el: holder,
-    place() {
-      const z = state.zoom;
-      el.style.transform = z === 1 ? '' : `scale(${z})`;
-      Object.assign(holder.style, { width: `${el.offsetWidth * z}px`, height: `${el.offsetHeight * z}px` });
+    const n = s.onMap ? byId.get(s.screen) : null;
+    const status = n ? statusOf(n.counts) : null;
+    return h('button', {
+      type: 'button', class: n ? `box screen ${status}` : 'box story-off', 'data-step': i, 'data-screen': s.screen,
+      title: [s.screen, n ? STATUS_WORD[status] : PATH_TAG['off-map'], '누르면 이 단계 카드로 내려갑니다'].join('\n'),
+      onclick: () => revealStoryPart({ kind: 'step', key: { step: i + 1 } }),
     },
+      h('span', { class: 'story-badge' }, i + 1),
+      n ? [h('span', { class: 'sq' }), h('span', { class: 'sr-only' }, STATUS_WORD[status])] : null,
+      h('span', { class: 'path' }, n ? pathText(n.label) : s.screen),
+      n ? null : h('span', { class: 'tag off' }, PATH_TAG['off-map']));
   };
+  const hop = (l, i) => h('button', {
+    type: 'button', class: `story-hop l-${l.verdict}`, 'data-hop': i,
+    title: [hopTitle(l, i), ...(l.reasons ?? []), '누르면 이 연결 줄로 내려갑니다'].join(' · '),
+    onclick: () => revealStoryPart({ kind: 'hop', key: { step: i + 1 } }),
+  },
+    svg('svg', { width: HOP_WIDTH, height: 8, 'aria-hidden': 'true' }, svg('path', { class: hopClass(l.verdict), d: `M2 4H${HOP_WIDTH - 2}` })),
+    l.verdict === 'broken' ? h('span', { class: 'story-tag l-broken' }, PATH_TAG.broken) : null);
+  return h('div', { class: 'story-line' }, h('div', { class: 'story-row' }, st.steps.flatMap((s, i) => [i ? hop(st.links[i - 1], i - 1) : null, step(s, i)])));
 }
-

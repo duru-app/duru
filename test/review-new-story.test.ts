@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
-import { withRebuiltFixture, withServer, browserMissing, withPage, screenBox, boxCount, lineSteps, pathMarks, pillMarks, pathEdges, untilSet, placeOf, postJson, CANDIDATES, storiesTab, holdRequests } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, browserMissing, withPage, screenBox, boxCount, lineSteps, pathMarks, pillMarks, pathEdges, untilSet, placeOf, postJson, CANDIDATES, storiesTab, holdRequests, WALK, WALK_ON_MAP, withPathStories, textOutside } from './review-helpers.ts';
 import type { Story, PageData } from './review-helpers.ts';
+
+declare const state: any;
+declare function canvas(roots: object[], options: object): { el: HTMLElement; measureWidths(): void; fit(width: number): void; measureHeights(): void; place(): void };
+declare function flowInnerWidth(flow: HTMLElement): number;
 
 const HELP_PATH = ['/signin#SignIn', '/home#Home', '/help#Help'];
 
@@ -189,12 +193,12 @@ test('in a browser, a new story being written is a place in the address and is k
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await startNewStory(p);
-        assert.equal(await placeOf(p), '#stories?new=1');
+        assert.equal(await placeOf(p), '#story?new=1');
         await pickScreen(p, '/home');
         await p.fill('#compose-name', '쓰다 만 스토리');
         await p.click('#left button.leave-compose');
         assert.equal(await p.textContent('#left button.new-story'), '새 스토리 이어 쓰기');
-        assert.match(await placeOf(p), /^#stories\?story=/);
+        assert.match(await placeOf(p), /^#story\?story=/);
         assert.equal(await p.locator('#story-list li.selected').count(), 1);
 
         await p.goBack();
@@ -264,7 +268,7 @@ test('in a browser, a map built before links carried their conditions has no 「
         await p.click(storiesTab);
         assert.equal(await p.locator('#left button.new-story').count(), 0);
         await p.evaluate(() => { location.hash = '#stories?new=1'; });
-        await p.waitForFunction(() => location.hash === '#stories');
+        await p.waitForFunction(() => location.hash === '#story');
         assert.equal(await p.locator('#pick-list').count(), 0);
       });
     });
@@ -276,7 +280,7 @@ const paneLinks = (p: Page) => p.locator('#flow-stories .story-path .link .link-
 const untilPaneJudged = (p: Page, links: number) => p.waitForFunction((n) => document.querySelectorAll('#flow-stories .story-path .link .link-verdict').length === n && !document.querySelector('#flow-stories .link.l-pending'), links);
 const pressBox = async (p: Page, id: string) => (await screenBox(p, id)).click();
 
-test('in a browser, 「새 스토리」 of the flow sits in the bar while there is no story yet and opens the story column, and while it is open each box pressed becomes the next step instead of opening the screen and stays where it was with the focus on it, numbered on its box over the whole flow with its links kept as drawn and the link between two neighbouring steps drawn in the style of its verdict, the same box twice in a row is refused as in the list, and 「스토리 목록」 lets a box open its screen again', { skip: browserMissing }, async () => {
+test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a pane beside the flow, and while it is open each box pressed becomes the next step instead of opening the screen and stays where it was with the focus on it, numbered on its box over the whole flow with its links kept as drawn and the link between two neighbouring steps drawn in the style of its verdict, the same box twice in a row is refused as in the list, and 「닫기」 lets a box open its screen again', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -285,7 +289,7 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar while there 
         assert.equal(await p.isVisible('#flow-stories'), false);
         await p.click('#flow-bar button.new-story');
         assert.equal(await placeOf(p), '#flow?new=1');
-        assert.equal(await p.textContent('#stories-tab'), '스토리 0 ◀');
+        assert.equal(await p.isVisible('#flow-stories'), true);
         assert.equal(await p.locator('#flow-bar button.new-story').count(), 0);
         assert.equal(await p.textContent('#flow-stories .no-steps'), '아직 넣은 화면이 없습니다.');
         assert.match((await (await screenBox(p, '/home#Home')).getAttribute('title'))!, /\n누르면 새 스토리의 단계로 넣습니다$/);
@@ -364,8 +368,7 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar while there 
         await untilPaneJudged(p, 2);
         assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
 
-        await p.click('#stories-tab');
-        await p.click('#view-list');
+        await p.click('#view-story');
         await p.click('#left button.leave-compose');
         await p.click('#view-flow');
         assert.equal(await placeOf(p), '#flow');
@@ -373,7 +376,7 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar while there 
         assert.equal(await p.textContent('#flow-bar button.new-story'), '새 스토리 이어 쓰기');
         assert.deepEqual(await pillMarks(p, 'story-badge'), []);
         await p.click('#flow-bar button.new-story');
-        assert.equal(await p.textContent('#stories-tab'), '스토리 0 ◀', 'the folded column opens again');
+        assert.equal(await p.isVisible('#flow-stories'), true, 'the pane opens again');
         assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
         await p.click('#flow-stories button.leave-compose');
         await p.goBack();
@@ -390,7 +393,7 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar while there 
   );
 });
 
-test('in a browser, a new story written in the list goes on in the flow and back with the same steps, its name being typed is left alone when a verdict arrives, and saving it in the flow writes the same story file as the list does and draws the saved story', { skip: browserMissing }, async () => {
+test('in a browser, a new story written in the story tab goes on in the flow and back with the same steps, its name being typed is left alone when a verdict arrives, and saving it in the flow writes the same story file as the story tab does and opens the saved story in the story tab', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -407,16 +410,16 @@ test('in a browser, a new story written in the list goes on in the flow and back
         await untilPaneJudged(p, 1);
         assert.equal(await name.evaluate((el: HTMLInputElement) => el.isConnected), true);
 
-        await p.click('#view-list');
+        await p.click('#view-story');
         await untilJudged(p, 1);
-        assert.equal(await placeOf(p), '#stories?new=1');
+        assert.equal(await placeOf(p), '#story?new=1');
         assert.deepEqual(await composeSteps(p), ['/signin', '/home']);
         await p.click('#view-flow');
         await untilPaneJudged(p, 1);
         const held = holdRequests(p, '**/api/stories/check');
         await pressBox(p, '/help#Help');
         await untilSet(() => held.sent.length === 1, 'the check');
-        await p.click('#view-list');
+        await p.click('#view-story');
         held.release!();
         await untilJudged(p, 2);
         await p.unroute('**/api/stories/check');
@@ -434,14 +437,95 @@ test('in a browser, a new story written in the list goes on in the flow and back
         await p.fill('#flow-stories #compose-id', 'help-from-signin');
         await p.fill('#flow-stories #compose-memo', '홈에 링크가 없다.');
         await p.click('#flow-stories button.save-compose');
-        await p.waitForSelector('#flow .story-line');
+        await p.waitForSelector('#center .story-line');
         const { date, ...saved } = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'help-from-signin.json'), 'utf8'));
         assert.deepEqual(saved, { name: '로그인해 도움말을 연다', screens: HELP_PATH, memo: '홈에 링크가 없다.', author: 'reviewer' });
-        assert.equal(await placeOf(p), '#flow?story=help-from-signin');
-        assert.equal(await p.textContent('#flow-stories button.new-story'), '새 스토리');
+        assert.equal(await placeOf(p), '#story?story=help-from-signin');
+        assert.equal(await p.isVisible('#flow-stories'), false);
+        assert.equal(await p.textContent('#left button.new-story'), '새 스토리');
         assert.deepEqual(await lineSteps(p), HELP_PATH.map((id, i) => [String(i + 1), id]));
         assert.deepEqual(errors, []);
       }),
     ),
   );
+});
+
+const drawOverlay = (p: Page, id: string) => p.evaluate((id) => {
+  const st = state.data.stories.list.find((s: { id: string }) => s.id === id);
+  const flow = document.getElementById('flow')!;
+  const c = canvas(state.data.flow.roots, { group: true, story: { st } });
+  flow.replaceChildren(c.el);
+  c.measureWidths();
+  c.fit(flowInnerWidth(flow));
+  c.measureHeights();
+  c.place();
+}, id);
+
+test('in a browser, a story laid over the whole flow, as while a new story is written, puts its hops from a box to its child on that link in the style of the story verdict and every other hop as chips with the other step number in both boxes, numbers a screen visited twice with both steps, and covers no box or mark', { skip: browserMissing }, async () => {
+  const stories = { 'walk-around': WALK, twice: ['/signin#SignIn', '/home#Home', '/help#Help', '/home#Home'] };
+  await withPathStories(stories, async (p) => {
+    await drawOverlay(p, 'walk-around');
+    assert.deepEqual(await pathEdges(p), [
+      ['/home#Home', '/document/:tab_draft_done_#DocumentList', 'l-open'],
+      ['/lab#Lab', '/lab/result#LabResult', 'l-open'],
+      ['/signin#SignIn', '/home#Home', 'l-open'],
+    ]);
+    const stroke = (from: string, to: string) => p.$eval(`#flow svg path[data-from="${from}"][data-to="${to}"]`, (e) => { const c = getComputedStyle(e); return [c.strokeWidth, c.strokeDasharray, c.opacity]; });
+    assert.deepEqual(await stroke('/signin#SignIn', '/home#Home'), ['3.2px', 'none', '1']);
+    assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), WALK_ON_MAP.map((id, i) => [id, String(i + 1)]).sort());
+    assert.deepEqual(await pillMarks(p, 'story-chip'), [
+      ['/document/:tab_draft_done_#DocumentList', '→ 4', 'exit', 'l-open'],
+      ['/document/:id#DocumentDetail', '3 →', 'entry', 'l-open'],
+      ['/document/:id#DocumentDetail', '→ 5조건', 'exit', 'l-conditioned'],
+      ['/lab#Lab', '✕5 →', 'entry', 'l-broken'],
+      ['/lab/result#LabResult', '→ 8맵에 없는 화면', 'exit', 'l-off-map'],
+      ['/help#Help', '4 →', 'entry', 'l-conditioned'],
+      ['/help#Help', '✕→ 6링크 없음', 'exit', 'l-broken'],
+    ]);
+    const order = await p.locator('#flow .box.screen[data-key="/document/:id#DocumentDetail"]').evaluate((box) => [...box.children].map((c) => c.className.split(' ')[0]));
+    assert.deepEqual(order.filter((c) => c !== 'sr-only'), ['story-chip', 'story-badge', 'sq', 'path', 'tag', 'story-chip'], 'chips from earlier steps and the number come first, chips to later steps last');
+    await p.locator('#flow .story-chip.exit[data-hop="3"]').hover();
+    assert.deepEqual(await p.$$eval('#flow .story-chip.hovered', (els) => els.map((e) => e.closest<HTMLElement>('.box')!.dataset.key)), ['/document/:id#DocumentDetail', '/help#Help']);
+
+    const problems = () => p.evaluate(() => {
+      const R = (e: Element) => e.getBoundingClientRect();
+      const boxes = [...document.querySelectorAll<HTMLElement>('#flow .canvas > .box')];
+      const marks = [...document.querySelectorAll<HTMLElement>('#flow .canvas > .mark')];
+      const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
+      const out = [];
+      for (const m of marks) {
+        for (const b of boxes) if (hit(R(m), R(b))) out.push(`${m.textContent} covers ${b.dataset.key}`);
+        if (R(m).right > R(m.parentElement!).right + 0.5) out.push(`${m.textContent} sticks out of its canvas`);
+      }
+      marks.forEach((m, i) => marks.slice(i + 1).forEach((o) => { if (hit(R(m), R(o))) out.push(`${m.textContent} covers ${o.textContent}`); }));
+      for (const line of document.querySelectorAll<SVGPathElement>('#flow .canvas svg path')) {
+        const ctm = line.getScreenCTM()!;
+        const len = line.getTotalLength();
+        const thick = line.classList.contains('story-edge');
+        for (let a = 2; a < len - 2; a += 2) {
+          const q = line.getPointAtLength(a);
+          const x = ctm.a * q.x + ctm.e;
+          const y = ctm.d * q.y + ctm.f;
+          const inside = (e: Element) => { const r = R(e); return x > r.left + 1 && x < r.right - 1 && y > r.top + 1 && y < r.bottom - 1; };
+          const box = thick && boxes.find(inside);
+          const under = marks.find((m) => !m.classList.contains('story-tag') && inside(m))!;
+          if (box || under) {
+            out.push(`${line.dataset.from} → ${line.dataset.to} runs ${box ? `across ${box.dataset.key}` : `under ${under.textContent}`}`);
+            break;
+          }
+        }
+      }
+      return out;
+    });
+    assert.deepEqual(await problems(), []);
+    assert.deepEqual(await textOutside(p), []);
+
+    await drawOverlay(p, 'run-lab');
+    assert.deepEqual(await pathEdges(p), [['/home#Home', '/lab#Lab', 'l-conditioned'], ['/lab#Lab', '/lab/result#LabResult', 'l-open']]);
+    assert.deepEqual(await pathMarks(p, 'story-tag'), [['/lab#Lab', '조건', 'l-conditioned']]);
+    assert.deepEqual(await problems(), []);
+
+    await drawOverlay(p, 'twice');
+    assert.deepEqual(await pillMarks(p, 'story-badge'), [['/signin#SignIn', '1'], ['/home#Home', '2·4'], ['/help#Help', '3']]);
+  });
 });

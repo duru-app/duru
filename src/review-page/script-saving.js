@@ -1,4 +1,4 @@
-const shownTarget = () => (state.side !== 'stories' ? state.target : state.candidate !== null ? { candidate: state.candidate } : { story: state.story });
+const shownTarget = () => (state.view !== 'story' ? state.target : state.candidate !== null ? { candidate: state.candidate } : { story: state.story });
 const isShown = (target) => {
   const shown = shownTarget();
   return !!shown && keyOf(shown) === keyOf(target);

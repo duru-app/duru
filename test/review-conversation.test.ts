@@ -313,18 +313,18 @@ test('in a browser, 「전체」 groups every attached comment by its screen, ca
         assert.match((await p.textContent('#right-info .history li.reached'))!, /and the API\?/);
         assert.equal(await p.locator('#right-info .history-filter').count(), 0);
 
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await p.click('#left button.new-story');
-        await p.click('#left .views.side button:has-text("화면")');
+        await p.click('#view-list');
         await chooseScreen(p, '/lab');
         await scope.nth(1).click();
         await p.click('#right-info .talk-line:has-text("one more step?")');
-        assert.equal(await p.textContent('#left .views.side button.on .tab-name'), '스토리');
+        assert.equal(await p.getAttribute('#view-story', 'class'), 'on');
         assert.match((await p.textContent('#right-dock .history li.reached'))!, /one more step\?/);
         assert.deepEqual(await badge(p.locator('#story-list li', { hasText: '실험실을 열어' })), ['코멘트 1', true]);
 
         await reply(copy, home.id, 'yes, the home comes first', '--server', `${base}/`);
-        await p.click('#left .views.side button:has-text("화면")');
+        await p.click('#view-list');
         await listed('/home').locator('.talk-count:not(:has(.unanswered-dot))').waitFor();
 
         await p.click('#view-flow');
@@ -335,7 +335,7 @@ test('in a browser, 「전체」 groups every attached comment by its screen, ca
   });
 });
 
-test('in a browser, each step of a story and each link between two steps has a bubble that puts it in as the tag with the status buttons off, a comment saved there shows its count, the count narrows the conversation, and the bubble on a step or a link of the story drawn in the flow opens the story there', { skip: browserMissing }, async () => {
+test('in a browser, each step of a story and each link between two steps has a bubble that puts it in as the tag with the status buttons off, a comment saved there shows its count, and the count narrows the conversation', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -349,7 +349,7 @@ test('in a browser, each step of a story and each link between two steps has a b
           await row.locator('.part-count', { hasText: '코멘트 1' }).waitFor();
         };
         await p.waitForSelector('#screen-list li');
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await p.click('#story-list li:has-text("실험실을 열어")');
         await comment(p.locator('#center .story-path .step').nth(1), '단계 2 /lab', 'check the result table here');
         await comment(p.locator('#center .story-path .link').first(), '단계 1 → 2 연결', 'is this link always there?');
@@ -365,19 +365,6 @@ test('in a browser, each step of a story and each link between two steps has a b
         await p.click('#right-info .talk-scope button:nth-child(2)');
         await p.click('#right-info .talk-line:has-text("check the result table here")');
         assert.equal(await p.locator('#right .history li.reached').isVisible(), true);
-
-        await p.click('#view-flow');
-        await p.click('#flow-story-list li[data-story="run-lab"]');
-        const third = p.locator('#flow .story-line .box[data-step="2"]');
-        await third.hover();
-        await third.locator('.bubble').click();
-        assert.equal(await p.textContent('#view-list.on'), '목록');
-        assert.equal(await p.textContent('#left .views.side button.on .tab-name'), '스토리');
-        assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '단계 3 /lab/result');
-        assert.equal(await p.evaluate(() => document.activeElement?.matches('#right-dock textarea')), true);
-        await p.click('#view-flow');
-        await p.locator('#flow .story-line .story-hop[data-hop="1"] .bubble').click();
-        assert.deepEqual(await p.locator('#right-dock .mark-form .tags .tag-label').allTextContents(), ['단계 3 /lab/result', '단계 2 → 3 연결']);
         assert.deepEqual(errors, []);
       })));
 });
@@ -588,7 +575,7 @@ test('in a browser, a comment on a story candidate shows in 「전체」 under t
         const group = p.locator('#right-info .talk-group', { hasText: '후보 open-help' });
         assert.equal(await group.locator('.talk-line .first').textContent(), 'why the beta inbox?');
         await group.locator('.talk-line').click();
-        assert.equal(await p.textContent('#left .views.side button.on .tab-name'), '스토리');
+        assert.equal(await p.getAttribute('#view-story', 'class'), 'on');
         await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
         const reached = p.locator(`#right [data-record="${asked.id}"]`);
         assert.equal(await reached.getAttribute('class'), 'reached');
@@ -628,7 +615,7 @@ test('in a browser, once a candidate with comments is accepted or discarded, its
           ['후보 opens home and then help', 'which test gives this?'],
           ['후보 open-help', 'why the beta inbox?'],
         ]);
-        await p.click('#left .views.side button:has-text("화면")');
+        await p.click('#view-list');
         await p.waitForSelector('#screen-list li');
         assert.doesNotMatch((await p.textContent('#left'))!, /후보 open/);
       }));

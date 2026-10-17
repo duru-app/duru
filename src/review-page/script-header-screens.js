@@ -135,28 +135,16 @@ const screenFilterBoxes = () => [...activeScreenFilters().map((f) => h('label', 
 } }), f.label)), baselineFilterBox()].filter(Boolean);
 
 function renderLeft() {
-  const { marks, map, stories } = state.data;
+  const { marks, map } = state.data;
   const left = document.getElementById('left');
+  if (state.view === 'story') return renderStoryLeft(left);
   const side = (key, name, count, title) => h('button', { class: state.side === key ? 'on' : '', title, disabled: state.bulkBusy, onclick: () => setSide(key) },
     h('span', { class: 'tab-name' }, name),
     // 화면에는 gap 이 띄우고, 이 빈칸은 탭의 글이 「화면 11」로 읽히게 한다.
     ' ', h('span', { class: 'tab-count' }, count));
   const tabs = h('div', { class: 'views side' },
     side('screens', '화면', map.screens.length),
-    side('stories', '스토리', stories.list.length),
     side('untagged', '태그 없음', untaggedCount(), '노드 태그도 스토리 태그도 없는 테스트'));
-  if (state.side === 'stories' && state.composing) {
-    if (!keptLeftList(left, tabs, 'pick-list')) {
-      fill(left,
-        tabs,
-        h('div', { class: 'compose-head' }, h('strong', {}, '새 스토리에 넣을 화면'), leaveComposeButton()),
-        h('div', { class: 'filters' },
-          h('input', { type: 'search', placeholder: '화면 찾기', value: state.compose.query, oninput: (e) => { state.compose.query = e.target.value; renderPickList(); } })),
-        h('ul', { class: 'screens', id: 'pick-list' }));
-    }
-    return renderPickList();
-  }
-  if (state.side === 'stories') return fill(left, tabs, storyList());
   if (state.side === 'untagged') {
     if (!keptLeftList(left, tabs, 'untagged-list')) {
       fill(left,
@@ -190,7 +178,18 @@ function renderLeft() {
   renderLeftList();
 }
 
-// 찾기 칸을 새로 만들면 조합 중이던 한글이 끊기고 초점도 사라진다.
+function renderStoryLeft(left) {
+  if (!state.composing) return fill(left, storyList());
+  if (!left.querySelector(':scope > ul#pick-list')) {
+    fill(left,
+      h('div', { class: 'compose-head' }, h('strong', {}, '새 스토리에 넣을 화면'), leaveComposeButton()),
+      h('div', { class: 'filters' },
+        h('input', { type: 'search', placeholder: '화면 찾기', value: state.compose.query, oninput: (e) => { state.compose.query = e.target.value; renderPickList(); } })),
+      h('ul', { class: 'screens', id: 'pick-list' }));
+  }
+  renderPickList();
+}
+
 function keptLeftList(left, tabs, listId) {
   const list = left.querySelector(`:scope > ul#${listId}`);
   if (list) left.firstElementChild.replaceWith(tabs);

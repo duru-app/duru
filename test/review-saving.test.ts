@@ -80,7 +80,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '에이전트와 대화']);
         assert.equal(await p.isDisabled('#right button.save'), true);
@@ -104,7 +104,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await p.click('#story-list li:has-text("보고서")');
         assert.equal(await p.locator('#right .history li').count(), 0);
         assert.equal(await p.locator('#right .statuses button.on').count(), 0);
-        await p.click('#left .views.side button:has-text("화면")');
+        await p.click('#view-list');
         assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /^화면 전체$/);
         assert.equal(await p.locator('#right .history li').count(), 0);
         assert.match((await p.textContent('#left'))!, /떨어져 나감 0/);
@@ -114,7 +114,7 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await toList(p);
         await p.waitForSelector('#screen-list li');
         assert.match((await p.textContent('#left'))!, /떨어져 나감 0/);
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         assert.equal(await p.locator('#story-list li:has-text("실험실을 열어")').count(), 0);
         assert.match((await p.textContent('#left'))!, /떨어져 나감 1/);
         const detached = p.locator('#left .detached li');
@@ -143,7 +143,7 @@ test('in a browser, a failed save stays with the form that tried it and is gone 
           await p.waitForSelector('#right .error');
           assert.match((await p.textContent('#right'))!, /저장하지 못했습니다: disk full/);
         };
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.equal(await p.locator('#right .error').count(), 0);
         await failSave();
@@ -151,9 +151,9 @@ test('in a browser, a failed save stays with the form that tried it and is gone 
         assert.doesNotMatch((await p.textContent('#right'))!, /저장하지 못했습니다/);
         await p.click('#story-list li:has-text("실험실을 열어")');
         await failSave();
-        await p.click('#left .views.side button:has-text("화면")');
+        await p.click('#view-list');
         assert.doesNotMatch((await p.textContent('#right'))!, /저장하지 못했습니다/);
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         await failSave();
         await p.click('#center .story-path .step:has-text("/lab/result")');
         assert.equal(await p.textContent('#center h3'), '/lab/result');
@@ -170,7 +170,7 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         assert.match((await p.textContent('#left'))!, /떨어져 나감 0/);
         const unread = p.locator('#left .unread-marks li');
         assert.equal(await unread.count(), 1);
@@ -324,7 +324,7 @@ test('in a browser, a save whose reload fails after the reviewer moved to anothe
           await route.continue();
         });
         const holdNextPost = () => new Promise<() => void>((resolve) => { onPost = resolve; });
-        await p.click('#left .views.side button:has-text("스토리")');
+        await p.click('#view-story');
         const first = p.locator('#story-list li:has-text("실험실을 열어")');
         const name = await first.locator('.name > span').textContent();
         await first.click();

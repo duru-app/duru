@@ -145,17 +145,16 @@ test('in a browser, drawing the screens side again keeps the search box and its 
       })));
 });
 
-test('in a browser, the three left tabs stay on one line inside the column, also with three-digit counts and a classic scrollbar', { skip: browserMissing }, async () => {
+test('in a browser, the two left tabs stay on one line inside the column, also with three-digit counts and a classic scrollbar', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
-        let counts: { screens: number; stories: number; untagged?: number } = { screens: 11, stories: 5 };
+        let counts: { screens: number; untagged?: number } = { screens: 11 };
         await p.route('**/api/data', async (route) => {
           const res = await route.fetch();
           const data: PageData = await res.json();
           const grow = <T>(list: T[], n: number) => Array.from({ length: n }, (_, i) => list[i % list.length]);
           data.map.screens = grow(data.map.screens, counts.screens);
-          data.stories.list = grow(data.stories.list, counts.stories);
           if (counts.untagged !== undefined) {
             delete data.tests.untagged;
             data.tests.untaggedCount = counts.untagged;
@@ -198,9 +197,9 @@ test('in a browser, the three left tabs stay on one line inside the column, also
           };
         });
         const assertFits = (m: Awaited<ReturnType<typeof measure>>, why: string) => {
-          assert.deepEqual(m.heights, Array(3).fill(m.oneLine), `${why}: every tab is as tall as a one-line tab`);
+          assert.deepEqual(m.heights, Array(2).fill(m.oneLine), `${why}: every tab is as tall as a one-line tab`);
           assert.ok(m.drop.every((d) => d <= 3), `${why}: each count stays beside its name ${m.drop}`);
-          assert.deepEqual(m.inside, Array(3).fill(true), `${why}: name and count stay inside their tab's padding`);
+          assert.deepEqual(m.inside, Array(2).fill(true), `${why}: name and count stay inside their tab's padding`);
           assert.ok(m.rowScroll[0] <= m.rowScroll[1], `${why}: row ${m.rowScroll[0]} fits in ${m.rowScroll[1]}`);
           assert.ok(m.leftScroll[0] <= m.leftScroll[1], `${why}: left column ${m.leftScroll[0]} does not scroll sideways in ${m.leftScroll[1]}`);
         };
@@ -213,27 +212,27 @@ test('in a browser, the three left tabs stay on one line inside the column, also
 
         const scrollbar = () => p.addStyleTag({ content: '#left { padding-right: 31px !important; }' });
 
-        await show({ screens: 11, stories: 5 });
+        await show({ screens: 11 });
         let m = await measure();
-        assert.deepEqual(m.labels, ['화면 11', '스토리 5', '태그 없음 13']);
-        assert.deepEqual(m.cut, [false, false, false]);
+        assert.deepEqual(m.labels, ['화면 11', '태그 없음 13']);
+        assert.deepEqual(m.cut, [false, false]);
         assertFits(m, 'default counts');
 
-        await show({ screens: 111, stories: 5, untagged: 999 });
+        await show({ screens: 111, untagged: 999 });
         m = await measure();
-        assert.deepEqual(m.labels, ['화면 111', '스토리 5', '태그 없음 999']);
-        assert.deepEqual(m.cut, [false, false, false]);
+        assert.deepEqual(m.labels, ['화면 111', '태그 없음 999']);
+        assert.deepEqual(m.cut, [false, false]);
         assertFits(m, 'three-digit counts');
 
-        await show({ screens: 111, stories: 5, untagged: 999 });
+        await show({ screens: 111, untagged: 999 });
         await scrollbar();
         m = await measure();
-        assert.deepEqual(m.cut, [false, false, false]);
+        assert.deepEqual(m.cut, [false, false]);
         assertFits(m, 'three-digit counts with a classic scrollbar');
 
-        await show({ screens: 111, stories: 111, untagged: 999 });
+        await show({ screens: 111, untagged: 999 });
         await scrollbar();
-        await p.click('#left .views.side button:nth-child(3)');
+        await p.click('#left .views.side button:nth-child(2)');
         assertFits(await measure(), 'three-digit counts on every tab, a classic scrollbar and the widest tab chosen');
       })));
 });
@@ -544,7 +543,7 @@ test('in a browser, the 「서버 대조 안 함」 chip explains itself on hove
         }
 
         await p.setViewportSize({ width: 1440, height: 900 });
-        await p.focus('#view-flow');
+        await p.focus('#view-story');
         await p.keyboard.press('Tab');
         assert.equal(await p.evaluate(() => document.activeElement!.className), 'chip state');
         assert.equal(await tip.isVisible(), true);

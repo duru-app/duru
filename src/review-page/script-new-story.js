@@ -2,7 +2,7 @@
 const oldMap = () => state.data.map.screens.some((sc) => sc.links.some((l) => !Array.isArray(l.conditions)));
 const newCompose = () => ({ screens: [], at: null, id: '', name: '', memo: '', checked: null, turn: 0, error: null, refused: null, query: '' });
 const flowComposing = () => state.composing && state.view === 'flow';
-const composeShown = () => state.composing && (state.view === 'flow' || state.side === 'stories');
+const composeShown = () => state.composing && state.view !== 'list';
 const composeStepsAt = () => (state.view === 'flow' ? '#flow-stories .compose-steps' : '#center');
 const checkedCompose = (c) => (c.checked && c.checked.screens.join('\n') === c.screens.join('\n') ? c.checked : null);
 const repeatedStep = (screens) => screens.some((id, i) => i > 0 && id === screens[i - 1]);
@@ -16,11 +16,7 @@ function startCompose() {
   state.candidateTalk = null;
   state.need = null;
   state.storyError = null;
-  if (state.view === 'flow') {
-    state.flowPicked = false;
-    state.storiesFolded = false;
-    if (state.storyPath) return pickStory('');
-  }
+  if (state.view === 'flow') state.flowPicked = false;
   render();
 }
 
@@ -188,10 +184,7 @@ async function saveCompose() {
   if (!(await writeStories('/api/stories/add', { id: c.id, name: c.name, memo: c.memo, screens: c.screens }))) return;
   state.compose = null;
   state.composing = false;
-  state.story = c.id;
-  state.storyDraft = null;
-  state.error = null;
-  if (state.view === 'flow' && pathStories().some((st) => st.id === c.id)) return pickStory(c.id);
-  render();
+  state.view = 'story';
+  selectStory(c.id);
 }
 

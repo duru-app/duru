@@ -1,5 +1,5 @@
 function hereTalk() {
-  if (state.side !== 'stories') return state.target && { label: `이 ${nodeWord(state.target.node)}`, target: state.target };
+  if (state.view !== 'story') return state.target && { label: `이 ${nodeWord(state.target.node)}`, target: state.target };
   if (state.candidate && !state.composing) return { label: '이 후보', target: { candidate: state.candidate } };
   if (state.need && !state.composing) return null;
   return { label: '이 스토리', target: state.story && !state.candidate && !state.composing ? { story: state.story } : null };
@@ -80,15 +80,16 @@ function reachTalk(target, recordId) {
   state.reachRecord = recordId;
   state.historyFilter = null;
   if (target.node === undefined) {
-    state.view = 'list';
-    state.side = 'stories';
+    state.view = 'story';
     state.composing = false;
     state.historyOpen = true;
     state.dockKey = keyOf(target.candidate !== undefined ? target : { story: target.story });
-    return target.candidate !== undefined ? selectCandidate(target.candidate) : selectStory(target.story);
+    if (target.candidate !== undefined) return selectCandidate(target.candidate);
+    selectStory(target.story);
+    return revealStoryPart(target.part);
   }
   state.side = 'screens';
-  if (state.view === 'flow' && drawnScreens().some((n) => n.id === screen)) {
+  if (state.view === 'flow' && flowScreens().some((n) => n.id === screen)) {
     state.flowPicked = true;
     select(screen, { node: target.node });
     return showBox(screen);

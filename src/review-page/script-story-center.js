@@ -44,16 +44,16 @@ function renderStoryCenter() {
   if (need) return fill(center, needCenter(need));
   const c = candidateOf();
   if (c) {
-    return fill(center,
+    return fillStoryCenter(center, c, [
       h('div', { class: 'title-row' }, h('h3', {}, c.name), storyChips(c)),
       sourceView(c.source, '후보가 나온'),
-      storyPath(c, c.stepRanges));
+      ...storyPath(c, c.stepRanges)]);
   }
   const st = storyOf();
   if (!st && state.story) return fill(center, h('h3', {}, state.story), h('p', { class: 'muted', title: '스토리 파일을 읽지 못했거나 맵이 오래되어 경로를 맞춰 보지 못했습니다' }, '경로 판정 없음'));
   if (!st) return fill(center, h('p', { class: 'muted' }, '스토리가 없습니다.'));
   const storyTests = ownTests(state.data.tests.stories, st.id);
-  fill(center,
+  fillStoryCenter(center, st, [
     h('div', { class: 'title-row' }, h('h3', {}, st.name), statusChip(st), storyChips(st)),
     h('div', { class: 'muted mono' }, `${st.id} · ${st.file}`),
     st.source ? sourceView(st.source, '받은 후보가 나온') : null,
@@ -62,8 +62,90 @@ function renderStoryCenter() {
     storyWide(st),
     h('div', { class: 'story-tests' }, h('h2', {}, `스토리 테스트 ${storyTests.length}`),
       storyTests.length ? storyTests.map((t) => testItem(t, { depth: true, hide: [`story:${st.id}`] })) : h('p', { class: 'muted' }, '없음')),
-    storyPath(st, null, st.id),
-    storyFile(st));
+    ...storyPath(st, null, st.id),
+    storyFile(st)]);
+}
+
+const storyPlaceKey = (candidate, story) => (candidate !== null ? `candidate\n${candidate}` : `story\n${story}`);
+
+function checkStoryStep() {
+  const pressed = state.storyStep;
+  if (!pressed || state.view !== 'story') return;
+  const st = state.composing || needOf() ? undefined : candidateOf() ?? storyOf();
+  const screen = st && pressed.of === storyPlaceKey(state.candidate, state.story) ? st.steps[pressed.step]?.screen : undefined;
+  if (screen === undefined || (pressed.screen !== null && pressed.screen !== screen)) state.storyStep = null;
+  else pressed.screen = screen;
+}
+
+function fillStoryCenter(center, st, cards) {
+  fill(center,
+    h('div', { class: 'story-top' },
+      h('div', { class: 'story-top-bar' }, legendInfo('path', '스토리 경로 읽는 법', pathLegend())),
+      storyLine(st)),
+    cards);
+  for (const info of center.querySelectorAll('[data-legend]')) applyLegend(info);
+  markStoryNow();
+}
+
+const STORY_GAP = 8;
+
+function revealStoryPart(part) {
+  if (part?.kind !== 'step' && part?.kind !== 'hop') return;
+  const top = document.querySelector('#center .story-top');
+  if (!top) return;
+  const box = /** @type {HTMLElement | null} */ (top.querySelector(`.story-line .box[data-step="${part.key.step - 1}"]`));
+  state.storyStep = part.kind === 'step' && box ? { of: storyPlaceKey(state.candidate, state.story), step: Number(box.dataset.step), screen: box.dataset.screen ?? null } : null;
+  markStoryNow();
+  recordPlace();
+  showStoryPart(part);
+}
+
+function showStoryPart(part) {
+  const center = document.getElementById('center');
+  const i = part.key.step - 1;
+  const item = center.querySelector(part.kind === 'step' ? `.story-path > .step[data-step="${i}"]` : `.story-path > .link[data-hop="${i}"]`);
+  const top = center.querySelector('.story-top');
+  if (!item || !top) return;
+  const r = item.getBoundingClientRect();
+  const from = top.getBoundingClientRect().bottom + STORY_GAP;
+  const to = center.getBoundingClientRect().bottom - center.clientTop - STORY_GAP;
+  const by = r.top < from ? r.top - from : r.bottom > to ? Math.min(r.bottom - to, r.top - from) : 0;
+  if (!by) return;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  center.scrollTo({ top: center.scrollTop + by, behavior: still ? 'auto' : 'smooth' });
+}
+
+function markStoryNow() {
+  const center = document.getElementById('center');
+  const top = center.querySelector('.story-top');
+  if (!top) return;
+  for (const card of /** @type {NodeListOf<HTMLElement>} */ (center.querySelectorAll('.story-path > .step[data-step]'))) card.classList.toggle('now', Number(card.dataset.step) === state.storyStep?.step);
+  const line = /** @type {HTMLElement} */ (top.querySelector('.story-line'));
+  for (const box of /** @type {NodeListOf<HTMLElement>} */ (line.querySelectorAll('.box[data-step]'))) {
+    const now = Number(box.dataset.step) === state.storyStep?.step;
+    box.classList.toggle('now', now);
+    if (now) box.setAttribute('aria-current', 'step');
+    else box.removeAttribute('aria-current');
+    if (!now) continue;
+    const b = box.getBoundingClientRect();
+    const l = line.getBoundingClientRect();
+    if (b.left < l.left) line.scrollLeft += b.left - l.left - 16;
+    else if (b.right > l.right) line.scrollLeft += b.right - l.right + 16;
+  }
+}
+
+function storyGaps(st) {
+  const byId = new Map(flowScreens().map((n) => [n.id, n]));
+  const firstStep = new Map();
+  st.steps.forEach((s, i) => {
+    if (s.onMap && byId.has(s.screen) && !firstStep.has(s.screen)) firstStep.set(s.screen, i);
+  });
+  const gaps = gapLists([...firstStep.keys()].map((id) => byId.get(id)), (n) => revealStoryPart({ kind: 'step', key: { step: firstStep.get(n.id) + 1 } }));
+  return h('details', { class: 'story-gaps', open: state.storyGapsOpen, ontoggle: (e) => { state.storyGapsOpen = e.currentTarget.open; } },
+    h('summary', {}, h('span', { class: 'title' }, `손볼 화면 ${gaps.count}`)),
+    h('p', { class: 'muted lead' }, '이 스토리의 경로에 있는 화면 가운데 실패했거나 테스트가 없는 화면입니다. 누르면 그 단계 카드로 내려갑니다.'),
+    ...gaps.groups,
+    gaps.count ? null : h('p', { class: 'muted' }, '손볼 화면이 없습니다.'));
 }
 
 const stepLabel = (r) => (r.kind === 'start' ? `첫 화면 ${screenLabel(r.screen)}`

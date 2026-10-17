@@ -259,7 +259,7 @@ test('in a browser, path values that arrive after the reviewer moved to the stor
             });
             await p.waitForSelector('#screen-list li');
             await chooseScreen(p, '/document/:id');
-            await p.click('#left .views.side button:has-text("스토리")');
+            await p.click('#view-story');
             release();
             await p.waitForFunction(() => state.pathValues.get(pathValueKey('/document/:id#DocumentDetail', null))?.pending === false);
             const arrived = await p.evaluate(() => state.pathValues.get(pathValueKey('/document/:id#DocumentDetail', null)));
@@ -269,7 +269,7 @@ test('in a browser, path values that arrive after the reviewer moved to the stor
             assert.equal(await p.locator('#center iframe').count(), 0);
             assert.deepEqual(await overridesOf(base), []);
 
-            await p.click('#left .views.side button:has-text("화면")');
+            await p.click('#view-list');
             const frame = p.frameLocator('#center iframe.app');
             await frame.locator('#path:has-text("/document/draft")').waitFor();
             await frame.locator('#lab:has-text("true")').waitFor();

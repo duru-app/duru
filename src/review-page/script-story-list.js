@@ -51,7 +51,7 @@ function storyRows(row) {
   return visible.length ? visible.map(row) : [h('li', { class: 'muted' }, '해당하는 스토리가 없습니다.')];
 }
 
-const tabStoryRow = (st) => storyRow(st, { class: st.id === state.story && !state.candidate && !state.need ? 'selected' : '', onclick: () => selectStory(st.id) });
+const tabStoryRow = (st) => storyRow(st, { class: st.id === state.story && !state.candidate && !state.need ? 'selected' : '', 'data-story': st.id, onclick: () => selectStory(st.id) });
 
 function storyItems() {
   return [
@@ -60,24 +60,11 @@ function storyItems() {
   ];
 }
 
-function flowStoryRow(st) {
-  const on = state.storyPath?.id === st.id;
-  const pick = () => pickStory(on ? '' : st.id);
-  return storyRow(st, {
-    class: on ? 'selected' : '', 'data-story': st.id, role: 'button', tabindex: '0', 'aria-pressed': String(on),
-    title: on ? '다시 누르면 메인 흐름으로 돌아갑니다' : '누르면 이 스토리의 단계를 차례대로 그립니다',
-    onclick: pick,
-    onkeydown: (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      e.preventDefault();
-      pick();
-    },
-  });
-}
-
 let paneCompose = null;
 
-const leaveComposeButton = () => h('button', { class: 'leave-compose', title: '쓰던 순서는 그대로 두고 스토리 목록을 봅니다', onclick: leaveCompose }, '스토리 목록');
+const leaveComposeButton = () => (state.view === 'flow'
+  ? h('button', { class: 'leave-compose', title: '쓰던 순서는 그대로 두고 쓰는 칸을 닫습니다. 「새 스토리 이어 쓰기」로 다시 엽니다', onclick: leaveCompose }, '닫기')
+  : h('button', { class: 'leave-compose', title: '쓰던 순서는 그대로 두고 스토리 목록을 봅니다', onclick: leaveCompose }, '스토리 목록'));
 
 function syncComposeForm(root) {
   fill(root.querySelector('#compose-reach'), ...composeReach(state.compose));
@@ -87,14 +74,9 @@ function syncComposeForm(root) {
 // 쓰는 동안 단계만 다시 그리고 ID · 이름 · 메모 칸은 그대로 둔다. 다시 만들면 조합 중이던 한글이 끊긴다.
 function renderStoryPane({ rebuild = false } = {}) {
   const pane = document.getElementById('flow-stories');
-  if (pane.hidden) return fill(pane);
-  if (!flowComposing()) {
+  if (pane.hidden) {
     paneCompose = null;
-    return fill(pane,
-      h('div', { class: 'stories-body' },
-        newStoryButton(),
-        storyFilters(() => fill(document.getElementById('flow-story-list'), storyRows(flowStoryRow)), renderStoryPane),
-        h('ul', { class: 'screens', id: 'flow-story-list' }, storyRows(flowStoryRow))));
+    return fill(pane);
   }
   const steps = pane.querySelector('.compose-steps');
   if (steps && !rebuild && paneCompose === state.compose) {
@@ -107,21 +89,6 @@ function renderStoryPane({ rebuild = false } = {}) {
       h('div', { class: 'compose-head' }, leaveComposeButton()),
       h('div', { class: 'compose-steps' }, composeCenter()),
       composeForm()));
-}
-
-let slideEnd = null;
-
-function foldStories() {
-  const main = document.querySelector('main');
-  main.classList.add('sliding');
-  clearTimeout(slideEnd);
-  slideEnd = setTimeout(() => {
-    main.classList.remove('sliding');
-    refitFlow();
-  }, parseFloat(getComputedStyle(main).transitionDuration) * 1000 + 50);
-  state.storiesFolded = !state.storiesFolded;
-  render();
-  document.getElementById('stories-tab').focus();
 }
 
 function discardedGroup(discarded) {
