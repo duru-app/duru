@@ -100,7 +100,7 @@ const removeButton = (rows, row, cls = 'remove-line') => h('button', {
     rows.splice(rows.indexOf(row), 1);
     redrawTable();
   },
-}, '빼기');
+}, '삭제');
 
 const textField = (name, label, value, set) => h('input', { type: 'text', name, 'aria-label': label, value, oninput: (e) => set(e.target.value) });
 
