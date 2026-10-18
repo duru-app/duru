@@ -666,7 +666,8 @@ itself when the second box hangs under the first, otherwise by a mark in each of
 number. Pressing a step shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」 on it, as in 「순서
 고치기」; a step is moved by taking it out and adding it again. The same screen twice in a row is refused as in the
 list; a box already chosen is added again, since a story can pass a screen twice. 「스토리 목록」 closes the screen and
-keeps the steps for 「새 스토리 이어 쓰기」. In the flow tab a box opens its screen as always.
+keeps the steps for 「새 스토리 이어 쓰기」. In the flow tab a box opens its screen. The filters, the search and the
+picked screen of the flow tab are left as they were and do not change the drawing in the new-story screen.
 
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app

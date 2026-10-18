@@ -9,7 +9,7 @@ function openPicked(id) {
 }
 
 function pickScreen(id) {
-  if (composeDiagram()) return addComposeScreen(id);
+  if (composeDiagram()) return addComposeScreen(id, true);
   openPicked(id);
 }
 

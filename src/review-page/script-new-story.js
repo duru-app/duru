@@ -14,9 +14,7 @@ function startCompose() {
   state.candidateTalk = null;
   state.need = null;
   state.storyError = null;
-  state.flowPicked = false;
-  state.view = 'story';
-  render();
+  setView('story');
 }
 
 function leaveCompose() {
@@ -90,14 +88,14 @@ function changeCompose(edit, focus, pressed = null) {
   checkCompose(focus, pressed);
 }
 
-function addComposeScreen(id) {
+function addComposeScreen(id, fromBox = false) {
   const c = state.compose;
   const at = c.at ?? c.screens.length;
   if (c.screens[at - 1] === id || c.screens[at] === id) {
     c.refused = '같은 화면을 이어서 넣을 수 없습니다.';
     return renderCompose();
   }
-  const box = composeDiagram() ? document.querySelector(`#flow .box.screen[data-key="${CSS.escape(id)}"]`)?.getBoundingClientRect() : null;
+  const box = fromBox ? document.querySelector(`#flow .box.screen[data-key="${CSS.escape(id)}"]`)?.getBoundingClientRect() : null;
   changeCompose((d) => {
     d.screens.splice(at, 0, id);
     if (d.at !== null) d.at += 1;

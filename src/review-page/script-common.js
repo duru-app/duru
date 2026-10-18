@@ -147,7 +147,8 @@ async function load() {
   dropLostSteps();
 }
 
-const screenPanesShown = () => (state.view === 'list' && state.side === 'screens') || (state.view === 'flow' && state.flowPicked);
+const flowPickShown = () => state.view === 'flow' && state.flowPicked;
+const screenPanesShown = () => (state.view === 'list' && state.side === 'screens') || flowPickShown();
 
 function setSelected(id, target = { node: id }) {
   for (const [key, kept] of state.pathValues) {

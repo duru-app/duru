@@ -19,7 +19,8 @@ function applyFlowEmphasis() {
   const flow = document.getElementById('flow');
   const screens = flowScreens();
   const byId = new Map(screens.map((n) => [n.id, n]));
-  const picked = state.flowPicked ? byId.get(state.selected) ?? null : null;
+  const inFlow = state.view === 'flow';
+  const picked = flowPickShown() ? byId.get(state.selected) ?? null : null;
   let related = null;
   let jumps = new Set();
   if (picked) {
@@ -28,8 +29,8 @@ function applyFlowEmphasis() {
     for (let id = parentOf.get(picked.id); id !== undefined; id = parentOf.get(id)) related.add(id);
     jumps = new Set(picked.jumps.map((j) => j.to).filter((id) => !related.has(id)));
   }
-  const filter = FLOW_FILTERS.find((f) => f.key === state.flowFilter);
-  const q = state.flowQuery.trim().toLowerCase();
+  const filter = FLOW_FILTERS.find((f) => f.key === (inFlow ? state.flowFilter : 'all'));
+  const q = inFlow ? state.flowQuery.trim().toLowerCase() : '';
   const found = (n) => !q || `${n.label}\n${n.component}\n${n.id}`.toLowerCase().includes(q);
   for (const box of /** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll('.box.screen'))) {
     const n = byId.get(box.dataset.key);

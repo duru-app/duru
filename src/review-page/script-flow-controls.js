@@ -41,7 +41,7 @@ document.getElementById('flow').addEventListener('pointerdown', (e) => {
 document.getElementById('flow').addEventListener('click', (e) => {
   const press = flowPress;
   flowPress = null;
-  if (!state.flowPicked || !press || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 4) return;
+  if (!flowPickShown() || !press || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 4) return;
   if (/** @type {Element} */ (e.target).matches(FLOW_EMPTY)) unpickScreen();
 });
 

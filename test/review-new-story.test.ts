@@ -467,6 +467,38 @@ test('in a browser, the old addresses of the flow tab and the story tab for a ne
   );
 });
 
+test('in a browser, the filter, the search and the picked screen of the flow tab neither dim nor mark the drawing of the new-story screen, and the picked screen is still there when the flow tab is back', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        await p.click('.flow-filters button[data-filter="fail"]');
+        await p.locator('.flowbar input.flow-search').fill('/admin');
+        await (await screenBox(p, '/home#Home')).click();
+        await p.waitForSelector('.flowbar .picking');
+        await p.click('#view-story');
+        await p.click('#left button.new-story');
+        await p.waitForSelector('#pick-list li');
+        const dimmed = () => p.$$eval('#flow .box.screen', (els) => els.filter((e) => e.classList.contains('off') || e.classList.contains('dim') || e.classList.contains('picked')).length);
+        assert.equal(await dimmed(), 0);
+        const r = await p.evaluate(() => document.getElementById('flow')!.getBoundingClientRect().toJSON());
+        const spot = await p.evaluate(({ left, top, right, bottom }) => {
+          for (let y = top + 20; y < bottom - 20; y += 8) {
+            for (let x = left + 20; x < right - 20; x += 8) if (document.elementFromPoint(x, y)?.matches('#flow, #flow .zoom-box, #flow .canvas')) return { x, y };
+          }
+          return null;
+        }, r);
+        assert.ok(spot);
+        await p.mouse.click(spot.x, spot.y);
+        await p.click('#left button.leave-compose');
+        await p.click('#view-flow');
+        assert.equal(await p.textContent('.flowbar .picking strong'), '/home');
+        assert.equal(await placeOf(p), '#flow?screen=/home#Home');
+      }, { view: 'flow' }),
+    ),
+  );
+});
+
 const drawOverlay = (p: Page, id: string) => p.evaluate((id) => {
   const st = state.data.stories.list.find((s: { id: string }) => s.id === id);
   const flow = document.getElementById('flow')!;

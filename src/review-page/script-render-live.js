@@ -18,10 +18,9 @@ function render() {
   renderHeader();
   const flow = state.view === 'flow';
   // 고른 화면이 그림에 없으면 오른쪽 칸과 그림이 서로 다른 화면을 가리키므로 선택을 해제한다.
-  if (flow && state.flowPicked && !flowScreens().some((n) => n.id === state.selected)) state.flowPicked = false;
-  const picked = flow && state.flowPicked;
+  if (flowPickShown() && !flowScreens().some((n) => n.id === state.selected)) state.flowPicked = false;
+  const picked = flowPickShown();
   const diagram = composeDiagram();
-  if (diagram) state.flowPicked = false;
   const main = document.querySelector('main');
   main.classList.toggle('flow', flow);
   main.classList.toggle('picked', picked);
@@ -186,7 +185,7 @@ document.getElementById('view-story').addEventListener('click', () => setView('s
 function refitFlow() {
   const flow = document.getElementById('flow');
   if (state.ended || flow.hidden || drawnGrid === null) return;
-  if (cellsPerRow(drawnGrid.count, drawnGrid.cellW, flowInnerWidth(flow) / state.zoom) !== drawnGrid.per) renderFlow();
+  if (cellsPerRow(drawnGrid.count, drawnGrid.cellW, flowInnerWidth(flow) / state.zoom) !== drawnGrid.per) renderFlow({ bar: state.view === 'flow' });
 }
 let resizeFrame = null;
 window.addEventListener('resize', () => {
