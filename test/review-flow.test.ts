@@ -12,6 +12,7 @@ declare const state: any;
 declare const GAP: number;
 declare let drawnGrid: { count: number; cellW: number; per: number } | null;
 declare function renderFlow(): void;
+declare function setZoom(z: number): void;
 declare function openNeeds(screen: { access: object }): { lines: { kind: string; text: string }[]; tips: string[]; bare: unknown };
 declare function flowColumns(roots: object[], sizes: object, view?: FlowView): FlowColumns;
 declare function layoutFlow(roots: object[], sizes: object, view?: FlowView, cols?: FlowColumns): { boxes: FlowBox[]; edges: FlowEdge[]; group: { x: number; y: number; height: number; count: number } | null; width: number; height: number; marks?: { x: number; y: number }[] };
@@ -630,6 +631,29 @@ test('in a browser, the zoom buttons shrink and grow the whole drawing around it
         assert.equal(await zoom.locator('.zoom-level').inputValue(), '150%');
         assert.equal(await zoom.locator('.zoom-in').isDisabled(), true);
       }, { view: 'flow' }),
+    ),
+  );
+});
+
+test('in a browser, fit gives the largest zoom at which gathered entry screens, which take more columns as the zoom shrinks, still fit in view', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 1440, height: 900 });
+        await p.waitForSelector('#flow .group-head');
+        const fitsAt = (level: number) => p.evaluate((z) => {
+          setZoom(z);
+          const flow = document.getElementById('flow')!;
+          const boxes = [...flow.querySelectorAll<HTMLElement>('.box.screen')].map((b) => b.getBoundingClientRect());
+          const pane = flow.getBoundingClientRect();
+          return flow.scrollHeight <= flow.clientHeight && flow.scrollWidth <= flow.clientWidth && boxes.every((r) => r.bottom <= pane.bottom + 1 && r.right <= pane.right + 1);
+        }, level);
+        await p.locator('#flow-zoom .zoom-fit').click();
+        const level = await p.evaluate(() => state.zoom);
+        assert.ok(level > 0.3, `fit chose ${level}`);
+        assert.equal(await fitsAt(level), true, `everything fits at ${level}`);
+        if (level < 1) assert.equal(await fitsAt(Math.round(level * 100 + 1) / 100), false, 'one percent more no longer fits');
+      }, { view: 'flow', setup: changeData((data) => { data.flow.roots.push(...leafEntries(data, 120)); }) }),
     ),
   );
 });
