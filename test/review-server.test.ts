@@ -133,7 +133,7 @@ test('with an app address, only screens without path variables get a link to the
       assert.deepEqual(data.appLinks, {
         '/signin#SignIn': 'https://app.example.test/signin',
         '/home#Home': 'https://app.example.test/home',
-        '/document/:tab_draft_done_#DocumentList': null,
+        '/document/:tab#DocumentList': null,
         '/document/:id#DocumentDetail': null,
         '/help#Help': 'https://app.example.test/help',
         '/admin/member#AdminMember': 'https://app.example.test/admin/member',

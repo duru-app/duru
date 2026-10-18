@@ -3,6 +3,7 @@ import { clientPath, loadServerEndpoints, matchEndpoint } from './server.ts';
 import { linkTargets, screenAccess } from './access.ts';
 import { compare } from './config.ts';
 import { removeExcludedFields } from './body-type-exclusions.ts';
+import { withoutPatterns } from './path-values.ts';
 import type { AccessConfig } from './access.ts';
 import type { RemovedField, UnknownExclusion } from './body-type-exclusions.ts';
 import type { AliasRule } from './resolve.ts';
@@ -131,7 +132,7 @@ export function unreadSites(screens: MapScreen[], direct: boolean): UnreadSite[]
 }
 
 export function screenId(routePath: string, component: string) {
-  return `${routePath}#${component}`.replace(TAG_FORBIDDEN, '_');
+  return `${withoutPatterns(routePath)}#${component}`.replace(TAG_FORBIDDEN, '_');
 }
 
 function callOf(e: Endpoint, apiPathPrefix: string) {

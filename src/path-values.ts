@@ -93,6 +93,8 @@ function fill(parts: PathPart[], values: Record<string, unknown>) {
   return out || '/';
 }
 
+export const withoutPatterns = (routePath: string) => routePath.replace(TOKEN, (all, escaped, prefix = '', name, pattern, group, modifier = '') => (name && pattern ? `${prefix}:${name}${modifier}` : all));
+
 export const readableRoute = (routePath: string) => pathParts(routePath).every((p) => !(isVariable(p) ? p.pattern?.includes(UNKNOWN) : p.includes(UNKNOWN)));
 
 export const fillPath = (routePath: string, values: Record<string, unknown>) => fill(pathParts(routePath), values);

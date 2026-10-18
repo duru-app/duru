@@ -139,7 +139,7 @@ ${emptyTests(
 
 - marks:
   - missing, api depth — "The server has no archive endpoint; check what the archive button gets back." (Kim Min, 2026-09-30)
-- called from: /document/:tab_draft_done_#DocumentList, /home#Home
+- called from: /document/:tab#DocumentList, /home#Home
 - server: not on the server
 - tests: none
 ${emptyTests(['@call:POST:/api/v1/archive/document @depth:api', 'call_POST_api_v1_archive_document_depth_api'])}
@@ -304,7 +304,7 @@ test('a marked story whose first screen opens only under a setting or a role lis
       '- preconditions:',
       '  - /admin/report#AdminReport, the first screen, needs a role and a setting; roles that open it: ADMIN, OWNER',
       `    - link from /document/:id#DocumentDetail at components/SideMenu.js:11, ${guards}`,
-      `    - link from /document/:tab_draft_done_#DocumentList at components/SideMenu.js:11, ${guards}`,
+      `    - link from /document/:tab#DocumentList at components/SideMenu.js:11, ${guards}`,
       `    - link from /home#Home at components/SideMenu.js:11, ${guards}`,
       emptyTests(['@story:read-reports @screen:/admin/report#AdminReport', 'story_read_reports']),
       '',
@@ -827,9 +827,9 @@ test('comments on tests under an open screen or call follow its marks, each test
     addReply(marksDir, { replyTo: pending.id, note: 'It waits for the lab data.' }, new Date('2026-10-12T03:00:00Z'));
     addMark(marksDir, { target: test('/lab#Lab', 'opens the lab', 'home.spec.ts', 'results/playwright/e2e.json'), note: 'And on firefox?', author: 'b' }, new Date('2026-10-12T04:00:00Z'));
     addMark(marksDir, { target: test('/lab#Lab', 'a test renamed since', 'home.spec.ts', 'results/playwright/e2e.json'), note: 'Gone.', author: 'b' }, new Date('2026-10-12T05:00:00Z'));
-    addMark(marksDir, { target: { node: '/document/:tab_draft_done_#DocumentList' }, status: 'needs-more', author: 'a' }, new Date('2026-10-12T01:00:00Z'));
-    addMark(marksDir, { target: test('/document/:tab_draft_done_#DocumentList', 'sort by date', 'document-checks.log', 'results/verdict/documents/document-checks.log'), note: 'Is the time zone set?', author: 'b' }, new Date('2026-10-12T02:00:00Z'));
-    addMark(marksDir, { target: test('/document/:tab_draft_done_#DocumentList', 'DocumentTable › lists the documents it is given', 'components/DocumentTable.spec.js', 'results/vitest/client-unit.json'), note: 'Can this carry the tag?', author: 'b' }, new Date('2026-10-12T03:00:00Z'));
+    addMark(marksDir, { target: { node: '/document/:tab#DocumentList' }, status: 'needs-more', author: 'a' }, new Date('2026-10-12T01:00:00Z'));
+    addMark(marksDir, { target: test('/document/:tab#DocumentList', 'sort by date', 'document-checks.log', 'results/verdict/documents/document-checks.log'), note: 'Is the time zone set?', author: 'b' }, new Date('2026-10-12T02:00:00Z'));
+    addMark(marksDir, { target: test('/document/:tab#DocumentList', 'DocumentTable › lists the documents it is given', 'components/DocumentTable.spec.js', 'results/vitest/client-unit.json'), note: 'Can this carry the tag?', author: 'b' }, new Date('2026-10-12T03:00:00Z'));
     addMark(marksDir, { target: test('/document/:id#DocumentDetail', 'loads the detail screen only when it is needed', 'components/DocumentDetail.spec.js', 'results/vitest/client-unit.json'), note: 'Not open.', author: 'b' }, new Date('2026-10-12T02:00:00Z'));
 
     const out = cli('tasks');
@@ -844,7 +844,7 @@ test('comments on tests under an open screen or call follow its marks, each test
       '    - comment — "And on firefox\\?" \\(b, 2026-10-12\\)',
       '- component: ',
     ].join('\n'), 'm'));
-    const list = out.split('## /document/:tab_draft_done_#DocumentList\n')[1].split('\n## ')[0];
+    const list = out.split('## /document/:tab#DocumentList\n')[1].split('\n## ')[0];
     assert.match(list, /^ {2}- test "sort by date" at document-checks\.log:9 — fail, tagged with this screen, from results\/verdict\/documents\/document-checks\.log — sorting ignores the time of day\n {4}- comment — "Is the time zone set\?"/m);
     assert.match(list, /^ {2}- test "DocumentTable › lists the documents it is given" at components\/DocumentTable\.spec\.js:6 — fail, imports a source file of this screen without its tag, from results\/vitest\/client-unit\.json\n/m);
     assert.doesNotMatch(out, /Gone\.|Not open\./);
@@ -1274,7 +1274,7 @@ test('an API call with an open mark is listed once under API calls with its scre
         '',
         '- marks:',
         '  - missing, api depth — "The server has no archive endpoint; check what the archive button gets back." (Kim Min, 2026-09-30)',
-        '- called from: /document/:tab_draft_done_#DocumentList, /home#Home',
+        '- called from: /document/:tab#DocumentList, /home#Home',
         '- server: not on the server',
         '- tests: none',
         emptyTests(['@call:POST:/api/v1/archive/document @depth:api', 'call_POST_api_v1_archive_document_depth_api']),
@@ -1389,7 +1389,7 @@ test('the tagging items come in the same order for the same map, results and jud
     [{ ...HELP_UNIT, title: 'shows the day the help was last updated' }, '/help#Help'],
     [HELP_UNIT, '/help#Help'],
     [TABLE_UNIT, '/home#Home'],
-    [TABLE_UNIT, '/document/:tab_draft_done_#DocumentList'],
+    [TABLE_UNIT, '/document/:tab#DocumentList'],
   ];
   const listWith = (order: [NewJudgment['test'], string][]) =>
     withFixtureCopy(({ configFile, cli }) => {
@@ -1401,7 +1401,7 @@ test('the tagging items come in the same order for the same map, results and jud
   const first = listWith(handOvers);
   assert.equal(listWith([...handOvers].reverse()), first);
   assert.deepEqual(first!.match(/^## .*$/gm), [
-    '## components/DocumentTable.spec.js:6 → /document/:tab_draft_done_#DocumentList',
+    '## components/DocumentTable.spec.js:6 → /document/:tab#DocumentList',
     '## components/DocumentTable.spec.js:6 → /home#Home',
     '## components/Help.spec.js:4 → /help#Help',
     '## components/Help.spec.js:8 → /help#Help',

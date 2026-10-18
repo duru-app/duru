@@ -2082,6 +2082,16 @@ Alternatives compared:
 - Free text in English: readable in the summary, but the page and an agent could tell the cases apart only by parsing
   the sentence, and the page would show English or keep a translation keyed by it.
 
+**The pattern a path variable carries is left out of the screen ID; the screen's path keeps it.**
+Driver's decision in #306 (2026-10-18). `/:team([a-z0-9\-_]+)/drafts` gives the ID `/:team/drafts#Drafts`. The
+ID names the screen for test tags and stories, while the pattern only says which addresses open it, and the
+characters a tag cannot hold turned a pattern into a run of underscores (`/:team_[a-z0-9\-_]+_/drafts`). Matching an
+address to a screen still uses the pattern. IDs of routes that carry a pattern change once, which the driver
+accepted; two routes that differ only by their patterns and show the same component now share an ID and are
+reported as a duplicate ID.
+Alternative compared: keeping the pattern in the ID, which keeps such routes apart but gives IDs nobody can type as
+a tag.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

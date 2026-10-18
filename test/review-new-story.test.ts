@@ -515,7 +515,7 @@ test('in a browser, a story laid over the whole flow, as while a new story is wr
   await withPathStories(stories, async (p) => {
     await drawOverlay(p, 'walk-around');
     assert.deepEqual(await pathEdges(p), [
-      ['/home#Home', '/document/:tab_draft_done_#DocumentList', 'l-open'],
+      ['/home#Home', '/document/:tab#DocumentList', 'l-open'],
       ['/lab#Lab', '/lab/result#LabResult', 'l-open'],
       ['/signin#SignIn', '/home#Home', 'l-open'],
     ]);
@@ -523,7 +523,7 @@ test('in a browser, a story laid over the whole flow, as while a new story is wr
     assert.deepEqual(await stroke('/signin#SignIn', '/home#Home'), ['3.2px', 'none', '1']);
     assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), WALK_ON_MAP.map((id, i) => [id, String(i + 1)]).sort());
     assert.deepEqual(await pillMarks(p, 'story-chip'), [
-      ['/document/:tab_draft_done_#DocumentList', '→ 4', 'exit', 'l-open'],
+      ['/document/:tab#DocumentList', '→ 4', 'exit', 'l-open'],
       ['/document/:id#DocumentDetail', '3 →', 'entry', 'l-open'],
       ['/document/:id#DocumentDetail', '→ 5조건', 'exit', 'l-conditioned'],
       ['/lab#Lab', '✕5 →', 'entry', 'l-broken'],

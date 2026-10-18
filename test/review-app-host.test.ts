@@ -269,7 +269,7 @@ test('the path values of a screen come from its fixed values and from list APIs 
       withRebuiltFixture(pathValueSettings(api, pathValues), (config) =>
         withServer(config, 'reviewer', async (base) => {
           const prepared = async (id: string) => (await fetch(`${base}/api/path-values?screen=${encodeURIComponent(id)}`)).json();
-          assert.deepEqual(await prepared('/document/:tab_draft_done_#DocumentList'), {
+          assert.deepEqual(await prepared('/document/:tab#DocumentList'), {
             parts: ['/document', { name: 'tab', prefix: '/', optional: false, pattern: 'draft|done' }],
             values: { tab: 'draft' },
             queryNames: [],
@@ -284,7 +284,7 @@ test('the path values of a screen come from its fixed values and from list APIs 
             queryNames: [],
             errors: [],
             path: '/document/17',
-            fallback: '/document/:tab_draft_done_#DocumentList', fallbackPath: '/document/draft',
+            fallback: '/document/:tab#DocumentList', fallbackPath: '/document/draft',
           });
           assert.deepEqual(await prepared('/home#Home'), { parts: ['/home'], values: {}, queryNames: [], errors: [], path: '/home', fallback: null, fallbackPath: null });
           const unknown = await fetch(`${base}/api/path-values?screen=${encodeURIComponent('/nowhere#Nowhere')}`);

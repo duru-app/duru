@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { asIsPath, fallbackScreen, fillPath, opensAsIs, pathParts, preparePathValues, unknownPathValues } from '../src/path-values.ts';
+import { asIsPath, fallbackScreen, fillPath, opensAsIs, pathParts, preparePathValues, unknownPathValues, withoutPatterns } from '../src/path-values.ts';
 
 type PrepareArgs = Parameters<typeof preparePathValues>;
 type ApiFetch = NonNullable<PrepareArgs[3]>;
@@ -20,6 +20,13 @@ test('a route path is split into text and its variables, with optional ones and 
   assert.deepEqual(pathParts('/doc-:id'), ['/doc-', { name: 'id', prefix: '', optional: false, pattern: null }]);
   assert.deepEqual(pathParts('/files/*'), ['/files', { name: '0', prefix: '/', optional: false, pattern: '.*' }]);
   assert.deepEqual(pathParts('/a\\:b'), ['/a:b']);
+});
+
+test('a path without its patterns keeps each named variable with its modifier, and an unnamed group, a wildcard and escaped text as written', () => {
+  assert.equal(withoutPatterns('/:team([a-z0-9\\-_]+)/drafts'), '/:team/drafts');
+  assert.equal(withoutPatterns('/list/:tab(a|b)?/:id(\\d+)*'), '/list/:tab?/:id*');
+  assert.equal(withoutPatterns('/app/:slug(.*-):id([0-9a-f]{24})/edit'), '/app/:slug:id/edit');
+  assert.equal(withoutPatterns('/files/(a|b)/*/\\:x'), '/files/(a|b)/*/\\:x');
 });
 
 test('a variable whose pattern could not be read is split as a variable written without a pattern, keeping its modifier', () => {

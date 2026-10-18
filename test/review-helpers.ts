@@ -413,7 +413,7 @@ export const inWindow = (p: Page, selector: string) => p.evaluate((sel) => {
   return { left: r.left, right: r.right, width: document.documentElement.clientWidth };
 }, selector);
 
-export const WALK = ['/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/help#Help', '/lab#Lab', '/lab/result#LabResult', '/settings#Settings'];
+export const WALK = ['/signin#SignIn', '/home#Home', '/document/:tab#DocumentList', '/document/:id#DocumentDetail', '/help#Help', '/lab#Lab', '/lab/result#LabResult', '/settings#Settings'];
 export const WALK_ON_MAP = WALK.slice(0, 7);
 
 export async function withPathStories(stories: Record<string, string[]>, fn: (p: Page, ctx: { base: string; errors: string[]; writeStory: (id: string, screens: string[]) => void; storyFile: (id: string) => string }) => Promise<void>, edits: [string, string, string][] = []) {
@@ -507,7 +507,7 @@ export const postJson = (base: string, url: string, body: unknown) => fetch(`${b
 export const CANDIDATES = { storiesDir: 'example-stories', visitRecords: ['example-visits'] };
 export const HELP_RECORD = 'example-visits/open-help.json';
 export const HELP_KEY = '/signin#SignIn > /home#Home > /beta/inbox > /help#Help';
-export const PUBLISH_KEY = '/home#Home > /document/:tab_draft_done_#DocumentList > /document/:id#DocumentDetail > /help#Help';
+export const PUBLISH_KEY = '/home#Home > /document/:tab#DocumentList > /document/:id#DocumentDetail > /help#Help';
 export const storiesTab = '#view-story';
 export const BAD_REQUEST = 'Failed to load resource: the server responded with a status of 400 (Bad Request)';
 

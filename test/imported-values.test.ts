@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { screenFinder } from '../src/address-match.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import type { ScreenMap } from '../src/map.ts';
@@ -141,4 +142,30 @@ export default function ImportedRoutes({ memberRole }: { memberRole: string }) {
 test('a role a route condition compares with a name imported from another file, by itself or through a namespace import, is read from the file that declares it', async () => {
   const map = await build(fixtureCopy({ 'roles/names.ts': `export const ADMIN = 'admin';\nexport const MANAGER = 'manager';\n`, 'ImportedRoutes.tsx': ROLE_ROUTES }));
   assert.deepEqual(map.screens.map((s) => [s.id, s.access.roleValues]), [['/admin#Simple', ['admin']], ['/manager#Satisfied', ['manager']]]);
+});
+
+const TEAM_ROUTES = `import { Route, Routes } from 'react-router-dom';
+import { TEAM_NAME_PATTERN, DRAFTS } from './paths/team';
+import Simple from './pages/Simple';
+import Satisfied from './pages/Satisfied';
+
+export default function ImportedRoutes() {
+  return (
+    <Routes>
+      <Route path={\`/:team(\${TEAM_NAME_PATTERN})/\${DRAFTS}\`} element={<Simple />} />
+      <Route path={\`/:team(\${TEAM_NAME_PATTERN})/:postid([a-z0-9]{26})?\`} element={<Satisfied />} />
+    </Routes>
+  );
+}
+`;
+
+test('a pattern a path variable carries is left out of the screen ID and kept in its path, where it decides which addresses open the screen', async () => {
+  const map = await build(fixtureCopy({ 'paths/team.ts': `export const TEAM_NAME_PATTERN = '[a-z0-9\\\\-_]+';\nexport const DRAFTS = 'drafts';\n`, 'ImportedRoutes.tsx': TEAM_ROUTES }));
+  assert.deepEqual(map.screens.map((s) => [s.id, s.path]), [
+    ['/:team/drafts#Simple', '/:team([a-z0-9\\-_]+)/drafts'],
+    ['/:team/:postid?#Satisfied', '/:team([a-z0-9\\-_]+)/:postid([a-z0-9]{26})?'],
+  ]);
+  const screenAt = screenFinder(map);
+  assert.equal(screenAt('/my-team/drafts'), '/:team/drafts#Simple');
+  assert.equal(screenAt('/My.Team/drafts'), null);
 });

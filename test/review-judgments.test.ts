@@ -278,7 +278,7 @@ test('in a browser, a hand-over whose test is no longer found shows apart and is
   });
 });
 
-const LIST_NODE = '/document/:tab_draft_done_#DocumentList';
+const LIST_NODE = '/document/:tab#DocumentList';
 const pick = '#center .pair-row input.pick';
 
 test('in a browser, only the pairs that still import get a checkbox, the bulk buttons stay disabled until a pair is picked and say how many are', { skip: browserMissing }, async () => {

@@ -21,7 +21,7 @@ test('every route of the fake client becomes a screen, with the guard on its rou
   const map = await buildFixture();
   assert.deepEqual(
     map.screens.map((s) => s.id),
-    ['/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/help#Help', '/admin/member#AdminMember', '/admin/group#AdminGroup', '/lab#Lab', '/lab/result#LabResult', '/admin/audit#AdminAudit', '/admin/report#AdminReport'],
+    ['/signin#SignIn', '/home#Home', '/document/:tab#DocumentList', '/document/:id#DocumentDetail', '/help#Help', '/admin/member#AdminMember', '/admin/group#AdminGroup', '/lab#Lab', '/lab/result#LabResult', '/admin/audit#AdminAudit', '/admin/report#AdminReport'],
   );
   assert.deepEqual(screen(map, '/admin/member#AdminMember').routeGuards, ['isAdminRole(memberRole)']);
   assert.deepEqual(screen(map, '/lab#Lab').routeGuards, ['globalSettings.SYSTEM.LAB_ENABLED']);
@@ -87,7 +87,7 @@ test('each API call becomes a node named by its method and the server path, or t
       ['GET:/api/v1/document/{documentId}', 'match', 'core', 'ajaxDocumentDetail', '/document/:id#DocumentDetail'],
       ['GET:/api/v1/lab/experiment', 'match', 'profile-lab', 'ajaxLabExperiment', '/lab#Lab'],
       ['GET:/api/v1/member/list', 'match', 'core', 'ajaxMemberList', '/admin/member#AdminMember'],
-      ['POST:/api/v1/archive/document', 'none', '', 'ajaxDocumentArchive', '/document/:tab_draft_done_#DocumentList,/home#Home'],
+      ['POST:/api/v1/archive/document', 'none', '', 'ajaxDocumentArchive', '/document/:tab#DocumentList,/home#Home'],
       ['POST:/api/v1/auth/sign-in', 'match', 'core', 'ajaxSignIn', '/signin#SignIn'],
       ['POST:/api/v1/report/archive', 'match', 'core', 'ajaxReportArchive', '/admin/audit#AdminAudit,/admin/report#AdminReport'],
       ['POST:/api/v1/report/export', 'match', 'core', 'ajaxReportExport', '/admin/audit#AdminAudit,/admin/report#AdminReport'],
@@ -125,7 +125,7 @@ test('a call is listed once per API function, and each endpoint on a screen poin
 
 test('a screen that reaches a call missing on the server is dead; a call whose URL cannot be computed makes no node and no dead screen', async () => {
   const map = await buildFixture();
-  assert.deepEqual(map.screens.filter((s) => s.dead).map((s) => s.id), ['/home#Home', '/document/:tab_draft_done_#DocumentList']);
+  assert.deepEqual(map.screens.filter((s) => s.dead).map((s) => s.id), ['/home#Home', '/document/:tab#DocumentList']);
 
   const download = map.apiFunctions.ajaxDownload.endpoints;
   assert.deepEqual(download.map((e) => [e.server, e.callId]), [[{ status: 'unresolved', reason: 'not-written' }, null]]);
@@ -134,7 +134,7 @@ test('a screen that reaches a call missing on the server is dead; a call whose U
   const withoutTable = await buildCopy((rewrite) =>
     rewrite('client/src/components/DocumentList.js', (src) => src.replace("import DocumentTable from './DocumentTable';\n", '').replace('      <DocumentTable />\n', '')),
   );
-  const list = screen(withoutTable, '/document/:tab_draft_done_#DocumentList');
+  const list = screen(withoutTable, '/document/:tab#DocumentList');
   assert.deepEqual(list.apiCalls.map((c) => c.fn), ['ajaxDownload']);
   assert.equal(list.dead, false);
 });
@@ -327,7 +327,7 @@ test('a screen opens only under a setting or a role when its route is guarded or
     '/admin/report#AdminReport': ['role', 'setting'],
   });
   const open = map.screens.filter((s) => !s.access.restricted);
-  assert.deepEqual(open.map((s) => s.id), ['/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail']);
+  assert.deepEqual(open.map((s) => s.id), ['/signin#SignIn', '/home#Home', '/document/:tab#DocumentList', '/document/:id#DocumentDetail']);
   for (const s of open) assert.deepEqual([s.access.kinds, s.access.route], [[], []], s.id);
 });
 
@@ -921,7 +921,7 @@ test('a menu built from a settings list links to each listed screen, under the l
     restricted: true,
     kinds: ['role', 'setting'],
     route: [],
-    links: ['/document/:id#DocumentDetail', '/document/:tab_draft_done_#DocumentList', '/home#Home'].map((from) => ({
+    links: ['/document/:id#DocumentDetail', '/document/:tab#DocumentList', '/home#Home'].map((from) => ({
       from,
       file: 'components/SideMenu.js',
       line: 11,
@@ -934,7 +934,7 @@ test('a menu built from a settings list links to each listed screen, under the l
     })),
     roleValues: ['ADMIN', 'OWNER'],
     unreadableRoleGuards: [],
-    settings: ['/document/:id#DocumentDetail', '/document/:tab_draft_done_#DocumentList', '/home#Home'].map((from) => ({
+    settings: ['/document/:id#DocumentDetail', '/document/:tab#DocumentList', '/home#Home'].map((from) => ({
       from,
       file: 'components/SideMenu.js',
       line: 11,
@@ -1067,7 +1067,7 @@ test('a settingsDefaults entry must name a settings root and a const holding an 
   );
 });
 
-const wrapped = ['/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail'];
+const wrapped = ['/home#Home', '/document/:tab#DocumentList', '/document/:id#DocumentDetail'];
 const menuLinks = (map: ScreenMap, id: string) => screen(map, id).links.filter((l) => l.file === 'components/SideMenu.js').map((l) => l.to);
 
 test('a component wrapping routes in the routes file is part of every screen it wraps', async () => {
@@ -1113,7 +1113,7 @@ test('a guard around the wrapping component guards every screen inside it, so th
   const report = screen(map, '/admin/report#AdminReport').access;
   assert.deepEqual(report.links.map((l) => [l.from, l.guards.length, l.fromKinds]), [
     ['/document/:id#DocumentDetail', 3, ['setting']],
-    ['/document/:tab_draft_done_#DocumentList', 3, ['setting']],
+    ['/document/:tab#DocumentList', 3, ['setting']],
     ['/home#Home', 3, ['setting']],
   ]);
   assert.deepEqual(report.kinds, ['role', 'setting']);
@@ -1122,8 +1122,8 @@ test('a guard around the wrapping component guards every screen inside it, so th
 test('a link to a path without its parameters enters every route that only adds parameters to it', async () => {
   const map = await buildFixture();
   const from = (id: string) => screen(map, id).access.links.map((l) => l.from);
-  assert.deepEqual(from('/document/:tab_draft_done_#DocumentList'), ['/home#Home']);
-  assert.deepEqual(from('/document/:id#DocumentDetail'), ['/document/:tab_draft_done_#DocumentList', '/home#Home']);
+  assert.deepEqual(from('/document/:tab#DocumentList'), ['/home#Home']);
+  assert.deepEqual(from('/document/:id#DocumentDetail'), ['/document/:tab#DocumentList', '/home#Home']);
 });
 
 test('a guard that reads neither a setting nor a configured role identifier does not block', async () => {
@@ -1535,7 +1535,7 @@ test('a tail that fits no route falls back to what the bare route constant reach
   assert.equal(linksTo(map, '/lab#Lab').length, 2);
   assert.deepEqual(linksTo(map, '/lab/result#LabResult'), []);
   assert.equal(linksTo(map, '/document/:id#DocumentDetail').length, 1);
-  assert.equal(linksTo(map, '/document/:tab_draft_done_#DocumentList').length, 1);
+  assert.equal(linksTo(map, '/document/:tab#DocumentList').length, 1);
   assert.equal(linksTo(map, '/help/:topic#Help').length, 1);
   assert.deepEqual(linksTo(map, '/help#Help'), []);
 });
@@ -1545,7 +1545,7 @@ test('a fixed tail reaches a parameter only when it fits the pattern written in 
     addToHome(rewrite, ["      <Link to={Option.ROUTE_PATH.DOCUMENT + '/draft'}>draft</Link>", "      <Link to={Option.ROUTE_PATH.DOCUMENT + '/other'}>other</Link>"].join('\n')),
   );
   const fromHome = (id: string) => screen(map, id).access.links.filter((l) => l.file === 'components/Home.js').length;
-  assert.equal(fromHome('/document/:tab_draft_done_#DocumentList'), 1);
+  assert.equal(fromHome('/document/:tab#DocumentList'), 1);
   assert.equal(fromHome('/document/:id#DocumentDetail'), 2);
 });
 
@@ -1554,8 +1554,8 @@ test('a fixed tail reaches a parameter whose pattern could not be read, as one s
     addRoutes(rewrite, [['`${Option.ROUTE_PATH.LAB}/:team(${TEAM_PATTERN})/drafts`', 'LabResult']]);
     addToHome(rewrite, "      <Link to={Option.ROUTE_PATH.LAB + '/myteam/drafts'}>drafts</Link>");
   });
-  assert.equal(screen(map, '/lab/:team_{?}_/drafts#LabResult').path, '/lab/:team({?})/drafts');
-  assert.equal(linksTo(map, '/lab/:team_{?}_/drafts#LabResult').length, 1);
+  assert.equal(screen(map, '/lab/:team/drafts#LabResult').path, '/lab/:team({?})/drafts');
+  assert.equal(linksTo(map, '/lab/:team/drafts#LabResult').length, 1);
   assert.equal(linksTo(map, '/lab#Lab').length, 1);
 });
 
@@ -1564,7 +1564,7 @@ test('a fixed tail is compared to the route without letter case, as React Router
     addRoutes(rewrite, [['`${Option.ROUTE_PATH.LAB}/Result/:id`', 'LabResult']]);
     addToHome(rewrite, ["      <Link to={Option.ROUTE_PATH.DOCUMENT + '/Draft'}>draft</Link>", "      <Link to={Option.ROUTE_PATH.LAB + '/result/' + id}>result</Link>"].join('\n'));
   });
-  assert.equal(linksTo(map, '/document/:tab_draft_done_#DocumentList').length, 1);
+  assert.equal(linksTo(map, '/document/:tab#DocumentList').length, 1);
   assert.equal(linksTo(map, '/lab/Result/:id#LabResult').length, 1);
 });
 
@@ -1591,7 +1591,7 @@ test('a bare route constant with no route of its own enters the routes that only
   assert.deepEqual(linksAddedToHome(map), [['/document', []]]);
   assert.deepEqual(linksTo(map, '/:page#Help'), []);
   assert.equal(linksTo(map, '/document/:id#DocumentDetail').length, 1);
-  assert.equal(linksTo(map, '/document/:tab_draft_done_#DocumentList').length, 1);
+  assert.equal(linksTo(map, '/document/:tab#DocumentList').length, 1);
 });
 
 test('the whole address is read when the route constant is nested in another concatenation', async () => {
@@ -1699,7 +1699,7 @@ test('paths in moves that match no route are listed, and each move joins every s
   const map = await buildCopy((rewrite) => rewrite('config.json', (src) => JSON.stringify({ ...JSON.parse(src), moves })));
   assert.deepEqual(map.moves, [
     { from: '/signin#SignIn', to: '/home#Home', reason: '로그인 뒤' },
-    { from: '/home#Home', to: '/document/:tab_draft_done_#DocumentList', reason: '저장 뒤' },
+    { from: '/home#Home', to: '/document/:tab#DocumentList', reason: '저장 뒤' },
     { from: '/home#Home', to: '/document/:id#DocumentDetail', reason: '저장 뒤' },
   ]);
   assert.deepEqual(map.unknownMovePaths, ['/login', '/gone']);

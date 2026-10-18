@@ -161,7 +161,7 @@ test('in a browser, a discarded pair and a handed-over pair show their state und
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: '/home#Home', kind: 'discard', reason: 'only lists documents', author: 'reviewer' });
-        addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: '/document/:tab_draft_done_#DocumentList', kind: 'hand-over', reason: 'covers the list', author: 'reviewer' });
+        addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: '/document/:tab#DocumentList', kind: 'hand-over', reason: 'covers the list', author: 'reviewer' });
         await p.reload();
         await toList(p);
         await p.click(untaggedTab);
@@ -287,8 +287,8 @@ test('in a browser, the imported-only filter keeps the screens with importing te
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         addJudgment(config.judgmentsDir, { test: DETAIL_TEST, node: '/document/:id#DocumentDetail', kind: 'discard', reason: 'only loads a view', author: 'reviewer' });
-        addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: '/document/:tab_draft_done_#DocumentList', kind: 'hand-over', reason: '', author: 'reviewer' });
-        const bare = ['/help#Help', '/document/:id#DocumentDetail', '/document/:tab_draft_done_#DocumentList'];
+        addJudgment(config.judgmentsDir, { test: DOCUMENT_TABLE, node: '/document/:tab#DocumentList', kind: 'hand-over', reason: '', author: 'reviewer' });
+        const bare = ['/help#Help', '/document/:id#DocumentDetail', '/document/:tab#DocumentList'];
         await p.route('**/api/data', async (route) => {
           const res = await route.fetch();
           const data = await res.json();

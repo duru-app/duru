@@ -309,13 +309,15 @@ client with example results and a config to start from.
 `extract` writes `map.json`; `rebuild` writes it and `tests.json`.
 
 **Screens.** Each screen has an ID made of its route path and component name (`/document/:id#DocumentDetail`),
-usable as a test tag. It lists its route file and line, its component file, its `sourceFiles`, the API calls it
-reaches, the settings it reads, and its links to other screens with the conditions guarding them. The settings
-and links come from every file in `sourceFiles`. The API calls are only those the screen's code reaches, so a file
-in `sourceFiles` can hold calls the screen does not list, and a call sent by a method of a store the screen gets
-from a React context hook can be written in a file outside them; each call names the file and line where it is
-written. A call a saga makes for the screen names the line in the saga and lists under `actions` each action type
-that leads to it, with the places the screen dispatches that type (`dispatchedAt`).
+usable as a test tag. The pattern a path variable carries is left out of the ID, so `/document/:tab(draft|done)`
+gives `/document/:tab#DocumentList`; the screen's path keeps it. It lists its route file and line, its component
+file, its `sourceFiles`, the API calls it reaches, the settings it reads, and its links to other screens with the
+conditions guarding them. The settings and links come from every file in `sourceFiles`. The API calls are only
+those the screen's code reaches, so a file in `sourceFiles` can hold calls the screen does not list, and a call
+sent by a method of a store the screen gets from a React context hook can be written in a file outside them; each
+call names the file and line where it is written. A call a saga makes for the screen names the line in the saga
+and lists under `actions` each action type that leads to it, with the places the screen dispatches that type
+(`dispatchedAt`).
 A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
 inside it.
 
@@ -484,7 +486,7 @@ A story is something a user gets done, written as the screens they pass through 
 ```json
 {
   "name": "로그인해 문서 목록에서 문서를 연다",
-  "screens": ["/signin#SignIn", "/home#Home", "/document/:tab_draft_done_#DocumentList", "/document/:id#DocumentDetail"],
+  "screens": ["/signin#SignIn", "/home#Home", "/document/:tab#DocumentList", "/document/:id#DocumentDetail"],
   "memo": "문서를 처음 여는 사람이 가장 자주 지나는 길이다.",
   "author": "Kim Min",
   "date": "2026-10-02"
@@ -529,7 +531,7 @@ duru does not look for the box in the code, so the page and the task list mark e
       { "box": { "placeholder": "비밀번호" }, "value": "test1234" }
     ] },
     "/home#Home",
-    { "screen": "/document/:tab_draft_done_#DocumentList", "needs": ["「완료」 탭을 고른다"] },
+    { "screen": "/document/:tab#DocumentList", "needs": ["「완료」 탭을 고른다"] },
     { "screen": "/document/:id#DocumentDetail", "linkNeeds": ["상태가 「완료」인 줄을 누른 경우"], "expects": ["문서 제목과 서명자 목록이 보인다"] }
   ],
   "expects": ["열람 기록에 이 문서가 한 줄 늘어난다"],
