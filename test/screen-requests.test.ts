@@ -116,11 +116,11 @@ test('a request a screen source sends with fetch or axios to an address written 
   assert.deepEqual(inbox.apiCalls.find((c) => c.fn === 'axios.get')!.endpoints![0].server, { status: 'method-mismatch', candidates: ['folders POST /api/folders'], path: '/api/folders' });
   assert.equal(inbox.dead, true);
   assert.deepEqual(Object.keys(map.apiFunctions), ['ajaxReportArchive', 'ajaxReportSchedule']);
-  assert.deepEqual(map.unreadRequests!.map((r) => [r.line, r.url]), [
-    [11, 'http://localhost:8080/api/mail/flags?kind=all'],
-    [20, '/api/mail{?}'],
-    [24, '//cdn.example.com/lib.js'],
-    [25, 'http://localhost:{?}/api/mail/port'],
+  assert.deepEqual(map.unreadRequests!.map((r) => [r.line, r.url, r.reason]), [
+    [11, 'http://localhost:8080/api/mail/flags?kind=all', 'other-host'],
+    [20, '/api/mail{?}', 'unknown-piece'],
+    [24, '//cdn.example.com/lib.js', 'other-host'],
+    [25, 'http://localhost:{?}/api/mail/port', 'unknown-piece'],
   ]);
   assert.equal(callFinder(map)('POST', 'http://localhost:8080/api/folders/7/move'), 'POST:/api/folders/{?}/move');
 
@@ -172,20 +172,82 @@ test('a request whose address the source does not spell stays on the screen as a
   assert.deepEqual(sent(map, OUTBOX), sent(map, INBOX));
   assert.deepEqual(callsOf(map, INBOX), []);
   assert.deepEqual(map.unreadRequests, [
-    { fn: 'fetch', file: 'screens/Inbox.tsx', line: 4, url: null },
-    { fn: 'fetch', file: 'screens/Inbox.tsx', line: 5, url: null },
-    { fn: 'fetch', file: 'screens/Inbox.tsx', line: 5, url: '{?}/mail' },
+    { fn: 'fetch', file: 'screens/Inbox.tsx', line: 4, url: null, reason: 'not-written' },
+    { fn: 'fetch', file: 'screens/Inbox.tsx', line: 5, url: null, reason: 'imported-piece' },
+    { fn: 'fetch', file: 'screens/Inbox.tsx', line: 5, url: '{?}/mail', reason: 'unknown-piece' },
   ]);
 
   const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('request')), [
     'requests and navigations written in screen sources 3 | address not read 3',
-    '  request fetch ← screens/Inbox.tsx:4: address not read',
-    '  request fetch ← screens/Inbox.tsx:5: address not read',
-    '  request fetch ← screens/Inbox.tsx:5: address not read, only {?}/mail',
+    '  request fetch ← screens/Inbox.tsx:4: address not read (not-written)',
+    '  request fetch ← screens/Inbox.tsx:5: address not read (imported-piece)',
+    '  request fetch ← screens/Inbox.tsx:5: address not read (unknown-piece), only {?}/mail',
   ]);
   assert.match(result.stdout, /^screens 10 \| api functions 2 \| endpoints match 0 method-mismatch 0 none 0 unresolved 0 unchecked 2$/m);
+});
+
+const MAIL_API = `const request = async (info: unknown) => info;
+
+export const ajaxOpen = async (url: string) => request({ METHOD: 'GET', URL: url });
+export const ajaxBox = async (box: string) => request({ METHOD: 'GET', URL: \`\${box}/mail\` });
+export const ajaxRoot = async () => request({ METHOD: 'GET', URL: '/' });
+`;
+
+const WHY_INBOX = `import { ajaxBox, ajaxOpen, ajaxRoot } from './mailApi';
+import { HOST, MAIL } from './urls';
+
+export default function Inbox({ url, box }: { url: string; box: string }) {
+  const load = () => [ajaxOpen(url), ajaxBox(box), ajaxRoot()];
+  const send = () => [fetch(url), fetch('/api/' + MAIL), fetch(\`/api/mail-\${box}\`), fetch(\`\${box}\`), fetch('https://cdn.example.com/mail'), fetch(\`https://\${HOST}/mail\`), fetch('/')];
+  return (
+    <main>
+      <form action="send" method="post" />
+      <form action={\`\${box}\`} method="post" />
+      <button onClick={load} onDoubleClick={send} />
+    </main>
+  );
+}
+`;
+
+test('an address duru cannot read carries why in its server match: not written where it is sent, a piece imported from another file, a piece of unknown value joined to the text or to the current page, another host than app.server, or no path; extract prints the reason on each request line and a line for each API function call a screen makes to such an address', async () => {
+  const configFile = fixtureCopy({ 'screens/mailApi.ts': MAIL_API, 'screens/urls.ts': `export const MAIL = 'mail';\nexport const HOST = 'mail.example.com';\n`, 'screens/Inbox.tsx': WHY_INBOX }, { apiModules: ['_ajax/AjaxFunc.ts', 'screens/mailApi.ts'] });
+  const map = await build(configFile);
+  assert.deepEqual(['ajaxOpen', 'ajaxBox', 'ajaxRoot'].map((fn) => map.apiFunctions[fn].endpoints.map((e) => [e.url, e.server])), [
+    [[null, { status: 'unresolved', reason: 'not-written' }]],
+    [['{?}/mail', { status: 'unresolved', reason: 'unknown-piece' }]],
+    [['/', { status: 'unresolved', reason: 'no-path' }]],
+  ]);
+  assert.deepEqual(map.unreadRequests!.map((r) => [r.fn, r.line, r.url, r.reason]), [
+    ['fetch', 6, null, 'not-written'],
+    ['fetch', 6, '/', 'no-path'],
+    ['fetch', 6, '/api/mail-{?}', 'unknown-piece'],
+    ['fetch', 6, '/api/{?}', 'imported-piece'],
+    ['fetch', 6, 'https://cdn.example.com/mail', 'other-host'],
+    ['fetch', 6, 'https://{?}/mail', 'imported-piece'],
+    ['fetch', 6, '{?}', 'not-written'],
+    ['<form action>', 9, 'send', 'unknown-piece'],
+    ['<form action>', 10, '{?}', 'not-written'],
+  ]);
+
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('address not read')), [
+    '  api call ajaxBox ← screens/Inbox.tsx:5: address not read (unknown-piece), only {?}/mail',
+    '  api call ajaxOpen ← screens/Inbox.tsx:5: address not read (not-written)',
+    '  api call ajaxRoot ← screens/Inbox.tsx:5: address not read (no-path), only /',
+    'requests and navigations written in screen sources 9 | address not read 9',
+    '  request fetch ← screens/Inbox.tsx:6: address not read (not-written)',
+    '  request fetch ← screens/Inbox.tsx:6: address not read (no-path), only /',
+    '  request fetch ← screens/Inbox.tsx:6: address not read (unknown-piece), only /api/mail-{?}',
+    '  request fetch ← screens/Inbox.tsx:6: address not read (imported-piece), only /api/{?}',
+    '  request fetch ← screens/Inbox.tsx:6: address not read (other-host), only https://cdn.example.com/mail',
+    '  request fetch ← screens/Inbox.tsx:6: address not read (imported-piece), only https://{?}/mail',
+    '  request fetch ← screens/Inbox.tsx:6: address not read (not-written), only {?}',
+    '  request <form action> ← screens/Inbox.tsx:9: address not read (unknown-piece), only send',
+    '  request <form action> ← screens/Inbox.tsx:10: address not read (not-written), only {?}',
+  ]);
 });
 
 const HTTP = `import axios from 'axios';
@@ -228,7 +290,7 @@ test('a call of the request object requestFunction names, imported from its file
     ['preset.get', 'GET {?}/mail', true],
   ]);
   assert.deepEqual(sent(map, OUTBOX), [['client.post', 'POST /mail/send', true]]);
-  assert.deepEqual(map.unreadRequests, ['elsewhere.get', 'preset.get', 'versioned.get'].map((fn) => ({ fn, file: 'screens/Inbox.tsx', line: 12, url: '{?}/mail' })));
+  assert.deepEqual(map.unreadRequests, ['elsewhere.get', 'preset.get', 'versioned.get'].map((fn) => ({ fn, file: 'screens/Inbox.tsx', line: 12, url: '{?}/mail', reason: 'unknown-piece' })));
   await assert.rejects(build(fixtureCopy({}, { requestFunction: { import: './lib/htp', name: 'http', object: true } })), /requestFunction\.import \.\/lib\/htp names no file/);
 });
 
@@ -262,9 +324,9 @@ test('a call of the request function requestFunction names gives the method and 
     ['contractApi.loadList', 'GET /internal/v2/workspace/{?}/contract/list', false],
   ]);
   assert.deepEqual(map.unreadRequests, [
-    { fn: 'executeRequest', file: 'screens/Inbox.tsx', line: 9, url: null },
-    { fn: 'executeRequest', file: 'screens/Inbox.tsx', line: 10, url: '/internal/v2/{?}' },
-    { fn: 'fetch', file: 'screens/Inbox.tsx', line: 10, url: '/internal/v2/{?}/mail' },
+    { fn: 'executeRequest', file: 'screens/Inbox.tsx', line: 9, url: null, reason: 'not-written' },
+    { fn: 'executeRequest', file: 'screens/Inbox.tsx', line: 10, url: '/internal/v2/{?}', reason: 'imported-piece' },
+    { fn: 'fetch', file: 'screens/Inbox.tsx', line: 10, url: '/internal/v2/{?}/mail', reason: 'imported-piece' },
   ]);
   assert.deepEqual(callsOf(map, INBOX).filter((id) => id.includes('mail')), ['GET:/internal/v2/mail', 'GET:/internal/v2/mail/{?}']);
 });
@@ -354,7 +416,7 @@ test('an address a screen source moves the browser to, by href, the action of a 
     ['<form action>', 'POST /api/mail/{?}', true],
     ['<form action>', 'POST null', true],
   ]);
-  assert.deepEqual(map.unreadRequests, [{ fn: '<form action>', file: 'screens/Inbox.tsx', line: 30, url: '/api/mail/{?}' }, { fn: '<form action>', file: 'screens/Inbox.tsx', line: 31, url: null }]);
+  assert.deepEqual(map.unreadRequests, [{ fn: '<form action>', file: 'screens/Inbox.tsx', line: 30, url: '/api/mail/{?}', reason: 'imported-piece' }, { fn: '<form action>', file: 'screens/Inbox.tsx', line: 31, url: null, reason: 'not-written' }]);
   assert.deepEqual(callsOf(map, INBOX), ['GET:/api/mail/export', 'GET:/api/mail/import', 'GET:/api/mail/print', 'GET:/api/mail/{id}/download', 'GET:/api/mail/{id}/raw', 'GET:/oauth/start', 'GET:/signout', 'POST:/api/mail/import', 'POST:/outbox', '{?}:/api/mail/filter']);
   assert.deepEqual(map.deadCalls.filter((d) => d.screen === INBOX), []);
 });
@@ -384,7 +446,7 @@ test('with apiPathPrefix, a path the server list holds without the prefix is not
   assert.deepEqual(map.screens.find((s) => s.id === INBOX)!.apiCalls.map((c) => [c.endpoints![0].url, c.endpoints![0].callId]), [['/api/settings/ai', 'GET:/settings/ai']]);
 });
 
-test('a screen whose sources send no request of their own has the same calls with or without a request function, and the usage guide and the agent skill name the line extract prints for a request it could not read', async () => {
+test('a screen whose sources send no request of their own has the same calls with or without a request function, and the usage guide and the agent skill name the lines extract prints for a request or an API function call whose address it could not read, and each reason it gives', async () => {
   const plain = await build(fixtureCopy({}));
   const withFunction = await build(fixtureCopy({ 'lib/http.ts': HTTP }, { requestFunction: { import: './lib/http', name: 'http', object: true } }));
   assert.deepEqual(withFunction.screens.map((s) => s.apiCalls), plain.screens.map((s) => s.apiCalls));
@@ -393,7 +455,7 @@ test('a screen whose sources send no request of their own has the same calls wit
 
   const readme = fs.readFileSync(path.join(import.meta.dirname, '../README.md'), 'utf8');
   const skill = fs.readFileSync(path.join(import.meta.dirname, '../skills/duru/SKILL.md'), 'utf8');
-  for (const text of ['`request <how> ← <file>:<line>: address not read`', '`unreadRequests`', '`"direct": true`']) {
+  for (const text of ['`request <how> ← <file>:<line>: address not read (<reason>)`', '`api call <name> ← <file>:<line>: address not read (<reason>)`', '`unreadRequests`', '`"direct": true`', '`not-written`', '`imported-piece`', '`unknown-piece`', '`other-host`', '`no-path`']) {
     assert.ok(readme.includes(text), `README lacks ${text}`);
     assert.ok(skill.includes(text), `SKILL lacks ${text}`);
   }

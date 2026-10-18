@@ -2043,6 +2043,23 @@ Alternatives compared:
 - The three buttons only on the step pressed: tidier, but still three buttons in a row on one step, and 「이전 단계 추가」
   sitting below the step it adds before.
 
+**An address duru could not work out carries why, as `reason` inside its `unresolved` server match: `not-written`,
+`imported-piece`, `unknown-piece`, `other-host` or `no-path`.**
+Asked for in #327 (2026-10-18); the codes come from the places in the source where duru gives up on an address. The
+reason sits beside the status, so everything that reads a server match — a screen's calls, an API function's endpoints,
+`unreadRequests`, the row of the review page and the lines of the summary — gets it with no list of its own to keep in
+step. The codes are kept to what tells the user a different thing to do: look at the caller or name a request
+function, follow an import, give a base address, give `app.server`, or nothing. An address on another host and one
+with `app.server` not given share `other-host`, since either is answered by giving `app.server` when that host is the
+app's server. The relative address of a form that posts is `unknown-piece`: it hangs on the current page, a value duru
+does not know. The summary prints a line for each place a screen calls an API function with such an address, as it
+does for requests, but the map adds no list for them: the screens' calls already hold them.
+Alternatives compared:
+- A separate top-level list of the addresses not read, with their reasons: a second place for the same fact, which the
+  page and an agent would have to join to the screens' calls by file and line.
+- Free text in English: readable in the summary, but the page and an agent could tell the cases apart only by parsing
+  the sentence, and the page would show English or keep a translation keyed by it.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

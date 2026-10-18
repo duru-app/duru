@@ -128,7 +128,7 @@ test('a screen that reaches a call missing on the server is dead; a call whose U
   assert.deepEqual(map.screens.filter((s) => s.dead).map((s) => s.id), ['/home#Home', '/document/:tab_draft_done_#DocumentList']);
 
   const download = map.apiFunctions.ajaxDownload.endpoints;
-  assert.deepEqual(download.map((e) => [e.server.status, e.callId]), [['unresolved', null]]);
+  assert.deepEqual(download.map((e) => [e.server, e.callId]), [[{ status: 'unresolved', reason: 'not-written' }, null]]);
   assert.equal(map.calls.some((c) => c.apiFunctions.includes('ajaxDownload')), false);
 
   const withoutTable = await buildCopy((rewrite) =>

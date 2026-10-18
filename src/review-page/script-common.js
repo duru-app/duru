@@ -4,6 +4,13 @@ const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류' };
 const MARK_STATUS = { 'needs-more': '더 필요', missing: '없음', fine: '충분' };
 const CASE_STATUS = { needed: '필요', 'not-needed': '필요 없음' };
 const SERVER_STATUS = { match: '서버에 있음', 'method-mismatch': '메서드 불일치', none: '서버에 없음', unresolved: '판정 불가', unchecked: '대조 안 함' };
+const UNRESOLVED_REASON = {
+  'not-written': '보내는 곳에 주소가 적혀 있지 않음',
+  'imported-piece': '주소 일부가 import 한 값이라 읽지 못함',
+  'unknown-piece': '값을 모르는 조각이 주소에 붙어 있음',
+  'other-host': 'app.server 로 확인되지 않은 호스트로 보냄',
+  'no-path': '주소에 경로가 없음',
+};
 const GROUP_HEAD_TIP = '밑으로 이어 그린 화면이 없는 진입 화면입니다. 다른 화면으로 가는 링크가 없거나, 링크가 닿는 화면이 모두 다른 진입 화면이나 그 밑에 이미 그려져 있습니다.';
 const SERVER_STATE_TIP = '서버 API 목록(serverEndpoints)이 없거나 비어 있어 API 호출을 서버와 견주지 않았습니다. 목록을 채우고 duru rebuild 를 다시 하면 견줍니다.';
 const KIND_LABEL = { setting: '설정', role: '역할' };

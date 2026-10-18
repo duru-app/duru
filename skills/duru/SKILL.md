@@ -77,12 +77,18 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   names, is among that screen's `apiCalls` with `"direct": true` and how it is sent (`fetch`, `axios.post`,
   `<form action>`) where an API function's name would be. A form that posts is there too, and another move of the
   browser (`href`, `window.open`, an address given to `location`) only when the server list holds its path or
-  `app.apiPaths` covers it. A `request <how> ← <file>:<line>: address not read` line in the summary names a request
-  whose address the source does not give where it is sent; it is on the screen without an address, in no call, and
-  listed under `unreadRequests`. Tell the user which requests those are. When the line points into a function of
-  the app that other requests go through, ask the user to name that function in `requestFunction`. A line with a
-  whole address on another host after `only` is a request duru does not take for one of the app's server; when
-  that host is the app's server, ask the user to give it in `app.server`.
+  `app.apiPaths` covers it. A `request <how> ← <file>:<line>: address not read (<reason>)` line in the summary
+  names a request whose address duru could not work out; it is on the screen without an address, in no call, and
+  listed under `unreadRequests`. An `api call <name> ← <file>:<line>: address not read (<reason>)` line is the same
+  for a screen's call of an API function at that place. Tell the user which requests and calls those are and why,
+  from the reason, which is also the `reason` of the call's `unresolved` server match on the map:
+  `not-written` — no address is written where it is sent, so it comes from the caller or is missing; when the line
+  points into a function of the app that other requests go through, ask the user to name that function in
+  `requestFunction`. `imported-piece` — part of the address is a name imported from another file, which duru does
+  not read. `unknown-piece` — a value duru does not know stands in front of the address or inside its text, such as
+  a base address it could not read. `no-path` — the address is only the top of the site. `other-host` — the whole
+  address after `only` is on a host duru does not take for the app's server; when that host is the app's server,
+  ask the user to give it in `app.server`. None of these is a call missing on the server: do not treat it as dead.
 - In an app that uses redux-saga, a call with `actions` is sent by a saga, written at the line it names in the
   saga, and comes to the screen because the screen dispatches one of those action types at the places under
   `dispatchedAt`. A test of that call for the screen does what the code at a `dispatchedAt` place answers to.

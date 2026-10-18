@@ -326,7 +326,15 @@ it, and the on/off `options` of its request body. The server match is one of:
 - `match` — on the server, with the endpoint list labels
 - `method-mismatch` — the server has the path with another method
 - `none` — not on the server; a screen that reaches such a call is `dead: true`
-- `unresolved` — the URL cannot be worked out from the source, so there is no call node
+- `unresolved` — the URL cannot be worked out from the source, so there is no call node. Its `reason` says what
+  stood in the way:
+  - `not-written` — no address is written where the request is sent: it is given to the function, or there is none
+  - `imported-piece` — a piece of the address is a name imported from another file, or what a function imported
+    by name returns
+  - `unknown-piece` — a piece whose value is not known stands in front of the address or inside its text, such as
+    a base address that could not be read, or the current page a relative address hangs on
+  - `other-host` — the address is on a host other than `app.server`, or on any host when `app.server` is not given
+  - `no-path` — the address has no path
 - `unchecked` — there is no server endpoint list (`serverNotCompared: true` on the map). Call IDs then use the
   client's URL with `{0}`, `{1}` for path variables, and may change once a server list is added.
 
@@ -345,6 +353,10 @@ listing the places whose value the source does not show in full.
 - `screens N | api functions N | endpoints match N method-mismatch N none N unresolved N unchecked N` — the
   screens and the server match of the calls. The API functions include the functions and methods
   `calledApiModules` called.
+- `api call <name> ← <file>:<line>: address not read (<reason>)` — a screen calls the API function at that
+  place, and an address it sends to could not be worked out; `<reason>` is the `reason` of its `unresolved`
+  server match, and `, only <text>` follows when a part of the address was read. The call stays on the screen
+  and is in no call. A function called from several places has a line for each.
 - `api method <name> ← <file>:<line>: <error>` — a called function or method that gave no address, where it is
   declared and the first line of what stopped it (`did not finish within 1000 ms` for one stopped after a
   second). Its calls are missing from the map. A method that sends no request is not printed.
@@ -358,11 +370,11 @@ listing the places whose value the source does not show in full.
 - `requests and navigations written in screen sources N | address not read N` — the requests and the moves of
   the browser read from the sources of the screens and of the sagas that send for them, and how many of them gave
   no address. Printed when there is one.
-- `request <how> ← <file>:<line>: address not read` — a request in a screen source whose address is not written
-  where it is sent, such as an address the function is given or one a function of the app builds; `, only <text>`
-  follows when a part of it was read. The request stays on the screen without an address and is in no call
-  (`unreadRequests`). When the line points into a function of the app that its other requests go through, name
-  that function in `requestFunction`. A request to an address on another host is printed the same way, with the
+- `request <how> ← <file>:<line>: address not read (<reason>)` — a request in a screen source whose address could
+  not be worked out, with the `reason` of its `unresolved` server match; `, only <text>` follows when a part of
+  it was read. The request stays on the screen without an address and is in no call (`unreadRequests`, each
+  with its `reason`). A `not-written` line inside a function of the app that its other requests go through means
+  the address comes from the callers: name that function in `requestFunction`. An `other-host` line has the
   address in full after `only`: when that host is the app's server, give it in `app.server`.
 - `redux-saga runs from <file>:<line> | watchers N | requests of sagas on screens N` — where the app runs its
   sagas, how many pairs of an action type and the saga code waiting for it those runs reach, and how many
