@@ -138,9 +138,10 @@ async function load() {
   }
   dropLostNeed();
   const c = state.compose;
-  const onMap = c?.screens.filter((id) => screens.some((sc) => sc.id === id));
-  if (c && onMap.length !== c.screens.length) {
-    Object.assign(c, { screens: onMap, at: null });
+  const kept = c?.steps.filter((step) => step.unmapped || screens.some((sc) => sc.id === step.screen));
+  if (c && kept.length !== c.steps.length) {
+    if (c.editing && !kept.some((step) => step.rows === c.editing.rows) && c.editing.rows !== c.wide) c.editing = null;
+    Object.assign(c, { steps: kept, at: null });
     checkCompose();
   }
   dropLostTable();

@@ -67,8 +67,8 @@ function renderGaps() {
 
 function composeOverlay() {
   const c = composeDiagram() ? state.compose : null;
-  if (!c?.screens.length) return null;
-  const st = checkedCompose(c) ?? { steps: c.screens.map((screen) => ({ screen, onMap: true })), links: [] };
+  if (!c?.steps.length) return null;
+  const st = checkedCompose(c) ?? { steps: composeScreens(c).map((screen) => ({ screen, onMap: true })), links: [] };
   return { st };
 }
 
@@ -93,10 +93,16 @@ function renderFlow({ bar = true, pressed = null } = {}) {
     return c.el;
   };
   if (bar) renderFlowBar(flowScreens());
+  if (composeDiagram() && state.compose.diagram === 'line') {
+    drawnGrid = null;
+    fill(flow, composeLine(state.compose));
+    return recordPlace();
+  }
   syncZoom();
   const { roots, unreached, summary } = state.data.flow;
   const story = composeOverlay();
   fill(flow,
+    composeDiagram() ? composeDiagramBar(state.compose) : null,
     roots.length ? draw(roots, { group: true, story })
       : h('p', { class: 'muted' }, summary.screens ? '진입 화면을 찾지 못했습니다. 설정 파일의 entryPaths 에 적어 주세요.' : '화면이 없습니다.'),
     unreached.length ? [h('h2', {}, `진입 화면에서 닿지 않는 화면 ${screensIn(unreached).length}`), draw(unreached, { story })] : null);

@@ -115,7 +115,7 @@ const goesOn = (from) => {
       : ' 에서 갈 수 있는 화면이 없습니다.');
 };
 
-function storyLine(st) {
+function storyLine(st, reveal = revealStoryPart) {
   const byId = new Map(flowScreens().map((n) => [n.id, n]));
   const step = (s, i) => {
     const n = s.onMap ? byId.get(s.screen) : null;
@@ -123,7 +123,7 @@ function storyLine(st) {
     return h('button', {
       type: 'button', class: n ? `box screen ${status}` : 'box story-off', 'data-step': i, 'data-screen': s.screen,
       title: [s.screen, n ? STATUS_WORD[status] : PATH_TAG['off-map'], '누르면 이 단계 카드로 내려갑니다'].join('\n'),
-      onclick: () => revealStoryPart({ kind: 'step', key: { step: i + 1 } }),
+      onclick: () => reveal({ kind: 'step', key: { step: i + 1 } }),
     },
       h('span', { class: 'story-badge' }, i + 1),
       n ? [h('span', { class: 'sq' }), h('span', { class: 'sr-only' }, STATUS_WORD[status])] : null,
@@ -133,7 +133,7 @@ function storyLine(st) {
   const hop = (l, i) => h('button', {
     type: 'button', class: `story-hop l-${l.verdict}`, 'data-hop': i,
     title: [hopTitle(l, i), ...(l.reasons ?? []), '누르면 이 연결 줄로 내려갑니다'].join(' · '),
-    onclick: () => revealStoryPart({ kind: 'hop', key: { step: i + 1 } }),
+    onclick: () => reveal({ kind: 'hop', key: { step: i + 1 } }),
   },
     svg('svg', { width: HOP_WIDTH, height: 8, 'aria-hidden': 'true' }, svg('path', { class: hopClass(l.verdict), d: `M2 4H${HOP_WIDTH - 2}` })),
     l.verdict === 'broken' ? h('span', { class: 'story-tag l-broken' }, PATH_TAG.broken) : null);

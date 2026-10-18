@@ -116,7 +116,7 @@ function candidateGroup() {
 function renderPickList() {
   const steps = openSteps();
   const draft = steps ?? state.compose;
-  const screens = steps ? stepScreens(steps) : state.compose.screens;
+  const screens = steps ? stepScreens(steps) : composeScreens(state.compose);
   const q = draft.query.trim().toLowerCase();
   const visible = state.data.map.screens.filter((sc) => !q || sc.id.toLowerCase().includes(q));
   const list = document.getElementById('pick-list');

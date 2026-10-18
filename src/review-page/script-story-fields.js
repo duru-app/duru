@@ -118,7 +118,7 @@ function useOptions(row) {
   ];
 }
 
-function newNeedFields(prefix, row) {
+function newNeedFields(prefix, row, edit) {
   const m = row.making;
   return h('div', { class: 'new-need' },
     h('label', {}, h('span', {}, '파일 이름'), textField(`${prefix}-new-file`, '새 공통 조건 파일 이름', m.file, (v) => { m.file = v; }), h('span', { class: 'muted mono' }, '.json')),
@@ -126,7 +126,7 @@ function newNeedFields(prefix, row) {
     h('label', {}, h('span', {}, '내용'), h('textarea', { name: `${prefix}-new-text`, 'aria-label': '새 공통 조건 내용', rows: 3, oninput: (e) => { m.text = e.target.value; } }, m.text)),
     m.error ? h('p', { class: 'error' }, m.error) : null,
     h('div', { class: 'fields-acts' },
-      h('button', { type: 'button', class: 'make-need', disabled: m.saving, title: `${state.data.storiesDir}/needs/ 에 공통 조건 파일을 새로 쓰고, 이 줄이 그 파일을 고릅니다`, onclick: () => makeNeed(prefix, row) }, '만들기'),
+      h('button', { type: 'button', class: 'make-need', disabled: m.saving, title: `${state.data.storiesDir}/needs/ 에 공통 조건 파일을 새로 쓰고, 이 줄이 그 파일을 고릅니다`, onclick: () => makeNeed(prefix, row, edit) }, '만들기'),
       h('button', { type: 'button', class: 'drop-need', disabled: m.saving, onclick: () => {
         row.making = null;
         redrawTable(`[name="${prefix}-use"]`);
@@ -143,7 +143,7 @@ const useSelect = (prefix, row) => h('select', {
   },
 }, useOptions(row));
 
-function lineEditRow(key, label, rows, row) {
+function lineEditRow(edit, key, label, rows, row) {
   const prefix = `${LINE_NAME[key]}-${row.key}`;
   const text = textField(prefix, label, row.text, (v) => { row.text = v; });
   if (key === 'expects') return h('tr', { 'data-row': row.key }, h('td', { class: 'line-text' }, text), h('td', {}, removeButton(rows, row)));
@@ -156,13 +156,12 @@ function lineEditRow(key, label, rows, row) {
         redrawTable(`[name="${prefix}-mode"]`);
       },
     }, Object.entries(LINE_MODES).map(([mode, word]) => h('option', { value: mode, selected: mode === row.mode }, word)))),
-    h('td', { class: 'line-text' }, row.mode === 'text' ? text : [useSelect(prefix, row), row.making ? newNeedFields(prefix, row) : null]),
+    h('td', { class: 'line-text' }, row.mode === 'text' ? text : [useSelect(prefix, row), row.making ? newNeedFields(prefix, row, edit) : null]),
     h('td', {}, removeButton(rows, row)));
 }
 
-async function makeNeed(prefix, row) {
+async function makeNeed(prefix, row, edit) {
   const m = row.making;
-  const edit = state.fieldsEdit;
   Object.assign(m, { error: null, saving: true });
   redrawTable();
   const file = `${m.file.trim().replace(/\.json$/, '')}.json`;
@@ -221,18 +220,19 @@ const inputEditRow = (rows, row) => h('tr', { 'data-row': row.key },
   h('td', {}, textField(`input-${row.key}-value`, '값', row.value, (v) => { row.value = v; })),
   h('td', {}, removeButton(rows, row)));
 
-function addLine(key) {
+function addLine(edit, key) {
   const row = key === 'inputs' ? { key: nextRowKey(), words: [wordRow('placeholder', '')], nth: '', value: '' } : lineRowOf('');
-  state.fieldsEdit.rows[key].push(row);
+  edit.rows[key].push(row);
   redrawTable(`[data-row="${row.key}"] input`);
 }
 
-function fieldsPart(key, label, rows) {
+function fieldsPart(edit, key, label) {
+  const rows = edit.rows[key];
   const head = key === 'inputs' ? h('thead', {}, h('tr', {}, h('th', {}, '찾는 말'), h('th', {}, '몇 번째'), h('th', {}, '값'), h('th', {}))) : null;
   return h('div', { class: `fields-part ${key === 'linkNeeds' ? 'link-needs' : key}` },
     h('h4', {}, label),
-    rows.length ? h('table', {}, head, h('tbody', {}, rows.map((row) => (key === 'inputs' ? inputEditRow(rows, row) : lineEditRow(key, label, rows, row))))) : null,
-    h('button', { type: 'button', class: 'add-line', onclick: () => addLine(key) }, ADD_LINE[key]));
+    rows.length ? h('table', {}, head, h('tbody', {}, rows.map((row) => (key === 'inputs' ? inputEditRow(rows, row) : lineEditRow(edit, key, label, rows, row))))) : null,
+    h('button', { type: 'button', class: 'add-line', onclick: () => addLine(edit, key) }, ADD_LINE[key]));
 }
 
 function fieldsEditor() {
@@ -240,7 +240,7 @@ function fieldsEditor() {
   const making = Object.values(edit.rows).flat().some((r) => r.mode === 'use' && r.making);
   return h('div', { class: 'fields-edit', onclick: (e) => e.stopPropagation() },
     h('fieldset', { disabled: edit.saving },
-      FIELD_PARTS[edit.place.kind].map(([key, label]) => fieldsPart(key, label, edit.rows[key])),
+      FIELD_PARTS[edit.place.kind].map(([key, label]) => fieldsPart(edit, key, label)),
       edit.error ? h('p', { class: 'error fields-error' }, edit.error) : null,
       h('div', { class: 'fields-acts' },
         edit.changedHash === null

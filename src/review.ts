@@ -42,6 +42,7 @@ export const PAGE_PARTS = [
   'script-untagged-center.js',
   'script-story-center.js',
   'script-new-story.js',
+  'script-walk.js',
   'script-center-right.js',
   'script-talk.js',
   'script-access-links.js',

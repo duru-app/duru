@@ -2166,6 +2166,91 @@ Measured on main bddb370 against the branch with both example clients, with no `
 kinds (on the first client with four picks, two `@case:` tests and one tag of an unknown kind): `map.json`, `tests.json`,
 what `rebuild` prints and the task list are identical apart from the time they were written.
 
+**A reviewer records the screens they move through in the app pane: the app host puts a script into every app page
+that reports each new address to the review page, and 「기록 끝」 saves the addresses as a visit record.**
+Driver's decision in #261. The app pane loads the app from another origin than the review page, so the page cannot
+read the pane's address itself. With `app` set duru already serves the app's pages and puts a script after `<head>`
+to store the login token; a few more lines there wrap `history.pushState` and `history.replaceState`, listen for
+`popstate` and `hashchange`, and post the address to the parent window on load and on each change. The app is not
+changed, the reviewer stays on the review page, and no dependency is added. The script posts only to the review
+page's own origins, so another site that frames the app cannot read its addresses, and the page takes a message only
+from the frame it shows and only from the origin of the app address it opened.
+The record holds the path, the query and what follows `#`, without host and port: every pane has a port of its own,
+and candidates are matched by path anyway. Every change of address is a step, also one of the query or after `#`
+alone, and steps on the same screen are merged into one as for any record. The signed-out pane and each role's pane
+are separate records, since each is another account: choosing another pane saves the record so far and begins a new
+one, while the story being written keeps all its steps. Recording needs `app`; with only `appUrl` duru does not serve
+the app and the page says so. An app whose security policy blocks inline scripts sends no address, and the page says
+it got none. A window the app opens with `window.open` is outside the pane and is not recorded; in into-sign that is
+only the password reset page.
+Tools that record a person's moves were checked on 2026-10-15. Playwright codegen opens a browser of its own: "When
+running the `codegen` command two windows will be opened." (https://playwright.dev/docs/codegen). QA Wolf's recorder
+did the same in its public repository: `npx qawolf record <url>` opens a browser and "Your browser actions are
+converted to Playwright and Jest code" (https://github.com/tchigher/qawolf). Cypress Studio records inside the
+browser that runs the tests: "Studio translates each action into a Cypress command in real time and adds it to your
+spec file." (https://docs.cypress.io/app/guides/cypress-studio), "Cypress tests run inside of the browser!"
+(https://docs.cypress.io/app/references/trade-offs); that it sends the app through a proxy to share the origin was
+not found in its documents and is a guess. The into-sign client was read but not run: it moves between screens with
+`history.push` and `replace` of react-router 5, keeps its token in localStorage and no cookie, writes no absolute
+app address, and has no web socket, service worker or framing rule in its own code, and it is already reviewed with
+`app`.
+Alternatives compared:
+- The review server passes the app through itself so the origins match: a reverse proxy with cookies, absolute
+  addresses, web sockets and headers to handle, and into-sign mounts its routes at `/`, so it could not share a path
+  prefix and would need a port of its own anyway (a guess). Close to Cypress, as far as could be found.
+- duru opens a browser with Playwright and reads its address: catches new windows and full reloads too, but the
+  reviewer moves around in a window apart from the review page, `playwright-core` becomes a dependency of the
+  package with a browser to download, and WSL needs a display for the window (a guess). The way of Playwright codegen
+  and QA Wolf.
+- A short script in the app's development build: almost nothing in duru, but the app's `index.html` has to change and
+  recording works only on a branch that has the change. No tool found does this.
+
+**A recorded visit is written once into `records/` in `storiesDir` and read with the records in `visitRecords`.**
+Driver's decision in #261. It works with no `visitRecords` in the config, which into-sign's has none of, and the
+records a person made do not mix with the ones a test run writes and may clear. Like `candidates/` and `discarded/`,
+a file is named by the date and eight letters of a random ID and never changed or deleted, so records made on two
+computers merge in git without a conflict, and the folder is not read as stories. A recorded visit becomes a
+candidate the way any record does, named by its file, with its path from the config folder as its source, so a walk
+whose story was never saved is still offered.
+
+**Recording is started from 「새 스토리」 and fills the story being written, and a typed value is kept as an input of
+its step when the box has a placeholder, a label or a test ID.**
+Driver's decision in #261. The reviewer walks the app to write a story, so the steps go straight into the draft,
+after the steps already chosen, and the record file is the copy kept in case the story is not saved. While recording
+the app takes the whole middle column and the steps stack where the screen list was, because the flow drawing is not
+used then. After 「기록 끝」 the path is drawn on one line as a saved story is, since the whole flow hides a walk of a
+few screens among many; 「전체 그림에서 보기」 brings the whole flow back for adding steps by pressing boxes. A value is
+read from the `change` event of a text-like `input` or a `textarea`, found by the words a story box finds it by, in
+the order placeholder, label, test ID, with `nth` when the same words name more than one box. A password is never
+read, and a select, a checkbox or a box with none of those words cannot be named by a story box, so each is only
+counted as `skipped`, as for a trace. A later value in the same box takes the place of the earlier one, the last value
+being what the screen was left with. Emptying a box whose value was recorded takes the value off the step and off each
+record entry of that screen back to where the step began, since the candidate joins a screen's inputs and would bring
+it back; emptying a box never recorded writes nothing. A box without those words is counted once for each address it
+is changed at, not once for each change, since a checkbox ticked on and off is still one input left out; the script
+in the app does not know which addresses the page joins into one screen step, so the address is as far as it can
+tell. When the story tab is left during a recording and opened again, the app opens at the last address received in
+that pane, straight and not through the sign-out address even in the signed-out pane, so the reviewer goes on where
+they were, still logged in if they logged in there, and that address adds no step. If no address has arrived yet, it
+opens where the recording started, through the sign-out address in the signed-out pane, as at the start. A recorded
+address no screen matches becomes a step marked 「맵에 없는 화면」, and the story is saved with it, so `/api/stories/check`
+and `/api/stories/add` take such steps, as a story file written by hand may hold them. A visit record step may now
+carry `inputs` and `skipped`; a record with a value of the wrong shape there is noted as unreadable rather than read
+without it, so a broken value is seen.
+Alternatives compared:
+- A button above the app pane of the list view that only saves a record, as first built in #287: the reviewer then accepts the
+  candidate and writes the conditions in a second place.
+- Reading every keystroke: each letter would be a value, and the box's last value is what the story needs.
+- Keeping the select and checkbox values with a guessed box: the story box has no field for an option, and a guess
+  would write a box the page cannot find.
+- Keeping an emptied box as an input with an empty value: a story value must have text, so the record would be
+  refused.
+- Counting a box without words once per screen step: the script in the app would need the map's screens.
+- Keeping the app frame while another tab is shown: the middle column is drawn anew for each view, so the frame would
+  need a place of its own outside it.
+- Opening the signed-out pane through the sign-out address again when the story tab comes back: a login made during
+  the recording would be lost, and the app would send the reviewer to the sign-in screen, a step never walked.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

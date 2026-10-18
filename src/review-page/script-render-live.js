@@ -25,6 +25,8 @@ function render() {
   main.classList.toggle('flow', flow);
   main.classList.toggle('picked', picked);
   main.classList.toggle('compose-flow', diagram);
+  main.classList.toggle('compose-line', diagram && state.compose.diagram === 'line');
+  main.classList.toggle('walking', walkShown());
   fitPanes();
   document.getElementById('flow-bar').hidden = !flow;
   document.getElementById('flow').hidden = !flow && !diagram;
@@ -156,7 +158,7 @@ function setEnding(ending) {
 }
 
 async function endReview() {
-  if (state.compose?.screens.length && !confirm('저장하지 않은 새 스토리가 있습니다. 「스토리 저장」을 누르지 않으면 스토리 파일이 생기지 않습니다. 그래도 리뷰를 끝낼까요?')) return;
+  if (state.compose?.steps.length && !confirm('저장하지 않은 새 스토리가 있습니다. 「스토리 저장」을 누르지 않으면 스토리 파일이 생기지 않습니다. 그래도 리뷰를 끝낼까요?')) return;
   if (hasUnsavedMark() && !confirm('「남기기」를 누르지 않은 코멘트가 있습니다. 남기지 않으면 작업 목록에 들어가지 않습니다. 그래도 리뷰를 끝낼까요?')) return;
   const error = document.getElementById('end-error');
   error.textContent = '';
