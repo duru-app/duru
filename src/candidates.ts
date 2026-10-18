@@ -5,7 +5,8 @@ import { pathOf, screenFinder } from './address-match.ts';
 import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { recordName, writeNewRecord } from './marks.ts';
-import { addStory, CANDIDATES, DISCARDED, isDate, isScreenList, isSource, isText, loadStories, writableStoriesFolder } from './stories.ts';
+import { addStory, CANDIDATES, DISCARDED, inputsProblem, isDate, isScreenList, isSource, isText, loadStories, writableStoriesFolder } from './stories.ts';
+import type { StepFields, StepInput } from './stories.ts';
 import { checkStories, linksWithoutConditions, staleMapMessage } from './story-paths.ts';
 import { withoutTags } from './verdict.ts';
 
@@ -56,6 +57,8 @@ export interface TracedTest {
   report: string;
   title: string;
   screens: string[];
+  inputs?: StepInput[][];
+  skipped?: number;
 }
 
 interface TestsSource {
@@ -69,7 +72,12 @@ export interface Candidate {
   screens: string[];
   source: { record: string; steps: number[] } | TestsSource;
   stepRanges?: [number, number][];
+  stepFields?: StepFields[];
+  skipped?: number;
 }
+
+const inputFields = (inputs: StepInput[][] = []) => (inputs.some((i) => i.length) ? inputs.map((i) => (i.length ? { inputs: i } : {})) : undefined);
+const carried = ({ stepFields, skipped }: { stepFields?: StepFields[]; skipped?: number }) => ({ ...(stepFields && { stepFields }), ...(skipped && { skipped }) });
 
 export function loadVisitRecords(sources: string[], configDir: string) {
   const records: VisitRecord[] = [];
@@ -119,6 +127,16 @@ function storedProblemOf(c: any) {
   if (!isScreenList(c.screens)) return 'screens 는 화면을 하나 이상 차례대로 담은 목록이어야 합니다';
   if (!isSource(c.source)) return 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] } 나 { "report": 보고 파일, "tests": [시험 제목, ...] } 여야 합니다';
   if (!isDate(c.date)) return 'date 는 2026-10-02 같은 날짜여야 합니다';
+  if (c.skipped !== undefined && !(Number.isInteger(c.skipped) && c.skipped > 0)) return 'skipped 는 옮기지 못한 동작의 수로, 1 이상의 정수여야 합니다';
+  if (c.stepFields !== undefined) {
+    if (!Array.isArray(c.stepFields) || c.stepFields.length !== c.screens.length) return 'stepFields 는 screens 와 같은 길이의 목록이어야 합니다';
+    for (const [i, f] of c.stepFields.entries()) {
+      const where = `stepFields 의 ${i + 1} 번째`;
+      if (!isPlainObject(f) || Object.keys(f).some((k) => k !== 'inputs')) return `${where}는 { "inputs" } 객체여야 합니다`;
+      const problem = inputsProblem(f.inputs, where);
+      if (problem) return problem;
+    }
+  }
   return null;
 }
 
@@ -188,12 +206,12 @@ export function storeCandidates(dir: string, list: Candidate[], now = new Date()
   const stored = new Set(loadStored(dir).found.map((c) => JSON.stringify(c.screens)));
   const date = now.toISOString();
   let written = 0;
-  for (const { name, screens, source } of list) {
+  for (const { name, screens, source, ...rest } of list) {
     const key = JSON.stringify(screens);
     if (stored.has(key)) continue;
     stored.add(key);
     try {
-      writeNewRecord(path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`), { name, screens, source, date });
+      writeNewRecord(path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`), { name, screens, source, date, ...carried(rest) });
     } catch (err: any) {
       return { written, reason: `후보 파일을 쓰지 못했습니다: ${err.message}` };
     }
@@ -204,15 +222,18 @@ export function storeCandidates(dir: string, list: Candidate[], now = new Date()
 
 export const candidatePlace = ({ name, source, screens, stepRanges }: Candidate) => ({ name, source, screens, ...(stepRanges && { stepRanges }) });
 
+const withInputs = ({ screens, stepFields }: Candidate) => screens.map((screen, i) => (stepFields?.[i]?.inputs?.length ? { screen, inputs: stepFields[i].inputs! } : screen));
+
 export const acceptCandidate = (dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) =>
-  addStory(dir, { id, name, screens: candidate.screens, author, source: candidate.source }, now);
+  addStory(dir, { id, name, screens: withInputs(candidate), author, source: candidate.source }, now);
 
 export function unacceptStory(dir: string, id: unknown) {
   if (!isFolder(dir)) throw new Error(`스토리 폴더 ${dir} 가 폴더가 아니라 스토리 파일을 지울 수 없습니다`);
   const story = loadStories(dir).stories.find((s) => s.id === id);
   if (!story) throw new Error(`스토리 ${id} 를 찾지 못했습니다`);
   if (!story.source) throw new Error(`스토리 ${id} 는 후보에서 받은 스토리가 아닙니다`);
-  const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source: story.source }]);
+  const stepFields = story.stepFields && inputFields(story.stepFields.map((f) => f.inputs ?? []));
+  const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source: story.source, ...carried({ stepFields }) }]);
   if (kept.reason) throw new Error(kept.reason);
   fs.rmSync(path.join(dir, story.file));
   return { id: story.id, screens: story.screens, file: story.file };
@@ -274,7 +295,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   }
   // 출처에는 보고 파일을 하나만 적으므로, 같은 화면 순서라도 다른 보고의 시험은 붙이지 않는다.
   const fromTraces = new Map<string, TestsSource>();
-  for (const { report, title, screens } of traced) {
+  for (const { report, title, screens, inputs, skipped } of traced) {
     const key = JSON.stringify(screens);
     const source = fromTraces.get(key);
     if (source) {
@@ -282,21 +303,21 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     } else if (screens.length > 1 && seen.has(key)) {
       gone[screens.join(' > ')] ??= shownTitle(title);
     } else if (screens.length > 1) {
-      const candidate = { key: screens.join(' > '), name: shownTitle(title), screens, source: { report, tests: [title] } };
+      const candidate = { key: screens.join(' > '), name: shownTitle(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) };
       fromTraces.set(key, candidate.source);
       list.push(candidate);
     }
   }
   for (const key of fromTraces.keys()) seen.add(key);
   const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
-  for (const { name, screens, source } of byFirstSeen) {
+  for (const { name, screens, source, ...rest } of byFirstSeen) {
     const key = JSON.stringify(screens);
     if (seen.has(key) || taken.has(JSON.stringify(source))) {
       gone[screens.join(' > ')] ??= name;
       continue;
     }
     seen.add(key);
-    list.push({ key: screens.join(' > '), name, screens, source });
+    list.push({ key: screens.join(' > '), name, screens, source, ...carried(rest) });
   }
   return { list: checkStories(map, list), discarded: shown, gone, notices: all };
 }

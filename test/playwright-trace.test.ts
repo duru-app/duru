@@ -198,3 +198,47 @@ test('a trace of a version duru does not know gives a reason that names the vers
     fs.writeFileSync(file, storedZip({ '0-trace.trace': `${JSON.stringify({ type: 'context-options', version: 99, playwrightVersion: '9.9.9' })}\n` }));
     assert.deepEqual(readTrace(file), { reason: '두루가 모르는 trace 파일 버전입니다: 99 (Playwright 9.9.9)' });
   }));
+
+const INPUTS = path.join(import.meta.dirname, 'fixtures/app/traces/inputs.zip');
+const inputSteps = () => (readTrace(INPUTS) as Traced).steps.filter((s) => s.input || s.inputSkipped).map((s) => [address(s.url), s.input ?? 'skipped']);
+
+test('a fill that found its box by label, placeholder or test ID gives the box words and the value', () => {
+  const found = inputSteps();
+  assert.deepEqual(found[2], ['/home', { box: { placeholder: '이름' }, value: 'Kim' }]);
+  assert.deepEqual(found[3], ['/home', { box: { testId: 'amount' }, value: '3' }]);
+  assert.deepEqual(found[0], ['/home', { box: { label: '메모', nth: 1 }, value: '첫 메모' }]);
+});
+
+test('a trailing i or s on the words is ignored, and a quote inside the words is kept', () => {
+  const found = inputSteps();
+  assert.deepEqual(found[1], ['/home', { box: { label: '메모', nth: 2 }, value: '둘째 메모' }]);
+  assert.deepEqual(found[6], ['/home', { box: { label: '따옴표 "큰"' }, value: 'q' }]);
+});
+
+test('nth is counted from 1, while the trace counts from 0', () => {
+  const found = inputSteps();
+  assert.deepEqual(found.slice(0, 2).map(([, input]) => (input as { box: { nth?: number } }).box.nth), [1, 2]);
+  assert.equal(found.filter(([, input]) => input !== 'skipped' && (input as { box: { nth?: number } }).box.nth === undefined).length, 4);
+});
+
+test('a fill found by CSS or role, a fill with an empty value and a fill whose box words are blank are marked skipped', () => {
+  const found = inputSteps();
+  const skipped = found.map(([, input]) => input === 'skipped');
+  assert.deepEqual(skipped.slice(0, 8), [false, false, false, false, true, true, false, true]);
+  assert.deepEqual(skipped.slice(14), [true, false]);
+});
+
+test('typing, choosing an option, checking, unchecking and picking files are marked skipped, since they write a value no input can hold', () => {
+  const methods = ['type', 'selectOption', 'check', 'uncheck', 'check', 'setInputFiles'];
+  const skipped = (readTrace(INPUTS) as Traced).steps.filter((s) => s.inputSkipped);
+  assert.equal(skipped.length, 3 + methods.length + 1);
+});
+
+test('a key press and a click carry no input and are not marked skipped', () => {
+  const plain = (readTrace(INPUTS) as Traced).steps.filter((s) => s.kind === 'interact' && !s.input && !s.inputSkipped);
+  assert.equal(plain.length, 2);
+});
+
+test('an input is put on the address that was open when it was filled', () => {
+  assert.deepEqual(inputSteps().at(-1), ['/document/draft', { box: { placeholder: '제목' }, value: '제목 값' }]);
+});

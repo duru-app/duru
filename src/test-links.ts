@@ -137,7 +137,7 @@ export function linkTests(config: any, map: any) {
         if (trace) {
           const traced = { title: t.title, tags: t.tags, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status };
           if (trace.reason) traceNotices.push({ file: shownPath(t.trace), test: { title: t.title, file: t.file, line: t.line }, reason: trace.reason });
-          else if (t.status === 'pass' && t.traceRunPassed) screenOrders.push({ report: resultPath.split(path.sep).join('/'), title: t.title, screens: trace.order! });
+          else if (t.status === 'pass' && t.traceRunPassed) screenOrders.push({ report: resultPath.split(path.sep).join('/'), title: t.title, screens: trace.order!, ...(trace.inputs!.some((i) => i.length) && { inputs: trace.inputs! }), ...(trace.skipped! > 0 && { skipped: trace.skipped! }) });
           for (const [id, level] of trace.screens ?? []) {
             if (t.tags.includes(`screen:${id}`)) continue;
             (passed[id] ??= []).push({ ...traced, level });

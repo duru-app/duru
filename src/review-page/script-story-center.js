@@ -114,6 +114,7 @@ function renderStoryCenter() {
     return fillStoryCenter(center, c, [
       h('div', { class: 'title-row' }, h('h3', {}, c.name), storyChips(c)),
       sourceView(c.source, '후보가 나온'),
+      c.skipped ? h('div', { class: 'muted skipped-inputs', title: '기록에는 있었지만 이 후보의 단계에 입력값으로 옮기지 못한 입력' }, `옮기지 못한 입력 ${c.skipped}개`) : null,
       ...storyPath(c, c.stepRanges)]);
   }
   const st = storyOf();

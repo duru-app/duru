@@ -66,7 +66,7 @@ interface Notice {
 interface NewStory {
   id: unknown;
   name: unknown;
-  screens: string[];
+  screens: (string | { screen: string; inputs: StepInput[] })[];
   memo?: string;
   author: unknown;
   source?: RawSource;
@@ -134,7 +134,7 @@ function boxProblem(box: any, where: string) {
   return null;
 }
 
-function inputsProblem(inputs: unknown, where: string) {
+export function inputsProblem(inputs: unknown, where: string) {
   if (inputs === undefined) return null;
   if (!Array.isArray(inputs)) return `${where}의 inputs 는 입력값을 { "box", "value" } 객체로 하나씩 적은 목록이어야 합니다`;
   for (const [i, input] of inputs.entries()) {

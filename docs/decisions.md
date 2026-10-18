@@ -2118,6 +2118,30 @@ reported as a duplicate ID.
 Alternative compared: keeping the pattern in the ID, which keeps such routes apart but gives IDs nobody can type as
 a tag.
 
+**A candidate from a trace carries the values its `fill` actions put into boxes found by label, placeholder or test ID,
+taken from the first trace read for that screen order.**
+Asked for in #277 (2026-10-18), on the input box of #275. The trace's `before` line for a `fill` holds the locator as
+`internal:label="…"i`, `internal:attr=[placeholder="…"i]` or `internal:testid=[data-testid="…"s]` and the text as
+`value` (read from a trace recorded with Playwright 1.60.0, format 8), so the three forms map to the story box's `label`,
+`placeholder` and `testId`. The trailing `i` or `s` (not exact or exact) is ignored: the story box has no place for it,
+and the words are the same either way. `>> nth=N` is carried as `nth` N + 1, since the trace counts from 0 and the story
+from 1; a locator with anything else chained (`nth=-1`, a filter, a parent) is not a box the story can name. A fill found
+by CSS or role, a fill with a blank value (a story value must have text), a fill whose box words are blank, and a locator
+of another shape are counted as skipped, and the candidate page shows the count. A role locator is skipped because it
+could be turned into a box only by guessing which words the screen shows. The other actions that write a value (`type`,
+`selectOption`, `check`, `uncheck`, `setInputFiles`; `setChecked` is recorded as `check`) are counted as skipped too: the
+input box cannot hold them, and the count tells the reviewer that the test did more than the candidate shows. A key
+press has no place in the input box and changes no value a story would write, so presses are ignored without being
+counted. When traces share a screen order the candidate keeps the inputs and count of the first trace
+read; merging them would invent a story no single run walked. Inputs sit in `stepFields` of the candidate, the shape a
+story has, so the page draws them with the code that draws a story's steps, and a stored candidate keeps them.
+Alternatives compared:
+- Counting a press as skipped: it would raise the count on nearly every login-like test with nothing a reviewer could
+  add by hand.
+- One candidate per distinct set of inputs: the same path would be offered again and again, against the rule that a
+  screen order is offered once.
+- Reading CSS or role locators by guessing the visible words: wrong guesses would write a box the page cannot find.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

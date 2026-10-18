@@ -598,8 +598,9 @@ cannot be read is skipped and noted with its path and why.
 A Playwright test needs no visit record when its report is listed in `tests` and the test ran with Playwright's
 `trace` option on: the screens it passed through, read from its trace by `rebuild`, become a candidate whose source
 names the report and the test titles. The candidate is named after the first of those titles without its tags. Only a passing run counts: a test that failed gives no candidate, and a test
-that passed on a retry gives the screens of the retry that passed. These candidates follow the limits of reading
-traces:
+that passed on a retry gives the screens of the retry that passed. The steps of such a candidate may come with the values the test typed in, shown before the candidate is accepted and
+written into the story file with it; a line on the page says how many inputs were not carried over. These candidates
+follow the limits of reading traces:
 
 - Only trace format version 8 is read. A trace of another version is skipped and listed with the traces
   `rebuild` could not read.
