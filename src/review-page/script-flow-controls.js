@@ -123,7 +123,7 @@ function flowSearch() {
     },
   });
   if (flowSearchInput.value !== state.flowQuery) flowSearchInput.value = state.flowQuery;
-  flowSearchInput.title = flowComposing() ? 'Enter 를 누르면 찾은 첫 화면을 새 스토리의 단계로 넣습니다' : 'Enter 를 누르면 찾은 첫 화면을 고릅니다';
+  flowSearchInput.title = 'Enter 를 누르면 찾은 첫 화면을 고릅니다';
   return flowSearchInput;
 }
 

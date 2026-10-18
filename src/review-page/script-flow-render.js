@@ -7,7 +7,7 @@ function renderFlowBar(screens) {
     h('strong', { class: 'flowsummary' }, `테스트 있는 화면 ${tested}/${screens.length}`),
     h('span', { class: 'flow-filters', role: 'group', 'aria-label': '상태로 거르기' }, FLOW_FILTERS.map((f) => h('button', { type: 'button', 'data-filter': f.key, title: f.title, onclick: () => setFlowFilter(f.key) },
       f.label, ' ', h('span', { class: 'count' }, String(screens.filter(f.keep).length))))),
-    flowComposing() ? null : newStoryButton(),
+    newStoryButton(),
     flowSearch(),
     picked ? h('span', { class: 'picking' }, '고른 화면 ', h('strong', {}, picked.path), ' ', h('button', { type: 'button', class: 'unpick', onclick: unpickScreen }, '선택 해제')) : null,
     h('div', { class: 'flowguide' }, flowKey(), legendInfo('flow', '흐름도 읽는 법', flowLegendItems())));
@@ -59,15 +59,13 @@ function renderGaps() {
   const gaps = gapLists(flowScreens(), (n) => pickScreen(n.id));
   fill(document.getElementById('gaps'),
     h('h2', {}, `손볼 화면 ${gaps.count}`),
-    h('p', { class: 'muted lead' }, flowComposing()
-      ? '실패했거나 테스트가 없는 화면입니다. 누르면 새 스토리의 단계로 넣습니다.'
-      : '실패했거나 테스트가 없는 화면입니다. 누르면 그림에서 그 화면에 이어진 길만 진하게 남기고 그 화면을 엽니다.'),
+    h('p', { class: 'muted lead' }, '실패했거나 테스트가 없는 화면입니다. 누르면 그림에서 그 화면에 이어진 길만 진하게 남기고 그 화면을 엽니다.'),
     ...gaps.groups,
     gaps.count ? null : h('p', { class: 'muted' }, '손볼 화면이 없습니다.'));
 }
 
 function composeOverlay() {
-  const c = flowComposing() ? state.compose : null;
+  const c = composeDiagram() ? state.compose : null;
   if (!c?.screens.length) return null;
   const st = checkedCompose(c) ?? { steps: c.screens.map((screen) => ({ screen, onMap: true })), links: [] };
   return { st };
@@ -109,7 +107,7 @@ function renderFlow({ bar = true, pressed = null } = {}) {
   drawnGrid = canvases.map((c) => c.place()).find(Boolean) ?? null;
   applyFlowEmphasis();
   Object.assign(flow, { scrollTop, scrollLeft });
-  if (pressed && flowComposing()) keepPressedBox(flow, pressed);
+  if (pressed && composeDiagram()) keepPressedBox(flow, pressed);
   for (const info of document.querySelectorAll('[data-legend]')) applyLegend(info);
   recordPlace();
 }

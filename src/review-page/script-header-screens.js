@@ -185,7 +185,7 @@ function renderStoryLeft(left) {
   if (left.querySelector(':scope > ul#pick-list')?.dataset.for !== picking) {
     const draft = steps ?? state.compose;
     fill(left,
-      h('div', { class: 'compose-head' }, steps ? h('strong', {}, `「${storyOf().name}」에 넣을 화면`) : [h('strong', {}, '새 스토리에 넣을 화면'), leaveComposeButton()]),
+      h('div', { class: 'compose-head' }, steps ? h('strong', {}, `「${storyOf().name}」에 넣을 화면`) : [h('strong', {}, '새 스토리에 넣을 화면'), h('button', { class: 'leave-compose', title: '쓰던 순서는 그대로 두고 스토리 목록을 봅니다', onclick: leaveCompose }, '스토리 목록')]),
       h('div', { class: 'filters' },
         h('input', { type: 'search', placeholder: '화면 찾기', value: draft.query, oninput: (e) => { draft.query = e.target.value; renderPickList(); } })),
       h('ul', { class: 'screens', id: 'pick-list', 'data-for': picking }));

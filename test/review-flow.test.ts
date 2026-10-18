@@ -788,7 +788,7 @@ test('in a browser, pressing a filter, a screen box, 「선택 해제」 or 「�
 
     await typed('90');
     await p.locator('.flowbar .new-story').click();
-    assert.equal(await flowPlace(p), '#flow?new=1', 'a new story is started');
+    assert.equal(await flowPlace(p), '#story?new=1', 'a new story is started');
     assert.deepEqual(await zoom(), [0.9, '90%']);
   });
 });

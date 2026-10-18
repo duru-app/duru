@@ -1954,8 +1954,8 @@ one line kept at the top and its cards below.** Before, one story was split over
 was drawn as a line of steps with nothing below it, while its cards and its conversation were in the list's story
 pane, so a story comment pressed in the flow moved to the list. The line shows only the step number, the screen, its
 test status and where a link is missing, since the cards right below say the rest; the counts of written lines and the
-link conditions it showed before repeated them. The flow tab keeps everything about screens and starting a new story
-by pressing boxes; the pane beside it opens only while a story is written there. The step marked on the line is the
+link conditions it showed before repeated them. The flow tab keeps everything about screens; a new story is made in
+the story tab. The step marked on the line is the
 one pressed, and the cards scroll only when its card is out of view. The pressed step is kept in the address, so that
 the same address always marks the same step, after a reload or a fresh visit too: kept only in the open page, it
 stayed after a tab change or going back but was lost on a reload. It is dropped when another story, a candidate or a
@@ -1975,6 +1975,28 @@ Alternatives compared:
   had to follow the cards, which made a short story scroll; a smooth scroll to a far step marked each step it passed;
   and keeping a pressed step marked meant telling a scroll the reviewer made from one the page made, where every rule
   tried had cases that marked the wrong step.
+
+
+**A new story is made in the story tab only, on a screen with the screen list on the left and the whole flow under the
+steps in the middle; the flow tab keeps only a button that goes there.** A new story could be begun in two places that
+shared one draft: the flow tab, where a pane opened beside the drawing and a box pressed became a step, and the story
+tab, where the left column became a screen list. The two held the same steps in different layouts, so a reviewer
+switching tabs met the same draft in a form they had not left it in, and every change to the draft had two layouts to
+keep right. Now the story tab is the only place. Its left column and right column are those of the tab already; the
+middle holds the steps in the same cards as a saved story, with 「이전 단계 추가」, 「다음 단계 추가」 and 「제외」, and
+the flow drawing under them, so a box pressed in the drawing adds a step as the list does. The code that lays a story
+over the whole flow stays for this drawing, as the entry above says; only the place it is drawn in changed, from the
+flow tab to the middle of the story tab. The old addresses `#flow?new=1`, `#story?new=1` and `#stories?new=1` open
+this screen, so links kept from earlier reviews still reach it.
+Alternatives compared:
+- Keeping both entries: nothing to build, but two layouts of one draft, and the flow tab bar and the story list each
+  had to offer to start, and to hide the offer once the draft was open.
+- Making it only in the flow tab, with the list of screens in the pane: the story tab would lose its way to begin, and
+  the cards of a saved story and of a new one would be drawn in two places.
+- Only the list and no drawing in the story tab: a reviewer who thinks in the map loses the way to pick the next
+  step from where the screens lie.
+Known limit: the search box and the status filters of the flow tab bar are not on this screen; the list has its own
+search by name.
 
 **A route variable whose pattern duru could not read (`/:team({?})/drafts`) takes what a variable written without a
 pattern takes, both when a link address is matched to a route and when a browser test

@@ -2,7 +2,6 @@ function setView(view) {
   if (!state.data || state.failed) return;
   if (view !== state.view) Object.assign(state, { error: null, caseError: null, judgmentError: null });
   state.view = view;
-  if (state.composing && view === 'flow') state.flowPicked = false;
   render();
 }
 
@@ -21,22 +20,23 @@ function render() {
   // 고른 화면이 그림에 없으면 오른쪽 칸과 그림이 서로 다른 화면을 가리키므로 선택을 해제한다.
   if (flow && state.flowPicked && !flowScreens().some((n) => n.id === state.selected)) state.flowPicked = false;
   const picked = flow && state.flowPicked;
-  const listed = flowComposing();
+  const diagram = composeDiagram();
+  if (diagram) state.flowPicked = false;
   const main = document.querySelector('main');
   main.classList.toggle('flow', flow);
   main.classList.toggle('picked', picked);
-  main.classList.toggle('with-stories', listed);
-  document.getElementById('flow-stories').hidden = !listed;
+  main.classList.toggle('compose-flow', diagram);
   fitPanes();
-  for (const id of ['flow-bar', 'flow']) document.getElementById(id).hidden = !flow;
+  document.getElementById('flow-bar').hidden = !flow;
+  document.getElementById('flow').hidden = !flow && !diagram;
   document.getElementById('left').hidden = flow;
   for (const id of ['center', 'right']) document.getElementById(id).hidden = flow && !picked;
   document.getElementById('gaps').hidden = !flow || picked;
   for (const view of ['list', 'flow', 'story']) document.getElementById(`view-${view}`).className = state.view === view ? 'on' : '';
   syncHeaderLocks();
-  renderStoryPane();
   if (flow) renderFlow();
   else renderLeft();
+  if (diagram) renderFlow({ bar: false });
   if (picked || !flow) {
     renderCenter();
     renderRight();
@@ -49,7 +49,6 @@ const LIST_TABS = ['screens', 'untagged'];
 function placeHash({ step = true } = {}) {
   const p = new URLSearchParams();
   if (state.view === 'flow') {
-    if (state.composing) p.set('new', '1');
     if (state.flowPicked) p.set('screen', state.selected);
   } else if (state.view === 'story') {
     if (state.composing) p.set('new', '1');
@@ -82,12 +81,9 @@ function applyPlace() {
   const [head, query] = location.hash.slice(1).split('?');
   const p = new URLSearchParams(query ?? '');
   let go = render;
-  if (head === 'flow' && !p.has('story')) {
-    const composing = p.has('new') && !oldMap();
-    const screen = composing ? null : p.get('screen');
+  if (head === 'flow' && !p.has('story') && !(p.has('new') && !oldMap())) {
+    const screen = p.get('screen');
     go = () => {
-      state.composing = composing;
-      if (composing) Object.assign(state, { compose: state.compose ?? newCompose(), candidate: null });
       state.flowPicked = screen !== null && flowScreens().some((n) => n.id === screen);
       if (state.flowPicked) {
         if (state.side !== 'screens') state.caseError = null;
@@ -108,7 +104,7 @@ function applyPlace() {
       ? { of: storyPlaceKey(candidate, story), step: step - 1, screen: null }
       : null;
     const storyKnown = state.data.stories.list.some((st) => st.id === story) || unlistedMarks().some((m) => m.target.story === story);
-    state.composing = head !== 'flow' && p.has('new') && !oldMap();
+    state.composing = p.has('new') && !oldMap();
     if (state.composing) Object.assign(state, { compose: state.compose ?? newCompose(), candidate: null });
     if (candidate !== null) {
       if (candidate !== state.candidate && state.data.candidates.list.some((c) => c.key === candidate)) go = () => selectCandidate(candidate);
@@ -201,10 +197,9 @@ window.addEventListener('resize', () => {
   });
 });
 
-const startWidths = { left: 300, stories: 300, graph: null, right: 360 };
+const startWidths = { left: 300, graph: null, right: 360 };
 const draggedWidths = { ...startWidths };
-const PANE_MIN = { left: 300, stories: 240, graph: 240, center: 360, right: 320 };
-const GAPS_WIDTH = 360;
+const PANE_MIN = { left: 300, graph: 240, center: 360, right: 320 };
 
 // 끌어서 정한 너비는 그대로 두므로 창이 다시 넓어지면 돌아온다.
 function fitPanes() {
@@ -212,20 +207,17 @@ function fitPanes() {
   if (!main || main.hidden) return;
   const flow = main.classList.contains('flow');
   const picked = !flow || main.classList.contains('picked');
-  const listed = flow && main.classList.contains('with-stories');
-  if (!picked && !listed) return main.style.removeProperty('grid-template-columns');
+  if (!picked) return main.style.removeProperty('grid-template-columns');
   const side = flow ? 'graph' : 'left';
-  const keys = [listed ? 'stories' : null, ...(picked ? [side, 'right'] : [])].filter(Boolean);
+  const keys = [side, 'right'];
   const total = main.clientWidth;
-  const fixed = picked ? 0 : GAPS_WIDTH;
   const want = Object.fromEntries(keys.map((key) => [key, draggedWidths[key]]));
-  if (picked) want[side] ??= Math.max(0, (total - fixed - (want.stories ?? 0) - startWidths.right) / 2);
+  want[side] ??= Math.max(0, (total - startWidths.right) / 2);
   const room = Object.fromEntries(keys.map((key) => [key, Math.max(0, want[key] - PANE_MIN[key])]));
   const spare = keys.reduce((sum, key) => sum + room[key], 0);
-  const over = Math.min(keys.reduce((sum, key) => sum + want[key], 0) + fixed + (picked ? PANE_MIN.center : PANE_MIN.graph) - total, spare);
+  const over = Math.min(keys.reduce((sum, key) => sum + want[key], 0) + PANE_MIN.center - total, spare);
   if (over > 0) for (const key of keys) want[key] -= over * room[key] / spare;
-  const first = listed ? [`${want.stories}px`] : [];
-  main.style.gridTemplateColumns = [...first, ...(picked ? [`${want[side]}px`, 'minmax(0, 1fr)', `${want.right}px`] : ['minmax(0, 1fr)', `${GAPS_WIDTH}px`])].join(' ');
+  main.style.gridTemplateColumns = `${want[side]}px minmax(0, 1fr) ${want.right}px`;
 }
 
 window.addEventListener('resize', fitPanes);
@@ -238,11 +230,10 @@ for (const sash of /** @type {NodeListOf<HTMLElement>} */ (document.querySelecto
     const flow = main.classList.contains('flow');
     const picked = !flow || main.classList.contains('picked');
     const right = sash.id === 'sash-right';
-    const key = sash.id === 'sash-stories' ? 'stories' : right ? 'right' : flow ? 'graph' : 'left';
+    const key = right ? 'right' : flow ? 'graph' : 'left';
     const cols = getComputedStyle(main).gridTemplateColumns.split(' ').map(parseFloat);
-    const shift = main.classList.contains('with-stories') ? 1 : 0;
-    const from = cols[{ stories: 0, left: 0, graph: shift, right: cols.length - 1 }[key]];
-    const middle = picked ? cols.length - 2 : shift;
+    const from = cols[{ left: 0, graph: 0, right: cols.length - 1 }[key]];
+    const middle = picked ? cols.length - 2 : 0;
     const sign = right ? -1 : 1;
     const most = from + cols[middle] - (picked ? PANE_MIN.center : PANE_MIN.graph);
     sash.setPointerCapture(down.pointerId);

@@ -305,7 +305,7 @@ async function writeStories(url, body) {
   state.storyError = null;
   let written = null;
   await whileWritingStories(async () => {
-    renderStoryForms();
+    renderRight();
     try {
       const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error(await res.text());
@@ -315,11 +315,9 @@ async function writeStories(url, body) {
       state.storyError = written ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `저장하지 못했습니다: ${err.message}`;
     }
   });
-  if (!written) renderStoryForms();
+  if (!written) renderRight();
   return written;
 }
-
-const renderStoryForms = () => (flowComposing() ? renderStoryPane({ rebuild: true }) : renderRight());
 
 const storyIdProblem = (id) => (state.data.stories.list.some((st) => st.id === id) ? '같은 ID 의 스토리가 이미 있습니다.' : STORY_ID.test(id) ? null : '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.');
 

@@ -300,23 +300,22 @@ test('in a browser, a map built before links carried their conditions has no 「
   });
 });
 
-const paneSteps = (p: Page) => p.locator('#flow-stories .compose-step .screen-path').allTextContents();
-const paneLinks = (p: Page) => p.locator('#flow-stories .story-path .link .link-verdict').allTextContents();
-const untilPaneJudged = (p: Page, links: number) => p.waitForFunction((n) => document.querySelectorAll('#flow-stories .story-path .link .link-verdict').length === n && !document.querySelector('#flow-stories .link.l-pending'), links);
 const pressBox = async (p: Page, id: string) => (await screenBox(p, id)).click();
 
-test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a pane beside the flow, and while it is open each box pressed becomes the next step instead of opening the screen and stays where it was with the focus on it, numbered on its box over the whole flow with its links kept as drawn and the link between two neighbouring steps drawn in the style of its verdict, the same box twice in a row is refused as in the list, and 「닫기」 lets a box open its screen again', { skip: browserMissing }, async () => {
+test('in a browser, 「새 스토리」 in the flow bar opens the new-story screen of the story tab, where the screen list stays on the left and the whole flow is drawn in the center under the steps, each box pressed becomes the next step instead of opening the screen and stays where it was with the focus on it, numbered on its box over the whole flow with its links kept as drawn and the link between two neighbouring steps drawn in the style of its verdict, the same box twice in a row is refused as in the list, and in the flow tab a box opens its screen again', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         await p.waitForSelector('#flow .box.screen');
         const drawn = await boxCount(p);
-        assert.equal(await p.isVisible('#flow-stories'), false);
         await p.click('#flow-bar button.new-story');
-        assert.equal(await placeOf(p), '#flow?new=1');
-        assert.equal(await p.isVisible('#flow-stories'), true);
-        assert.equal(await p.locator('#flow-bar button.new-story').count(), 0);
-        assert.equal(await p.textContent('#flow-stories .no-steps'), '아직 넣은 화면이 없습니다.');
+        assert.equal(await placeOf(p), '#story?new=1');
+        await p.waitForSelector('#pick-list li');
+        assert.deepEqual(await p.evaluate(() => ['flow-bar', 'flow', 'left', 'center'].map((id) => !document.getElementById(id)!.hidden)), [false, true, true, true]);
+        assert.equal(await boxCount(p), drawn, 'the whole flow is drawn in the center');
+        const [steps, diagram] = await p.evaluate(() => ['center', 'flow'].map((id) => document.getElementById(id)!.getBoundingClientRect().toJSON()));
+        assert.ok(steps.bottom <= diagram.top + 1 && steps.left === diagram.left, 'the steps stand above the diagram');
+        assert.equal(await p.textContent('#center .no-steps'), '아직 넣은 화면이 없습니다.');
         assert.match((await (await screenBox(p, '/home#Home')).getAttribute('title'))!, /\n누르면 새 스토리의 단계로 넣습니다$/);
 
         await pressBox(p, '/home#Home');
@@ -325,13 +324,13 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a 
         await member.focus();
         const before = (await member.boundingBox())!;
         await p.keyboard.press('Enter');
-        await untilPaneJudged(p, 1);
+        await untilJudged(p, 1);
         assert.deepEqual(await pathMarks(p, 'story-tag'), [['/admin/member#AdminMember', '조건', 'l-conditioned']], 'a mark now stands before the box');
         const after = (await (await screenBox(p, '/admin/member#AdminMember')).boundingBox())!;
         assert.deepEqual([Math.round(after.x), Math.round(after.y)], [Math.round(before.x), Math.round(before.y)]);
         assert.equal(await p.evaluate(() => (document.activeElement as HTMLElement).dataset.key), '/admin/member#AdminMember');
-        for (const step of [1, 0]) await takeOutStep(p, '#flow-stories', step);
-        await p.waitForSelector('#flow-stories .no-steps');
+        for (const step of [1, 0]) await takeOutStep(p, '#center', step);
+        await p.waitForSelector('#center .no-steps');
 
         await pressBox(p, '/home#Home');
         await p.waitForFunction(() => document.querySelector('#flow .story-badge'));
@@ -340,29 +339,28 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a 
         const spot = (await twice.boundingBox())!;
         await twice.click();
         await twice.click();
-        assert.equal(await p.textContent('#flow-stories .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
+        assert.equal(await p.textContent('#center .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
         await untilSet(() => held.sent.length === 1, 'the check');
         held.release!();
-        await untilPaneJudged(p, 1);
+        await untilJudged(p, 1);
         await p.unroute('**/api/stories/check');
-        assert.deepEqual(await paneSteps(p), ['/home', '/admin/member']);
+        assert.deepEqual(await composeSteps(p), ['/home', '/admin/member']);
         const kept = (await (await screenBox(p, '/admin/member#AdminMember')).boundingBox())!;
         assert.deepEqual([Math.round(kept.x), Math.round(kept.y)], [Math.round(spot.x), Math.round(spot.y)], 'a second press on the same box keeps the place of the first');
-        for (const step of [1, 0]) await takeOutStep(p, '#flow-stories', step);
-        await p.waitForSelector('#flow-stories .no-steps');
+        for (const step of [1, 0]) await takeOutStep(p, '#center', step);
+        await p.waitForSelector('#center .no-steps');
 
         for (const id of HELP_PATH) await pressBox(p, id);
-        await untilPaneJudged(p, 2);
-        assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
-        assert.deepEqual(await paneLinks(p), ['이어짐', '링크 없음']);
-        assert.deepEqual(await p.locator('#flow-stories .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
-        assert.equal(await p.locator(`#flow-stories .story-path ${NO_MOVE}`).count(), 0);
-        assert.equal(await p.locator('#flow-stories .story-path :is(button.add-step, .step-acts button)').count(), 0);
-        await pressStep(p, '#flow-stories', 1);
-        assert.deepEqual(await p.locator('#flow-stories .story-path button.add-step').allTextContents(), ['+ 이전 단계 추가', '+ 다음 단계 추가']);
-        assert.deepEqual(await p.locator('#flow-stories .story-path .step-acts button').allTextContents(), ['제외']);
-        assert.deepEqual(await pressedSteps(p, '#flow-stories'), ['1']);
-        assert.equal(await p.isVisible('#center'), false, 'no screen was opened');
+        await untilJudged(p, 2);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
+        assert.deepEqual(await composeLinks(p), ['이어짐', '링크 없음']);
+        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
+        assert.equal(await p.locator(`#center .story-path ${NO_MOVE}`).count(), 0);
+        assert.equal(await p.locator('#center .story-path :is(button.add-step, .step-acts button)').count(), 0);
+        await pressStep(p, '#center', 1);
+        assert.deepEqual(await p.locator('#center .story-path button.add-step').allTextContents(), ['+ 이전 단계 추가', '+ 다음 단계 추가']);
+        assert.deepEqual(await p.locator('#center .story-path .step-acts button').allTextContents(), ['제외']);
+        assert.deepEqual(await pressedSteps(p, '#center'), ['1']);
         assert.equal(await boxCount(p), drawn, 'the whole flow stays drawn');
         assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), [['/help#Help', '3'], ['/home#Home', '2'], ['/signin#SignIn', '1']]);
         assert.deepEqual(await pathEdges(p), [['/signin#SignIn', '/home#Home', 'l-open']]);
@@ -371,11 +369,11 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a 
         assert.deepEqual(await look('/signin#SignIn', '/help#Help'), ['5px, 4px', '0.9'], 'a guarded link keeps its dashes');
 
         await pressBox(p, '/help#Help');
-        assert.equal(await p.textContent('#flow-stories .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
-        assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
+        assert.equal(await p.textContent('#center .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
         const scrolled = await p.$eval('#flow', (f) => { f.scrollTop = 40; f.scrollLeft = 40; return [f.scrollTop, f.scrollLeft]; });
-        await takeOutStep(p, '#flow-stories', 2);
-        await untilPaneJudged(p, 1);
+        await takeOutStep(p, '#center', 2);
+        await untilJudged(p, 1);
         assert.deepEqual(await p.$eval('#flow', (f) => [f.scrollTop, f.scrollLeft]), scrolled, 'a refused press leaves no place to scroll back to');
         const pending = holdRequests(p, '**/api/stories/check');
         await pressBox(p, '/help#Help');
@@ -385,97 +383,85 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a 
         assert.deepEqual(await p.$eval('#flow', (f) => [f.scrollTop, f.scrollLeft]), waiting, 'a redraw before the verdict leaves the scroll alone');
         await p.click('#flow-zoom .zoom-out');
         pending.release!();
-        await untilPaneJudged(p, 2);
+        await untilJudged(p, 2);
         await p.unroute('**/api/stories/check');
         const judged = await p.$eval('#flow', (f) => { f.scrollTop = 20; f.scrollLeft = 20; return [f.scrollTop, f.scrollLeft]; });
         await p.click('#flow-zoom .zoom-in');
         assert.deepEqual(await p.$eval('#flow', (f) => [f.scrollTop, f.scrollLeft]), judged, 'and so does one after it');
         await p.click('#flow-zoom .zoom-out');
         await p.click('#flow .story-chip.exit');
-        await untilPaneJudged(p, 3);
-        assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help', '/home'], 'a press on the mark inside a box adds that box');
+        await untilJudged(p, 3);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help', '/home'], 'a press on the mark inside a box adds that box');
         assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), [['/help#Help', '3'], ['/home#Home', '2·4'], ['/signin#SignIn', '1']]);
-        await takeOutStep(p, '#flow-stories', 3);
-        await untilPaneJudged(p, 2);
-        assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
+        await takeOutStep(p, '#center', 3);
+        await untilJudged(p, 2);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
 
-        await p.click('#view-story');
-        await p.click('#left button.leave-compose');
         await p.click('#view-flow');
         assert.equal(await placeOf(p), '#flow');
-        assert.equal(await p.isVisible('#flow-stories'), false);
         assert.equal(await p.textContent('#flow-bar button.new-story'), '새 스토리 이어 쓰기');
-        assert.deepEqual(await pillMarks(p, 'story-badge'), []);
-        await p.click('#flow-bar button.new-story');
-        assert.equal(await p.isVisible('#flow-stories'), true, 'the pane opens again');
-        assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
-        await p.click('#flow-stories button.leave-compose');
-        await p.goBack();
-        await p.waitForSelector('#flow-stories .compose-step');
-        assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
-        await p.goForward();
-        await p.waitForSelector('#flow-bar button.new-story');
-        await pressBox(p, '/home#Home');
+        assert.deepEqual(await pillMarks(p, 'story-badge'), [], 'the flow tab draws no steps');
+        await pressBox(p, '/help#Help');
         await p.waitForSelector('#center', { state: 'visible' });
-        assert.equal(await placeOf(p), '#flow?screen=/home#Home');
+        assert.equal(await placeOf(p), '#flow?screen=/help#Help', 'a box in the flow tab opens its screen');
+        await p.click('.flowbar .unpick');
+        await p.click('#flow-bar button.new-story');
+        assert.equal(await placeOf(p), '#story?new=1');
+        await untilJudged(p, 2);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help'], 'the steps are kept');
         assert.deepEqual(errors, []);
       }, { view: 'flow' }),
     ),
   );
 });
 
-test('in a browser, a new story written in the story tab goes on in the flow and back with the same steps, its name being typed is left alone when a verdict arrives, and saving it in the flow writes the same story file as the story tab does and opens the saved story in the story tab', { skip: browserMissing }, async () => {
+test('in a browser, a screen pressed in the list and a box pressed in the diagram add to the same new story, its name being typed is left alone when a verdict arrives, and saving writes the story file and opens the saved story', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         await startNewStory(p);
         await pickScreen(p, '/signin');
         await p.fill('#compose-name', '로그인해 도움말을 연다');
-        await p.click('#view-flow');
-        await p.waitForSelector('#flow-stories .compose-step');
-        assert.equal(await placeOf(p), '#flow?new=1');
-        assert.deepEqual(await paneSteps(p), ['/signin']);
-        const name = (await p.$('#flow-stories #compose-name'))!;
-        assert.equal(await name.inputValue(), '로그인해 도움말을 연다');
+        await untilJudged(p, 0);
         await pressBox(p, '/home#Home');
-        await untilPaneJudged(p, 1);
-        assert.equal(await name.evaluate((el: HTMLInputElement) => el.isConnected), true);
-
-        await p.click('#view-story');
         await untilJudged(p, 1);
-        assert.equal(await placeOf(p), '#story?new=1');
-        assert.deepEqual(await composeSteps(p), ['/signin', '/home']);
-        await p.click('#view-flow');
-        await untilPaneJudged(p, 1);
-        const held = holdRequests(p, '**/api/stories/check');
-        await pressBox(p, '/help#Help');
-        await untilSet(() => held.sent.length === 1, 'the check');
-        await p.click('#view-story');
-        held.release!();
+        const name = (await p.$('#compose-name'))!;
+        assert.equal(await name.inputValue(), '로그인해 도움말을 연다');
+        assert.equal(await name.evaluate((el: HTMLInputElement) => el.isConnected), true);
+        await pickScreen(p, '/help');
         await untilJudged(p, 2);
-        await p.unroute('**/api/stories/check');
         assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
-        await p.click('#view-flow');
-        await untilPaneJudged(p, 2);
-        const scrolled = await p.$eval('#flow', (f) => { f.scrollTop = 40; f.scrollLeft = 40; return [f.scrollTop, f.scrollLeft]; });
-        await takeOutStep(p, '#flow-stories', 2);
-        await untilPaneJudged(p, 1);
-        assert.deepEqual(await p.$eval('#flow', (f) => [f.scrollTop, f.scrollLeft]), scrolled, 'a box pressed before going to the list is not scrolled back to later');
-        await pressBox(p, '/help#Help');
-        await untilPaneJudged(p, 2);
-        assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
+        assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), [['/help#Help', '3'], ['/home#Home', '2'], ['/signin#SignIn', '1']], 'the diagram numbers what the list added');
 
-        await p.fill('#flow-stories #compose-id', 'help-from-signin');
-        await p.fill('#flow-stories #compose-memo', '홈에 링크가 없다.');
-        await p.click('#flow-stories button.save-compose');
+        await p.fill('#compose-id', 'help-from-signin');
+        await p.fill('#compose-memo', '홈에 링크가 없다.');
+        await p.click('button.save-compose');
         await p.waitForSelector('#center .story-line');
         const { date, ...saved } = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'help-from-signin.json'), 'utf8'));
         assert.deepEqual(saved, { name: '로그인해 도움말을 연다', screens: HELP_PATH, memo: '홈에 링크가 없다.', author: 'reviewer' });
         assert.equal(await placeOf(p), '#story?story=help-from-signin');
-        assert.equal(await p.isVisible('#flow-stories'), false);
         assert.equal(await p.textContent('#left button.new-story'), '새 스토리');
         assert.deepEqual(await lineSteps(p), HELP_PATH.map((id, i) => [String(i + 1), id]));
         assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, the old addresses of the flow tab and the story tab for a new story all open the new-story screen of the story tab', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        for (const old of ['#flow?new=1', '#story?new=1', '#stories?new=1']) {
+          await p.evaluate(() => { location.hash = '#screens'; });
+          await p.waitForSelector('#screen-list li');
+          await p.evaluate((hash) => { location.hash = hash; }, old);
+          await p.waitForSelector('#pick-list li');
+          assert.equal(await placeOf(p), '#story?new=1', old);
+          assert.equal(await p.locator('#center .no-steps').count(), 1, old);
+          assert.equal(await p.isVisible('#flow'), true, old);
+        }
       }),
     ),
   );

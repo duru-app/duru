@@ -1,9 +1,7 @@
 // 링크에 조건이 없는 예전 맵으로는 화면 순서를 대조하지 못한다.
 const oldMap = () => state.data.map.screens.some((sc) => sc.links.some((l) => !Array.isArray(l.conditions)));
 const newCompose = () => ({ screens: [], at: null, selected: null, id: '', name: '', memo: '', checked: null, turn: 0, error: null, refused: null, query: '' });
-const flowComposing = () => state.composing && state.view === 'flow';
-const composeShown = () => state.composing && state.view !== 'list';
-const composeStepsAt = () => (state.view === 'flow' ? '#flow-stories .compose-steps' : '#center');
+const composeDiagram = () => state.composing && state.view === 'story';
 const checkedCompose = (c) => (c.checked && c.checked.screens.join('\n') === c.screens.join('\n') ? c.checked : null);
 const repeatedStep = (screens) => screens.some((id, i) => i > 0 && id === screens[i - 1]);
 
@@ -16,7 +14,8 @@ function startCompose() {
   state.candidateTalk = null;
   state.need = null;
   state.storyError = null;
-  if (state.view === 'flow') state.flowPicked = false;
+  state.flowPicked = false;
+  state.view = 'story';
   render();
 }
 
@@ -44,18 +43,14 @@ function composeReach(c) {
 // 이름을 치는 동안 판정이 도착해도 입력 칸은 다시 만들지 않는다. 다시 만들면 조합 중이던 한글이 끊긴다.
 // 흐름 그림은 판정이 나온 뒤에 한 번만 다시 그린다.
 function renderCompose(focus, { drawing = false, pressed = null } = {}) {
-  if (!composeShown()) return;
-  if (state.view === 'flow') {
-    renderStoryPane();
-    if (drawing) renderFlow({ pressed });
-  } else {
-    renderPickList();
-    renderCenter();
-    const info = document.getElementById('right-info');
-    if (info.querySelector('#compose-reach')) syncComposeForm(info);
-    else renderRight();
-  }
-  if (focus) (focus.map((selector) => document.querySelector(`${composeStepsAt()} ${selector}`)).find((el) => el && !el.disabled))?.focus();
+  if (!composeDiagram()) return;
+  renderPickList();
+  renderCenter();
+  if (drawing) renderFlow({ bar: false, pressed });
+  const info = document.getElementById('right-info');
+  if (info.querySelector('#compose-reach')) syncComposeForm(info);
+  else renderRight();
+  if (focus) (focus.map((selector) => document.querySelector(`#center ${selector}`)).find((el) => el && !el.disabled))?.focus();
 }
 
 async function checkCompose(focus, pressed = null) {
@@ -81,7 +76,7 @@ const STEP_BUTTONS = ['step-press', 'remove', 'insert-before', 'insert-after', '
 
 function focusedStep() {
   const focused = document.activeElement;
-  if (!focused?.closest(composeStepsAt())) return null;
+  if (!focused?.closest('#center')) return null;
   const cls = focused.matches('button') && STEP_BUTTONS.find((c) => focused.classList.contains(c));
   if (!cls) return focused.matches('.story-path') ? ['.story-path'] : null;
   const step = /** @type {HTMLElement | null} */ (focused.closest('.compose-step'));
@@ -102,7 +97,7 @@ function addComposeScreen(id) {
     c.refused = '같은 화면을 이어서 넣을 수 없습니다.';
     return renderCompose();
   }
-  const box = flowComposing() ? document.querySelector(`#flow .box.screen[data-key="${CSS.escape(id)}"]`)?.getBoundingClientRect() : null;
+  const box = composeDiagram() ? document.querySelector(`#flow .box.screen[data-key="${CSS.escape(id)}"]`)?.getBoundingClientRect() : null;
   changeCompose((d) => {
     d.screens.splice(at, 0, id);
     if (d.at !== null) d.at += 1;
@@ -135,7 +130,7 @@ function composeCenter() {
   const pending = h('div', { class: 'link l-pending' }, c.error ? '판정 못 함' : '맞춰 보는 중');
   return [
     h('div', { class: 'title-row' }, h('h3', {}, c.name.trim() || '새 스토리'), checked ? storyChips(checked) : null),
-    h('p', { class: 'muted' }, `${state.view === 'flow' ? '흐름 그림에서 화면 상자를' : '왼쪽 목록에서 화면을'} 누르면 차례로 단계가 됩니다. 단계를 누르면 위아래에 「이전 단계 추가」 · 「다음 단계 추가」가, 단계 안에 「제외」가 나옵니다. 단계를 옮기려면 제외하고 맞는 자리에 다시 넣습니다. 순서를 바꿀 때마다 이웃한 화면 사이의 링크를 다시 맞춰 봅니다.`),
+    h('p', { class: 'muted' }, `왼쪽 목록에서 화면을, 아래 흐름 그림에서 화면 상자를 누르면 차례로 단계가 됩니다. 단계를 누르면 위아래에 「이전 단계 추가」 · 「다음 단계 추가」가, 단계 안에 「제외」가 나옵니다. 단계를 옮기려면 제외하고 맞는 자리에 다시 넣습니다. 순서를 바꿀 때마다 이웃한 화면 사이의 링크를 다시 맞춰 봅니다.`),
     c.refused ?? c.error ? h('p', { class: 'error compose-error' }, c.refused ?? c.error) : null,
     h('h2', {}, `화면 순서 ${c.screens.length}`),
     c.screens.length

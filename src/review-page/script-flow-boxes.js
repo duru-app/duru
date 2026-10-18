@@ -22,7 +22,7 @@ function screenPill(n, pick = () => pickScreen(n.id)) {
       n.moved ? `${LINK_VERDICT.configured}: ${n.moved.join(', ')}` : '',
       ...needs.tips,
       needs.bare ?? '',
-      flowComposing() ? COMPOSE_TIP : PICK_TIP,
+      composeDiagram() ? COMPOSE_TIP : PICK_TIP,
     ].filter(Boolean).join('\n'),
     'aria-pressed': 'false',
     onclick: pick,
