@@ -129,8 +129,8 @@ function renderStoryCenter() {
     storyWide(st),
     h('div', { class: 'story-tests' }, h('h2', {}, `스토리 테스트 ${storyTests.length}`),
       storyTests.length ? storyTests.map((t) => testItem(t, { depth: true, hide: [`story:${st.id}`] })) : h('p', { class: 'muted' }, '없음')),
-    ...storyPath(st, null, st.id),
-    storyFile(st)]);
+    ...savedStoryPath(st),
+    storyFile(stepsFileStory(st))]);
 }
 
 const storyPlaceKey = (candidate, story) => (candidate !== null ? `candidate\n${candidate}` : `story\n${story}`);
@@ -433,16 +433,24 @@ function askDiscard(c) {
   });
 }
 
-const unacceptAction = () => [
+const hasStoryFields = (st) => hasWritten(st) || Boolean(st.stepFields?.some((f) => hasWritten(f) || f.linkNeeds?.length));
+
+const unacceptAction = (st) => [
   h('h2', {}, '받기 되돌리기'),
-  storyForm(h('button', { class: 'unaccept', title: '스토리 파일을 지우고, 같은 화면 순서를 후보 목록에 다시 올립니다. 이 스토리에 남은 코멘트는 「떨어져 나감」으로 갑니다.', onclick: unacceptChosen }, '받기 되돌리기')),
+  storyForm(h('button', {
+    class: 'unaccept',
+    title: `스토리 파일을 지우고, 같은 화면 순서를 후보 목록에 다시 올립니다.${hasStoryFields(st) ? ' 이 스토리에 적은 조건 · 입력값 · 기대 결과도 파일과 함께 사라집니다.' : ''} 이 스토리에 남은 코멘트는 「떨어져 나감」으로 갑니다.`,
+    onclick: unacceptChosen,
+  }, '받기 되돌리기')),
 ];
 
 async function unacceptChosen() {
   const st = storyOf();
-  if (!st || !(await writeStories('/api/stories/unaccept', { id: st.id }))) return;
+  if (!st) return;
+  if (hasStoryFields(st) && !confirm(`받기를 되돌리면 스토리 파일 ${st.file} 을 지우므로, 이 스토리에 적은 조건 · 입력값 · 기대 결과도 함께 사라집니다. 그래도 되돌릴까요?`)) return;
+  if (!(await writeStories('/api/stories/unaccept', { id: st.id }))) return;
   const key = st.screens.join(' > ');
-  Object.assign(state, { story: null, storyDraft: null, storyEdit: null, candidateTalk: null });
+  Object.assign(state, { story: null, storyDraft: null, storyEdit: null, stepsEdit: null, candidateTalk: null });
   state.candidate = state.data.candidates.list.some((c) => c.key === key) ? key : null;
   render();
 }
@@ -452,8 +460,9 @@ async function saveStoryEdit() {
   if (!st) return;
   const written = await writeStories('/api/stories/edit', { id: st.id, name: state.storyEdit.name, memo: state.storyEdit.memo });
   if (!written) return;
-  const table = openTable();
-  if (table?.story === st.id && table.contentHash === written.previousHash) table.contentHash = written.contentHash;
+  for (const edit of [openTable(), openSteps()]) {
+    if (edit?.story === st.id && edit.contentHash === written.previousHash) edit.contentHash = written.contentHash;
+  }
   state.storyEdit = null;
   render();
 }

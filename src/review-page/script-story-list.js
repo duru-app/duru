@@ -140,13 +140,15 @@ function candidateGroup() {
 }
 
 function renderPickList() {
-  const c = state.compose;
-  const q = c.query.trim().toLowerCase();
+  const steps = openSteps();
+  const draft = steps ?? state.compose;
+  const screens = steps ? stepScreens(steps) : state.compose.screens;
+  const q = draft.query.trim().toLowerCase();
   const visible = state.data.map.screens.filter((sc) => !q || sc.id.toLowerCase().includes(q));
   const list = document.getElementById('pick-list');
   fill(list, ...visible.map((sc) => {
-    const used = c.screens.filter((id) => id === sc.id).length;
-    return h('li', { title: `${sc.path} ${sc.component}\n누르면 새 스토리의 단계로 넣습니다`, onclick: () => addComposeScreen(sc.id) },
+    const used = screens.filter((id) => id === sc.id).length;
+    return h('li', { title: `${sc.path} ${sc.component}\n누르면 ${steps ? '표시한 자리에 단계로' : '새 스토리의 단계로'} 넣습니다`, onclick: () => (steps ? addStepsScreen(sc.id) : addComposeScreen(sc.id)) },
       h('span', { class: 'name' }, h('span', {}, routeSegments(sc.path)), ' ', h('span', { class: 'muted component' }, sc.component)),
       used ? h('span', { class: 'count' }, `넣음 ${used}`) : null);
   }));

@@ -62,8 +62,15 @@ const pickScreen = (p: Page, routePath: string) => p.locator('#pick-list li').fi
 const composeSteps = (p: Page) => p.locator('#center .compose-step .screen-path').allTextContents();
 const composeLinks = (p: Page) => p.locator('#center .story-path .link .link-verdict').allTextContents();
 const untilJudged = (p: Page, links: number) => p.waitForFunction((n) => document.querySelectorAll('#center .story-path .link .link-verdict').length === n && !document.querySelector('#center .link.l-pending'), links);
-const stepButton = (step: number, cls: string) => `#center .compose-step[data-step="${step}"] button.${cls}`;
-const focusedStepButton = (p: Page) => p.evaluate(() => [document.activeElement!.closest<HTMLElement>('.compose-step')?.dataset.step, document.activeElement!.className]);
+const composeCard = (at: string, step: number) => `${at} .compose-step[data-step="${step}"]`;
+const stepHead = (at: string, step: number) => `${composeCard(at, step)} button.step-press`;
+const pressStep = (p: Page, at: string, step: number) => p.click(stepHead(at, step));
+const takeOutStep = async (p: Page, at: string, step: number) => {
+  if (await p.getAttribute(stepHead(at, step), 'aria-pressed') !== 'true') await pressStep(p, at, step);
+  await p.click(`${composeCard(at, step)} button.remove`);
+};
+const pressedSteps = (p: Page, at: string) => p.locator(`${at} .compose-step button.step-press[aria-pressed="true"]`).evaluateAll((els) => els.map((e) => e.closest<HTMLElement>('.compose-step')!.dataset.step));
+const NO_MOVE = ':is([draggable="true"], .grip, button.up, button.down)';
 
 async function startNewStory(p: Page) {
   await p.waitForSelector('#screen-list li');
@@ -115,7 +122,7 @@ test('in a browser, 「새 스토리」 turns the left column into a screen pick
   );
 });
 
-test('in a browser, moving a step of a new story with 「위로」 or 「아래로」 judges the links again at once and keeps the focus on the moved step, a step goes in before another or comes out, and the same screen twice in a row is refused', { skip: browserMissing }, async () => {
+test('in a browser, a step of a new story shows nothing to add or take out until it is pressed, also with Enter, and then shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」 on it, with nothing to move or drag; a screen goes in at the mark with the pressed step staying pressed, a step comes out, and the same screen twice in a row is refused', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -124,42 +131,69 @@ test('in a browser, moving a step of a new story with 「위로」 or 「아래�
         await pickScreen(p, '/home');
         await untilJudged(p, 1);
         assert.deepEqual([await composeLinks(p), await p.locator('#right .verdict').allTextContents()], [['이어짐'], ['도달 가능']]);
-        assert.deepEqual([await p.isDisabled(stepButton(0, 'up')), await p.isDisabled(stepButton(1, 'down'))], [true, true]);
-
-        await p.click(stepButton(0, 'down'));
-        await p.waitForFunction(() => document.querySelector('#center .story-path .link .link-verdict')?.textContent === '링크 없음');
-        assert.deepEqual(await composeSteps(p), ['/home', '/signin']);
-        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
-        assert.deepEqual(await focusedStepButton(p), ['1', 'up']);
-        await p.keyboard.press('Enter');
-        await p.waitForFunction(() => document.querySelector('#center .story-path .link .link-verdict')?.textContent === '이어짐');
-        assert.deepEqual(await composeSteps(p), ['/signin', '/home']);
-        assert.deepEqual(await focusedStepButton(p), ['0', 'down']);
+        assert.equal(await p.locator(`#center .story-path ${NO_MOVE}`).count(), 0);
+        assert.equal(await p.locator('#center .story-path :is(button.add-step, .step-acts button)').count(), 0);
 
         await pickScreen(p, '/home');
         assert.equal(await p.textContent('#center .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
         assert.deepEqual(await composeSteps(p), ['/signin', '/home']);
 
-        await p.click(stepButton(1, 'insert-before'));
+        await pressStep(p, '#center', 0);
+        assert.deepEqual(await pressedSteps(p, '#center'), ['0']);
+        assert.deepEqual(await p.locator('#center .story-path button.add-step').allTextContents(), ['+ 이전 단계 추가', '+ 다음 단계 추가']);
+        assert.deepEqual(await p.locator(`${composeCard('#center', 0)} .step-acts button`).allTextContents(), ['제외']);
+        await pressStep(p, '#center', 1);
+        assert.deepEqual(await pressedSteps(p, '#center'), ['1']);
+        assert.equal(await p.locator(`${composeCard('#center', 0)} .step-acts`).count(), 0);
+        assert.deepEqual(await p.locator('#center .story-path button.add-step').allTextContents(), ['+ 이전 단계 추가', '+ 다음 단계 추가'], 'the last step can mark the end too');
+        await p.click('#center button.insert-after');
+        const lastIsMark = () => p.$eval('#center .story-path', (path) => path.lastElementChild!.matches('.insert-mark'));
+        assert.equal(await lastIsMark(), true);
+        assert.equal(await p.locator('#center button.insert-after').count(), 0);
+        await pickScreen(p, '/help');
+        await untilJudged(p, 2);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
+        assert.equal(await lastIsMark(), true, 'the mark at the end stays after the screen put there');
+        await p.click('#center .insert-mark button.insert-cancel');
+        await takeOutStep(p, '#center', 2);
+        await untilJudged(p, 1);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home']);
+        await p.click(composeCard('#center', 1), { position: { x: 3, y: 3 } });
+        assert.deepEqual(await pressedSteps(p, '#center'), ['1'], 'a click on the rest of a step presses it too');
+        await p.click(composeCard('#center', 1), { position: { x: 3, y: 3 } });
+        assert.deepEqual(await pressedSteps(p, '#center'), ['1'], 'and never lets it go');
+        await pressStep(p, '#center', 1);
+        assert.deepEqual(await pressedSteps(p, '#center'), [], 'a pressed step pressed again by its head lets go');
+
+        await p.focus(stepHead('#center', 1));
+        await p.keyboard.press('Enter');
+        assert.deepEqual(await pressedSteps(p, '#center'), ['1']);
+        assert.equal(await p.evaluate(() => document.activeElement!.matches('#center .compose-step[data-step="1"] button.step-press')), true);
+        assert.equal(await p.locator('#center .story-path [role="button"]').count(), 0, 'no step is a button holding other buttons');
+        await p.click('#center button.insert-before');
         assert.match((await p.textContent('#center .insert-mark'))!, /^다음에 고르는 화면이 여기 들어갑니다/);
+        assert.equal(await p.evaluate(() => document.activeElement!.matches('#center .insert-mark button.insert-cancel')), true);
+        assert.equal(await p.locator('#center button.insert-before').count(), 0, 'the place marked has no line to mark it again');
         await pickScreen(p, '/help');
         await pickScreen(p, '/lab');
         await untilJudged(p, 3);
         assert.deepEqual(await composeSteps(p), ['/signin', '/help', '/lab', '/home']);
+        assert.deepEqual(await pressedSteps(p, '#center'), ['3'], 'the pressed step moves along with the screens put in before it');
         assert.equal(await p.locator('#center .compose-error').count(), 0);
-        await p.click('#center .insert-mark button.insert-at-end');
+        await p.click('#center .insert-mark button.insert-cancel');
         assert.equal(await p.locator('#center .insert-mark').count(), 0);
 
-        await p.click(stepButton(1, 'remove'));
+        await takeOutStep(p, '#center', 1);
         await untilJudged(p, 2);
         assert.deepEqual(await composeSteps(p), ['/signin', '/lab', '/home']);
+        assert.deepEqual(await pressedSteps(p, '#center'), []);
         assert.deepEqual(await p.locator('#pick-list li .count').allTextContents(), ['넣음 1', '넣음 1', '넣음 1']);
       }),
     ),
   );
 });
 
-test('in a browser, a step of a new story is dragged onto another step to take its place, something else dropped on a step moves nothing, and the name being typed is left alone when a verdict arrives', { skip: browserMissing }, async () => {
+test('in a browser, the name being typed for a new story is left alone when a verdict arrives', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -167,22 +201,13 @@ test('in a browser, a step of a new story is dragged onto another step to take i
         for (const routePath of ['/signin', '/home', '/help']) await pickScreen(p, routePath);
         await untilJudged(p, 2);
         const name = (await p.$('#compose-name'))!;
-        await p.fill('#compose-name', '끌어서 옮긴다');
+        await p.fill('#compose-name', '하나 빼고 다시 본다');
 
-        await p.evaluate(() => {
-          const dropped = new DataTransfer();
-          dropped.setData('text/plain', '0');
-          document.querySelector('#center .compose-step[data-step="1"]')!.dispatchEvent(new DragEvent('drop', { dataTransfer: dropped, bubbles: true, cancelable: true }));
-        });
-        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
-
-        await p.locator('#center .compose-step[data-step="2"]').dragTo(p.locator('#center .compose-step[data-step="0"]'));
-        await p.waitForFunction(() => document.querySelector('#center .compose-step .screen-path')?.textContent === '/help');
-        await untilJudged(p, 2);
-        assert.deepEqual(await composeSteps(p), ['/help', '/signin', '/home']);
-        assert.deepEqual(await composeLinks(p), ['링크 없음', '이어짐']);
-        assert.equal(await name.evaluate((el: HTMLInputElement) => el.isConnected && el.value), '끌어서 옮긴다');
-        assert.equal(await p.textContent('#center h3'), '끌어서 옮긴다');
+        await takeOutStep(p, '#center', 1);
+        await untilJudged(p, 1);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/help']);
+        assert.equal(await name.evaluate((el: HTMLInputElement) => el.isConnected && el.value), '하나 빼고 다시 본다');
+        assert.equal(await p.textContent('#center h3'), '하나 빼고 다시 본다');
       }),
     ),
   );
@@ -305,7 +330,7 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a 
         const after = (await (await screenBox(p, '/admin/member#AdminMember')).boundingBox())!;
         assert.deepEqual([Math.round(after.x), Math.round(after.y)], [Math.round(before.x), Math.round(before.y)]);
         assert.equal(await p.evaluate(() => (document.activeElement as HTMLElement).dataset.key), '/admin/member#AdminMember');
-        for (const step of [1, 0]) await p.click(`#flow-stories .compose-step[data-step="${step}"] button.remove`);
+        for (const step of [1, 0]) await takeOutStep(p, '#flow-stories', step);
         await p.waitForSelector('#flow-stories .no-steps');
 
         await pressBox(p, '/home#Home');
@@ -323,7 +348,7 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a 
         assert.deepEqual(await paneSteps(p), ['/home', '/admin/member']);
         const kept = (await (await screenBox(p, '/admin/member#AdminMember')).boundingBox())!;
         assert.deepEqual([Math.round(kept.x), Math.round(kept.y)], [Math.round(spot.x), Math.round(spot.y)], 'a second press on the same box keeps the place of the first');
-        for (const step of [1, 0]) await p.click(`#flow-stories .compose-step[data-step="${step}"] button.remove`);
+        for (const step of [1, 0]) await takeOutStep(p, '#flow-stories', step);
         await p.waitForSelector('#flow-stories .no-steps');
 
         for (const id of HELP_PATH) await pressBox(p, id);
@@ -331,6 +356,12 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a 
         assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
         assert.deepEqual(await paneLinks(p), ['이어짐', '링크 없음']);
         assert.deepEqual(await p.locator('#flow-stories .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
+        assert.equal(await p.locator(`#flow-stories .story-path ${NO_MOVE}`).count(), 0);
+        assert.equal(await p.locator('#flow-stories .story-path :is(button.add-step, .step-acts button)').count(), 0);
+        await pressStep(p, '#flow-stories', 1);
+        assert.deepEqual(await p.locator('#flow-stories .story-path button.add-step').allTextContents(), ['+ 이전 단계 추가', '+ 다음 단계 추가']);
+        assert.deepEqual(await p.locator('#flow-stories .story-path .step-acts button').allTextContents(), ['제외']);
+        assert.deepEqual(await pressedSteps(p, '#flow-stories'), ['1']);
         assert.equal(await p.isVisible('#center'), false, 'no screen was opened');
         assert.equal(await boxCount(p), drawn, 'the whole flow stays drawn');
         assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), [['/help#Help', '3'], ['/home#Home', '2'], ['/signin#SignIn', '1']]);
@@ -343,7 +374,7 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a 
         assert.equal(await p.textContent('#flow-stories .compose-error'), '같은 화면을 이어서 넣을 수 없습니다.');
         assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
         const scrolled = await p.$eval('#flow', (f) => { f.scrollTop = 40; f.scrollLeft = 40; return [f.scrollTop, f.scrollLeft]; });
-        await p.click('#flow-stories .compose-step[data-step="2"] button.remove');
+        await takeOutStep(p, '#flow-stories', 2);
         await untilPaneJudged(p, 1);
         assert.deepEqual(await p.$eval('#flow', (f) => [f.scrollTop, f.scrollLeft]), scrolled, 'a refused press leaves no place to scroll back to');
         const pending = holdRequests(p, '**/api/stories/check');
@@ -364,7 +395,7 @@ test('in a browser, 「새 스토리」 of the flow sits in the bar and opens a 
         await untilPaneJudged(p, 3);
         assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help', '/home'], 'a press on the mark inside a box adds that box');
         assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), [['/help#Help', '3'], ['/home#Home', '2·4'], ['/signin#SignIn', '1']]);
-        await p.click('#flow-stories .compose-step[data-step="3"] button.remove');
+        await takeOutStep(p, '#flow-stories', 3);
         await untilPaneJudged(p, 2);
         assert.deepEqual(await paneSteps(p), ['/signin', '/home', '/help']);
 
@@ -427,7 +458,7 @@ test('in a browser, a new story written in the story tab goes on in the flow and
         await p.click('#view-flow');
         await untilPaneJudged(p, 2);
         const scrolled = await p.$eval('#flow', (f) => { f.scrollTop = 40; f.scrollLeft = 40; return [f.scrollTop, f.scrollLeft]; });
-        await p.click('#flow-stories .compose-step[data-step="2"] button.remove');
+        await takeOutStep(p, '#flow-stories', 2);
         await untilPaneJudged(p, 1);
         assert.deepEqual(await p.$eval('#flow', (f) => [f.scrollTop, f.scrollLeft]), scrolled, 'a box pressed before going to the list is not scrolled back to later');
         await pressBox(p, '/help#Help');

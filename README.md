@@ -649,12 +649,12 @@ drawing, a screen in the right column, or Enter in the search box for the first 
 as the next step instead of opening it, and the drawing scrolls to keep the box pressed in place where it can. The whole flow
 stays drawn, and each chosen box carries its step number. Two neighbouring steps are joined in the style of their
 verdict: on the link itself when the second box hangs under the first, otherwise by a mark in each of the two boxes
-with the other step's number. A column opens left of the drawing with the steps, which move with 「위로」, 「아래로」 or by
-dragging, go in before another step with 「앞에 넣기」 and come out with 「빼기」, then the verdict, and ID, name and memo
-with 「스토리 저장」. The same screen twice in a row is refused as in the list; a box already chosen is added again,
-since a story can pass a screen twice. A new story begun in the story tab goes on in the flow, and back. 「닫기」
-closes that column and keeps the steps for 「새 스토리 이어 쓰기」, and a box opens its screen again. A story saved in
-the flow opens in the story tab.
+with the other step's number. A column opens left of the drawing with the steps, then the verdict, and ID, name and
+memo with 「스토리 저장」. Pressing a step there shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」
+on it, as in 「순서 고치기」; a step is moved by taking it out and adding it again. The same screen twice in a row is
+refused as in the list; a box already chosen is added again, since a story can pass a screen twice. A new story begun
+in the story tab goes on in the flow, and back. 「닫기」 closes that column and keeps the steps for 「새 스토리 이어
+쓰기」, and a box opens its screen again. A story saved in the flow opens in the story tab.
 
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
@@ -734,14 +734,26 @@ opens its name and text; 「저장」 writes them into the need file, and every 
 text, since stories pick it by its file name. If the need file changed elsewhere since it was opened, the save is
 refused and 「새로 읽기」 and 「덮어쓰기」 are offered, as in the story table. If it is deleted or can no longer be
 read, the editor closes with a note that what was typed was not saved. 「스토리 파일」 at the bottom unfolds
-the story in the shape of its file, with the steps that have any of these lines written as objects. Candidates are
+the story in the shape of its file, with the steps that have any of these lines written as objects. 「순서 고치기」 at the
+end of the 「화면 순서」 heading changes which screens the story passes: the left column becomes a screen picker.
+Pressing a step, or Enter on it, shows 「이전 단계 추가」 above it and 「다음 단계 추가」 below it, which mark where the
+next screen picked goes (「취소」 on the mark sends it to the end again), and 「제외」 on it. Steps are not moved or
+dragged; a step in the wrong place is taken out and put in again. A kept step keeps its conditions, inputs and
+expected results, a step put in has none, and the conditions of the link into a step stay only while the step
+before it is the one it had, which its link row says before the order is saved. Taking out a step with lines written
+asks first, naming what goes with it, with 「제외」 and 「취소」. The right pane shows the verdict and 「사전 조건」 of the
+order being changed, with 「순서 저장」 and 「취소」 under the verdict; an order with the
+same screen twice in a row or with no step is not saved and says why, and a file changed elsewhere is refused with
+「새로 읽기」 and 「덮어쓰기」 as in the table. While the order is open the pencils wait, and while a table is open
+「순서 고치기」 waits. A comment on a step whose number no longer holds its screen then shows under 「떨어져 나감」. Candidates are
 listed below with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the address of a chosen candidate holds its screen order, as
 `#story?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
 screen order, and the candidate is discarded only once a reason is written there. 「버리기」 in the window or Ctrl+Enter
 saves it and moves on to the next candidate; 「취소」 or Escape closes the window, and a click outside it does not. If
 the discard is not saved, the window stays open with the reason and the error. A story accepted from a candidate has
-「받기 되돌리기」 below its name and memo: it deletes the story file, without asking, and the candidate is listed again
-and chosen. The comments left on that story then show under 「떨어져 나감」, as for any story file that is gone. A story
+「받기 되돌리기」 below its name and memo: it deletes the story file and the candidate is listed again and chosen. It
+asks first only when conditions, inputs or expected results are written in the story, and its title then says they go
+with the file. The comments left on that story then show under 「떨어져 나감」, as for any story file that is gone. A story
 made with 「새 스토리」 or written by hand has no such button. Below the candidates, 「버린 후보 N」 opens the discarded
 candidates, newest first, each with its name, its screens, the reason and the date; a screen order discarded more
 than once shows its latest discard. Each has 「되돌리기」: it writes the undo file, without asking, and the

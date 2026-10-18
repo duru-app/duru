@@ -30,7 +30,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: /** @type {PageData} */ (null), selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateTalk: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, discardedOpen: false, undiscardError: null, callInfoShut: null, storyQuery: '', storyStep: null, storyGapsOpen: false, talkScope: 'here', talkFilter: 'all', reachRecord: null, storyFileOpen: false, need: null, needEdit: null, needSaved: null, fieldsEdit: null, fieldsSaved: null };
+const state = { data: /** @type {PageData} */ (null), selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateTalk: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, discardedOpen: false, undiscardError: null, callInfoShut: null, storyQuery: '', storyStep: null, storyGapsOpen: false, talkScope: 'here', talkFilter: 'all', reachRecord: null, storyFileOpen: false, need: null, needEdit: null, needSaved: null, fieldsEdit: null, fieldsSaved: null, stepsEdit: null, stepsSaved: null };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -137,6 +137,7 @@ async function load() {
     checkCompose();
   }
   dropLostTable();
+  dropLostSteps();
 }
 
 const screenPanesShown = () => (state.view === 'list' && state.side === 'screens') || (state.view === 'flow' && state.flowPicked);
@@ -168,6 +169,8 @@ function selectStory(id) {
     state.storyOpen.clear();
     state.fieldsEdit = null;
     state.fieldsSaved = null;
+    state.stepsEdit = null;
+    state.stepsSaved = null;
   }
   state.story = id;
   state.candidate = null;

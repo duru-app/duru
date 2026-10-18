@@ -313,6 +313,42 @@ export function writeStoryFields(dir: string, id: string, { place, fields, conte
   }, { contentHash });
 }
 
+const isStepPick = (v: any) => isPlainObject(v) && isText(v.screen)
+  && (Object.keys(v).length === 1 || (Object.keys(v).length === 2 && isStep(v.step)));
+
+function withoutLinkNeeds(step: any) {
+  if (!isPlainObject(step)) return step;
+  const { linkNeeds, ...rest } = step as Record<string, unknown>;
+  return Object.keys(rest).length === 1 ? rest.screen : rest;
+}
+
+// 앞 단계가 바뀌면 들어오는 링크 조건을 적어 둔 링크가 없어지므로 그 조건을 뗀다.
+export function writeStorySteps(dir: string, id: string, { steps, contentHash }: { steps: unknown; contentHash: unknown }) {
+  if (!Array.isArray(steps) || !steps.length) throw new Error('steps 에 단계를 하나 이상 차례대로 담아야 합니다');
+  const bad = steps.findIndex((s) => !isStepPick(s));
+  if (bad >= 0) throw new Error(`steps 의 ${bad + 1} 번째는 남길 단계의 { "step": 단계 번호, "screen": 그 단계의 화면 ID } 나 새로 넣을 단계의 { "screen": 화면 ID } 여야 합니다`);
+  if (typeof contentHash !== 'string') throw new Error('contentHash 에 페이지가 읽은 스토리 파일 내용의 SHA-256 을 보내야 합니다');
+  const picks: { step?: number; screen: string }[] = steps;
+  return rewriteStory(dir, id, (raw) => {
+    let last = 0;
+    const screens = picks.map((pick, i) => {
+      if (pick.step === undefined) return pick.screen;
+      if (pick.step > raw.screens.length) throw new Error(`스토리 ${id} 에는 ${pick.step} 번째 단계가 없습니다`);
+      const screen = screenOf(raw.screens[pick.step - 1]);
+      if (screen !== pick.screen) throw new Error(`스토리 ${id} 의 ${pick.step} 번째 단계는 ${pick.screen} 이 아니라 ${screen} 화면이라 쓰지 않았습니다`);
+      if (pick.step === last) throw new Error(`${pick.step} 번째 단계를 두 번 남길 수 없습니다`);
+      if (pick.step < last) throw new Error(`남기는 단계는 파일에 있던 차례대로 적어야 하는데, ${pick.step} 번째 단계가 ${last} 번째 단계 뒤에 왔습니다`);
+      last = pick.step;
+      const step = raw.screens[pick.step - 1];
+      return i > 0 && picks[i - 1].step === pick.step - 1 ? step : withoutLinkNeeds(step);
+    });
+    const next = { ...raw, screens };
+    const problem = problemOf(next);
+    if (problem) throw new Error(problem);
+    return next;
+  }, { contentHash });
+}
+
 function rewriteStory(dir: string, id: string, change: (raw: any) => object, read?: { contentHash: unknown }) {
   const story = loadStories(dir).stories.find((s) => s.id === id);
   if (!story) throw new Error(`스토리 ${id} 를 찾지 못했습니다`);
