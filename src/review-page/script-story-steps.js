@@ -4,6 +4,7 @@ const newStepsEdit = (st) => ({
   changedHash: null,
   steps: st.steps.map((s, i) => ({ key: nextRowKey(), step: i + 1, screen: s.screen, fields: st.stepFields?.[i] ?? {} })),
   at: null,
+  selected: null,
   refused: null,
   removing: null,
   checked: st,
@@ -124,29 +125,67 @@ function removeStep(e, i, confirmed = false) {
   changeSteps((d) => {
     d.steps.splice(i, 1);
     d.at = null;
+    d.selected = null;
   });
   /** @type {HTMLElement | null} */ (document.querySelector('#center .story-path'))?.focus();
 }
 
 const lostLine = (n, first) => h('p', { class: 'error link-lost' }, `${first ? '첫 단계가 되어' : '앞 단계가 바뀌어'}, 저장하면 들어오는 링크 조건 ${n}개가 지워집니다.`);
 
+const insertMark = (cancel) => h('div', { class: 'insert-mark' }, '다음에 고르는 화면이 여기 들어갑니다',
+  h('button', { type: 'button', class: 'insert-cancel', title: '표시를 지웁니다. 다음에 고르는 화면은 끝에 들어갑니다', onclick: cancel }, '취소'));
+
+const addStepLine = (cls, label, title, disabled, onclick) => h('button', { type: 'button', class: `add-step ${cls}`, disabled, title, onclick }, `+ ${label}`);
+
+const stepHead = (sc, id) => (sc
+  ? [h('span', { class: 'screen-path' }, sc.path), ' ', h('span', { class: 'muted' }, sc.component), h('span', { class: 'muted mono screen-id' }, sc.id)]
+  : h('span', { class: 'muted mono' }, id));
+
+const stepPress = (i, sc, id, on, toggle) => h('button', { type: 'button', class: 'step-press', 'aria-pressed': String(on), onclick: toggle },
+  h('span', { class: 'no' }, i + 1),
+  h('span', { class: 'name' }, stepHead(sc, id)));
+
+const selectOnClick = (on, select) => (ev) => {
+  if (on || /** @type {Element} */ (ev.target).closest('button, a, input, textarea, select, summary') || window.getSelection()?.toString()) return;
+  select();
+};
+
+function addStepLines(at, i, disabled, mark) {
+  return {
+    before: at === i ? null : addStepLine('insert-before', '이전 단계 추가', '다음에 고르는 화면을 이 단계 앞에 넣습니다', disabled, () => mark(i)),
+    after: at === i + 1 ? null : addStepLine('insert-after', '다음 단계 추가', '다음에 고르는 화면을 이 단계 뒤에 넣습니다', disabled, () => mark(i + 1)),
+  };
+}
+
+function pickStepsCard(e, i, key) {
+  if (e.selected !== key) Object.assign(e, { selected: key, removing: null });
+  renderSteps();
+  /** @type {HTMLElement | null} */ (document.querySelector(`#center .story-path > .step[data-step="${i}"] button.step-press`))?.focus();
+}
+
+function markSteps(e, at) {
+  Object.assign(e, { at, refused: null });
+  renderSteps();
+  /** @type {HTMLElement | null} */ (document.querySelector('#center .insert-mark button.insert-cancel'))?.focus();
+}
+
 function stepsCard(e, i) {
   const s = e.steps[i];
+  const on = e.selected === s.key;
   const written = hasWritten(s.fields) ? h('div', { class: 'step-written written' }, writtenRows(s.fields, '조건', '기대 결과')) : null;
   const lost = i === 0 && lostLinkNeeds(e, i) ? lostLine(lostLinkNeeds(e, i), true) : null;
   const warn = e.removing === s.key
     ? h('div', { class: 'remove-warn' },
-        h('span', {}, `빼면 ${removeLoss(e, i)}도 함께 지워집니다.`),
-        h('button', { type: 'button', class: 'remove-anyway', onclick: () => removeStep(e, i, true) }, '그래도 빼기'),
-        h('button', { type: 'button', class: 'keep', onclick: () => { e.removing = null; renderSteps(); } }, '두기'))
+        h('span', {}, `제외하면 ${removeLoss(e, i)}도 함께 지워집니다.`),
+        h('button', { type: 'button', class: 'remove-anyway', onclick: () => removeStep(e, i, true) }, '제외'),
+        h('button', { type: 'button', class: 'keep', onclick: () => { e.removing = null; renderSteps(); } }, '취소'))
     : null;
-  const sc = screenOf(s.screen);
-  return h('div', { class: `step order-step${s.step === undefined ? ' new-step' : ''}${written || lost || warn ? ' has-written' : ''}`, 'data-step': i },
-    h('span', { class: 'no' }, i + 1),
-    h('span', { class: 'name' }, sc ? screenHead(sc) : h('span', { class: 'muted mono' }, s.screen)),
-    h('span', { class: 'step-acts' },
-      h('button', { type: 'button', class: 'insert-before', disabled: e.saving || e.at === i, title: '다음에 고르는 화면을 이 단계 앞에 넣습니다', onclick: () => { Object.assign(e, { at: i, refused: null }); renderSteps(); } }, '앞에 넣기'),
-      h('button', { type: 'button', class: 'remove', disabled: e.saving, title: removeLoss(e, i) ? `이 단계를 뺍니다. ${removeLoss(e, i)}도 함께 빠집니다` : '이 단계를 뺍니다', onclick: () => removeStep(e, i) }, '빼기')),
+  return h('div', { class: `step order-step${on ? ' selected' : ''}${s.step === undefined ? ' new-step' : ''}${written || lost || warn ? ' has-written' : ''}`, 'data-step': i, onclick: selectOnClick(on, () => pickStepsCard(e, i, s.key)) },
+    stepPress(i, screenOf(s.screen), s.screen, on, () => pickStepsCard(e, i, on ? null : s.key)),
+    on
+      ? h('span', { class: 'step-acts' },
+          h('button', { type: 'button', class: 'remove', disabled: e.saving, title: removeLoss(e, i) ? `이 단계를 제외합니다. ${removeLoss(e, i)}도 함께 지워집니다` : '이 단계를 제외합니다', onclick: () => removeStep(e, i) }, '제외'))
+      : null,
     written,
     lost,
     warn);
@@ -163,18 +202,16 @@ function stepsLink(e, i, checked) {
 
 function stepsPath(e) {
   const checked = checkedSteps(e);
-  const insertMark = h('div', { class: 'insert-mark' }, '다음에 고르는 화면이 여기 들어갑니다',
-    h('button', { type: 'button', class: 'insert-at-end', onclick: () => { e.at = null; renderSteps(); } }, '끝에 넣기'));
+  const mark = insertMark(() => { e.at = null; renderSteps(); });
   return [
     h('div', { class: 'path-head' }, h('h2', {}, `화면 순서 ${e.steps.length}`), h('span', { class: 'editing-note' }, '순서 고치는 중')),
-    h('p', { class: 'muted' }, '왼쪽 목록에서 화면을 누르면 표시한 자리에, 표시가 없으면 끝에 단계로 들어갑니다. 단계를 옮기려면 빼고 맞는 자리에 다시 넣습니다. 남긴 단계의 조건 · 입력값 · 기대 결과는 그 단계에 그대로 남습니다. 순서를 바꿀 때마다 이웃한 화면 사이의 링크를 다시 맞춰 봅니다.'),
+    h('p', { class: 'muted' }, '왼쪽 목록에서 화면을 누르면 표시한 자리에, 표시가 없으면 끝에 단계로 들어갑니다. 단계를 누르면 위아래에 「이전 단계 추가」 · 「다음 단계 추가」가, 단계 안에 「제외」가 나옵니다. 단계를 옮기려면 제외하고 맞는 자리에 다시 넣습니다. 남긴 단계의 조건 · 입력값 · 기대 결과는 그 단계에 그대로 남습니다. 순서를 바꿀 때마다 이웃한 화면 사이의 링크를 다시 맞춰 봅니다.'),
     e.refused ?? e.error ? h('p', { class: 'error steps-refused' }, e.refused ?? e.error) : null,
     e.steps.length
-      ? h('div', { class: 'story-path', tabindex: '-1' }, e.steps.flatMap((_, i) => [
-          i > 0 ? stepsLink(e, i, checked) : null,
-          e.at === i ? insertMark : null,
-          stepsCard(e, i),
-        ]))
+      ? h('div', { class: 'story-path', tabindex: '-1' }, e.steps.flatMap((s, i) => {
+          const lines = s.key === e.selected ? addStepLines(e.at, i, e.saving, (at) => markSteps(e, at)) : null;
+          return [i > 0 ? stepsLink(e, i, checked) : null, e.at === i ? mark : lines?.before, stepsCard(e, i), lines?.after, e.at === i + 1 && i + 1 === e.steps.length ? mark : null];
+        }))
       : h('p', { class: 'muted no-steps' }, '단계가 하나도 없습니다.'),
   ];
 }

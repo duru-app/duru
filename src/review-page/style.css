@@ -242,18 +242,22 @@
   button.new-story { margin-bottom: 8px; }
   .flowbar button.new-story { margin-bottom: 0; }
   .step-acts button:disabled { opacity: .5; cursor: default; }
-  .story-path .step.compose-step { align-items: center; cursor: grab; }
-  .story-path .step.compose-step .grip { flex: none; color: var(--muted); }
-  .story-path .step .step-acts { flex: none; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
-  #flow-stories .story-path .step.compose-step { flex-wrap: wrap; row-gap: 6px; }
-  #flow-stories .story-path .step.compose-step .step-acts { flex-basis: 100%; justify-content: flex-start; }
-  .story-path .insert-mark { display: flex; align-items: center; gap: 8px; margin: 4px 0; padding: 4px 8px; border: 1px dashed var(--accent); border-radius: 6px; font-size: 12px; color: var(--accent); }
+  .story-path .step:is(.compose-step, .order-step) { align-items: center; }
+  .story-path .step:is(.compose-step, .order-step):not(.selected) { cursor: pointer; }
+  .story-path .step:is(.compose-step, .order-step).selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .story-path .step button.step-press { flex: 1; min-width: 0; display: flex; gap: 10px; align-items: center; padding: 0; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .story-path .step button.step-press:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+  .story-path .step-press .screen-id { display: block; }
+  .story-path .step .step-acts { flex: none; display: flex; gap: 4px; }
+  .story-path button.add-step { display: block; width: 100%; margin: 4px 0; padding: 4px 8px; border: 1px dashed var(--accent); border-radius: 6px; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+  .story-path button.add-step:hover { background: var(--selected); }
+  .story-path button.add-step:disabled { opacity: .5; cursor: default; }
+  .story-path .insert-mark { display: flex; align-items: center; gap: 8px; margin: 4px 0; padding: 4px 8px; border: 1px dashed var(--accent); border-radius: 6px; font-size: 12px; color: var(--accent); word-break: keep-all; }
   .story-path .link.l-pending { color: var(--muted); }
   .path-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 16px 0 6px; }
   .path-head h2 { margin: 0; }
   button.reorder:disabled { opacity: .5; cursor: default; }
   .path-head .editing-note { font-size: 12px; color: var(--accent); }
-  .story-path .step.order-step { align-items: center; }
   .story-path .step.order-step.new-step { border-color: var(--accent); }
   .remove-warn { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 0 calc(1.6em + 10px); font-size: 12px; color: var(--fail); }
   .remove-warn button.remove-anyway { color: var(--fail); border-color: var(--fail); }

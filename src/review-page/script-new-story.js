@@ -1,6 +1,6 @@
 // 링크에 조건이 없는 예전 맵으로는 화면 순서를 대조하지 못한다.
 const oldMap = () => state.data.map.screens.some((sc) => sc.links.some((l) => !Array.isArray(l.conditions)));
-const newCompose = () => ({ screens: [], at: null, id: '', name: '', memo: '', checked: null, turn: 0, error: null, refused: null, query: '' });
+const newCompose = () => ({ screens: [], at: null, selected: null, id: '', name: '', memo: '', checked: null, turn: 0, error: null, refused: null, query: '' });
 const flowComposing = () => state.composing && state.view === 'flow';
 const composeShown = () => state.composing && state.view !== 'list';
 const composeStepsAt = () => (state.view === 'flow' ? '#flow-stories .compose-steps' : '#center');
@@ -74,10 +74,18 @@ async function checkCompose(focus, pressed = null) {
   }
   if (state.compose !== c || turn !== c.turn) return;
   Object.assign(c, { checked, error });
+  renderCompose(focusedStep(), { drawing: true, pressed });
+}
+
+const STEP_BUTTONS = ['step-press', 'remove', 'insert-before', 'insert-after', 'insert-cancel'];
+
+function focusedStep() {
   const focused = document.activeElement;
-  const steps = composeStepsAt();
-  const step = /** @type {HTMLElement} */ (focused?.closest?.(`${steps} .compose-step`));
-  renderCompose(step ? [`.compose-step[data-step="${step.dataset.step}"] button.${focused.className}`] : focused?.matches?.(`${steps} .story-path`) ? ['.story-path'] : null, { drawing: true, pressed });
+  if (!focused?.closest(composeStepsAt())) return null;
+  const cls = focused.matches('button') && STEP_BUTTONS.find((c) => focused.classList.contains(c));
+  if (!cls) return focused.matches('.story-path') ? ['.story-path'] : null;
+  const step = /** @type {HTMLElement | null} */ (focused.closest('.compose-step'));
+  return [step ? `.compose-step[data-step="${step.dataset.step}"] button.${cls}` : `button.${cls}`];
 }
 
 function changeCompose(edit, focus, pressed = null) {
@@ -98,62 +106,43 @@ function addComposeScreen(id) {
   changeCompose((d) => {
     d.screens.splice(at, 0, id);
     if (d.at !== null) d.at += 1;
+    if (d.selected !== null && d.selected >= at) d.selected += 1;
   }, null, box ? { key: id, top: box.top, left: box.left } : null);
 }
 
-function moveComposeStep(from, to, focus) {
-  changeCompose((d) => {
-    const [id] = d.screens.splice(from, 1);
-    d.screens.splice(to, 0, id);
-    d.at = null;
-  }, focus);
-}
-
-const STEP_DRAG = 'application/x-duru-step';
-
 function composeStep(id, i, c) {
-  const stepButtons = (step) => ['up', 'down'].map((cls) => `.compose-step[data-step="${step}"] button.${cls}`);
-  const last = i === c.screens.length - 1;
-  return h('div', {
-    class: 'step compose-step',
-    'data-step': i,
-    draggable: 'true',
-    ondragstart: (e) => { e.dataTransfer.setData(STEP_DRAG, String(i)); e.dataTransfer.effectAllowed = 'move'; },
-    ondragover: (e) => e.preventDefault(),
-    ondrop: (e) => {
-      e.preventDefault();
-      const dragged = e.dataTransfer.getData(STEP_DRAG);
-      const from = Number(dragged);
-      if (dragged !== '' && Number.isInteger(from) && from !== i && from >= 0 && from < c.screens.length) moveComposeStep(from, i);
-    },
-  },
-    h('span', { class: 'grip', title: '끌어서 순서를 바꿉니다', 'aria-hidden': 'true' }, '⠿'),
-    h('span', { class: 'no' }, i + 1),
-    h('span', { class: 'name' }, screenHead(screenOf(id))),
-    h('span', { class: 'step-acts' },
-      h('button', { class: 'up', disabled: i === 0, title: '한 단계 위로 옮깁니다', onclick: () => moveComposeStep(i, i - 1, stepButtons(i - 1)) }, '위로'),
-      h('button', { class: 'down', disabled: last, title: '한 단계 아래로 옮깁니다', onclick: () => moveComposeStep(i, i + 1, stepButtons(i + 1).reverse()) }, '아래로'),
-      h('button', { class: 'insert-before', disabled: c.at === i, title: '다음에 고르는 화면을 이 단계 앞에 넣습니다', onclick: () => { c.at = i; renderCompose([`.compose-step[data-step="${i}"] button.up`, `.compose-step[data-step="${i}"] button.down`]); } }, '앞에 넣기'),
-      h('button', { class: 'remove', title: '이 단계를 뺍니다', onclick: () => changeCompose((d) => { d.screens.splice(i, 1); d.at = null; }, ['.story-path']) }, '빼기')));
+  const on = c.selected === i;
+  const pick = (selected) => {
+    c.selected = selected;
+    renderCompose([`.compose-step[data-step="${i}"] button.step-press`]);
+  };
+  return h('div', { class: `step compose-step${on ? ' selected' : ''}`, 'data-step': i, onclick: selectOnClick(on, () => pick(i)) },
+    stepPress(i, screenOf(id), id, on, () => pick(on ? null : i)),
+    on
+      ? h('span', { class: 'step-acts' },
+          h('button', { class: 'remove', title: '이 단계를 제외합니다', onclick: () => changeCompose((d) => { d.screens.splice(i, 1); Object.assign(d, { at: null, selected: null }); }, ['.story-path']) }, '제외'))
+      : null);
 }
 
 function composeCenter() {
   const c = state.compose;
   const checked = checkedCompose(c);
-  const insertMark = h('div', { class: 'insert-mark' }, '다음에 고르는 화면이 여기 들어갑니다',
-    h('button', { class: 'insert-at-end', onclick: () => { c.at = null; renderCompose(); } }, '끝에 넣기'));
+  const mark = insertMark(() => { c.at = null; renderCompose(); });
+  const markAt = (at) => {
+    c.at = at;
+    renderCompose(['.insert-mark button.insert-cancel']);
+  };
   const pending = h('div', { class: 'link l-pending' }, c.error ? '판정 못 함' : '맞춰 보는 중');
   return [
     h('div', { class: 'title-row' }, h('h3', {}, c.name.trim() || '새 스토리'), checked ? storyChips(checked) : null),
-    h('p', { class: 'muted' }, `${state.view === 'flow' ? '흐름 그림에서 화면 상자를' : '왼쪽 목록에서 화면을'} 누르면 차례로 단계가 됩니다. 단계는 끌거나 「위로」·「아래로」로 옮깁니다. 순서를 바꿀 때마다 이웃한 화면 사이의 링크를 다시 맞춰 봅니다.`),
+    h('p', { class: 'muted' }, `${state.view === 'flow' ? '흐름 그림에서 화면 상자를' : '왼쪽 목록에서 화면을'} 누르면 차례로 단계가 됩니다. 단계를 누르면 위아래에 「이전 단계 추가」 · 「다음 단계 추가」가, 단계 안에 「제외」가 나옵니다. 단계를 옮기려면 제외하고 맞는 자리에 다시 넣습니다. 순서를 바꿀 때마다 이웃한 화면 사이의 링크를 다시 맞춰 봅니다.`),
     c.refused ?? c.error ? h('p', { class: 'error compose-error' }, c.refused ?? c.error) : null,
     h('h2', {}, `화면 순서 ${c.screens.length}`),
     c.screens.length
-      ? h('div', { class: 'story-path', tabindex: '-1' }, c.screens.flatMap((id, i) => [
-          i > 0 ? (checked ? linkItem(checked.links[i - 1]) : pending.cloneNode(true)) : null,
-          c.at === i ? insertMark : null,
-          composeStep(id, i, c),
-        ]))
+      ? h('div', { class: 'story-path', tabindex: '-1' }, c.screens.flatMap((id, i) => {
+          const lines = c.selected === i ? addStepLines(c.at, i, false, markAt) : null;
+          return [i > 0 ? (checked ? linkItem(checked.links[i - 1]) : pending.cloneNode(true)) : null, c.at === i ? mark : lines?.before, composeStep(id, i, c), lines?.after, c.at === i + 1 && i + 1 === c.screens.length ? mark : null];
+        }))
       : h('p', { class: 'muted no-steps' }, '아직 넣은 화면이 없습니다.'),
   ];
 }

@@ -2031,6 +2031,18 @@ Alternatives compared:
   would write them back over that change when the reviewer chose to overwrite only the order.
 - Keeping `linkNeeds` on a step whose step before changed: they would describe a link the story no longer takes.
 
+**A step shows 「이전 단계 추가」, 「다음 단계 추가」 and 「제외」 only once it is pressed, the first two as dashed lines above
+and below it; 「새 스토리」 drops 「위로」, 「아래로」 and dragging, so both editors move a step the same way.**
+User's decision on 2026-10-18. Pressing a step, or Enter on it, shows the two lines and 「제외」; a line marks where the
+next screen picked goes, as the buttons did. In 「새 스토리」 a step is now moved as in 「순서 고치기」, by taking it out
+and adding it again, which replaces the part of the entry above that kept 「위로」, 「아래로」 and dragging there: two ways
+to move a step in two editors that otherwise look alike were one more thing to learn.
+Alternatives compared:
+- The three buttons on every step, as before: each step carried a row of buttons, and in the column beside the flow
+  drawing they wrapped into a second row under the screen name.
+- The three buttons only on the step pressed: tidier, but still three buttons in a row on one step, and 「이전 단계 추가」
+  sitting below the step it adds before.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

@@ -21,6 +21,14 @@ const card = (i: number) => `${CARDS}[data-step="${i}"]`;
 const readStory = (config: Config) => JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'));
 const pickScreen = (p: Page, routePath: string) => p.locator('#pick-list li').filter({ has: p.locator('.name > span:first-child', { hasText: new RegExp(`^${routePath}$`) }) }).click();
 const cardScreens = (p: Page) => p.locator(`${CARDS} .screen-path`).allTextContents();
+const head = (i: number) => `${card(i)} button.step-press`;
+const press = (p: Page, i: number) => p.click(head(i));
+const takeOut = async (p: Page, i: number) => {
+  if (await p.getAttribute(head(i), 'aria-pressed') !== 'true') await press(p, i);
+  await p.click(`${card(i)} button.remove`);
+};
+const pathOrder = (p: Page) => p.locator('#center .story-path').evaluate((path) => [...path.children].map((c) =>
+  c.matches('.step') ? (c.querySelector(':scope > button.step-press')!.getAttribute('aria-pressed') === 'true' ? 'pressed' : 'step') : c.matches('.link') ? 'link' : c.matches('.insert-mark') ? 'mark' : c.className.replace('add-step ', '')));
 const untilJudged = (p: Page) => p.waitForFunction(() => !document.querySelector('#center .link.l-pending') && document.querySelectorAll('#center .story-path > .link').length === Math.max(document.querySelectorAll('#center .story-path > .step').length - 1, 0));
 
 async function withLabStory(fn: (p: Page, config: Config, base: string, errors: string[]) => Promise<void>, story: object | null = FILLED) {
@@ -36,7 +44,7 @@ async function withLabStory(fn: (p: Page, config: Config, base: string, errors: 
   });
 }
 
-test('in a browser, 「순서 고치기」 at the end of the 「화면 순서」 heading turns the left column into a screen picker and gives each step only 「앞에 넣기」 and 「빼기」, with nothing to move or drag, and 「순서 저장」 writes the new order with each kept step\'s fields on it and the comments on a step that is gone under 「떨어져 나감」', { skip: browserMissing }, async () => {
+test('in a browser, 「순서 고치기」 at the end of the 「화면 순서」 heading turns the left column into a screen picker where a step pressed by its head, also with Enter, or by a click on the rest of it, shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」 on it, with nothing to move or drag, the step pressed stays pressed when a screen goes in before it, and 「순서 저장」 writes the new order with each kept step\'s fields on it and the comments on a step that is gone under 「떨어져 나감」', { skip: browserMissing }, async () => {
   await withLabStory(async (p, config, base, errors) => {
     const onStep = (step: number, screen: string) => ({ story: 'run-lab', part: { kind: 'step', key: { step, screen } } });
     for (const [target, note] of [[onStep(1, HOME), 'start here?'], [onStep(2, LAB_SCREEN), 'lab on?']] as const) assert.equal((await postMark(base, { target, note })).status, 201);
@@ -47,18 +55,46 @@ test('in a browser, 「순서 고치기」 at the end of the 「화면 순서」
     await p.waitForSelector('#pick-list li');
     assert.equal(await p.textContent('#left .compose-head'), `「${LAB}」에 넣을 화면`);
     assert.equal(await p.textContent('#center .path-head .editing-note'), '순서 고치는 중');
-    for (let i = 0; i < 3; i++) assert.deepEqual(await p.locator(`${card(i)} .step-acts button`).allTextContents(), ['앞에 넣기', '빼기']);
+    assert.equal(await p.locator('#center .story-path :is(button.add-step, .step-acts button)').count(), 0, 'nothing to add or take out before a step is pressed');
+    assert.deepEqual(await pathOrder(p), ['step', 'link', 'step', 'link', 'step']);
+    await press(p, 1);
+    assert.deepEqual(await pathOrder(p), ['step', 'link', 'insert-before', 'pressed', 'insert-after', 'link', 'step']);
+    assert.deepEqual(await p.locator('#center .story-path button.add-step').allTextContents(), ['+ 이전 단계 추가', '+ 다음 단계 추가']);
+    assert.deepEqual(await p.locator('#center .story-path .step-acts button').allTextContents(), ['제외']);
+    assert.equal(await p.locator(`${card(1)} button.remove`).count(), 1);
+    await p.click(`${card(2)} .written-label`);
+    assert.deepEqual(await pathOrder(p), ['step', 'link', 'step', 'link', 'insert-before', 'pressed', 'insert-after'], 'the last step can mark the end too');
+    assert.equal(await p.locator(`${card(1)} .step-acts`).count(), 0);
+    await p.click(`${card(2)} .written-label`);
+    assert.equal(await p.getAttribute(head(2), 'aria-pressed'), 'true', 'a click on the rest of a pressed step leaves it pressed');
+    await p.evaluate(() => {
+      getSelection()!.selectAllChildren(document.querySelector('#center .story-path > .step[data-step="0"] .screen-path')!);
+      document.querySelector('#center .story-path > .step[data-step="0"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      getSelection()!.removeAllRanges();
+    });
+    assert.equal(await p.getAttribute(head(2), 'aria-pressed'), 'true', 'a click that ends selecting text presses nothing');
+    await press(p, 2);
+    assert.deepEqual(await pathOrder(p), ['step', 'link', 'step', 'link', 'step'], 'a pressed step pressed again by its head lets go');
+    await p.focus(head(1));
+    await p.keyboard.press('Enter');
+    assert.equal(await p.getAttribute(head(1), 'aria-pressed'), 'true');
+    assert.equal(await p.evaluate(() => document.activeElement!.matches('#center .story-path > .step[data-step="1"] button.step-press')), true);
+    assert.equal(await p.locator('#center .story-path [role="button"]').count(), 0, 'no step is a button holding other buttons');
     assert.equal(await p.locator('#center .story-path [draggable="true"], #center .story-path .grip, #center .story-path button:is(.up, .down)').count(), 0);
     assert.deepEqual(await p.locator(`${card(1)} .written-row`).allTextContents(), ['조건실험실 설정을 켠다']);
     assert.deepEqual(await p.locator('#right-info .steps-top button').allTextContents(), ['순서 저장', '취소']);
     assert.equal(await p.locator('#right-info .steps-top button.save-steps').isDisabled(), true, 'nothing changed yet');
 
-    await p.click(`${card(1)} button.insert-before`);
+    await p.click('#center button.insert-before');
+    assert.deepEqual(await pathOrder(p), ['step', 'link', 'mark', 'pressed', 'insert-after', 'link', 'step']);
+    assert.equal(await p.evaluate(() => document.activeElement!.matches('#center .insert-mark button.insert-cancel')), true);
     await pickScreen(p, '/help');
     assert.deepEqual(await cardScreens(p), ['/home', '/help', '/lab', '/lab/result']);
-    await p.click('#center .insert-mark button.insert-at-end');
+    assert.deepEqual(await p.locator(`${CARDS}.selected .screen-path`).allTextContents(), ['/lab']);
+    await p.click('#center .insert-mark button.insert-cancel');
     await pickScreen(p, '/signin');
-    await p.click(`${card(0)} button.remove`);
+    await takeOut(p, 0);
+    assert.equal(await p.locator(`${CARDS}.selected`).count(), 0, 'the step taken out was the one pressed');
     assert.deepEqual(await cardScreens(p), ['/help', '/lab', '/lab/result', '/signin']);
     assert.equal(await p.locator(`${card(0)}.new-step`).count(), 1);
     assert.equal(await p.locator(`${card(0)} .written-row`).count(), 0, 'a step put in has nothing written');
@@ -84,18 +120,24 @@ test('in a browser, an order with the same screen twice in a row or with no step
   await withLabStory(async (p, config) => {
     const before = fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8');
     await p.click('#center button.reorder');
-    await p.click(`${card(1)} button.insert-before`);
+    await press(p, 1);
+    await p.click('#center button.insert-before');
     await pickScreen(p, '/home');
     assert.equal(await p.textContent('#center .steps-refused'), '같은 화면을 이어서 넣을 수 없습니다.');
-    await p.click('#center .insert-mark button.insert-at-end');
+    await p.click('#center .insert-mark button.insert-cancel');
+    await press(p, 2);
+    await p.click('#center button.insert-after');
+    assert.deepEqual(await pathOrder(p), ['step', 'link', 'step', 'link', 'insert-before', 'pressed', 'mark']);
     await pickScreen(p, '/home');
-    await p.click(`${card(2)} button.remove`);
-    await p.click(`${card(1)} button.remove`);
+    assert.deepEqual(await cardScreens(p), ['/home', '/lab', '/lab/result', '/home']);
+    assert.deepEqual(await pathOrder(p), ['step', 'link', 'step', 'link', 'insert-before', 'pressed', 'insert-after', 'link', 'step', 'mark'], 'the mark at the end stays after the screen put there');
+    await takeOut(p, 2);
+    await takeOut(p, 1);
     assert.deepEqual(await cardScreens(p), ['/home', '/home']);
     assert.equal(await p.textContent('#right-info .steps-problem'), '같은 화면이 이어진 자리가 있어 저장할 수 없습니다.');
     assert.equal(await p.locator('#right-info button.save-steps').isDisabled(), true);
-    await p.click(`${card(1)} button.remove`);
-    await p.click(`${card(0)} button.remove`);
+    await takeOut(p, 1);
+    await takeOut(p, 0);
     assert.equal(await p.textContent('#center .no-steps'), '단계가 하나도 없습니다.');
     assert.equal(await p.textContent('#right-info .steps-problem'), '단계가 하나도 없어 저장할 수 없습니다.');
     assert.equal(await p.locator('#right-info button.save-steps').isDisabled(), true);
@@ -105,20 +147,23 @@ test('in a browser, an order with the same screen twice in a row or with no step
   }, null);
 });
 
-test('in a browser, taking out a step with fields written asks first with what goes with it, also when 빼기 is pressed twice, and a step whose step before changed shows that the conditions of the link into it will go', { skip: browserMissing }, async () => {
+test('in a browser, taking out a step with fields written asks first with what goes with it, also when 제외 is pressed twice, and a step whose step before changed shows that the conditions of the link into it will go', { skip: browserMissing }, async () => {
   await withLabStory(async (p, config) => {
     await p.click('#center button.reorder');
+    await press(p, 1);
     await p.dblclick(`${card(1)} button.remove`);
-    assert.deepEqual(await cardScreens(p), ['/home', '/lab', '/lab/result'], 'pressing 빼기 again does not take the place of 그래도 빼기');
-    assert.equal(await p.textContent(`${card(1)} .remove-warn span`), '빼면 이 단계에 적은 조건 1개와 다음 단계로 들어오는 링크 조건 1개도 함께 지워집니다.');
-    assert.deepEqual(await p.locator(`${card(1)} .remove-warn button`).allTextContents(), ['그래도 빼기', '두기']);
+    assert.deepEqual(await cardScreens(p), ['/home', '/lab', '/lab/result'], 'pressing 제외 again does not take the place of the 제외 in the warning');
+    assert.equal(await p.textContent(`${card(1)} .remove-warn span`), '제외하면 이 단계에 적은 조건 1개와 다음 단계로 들어오는 링크 조건 1개도 함께 지워집니다.');
+    assert.deepEqual(await p.locator(`${card(1)} .remove-warn button`).allTextContents(), ['제외', '취소']);
+    await p.click(`${card(1)} .remove-warn span`);
+    assert.equal(await p.locator(`${card(1)} .remove-warn`).count(), 1, 'a click on the warning sentence leaves the warning');
     await p.click(`${card(1)} .remove-warn button.keep`);
     assert.equal(await p.locator('#center .remove-warn').count(), 0);
     assert.deepEqual(await cardScreens(p), ['/home', '/lab', '/lab/result']);
 
-    await p.click(`${card(2)} button.remove`);
-    assert.equal(await p.textContent(`${card(2)} .remove-warn span`), '빼면 이 단계에 적은 기대 결과 1개 · 들어오는 링크 조건 1개도 함께 지워집니다.');
-    await p.click(`${card(1)} button.remove`);
+    await takeOut(p, 2);
+    assert.equal(await p.textContent(`${card(2)} .remove-warn span`), '제외하면 이 단계에 적은 기대 결과 1개 · 들어오는 링크 조건 1개도 함께 지워집니다.');
+    await takeOut(p, 1);
     assert.equal(await p.locator(`${card(1)} .remove-warn`).count(), 1, 'the warning moves to the step pressed last');
     assert.equal(await p.locator(`${card(2)} .remove-warn`).count(), 0);
     await p.click(`${card(1)} .remove-warn button.remove-anyway`);
@@ -142,7 +187,7 @@ test('in a browser, only one editor is open at a time: while the order is being 
     assert.ok(await pencils.count() > 0);
     assert.equal(await p.locator('#center button.edit-fields:not([disabled])').count(), 0);
     assert.equal(await pencils.first().getAttribute('title'), '화면 순서를 저장하거나 취소한 뒤에 고칩니다');
-    await p.click(`${card(1)} button.remove`);
+    await takeOut(p, 1);
     await p.click('#right-info button.cancel-steps');
     assert.equal(await p.locator('#pick-list').count(), 0);
     assert.equal(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'), before);
@@ -159,7 +204,7 @@ test('in a browser, an order saved over a story file changed elsewhere is refuse
   await withLabStory(async (p, config, _base, errors) => {
     const file = path.join(config.storiesDir, 'run-lab.json');
     await p.click('#center button.reorder');
-    await p.click(`${card(0)} button.remove`);
+    await takeOut(p, 0);
     const elsewhere = { ...FILLED, memo: '다른 곳에서 고쳤다', screens: [HOME, { ...LAB_STEP, expects: ['실험 목록이 보인다'] }, RESULT_STEP] };
     fs.writeFileSync(file, JSON.stringify(elsewhere, null, 2));
     await p.waitForSelector('#center .memo:has-text("다른 곳에서 고쳤다")');
@@ -182,7 +227,7 @@ test('in a browser, an order saved over a story file changed elsewhere is refuse
 test('in a browser, after a refused order save 「새로 읽기」 starts again from the changed file', { skip: browserMissing }, async () => {
   await withLabStory(async (p, config, _base, errors) => {
     await p.click('#center button.reorder');
-    await p.click(`${card(0)} button.remove`);
+    await takeOut(p, 0);
     fs.writeFileSync(path.join(config.storiesDir, 'run-lab.json'), JSON.stringify({ ...FILLED, screens: [HOME, LAB_SCREEN] }, null, 2));
     await p.waitForFunction(() => state.data.stories.list.find((s: { id: string }) => s.id === 'run-lab').steps.length === 2);
     await p.click('#right-info button.save-steps');
