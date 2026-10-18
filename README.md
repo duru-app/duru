@@ -403,10 +403,10 @@ listing the places whose value the source does not show in full.
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring.
 - `route path not read ← <route file>:<line>: stopped at <piece>` — a route whose path duru could not read in full.
-  `<piece>` is the first part of the path whose value it could not read, as written, followed by
-  `in <file>:<line>` when it is in a file duru reached by following an imported name, and `, only <text>` follows
-  when a part of the path was read, with `{?}` for the rest. The screen is on the map with that path and an ID
-  made from it, and the ID changes once the path can be read (`unreadRoutePaths`).
+  `<piece>` is the first part of the path whose value it could not read, as written where duru stopped: in the
+  route file, or, followed by `in <file>:<line>`, in another file when duru followed a name into that file. `, only
+  <text>` follows when a part of the path was read, with `{?}` for the rest. The screen is on the map with that path
+  and an ID made from it; when the ID itself holds `{?}`, it changes once that part can be read (`unreadRoutePaths`).
 - `settingsFunctions <file>:<line> <what>` — about calls in the files the route files lead to by import: a call
   that duru does not read as settings; a default the function is given that differs from the `settingsDefaults`
   value (the map keeps that value), or that differs from another call's or cannot be compared with it (the map

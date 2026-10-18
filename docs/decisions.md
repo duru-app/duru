@@ -2095,9 +2095,11 @@ constant written beside the route: literals, templates and joins of constants of
 literals or templates of constants of their own file. A name two `export *` give from different declarations is
 not exported, as in ES modules, and a name whose value leads back to itself is not read. What an imported function
 returns (`draftsPath()`, `settingsPath("groups", ":id")`) is not read; each route path left with `{?}` gets a
-`route path not read` line in the summary that names where duru stopped. The same reading serves every place that
-reads a value at once, so a request address with an imported constant in it is read too, and `imported-piece` is
-left to a function's result or a name whose declaration duru could not read.
+`route path not read` line in the summary that names where duru stopped. The same reading serves route paths,
+redirects, the request addresses in screen sources and API modules, and role conditions, so a request address with an
+imported constant in it is read too, and `imported-piece` is left to a function's result or a name whose declaration
+duru could not read. The defaults given to calls of `settingsFunctions` are read from files parsed apart from these
+and still do not follow imports.
 Alternatives compared:
 - Running the declaring module, as `constants` does: it would read values that functions build, but every such
   module would have to be listed, with stand-ins for what it imports, and the files these apps declare paths in
