@@ -696,7 +696,7 @@ test('the trace of an input run gives the filled values and the skipped count, o
   const trace = linkByTrace('test/fixtures/app/traces/inputs.zip') as { order: string[]; inputs: StepInput[][]; skipped: number };
   assert.equal(trace.order.length, 2);
   assert.deepEqual(trace.inputs.map((i) => i.length), [5, 1]);
-  assert.equal(trace.skipped, 3);
+  assert.equal(trace.skipped, 10);
 });
 
 test('of traces with the same screen order, the first one read gives the inputs and the skipped count', () => {

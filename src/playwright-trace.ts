@@ -39,6 +39,7 @@ const BOX_SELECTORS: [keyof InputBox, RegExp][] = [
   ['placeholder', new RegExp(`^internal:attr=\\[placeholder=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`)],
   ['testId', new RegExp(`^internal:testid=\\[data-testid=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`)],
 ];
+const VALUE_WRITES = new Set(['type', 'selectOption', 'check', 'uncheck', 'setInputFiles']);
 const NOT_THE_APP = /^(about|data|blob|chrome|chrome-error):/;
 const END_OF_DIRECTORY = 0x06054b50;
 const DIRECTORY_ENTRY = 0x02014b50;
@@ -50,7 +51,9 @@ function fillOf(params: any): StepInput | 'skipped' {
     const found = params.selector.match(pattern);
     if (!found) continue;
     try {
-      return { box: { [word]: JSON.parse(found[1]), ...(found[2] !== undefined && { nth: Number(found[2]) + 1 }) }, value };
+      const text = JSON.parse(found[1]);
+      if (!text.trim()) return 'skipped';
+      return { box: { [word]: text, ...(found[2] !== undefined && { nth: Number(found[2]) + 1 }) }, value };
     } catch {
       return 'skipped';
     }
@@ -123,7 +126,7 @@ export function readTrace(file: string): TraceResult {
     const kind = kindOf(action.method);
     if (kind === 'assert') timeline.push({ at: endTime, page: action.pageId, kind });
     else if (kind && !end?.error) {
-      const fill = action.method === 'fill' ? fillOf(action.params) : undefined;
+      const fill = action.method === 'fill' ? fillOf(action.params) : VALUE_WRITES.has(action.method) ? 'skipped' as const : undefined;
       timeline.push({ at: input?.timestamp ?? action.startTime, page: action.pageId, kind, ...(fill && { fill }) });
     }
   }

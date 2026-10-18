@@ -77,6 +77,7 @@ export interface Candidate {
 }
 
 const inputFields = (inputs: StepInput[][] = []) => (inputs.some((i) => i.length) ? inputs.map((i) => (i.length ? { inputs: i } : {})) : undefined);
+const carried = ({ stepFields, skipped }: { stepFields?: StepFields[]; skipped?: number }) => ({ ...(stepFields && { stepFields }), ...(skipped && { skipped }) });
 
 export function loadVisitRecords(sources: string[], configDir: string) {
   const records: VisitRecord[] = [];
@@ -205,12 +206,12 @@ export function storeCandidates(dir: string, list: Candidate[], now = new Date()
   const stored = new Set(loadStored(dir).found.map((c) => JSON.stringify(c.screens)));
   const date = now.toISOString();
   let written = 0;
-  for (const { name, screens, source, stepFields, skipped } of list) {
+  for (const { name, screens, source, ...rest } of list) {
     const key = JSON.stringify(screens);
     if (stored.has(key)) continue;
     stored.add(key);
     try {
-      writeNewRecord(path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`), { name, screens, source, date, ...(stepFields && { stepFields }), ...(skipped && { skipped }) });
+      writeNewRecord(path.join(folder, `${date.slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`), { name, screens, source, date, ...carried(rest) });
     } catch (err: any) {
       return { written, reason: `후보 파일을 쓰지 못했습니다: ${err.message}` };
     }
@@ -232,7 +233,7 @@ export function unacceptStory(dir: string, id: unknown) {
   if (!story) throw new Error(`스토리 ${id} 를 찾지 못했습니다`);
   if (!story.source) throw new Error(`스토리 ${id} 는 후보에서 받은 스토리가 아닙니다`);
   const stepFields = story.stepFields && inputFields(story.stepFields.map((f) => f.inputs ?? []));
-  const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source: story.source, ...(stepFields && { stepFields }) }]);
+  const kept = storeCandidates(dir, [{ key: story.screens.join(' > '), name: story.id, screens: story.screens, source: story.source, ...carried({ stepFields }) }]);
   if (kept.reason) throw new Error(kept.reason);
   fs.rmSync(path.join(dir, story.file));
   return { id: story.id, screens: story.screens, file: story.file };
@@ -302,22 +303,21 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     } else if (screens.length > 1 && seen.has(key)) {
       gone[screens.join(' > ')] ??= shownTitle(title);
     } else if (screens.length > 1) {
-      const stepFields = inputFields(inputs);
-      const candidate = { key: screens.join(' > '), name: shownTitle(title), screens, source: { report, tests: [title] }, ...(stepFields && { stepFields }), ...(skipped && { skipped }) };
+      const candidate = { key: screens.join(' > '), name: shownTitle(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) };
       fromTraces.set(key, candidate.source);
       list.push(candidate);
     }
   }
   for (const key of fromTraces.keys()) seen.add(key);
   const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
-  for (const { name, screens, source, stepFields, skipped } of byFirstSeen) {
+  for (const { name, screens, source, ...rest } of byFirstSeen) {
     const key = JSON.stringify(screens);
     if (seen.has(key) || taken.has(JSON.stringify(source))) {
       gone[screens.join(' > ')] ??= name;
       continue;
     }
     seen.add(key);
-    list.push({ key: screens.join(' > '), name, screens, source, ...(stepFields && { stepFields }), ...(skipped && { skipped }) });
+    list.push({ key: screens.join(' > '), name, screens, source, ...carried(rest) });
   }
   return { list: checkStories(map, list), discarded: shown, gone, notices: all };
 }

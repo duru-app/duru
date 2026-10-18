@@ -2126,10 +2126,13 @@ Asked for in #277 (2026-10-18), on the input box of #275. The trace's `before` l
 `placeholder` and `testId`. The trailing `i` or `s` (not exact or exact) is ignored: the story box has no place for it,
 and the words are the same either way. `>> nth=N` is carried as `nth` N + 1, since the trace counts from 0 and the story
 from 1; a locator with anything else chained (`nth=-1`, a filter, a parent) is not a box the story can name. A fill found
-by CSS or role, a fill with a blank value (a story value must have text), and any such locator are counted as skipped,
-and the candidate page shows the count; a role locator could be turned into a box only by guessing which words the
-screen shows. A key press has no place in the input box, so presses are ignored without being counted: they change no
-value a story would write. When traces share a screen order the candidate keeps the inputs and count of the first trace
+by CSS or role, a fill with a blank value (a story value must have text), a fill whose box words are blank, and a locator
+of another shape are counted as skipped, and the candidate page shows the count. A role locator is skipped because it
+could be turned into a box only by guessing which words the screen shows. The other actions that write a value (`type`,
+`selectOption`, `check`, `uncheck`, `setInputFiles`; `setChecked` is recorded as `check`) are counted as skipped too: the
+input box cannot hold them, and the count tells the reviewer that the test did more than the candidate shows. A key
+press has no place in the input box and changes no value a story would write, so presses are ignored without being
+counted. When traces share a screen order the candidate keeps the inputs and count of the first trace
 read; merging them would invent a story no single run walked. Inputs sit in `stepFields` of the candidate, the shape a
 story has, so the page draws them with the code that draws a story's steps, and a stored candidate keeps them.
 Alternatives compared:

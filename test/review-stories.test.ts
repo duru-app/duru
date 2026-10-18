@@ -581,7 +581,7 @@ test('in a browser, a candidate from a trace shows the values filled in its step
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("moves to the drafts")');
-        assert.equal(await p.textContent('#center .skipped-inputs'), '옮기지 못한 입력 3개');
+        assert.equal(await p.textContent('#center .skipped-inputs'), '옮기지 못한 입력 10개');
         assert.deepEqual(await p.locator('#center .story-path .step').first().locator('.written-inputs tr').evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll('td')].slice(0, 2).map((td) => td.textContent))), [
           ['라벨 「메모」 · 1 번째', '첫 메모'],
           ['라벨 「메모」 · 2 번째', '둘째 메모'],

@@ -7,3 +7,8 @@ place of `visits.json` and copy `test-results/*/trace.zip` over. `visits.json` i
 its attachment paths pointing at a folder that does not exist (`/builds/app/test-results/...`), the way a
 report looks after the results were moved. `calls.json` is the report of `tests/calls.spec.ts` alone
 (`npx playwright test calls.spec.ts`), trimmed the same way; keep that spec out of the run for `visits.json`.
+
+`../traces/inputs.zip` is not from these tests. It is one page recorded with `playwright-core` 1.60.0
+(`context.tracing.start({ snapshots: true })`, a page served by `page.route`) on which a test fills, types into,
+selects in, checks and clicks boxes found by label, placeholder, test ID, CSS and role. To make it again, record
+the same calls and put the zip there.
