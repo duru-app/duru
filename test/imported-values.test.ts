@@ -1,5 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,6 +10,7 @@ import { buildMap } from '../src/map.ts';
 import type { ScreenMap } from '../src/map.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/ts-app');
+const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 const copies: string[] = [];
 after(() => copies.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
 
@@ -121,6 +123,21 @@ test('a route path is not read when the name is exported by two export * of diff
   const paths = pathsOf(map);
   assert.deepEqual([paths.Twice, paths.Called, paths.Packaged], ['{?}', '{?}', '{?}']);
   assert.match(paths.Circled, /\{\?\}/);
+});
+
+test('extract prints a line for each route path it could not read, with the route, the piece it stopped at and, when that piece is in a file it followed a name into, that file and line', async () => {
+  const configFile = fixtureCopy({ ...PATH_FILES, 'ImportedRoutes.tsx': ROUTES });
+  const lineOf = (text: string) => ROUTES.split('\n').findIndex((l) => l.includes(text)) + 1;
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('route path not read')), [
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('path={TWICE}')}: stopped at TWICE`,
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('path={PING}')}: stopped at PING in paths/pong.ts:2, only {?}/pong/ping`,
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('path={draftsPath()}')}: stopped at draftsPath()`,
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('path={OUTSIDE}')}: stopped at OUTSIDE`,
+  ]);
+  const map = JSON.parse(fs.readFileSync(path.join(path.dirname(configFile), 'out/map.json'), 'utf8'));
+  assert.deepEqual(map.unreadRoutePaths[1], { file: 'ImportedRoutes.tsx', line: lineOf('path={PING}'), path: '{?}/pong/ping', stoppedAt: { text: 'PING', file: 'paths/pong.ts', line: 2 } });
 });
 
 const ROLE_ROUTES = `import { Route, Routes } from 'react-router-dom';

@@ -2082,6 +2082,30 @@ Alternatives compared:
 - Free text in English: readable in the summary, but the page and an agent could tell the cases apart only by parsing
   the sentence, and the page would show English or keep a translation keyed by it.
 
+**A name that a route path, a redirect, a request address or a role condition imports from another file is read
+from the source of the file that declares it, with no config key for it.**
+Driver's decision in #306 (2026-10-18). Until then a route path was read only from constants written in its own
+file and from the object `routeConstant` names, run through `constants`, so an app that writes `path={BASE_URL}`
+with `BASE_URL` imported had `{?}` paths: all 34 screens of appsmith, and 8 screens of mattermost and 9 of outline
+whose paths join imported constants. duru now finds where the
+name is declared with the import resolution it already has, tsconfig aliases included, and through `export *`,
+`export { … } from`, `export { X as Y }` and an import exported again, then reads the value there as it reads a
+constant written beside the route: literals, templates and joins of constants of that file, objects, enum members,
+`as const`, `satisfies` and a default export. The 26 constants behind those paths on the three apps were all
+literals or templates of constants of their own file. A name two `export *` give from different declarations is
+not exported, as in ES modules, and a name whose value leads back to itself is not read. What an imported function
+returns (`draftsPath()`, `settingsPath("groups", ":id")`) is not read; each route path left with `{?}` gets a
+`route path not read` line in the summary that names where duru stopped. The same reading serves every place that
+reads a value at once, so a request address with an imported constant in it is read too, and `imported-piece` is
+left to a function's result or a name whose declaration duru could not read.
+Alternatives compared:
+- Running the declaring module, as `constants` does: it would read values that functions build, but every such
+  module would have to be listed, with stand-ins for what it imports, and the files these apps declare paths in
+  import far more than the paths need. Reading the source needs nothing in the config and gave every constant
+  measured.
+- A config key listing the files that hold path constants: one more key to keep in step with the code, while the
+  import already says where each name is declared.
+
 **The pattern a path variable carries is left out of the screen ID; the screen's path keeps it.**
 Driver's decision in #306 (2026-10-18). `/:team([a-z0-9\-_]+)/drafts` gives the ID `/:team/drafts#Drafts`. The
 ID names the screen for test tags and stories, while the pattern only says which addresses open it, and the

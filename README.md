@@ -331,8 +331,8 @@ it, and the on/off `options` of its request body. The server match is one of:
 - `unresolved` — the URL cannot be worked out from the source, so there is no call node. Its `reason` says what
   stood in the way:
   - `not-written` — no address is written where the request is sent: it is given to the function, or there is none
-  - `imported-piece` — a piece of the address is a name imported from another file, or what a function imported
-    by name returns
+  - `imported-piece` — a piece of the address is what a function imported by name returns, or a name imported from
+    another file whose value duru could not read in the file that declares it
   - `unknown-piece` — a piece whose value is not known stands in front of the address or inside its text, such as
     a base address that could not be read, or the current page a relative address hangs on
   - `other-host` — the address is on a host other than `app.server`, or on any host when `app.server` is not given
@@ -402,6 +402,11 @@ listing the places whose value the source does not show in full.
   entry can come out of the config (`keptBodyTypeExclusions`).
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring.
+- `route path not read ← <route file>:<line>: stopped at <piece>` — a route whose path duru could not read in full.
+  `<piece>` is the first part of the path whose value it could not read, as written, followed by
+  `in <file>:<line>` when it is in a file duru reached by following an imported name, and `, only <text>` follows
+  when a part of the path was read, with `{?}` for the rest. The screen is on the map with that path and an ID
+  made from it, and the ID changes once the path can be read (`unreadRoutePaths`).
 - `settingsFunctions <file>:<line> <what>` — about calls in the files the route files lead to by import: a call
   that duru does not read as settings; a default the function is given that differs from the `settingsDefaults`
   value (the map keeps that value), or that differs from another call's or cannot be compared with it (the map

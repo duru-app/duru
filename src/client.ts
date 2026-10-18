@@ -1004,6 +1004,26 @@ export async function extractClient(config: any) {
   // ---------- 라우트 파일: 화면 목록과 화면에 걸린 조건 ----------
 
   const redirects: { to: string; file: string; line: number; guards: string[] }[] = [];
+  const unreadRoutePaths: { file: string; line: number; path: string; stoppedAt: { text: string; file: string | null; line: number } }[] = [];
+  const readWhole = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && !v.includes(UNKNOWN));
+
+  function unreadPiece(p: NodePath, seen = new Set<Node>()): NodePath {
+    const pieces = p.isTemplateLiteral() ? (p.get('expressions') as NodePath[]) : p.isBinaryExpression({ operator: '+' }) ? [p.get('left'), p.get('right')] : null;
+    if (pieces) {
+      const unread = pieces.find((x) => !readWhole(evaluate(x)));
+      return unread ? unreadPiece(unread, seen) : p;
+    }
+    const chain = p.isIdentifier() || p.isMemberExpression() ? memberChain(p.node) : null;
+    const value = chain?.length === 1 ? declaredValue(p.scope, chain[0]) : chain?.length === 2 ? namespaceMember(p.scope, chain) : null;
+    if (!value || seen.has(value.node)) return p;
+    seen.add(value.node);
+    return unreadPiece(value, seen);
+  }
+
+  function stopOf(p: NodePath) {
+    const file = programFile.get(p.scope.getProgramParent().block) ?? null;
+    return { text: file ? sliceText(parse(file).src, p.node) : '?', file: rel(file), line: p.node.loc!.start.line };
+  }
 
   function extractScreens(routeFile: string) {
     const absFile = path.join(config.srcRoot, routeFile);
@@ -1030,9 +1050,12 @@ export async function extractClient(config: any) {
         const page = compAttr ? componentAttrPage(compAttr, absFile) : elementPage(attr('element'), absFile);
         if (!page) return;
         const pathWritten = pathAttr.get('value');
-        const pathValue = evaluate(pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten);
+        const pathExpr = (pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten) as NodePath;
+        const pathValue = evaluate(pathExpr);
+        const routePath = typeof pathValue === 'string' ? pathValue : UNKNOWN;
+        if (routePath.includes(UNKNOWN)) unreadRoutePaths.push({ file: routeFile, line: p.node.loc!.start.line, path: routePath, stoppedAt: stopOf(unreadPiece(pathExpr)) });
         screens.push({
-          path: typeof pathValue === 'string' ? pathValue : UNKNOWN,
+          path: routePath,
           component: page.component,
           componentFile: page.componentFile,
           wrapperFiles: [...page.files, ...wrappersOf(p, absFile)],
@@ -1249,5 +1272,5 @@ export async function extractClient(config: any) {
   });
 
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
+  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
 }
