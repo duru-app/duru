@@ -12,7 +12,7 @@ declare function flowInnerWidth(flow: HTMLElement): number;
 
 const HELP_PATH = ['/signin#SignIn', '/home#Home', '/help#Help'];
 
-test('a screen order sent for checking comes back judged like a story, and one that is empty, not a list or off the map is refused', async () => {
+test('a screen order sent for checking comes back judged like a story, also with a step the map does not have, and one that is empty or not a list is refused', async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', async (base) => {
       const res = await postJson(base, '/api/stories/check', { screens: HELP_PATH });
@@ -20,8 +20,10 @@ test('a screen order sent for checking comes back judged like a story, and one t
       const checked: Story = await res.json();
       assert.deepEqual([checked.screens, checked.links.map((l) => l.verdict), checked.broken, checked.detached], [HELP_PATH, ['open', 'broken'], true, false]);
       for (const screens of [[], 'x', undefined, ['/home#Home', 3]]) assert.equal((await postJson(base, '/api/stories/check', { screens })).status, 400);
-      const offMap = await postJson(base, '/api/stories/check', { screens: ['/home#Home', '/gone#Gone'] });
-      assert.deepEqual([offMap.status, await offMap.text()], [400, '맵에 없는 화면입니다: /gone#Gone']);
+      const offMap = await postJson(base, '/api/stories/check', { screens: ['/home#Home', '/beta/inbox'] });
+      assert.equal(offMap.status, 200);
+      const off: Story = await offMap.json();
+      assert.deepEqual([off.links.map((l) => l.verdict), off.detached], [['off-map'], true]);
       const notJson = await fetch(`${base}/api/stories/check`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
       assert.equal(notJson.status, 415);
       assert.equal(fs.existsSync(config.storiesDir), false);
@@ -29,7 +31,7 @@ test('a screen order sent for checking comes back judged like a story, and one t
   );
 });
 
-test('a new story posted from the page is written with its screens, name, memo and the server-side author, and is refused when its ID is taken or breaks the rule, a screen repeats or a screen is off the map', async () => {
+test('a new story posted from the page is written with its screens, name, memo and the server-side author, and is refused when its ID is taken or breaks the rule or a screen repeats', async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', async (base) => {
       const res = await postJson(base, '/api/stories/add', { id: 'help-from-signin', name: ' 로그인해 도움말을 연다 ', memo: '홈에 링크가 없다.', screens: HELP_PATH, author: 'someone else' });
@@ -50,10 +52,44 @@ test('a new story posted from the page is written with its screens, name, memo a
       await refused({ name: ' ' }, /스토리 이름이 필요합니다/);
       await refused({ memo: 3 }, /memo 는 글자여야 합니다/);
       await refused({ screens: ['/home#Home', '/home#Home'] }, /같은 화면입니다/);
-      await refused({ screens: ['/gone#Gone'] }, /맵에 없는 화면입니다/);
       assert.deepEqual(fs.readdirSync(config.storiesDir), ['help-from-signin.json']);
       assert.equal((await postJson(base, '/api/stories/add', { id: 'no-memo', name: 'x', screens: ['/home#Home'] })).status, 201);
       assert.equal(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'no-memo.json'), 'utf8')).memo, '');
+    }),
+  );
+});
+
+test('a new story posted with conditions and expected results for the whole story and for its steps, the values typed at a step and a step the map does not have is written with all of them in the story file\'s order', async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const screens = [
+        { screen: '/signin#SignIn', needs: [{ use: 'member.json' }], inputs: [{ box: { placeholder: '이메일' }, value: 'member@example.com' }] },
+        '/home#Home',
+        { screen: '/beta/inbox', linkNeeds: ['받은 문서가 있는 경우'], expects: ['받은 문서 목록이 보인다'] },
+      ];
+      const res = await postJson(base, '/api/stories/add', { id: 'walked', name: '걸어 본 길', memo: '', expects: ['받은 문서가 하나 늘어난다'], screens, needs: ['회원 계정이 있다'] });
+      assert.equal(res.status, 201);
+      const text = fs.readFileSync(path.join(config.storiesDir, 'walked.json'), 'utf8');
+      const { date, ...saved } = JSON.parse(text);
+      assert.deepEqual(saved, { name: '걸어 본 길', screens, needs: ['회원 계정이 있다'], expects: ['받은 문서가 하나 늘어난다'], memo: '', author: 'reviewer' });
+      assert.deepEqual(Object.keys(JSON.parse(text)), ['name', 'screens', 'needs', 'expects', 'memo', 'author', 'date']);
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.stories.list.map((st) => [st.id, st.detached]), [['walked', true]]);
+
+      const plain = await postJson(base, '/api/stories/add', { id: 'plain', name: 'x', screens: ['/home#Home'], needs: [], expects: [] });
+      assert.equal(plain.status, 201);
+      assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'plain.json'), 'utf8'))), ['name', 'screens', 'memo', 'author', 'date']);
+      for (const [body, why] of [
+        [{ needs: '회원' }, /needs 는 조건을 하나씩/],
+        [{ screens: [{ screen: '/home#Home', expects: [3] }] }, /screens 의 1 번째 단계의 expects 는 기대 결과를 하나씩/],
+        [{ screens: [{ screen: '/home#Home', linkNeeds: ['x'] }] }, /linkNeeds\(들어오는 링크 조건\)를 둘 수 없습니다/],
+        [{ screens: [{ needs: ['x'] }] }, /screens 는 화면 ID 를 하나 이상/],
+      ] as [object, RegExp][]) {
+        const r = await postJson(base, '/api/stories/add', { id: 'refused', name: 'x', screens: ['/home#Home'], ...body });
+        assert.equal(r.status, 400, JSON.stringify(body));
+        assert.match(await r.text(), why);
+      }
+      assert.equal(fs.existsSync(path.join(config.storiesDir, 'refused.json')), false);
     }),
   );
 });

@@ -66,7 +66,9 @@ interface Notice {
 interface NewStory {
   id: unknown;
   name: unknown;
-  screens: (string | { screen: string; inputs: StepInput[] })[];
+  needs?: unknown;
+  screens: unknown[];
+  expects?: unknown;
   memo?: string;
   author: unknown;
   source?: RawSource;
@@ -84,6 +86,7 @@ const BOX_KEYS: string[] = [...BOX_WORDS, 'nth'];
 export const DISCARDED = 'discarded';
 export const CANDIDATES = 'candidates';
 export const NEEDS = 'needs';
+export const RECORDS = 'records';
 const DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
 export const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
@@ -200,7 +203,7 @@ const SAY = {
 
 function storyFiles(dir: string): { root: string; files: { file: string; reason?: string }[] } {
   if (!fs.statSync(dir).isDirectory()) return { root: path.dirname(dir), files: [{ file: path.basename(dir) }] };
-  return { root: dir, files: jsonFiles(dir, SAY).filter((f) => ![DISCARDED, CANDIDATES, NEEDS].includes(f.file.split(path.sep)[0])) };
+  return { root: dir, files: jsonFiles(dir, SAY).filter((f) => ![DISCARDED, CANDIDATES, NEEDS, RECORDS].includes(f.file.split(path.sep)[0])) };
 }
 
 export function loadStories(dir: string): { stories: Story[]; notices: Notice[] } {
@@ -249,14 +252,16 @@ export function writableStoriesFolder(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-export function addStory(dir: string, { id, name, screens, memo = '', author, source }: NewStory, now = new Date()) {
+const filled = (list: unknown) => (Array.isArray(list) && !list.length ? undefined : list);
+
+export function addStory(dir: string, { id, name, needs, screens, expects, memo = '', author, source }: NewStory, now = new Date()) {
   if (typeof id !== 'string' || !STORY_ID.test(id)) throw new Error('스토리 ID 는 영문 소문자 · 숫자 · - · _ 로만 씁니다');
   if (!isText(name)) throw new Error('스토리 이름이 필요합니다');
   if (!isText(author)) throw new Error('작성자가 필요합니다');
   writableStoriesFolder(dir);
   const taken = storyFiles(dir).files.find((f) => path.basename(f.file) === `${id}.json`);
   if (taken) throw new Error(`스토리 ID ${id} 는 ${taken.file} 이 이미 씁니다`);
-  const story = { name: name.trim(), screens, memo, author: author.trim(), date: now.toISOString(), ...(source && { source }) };
+  const story = { name: name.trim(), screens, needs: filled(needs), expects: filled(expects), memo, author: author.trim(), date: now.toISOString(), ...(source && { source }) };
   const problem = problemOf(story);
   if (problem) throw new Error(problem);
   fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(story, null, 2) + '\n', { flag: 'wx' });

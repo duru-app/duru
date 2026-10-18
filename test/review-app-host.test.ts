@@ -97,6 +97,57 @@ test('screens listed as signed out open on a second app address that never gets 
   );
 });
 
+test('every app page, signed in or signed out, carries the script that reports its address and the values typed to the review page, posting only to the review page\'s own addresses', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { app } = await (await fetch(`${base}/api/data`)).json();
+          const { port } = new URL(base);
+          const origins = JSON.stringify([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
+          for (const page of [`${app.url}/home`, `${app.url}/document/7`, `${app.signedOutUrl}/signin`]) {
+            const html = await (await fetch(page)).text();
+            assert.ok(html.includes(`(function reportWalk(`), page);
+            assert.ok(html.includes(`)(${origins});`), page);
+          }
+          assert.doesNotMatch(await (await fetch(`${app.url}/app.js`)).text(), /reportWalk/);
+        }),
+      ),
+    ),
+  );
+});
+
+test('a visit recorded on the page is written into records/ in the stories folder and named in the reply as the record of its candidate, while a visit that breaks the rules, a body that is not JSON or a review without app is refused', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const post = (body: string, type = 'application/json') => fetch(`${base}/api/records`, { method: 'POST', headers: { 'content-type': type }, body });
+          const steps = [{ url: '/home', inputs: [{ box: { label: '메모' }, value: '첫 메모' }] }, { url: '/help?from=home', skipped: 1 }];
+          const res = await post(JSON.stringify({ steps }));
+          assert.equal(res.status, 201);
+          const { record } = await res.json();
+          assert.match(record, /^out\/stories\/records\/\d{4}-\d{2}-\d{2}-[0-9a-f]{8}\.json$/);
+          assert.deepEqual(JSON.parse(fs.readFileSync(path.join(config.configDir, record), 'utf8')), { steps });
+          const data: PageData = await (await fetch(`${base}/api/data`)).json();
+          const candidate = data.candidates.list.find((c) => c.source.record === record)!;
+          assert.deepEqual(candidate.screens, ['/home#Home', '/help#Help']);
+          assert.equal((await post(JSON.stringify({ steps: [{ url: 'http://evil.example/home' }] }))).status, 400);
+          assert.equal((await post(JSON.stringify({ steps }), 'text/plain')).status, 415);
+          assert.equal(fs.readdirSync(path.join(config.storiesDir, 'records')).length, 1);
+        }),
+      ),
+    ),
+  );
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const res = await fetch(`${base}/api/records`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ steps: [{ url: '/home' }] }) });
+      assert.deepEqual([res.status, await res.text()], [404, 'no app is served']);
+      assert.equal(fs.existsSync(path.join(config.storiesDir, 'records')), false);
+    }),
+  );
+});
+
 test('without signedOutPaths there is no signed-out address', async () => {
   await withFakeApi((api) =>
     withPassword('s3cret', () =>
