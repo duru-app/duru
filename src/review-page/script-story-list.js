@@ -60,35 +60,9 @@ function storyItems() {
   ];
 }
 
-let paneCompose = null;
-
-const leaveComposeButton = () => (state.view === 'flow'
-  ? h('button', { class: 'leave-compose', title: '쓰던 순서는 그대로 두고 쓰는 칸을 닫습니다. 「새 스토리 이어 쓰기」로 다시 엽니다', onclick: leaveCompose }, '닫기')
-  : h('button', { class: 'leave-compose', title: '쓰던 순서는 그대로 두고 스토리 목록을 봅니다', onclick: leaveCompose }, '스토리 목록'));
-
 function syncComposeForm(root) {
   fill(root.querySelector('#compose-reach'), ...composeReach(state.compose));
   root.querySelector('button.save-compose').disabled = !canSaveCompose(state.compose);
-}
-
-// 쓰는 동안 단계만 다시 그리고 ID · 이름 · 메모 칸은 그대로 둔다. 다시 만들면 조합 중이던 한글이 끊긴다.
-function renderStoryPane({ rebuild = false } = {}) {
-  const pane = document.getElementById('flow-stories');
-  if (pane.hidden) {
-    paneCompose = null;
-    return fill(pane);
-  }
-  const steps = pane.querySelector('.compose-steps');
-  if (steps && !rebuild && paneCompose === state.compose) {
-    fill(steps, composeCenter());
-    return syncComposeForm(pane);
-  }
-  paneCompose = state.compose;
-  fill(pane,
-    h('div', { class: 'stories-body compose-pane' },
-      h('div', { class: 'compose-head' }, leaveComposeButton()),
-      h('div', { class: 'compose-steps' }, composeCenter()),
-      composeForm()));
 }
 
 function discardedGroup(discarded) {

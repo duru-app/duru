@@ -50,9 +50,8 @@ test('in a browser, the flow lays out a story\'s link tags just before the box t
 
 test('in a browser, the flow tab has no story list, and a story picked in the story tab is drawn above its step cards as its steps in order on one line showing only the step number, the screen, its test status and whether it is on the map', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
-    assert.equal(await p.locator('#flow-stories').isVisible(), false, 'the flow has no story list beside it');
     assert.equal(await p.locator('#stories-tab, #flow-story-list').count(), 0);
-    assert.equal(await p.locator('.flowbar .new-story').isVisible(), true, 'a new story is still started from the flow');
+    assert.equal(await p.locator('.flowbar .new-story').isVisible(), true, 'the flow bar still offers a new story');
     const before = await drawnScreens(p);
 
     await pickPathStory(p, 'walk-around');
@@ -140,24 +139,21 @@ test('in a browser, two steps on the line that a move in the config joins are dr
   });
 });
 
-test('in a browser, the pane where a new story is written in the flow tab opens left of the drawing only while writing, its edge is dragged like the other panes, and 「닫기」 keeps the draft and gives the drawing its width back', { skip: browserMissing }, async () => {
+test('in a browser, 「새 스토리」 in the flow bar moves to the story tab, where the list, the steps over the drawing and the right column share the width, and 「스토리 목록」 keeps the draft and takes the drawing away', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
-    const ids = ['flow-stories', 'flow', 'gaps'];
-    assert.deepEqual(await paneWidths(p, ['flow', 'gaps']), [1440 - 360, 360]);
     await p.click('.flowbar .new-story');
-    assert.deepEqual(await paneWidths(p, ids), [300, 1440 - 300 - 360, 360]);
-    assert.equal(await p.locator('.flowbar .new-story').count(), 0, 'the bar does not offer to start what the pane is already writing');
-    await dragEdge(p, 'sash-stories', 100);
-    assert.deepEqual(await paneWidths(p, ids), [400, 1440 - 400 - 360, 360], 'the pane edge moves with the mouse');
-    await dragEdge(p, 'sash-stories', -500);
-    assert.equal((await paneWidths(p, ids))[0], 240, 'the pane stops at its minimum');
+    await p.waitForSelector('#pick-list li');
+    assert.equal(await flowPlace(p), '#story?new=1');
+    assert.deepEqual(await paneWidths(p, ['left', 'center', 'right']), [300, 1440 - 300 - 360, 360]);
+    assert.deepEqual(await paneWidths(p, ['flow']), [1440 - 300 - 360], 'the drawing is as wide as the steps above it');
+    assert.equal(await p.locator('#flow-bar').isVisible(), false);
 
     await p.locator('#flow .box.screen[data-key="/home#Home"]').click();
-    await p.click('#flow-stories button.leave-compose');
-    assert.equal(await p.locator('#flow-stories').isVisible(), false);
-    assert.deepEqual(await paneWidths(p, ['flow', 'gaps']), [1440 - 360, 360]);
+    await p.waitForSelector('#center .compose-step');
+    await p.click('#left button.leave-compose');
+    assert.equal(await p.locator('#flow').isVisible(), false);
+    await p.click('#view-flow');
     assert.equal(await p.textContent('.flowbar .new-story'), '새 스토리 이어 쓰기');
-    assert.equal(await p.locator('#sash-stories').isVisible(), false);
   });
 });
 

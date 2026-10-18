@@ -656,17 +656,18 @@ with `&step=<N>` added while step N is outlined, so opening that address, going 
 the same step and brings its card into view. Pressing another step changes the address without adding to the browser
 history.
 
-**A new story in the flow.** While 「새 스토리」 is open (「새 스토리 이어 쓰기」 once it has steps), pressing a box in the
-drawing, a screen in the right column, or Enter in the search box for the first screen it finds, adds that screen
-as the next step instead of opening it, and the drawing scrolls to keep the box pressed in place where it can. The whole flow
-stays drawn, and each chosen box carries its step number. Two neighbouring steps are joined in the style of their
-verdict: on the link itself when the second box hangs under the first, otherwise by a mark in each of the two boxes
-with the other step's number. A column opens left of the drawing with the steps, then the verdict, and ID, name and
-memo with 「스토리 저장」. Pressing a step there shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」
-on it, as in 「순서 고치기」; a step is moved by taking it out and adding it again. The same screen twice in a row is
-refused as in the list; a box already chosen is added again, since a story can pass a screen twice. A new story begun
-in the story tab goes on in the flow, and back. 「닫기」 closes that column and keeps the steps for 「새 스토리 이어
-쓰기」, and a box opens its screen again. A story saved in the flow opens in the story tab.
+**A new story.** 「새 스토리」 is made in the story tab only. The flow tab's bar has a 「새 스토리」 button (「새 스토리 이어
+쓰기」 once it has steps) that moves to the story tab's new-story screen, and `#flow?new=1` and `#stories?new=1` open
+the same screen. The left column lists the screens, the middle shows the steps chosen so far above the whole flow, and
+the right column holds the verdict, and ID, name and memo with 「스토리 저장」. Pressing a screen in the list or a box in
+the drawing adds that screen as the next step, and the drawing scrolls to keep the box pressed in place where it can.
+Each chosen box carries its step number. Two neighbouring steps are joined in the style of their verdict: on the link
+itself when the second box hangs under the first, otherwise by a mark in each of the two boxes with the other step's
+number. Pressing a step shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」 on it, as in 「순서
+고치기」; a step is moved by taking it out and adding it again. The same screen twice in a row is refused as in the
+list; a box already chosen is added again, since a story can pass a screen twice. 「스토리 목록」 closes the screen and
+keeps the steps for 「새 스토리 이어 쓰기」. In the flow tab a box opens its screen. The filters, the search and the
+picked screen of the flow tab are left as they were and do not change the drawing in the new-story screen.
 
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app
@@ -700,7 +701,7 @@ makes the kind a case there, with its tests by depth, and pressing it again take
 middle and right panes for a picked screen.
 
 **Pane widths.** The edge on either side of the middle pane, in the list, in the story tab and beside a picked screen
-in the flow, and the right edge of the column where a new story is written in the flow can be dragged to widen or narrow the panes; the line lights up when the
+in the flow, can be dragged to widen or narrow the panes; the line lights up when the
 mouse rests on it. The drawing is laid out again for its new width, and the app in the middle pane is shown at the
 percent that fits the pane's new width
 when 「배율」 is 「칸에 맞춤」 (with the width at 「칸에 맞춤」, the app itself gets the new width). No pane can be dragged narrower than its contents need, and when the window gets too narrow
@@ -770,7 +771,7 @@ made with 「새 스토리」 or written by hand has no such button. Below the c
 candidates, newest first, each with its name, its screens, the reason and the date; a screen order discarded more
 than once shows its latest discard. Each has 「되돌리기」: it writes the undo file, without asking, and the
 candidate is listed again and chosen; if the undo is refused, why shows under the list. 「새 스토리」 puts a story together from screens of the map, picked from the list
-that takes the place of the stories or from boxes in the flow.
+that takes the place of the stories or from boxes in the flow drawn in the middle.
 
 **Changes to the stories folder.** While the review runs it watches `storiesDir` and every folder in it, such as
 `candidates/` and `discarded/`, and every open page reads the stories again a moment after files there change from

@@ -41,7 +41,7 @@ document.getElementById('flow').addEventListener('pointerdown', (e) => {
 document.getElementById('flow').addEventListener('click', (e) => {
   const press = flowPress;
   flowPress = null;
-  if (!state.flowPicked || !press || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 4) return;
+  if (!flowPickShown() || !press || Math.hypot(e.clientX - press.x, e.clientY - press.y) > 4) return;
   if (/** @type {Element} */ (e.target).matches(FLOW_EMPTY)) unpickScreen();
 });
 
@@ -123,7 +123,7 @@ function flowSearch() {
     },
   });
   if (flowSearchInput.value !== state.flowQuery) flowSearchInput.value = state.flowQuery;
-  flowSearchInput.title = flowComposing() ? 'Enter 를 누르면 찾은 첫 화면을 새 스토리의 단계로 넣습니다' : 'Enter 를 누르면 찾은 첫 화면을 고릅니다';
+  flowSearchInput.title = 'Enter 를 누르면 찾은 첫 화면을 고릅니다';
   return flowSearchInput;
 }
 

@@ -35,10 +35,12 @@
   .sash { position: absolute; grid-row: 1; top: 0; bottom: 0; left: -4px; z-index: 2; width: 9px; cursor: col-resize; touch-action: none; }
   #sash-left { grid-column: 2; }
   #sash-right { grid-column: 3; }
-  #sash-stories { grid-column: 2; display: none; }
-  main.with-stories #sash-left { grid-column: 3; }
-  main.with-stories #sash-right { grid-column: 4; }
-  main.with-stories #sash-stories { display: block; }
+  main.compose-flow { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  main.compose-flow :is(#left, #right, .sash) { grid-row: 1 / 3; }
+  main.compose-flow #left { grid-column: 1; }
+  main.compose-flow #right { grid-column: 3; }
+  main.compose-flow #center { grid-column: 2; grid-row: 1; border-bottom: 1px solid var(--line); }
+  main.compose-flow #flow { grid-column: 2; grid-row: 2; }
   main.flow .sash { grid-row: 2; }
   main.flow:not(.picked) :is(#sash-left, #sash-right) { display: none; }
   .sash::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; transition: background-color .1s; }
@@ -390,14 +392,12 @@
   .flowbar .flow-search { flex: none; width: 180px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 12px; }
   main.flow { position: relative; }
   .zoom { position: absolute; grid-area: 2 / 1 / 3 / 2; left: 16px; bottom: 20px; z-index: 2; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
-  main:not(.flow) .zoom { display: none; }
-  main.with-stories .zoom { grid-column: 2 / 3; }
+  main:not(.flow, .compose-flow) .zoom { display: none; }
+  main.compose-flow .zoom { grid-area: 2 / 2 / 3 / 3; }
   .zoom button { padding: 3px 9px; border: 0; background: none; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
   .zoom button:disabled { opacity: .4; cursor: default; }
   .zoom .zoom-level { width: 48px; padding: 3px 0; border: 0; border-radius: 4px; background: none; color: var(--muted); font: inherit; font-size: 12px; text-align: center; }
   .zoom .zoom-level:focus { outline: 1px solid var(--accent); color: var(--text); }
-  #flow-stories { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--line); background: var(--panel); }
-  #flow-stories .stories-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 12px 12px; }
   .pathinfo { position: relative; }
   .pathlegend { position: absolute; right: -8px; top: calc(100% + 6px); z-index: 2; width: max-content; max-width: min(340px, calc(100vw - 48px)); flex-direction: column; gap: 8px; margin: 0; padding: 10px 12px; list-style: none; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); font-size: 12px; line-height: 1.5; color: var(--muted); }
   .pathlegend::before { content: ''; position: absolute; left: -1px; right: -1px; top: -8px; height: 10px; }
