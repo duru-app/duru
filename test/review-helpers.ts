@@ -350,9 +350,9 @@ export async function withLabLinks(fn: (p: Page, open: () => Promise<Locator>, r
 }
 
 export const screenBox = async (p: Page, id: string) => {
-  const i = await p.$$eval('#flow .box.screen', (els: HTMLElement[], id) => els.findIndex((e) => e.title.split('\n')[0] === id), id);
-  assert.ok(i >= 0, `box ${id} is drawn`);
-  return p.locator('#flow .box.screen').nth(i);
+  const box = p.locator(`#flow .box.screen[data-key="${id}"]`).first();
+  await box.waitFor({ state: 'attached' });
+  return box;
 };
 export const boxCount = async (p: Page) => p.locator('#flow .box.screen').count();
 export const flowButton = (p: Page, label: string) => p.locator('.flowbar button', { hasText: label });
