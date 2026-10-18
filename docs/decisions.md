@@ -2142,6 +2142,30 @@ Alternatives compared:
   screen order is offered once.
 - Reading CSS or role locators by guessing the visible words: wrong guesses would write a box the page cannot find.
 
+**A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
+without a value on such a kind fills no value.**
+Asked for in #311 (2026-10-19), the first part of #310. Some kinds are covered only once each of a few values has a
+test: an ended document is cancelled, rejected, completed or expired, and a test on a cancelled one says nothing of a
+rejected one, yet one test was enough to fill the kind. So a kind in `caseKinds` may be `{ "text", "values" }`, and
+wherever a reviewer picks it, each value is a case with its own tests by depth and status, as each value of an
+on/off option and each side of a setting condition already is; the tag follows theirs. The kind is still what a
+reviewer picks per screen or call, a picked kind still puts nothing on the task list by itself, and on a listed screen
+or call each value with no tests gets its own empty test. A tag without a value on a kind with values, a value the
+kind does not list, and a value on a kind without values are reported with the tags that point at nothing, so a typo
+in a value shows. A value follows the rule of a kind's name, so `=` cannot appear in either. The description-only form
+stays; the loaded config and the review page data carry every kind as `{ text, values }`, with no values for a kind
+written as text. Counting each value on its own comes from Xray's parameterized tests and Gherkin's Examples tables,
+where each row of values is a run of its own, and naming each value without tests from NIST's combinatorial coverage
+measurement, which lists what is missing by name.
+Alternatives compared:
+- A kind per value (`ended-cancelled`, `ended-rejected`): as many buttons as values, the description written again in
+  each, and nothing on the page or in the task list shows they belong together.
+- A tag without a value counting for every value: one test would fill every value, which is what the values are there
+  to stop.
+Measured on main bddb370 against the branch with both example clients, with no `caseKinds` and with description-only
+kinds (on the first client with four picks, two `@case:` tests and one tag of an unknown kind): `map.json`, `tests.json`,
+what `rebuild` prints and the task list are identical apart from the time they were written.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

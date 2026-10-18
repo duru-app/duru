@@ -226,10 +226,12 @@ client with example results and a config to start from.
   (verdict).
 - `caseKinds` — kinds of test case the source cannot show, such as input limits or data from an older version
   (optional), each name mapped to the description the review page shows for it:
-  `{ "boundary": "입력 경계: 빈 값, 최대 길이, 특수 문자", "legacy": "옛 데이터: 이전 버전에서 만든 문서" }`. A name
-  starts with a letter followed by letters, digits, `.`, `_` or `-`, and a description is one line. The page and
-  the task list keep this order. A kind is a case of a screen or call only where a reviewer picks it on the review
-  page.
+  `{ "boundary": "입력 경계: 빈 값, 최대 길이, 특수 문자", "legacy": "옛 데이터: 이전 버전에서 만든 문서" }`. A kind
+  that needs a test for each of a few values is written `{ "text": <description>, "values": [<value>, …] }`, such as
+  `"ended": { "text": "끝난 문서", "values": ["cancelled", "rejected", "completed", "expired"] }`, and each value is
+  then a case of its own. A name or a value starts with a letter followed by letters, digits, `.`, `_` or `-`, a
+  description is one line, and `values` lists at least one value, each once. The page and the task list keep this
+  order. A kind is a case of a screen or call only where a reviewer picks it on the review page.
 
 ### Output and review
 
@@ -455,9 +457,12 @@ value or that a setting equals a value, the value follows a colon
 the condition is that a setting is off. A test with both tags counts for each case. A role or setting tag that is
 not a case of a screen the test is tagged with is listed with the tags that point at nothing on the map.
 
-A test of a kind from `caseKinds` declares it with `@case:<kind>` (`@screen:/home#Home @case:boundary`). It counts
-for that kind on every screen and call the test is tagged with, and shows under that case wherever a reviewer has
-picked the kind.
+A test of a kind from `caseKinds` declares it with `@case:<kind>` (`@screen:/home#Home @case:boundary`), and a test
+of a kind with values declares the value it checks with `@case:<kind>=<value>`
+(`@call:POST:/api/v1/sign @case:ended=cancelled`). It counts for that kind or value on every screen and call the
+test is tagged with, and shows under that case wherever a reviewer has picked the kind. A tag without a value on a
+kind with values, with a value the kind does not list, or with a value on a kind without values counts for no case
+and is listed with the tags that point at nothing on the map.
 
 `tests.json` lists the tests per node and per story with depth, status (pass, fail, pending; skipped and todo
 count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
@@ -705,7 +710,8 @@ reason. Once opened it stays open on other screens until it is closed. Choosing 
 elsewhere, opens its details under the call table and scrolls the middle pane to them: where its option was found,
 the server match, its tests, untagged tests linked to it, where this screen calls it and the screens that use it.
 With `caseKinds` set, 「경우별 테스트」 has a button per kind for every screen, and for a call in its details: pressing one
-makes the kind a case there, with its tests by depth, and pressing it again takes it out. The flow shows the same
+makes the kind a case there, with its tests by depth, and pressing it again takes it out. A picked kind with values
+has a row per value under it, with that value's tests by depth and result, or 「테스트 없음」. The flow shows the same
 middle and right panes for a picked screen.
 
 **Pane widths.** The edge on either side of the middle pane, in the list, in the story tab and beside a picked screen
@@ -942,9 +948,9 @@ listening for new saves when the review ends.
 
 `tasks` prints, as Markdown, every screen, API call and story whose current mark is `needs-more` or `missing`.
 Each screen comes with its marks, component file and route line, the app address, the settings and roles it
-needs, the tests of each role and setting case and of each picked case kind by depth and status, its API calls and
-the tests already attached. Calls follow under `# API calls`, with their picked case kinds the same way, and
-stories under `# Stories` with their steps, link verdicts and 「사전 조건」. A story's `needs` lines come before its
+needs, the tests of each role and setting case and of each picked case kind, or of each value of a kind with values,
+by depth and status, its API calls and the tests already attached. Calls follow under `# API calls`, with their
+picked case kinds the same way, and stories under `# Stories` with their steps, link verdicts and 「사전 조건」. A story's `needs` lines come before its
 steps, each step's `link need from step N` (the link from the step before), `need`, `input` and `expect` lines follow
 that step, and `expects at the end` follows the last step; a story without them gets none of these lines. An
 `input` line reads like `input: placeholder "이메일" or testId "login-email", number 2 → "member@example.com" (not
@@ -963,7 +969,8 @@ listed, followed by `left on N targets:` and all of them. Comments with no targe
 Each item ends with `empty tests`: one empty test per test format in the config, with the item's tags already in
 place (in the `tag` option for Playwright, in the title for the other formats) and held back so a copy run as it is does not pass (`test.fixme` for Playwright, `test.todo` for
 Vitest, `@Disabled` for JUnit, a verdict line with `<verdict>` for a check script). A screen gets one more set for
-each case with no tests, and a call one for each picked case kind with no tests. The writer puts what the test
+each case with no tests, and a call one for each picked case kind with no tests; for a kind with values that is one
+for each value with no tests, carrying `@case:<kind>=<value>`. The writer puts what the test
 checks in place of `<what it checks>`, since the Playwright empty tests of an item all carry that same title, fills
 in the data setup and the checks, and the test attaches after a `rebuild`. Pairs handed over on the review page follow under
 `# Tagging`, each with the test, the tag to add and where it goes. duru never edits a test file.

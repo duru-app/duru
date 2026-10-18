@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { compare } from './config.ts';
+import type { CaseKind } from './config.ts';
 import { GENERAL, recordKind } from './marks.ts';
 import { findNeed, needPath } from './needs.ts';
 import { reviewData } from './review.ts';
@@ -221,18 +222,29 @@ const CASE_TEXT: Record<string, (c: { opens: boolean }) => string> = {
 };
 const withCase = (tests: TestRow[] | undefined, tag: string) => (tests ?? []).filter((t) => t.cases?.includes(tag));
 
-function caseLines(nodeTag: string, cases: any[], tests: TestRow[] | undefined, caseKinds: Record<string, string>) {
+const kindOf = (c: { kind: string; tag: string }, caseKinds: Record<string, CaseKind>) => (c.kind === 'case' ? caseKinds[c.tag.slice('case:'.length)] : null);
+const caseTags = (c: { kind: string; tag: string }, caseKinds: Record<string, CaseKind>) => {
+  const values = kindOf(c, caseKinds)?.values ?? [];
+  return values.length ? values.map((v) => `${c.tag}=${v}`) : [c.tag];
+};
+
+function caseLines(nodeTag: string, cases: any[], tests: TestRow[] | undefined, caseKinds: Record<string, CaseKind>) {
   if (!cases.length) return [];
-  const text = (c: any) => (c.kind === 'case' ? caseKinds[c.tag.slice('case:'.length)] : CASE_TEXT[c.kind](c));
-  const tags = new Set(cases.map((c) => c.tag));
+  const tags = new Set(cases.flatMap((c) => caseTags(c, caseKinds)));
+  const tagLine = (tag: string, text: string, indent: string) => `${indent}- \`@${tag}\`${text && ` ${text}`} — ${testSummary(withCase(tests, tag))}`;
   return [
     `- cases (a test of one carries its tag with \`@${nodeTag}\`):`,
-    ...cases.map((c) => `  - \`@${c.tag}\` ${text(c)} — ${testSummary(withCase(tests, c.tag))}`),
+    ...cases.flatMap((c) => {
+      const kind = kindOf(c, caseKinds);
+      if (!kind) return [tagLine(c.tag, CASE_TEXT[c.kind](c), '  ')];
+      if (!kind.values.length) return [tagLine(c.tag, kind.text, '  ')];
+      return [`  - ${kind.text}, a case for each value:`, ...caseTags(c, caseKinds).map((tag) => tagLine(tag, '', '    '))];
+    }),
     `  - in no case — ${testSummary((tests ?? []).filter((t) => !t.cases?.some((tag) => tags.has(tag))))}`,
   ];
 }
 
-const untestedCases = (nodeTag: string, cases: any[], tests: TestRow[] | undefined) => cases.filter((c) => !withCase(tests, c.tag).length).map((c) => [nodeTag, c.tag]);
+const untestedCases = (nodeTag: string, cases: any[], tests: TestRow[] | undefined, caseKinds: Record<string, CaseKind>) => cases.flatMap((c) => caseTags(c, caseKinds)).filter((tag) => !withCase(tests, tag).length).map((tag) => [nodeTag, tag]);
 
 // 결과를 내주는 호출의 테스트는 세지 않는다.
 function resultOptionLines(map: any, tests: Record<string, TestRow[]>) {
@@ -459,13 +471,14 @@ export function taskList(config: any) {
   const formats = [...new Set<string>(config.tests.map((t: any) => t.format))];
   const resultLines = resultOptionLines(map, tests.nodes);
   const hasKinds = Object.keys(config.caseKinds).length > 0;
+  const hasValues = Object.values<CaseKind>(config.caseKinds).some((k) => k.values.length > 0);
   const partsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.node === id);
   const storyPartsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.story === id && m.where);
 
   const out = [
     `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}`,
     '',
-    `A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` on each test, in its \`tag\` option for Playwright and in its title for the other formats (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and ${hasKinds ? 'the tag of each case under `cases` it checks: a role or setting case of a screen that opens only under one, or a kind of case a reviewer picked for the screen or call, tagged `@case:<kind>`' : 'for a screen that opens only under a role or a setting the tag of each case under `cases` it checks'}), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` on it as well. Under \`empty tests\`, a screen or call gets one set for each open mark${hasKinds ? ' and one more for each case with no tests' : ', a screen one more for each case with no tests'}, and a story one set: an empty test for each test format in the config, with the tags already in place and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, put what the test checks in place of \`<what it checks>\` (the Playwright ones of an item all carry that title), remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
+    `A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` on each test, in its \`tag\` option for Playwright and in its title for the other formats (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and ${hasKinds ? 'the tag of each case under `cases` it checks: a role or setting case of a screen that opens only under one, or a kind of case a reviewer picked for the screen or call, tagged `@case:<kind>`' + (hasValues ? ', or `@case:<kind>=<value>` for a value of a kind with values' : '') : 'for a screen that opens only under a role or a setting the tag of each case under `cases` it checks'}), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` on it as well. Under \`empty tests\`, a screen or call gets one set for each open mark${hasKinds ? ' and one more for each case with no tests' : ', a screen one more for each case with no tests'}, and a story one set: an empty test for each test format in the config, with the tags already in place and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, put what the test checks in place of \`<what it checks>\` (the Playwright ones of an item all carry that title), remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
     '',
     `Source files are under \`${relative(config.srcRoot)}\`.`,
   ];
@@ -516,7 +529,7 @@ export function taskList(config: any) {
       ...caseLines(`screen:${s.id}`, s.cases, tests.nodes[s.id], config.caseKinds),
       ...callLines(s, tests.nodes, resultLines),
       ...testLines(tests.nodes[s.id]),
-      ...emptyTestLines(formats, [...marks.map((m) => cellTags('screen', m.target as Cell)), ...untestedCases(`screen:${s.id}`, s.cases, tests.nodes[s.id])]),
+      ...emptyTestLines(formats, [...marks.map((m) => cellTags('screen', m.target as Cell)), ...untestedCases(`screen:${s.id}`, s.cases, tests.nodes[s.id], config.caseKinds)]),
     );
   }
   if (calls.length) out.push('', '# API calls');
@@ -535,7 +548,7 @@ export function taskList(config: any) {
       ...caseLines(`call:${c.id}`, c.cases, tests.nodes[c.id], config.caseKinds),
       ...markedOptionLines(c, marks, tests.nodes[c.id]),
       ...testLines(tests.nodes[c.id]),
-      ...emptyTestLines(formats, [...marks.map((m) => cellTags('call', m.target as Cell)), ...untestedCases(`call:${c.id}`, c.cases, tests.nodes[c.id])]),
+      ...emptyTestLines(formats, [...marks.map((m) => cellTags('call', m.target as Cell)), ...untestedCases(`call:${c.id}`, c.cases, tests.nodes[c.id], config.caseKinds)]),
     );
   }
   if (storyMarks.length) out.push('', '# Stories', '', `Story files are in \`${relative(config.storiesDir)}\`.`);

@@ -65,7 +65,7 @@ const targetName = (t) => (t.candidate !== undefined
   ? `후보 ${candidateName(t.candidate)}`
   : t.story !== undefined
   ? `스토리 ${state.data.stories.list.find((st) => st.id === t.story)?.name ?? t.story}`
-  : [t.node, t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case] ?? t.case}`].filter(Boolean).join(' · '));
+  : [t.node, t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case]?.text ?? t.case}`].filter(Boolean).join(' · '));
 const conditionLabel = (key) => (key.startsWith('role:') ? `역할 ${key.slice('role:'.length)}` : `설정 ${key.slice('setting:'.length)}`);
 const tagLabel = (t) => {
   if (t.candidate !== undefined) return '후보';
@@ -75,7 +75,7 @@ const tagLabel = (t) => {
   if (t.part?.kind === 'condition') return conditionLabel(t.part.key);
   if (t.part?.kind === 'link') return `${t.part.key.from} 에서 오는 링크`;
   if (t.part) return `테스트 「${t.part.key.title}」`;
-  return [t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case] ?? t.case}`].filter(Boolean).join(' · ') || (callOf(t.node) ? '호출 전체' : '화면 전체');
+  return [t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case]?.text ?? t.case}`].filter(Boolean).join(' · ') || (callOf(t.node) ? '호출 전체' : '화면 전체');
 };
 const ownTests = (byId, id) => (byId && Object.hasOwn(byId, id) ? byId[id] : []);
 const testsOf = (id) => ownTests(state.data.tests.nodes, id);

@@ -162,6 +162,9 @@
   .open-needs .tips { font-size: 12px; margin-top: 4px; }
   .cases li { margin: 4px 0; }
   .cases .case { font-size: 13px; }
+  .case-values { margin: 2px 0 0 12px; }
+  .case-values li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 2px 0; }
+  .case-value { font-size: 12px; }
   .case-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
   .case-kinds button { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; text-align: left; }
   .case-kinds button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }

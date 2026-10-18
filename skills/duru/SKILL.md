@@ -268,9 +268,14 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    screen's cases does not attach and `rebuild` prints it as `unknown`.
    A screen or call can also list under `cases` a kind of case a reviewer picked for it, written `@case:<kind>`
    followed by what to test; a test of it carries that tag next to `@screen:` or `@call:` and checks what the
-   description asks. When the config names `caseKinds`, a `@case:` tag whose kind is not among them is printed as `unknown`.
+   description asks. A kind with values is listed by its description followed by a case per value, written
+   `@case:<kind>=<value>`; a test of one value carries that tag and sets up that value, and a test that carries
+   the kind without a value counts for none of them. When the config names `caseKinds`, a `@case:` tag whose kind is
+   not among them, a kind with values tagged without one, a value the kind does not list, or a value on a kind
+   without values is printed as `unknown`.
    Under `empty tests`, a screen or call has one set for each open mark, a screen one more for each case with no
-   tests, a call one more for each picked kind with no tests, and a story one set: an empty test per
+   tests, a call one more for each picked kind with no tests (for a kind with values, one for each value with no
+   tests), and a story one set: an empty test per
    test format in the config, with those tags already in place: in the `tag` option for Playwright, in the title for
    the other formats. Copy the one for the runner you write the test in and keep every tag where it is (you may
    add words around the tags in a title). Replace `<what it checks>` with what the test checks: the Playwright

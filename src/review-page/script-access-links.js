@@ -76,24 +76,34 @@ const settingCaseName = (tag) => tag.slice('setting:'.length, tag.lastIndexOf('=
 const CASE_LABEL = {
   role: (c) => (c.opens ? `역할 ${c.tag.slice('role:'.length)} — 열림` : '여는 역할이 아닌 역할 — 막힘'),
   setting: (c) => `설정 ${settingCaseName(c.tag)} ${c.opens ? '맞춤 — 열림' : '맞추지 않음 — 막힘'}`,
-  case: (c) => state.data.caseKinds[c.tag.slice('case:'.length)],
+  case: (c) => state.data.caseKinds[c.tag.slice('case:'.length)].text,
 };
+const caseValues = (c) => (c.kind === 'case' ? state.data.caseKinds[c.tag.slice('case:'.length)].values : []);
 
 function caseSection(node) {
   const kinds = Object.entries(state.data.caseKinds);
   if (!node.cases.length && !kinds.length) return null;
   const tests = testsOf(node.id);
+  const testsWith = (tag) => tests.filter((t) => t.cases?.includes(tag));
   const picked = new Set(node.cases.map((c) => c.tag));
+  const caseRow = (c, values) => (values.length
+    ? h('li', {},
+      h('div', { class: 'case' }, CASE_LABEL[c.kind](c)),
+      h('ul', { class: 'plain case-values' }, values.map((v) => h('li', { title: `@${c.tag}=${v}` },
+        h('code', { class: 'case-value' }, v),
+        depthCounts(testsWith(`${c.tag}=${v}`), '테스트 없음')))))
+    : h('li', { title: `@${c.tag}` },
+      h('div', { class: 'case' }, CASE_LABEL[c.kind](c)),
+      depthCounts(testsWith(c.tag), '테스트 없음')));
   return h('div', { class: 'cases' },
     h('h2', {}, '경우별 테스트'),
-    node.cases.length ? h('ul', { class: 'plain' }, node.cases.map((c) => h('li', { title: `@${c.tag}` },
-      h('div', { class: 'case' }, CASE_LABEL[c.kind](c)),
-      depthCounts(tests.filter((t) => t.cases?.includes(c.tag)), '테스트 없음')))) : null,
+    node.cases.length ? h('ul', { class: 'plain' }, node.cases.map((c) => caseRow(c, caseValues(c)))) : null,
     kinds.length ? [
       h('p', { class: 'muted' }, `이 ${nodeWord(node.id)}에서 시험할 경우 종류`),
-      h('div', { class: 'case-kinds' }, kinds.map(([kind, text]) => {
+      h('div', { class: 'case-kinds' }, kinds.map(([kind, { text, values }]) => {
         const on = picked.has(`case:${kind}`);
-        return h('button', { type: 'button', class: on ? 'on' : '', 'aria-pressed': String(on), title: `@case:${kind}`, disabled: state.caseSaving || state.bulkBusy, onclick: () => pickCase({ node: node.id, case: kind }, on ? 'not-needed' : 'needed') }, text);
+        const tag = values.length ? values.map((v) => `@case:${kind}=${v}`).join('\n') : `@case:${kind}`;
+        return h('button', { type: 'button', class: on ? 'on' : '', 'aria-pressed': String(on), title: tag, disabled: state.caseSaving || state.bulkBusy, onclick: () => pickCase({ node: node.id, case: kind }, on ? 'not-needed' : 'needed') }, text);
       })),
       state.caseError?.node === node.id ? h('p', { class: 'error' }, state.caseError.message) : null,
     ] : null);
