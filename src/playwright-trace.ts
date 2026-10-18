@@ -1,11 +1,14 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
+import type { InputBox, StepInput } from './stories.ts';
 
 type StepKind = 'visit' | 'assert' | 'interact';
 
 export interface TraceStep {
   url: string;
   kind: StepKind;
+  input?: StepInput;
+  inputSkipped?: true;
 }
 
 export interface TraceRequest {
@@ -20,6 +23,7 @@ interface TimelineEntry {
   page: string;
   url?: string;
   kind?: 'assert' | 'interact';
+  fill?: StepInput | 'skipped';
 }
 
 const KNOWN_VERSIONS = [8];
@@ -29,9 +33,30 @@ const INTERACTIONS = new Set([
   'hover', 'dispatchEvent', 'keyboardDown', 'keyboardUp', 'keyboardType', 'keyboardPress', 'keyboardInsertText',
   'mouseMove', 'mouseClick', 'mouseDown', 'mouseUp', 'mouseWheel', 'touchscreenTap',
 ]);
+const QUOTED = '("(?:[^"\\\\]|\\\\.)*")';
+const BOX_SELECTORS: [keyof InputBox, RegExp][] = [
+  ['label', new RegExp(`^internal:label=${QUOTED}[is]?(?: >> nth=(\\d+))?$`)],
+  ['placeholder', new RegExp(`^internal:attr=\\[placeholder=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`)],
+  ['testId', new RegExp(`^internal:testid=\\[data-testid=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`)],
+];
 const NOT_THE_APP = /^(about|data|blob|chrome|chrome-error):/;
 const END_OF_DIRECTORY = 0x06054b50;
 const DIRECTORY_ENTRY = 0x02014b50;
+
+function fillOf(params: any): StepInput | 'skipped' {
+  const value = params?.value;
+  if (typeof value !== 'string' || !value.trim() || typeof params.selector !== 'string') return 'skipped';
+  for (const [word, pattern] of BOX_SELECTORS) {
+    const found = params.selector.match(pattern);
+    if (!found) continue;
+    try {
+      return { box: { [word]: JSON.parse(found[1]), ...(found[2] !== undefined && { nth: Number(found[2]) + 1 }) }, value };
+    } catch {
+      return 'skipped';
+    }
+  }
+  return 'skipped';
+}
 
 function zipEntries(buffer: Buffer): Map<string, () => Buffer> {
   let end = buffer.length - 22;
@@ -97,14 +122,17 @@ export function readTrace(file: string): TraceResult {
     }
     const kind = kindOf(action.method);
     if (kind === 'assert') timeline.push({ at: endTime, page: action.pageId, kind });
-    else if (kind && !end?.error) timeline.push({ at: input?.timestamp ?? action.startTime, page: action.pageId, kind });
+    else if (kind && !end?.error) {
+      const fill = action.method === 'fill' ? fillOf(action.params) : undefined;
+      timeline.push({ at: input?.timestamp ?? action.startTime, page: action.pageId, kind, ...(fill && { fill }) });
+    }
   }
   timeline.sort((a, b) => a.at - b.at || Number(Boolean(a.kind)) - Number(Boolean(b.kind)));
   const current = new Map();
   const steps: TraceStep[] = [];
-  for (const { page, url, kind } of timeline) {
+  for (const { page, url, kind, fill } of timeline) {
     if (kind) {
-      if (current.has(page)) steps.push({ url: current.get(page), kind });
+      if (current.has(page)) steps.push({ url: current.get(page), kind, ...(fill === 'skipped' ? { inputSkipped: true as const } : fill && { input: fill }) });
     } else if (NOT_THE_APP.test(url!)) {
       current.delete(page);
     } else if (current.get(page) !== url) {

@@ -7,7 +7,9 @@ import { acceptCandidate, discardCandidate, storeCandidates, storyCandidates, un
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { editStory, loadStories, writeStorySteps } from '../src/stories.ts';
+import type { StepInput } from '../src/stories.ts';
 import { linkTests } from '../src/test-links.ts';
+import { traceLinker } from '../src/trace-links.ts';
 
 type Candidate = Parameters<typeof acceptCandidate>[1];
 
@@ -683,5 +685,57 @@ test('with a map built before links carried their conditions, stored candidates 
     const result = leftOnlyStored(dir, stale, path.join(dir, 'map.json'));
     assert.deepEqual(result.list, []);
     assert.match((result as { stale?: string }).stale!, /예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다/);
+  });
+});
+
+const MEMO_INPUT = { box: { label: '메모' }, value: '첫 메모' };
+const withInputs = (title: string, inputs: StepInput[][], skipped = 0) => ({ report: 'results/playwright/e2e.json', title, screens: HOME_HELP, inputs, skipped });
+
+test('the trace of an input run gives the filled values and the skipped count, one list per screen of the order', () => {
+  const linkByTrace = traceLinker(map);
+  const trace = linkByTrace('test/fixtures/app/traces/inputs.zip') as { order: string[]; inputs: StepInput[][]; skipped: number };
+  assert.equal(trace.order.length, 2);
+  assert.deepEqual(trace.inputs.map((i) => i.length), [5, 1]);
+  assert.equal(trace.skipped, 3);
+});
+
+test('of traces with the same screen order, the first one read gives the inputs and the skipped count', () => {
+  const traced = [withInputs('first', [[MEMO_INPUT], []], 2), withInputs('second', [[{ box: { label: '메모' }, value: '다른 값' }], []], 0)];
+  const { list } = storyCandidates({ ...config, visitRecords: [], storiesDir: EXAMPLE_STORIES }, map, path.join(config.outDir, 'map.json'), traced);
+  assert.equal(list.length, 1);
+  assert.deepEqual(list[0].stepFields, [{ inputs: [MEMO_INPUT] }, {}]);
+  assert.equal(list[0].skipped, 2);
+});
+
+test('a candidate with no input and nothing skipped carries neither field', () => {
+  const { list } = storyCandidates({ ...config, visitRecords: [], storiesDir: EXAMPLE_STORIES }, map, path.join(config.outDir, 'map.json'), [withInputs('plain', [[], []])]);
+  assert.equal('stepFields' in list[0], false);
+  assert.equal('skipped' in list[0], false);
+});
+
+test('accepting a candidate writes its inputs into the steps of the story, and unaccepting keeps them in the stored candidate', () => {
+  withFolder({}, (dir: string) => {
+    const [candidate] = storyCandidates({ ...config, visitRecords: [], storiesDir: dir }, map, path.join(config.outDir, 'map.json'), [withInputs('fills memo', [[MEMO_INPUT], []], 1)]).list;
+    acceptCandidate(dir, candidate, { id: 'fills-memo', name: '메모를 쓴다', author: 'reviewer' });
+    const written = JSON.parse(fs.readFileSync(path.join(dir, 'fills-memo.json'), 'utf8'));
+    assert.deepEqual(written.screens, [{ screen: '/home#Home', inputs: [MEMO_INPUT] }, '/help#Help']);
+    assert.equal(loadStories(dir).notices.length, 0);
+    unacceptStory(dir, 'fills-memo');
+    const [stored] = storyCandidates({ ...config, visitRecords: [], storiesDir: dir }, map, path.join(config.outDir, 'map.json')).list;
+    assert.deepEqual(stored.stepFields, [{ inputs: [MEMO_INPUT] }, {}]);
+  });
+});
+
+test('a stored candidate keeps its inputs and skipped count, and one whose stepFields do not fit its screens is reported', () => {
+  withFolder({}, (dir: string) => {
+    const list = storyCandidates({ ...config, visitRecords: [], storiesDir: dir }, map, path.join(config.outDir, 'map.json'), [withInputs('fills memo', [[MEMO_INPUT], []], 4)]).list;
+    storeCandidates(dir, list);
+    const [stored] = storyCandidates({ ...config, visitRecords: [], storiesDir: dir }, map, path.join(config.outDir, 'map.json')).list;
+    assert.deepEqual([stored.stepFields, stored.skipped], [[{ inputs: [MEMO_INPUT] }, {}], 4]);
+    const file = path.join(dir, 'candidates', fs.readdirSync(path.join(dir, 'candidates'))[0]);
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), stepFields: [{}] }));
+    const broken = storyCandidates({ ...config, visitRecords: [], storiesDir: dir }, map, path.join(config.outDir, 'map.json'));
+    assert.equal(broken.list.length, 0);
+    assert.match(broken.notices[0].reason, /stepFields 는 screens 와 같은 길이/);
   });
 });

@@ -198,3 +198,38 @@ test('a trace of a version duru does not know gives a reason that names the vers
     fs.writeFileSync(file, storedZip({ '0-trace.trace': `${JSON.stringify({ type: 'context-options', version: 99, playwrightVersion: '9.9.9' })}\n` }));
     assert.deepEqual(readTrace(file), { reason: '두루가 모르는 trace 파일 버전입니다: 99 (Playwright 9.9.9)' });
   }));
+
+const INPUTS = path.join(import.meta.dirname, 'fixtures/app/traces/inputs.zip');
+const inputSteps = () => (readTrace(INPUTS) as Traced).steps.filter((s) => s.input || s.inputSkipped).map((s) => [address(s.url), s.input ?? 'skipped']);
+
+test('a fill that found its box by label, placeholder or test ID gives the box words and the value', () => {
+  const found = inputSteps();
+  assert.deepEqual(found[2], ['/home', { box: { placeholder: '이름' }, value: 'Kim' }]);
+  assert.deepEqual(found[3], ['/home', { box: { testId: 'amount' }, value: '3' }]);
+  assert.deepEqual(found[0], ['/home', { box: { label: '메모', nth: 1 }, value: '첫 메모' }]);
+});
+
+test('a trailing i or s on the words is ignored, and a quote inside the words is kept', () => {
+  const found = inputSteps();
+  assert.deepEqual(found[1], ['/home', { box: { label: '메모', nth: 2 }, value: '둘째 메모' }]);
+  assert.deepEqual(found[6], ['/home', { box: { label: '따옴표 "큰"' }, value: 'q' }]);
+});
+
+test('nth is counted from 1, while the trace counts from 0', () => {
+  const found = inputSteps();
+  assert.deepEqual(found.map(([, input]) => (input as { box?: { nth?: number } }).box?.nth), [1, 2, undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
+});
+
+test('a fill found by CSS or role, and a fill with an empty value, are marked skipped', () => {
+  const found = inputSteps();
+  assert.deepEqual(found.map(([, input]) => input === 'skipped'), [false, false, false, false, true, true, false, true, false]);
+});
+
+test('a key press and a click carry no input and are not marked skipped', () => {
+  const plain = (readTrace(INPUTS) as Traced).steps.filter((s) => s.kind === 'interact' && !s.input && !s.inputSkipped);
+  assert.equal(plain.length, 2);
+});
+
+test('an input is put on the address that was open when it was filled', () => {
+  assert.deepEqual(inputSteps().at(-1), ['/document/draft', { box: { placeholder: '제목' }, value: '제목 값' }]);
+});

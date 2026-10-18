@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { Page } from 'playwright-core';
 import { addMark } from '../src/marks.ts';
 import { taskList } from '../src/tasks.ts';
-import { withRebuiltFixture, withServer, postMark, rebuild, browserMissing, withPage, TRACED, asked, why, placeOf, postJson, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate } from './review-helpers.ts';
+import { FIXTURE, withRebuiltFixture, withServer, postMark, rebuild, browserMissing, withPage, TRACED, asked, why, placeOf, postJson, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
 
 test('the data carries each story checked against the map with its status, the tests per story and the story files that could not be read, read again on every request', async () => {
@@ -566,6 +566,33 @@ test('in a browser, a need file deleted or made unreadable elsewhere while its e
         fs.writeFileSync(path.join(needs, 'admin-account.json'), JSON.stringify({ name: '관리자 계정', text: '역할 ADMIN 계정' }));
         await p.waitForSelector('#need-list li:has-text("관리자 계정")');
         assert.equal(await p.locator('#right .story-error').count(), 0, 'the notice does not come back once another place is chosen');
+      }),
+    );
+  });
+});
+
+test('in a browser, a candidate from a trace shows the values filled in its steps and how many inputs could not be carried over, and accepting it writes the values into the story file', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories', ...TRACED }, (config, copy) => {
+    const results = path.join(copy, 'results/playwright-traced/test-results/visits-moves-to-the-drafts-without-loading-a-page-chromium');
+    fs.copyFileSync(path.join(FIXTURE, 'traces/inputs.zip'), path.join(results, 'trace.zip'));
+    rebuild(copy);
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#candidate-list li:has-text("moves to the drafts")');
+        assert.equal(await p.textContent('#center .skipped-inputs'), '옮기지 못한 입력 3개');
+        assert.deepEqual(await p.locator('#center .story-path .step').first().locator('.written-inputs tr').evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll('td')].slice(0, 2).map((td) => td.textContent))), [
+          ['라벨 「메모」 · 1 번째', '첫 메모'],
+          ['라벨 「메모」 · 2 번째', '둘째 메모'],
+          ['안내 글 「이름」', 'Kim'],
+          ['테스트 ID 「amount」', '3'],
+          ['라벨 「따옴표 "큰"」', 'q'],
+        ]);
+        await p.click('#right button.accept');
+        await p.waitForSelector('#story-list li:has-text("moves to the drafts")');
+        const written = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'moves-to-the-drafts-without-loading-a-page.json'), 'utf8'));
+        assert.equal(written.screens[0].inputs.length, 5);
       }),
     );
   });
