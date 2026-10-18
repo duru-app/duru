@@ -41,20 +41,26 @@ function stepItem(step, i, recordSteps, story, fields) {
   const slot = (name) => (story ? slotRow(name, stepTarget(story, i, step.screen), SLOT_WORDS.step) : name);
   // 적힌 글을 선택하려고 클릭해도 화면이 열리지 않게 이벤트 전파를 막는다.
   const written = hasWritten(fields) ? h('div', { class: 'step-written written', title: '', onclick: (e) => e.stopPropagation() }, writtenRows(fields, '조건', '기대 결과')) : null;
+  const place = { kind: 'step', step: i + 1, screen: step.screen };
+  const button = story ? fieldsButton(story, place, Boolean(written)) : null;
+  const below = story ? fieldsBelow(story, place, written) : [written].filter(Boolean);
+  const wraps = below.length ? ' has-written' : '';
   if (!step.onMap) {
-    return h('div', { class: `step off-map${written ? ' has-written' : ''}`, 'data-step': i },
+    return h('div', { class: `step off-map${wraps}`, 'data-step': i },
       h('span', { class: 'no' }, i + 1),
       slot(h('span', { class: 'name slot-text' }, h('div', { class: 'muted mono' }, step.screen))),
       records,
       h('span', { class: 'chip l-off-map' }, '맵에 없는 화면'),
-      written);
+      button,
+      below);
   }
   const s = screenOf(step.screen);
-  return h('div', { class: `step on-map${written ? ' has-written' : ''}`, 'data-step': i, title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
+  return h('div', { class: `step on-map${wraps}`, 'data-step': i, title: '화면 목록에서 이 화면을 엽니다', onclick: () => openScreen(s.id) },
     h('span', { class: 'no' }, i + 1),
     slot(h('span', { class: 'name slot-text' }, screenHead(s), stepTests(s.id))),
     records,
-    written);
+    button,
+    below);
 }
 
 function depthCounts(tests, empty) {
@@ -74,6 +80,7 @@ const unknownList = (links) => h('ul', { class: 'plain ways unknown-links' }, li
 const skippedLinks = (links) => [h('div', { class: 'muted skipped' }, '판정에서 뺀 링크'), unknownList(links)];
 
 function linkItem(l, story, i, fields) {
+  const place = { kind: 'link', step: i + 2, screen: l.to };
   const head = h('span', { class: 'slot-text' },
     h('span', { class: `chip link-verdict l-${l.verdict}`, title: LINK_VERDICT_TITLE[l.verdict] }, LINK_VERDICT[l.verdict]),
     l.verdict === 'off-map' ? h('span', { class: 'muted' }, ' 화면 없음') : null,
@@ -85,6 +92,6 @@ function linkItem(l, story, i, fields) {
     l.verdict === 'unknown' ? unknownList(l.unknownLinks) : null,
     l.ways.length ? h('ul', { class: 'plain ways' }, l.ways.map((w) => wayItem(w))) : null,
     l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null,
-    linkWritten(fields));
+    story ? [fieldsButton(story, place, Boolean(fields?.linkNeeds?.length)), ...fieldsBelow(story, place, linkWritten(fields))] : linkWritten(fields));
 }
 

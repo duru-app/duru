@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import type { Page, Route } from 'playwright-core';
 import { loadMarks } from '../src/marks.ts';
@@ -419,10 +421,68 @@ test('a story name and memo edited through the page are written into its file', 
   );
 });
 
+const sha256 = (file: string) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+
+test('the fields of a story, a step or the link into a step are written through the page with the mark of the file it read, and the reply names the file written', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const file = path.join(config.storiesDir, 'run-lab.json');
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
+      const read = data.stories.list.find((s) => s.id === 'run-lab')!.contentHash;
+      assert.equal(read, sha256(file));
+      const inputs = [{ box: { label: '실험 이름', nth: 2 }, value: '첫 실험' }];
+      const res = await postJson(base, '/api/stories/fields', { id: 'run-lab', place: { kind: 'step', step: 2, screen: '/lab#Lab' }, fields: { needs: ['실험실 설정을 켠다'], inputs }, contentHash: read });
+      assert.equal(res.status, 200);
+      const written = await res.json();
+      assert.deepEqual([written.file, written.contentHash, written.previousHash], ['run-lab.json', sha256(file), read]);
+      const link = await postJson(base, '/api/stories/fields', { id: 'run-lab', place: { kind: 'link', step: 3, screen: '/lab/result#LabResult' }, fields: { linkNeeds: ['실행이 끝난 경우'] }, contentHash: written.contentHash });
+      const story = await postJson(base, '/api/stories/fields', { id: 'run-lab', place: { kind: 'story' }, fields: { expects: ['실행 기록이 한 줄 늘어난다'] }, contentHash: (await link.json()).contentHash });
+      assert.equal(story.status, 200);
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+      assert.deepEqual(saved.screens, ['/home#Home', { screen: '/lab#Lab', needs: ['실험실 설정을 켠다'], inputs }, { screen: '/lab/result#LabResult', linkNeeds: ['실행이 끝난 경우'] }]);
+      assert.deepEqual(saved.expects, ['실행 기록이 한 줄 늘어난다']);
+    }),
+  );
+});
+
+test('a field write is refused with its reason when a field is wrong, when the story file changed since the page read it, when the body is not an object or too large, or when it comes from another host, and the file stays as it was', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const file = path.join(config.storiesDir, 'run-lab.json');
+      const read = sha256(file);
+      const wrong = await postJson(base, '/api/stories/fields', { id: 'run-lab', place: { kind: 'step', step: 2, screen: '/lab#Lab' }, fields: { inputs: [{ box: { label: '실험 이름', nth: 0 }, value: '첫 실험' }] }, contentHash: read });
+      assert.deepEqual([wrong.status, await wrong.text()], [400, 'screens 의 2 번째 단계의 1 번째 입력값의 box 의 nth 는 1 이상의 정수여야 합니다']);
+      const first = await postJson(base, '/api/stories/fields', { id: 'run-lab', place: { kind: 'link', step: 1, screen: '/home#Home' }, fields: { linkNeeds: ['반려된 경우'] }, contentHash: read });
+      assert.deepEqual([first.status, await first.text()], [400, 'screens 의 1 번째 단계에는 앞 단계가 없어 linkNeeds(들어오는 링크 조건)를 둘 수 없습니다']);
+      assert.equal((await postJson(base, '/api/stories/fields', ['run-lab'])).status, 400);
+      const unmarked = await postJson(base, '/api/stories/fields', { id: 'run-lab', place: { kind: 'story' }, fields: { needs: ['x'] } });
+      assert.deepEqual([unmarked.status, await unmarked.text()], [400, 'contentHash 에 페이지가 읽은 스토리 파일 내용의 SHA-256 을 보내야 합니다']);
+      const moved = await postJson(base, '/api/stories/fields', { id: 'run-lab', place: { kind: 'step', step: 2, screen: '/home#Home' }, fields: { needs: ['x'] }, contentHash: read });
+      assert.deepEqual([moved.status, await moved.text()], [400, '스토리 run-lab 의 2 번째 단계는 /home#Home 이 아니라 /lab#Lab 화면이라 쓰지 않았습니다']);
+      assert.equal((await postJson(base, '/api/stories/fields', { id: 'nope', place: { kind: 'story' }, fields: {}, contentHash: read })).status, 400);
+
+      fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), memo: '다른 곳에서 고쳤다' }));
+      const changed = fs.readFileSync(file, 'utf8');
+      const stale = await postJson(base, '/api/stories/fields', { id: 'run-lab', place: { kind: 'story' }, fields: { needs: ['완료된 문서가 하나 있다'] }, contentHash: read });
+      assert.deepEqual([stale.status, await stale.text()], [409, '스토리 파일 run-lab.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다']);
+
+      const big = await postJson(base, '/api/stories/fields', { id: 'run-lab', place: { kind: 'story' }, fields: { needs: ['x'.repeat(70 * 1024)] }, contentHash: sha256(file) }).then((r) => r.status, () => 'closed');
+      assert.notEqual(big, 200);
+      const port = new URL(base).port;
+      const body = JSON.stringify({ id: 'run-lab', place: { kind: 'story' }, fields: { needs: ['완료된 문서가 하나 있다'] }, contentHash: sha256(file) });
+      const host = await new Promise((resolve, reject) => {
+        http.request({ host: '127.0.0.1', port, path: '/api/stories/fields', method: 'POST', headers: { host: `attacker.example:${port}`, 'content-type': 'application/json' } }, (r) => resolve(r.statusCode)).on('error', reject).end(body);
+      });
+      assert.equal(host, 403);
+      assert.equal(fs.readFileSync(file, 'utf8'), changed);
+    }),
+  );
+});
+
 test('story writes that are not JSON requests are refused', async () => {
   await withRebuiltFixture(CANDIDATES, (config) =>
     withServer(config, 'reviewer', async (base) => {
-      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/unaccept']) {
+      for (const url of ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/unaccept']) {
         const res = await fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
         assert.equal(res.status, 415, url);
       }

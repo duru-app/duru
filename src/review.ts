@@ -19,7 +19,7 @@ import type { Mark } from './marks.ts';
 import { linkKey, locatePart, locateStoryPart } from './parts.ts';
 import type { StoryPath } from './parts.ts';
 import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.ts';
-import { addStory, editStory } from './stories.ts';
+import { addStory, editStory, StoryChanged, writeStoryFields } from './stories.ts';
 import { checkScreens, checkStoryFiles } from './story-paths.ts';
 import { DEPTHS } from './test-links.ts';
 
@@ -35,6 +35,7 @@ export const PAGE_PARTS = [
   'script-app-pane.js',
   'script-settings-bar.js',
   'script-step-cards.js',
+  'script-story-fields.js',
   'script-untagged-center.js',
   'script-story-center.js',
   'script-new-story.js',
@@ -53,7 +54,7 @@ export const PAGE_PARTS = [
 ];
 const BODY_LIMIT = 64 * 1024;
 const STORIES_SETTLE_MS = 100;
-const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add'];
+const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add'];
 
 function gitUserName(cwd: string) {
   try {
@@ -453,6 +454,13 @@ export async function startReviewServer(config: any, { port = 0, author = review
           return send(res, 400, 'text/plain', err.message);
         }
         if (!isPlainObject(input)) return send(res, 400, 'text/plain', 'expected a JSON object');
+        if (req.url === '/api/stories/fields') {
+          try {
+            return send(res, 200, 'application/json', JSON.stringify(writeStoryFields(config.storiesDir, input.id, input)));
+          } catch (err: any) {
+            return send(res, err instanceof StoryChanged ? 409 : 400, 'text/plain', err.message);
+          }
+        }
         if (req.url === '/api/stories/edit' || req.url === '/api/stories/unaccept') {
           try {
             const written = req.url === '/api/stories/edit' ? editStory(config.storiesDir, input.id, input) : unacceptStory(config.storiesDir, input.id);

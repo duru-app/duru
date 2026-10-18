@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { compare, isPlainObject } from './config.ts';
@@ -54,6 +55,7 @@ export interface Story {
   date: string;
   source?: { record: string; steps: [number, number] } | { report: string; tests: string[] };
   file: string;
+  contentHash: string;
 }
 
 interface Notice {
@@ -100,6 +102,7 @@ export const isSource = (v: RawSource) => isPlainObject(v) && Object.keys(v).len
 export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v))
   && new Date(`${v.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === v.slice(0, 10);
 
+const hashOf = (bytes: Buffer) => crypto.createHash('sha256').update(bytes).digest('hex');
 const screenOf = (step: any) => (isPlainObject(step) ? step.screen : step);
 
 function fieldsProblem(fields: { needs?: unknown; linkNeeds?: unknown; expects?: unknown }, where: string, keys: readonly (keyof typeof FIELD_RULES)[] = FIELD_KEYS) {
@@ -222,8 +225,11 @@ export function loadStories(dir: string): { stories: Story[]; notices: Notice[] 
     }
     fileOfId.set(id, file);
     let story;
+    let contentHash;
     try {
-      story = JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
+      const bytes = fs.readFileSync(path.join(root, file));
+      contentHash = hashOf(bytes);
+      story = JSON.parse(bytes.toString('utf8'));
     } catch (err) {
       notices.push({ file, reason: `JSON 으로 읽지 못했습니다: ${(err as Error).message}` });
       continue;
@@ -233,7 +239,7 @@ export function loadStories(dir: string): { stories: Story[]; notices: Notice[] 
       notices.push({ file, reason: problem });
       continue;
     }
-    stories.push({ id, ...storyOf(story), file });
+    stories.push({ id, ...storyOf(story), file, contentHash });
   }
   return { stories: stories.sort((a, b) => compare(a.id, b.id)), notices };
 }
@@ -260,10 +266,59 @@ export function addStory(dir: string, { id, name, screens, memo = '', author, so
 export function editStory(dir: string, id: string, { name, memo }: { name: unknown; memo: unknown }) {
   if (!isText(name)) throw new Error('스토리 이름이 필요합니다');
   if (typeof memo !== 'string') throw new Error('메모는 글자여야 합니다');
+  return rewriteStory(dir, id, (raw) => ({ ...raw, name: name.trim(), memo }));
+}
+
+export class StoryChanged extends Error {}
+
+type Place = { kind: 'story' } | { kind: 'step' | 'link'; step: number; screen: string };
+
+const PLACE_FIELDS = { story: FIELD_KEYS, step: ['needs', 'inputs', 'expects'], link: ['linkNeeds'] } as const;
+
+const isPlace = (v: any): v is Place => isPlainObject(v) && (v.kind === 'story' || ((v.kind === 'step' || v.kind === 'link') && isStep(v.step) && isText(v.screen)));
+const placeName = (place: Place) => (place.kind === 'story' ? '스토리 전체' : `screens 의 ${place.step} 번째 단계${place.kind === 'link' ? '로 들어오는 링크' : ''}`);
+
+function withFields(raw: any, keys: readonly string[], fields: Record<string, unknown>, order: readonly string[]) {
+  const next = { ...raw };
+  for (const key of keys.filter((k) => Object.hasOwn(fields, k))) next[key] = Array.isArray(fields[key]) && !fields[key].length ? undefined : fields[key];
+  return Object.fromEntries(order.filter((k) => next[k] !== undefined).map((k) => [k, next[k]]));
+}
+
+function placeFields(raw: any, place: Place, fields: Record<string, unknown>) {
+  const keys = PLACE_FIELDS[place.kind];
+  if (place.kind === 'story') return withFields(raw, keys, fields, KEYS);
+  const step = raw.screens[place.step - 1];
+  const next = withFields(isPlainObject(step) ? step : { screen: step }, keys, fields, STEP_KEYS);
+  return { ...raw, screens: raw.screens.with(place.step - 1, Object.keys(next).length === 1 ? next.screen : next) };
+}
+
+export function writeStoryFields(dir: string, id: string, { place, fields, contentHash }: { place: unknown; fields: unknown; contentHash: unknown }) {
+  if (!isPlace(place)) throw new Error('place 는 { "kind": "story" } 나 { "kind": "step" 또는 "link", "step": 단계 번호, "screen": 그 단계의 화면 ID } 여야 합니다');
+  if (!isPlainObject(fields)) throw new Error('fields 는 칸 이름마다 목록을 담은 객체여야 합니다');
+  const given = fields as Record<string, unknown>;
+  const keys: readonly string[] = PLACE_FIELDS[place.kind];
+  const others = Object.keys(given).filter((k) => !keys.includes(k));
+  if (others.length) throw new Error(`${placeName(place)}에는 ${keys.join(', ')} 만 적을 수 있습니다: ${others.join(', ')}`);
+  if (typeof contentHash !== 'string') throw new Error('contentHash 에 페이지가 읽은 스토리 파일 내용의 SHA-256 을 보내야 합니다');
+  return rewriteStory(dir, id, (raw) => {
+    if (place.kind !== 'story') {
+      if (place.step > raw.screens.length) throw new Error(`스토리 ${id} 에는 ${place.step} 번째 단계가 없습니다`);
+      const screen = screenOf(raw.screens[place.step - 1]);
+      if (screen !== place.screen) throw new Error(`스토리 ${id} 의 ${place.step} 번째 단계는 ${place.screen} 이 아니라 ${screen} 화면이라 쓰지 않았습니다`);
+    }
+    const next = placeFields(raw, place, given);
+    const problem = problemOf(next);
+    if (problem) throw new Error(problem);
+    return next;
+  }, { contentHash });
+}
+
+function rewriteStory(dir: string, id: string, change: (raw: any) => object, read?: { contentHash: unknown }) {
   const story = loadStories(dir).stories.find((s) => s.id === id);
   if (!story) throw new Error(`스토리 ${id} 를 찾지 못했습니다`);
   const file = path.join(storyFiles(dir).root, story.file);
-  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-  fs.writeFileSync(file, JSON.stringify({ ...raw, name: name.trim(), memo }, null, 2) + '\n');
-  return { ...story, name: name.trim(), memo };
+  const bytes = fs.readFileSync(file);
+  if (read && hashOf(bytes) !== read.contentHash) throw new StoryChanged(`스토리 파일 ${story.file} 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다`);
+  fs.writeFileSync(file, JSON.stringify(change(JSON.parse(bytes.toString('utf8'))), null, 2) + '\n');
+  return { ...loadStories(dir).stories.find((s) => s.id === id)!, previousHash: hashOf(bytes) };
 }

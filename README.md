@@ -637,11 +637,11 @@ dashed with 「링크 없음」 where the map has no link, and orange dotted whe
 could not be read; the 「i」 above the line shows these. Pressing a box outlines it and that step's card, scrolling the
 cards only when that card is out of view; pressing the line between two steps brings that link's row into view. The
 outline stays on the pressed step while the cards scroll, and a line wider than the pane slides sideways to keep it in
-view. Below the line are the story's cards: its name, tests, 「스토리」 box, then each step and the link into it. The right
-column has the story's 「사전 조건」, a folded 「손볼 화면 N」 listing the failing and untested screens on its path, each bringing
-up its step card, then the name and memo and the conversation. The address of a story is `#story?story=<ID>`, with
-`&step=<N>` added while step N is outlined, so opening that address, going back to it or reloading it outlines the
-same step and brings its card into view. Pressing another step changes the address without adding to the browser
+view. Below the line are the story's cards: its name, tests, 「스토리 전체」 box, then each step and the link into it. The
+right column has the story's 「사전 조건」, a folded 「손볼 화면 N」 listing the failing and untested screens on its path, each
+bringing up its step card, then the name and memo and the conversation. The address of a story is `#story?story=<ID>`,
+with `&step=<N>` added while step N is outlined, so opening that address, going back to it or reloading it outlines
+the same step and brings its card into view. Pressing another step changes the address without adding to the browser
 history.
 
 **A new story in the flow.** While 「새 스토리」 is open (「새 스토리 이어 쓰기」 once it has steps), pressing a box in the
@@ -711,9 +711,15 @@ judge several pairs at once.
 **Stories.** The story tab lists the stories with their status and link verdicts, a search box by name or ID and
 filters by status and missing links; choosing one shows its steps,
 the link between each two and its 「사전 조건」, and lets its name and memo be changed. The story's own `needs` and
-`expects` show in a 「스토리」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs`
-show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. A link row where the
-map has no link lists the screens the step before leads to, here and while a new story is written. Each input reads like
+`expects` show in a 「스토리 전체」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs`
+show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. The pencil on the box, a
+card or a link row, shown while the pointer is over it or the keyboard is on it and always on a touch screen, opens a
+table there to add, change and remove these lines;
+「저장」 writes them into the story file and names the file, and 「취소」 leaves the file as it is. If the file changed
+elsewhere after the table opened, the save is refused and what was typed stays; 「새로 읽기」 then fills the table from the
+changed file and drops what was typed, and 「덮어쓰기」 writes what was typed over the change. A need file already picked
+stays as it is and can be removed. A link row where the map has no link lists the screens the step before leads to,
+here and while a new story is written. Each input reads like
 「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」:
 duru has not looked for that box in the code.
 A picked need file shows as 「공통 조건」 and its name, hovering shows its file and text, and pressing it opens it.
