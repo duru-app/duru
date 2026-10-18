@@ -69,7 +69,7 @@ test('in a browser, a step card with nothing written shows only a pencil to writ
     await p.keyboard.type('실험 목록이 보인다');
     await edit.locator('button:has-text("기대 결과 더하기")').click();
     await p.keyboard.type('지울 줄');
-    await edit.locator('.fields-part.expects button:has-text("빼기")').nth(1).click();
+    await edit.locator('.fields-part.expects button:has-text("삭제")').nth(1).click();
 
     await edit.locator('.fields-part.needs input').focus();
     await p.keyboard.press('End');
@@ -157,15 +157,15 @@ test('in a browser, the link into a step and the 「스토리 전체」 box are 
     assert.deepEqual(readStory(config).screens[1], { screen: '/lab#Lab', needs: [{ use: 'member-account.json' }, '실험실 설정을 켠 뒤'] });
 
     await p.click(`${STEP_2} button.edit-fields`);
-    for (let left = 2; left > 0; left--) await p.click(`${STEP_2} ${EDIT} .fields-part.needs button:has-text("빼기")`);
+    for (let left = 2; left > 0; left--) await p.click(`${STEP_2} ${EDIT} .fields-part.needs button:has-text("삭제")`);
     await p.click(`${STEP_2} button.save-fields`);
     await p.waitForSelector(`${STEP_2} .fields-saved`);
     assert.equal(readStory(config).screens[1], '/lab#Lab');
     assert.deepEqual(await editLabels(p, STEP_2), ['이 단계의 조건 · 입력값 · 기대 결과 적기']);
 
     await p.click(`${STORY_BOX} button.edit-fields`);
-    await p.click(`${STORY_BOX} .fields-part.needs button:has-text("빼기")`);
-    await p.click(`${STORY_BOX} .fields-part.expects button:has-text("빼기")`);
+    await p.click(`${STORY_BOX} .fields-part.needs button:has-text("삭제")`);
+    await p.click(`${STORY_BOX} .fields-part.expects button:has-text("삭제")`);
     await p.click(`${STORY_BOX} button.save-fields`);
     await p.waitForSelector('#center .story-wide-blank .fields-saved');
     assert.deepEqual(Object.keys(readStory(config)), ['name', 'screens', 'memo', 'author', 'date']);
