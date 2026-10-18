@@ -248,3 +248,14 @@ test('the declaration of a name is found through re-exports, export * and a cons
   assert.deepEqual(declaration('barrel.ts', 'Same'), { file: at('types.ts'), name: 'Types' });
   assert.equal(declaration('barrel.ts', 'Missing'), null);
 });
+
+test('a name two export * give from different declarations has no declaration, while one both reach in the same file has it, and an exported TS enum is declared where it is written', () => {
+  const { at, declaration } = follow({
+    'one.ts': "export const Same = 1;\nexport * from './shared';\n",
+    'two.ts': "export const Same = 2;\nexport * from './shared';\n",
+    'shared.ts': "export enum Kind { A = 'a' }\n",
+    'both.ts': "export * from './one';\nexport * from './two';\n",
+  });
+  assert.equal(declaration('both.ts', 'Same'), null);
+  assert.deepEqual(declaration('both.ts', 'Kind'), { file: at('shared.ts'), name: 'Kind' });
+});

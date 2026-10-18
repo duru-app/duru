@@ -84,8 +84,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   from the reason, which is also the `reason` of the call's `unresolved` server match on the map:
   `not-written` — no address is written where it is sent, so it comes from the caller or is missing; when the line
   points into a function of the app that other requests go through, ask the user to name that function in
-  `requestFunction`. `imported-piece` — part of the address is a name imported from another file, which duru does
-  not read. `unknown-piece` — a value duru does not know stands in front of the address or inside its text, such as
+  `requestFunction`. `imported-piece` — part of the address is what a function imported from another file
+  returns, or an imported name whose value duru could not read where it is declared. `unknown-piece` — a value duru does not know stands in front of the address or inside its text, such as
   a base address it could not read. `no-path` — the address is only the top of the site. `other-host` — the whole
   address after `only` is on a host duru does not take for the app's server; when that host is the app's server,
   ask the user to give it in `app.server`. None of these is a call missing on the server: do not treat it as dead.
@@ -114,6 +114,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - A `component file not found` line in the `extract` summary names a screen whose component file duru could
   not find and the route it is written at. The map then holds only what the components wrapping that route
   bring: the screen's own source files, API calls, setting reads and links are missing.
+- A `route path not read ← <route file>:<line>: stopped at <piece>` line names a route whose path holds `{?}`,
+  with the first piece duru could not read where it stopped; an `in <file>:<line>` after it appears only when duru
+  followed a name into another file and stopped there. An address a browser test passes through is not matched to
+  that screen, and when its ID holds `{?}` the ID changes once that part is read, so do not tag tests with such an
+  ID; tell the user which routes these are and where each one stopped.
 
 ## Sequence
 

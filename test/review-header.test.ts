@@ -494,7 +494,7 @@ test('in a browser, with no server API list the header line carries a 「서버 
         assert.equal(await p.locator('#server-notice').count(), 0);
         assert.equal((await box('#flow-bar')).top, (await box('header')).bottom);
         assert.equal((await box('main')).bottom, 900);
-        await (await screenBox(p, '/document/:tab_draft_done_#DocumentList')).click();
+        await (await screenBox(p, '/document/:tab#DocumentList')).click();
         assert.equal(await p.locator('#center table.calls td.call .chip.v-unchecked').count(), 1, 'the picked screen\'s calls say they were not compared');
         assert.doesNotMatch(await text(), /죽은 화면|서버에 없음/);
       })));

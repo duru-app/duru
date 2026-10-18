@@ -29,7 +29,7 @@ test('rebuild writes map.json and tests.json to the configured output folder and
     assert.deepEqual(Object.keys(links.nodes).sort(), [
       '/admin/member#AdminMember',
       '/document/:id#DocumentDetail',
-      '/document/:tab_draft_done_#DocumentList',
+      '/document/:tab#DocumentList',
       '/help#Help',
       '/home#Home',
       '/lab#Lab',

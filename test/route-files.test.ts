@@ -128,7 +128,7 @@ const withSplitCopy = (fn: (copy: SplitCopy) => unknown, { configPatch = {}, ext
 
 const mapOf = (configFile: string) => buildMap(loadConfig(configFile));
 const screen = (map: ScreenMap, id: string) => map.screens.find((s) => s.id === id)!;
-const IDS = ['/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/help#Help', '/admin/member#AdminMember', '/admin/group#AdminGroup', '/lab#Lab', '/lab/result#LabResult', '/admin/audit#AdminAudit', '/admin/report#AdminReport'];
+const IDS = ['/signin#SignIn', '/home#Home', '/document/:tab#DocumentList', '/document/:id#DocumentDetail', '/help#Help', '/admin/member#AdminMember', '/admin/group#AdminGroup', '/lab#Lab', '/lab/result#LabResult', '/admin/audit#AdminAudit', '/admin/report#AdminReport'];
 const withoutRun = ({ meta, ...rest }: { meta: object }) => ({ ...rest, meta: { ...meta, generatedAt: null } });
 
 test('a config that lists two route files puts the screens of both on the map in listed order, each with its own route file and line', async () => {
@@ -137,7 +137,7 @@ test('a config that lists two route files puts the screens of both on the map in
     assert.deepEqual(map.screens.map((s) => [s.id, s.routeFile]), [
       ['/signin#SignIn', 'Routes.js'],
       ['/home#Home', 'Routes.js'],
-      ['/document/:tab_draft_done_#DocumentList', 'Routes.js'],
+      ['/document/:tab#DocumentList', 'Routes.js'],
       ['/document/:id#DocumentDetail', 'Routes.js'],
       ['/help#Help', 'Routes.js'],
       ['/admin/member#AdminMember', SECOND],

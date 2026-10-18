@@ -66,8 +66,8 @@ test('a story whose every step follows an unguarded link connects end to end wit
   const story = checked['open-document'];
   assert.deepEqual(verdicts(story), [
     '/signin#SignIn → /home#Home open',
-    '/home#Home → /document/:tab_draft_done_#DocumentList open',
-    '/document/:tab_draft_done_#DocumentList → /document/:id#DocumentDetail open',
+    '/home#Home → /document/:tab#DocumentList open',
+    '/document/:tab#DocumentList → /document/:id#DocumentDetail open',
   ]);
   assert.deepEqual(story.links.map((l) => places(l.ways)), [['components/SignIn.js:12'], ['components/DocumentTable.js:13'], ['components/DocumentTable.js:13']]);
   assert.deepEqual(story.reach, []);

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { baselineLine, compareMaps, readBaseline } from './baseline.ts';
 import { storeCandidates, storyCandidates } from './candidates.ts';
 import { loadConfig } from './config.ts';
+import { UNKNOWN } from './client.ts';
 import { buildMap, unreadSites } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
 import { addReply } from './marks.ts';
@@ -215,6 +216,10 @@ if (command === 'tasks') {
   for (const { spec, files } of map.unresolvedAliasImports ?? []) console.log(`  tsconfig import ${spec} matches an alias but no file, imported in ${files} file${files === 1 ? '' : 's'}`);
   for (const d of map.duplicateIds) console.log(`  duplicate screen ID ${d.id} ← ${d.places.map((p: { file: string; line: number }) => `${p.file}:${p.line}`).join(', ')}`);
   for (const s of map.screens.filter((s: any) => !s.componentFile)) console.log(`  component file not found for ${s.id} ← ${s.routeFile}:${s.line}`);
+  for (const { file, line, path: routePath, stoppedAt: at } of map.unreadRoutePaths ?? []) {
+    const elsewhere = at.file === file ? '' : ` in ${at.file}:${at.line}`;
+    console.log(`  route path not read ← ${file}:${line}: stopped at ${at.text}${elsewhere}${routePath === UNKNOWN ? '' : `, only ${routePath}`}`);
+  }
 
   if (command === 'rebuild') {
     if (changes) console.log(changes);

@@ -195,13 +195,18 @@ function roleReader(config: AccessConfig, guardInits: GuardInits, constants: Con
     const entry = guardInits.get(file)?.get(guard);
     const inits = entry?.inits ?? [];
     const helpers = entry?.helpers ?? new Map();
+    const nameOf = (node: Node) => (['Identifier', 'MemberExpression', 'OptionalMemberExpression'].includes(node.type) ? (memberChain(node)?.join('.') ?? null) : null);
     const initOf = ({ node }: Expr, seen: Set<string>) => {
-      if (node.type !== 'Identifier' || seen.has(node.name)) return null;
-      const found = inits.filter((i) => i.name === node.name);
+      const name = nameOf(node);
+      if (name === null || seen.has(name)) return null;
+      const found = inits.filter((i) => i.name === name);
       return found.length === 1 ? parse(found[0].init) : null;
     };
     const at = (expr: Expr, node: Node) => ({ node, text: expr.text });
-    const follow = (expr: Expr, seen: Set<string>): [Expr | null, Set<string>] => [initOf(expr, seen), expr.node.type === 'Identifier' ? new Set([...seen, expr.node.name]) : seen];
+    const follow = (expr: Expr, seen: Set<string>): [Expr | null, Set<string>] => {
+      const name = nameOf(expr.node);
+      return [initOf(expr, seen), name === null ? seen : new Set([...seen, name])];
+    };
     const inlined = (expr: Expr, seen: Set<string>): [Expr | null, Set<string>] => {
       const { node } = expr;
       if (node.type !== 'CallExpression' || node.callee.type !== 'Identifier' || seen.has(node.callee.name)) return [null, seen];
@@ -235,7 +240,8 @@ function roleReader(config: AccessConfig, guardInits: GuardInits, constants: Con
         const values = node.elements.map((e) => e && valueOf(at(expr, e), seen));
         return values.every((v) => typeof v === 'string') ? values : undefined;
       }
-      if (node.type === 'MemberExpression') return lookupConstant(constants, memberChain(node));
+      const known = node.type === 'MemberExpression' ? lookupConstant(constants, memberChain(node)) : undefined;
+      if (known !== undefined) return known;
       const [init, next] = follow(expr, seen);
       return init ? valueOf(init, next) : undefined;
     };

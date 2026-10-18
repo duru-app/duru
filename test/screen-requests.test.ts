@@ -196,11 +196,11 @@ export const ajaxRoot = async () => request({ METHOD: 'GET', URL: '/' });
 `;
 
 const WHY_INBOX = `import { ajaxBox, ajaxOpen, ajaxRoot } from './mailApi';
-import { HOST, MAIL } from './urls';
+import { HOST, MAIL, mailName } from './urls';
 
 export default function Inbox({ url, box }: { url: string; box: string }) {
   const load = () => [ajaxOpen(url), ajaxBox(box), ajaxRoot()];
-  const send = () => [fetch(url), fetch('/api/' + MAIL), fetch(\`/api/mail-\${box}\`), fetch(\`\${box}\`), fetch('https://cdn.example.com/mail'), fetch(\`https://\${HOST}/mail\`), fetch('/')];
+  const send = () => [fetch(url), fetch('/api/' + MAIL), fetch('/api/' + mailName()), fetch(\`/api/mail-\${box}\`), fetch(\`\${box}\`), fetch('https://cdn.example.com/mail'), fetch(\`https://\${HOST}/mail\`), fetch('/')];
   return (
     <main>
       <form action="send" method="post" />
@@ -211,8 +211,8 @@ export default function Inbox({ url, box }: { url: string; box: string }) {
 }
 `;
 
-test('an address duru cannot read carries why in its server match: not written where it is sent, a piece imported from another file, a piece of unknown value joined to the text or to the current page, another host than app.server, or no path; extract prints the reason on each request line and a line for each API function call a screen makes to such an address', async () => {
-  const configFile = fixtureCopy({ 'screens/mailApi.ts': MAIL_API, 'screens/urls.ts': `export const MAIL = 'mail';\nexport const HOST = 'mail.example.com';\n`, 'screens/Inbox.tsx': WHY_INBOX }, { apiModules: ['_ajax/AjaxFunc.ts', 'screens/mailApi.ts'] });
+test('an address duru cannot read carries why in its server match: not written where it is sent, a piece a function imported from another file gives, a piece of unknown value joined to the text or to the current page, another host than app.server, or no path; extract prints the reason on each request line and a line for each API function call a screen makes to such an address', async () => {
+  const configFile = fixtureCopy({ 'screens/mailApi.ts': MAIL_API, 'screens/urls.ts': `export const MAIL = 'mail';\nexport const HOST = 'mail.example.com';\nexport const mailName = () => 'mail';\n`, 'screens/Inbox.tsx': WHY_INBOX }, { apiModules: ['_ajax/AjaxFunc.ts', 'screens/mailApi.ts'] });
   const map = await build(configFile);
   assert.deepEqual(['ajaxOpen', 'ajaxBox', 'ajaxRoot'].map((fn) => map.apiFunctions[fn].endpoints.map((e) => [e.url, e.server])), [
     [[null, { status: 'unresolved', reason: 'not-written' }]],
@@ -225,7 +225,7 @@ test('an address duru cannot read carries why in its server match: not written w
     ['fetch', 6, '/api/mail-{?}', 'unknown-piece'],
     ['fetch', 6, '/api/{?}', 'imported-piece'],
     ['fetch', 6, 'https://cdn.example.com/mail', 'other-host'],
-    ['fetch', 6, 'https://{?}/mail', 'imported-piece'],
+    ['fetch', 6, 'https://mail.example.com/mail', 'other-host'],
     ['fetch', 6, '{?}', 'not-written'],
     ['<form action>', 9, 'send', 'unknown-piece'],
     ['<form action>', 10, '{?}', 'not-written'],
@@ -237,13 +237,13 @@ test('an address duru cannot read carries why in its server match: not written w
     '  api call ajaxBox ← screens/Inbox.tsx:5: address not read (unknown-piece), only {?}/mail',
     '  api call ajaxOpen ← screens/Inbox.tsx:5: address not read (not-written)',
     '  api call ajaxRoot ← screens/Inbox.tsx:5: address not read (no-path), only /',
-    'requests and navigations written in screen sources 9 | address not read 9',
+    'requests and navigations written in screen sources 10 | address not read 9',
     '  request fetch ← screens/Inbox.tsx:6: address not read (not-written)',
     '  request fetch ← screens/Inbox.tsx:6: address not read (no-path), only /',
     '  request fetch ← screens/Inbox.tsx:6: address not read (unknown-piece), only /api/mail-{?}',
     '  request fetch ← screens/Inbox.tsx:6: address not read (imported-piece), only /api/{?}',
     '  request fetch ← screens/Inbox.tsx:6: address not read (other-host), only https://cdn.example.com/mail',
-    '  request fetch ← screens/Inbox.tsx:6: address not read (imported-piece), only https://{?}/mail',
+    '  request fetch ← screens/Inbox.tsx:6: address not read (other-host), only https://mail.example.com/mail',
     '  request fetch ← screens/Inbox.tsx:6: address not read (not-written), only {?}',
     '  request <form action> ← screens/Inbox.tsx:9: address not read (unknown-piece), only send',
     '  request <form action> ← screens/Inbox.tsx:10: address not read (not-written), only {?}',
@@ -273,7 +273,7 @@ export default function Inbox({ id }: { id: string }) {
 }
 `;
 
-test('a call of the request object requestFunction names, imported from its file or through a file that exports it again, is read in screen sources without calledApiModules, as is an object made with create with its base address in front, while a request inside the file that makes the request object is not a call of the screen, a base address with an imported name in it, or one hidden in options duru cannot read, leaves the address not read, and an import that names no file is refused', async () => {
+test('a call of the request object requestFunction names, imported from its file or through a file that exports it again, is read in screen sources without calledApiModules, as is an object made with create with its base address in front, a name imported from another file in that base address included, while a request inside the file that makes the request object is not a call of the screen, a base address hidden in options duru cannot read leaves the address not read, and an import that names no file is refused', async () => {
   const map = await build(fixtureCopy({
     'lib/http.ts': HTTP,
     'lib/index.ts': `export { http as client } from './http';\n`,
@@ -286,11 +286,11 @@ test('a call of the request object requestFunction names, imported from its file
     ['local.delete', 'DELETE /internal/mail/{?}', true],
     ['nested.head', 'HEAD /internal/mail', true],
     ['elsewhere.get', 'GET {?}/mail', true],
-    ['versioned.get', 'GET {?}/mail', true],
+    ['versioned.get', 'GET /api/v2/mail', true],
     ['preset.get', 'GET {?}/mail', true],
   ]);
   assert.deepEqual(sent(map, OUTBOX), [['client.post', 'POST /mail/send', true]]);
-  assert.deepEqual(map.unreadRequests, ['elsewhere.get', 'preset.get', 'versioned.get'].map((fn) => ({ fn, file: 'screens/Inbox.tsx', line: 12, url: '{?}/mail', reason: 'unknown-piece' })));
+  assert.deepEqual(map.unreadRequests, ['elsewhere.get', 'preset.get'].map((fn) => ({ fn, file: 'screens/Inbox.tsx', line: 12, url: '{?}/mail', reason: 'unknown-piece' })));
   await assert.rejects(build(fixtureCopy({}, { requestFunction: { import: './lib/htp', name: 'http', object: true } })), /requestFunction\.import \.\/lib\/htp names no file/);
 });
 
@@ -313,22 +313,21 @@ export default function Inbox({ id }: { id: string }) {
 }
 `;
 
-test('a call of the request function requestFunction names gives the method and address at the places the config names, beside the calls of the API methods the same screen makes, and an address with a piece from an imported name or from a function imported by name is not read, since that piece is text and not a path variable', async () => {
+test('a call of the request function requestFunction names gives the method and address at the places the config names, beside the calls of the API methods the same screen makes, and a name imported from another file is read from the file that declares it, while an address with a piece from a function imported by name is not read, since that piece is text and not a path variable', async () => {
   const map = await build(fixtureCopy({ 'screens/urls.ts': `export const MAIL = 'mail';\nexport const mailPath = (id: string) => 'box/' + id;\n`, 'screens/Inbox.tsx': PLACED_INBOX }, CALLED));
   assert.deepEqual(sent(map, INBOX), [
     ['executeRequest', 'GET /internal/v2/mail/{?}', true],
     ['executeRequest', 'GET null', true],
-    ['executeRequest', 'POST /internal/v2/{?}', true],
+    ['executeRequest', 'POST /internal/v2/mail', true],
     ['fetch', 'GET /internal/v2/{?}/mail', true],
     ['fetch', 'GET /internal/v2/mail', true],
     ['contractApi.loadList', 'GET /internal/v2/workspace/{?}/contract/list', false],
   ]);
   assert.deepEqual(map.unreadRequests, [
     { fn: 'executeRequest', file: 'screens/Inbox.tsx', line: 9, url: null, reason: 'not-written' },
-    { fn: 'executeRequest', file: 'screens/Inbox.tsx', line: 10, url: '/internal/v2/{?}', reason: 'imported-piece' },
     { fn: 'fetch', file: 'screens/Inbox.tsx', line: 10, url: '/internal/v2/{?}/mail', reason: 'imported-piece' },
   ]);
-  assert.deepEqual(callsOf(map, INBOX).filter((id) => id.includes('mail')), ['GET:/internal/v2/mail', 'GET:/internal/v2/mail/{?}']);
+  assert.deepEqual(callsOf(map, INBOX).filter((id) => id.includes('mail')), ['GET:/internal/v2/mail', 'GET:/internal/v2/mail/{?}', 'POST:/internal/v2/mail']);
 });
 
 const MOVING_INBOX = `import { useFetcher, useLocation } from 'react-router-dom';
@@ -400,7 +399,7 @@ const MOVING_FILES = {
 };
 const SERVER = ['print GET /api/mail/print', 'oauth GET /oauth/start', 'raw GET /api/mail/{id}/raw', 'signout POST /signout', 'export GET /api/mail/export', 'download GET /api/mail/{id}/download', 'import POST /api/mail/import', 'filter GET /api/mail/filter', 'outbox GET /outbox', 'archive GET /archive', 'local GET /api/mail/local', 'route POST /api/mail/route', 'fetched POST /api/mail/fetched', 'styled POST /api/mail/styled', 'own GET /api/mail/own'];
 
-test('an address a screen source moves the browser to, by href, the action of a form, window.open or an address given to location, is a call when it is a path from the top of the site that the server list holds, with GET or the method of the form, while a path the list lacks, another site, an address read from the current page, a route of the app, an address a value or an imported name decides, a Form of react-router, of what useFetcher gives or of any value that is not imported, and a local variable named location are not, except that a form posting to an address not read stays as a request without an address', async () => {
+test('an address a screen source moves the browser to, by href, the action of a form, window.open or an address given to location, is a call when it is a path from the top of the site that the server list holds, with GET or the method of the form, while a path the list lacks, another site, an address read from the current page, a route of the app, an address a value or a function imported from another file decides, a Form of react-router, of what useFetcher gives or of any value that is not imported, and a local variable named location are not, except that a form posting to an address not read stays as a request without an address', async () => {
   const map = await build(fixtureCopy(MOVING_FILES, {}, SERVER));
   assert.deepEqual(sent(map, INBOX), [
     ['window.open', 'GET /api/mail/print', true],
@@ -413,17 +412,18 @@ test('an address a screen source moves the browser to, by href, the action of a 
     ['<Form action>', 'GET /api/mail/import', true],
     ['<Form.Inline action>', 'null /api/mail/filter', true],
     ['<Form action>', 'POST /outbox', true],
-    ['<form action>', 'POST /api/mail/{?}', true],
+    ['<a href>', 'GET /api/mail/export', true],
+    ['<form action>', 'POST /api/mail/export', true],
     ['<form action>', 'POST null', true],
   ]);
-  assert.deepEqual(map.unreadRequests, [{ fn: '<form action>', file: 'screens/Inbox.tsx', line: 30, url: '/api/mail/{?}', reason: 'imported-piece' }, { fn: '<form action>', file: 'screens/Inbox.tsx', line: 31, url: null, reason: 'not-written' }]);
-  assert.deepEqual(callsOf(map, INBOX), ['GET:/api/mail/export', 'GET:/api/mail/import', 'GET:/api/mail/print', 'GET:/api/mail/{id}/download', 'GET:/api/mail/{id}/raw', 'GET:/oauth/start', 'GET:/signout', 'POST:/api/mail/import', 'POST:/outbox', '{?}:/api/mail/filter']);
+  assert.deepEqual(map.unreadRequests, [{ fn: '<form action>', file: 'screens/Inbox.tsx', line: 31, url: null, reason: 'not-written' }]);
+  assert.deepEqual(callsOf(map, INBOX), ['GET:/api/mail/export', 'GET:/api/mail/import', 'GET:/api/mail/print', 'GET:/api/mail/{id}/download', 'GET:/api/mail/{id}/raw', 'GET:/oauth/start', 'GET:/signout', 'POST:/api/mail/export', 'POST:/api/mail/import', 'POST:/outbox', '{?}:/api/mail/filter']);
   assert.deepEqual(map.deadCalls.filter((d) => d.screen === INBOX), []);
 });
 
 test('without a server list, a move by GET or by a method the source does not give is a call only under a path of app.apiPaths, on this site or written with the host of app.server, while a form posting is a call wherever it goes', async () => {
   const bare = await build(fixtureCopy(MOVING_FILES));
-  assert.deepEqual(sent(bare, INBOX), [['<form action>', 'POST /api/mail/import', true], ['<Form action>', 'POST /outbox', true], ['<form action>', 'POST /api/mail/{?}', true], ['<form action>', 'POST null', true]]);
+  assert.deepEqual(sent(bare, INBOX), [['<form action>', 'POST /api/mail/import', true], ['<Form action>', 'POST /outbox', true], ['<form action>', 'POST /api/mail/export', true], ['<form action>', 'POST null', true]]);
   const prefixed = await build(fixtureCopy(MOVING_FILES, { app: APP }));
   assert.deepEqual(sent(prefixed, INBOX).map(([fn, request]) => `${fn} ${request}`), [
     'window.open GET /api/mail/print',
@@ -434,7 +434,8 @@ test('without a server list, a move by GET or by a method the source does not gi
     '<Form action> GET /api/mail/import',
     '<Form.Inline action> null /api/mail/filter',
     '<Form action> POST /outbox',
-    '<form action> POST /api/mail/{?}',
+    '<a href> GET /api/mail/export',
+    '<form action> POST /api/mail/export',
     '<form action> POST null',
     '<a href> GET /api/mail/own',
   ]);

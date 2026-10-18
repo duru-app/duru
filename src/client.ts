@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { CallExpression, Expression, Identifier, ImportDeclaration, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
+import type { CallExpression, Expression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import type { Constants, GuardInit, GuardSetting } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
@@ -140,17 +140,27 @@ export function lookupConstant(constants: Constants, chain: string[] | null | un
 
 const initCache = new WeakMap<Node, ConstInits>();
 
-function constInits(exprPath: NodePath, src: string) {
+// import 한 이름이나 그 멤버(`Roles.ADMIN`)는 선언한 파일에서 읽은 값을 글자로 적어 둔다.
+function constInits(exprPath: NodePath, src: string, valueOf: (p: NodePath) => unknown) {
   if (initCache.has(exprPath.node)) return initCache.get(exprPath.node)!;
   const found: Init[] = [];
   const calls: [string, Binding | null][] = [];
   const seen = new Set<Binding>();
+  const noteImported = (id: NodePath<Identifier>) => {
+    let top: NodePath = id;
+    while ((top.parentPath!.isMemberExpression() || top.parentPath!.isOptionalMemberExpression()) && top.key === 'object' && !(top.parent as MemberExpression).computed) top = top.parentPath!;
+    const name = memberChain(top.node)?.join('.');
+    const value = valueOf(top);
+    const text = typeof value === 'string' || (Array.isArray(value) && value.every((v) => typeof v === 'string'));
+    if (name && text && !found.some((f) => f.name === name)) found.push({ name, init: JSON.stringify(value) });
+  };
   const follow = (p: NodePath) => {
     const ids: NodePath<Identifier>[] = p.isIdentifier() ? [p] : [];
     p.traverse({ Identifier: (id) => void ids.push(id) });
     for (const id of ids) {
       const binding = id.isReferencedIdentifier() && id.scope.getBinding(id.node.name);
       if (id.parentPath.isCallExpression() && id.key === 'callee') calls.push([id.node.name, binding || null]);
+      if (binding && binding.kind === 'module') noteImported(id);
       if (!binding || binding.kind !== 'const' || seen.has(binding)) continue;
       seen.add(binding);
       const init = (binding.path.isVariableDeclarator() && binding.path.get('init')) as NodePath<Expression | null | undefined> | undefined;
@@ -234,6 +244,93 @@ export async function extractClient(config: any) {
     return maps.get(file)!;
   };
 
+  const factCache = new Map<string, Facts>();
+  const parsed = new Map<string, ReturnType<typeof parseSource>>();
+  const parse = (file: string) => {
+    if (!parsed.has(file)) parsed.set(file, parseSource(file));
+    return parsed.get(file)!;
+  };
+  const siteStart = new WeakMap<FollowedSite, number>();
+  const siteFile = new WeakMap<ApiCallSite, string>();
+  const sitesOf = (file: string) => {
+    const { apiCalls, dispatches, watchers } = fileFacts(file);
+    return [...apiCalls, ...dispatches, ...watchers].map((site) => ({ start: siteStart.get(site)!, site }));
+  };
+  const follower = nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf });
+  const programFile = new WeakMap<Node, string>();
+  const importedFile = new WeakMap<Node, string | null>();
+  const programs = new Map<string, NodePath<Program> | null>();
+  const programOf = (file: string) => {
+    if (!programs.has(file)) {
+      let program: NodePath<Program> | null = null;
+      try {
+        const { ast } = parse(file);
+        programFile.set(ast.program, file);
+        traverse(ast, {
+          Program(p) {
+            program = p;
+            p.stop();
+          },
+        });
+      } catch {}
+      programs.set(file, program);
+    }
+    return programs.get(file)!;
+  };
+
+  function declaredValue(scope: Scope, name: string): NodePath | null {
+    const binding = scope.getBinding(name);
+    if (!binding) {
+      const program = scope.getProgramParent().path as NodePath<Program>;
+      const declared = program.get('body').map((s) => (s.isExportNamedDeclaration() ? (s.get('declaration') as NodePath) : s));
+      return declared.find((d) => d.isTSEnumDeclaration() && d.node.id.name === name) ?? null;
+    }
+    if (binding.kind === 'const' && binding.path.isVariableDeclarator() && binding.path.get('id').isIdentifier()) {
+      const init = binding.path.get('init') as NodePath;
+      return init.node ? init : null;
+    }
+    const from = binding.kind === 'module' ? importedName(binding) : null;
+    return from && from.name !== '*' ? exportedValue(from.file, from.name) : null;
+  }
+
+  function importedName(binding: Binding) {
+    if (!binding.path.parentPath?.isImportDeclaration()) return null;
+    const spec = binding.path.node as ImportSpecifier | ImportDefaultSpecifier | ImportNamespaceSpecifier;
+    const declaration = binding.path.parent as ImportDeclaration;
+    const file = programFile.get(binding.scope.getProgramParent().block);
+    if (!file) return null;
+    if (!importedFile.has(declaration)) importedFile.set(declaration, imports.resolve(file, declaration.source.value));
+    const name = spec.type === 'ImportNamespaceSpecifier' ? '*' : spec.type === 'ImportDefaultSpecifier' ? 'default' : (spec.imported as Identifier).name ?? (spec.imported as StringLiteral).value;
+    return { file: importedFile.get(declaration)!, name };
+  }
+
+  function exportedValue(file: string | null, name: string): NodePath | null {
+    const found = file ? follower.declaration(file, name) : null;
+    const program = found && programOf(found.file);
+    if (!program) return null;
+    if (found!.name !== 'default') return declaredValue(program.scope, found!.name);
+    const value = program.get('body').find((s) => s.isExportDefaultDeclaration())?.get('declaration') as NodePath | undefined;
+    return value?.isExpression() ? value : null;
+  }
+
+  function namespaceMember(scope: Scope, chain: string[]) {
+    const binding = scope.getBinding(chain[0]);
+    const from = binding?.kind === 'module' ? importedName(binding) : null;
+    return from?.name === '*' ? exportedValue(from.file, chain[1]) : null;
+  }
+
+  // 따라가는 중인 선언을 다시 만나면 값을 읽지 못한 것으로 본다.
+  const evaluating = new Set<Node>();
+  function valueAt(p: NodePath | null) {
+    if (!p || evaluating.has(p.node)) return undefined;
+    evaluating.add(p.node);
+    try {
+      return evaluate(p);
+    } finally {
+      evaluating.delete(p.node);
+    }
+  }
+
   const textOf = (v: unknown) => (typeof v === 'string' || typeof v === 'number' ? String(v) : UNKNOWN);
   // 상수·템플릿·문자열 결합·지역 const 까지만 따라가 값을 만든다. 모르는 조각은 UNKNOWN 으로 남긴다.
   function evaluate(nodePath: NodePath<any>): any {
@@ -268,18 +365,22 @@ export async function extractClient(config: any) {
         const chain = memberChain(node);
         const direct = lookupConstant(constants, chain);
         if (direct !== undefined) return direct;
-        if (chain && chain.length > 1) {
-          const base = evaluateIdentifier(nodePath.scope, chain[0]);
-          if (base && typeof base === 'object') {
-            let value = base;
-            for (const key of chain.slice(1)) value = value?.[key];
-            return value;
-          }
-        }
-        return undefined;
+        if (!chain || chain.length < 2) return undefined;
+        const member = namespaceMember(nodePath.scope, chain);
+        let value = member ? valueAt(member) : valueAt(declaredValue(nodePath.scope, chain[0]));
+        for (const key of chain.slice(member ? 2 : 1)) value = value !== null && typeof value === 'object' ? value[key] : undefined;
+        return value;
       }
       case 'Identifier':
-        return evaluateIdentifier(nodePath.scope, node.name);
+        return valueAt(declaredValue(nodePath.scope, node.name));
+      case 'TSEnumDeclaration': {
+        const members: Record<string, unknown> = {};
+        for (const m of nodePath.get('members') as NodePath<any>[]) {
+          const init = m.get('initializer') as NodePath;
+          members[(m.node.id as NameNode).name ?? (m.node.id as NameNode).value!] = init.node ? evaluate(init) : undefined;
+        }
+        return members;
+      }
       case 'ArrayExpression':
         return (nodePath.get('elements') as NodePath[]).map((e) => (e.node ? evaluate(e) : undefined));
       case 'ObjectExpression': {
@@ -307,19 +408,12 @@ export async function extractClient(config: any) {
     }
   }
 
-  function evaluateIdentifier(scope: Scope, name: string): any {
-    const binding = scope.getBinding(name);
-    if (!binding || binding.kind !== 'const' || !binding.path.isVariableDeclarator()) return undefined;
-    const init = binding.path.get('init');
-    return init.node ? evaluate(init) : undefined;
-  }
-
   const isJsonValue = (v: any): boolean =>
     v === null || ['string', 'boolean'].includes(typeof v) || Number.isFinite(v)
     || (Array.isArray(v) ? v.every(isJsonValue) : typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype && Object.values(v).every(isJsonValue));
 
   // evaluate 는 모르는 조각을 빼거나 UNKNOWN 으로 바꾸므로, 값이 소스 그대로 다 읽히는지는 따로 본다.
-  function lossless(p: NodePath<any>, seen = new Set<Binding>()): boolean {
+  function lossless(p: NodePath<any>, seen = new Set<Node>()): boolean {
     switch (p.node.type) {
       case 'StringLiteral':
       case 'NumericLiteral':
@@ -332,20 +426,28 @@ export async function extractClient(config: any) {
         return (p.get('elements') as NodePath[]).every((e) => e.node && !e.isSpreadElement() && lossless(e, seen));
       case 'ObjectExpression':
         return (p.get('properties') as NodePath[]).every((prop) => prop.isObjectProperty() && !prop.node.computed && lossless(prop.get('value'), seen));
-      case 'Identifier': {
-        const init = constInit(p, p.node.name, seen);
-        return Boolean(init) && lossless(init!, seen);
-      }
+      case 'Identifier':
+        return declaredLossless(declaredValue(p.scope, p.node.name), seen);
       case 'MemberExpression':
       case 'OptionalMemberExpression': {
-        const value = lookupConstant(constants, memberChain(p.node));
-        return value !== undefined && isJsonValue(value);
+        const chain = memberChain(p.node);
+        const value = lookupConstant(constants, chain);
+        if (value !== undefined) return isJsonValue(value);
+        return chain?.length === 2 && declaredLossless(namespaceMember(p.scope, chain), seen);
       }
       case 'CallExpression':
         return p.node.callee.type === 'Identifier' && (config.passThroughCalls ?? []).includes(p.node.callee.name) && Boolean(p.node.arguments[0]) && lossless(p.get('arguments.0') as NodePath, seen);
       default:
         return false;
     }
+  }
+
+  function declaredLossless(value: NodePath | null, seen: Set<Node>) {
+    if (!value || seen.has(value.node)) return false;
+    seen.add(value.node);
+    const whole = lossless(value, seen);
+    seen.delete(value.node);
+    return whole;
   }
 
   // [] 는 섹션을 다 알 수 없다는 뜻, [섹션] 은 그 섹션의 키를 다 알 수 없다는 뜻, [섹션, 키] 는 그 키의 값을 다 읽지 못했다는 뜻이다.
@@ -387,6 +489,7 @@ export async function extractClient(config: any) {
         continue;
       }
       const { ast } = parseSource(path.join(config.srcRoot, file));
+      programFile.set(ast.program, path.join(config.srcRoot, file));
       let init: NodePath<ObjectExpression> | null = null;
       traverse(ast, {
         VariableDeclarator(p) {
@@ -405,7 +508,6 @@ export async function extractClient(config: any) {
   const { values: settingsDefaults, incomplete: settingsDefaultsIncomplete } = loadSettingsDefaults();
   const settingsCalls = config.settingsFunctions.length ? findSettingsCalls(config) : { calls: [], unread: [], notices: [] };
   const settingsCallNotices = [...settingsCalls.notices, ...addCallDefaults(settingsCalls.calls, settingsDefaults, settingsDefaultsIncomplete, { evaluate, lossless }, config.srcRoot), ...settingsCalls.unread];
-  const programFile = new WeakMap<Node, string>();
   const resultOf = settingsResultFinder(settingsCalls as ReturnType<typeof findSettingsCalls>);
   const settingsResult = (id: NodePath) => resultOf(id, programFile.get(id.scope.getProgramParent().block));
   const needs = settingNeeds(config.settingsRoots ?? [], settingsDefaults, settingsResult);
@@ -417,7 +519,6 @@ export async function extractClient(config: any) {
     else if (JSON.stringify(known.get(text)) !== JSON.stringify(result)) known.set(text, CONFLICT);
   }
 
-  const importedFile = new WeakMap<Node, string | null>();
   const constantRoot = (id: NodePath<Identifier>, file: string) => {
     const { name } = id.node;
     const binding = id.scope.getBinding(name);
@@ -473,7 +574,7 @@ export async function extractClient(config: any) {
     const inits = mapOf(guardInits, file);
     // source 는 줄이지 않은 조건이다. 다른 조건이 같은 글자로 줄어들면 어느 것인지 모르므로 비운다.
     return (text, exprPath, negated, source) => {
-      const { inits: found, calls } = constInits(exprPath, src);
+      const { inits: found, calls } = constInits(exprPath, src, evaluate);
       const known = inits.get(text);
       if (!known) inits.set(text, { source, inits: [...found] });
       else {
@@ -637,6 +738,7 @@ export async function extractClient(config: any) {
 
   function extractApiModule(file: string) {
     const { ast } = parseSource(file);
+    programFile.set(ast.program, file);
     const fns: Record<string, ModuleFunction> = {};
     traverse(ast, {
       ExportNamedDeclaration(exp) {
@@ -686,19 +788,6 @@ export async function extractClient(config: any) {
 
   // ---------- 일반 파일: import · API 호출 · 설정 읽기 · 라우트 참조 ----------
 
-  const factCache = new Map<string, Facts>();
-  const parsed = new Map<string, ReturnType<typeof parseSource>>();
-  const parse = (file: string) => {
-    if (!parsed.has(file)) parsed.set(file, parseSource(file));
-    return parsed.get(file)!;
-  };
-  const siteStart = new WeakMap<FollowedSite, number>();
-  const siteFile = new WeakMap<ApiCallSite, string>();
-  const sitesOf = (file: string) => {
-    const { apiCalls, dispatches, watchers } = fileFacts(file);
-    return [...apiCalls, ...dispatches, ...watchers].map((site) => ({ start: siteStart.get(site)!, site }));
-  };
-  const follower = nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf });
   const sagas = sagaReader({ parse, resolve: imports.resolve, declaration: follower.declaration });
   const origins = new Map<string, Origin | null>();
   const calledOrigin = (file: string | null | undefined, name: string) => {
@@ -915,6 +1004,26 @@ export async function extractClient(config: any) {
   // ---------- 라우트 파일: 화면 목록과 화면에 걸린 조건 ----------
 
   const redirects: { to: string; file: string; line: number; guards: string[] }[] = [];
+  const unreadRoutePaths: { file: string; line: number; path: string; stoppedAt: { text: string; file: string | null; line: number } }[] = [];
+  const readWhole = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && !v.includes(UNKNOWN));
+
+  function unreadPiece(p: NodePath, seen = new Set<Node>()): NodePath {
+    const pieces = p.isTemplateLiteral() ? (p.get('expressions') as NodePath[]) : p.isBinaryExpression({ operator: '+' }) ? [p.get('left'), p.get('right')] : null;
+    if (pieces) {
+      const unread = pieces.find((x) => !readWhole(evaluate(x)));
+      return unread ? unreadPiece(unread, seen) : p;
+    }
+    const chain = p.isIdentifier() || p.isMemberExpression() ? memberChain(p.node) : null;
+    const value = chain?.length === 1 ? declaredValue(p.scope, chain[0]) : chain?.length === 2 ? namespaceMember(p.scope, chain) : null;
+    if (!value || seen.has(value.node)) return p;
+    seen.add(value.node);
+    return unreadPiece(value, seen);
+  }
+
+  function stopOf(p: NodePath) {
+    const file = programFile.get(p.scope.getProgramParent().block) ?? null;
+    return { text: file ? sliceText(parse(file).src, p.node) : '?', file: rel(file), line: p.node.loc!.start.line };
+  }
 
   function extractScreens(routeFile: string) {
     const absFile = path.join(config.srcRoot, routeFile);
@@ -941,9 +1050,12 @@ export async function extractClient(config: any) {
         const page = compAttr ? componentAttrPage(compAttr, absFile) : elementPage(attr('element'), absFile);
         if (!page) return;
         const pathWritten = pathAttr.get('value');
-        const pathValue = evaluate(pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten);
+        const pathExpr = (pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten) as NodePath;
+        const pathValue = evaluate(pathExpr);
+        const routePath = typeof pathValue === 'string' ? pathValue : UNKNOWN;
+        if (routePath.includes(UNKNOWN)) unreadRoutePaths.push({ file: routeFile, line: p.node.loc!.start.line, path: routePath, stoppedAt: stopOf(unreadPiece(pathExpr)) });
         screens.push({
-          path: typeof pathValue === 'string' ? pathValue : UNKNOWN,
+          path: routePath,
           component: page.component,
           componentFile: page.componentFile,
           wrapperFiles: [...page.files, ...wrappersOf(p, absFile)],
@@ -1160,5 +1272,5 @@ export async function extractClient(config: any) {
   });
 
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
+  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
 }

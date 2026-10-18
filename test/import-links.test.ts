@@ -42,7 +42,7 @@ test('a test whose file imports a source file of one screen is linked to that sc
 test('a source file two screens use links the test to both', () => {
   const expected = ['DocumentTable › lists the documents it is given | components/DocumentTable.js'];
   assert.deepEqual(importers('/home#Home'), expected);
-  assert.deepEqual(importers('/document/:tab_draft_done_#DocumentList'), expected);
+  assert.deepEqual(importers('/document/:tab#DocumentList'), expected);
 });
 
 test('a file loaded with require inside a test counts like an import', () => {
@@ -52,7 +52,7 @@ test('a file loaded with require inside a test counts like an import', () => {
 test('a source file more than three screens use links nothing', () => {
   const titles = Object.values(links.importers).flat().map((t) => t.title);
   assert.equal(titles.includes('formats a date as year-month-day'), false);
-  assert.deepEqual(Object.keys(links.importers).sort(), ['/document/:id#DocumentDetail', '/document/:tab_draft_done_#DocumentList', '/help#Help', '/home#Home']);
+  assert.deepEqual(Object.keys(links.importers).sort(), ['/document/:id#DocumentDetail', '/document/:tab#DocumentList', '/help#Help', '/home#Home']);
 });
 
 test('a source file no screen uses links nothing', () => {

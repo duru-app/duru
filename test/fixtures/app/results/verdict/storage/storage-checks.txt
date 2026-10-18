@@ -1,10 +1,10 @@
 storage checks
 VERDICT upload timeout: INCONCLUSIVE — the timer did not fire within the wait window @screen:/document/:id#DocumentDetail
 VERDICT old versions: KNOWN_DROP — versions older than a day are dropped by design @screen:/document/:id#DocumentDetail
-VERDICT first page load: ENTRY_HEALTHY — only the first page was reached @screen:/document/:tab_draft_done_#DocumentList
-VERDICT bulk import: PARTIAL — 3 of 5 files imported @screen:/document/:tab_draft_done_#DocumentList
+VERDICT first page load: ENTRY_HEALTHY — only the first page was reached @screen:/document/:tab#DocumentList
+VERDICT bulk import: PARTIAL — 3 of 5 files imported @screen:/document/:tab#DocumentList
 VERDICT thumbnail cache: FIXED @screen:/document/:id#DocumentDetail
-VERDICT row growth: REPRODUCES(quadratic) — time doubles with each row @screen:/document/:tab_draft_done_#DocumentList
-VERDICT quota check: SKIPPED — no quota configured @screen:/document/:tab_draft_done_#DocumentList
+VERDICT row growth: REPRODUCES(quadratic) — time doubles with each row @screen:/document/:tab#DocumentList
+VERDICT quota check: SKIPPED — no quota configured @screen:/document/:tab#DocumentList
 VERDICT storage size: UPHOLDS - stays under the limit @screen:/document/:id#DocumentDetail
 VERDICT orphan files: HEALTHY — none found

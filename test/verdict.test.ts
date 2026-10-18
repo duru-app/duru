@@ -12,7 +12,7 @@ const FIXTURE_CONFIG = path.join(import.meta.dirname, 'fixtures/app/config.json'
 const config = loadConfig(FIXTURE_CONFIG);
 const map = await buildMap(config);
 const links = linkTests(config, map);
-const LIST = '/document/:tab_draft_done_#DocumentList';
+const LIST = '/document/:tab#DocumentList';
 const DETAIL = '/document/:id#DocumentDetail';
 const verdicts = Object.values(links.nodes).flat().filter((t) => t.format === 'verdict');
 const byTitle = (title: string) => verdicts.find((t) => t.title === title);

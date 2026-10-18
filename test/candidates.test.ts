@@ -63,7 +63,7 @@ test('the example visit records give one candidate per record, with steps on the
     },
     {
       name: 'publish-document',
-      screens: ['/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/help#Help'],
+      screens: ['/home#Home', '/document/:tab#DocumentList', '/document/:id#DocumentDetail', '/help#Help'],
       source: { record: 'example-visits/publish-document.json', steps: [1, 7] },
       stepRanges: [[1, 2], [3, 3], [4, 5], [7, 7]],
     },
@@ -88,7 +88,7 @@ test('an address picks the first screen in map order whose route path matches th
   withFolder(records, (dir: string) => {
     const { list } = candidatesOf({ visitRecords: [dir], storiesDir: path.join(dir, 'stories') });
     assert.deepEqual(list.map((c) => c.screens), [[
-      '/document/:tab_draft_done_#DocumentList', '/home#Home', '/document/:id#DocumentDetail', '/document/7/edit', '/document',
+      '/document/:tab#DocumentList', '/home#Home', '/document/:id#DocumentDetail', '/document/7/edit', '/document',
     ]]);
   });
 });
@@ -378,7 +378,7 @@ test('a discarded entry in the stories folder that is a file, or a discarded fol
 
 const TRACED = { format: 'playwright', path: path.join(FIXTURE, 'results/playwright-traced'), depth: 'ui' };
 const HOME_HELP = ['/home#Home', '/help#Help'];
-const HOME_DRAFTS = ['/home#Home', '/document/:tab_draft_done_#DocumentList'];
+const HOME_DRAFTS = ['/home#Home', '/document/:tab#DocumentList'];
 const tracedCandidatesOf = (patch: Record<string, unknown> = {}, onMap: object = map, mapFile = path.join(config.outDir, 'map.json')) => {
   const settings = { ...config, visitRecords: [], storiesDir: EXAMPLE_STORIES, tests: [TRACED], ...patch };
   return storyCandidates(settings, onMap, mapFile, linkTests(settings, map).traced);
@@ -530,9 +530,9 @@ const leftOnlyStored = (dir: string, onMap: object = map, mapFile = path.join(co
 test('every candidate is keyed by its screen order joined with " > ", whether it comes from a visit record or from traces', () => {
   assert.deepEqual(tracedCandidatesOf({ visitRecords: [EXAMPLE_VISITS] }).list.map((c) => c.key), [
     '/signin#SignIn > /home#Home > /beta/inbox > /help#Help',
-    '/home#Home > /document/:tab_draft_done_#DocumentList > /document/:id#DocumentDetail > /help#Help',
+    '/home#Home > /document/:tab#DocumentList > /document/:id#DocumentDetail > /help#Help',
     '/home#Home > /help#Help',
-    '/home#Home > /document/:tab_draft_done_#DocumentList',
+    '/home#Home > /document/:tab#DocumentList',
   ]);
 });
 

@@ -309,13 +309,15 @@ client with example results and a config to start from.
 `extract` writes `map.json`; `rebuild` writes it and `tests.json`.
 
 **Screens.** Each screen has an ID made of its route path and component name (`/document/:id#DocumentDetail`),
-usable as a test tag. It lists its route file and line, its component file, its `sourceFiles`, the API calls it
-reaches, the settings it reads, and its links to other screens with the conditions guarding them. The settings
-and links come from every file in `sourceFiles`. The API calls are only those the screen's code reaches, so a file
-in `sourceFiles` can hold calls the screen does not list, and a call sent by a method of a store the screen gets
-from a React context hook can be written in a file outside them; each call names the file and line where it is
-written. A call a saga makes for the screen names the line in the saga and lists under `actions` each action type
-that leads to it, with the places the screen dispatches that type (`dispatchedAt`).
+usable as a test tag. The pattern a path variable carries is left out of the ID, so `/document/:tab(draft|done)`
+gives `/document/:tab#DocumentList`; the screen's path keeps it. It lists its route file and line, its component
+file, its `sourceFiles`, the API calls it reaches, the settings it reads, and its links to other screens with the
+conditions guarding them. The settings and links come from every file in `sourceFiles`. The API calls are only
+those the screen's code reaches, so a file in `sourceFiles` can hold calls the screen does not list, and a call
+sent by a method of a store the screen gets from a React context hook can be written in a file outside them; each
+call names the file and line where it is written. A call a saga makes for the screen names the line in the saga
+and lists under `actions` each action type that leads to it, with the places the screen dispatches that type
+(`dispatchedAt`).
 A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
 inside it.
 
@@ -329,8 +331,8 @@ it, and the on/off `options` of its request body. The server match is one of:
 - `unresolved` — the URL cannot be worked out from the source, so there is no call node. Its `reason` says what
   stood in the way:
   - `not-written` — no address is written where the request is sent: it is given to the function, or there is none
-  - `imported-piece` — a piece of the address is a name imported from another file, or what a function imported
-    by name returns
+  - `imported-piece` — a piece of the address is what a function imported by name returns, or a name imported from
+    another file whose value duru could not read in the file that declares it
   - `unknown-piece` — a piece whose value is not known stands in front of the address or inside its text, such as
     a base address that could not be read, or the current page a relative address hangs on
   - `other-host` — the address is on a host other than `app.server`, or on any host when `app.server` is not given
@@ -400,6 +402,11 @@ listing the places whose value the source does not show in full.
   entry can come out of the config (`keptBodyTypeExclusions`).
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring.
+- `route path not read ← <route file>:<line>: stopped at <piece>` — a route whose path duru could not read in full.
+  `<piece>` is the first part of the path whose value it could not read, as written where duru stopped: in the
+  route file, or, followed by `in <file>:<line>`, in another file when duru followed a name into that file. `, only
+  <text>` follows when a part of the path was read, with `{?}` for the rest. The screen is on the map with that path
+  and an ID made from it; when the ID itself holds `{?}`, it changes once that part can be read (`unreadRoutePaths`).
 - `settingsFunctions <file>:<line> <what>` — about calls in the files the route files lead to by import: a call
   that duru does not read as settings; a default the function is given that differs from the `settingsDefaults`
   value (the map keeps that value), or that differs from another call's or cannot be compared with it (the map
@@ -484,7 +491,7 @@ A story is something a user gets done, written as the screens they pass through 
 ```json
 {
   "name": "로그인해 문서 목록에서 문서를 연다",
-  "screens": ["/signin#SignIn", "/home#Home", "/document/:tab_draft_done_#DocumentList", "/document/:id#DocumentDetail"],
+  "screens": ["/signin#SignIn", "/home#Home", "/document/:tab#DocumentList", "/document/:id#DocumentDetail"],
   "memo": "문서를 처음 여는 사람이 가장 자주 지나는 길이다.",
   "author": "Kim Min",
   "date": "2026-10-02"
@@ -529,7 +536,7 @@ duru does not look for the box in the code, so the page and the task list mark e
       { "box": { "placeholder": "비밀번호" }, "value": "test1234" }
     ] },
     "/home#Home",
-    { "screen": "/document/:tab_draft_done_#DocumentList", "needs": ["「완료」 탭을 고른다"] },
+    { "screen": "/document/:tab#DocumentList", "needs": ["「완료」 탭을 고른다"] },
     { "screen": "/document/:id#DocumentDetail", "linkNeeds": ["상태가 「완료」인 줄을 누른 경우"], "expects": ["문서 제목과 서명자 목록이 보인다"] }
   ],
   "expects": ["열람 기록에 이 문서가 한 줄 늘어난다"],

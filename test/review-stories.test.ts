@@ -187,7 +187,7 @@ test('the data carries the story candidates from the visit records, checked agai
 test('the candidates from traces come from the screen orders rebuild wrote into tests.json and stored, so the page still offers and accepts them with the reports and traces gone, and also with a tests.json that has none of them', async () => {
   await withRebuiltFixture({ ...CANDIDATES, ...TRACED }, async (config, copy) => {
     const visits = [HELP_KEY, PUBLISH_KEY];
-    const drafts = '/home#Home > /document/:tab_draft_done_#DocumentList';
+    const drafts = '/home#Home > /document/:tab#DocumentList';
     fs.rmSync(path.join(copy, 'results/playwright-traced'), { recursive: true });
     await withServer(config, 'reviewer', async (base) => {
       const { candidates }: PageData = await (await fetch(`${base}/api/data`)).json();

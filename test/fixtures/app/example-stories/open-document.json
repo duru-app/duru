@@ -1,6 +1,6 @@
 {
   "name": "로그인해 문서 목록에서 문서를 연다",
-  "screens": ["/signin#SignIn", "/home#Home", "/document/:tab_draft_done_#DocumentList", "/document/:id#DocumentDetail"],
+  "screens": ["/signin#SignIn", "/home#Home", "/document/:tab#DocumentList", "/document/:id#DocumentDetail"],
   "memo": "",
   "author": "reviewer",
   "date": "2026-10-01"

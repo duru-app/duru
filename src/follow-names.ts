@@ -52,6 +52,7 @@ interface Analysis {
   moduleLevel: number[];
   localEdge: (name: string) => Edge | null;
   aliased: (name: string) => string;
+  enums: Set<string>;
   // 클래스 이름이 적힌 위치 → 멤버 이름 → 그 멤버의 구역
   memberRegions: Map<number, Map<string, number[]>>;
 }
@@ -175,6 +176,7 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
   const sideEffects: (string | null)[] = [];
   const loads: (string | null)[] = [];
   const aliases = new Map<string, string>();
+  const enums = new Set<string>();
   const moduleLevel: number[] = [];
   const from = (node: { source?: { value: string } | null }) => resolve(file, node.source!.value);
   let loadRegion: number | null = null;
@@ -229,6 +231,7 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
       return;
     }
     splitMembers(decl, newRegion(decl, decl));
+    if (decl.type === 'TSEnumDeclaration') enums.add(decl.id.name);
     if (exported && decl.id?.type === 'Identifier') exports.set(decl.id.name, { local: decl.id.name });
   };
   const attachments: ExpressionStatement[] = [];
@@ -388,7 +391,7 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
     }
     return name;
   };
-  return { regions, refs, regionAt, exports, stars, sideEffects, loads, moduleLevel, localEdge, aliased, memberRegions };
+  return { regions, refs, regionAt, exports, stars, sideEffects, loads, moduleLevel, localEdge, aliased, enums, memberRegions };
 }
 
 const memberKey = (key: Node): string | null => (key.type === 'Identifier' ? key.name : key.type === 'StringLiteral' ? key.value : null);
@@ -573,6 +576,7 @@ export function nameFollower<Site>({ parse, resolve, sitesOf, members = null }: 
   }
 
   // re-export 하는 파일과 import 를 거쳐, 그 이름을 자기 파일에서 선언하는 곳의 { file, name } 을 준다. name 이 default 면 default export 한 값이다.
+  // export * 두 곳이 서로 다른 선언을 같은 이름으로 내보내면, ES 모듈에서처럼 그 이름은 내보내지 않은 것으로 본다.
   function declaration(file: string | null | undefined, name: string, seen = new Set<string>()): Origin | null {
     const a = file ? readable(file) : null;
     const key = `${file}\0${name}`;
@@ -584,14 +588,13 @@ export function nameFollower<Site>({ parse, resolve, sitesOf, members = null }: 
       const local = a.aliased(exp.local);
       const edge = a.localEdge(local);
       if (edge?.file !== undefined) return edge.name === '*' ? null : declaration(edge.file, edge.name!, seen);
-      return edge ? { file: file!, name: local } : null;
+      // TS enum 은 babel 의 scope 에 이름이 없다.
+      return edge || a.enums.has(local) ? { file: file!, name: local } : null;
     }
     if (exp) return { file: file!, name };
-    for (const f of a.stars) {
-      const found = declaration(f, name, seen);
-      if (found) return found;
-    }
-    return null;
+    const found = a.stars.map((f) => declaration(f, name, seen)).filter((o): o is Origin => o !== null);
+    const [first] = found;
+    return first && found.every((o) => o.file === first.file && o.name === first.name) ? first : null;
   }
 
   return { reach, origin, declaration };

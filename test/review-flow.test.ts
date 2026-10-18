@@ -54,7 +54,7 @@ const layoutErrors = (p: Page) => p.$$eval('#flow .canvas', (canvases) => canvas
   return errors;
 }));
 const SCREEN_ORDER = [
-  '/signin#SignIn', '/home#Home', '/document/:tab_draft_done_#DocumentList', '/document/:id#DocumentDetail', '/admin/member#AdminMember',
+  '/signin#SignIn', '/home#Home', '/document/:tab#DocumentList', '/document/:id#DocumentDetail', '/admin/member#AdminMember',
   '/admin/group#AdminGroup', '/lab#Lab', '/lab/result#LabResult', '/admin/audit#AdminAudit', '/admin/report#AdminReport', '/help#Help',
 ];
 const LAB_PATHS = ['/home#Home /lab#Lab', '/lab#Lab /lab/result#LabResult', '/signin#SignIn /home#Home'];
@@ -94,7 +94,7 @@ test('in a browser, pressing a screen in the flow keeps strong only the paths th
 
         await (await screenBox(p, '/document/:id#DocumentDetail')).click();
         assert.deepEqual(await boxesWith(p, 'jump'), ['/admin/report#AdminReport', '/help#Help'], 'the screens its links reach in other branches are marked, not dimmed');
-        assert.deepEqual(await boxesWith(p, 'dim'), ['/admin/audit#AdminAudit', '/admin/group#AdminGroup', '/admin/member#AdminMember', '/document/:tab_draft_done_#DocumentList', '/lab#Lab', '/lab/result#LabResult']);
+        assert.deepEqual(await boxesWith(p, 'dim'), ['/admin/audit#AdminAudit', '/admin/group#AdminGroup', '/admin/member#AdminMember', '/document/:tab#DocumentList', '/lab#Lab', '/lab/result#LabResult']);
 
         await flowButton(p, '선택 해제').click();
         assert.deepEqual(await shown(), ['flow-bar', 'flow', 'gaps']);
