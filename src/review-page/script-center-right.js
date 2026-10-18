@@ -193,7 +193,9 @@ function callTable(s) {
       h('tbody', {}, rows.flatMap((r) => {
         if (!r.call) {
           return h('tr', {},
-            h('td', { class: 'call' }, h('div', { class: 'mono' }, r.problem), r.server ? verdictChip(r.server) : null, h('div', { class: 'muted mono' }, r.site)),
+            h('td', { class: 'call' }, h('div', { class: 'mono' }, r.problem), r.server ? verdictChip(r.server) : null,
+              r.server?.status === 'unresolved' ? h('span', { class: 'unresolved-reason' }, UNRESOLVED_REASON[r.server.reason]) : null,
+              h('div', { class: 'muted mono' }, r.site)),
             h('td', { class: 'muted', colspan: depths.length + 1 }, '호출 노드가 없어 테스트를 붙이거나 코멘트를 남길 수 없습니다'),
             compareGap());
         }

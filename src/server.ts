@@ -7,8 +7,12 @@ export interface ServerEndpoint {
   segments: string[];
 }
 
+// not-written 은 보내는 곳에 주소 글자가 없는 것이고, unknown-piece 는 값을 모르는 조각이 주소 앞이나 글자 사이에 들어간 것이다.
+export type UnresolvedReason = 'not-written' | 'imported-piece' | 'unknown-piece' | 'other-host' | 'no-path';
+
 export type EndpointMatch =
-  | { status: 'unresolved' | 'unchecked' | 'none' }
+  | { status: 'unresolved'; reason: UnresolvedReason }
+  | { status: 'unchecked' | 'none' }
   | { status: 'method-mismatch'; candidates: string[]; path: string }
   | { status: 'match'; labels: string[]; path: string };
 
@@ -53,9 +57,10 @@ function closestPath(entries: ServerEndpoint[], segs: string[]) {
 }
 
 export function matchEndpoint(server: ServerEndpoint[], method: string | null | undefined, url: unknown, apiPathPrefix: string): EndpointMatch {
-  if (typeof url !== 'string') return { status: 'unresolved' };
+  if (typeof url !== 'string') return { status: 'unresolved', reason: 'not-written' };
   const segs = toSegments(clientPath(url, apiPathPrefix));
-  if (segs.length === 0 || segs[0] === '*') return { status: 'unresolved' };
+  if (segs.length === 0) return { status: 'unresolved', reason: 'no-path' };
+  if (segs[0] === '*') return { status: 'unresolved', reason: segs.every((s) => s === '*') ? 'not-written' : 'unknown-piece' };
   if (server.length === 0) return { status: 'unchecked' };
   const byPath = server.filter((e) => sameShape(e.segments, segs));
   if (byPath.length === 0) return { status: 'none' };

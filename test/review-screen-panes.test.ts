@@ -523,7 +523,7 @@ test('in a browser, long addresses and conditions wrap inside the screen info, t
   );
 });
 
-test('in a browser, the chosen screen shows its calls with the server match and tests by depth, and a mark on a call depth reaches the task list', { skip: browserMissing }, async () => {
+test('in a browser, the chosen screen shows its calls with the server match, with why for a call whose address was not read, and tests by depth, and a mark on a call depth reaches the task list', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -531,6 +531,7 @@ test('in a browser, the chosen screen shows its calls with the server match and 
         await p.click('#screen-list li:has-text("/document/:tab")');
         assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['판정 불가', '서버에 없음']);
         assert.equal(await p.locator('table.calls tr:has-text("판정 불가") td.cell').count(), 0);
+        assert.equal(await p.locator('table.calls tr:has-text("판정 불가") .unresolved-reason').innerText(), '보내는 곳에 주소가 적혀 있지 않음');
 
         await p.click('#screen-list li:has-text("/document/:id")');
         assert.deepEqual(await p.locator('table.calls td.call .chip').allTextContents(), ['서버에 있음 (core)', '메서드 불일치']);

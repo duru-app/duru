@@ -2,6 +2,7 @@ import type { Binding, NodePath } from '@babel/traverse';
 import type { AssignmentExpression, CallExpression, ImportDeclaration, JSXAttribute, JSXOpeningElement, ObjectExpression, StringLiteral } from '@babel/types';
 import { keyName, memberChain, UNKNOWN } from './client.ts';
 import { placeUnknown, sentAddress, staysInBrowser, VERBS, WITH_DATA, withBase } from './sent-address.ts';
+import type { UnresolvedReason } from './server.ts';
 
 export interface ScreenRequest {
   fn: string;
@@ -9,7 +10,7 @@ export interface ScreenRequest {
   url: string | null;
   navigation?: true;
   // url 에서 읽은 문자열이 있어도 어느 경로인지는 알 수 없다.
-  unresolved?: true;
+  unresolved?: UnresolvedReason;
 }
 
 interface RequestFunction {
@@ -32,6 +33,7 @@ type Base = string | null | undefined;
 
 const PAGE_OBJECTS = new Set(['window', 'globalThis', 'self']);
 const OTHER_SITE = /^(?:[a-z][a-z\d+.-]*:)?\/\//i;
+const FROM_ROOT = /^\/(?!\/)/;
 const ROUTER_PACKAGES = new Set(['react-router', 'react-router-dom', '@remix-run/react']);
 // URL 로 읽거나 ? · # 에서 자를 때 {?} 의 물음표가 걸리지 않게 잠시 바꿔 두는 문자열
 const MASK = '__duru_unknown__';
@@ -40,9 +42,16 @@ const masked = (url: string) => url.replaceAll(UNKNOWN, MASK);
 const unmasked = (url: string) => url.replaceAll(MASK, UNKNOWN);
 const verbOf = (method: unknown) => (typeof method === 'string' && /^[a-z]+$/i.test(method) ? method.toUpperCase() : null);
 
+// 값을 모르는 조각을 빼면 글자가 남지 않는 경로는 주소 전체가 값에서 온 것이다.
+function unknownReason(url: string): UnresolvedReason {
+  const path = masked(url).split(/[?#]/)[0];
+  if (!path.includes(MASK)) return 'no-path';
+  return /[^/]/.test(path.replaceAll(MASK, '')) ? 'unknown-piece' : 'not-written';
+}
+
 // 사이트 루트부터 시작하는 경로만 돌려준다. 다른 사이트 주소, 현재 페이지 기준 상대 주소, 경로를 알 수 없는 값으로 정해지는 주소는 null 이다.
 function navigatedAddress(url: unknown) {
-  if (typeof url !== 'string' || !/^\/(?!\/)/.test(url)) return null;
+  if (typeof url !== 'string' || !FROM_ROOT.test(url)) return null;
   const address = masked(url);
   return placeUnknown(address, [MASK]) ? null : unmasked(sentAddress(address));
 }
@@ -155,12 +164,15 @@ export function screenRequestReader({ requestFunction, evaluate, objectLiteral, 
     if (!address?.node) return null;
     const raw = evaluate(address);
     const value = typeof raw === 'string' ? pathOnServer(raw) : raw;
-    const url = hidesText(address) ? null : navigatedAddress(value);
+    const hides = hidesText(address);
+    const url = hides ? null : navigatedAddress(value);
     if (url !== null) return { fn, method, url, navigation: true };
     // POST 하는 form 은 앱 안에서 화면만 여는 페이지 이동일 수 없으므로, 주소를 다 읽지 못해도 요청으로 남긴다.
     if (method !== 'POST') return null;
-    if (typeof raw !== 'string') return { fn, method, url: null, navigation: true };
-    return !value || staysInBrowser(value) ? null : { fn, method, url: value, navigation: true, unresolved: true };
+    if (typeof raw !== 'string') return { fn, method, url: null, navigation: true, unresolved: hides ? 'imported-piece' : 'not-written' };
+    if (!value || staysInBrowser(value)) return null;
+    const reason = hides ? 'imported-piece' : FROM_ROOT.test(value) || value.startsWith(UNKNOWN) ? unknownReason(value) : 'unknown-piece';
+    return { fn, method, url: value, navigation: true, unresolved: reason };
   }
 
   function pathOnServer(url: string) {
@@ -175,10 +187,12 @@ export function screenRequestReader({ requestFunction, evaluate, objectLiteral, 
 
   function sent(fn: string, method: string | null, address: NodePath<any> | undefined, base: Base = undefined): ScreenRequest {
     const whole = withBase(address?.node ? text(evaluate(address)) : null, base);
-    if (whole === null) return { fn, method, url: null };
+    const hides = hidesText(address);
+    if (whole === null) return { fn, method, url: null, unresolved: hides ? 'imported-piece' : 'not-written' };
     const url = pathOnServer(whole);
-    if (url === null) return { fn, method, url: whole, unresolved: true };
-    return { fn, method, url, ...((hidesText(address) || placeUnknown(masked(url), [MASK])) && { unresolved: true as const }) };
+    if (url === null) return { fn, method, url: whole, unresolved: !masked(whole).replace(OTHER_SITE, '').split(/[/?#]/)[0].includes(MASK) ? 'other-host' : hides ? 'imported-piece' : 'unknown-piece' };
+    const reason = hides ? 'imported-piece' : placeUnknown(masked(url), [MASK]) ? unknownReason(url) : null;
+    return { fn, method, url, ...(reason && { unresolved: reason }) };
   }
 
   const fromConfig = (fn: string, config: NodePath<any> | undefined, base: Base) => sent(fn, methodIn(config), written(config, 'url') ?? undefined, baseIn(config, base));

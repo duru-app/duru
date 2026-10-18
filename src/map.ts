@@ -6,7 +6,7 @@ import { removeExcludedFields } from './body-type-exclusions.ts';
 import type { AccessConfig } from './access.ts';
 import type { RemovedField, UnknownExclusion } from './body-type-exclusions.ts';
 import type { AliasRule } from './resolve.ts';
-import type { EndpointMatch } from './server.ts';
+import type { EndpointMatch, UnresolvedReason } from './server.ts';
 
 type Client = Awaited<ReturnType<typeof extractClient>>;
 type ClientScreen = Client['screens'][number];
@@ -92,7 +92,7 @@ export type ScreenMap = {
   unrunApiModules?: NonNullable<Client['unrunApiModules']>;
   outsideStandIns?: Client['outsideStandIns'];
   silentApiModules?: Client['silentApiModules'];
-  unreadRequests?: { fn: string; file: string | null; line: number; url: string | null }[];
+  unreadRequests?: UnreadSite[];
   sagas?: NonNullable<Client['sagaRuns']>;
   bodyTypeNotices?: NonNullable<Client['bodyTypeNotices']>;
   deadCalls: { screen: string; fn: string; method: string | null; url: string | null; callSite: string }[];
@@ -114,6 +114,21 @@ export type ScreenMap = {
 
 // JUnit 태그에 쓸 수 없는 문자. 이 문자만 없으면 Playwright · Vitest 제목에서도 그대로 태그로 쓸 수 있다.
 const TAG_FORBIDDEN = /[\s,()&|!]+/g;
+
+type UnreadSite = { fn: string; file: string | null; line: number; url: string | null; reason: UnresolvedReason };
+
+export function unreadSites(screens: MapScreen[], direct: boolean): UnreadSite[] {
+  const unread = new Map<string, UnreadSite>();
+  for (const s of screens) {
+    for (const c of s.apiCalls) {
+      if (Boolean(c.direct) !== direct) continue;
+      for (const e of c.endpoints ?? []) {
+        if (e.server.status === 'unresolved') unread.set(`${c.file}\n${c.line}\n${c.fn}\n${e.url}`, { fn: c.fn, file: c.file, line: c.line, url: e.url, reason: e.server.reason });
+      }
+    }
+  }
+  return [...unread.values()].sort((a, b) => compare(a.file ?? '', b.file ?? '') || a.line - b.line || compare(a.fn, b.fn) || compare(a.url ?? '', b.url ?? ''));
+}
 
 export function screenId(routePath: string, component: string) {
   return `${routePath}#${component}`.replace(TAG_FORBIDDEN, '_');
@@ -252,19 +267,13 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     apiCalls: s.apiCalls.flatMap(({ request, navigation, ...c }) => {
       if (!request) return [{ ...c, endpoints: apiFunctions[c.fn]?.endpoints ?? null }];
       const { unresolved, ...sent } = request;
-      const e = { ...sent, line: c.line, server: unresolved ? { status: 'unresolved' as const } : matchEndpoint(server, sent.method, sent.url, apiPathPrefix), callId: null as string | null };
+      const e = { ...sent, line: c.line, server: unresolved ? { status: 'unresolved' as const, reason: unresolved } : matchEndpoint(server, sent.method, sent.url, apiPathPrefix), callId: null as string | null };
       if (navigation && sent.method !== 'POST' && !goesToServer(e)) return [];
       e.callId = callOf(e, apiPathPrefix)?.id ?? null;
       return [{ ...c, direct: true, endpoints: [e] }];
     }),
   }));
-  const unread = new Map<string, NonNullable<ScreenMap['unreadRequests']>[number]>();
-  for (const s of mapped) {
-    for (const c of s.apiCalls) {
-      if (c.direct && !c.endpoints[0].callId) unread.set(`${c.file}\n${c.line}\n${c.fn}\n${c.endpoints[0].url}`, { fn: c.fn, file: c.file, line: c.line, url: c.endpoints[0].url });
-    }
-  }
-  const unreadRequests = [...unread.values()].sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.fn, b.fn) || compare(a.url ?? '', b.url ?? ''));
+  const unreadRequests = unreadSites(mapped, true);
   const { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
   mapped.forEach((s, i) => {
     s.access = access[i];

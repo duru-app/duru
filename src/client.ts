@@ -16,6 +16,7 @@ import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
 import { screenRequestReader } from './screen-requests.ts';
+import type { UnresolvedReason } from './server.ts';
 import { typedMembers } from './typed-members.ts';
 import { settingNeeds } from './setting-needs.ts';
 import { addCallDefaults, findSettingsCalls, settingsResultFinder } from './settings-functions.ts';
@@ -60,7 +61,7 @@ interface Site {
 }
 
 type BodyOption = { key: string; line: number };
-type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: true }; navigation?: true; actions?: { type: string; dispatchedAt: string[] }[] };
+type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: UnresolvedReason }; navigation?: true; actions?: { type: string; dispatchedAt: string[] }[] };
 type DispatchSite = { line: number; types: () => ActionType[] };
 type WatcherSite = { watches: Watch[] };
 type FollowedSite = ApiCallSite | DispatchSite | WatcherSite;
