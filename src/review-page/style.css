@@ -501,6 +501,17 @@
   .fields-edit .add-line, .fields-edit .add-word { margin-top: 2px; }
   .fields-acts { display: flex; gap: 8px; }
   .fields-edit button.save-fields { border-color: var(--accent); background: var(--accent); color: #fff; }
+  .fields-edit button:disabled { opacity: .5; cursor: default; }
+  .new-need { display: grid; gap: 4px; margin-top: 4px; padding: 6px 8px; border: 1px dashed var(--written); border-radius: 6px; }
+  .new-need label { display: flex; align-items: baseline; gap: 6px; }
+  .new-need label > span:first-child { min-width: 4.5em; font-size: 12px; color: var(--muted); }
+  .new-need textarea { flex: 1; font: inherit; font-size: 13px; }
+  .new-need .error { margin: 0; }
+  .need-edit { margin: 8px 0 12px; }
+  .need-edit textarea { width: 100%; font: inherit; }
+  .need-edit .fields-acts .cancel-need { background: var(--panel); color: var(--text); border-color: var(--line); }
+  .need-saved { margin: 4px 0 0; font-size: 12px; }
+  button.edit-need { padding: 1px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
   .fields-saved { flex-basis: 100%; margin: 4px 0 0; font-size: 12px; }
   .story-file { margin-top: 16px; }
   .story-file summary { cursor: pointer; font-weight: 600; }

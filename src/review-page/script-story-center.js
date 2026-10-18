@@ -24,10 +24,75 @@ const storyFile = (st) => h('details', { class: 'story-file', open: state.storyF
 
 const storyName = (id) => state.data.stories.list.find((st) => st.id === id)?.name ?? id;
 
+function needEditor(n) {
+  const edit = state.needEdit?.file === n.file ? state.needEdit : null;
+  if (!edit) {
+    return [
+      h('button', { type: 'button', class: 'edit-need', title: '공통 조건 파일의 이름과 내용을 고칩니다. 스토리는 파일 이름으로 고르므로 이름을 바꿔도 그대로 이어집니다.', onclick: () => openNeedEdit(n) }, '고치기'),
+      state.needSaved === n.file ? h('p', { class: 'need-saved muted' }, `공통 조건 파일 ${needPath(n.file)} 에 썼습니다`) : null,
+    ];
+  }
+  return [h('fieldset', { class: 'story-form need-edit', disabled: edit.saving },
+    field('이름', h('input', { type: 'text', id: 'need-name', value: edit.name, oninput: (e) => { edit.name = e.target.value; } })),
+    field('내용', h('textarea', { id: 'need-text', rows: 4, oninput: (e) => { edit.text = e.target.value; } }, edit.text)),
+    edit.error ? h('p', { class: 'error need-error' }, edit.error) : null,
+    h('div', { class: 'fields-acts' },
+      edit.changedHash === null
+        ? h('button', { type: 'button', class: 'save-need', title: '공통 조건 파일에 고쳐 씁니다', onclick: saveNeed }, '저장')
+        : [
+          h('button', { type: 'button', class: 'reread-need', title: '바뀐 공통 조건 파일의 이름과 내용을 불러오고, 적던 내용은 버립니다', onclick: () => openNeedEdit(n) }, '새로 읽기'),
+          h('button', { type: 'button', class: 'overwrite-need', title: '다른 곳에서 바뀐 공통 조건 파일을 적은 이름과 내용으로 덮어씁니다', onclick: overwriteNeed }, '덮어쓰기'),
+        ],
+      h('button', { type: 'button', class: 'cancel-need', title: '공통 조건 파일은 그대로 둡니다', onclick: cancelNeedEdit }, '취소')))];
+}
+
+function dropLostNeed() {
+  if (needOf()) return;
+  const edit = state.need !== null && state.needEdit?.file === state.need ? state.needEdit : null;
+  Object.assign(state, { need: null, needEdit: null });
+  if (edit) state.storyError = `공통 조건 파일 ${needPath(edit.file)} ${findNeed(edit.file) ? '을 읽지 못하게 되어' : '이 없어져'} 고치던 칸을 닫았습니다. 적던 이름과 내용은 저장하지 않았습니다.`;
+}
+
+function openNeedEdit(n) {
+  state.needEdit = { file: n.file, name: n.name, text: n.text, contentHash: n.contentHash, changedHash: null, error: null, saving: false };
+  state.needSaved = null;
+  renderCenter();
+  document.getElementById('need-name')?.focus();
+}
+
+function cancelNeedEdit() {
+  state.needEdit = null;
+  renderCenter();
+}
+
+function overwriteNeed() {
+  const edit = state.needEdit;
+  edit.contentHash = edit.changedHash;
+  saveNeed();
+}
+
+async function saveNeed() {
+  const edit = state.needEdit;
+  Object.assign(edit, { error: null, changedHash: null, saving: true });
+  renderCenter();
+  const { written, reread, error } = await writeOverRead('/api/needs/edit', { file: edit.file, name: edit.name, text: edit.text, contentHash: edit.contentHash });
+  edit.saving = false;
+  if (written) {
+    state.needEdit = null;
+    state.needSaved = edit.file;
+    state.error = error;
+  } else {
+    if (reread) edit.changedHash = state.data.needs.list.find((n) => n.file === edit.file)?.contentHash ?? null;
+    edit.error = error;
+  }
+  render();
+}
+
 const needCenter = (n) => [
   h('div', { class: 'title-row' }, h('h3', {}, n.name), h('span', { class: 'chip need-chip' }, '공통 조건')),
   h('div', { class: 'muted mono need-place' }, `${state.data.storiesDir}/${needPath(n.file)}`),
   h('p', { class: 'memo' }, n.text),
+  ...needEditor(n),
   h('h2', { class: 'need-stories-head' }, `이 공통 조건을 쓰는 스토리 ${n.stories.length}`),
   n.stories.length
     ? h('ul', { class: 'screens', id: 'need-stories' }, n.stories.map((id) => h('li', { onclick: () => selectStory(id) },

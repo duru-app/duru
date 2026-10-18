@@ -454,7 +454,8 @@ test('in a browser, the need files show under the story list with each one\'s na
         assert.deepEqual(await p.locator('#need-stories li').allTextContents(), ['로그인해 문서 목록에서 문서를 연다open-document', '실험실을 열어 결과를 본다run-lab']);
         assert.equal(await p.textContent('#center details.need-file summary'), '공통 조건 파일 needs/member-account.json');
         assert.deepEqual(JSON.parse((await p.textContent('#center details.need-file pre'))!), { name: '일반 회원 계정', text: '역할 USER 로 가입한 계정.\n이메일 member@example.com' });
-        assert.equal(await p.locator('#center button, #center textarea, #center input').count(), 0, 'a need is only shown, not edited');
+        assert.deepEqual(await p.locator('#center button').allTextContents(), ['고치기']);
+        assert.equal(await p.locator('#center textarea, #center input').count(), 0);
         assert.equal(await p.locator('#right-dock textarea').count(), 0);
         assert.equal(await p.evaluate(() => location.hash), '#story?need=member-account.json');
 
@@ -464,6 +465,107 @@ test('in a browser, the need files show under the story list with each one\'s na
         await p.goBack();
         await p.waitForSelector('#center .need-place');
         assert.equal(await p.textContent('#center h3'), '일반 회원 계정');
+      }),
+    );
+  });
+});
+
+test('in a browser, a need chosen in the list is edited in the middle: 「고치기」 opens its name and text, 「취소」 leaves the file, 「저장」 writes them into the need file and every story picking it shows the new name, and after a save refused because the file changed elsewhere, 「새로 읽기」 fills in the changed file and 「덮어쓰기」 writes over it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) => {
+    const file = path.join(config.storiesDir, 'needs/member-account.json');
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, JSON.stringify({ name: '일반 회원 계정', text: '역할 USER 로 가입한 계정' }));
+    const storyFile = path.join(config.storiesDir, 'run-lab.json');
+    fs.writeFileSync(storyFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(storyFile, 'utf8')), needs: [{ use: 'member-account.json' }] }));
+    const story = fs.readFileSync(storyFile, 'utf8');
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#need-list li:has-text("일반 회원 계정")');
+        await p.click('#center button.edit-need');
+        assert.deepEqual([await p.inputValue('#need-name'), await p.inputValue('#need-text')], ['일반 회원 계정', '역할 USER 로 가입한 계정']);
+        await p.fill('#need-name', '지울 이름');
+        await p.click('#center button.cancel-need');
+        assert.equal(await p.locator('#need-name').count(), 0);
+        assert.equal(await p.textContent('#center h3'), '일반 회원 계정');
+
+        await p.click('#center button.edit-need');
+        await p.fill('#need-name', '회원 계정');
+        await p.fill('#need-text', '역할 USER 로 가입한 계정.\n이메일 member@example.com');
+        await p.click('#center button.save-need');
+        await p.waitForSelector('#center .need-saved');
+        assert.equal(await p.textContent('#center .need-saved'), '공통 조건 파일 needs/member-account.json 에 썼습니다');
+        assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { name: '회원 계정', text: '역할 USER 로 가입한 계정.\n이메일 member@example.com' });
+        assert.equal(await p.textContent('#center h3'), '회원 계정');
+        assert.equal(await p.textContent('#center .memo'), '역할 USER 로 가입한 계정.\n이메일 member@example.com');
+        assert.equal(await p.textContent('#need-list li.selected .name > span'), '회원 계정');
+        assert.equal(fs.readFileSync(storyFile, 'utf8'), story, 'the stories still pick the need by its file name');
+        await p.click('#need-stories li:has-text("run-lab")');
+        assert.equal(await p.textContent('#center .story-wide .need-use'), '공통 조건 회원 계정');
+
+        await p.click('#need-list li:has-text("회원 계정")');
+        await p.click('#center button.edit-need');
+        await p.fill('#need-text', '역할 USER 계정');
+        fs.writeFileSync(file, JSON.stringify({ name: '회원 계정', text: '다른 곳에서 고쳤다' }));
+        await p.waitForSelector('#center .memo:has-text("다른 곳에서 고쳤다")');
+        assert.equal(await p.inputValue('#need-text'), '역할 USER 계정');
+        await p.click('#center button.save-need');
+        await p.waitForSelector('#center .need-error');
+        assert.equal(await p.textContent('#center .need-error'), '저장하지 않았습니다: 공통 조건 파일 needs/member-account.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다. 바뀐 파일을 새로 읽거나, 지금 적은 내용으로 덮어쓸 수 있습니다.');
+        assert.deepEqual(await p.locator('#center .need-edit .fields-acts button').allTextContents(), ['새로 읽기', '덮어쓰기', '취소']);
+        assert.deepEqual(errors.splice(0), ['Failed to load resource: the server responded with a status of 409 (Conflict)']);
+        await p.click('#center button.reread-need');
+        assert.equal(await p.inputValue('#need-text'), '다른 곳에서 고쳤다');
+        assert.deepEqual(await p.locator('#center .need-edit .fields-acts button').allTextContents(), ['저장', '취소']);
+
+        await p.fill('#need-text', '역할 USER 계정');
+        fs.writeFileSync(file, JSON.stringify({ name: '회원 계정', text: '또 다른 곳에서 고쳤다' }));
+        await p.waitForSelector('#center .memo:has-text("또 다른 곳에서 고쳤다")');
+        await p.click('#center button.save-need');
+        await p.waitForSelector('#center button.overwrite-need');
+        assert.deepEqual(errors.splice(0), ['Failed to load resource: the server responded with a status of 409 (Conflict)']);
+        await p.click('#center button.overwrite-need');
+        await p.waitForSelector('#center .need-saved');
+        assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { name: '회원 계정', text: '역할 USER 계정' });
+      }),
+    );
+  });
+});
+
+test('in a browser, a need file deleted or made unreadable elsewhere while its editor is open closes the editor with a notice that what was typed was not saved, and nothing is written', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) => {
+    const needs = path.join(config.storiesDir, 'needs');
+    fs.mkdirSync(needs);
+    fs.writeFileSync(path.join(needs, 'member-account.json'), JSON.stringify({ name: '일반 회원 계정', text: '역할 USER 로 가입한 계정' }));
+    fs.writeFileSync(path.join(needs, 'done-document.json'), JSON.stringify({ name: '완료된 문서 하나', text: '서명이 끝난 문서가 하나 있다' }));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.click('#need-list li:has-text("일반 회원 계정")');
+        await p.click('#center button.edit-need');
+        await p.fill('#need-name', '회원 계정');
+        fs.rmSync(path.join(needs, 'member-account.json'));
+        await p.waitForSelector('#right .story-error');
+        assert.equal(await p.textContent('#right .story-error'), '공통 조건 파일 needs/member-account.json 이 없어져 고치던 칸을 닫았습니다. 적던 이름과 내용은 저장하지 않았습니다.');
+        assert.equal(await p.locator('#need-name').count(), 0);
+        assert.equal(await p.locator('#need-list li.selected').count(), 0);
+        assert.ok(!fs.existsSync(path.join(needs, 'member-account.json')));
+
+        await p.click('#need-list li:has-text("완료된 문서 하나")');
+        assert.equal(await p.locator('#right .story-error').count(), 0);
+        await p.click('#center button.edit-need');
+        await p.fill('#need-text', '서명이 끝난 문서가 두 개 있다');
+        fs.writeFileSync(path.join(needs, 'done-document.json'), '{');
+        await p.waitForSelector('#right .story-error');
+        assert.equal(await p.textContent('#right .story-error'), '공통 조건 파일 needs/done-document.json 을 읽지 못하게 되어 고치던 칸을 닫았습니다. 적던 이름과 내용은 저장하지 않았습니다.');
+        assert.equal(fs.readFileSync(path.join(needs, 'done-document.json'), 'utf8'), '{');
+
+        await p.click('#story-list li:has-text("실험실을 열어 결과를 본다")');
+        fs.writeFileSync(path.join(needs, 'admin-account.json'), JSON.stringify({ name: '관리자 계정', text: '역할 ADMIN 계정' }));
+        await p.waitForSelector('#need-list li:has-text("관리자 계정")');
+        assert.equal(await p.locator('#right .story-error').count(), 0, 'the notice does not come back once another place is chosen');
       }),
     );
   });

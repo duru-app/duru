@@ -102,7 +102,7 @@ export const isSource = (v: RawSource) => isPlainObject(v) && Object.keys(v).len
 export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v))
   && new Date(`${v.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === v.slice(0, 10);
 
-const hashOf = (bytes: Buffer) => crypto.createHash('sha256').update(bytes).digest('hex');
+export const hashOf = (bytes: Buffer) => crypto.createHash('sha256').update(bytes).digest('hex');
 const screenOf = (step: any) => (isPlainObject(step) ? step.screen : step);
 
 function fieldsProblem(fields: { needs?: unknown; linkNeeds?: unknown; expects?: unknown }, where: string, keys: readonly (keyof typeof FIELD_RULES)[] = FIELD_KEYS) {
@@ -269,7 +269,7 @@ export function editStory(dir: string, id: string, { name, memo }: { name: unkno
   return rewriteStory(dir, id, (raw) => ({ ...raw, name: name.trim(), memo }));
 }
 
-export class StoryChanged extends Error {}
+export class FileChanged extends Error {}
 
 type Place = { kind: 'story' } | { kind: 'step' | 'link'; step: number; screen: string };
 
@@ -318,7 +318,7 @@ function rewriteStory(dir: string, id: string, change: (raw: any) => object, rea
   if (!story) throw new Error(`스토리 ${id} 를 찾지 못했습니다`);
   const file = path.join(storyFiles(dir).root, story.file);
   const bytes = fs.readFileSync(file);
-  if (read && hashOf(bytes) !== read.contentHash) throw new StoryChanged(`스토리 파일 ${story.file} 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다`);
+  if (read && hashOf(bytes) !== read.contentHash) throw new FileChanged(`스토리 파일 ${story.file} 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다`);
   fs.writeFileSync(file, JSON.stringify(change(JSON.parse(bytes.toString('utf8'))), null, 2) + '\n');
   return { ...loadStories(dir).stories.find((s) => s.id === id)!, previousHash: hashOf(bytes) };
 }

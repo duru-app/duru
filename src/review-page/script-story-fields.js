@@ -50,7 +50,7 @@ const inputRowOf = (input) => ({
   nth: input.box.nth === undefined ? '' : String(input.box.nth),
   value: input.value,
 });
-const lineRowOf = (line) => (typeof line === 'string' ? { key: nextRowKey(), text: line } : { key: nextRowKey(), use: line.use });
+const lineRowOf = (line) => (typeof line === 'string' ? { key: nextRowKey(), mode: 'text', text: line, use: '', making: null } : { key: nextRowKey(), mode: 'use', text: '', use: line.use, making: null });
 
 function openFields(story, place) {
   const st = storyById(story);
@@ -86,9 +86,11 @@ function fieldsBelow(story, place, written) {
   return [written, savedLine(story, place)].flat().filter(Boolean);
 }
 
-function redrawTable(focusRow = null) {
+const focusInTable = (selector) => /** @type {HTMLElement | null} */ (document.querySelector(`.fields-edit ${selector}`))?.focus();
+
+function redrawTable(focus = null) {
   renderCenter();
-  if (focusRow !== null) /** @type {HTMLElement | null} */ (document.querySelector(`.fields-edit [data-row="${focusRow}"] input`))?.focus();
+  if (focus !== null) focusInTable(focus);
 }
 
 const removeButton = (rows, row, cls = 'remove-line') => h('button', {
@@ -102,9 +104,89 @@ const removeButton = (rows, row, cls = 'remove-line') => h('button', {
 
 const textField = (name, label, value, set) => h('input', { type: 'text', name, 'aria-label': label, value, oninput: (e) => set(e.target.value) });
 
-const lineEditRow = (key, label, rows, row) => h('tr', { 'data-row': row.key },
-  h('td', { class: 'line-text' }, row.use !== undefined ? needItem({ use: row.use }) : textField(`${LINE_NAME[key]}-${row.key}`, label, row.text, (v) => { row.text = v; })),
-  h('td', {}, removeButton(rows, row)));
+const LINE_MODES = { text: '글로 적기', use: '공통 조건 고르기' };
+const MAKE_NEED = ':new';
+
+function useOptions(row) {
+  const { list } = state.data.needs;
+  const picked = !row.making && row.use;
+  const lost = picked && !list.some((n) => n.file === row.use) ? needWord({ use: row.use }) : null;
+  return [
+    lost ? h('option', { value: row.use, selected: true }, lost) : h('option', { value: '', selected: !picked && !row.making }, '고르지 않음'),
+    ...list.map((n) => h('option', { value: n.file, selected: picked === n.file }, `${n.name} (${n.file})`)),
+    h('option', { value: MAKE_NEED, selected: Boolean(row.making) }, '새 공통 조건 만들기…'),
+  ];
+}
+
+function newNeedFields(prefix, row) {
+  const m = row.making;
+  return h('div', { class: 'new-need' },
+    h('label', {}, h('span', {}, '파일 이름'), textField(`${prefix}-new-file`, '새 공통 조건 파일 이름', m.file, (v) => { m.file = v; }), h('span', { class: 'muted mono' }, '.json')),
+    h('label', {}, h('span', {}, '이름'), textField(`${prefix}-new-name`, '새 공통 조건 이름', m.name, (v) => { m.name = v; })),
+    h('label', {}, h('span', {}, '내용'), h('textarea', { name: `${prefix}-new-text`, 'aria-label': '새 공통 조건 내용', rows: 3, oninput: (e) => { m.text = e.target.value; } }, m.text)),
+    m.error ? h('p', { class: 'error' }, m.error) : null,
+    h('div', { class: 'fields-acts' },
+      h('button', { type: 'button', class: 'make-need', disabled: m.saving, title: `${state.data.storiesDir}/needs/ 에 공통 조건 파일을 새로 쓰고, 이 줄이 그 파일을 고릅니다`, onclick: () => makeNeed(prefix, row) }, '만들기'),
+      h('button', { type: 'button', class: 'drop-need', disabled: m.saving, onclick: () => {
+        row.making = null;
+        redrawTable(`[name="${prefix}-use"]`);
+      } }, '그만두기')));
+}
+
+const useSelect = (prefix, row) => h('select', {
+  name: `${prefix}-use`,
+  'aria-label': '공통 조건',
+  onchange: (e) => {
+    if (e.target.value === MAKE_NEED) row.making = { file: '', name: '', text: '', error: null, saving: false };
+    else Object.assign(row, { use: e.target.value, making: null });
+    redrawTable(row.making ? `[name="${prefix}-new-file"]` : `[name="${prefix}-use"]`);
+  },
+}, useOptions(row));
+
+function lineEditRow(key, label, rows, row) {
+  const prefix = `${LINE_NAME[key]}-${row.key}`;
+  const text = textField(prefix, label, row.text, (v) => { row.text = v; });
+  if (key === 'expects') return h('tr', { 'data-row': row.key }, h('td', { class: 'line-text' }, text), h('td', {}, removeButton(rows, row)));
+  return h('tr', { 'data-row': row.key },
+    h('td', { class: 'line-mode' }, h('select', {
+      name: `${prefix}-mode`,
+      'aria-label': '조건 적는 법',
+      onchange: (e) => {
+        row.mode = e.target.value;
+        redrawTable(`[name="${prefix}-mode"]`);
+      },
+    }, Object.entries(LINE_MODES).map(([mode, word]) => h('option', { value: mode, selected: mode === row.mode }, word)))),
+    h('td', { class: 'line-text' }, row.mode === 'text' ? text : [useSelect(prefix, row), row.making ? newNeedFields(prefix, row) : null]),
+    h('td', {}, removeButton(rows, row)));
+}
+
+async function makeNeed(prefix, row) {
+  const m = row.making;
+  const edit = state.fieldsEdit;
+  Object.assign(m, { error: null, saving: true });
+  redrawTable();
+  const file = `${m.file.trim().replace(/\.json$/, '')}.json`;
+  /** @type {PageData['needs']['list'][number] | null} */
+  let made = null;
+  let failed = null;
+  await whileWritingStories(async () => {
+    try {
+      const res = await fetch('/api/needs/add', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ file, name: m.name, text: m.text }) });
+      if (!res.ok) throw new Error(await res.text());
+      made = await res.json();
+      await load();
+    } catch (err) {
+      failed = made ? `만들었지만 다시 읽지 못했습니다: ${err.message}` : `만들지 못했습니다: ${err.message}`;
+    }
+  });
+  m.saving = false;
+  if (made) {
+    Object.assign(row, { use: made.file, making: null });
+    edit.error = failed;
+  } else m.error = failed;
+  render();
+  focusInTable(made ? `[name="${prefix}-use"]` : `[name="${prefix}-new-file"]`);
+}
 
 const unusedWord = (row) => Object.keys(BOX_WORDS).find((k) => !row.words.some((w) => w.kind === k));
 
@@ -140,9 +222,9 @@ const inputEditRow = (rows, row) => h('tr', { 'data-row': row.key },
   h('td', {}, removeButton(rows, row)));
 
 function addLine(key) {
-  const row = key === 'inputs' ? { key: nextRowKey(), words: [wordRow('placeholder', '')], nth: '', value: '' } : { key: nextRowKey(), text: '' };
+  const row = key === 'inputs' ? { key: nextRowKey(), words: [wordRow('placeholder', '')], nth: '', value: '' } : lineRowOf('');
   state.fieldsEdit.rows[key].push(row);
-  redrawTable(row.key);
+  redrawTable(`[data-row="${row.key}"] input`);
 }
 
 function fieldsPart(key, label, rows) {
@@ -155,16 +237,29 @@ function fieldsPart(key, label, rows) {
 
 function fieldsEditor() {
   const edit = state.fieldsEdit;
+  const making = Object.values(edit.rows).flat().some((r) => r.mode === 'use' && r.making);
   return h('div', { class: 'fields-edit', onclick: (e) => e.stopPropagation() },
     h('fieldset', { disabled: edit.saving },
       FIELD_PARTS[edit.place.kind].map(([key, label]) => fieldsPart(key, label, edit.rows[key])),
       edit.error ? h('p', { class: 'error fields-error' }, edit.error) : null,
       h('div', { class: 'fields-acts' },
         edit.changedHash === null
-          ? h('button', { type: 'button', class: 'save-fields', title: '이 자리의 칸만 스토리 파일에 고쳐 씁니다', onclick: saveFields }, '저장')
+          ? h('button', {
+            type: 'button',
+            class: 'save-fields',
+            disabled: making,
+            title: making ? '새 공통 조건을 만들거나 그만둔 뒤에 저장합니다' : '이 자리의 칸만 스토리 파일에 고쳐 씁니다',
+            onclick: saveFields,
+          }, '저장')
           : [
             h('button', { type: 'button', class: 'reread-fields', title: '바뀐 스토리 파일의 이 자리 칸을 표에 불러오고, 표에 적던 내용은 버립니다', onclick: () => openFields(edit.story, edit.place) }, '새로 읽기'),
-            h('button', { type: 'button', class: 'overwrite-fields', title: '다른 곳에서 바뀐 이 자리의 칸을 표에 적은 내용으로 덮어씁니다', onclick: overwriteFields }, '덮어쓰기'),
+            h('button', {
+              type: 'button',
+              class: 'overwrite-fields',
+              disabled: making,
+              title: making ? '새 공통 조건을 만들거나 그만둔 뒤에 덮어씁니다' : '다른 곳에서 바뀐 이 자리의 칸을 표에 적은 내용으로 덮어씁니다',
+              onclick: overwriteFields,
+            }, '덮어쓰기'),
           ],
         h('button', { type: 'button', class: 'cancel-fields', title: '스토리 파일은 그대로 둡니다', onclick: cancelFields }, '취소'))));
 }
@@ -182,18 +277,27 @@ function cancelFields() {
 
 // 반만 채운 입력값 줄은 그대로 보내 서버가 빠진 항목을 알려 주게 한다.
 function fieldsToSend(rows) {
-  const lines = (list) => list.flatMap((r) => (r.use !== undefined ? [{ use: r.use }] : r.text.trim() ? [r.text.trim()] : []));
+  const lines = (list) => list.flatMap((r) => (r.mode === 'use' ? (r.use ? [{ use: r.use }] : []) : r.text.trim() ? [r.text.trim()] : []));
   const inputs = (list) => list
     .filter((r) => r.words.some((w) => w.text.trim()) || r.nth.trim() || r.value.trim())
     .map((r) => ({ box: { ...Object.fromEntries(r.words.map((w) => [w.kind, w.text.trim()])), ...(r.nth.trim() && { nth: Number(r.nth) }) }, value: r.value }));
   return Object.fromEntries(Object.entries(rows).map(([key, list]) => [key, key === 'inputs' ? inputs(list) : lines(list)]));
 }
 
-async function saveFields() {
-  const edit = state.fieldsEdit;
-  Object.assign(edit, { error: null, changedHash: null, saving: true });
-  renderCenter();
-  /** @type {{ file: string } | null} */
+/**
+ * @typedef {{
+ *   '/api/stories/fields': ReturnType<typeof import('../stories.ts').writeStoryFields>,
+ *   '/api/needs/edit': ReturnType<typeof import('../needs.ts').editNeed>,
+ * }} GuardedReplies
+ */
+
+/**
+ * @template {keyof GuardedReplies} U
+ * @param {U} url
+ * @param {object} body
+ */
+async function writeOverRead(url, body) {
+  /** @type {GuardedReplies[U] | null} */
   let written = null;
   /** @type {{ reason: string, changed: boolean } | null} */
   let refused = null;
@@ -201,11 +305,7 @@ async function saveFields() {
   let failed = null;
   await whileWritingStories(async () => {
     try {
-      const res = await fetch('/api/stories/fields', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: edit.story, place: edit.place, fields: fieldsToSend(edit.rows), contentHash: edit.contentHash }),
-      });
+      const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (res.ok) written = await res.json();
       else refused = { reason: await res.text(), changed: res.status === 409 };
       if (written || refused.changed) await load();
@@ -215,16 +315,37 @@ async function saveFields() {
         : refused ? `저장하지 않았습니다: ${refused.reason}. 바뀐 파일을 다시 읽지 못했습니다: ${err.message}` : `저장하지 못했습니다: ${err.message}`;
     }
   });
+  const reread = Boolean(refused?.changed && !failed);
+  const error = refused && !failed ? `저장하지 않았습니다: ${refused.reason}${reread ? '. 바뀐 파일을 새로 읽거나, 지금 적은 내용으로 덮어쓸 수 있습니다.' : ''}` : failed;
+  return { written, reread, error };
+}
+
+function unpickedLine(edit) {
+  for (const [key, label] of FIELD_PARTS[edit.place.kind]) {
+    const at = edit.rows[key].findIndex((r) => r.mode === 'use' && !r.use && r.text.trim());
+    if (at >= 0) return `${label}의 ${at + 1} 번째 줄에서 공통 조건을 고르지 않았습니다`;
+  }
+  return null;
+}
+
+async function saveFields() {
+  const edit = state.fieldsEdit;
+  const unpicked = unpickedLine(edit);
+  if (unpicked) {
+    edit.error = `저장하지 않았습니다: ${unpicked}`;
+    return renderCenter();
+  }
+  Object.assign(edit, { error: null, changedHash: null, saving: true });
+  renderCenter();
+  const { written, reread, error } = await writeOverRead('/api/stories/fields', { id: edit.story, place: edit.place, fields: fieldsToSend(edit.rows), contentHash: edit.contentHash });
   edit.saving = false;
   if (written) {
     state.fieldsEdit = null;
     state.fieldsSaved = { story: edit.story, place: edit.place, file: written.file };
-    state.error = failed;
-  } else if (refused && !failed) {
-    if (refused.changed) edit.changedHash = storyById(edit.story)?.contentHash ?? null;
-    edit.error = `저장하지 않았습니다: ${refused.reason}${edit.changedHash !== null ? '. 바뀐 파일을 새로 읽거나, 지금 적은 내용으로 덮어쓸 수 있습니다.' : ''}`;
+    state.error = error;
   } else {
-    edit.error = failed;
+    if (reread) edit.changedHash = storyById(edit.story)?.contentHash ?? null;
+    edit.error = error;
   }
   render();
 }
