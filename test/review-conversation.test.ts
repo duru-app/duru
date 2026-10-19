@@ -293,8 +293,8 @@ test('in a browser, 「전체」 groups every attached comment by its screen, ca
         ]);
         assert.match((await p.textContent('#right-info .talk-line:has-text("why pending?") .meta'))!, /테스트 「opens the lab」.*· 답 1/);
         const filter = (label: string) => p.locator('#right-info .talk-filters button', { hasText: label });
-        assert.equal(await filter('답 없는 것만').textContent(), '답 없는 것만 4');
-        await filter('답 없는 것만').click();
+        assert.equal(await filter('미답변').textContent(), '미답변 4');
+        await filter('미답변').click();
         assert.deepEqual((await groups()).map(([, lines]) => lines).flat(), ['one more step?', 'home first?', 'and the API?', 'is this paged?']);
         await filter('없음').click();
         assert.deepEqual(await groups(), [['/lab', ['no table test']]]);
@@ -510,12 +510,12 @@ test('in a browser, 「변경 기록」 under 「전체」 lists each case kind 
         await chooseScreen(p, '/help');
         assert.deepEqual(await scope.allTextContents(), ['이 화면 0', '전체 1']);
         await scope.nth(1).click();
-        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '답 없는 것만 1', '더 필요', '없음', '충분', '변경 기록']);
+        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 1', '더 필요', '없음', '충분', '변경 기록']);
         assert.deepEqual(await groups(), [['/lab', ['is the lab done?']]]);
 
         await filter('변경 기록').click();
         assert.equal(await filter('변경 기록').getAttribute('aria-pressed'), 'true');
-        assert.equal(await filter('답 없는 것만').textContent(), '답 없는 것만 1');
+        assert.equal(await filter('미답변').textContent(), '미답변 1');
         assert.deepEqual(await groups(), []);
         assert.deepEqual(await changes(), [
           ['끔', `경우 ${CASE_KINDS.boundary}`, '/lab', 'no input here'],
@@ -546,7 +546,7 @@ test('in a browser, 「변경 기록」 under 「전체」 lists each case kind 
       withPage(base, async (p) => {
         await chooseScreen(p, '/lab');
         await p.locator('#right-info .talk-scope button').nth(1).click();
-        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '답 없는 것만 0', '더 필요', '없음', '충분']);
+        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 0', '더 필요', '없음', '충분']);
       })));
 });
 

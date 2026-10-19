@@ -905,7 +905,7 @@ attached anywhere; N counts those, leaving out replies and marks that carry only
 only the case kinds picked or taken out are listed, under 「변경 기록」. 「전체」 groups them by the
 screen, call, story or candidate they were left on, the group with the latest entry first and the latest entry first
 in each group; a line shows the status, the tag, who wrote it and when, the number of replies and the first line of
-the text. 「답 없는 것만」 keeps the comments without a status that have no reply yet, and 「더 필요」, 「없음」 and 「충분」 keep, for a
+the text. 「미답변」 keeps the comments without a status that have no reply yet, and 「더 필요」, 「없음」 and 「충분」 keep, for a
 place whose current status is that one, the latest mark with that status and text. With `caseKinds` set, the last
 filter, 「변경 기록」, lists instead every case kind picked or taken out, as one list by time, the latest first, not
 grouped: a line shows 켬 or 끔, the kind, the screen or call, who pressed it and when. Pressing one opens that screen or

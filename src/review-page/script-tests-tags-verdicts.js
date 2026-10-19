@@ -42,7 +42,7 @@ const saidIn = (m) => m.history.filter((r) => r.replyTo === undefined && r.note.
 const unanswered = (m, r) => r.replyTo === undefined && r.status === undefined && !m.history.some((x) => x.replyTo === r.id);
 const anyUnanswered = (entries) => entries.some((m) => m.history.some((r) => unanswered(m, r)));
 const entriesAt = (t) => [markOf(t)].filter(Boolean);
-const unansweredDot = (entries) => (anyUnanswered(entries) ? h('span', { class: 'unanswered-dot', role: 'img', 'aria-label': '답 없는 코멘트 있음', title: '답 없는 코멘트가 있습니다' }) : null);
+const unansweredDot = (entries) => (anyUnanswered(entries) ? h('span', { class: 'unanswered-dot', role: 'img', 'aria-label': '미답변 코멘트 있음', title: '미답변 코멘트가 있습니다' }) : null);
 
 const saidCount = (entries) => new Set(entries.flatMap((m) => saidIn(m).map((r) => r.id))).size;
 

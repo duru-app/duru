@@ -20,7 +20,7 @@ function scopeButtons() {
 
 const TALK_FILTERS = [
   { key: 'all', label: '모두', keep: () => true },
-  { key: 'unanswered', label: '답 없는 것만', keep: unanswered },
+  { key: 'unanswered', label: '미답변', keep: unanswered },
   ...Object.entries(MARK_STATUS).map(([key, label]) => ({ key, label, keep: (m, r) => m.current?.status === key && saidIn(m).find((x) => x.status === key)?.id === r.id })),
   { key: 'changes', label: '변경 기록' },
 ];
@@ -59,7 +59,7 @@ function allTalk() {
   const lineItem = ({ m, r }) => {
     const replies = m.history.filter((x) => x.replyTo === r.id).sort(byDate);
     const meta = h('span', { class: 'meta' },
-      unanswered(m, r) ? h('span', { class: 'unanswered-dot', role: 'img', 'aria-label': '답 없음', title: '답 없는 코멘트' }) : null,
+      unanswered(m, r) ? h('span', { class: 'unanswered-dot', role: 'img', 'aria-label': '미답변', title: '미답변 코멘트' }) : null,
       r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status]) : null,
       noTarget(m.target) ? null : tagChip(tagLabel(m.target)),
       h('span', {}, signedAt(r)),

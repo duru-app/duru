@@ -1771,7 +1771,7 @@ later carries a reason stays out of the conversation as well.
 「변경 기록」 is the last button of 「전체」's filter row, shown only when `caseKinds` is set. It lists every pick on its own
 line, latest first, across screens and calls rather than grouped like the other filters, because what it answers is
 who changed which kind and when; each line names its screen or call, 켬 or 끔, the kind, and always its author, even on
-a page only one reviewer has signed, where other lines leave the author out. 「답 없는 것만 N」 keeps counting the
+a page only one reviewer has signed, where other lines leave the author out. 「미답변 N」 keeps counting the
 comments while 「변경 기록」 is chosen. Pressing a line opens the screen or call, opens the fold that holds
 「경우별 테스트」 and scrolls the middle pane to it, since that is where the pick lives now.
 Alternatives compared:
