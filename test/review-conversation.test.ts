@@ -293,8 +293,8 @@ test('in a browser, 「전체」 groups every attached comment by its screen, ca
         ]);
         assert.match((await p.textContent('#right-info .talk-line:has-text("why pending?") .meta'))!, /테스트 「opens the lab」.*· 답 1/);
         const filter = (label: string) => p.locator('#right-info .talk-filters button', { hasText: label });
-        assert.equal(await filter('답 없는 것만').textContent(), '답 없는 것만 4');
-        await filter('답 없는 것만').click();
+        assert.equal(await filter('미답변').textContent(), '미답변 4');
+        await filter('미답변').click();
         assert.deepEqual((await groups()).map(([, lines]) => lines).flat(), ['one more step?', 'home first?', 'and the API?', 'is this paged?']);
         await filter('없음').click();
         assert.deepEqual(await groups(), [['/lab', ['no table test']]]);
@@ -445,16 +445,109 @@ test('in a browser, a comment on a test that is no longer among the results show
   });
 });
 
-test('in a browser, a case kind picked on a screen shows in its conversation with the status the case was given', { skip: browserMissing }, async () => {
+test('in a browser, pressing a case kind on and off on a screen or a call leaves its conversation, 「이 화면 N」, 「전체 N」 and the list count as they were, keeps a mark file for each press, and a comment on the same screen still shows', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) => {
-    const kind = Object.keys(CASE_KINDS)[0];
-    addMark(config.marksDir, { target: { node: '/lab#Lab', case: kind }, status: 'needed', author: 'reviewer' });
+    addMark(config.marksDir, { target: { node: '/lab#Lab' }, note: 'is the lab done?', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
+    addMark(config.marksDir, { target: { node: '/home#Home', case: 'legacy' }, status: 'needed', author: 'qa-agent' }, new Date('2026-10-12T02:00:00Z'));
     return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
+        const scope = p.locator('#right-info .talk-scope button');
+        const said = () => p.locator('#right-info .history > li').allTextContents();
+        const listCount = () => p.locator('#screen-list li').filter({ has: p.locator('.name > span:first-child', { hasText: /^\/lab$/ }) }).locator('.talk-count').textContent();
+        const press = async (section: string, on: boolean) => {
+          await p.locator(`${section} .case-kinds button[title="@case:boundary"]`).click();
+          await p.locator(`${section} .case-kinds button[title="@case:boundary"][aria-pressed="${on}"]:not([disabled])`).waitFor();
+        };
+
         await chooseScreen(p, '/lab');
-        assert.equal(await p.textContent('#right-info .history > li .chip'), '필요');
+        assert.deepEqual(await scope.allTextContents(), ['이 화면 1', '전체 1']);
+        assert.equal(await listCount(), '코멘트 1');
+        assert.equal((await said()).length, 1);
+        await openScreenInfo(p);
+        for (const on of [true, false, true, false]) await press('#center .screen-info > .cases', on);
+        assert.deepEqual(await scope.allTextContents(), ['이 화면 1', '전체 1']);
+        assert.equal(await listCount(), '코멘트 1');
+        assert.equal((await said()).length, 1);
+        assert.match((await said())[0], /is the lab done\?/);
+        assert.doesNotMatch((await said())[0], /reviewer · /);
+
+        await chooseScreen(p, '/home');
+        await p.locator('table.calls tbody tr:not(.option)', { hasText: 'GET:/api/v1/document/list' }).locator('td.cell').first().click();
+        await press('#center .call-info > .cases', true);
+        assert.deepEqual(await scope.allTextContents(), ['이 호출 0', '전체 1']);
+        assert.equal(await p.textContent('#right-info .talk > p.muted'), '아직 대화가 없습니다.');
+
+        assert.deepEqual(loadMarks(config.marksDir).filter((m) => m.target?.case !== undefined).sort((a, b) => a.date.localeCompare(b.date)).map((m) => [m.target!.node, m.status]), [
+          ['/home#Home', 'needed'],
+          ['/lab#Lab', 'needed'],
+          ['/lab#Lab', 'not-needed'],
+          ['/lab#Lab', 'needed'],
+          ['/lab#Lab', 'not-needed'],
+          ['GET:/api/v1/document/list', 'needed'],
+        ]);
       }));
   });
+});
+
+test('in a browser, 「변경 기록」 under 「전체」 lists each case kind picked or taken out in time order, newest first, with on or off, the kind, its screen or call, who and when, and leaves them out of the other filters; a line opens its screen or call with 「경우별 테스트」 in view, and with no case kinds in the config the filter is not there', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) => {
+    addMark(config.marksDir, { target: { node: '/lab#Lab' }, note: 'is the lab done?', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
+    addMark(config.marksDir, { target: { node: '/lab#Lab', case: 'boundary' }, status: 'needed', author: 'reviewer' }, new Date('2026-10-12T02:00:00Z'));
+    addMark(config.marksDir, { target: { node: 'GET:/api/v1/document/list', case: 'legacy' }, status: 'needed', author: 'reviewer' }, new Date('2026-10-12T03:00:00Z'));
+    addMark(config.marksDir, { target: { node: '/lab#Lab', case: 'boundary' }, status: 'not-needed', note: 'no input here\nsecond line', author: 'reviewer' }, new Date('2026-10-12T04:00:00Z'));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        const scope = p.locator('#right-info .talk-scope button');
+        const filter = (label: string) => p.locator('#right-info .talk-filters button', { hasText: label });
+        const groups = () => p.locator('#right-info .talk-group').evaluateAll((list) => list.map((g) => [g.querySelector('h3')!.textContent, [...g.querySelectorAll('.talk-line .first')].map((e) => e.textContent)]));
+        const changes = () => p.locator('#right-info .talk-changes .talk-line').evaluateAll((list) => list.map((l) => [l.querySelector('.chip')!.textContent, l.querySelector('.tag-label')!.textContent, ...[...l.querySelectorAll('.first')].map((e) => e.textContent)]));
+        const inView = (selector: string) => p.waitForFunction((sel) => {
+          const pane = document.getElementById('center')!.getBoundingClientRect();
+          const head = document.querySelector(sel)?.getBoundingClientRect();
+          return !!head && head.top >= pane.top - 0.5 && head.bottom <= pane.bottom + 0.5;
+        }, selector);
+
+        await chooseScreen(p, '/help');
+        assert.deepEqual(await scope.allTextContents(), ['이 화면 0', '전체 1']);
+        await scope.nth(1).click();
+        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 1', '더 필요', '없음', '충분', '변경 기록']);
+        assert.deepEqual(await groups(), [['/lab', ['is the lab done?']]]);
+
+        await filter('변경 기록').click();
+        assert.equal(await filter('변경 기록').getAttribute('aria-pressed'), 'true');
+        assert.equal(await filter('미답변').textContent(), '미답변 1');
+        assert.deepEqual(await groups(), []);
+        assert.deepEqual(await changes(), [
+          ['끔', `경우 ${CASE_KINDS.boundary}`, '/lab', 'no input here'],
+          ['켬', `경우 ${CASE_KINDS.legacy}`, '호출 GET:/api/v1/document/list'],
+          ['켬', `경우 ${CASE_KINDS.boundary}`, '/lab'],
+        ]);
+        for (const meta of await p.locator('#right-info .talk-changes .talk-line .meta').allTextContents()) assert.match(meta, /reviewer · /);
+
+        await p.click('#right-info .talk-changes .talk-line:has-text("호출 GET:/api/v1/document/list")');
+        assert.equal(await scope.first().getAttribute('aria-pressed'), 'true');
+        assert.match((await p.textContent('#screen-list li.selected'))!, /^\/home/);
+        await inView('#center .call-info[open] > .cases > h2');
+        assert.equal(await p.locator('#center .call-info > .cases .case-kinds button[title="@case:legacy"]').getAttribute('aria-pressed'), 'true');
+
+        await scope.nth(1).click();
+        assert.equal(await filter('변경 기록').getAttribute('aria-pressed'), 'true');
+        await p.click('#right-info .talk-changes .talk-line:has-text("no input here")');
+        assert.match((await p.textContent('#screen-list li.selected'))!, /^\/lab/);
+        await inView('#center .screen-info[open] > .cases > h2');
+        assert.equal(await p.locator('#center .screen-info > .cases .case-kinds button[title="@case:boundary"]').getAttribute('aria-pressed'), 'false');
+        assert.deepEqual(await scope.allTextContents(), ['이 화면 1', '전체 1']);
+        assert.equal(await p.locator('#screen-list li').filter({ has: p.locator('.name > span:first-child', { hasText: /^\/lab$/ }) }).locator('.talk-count').textContent(), '코멘트 1');
+        assert.deepEqual(errors, []);
+      }));
+  });
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await chooseScreen(p, '/lab');
+        await p.locator('#right-info .talk-scope button').nth(1).click();
+        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 0', '더 필요', '없음', '충분']);
+      })));
 });
 
 test('in a browser, the default tag taken off with its × leaves a note that can be saved with no target, comes back with the note still typed, and after it or after a bubble typing goes on at the end of the note', { skip: browserMissing }, async () => {

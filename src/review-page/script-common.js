@@ -90,10 +90,11 @@ const untaggedCount = () => state.data.tests.untagged?.length ?? state.data.test
 const untaggedKey = (t) => JSON.stringify([t.source, t.file, t.line, t.title]);
 const markOf = (t) => state.data.marks.attached.find((m) => m.key === keyOf(t));
 const fmtDate = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+const isPick = (m) => m.target.case !== undefined;
 function othersSigned() {
   const { marks, tests, author } = state.data;
   const judged = [tests.discarded, tests.awaitingTag, tests.detachedHandOvers].flatMap((byNode) => Object.values(byNode ?? {}).flat()).map((t) => t.judgment);
-  return [...marks.attached, ...marks.detached].flatMap((m) => m.history).concat(judged).some((record) => record.author !== author);
+  return [...marks.attached.filter((m) => !isPick(m)), ...marks.detached].flatMap((m) => m.history).concat(judged).some((record) => record.author !== author);
 }
 const signedAt = (record) => (othersSigned() ? `${record.author} · ${fmtDate(record.date)}` : fmtDate(record.date));
 const markChip = (m) => (m?.current ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status] ?? CASE_STATUS[m.current.status]) : null);
@@ -274,11 +275,19 @@ function selectTarget(t) {
 
 // 호출 정보는 호출 표 아래에 있어, 고른 뒤에 칸 밖에 놓이면 가운데 칸만 그 자리로 내린다.
 function revealCallInfo() {
+  revealInCenter('.call-info[open] > summary');
+}
+
+function revealCases(node) {
+  revealInCenter(`${callOf(node) ? '.call-info' : '.screen-info'}[open] > .cases > h2`);
+}
+
+function revealInCenter(selector) {
   const pane = document.getElementById('center');
-  const summary = /** @type {HTMLElement} */ (pane.querySelector('.call-info[open] > summary'));
-  if (!summary) return;
-  const top = summary.getBoundingClientRect().top - pane.getBoundingClientRect().top;
-  if (top >= 0 && top + summary.offsetHeight <= pane.clientHeight) return;
+  const el = /** @type {HTMLElement} */ (pane.querySelector(selector));
+  if (!el) return;
+  const top = el.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+  if (top >= 0 && top + el.offsetHeight <= pane.clientHeight) return;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   pane.scrollTo({ top: pane.scrollTop + top - 12, behavior: still ? 'auto' : 'smooth' });
 }
