@@ -1046,7 +1046,7 @@ export async function extractClient(config: any) {
         }
         if (!config.routeElements.includes(tag)) return;
         const line = p.node.loc!.start.line;
-        const unread = (reason: string) => void unreadRoutes.push({ file: routeFile, line, reason });
+        const unread = (reason: string) => void (definesRouteElement(p) || unreadRoutes.push({ file: routeFile, line, reason }));
         const pathAttr = attr('path');
         const compAttr = attr('component');
         const elementAttr = attr('element');
@@ -1066,7 +1066,7 @@ export async function extractClient(config: any) {
         if (compAttr) page = componentAttrPage(compAttr, absFile);
         else if (elementAttr) page = elementPage(elementAttr, absFile);
         else {
-          if (holdsRoutes(p)) return;
+          if (holdsRoutes(p) || definesRouteElement(p)) return;
           const drawn = drawnBy();
           if (drawn === REDIRECT) return;
           if (typeof drawn === 'string') return unread(drawn);
@@ -1110,6 +1110,14 @@ export async function extractClient(config: any) {
       },
     });
     return found;
+  }
+
+  function definesRouteElement(route: NodePath) {
+    let owner: NodePath | null = route.getFunctionParent();
+    if (owner?.isClassMethod()) owner = owner.parentPath.parentPath;
+    while (owner && (owner.isFunction() || owner.isCallExpression() || owner.isClassExpression()) && !owner.isFunctionDeclaration()) owner = owner.parentPath;
+    const id = owner && (owner.isVariableDeclarator() || owner.isFunctionDeclaration() || owner.isClassDeclaration()) ? owner.node.id : null;
+    return id?.type === 'Identifier' && config.routeElements.includes(id.name);
   }
 
   const LOOP_METHODS = ['map', 'flatMap', 'forEach', 'reduce'];

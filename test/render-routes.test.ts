@@ -146,6 +146,41 @@ test('a route whose path or screen may sit in a spread prints route not read quo
   });
 });
 
+test('a route written inside a route element listed in routeElements, such as a PrivateRoute passing its props on, prints no route not read line', async () => {
+  const definitions: [string, string] = ['export default function Routes', [
+    'const PrivateRoute = ({ component: Component, ...rest }) => (',
+    '  <Route {...rest} render={(props) => (session ? <Component {...props} /> : <Redirect to={Option.ROUTE_PATH.SIGN_IN} />)} />',
+    ');',
+    'function GuardRoute({ children, ...rest }) {',
+    '  return <Route {...rest} render={() => children} />;',
+    '}',
+    'export default function Routes',
+  ].join('\n')];
+  const used: [string, string] = ['<Route path={Option.ROUTE_PATH.HELP} component={Help} exact />', '<PrivateRoute path={Option.ROUTE_PATH.HELP} component={Help} exact />'];
+  await withCopy([definitions, used], async ({ configFile, routes, setConfig }) => {
+    setConfig({ routeElements: ['Route', 'PrivateRoute', 'GuardRoute'] });
+    assert.deepEqual(ids(await build(configFile)), ids(await original));
+    assert.deepEqual(printed('extract', configFile), []);
+    setConfig({ routeElements: ['Route', 'PrivateRoute'] });
+    assert.deepEqual(printed('extract', configFile), [`  route not read ← Routes.js:${lineOf(routes, '<Route {...rest} render={() => children} />')}: the path may be in {...rest}`]);
+  });
+});
+
+test('a render or child-element route written inside a route element listed in routeElements gives no screen and no line, so the map is the one without that definition', async () => {
+  const definitions: [string, string] = ['function canManageGroups(role) {', [
+    'const AppRoute = ({ path, component: C }) => <Route path={path} render={(props) => <C {...props} />} />;',
+    'function ShellRoute({ path, page: Page }) {',
+    '  return <Route path={path}><Page /></Route>;',
+    '}',
+    'function canManageGroups(role) {',
+  ].join('\n')];
+  await withCopy([definitions], async ({ configFile, setConfig }) => {
+    setConfig({ routeElements: ['Route', 'AppRoute', 'ShellRoute'] });
+    assert.deepEqual(withoutMeta(await build(configFile)), withoutMeta(await original));
+    assert.deepEqual(printed('extract', configFile), []);
+  });
+});
+
 test('a render or child-element route made for each item of a list with a path that is not read is not a screen and prints route not read', async () => {
   const listed = [
     '{Object.values(items).map((item) => <Route key={item.url} path={`/admin/${item.url}`} render={(props) => <AdminReport {...props} />} />)}',

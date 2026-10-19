@@ -2314,8 +2314,13 @@ screen whose element has value children such as `<About>{label}</About>`. A
 `render=` or child-element route built in a loop over a list whose path is not read, such as mattermost's admin
 console route per settings page (`path={`${props.match.url}/${item.url}`}`), is a line and not a `{?}` screen:
 every item would share one ID, as in #304, and that ID would change once reading tables is settled in #305, so
-the review marks put on it would come loose. This removes, for routes, the silence the entry on route files
-being listed in the config names for code that spreads lists of routes.
+the review marks put on it would come loose. For routes, this ends the silence that the entry "Route files are
+listed in the config" names for code that spreads lists of routes. Inside a component whose name is in
+`routeElements`, such as the react-router 5 `PrivateRoute` that passes `{...rest}` on to `<Route>`, a route that
+draws its screen with `render=` or a child element gives no screen and no line, as on main, since each place
+that component is used is already read as a route, so a line would report a screen missing that is on the map, and a
+screen would add one `{?}` screen that stands for all of those uses. A `component=` or `element=` route there gives
+what it gave on main.
 Measured: the maps of `test/fixtures/app`, `test/fixtures/ts-app`, into-sign 2.0.0 (`config-role.json`, 44 screens)
 and into-sign 1.5.0 (45 screens) are the same on main and on this change apart from `generatedAt`, and none of them
 prints a `route not read` line.
