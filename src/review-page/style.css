@@ -3,7 +3,7 @@
     --selected: #e8eefc; --pass: #1f7a3d; --fail: #c0392b; --pending: #a86a00;
     --more: #b3541e; --missing: #c0392b; --fine: #1f7a3d; --changed: #7c3aed; --changed-bg: #f3ecff;
     --written: #0f766e; --written-bg: #e6f4f1;
-    --point: #e8710a; --point-bg: rgba(232, 113, 10, .18); --point-other: #8a94a6;
+    --point: #2f5fd0; --point-bg: rgba(47, 95, 208, .10); --point-ring: rgba(47, 95, 208, .18); --point-other: #9aa4b2;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -11,7 +11,7 @@
       --selected: #26304a; --pass: #5cc185; --fail: #ff7b6b; --pending: #e0b050;
       --more: #f0935a; --missing: #ff7b6b; --fine: #5cc185; --changed: #b18cff; --changed-bg: #2a2140;
       --written: #4fd1c0; --written-bg: #12302c;
-      --point: #ff9a3c; --point-bg: rgba(255, 154, 60, .22); --point-other: #9aa3b5;
+      --point: #7fa2ff; --point-bg: rgba(127, 162, 255, .16); --point-ring: rgba(127, 162, 255, .28); --point-other: #9aa3b5;
     }
   }
   * { box-sizing: border-box; }
@@ -199,9 +199,9 @@
   .point-crop { position: relative; overflow: hidden; height: 0; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
   .point-frame { position: absolute; left: 0; top: 0; border: 0; background: #fff; transform-origin: 0 0; pointer-events: none; }
   .point-marks { position: absolute; inset: 0; pointer-events: none; }
-  .point-mark { position: absolute; border: 2px dashed var(--point-other); border-radius: 4px; }
-  .point-mark.target { border: 3px solid var(--point); box-shadow: 0 0 0 5px var(--point-bg); }
-  .point-no { position: absolute; top: -11px; left: -11px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--point-other); color: #fff; font-size: 12px; font-weight: 700; }
+  .point-mark { position: absolute; border: 1.5px solid var(--point-other); border-radius: 4px; }
+  .point-mark.target { border: 2px solid var(--point); background: var(--point-bg); box-shadow: 0 0 0 3px var(--point-ring); }
+  .point-no { position: absolute; top: 50%; left: calc(100% + 6px); transform: translateY(-50%); display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--point-other); color: #fff; font-size: 11px; font-weight: 700; }
   .point-mark.target .point-no { background: var(--point); }
   .point-block p { margin: 0; font-size: 13px; }
   .point-missing { color: var(--fail); }
