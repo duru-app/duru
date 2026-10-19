@@ -79,31 +79,134 @@ const CASE_LABEL = {
   case: (c) => state.data.caseKinds[c.tag.slice('case:'.length)].text,
 };
 const caseValues = (c) => (c.kind === 'case' ? state.data.caseKinds[c.tag.slice('case:'.length)].values : []);
+/** @param {import('../config.ts').CasePick} pick */
+const pickText = ({ screen, methods, api }) => [screen && `화면 경로 ${screen}`, methods && `메서드 ${methods.join(' · ')}`, api && `요청 주소 ${api}`].filter(Boolean).join(' · ');
+const ruleText = (kind, index, pick = state.data.caseKinds[kind].picks[index]) => `${pickText(pick)} (설정 caseKinds.${kind}.picks ${index + 1}번째 줄)`;
+const rulesText = (kind, indices) => indices.map((i) => ruleText(kind, i)).join('\n');
+const nowRules = (kind) => (state.data.caseKinds[kind].picks.length ? `지금 규칙: ${rulesText(kind, state.data.caseKinds[kind].picks.map((_, i) => i))}` : '지금 규칙 없음');
+const targetWord = (id) => (nodeWord(id) === '호출' ? '요청' : '화면');
+
+function pickedBy(kind, id) {
+  const kindTargets = state.data.caseTargets[kind];
+  const unused = kindTargets?.unused[id];
+  if (unused) return { state: 'unused', rules: [], mark: unused };
+  return kindTargets?.nodes[id] ?? { state: 'undecided', rules: [], mark: null };
+}
+
+const takenOut = (by) => (by.state === 'not-needed' && by.mark?.rule) || by.state === 'unused';
+
+function pickChip(kind, by) {
+  const { mark } = by;
+  if (by.state === 'rule') return h('span', { class: 'chip pick-rule', title: `규칙이 골랐습니다: ${rulesText(kind, by.rules)}` }, '규칙');
+  if (by.state === 'needed') return h('span', { class: 'chip pick-person', title: `${fmtDate(mark.date)} 에 골랐습니다${by.rules.length ? `\n규칙도 골랐습니다: ${rulesText(kind, by.rules)}` : ''}` }, mark.author);
+  if (!takenOut(by)) return null;
+  const from = mark.rule ? `\n${ruleText(kind, mark.rule.index, mark.rule.pick)}` : '';
+  return h('span', { class: `chip ${by.state === 'unused' ? 'pick-unused' : 'pick-out'}`, title: by.state === 'unused' ? `${fmtDate(mark.date)} 에 규칙에서 뺐습니다\n${nowRules(kind)}` : `${fmtDate(mark.date)} 에 규칙에서 뺐습니다${from}` }, `불필요 · ${mark.author}`);
+}
+
+function askTakeOut(id, kind, refocus) {
+  const word = targetWord(id);
+  askReason({
+    verb: '빼기',
+    reasonLabel: '규칙에서 빼는 이유',
+    describe: () => ({
+      title: `이 ${word}을 규칙에서 뺍니다`,
+      subject: [
+        h('span', { class: 'label' }, '경우 종류'),
+        h('div', {}, state.data.caseKinds[kind].text, ' ', h('span', { class: 'muted mono' }, `case:${kind}`)),
+        h('span', { class: 'label' }, word),
+        h('div', {}, callOf(id) ? h('span', { class: 'mono' }, id) : [screenLabel(id), ' ', h('span', { class: 'muted' }, screenOf(id)?.component)]),
+        h('span', { class: 'label' }, '규칙'),
+        h('div', { class: 'muted' }, rulesText(kind, pickedBy(kind, id).rules)),
+      ],
+      confirm: '빼기',
+    }),
+    save: (reason) => takeOut({ node: id, case: kind }, reason),
+    done: render,
+    refocus: () => /** @type {HTMLElement} */ (document.querySelector(refocus))?.focus(),
+  });
+}
+
+async function takeOut(target, note) {
+  let error = null;
+  await trackOwnSave(async () => {
+    let id;
+    try {
+      id = await postPick(target, 'not-needed', note);
+    } catch (err) {
+      error = `저장하지 못했습니다: ${err.message}`;
+      return null;
+    }
+    try {
+      await load();
+    } catch (err) {
+      state.caseError = { node: target.node, message: `「${targetName(target)}」 코멘트는 저장했지만 다시 읽지 못했습니다: ${err.message}` };
+    }
+    return id;
+  });
+  return error;
+}
 
 function caseSection(node) {
   const kinds = Object.entries(state.data.caseKinds);
   if (!node.cases.length && !kinds.length) return null;
   const tests = testsOf(node.id);
   const testsWith = (tag) => tests.filter((t) => t.cases?.includes(tag));
-  const picked = new Set(node.cases.map((c) => c.tag));
-  const caseRow = (c, values) => (values.length
-    ? h('li', {},
-      h('div', { class: 'case' }, CASE_LABEL[c.kind](c)),
-      h('ul', { class: 'plain case-values' }, values.map((v) => h('li', { title: `@${c.tag}=${v}` },
-        h('code', { class: 'case-value' }, v),
-        depthCounts(testsWith(`${c.tag}=${v}`), '테스트 없음')))))
-    : h('li', { title: `@${c.tag}` },
-      h('div', { class: 'case' }, CASE_LABEL[c.kind](c)),
-      depthCounts(testsWith(c.tag), '테스트 없음')));
+  const word = targetWord(node.id);
+  const by = Object.fromEntries(kinds.map(([kind]) => [kind, pickedBy(kind, node.id)]));
+  const busy = state.caseSaving || state.bulkBusy;
+  const scope = `#center .${callOf(node.id) ? 'call-info' : 'screen-info'} > .cases`;
+  const head = (label, kind) => {
+    const chip = kind ? pickChip(kind, by[kind]) : null;
+    return h('div', { class: 'case-head' }, h('div', { class: 'case' }, label), chip);
+  };
+  const takeOutButton = (kind) => h('button', {
+    type: 'button',
+    class: 'take-out',
+    'data-kind': kind,
+    title: `이유를 적고, 이 ${word}에는 이 경우를 시험하지 않아도 된다고 표시합니다`,
+    disabled: busy,
+    onclick: () => askTakeOut(node.id, kind, `${scope} .take-out[data-kind="${kind}"]`),
+  }, `이 ${word}은 규칙에서 빼기…`);
+  const caseRow = (c) => {
+    const kind = c.kind === 'case' ? c.tag.slice('case:'.length) : null;
+    const values = caseValues(c);
+    return h('li', { title: values.length ? null : `@${c.tag}` },
+      head(CASE_LABEL[c.kind](c), kind),
+      kind && by[kind].rules.length ? takeOutButton(kind) : null,
+      values.length
+        ? h('ul', { class: 'plain case-values' }, values.map((v) => h('li', { title: `@${c.tag}=${v}` },
+          h('code', { class: 'case-value' }, v),
+          depthCounts(testsWith(`${c.tag}=${v}`), '테스트 없음'))))
+        : depthCounts(testsWith(c.tag), '테스트 없음'));
+  };
+  const leftOutRow = (kind, text) => h('li', { class: `case-left-out ${by[kind].state}` },
+    head(text, kind),
+    h('p', { class: 'case-reason' }, '이유 ', h('span', { class: 'memo' }, by[kind].mark.note)),
+    by[kind].state === 'unused' ? h('p', { class: 'case-unused' }, `규칙이 이 ${word}을 더는 고르지 않아, 이 표시는 쓰이지 않습니다`) : null);
+  const picked = new Map(node.cases.filter((c) => c.kind === 'case').map((c) => [c.tag.slice('case:'.length), c]));
+  const rows = [
+    ...node.cases.filter((c) => c.kind !== 'case').map(caseRow),
+    ...kinds.map(([kind, { text }]) => (picked.has(kind) ? caseRow(picked.get(kind)) : takenOut(by[kind]) ? leftOutRow(kind, text) : null)).filter(Boolean),
+  ];
   return h('div', { class: 'cases' },
     h('h2', {}, '경우별 테스트'),
-    node.cases.length ? h('ul', { class: 'plain' }, node.cases.map((c) => caseRow(c, caseValues(c)))) : null,
+    rows.length ? h('ul', { class: 'plain' }, rows) : null,
     kinds.length ? [
       h('p', { class: 'muted' }, `이 ${nodeWord(node.id)}에서 시험할 경우 종류`),
       h('div', { class: 'case-kinds' }, kinds.map(([kind, { text, values }]) => {
-        const on = picked.has(`case:${kind}`);
+        const on = picked.has(kind);
+        const ruled = on && by[kind].rules.length > 0;
         const tag = values.length ? values.map((v) => `@case:${kind}=${v}`).join('\n') : `@case:${kind}`;
-        return h('button', { type: 'button', class: on ? 'on' : '', 'aria-pressed': String(on), title: tag, disabled: state.caseSaving || state.bulkBusy, onclick: () => pickCase({ node: node.id, case: kind }, on ? 'not-needed' : 'needed') }, text);
+        return h('button', {
+          type: 'button',
+          class: on ? 'on' : '',
+          'data-kind': kind,
+          'aria-pressed': String(on),
+          title: ruled ? `${tag}\n누르면 이유를 적고 규칙에서 뺍니다` : tag,
+          disabled: busy,
+          onclick: () => (ruled ? askTakeOut(node.id, kind, `${scope} .case-kinds button[data-kind="${kind}"]`) : pickCase({ node: node.id, case: kind }, on ? 'not-needed' : 'needed')),
+        }, text);
       })),
       state.caseError?.node === node.id ? h('p', { class: 'error' }, state.caseError.message) : null,
     ] : null);
@@ -114,16 +217,20 @@ async function pickCase(target, status) {
   return trackOwnSave(() => savePick(target, status));
 }
 
+async function postPick(target, status, note = undefined) {
+  const res = await fetch('/api/marks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, status, note }) });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()).id;
+}
+
 async function savePick(target, status) {
   state.error = null;
   state.caseError = null;
   state.caseSaving = true;
   renderCenter();
-  let saved;
+  let id;
   try {
-    const res = await fetch('/api/marks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, status }) });
-    if (!res.ok) throw new Error(await res.text());
-    saved = await res.json();
+    id = await postPick(target, status);
   } catch (err) {
     state.caseSaving = false;
     state.caseError = { node: target.node, message: `「${targetName(target)}」 코멘트를 저장하지 못했습니다: ${err.message}` };
@@ -137,7 +244,7 @@ async function savePick(target, status) {
   }
   state.caseSaving = false;
   render();
-  return saved.id;
+  return id;
 }
 
 function openSummary(s) {
