@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { caseTargets, exclusionOf, matchesPattern, pickedKinds, rulePicks } from '../src/case-targets.ts';
 import { loadConfig } from '../src/config.ts';
@@ -149,4 +150,25 @@ test('taking a screen or call out of a rule needs a note and names the first rul
   assert.equal(exclusionOf(map, caseKinds, { target: { node: RENAME, case: 'legacy' }, status: 'not-needed' }), undefined);
   assert.equal(exclusionOf(map, caseKinds, { target: { node: RENAME, case: 'gone' }, status: 'not-needed' }), undefined);
   assert.equal(exclusionOf(map, caseKinds, { target: { node: RENAME, case: 'constructor' }, status: 'not-needed' }), undefined);
+});
+
+test('the README and the agent skill say what picks takes, what its rebuild lines mean and how to read a case mark taken out of a rule', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /can also carry `picks`, a list of rules[\s\S]*`screen`[\s\S]*`methods`[\s\S]*`api`/);
+  assert.match(readme, /`\*` stands for one whole part between\s+`\/`s and `\*\*` for any number of parts, none included/);
+  assert.match(readme, /`case kind <kind>: rules pick N screens, N calls`/);
+  assert.match(readme, /`caseKinds <kind> picks\[<i>\] matches no screen\|call: <rule>`/);
+  assert.match(readme, /「규칙」 when a rule in `picks` did[\s\S]*「이 요청은 규칙에서 빼기…」/);
+  assert.match(readme, /it also carries `rule`, `\{ "index": <place in picks, from 0>, "pick": <the\s+rule as written> \}`/);
+  const skill = read('../skills/duru/SKILL.md');
+  assert.match(skill, /a kind of case a reviewer, or a rule in the config's `caseKinds`\s+`picks`, picked for it/);
+  assert.match(skill, /`caseKinds <kind> picks\[<i>\] matches no screen` \(or `no call`\)/);
+  assert.match(skill, /A `not-needed` case mark that also carries\s+`rule`, `\{ "index", "pick" \}`/);
+});
+
+test('the decision record says the review server\'s check and rebuild call the rule matcher the page data uses, without reading its table', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
+  assert.match(decisions, /The review data and the task list, which is made from that data, read it; the review\s+server's check of a `not-needed` mark and `rebuild` call the same rule matcher \(`rulePicks`\) without the marks/);
+  assert.doesNotMatch(decisions, /the review server's check and `rebuild` all read it/);
 });

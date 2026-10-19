@@ -563,10 +563,11 @@ the review page, and a test names its kind with `@case:`.**
 Input limits, data from an older version, failure and recovery, or time and state are cases no source shape shows,
 and which screen or call needs which of them is not in the source either. So the config only names the kinds,
 `caseKinds`, each mapped to the description the review page shows, and a kind becomes a case of a screen or call
-only where a reviewer picks it. Compared for the config: a list of names (shorter, but the page would show a bare
+only where a reviewer picks it (since #312 also where a rule in the kind's `picks` picks it, see the entry on rules
+below). Compared for the config: a list of names (shorter, but the page would show a bare
 name such as `boundary` with nothing saying what to test), and an object per kind that also says which screens or
 calls it applies to (puts in the config the judgment the review is for, and has to be kept up as screens are added
-or renamed). A name has no spaces, `:` or `=` so it reads as one tag, and starts with a letter, since a JSON object
+or renamed; it still holds for a list of screens and calls, but rules that pick by shape were not compared here). A name has no spaces, `:` or `=` so it reads as one tag, and starts with a letter, since a JSON object
 puts keys that read as whole numbers first and the author's order would be lost.
 A pick is a mark in `marksDir` with the target `{ node, case }` and the status `needed` or `not-needed`, and the
 latest mark of a node and kind is the current pick. Compared: one file of picks the page overwrites (two reviewers
@@ -2203,6 +2204,60 @@ Alternatives compared:
 Measured on main bddb370 against the branch with both example clients, with no `caseKinds` and with description-only
 kinds (on the first client with four picks, two `@case:` tests and one tag of an unknown kind): `map.json`, `tests.json`,
 what `rebuild` prints and the task list are identical apart from the time they were written.
+
+**A kind of case can carry rules that pick its screens or calls by screen path, request method and request path;
+a rule's pick is taken out only by a `not-needed` mark that names the rule and gives a reason.**
+Asked for in #312 (2026-10-19), the second part of #310. The entry above has a reviewer pick each kind per screen or
+call, but some kinds belong to every member of a group a rule defines: 「when a document ends while the signing
+screen is open, every write request that screen sends must be refused」. Picked one by one, members of such a group
+are missed, and a miss shows nowhere. The into-sign 1.5.0 check did exactly that: of the nine write requests of the
+participant signing screens only submitting and issuing a new token were tested on a cancelled document, and one of
+the others later had a defect of its own. The earlier comparison put a list per kind beside picking by hand and never
+compared rules. So a kind written as an object may carry `picks`, a list of rules with the keys `screen`, `methods`
+and `api` (the config's word for a request path in `app.pathValues`); a rule picks what every key it writes matches,
+a rule with `screen` alone picks screens and one with `methods` or `api` picks the calls the matching screens send,
+or any call without `screen`. In a pattern `*` is one whole path part and `**` any number of parts, none included, so
+`/document/**` also picks `/document`; a `*` inside a part is refused, so a pattern means one thing. A kind without
+`picks` works as before, and the loaded config carries every kind with `picks: []`.
+One module (`case-targets.ts`) takes the map, the kinds and the attached marks and gives, for each kind and each
+candidate, one state: picked by a rule, picked (`needed`) by a person or agent, `not-needed`, or undecided, with the
+rules and the mark behind it. The review data and the task list, which is made from that data, read it; the review
+server's check of a `not-needed` mark and `rebuild` call the same rule matcher (`rulePicks`) without the marks, so
+none of them can pick differently. A candidate is every screen and call for a kind without rules, and otherwise the side its rules
+name; a mark on the other side still counts, so picking by hand outside the rules works as before.
+A `not-needed` mark on a target a rule picks needs a note, and the server writes `rule`, `{ index, pick }`, into it:
+the rule's place in `picks`, from 0, and the rule as it was written. Only such a mark takes a target out of a rule;
+the newest mark wins as before, so a later `needed` puts it back in the name of whoever pressed it. A `not-needed`
+mark without `rule`, such as a kind pressed off before the rule was written, leaves the rule's pick in place, and the
+page shows 「규칙」. When no rule picks the target any more, also when the kind has lost every rule, a mark with
+`rule` is listed as no longer used and the target counts as undecided; a plain `not-needed` on a target no rule picks
+keeps meaning what it meant. The index and the rule are both kept because either alone can mislead after the config
+changes: the index after a rule is added in front, the rule after it is edited. Old mark files are read unchanged.
+On the page the row of a kind says who picked it, 「규칙」 with the rule on hover or the author with the date on hover,
+on every kind whether it has rules or not, and a kind taken out of a rule shows as 「불필요 · <author>」 with the reason
+under it. 「이 요청은 규칙에서 빼기…」 on the row of a kind a rule picks, while it is picked by anyone, and the pressed kind
+button both open the reason dialog the discard flows use, which saves nothing without a reason; a kind button that
+is off picks the kind back with no reason.
+`rebuild` prints, for each kind with rules, how many screens and calls they pick, each rule that picks nothing with
+its place and text, and with `baselineMap` how many of the picks the same rules did not make on the baseline map.
+Reference cases: GitHub CODEOWNERS shows on hover which line of the file made someone an owner, which is where the
+rule on hover comes from; RESTler's `UseAfterFreeChecker` and Schemathesis's `use_after_free` apply a check wherever
+its condition holds instead of to requests a person lists; SonarQube's analysis scope picks files by path patterns.
+Alternatives compared (from #310):
+- Picking by hand only, as before: members of a group are missed and the misses show nowhere.
+- A list of screens and calls per kind in the config: has to be edited whenever a screen is added or renamed; a rule
+  picks by shape and does not.
+- Suggesting a request from the tests of the other requests of the same screen: nothing is suggested when none of
+  them has a test.
+- A kind per value: see the entry on values above.
+- Expressions or regular expressions in a rule: out of scope; matching by shape only.
+- Telling a taken-out mark apart without a new field, by calling every `not-needed` on a target no rule picks no
+  longer used: a reviewer's `not-needed` on a candidate outside the rules would be shown as unused too.
+- Any `not-needed` mark beating a rule: every kind pressed off before the rule was added would take a target out of
+  it without a reason.
+Measured on main 6920481 against the branch with both example clients, with no `caseKinds` and with kinds without
+`picks` (with four picks of kinds and two open marks): `map.json`, `tests.json`, what `rebuild` prints and the task
+list are identical apart from the time they were written.
 
 **A reviewer records the screens they move through in the app pane: the app host puts a script into every app page
 that reports each new address to the review page, and 「기록 끝」 saves the addresses as a visit record.**
