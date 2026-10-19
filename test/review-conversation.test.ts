@@ -84,14 +84,14 @@ test('in a browser, the conversation of a screen holds the comments on it and on
         assert.equal((await said()).length, 3);
 
         assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '화면 전체');
-        assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 3);
+        assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 2);
         const row = p.locator('#center-body table .part-row', { hasText: /opens the lab home\.spec\.ts/ });
         await row.hover();
         await row.locator('.bubble').click();
         assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 0);
         await p.click('#right-dock .mark-form .tags .tag button');
         assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '화면 전체');
-        assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 3);
+        assert.equal(await p.locator('#right-dock .statuses button:not(:disabled)').count(), 2);
         await p.click('#right-dock .mark-form .tags .tag button');
         assert.equal(await p.locator('#right-dock .mark-form .tags .tag').count(), 0);
         await p.fill('#right-dock textarea', 'about nothing');
@@ -179,7 +179,7 @@ test('in a browser, the @ list closes when the caret leaves the @ word and keeps
         const field = p.locator('#right-dock textarea');
         const picker = p.locator('#right-dock .tag-pick');
         const tags = () => p.locator('#right-dock .mark-form .tags .tag-label').allTextContents();
-        await p.click('#right-dock .statuses button:has-text("없음")');
+        await p.click('#right-dock .statuses button:has-text("충분")');
         await field.pressSequentially('check @AP');
         await field.press('Home');
         assert.equal(await picker.isHidden(), true);
@@ -296,9 +296,9 @@ test('in a browser, 「전체」 groups every attached comment by its screen, ca
         assert.equal(await filter('미답변').textContent(), '미답변 4');
         await filter('미답변').click();
         assert.deepEqual((await groups()).map(([, lines]) => lines).flat(), ['one more step?', 'home first?', 'and the API?', 'is this paged?']);
-        await filter('없음').click();
+        await filter('테스트 필요').click();
         assert.deepEqual(await groups(), [['/lab', ['no table test']]]);
-        await filter('더 필요').click();
+        await filter('충분').click();
         assert.deepEqual(await groups(), []);
         await filter('모두').click();
         await p.locator('table.calls tbody tr:not(.option)', { hasText: 'GET:/api/v1/document/list' }).locator('td.cell').first().locator('.talk-count').click();
@@ -510,7 +510,7 @@ test('in a browser, 「변경 기록」 under 「전체」 lists each case kind 
         await chooseScreen(p, '/help');
         assert.deepEqual(await scope.allTextContents(), ['이 화면 0', '전체 1']);
         await scope.nth(1).click();
-        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 1', '더 필요', '없음', '충분', '변경 기록']);
+        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 1', '테스트 필요', '충분', '변경 기록']);
         assert.deepEqual(await groups(), [['/lab', ['is the lab done?']]]);
 
         await filter('변경 기록').click();
@@ -546,7 +546,7 @@ test('in a browser, 「변경 기록」 under 「전체」 lists each case kind 
       withPage(base, async (p) => {
         await chooseScreen(p, '/lab');
         await p.locator('#right-info .talk-scope button').nth(1).click();
-        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 0', '더 필요', '없음', '충분']);
+        assert.deepEqual(await p.locator('#right-info .talk-filters button').allTextContents(), ['모두', '미답변 0', '테스트 필요', '충분']);
       })));
 });
 

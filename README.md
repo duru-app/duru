@@ -863,7 +863,9 @@ a Korean syllable is being composed the page waits until it is done. A `storiesD
 watched once it is made. These changes are not printed on standard error, and `wait` does not exit for them.
 
 **Marks.** A mark targets a screen, a call, one depth of either, one value of a call's option, or a story, and
-records a status (`needs-more`, `missing`, `fine`), a note, the author and the date. A mark left with text and no
+records a status, a note, the author and the date. The status buttons are 「테스트 필요」, saved as `needs-more`, and
+「충분」, saved as `fine`; 「충분」 can be put on a screen or call with no tests, for one that needs none. A mark saved as
+`missing` by an older duru shows and counts as 「테스트 필요」. A mark left with text and no
 status is a comment: it shows in the conversation with no status, keeps the current status as it was, and in the task list
 follows the open mark it was written after. Pressing a picked status again lets it go, so a comment can be left on
 a target that already has one. Each mark and each judgment
@@ -948,15 +950,18 @@ attached anywhere; N counts those, leaving out replies and marks that carry only
 only the case kinds picked or taken out are listed, under 「변경 기록」. 「전체」 groups them by the
 screen, call, story or candidate they were left on, the group with the latest entry first and the latest entry first
 in each group; a line shows the status, the tag, who wrote it and when, the number of replies and the first line of
-the text. 「미답변」 keeps the comments without a status that have no reply yet, and 「더 필요」, 「없음」 and 「충분」 keep, for a
+the text. 「미답변」 keeps the comments without a status that have no reply yet, and 「테스트 필요」 and 「충분」 keep, for a
 place whose current status is that one, the latest mark with that status and text. With `caseKinds` set, the last
 filter, 「변경 기록」, lists instead every case kind picked or taken out, as one list by time, the latest first, not
 grouped: a line shows 켬 or 끔, the kind, the screen or call, who pressed it and when. Pressing one opens that screen or
 call with 「경우별 테스트」 opened and scrolled into view. The form is hidden while 「전체」 is
 shown. Pressing a line opens its screen, call, story or candidate in 「이 화면」 and scrolls the conversation to that
-entry, outlined. A comment with several tags is a line in each group it is on and is counted once in N. A comment with
-no tag is listed under 「대상 없음」 with its whole text and its replies, and pressing it opens nothing. 「전체」 and the
-numbers and dots it describes leave out what has come off its target; it stays under
+entry, outlined. While 「전체」 is shown the address carries `&talk=all`, and `&filter=<filter>` for a filter other than
+「모두」, so going back after pressing a line shows 「전체」 with the same filter and the pressed line outlined in view,
+and going forward opens the line's place again. Changing the filter or switching between the two buttons rewrites the
+address without adding to the browser history. A comment with several tags is a line in each group it is on and is
+counted once in N. A comment with no tag is listed under 「대상 없음」 with its whole text and its replies, and pressing it
+opens nothing. 「전체」 and the numbers and dots it describes leave out what has come off its target; it stays under
 「떨어져 나감」 and, unless it is a case kind picked or taken out, in the conversation of its screen or call.
 
 A screen in the list and in the flow, a story in the story tab, a depth row and a call cell show 「코멘트 N」 when marks or
@@ -1020,7 +1025,7 @@ listening for new saves when the review ends.
 
 ## Task list
 
-`tasks` prints, as Markdown, every screen, API call and story whose current mark is `needs-more` or `missing`.
+`tasks` prints, as Markdown, every screen, API call and story whose current mark is 「테스트 필요」, written `needs-more`.
 Each screen comes with its marks, component file and route line, the app address, the settings and roles it
 needs, the tests of each role and setting case and of each case kind picked by a reviewer or a rule, or of each value of a kind with values,
 by depth and status, its API calls and the tests already attached. Calls follow under `# API calls`, with their

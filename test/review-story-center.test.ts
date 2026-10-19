@@ -330,7 +330,7 @@ test('in a browser, the fold of a story\'s raw conditions and its long condition
     }));
     const expected = { fold: true, long: [true, false] };
     assert.deepEqual(await openState(), expected);
-    await p.click('#right .statuses button:has-text("더 필요")');
+    await p.click('#right .statuses button:has-text("테스트 필요")');
     assert.deepEqual(await openState(), expected);
     await p.fill('#right-dock textarea', 'redraw');
     await p.click('#right button.save');
@@ -738,7 +738,7 @@ test('in a browser, after a candidate is accepted the name and memo form and the
         await p.click(storiesTab);
         await p.click('#story-list li:has-text("실험실을 열어")');
         assert.equal(await p.inputValue('#story-name'), '실험실을 열어 결과를 본다');
-        await p.click('#right-dock .statuses button:has-text("없음")');
+        await p.click('#right-dock .statuses button:has-text("테스트 필요")');
         await p.fill('#right-dock textarea', '실험실 스토리에 쓰던 메모');
         await p.click('#candidate-list li:has-text("open-help")');
         await p.click('#right button.accept');

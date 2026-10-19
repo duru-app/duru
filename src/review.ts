@@ -16,7 +16,7 @@ import type { CaseKind } from './config.ts';
 import { buildFlow } from './flow.ts';
 import type { MapCall, MapScreen, ScreenMap } from './map.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
-import { addMark, addReply, classifyMarks, loadMarks, recordKind } from './marks.ts';
+import { addMark, addReply, classifyMarks, loadMarks, mergedStatus, recordKind } from './marks.ts';
 import { addNeed, checkNeeds, editNeed } from './needs.ts';
 import type { Mark } from './marks.ts';
 import { linkKey, locatePart, locateStoryPart } from './parts.ts';
@@ -135,7 +135,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const caseKinds: Record<string, CaseKind> = config.caseKinds;
   const kinds = Object.keys(caseKinds);
   const candidates = storyCandidates(config, map, mapFile, traced);
-  const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key), stories.list as StoryPath[]);
+  const marks = classifyMarks(loadMarks(config.marksDir).map(mergedStatus), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key), stories.list as StoryPath[]);
   const targets = caseTargets(map, caseKinds, marks.attached);
   const pickedCases = (id: string) => pickedKinds(targets, id);
   const screens = map.screens.map((s) => ({

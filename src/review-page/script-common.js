@@ -1,7 +1,7 @@
 /** @typedef {import('../review.ts').PageData} PageData */
 const DEPTH_LABELS = { ui: 'UI/E2E', api: 'API', render: '렌더링만', code: '코드', data: '데이터', output: '산출물' };
 const TEST_STATUS = { pass: '통과', fail: '실패', pending: '보류' };
-const MARK_STATUS = { 'needs-more': '더 필요', missing: '없음', fine: '충분' };
+const MARK_STATUS = { 'needs-more': '테스트 필요', fine: '충분' };
 const CASE_STATUS = { needed: '필요', 'not-needed': '필요 없음' };
 const SERVER_STATUS = { match: '서버에 있음', 'method-mismatch': '메서드 불일치', none: '서버에 없음', unresolved: '판정 불가', unchecked: '대조 안 함' };
 const UNRESOLVED_REASON = {

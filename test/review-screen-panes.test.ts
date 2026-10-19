@@ -120,9 +120,9 @@ test('in a browser, the opened screen info stays open on other screens, on a red
         assert.equal(await isOpen(), true);
         await p.click('#screen-list li:has-text("/admin/report")');
         assert.equal(await isOpen(), true);
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.click('#right button.save');
-        await p.waitForSelector('#screen-list li.selected .chip.missing');
+        await p.waitForSelector('#screen-list li.selected .chip.needs-more');
         assert.equal(await isOpen(), true);
         await p.click('#view-flow');
         await (await screenBox(p, '/lab#Lab')).click();
@@ -210,7 +210,7 @@ test('in a browser, choosing a call shows its details open under the call table 
         assert.match(await details.locator(':scope > summary').innerText(), /POST:\/api\/v1\/report\/export\s+호출 전체/);
         await details.locator(':scope > summary').click();
         assert.equal(await details.evaluate((e: HTMLDetailsElement) => e.open), false);
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         assert.equal(await details.evaluate((e: HTMLDetailsElement) => e.open), false);
         await p.locator('table.calls tbody tr:not(.option)').nth(1).locator('td.cell').first().click();
         assert.equal(await details.evaluate((e: HTMLDetailsElement) => e.open), true);
@@ -244,10 +244,10 @@ test('in a browser, choosing another screen or call target opens the right pane 
 
         const kept = await scrollRightToBottom(p);
         assert.ok(kept > 0);
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         assert.equal(await rightScroll(p), kept);
         await p.click('#right button.save');
-        await p.waitForSelector('table.calls td.cell.selected .chip.missing');
+        await p.waitForSelector('table.calls td.cell.selected .chip.needs-more');
         assert.equal(await rightScroll(p), kept);
 
         await p.click('#screen-list li:has-text("/admin/report")');
@@ -310,7 +310,7 @@ test('in a browser, selecting another story opens the right pane at its top', { 
         assert.equal(await rightScroll(p), 0);
         const kept = await scrollRightToBottom(p);
         assert.ok(kept > 0);
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         assert.equal(await rightScroll(p), kept);
       }),
     ),
@@ -393,7 +393,7 @@ test('in a browser, the conversation of a screen is open from the start with no 
         assert.ok(await p.evaluate(() => Math.abs(document.querySelector('#right-info .talk-scope')!.getBoundingClientRect().top - document.getElementById('right-info')!.getBoundingClientRect().top) < 1), 'the conversation buttons stay at the top while it scrolls');
         assert.ok(await insideRightPane(p, '#right button.save'));
 
-        await p.click('#right .statuses button:has-text("더 필요")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.click('#center tr:has-text("API")');
         assert.equal(await list.isVisible(), true);
         await p.click('#screen-list li:has-text("/admin/report")');
@@ -443,7 +443,7 @@ test('in a browser, on a window too short for the conversation part and the dock
         await p.setViewportSize({ width: 1440, height: 320 });
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/document/:id")');
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         assert.equal(await insideRightPane(p, '#right button.save'), false);
         const heading = (await p.locator('#right-dock .mark-form .tags').boundingBox())!;
         await p.mouse.move(heading.x + 10, heading.y + heading.height / 2);
@@ -451,8 +451,8 @@ test('in a browser, on a window too short for the conversation part and the dock
         for (let i = 0; i < 20 && !(await insideRightPane(p, '#right button.save')); i++) await p.waitForTimeout(50);
         assert.ok(await insideRightPane(p, '#right button.save'), 'the save button is brought inside the pane by scrolling it');
         await p.click('#right button.save');
-        await p.waitForSelector('#screen-list li.selected .chip.missing');
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]), [[{ node: '/document/:id#DocumentDetail' }, 'missing']]);
+        await p.waitForSelector('#screen-list li.selected .chip.needs-more');
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]), [[{ node: '/document/:id#DocumentDetail' }, 'needs-more']]);
         assert.ok((await p.locator('#right').evaluate((e) => e.scrollTop)) > 0);
         await p.click('#screen-list li:has-text("/admin/report")');
         assert.equal(await p.locator('#right').evaluate((e) => e.scrollTop), 0);
@@ -544,14 +544,14 @@ test('in a browser, the chosen screen shows its calls with the server match, wit
         await rename.locator('td.cell').nth(2).click();
         assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /API 깊이/);
         assert.equal(await p.locator('#center .call-info .test').count(), 0);
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.fill('#right-dock textarea', 'no API test for the rename');
         await p.click('#right button.save');
-        await p.waitForSelector('table.calls td.cell.selected .chip.missing');
+        await p.waitForSelector('table.calls td.cell.selected .chip.needs-more');
         assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.author]), [
-          [{ node: 'PUT:/api/v1/document/{documentId}/name', depth: 'api' }, 'missing', 'reviewer'],
+          [{ node: 'PUT:/api/v1/document/{documentId}/name', depth: 'api' }, 'needs-more', 'reviewer'],
         ]);
-        assert.match(taskList(config), /^## PUT:\/api\/v1\/document\/\{documentId\}\/name\n\n- marks:\n {2}- missing, api depth — "no API test for the rename" \(reviewer, \d{4}-\d\d-\d\d\)$/m);
+        assert.match(taskList(config), /^## PUT:\/api\/v1\/document\/\{documentId\}\/name\n\n- marks:\n {2}- needs-more, api depth — "no API test for the rename" \(reviewer, \d{4}-\d\d-\d\d\)$/m);
       }),
     ),
   );
@@ -595,26 +595,26 @@ test('in a browser, each call shows on and off rows for its options and a no-opt
         await exportRows('withHistory 켬').locator('td.cell').nth(6).click();
         assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /withHistory 켬 · 산출물 깊이/);
         assert.equal(await p.locator('#center .call-info .test').count(), 0);
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.fill('#right-dock textarea', 'Open the exported file.');
         await p.click('#right button.save');
-        await p.waitForSelector('table.calls td.cell.selected .chip.missing');
+        await p.waitForSelector('table.calls td.cell.selected .chip.needs-more');
 
         await exportRows('withAttachments 끔').locator('td.cell').first().click();
         assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /withAttachments 끔$/);
-        await p.click('#right .statuses button:has-text("더 필요")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.click('#right button.save');
         await p.waitForSelector('table.calls td.cell.selected .chip.needs-more');
 
         await p.locator('table.calls tr.option').filter({ hasText: 'weekly 켬' }).locator('td.cell').first().click();
         assert.match(await p.locator('#center .call-info .option-sites').innerText(), /설정에 적음/);
 
-        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!] as const).sort((a, b) => a[1].localeCompare(b[1])), [
-          [{ node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true }, depth: 'output' }, 'missing'],
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status!] as const).sort((a, b) => a[0]!.option!.key.localeCompare(b[0]!.option!.key)), [
           [{ node: 'POST:/api/v1/report/export', option: { key: 'withAttachments', value: false } }, 'needs-more'],
+          [{ node: 'POST:/api/v1/report/export', option: { key: 'withHistory', value: true }, depth: 'output' }, 'needs-more'],
         ]);
         const tasks = taskList(config);
-        assert.match(tasks, /^ {2}- missing, withHistory=true at output depth — "Open the exported file\." \(reviewer, \d{4}-\d\d-\d\d\)$/m);
+        assert.match(tasks, /^ {2}- needs-more, withHistory=true at output depth — "Open the exported file\." \(reviewer, \d{4}-\d\d-\d\d\)$/m);
         assert.match(tasks, /^ {4}- withAttachments=false: no tests$/m);
 
         assert.equal((await postMark(base, { target: { node: 'POST:/api/v1/report/export', option: { key: 'withComments', value: true } }, status: 'missing' })).status, 201);
@@ -757,9 +757,9 @@ test('in a browser, the output depth row comes after the other depths and takes 
         assert.deepEqual(await p.locator('#center td.depth').allTextContents(), ['화면 전체', 'UI/E2E', 'API', '렌더링만', '코드', '데이터', '산출물']);
         await p.click('#center tr:has-text("산출물")');
         assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /산출물 깊이/);
-        await p.click('#right .statuses button:has-text("더 필요")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.click('#right button.save');
-        await p.waitForSelector('#center tr.selected td.mark:has-text("더 필요")');
+        await p.waitForSelector('#center tr.selected td.mark:has-text("테스트 필요")');
         assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]), [[{ node: '/lab/result#LabResult', depth: 'output' }, 'needs-more']]);
       }),
     ),

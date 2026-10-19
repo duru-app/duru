@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Page, Route } from 'playwright-core';
-import { withRebuiltFixture, withServer, browserMissing, withPage, untaggedTab, screenBox, filterButton, pickedBoxes, WALK, withPathStories, flowPlace, pickPathStory, lineSteps, DOCUMENT_TABLE, bulk, openDocumentTable, untilSet, placeOf, CANDIDATES, HELP_KEY, storiesTab, nowStep } from './review-helpers.ts';
+import { addMark } from '../src/marks.ts';
+import { withRebuiltFixture, withServer, browserMissing, withPage, untaggedTab, screenBox, filterButton, pickedBoxes, WALK, withPathStories, flowPlace, pickPathStory, lineSteps, DOCUMENT_TABLE, bulk, openDocumentTable, untilSet, placeOf, CANDIDATES, HELP_KEY, storiesTab, nowStep, chooseScreen } from './review-helpers.ts';
 
 declare const state: any;
 declare function render(): void;
@@ -291,4 +292,65 @@ test('in a browser, a chosen candidate is a place in the address, and the back b
       }),
     ),
   );
+});
+
+test('in a browser, 「전체」 and its filter are kept in the address: back from a pressed line returns to 「전체」 with the same filter and the pressed line in view in the group it was pressed in, forward goes to the line\'s place again, and changing the filter or the two buttons adds nothing to the history', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) => {
+    for (let i = 0; i < 30; i++) addMark(config.marksDir, { target: { node: '/home#Home' }, note: `home question ${i}`, author: 'reviewer' }, new Date(Date.UTC(2026, 9, 12, 2, i)));
+    addMark(config.marksDir, { target: { node: '/home#Home' }, status: 'needs-more', note: 'home verdict', author: 'reviewer' }, new Date('2026-10-12T03:00:00Z'));
+    addMark(config.marksDir, { targets: [{ node: '/home#Home' }, { node: '/lab#Lab' }], note: 'lab question', author: 'reviewer' }, new Date('2026-10-12T02:15:30Z'));
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        const scope = p.locator('#right-info .talk-scope button');
+        const filter = (label: string) => p.locator('#right-info .talk-filters button', { hasText: label });
+        const labLine = p.locator('#right-info .talk-group:last-child .talk-line', { hasText: 'lab question' });
+        const inView = (line: typeof labLine) => line.evaluate((e) => {
+          const r = e.getBoundingClientRect();
+          const pane = document.getElementById('right')!.getBoundingClientRect();
+          return r.top >= pane.top && r.bottom <= Math.min(pane.bottom, innerHeight);
+        });
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/help');
+        const steps = await p.evaluate(() => history.length);
+        await scope.nth(1).click();
+        await filter('테스트 필요').click();
+        await filter('미답변').click();
+        assert.equal(await placeOf(p), '#screens?screen=/help#Help&talk=all&filter=unanswered');
+        await scope.first().click();
+        assert.equal(await placeOf(p), '#screens?screen=/help#Help');
+        await scope.nth(1).click();
+        assert.equal(await p.evaluate(() => history.length), steps, 'the filter and the two buttons add nothing to the history');
+        assert.equal(await inView(labLine), false, 'the line starts out of view');
+
+        await labLine.click();
+        assert.equal(await placeOf(p), '#screens?screen=/lab#Lab');
+        assert.equal(await scope.first().getAttribute('aria-pressed'), 'true');
+        assert.equal(await p.evaluate(() => history.length), steps + 1);
+
+        await p.goBack();
+        await p.waitForFunction(() => state.talkScope === 'all');
+        assert.equal(await placeOf(p), '#screens?screen=/help#Help&talk=all&filter=unanswered');
+        assert.match((await p.textContent('#screen-list li.selected'))!, /^\/help/);
+        assert.equal(await filter('미답변').getAttribute('aria-pressed'), 'true');
+        assert.equal(await inView(labLine), true, 'the pressed line is in view after going back');
+        assert.match((await p.textContent('#right-info .talk-line.reached'))!, /lab question/);
+
+        await p.goForward();
+        await p.waitForFunction(() => state.talkScope === 'here');
+        assert.equal(await placeOf(p), '#screens?screen=/lab#Lab');
+        assert.match((await p.textContent('#screen-list li.selected'))!, /^\/lab/);
+
+        await scope.nth(1).click();
+        await labLine.click();
+        assert.equal(await placeOf(p), '#screens?screen=/lab#Lab');
+        await p.goBack();
+        await p.waitForFunction(() => state.talkScope === 'all');
+        assert.equal(await placeOf(p), '#screens?screen=/lab#Lab&talk=all&filter=unanswered', 'a line of the screen already open is a step in the history too');
+
+        await p.reload();
+        await p.waitForSelector('#right-info .all-talk');
+        assert.equal(await filter('미답변').getAttribute('aria-pressed'), 'true');
+        assert.deepEqual(errors, []);
+      }));
+  });
 });

@@ -304,9 +304,9 @@ test('in a browser, a mark and a comment saved in one page show in a second page
         await other.evaluate(() => { (window as Window & Kept).kept = true; });
 
         await p.click('#screen-list li:has-text("/document/:id")');
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.click('#right button.save');
-        await other.waitForSelector('#screen-list li.selected .chip.missing');
+        await other.waitForSelector('#screen-list li.selected .chip.needs-more');
         await p.fill('#right-dock textarea', 'from the first page');
         await p.click('#right button.save');
         await other.waitForSelector('#right .history li:has-text("from the first page")');

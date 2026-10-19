@@ -69,12 +69,12 @@ function allTalk() {
       return h('div', { class: 'talk-line general', 'data-record': r.id }, meta, h('div', {}, r.note),
         replies.length ? h('ul', { class: 'plain replies' }, replies.map((x) => h('li', { class: 'reply' }, h('span', { class: 'muted' }, signedAt(x)), h('div', {}, x.note)))) : null);
     }
-    return h('button', { type: 'button', class: 'talk-line', 'data-record': r.id, onclick: () => reachTalk(m.target, r.id) }, meta, h('span', { class: 'first' }, firstLine(r.note)));
+    return h('button', { type: 'button', class: 'talk-line', 'data-record': r.id, onclick: () => reachTalk(m.target, r.id, { record: r.id, group: groupOf(m.target) }) }, meta, h('span', { class: 'first' }, firstLine(r.note)));
   };
   return h('div', { class: 'talk all-talk' },
     filters,
     groups.size
-      ? [...groups.values()].map((group) => h('div', { class: 'talk-group' }, h('h3', { class: group[0].m.target.node !== undefined ? 'mono' : null }, groupTitle(group[0].m.target)), group.map(lineItem)))
+      ? [...groups.entries()].map(([key, group]) => h('div', { class: 'talk-group', 'data-group': key }, h('h3', { class: group[0].m.target.node !== undefined ? 'mono' : null }, groupTitle(group[0].m.target)), group.map(lineItem)))
       : h('p', { class: 'muted' }, lines.length ? '거른 조건에 맞는 말이 없습니다.' : '아직 남긴 말이 없습니다.'));
 }
 
@@ -87,7 +87,7 @@ function changeList() {
     'data-record': r.id,
     onclick: () => {
       if (!callOf(m.target.node)) state.screenInfoOpen = true;
-      reachTalk(m.target, null);
+      reachTalk(m.target, null, { record: r.id, group: null });
       revealCases(m.target.node);
     },
   },
@@ -99,9 +99,11 @@ function changeList() {
     r.note.trim() ? h('span', { class: 'first' }, firstLine(r.note)) : null)));
 }
 
-function reachTalk(target, recordId) {
+/** @param {{ record: string, group: string | null }} pressed */
+function reachTalk(target, recordId, pressed) {
   const screen = target.node === undefined ? null : screenOf(target.node) ? target.node : callOf(target.node)?.screens[0];
   if (screen === undefined) return;
+  linePressed = pressed;
   state.talkScope = 'here';
   state.reachRecord = recordId;
   state.historyFilter = null;
@@ -132,6 +134,15 @@ function revealRecord() {
   if (!item) return;
   item.classList.add('reached');
   item.scrollIntoView({ block: 'nearest' });
+}
+
+// 태그가 여럿 달린 코멘트는 그룹마다 한 줄씩 나오므로, 누른 그룹에 있는 줄을 찾는다.
+function revealLine({ record, group }) {
+  const lines = [...document.querySelectorAll(`#right .all-talk [data-record="${CSS.escape(record)}"]`)];
+  const line = lines.find((l) => l.closest('.talk-group')?.getAttribute('data-group') === group) ?? lines[0];
+  if (!line) return;
+  line.classList.add('reached');
+  line.scrollIntoView({ block: 'nearest' });
 }
 
 function renderScreenRight(info, dock) {

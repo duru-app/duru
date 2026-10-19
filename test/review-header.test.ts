@@ -17,7 +17,7 @@ test('in a browser, the header does not name an author taken from the config, an
         assert.equal(await p.textContent('#author'), '');
         assert.equal(await p.locator('header input').count(), 0);
         await p.click('#screen-list li:has-text("/lab/result")');
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.click('#right button.save');
         await p.waitForSelector('#right .history li');
         assert.deepEqual(loadMarks(config.marksDir).map((m) => m.author), ['설정 이름']);
@@ -50,7 +50,7 @@ test('in a browser, marks and judgments show only their date while every one of 
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click('#screen-list li:has-text("/help")');
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.click('#right button.save');
         await p.waitForSelector('#right .history li');
         await p.locator('#center .importers .importer', { hasText: 'renders the help text' }).locator('button.hand-over').click();
@@ -93,11 +93,11 @@ for (const host of ['127.0.0.1', 'localhost']) {
           await p.click('#center tr:has-text("API")');
           assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /API 깊이/);
           assert.equal(await p.isDisabled('#right button.save'), true);
-          await p.click('#right .statuses button:has-text("더 필요")');
+          await p.click('#right .statuses button:has-text("테스트 필요")');
           await p.fill('#right-dock textarea', 'no API test yet');
           await p.click('#right button.save');
           await p.waitForSelector('#right .history li:has-text("no API test yet")');
-          assert.match((await p.textContent('#center tr.selected td.mark'))!, /더 필요/);
+          assert.match((await p.textContent('#center tr.selected td.mark'))!, /테스트 필요/);
           assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status, m.note, m.author]), [
             [{ node: '/document/:id#DocumentDetail', depth: 'api' }, 'needs-more', 'no API test yet', 'reviewer'],
           ]);
