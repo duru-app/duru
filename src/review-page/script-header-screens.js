@@ -179,6 +179,7 @@ function renderLeft() {
 }
 
 function renderStoryLeft(left) {
+  if (walkShown()) return renderWalkLeft(left);
   const steps = openSteps();
   if (!state.composing && !steps) return fill(left, storyList());
   const picking = steps ? `steps\n${steps.story}` : 'compose';

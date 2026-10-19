@@ -5,7 +5,7 @@ import { pathOf, screenFinder } from './address-match.ts';
 import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { recordName, writeNewRecord } from './marks.ts';
-import { addStory, CANDIDATES, DISCARDED, inputsProblem, isDate, isScreenList, isSource, isText, loadStories, writableStoriesFolder } from './stories.ts';
+import { addStory, CANDIDATES, DISCARDED, inputsProblem, RECORDS, isDate, isScreenList, isSource, isText, loadStories, writableStoriesFolder } from './stories.ts';
 import type { StepFields, StepInput } from './stories.ts';
 import { checkStories, linksWithoutConditions, staleMapMessage } from './story-paths.ts';
 import { withoutTags } from './verdict.ts';
@@ -21,6 +21,14 @@ function recordFiles(source: string): { reason?: string; files: string[] } {
   } catch (err: any) {
     return { reason: `방문 기록 폴더를 읽지 못했습니다: ${err.message}`, files: [] };
   }
+}
+
+const isCount = (v: unknown) => Number.isInteger(v) && (v as number) >= 0;
+
+function typedProblem(step: any, i: number) {
+  const problem = inputsProblem(step.inputs, `${i + 1} 번째 단계`);
+  if (problem) return problem;
+  return step.skipped === undefined || isCount(step.skipped) ? null : `${i + 1} 번째 단계의 skipped 는 넣지 못한 입력의 수로, 0 이상의 정수여야 합니다`;
 }
 
 function readRecord(file: string): { reason: string } | Pick<VisitRecord, 'addresses' | 'stepCount'> {
@@ -40,7 +48,9 @@ function readRecord(file: string): { reason: string } | Pick<VisitRecord, 'addre
     if (typeof step.url !== 'string' || !step.url.trim()) return { reason: `${i + 1} 번째 단계의 url 이 문자열이 아니거나 비어 있습니다` };
     const address = pathOf(step.url.trim());
     if (!address) return { reason: `${i + 1} 번째 단계의 url 을 읽지 못했습니다` };
-    addresses.push({ address, step: i + 1 });
+    const typed = typedProblem(step, i);
+    if (typed) return { reason: typed };
+    addresses.push({ address, step: i + 1, ...(step.inputs?.length && { inputs: step.inputs }), ...(step.skipped && { skipped: step.skipped }) });
   }
   if (!addresses.length) return { reason: 'url 이 있는 단계가 없습니다' };
   return { addresses, stepCount: steps.length };
@@ -49,7 +59,7 @@ function readRecord(file: string): { reason: string } | Pick<VisitRecord, 'addre
 interface VisitRecord {
   record: string;
   name: string;
-  addresses: { address: string; step: number }[];
+  addresses: { address: string; step: number; inputs?: StepInput[]; skipped?: number }[];
   stepCount: number;
 }
 
@@ -97,18 +107,30 @@ export function loadVisitRecords(sources: string[], configDir: string) {
   return { records, notices };
 }
 
+const sameBox = (a: StepInput, b: StepInput) => JSON.stringify(a.box) === JSON.stringify(b.box);
+
 function candidateOf({ record, name, addresses, stepCount }: VisitRecord, screenAt: (url: string) => string | null): Candidate {
   const screens: string[] = [];
   const stepRanges: [number, number][] = [];
-  for (const { address, step } of addresses) {
+  const inputs: StepInput[][] = [];
+  let skipped = 0;
+  for (const { address, step, inputs: typed = [], skipped: left = 0 } of addresses) {
     const screen = screenAt(address) ?? address;
     if (screen === screens.at(-1)) stepRanges.at(-1)![1] = step;
     else {
       screens.push(screen);
       stepRanges.push([step, step]);
+      inputs.push([]);
     }
+    for (const input of typed) {
+      const at = inputs.at(-1)!;
+      const kept = at.findIndex((i) => sameBox(i, input));
+      if (kept >= 0) at[kept] = input;
+      else at.push(input);
+    }
+    skipped += left;
   }
-  return { key: screens.join(' > '), name, screens, source: { record, steps: [1, stepCount] }, stepRanges };
+  return { key: screens.join(' > '), name, screens, source: { record, steps: [1, stepCount] }, stepRanges, ...carried({ stepFields: inputFields(inputs), skipped }) };
 }
 
 function discardedProblemOf(d: any) {
@@ -266,8 +288,39 @@ export function undiscardCandidate(dir: string, screens: unknown, { author }: { 
   return { ...undone, file: path.join(DISCARDED, file) };
 }
 
+const RECORD_KEYS = ['url', 'inputs', 'skipped'];
+const isAddress = (url: unknown) => typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+
+// 쓴 파일은 고치지도 지우지도 않는다.
+export function saveVisitRecord(dir: string, steps: unknown, now = new Date()) {
+  if (!Array.isArray(steps) || !steps.length || !steps.every((s) => isPlainObject(s) && isAddress(s.url))) {
+    throw new Error('steps 는 / 로 시작하는 앱 안 주소를 url 에 담은 단계를 하나 이상 차례대로 담은 목록이어야 합니다');
+  }
+  for (const [i, step] of steps.entries()) {
+    const unknown = Object.keys(step).filter((k) => !RECORD_KEYS.includes(k));
+    if (unknown.length) throw new Error(`${i + 1} 번째 단계에 모르는 항목이 있습니다: ${unknown.join(', ')}`);
+    const problem = typedProblem(step, i);
+    if (problem) throw new Error(problem);
+  }
+  writableStoriesFolder(dir);
+  const folder = path.join(dir, RECORDS);
+  if (fs.existsSync(folder) && !isFolder(folder)) throw new Error(`스토리 폴더 안 ${RECORDS} 가 파일이라 기록을 쓸 수 없습니다`);
+  const file = path.join(RECORDS, `${now.toISOString().slice(0, 10)}-${crypto.randomUUID().slice(0, 8)}.json`);
+  writeNewRecord(path.join(dir, file), { steps: steps.map(({ url, inputs, skipped }) => ({ url, ...(inputs?.length && { inputs }), ...(skipped && { skipped }) })) });
+  return file;
+}
+
+function recordSources(config: any) {
+  const folder = path.join(config.storiesDir, RECORDS);
+  if (!fs.existsSync(folder)) return { sources: config.visitRecords, notices: [] };
+  if (!isFolder(folder)) return { sources: config.visitRecords, notices: [{ file: relative(config.configDir, folder), reason: `${RECORDS} 는 리뷰 페이지에서 남긴 방문 기록을 담는 폴더여야 합니다` }] };
+  return { sources: [...config.visitRecords, folder], notices: [] };
+}
+
 export function storyCandidates(config: any, map: any, mapFile: string, traced: TracedTest[] = []) {
-  const { records, notices } = loadVisitRecords(config.visitRecords, config.configDir);
+  const { sources, notices: folderNotices } = recordSources(config);
+  const { records, notices: recordNotices } = loadVisitRecords(sources, config.configDir);
+  const notices = [...folderNotices, ...recordNotices];
   const { discarded, notices: discardedNotices } = loadDiscarded(config.storiesDir);
   const { found: stored, notices: storedNotices } = loadStored(config.storiesDir);
   const all = [...notices, ...[...discardedNotices, ...storedNotices].map((n) => ({ ...n, file: relative(config.configDir, path.join(config.storiesDir, n.file)) }))];

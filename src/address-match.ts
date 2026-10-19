@@ -36,8 +36,10 @@ export function pathOf(url: string) {
   }
 }
 
+export const screenRoutes = (map: AddressMap) => map.screens.filter((s) => readableRoute(s.path)).map((s) => ({ id: s.id, pattern: routePattern(s.path) }));
+
 export function screenFinder(map: AddressMap) {
-  const routes = map.screens.filter((s) => readableRoute(s.path)).map((s) => ({ id: s.id, pattern: routePattern(s.path) }));
+  const routes = screenRoutes(map);
   return (url: string) => {
     const address = pathOf(url);
     return (address !== null && routes.find((r) => r.pattern.test(address))?.id) || null;

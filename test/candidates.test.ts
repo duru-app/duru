@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { acceptCandidate, discardCandidate, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
+import { acceptCandidate, discardCandidate, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { editStory, loadStories, writeStorySteps } from '../src/stories.ts';
@@ -737,5 +737,80 @@ test('a stored candidate keeps its inputs and skipped count, and one whose stepF
     const broken = storyCandidates({ ...config, visitRecords: [], storiesDir: dir }, map, path.join(config.outDir, 'map.json'));
     assert.equal(broken.list.length, 0);
     assert.match(broken.notices[0].reason, /stepFields 는 screens 와 같은 길이/);
+  });
+});
+
+const EMAIL_INPUT = { box: { placeholder: '이메일', testId: 'login-email' }, value: 'member@example.com' };
+const RECORDED = [
+  { url: '/signin', inputs: [EMAIL_INPUT], skipped: 1 },
+  { url: '/home' },
+  { url: '/home?tab=recent#top', inputs: [MEMO_INPUT] },
+  { url: '/beta/inbox' },
+];
+
+test('a visit recorded on the review page is written into records/ in the stories folder as a new file with its addresses, the values typed and the number of inputs left out, and gives a candidate named by its file with those values on its steps', () => {
+  withFolder({}, (dir: string) => {
+    const stories = path.join(dir, 'stories');
+    const now = new Date('2026-10-19T09:00:00Z');
+    const file = saveVisitRecord(stories, RECORDED, now);
+    assert.match(file, /^records[\\/]2026-10-19-[0-9a-f]{8}\.json$/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(stories, file), 'utf8')), { steps: RECORDED });
+    const again = saveVisitRecord(stories, [{ url: '/home', inputs: [] }], now);
+    assert.notEqual(again, file);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(stories, again), 'utf8')), { steps: [{ url: '/home' }] });
+    assert.deepEqual(loadStories(stories), { stories: [], notices: [] });
+
+    const { list, notices } = storyCandidates({ ...config, configDir: dir, visitRecords: [], storiesDir: stories }, map, path.join(config.outDir, 'map.json'));
+    assert.deepEqual(notices, []);
+    const recorded = list.find((c) => c.screens.length > 1)!;
+    assert.deepEqual({ ...shape(recorded), stepFields: recorded.stepFields, skipped: recorded.skipped }, {
+      name: path.basename(file, '.json'),
+      screens: ['/signin#SignIn', '/home#Home', '/beta/inbox'],
+      source: { record: `stories/${file.split(path.sep).join('/')}`, steps: [1, 4] },
+      stepRanges: [[1, 1], [2, 3], [4, 4]],
+      stepFields: [{ inputs: [EMAIL_INPUT] }, { inputs: [MEMO_INPUT] }, {}],
+      skipped: 1,
+    });
+  });
+});
+
+test('a recorded visit needs one or more steps, each with an address inside the app and only the values typed and the inputs left out, and writes nothing otherwise', () => {
+  withFolder({}, (dir: string) => {
+    const refused = (steps: unknown, why: RegExp) => assert.throws(() => saveVisitRecord(dir, steps), why, JSON.stringify(steps));
+    for (const steps of [undefined, [], 'x', [{ url: 'http://localhost:3000/home' }], [{ url: '//other.example/home' }], [{ url: '' }], [{}], ['/home']]) {
+      refused(steps, /steps 는 \/ 로 시작하는 앱 안 주소를 url 에 담은 단계를 하나 이상/);
+    }
+    refused([{ url: '/home', action: 'open' }], /1 번째 단계에 모르는 항목이 있습니다: action/);
+    refused([{ url: '/home' }, { url: '/help', inputs: [{ box: {}, value: 'x' }] }], /2 번째 단계의 1 번째 입력값의 box 에 상자를 찾는 말/);
+    refused([{ url: '/home', skipped: -1 }], /1 번째 단계의 skipped 는 넣지 못한 입력의 수로, 0 이상의 정수여야 합니다/);
+    assert.deepEqual(fs.readdirSync(dir), []);
+  });
+  withFolder({ 'stories.json': '{}', 'folder/records': 'not a folder' }, (dir: string) => {
+    assert.throws(() => saveVisitRecord(path.join(dir, 'stories.json'), [{ url: '/home' }]), /가 파일이라 새 파일을 쓸 수 없습니다/);
+    assert.throws(() => saveVisitRecord(path.join(dir, 'folder'), [{ url: '/home' }]), /스토리 폴더 안 records 가 파일이라 기록을 쓸 수 없습니다/);
+  });
+});
+
+test('a visit record step may carry the values typed there and the number of inputs left out, which go onto its screen\'s step of the candidate, a later value for the same box replacing the earlier one, and a step whose values do not fit is noted', () => {
+  const later = { box: { label: '메모' }, value: '고친 메모' };
+  withFolder({
+    'typed.json': { steps: [{ url: '/home', inputs: [MEMO_INPUT], skipped: 2 }, { url: '/home?x=1', inputs: [later, EMAIL_INPUT], skipped: 1 }, { url: '/help' }] },
+    'bad.json': { steps: [{ url: '/home' }, { url: '/help', inputs: { box: { label: '메모' }, value: 'x' } }] },
+    'bad-count.json': { steps: [{ url: '/home', skipped: 'two' }] },
+    'zero.json': { steps: [{ url: '/home', skipped: 0 }, { url: '/signin' }] },
+  }, (dir: string) => {
+    const { list, notices } = candidatesOf({ configDir: dir, visitRecords: [dir], storiesDir: path.join(dir, 'stories') });
+    assert.deepEqual(list.map((c) => [c.name, c.stepFields, c.skipped]), [['typed', [{ inputs: [later, EMAIL_INPUT] }, {}], 3], ['zero', undefined, undefined]]);
+    assert.deepEqual(notices, [
+      { file: 'bad-count.json', reason: '1 번째 단계의 skipped 는 넣지 못한 입력의 수로, 0 이상의 정수여야 합니다' },
+      { file: 'bad.json', reason: '2 번째 단계의 inputs 는 입력값을 { "box", "value" } 객체로 하나씩 적은 목록이어야 합니다' },
+    ]);
+  });
+});
+
+test('a records entry in the stories folder that is a file is noted with the candidates', () => {
+  withFolder({ 'stories/records': 'x' }, (dir: string) => {
+    const { notices } = candidatesOf({ configDir: dir, visitRecords: [], storiesDir: path.join(dir, 'stories') });
+    assert.deepEqual(notices, [{ file: 'stories/records', reason: 'records 는 리뷰 페이지에서 남긴 방문 기록을 담는 폴더여야 합니다' }]);
   });
 });

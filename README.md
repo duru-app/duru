@@ -240,7 +240,8 @@ client with example results and a config to start from.
   and `judgments` in `outDir`).
 - `author` — the name marks and judgments are signed with (optional; default `git config user.name` in the
   config's folder, else the computer's user name). Leave it out of a config file a team shares.
-- `storiesDir` — folder of story files, or a single story file (default: `stories` in `outDir`).
+- `storiesDir` — folder of story files, or a single story file (default: `stories` in `outDir`). The review page
+  writes the visits recorded on it into `records/` there.
 - `visitRecords` — visit record files or folders that story candidates are made from (optional), as
   `["qa/records"]`. Playwright reports in `tests` whose tests left a trace give candidates too.
 - `baselineMap` — the `map.json` of an earlier version of the same client (optional), such as the map kept from
@@ -584,7 +585,8 @@ test, and `untested` when none has.
 ## Story candidates
 
 A test that walks through the app can leave a visit record: a JSON file holding a list of steps, or an object
-with the list in `steps`, each step with the `url` it was at. Other keys are ignored.
+with the list in `steps`, each step with the `url` it was at. A step may also carry `inputs`, the values typed there
+in the shape a story step's `inputs` has, and `skipped`, how many inputs were left out; other keys are ignored.
 
 ```json
 {
@@ -595,9 +597,10 @@ with the list in `steps`, each step with the `url` it was at. Other keys are ign
 }
 ```
 
-duru turns each record named in `visitRecords` into a story candidate: each address goes to the screen whose
-route path matches it, steps in a row on the same screen become one step, and an address no screen matches stays
-as it is. A candidate with the screen order of a story or of a discarded candidate is not offered. A record that
+duru turns each record named in `visitRecords`, and each file in `records/` in `storiesDir`, into a story candidate:
+each address goes to the screen whose route path matches it, steps in a row on the same screen become one step, and
+an address no screen matches stays as it is. The inputs of the steps of one screen step are joined, a later value for
+the same box taking the place of the earlier one, and the counts in `skipped` are added up. A candidate with the screen order of a story or of a discarded candidate is not offered. A record that
 cannot be read is skipped and noted with its path and why.
 
 A Playwright test needs no visit record when its report is listed in `tests` and the test ran with Playwright's
@@ -634,7 +637,7 @@ noted with its path and why.
 ## Review page
 
 `review` serves a local page that reads `map.json` and `tests.json` from `outDir` (run `rebuild` first) and writes
-only marks, judgments and story files. The page keeps the place being looked at in its address, so the back
+only marks, judgments, story files and the visits recorded on it. The page keeps the place being looked at in its address, so the back
 button, a reload and a copied address work.
 
 **Flow.** The page opens on the flow: one line per screen, in columns by how many links or moves they are from an
@@ -681,6 +684,27 @@ number. Pressing a step shows 「이전 단계 추가」 above it, 「다음 단
 list; a box already chosen is added again, since a story can pass a screen twice. 「스토리 목록」 closes the screen and
 keeps the steps for 「새 스토리 이어 쓰기」. In the flow tab a box opens its screen. The filters, the search and the
 picked screen of the flow tab are left as they were and do not change the drawing in the new-story screen.
+
+**Recording a walk through the app.** When `app` is set, the title row of 「새 스토리」 has 「● 기록」. It opens the app in
+the middle column in place of the drawing, and the screens the app passes through stack up as steps in the left column
+in place of the screen list, after the steps chosen before. Each address change is read, an address on the same screen
+as the step before joins that step, and an address no screen matches becomes a step marked 「맵에 없는 화면」. A value
+typed into a box found by its placeholder, label or test ID is kept on its step; a password, a select, a checkbox or a
+box with none of these is only counted. The bar above the app chooses the account it is open as: the default
+account, each role in `app.roles`, or signed out when `app.signedOutPaths` is set. Choosing another one keeps the
+addresses so far as one record and starts a new one. 「기록 끝」 writes the record into `records/` in `storiesDir` as
+`{ "steps": [{ "url": "/home" }, { "url": "/signin", "inputs": [...], "skipped": 1 }] }`, with the path, the query and
+what follows `#` and no host or port, in a file named by the date and a random ID (`2026-10-15-1a2b3c4d.json`) that is
+never changed or deleted; keep the folder in git with the stories. The record is listed as a candidate even if the
+page is closed before saving. 「기록 끝」 also draws the steps on one line as a story's
+steps are drawn; 「전체 그림에서 보기」 shows them on the whole flow, where pressing a box adds a step, and 「한 줄로
+보기」 goes back. If no address came, as when the app's Content Security Policy blocks inline scripts, the page says so
+and writes no record. A window the app opens with `window.open` is not
+recorded. With only `appUrl` set, the page says that recording needs `app`.
+
+The pencil on 「스토리 전체」 and on each step opens a table for the conditions, the inputs and the expected results,
+written like those of a saved story and saved into the story file with it; 「닫기」 closes the table and keeps what was
+written. A recorded value is changed there like any other input.
 
 **List.** The left column lists screens with filters for no tests, dead screens, screens that open only under a
 setting or a role, and screens with only untagged tests. With `app` set, the middle shows the chosen screen's app

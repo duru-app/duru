@@ -8,7 +8,8 @@ import path from 'node:path';
 import { screenCases, settingConditionName } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
-import { acceptCandidate, candidatePlace, discardCandidate, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
+import { screenRoutes } from './address-match.ts';
+import { acceptCandidate, candidatePlace, discardCandidate, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
 import { isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { buildFlow } from './flow.ts';
@@ -41,6 +42,7 @@ export const PAGE_PARTS = [
   'script-untagged-center.js',
   'script-story-center.js',
   'script-new-story.js',
+  'script-walk.js',
   'script-center-right.js',
   'script-talk.js',
   'script-access-links.js',
@@ -56,7 +58,7 @@ export const PAGE_PARTS = [
 ];
 const BODY_LIMIT = 64 * 1024;
 const STORIES_SETTLE_MS = 100;
-const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/steps', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add', '/api/needs/add', '/api/needs/edit'];
+const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/steps', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add', '/api/needs/add', '/api/needs/edit', '/api/records'];
 
 function gitUserName(cwd: string) {
   try {
@@ -161,6 +163,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
     candidates,
     storiesDir: config.storiesDir,
     flow: buildFlow(reviewMap, tests),
+    screenRoutes: screenRoutes(map).map(({ id, pattern }) => ({ id, source: pattern.source, flags: pattern.flags })),
     appUrl: config.appUrl ?? null,
     app: app && {
       url: app.url,
@@ -309,7 +312,8 @@ export async function startReviewServer(config: any, { port = 0, author = review
     const root = config.app.settingsFile?.root;
     return { values: map.settingsDefaults?.[root] ?? {}, incomplete: map.settingsDefaultsIncomplete?.[root] ?? [] };
   };
-  const app = config.app && (await startAppHost(config.app, { rootDefaults }));
+  let pageOrigins: string[] = [];
+  const app = config.app && (await startAppHost(config.app, { rootDefaults, pageOrigins: () => pageOrigins }));
   // 다른 사이트가 사용자의 브라우저로 표시를 써 넣거나 리뷰를 끝내거나(JSON 이 아닌 요청), 자기 도메인을 이 주소로 돌려 맵을 읽어 가는 것(다른 Host)을 막는다.
   const ownHosts = () => [`127.0.0.1:${(server.address() as AddressInfo).port}`, `localhost:${(server.address() as AddressInfo).port}`];
   const isJson = (req: http.IncomingMessage) => req.headers['content-type']?.startsWith('application/json');
@@ -483,13 +487,23 @@ export async function startReviewServer(config: any, { port = 0, author = review
         }
         if (req.url === '/api/stories/check' || req.url === '/api/stories/add') {
           try {
-            const checked = checkScreens(readMap(mapFile), mapFile, input.screens);
+            const { id, name, memo, needs, screens, expects } = input;
+            const checked = checkScreens(readMap(mapFile), mapFile, Array.isArray(screens) ? screens.map((s) => (isPlainObject(s) ? s.screen : s)) : screens);
             if (req.url === '/api/stories/check') return send(res, 200, 'application/json', JSON.stringify(checked));
-            const { id, name, memo, screens } = input;
-            return send(res, 201, 'application/json', JSON.stringify(addStory(config.storiesDir, { id, name, memo, screens, author: author.name })));
+            return send(res, 201, 'application/json', JSON.stringify(addStory(config.storiesDir, { id, name, memo, needs, screens, expects, author: author.name })));
           } catch (err: any) {
             return send(res, 400, 'text/plain', err.message);
           }
+        }
+        if (req.url === '/api/records') {
+          if (!app) return send(res, 404, 'text/plain', 'no app is served');
+          let file;
+          try {
+            file = saveVisitRecord(config.storiesDir, input.steps);
+          } catch (err: any) {
+            return send(res, 400, 'text/plain', err.message);
+          }
+          return send(res, 201, 'application/json', JSON.stringify({ record: path.relative(config.configDir, path.join(config.storiesDir, file)).split(path.sep).join('/') }));
         }
         if (req.url === '/api/candidates/undiscard') {
           try {
@@ -544,6 +558,10 @@ export async function startReviewServer(config: any, { port = 0, author = review
       app?.close();
       reject(err);
     });
-    server.listen(port, '127.0.0.1', () => resolve(server));
+    server.listen(port, '127.0.0.1', () => {
+      const { port: own } = server.address() as AddressInfo;
+      pageOrigins = [`http://127.0.0.1:${own}`, `http://localhost:${own}`];
+      resolve(server);
+    });
   });
 }

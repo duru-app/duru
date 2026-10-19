@@ -134,8 +134,5 @@ export function checkStoryFiles(map: any, dir: string, mapFile: string, tests: S
 export function checkScreens(map: any, mapFile: string, screens: string[]) {
   if (!isScreenList(screens)) throw new Error('screens 는 화면 ID 를 하나 이상 차례대로 담은 목록이어야 합니다');
   if (linksWithoutConditions(map)) throw new Error(staleMapMessage(mapFile, '스토리'));
-  const [checked] = checkStories(map, [{ screens }]);
-  const offMap = checked.steps.filter((step) => !step.onMap).map((step) => step.screen);
-  if (offMap.length) throw new Error(`맵에 없는 화면입니다: ${offMap.join(', ')}`);
-  return checked;
+  return checkStories(map, [{ screens }])[0];
 }
