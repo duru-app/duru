@@ -172,7 +172,7 @@ function markSteps(e, at) {
 function stepsCard(e, i) {
   const s = e.steps[i];
   const on = e.selected === s.key;
-  const written = hasWritten(s.fields) ? h('div', { class: 'step-written written' }, writtenRows(s.fields, '조건', '기대 결과')) : null;
+  const written = hasWritten(s.fields) ? h('div', { class: 'step-written written' }, writtenRows(s.fields, '조건', '기대 결과', { kind: 'order' })) : null;
   const lost = i === 0 && lostLinkNeeds(e, i) ? lostLine(lostLinkNeeds(e, i), true) : null;
   const warn = e.removing === s.key
     ? h('div', { class: 'remove-warn' },

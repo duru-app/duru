@@ -25,13 +25,53 @@ function needItem(n) {
 
 const BOX_WORDS = { placeholder: '안내 글', label: '라벨', testId: '테스트 ID' };
 const boxWords = (box) => Object.keys(BOX_WORDS).filter((k) => box[k] !== undefined).map((k) => `${BOX_WORDS[k]} 「${box[k]}」`).join(' 또는 ') + (box.nth ? ` · ${box.nth} 번째` : '');
-const inputRow = (input) => h('tr', {},
-  h('td', { class: 'input-box' }, boxWords(input.box)),
-  h('td', { class: 'input-value mono' }, input.value),
-  h('td', {}, h('span', { class: 'chip input-unchecked', title: 'duru 가 코드에서 이 상자를 찾아보지 않았습니다' }, '확인 안 됨')));
-const inputsRow = (inputs) => (inputs?.length ? h('div', { class: 'written-row inputs' }, h('span', { class: 'written-label' }, '입력값'), h('table', { class: 'written-inputs' }, h('tbody', {}, inputs.map(inputRow)))) : null);
+const STILL_INPUT = {
+  noApp: '앱 화면에서 이 상자를 찾아보는 것은 설정에 app 을 적어 duru 가 앱을 띄울 때만 됩니다',
+  offMap: '이 단계의 화면이 맵에 없어, 앱을 어느 화면으로 띄울지 정하지 못합니다. 앱 화면에서 상자를 짚을 수 없습니다',
+  compose: '기록하는 동안 앱에서 직접 값을 넣은 상자라 따로 짚지 않습니다. 스토리로 저장한 뒤 스토리 카드에서 눌러 짚어 볼 수 있습니다',
+  order: '화면 순서를 고치는 동안에는 상자를 짚지 않습니다. 순서를 고친 뒤 단계 카드에서 눌러 짚어 볼 수 있습니다',
+};
+const PRESS_INPUT = '누르면 오른쪽 칸에 띄운 앱 화면에서 이 상자를 짚어 보입니다';
+const FOUND_INPUT = '줄을 눌렀을 때 띄운 앱 화면에서 이 상자를 찾았습니다. 띄운 앱의 데이터에 따라 달라지므로 파일에는 남기지 않습니다';
+const UNCHECKED_INPUT = '아직 이 줄을 눌러 앱 화면에서 찾아보지 않았습니다';
+
+function inputChip(found, still) {
+  if (still) return h('span', { class: 'chip input-unchecked', title: STILL_INPUT[still] }, '확인 안 됨');
+  if (!found) return h('span', { class: 'chip input-unchecked', title: UNCHECKED_INPUT }, '확인 안 됨');
+  return found.found
+    ? h('span', { class: 'chip input-found', title: FOUND_INPUT }, '화면에서 찾음')
+    : h('span', { class: 'chip input-missing', title: found.reason }, '못 찾음');
+}
+
+// line 은 이 입력값이 놓인 자리다: 스토리나 후보의 단계 카드면 { kind: 'step', step, screen, onMap }, 그 밖에는 { kind: 'compose' | 'order' }.
+function inputRow(input, row, line) {
+  const words = h('td', { class: 'input-box' }, boxWords(input.box));
+  const value = h('td', { class: 'input-value mono' }, input.value);
+  const still = !state.data.app ? 'noApp' : line.kind !== 'step' ? line.kind : line.onMap ? null : 'offMap';
+  if (still) return h('tr', { class: 'input-still', title: STILL_INPUT[still] }, words, value, h('td', {}, inputChip(null, still)));
+  const point = { step: line.step, screen: line.screen, row, box: input.box, value: input.value };
+  const found = boxFindOf(line.screen, input.box);
+  const on = state.point?.step === line.step && state.point.row === row;
+  const press = () => pressPoint(point);
+  return [
+    h('tr', {
+      class: `point-line${on ? ' on' : ''}`,
+      tabindex: 0,
+      title: PRESS_INPUT,
+      onclick: press,
+      onkeydown: (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        if (!e.repeat) press();
+      },
+    }, words, value, h('td', {}, inputChip(found, null))),
+    found && !found.found ? h('tr', { class: 'point-reason' }, h('td', { colspan: 3 }, found.reason)) : null,
+  ].filter(Boolean);
+}
+
+const inputsRow = (inputs, line) => (inputs?.length ? h('div', { class: 'written-row inputs' }, h('span', { class: 'written-label' }, '입력값'), h('table', { class: 'written-inputs' }, h('tbody', {}, inputs.flatMap((input, row) => inputRow(input, row, line))))) : null);
 const writtenRow = (cls, label, lines, item = (x) => x) => (lines?.length ? h('div', { class: `written-row ${cls}` }, h('span', { class: 'written-label' }, label), h('ul', {}, lines.map((x) => h('li', {}, item(x))))) : null);
-const writtenRows = (fields, needLabel, expectLabel) => [writtenRow('needs', needLabel, fields?.needs, needItem), inputsRow(fields?.inputs), writtenRow('expects', expectLabel, fields?.expects)].filter(Boolean);
+const writtenRows = (fields, needLabel, expectLabel, line) => [writtenRow('needs', needLabel, fields?.needs, needItem), inputsRow(fields?.inputs, line), writtenRow('expects', expectLabel, fields?.expects)].filter(Boolean);
 const linkWritten = (fields) => (fields?.linkNeeds?.length ? h('div', { class: 'link-written written' }, writtenRow('link-needs', LINK_NEEDS_LABEL, fields.linkNeeds, needItem)) : null);
 
 const hasWritten = (fields) => Boolean(fields?.needs?.length || fields?.inputs?.length || fields?.expects?.length);
@@ -40,7 +80,7 @@ function stepItem(step, i, recordSteps, story, fields) {
   const records = recordSteps ? h('span', { class: 'records muted', title: '방문 기록에서 이 화면에 머문 단계' }, stepsText(recordSteps)) : null;
   const slot = (name) => (story ? slotRow(name, stepTarget(story, i, step.screen), SLOT_WORDS.step) : name);
   // 적힌 글을 선택하려고 클릭해도 화면이 열리지 않게 이벤트 전파를 막는다.
-  const written = hasWritten(fields) ? h('div', { class: 'step-written written', title: '', onclick: (e) => e.stopPropagation() }, writtenRows(fields, '조건', '기대 결과')) : null;
+  const written = hasWritten(fields) ? h('div', { class: 'step-written written', title: '', onclick: (e) => e.stopPropagation() }, writtenRows(fields, '조건', '기대 결과', { kind: 'step', step: i, screen: step.screen, onMap: step.onMap })) : null;
   const place = { kind: 'step', step: i + 1, screen: step.screen };
   const button = story ? fieldsButton(story, place, Boolean(written)) : null;
   const below = story ? fieldsBelow(story, place, written) : [written].filter(Boolean);

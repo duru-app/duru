@@ -97,7 +97,7 @@ test('screens listed as signed out open on a second app address that never gets 
   );
 });
 
-test('every app page, signed in or signed out, carries the script that reports its address and the values typed to the review page, posting only to the review page\'s own addresses', async () => {
+test('every app page, signed in or signed out, carries the script that reports its address and the values typed to the review page and answers its box lookups, posting only to the review page\'s own addresses', async () => {
   await withFakeApi((api) =>
     withPassword('s3cret', () =>
       withRebuiltFixture({ app: { ...appSettings(api).app, signedOutPaths: ['/signin'] } }, (config) =>
@@ -107,10 +107,10 @@ test('every app page, signed in or signed out, carries the script that reports i
           const origins = JSON.stringify([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
           for (const page of [`${app.url}/home`, `${app.url}/document/7`, `${app.signedOutUrl}/signin`]) {
             const html = await (await fetch(page)).text();
-            assert.ok(html.includes(`(function reportWalk(`), page);
+            assert.ok(html.includes(`(function answerReviewPage(`), page);
             assert.ok(html.includes(`)(${origins});`), page);
           }
-          assert.doesNotMatch(await (await fetch(`${app.url}/app.js`)).text(), /reportWalk/);
+          assert.doesNotMatch(await (await fetch(`${app.url}/app.js`)).text(), /answerReviewPage/);
         }),
       ),
     ),

@@ -1,7 +1,7 @@
 function frameAccount(s) {
   const { app } = state.data;
-  const account = { url: app.url, label: `${app.account} 로 로그인`, error: app.error };
-  const asRole = (r) => ({ url: r.url, label: `${r.role} 역할 ${r.account} 로 로그인`, error: r.error, role: r.role });
+  const account = { url: app.url, id: app.account, label: `${app.account} 로 로그인`, error: app.error };
+  const asRole = (r) => ({ url: r.url, id: r.account, label: `${r.role} 역할 ${r.account} 로 로그인`, error: r.error, role: r.role });
   const wanted = s.access.roleValues;
   const unread = s.access.unreadableRoleGuards ?? [];
   const hint = wanted && unread.length ? `읽지 못한 역할 조건도 있습니다: ${unread.join(', ')}` : null;
@@ -17,11 +17,13 @@ function pickAccount(account, asRole, wanted, unread) {
     }
     const meets = app.roles.filter((r) => wanted.includes(r.role));
     const role = meets.find((r) => !r.error) ?? meets[0];
-    return role ? { ...asRole(role), notes: [] } : { ...account, notes: [`조건을 채우는 역할(${wanted.join(', ')})에 계정이 없습니다`] };
+    return role ? { ...asRole(role), notes: [] } : { ...account, noAccount: true, notes: [`조건을 채우는 역할(${wanted.join(', ')})에 계정이 없습니다`] };
   }
   const role = app.roles.find((r) => `role:${r.role}` === state.roleChoice);
   if (!role) return { ...account, notes: [] };
-  return { ...asRole(role), notes: wanted && !wanted.includes(role.role) ? [`이 역할은 화면 조건(${wanted.join(', ')})을 채우지 못합니다`] : [] };
+  return wanted && !wanted.includes(role.role)
+    ? { ...asRole(role), missesRole: true, notes: [`이 역할은 화면 조건(${wanted.join(', ')})을 채우지 못합니다`] }
+    : { ...asRole(role), notes: [] };
 }
 
 function rolePicker() {
@@ -67,6 +69,7 @@ async function loadPathValues(id, role) {
   }
   Object.assign(entry, { pending: false, draft: { ...entry.values }, filled: { ...entry.values }, opened: 0 });
   if (screenPanesShown() && state.selected === id) renderCenterHead(state.data.map.screens.find((x) => x.id === id));
+  if (state.point?.screen === id) renderPointPane();
 }
 
 async function newIssued(s, entry, values) {
@@ -156,6 +159,15 @@ function pathValueBar(s, entry, fallback) {
     entry.errors.map((e) => h('span', { class: 'error' }, e)));
 }
 
+function openingOf(s, link) {
+  const { app } = state.data;
+  const signedOut = Boolean(app.signedOutUrl) && link.startsWith(`${app.signedOutUrl}/`);
+  const who = signedOut ? null : frameAccount(s);
+  /** @param {string} l */
+  const opening = (l) => (signedOut ? `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent(l.slice(app.signedOutUrl.length))}` : who.url + l.slice(app.url.length));
+  return { signedOut, who, opening };
+}
+
 /**
  * @param {PageData['map']['screens'][number]} s
  * @param {ReturnType<typeof frameTarget>} target
@@ -174,9 +186,7 @@ function appFrame(s, { link, fallback, opens, missing }, entry) {
       h('div', { class: 'frame-note muted' }, missing ? `${missing.join(', ')} 값이 없어 이 화면을 띄울 수 없습니다.` : '주소에 값이 필요한 화면이라 앱을 띄우지 않았습니다.'),
     ];
   }
-  const signedOut = Boolean(app.signedOutUrl) && link.startsWith(`${app.signedOutUrl}/`);
-  const who = signedOut ? null : frameAccount(opens ?? s);
-  const opening = (l) => (signedOut ? `${app.signedOutUrl}${app.signOutPath}?to=${encodeURIComponent(l.slice(app.signedOutUrl.length))}` : who.url + l.slice(app.url.length));
+  const { signedOut, who, opening } = openingOf(opens ?? s, link);
   const shown = signedOut ? link : opening(link);
   const opened = opening(link);
   // 팝업이 막히지 않도록 탭은 누른 자리에서 바로 열고, 주소는 값을 받은 뒤에 넣는다.

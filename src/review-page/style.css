@@ -3,6 +3,7 @@
     --selected: #e8eefc; --pass: #1f7a3d; --fail: #c0392b; --pending: #a86a00;
     --more: #b3541e; --missing: #c0392b; --fine: #1f7a3d; --changed: #7c3aed; --changed-bg: #f3ecff;
     --written: #0f766e; --written-bg: #e6f4f1;
+    --point: #2f5fd0; --point-bg: rgba(47, 95, 208, .10); --point-ring: rgba(47, 95, 208, .18); --point-other: #8a94a6;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -187,6 +188,27 @@
   #right-info { flex: 1 1 auto; min-height: 120px; overflow: auto; padding: 12px 16px; }
   #right-dock { flex: none; padding: 10px 16px 12px; border-top: 1px solid var(--line); background: var(--panel); }
   #right-info:empty, #right-dock:empty { display: none; }
+  #right-app { flex: none; padding: 12px 16px 0; }
+  .point-block { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--panel); }
+  .point-head { display: flex; align-items: center; gap: 6px; }
+  .point-head h2 { margin: 0; font-size: 14px; color: var(--text); }
+  .point-close { margin-left: auto; padding: 1px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+  .point-which { font-size: 13px; }
+  .point-where { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; color: var(--muted); }
+  .point-where .mono { color: var(--text); }
+  .point-mini { position: relative; flex: none; width: 96px; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); }
+  .point-mini i { position: absolute; border: 2px solid var(--accent); border-radius: 2px; background: var(--selected); }
+  .point-crop { position: relative; overflow: hidden; height: 0; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  .point-frame { position: absolute; left: 0; top: 0; border: 0; background: #fff; transform-origin: 0 0; pointer-events: none; }
+  .point-marks { position: absolute; inset: 0; pointer-events: none; }
+  .point-mark { position: absolute; border: 1px solid var(--point-other); border-radius: 4px; }
+  .point-mark.target { border: 2px solid var(--point); background: var(--point-bg); box-shadow: 0 0 0 3px var(--point-ring); }
+  .point-no { position: absolute; top: 50%; left: calc(100% + 6px); transform: translateY(-50%); display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--point-other); color: #fff; font-size: 12px; font-weight: 700; }
+  .point-mark.target .point-no { background: var(--point); }
+  .point-block p { margin: 0; font-size: 13px; }
+  .point-missing { color: var(--fail); }
+  .point-full { justify-self: start; padding: 4px 10px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; }
+  .point-bar button { padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
   #right-info:has(> .talk-scope:only-child) { flex: none; min-height: 0; }
   .talk-scope { position: sticky; top: -12px; z-index: 1; display: flex; gap: 4px; margin: -12px -16px 8px; padding: 10px 16px 6px; background: var(--bg); }
   .talk-scope button { padding: 3px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
@@ -509,6 +531,16 @@
   .written-inputs { margin: 0; border-collapse: collapse; font-size: 13px; }
   .written-inputs td { padding: 1px 10px 1px 0; border: 0; vertical-align: baseline; white-space: pre-wrap; overflow-wrap: anywhere; }
   .chip.input-unchecked { color: var(--muted); border-style: dashed; font-size: 11px; }
+  .chip.input-found { color: var(--pass); font-size: 11px; }
+  .chip.input-missing { color: var(--fail); font-size: 11px; }
+  .written-inputs tr.point-line { cursor: pointer; }
+  .written-inputs tr.point-line:hover > td, .written-inputs tr.point-line.on > td { background: var(--selected); }
+  .written-inputs tr.point-line.on > td:first-child { box-shadow: inset 3px 0 0 var(--accent); padding-left: 6px; }
+  .written-inputs tr.point-line:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .written-inputs tr.point-line .input-box { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
+  .written-inputs tr.input-still { cursor: help; }
+  .written-inputs tr.input-still :is(.input-box, .input-value) { color: var(--muted); }
+  .written-inputs tr.point-reason td { padding-top: 0; padding-bottom: 4px; font-size: 12px; color: var(--fail); }
   .story-wide { margin: 12px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--written); border-radius: 6px; background: var(--panel); }
   .story-wide h2 { margin: 0 0 6px; }
   .story-wide-head { display: flex; align-items: baseline; gap: 8px; }
@@ -580,6 +612,11 @@
   main.walking #center-body { display: none; }
   main.walking .walk-bar { margin-top: 0; }
   main.walking .app-stage.walk-stage { flex: 1; height: auto; min-height: 240px; resize: none; }
+  main.app-full #center { display: flex; flex-direction: column; }
+  main.app-full #center-head { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  main.app-full #center-body { display: none; }
+  main.app-full .point-bar { margin-top: 0; }
+  main.app-full .app-stage.point-stage { flex: 1; height: auto; min-height: 240px; resize: none; }
   .walk-bar button.end-walk { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--fail); background: var(--panel); color: var(--fail); font: inherit; font-weight: 600; cursor: pointer; }
   .walk-bar .walk-status { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 12px; }
   .walk-guide { margin: 0 0 8px; font-size: 12px; }
