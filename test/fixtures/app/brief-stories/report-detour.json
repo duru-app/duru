@@ -1,0 +1,13 @@
+{
+  "name": "관리자가 보고서에서 홈으로 돌아와 문서를 열고 보고서로 다시 간다",
+  "screens": [
+    { "screen": "/admin/report#AdminReport", "needs": [{ "use": "admin-account.json" }] },
+    { "screen": "/home#Home", "inputs": [{ "box": { "placeholder": "문서 검색" }, "value": "분기 보고" }] },
+    { "screen": "/document/:id#DocumentDetail", "expects": ["문서 제목이 보인다"] },
+    "/admin/report#AdminReport"
+  ],
+  "expects": ["보고서 화면이 열린다"],
+  "memo": "",
+  "author": "reviewer",
+  "date": "2026-10-04"
+}

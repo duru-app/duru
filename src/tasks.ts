@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { compare } from './config.ts';
 import type { CaseKind } from './config.ts';
@@ -7,6 +8,7 @@ import { reviewData } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { BOX_WORDS } from './stories.ts';
 import { testsAt } from './story-paths.ts';
+import { escapeText, readableRoute, routePattern } from './path-values.ts';
 import { DEPTHS } from './test-links.ts';
 
 const KIND_NAMES: Record<string, string> = { setting: 'a setting', role: 'a role' };
@@ -37,7 +39,7 @@ interface TestRow {
   project?: string;
 }
 
-interface MapInfo {
+export interface MapInfo {
   screensById: Map<string, any>;
   restricted: Set<string>;
 }
@@ -363,7 +365,34 @@ function needText(need: any, needs: any) {
 
 const needTexts = (list: any[] | undefined, needs: any) => list?.map((n) => needText(n, needs));
 
-function stepLines(story: any, tests: any, needs: any) {
+export interface StoryBrief {
+  screensById: Map<string, any>;
+  appUrl: string | null;
+  base: string;
+}
+
+const ROUTE_END = '(?:\\/(?=$))?$';
+
+function arrivalLine(screen: any, base: string) {
+  if (!readableRoute(screen.path)) return `not written, the route path was not read at ${screen.routeFile}:${screen.line}`;
+  const { source, flags } = routePattern(screen.path);
+  const body = source.slice(1, -ROUTE_END.length).replace(/\[\^([^\]]*)\]\+\?/g, '[^$1?#]+?');
+  return `\`await expect(page).toHaveURL(/^[a-z]+:\\/\\/[^\\/]+${base}${body}\\/?(?:[?#].*)?$/${flags});\``;
+}
+
+function appBase(appUrl: string | null) {
+  const rest = appUrl?.match(/^https?:\/\/[^/?#]+(.*)$/i)?.[1];
+  return rest ? escapeText(rest.replace(/\/+$/, '')) : '';
+}
+
+function briefLines(step: any, first: boolean, brief: StoryBrief, indent: string) {
+  const screen = brief.screensById.get(step.screen);
+  if (!screen) return [`${indent}- arrives: none, the screen is not on the map`];
+  const open = first ? [`${indent}- open: ${(brief.appUrl ?? '').replace(/\/+$/, '')}${screen.path}`] : [];
+  return [...open, `${indent}- arrives: ${arrivalLine(screen, brief.base)}`];
+}
+
+function stepLines(story: any, tests: any, needs: any, brief?: StoryBrief) {
   return story.steps.flatMap((step: any, i: number) => {
     const no = `${i + 1}. `;
     const indent = ' '.repeat(2 + no.length);
@@ -371,7 +400,8 @@ function stepLines(story: any, tests: any, needs: any) {
     const fields = story.stepFields?.[i] ?? {};
     const written = [...writtenLines(`link need from step ${i}: `, needTexts(fields.linkNeeds, needs), indent), ...writtenLines('need: ', needTexts(fields.needs, needs), indent), ...inputLines(fields.inputs, indent), ...writtenLines('expect: ', fields.expects, indent)];
     const link = story.links[i];
-    return [line, ...written, ...(link ? [`${indent}- to ${within(link.to, `${indent}  `)}: ${linkText(link)}`] : [])];
+    const pressed = brief && link && !['broken', 'off-map', 'configured'].includes(link.verdict) ? [`${indent}  - what to press: duru does not know`] : [];
+    return [line, ...(brief ? briefLines(step, i === 0, brief, indent) : []), ...written, ...(link ? [`${indent}- to ${within(link.to, `${indent}  `)}: ${linkText(link)}`, ...pressed] : [])];
   });
 }
 
@@ -403,23 +433,21 @@ function preconditionLines(r: any, { screensById, restricted }: MapInfo) {
   ];
 }
 
-function storyLines(story: any, marks: any[], parts: any[], tests: any, needs: any, mapInfo: MapInfo, formats: string[]) {
+export function storyLines(story: any, marks: any[] | null, parts: any[], tests: any, needs: any, mapInfo: MapInfo, formats: string[], brief?: StoryBrief) {
   const problems = reachProblems(story);
   return [
     '',
     `## ${story.id}`,
     '',
     `- name: ${within(story.name, '  ')}`,
-    '- marks:',
-    ...marks.flatMap((m) => entryLines(m)),
-    ...partLines(parts, 'story', STORY_PART_SECTIONS),
+    ...(marks ? ['- marks:', ...marks.flatMap((m) => entryLines(m)), ...partLines(parts, 'story', STORY_PART_SECTIONS)] : []),
     `- story file: ${story.file} (${within(story.author, '  ')}, ${story.date.slice(0, 10)})`,
     ...(story.memo ? [`- memo: ${within(story.memo, '  ')}`] : []),
     `- status: ${STORY_STATUS[story.status]}`,
     ...testLines(testsAt(tests.stories, story.id), 'story tests'),
     ...writtenList('- needs:', needTexts(story.needs, needs)),
     '- screens:',
-    ...stepLines(story, tests, needs),
+    ...stepLines(story, tests, needs, brief),
     ...writtenList('- expects at the end:', story.expects),
     `- reach: ${problems.length ? problems.join('; ') : 'reachable'}`,
     ...(story.reach.length
@@ -565,4 +593,29 @@ export function taskList(config: any) {
   }
   out.push(...taggingLines(tests.awaitingTag, new Set<string>(map.calls.map((c: any) => c.id))));
   return out.join('\n') + '\n';
+}
+
+const STORY_INTRO = "Write a test that goes through the screens of this story in order, and put `@story:<story ID>` on it. The lines under each step come from the map: `open` is the address to open for the first step, with a route variable left as it is in the route path, and `arrives` is the line to check that the step's screen is open. `what to press` says duru does not know which element moves from one screen to the next, and appears only under a link that exists in the source, not under a link marked `no link` or `not judged, a screen is not on the map`, or a move written in the config's `moves`; the link's verdict and where it is written are on the `to` line. The `need`, `link need from step N`, `input` and `expect` lines, and the `needs` and `expects at the end` lists, are text a person wrote that duru did not check against the code; a need written `<name> (needs/<file>): <text>` is kept as a file and picked by several stories. The `reach` and `preconditions` lines say why a step may not open. `story tests` are the tests already tagged with this story. Under `empty tests` are the empty tests with the `@story:` tag and the `@screen:` tag of each screen on the map already in place and held back from passing (`test.fixme`, `test.todo`, `@Disabled` with `import org.junit.jupiter.api.Disabled;`, or no verdict word): copy the one for your runner, put what the test checks in place of `<what it checks>`, remove what holds it back and fill in the data setup and the checks.";
+
+export function storyBrief(config: any, id: string): { text: string } | { error: string } {
+  const { map, tests, stories, needs } = reviewData(config, null);
+  if (stories.stale) return { error: stories.stale };
+  const story = stories.list.find((s) => s.id === id);
+  if (!story) {
+    const unread = fs.existsSync(path.join(config.storiesDir, `${id}.json`));
+    return { error: unread ? `story ${id} could not be read; \`duru rebuild\` prints why` : `no story ${id} in ${path.relative(config.configDir, config.storiesDir)}` };
+  }
+  const screensById = new Map<string, any>(map.screens.map((s: any) => [s.id, s]));
+  const mapInfo = { screensById, restricted: new Set<string>(map.screens.filter((s: any) => s.access.restricted).map((s: any) => s.id)) };
+  const formats = [...new Set<string>(config.tests.map((t: any) => t.format))];
+  const relative = (p: string) => path.relative(config.configDir, p).split(path.sep).join('/');
+  const out = [
+    `# Story ${story.id}`,
+    '',
+    STORY_INTRO,
+    '',
+    `Source files are under \`${relative(config.srcRoot)}\`. Story files are in \`${relative(config.storiesDir)}\`.`,
+    ...storyLines(story, null, [], tests, needs, mapInfo, formats, { screensById, appUrl: config.appUrl ?? null, base: appBase(config.appUrl ?? null) }),
+  ];
+  return { text: out.join('\n') + '\n' };
 }

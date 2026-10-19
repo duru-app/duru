@@ -2518,6 +2518,17 @@ Alternatives compared:
 - A screen for each outer path (two boxes for each integrations screen): the driver chose one box with one joined
   path, so the number of screens does not grow.
 
+**`duru story <config> <story ID>` prints a story in the text shape of `duru tasks`, plus the lines duru computes for each step, rather than JSON or a test code draft.**
+An agent that writes a test already reads the story part of `duru tasks`, so the same code makes the same lines and
+a story that no reviewer marked is read the same way. What duru can compute (the address to open, a `toHaveURL`
+line from the route path) is given as lines; what it cannot (which element to press, how to find a box) is said to
+be unknown, and the agent fills it from the source the line names.
+Alternatives compared:
+- JSON for the agent to read: each field is exact, but it is a second shape to keep beside the task list's text, and
+  the text of reasons and verdicts would be written twice.
+- A test code draft with the computed lines in place: the agent gets one file, but a draft hides which lines duru is
+  sure of and which it guessed, and a step with no readable path or no known link would need comments inside code.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

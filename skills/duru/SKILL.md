@@ -345,3 +345,22 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    and no `unknown` line should name one of your tags. Fix and repeat until they attach.
    A screen, call or story stays in `duru tasks` until a reviewer marks it `fine`, so an unchanged list is expected;
    offer the user another review round instead.
+
+## Writing the test of one story
+
+When the user names a story, or you have to write a test for a story the reviewer did not mark, run
+`duru story <config> <story ID>` after `duru rebuild <config>`. Its standard output is the text of one story, in the
+shape of a story under `# Stories` in `duru tasks`, without the `marks` lines and with these lines added under each
+step: `open` (the first step only), the address to open, with a route variable left as it is in the route path, put
+the app address in front when the config has `appUrl`; `arrives`, a `toHaveURL` line with a regular expression that matches the whole address of the step's screen, after the path and hash of `appUrl` if it has any, to put after the step, or why
+duru could not write it (the route path was not read, or the screen is not on the map); and under a link
+`what to press: duru does not know` (only under a link that exists in the source: not under `no link`, under `not judged, a screen is not on the map`, or under a move written in the config's `moves`), because duru gives the link's verdict and where it is written but not which
+element to press, so find that element in the source it names. Fill a route variable with a real value yourself.
+The `need`, `link need from step N`, `input`, `expect`, `needs` and `expects at the end` lines are text a person
+wrote that duru did not check, and a `needs/<file>` need comes with its file's name and text. The `reach` and
+`preconditions` lines say what a step needs (a role, a setting) and which steps have no link; when a step cannot be
+taken, tell the user instead of writing a test that skips it. The `empty tests` at the end carry the `@story:` tag
+and a `@screen:` tag for each screen on the map: copy the one for your runner, as under the task list.
+The tests you write attach the same way as in step 4. Standard output holds only this text, and a line on standard
+error says why when the exit code is 1 (no such story ID, a story file that could not be read, or a map built by an
+older duru, for which run `duru rebuild <config>`); a wrong call exits with 2.
