@@ -45,14 +45,14 @@ const AUDIT_CASES = ['role:ADMIN', 'role:AUDITOR', 'role:other'];
 
 const EXPECTED = `# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks
 
-A reviewer marked these screens, API calls and stories as needing more tests (\`needs-more\`) or as having none (\`missing\`). Write the tests, put \`@screen:<screen ID>\` on each test, in its \`tag\` option for Playwright and in its title for the other formats (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and for a screen that opens only under a role or a setting the tag of each case under \`cases\` it checks), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` on it as well. Under \`empty tests\`, a screen or call gets one set for each open mark, a screen one more for each case with no tests, and a story one set: an empty test for each test format in the config, with the tags already in place and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, put what the test checks in place of \`<what it checks>\` (the Playwright ones of an item all carry that title), remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.
+A reviewer marked these screens, API calls and stories as needing tests (\`needs-more\`). Write the tests, put \`@screen:<screen ID>\` on each test, in its \`tag\` option for Playwright and in its title for the other formats (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and for a screen that opens only under a role or a setting the tag of each case under \`cases\` it checks), add \`@depth:<ui|api|render|code|data|output>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` on it as well. Under \`empty tests\`, a screen or call gets one set for each open mark, a screen one more for each case with no tests, and a story one set: an empty test for each test format in the config, with the tags already in place and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, put what the test checks in place of \`<what it checks>\` (the Playwright ones of an item all carry that title), remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.
 
 Source files are under \`client/src\`.
 
 ## /admin/member#AdminMember
 
 - marks:
-  - missing, whole screen — "No test signs in as an admin." (Kim Min, 2026-09-29)
+  - needs-more, whole screen — "No test signs in as an admin." (Kim Min, 2026-09-29)
 - component: components/AdminMember.js, route at Routes.js:42
 - access: needs a role
   - route guard \`isAdminRole(memberRole)\` (role)
@@ -117,7 +117,7 @@ ${emptyTests(['@screen:/home#Home @depth:data', 'screen_home_Home_depth_data'])}
 ## /lab/result#LabResult
 
 - marks:
-  - missing, whole screen (Kim Min, 2026-09-30)
+  - needs-more, whole screen (Kim Min, 2026-09-30)
 - component: components/LabResult.js, route at Routes.js:45
 - access: needs a setting
   - link from /lab#Lab at components/Lab.js:14, no guard — /lab#Lab itself needs a setting
@@ -138,7 +138,7 @@ ${emptyTests(
 ## POST:/api/v1/archive/document
 
 - marks:
-  - missing, api depth — "The server has no archive endpoint; check what the archive button gets back." (Kim Min, 2026-09-30)
+  - needs-more, api depth — "The server has no archive endpoint; check what the archive button gets back." (Kim Min, 2026-09-30)
 - called from: /document/:tab#DocumentList, /home#Home
 - server: not on the server
 - tests: none
@@ -180,7 +180,7 @@ ${emptyTests(['@story:change-settings @screen:/home#Home', 'story_change_setting
 
 - name: 홈에서 바로 도움말을 연다
 - marks:
-  - missing — "Home has no help link; check the way through the document page." (reviewer, 2026-10-03)
+  - needs-more — "Home has no help link; check the way through the document page." (reviewer, 2026-10-03)
 - story file: help-from-home.json (reviewer, 2026-10-02)
 - memo: 홈에는 도움말 링크가 없다.
 - status: pending — no story test fails and one is pending
@@ -293,7 +293,7 @@ test('a marked story whose first screen opens only under a setting or a role lis
       '',
       '- name: 관리자가 보고서를 본다',
       '- marks:',
-      '  - missing — "Line one.',
+      '  - needs-more — "Line one.',
       '    Line two." (a, 2026-10-03)',
       '- story file: read-reports.json (reviewer, 2026-10-03)',
       '- status: untested — no story test, and no screen on the path has a test',
@@ -859,7 +859,7 @@ test('comments left on an open target after its mark follow the mark in order, w
 
     const after = cli('tasks');
     const lab = after.split('## /lab#Lab\n')[1].split('\n## ')[0];
-    assert.match(lab, /^ {2}- missing, ui depth — "No UI test\." \(a, 2026-10-05\)\n {2}- comment, ui depth — "The empty table too\." \(b, 2026-10-05\)\n {2}- comment, ui depth — "And the error row\." \(a, 2026-10-05\)$/m);
+    assert.match(lab, /^ {2}- needs-more, ui depth — "No UI test\." \(a, 2026-10-05\)\n {2}- comment, ui depth — "The empty table too\." \(b, 2026-10-05\)\n {2}- comment, ui depth — "And the error row\." \(a, 2026-10-05\)$/m);
     assert.doesNotMatch(after, /Before the mark|Only a comment/);
     assert.match(after.split('\n')[2], / A `comment` line under a mark is a comment a reviewer left on the same target after that mark\.$/);
     assert.doesNotMatch(before, /`comment` line/);
@@ -883,7 +883,7 @@ test('replies follow the comment they answer, indented under it and oldest first
     const out = cli('tasks');
     const lab = out.split('## /lab#Lab\n')[1].split('\n## ')[0];
     assert.match(lab, new RegExp([
-      '^  - missing, whole screen — "No test\\." \\(a, 2026-10-05\\)',
+      '^  - needs-more, whole screen — "No test\\." \\(a, 2026-10-05\\)',
       '  - comment, whole screen — "Is the table tested\\?" \\(b, 2026-10-05\\)',
       '    - reply — "Not yet\\.',
       '      Writing one now\\." \\(agent, 2026-10-05\\)',
@@ -915,7 +915,7 @@ test('comments on tests under an open screen or call follow its marks, each test
     const lab = out.split('## /lab#Lab\n')[1].split('\n## ')[0];
     assert.match(lab, new RegExp([
       '^- marks:',
-      '  - missing, whole screen — "No test\\." \\(a, 2026-10-12\\)',
+      '  - needs-more, whole screen — "No test\\." \\(a, 2026-10-12\\)',
       '- comments on tests:',
       '  - test "opens the lab" at home\\.spec\\.ts:20 — pending, tagged with this screen, from results/playwright/e2e\\.json',
       '    - comment — "Why is this pending\\?" \\(b, 2026-10-12\\)',
@@ -945,7 +945,7 @@ test('comments on an opening condition and an incoming link of an open screen ar
     const lab = out.split('## /lab#Lab\n')[1].split('\n## ')[0];
     assert.match(lab, new RegExp([
       '^- marks:',
-      '  - missing, whole screen — "No test\\." \\(a, 2026-10-12\\)',
+      '  - needs-more, whole screen — "No test\\." \\(a, 2026-10-12\\)',
       '- comments on opening conditions:',
       '  - condition `setting:SYSTEM\\.LAB_ENABLED=on` — route at Routes\\.js:44 \\(`globalSettings\\.SYSTEM\\.LAB_ENABLED`\\); link from /home#Home at components/Home\\.js:19 \\(`globalSettings\\.SYSTEM\\.LAB_ENABLED`\\)',
       '    - comment — "Only with the lab on\\?" \\(b, 2026-10-12\\)',
@@ -973,7 +973,7 @@ test('comments on a step and on the link between two steps of an open story are 
     const story = out.split('## help-from-home\n')[1].split('\n## ')[0];
     assert.match(story, new RegExp([
       '^- marks:',
-      '  - missing — "Home has no help link; check the way through the document page\\." \\(reviewer, 2026-10-03\\)',
+      '  - needs-more — "Home has no help link; check the way through the document page\\." \\(reviewer, 2026-10-03\\)',
       '- comments on steps:',
       '  - step 2: /home#Home, component \\S+, route at Routes\\.js:\\d+',
       '    - comment — "Check the help link here\\." \\(b, 2026-10-12\\)',
@@ -1018,7 +1018,7 @@ test('a note over several lines stays inside its mark, and a call whose API func
     fs.writeFileSync(mapFile, JSON.stringify(map));
 
     const lab = cli('tasks').split('## /lab#Lab\n')[1].split('\n## ')[0];
-    assert.match(lab, /^ {2}- missing, whole screen — "Check the start\.\n {4}## \/fake#Fake\n {4}- tests: none" \(a, 2026-09-30\)$/m);
+    assert.match(lab, /^ {2}- needs-more, whole screen — "Check the start\.\n {4}## \/fake#Fake\n {4}- tests: none" \(a, 2026-09-30\)$/m);
     assert.match(lab, /^ {2}- ajaxLabExperiment at components\/Lab\.js:\d+ — not found among the API functions$/m);
   });
 });
@@ -1145,7 +1145,7 @@ test('a call that another call\'s options change the result of lists those optio
     const item = tasks.split(`## ${DETAIL_CALL}\n`)[1].split('\n## ')[0];
     assert.equal(
       item.slice(0, item.indexOf('\n- tests:')),
-      ['', '- marks:', '  - missing, output depth (a, 2026-10-01)', '- called from: /document/:id#DocumentDetail', '- server: on the server (core)', ...RESULT_OPTION_LINES].join('\n'),
+      ['', '- marks:', '  - needs-more, output depth (a, 2026-10-01)', '- called from: /document/:id#DocumentDetail', '- server: on the server (core)', ...RESULT_OPTION_LINES].join('\n'),
     );
     assert.equal(tasks.match(/options that change this result/g)!.length, 6);
   });
@@ -1286,7 +1286,7 @@ test('a mark on an option value of a call is listed with the option key, value a
         '',
         '- marks:',
         '  - needs-more, withHistory=true — "Only the UI is tested." (a, 2026-10-01)',
-        '  - missing, withHistory=true at output depth — "Open the exported file." (a, 2026-10-01)',
+        '  - needs-more, withHistory=true at output depth — "Open the exported file." (a, 2026-10-01)',
         '- called from: /admin/audit#AdminAudit, /admin/report#AdminReport',
         '- server: on the server (core)',
         '- marked options:',
@@ -1310,7 +1310,7 @@ test('a mark on an option value of a call is listed with the option key, value a
       [
         '',
         '- marks:',
-        '  - missing, weekly=true (a, 2026-10-01)',
+        '  - needs-more, weekly=true (a, 2026-10-01)',
         '- called from: /admin/audit#AdminAudit, /admin/report#AdminReport',
         '- server: on the server (core)',
         '- marked options:',
@@ -1352,7 +1352,7 @@ test('an API call with an open mark is listed once under API calls with its scre
         '## POST:/api/v1/archive/document',
         '',
         '- marks:',
-        '  - missing, api depth — "The server has no archive endpoint; check what the archive button gets back." (Kim Min, 2026-09-30)',
+        '  - needs-more, api depth — "The server has no archive endpoint; check what the archive button gets back." (Kim Min, 2026-09-30)',
         '- called from: /document/:tab#DocumentList, /home#Home',
         '- server: not on the server',
         '- tests: none',
@@ -1361,7 +1361,7 @@ test('an API call with an open mark is listed once under API calls with its scre
         '## POST:/api/v1/report/archive',
         '',
         '- marks:',
-        '  - missing, ui depth (a, 2026-10-01)',
+        '  - needs-more, ui depth (a, 2026-10-01)',
         '- called from: /admin/audit#AdminAudit, /admin/report#AdminReport',
         '- server: on the server (core)',
         '- tests:',
@@ -1588,7 +1588,7 @@ test('a mark\'s note is printed trimmed, and a mark whose note is only whitespac
     addMark(marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: '\n  checks the start\nand the end  \n', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
     addMark(marksDir, { target: { node: '/admin/report#AdminReport' }, status: 'missing', note: ' \n ', author: 'a' }, new Date('2026-10-04T05:00:00Z'));
     const tasks = cli('tasks');
-    assert.match(tasks, /^ {2}- missing, whole screen — "checks the start\n {4}and the end" \(a, 2026-10-03\)$/m);
-    assert.match(tasks, /^ {2}- missing, whole screen \(a, 2026-10-04\)$/m);
+    assert.match(tasks, /^ {2}- needs-more, whole screen — "checks the start\n {4}and the end" \(a, 2026-10-03\)$/m);
+    assert.match(tasks, /^ {2}- needs-more, whole screen \(a, 2026-10-04\)$/m);
   });
 });

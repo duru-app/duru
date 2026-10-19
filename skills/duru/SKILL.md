@@ -181,8 +181,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `duru wait` exiting with code 0 and nothing on standard output tells you, run the same `duru reply` without
    `--server`; the reply is then written to the marks folder. If `reply` exits with a non-zero code, show its
    standard error to the user. Each reply sent with `--server` also comes out on the review's standard error as a
-   `"reply"` line with `replyTo` set to the comment's `id`; it asks for nothing. A mark with `needs-more` or
-   `missing` will be in the task list, and you may start on it now. A
+   `"reply"` line with `replyTo` set to the comment's `id`; it asks for nothing. A mark with `needs-more`
+   (「테스트 필요」 on the page) will be in the task list, and you may start on it now. A
    target can also carry a `depth` or an `option` of a call, and a mark whose target has a `case` (status `needed`
    or `not-needed`) or whose status is `fine` asks for nothing by itself. A `not-needed` case mark that also carries
    `rule`, `{ "index", "pick" }`, took that screen or call out of the rule at that place in the kind's `picks`

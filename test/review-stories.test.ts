@@ -75,7 +75,7 @@ test('a map.json built before links carried their conditions leaves the stories 
       '## run-lab',
       '',
       '- marks:',
-      '  - missing (a, 2026-10-03)',
+      '  - needs-more (a, 2026-10-03)',
       '',
     ].join('\n'));
   });

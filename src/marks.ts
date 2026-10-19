@@ -96,6 +96,8 @@ export function loadMarks(dir: string): Mark[] {
     });
 }
 
+export const mergedStatus = (mark: Mark): Mark => (mark.status === 'missing' ? { ...mark, status: 'needs-more' } : mark);
+
 // 표시 하나를 파일 하나로 저장하고 기존 파일은 고치지 않으므로, 두 사람이 따로 남긴 표시도 git 에서 충돌 없이 합쳐진다.
 // 어느 화면의 표시인지는 폴더 이름이 아니라 파일 안의 target 으로 정한다.
 function saveMark(dir: string, mark: Mark) {

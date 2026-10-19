@@ -105,7 +105,7 @@ test('in a browser, pressing a screen in the flow keeps strong only the paths th
         await (await screenBox(p, '/lab#Lab')).focus();
         await p.keyboard.press('Enter');
         assert.deepEqual(await pickedBoxes(p), ['/lab#Lab'], 'Enter on a focused screen picks it');
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.fill('#right .mark-form textarea', '아직 저장하지 않은 메모');
         await (await screenBox(p, '/lab#Lab')).click();
         assert.equal(await p.inputValue('#right .mark-form textarea'), '아직 저장하지 않은 메모', 'pressing the picked screen again keeps the unsaved mark');

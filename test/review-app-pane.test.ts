@@ -30,9 +30,9 @@ test('in a browser, the chosen screen shows the logged-in app in a frame above i
             assert.equal(presses.length, 1);
 
             await p.click('#center tr:has-text("API")');
-            await p.click('#right .statuses button:has-text("없음")');
+            await p.click('#right .statuses button:has-text("테스트 필요")');
             await p.click('#right button.save');
-            await p.waitForSelector('#center tr.selected .chip.missing');
+            await p.waitForSelector('#center tr.selected .chip.needs-more');
             assert.equal(await frame.locator('#pressed').textContent(), 'pressed');
 
             const frameBox = (await p.locator('#center iframe.app').boundingBox())!;
@@ -358,9 +358,9 @@ test('in a browser, a screen with path variables opens filled with its fixed val
             await frame.locator('#press').click();
             await frame.locator('#pressed:has-text("pressed")').waitFor();
             await p.click('#center tr:has-text("API")');
-            await p.click('#right .statuses button:has-text("없음")');
+            await p.click('#right .statuses button:has-text("테스트 필요")');
             await p.click('#right button.save');
-            await p.waitForSelector('#center tr.selected .chip.missing');
+            await p.waitForSelector('#center tr.selected .chip.needs-more');
             assert.equal(await frame.locator('#pressed').textContent(), 'pressed');
 
             await bar.locator('input[name=id]').fill('43');
@@ -573,9 +573,9 @@ test('in a browser, a screen with an issuing API gets a new value each time it i
             await frame.locator('#press').click();
             await frame.locator('#pressed:has-text("pressed")').waitFor();
             await p.click('#center tr:has-text("API")');
-            await p.click('#right .statuses button:has-text("없음")');
+            await p.click('#right .statuses button:has-text("테스트 필요")');
             await p.click('#right button.save');
-            await p.waitForSelector('#center tr.selected .chip.missing');
+            await p.waitForSelector('#center tr.selected .chip.needs-more');
             assert.equal(await frame.locator('#pressed').textContent(), 'pressed');
             assert.equal(issued(), 1);
 

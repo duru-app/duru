@@ -10,7 +10,7 @@ PRD or changing the extractor's output shape.
    server does not have).
 2. Attach to each node the tests that cover it, their depth (UI/E2E, API, render-only, code, data,
    output — the content of what the app produces) and their status (pass, fail, pending).
-3. A person reviews the map and marks nodes or test cells: "needs more", "missing", "fine", with a note.
+3. A person reviews the map and marks nodes or test cells: "needs tests" or "fine", with a note.
 4. A coding agent (a Claude Code session) reads the marks, writes and runs the missing tests, and
    regenerates the map.
 
@@ -582,7 +582,7 @@ depth and option value, and a kind applies to the whole screen or call), and the
 (a pick is no judgment of the tests, and would take the place of the status the form records). The middle pane is
 the same in the list and beside the flow, so a pick works the same in both.
 A picked kind alone does not put a screen or call on the task list, as a role or setting case does not: the list
-is what a reviewer marked `needs-more` or `missing`. A `@case:` tag counts for its kind on every screen and call
+is what a reviewer marked `needs-more`. A `@case:` tag counts for its kind on every screen and call
 the test is tagged with, whether or not a reviewer has picked the kind there, because picks are only known when the
 review page and the task list read the marks; a tag whose kind is not in `caseKinds`, or on a test with no screen
 or call tag, is reported with the tags that point at nothing. Without `caseKinds` a `@case:` tag is not read at
@@ -2394,6 +2394,31 @@ Alternatives compared:
 - Putting list-built render routes on the map with `{?}` in the path, as `component=` routes built in a loop still
   are: not chosen for the reason above. `component=` and `element=` routes keep their screens, since taking them off
   would move IDs on maps already reviewed.
+
+**A reviewer's status is 「테스트 필요」 or 「충분」; a mark an older duru saved as `missing` reads as 「테스트 필요」.**
+Driver's decision in #343. 「없음」 and 「더 필요」 both meant that tests have to be written, and the only difference, whether
+any test exists, is what duru already counts and shows on the same row as 「테스트 없음」 or 「테스트 N」, so a row read
+「없음 | 테스트 없음」, saying it twice, or 「없음 | 테스트 3」, saying two things that disagree. The reviewer now gives a
+verdict and duru gives the count beside it. A new 「테스트 필요」 is saved under the name it had, `needs-more`, so an older
+duru reads the new files as open marks and going back is a plain revert. Old `missing` files are read as `needs-more`
+where the review page's data and the task list read the marks, not in the page, so the page, its filters and the
+task list know one status, and the task list prints `needs-more` for both. The server still accepts `missing` in a
+posted mark, since refusing it would only break a caller nothing in duru is; the page never sends it. 「충분」 can
+still be put on a screen or call with no tests: that is how a reviewer says it needs none.
+Reference cases: Jira Xray computes a requirement's coverage status, UNCOVERED and NOTRUN among them, from the linked
+tests and never lets a person pick it; TestRail and Zephyr compute coverage from links and let a person set only the
+scope and each test's own status; GitHub reviews and Gerrit keep a person's verdict (Approve or Request changes,
+Code-Review) beside the computed result (status checks, Verified) under another name, and no verdict value tells
+"none" from "too weak"; SonarQube's statuses that a person sets do not repeat what the tool computed, and keep an
+"accept as it is" verdict with its reason.
+Alternatives compared:
+- Saving the new status under a new name (`needs-tests`): the page looks the same, but code that reads old files as
+  the new name stays for good, and an older duru reading a new file drops that item from the task list without a word,
+  which makes going back hard.
+- Keeping three statuses under new names (「보강 필요 · 새로 필요 · 충분」): the repeated words go, but the reviewer still
+  picks between two buttons that mean the same thing, and none of the cases above does this.
+- Showing `missing` as 「테스트 필요」 in the page only: the page would compare the picked status with the saved one in
+  several places, each needing both names, and the task list would still print two words for one verdict.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

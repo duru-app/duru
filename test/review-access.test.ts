@@ -346,11 +346,11 @@ test('in a browser, opened link groups and opened long conditions stay open when
     }));
     const expected = { groups: [true, false, false, true], long: [true] };
     assert.deepEqual(await openState(), expected);
-    await p.click('#right .statuses button:has-text("더 필요")');
+    await p.click('#right .statuses button:has-text("테스트 필요")');
     assert.deepEqual(await openState(), expected);
     await p.fill('#right-dock textarea', 'redraw');
     await p.click('#right button.save');
-    await p.waitForSelector('#center tr.selected td.mark:has-text("더 필요")');
+    await p.waitForSelector('#center tr.selected td.mark:has-text("테스트 필요")');
     assert.deepEqual(await openState(), expected);
     await p.click('#screen-list li:has-text("/home")');
     await p.click('#screen-list li:has-text("/lab")');
