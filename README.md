@@ -749,9 +749,10 @@ screen, links out of it and settings it reads on its line. Opened, it says under
 the screen, then shows the tests of each role and setting case by depth under 「경우별 테스트」, the links into it
 with their guards, the conditions inside the screen, where its route and component are, the links out of it and the
 settings it reads. The links into it and out of it also list the moves written in `moves` as 「설정에 적은 이동」 with their
-reason. Once opened it stays open on other screens until it is closed. Choosing a call, in the table or from a link
-elsewhere, opens its details under the call table and scrolls the middle pane to them: where its option was found,
-the server match, its tests, untagged tests linked to it, where this screen calls it and the screens that use it.
+reason. Once opened it stays open on other screens until it is closed. Choosing a call, by its name or a count in
+the table or from a link elsewhere, opens its details under the call table and scrolls the middle pane to them: where
+its option was found, the server match, its tests, untagged tests linked to it, where this screen calls it and the
+screens that use it.
 With `caseKinds` set, 「경우별 테스트」 has a button per kind for every screen, and for a call in its details: pressing one
 makes the kind a case there, with its tests by depth, and pressing it again takes it out. Each press is listed under
 「전체」's 「변경 기록」, not in the conversation of the screen or call. A picked kind with values
