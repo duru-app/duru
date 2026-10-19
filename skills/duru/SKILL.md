@@ -59,8 +59,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   hold other routes only wraps them. A route whose element is `element={<Navigate to=… />}` is a redirect, not a
   screen. The redirect element names come from
   `redirectElements` in the config, default `Redirect` and `Navigate`; a config that lists them uses only the
-  names listed. Paths are read as written in each route, without the path of a parent route in front, so a
-  nested route written with a relative path shows on the map with that relative path.
+  names listed. A route file that another screen draws, whose paths start with the address that screen's route
+  matched (`${match.url}/…`, `useRouteMatch().path`), gets that screen's path in front; a nested route written with
+  a relative path shows on the map with that relative path.
 - API code whose methods find their address in a table, or get a prefix when the request is sent, is read through
   `calledApiModules` and `requestFunction`: duru calls each method with fake values and records the request it hands
   to the app's request function, or to `get`, `post`, `put`, `patch` and `delete` of the app's request object when

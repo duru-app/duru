@@ -100,6 +100,7 @@ interface RouteScreen {
   routeFile: string;
   routeGuards: string[];
   line: number;
+  startsWithOuterAddress: boolean;
 }
 
 const traverse = _traverse.default ?? _traverse;
@@ -1092,10 +1093,39 @@ export async function extractClient(config: any) {
           routeFile,
           routeGuards: guardsOf(p, src, note),
           line,
+          startsWithOuterAddress: routePath.startsWith(UNKNOWN) && readsMatchedRoute(leadingPiece(pathExpr)),
         });
       },
     });
     return screens;
+  }
+
+  const leadingPiece = (p: NodePath): NodePath => (p.isTemplateLiteral() && p.node.quasis[0].value.cooked === '' && p.node.expressions.length ? leadingPiece(p.get('expressions.0') as NodePath)
+    : p.isBinaryExpression({ operator: '+' }) ? leadingPiece(p.get('left')) : p);
+
+  // 바깥 라우트가 매치한 주소: match.url · props.match.path · useRouteMatch().url, 또는 거기서 꺼낸 url · path.
+  const MATCHED_ADDRESS = ['url', 'path'];
+  function readsMatchedRoute(p: NodePath): boolean {
+    if (p.isMemberExpression() && !p.node.computed) return MATCHED_ADDRESS.includes((p.node.property as Identifier).name) && isRouteMatch(p.get('object'));
+    if (!p.isIdentifier()) return false;
+    const binding = p.scope.getBinding(p.node.name);
+    if (!binding) return false;
+    const property = (pattern: Node | null | undefined, keys: string[]) => (pattern?.type === 'ObjectPattern'
+      ? pattern.properties.find((x): x is ObjectProperty => x.type === 'ObjectProperty' && keys.includes(keyName(x)))
+      : undefined);
+    const taken = (pattern: Node | null | undefined) => property(pattern, MATCHED_ADDRESS)?.value === binding.identifier;
+    const takenFromMatch = (pattern: Node | null | undefined) => taken(property(pattern, ['match'])?.value);
+    if (binding.path.isVariableDeclarator() && binding.path.get('id').isIdentifier()) return binding.kind === 'const' && readsMatchedRoute(binding.path.get('init') as NodePath);
+    if (binding.path.isVariableDeclarator()) return takenFromMatch(binding.path.node.id) || (taken(binding.path.node.id) && isRouteMatch(binding.path.get('init') as NodePath));
+    return binding.kind === 'param' && binding.path.isObjectPattern() && takenFromMatch(binding.path.node);
+  }
+
+  function isRouteMatch(p: NodePath): boolean {
+    if (p.isCallExpression()) return p.get('callee').isIdentifier({ name: 'useRouteMatch' }) && !p.node.arguments.length;
+    if (p.isMemberExpression() && !p.node.computed) return (p.node.property as Identifier).name === 'match';
+    if (!p.isIdentifier({ name: 'match' })) return false;
+    const binding = p.scope.getBinding('match');
+    return !binding?.path.isVariableDeclarator() || !binding.path.get('id').isIdentifier() || isRouteMatch(binding.path.get('init') as NodePath);
   }
 
   function holdsRoutes(route: NodePath<JSXElement>) {
@@ -1256,6 +1286,49 @@ export async function extractClient(config: any) {
     return withFiles(page, files);
   }
 
+  function fillOuterAddresses(sourced: { s: { path: string; routeFile: string; line: number }; startsWithOuterAddress: boolean; files: string[] }[]) {
+    const holds = sourced.map((x) => new Set(x.files));
+    const routeFileOf = (i: number) => path.join(config.srcRoot, sourced[i].s.routeFile);
+    const outersOf = (i: number) => {
+      const around = sourced.flatMap((x, j) => (x.s.routeFile !== sourced[i].s.routeFile && holds[j].has(routeFileOf(i)) ? [j] : []));
+      return around.filter((j) => !around.some((k) => sourced[k].s.routeFile !== sourced[j].s.routeFile && holds[j].has(routeFileOf(k))));
+    };
+    const filled = new Map<number, string>();
+    const filling = new Set<number>();
+    const addressOf = (i: number): string => {
+      const { s, startsWithOuterAddress } = sourced[i];
+      if (!startsWithOuterAddress || filling.has(i)) return s.path;
+      if (!filled.has(i)) {
+        filling.add(i);
+        const outer = joinedPaths([...new Set(outersOf(i).map(addressOf))]);
+        filling.delete(i);
+        filled.set(i, outer === null ? s.path : outer.replace(/\/$/, '') + s.path.slice(UNKNOWN.length) || '/');
+      }
+      return filled.get(i)!;
+    };
+    sourced.forEach((x, i) => {
+      const address = addressOf(i);
+      if (address === x.s.path) return;
+      const at = unreadRoutePaths.findIndex((u) => u.file === x.s.routeFile && u.line === x.s.line);
+      if (address.includes(UNKNOWN)) unreadRoutePaths[at].path = address;
+      else unreadRoutePaths.splice(at, 1);
+      x.s.path = address;
+    });
+  }
+
+  function joinedPaths(paths: string[]) {
+    if (!paths.length || paths.some((p) => p.includes(UNKNOWN))) return null;
+    if (paths.length === 1) return paths[0];
+    const split = paths.map((p) => p.split('/'));
+    if (split.some((parts) => parts.length !== split[0].length)) return null;
+    const differ = split[0].flatMap((_, at) => (split.some((parts) => parts[at] !== split[0][at]) ? [at] : []));
+    const words = split.map((parts) => parts[differ[0]]);
+    if (differ.length !== 1 || !words.every((w) => /^[\w-]+$/.test(w))) return null;
+    let name = 'section';
+    for (let n = 2; paths.some((p) => new RegExp(`:${name}\\b`).test(p)); n++) name = `section${n}`;
+    return split[0].map((part, at) => (at === differ[0] ? `:${name}(${words.join('|')})` : part)).join('/');
+  }
+
   // ---------- 화면마다 모으기 ----------
 
   const apiFunctions: Record<string, any> = {};
@@ -1269,8 +1342,14 @@ export async function extractClient(config: any) {
   if (!config.routeFiles.length) throw new Error(`the config has no routesFile, which takes ${ROUTES_FILE}`);
   const extracted = (config.routeFiles as string[]).flatMap(extractScreens);
   const screenFiles = new Set(extracted.map((s) => s.componentFile).filter(Boolean));
+  const sourced = extracted.map(({ wrapperFiles, startsWithOuterAddress, ...s }) => {
+    const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
+    const isOtherScreen = (f: string) => screenFiles.has(f) && !entryFiles.includes(f);
+    return { s, startsWithOuterAddress, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))] };
+  });
+  fillOuterAddresses(sourced);
   // POST 가 아닌 페이지 이동의 주소가 앱의 라우트와 맞으면 서버가 아니라 앱의 다른 화면이 열린다. 고정 문자열 부분이 없는 라우트는 어떤 주소에나 맞으므로 견주지 않는다.
-  const screenRoutes = extracted.filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
+  const screenRoutes = sourced.map((x) => x.s).filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
   const opensScreen = (url: string) => screenRoutes.some((route) => route.test(url.replaceAll(UNKNOWN, '\0').split(/[?#]/)[0]));
   const isApiCall = (site: FollowedSite): site is ApiCallSite => 'fn' in site;
   const sends = (c: ApiCallSite, outsideRequestFunction: Set<FollowedSite>) => !c.request || (outsideRequestFunction.has(c) && !(c.navigation && c.request.method !== 'POST' && opensScreen(c.request.url!)));
@@ -1304,11 +1383,6 @@ export async function extractClient(config: any) {
     return handled.get(key)!;
   };
 
-  const sourced = extracted.map(({ wrapperFiles, ...s }) => {
-    const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
-    const isOtherScreen = (f: string) => screenFiles.has(f) && !entryFiles.includes(f);
-    return { s, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))] };
-  });
   const members = typedMembers(config.tsconfig, [...new Set(sourced.flatMap((x) => x.files))], imports.resolve);
   const screenFollower = members ? nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf, members }) : follower;
   const screens = sourced.map(({ s, entryFiles, isOtherScreen, files }) => {

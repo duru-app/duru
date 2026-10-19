@@ -60,10 +60,10 @@ client with example results and a config to start from.
   the route paths (`"Option.ROUTE_PATH"`). A route with a `path` gives a screen when duru can read which component
   it draws. When duru sees a route that draws a screen it cannot read, it prints a `route not read` line saying why
   (see "What extract and rebuild print").
-  `element={<Navigate to=… />}` is a redirect, not a screen. A route without `path` gives no screen, and the path
-  of a parent route is not put in front of it. `routeConstant` and `constants` may be left out, or set to `null`
-  (`routeConstant` also to `""`), for an app that has no table of its route paths. A `routeConstant` that is not a
-  dotted name, or whose first name is not in `constants`, stops the run with an error.
+  `element={<Navigate to=… />}` is a redirect, not a screen. A route without `path` gives no screen.
+  `routeConstant` and `constants` may be left out, or set to `null` (`routeConstant` also to `""`), for an app that
+  has no table of its route paths. A `routeConstant` that is not a dotted name, or whose first name is not in
+  `constants`, stops the run with an error.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
