@@ -255,7 +255,11 @@ export function loadConfig(configPath: string) {
   if (!Array.isArray(calledApiModules) || !calledApiModules.every(isText) || new Set(calledApiModules).size < calledApiModules.length) {
     throw new Error(`calledApiModules must be a list of files exporting API objects or API functions, as paths from srcRoot with each file once, such as ["api/index.ts"], not ${JSON.stringify(raw.calledApiModules)}`);
   }
-  const twice = calledApiModules.find((f) => (raw.apiModules ?? []).includes(f));
+  const apiModules = raw.apiModules ?? [];
+  if (!Array.isArray(apiModules) || !apiModules.every(isText)) {
+    throw new Error(`apiModules must be a list of files that export the app's API functions, as paths from srcRoot, such as ["_ajax/AjaxFunc.js"], not ${JSON.stringify(raw.apiModules)}`);
+  }
+  const twice = calledApiModules.find((f) => apiModules.includes(f));
   if (twice) throw new Error(`${twice} is in both apiModules and calledApiModules; list it in one of them`);
   const requestFunction = raw.requestFunction ?? null;
   const { import: from, name, method, url, body, object, ...extraKeys } = isPlainObject(requestFunction) ? requestFunction : {};
@@ -303,6 +307,7 @@ export function loadConfig(configPath: string) {
     roleIdentifiers: raw.roleIdentifiers ?? [],
     caseKinds,
     roleGuards: Object.fromEntries(Object.entries<any>(roleGuards).map(([guard, roles]) => [guard, [...new Set(roles)].sort()])),
+    apiModules,
     calledApiModules,
     requestFunction,
     bodyArgKeys,
