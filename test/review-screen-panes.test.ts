@@ -222,7 +222,56 @@ test('in a browser, choosing a call shows its details open under the call table 
     ),
   );
 });
-const scrollRightToBottom = (p: Page) => p.locator('#right-info').evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
+
+test('in a browser, pressing a call name in the call table, or Enter on it, chooses the call and opens its details as its 「전체」 cell does, while option rows and rows with no call node stay unpressable', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:id")');
+        const callRow = (id: string) => p.locator('table.calls tbody tr:not(.option)', { hasText: id });
+        const name = (id: string) => callRow(id).locator('td.call');
+        const cursor = (cell: Locator) => cell.evaluate((e) => getComputedStyle(e).cursor);
+        const head = p.locator('#center .call-info > summary .target-id');
+        const RENAME = 'PUT:/api/v1/document/{documentId}/name';
+        const READ = 'GET:/api/v1/document/{documentId}';
+
+        assert.equal(await p.locator('#center .call-info').count(), 0);
+        assert.equal(await cursor(name(RENAME)), 'pointer');
+        await name(RENAME).click();
+        assert.equal(await p.locator('#center .call-info').evaluate((e: HTMLDetailsElement) => e.open), true);
+        assert.equal(await head.locator('.mono').textContent(), RENAME);
+        assert.match(await head.innerText(), /호출 전체$/);
+        assert.equal(await p.textContent('#right .mark-form .tags .tag-label'), '호출 전체');
+        assert.match((await callRow(RENAME).locator('td.cell').first().getAttribute('class'))!, /\bselected\b/);
+
+        await name(READ).getByRole('button', { name: READ }).focus();
+        await p.keyboard.press('Enter');
+        assert.equal(await head.locator('.mono').textContent(), READ);
+        assert.match((await callRow(READ).locator('td.cell').first().getAttribute('class'))!, /\bselected\b/);
+        assert.equal(await p.evaluate(() => document.activeElement?.textContent), READ);
+        await callRow(READ).locator('td.cell').nth(2).click();
+        assert.match(await head.innerText(), / 깊이$/);
+
+        await p.click('#screen-list li:has-text("/admin/report")');
+        const option = p.locator('table.calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.call');
+        assert.equal(await cursor(option), 'default');
+        assert.equal(await option.getByRole('button').count(), 0);
+        await option.click();
+        assert.equal(await p.locator('#center .call-info').count(), 0);
+
+        await p.click('#screen-list li:has-text("/document/:tab")');
+        const noNode = p.locator('table.calls tr:has-text("판정 불가") td.call');
+        assert.equal(await cursor(noNode), 'default');
+        assert.equal(await noNode.getByRole('button').count(), 0);
+        await noNode.click();
+        assert.equal(await p.locator('table.calls .selected').count(), 0);
+      }),
+    ),
+  );
+});
+
+const scrollRightToBottom =(p: Page) => p.locator('#right-info').evaluate((el) => { el.scrollTop = el.scrollHeight; return el.scrollTop; });
 const scrollRightTo = (p: Page, top: number) => p.locator('#right-info').evaluate((el, y) => { el.scrollTop = y; return el.scrollTop; }, top);
 const rightScroll = (p: Page) => p.locator('#right-info').evaluate((el) => el.scrollTop);
 

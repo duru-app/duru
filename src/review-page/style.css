@@ -117,6 +117,9 @@
   table.calls td.cell.selected { background: var(--selected); box-shadow: inset 0 0 0 1.5px var(--accent); }
   table.calls td.cell .chip { margin-top: 2px; }
   table.calls td.call { overflow-wrap: anywhere; }
+  table.calls td.call.pick { cursor: pointer; }
+  table.calls td.call.pick:hover { background: var(--selected); }
+  table.calls button.call-name { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
   table.calls tr.option td { padding-top: 4px; padding-bottom: 4px; }
   table.calls tr.option td.call { padding-left: 24px; font-size: 12px; }
   table.calls tr.option td.call .chip { margin-left: 6px; }

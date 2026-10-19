@@ -170,6 +170,13 @@ function resultOptionRows(call, depths) {
   });
 }
 
+function pickCall(id) {
+  selectTarget({ node: id });
+  if (document.activeElement !== document.body) return;
+  const names = /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('table.calls button.call-name'));
+  [...names].find((b) => b.textContent === id)?.focus({ preventScroll: true });
+}
+
 const compareGap = () => (state.data.baseline ? h('td', { class: 'compare' }) : null);
 
 function removedCallRows(s, depths) {
@@ -202,7 +209,8 @@ function callTable(s) {
         const tests = testsOf(r.call.id);
         const sent = passedOf(r.call.id).length;
         return [h('tr', {},
-          h('td', { class: 'call' }, h('div', { class: 'mono' }, r.call.id), verdictChip(r.call.server),
+          h('td', { class: 'call pick', onclick: () => pickCall(r.call.id) },
+            h('div', { class: 'mono' }, h('button', { type: 'button', class: 'call-name', title: '이 호출을 고르고 호출 정보를 엽니다' }, r.call.id)), verdictChip(r.call.server),
             sent ? h('span', { class: 'sent-count', title: '이 호출의 태그 없이, 도는 동안 이 호출을 보낸 브라우저 테스트' }, `호출함 ${sent}`) : null),
           cell({ node: r.call.id }, tests),
           depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d))),
