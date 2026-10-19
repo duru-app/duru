@@ -2,10 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { Locator } from 'playwright-core';
 import { loadMarks } from '../src/marks.ts';
-import { CLI, withRebuiltFixture, withServer, postMark, CASE_KINDS, rewrite, rebuild, browserMissing, withPage, openScreenInfo, openLinkGroups, LONG_GUARD, IN_SCREEN_GUARD, labLink, withLabLinks, screenBox, pickedBoxes, tipLines, needTag } from './review-helpers.ts';
+import type { AnnouncedMark } from '../src/review.ts';
+import { startReviewServer } from '../src/review.ts';
+import { CLI, withRebuiltFixture, withServer, postMark, CASE_KINDS, signer, rewrite, rebuild, browserMissing, withPage, openScreenInfo, openLinkGroups, LONG_GUARD, IN_SCREEN_GUARD, labLink, withLabLinks, screenBox, pickedBoxes, tipLines, needTag } from './review-helpers.ts';
 
 const BOUNDARY_ON_SIGNIN: [string, string, string] = ['results/playwright/e2e.json', '"screen:/signin#SignIn",\n            "screen:/help#Help"', '"screen:/signin#SignIn",\n            "screen:/help#Help",\n            "case:boundary"'];
 type CaseData = { caseKinds: Record<string, { text: string; values: string[] }>; map: { screens: { id: string; cases: { tag: string; kind: string }[] }[]; calls: { id: string; cases: { tag: string; kind: string }[] }[] } };
@@ -16,7 +19,7 @@ test('the data carries the configured case kinds, and the kinds picked for a scr
     withServer(config, 'reviewer', async (base) => {
       const data = async (): Promise<CaseData> => (await fetch(`${base}/api/data`)).json();
       const before = casesIn(await data());
-      assert.deepEqual((await data()).caseKinds, { boundary: { text: CASE_KINDS.boundary, values: [] }, legacy: { text: CASE_KINDS.legacy, values: [] } });
+      assert.deepEqual((await data()).caseKinds, { boundary: { text: CASE_KINDS.boundary, values: [], picks: [] }, legacy: { text: CASE_KINDS.legacy, values: [], picks: [] } });
       for (const [node, kind] of [['/admin/member#AdminMember', 'legacy'], ['/admin/member#AdminMember', 'boundary'], ['GET:/api/v1/document/list', 'legacy'], ['/signin#SignIn', 'legacy']]) {
         assert.equal((await postMark(base, { target: { node, case: kind }, status: 'needed' })).status, 201);
       }
@@ -37,6 +40,81 @@ test('the data carries the configured case kinds, and the kinds picked for a scr
       assert.ok(data.map.calls.every((c) => c.cases.length === 0));
     }),
   );
+});
+
+const RULED = {
+  boundary: CASE_KINDS.boundary,
+  ended: { text: '끝난 문서: 끝난 뒤의 쓰기 요청은 거부된다', values: ['cancelled', 'rejected'], picks: [{ screen: '/document/**', methods: ['POST', 'PUT'] }] },
+  legacy: { text: CASE_KINDS.legacy, picks: [{ screen: '/admin/*' }] },
+};
+const RULE_ENDED = { index: 0, pick: RULED.ended.picks[0] };
+type TargetData = { caseTargets: Record<string, { nodes: Record<string, { state: string; rules: number[]; mark: { author: string; note: string; rule?: object } | null }>; unused: Record<string, object> }> };
+
+test('the data carries the kinds a rule picks for a screen or call as its cases with the rule that picked each, and a later mark wins over the rule', async () => {
+  await withRebuiltFixture({ caseKinds: RULED }, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const data = async (): Promise<CaseData & TargetData> => (await fetch(`${base}/api/data`)).json();
+      const before = await data();
+      const cases = (d: CaseData): Record<string, string[]> => Object.fromEntries(casesIn(d));
+      const ruled = Object.entries(cases(before)).filter(([, tags]) => tags.some((t) => t.startsWith('case:'))).map(([id, tags]) => [id, tags.filter((t) => t.startsWith('case:'))]);
+      assert.deepEqual(ruled, [
+        ['/admin/member#AdminMember', ['case:legacy']],
+        ['/admin/group#AdminGroup', ['case:legacy']],
+        ['/admin/audit#AdminAudit', ['case:legacy']],
+        ['/admin/report#AdminReport', ['case:legacy']],
+        ['POST:/api/v1/archive/document', ['case:ended']],
+        [RENAME, ['case:ended']],
+      ]);
+      assert.deepEqual(cases(before)['/admin/member#AdminMember'], ['role:ADMIN', 'role:other', 'case:legacy']);
+      assert.deepEqual(before.caseTargets.ended.nodes[RENAME], { state: 'rule', rules: [0], mark: null });
+      assert.deepEqual(before.caseTargets.legacy.nodes['/admin/group#AdminGroup'], { state: 'rule', rules: [0], mark: null });
+
+      assert.equal((await postMark(base, { target: { node: RENAME, case: 'ended' }, status: 'not-needed', note: '이름은 끝난 문서에서도 막지 않는다' })).status, 201);
+      assert.equal((await postMark(base, { target: { node: '/admin/group#AdminGroup', case: 'boundary' }, status: 'needed' })).status, 201);
+      const out = await data();
+      assert.deepEqual(cases(out)[RENAME], undefined);
+      assert.deepEqual(cases(out)['/admin/group#AdminGroup'], ['role:ADMIN', 'role:other', 'case:boundary', 'case:legacy']);
+      const { state, rules, mark } = out.caseTargets.ended.nodes[RENAME];
+      assert.deepEqual([state, rules, mark?.author, mark?.note, mark?.rule], ['not-needed', [0], 'reviewer', '이름은 끝난 문서에서도 막지 않는다', RULE_ENDED]);
+
+      assert.equal((await postMark(base, { target: { node: RENAME, case: 'ended' }, status: 'needed' })).status, 201);
+      const back = await data();
+      assert.deepEqual(cases(back)[RENAME], ['case:ended']);
+      assert.deepEqual([back.caseTargets.ended.nodes[RENAME].state, back.caseTargets.ended.nodes[RENAME].mark?.author], ['needed', 'reviewer']);
+    }),
+  );
+});
+
+test('a not-needed pick without a reason is refused on a screen or call a rule picks and saved with one, naming the rule in the file and in the mark line; elsewhere it needs no reason as before', async () => {
+  await withRebuiltFixture({ caseKinds: RULED }, async (config) => {
+    const lines: AnnouncedMark[] = [];
+    const server = await startReviewServer(config, { author: signer('reviewer'), onMark: (line) => lines.push(line) });
+    try {
+      const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const refused = await postMark(base, { target: { node: RENAME, case: 'ended' }, status: 'not-needed' });
+      assert.equal(refused.status, 400);
+      assert.equal(await refused.text(), `a rule picks ${RENAME} for ended (caseKinds.ended.picks[0]), so taking it out needs a note saying why`);
+      assert.equal((await postMark(base, { target: { node: '/admin/member#AdminMember', case: 'legacy' }, status: 'not-needed', note: ' ' })).status, 400);
+      assert.equal(loadMarks(config.marksDir).length, 0);
+
+      const saved = await postMark(base, { target: { node: RENAME, case: 'ended' }, status: 'not-needed', note: '이름은 막지 않는다' });
+      assert.equal(saved.status, 201);
+      assert.deepEqual((await saved.json()).rule, RULE_ENDED);
+      for (const [node, kind] of [['GET:/api/v1/document/list', 'ended'], ['/signin#SignIn', 'boundary'], ['/signin#SignIn', 'gone']]) {
+        assert.equal((await postMark(base, { target: { node, case: kind }, status: 'not-needed', rule: RULE_ENDED })).status, 201);
+      }
+      const files = loadMarks(config.marksDir).sort((a, b) => a.date.localeCompare(b.date)).map((m) => [m.target!.node, m.target!.case, m.note, m.rule ?? null]);
+      assert.deepEqual(files, [
+        [RENAME, 'ended', '이름은 막지 않는다', RULE_ENDED],
+        ['GET:/api/v1/document/list', 'ended', '', null],
+        ['/signin#SignIn', 'boundary', '', null],
+        ['/signin#SignIn', 'gone', '', null],
+      ]);
+      assert.deepEqual(lines.map((l) => [l.duru, l.target?.node, l.rule ?? null]), files.map(([node, , , rule]) => ['mark', node, rule]));
+    } finally {
+      server.close();
+    }
+  });
 });
 
 test('in a browser, with case kinds in the config every screen and every call shows a button per kind, and pressing one makes it a case with its tests until pressed again', { skip: browserMissing }, async () => {
