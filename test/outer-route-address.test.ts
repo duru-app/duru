@@ -95,7 +95,7 @@ const OUTER_ROUTES = [
   '<Route path="/settings" component={Settings} />',
 ];
 
-async function withOuterRoutes<T>(fn: (copy: { configFile: string; src: string }) => T | Promise<T>, outerRoutes = OUTER_ROUTES): Promise<T> {
+async function withOuterRoutes<T>(fn: (copy: { configFile: string; src: string }) => T | Promise<T>, outerRoutes = OUTER_ROUTES, backstageRoutes = ''): Promise<T> {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
@@ -104,7 +104,7 @@ async function withOuterRoutes<T>(fn: (copy: { configFile: string; src: string }
     const imports = ['Backstage', 'Claim', 'Mfa', 'Settings'].map((name) => `import ${name} from './outer/${name}';\n`).join('');
     fs.writeFileSync(routes, imports + fs.readFileSync(routes, 'utf8').replace(LAST_ROUTE, [...outerRoutes.map((r) => `      ${r}`), LAST_ROUTE].join('\n')));
     fs.mkdirSync(path.join(src, 'outer'));
-    for (const [file, text] of Object.entries(INNER)) fs.writeFileSync(path.join(src, file), text);
+    for (const [file, text] of Object.entries(INNER)) fs.writeFileSync(path.join(src, file), file === 'outer/Backstage.js' ? text.replace('    </Switch>', `${backstageRoutes}    </Switch>`) : text);
     for (const name of PAGES) fs.writeFileSync(path.join(src, `outer/${name}.js`), page(name));
     const configFile = path.join(copy, 'config.json');
     fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), routesFile: ['Routes.js', ...ROUTE_FILES] }));
@@ -162,4 +162,31 @@ test('a route file no listed screen draws keeps the address of its outer route u
     assert.deepEqual(innerScreens(map).find(([, id]) => id.endsWith('#MfaSetup')), ['{?}/setup', '{?}/setup#MfaSetup']);
     assert.ok(map.unreadRoutePaths!.some((u) => u.file === 'outer/Mfa.js' && u.stoppedAt.text === 'url'));
   }, OUTER_ROUTES.filter((r) => !r.includes('Mfa')));
+});
+
+const backstageEntries = (map: ScreenMap) => (map.unreadRoutePaths ?? []).filter((u) => u.file === 'outer/Backstage.js').map((u) => [u.path, u.stoppedAt.text]);
+
+test('a filled path that still holds an unread piece is reported with the outer path in front, stopped at that piece', async () => {
+  const route = '      <Route path={`${props.match.url}/${props.tab}/edit`} component={Bots} />\n';
+  await withOuterRoutes(async ({ configFile }) => {
+    const map = await build(configFile);
+    assert.deepEqual(backstageEntries(map), [['/:team/:section(integrations|emoji)/{?}/edit', 'props.tab']]);
+  }, OUTER_ROUTES, route);
+});
+
+test('two routes on one line keep the report of the one whose path is still unread', async () => {
+  const routes = '      <Route path={`${props.match.url}/${props.tab}/edit`} component={Bots} /><Route path={`${props.match.url}/hooks`} component={Confirm} />\n';
+  await withOuterRoutes(async ({ configFile }) => {
+    const map = await build(configFile);
+    assert.deepEqual(backstageEntries(map).map(([p]) => p), ['/:team/:section(integrations|emoji)/{?}/edit']);
+    assert.ok(map.screens.some((s) => s.path === '/:team/:section(integrations|emoji)/hooks'));
+  }, OUTER_ROUTES, routes);
+});
+
+test('the variable that joins two outer paths takes a name the inner path does not use', async () => {
+  const route = '      <Route path={`${props.match.url}/:section/edit`} component={Bots} />\n';
+  await withOuterRoutes(async ({ configFile }) => {
+    const map = await build(configFile);
+    assert.ok(map.screens.some((s) => s.path === '/:team/:section2(integrations|emoji)/:section/edit'), JSON.stringify(map.screens.map((s) => s.path)));
+  }, OUTER_ROUTES, route);
 });

@@ -100,7 +100,15 @@ interface RouteScreen {
   routeFile: string;
   routeGuards: string[];
   line: number;
+  outerFill: OuterFill;
+}
+
+type StoppedAt = { text: string; file: string | null; line: number };
+type UnreadRoutePath = { file: string; line: number; path: string; stoppedAt: StoppedAt };
+
+interface OuterFill {
   startsWithOuterAddress: boolean;
+  unreadPath: { entry: UnreadRoutePath; restStoppedAt: StoppedAt | null } | null;
 }
 
 const traverse = _traverse.default ?? _traverse;
@@ -1005,21 +1013,26 @@ export async function extractClient(config: any) {
   // ---------- 라우트 파일: 화면 목록과 화면에 걸린 조건 ----------
 
   const redirects: { to: string; file: string; line: number; guards: string[] }[] = [];
-  const unreadRoutePaths: { file: string; line: number; path: string; stoppedAt: { text: string; file: string | null; line: number } }[] = [];
+  const unreadRoutePaths: UnreadRoutePath[] = [];
   const unreadRoutes: { file: string; line: number; reason: string }[] = [];
   const readWhole = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && !v.includes(UNKNOWN));
 
-  function unreadPiece(p: NodePath, seen = new Set<Node>()): NodePath {
+  // filled 말고 읽지 못한 부분이 없으면 null 이다.
+  function unreadPiece(p: NodePath, seen = new Set<Node>(), filled: Node | null = null): NodePath | null {
+    if (p.node === filled) return null;
     const pieces = p.isTemplateLiteral() ? (p.get('expressions') as NodePath[]) : p.isBinaryExpression({ operator: '+' }) ? [p.get('left'), p.get('right')] : null;
     if (pieces) {
-      const unread = pieces.find((x) => !readWhole(evaluate(x)));
-      return unread ? unreadPiece(unread, seen) : p;
+      for (const x of pieces) {
+        const found = !readWhole(evaluate(x)) && unreadPiece(x, seen, filled);
+        if (found) return found;
+      }
+      return filled ? null : p;
     }
     const chain = p.isIdentifier() || p.isMemberExpression() ? memberChain(p.node) : null;
     const value = chain?.length === 1 ? declaredValue(p.scope, chain[0]) : chain?.length === 2 ? namespaceMember(p.scope, chain) : null;
     if (!value || seen.has(value.node)) return p;
     seen.add(value.node);
-    return unreadPiece(value, seen);
+    return unreadPiece(value, seen, filled) ?? p;
   }
 
   function stopOf(p: NodePath) {
@@ -1080,10 +1093,14 @@ export async function extractClient(config: any) {
         const pathExpr = (pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten) as NodePath;
         const pathValue = evaluate(pathExpr);
         const routePath = typeof pathValue === 'string' ? pathValue : UNKNOWN;
+        let unreadPath: OuterFill['unreadPath'] = null;
+        const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
         if (routePath.includes(UNKNOWN)) {
-          const stoppedAt = stopOf(unreadPiece(pathExpr));
+          const stoppedAt = stopOf(unreadPiece(pathExpr)!);
           if (drawnInFunctionOrChildren && madeInLoop(p)) return unread(`made for each item of a list, and its path stopped at ${stoppedAt.text}`);
-          unreadRoutePaths.push({ file: routeFile, line, path: routePath, stoppedAt });
+          const rest = outerAddress && unreadPiece(pathExpr, new Set(), outerAddress.node);
+          unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt }, restStoppedAt: rest ? stopOf(rest) : null };
+          unreadRoutePaths.push(unreadPath.entry);
         }
         screens.push({
           path: routePath,
@@ -1093,7 +1110,7 @@ export async function extractClient(config: any) {
           routeFile,
           routeGuards: guardsOf(p, src, note),
           line,
-          startsWithOuterAddress: routePath.startsWith(UNKNOWN) && readsMatchedRoute(leadingPiece(pathExpr)),
+          outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
         });
       },
     });
@@ -1286,7 +1303,7 @@ export async function extractClient(config: any) {
     return withFiles(page, files);
   }
 
-  function fillOuterAddresses(sourced: { s: { path: string; routeFile: string; line: number }; startsWithOuterAddress: boolean; files: string[] }[]) {
+  function fillOuterAddresses(sourced: { s: { path: string; routeFile: string }; outerFill: OuterFill; files: string[] }[]) {
     const holds = sourced.map((x) => new Set(x.files));
     const routeFileOf = (i: number) => path.join(config.srcRoot, sourced[i].s.routeFile);
     const outersOf = (i: number) => {
@@ -1296,27 +1313,29 @@ export async function extractClient(config: any) {
     const filled = new Map<number, string>();
     const filling = new Set<number>();
     const addressOf = (i: number): string => {
-      const { s, startsWithOuterAddress } = sourced[i];
-      if (!startsWithOuterAddress || filling.has(i)) return s.path;
+      const { s, outerFill } = sourced[i];
+      if (!outerFill.startsWithOuterAddress || filling.has(i)) return s.path;
       if (!filled.has(i)) {
         filling.add(i);
-        const outer = joinedPaths([...new Set(outersOf(i).map(addressOf))]);
+        const rest = s.path.slice(UNKNOWN.length);
+        const outer = joinedPaths([...new Set(outersOf(i).map(addressOf))], rest);
         filling.delete(i);
-        filled.set(i, outer === null ? s.path : outer.replace(/\/$/, '') + s.path.slice(UNKNOWN.length) || '/');
+        filled.set(i, outer === null ? s.path : outer.replace(/\/$/, '') + rest || '/');
       }
       return filled.get(i)!;
     };
     sourced.forEach((x, i) => {
       const address = addressOf(i);
+      const { unreadPath } = x.outerFill;
       if (address === x.s.path) return;
-      const at = unreadRoutePaths.findIndex((u) => u.file === x.s.routeFile && u.line === x.s.line);
-      if (address.includes(UNKNOWN)) unreadRoutePaths[at].path = address;
-      else unreadRoutePaths.splice(at, 1);
       x.s.path = address;
+      if (!unreadPath) return;
+      if (address.includes(UNKNOWN)) Object.assign(unreadPath.entry, { path: address, stoppedAt: unreadPath.restStoppedAt ?? unreadPath.entry.stoppedAt });
+      else unreadRoutePaths.splice(unreadRoutePaths.indexOf(unreadPath.entry), 1);
     });
   }
 
-  function joinedPaths(paths: string[]) {
+  function joinedPaths(paths: string[], rest: string) {
     if (!paths.length || paths.some((p) => p.includes(UNKNOWN))) return null;
     if (paths.length === 1) return paths[0];
     const split = paths.map((p) => p.split('/'));
@@ -1325,7 +1344,7 @@ export async function extractClient(config: any) {
     const words = split.map((parts) => parts[differ[0]]);
     if (differ.length !== 1 || !words.every((w) => /^[\w-]+$/.test(w))) return null;
     let name = 'section';
-    for (let n = 2; paths.some((p) => new RegExp(`:${name}\\b`).test(p)); n++) name = `section${n}`;
+    for (let n = 2; [...paths, rest].some((p) => new RegExp(`:${name}\\b`).test(p)); n++) name = `section${n}`;
     return split[0].map((part, at) => (at === differ[0] ? `:${name}(${words.join('|')})` : part)).join('/');
   }
 
@@ -1342,10 +1361,10 @@ export async function extractClient(config: any) {
   if (!config.routeFiles.length) throw new Error(`the config has no routesFile, which takes ${ROUTES_FILE}`);
   const extracted = (config.routeFiles as string[]).flatMap(extractScreens);
   const screenFiles = new Set(extracted.map((s) => s.componentFile).filter(Boolean));
-  const sourced = extracted.map(({ wrapperFiles, startsWithOuterAddress, ...s }) => {
+  const sourced = extracted.map(({ wrapperFiles, outerFill, ...s }) => {
     const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
     const isOtherScreen = (f: string) => screenFiles.has(f) && !entryFiles.includes(f);
-    return { s, startsWithOuterAddress, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))] };
+    return { s, outerFill, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))] };
   });
   fillOuterAddresses(sourced);
   // POST 가 아닌 페이지 이동의 주소가 앱의 라우트와 맞으면 서버가 아니라 앱의 다른 화면이 열린다. 고정 문자열 부분이 없는 라우트는 어떤 주소에나 맞으므로 견주지 않는다.
