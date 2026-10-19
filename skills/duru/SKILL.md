@@ -137,6 +137,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    says under its intro that the comparison was skipped, and a task-list line `server: not checked` means the same; it does not mean the
    endpoint is missing, so do not write a test or a fix for a missing endpoint from it. Tell the user the list
    is missing.
+   When it prints a line `caseKinds <kind> picks[<i>] matches no screen` (or `no call`), that rule of the kind
+   picks nothing on this map, most likely a typo in its pattern or method; tell the user, with the rule as printed.
    When it prints lines starting with `tsconfig import`, each names an import that matches an alias of the
    `tsconfig` file whose targets are inside the client source but finds no file, with the number of files that write it: the alias or the import is wrong, or
    the file is missing. Tell the user, because the screens that use those files miss what they would reach.
@@ -182,7 +184,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `"reply"` line with `replyTo` set to the comment's `id`; it asks for nothing. A mark with `needs-more` or
    `missing` will be in the task list, and you may start on it now. A
    target can also carry a `depth` or an `option` of a call, and a mark whose target has a `case` (status `needed`
-   or `not-needed`) or whose status is `fine` asks for nothing by itself.
+   or `not-needed`) or whose status is `fine` asks for nothing by itself. A `not-needed` case mark that also carries
+   `rule`, `{ "index", "pick" }`, took that screen or call out of the rule at that place in the kind's `picks`
+   (counted from 0, `pick` as the rule was written); its `note` says why, and no test of that kind is wanted there.
    A comment can also be about one part of a screen or call, named in `target.part` as `{ "kind", "key" }`. Such a
    line carries `where`, saying where that part is now, or `null` when it is no longer found or `tests.json` (for a
    test) or `map.json` could not be read at that moment (a `rebuild` was writing it), so check the task list before taking it as gone; a reply to the comment
@@ -273,7 +277,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    its title names that role, since the tag does not; `@setting:<path>=true` meets that setting condition and
    checks the screen opens, `=false` breaks it and checks the screen stays shut. A tag that is not one of the
    screen's cases does not attach and `rebuild` prints it as `unknown`.
-   A screen or call can also list under `cases` a kind of case a reviewer picked for it, written `@case:<kind>`
+   A screen or call can also list under `cases` a kind of case a reviewer, or a rule in the config's `caseKinds`
+   `picks`, picked for it, written `@case:<kind>`
    followed by what to test; a test of it carries that tag next to `@screen:` or `@call:` and checks what the
    description asks. A kind with values is listed by its description followed by a case per value, written
    `@case:<kind>=<value>`; a test of one value carries that tag and sets up that value, and a test that carries

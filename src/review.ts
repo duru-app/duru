@@ -10,6 +10,7 @@ import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { screenRoutes } from './address-match.ts';
 import { acceptCandidate, candidatePlace, discardCandidate, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
+import { caseTargets, exclusionOf, pickedKinds } from './case-targets.ts';
 import { isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { buildFlow } from './flow.ts';
@@ -134,13 +135,8 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const kinds = Object.keys(caseKinds);
   const candidates = storyCandidates(config, map, mapFile, traced);
   const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key), stories.list as StoryPath[]);
-  const needed = new Map<string, Set<string>>();
-  for (const { target, current } of marks.attached) {
-    if (target.case === undefined || current?.status !== 'needed') continue;
-    if (!needed.has(target.node!)) needed.set(target.node!, new Set());
-    needed.get(target.node!)!.add(target.case);
-  }
-  const pickedCases = (id: string) => kinds.filter((k) => needed.get(id)?.has(k)).map((k) => ({ tag: `case:${k}`, kind: 'case' }));
+  const targets = caseTargets(map, caseKinds, marks.attached);
+  const pickedCases = (id: string) => pickedKinds(targets, id);
   const screens = map.screens.map((s) => ({
     ...s,
     callOptions: screenCallOptions(s, callsById),
@@ -158,6 +154,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
     tests,
     marks,
     caseKinds,
+    caseTargets: targets,
     stories,
     needs: checkNeeds(config.storiesDir, stories.list),
     candidates,
@@ -383,7 +380,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
   };
   // 답글의 작성자는 페이지를 띄운 사람이 아니라 답한 에이전트다.
   const saves: Record<string, (input: any) => unknown> = {
-    '/api/marks': (input) => announce(addMark(config.marksDir, input)),
+    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined })),
     '/api/replies': (input) => announce(addReply(config.marksDir, { replyTo: input.replyTo, note: input.note })),
     '/api/judgments': (input) => addJudgment(config.judgmentsDir, input),
   };

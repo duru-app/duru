@@ -233,7 +233,15 @@ client with example results and a config to start from.
   `"ended": { "text": "끝난 문서", "values": ["cancelled", "rejected", "completed", "expired"] }`, and each value is
   then a case of its own. A name or a value starts with a letter followed by letters, digits, `.`, `_` or `-`, a
   description is one line, and `values` lists at least one value, each once. The page and the task list keep this
-  order. A kind is a case of a screen or call only where a reviewer picks it on the review page.
+  order. A kind written as an object can also carry `picks`, a list of rules that pick its screens or calls, such as
+  `"ended": { "text": "끝난 문서", "values": ["cancelled", "rejected"], "picks": [{ "screen": "/participant/**",
+  "methods": ["POST", "PUT", "PATCH", "DELETE"] }] }`. A rule writes one or more of `screen` (a pattern of the screen
+  path as in the map), `methods` (a list of request methods in capitals) and `api` (a pattern of the request path as
+  in the map), and picks only what every key it writes matches. In a pattern, `*` stands for one whole part between
+  `/`s and `**` for any number of parts, none included. A rule with `screen` alone picks screens; a rule with
+  `methods` or `api` picks the calls that the screens its `screen` matches send, or any call when it has no `screen`.
+  A kind is a case of a screen or call where one of its rules picks it or a reviewer picks it on the review page; a
+  rule's pick is taken out only by a mark that names the rule (see **Marks**).
 
 ### Output and review
 
@@ -433,6 +441,11 @@ listing the places whose value the source does not show in full.
   they did not or no longer send the ones they did, and the same for calls, with the calls whose server match
   differs. A `baselineMap` that is missing, unreadable or not such a map stops `rebuild` with a line naming the file,
   before anything is written.
+- `case kind <kind>: rules pick N screens, N calls` — printed by `rebuild` for each kind in `caseKinds` with
+  `picks`: how many screens and calls its rules pick on this map. With `baselineMap`, `| new since <file> N` follows:
+  how many of them the same rules did not pick on the baseline map.
+- `caseKinds <kind> picks[<i>] matches no screen|call: <rule>` — a rule of that kind, counted from 0 and shown as
+  written, that picks nothing on this map.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
   newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
   file that is not there and each need file it could not read with why, the links from untagged tests to screens and the trace or test files it could not read, the judged test
@@ -742,7 +755,14 @@ the server match, its tests, untagged tests linked to it, where this screen call
 With `caseKinds` set, 「경우별 테스트」 has a button per kind for every screen, and for a call in its details: pressing one
 makes the kind a case there, with its tests by depth, and pressing it again takes it out. Each press is listed under
 「전체」's 「변경 기록」, not in the conversation of the screen or call. A picked kind with values
-has a row per value under it, with that value's tests by depth and result, or 「테스트 없음」. The flow shows the same
+has a row per value under it, with that value's tests by depth and result, or 「테스트 없음」. Next to each picked
+kind a chip says who picked it: 「규칙」 when a rule in `picks` did, with the rule shown on hover, or the name of the
+person or agent who did, with the date on hover and, when a rule picks it too, the rule. A kind a rule picks starts
+out picked, and while it is picked, whoever picked it, its row has 「이 요청은 규칙에서 빼기…」 (「이 화면은 규칙에서 빼기…」 on a screen);
+that and pressing its button both open a dialog that saves only with a reason. The kind then shows as 「불필요 ·
+<author>」 with the date and the rule on hover and the reason on the line below, and pressing its button again picks
+it back in that person's name. When no rule picks
+that screen or call any more, the row also says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. The flow shows the same
 middle and right panes for a picked screen.
 
 **Pane widths.** The edge on either side of the middle pane, in the list, in the story tab and beside a picked screen
@@ -835,7 +855,10 @@ is its own new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so mar
 git without a conflict and the newest is the current state. A mark whose target is gone from a rebuilt map shows
 under 「떨어져 나감」. A case kind picked or taken out on a screen or call is kept the same way, as a mark with the
 status `needed` or `not-needed`; it puts nothing on the task list, and one whose kind has left `caseKinds` shows
-under 「떨어져 나감」.
+under 「떨어져 나감」. A `not-needed` mark on a screen or call that a rule of its kind picks needs a note, and the
+review server refuses one without; it also carries `rule`, `{ "index": <place in picks, from 0>, "pick": <the
+rule as written> }`, naming the rule it took the target out of. Only such a mark wins over a rule; a `not-needed`
+mark without `rule`, such as a kind pressed off before the rule was written, leaves the rule's pick in place.
 
 **Test rows.** A test row under a screen, call or story shows the test's title without its tags. The tags of the screen, call, story and depth
 the row sits under are left out, and every other tag (a role, a setting, a story, another screen …) follows the
@@ -983,7 +1006,7 @@ listening for new saves when the review ends.
 
 `tasks` prints, as Markdown, every screen, API call and story whose current mark is `needs-more` or `missing`.
 Each screen comes with its marks, component file and route line, the app address, the settings and roles it
-needs, the tests of each role and setting case and of each picked case kind, or of each value of a kind with values,
+needs, the tests of each role and setting case and of each case kind picked by a reviewer or a rule, or of each value of a kind with values,
 by depth and status, its API calls and the tests already attached. Calls follow under `# API calls`, with their
 picked case kinds the same way, and stories under `# Stories` with their steps, link verdicts and 「사전 조건」. A story's `needs` lines come before its
 steps, each step's `link need from step N` (the link from the step before), `need`, `input` and `expect` lines follow
