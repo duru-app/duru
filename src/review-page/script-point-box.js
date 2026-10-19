@@ -258,7 +258,8 @@ function drawPointCut(host) {
   const crop = /** @type {HTMLElement | null} */ (host.querySelector('.point-crop'));
   if (!p || !f || !crop) return;
   const a = p.answer ?? { url: '', boxes: [], page: { w: f.width, h: f.height }, scroll: { x: 0, y: 0 } };
-  const room = crop.clientWidth;
+  const numbered = p.status === 'found' && (p.answer?.boxes.length ?? 0) > 1;
+  const room = crop.clientWidth - (numbered ? POINT_NO_ROOM : 0);
   const scaleOf = (r) => Math.min(room / r.w, POINT_CROP_MAX / r.h, POINT_ZOOM_MAX);
   let region = pointRegion({ ...p, answer: a }, f, POINT_MARGIN, room);
   let k = scaleOf(region);
@@ -273,9 +274,8 @@ function drawPointCut(host) {
   const at = (p.box.nth ?? 1) - 1;
   const shown = p.status === 'found' ? a.boxes : [];
   const drawn = shown.map((b, i) => showing(b) && (i === at || !sideOf(b, region)));
-  const tight = (b) => dx + (b.x + b.w - region.x) * k + POINT_NO_ROOM > room;
   fill(crop.querySelector('.point-marks'), shown.map((b, i) => drawn[i] && h('div', {
-    class: `point-mark${i === at ? ' target' : ''}${tight(b) ? ' tight' : ''}`,
+    class: `point-mark${i === at ? ' target' : ''}`,
     style: `left: ${dx + (b.x - region.x) * k - 3}px; top: ${(b.y - region.y) * k - 3}px; width: ${b.w * k + 6}px; height: ${b.h * k + 6}px`,
   }, shown.length > 1 ? h('span', { class: 'point-no' }, i + 1) : null)));
   const away = new Map();

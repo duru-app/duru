@@ -201,7 +201,6 @@
   .point-mark { position: absolute; border: 1px solid var(--point-other); border-radius: 4px; }
   .point-mark.target { border: 2px solid var(--point); background: var(--point-bg); box-shadow: 0 0 0 3px var(--point-ring); }
   .point-no { position: absolute; top: 50%; left: calc(100% + 6px); transform: translateY(-50%); display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--point-other); color: #fff; font-size: 12px; font-weight: 700; }
-  .point-mark.tight .point-no { left: auto; right: 3px; }
   .point-mark.target .point-no { background: var(--point); }
   .point-block p { margin: 0; font-size: 13px; }
   .point-missing { color: var(--fail); }

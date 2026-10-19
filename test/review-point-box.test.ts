@@ -41,7 +41,7 @@ if (location.pathname === '/home') {
   const hidden = (shown) => {
     const label = document.createElement('label');
     label.append('숨은 칸 ', document.createElement('input'));
-    if (shown) label.style.cssText = 'position: absolute; right: 0; top: 400px';
+    if (shown) label.style.cssText = 'display: block; text-align: right';
     else label.style.display = 'none';
     return label;
   };
