@@ -95,6 +95,7 @@ test('a not-needed pick without a reason is refused on a screen or call a rule p
       assert.equal(refused.status, 400);
       assert.equal(await refused.text(), `a rule picks ${RENAME} for ended (caseKinds.ended.picks[0]), so taking it out needs a note saying why`);
       assert.equal((await postMark(base, { target: { node: '/admin/member#AdminMember', case: 'legacy' }, status: 'not-needed', note: ' ' })).status, 400);
+      assert.equal((await postMark(base, { targets: [{ node: RENAME, case: 'ended' }], status: 'not-needed' })).status, 400);
       assert.equal(loadMarks(config.marksDir).length, 0);
 
       const saved = await postMark(base, { target: { node: RENAME, case: 'ended' }, status: 'not-needed', note: '이름은 막지 않는다' });
@@ -103,14 +104,16 @@ test('a not-needed pick without a reason is refused on a screen or call a rule p
       for (const [node, kind] of [['GET:/api/v1/document/list', 'ended'], ['/signin#SignIn', 'boundary'], ['/signin#SignIn', 'gone']]) {
         assert.equal((await postMark(base, { target: { node, case: kind }, status: 'not-needed', rule: RULE_ENDED })).status, 201);
       }
-      const files = loadMarks(config.marksDir).sort((a, b) => a.date.localeCompare(b.date)).map((m) => [m.target!.node, m.target!.case, m.note, m.rule ?? null]);
+      const byTarget = (a: string[], b: string[]) => `${a[0]} ${a[1]}`.localeCompare(`${b[0]} ${b[1]}`);
+      const files = loadMarks(config.marksDir).map((m) => [m.target!.node, m.target!.case, m.note, m.rule ?? null]).sort(byTarget as never);
       assert.deepEqual(files, [
-        [RENAME, 'ended', '이름은 막지 않는다', RULE_ENDED],
-        ['GET:/api/v1/document/list', 'ended', '', null],
         ['/signin#SignIn', 'boundary', '', null],
         ['/signin#SignIn', 'gone', '', null],
+        ['GET:/api/v1/document/list', 'ended', '', null],
+        [RENAME, 'ended', '이름은 막지 않는다', RULE_ENDED],
       ]);
-      assert.deepEqual(lines.map((l) => [l.duru, l.target?.node, l.rule ?? null]), files.map(([node, , , rule]) => ['mark', node, rule]));
+      assert.deepEqual(lines.map((l) => [l.target!.node, l.target!.case, l.note, l.rule ?? null]).sort(byTarget as never), files);
+      assert.ok(lines.every((l) => l.duru === 'mark'));
     } finally {
       server.close();
     }

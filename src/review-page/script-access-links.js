@@ -129,6 +129,7 @@ function askTakeOut(id, kind, refocus) {
 
 async function takeOut(target, note) {
   let error = null;
+  state.caseError = null;
   await trackOwnSave(async () => {
     let id;
     try {

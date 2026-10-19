@@ -142,14 +142,15 @@ test('a mark whose screen or call left the map or whose kind left caseKinds is n
 test('taking a screen or call out of a rule needs a note and names the first rule that picks it; elsewhere a not-needed mark needs neither', () => {
   const caseKinds = { ended: kind({ screen: '/nowhere' }, { screen: '/document/**', methods: ['PUT'] }), legacy: kind() };
   const target = { node: RENAME, case: 'ended' };
-  assert.throws(() => exclusionOf(map, caseKinds, { target, status: 'not-needed' }), /^Error: a rule picks PUT:\/api\/v1\/document\/\{documentId\}\/name for ended \(caseKinds\.ended\.picks\[1\]\), so taking it out needs a note saying why$/);
-  assert.throws(() => exclusionOf(map, caseKinds, { target, status: 'not-needed', note: '  ' }), /needs a note/);
-  assert.deepEqual(exclusionOf(map, caseKinds, { target, status: 'not-needed', note: '이름은 막지 않는다' }), { index: 1, pick: { screen: '/document/**', methods: ['PUT'] } });
-  assert.equal(exclusionOf(map, caseKinds, { target, status: 'needed' }), undefined);
-  assert.equal(exclusionOf(map, caseKinds, { target: { node: ARCHIVE, case: 'ended' }, status: 'not-needed' }), undefined);
-  assert.equal(exclusionOf(map, caseKinds, { target: { node: RENAME, case: 'legacy' }, status: 'not-needed' }), undefined);
-  assert.equal(exclusionOf(map, caseKinds, { target: { node: RENAME, case: 'gone' }, status: 'not-needed' }), undefined);
-  assert.equal(exclusionOf(map, caseKinds, { target: { node: RENAME, case: 'constructor' }, status: 'not-needed' }), undefined);
+  assert.throws(() => exclusionOf(() => map, caseKinds, { target, status: 'not-needed' }), /^Error: a rule picks PUT:\/api\/v1\/document\/\{documentId\}\/name for ended \(caseKinds\.ended\.picks\[1\]\), so taking it out needs a note saying why$/);
+  assert.throws(() => exclusionOf(() => map, caseKinds, { target, status: 'not-needed', note: '  ' }), /needs a note/);
+  assert.deepEqual(exclusionOf(() => map, caseKinds, { target, status: 'not-needed', note: '이름은 막지 않는다' }), { index: 1, pick: { screen: '/document/**', methods: ['PUT'] } });
+  assert.throws(() => exclusionOf(() => map, caseKinds, { targets: [target], status: 'not-needed' }), /needs a note/);
+  assert.equal(exclusionOf(() => map, caseKinds, { target, status: 'needed' }), undefined);
+  assert.equal(exclusionOf(() => map, caseKinds, { target: { node: ARCHIVE, case: 'ended' }, status: 'not-needed' }), undefined);
+  assert.equal(exclusionOf(() => map, caseKinds, { target: { node: RENAME, case: 'legacy' }, status: 'not-needed' }), undefined);
+  assert.equal(exclusionOf(() => map, caseKinds, { target: { node: RENAME, case: 'gone' }, status: 'not-needed' }), undefined);
+  assert.equal(exclusionOf(() => map, caseKinds, { target: { node: RENAME, case: 'constructor' }, status: 'not-needed' }), undefined);
 });
 
 test('the README and the agent skill say what picks takes, what its rebuild lines mean and how to read a case mark taken out of a rule', () => {

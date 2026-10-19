@@ -233,7 +233,8 @@ if (command === 'tasks') {
       const picked = (list: typeof rules, side: 'screens' | 'calls') => new Set(list.flatMap((r) => r[side]));
       const [screens, calls] = [picked(rules, 'screens'), picked(rules, 'calls')];
       const before = baseline && rulePicks(baseline, caseKind);
-      const added = before ? [...screens].filter((id) => !picked(before, 'screens').has(id)).length + [...calls].filter((id) => !picked(before, 'calls').has(id)).length : 0;
+      const [wasScreens, wasCalls] = before ? [picked(before, 'screens'), picked(before, 'calls')] : [new Set(), new Set()];
+      const added = [...screens].filter((id) => !wasScreens.has(id)).length + [...calls].filter((id) => !wasCalls.has(id)).length;
       console.log(`case kind ${kind}: rules pick ${plural(screens.size, 'screen')}, ${plural(calls.size, 'call')}${before ? ` | new since ${config.baselineMap} ${added}` : ''}`);
       rules.forEach((r, i) => {
         if (!r.screens.length && !r.calls.length) console.log(`  caseKinds ${kind} picks[${i}] matches no ${picksCalls(r.pick) ? 'call' : 'screen'}: ${JSON.stringify(r.pick)}`);

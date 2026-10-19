@@ -64,10 +64,11 @@ export function ruleOf(map: TargetMap, kind: CaseKind | undefined, node: string)
 }
 
 // 돌려준 규칙은 「불필요」 표시에 함께 적어, 어느 규칙에서 뺐는지 남긴다.
-export function exclusionOf(map: TargetMap, caseKinds: Record<string, CaseKind>, input: { target?: unknown; status?: unknown; note?: unknown }) {
-  const { node, case: kind } = (typeof input.target === 'object' && input.target !== null ? input.target : {}) as Record<string, unknown>;
-  if (input.status !== 'not-needed' || typeof node !== 'string' || typeof kind !== 'string' || !Object.hasOwn(caseKinds, kind)) return undefined;
-  const rule = ruleOf(map, caseKinds[kind], node);
+export function exclusionOf(mapOf: () => TargetMap, caseKinds: Record<string, CaseKind>, input: { target?: unknown; targets?: unknown; status?: unknown; note?: unknown }) {
+  const only = input.target ?? (Array.isArray(input.targets) && input.targets.length === 1 ? input.targets[0] : undefined);
+  const { node, case: kind } = (typeof only === 'object' && only !== null ? only : {}) as Record<string, unknown>;
+  if (input.status !== 'not-needed' || typeof node !== 'string' || typeof kind !== 'string' || !Object.hasOwn(caseKinds, kind) || !caseKinds[kind].picks.length) return undefined;
+  const rule = ruleOf(mapOf(), caseKinds[kind], node);
   if (!rule) return undefined;
   if (typeof input.note !== 'string' || !input.note.trim()) {
     throw new Error(`a rule picks ${node} for ${kind} (caseKinds.${kind}.picks[${rule.index}]), so taking it out needs a note saying why`);

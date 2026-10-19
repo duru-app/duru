@@ -240,8 +240,8 @@ client with example results and a config to start from.
   in the map), and picks only what every key it writes matches. In a pattern, `*` stands for one whole part between
   `/`s and `**` for any number of parts, none included. A rule with `screen` alone picks screens; a rule with
   `methods` or `api` picks the calls that the screens its `screen` matches send, or any call when it has no `screen`.
-  A kind is a case of a screen or call where one of its rules picks it or a reviewer picks it on the review page, and
-  the newest mark wins over a rule (see **Marks**).
+  A kind is a case of a screen or call where one of its rules picks it or a reviewer picks it on the review page; a
+  rule's pick is taken out only by a mark that names the rule (see **Marks**).
 
 ### Output and review
 

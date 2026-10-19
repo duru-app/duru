@@ -378,14 +378,9 @@ export async function startReviewServer(config: any, { port = 0, author = review
     for (const stream of streams) stream.write(`data: ${JSON.stringify(line)}\n\n`);
     return mark;
   };
-  const ruleTakenOut = (input: any) => {
-    const kind = input?.target?.case;
-    const ruled = input?.status === 'not-needed' && typeof kind === 'string' && Object.hasOwn(config.caseKinds, kind) && config.caseKinds[kind].picks.length > 0;
-    return ruled ? exclusionOf(readMap(mapFile), config.caseKinds, input) : undefined;
-  };
   // 답글의 작성자는 페이지를 띄운 사람이 아니라 답한 에이전트다.
   const saves: Record<string, (input: any) => unknown> = {
-    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, rule: ruleTakenOut(input) })),
+    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined })),
     '/api/replies': (input) => announce(addReply(config.marksDir, { replyTo: input.replyTo, note: input.note })),
     '/api/judgments': (input) => addJudgment(config.judgmentsDir, input),
   };
