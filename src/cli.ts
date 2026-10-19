@@ -5,7 +5,9 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { baselineLine, compareMaps, readBaseline } from './baseline.ts';
 import { storeCandidates, storyCandidates } from './candidates.ts';
+import { picksCalls, rulePicks } from './case-targets.ts';
 import { loadConfig } from './config.ts';
+import type { CaseKind } from './config.ts';
 import { UNKNOWN } from './client.ts';
 import { buildMap, unreadSites } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
@@ -164,6 +166,7 @@ if (command === 'tasks') {
     process.exit(1);
   }
   fs.mkdirSync(config.outDir, { recursive: true });
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const write = (name: string, data: unknown) => {
     const file = path.join(config.outDir, name);
     fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
@@ -224,6 +227,18 @@ if (command === 'tasks') {
 
   if (command === 'rebuild') {
     if (changes) console.log(changes);
+    for (const [kind, caseKind] of Object.entries<CaseKind>(config.caseKinds)) {
+      if (!caseKind.picks.length) continue;
+      const rules = rulePicks(map, caseKind);
+      const picked = (list: typeof rules, side: 'screens' | 'calls') => new Set(list.flatMap((r) => r[side]));
+      const [screens, calls] = [picked(rules, 'screens'), picked(rules, 'calls')];
+      const before = baseline && rulePicks(baseline, caseKind);
+      const added = before ? [...screens].filter((id) => !picked(before, 'screens').has(id)).length + [...calls].filter((id) => !picked(before, 'calls').has(id)).length : 0;
+      console.log(`case kind ${kind}: rules pick ${plural(screens.size, 'screen')}, ${plural(calls.size, 'call')}${before ? ` | new since ${config.baselineMap} ${added}` : ''}`);
+      rules.forEach((r, i) => {
+        if (!r.screens.length && !r.calls.length) console.log(`  caseKinds ${kind} picks[${i}] matches no ${picksCalls(r.pick) ? 'call' : 'screen'}: ${JSON.stringify(r.pick)}`);
+      });
+    }
     const links = linkTests(config, map);
     console.log(`wrote ${write('tests.json', links)}`);
     const { list, notices, stale, unknownTags: unknownStories } = checkStoryFiles(map, config.storiesDir, path.join(config.outDir, 'map.json'), links);

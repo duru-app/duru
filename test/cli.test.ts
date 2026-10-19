@@ -45,6 +45,27 @@ test('rebuild writes map.json and tests.json to the configured output folder and
     assert.match(stdout, /^calls with tests 3\/10$/m);
     assert.doesNotMatch(stdout, /bodyOptions/);
     assert.doesNotMatch(stdout, /roleGuards/);
+    assert.doesNotMatch(stdout, /^case kind /m);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('rebuild prints for each case kind with rules how many screens and calls they pick and names each rule that picks nothing', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    const ended = { text: '끝난 문서', picks: [{ screen: '/admin/*' }, { screen: '/document/**', methods: ['POST', 'PUT'] }, { screen: '/participant/**' }, { api: '/api/v2/**' }] };
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, caseKinds: { boundary: '경계', ended, legacy: { text: '옛 데이터', picks: [{ screen: '/help' }] } } }));
+    const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.deepEqual(stdout.split('\n').filter((l) => /^(case kind |  caseKinds )/.test(l)), [
+      'case kind ended: rules pick 4 screens, 2 calls',
+      '  caseKinds ended picks[2] matches no screen: {"screen":"/participant/**"}',
+      '  caseKinds ended picks[3] matches no call: {"api":"/api/v2/**"}',
+      'case kind legacy: rules pick 1 screen, 0 calls',
+    ]);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
