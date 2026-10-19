@@ -448,6 +448,7 @@ test('in a browser, a comment on a test that is no longer among the results show
 test('in a browser, pressing a case kind on and off on a screen or a call leaves its conversation, 「이 화면 N」, 「전체 N」 and the list count as they were, keeps a mark file for each press, and a comment on the same screen still shows', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) => {
     addMark(config.marksDir, { target: { node: '/lab#Lab' }, note: 'is the lab done?', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
+    addMark(config.marksDir, { target: { node: '/home#Home', case: 'legacy' }, status: 'needed', author: 'qa-agent' }, new Date('2026-10-12T02:00:00Z'));
     return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         const scope = p.locator('#right-info .talk-scope button');
@@ -468,6 +469,7 @@ test('in a browser, pressing a case kind on and off on a screen or a call leaves
         assert.equal(await listCount(), '코멘트 1');
         assert.equal((await said()).length, 1);
         assert.match((await said())[0], /is the lab done\?/);
+        assert.doesNotMatch((await said())[0], /reviewer · /);
 
         await chooseScreen(p, '/home');
         await p.locator('table.calls tbody tr:not(.option)', { hasText: 'GET:/api/v1/document/list' }).locator('td.cell').first().click();
@@ -476,6 +478,7 @@ test('in a browser, pressing a case kind on and off on a screen or a call leaves
         assert.equal(await p.textContent('#right-info .talk > p.muted'), '아직 대화가 없습니다.');
 
         assert.deepEqual(loadMarks(config.marksDir).filter((m) => m.target?.case !== undefined).sort((a, b) => a.date.localeCompare(b.date)).map((m) => [m.target!.node, m.status]), [
+          ['/home#Home', 'needed'],
           ['/lab#Lab', 'needed'],
           ['/lab#Lab', 'not-needed'],
           ['/lab#Lab', 'needed'],
@@ -533,6 +536,8 @@ test('in a browser, 「변경 기록」 under 「전체」 lists each case kind 
         assert.match((await p.textContent('#screen-list li.selected'))!, /^\/lab/);
         await inView('#center .screen-info[open] > .cases > h2');
         assert.equal(await p.locator('#center .screen-info > .cases .case-kinds button[title="@case:boundary"]').getAttribute('aria-pressed'), 'false');
+        assert.deepEqual(await scope.allTextContents(), ['이 화면 1', '전체 1']);
+        assert.equal(await p.locator('#screen-list li').filter({ has: p.locator('.name > span:first-child', { hasText: /^\/lab$/ }) }).locator('.talk-count').textContent(), '코멘트 1');
         assert.deepEqual(errors, []);
       }));
   });

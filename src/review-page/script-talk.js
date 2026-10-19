@@ -25,7 +25,6 @@ const TALK_FILTERS = [
   { key: 'changes', label: '변경 기록' },
 ];
 const PICK_STATUS = { needed: '켬', 'not-needed': '끔' };
-const isPick = (m) => m.target.case !== undefined;
 const talkMarks = () => state.data.marks.attached.filter((m) => !isPick(m));
 
 const noTarget = (t) => t.node === undefined && t.story === undefined && t.candidate === undefined;
@@ -61,7 +60,7 @@ function allTalk() {
     const replies = m.history.filter((x) => x.replyTo === r.id).sort(byDate);
     const meta = h('span', { class: 'meta' },
       unanswered(m, r) ? h('span', { class: 'unanswered-dot', role: 'img', 'aria-label': '답 없음', title: '답 없는 코멘트' }) : null,
-      r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status] ?? CASE_STATUS[r.status]) : null,
+      r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status]) : null,
       noTarget(m.target) ? null : tagChip(tagLabel(m.target)),
       h('span', {}, signedAt(r)),
       replies.length ? h('span', {}, `· 답 ${replies.length}`) : null);
@@ -161,7 +160,7 @@ function talkThread(target, { labelled }) {
   const talk = talkOf(target);
   const shown = state.historyFilter ? talk.filter((m) => m.key === state.historyFilter) : talk;
   const recordItem = (m, r) => h('li', { class: r.replyTo !== undefined ? 'reply' : null, 'data-record': r.id },
-    r.status ? [h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status] ?? CASE_STATUS[r.status]), ' ']
+    r.status ? [h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status]), ' ']
       : labelled ? [h('span', { class: `chip ${r.replyTo !== undefined ? 'reply' : 'comment'}` }, r.replyTo !== undefined ? '답' : '코멘트'), ' '] : null,
     r.replyTo === undefined ? [...recordTags(r, target), ' '] : null,
     h('span', { class: 'muted' }, signedAt(r)),

@@ -90,10 +90,11 @@ const untaggedCount = () => state.data.tests.untagged?.length ?? state.data.test
 const untaggedKey = (t) => JSON.stringify([t.source, t.file, t.line, t.title]);
 const markOf = (t) => state.data.marks.attached.find((m) => m.key === keyOf(t));
 const fmtDate = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+const isPick = (m) => m.target.case !== undefined;
 function othersSigned() {
   const { marks, tests, author } = state.data;
   const judged = [tests.discarded, tests.awaitingTag, tests.detachedHandOvers].flatMap((byNode) => Object.values(byNode ?? {}).flat()).map((t) => t.judgment);
-  return [...marks.attached, ...marks.detached].flatMap((m) => m.history).concat(judged).some((record) => record.author !== author);
+  return [...marks.attached.filter((m) => !isPick(m)), ...marks.detached].flatMap((m) => m.history).concat(judged).some((record) => record.author !== author);
 }
 const signedAt = (record) => (othersSigned() ? `${record.author} · ${fmtDate(record.date)}` : fmtDate(record.date));
 const markChip = (m) => (m?.current ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status] ?? CASE_STATUS[m.current.status]) : null);
