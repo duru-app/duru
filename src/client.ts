@@ -100,6 +100,15 @@ interface RouteScreen {
   routeFile: string;
   routeGuards: string[];
   line: number;
+  outerFill: OuterFill;
+}
+
+type StoppedAt = { text: string; file: string | null; line: number };
+type UnreadRoutePath = { file: string; line: number; path: string; stoppedAt: StoppedAt };
+
+interface OuterFill {
+  startsWithOuterAddress: boolean;
+  unreadPath: { entry: UnreadRoutePath; restStoppedAt: StoppedAt | null } | null;
 }
 
 const traverse = _traverse.default ?? _traverse;
@@ -1004,21 +1013,26 @@ export async function extractClient(config: any) {
   // ---------- 라우트 파일: 화면 목록과 화면에 걸린 조건 ----------
 
   const redirects: { to: string; file: string; line: number; guards: string[] }[] = [];
-  const unreadRoutePaths: { file: string; line: number; path: string; stoppedAt: { text: string; file: string | null; line: number } }[] = [];
+  const unreadRoutePaths: UnreadRoutePath[] = [];
   const unreadRoutes: { file: string; line: number; reason: string }[] = [];
   const readWhole = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && !v.includes(UNKNOWN));
 
-  function unreadPiece(p: NodePath, seen = new Set<Node>()): NodePath {
+  // filled 말고 읽지 못한 부분이 없으면 null 이다.
+  function unreadPiece(p: NodePath, seen = new Set<Node>(), filled: Node | null = null): NodePath | null {
+    if (p.node === filled) return null;
     const pieces = p.isTemplateLiteral() ? (p.get('expressions') as NodePath[]) : p.isBinaryExpression({ operator: '+' }) ? [p.get('left'), p.get('right')] : null;
     if (pieces) {
-      const unread = pieces.find((x) => !readWhole(evaluate(x)));
-      return unread ? unreadPiece(unread, seen) : p;
+      for (const x of pieces) {
+        const found = !readWhole(evaluate(x)) && unreadPiece(x, seen, filled);
+        if (found) return found;
+      }
+      return filled ? null : p;
     }
     const chain = p.isIdentifier() || p.isMemberExpression() ? memberChain(p.node) : null;
     const value = chain?.length === 1 ? declaredValue(p.scope, chain[0]) : chain?.length === 2 ? namespaceMember(p.scope, chain) : null;
     if (!value || seen.has(value.node)) return p;
     seen.add(value.node);
-    return unreadPiece(value, seen);
+    return unreadPiece(value, seen, filled) ?? p;
   }
 
   function stopOf(p: NodePath) {
@@ -1079,10 +1093,14 @@ export async function extractClient(config: any) {
         const pathExpr = (pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten) as NodePath;
         const pathValue = evaluate(pathExpr);
         const routePath = typeof pathValue === 'string' ? pathValue : UNKNOWN;
+        let unreadPath: OuterFill['unreadPath'] = null;
+        const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
         if (routePath.includes(UNKNOWN)) {
-          const stoppedAt = stopOf(unreadPiece(pathExpr));
+          const stoppedAt = stopOf(unreadPiece(pathExpr)!);
           if (drawnInFunctionOrChildren && madeInLoop(p)) return unread(`made for each item of a list, and its path stopped at ${stoppedAt.text}`);
-          unreadRoutePaths.push({ file: routeFile, line, path: routePath, stoppedAt });
+          const rest = outerAddress && unreadPiece(pathExpr, new Set(), outerAddress.node);
+          unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt }, restStoppedAt: rest ? stopOf(rest) : null };
+          unreadRoutePaths.push(unreadPath.entry);
         }
         screens.push({
           path: routePath,
@@ -1092,10 +1110,39 @@ export async function extractClient(config: any) {
           routeFile,
           routeGuards: guardsOf(p, src, note),
           line,
+          outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
         });
       },
     });
     return screens;
+  }
+
+  const leadingPiece = (p: NodePath): NodePath => (p.isTemplateLiteral() && p.node.quasis[0].value.cooked === '' && p.node.expressions.length ? leadingPiece(p.get('expressions.0') as NodePath)
+    : p.isBinaryExpression({ operator: '+' }) ? leadingPiece(p.get('left')) : p);
+
+  // 바깥 라우트가 매치한 주소: match.url · props.match.path · useRouteMatch().url, 또는 거기서 꺼낸 url · path.
+  const MATCHED_ADDRESS = ['url', 'path'];
+  function readsMatchedRoute(p: NodePath): boolean {
+    if (p.isMemberExpression() && !p.node.computed) return MATCHED_ADDRESS.includes((p.node.property as Identifier).name) && isRouteMatch(p.get('object'));
+    if (!p.isIdentifier()) return false;
+    const binding = p.scope.getBinding(p.node.name);
+    if (!binding) return false;
+    const property = (pattern: Node | null | undefined, keys: string[]) => (pattern?.type === 'ObjectPattern'
+      ? pattern.properties.find((x): x is ObjectProperty => x.type === 'ObjectProperty' && keys.includes(keyName(x)))
+      : undefined);
+    const taken = (pattern: Node | null | undefined) => property(pattern, MATCHED_ADDRESS)?.value === binding.identifier;
+    const takenFromMatch = (pattern: Node | null | undefined) => taken(property(pattern, ['match'])?.value);
+    if (binding.path.isVariableDeclarator() && binding.path.get('id').isIdentifier()) return binding.kind === 'const' && readsMatchedRoute(binding.path.get('init') as NodePath);
+    if (binding.path.isVariableDeclarator()) return takenFromMatch(binding.path.node.id) || (taken(binding.path.node.id) && isRouteMatch(binding.path.get('init') as NodePath));
+    return binding.kind === 'param' && binding.path.isObjectPattern() && takenFromMatch(binding.path.node);
+  }
+
+  function isRouteMatch(p: NodePath): boolean {
+    if (p.isCallExpression()) return p.get('callee').isIdentifier({ name: 'useRouteMatch' }) && !p.node.arguments.length;
+    if (p.isMemberExpression() && !p.node.computed) return (p.node.property as Identifier).name === 'match';
+    if (!p.isIdentifier({ name: 'match' })) return false;
+    const binding = p.scope.getBinding('match');
+    return !binding?.path.isVariableDeclarator() || !binding.path.get('id').isIdentifier() || isRouteMatch(binding.path.get('init') as NodePath);
   }
 
   function holdsRoutes(route: NodePath<JSXElement>) {
@@ -1256,6 +1303,51 @@ export async function extractClient(config: any) {
     return withFiles(page, files);
   }
 
+  function fillOuterAddresses(sourced: { s: { path: string; routeFile: string }; outerFill: OuterFill; files: string[] }[]) {
+    const holds = sourced.map((x) => new Set(x.files));
+    const routeFileOf = (i: number) => path.join(config.srcRoot, sourced[i].s.routeFile);
+    const outersOf = (i: number) => {
+      const around = sourced.flatMap((x, j) => (x.s.routeFile !== sourced[i].s.routeFile && holds[j].has(routeFileOf(i)) ? [j] : []));
+      return around.filter((j) => !around.some((k) => sourced[k].s.routeFile !== sourced[j].s.routeFile && holds[j].has(routeFileOf(k))));
+    };
+    const filled = new Map<number, string>();
+    const filling = new Set<number>();
+    const addressOf = (i: number): string => {
+      const { s, outerFill } = sourced[i];
+      if (!outerFill.startsWithOuterAddress || filling.has(i)) return s.path;
+      if (!filled.has(i)) {
+        filling.add(i);
+        const rest = s.path.slice(UNKNOWN.length);
+        const outer = joinedPaths([...new Set(outersOf(i).map(addressOf))], rest);
+        filling.delete(i);
+        filled.set(i, outer === null ? s.path : outer.replace(/\/$/, '') + rest || '/');
+      }
+      return filled.get(i)!;
+    };
+    sourced.forEach((x, i) => {
+      const address = addressOf(i);
+      const { unreadPath } = x.outerFill;
+      if (address === x.s.path) return;
+      x.s.path = address;
+      if (!unreadPath) return;
+      if (address.includes(UNKNOWN)) Object.assign(unreadPath.entry, { path: address, stoppedAt: unreadPath.restStoppedAt ?? unreadPath.entry.stoppedAt });
+      else unreadRoutePaths.splice(unreadRoutePaths.indexOf(unreadPath.entry), 1);
+    });
+  }
+
+  function joinedPaths(paths: string[], rest: string) {
+    if (!paths.length || paths.some((p) => p.includes(UNKNOWN))) return null;
+    if (paths.length === 1) return paths[0];
+    const split = paths.map((p) => p.split('/'));
+    if (split.some((parts) => parts.length !== split[0].length)) return null;
+    const differ = split[0].flatMap((_, at) => (split.some((parts) => parts[at] !== split[0][at]) ? [at] : []));
+    const words = split.map((parts) => parts[differ[0]]);
+    if (differ.length !== 1 || !words.every((w) => /^[\w-]+$/.test(w))) return null;
+    let name = 'section';
+    for (let n = 2; [...paths, rest].some((p) => new RegExp(`:${name}\\b`).test(p)); n++) name = `section${n}`;
+    return split[0].map((part, at) => (at === differ[0] ? `:${name}(${words.join('|')})` : part)).join('/');
+  }
+
   // ---------- 화면마다 모으기 ----------
 
   const apiFunctions: Record<string, any> = {};
@@ -1269,8 +1361,14 @@ export async function extractClient(config: any) {
   if (!config.routeFiles.length) throw new Error(`the config has no routesFile, which takes ${ROUTES_FILE}`);
   const extracted = (config.routeFiles as string[]).flatMap(extractScreens);
   const screenFiles = new Set(extracted.map((s) => s.componentFile).filter(Boolean));
+  const sourced = extracted.map(({ wrapperFiles, outerFill, ...s }) => {
+    const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
+    const isOtherScreen = (f: string) => screenFiles.has(f) && !entryFiles.includes(f);
+    return { s, outerFill, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))] };
+  });
+  fillOuterAddresses(sourced);
   // POST 가 아닌 페이지 이동의 주소가 앱의 라우트와 맞으면 서버가 아니라 앱의 다른 화면이 열린다. 고정 문자열 부분이 없는 라우트는 어떤 주소에나 맞으므로 견주지 않는다.
-  const screenRoutes = extracted.filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
+  const screenRoutes = sourced.map((x) => x.s).filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
   const opensScreen = (url: string) => screenRoutes.some((route) => route.test(url.replaceAll(UNKNOWN, '\0').split(/[?#]/)[0]));
   const isApiCall = (site: FollowedSite): site is ApiCallSite => 'fn' in site;
   const sends = (c: ApiCallSite, outsideRequestFunction: Set<FollowedSite>) => !c.request || (outsideRequestFunction.has(c) && !(c.navigation && c.request.method !== 'POST' && opensScreen(c.request.url!)));
@@ -1304,11 +1402,6 @@ export async function extractClient(config: any) {
     return handled.get(key)!;
   };
 
-  const sourced = extracted.map(({ wrapperFiles, ...s }) => {
-    const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
-    const isOtherScreen = (f: string) => screenFiles.has(f) && !entryFiles.includes(f);
-    return { s, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))] };
-  });
   const members = typedMembers(config.tsconfig, [...new Set(sourced.flatMap((x) => x.files))], imports.resolve);
   const screenFollower = members ? nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf, members }) : follower;
   const screens = sourced.map(({ s, entryFiles, isOtherScreen, files }) => {

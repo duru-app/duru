@@ -1163,7 +1163,7 @@ test('a map written before call links has no result option lines and the task li
   });
 });
 
-test('screens that share an ID each keep the options they send themselves', () => {
+test('screens that share an ID are listed once, as the last of them on the map, and the page data holds that one', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     cli('rebuild');
     const mapFile = path.join(copy, 'out/map.json');
@@ -1173,10 +1173,15 @@ test('screens that share an ID each keep the options they send themselves', () =
     map.screens.push({ ...report, line: 99, apiCalls: [plainExport] });
     fs.writeFileSync(mapFile, JSON.stringify(map));
     addMark(loadConfig(configFile).marksDir, { target: { node: '/admin/report#AdminReport' }, status: 'missing', author: 'a' }, new Date('2026-10-01T05:00:00Z'));
-    const sections = cli('tasks').split('## /admin/report#AdminReport\n').slice(1).map((s) => s.split('\n## ')[0]);
-    assert.equal(sections.length, 2);
-    assert.match(sections[0], /^ {2}- POST:\/api\/v1\/report\/export — tests: ui pass 4, ui fail 1 — options: withAttachments, withHistory$/m);
-    assert.match(sections[1], /^- calls:\n {2}- POST:\/api\/v1\/report\/export — tests: ui pass 4, ui fail 1\n- tests: none$/m);
+    const list = cli('tasks');
+    const sections = list.split('## /admin/report#AdminReport\n').slice(1).map((s) => s.split('\n## ')[0]);
+    assert.equal(sections.length, 1);
+    assert.match(sections[0], /^- calls:\n {2}- POST:\/api\/v1\/report\/export — tests: ui pass 4, ui fail 1\n- tests: none$/m);
+    assert.match(list, /^# Test tasks — 5 screens,/m);
+    const data = reviewData(loadConfig(configFile), null);
+    assert.equal(data.map.screens.length, map.screens.length - 1);
+    assert.equal(data.map.screens.find((s) => s.id === '/admin/report#AdminReport')!.line, 99);
+    assert.equal(data.flow.summary.screens, data.map.screens.length);
   });
 });
 

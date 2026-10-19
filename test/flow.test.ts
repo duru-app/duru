@@ -61,6 +61,12 @@ test('screens no entry screen reaches are grown into their own trees', () => {
   assert.deepEqual(withoutEntries.unreached.map((r) => r.label), ['/signin']);
 });
 
+test('an entry screen listed twice under one ID, as two routes with the same ID give, is one box', () => {
+  const twice = buildFlow({ ...map, entries: [...map.entries, ...map.entries] }, { nodes: {} });
+  assert.deepEqual(twice.roots.map((r) => r.id), ['/signin#SignIn']);
+  assert.equal(twice.summary.screens, 11);
+});
+
 test('links from one screen to another that carry different guards are alternatives, and one open link makes the way open', () => {
   const screen = (id: string, links: FlowAccess['links']): FlowMapScreen => ({ id, path: id, component: id, apiCalls: [], access: { restricted: false, kinds: [], links } });
   const guard = (g: string) => ({ guard: g, kinds: ['setting'] });

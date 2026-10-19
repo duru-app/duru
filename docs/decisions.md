@@ -2484,6 +2484,40 @@ Alternatives compared:
 - Showing `missing` as 「테스트 필요」 in the page only: the page would compare the picked status with the saved one in
   several places, each needing both names, and the task list would still print two words for one verdict.
 
+**A route file that another screen draws gets that screen's path in front of each route path that starts with the
+address the outer route matched; two outer paths that differ in one piece are joined into one path.**
+Driver's decision in #304 (2026-10-19). Route files that build their paths from the matched address
+(`${props.match.url}/confirm`, `const { path } = useRouteMatch()`) got `{?}` in front, so two different addresses
+could share an ID: mattermost's `/:team/integrations/confirm` and `/:team/integrations/commands/confirm` both
+became `{?}/confirm#ConfirmIntegration`, and the flow showed one box fewer than its count. The outer screen is found
+among the screens duru already collected: those whose source files hold the inner route file, keeping the ones that
+do not also hold the route file of another such screen, so the innermost one wins and two levels (team, then
+integrations, then slash commands) fill in turn. Only a path whose first piece reads the matched address is filled:
+`url` or `path` of `props.match`, `this.props.match`, a `match` taken from props, or `useRouteMatch()`, and a `url`
+or `path` taken from one of these. A first piece that is a function's result (`${settingsPath()}/groups`, as outline
+writes its routes) stays `{?}` with its `route path not read` line. When the innermost outer screens have two paths
+that differ in one plain piece, as mattermost draws its integrations under both `/:team/integrations` and
+`/:team/emoji`, the inner screen gets one path with that piece as a variable,
+`/:team/:section(integrations|emoji)/bots`, the way mattermost itself writes `/:team/:path(channels|messages)`.
+Outer paths that differ in any other way, or are not read in full themselves, leave the inner path `{?}`. This
+reverses the rule of the PRDs in #134 and #140 that the path of a parent route is not put in front, and README no
+longer states it. An ID that held `{?}` changes once it is filled, as README already says; the into-sign 2.0.0 and
+1.5.0 maps have no `{?}` screen, so none of their IDs change.
+The flow, the screen list and the task list also count one screen ID once when two routes still give it, keeping the
+last of them on the map, as the baseline comparison does, so that comparing with a baseline map built before does
+not report a change; before, the flow planted an entry screen listed twice as two roots.
+Measured with mattermost 4d94455 (8 route files), appsmith 4f8e991 and outline d460341: `{?}` screens went from 27 to
+0, 10 to 0 and 12 to 12 (all function results), with no duplicate ID and the same number of screens (57, 44, 30);
+apart from path, ID, access and links, every screen is the same as on main.
+Known limits: a screen that imports the inner route file only for a constant counts as an outer screen too, which can
+join a wrong path or leave the path unread; react-router 6 child routes written with a relative path are not joined;
+the inner screens do not take on the route conditions of the outer screen.
+Alternatives compared:
+- One screen with two routes, marked 「라우트 2곳」, as first planned for this case: dropped once measuring showed the
+  two routes are two addresses duru read wrongly, not one screen.
+- A screen for each outer path (two boxes for each integrations screen): the driver chose one box with one joined
+  path, so the number of screens does not grow.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

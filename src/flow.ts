@@ -171,7 +171,7 @@ export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
     return roots;
   };
   const plant = (ids: string[]) => {
-    const roots = ids.filter((id) => !placed.has(id)).map((id) => {
+    const roots = [...new Set(ids)].filter((id) => !placed.has(id)).map((id) => {
       placed.add(id);
       return screenNode(id, { guards: [] });
     });
