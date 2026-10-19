@@ -63,7 +63,6 @@ export function ruleOf(map: TargetMap, kind: CaseKind | undefined, node: string)
   return index < 0 ? null : { index, pick: kind.picks[index] };
 }
 
-// 돌려준 규칙은 「불필요」 표시에 함께 적어, 어느 규칙에서 뺐는지 남긴다.
 export function exclusionOf(mapOf: () => TargetMap, caseKinds: Record<string, CaseKind>, input: { target?: unknown; targets?: unknown; status?: unknown; note?: unknown }) {
   const only = input.target ?? (Array.isArray(input.targets) && input.targets.length === 1 ? input.targets[0] : undefined);
   const { node, case: kind } = (typeof only === 'object' && only !== null ? only : {}) as Record<string, unknown>;
