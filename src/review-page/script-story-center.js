@@ -105,6 +105,7 @@ const needCenter = (n) => [
 
 function renderStoryCenter() {
   if (walkShown()) return renderWalkCenter();
+  if (storyAppShown()) return renderPointCenter();
   clearCenterHead();
   const center = document.getElementById('center-body');
   if (state.composing) return fill(center, composeCenter());

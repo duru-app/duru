@@ -222,6 +222,7 @@ function guardList(item) {
 }
 
 function renderRight() {
+  renderPointPane();
   const info = document.getElementById('right-info');
   const dock = document.getElementById('right-dock');
   if (state.view !== 'story' && state.side === 'untagged') {

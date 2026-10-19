@@ -148,7 +148,7 @@ function composeFieldsButton(c, kind, rows) {
 function composeFieldsBelow(c, rows, needLabel, expectLabel) {
   if (!editingRows(c, rows)) {
     const fields = rowsWritten(rows);
-    return fields ? h('div', { class: 'step-written written', onclick: (e) => e.stopPropagation() }, writtenRows(fields, needLabel, expectLabel)) : null;
+    return fields ? h('div', { class: 'step-written written', onclick: (e) => e.stopPropagation() }, writtenRows(fields, needLabel, expectLabel, { kind: 'compose' })) : null;
   }
   const edit = c.editing;
   return h('div', { class: 'fields-edit', onclick: (e) => e.stopPropagation() },

@@ -44,6 +44,7 @@ export const PAGE_PARTS = [
   'script-story-center.js',
   'script-new-story.js',
   'script-walk.js',
+  'script-point-box.js',
   'script-center-right.js',
   'script-talk.js',
   'script-access-links.js',
