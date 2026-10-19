@@ -54,7 +54,7 @@ test('in a browser, 「리뷰 끝」 asks before throwing away a mark that was p
     try {
       await withPage(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async (p) => {
         await p.waitForSelector('#screen-list li');
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.fill('#right-dock textarea', 'draft note');
 
         const asked = [];
@@ -67,7 +67,7 @@ test('in a browser, 「리뷰 끝」 asks before throwing away a mark that was p
         assert.equal(await p.inputValue('#right-dock textarea'), 'draft note');
 
         await p.locator('table.calls td.cell').first().click();
-        await p.click('#right .statuses button:has-text("없음")');
+        await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.fill('#right-dock textarea', 'call note');
         p.once('dialog', (d) => { asked.push(d.message()); d.dismiss(); });
         await p.click('header button:has-text("리뷰 끝")');
