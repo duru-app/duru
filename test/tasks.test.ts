@@ -748,6 +748,48 @@ test('a kind of case a reviewer picked for a listed screen or call is a case of 
   }, { caseKinds: CASE_KINDS });
 });
 
+const ENDED = { text: '끝난 문서: 끝난 뒤의 쓰기 요청은 거부된다', values: ['cancelled', 'rejected'] };
+
+test('a picked kind that lists values is a case of each value in the task list with its tests, and each value with none gets an empty test carrying its value tag', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    const specs = [
+      'refuses a cancelled document @screen:/home#Home @case:ended=cancelled',
+      'refuses an ended document @screen:/home#Home @case:ended',
+      `refuses archiving a rejected document @call:${ARCHIVE} @case:ended=rejected`,
+    ].map((title, i) => ({ title, file: 'cases.spec.ts', line: i + 1, tests: [{ status: 'expected', projectName: 'chromium' }] }));
+    fs.writeFileSync(path.join(copy, 'results/playwright/cases.json'), JSON.stringify({ suites: [{ title: 'cases.spec.ts', file: 'cases.spec.ts', specs }] }));
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    const pick = (node: string, kind: string) => addMark(marksDir, { target: { node, case: kind }, status: 'needed', author: 'a' }, new Date('2026-10-04T01:00:00Z'));
+    pick('/home#Home', 'boundary');
+    pick('/home#Home', 'ended');
+    pick(ARCHIVE, 'ended');
+    const tasks = cli('tasks');
+    const section = (id: string) => tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0].split('\n# ')[0];
+
+    assert.ok(tasks.includes('or a kind of case a reviewer picked for the screen or call, tagged `@case:<kind>`, or `@case:<kind>=<value>` for a value of a kind with values)'));
+    assert.ok(section('/home#Home').includes([
+      '- cases (a test of one carries its tag with `@screen:/home#Home`):',
+      `  - \`@case:boundary\` ${CASE_KINDS.boundary} — no tests`,
+      `  - ${ENDED.text}, a case for each value:`,
+      '    - `@case:ended=cancelled` — tests: ui pass 1',
+      '    - `@case:ended=rejected` — no tests',
+      '  - in no case — tests: ui pass 4, api pass 1, api pending 1, render fail 1, code pass 1, data fail 1',
+      '- calls:',
+    ].join('\n')));
+    assert.ok(section('/home#Home').endsWith(`${emptyTests(['@screen:/home#Home @depth:data', 'screen_home_Home_depth_data'], ['@screen:/home#Home @case:boundary', 'screen_home_Home_case_boundary'], ['@screen:/home#Home @case:ended=rejected', 'screen_home_Home_case_ended_rejected'])}\n`));
+    assert.ok(section(ARCHIVE).includes([
+      `- cases (a test of one carries its tag with \`@call:${ARCHIVE}\`):`,
+      `  - ${ENDED.text}, a case for each value:`,
+      '    - `@case:ended=cancelled` — no tests',
+      '    - `@case:ended=rejected` — tests: ui pass 1',
+      '  - in no case — no tests',
+      '- tests:',
+    ].join('\n')));
+    assert.ok(section(ARCHIVE).endsWith(`${emptyTests([`@call:${ARCHIVE} @depth:api`, 'call_POST_api_v1_archive_document_depth_api'], [`@call:${ARCHIVE} @case:ended=cancelled`, 'call_POST_api_v1_archive_document_case_ended_cancelled'])}\n`));
+  }, { caseKinds: { boundary: CASE_KINDS.boundary, ended: ENDED } });
+});
+
 test('with case kinds configured but none picked, the task list differs from one without them only in its intro', () => {
   withFixtureCopy(({ cli }) => {
     cli('rebuild');

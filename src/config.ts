@@ -11,6 +11,29 @@ const PACKAGE_NAME = /^(@[\w.-]+\/)?[\w.-]+$/;
 export const CASE_KIND = /^[A-Za-z][\w.-]*$/;
 const ROLE_MEMBER = new RegExp(`^(${NAME})(?:\\[(?:'([^']*)'|"([^"]*)")\\]|\\.(${NAME}))$`);
 
+export interface CaseKind {
+  text: string;
+  values: string[];
+}
+
+const CASE_KIND_KEYS = ['text', 'values'];
+
+function caseKind(kind: string, entry: any): CaseKind {
+  if (typeof entry === 'string') return { text: entry, values: [] };
+  const at = `caseKinds.${kind}`;
+  const extra = Object.keys(entry).filter((k) => !CASE_KIND_KEYS.includes(k));
+  if (extra.length) throw new Error(`${at} has ${extra.map((k) => JSON.stringify(k)).join(', ')}, which a kind does not take; a kind takes "text" and "values"`);
+  if (!isOneLine(entry.text)) throw new Error(`${at}.text must be the description the review page shows for the kind, on one line, not ${JSON.stringify(entry.text)}`);
+  if (entry.values === undefined) return { text: entry.text, values: [] };
+  if (!Array.isArray(entry.values)) throw new Error(`${at}.values must be a list of value names, such as ["cancelled", "rejected"], not ${JSON.stringify(entry.values)}`);
+  if (!entry.values.length) throw new Error(`${at}.values must list at least one value; leave it out for a kind with no values`);
+  const bad = entry.values.find((v: unknown) => typeof v !== 'string' || !CASE_KIND.test(v));
+  if (bad !== undefined) throw new Error(`${at}.values has ${JSON.stringify(bad)}, which is not a value name: a value starts with a letter followed by letters, digits, ".", "_" or "-"`);
+  const twice = entry.values.find((v: string, i: number) => entry.values.indexOf(v) !== i);
+  if (twice !== undefined) throw new Error(`${at}.values lists ${JSON.stringify(twice)} twice`);
+  return { text: entry.text, values: entry.values };
+}
+
 export function parseRoleEntry(entry: unknown) {
   if (typeof entry === 'string' && IDENTIFIER.test(entry)) return { name: entry };
   const m = typeof entry === 'string' && entry.match(ROLE_MEMBER);
@@ -155,12 +178,14 @@ export function loadConfig(configPath: string) {
   if (!isPlainObject(roleGuards) || !Object.entries(roleGuards).every(([guard, roles]) => isText(guard) && Array.isArray(roles) && roles.length > 0 && roles.every((r) => isText(r) && !/\s/.test(r)))) {
     throw new Error(`roleGuards must map role guards as in the map to the roles that pass them, such as { "menuPolicy.canAccessAdminRoutes": ["member:ADMINISTRATOR"] }, with no spaces in a role, not ${JSON.stringify(raw.roleGuards)}`);
   }
-  const caseKinds = raw.caseKinds ?? {};
-  if (!isPlainObject(caseKinds) || !Object.entries(caseKinds).every(([kind, text]) => CASE_KIND.test(kind) && isOneLine(text))) {
+  const rawKinds = raw.caseKinds ?? {};
+  if (!isPlainObject(rawKinds) || !Object.entries(rawKinds).every(([kind, entry]) => CASE_KIND.test(kind) && (isOneLine(entry) || isPlainObject(entry)))) {
     throw new Error('caseKinds must map each kind of test case a reviewer can pick for a screen or call to the description the review page shows for it, '
       + 'with each kind starting with a letter followed by letters, digits, ".", "_" or "-", and each description on one line, '
-      + `such as { "boundary": "입력 경계: 빈 값, 최대 길이, 특수 문자" }, not ${JSON.stringify(raw.caseKinds)}`);
+      + `such as { "boundary": "입력 경계: 빈 값, 최대 길이, 특수 문자" }, or to { "text", "values" } for a kind tested once for each of its values, `
+      + `such as { "ended": { "text": "끝난 문서", "values": ["cancelled", "rejected"] } }, not ${JSON.stringify(raw.caseKinds)}`);
   }
+  const caseKinds: Record<string, CaseKind> = Object.fromEntries(Object.entries<any>(rawKinds).map(([kind, entry]) => [kind, caseKind(kind, entry)]));
   const moves = raw.moves ?? [];
   const isMove = (m: any) => isPlainObject(m) && Object.keys(m).every((k) => MOVE_KEYS.includes(k)) && isRoutePath(m.from) && isRoutePath(m.to) && isOneLine(m.reason);
   if (!Array.isArray(moves) || !moves.every(isMove)) {

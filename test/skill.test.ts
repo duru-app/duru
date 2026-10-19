@@ -38,6 +38,12 @@ test('the agent skill says how to tag a test of a kind of case a reviewer picked
   assert.match(SKILL, /a call one more for each picked kind with no tests/);
 });
 
+test('the agent skill says how to tag a test of one value of a kind of case with values', () => {
+  assert.match(SKILL, /`@case:<kind>=<value>`; a test of one value carries that tag/);
+  assert.match(SKILL, /carries\s+the kind without a value counts for none of them/);
+  assert.match(SKILL, /for a kind with values, one for each value with no\s+tests/);
+});
+
 test('the agent skill says what an unchecked server match means when there is no server API list', () => {
   assert.match(SKILL, /`unchecked`/);
   assert.match(SKILL, /no call is dead and no screen is a dead screen/);

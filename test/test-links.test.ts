@@ -121,6 +121,7 @@ test('a role tag on a test with no screen tag is reported', () => {
 });
 
 const KINDS = { boundary: '입력 경계: 빈 값, 최대 길이, 특수 문자', legacy: '옛 데이터: 이전 버전에서 만든 문서' };
+const LOADED_KINDS = { boundary: { text: KINDS.boundary, values: [] }, legacy: { text: KINDS.legacy, values: [] } };
 const spec = (title: string, line: number) => ({ title, file: 'a.spec.ts', line, tests: [{ status: 'expected' }] });
 
 test('a @case tag of a configured kind attaches its test to that kind on every screen and call the test is tagged with, after the screen\'s role or setting cases', () => {
@@ -131,7 +132,7 @@ test('a @case tag of a configured kind attaches its test to that kind on every s
     spec('z @screen:/help#Help', 9),
   ] }]);
   withResults({ 'e2e.json': report }, (own) => {
-    const result = linkTests({ ...own, caseKinds: KINDS }, { screens: [{ id: '/report#Report', access }, { id: '/help#Help' }], calls: [{ id: 'GET:/x', options: [] }] });
+    const result = linkTests({ ...own, caseKinds: LOADED_KINDS }, { screens: [{ id: '/report#Report', access }, { id: '/help#Help' }], calls: [{ id: 'GET:/x', options: [] }] });
     assert.deepEqual(result.nodes['/report#Report'].map((t) => t.cases), [['role:ADMIN', 'case:boundary', 'case:legacy']]);
     assert.deepEqual(result.nodes['GET:/x'].map((t) => t.cases), [['case:boundary', 'case:legacy'], ['case:legacy']]);
     assert.ok(!('cases' in result.nodes['/help#Help'][0]));
@@ -146,12 +147,40 @@ test('a @case tag naming a kind the config does not list, or on a test with no s
     spec('z @story:open-help @case:boundary', 9),
   ] }]);
   withResults({ 'e2e.json': report }, (own) => {
-    const configured = linkTests({ ...own, caseKinds: KINDS }, { screens: [{ id: '/help#Help' }] });
+    const configured = linkTests({ ...own, caseKinds: LOADED_KINDS }, { screens: [{ id: '/help#Help' }] });
     assert.deepEqual(configured.unknownTags.map((u) => `${u.tag} ${u.test.line}`), ['case:timing 5', 'case:boundary 9']);
     assert.deepEqual(configured.nodes['/help#Help'].map((t) => t.cases ?? null), [['case:boundary'], null]);
     const absent = linkTests(own, { screens: [{ id: '/help#Help' }] });
     assert.deepEqual(absent.unknownTags, []);
     assert.ok(absent.nodes['/help#Help'].every((t) => !('cases' in t)));
+  });
+});
+
+const ENDED = { text: '끝난 문서: 끝난 뒤의 쓰기 요청은 거부된다', values: ['cancelled', 'rejected', 'completed'] };
+
+test('a @case tag with a value of a kind that lists values attaches its test to that value alone, on every screen and call the test is tagged with', () => {
+  const report = reportOf([{ title: 'a.spec.ts', specs: [
+    spec('x @screen:/sign#Sign @call:POST:/x @case:ended=cancelled @case:boundary', 1),
+    spec('y @call:POST:/x @case:ended=rejected @case:ended=cancelled', 5),
+  ] }]);
+  withResults({ 'e2e.json': report }, (own) => {
+    const result = linkTests({ ...own, caseKinds: { ...LOADED_KINDS, ended: ENDED } }, { screens: [{ id: '/sign#Sign' }], calls: [{ id: 'POST:/x', options: [] }] });
+    assert.deepEqual(result.nodes['/sign#Sign'].map((t) => t.cases), [['case:boundary', 'case:ended=cancelled']]);
+    assert.deepEqual(result.nodes['POST:/x'].map((t) => t.cases), [['case:boundary', 'case:ended=cancelled'], ['case:ended=cancelled', 'case:ended=rejected']]);
+    assert.deepEqual(result.unknownTags, []);
+  });
+});
+
+test('a @case tag without a value on a kind that lists values, with a value the kind does not list, or with a value on a kind that lists none points at nothing, and its test still counts for its screen', () => {
+  const report = reportOf([{ title: 'a.spec.ts', specs: [
+    spec('x @screen:/sign#Sign @case:ended', 1),
+    spec('y @screen:/sign#Sign @case:ended=expired', 5),
+    spec('z @screen:/sign#Sign @case:boundary=long @case:ended=completed', 9),
+  ] }]);
+  withResults({ 'e2e.json': report }, (own) => {
+    const result = linkTests({ ...own, caseKinds: { ...LOADED_KINDS, ended: ENDED } }, { screens: [{ id: '/sign#Sign' }] });
+    assert.deepEqual(result.unknownTags.map((u) => `${u.tag} ${u.test.line}`), ['case:ended 1', 'case:ended=expired 5', 'case:boundary=long 9']);
+    assert.deepEqual(result.nodes['/sign#Sign'].map((t) => t.cases ?? null), [null, null, ['case:ended=completed']]);
   });
 });
 
@@ -165,12 +194,34 @@ function withConfig<T>(raw: object, fn: (file: string) => T) {
   }
 }
 
-test('case kinds keep the order the config writes them in, and a config without them has none', () => {
+test('case kinds keep the order the config writes them in, a kind written as its description alone has no values, and a config without them has none', () => {
   withConfig({ caseKinds: { legacy: KINDS.legacy, boundary: KINDS.boundary, 'retry.v2_x-1': '실패와 복구' } }, (file) => {
-    assert.deepEqual(Object.entries(loadConfig(file).caseKinds), [['legacy', KINDS.legacy], ['boundary', KINDS.boundary], ['retry.v2_x-1', '실패와 복구']]);
+    assert.deepEqual(Object.entries(loadConfig(file).caseKinds), [['legacy', { text: KINDS.legacy, values: [] }], ['boundary', { text: KINDS.boundary, values: [] }], ['retry.v2_x-1', { text: '실패와 복구', values: [] }]]);
   });
   withConfig({}, (file) => assert.deepEqual(loadConfig(file).caseKinds, {}));
 });
+
+test('a case kind written as an object takes its description from text and keeps its values in the order written', () => {
+  withConfig({ caseKinds: { ended: { text: ENDED.text, values: ['rejected', 'cancelled', 'v2_x-1.b'] }, legacy: { text: KINDS.legacy } } }, (file) => {
+    assert.deepEqual(loadConfig(file).caseKinds, { ended: { text: ENDED.text, values: ['rejected', 'cancelled', 'v2_x-1.b'] }, legacy: { text: KINDS.legacy, values: [] } });
+  });
+});
+
+for (const [entry, reason] of [
+  [{ text: '끝난 문서', values: [] }, /^caseKinds\.ended\.values must list at least one value; leave it out for a kind with no values$/],
+  [{ text: '끝난 문서', values: 'cancelled' }, /^caseKinds\.ended\.values must be a list of value names, such as \["cancelled", "rejected"\], not "cancelled"$/],
+  [{ text: '끝난 문서', values: ['cancelled', 'rejected', 'cancelled'] }, /^caseKinds\.ended\.values lists "cancelled" twice$/],
+  [{ text: '끝난 문서', values: ['cancelled', 'two words'] }, /^caseKinds\.ended\.values has "two words", which is not a value name: a value starts with a letter followed by letters, digits, "\.", "_" or "-"$/],
+  [{ text: '끝난 문서', values: ['a=b'] }, /^caseKinds\.ended\.values has "a=b", which is not a value name/],
+  [{ text: '끝난 문서', values: [3] }, /^caseKinds\.ended\.values has 3, which is not a value name/],
+  [{ text: '끝난 문서', values: ['cancelled'], picks: [{ screen: '/participant/**' }] }, /^caseKinds\.ended has "picks", which a kind does not take; a kind takes "text" and "values"$/],
+  [{ values: ['cancelled'] }, /^caseKinds\.ended\.text must be the description the review page shows for the kind, on one line, not undefined$/],
+  [{ text: '끝난\n문서', values: ['cancelled'] }, /^caseKinds\.ended\.text must be the description the review page shows for the kind, on one line, not "끝난\\n문서"$/],
+] as const) {
+  test(`caseKinds { "ended": ${JSON.stringify(entry)} } is refused with the reason`, () => {
+    withConfig({ caseKinds: { boundary: KINDS.boundary, ended: entry } }, (file) => assert.throws(() => loadConfig(file), (err: Error) => reason.test(err.message)));
+  });
+}
 
 for (const caseKinds of [['boundary'], { 'two words': '경계' }, { 'a:b': '경계' }, { 'a=b': '경계' }, { '1st': '경계' }, { '': '경계' }, { boundary: '' }, { boundary: ' ' }, { boundary: '경계\n값' }, { boundary: 3 }]) {
   test(`caseKinds ${JSON.stringify(caseKinds)} is refused with what it should be`, () => {

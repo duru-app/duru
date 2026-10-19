@@ -10,6 +10,7 @@ import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { acceptCandidate, candidatePlace, discardCandidate, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
 import { isPlainObject } from './config.ts';
+import type { CaseKind } from './config.ts';
 import { buildFlow } from './flow.ts';
 import type { MapCall, MapScreen, ScreenMap } from './map.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
@@ -127,7 +128,8 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const { traced, ...tests } = applyJudgments(linked, loadJudgments(config.judgmentsDir).judgments);
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
-  const kinds = Object.keys(config.caseKinds);
+  const caseKinds: Record<string, CaseKind> = config.caseKinds;
+  const kinds = Object.keys(caseKinds);
   const candidates = storyCandidates(config, map, mapFile, traced);
   const marks = classifyMarks(loadMarks(config.marksDir), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key), stories.list as StoryPath[]);
   const needed = new Map<string, Set<string>>();
@@ -153,7 +155,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
     map: reviewMap,
     tests,
     marks,
-    caseKinds: config.caseKinds,
+    caseKinds,
     stories,
     needs: checkNeeds(config.storiesDir, stories.list),
     candidates,

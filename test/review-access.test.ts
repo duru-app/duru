@@ -8,7 +8,7 @@ import { loadMarks } from '../src/marks.ts';
 import { CLI, withRebuiltFixture, withServer, postMark, CASE_KINDS, rewrite, rebuild, browserMissing, withPage, openScreenInfo, openLinkGroups, LONG_GUARD, IN_SCREEN_GUARD, labLink, withLabLinks, screenBox, pickedBoxes, tipLines, needTag } from './review-helpers.ts';
 
 const BOUNDARY_ON_SIGNIN: [string, string, string] = ['results/playwright/e2e.json', '"screen:/signin#SignIn",\n            "screen:/help#Help"', '"screen:/signin#SignIn",\n            "screen:/help#Help",\n            "case:boundary"'];
-type CaseData = { caseKinds: Record<string, string>; map: { screens: { id: string; cases: { tag: string; kind: string }[] }[]; calls: { id: string; cases: { tag: string; kind: string }[] }[] } };
+type CaseData = { caseKinds: Record<string, { text: string; values: string[] }>; map: { screens: { id: string; cases: { tag: string; kind: string }[] }[]; calls: { id: string; cases: { tag: string; kind: string }[] }[] } };
 const casesIn = (data: CaseData) => [...data.map.screens, ...data.map.calls].filter((n) => n.cases.length).map((n) => [n.id, n.cases.map((c) => c.tag)]);
 
 test('the data carries the configured case kinds, and the kinds picked for a screen or call in config order after its role or setting cases, as the latest pick of each says', async () => {
@@ -16,7 +16,7 @@ test('the data carries the configured case kinds, and the kinds picked for a scr
     withServer(config, 'reviewer', async (base) => {
       const data = async (): Promise<CaseData> => (await fetch(`${base}/api/data`)).json();
       const before = casesIn(await data());
-      assert.deepEqual((await data()).caseKinds, CASE_KINDS);
+      assert.deepEqual((await data()).caseKinds, { boundary: { text: CASE_KINDS.boundary, values: [] }, legacy: { text: CASE_KINDS.legacy, values: [] } });
       for (const [node, kind] of [['/admin/member#AdminMember', 'legacy'], ['/admin/member#AdminMember', 'boundary'], ['GET:/api/v1/document/list', 'legacy'], ['/signin#SignIn', 'legacy']]) {
         assert.equal((await postMark(base, { target: { node, case: kind }, status: 'needed' })).status, 201);
       }
@@ -94,6 +94,49 @@ test('in a browser, with case kinds in the config every screen and every call sh
         ]);
       }),
     ), [BOUNDARY_ON_SIGNIN]);
+});
+
+const ENDED = { text: '끝난 문서: 끝난 뒤의 쓰기 요청은 거부된다', values: ['cancelled', 'rejected'] };
+const RENAME = 'PUT:/api/v1/document/{documentId}/name';
+const ENDED_TESTS: [string, string, string][] = [
+  ['results/playwright/e2e.json', '"screen:/signin#SignIn",\n            "screen:/help#Help"', '"screen:/signin#SignIn",\n            "screen:/help#Help",\n            "case:ended=cancelled",\n            "case:ended"'],
+  ['results/playwright/e2e.json', `"call:${RENAME}"\n`, `"call:${RENAME}",\n            "case:ended=rejected"\n`],
+];
+
+test('in a browser, a picked kind that lists values shows a row per value under it, with the tests of that value by depth and result or 「테스트 없음」, in screen info and in call details', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: { boundary: CASE_KINDS.boundary, ended: ENDED } }, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      for (const node of ['/signin#SignIn', RENAME]) assert.equal((await postMark(base, { target: { node, case: 'ended' }, status: 'needed' })).status, 201);
+      await withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const rows = async (section: Locator) => ({
+          kinds: await section.locator('li .case').allTextContents(),
+          values: await section.locator('.case-values > li').evaluateAll((els) => els.map((e) => [e.getAttribute('title'), e.querySelector('.case-value')!.textContent, (e.querySelector('.step-tests') as HTMLElement).innerText.replace(/\s+/g, ' ').trim()])),
+        });
+
+        await p.click('#screen-list li:has-text("/signin")');
+        await openScreenInfo(p);
+        const section = p.locator('#center .screen-info > .cases');
+        await section.locator('.case-values').waitFor();
+        assert.deepEqual(await rows(section), {
+          kinds: [ENDED.text],
+          values: [['@case:ended=cancelled', 'cancelled', 'UI/E2E ✓1'], ['@case:ended=rejected', 'rejected', '테스트 없음']],
+        });
+        assert.deepEqual(await section.locator('.case-kinds button').evaluateAll((els) => els.map((e) => [e.textContent, e.getAttribute('title'), e.getAttribute('aria-pressed')])), [
+          [CASE_KINDS.boundary, '@case:boundary', 'false'],
+          [ENDED.text, '@case:ended=cancelled\n@case:ended=rejected', 'true'],
+        ]);
+
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.locator('table.calls tbody tr:not(.option)', { hasText: RENAME }).locator('td.cell').first().click();
+        const callSection = p.locator('#center .call-info > .cases');
+        await callSection.locator('.case-values').waitFor();
+        assert.deepEqual(await rows(callSection), {
+          kinds: [ENDED.text],
+          values: [['@case:ended=cancelled', 'cancelled', '테스트 없음'], ['@case:ended=rejected', 'rejected', 'UI/E2E ✕1']],
+        });
+      });
+    }), ENDED_TESTS);
 });
 
 test('in a browser, a screen whose links ask for different kinds has its own filter and says so in its access panel, on links from it and in its flow box', { skip: browserMissing }, async () => {
