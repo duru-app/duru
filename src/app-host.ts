@@ -191,7 +191,8 @@ const WINDOW_NAMES = ['window', 'globalThis', 'self'];
 // 앱 페이지 안에서 따로 돌기 때문에 바깥 스코프의 변수를 쓰지 않는다.
 // 다른 사이트가 앱을 iframe 에 띄워도 주소와 입력값을 받아 가지 못하게, 리뷰 페이지의 출처로만 보낸다.
 // 비밀번호 칸의 값은 보내지 않고, 찾을 말이 없거나 글로 적을 수 없는 칸과 함께 건너뛴 수로만 센다.
-export function reportWalk(origins: string[]) {
+// 상자를 찾아 달라는 요청에는 이 앱을 띄운 리뷰 페이지에만 답하고, 칸의 값은 빼고 자리와 크기만 보낸다.
+export function answerReviewPage(origins: string[]) {
   const w: any = globalThis;
   if (w.parent === w) return;
   const post = (message: object) => {
@@ -244,6 +245,53 @@ export function reportWalk(origins: string[]) {
     post({ skipped: true });
   }, true);
   report();
+
+  const FIND_QUIET_MS = 300;
+  const FIND_WAIT_MS = 3000;
+  const afterQuiet = (then: () => void) => {
+    let done = false;
+    let quiet: ReturnType<typeof setTimeout>;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      watch.disconnect();
+      clearTimeout(quiet);
+      clearTimeout(cap);
+      then();
+    };
+    const watch = new w.MutationObserver(() => {
+      clearTimeout(quiet);
+      quiet = setTimeout(finish, FIND_QUIET_MS);
+    });
+    const cap = setTimeout(finish, FIND_WAIT_MS);
+    watch.observe(w.document, { childList: true, subtree: true, attributes: true, characterData: true });
+    quiet = setTimeout(finish, FIND_QUIET_MS);
+  };
+  w.addEventListener('message', (e: any) => {
+    const { duru, box, turn } = e.data ?? {};
+    if (e.source !== w.parent || !origins.includes(e.origin) || duru !== 'find' || typeof box !== 'object' || box === null) return;
+    const wanted = ['placeholder', 'label', 'testId'].filter((kind) => clean(box[kind]));
+    afterQuiet(() => {
+      const matched = [...w.document.querySelectorAll('input, textarea')]
+        .map((el) => ({ el, kinds: wanted.filter((kind) => wordsOf(el)[kind] === clean(box[kind])) }))
+        .filter((m) => m.kinds.length);
+      const whole = matched.filter((m) => m.kinds.length === wanted.length);
+      const found = whole.length >= (Number.isInteger(box.nth) && box.nth > 0 ? box.nth : 1) ? whole : matched;
+      const page = w.document.documentElement;
+      const scroll = { x: w.scrollX, y: w.scrollY };
+      w.parent.postMessage({
+        duru: 'found',
+        turn,
+        url: w.location.pathname + w.location.search + w.location.hash,
+        boxes: found.map(({ el, kinds }) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.left + scroll.x, y: r.top + scroll.y, w: r.width, h: r.height, kinds };
+        }),
+        scroll,
+        page: { w: page.scrollWidth, h: page.scrollHeight },
+      }, e.origin);
+    });
+  });
 }
 
 // 페이지마다 지우면 앱이 로그인하고 새로 고칠 때 다시 로그아웃되므로, 이 경로로 열 때만 토큰을 지운다.
@@ -270,7 +318,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     const origins = pageOrigins();
     const code = [
       login?.storage ? `localStorage.setItem(${key}, ${literal(login.storage.value)});` : '',
-      origins.length ? `(${reportWalk})(${literal(origins)});` : '',
+      origins.length ? `(${answerReviewPage})(${literal(origins)});` : '',
     ].join('');
     return code ? withScript(html, code) : html;
   };

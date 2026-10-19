@@ -321,7 +321,7 @@ test('in a browser, with baselineMap the page names the baseline, marks each cha
       await p.uncheck('#left input[name=changed]');
       await pick(p, '/home Home');
       assert.equal(await p.locator('#center .baseline-banner').count(), 0);
-      const compareOf = (id: string) => p.locator('#center table.calls tr', { has: p.locator(`td.call > div.mono:text-is("${id}")`) }).locator('td.compare');
+      const compareOf = (id: string) => p.locator('#center table.calls tr', { has: p.locator(`td.call > div.mono :text-is("${id}")`) }).locator('td.compare');
       assert.equal(await compareOf('POST:/api/v1/archive/document').textContent(), '서버 대조 바뀜 (서버에 있음 → 서버에 없음)');
       assert.equal(await compareOf('GET:/api/v1/document/list').textContent(), '—');
 

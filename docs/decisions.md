@@ -1917,15 +1917,79 @@ Chrome DevTools Recorder keeps several selectors for one step
 changes. `nth`, counted from 1, names one of several boxes the same words find, as Maestro picks the Nth match
 (https://docs.maestro.dev/api-reference/selectors); all read on 2026-10-15. A file with a box that has no words,
 empty words, a kind duru does not know, or an `nth` below 1 is not read, like any other malformed story file, so
-a test never gets a box it cannot look for. duru does not yet look for the box in the code, so every input shows
-「확인 안 됨」 on the page and `(not checked against the code)` in the task list; reading the boxes from the code can
-later turn that into found or gone without changing the file. The task list writes the words and the value as JSON
-strings, so spaces at the ends of a value and quotes inside the words stay visible.
+a test never gets a box it cannot look for. duru does not look for the box in the code, so the task list writes
+`(not checked against the code)`; since #300 the page looks for it in the running app when its line is pressed (the
+next entry). The task list writes the words and the value as JSON strings, so spaces at the ends of a value and quotes
+inside the words stay visible.
 Alternatives compared:
 - One line of text per input: easier to write, but a test or a record would have to turn the sentence into a box.
 - The field names of the request the screen sends: into-sign 1.5.0 has no TypeScript, so duru cannot read the body
   types, and a box whose value is never sent to the server could not be written.
 - A CSS or XPath selector: a reviewer cannot write it from the screen, and Playwright advises against it.
+
+**Pressing an input line looks for its box in the app duru serves, through the script duru already puts into every
+app page, and whether it was found shows only on the page.**
+Asked for in #300 (2026-10-19). On the card alone a reviewer cannot tell which box on the screen
+「라벨 「서명자 메모」 · 2 번째」 is. The app runs on a port of its own for each account, since the browser keeps storage per port, so the review
+page cannot read inside the app frame. It posts the box to the script duru puts after `<head>`, the one that reports a
+walk, and the script answers with where each matching `input` or `textarea` sits and which of the written kinds
+matched it, never a value. It answers only a request from its parent window at one of the review page's origins, as
+the walk report goes only there. The script reads each box's words the way a walk reads them (the placeholder, the first
+label's text or `aria-label`, `data-testid`) and takes the boxes that have every written word; when fewer boxes have
+them all than `nth`, it takes the boxes that have any one of them. `nth` counts in document order within the boxes it
+took. A walk writes `nth` among the boxes that have all its words, so a walked box is counted as the walk counted it,
+and several kinds are written so that the box can still be found when one of them changes (the entry above), which is why
+the task list joins them with `or`. The script counts once the page has had no change
+for 300 ms, waiting at most 3 s, so a box the app draws when its data arrives is counted, and the count does not depend
+on how fast the data came.
+The cut is the live app in a frame of its own at the app width, made taller, up to 4000 px, only as far as the counted
+box and the boxes within one cut's height of it need; the frame is scaled and moved so that their region fills the
+right pane. Boxes with the same words are cut together only while the app's text can still be read: the app is shown at
+no less than three quarters of its size, where the browser's default 16 px text is 12 px, the size of the review
+page's own small text. Driver's decision in #300 (2026-10-19), chosen from screenshots of the demo app, where the three
+「서명자 메모」 boxes sat at 234, 257 and 1926 px and cutting them together shrank the app to a fifth of its size, so
+that only the numbers could be seen: when the boxes do not fit together at that size, the cut stays around the counted
+box, the boxes near it that fit still show with their numbers, and the note under the cut says on which side of it the
+others are, as in 「3번은 이 그림 아래쪽에 있습니다」. When no box is found, the top left of the app screen is shown at
+that size rather than the whole width shrunk into the pane. The outlines and numbers are drawn by the
+review page over the frame, so nothing is drawn inside the app and the box shows empty, as the app has it, with the
+value on the line above. The small picture is a rectangle in the page's proportions with the cut marked, worked out from
+the page size the script sends. The frame is apart from the middle pane's and sits in a place of its own above the
+right pane's content, so typing a comment or a live reload does not reload it, and another line on the same screen and
+account asks again in the same frame. Driver's decision in #300 (2026-10-19): 「앱 화면」 is a block at the top of the
+right pane with 「닫기」 and the story's pane below it, not a tab beside the story's pane, and 「가운데에 앱 화면 전체 열기」
+opens the whole app in the story tab's middle pane, with 「단계 카드로 돌아가기」, rather than switching to the list view.
+In the mockup the driver also chose that lines on a new story's cards cannot be pressed, as their values were typed in
+the app while it was recorded; lines on a screen not on the map and in 「순서 고치기」 cannot be pressed either, since the
+first has no address to open and the second shows an order not yet saved.
+Driver's decision in #300 (2026-10-19): whether the box was found shows only on the page, until it is reloaded, and is
+written to no file and not to the task list, which keeps `(not checked against the code)`. Whether a box can be found
+depends on the data in the running app, a second signer's memo only when there is a second signer, so a kept result
+would soon be stale. For the same reason `skills/duru/SKILL.md` still tells the agent that duru did not look for the
+box: the agent reads the task list, not the page.
+Showing the target on the screen as it is follows Playwright's trace viewer, the issue's reference, which colours only
+the target element on the screen of each action.
+Alternatives compared:
+- Keeping the result in the story file or the task list: stale as soon as the app's data changes, and pressing a line
+  would change a story file.
+- A screenshot taken by the review server with Playwright: `playwright-core` becomes a dependency with a browser to
+  download, and the picture is not the app the reviewer has open.
+- The review server passing the app through its own port so that the page can read the frame: turned down for
+  recording (below) for the same reasons.
+- Drawing the outline inside the app page: the app's own styles could hide or move it, and the script would change
+  what the app shows.
+- A second frame of the app for the small picture: the app would load twice for each press.
+- Counting only boxes that have every written word: a box with one word out of date would not be found, which is what
+  writing several kinds is for.
+- Counting every box any written word finds: a walk that wrote `placeholder` 「메모」 and `testId` 「memo-b」 without
+  `nth`, because only that box had both, would point at the first box with the placeholder 「메모」.
+- Cutting only the counted box whenever the boxes do not all fit in one cut: the numbers 1, 2, 3 are there to show
+  which of the boxes with the same words the line means, so the boxes near it stay in the cut and the note names the
+  others.
+- Shrinking the cut until every box with the same words fits, as the first version did: boxes 1700 px apart left the
+  app at a fifth of its size, with only the numbers to be seen.
+- A separate cut for each group of boxes, stacked in the pane: the pane grows with every scattered group, pushing the
+  story's own pane further down.
 
 **What several stories need alike is kept once, one file per need in `needs/` inside the story folder, and a
 condition picks it by its path under that folder: `{ "use": "member-account.json" }`.**

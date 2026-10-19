@@ -176,7 +176,7 @@ test('in a browser, the inputs written for a step show in its card with the word
           [['안내 글 「실험 이름」 또는 테스트 ID 「lab-name」', '첫 실험', '확인 안 됨'], ['라벨 「서명자 메모」 · 2 번째', '확인했습니다', '확인 안 됨']],
           [['라벨 「검색어」', '계약서', '확인 안 됨']],
         ]);
-        assert.equal(await p.getAttribute('#center .step-written .input-unchecked >> nth=0', 'title'), 'duru 가 코드에서 이 상자를 찾아보지 않았습니다');
+        assert.equal(await p.getAttribute('#center .step-written .input-unchecked >> nth=0', 'title'), '앱 화면에서 이 상자를 찾아보는 것은 설정에 app 을 적어 duru 가 앱을 띄울 때만 됩니다');
         await p.click('#center .step-written td:has-text("계약서")');
         assert.equal(await p.textContent('#center h3'), '실험 이름을 적어 돌린다', 'pressing an input line does not open the screen');
         await p.click('#center details.story-file summary');

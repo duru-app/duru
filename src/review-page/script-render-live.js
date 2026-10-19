@@ -15,6 +15,7 @@ function render() {
   if (state.ended || state.failed) return;
   pickables = [];
   checkStoryStep();
+  checkPoint();
   renderHeader();
   const flow = state.view === 'flow';
   // 고른 화면이 그림에 없으면 오른쪽 칸과 그림이 서로 다른 화면을 가리키므로 선택을 해제한다.
@@ -27,6 +28,7 @@ function render() {
   main.classList.toggle('compose-flow', diagram);
   main.classList.toggle('compose-line', diagram && state.compose.diagram === 'line');
   main.classList.toggle('walking', walkShown());
+  main.classList.toggle('app-full', storyAppShown());
   fitPanes();
   document.getElementById('flow-bar').hidden = !flow;
   document.getElementById('flow').hidden = !flow && !diagram;
