@@ -312,6 +312,48 @@ test('constants that are not an object of file paths, or a routeConstant that is
   });
 });
 
+test('a config without apiModules, or with null for it, builds the same map as one with an empty list, and rebuild and extract run through', async () => {
+  await withCopy(async ({ copy, configFile, setConfig }) => {
+    const written = () => withoutRun(JSON.parse(fs.readFileSync(path.join(copy, 'out/map.json'), 'utf8')));
+    setConfig({ apiModules: [] });
+    const empty = withoutRun(await mapOf(configFile));
+    execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    const emptyWritten = written();
+    for (const value of [undefined, null]) {
+      setConfig({ apiModules: value });
+      assert.deepEqual(withoutRun(await mapOf(configFile)), empty, String(value));
+    }
+    for (const value of [undefined, null]) {
+      setConfig({ apiModules: value });
+      for (const command of ['rebuild', 'extract']) {
+        fs.rmSync(path.join(copy, 'out/map.json'));
+        execFileSync(process.execPath, [CLI, command, configFile], { encoding: 'utf8' });
+        assert.deepEqual(written(), emptyWritten, `${command} ${value}`);
+      }
+    }
+  });
+});
+
+const API_MODULES_ERROR = 'apiModules must be a list of files that export the app\'s API functions, as paths from srcRoot, such as ["_ajax/AjaxFunc.js"], not ';
+
+test('an apiModules that is not a list of file paths, or that names a file calledApiModules also names, stops the run with an error that says what to write', async () => {
+  await withCopy(({ configFile, setConfig }) => {
+    for (const value of ['_ajax/AjaxFunc.js', { a: 'x' }, ['_ajax/AjaxFunc.js', 3], ['_ajax/AjaxFunc.js', '']]) {
+      setConfig({ apiModules: value });
+      assert.throws(() => loadConfig(configFile), (err: Failure) => err.message === API_MODULES_ERROR + JSON.stringify(value), JSON.stringify(value));
+    }
+    setConfig({ apiModules: ['_ajax/AjaxFunc.js'], calledApiModules: ['_ajax/AjaxFunc.js'] });
+    assert.throws(() => loadConfig(configFile), (err: Failure) => err.message === '_ajax/AjaxFunc.js is in both apiModules and calledApiModules; list it in one of them');
+    setConfig({ apiModules: undefined });
+    assert.deepEqual(loadConfig(configFile).calledApiModules, ['_ajax/AjaxFunc.js']);
+    setConfig({ apiModules: '_ajax/AjaxFunc.js', calledApiModules: undefined });
+    assert.throws(
+      () => execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8', stdio: 'pipe' }),
+      (err: Failure) => err.status !== 0 && err.stderr.includes(`${API_MODULES_ERROR}"_ajax/AjaxFunc.js"`) && !err.stderr.includes('TypeError'),
+    );
+  });
+});
+
 test('a map built before screens carried their route file stops the task list, and the review server before it starts, with a line that says to rebuild', async () => {
   await withCopy(async ({ copy, configFile }) => {
     execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });

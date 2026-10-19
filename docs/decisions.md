@@ -793,6 +793,16 @@ Measured with `test/fixtures/app` and its route file rewritten to literal paths:
 two example maps and the into-sign 1.5.0 and 2.0.0 maps, which set both keys, are identical to main's apart from the
 time they were written.
 
+**`apiModules` may be left out of the config.**
+An app with no hand-written module of API functions (outline, appsmith and mattermost, in the measurement that
+found the stop) had to write `"apiModules": []` to get past a `TypeError`. As with `constants`, a required key with a
+clear error would still make every such app write an empty list, so leaving the key out, or `null`, is the same as
+`[]`. A value that is present but not a list of paths stops the run in the config check. Unlike `calledApiModules`,
+a file listed twice is not refused: the files are gathered into a set, so such a config works and keeps working.
+Measured on `test/fixtures/app`: without the key, or with `null`, the map is the one `[]` gives; outline, appsmith
+and mattermost were not rebuilt. `test/fixtures/app` and `test/fixtures/ts-app`, which list `apiModules`, give the
+same map as main's apart from the time it was written.
+
 **A route written as a property of what a call returns (`Drafts.Component`, with `const Drafts =
 createLazyComponent(() => import('./Drafts'))`) points at the file that the function given to the call loads,
 whatever the property is called.**

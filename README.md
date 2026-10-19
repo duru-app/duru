@@ -94,7 +94,9 @@ client with example results and a config to start from.
   export default createSettings();
   ```
 
-- `apiModules`, `passThroughCalls` — where API functions live and which wrappers pass a URL through.
+- `apiModules`, `passThroughCalls` — where API functions live and which wrappers pass a URL through. Both may be left
+  out; leaving out `apiModules` is the same as `[]`, for an app whose API code is read through `calledApiModules`
+  or sits in the screens. An `apiModules` that is not a list of paths from `srcRoot` stops the run with an error.
 - `calledApiModules`, `requestFunction` — for API code whose methods find their address somewhere else, such as in a
   table or through a prefix added when the request is sent. `calledApiModules` lists the files that export the API
   objects, API functions or API classes. `requestFunction` names the function the app sends its requests through:
