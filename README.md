@@ -57,9 +57,9 @@ client with example results and a config to start from.
   screens. An empty list, an entry that is not text or a file listed twice stops the run with an error, and a
   listed file that is not there stops the map build with its name.
 - `routeElements`, `routeConstant` — the elements that declare routes (`["Route"]`) and the object that holds
-  the route paths (`"Option.ROUTE_PATH"`). A route with a `path` gives a screen when the screen is written as
-  `component={Home}`, `element={<Home />}`, `element={wrap(<Home />)}`, an element wrapped in others
-  (`element={<Suspense><Home /></Suspense>}`) or a component passed to another (`element={<Wrapper Page={Signer} />}`).
+  the route paths (`"Option.ROUTE_PATH"`). A route with a `path` gives a screen when duru can read which component
+  it draws. When duru sees a route that draws a screen it cannot read, it prints a `route not read` line saying why
+  (see "What extract and rebuild print").
   `element={<Navigate to=… />}` is a redirect, not a screen. A route without `path` gives no screen, and the path
   of a parent route is not put in front of it. `routeConstant` and `constants` may be left out, or set to `null`
   (`routeConstant` also to `""`), for an app that has no table of its route paths. A `routeConstant` that is not a
@@ -412,6 +412,10 @@ listing the places whose value the source does not show in full.
   route file, or, followed by `in <file>:<line>`, in another file when duru followed a name into that file. `, only
   <text>` follows when a part of the path was read, with `{?}` for the rest. The screen is on the map with that path
   and an ID made from it; when the ID itself holds `{?}`, it changes once that part can be read (`unreadRoutePaths`).
+- `route not read ← <route file>:<line>: <reason>` — printed when duru sees a route that draws a screen it cannot
+  read, with the reason.
+  That screen is missing from the map and has no ID, so no test can be tagged with it; look at the route at that
+  line to see which screen it draws (`unreadRoutes`).
 - `settingsFunctions <file>:<line> <what>` — about calls in the files the route files lead to by import: a call
   that duru does not read as settings; a default the function is given that differs from the `settingsDefaults`
   value (the map keeps that value), or that differs from another call's or cannot be compared with it (the map

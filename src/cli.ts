@@ -220,6 +220,7 @@ if (command === 'tasks') {
     const elsewhere = at.file === file ? '' : ` in ${at.file}:${at.line}`;
     console.log(`  route path not read ← ${file}:${line}: stopped at ${at.text}${elsewhere}${routePath === UNKNOWN ? '' : `, only ${routePath}`}`);
   }
+  for (const { file, line, reason } of map.unreadRoutes ?? []) console.log(`  route not read ← ${file}:${line}: ${reason}`);
 
   if (command === 'rebuild') {
     if (changes) console.log(changes);

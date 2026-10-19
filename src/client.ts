@@ -1005,6 +1005,7 @@ export async function extractClient(config: any) {
 
   const redirects: { to: string; file: string; line: number; guards: string[] }[] = [];
   const unreadRoutePaths: { file: string; line: number; path: string; stoppedAt: { text: string; file: string | null; line: number } }[] = [];
+  const unreadRoutes: { file: string; line: number; reason: string }[] = [];
   const readWhole = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && !v.includes(UNKNOWN));
 
   function unreadPiece(p: NodePath, seen = new Set<Node>()): NodePath {
@@ -1044,16 +1045,45 @@ export async function extractClient(config: any) {
           return;
         }
         if (!config.routeElements.includes(tag)) return;
+        const line = p.node.loc!.start.line;
+        const unread = (reason: string) => void unreadRoutes.push({ file: routeFile, line, reason });
         const pathAttr = attr('path');
         const compAttr = attr('component');
-        if (!pathAttr) return;
-        const page = compAttr ? componentAttrPage(compAttr, absFile) : elementPage(attr('element'), absFile);
+        const elementAttr = attr('element');
+        const renderAttr = attr('render');
+        const spread = p.get('openingElement.attributes').find((a) => a.isJSXSpreadAttribute());
+        const drawnBy = () => (renderAttr ? renderPage(renderAttr, absFile) : childrenPage(p, absFile));
+        if (!pathAttr) {
+          if (spread) return unread(`the path may be in ${sliceText(src, spread.node)}`);
+          if (holdsRoutes(p)) return;
+          const drawn = compAttr ? componentAttrPage(compAttr, absFile) : elementAttr ? elementPage(elementAttr, absFile) : drawnBy();
+          if (typeof drawn === 'string') return unread(drawn);
+          if (drawn && drawn !== REDIRECT) unread('no path');
+          return;
+        }
+        let page: Page | null;
+        let drawnInFunctionOrChildren = false;
+        if (compAttr) page = componentAttrPage(compAttr, absFile);
+        else if (elementAttr) page = elementPage(elementAttr, absFile);
+        else {
+          if (holdsRoutes(p)) return;
+          const drawn = drawnBy();
+          if (drawn === REDIRECT) return;
+          if (typeof drawn === 'string') return unread(drawn);
+          if (!drawn) return spread ? unread(`the screen may be in ${sliceText(src, spread.node)}`) : undefined;
+          page = drawn;
+          drawnInFunctionOrChildren = true;
+        }
         if (!page) return;
         const pathWritten = pathAttr.get('value');
         const pathExpr = (pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten) as NodePath;
         const pathValue = evaluate(pathExpr);
         const routePath = typeof pathValue === 'string' ? pathValue : UNKNOWN;
-        if (routePath.includes(UNKNOWN)) unreadRoutePaths.push({ file: routeFile, line: p.node.loc!.start.line, path: routePath, stoppedAt: stopOf(unreadPiece(pathExpr)) });
+        if (routePath.includes(UNKNOWN)) {
+          const stoppedAt = stopOf(unreadPiece(pathExpr));
+          if (drawnInFunctionOrChildren && madeInLoop(p)) return unread(`made for each item of a list, and its path stopped at ${stoppedAt.text}`);
+          unreadRoutePaths.push({ file: routeFile, line, path: routePath, stoppedAt });
+        }
         screens.push({
           path: routePath,
           component: page.component,
@@ -1061,12 +1091,32 @@ export async function extractClient(config: any) {
           wrapperFiles: [...page.files, ...wrappersOf(p, absFile)],
           routeFile,
           routeGuards: guardsOf(p, src, note),
-          line: p.node.loc!.start.line,
+          line,
         });
       },
     });
     return screens;
   }
+
+  function holdsRoutes(route: NodePath<JSXElement>) {
+    let found = false;
+    route.traverse({
+      JSXElement(e) {
+        const tag = tagOf(e.node.openingElement.name);
+        if (tag && config.routeElements.includes(tag)) {
+          found = true;
+          e.stop();
+        }
+      },
+    });
+    return found;
+  }
+
+  const LOOP_METHODS = ['map', 'flatMap', 'forEach', 'reduce'];
+  const madeInLoop = (route: NodePath) => Boolean(route.findParent((a) => {
+    const callee = a.isFunction() && a.listKey === 'arguments' && (a.parent as CallExpression).callee;
+    return Boolean(callee) && (callee as Node).type.endsWith('MemberExpression') && LOOP_METHODS.includes(((callee as MemberExpression).property as Identifier).name);
+  }));
 
   function wrappersOf(routePath: NodePath, routesFile: string) {
     const files: string[] = [];
@@ -1109,6 +1159,49 @@ export async function extractClient(config: any) {
   function elementPage(elementAttr: NodePath<JSXAttribute> | undefined, routesFile: string) {
     const pages = elementsIn(elementAttr?.get('value')).map((e) => pageOf(e, routesFile)).filter(isPage);
     return withFiles(pickPage(pages), pages.flatMap((c) => c.files));
+  }
+
+  function renderPage(renderAttr: NodePath<JSXAttribute>, routesFile: string): Page | typeof REDIRECT | string | null {
+    const value = renderAttr.get('value');
+    const fn = value.isJSXExpressionContainer() ? (value.get('expression') as NodePath) : null;
+    if (!fn?.isArrowFunctionExpression() && !fn?.isFunctionExpression()) return 'render is not a function written in the route';
+    const body = fn.get('body') as NodePath;
+    const statements = body.isBlockStatement() ? body.get('body') : null;
+    const returned = statements ? (statements.length === 1 && statements[0].isReturnStatement() ? (statements[0].get('argument') as NodePath) : null) : body;
+    const element = unwrapCalls(returned ?? undefined);
+    if (element?.isJSXElement() && holdsValue(element)) return null;
+    const page = element?.isJSXElement() ? pageOf(element, routesFile) : null;
+    if (isPage(page) && !isAppScreen(page, renderAttr.scope)) return null;
+    return page ?? 'render does not return one component';
+  }
+
+  function childrenPage(route: NodePath<JSXElement>, routesFile: string): Page | typeof REDIRECT | string | null {
+    if (holdsValue(route)) return null;
+    const read = route.get('children').flatMap(elementsIn).map((e) => pageOf(e, routesFile));
+    if (!read.length) return null;
+    const pages = read.filter(isPage);
+    const screens = pages.filter((c) => isAppScreen(c, route.scope));
+    if (screens.length) return withFiles(pickPage(screens), pages.flatMap((c) => c.files));
+    if (pages.length) return null;
+    return read.every((c) => c === REDIRECT) ? REDIRECT : "the route's children hold no component";
+  }
+
+  function holdsValue(p: NodePath<any>): boolean {
+    if (p.isJSXText() || p.isJSXEmptyExpression() || p.isLiteral()) return false;
+    if (p.isJSXExpressionContainer()) return holdsValue(p.get('expression'));
+    if (p.isJSXElement() || p.isJSXFragment()) return (p.get('children') as NodePath[]).some(holdsValue);
+    if (p.isConditionalExpression()) return holdsValue(p.get('consequent')) || holdsValue(p.get('alternate'));
+    if (p.isLogicalExpression()) return holdsValue(p.get('right'));
+    return true;
+  }
+
+  function isAppScreen(page: Page, scope: Scope) {
+    if (page.componentFile) return true;
+    const binding = scope.getBinding(page.component.split('.')[0]);
+    if (!binding || binding.kind === 'module' || binding.kind === 'param') return false;
+    let init = binding.path.isVariableDeclarator() ? (binding.path.get('init') as NodePath) : null;
+    while (init?.isMemberExpression()) init = init.get('object');
+    return !(init?.isCallExpression() && init.get('callee').isIdentifier({ name: 'require' }));
   }
 
   function elementsIn(p: NodePath<any> | undefined): NodePath<JSXElement>[] {
@@ -1272,5 +1365,5 @@ export async function extractClient(config: any) {
   });
 
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
+  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
 }
