@@ -126,7 +126,8 @@ const readTests = (config: any) => readJson(path.join(config.outDir, 'tests.json
 
 export function reviewData(config: any, author: ReviewAuthor | null, app: AppHost | null = null, fileSettings: Awaited<ReturnType<AppHost['fileSettings']>> | null = null) {
   const mapFile = path.join(config.outDir, 'map.json');
-  const map = readMap(mapFile);
+  const read = readMap(mapFile);
+  const map = { ...read, screens: [...new Map(read.screens.map((s) => [s.id, s])).values()] };
   const linked = readTests(config);
   const { traced, ...tests } = applyJudgments(linked, loadJudgments(config.judgmentsDir).judgments);
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
