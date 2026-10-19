@@ -9,6 +9,7 @@ const POINT_MARGIN = 16;
 const POINT_MARGIN_SHOWN = 14;
 const POINT_MIN_WIDTH = 360;
 const POINT_MIN_HEIGHT = 120;
+const POINT_NO_ROOM = 28;
 const POINT_MINI_WIDTH = 96;
 const POINT_MINI_MAX = 140;
 const POINT_ANSWER_MS = 5000;
@@ -272,8 +273,9 @@ function drawPointCut(host) {
   const at = (p.box.nth ?? 1) - 1;
   const shown = p.status === 'found' ? a.boxes : [];
   const drawn = shown.map((b, i) => showing(b) && (i === at || !sideOf(b, region)));
+  const tight = (b) => dx + (b.x + b.w - region.x) * k + POINT_NO_ROOM > room;
   fill(crop.querySelector('.point-marks'), shown.map((b, i) => drawn[i] && h('div', {
-    class: `point-mark${i === at ? ' target' : ''}`,
+    class: `point-mark${i === at ? ' target' : ''}${tight(b) ? ' tight' : ''}`,
     style: `left: ${dx + (b.x - region.x) * k - 3}px; top: ${(b.y - region.y) * k - 3}px; width: ${b.w * k + 6}px; height: ${b.h * k + 6}px`,
   }, shown.length > 1 ? h('span', { class: 'point-no' }, i + 1) : null)));
   const away = new Map();

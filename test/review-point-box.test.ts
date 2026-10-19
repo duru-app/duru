@@ -41,7 +41,7 @@ if (location.pathname === '/home') {
   const hidden = (shown) => {
     const label = document.createElement('label');
     label.append('숨은 칸 ', document.createElement('input'));
-    if (shown) label.style.cssText = 'display: block; margin-left: 800px';
+    if (shown) label.style.cssText = 'position: absolute; right: 0; top: 400px';
     else label.style.display = 'none';
     return label;
   };
@@ -298,6 +298,7 @@ test('in a browser, boxes found by the same words are cut together and numbered 
     assert.equal(await p.textContent('#right-app .point-note'), '같은 라벨의 상자 3개 가운데 2 번째를 짚었습니다.');
     const [crop] = await rectOf(p, '#right-app .point-crop');
     assert.ok((await rectOf(p, '#right-app .point-mark')).every((m) => inside(m, crop)));
+    assert.ok((await rectOf(p, '#right-app .point-no')).every((n) => inside(n, crop)), 'every number shows inside the cut');
   });
 });
 
@@ -312,6 +313,7 @@ test('in a browser, when boxes found by the same words lie too far apart to cut 
     assert.equal(await p.textContent('#right-app .point-note'), '같은 라벨의 상자 3개 가운데 2 번째를 짚었습니다. 3번은 이 그림 아래쪽에 있습니다.');
     const [crop] = await rectOf(p, '#right-app .point-crop');
     assert.ok((await rectOf(p, '#right-app .point-mark')).every((m) => inside(m, crop)));
+    assert.ok((await rectOf(p, '#right-app .point-no')).every((n) => inside(n, crop)), 'every number shows inside the cut');
 
     await lineAt(p, 0, 4).click();
     await untilChip(p, 0, 4, '화면에서 찾음');
@@ -321,7 +323,9 @@ test('in a browser, when boxes found by the same words lie too far apart to cut 
     assert.equal(await p.textContent('#right-app .point-note'), '같은 라벨의 상자 2개 가운데 2 번째를 짚었습니다. 1번은 이 그림 위쪽에 있습니다.');
     assert.ok(parseFloat((await p.getAttribute('#right-app iframe.point-frame', 'style'))!.match(/height: ([\d.]+)px/)![1]) > 1600, 'the app frame grew to hold the counted box');
     const [mark] = await rectOf(p, '#right-app .point-mark');
-    assert.ok(inside(mark, (await rectOf(p, '#right-app .point-crop'))[0]));
+    const [cut] = await rectOf(p, '#right-app .point-crop');
+    assert.ok(inside(mark, cut));
+    assert.ok(inside((await rectOf(p, '#right-app .point-no'))[0], cut), 'the number shows inside the cut');
   });
 });
 
@@ -334,6 +338,8 @@ test('in a browser, a box the app hides is counted but left out of the cut and n
     const [mini] = await rectOf(p, '#right-app .point-mini');
     const [cut] = await rectOf(p, '#right-app .point-mini i');
     assert.ok(cut.left - mini.left > 20, `the cut starts beside the box that shows, not at the page's left edge (${JSON.stringify({ mini, cut })})`);
+    const [crop] = await rectOf(p, '#right-app .point-crop');
+    assert.ok(inside((await rectOf(p, '#right-app .point-no'))[0], crop), 'the number of a box at the right of the cut still shows inside it');
   });
 });
 
