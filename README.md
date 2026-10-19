@@ -802,8 +802,24 @@ added), a name and a text: 「만들기」 writes the need file and the line pic
 that breaks the story ID rule or is already in `needs/` is refused with why. A line picking a file that is not there
 shows 「needs/… 없음」 and can pick another need file or be removed. A link row where the map has no link lists the
 screens the step before leads to, here and while a new story is written. Each input reads like
-「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」:
-duru has not looked for that box in the code.
+「안내 글 「이메일」 또는 테스트 ID 「login-email」」, with 「· 2 번째」 when it has `nth`, then the value and 「확인 안 됨」.
+With `app` set, pressing an input line on a story's or a candidate's card puts 「앱 화면」 at the top of the right pane,
+above the story's own pane: the app at that step's screen, the account it is opened with, and the app cut down to the
+boxes those words find, zoomed in. When the words find several boxes they are numbered 1, 2, 3 and only the one the
+line counts to has the strong outline. When they lie too far apart to be cut together with the app's text still
+readable, the cut stays around the box the line counts to and the boxes near it, and the note under the cut says where
+the others are, such as 「3번은 이 그림 아래쪽에 있습니다」. When no box is found, 「앱 화면」 shows the top left of the
+app screen at that same readable size. The box is shown empty, as the app has it; the value stays on the line above the
+cut. A small picture beside the address shows where the cut sits in the whole app screen, 「가운데에 앱 화면 전체 열기」
+opens the whole app in the middle pane until 「단계 카드로 돌아가기」, and 「닫기」 closes 「앱 화면」. The line then says
+「화면에서 찾음」, or 「못 찾음」 with why under it: no box has those words, or fewer boxes have them than the number
+written. A box that shows only with certain data, such as a second signer's memo, is found only when the running app
+has that data, so the result lasts only until the page is reloaded and is written to no file and not to the task list.
+The line keeps 「확인 안 됨」, and 「앱 화면」 says why, when the step's screen needs path values that are missing, when the
+app moves to another screen, when the app never answers, as an app whose security policy blocks inline scripts
+does not, or when the box is not found while the account the app is opened with could not sign in or no account meets
+the screen's role condition; 「앱 화면」 shows that sign-in error or account note in red, as the middle pane does. Lines on a screen not on the map, on the cards of a new story and in 「순서 고치기」 cannot be pressed, and
+hovering says why; without `app`, hovering 「확인 안 됨」 says that finding the box needs `app`.
 A picked need file shows as 「공통 조건」 and its name, hovering shows its file and text, and pressing it opens it.
 At the bottom of the story tab, 「공통 조건 N」 lists the need files with their name, file and how many stories pick them, followed
 by the need files that could not be read and why. Pressing one shows its name, its text, the stories that pick it and
