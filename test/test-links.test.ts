@@ -196,14 +196,21 @@ function withConfig<T>(raw: object, fn: (file: string) => T) {
 
 test('case kinds keep the order the config writes them in, a kind written as its description alone has no values, and a config without them has none', () => {
   withConfig({ caseKinds: { legacy: KINDS.legacy, boundary: KINDS.boundary, 'retry.v2_x-1': '실패와 복구' } }, (file) => {
-    assert.deepEqual(Object.entries(loadConfig(file).caseKinds), [['legacy', { text: KINDS.legacy, values: [] }], ['boundary', { text: KINDS.boundary, values: [] }], ['retry.v2_x-1', { text: '실패와 복구', values: [] }]]);
+    assert.deepEqual(Object.entries(loadConfig(file).caseKinds), [['legacy', { text: KINDS.legacy, values: [], picks: [] }], ['boundary', { text: KINDS.boundary, values: [], picks: [] }], ['retry.v2_x-1', { text: '실패와 복구', values: [], picks: [] }]]);
   });
   withConfig({}, (file) => assert.deepEqual(loadConfig(file).caseKinds, {}));
 });
 
 test('a case kind written as an object takes its description from text and keeps its values in the order written', () => {
   withConfig({ caseKinds: { ended: { text: ENDED.text, values: ['rejected', 'cancelled', 'v2_x-1.b'] }, legacy: { text: KINDS.legacy } } }, (file) => {
-    assert.deepEqual(loadConfig(file).caseKinds, { ended: { text: ENDED.text, values: ['rejected', 'cancelled', 'v2_x-1.b'] }, legacy: { text: KINDS.legacy, values: [] } });
+    assert.deepEqual(loadConfig(file).caseKinds, { ended: { text: ENDED.text, values: ['rejected', 'cancelled', 'v2_x-1.b'], picks: [] }, legacy: { text: KINDS.legacy, values: [], picks: [] } });
+  });
+});
+
+test('a case kind written with picks keeps each rule as written, in order', () => {
+  const picks = [{ screen: '/participant/**', methods: ['POST', 'PUT', 'DELETE'] }, { api: '/api/v1/document/*/name' }, { screen: '/admin/*' }];
+  withConfig({ caseKinds: { ended: { text: ENDED.text, values: ['cancelled'], picks }, legacy: { text: KINDS.legacy, picks: [{ methods: ['DELETE'] }] } } }, (file) => {
+    assert.deepEqual(loadConfig(file).caseKinds, { ended: { text: ENDED.text, values: ['cancelled'], picks }, legacy: { text: KINDS.legacy, values: [], picks: [{ methods: ['DELETE'] }] } });
   });
 });
 
@@ -214,7 +221,19 @@ for (const [entry, reason] of [
   [{ text: '끝난 문서', values: ['cancelled', 'two words'] }, /^caseKinds\.ended\.values has "two words", which is not a value name: a value starts with a letter followed by letters, digits, "\.", "_" or "-"$/],
   [{ text: '끝난 문서', values: ['a=b'] }, /^caseKinds\.ended\.values has "a=b", which is not a value name/],
   [{ text: '끝난 문서', values: [3] }, /^caseKinds\.ended\.values has 3, which is not a value name/],
-  [{ text: '끝난 문서', values: ['cancelled'], picks: [{ screen: '/participant/**' }] }, /^caseKinds\.ended has "picks", which a kind does not take; a kind takes "text" and "values"$/],
+  [{ text: '끝난 문서', values: ['cancelled'], targets: [{ screen: '/participant/**' }] }, /^caseKinds\.ended has "targets", which a kind does not take; a kind takes "text", "values" and "picks"$/],
+  [{ text: '끝난 문서', picks: [] }, /^caseKinds\.ended\.picks must list at least one rule; leave it out for a kind a reviewer picks by hand$/],
+  [{ text: '끝난 문서', picks: { screen: '/participant/**' } }, /^caseKinds\.ended\.picks must be a list of rules, such as \[\{ "screen": "\/participant\/\*\*", "methods": \["POST", "PUT", "DELETE"\] \}\], not \{"screen":"\/participant\/\*\*"\}$/],
+  [{ text: '끝난 문서', picks: [{}] }, /^caseKinds\.ended\.picks\[0\] writes none of "screen", "methods", "api"; a rule writes at least one/],
+  [{ text: '끝난 문서', picks: ['/participant/**'] }, /^caseKinds\.ended\.picks\[0\] must be a rule such as \{ "screen"/],
+  [{ text: '끝난 문서', picks: [{ screen: '/a' }, { screens: '/participant/**' }] }, /^caseKinds\.ended\.picks\[1\] has "screens", which a rule does not take; a rule takes "screen", "methods" and "api"$/],
+  [{ text: '끝난 문서', picks: [{ screen: 'participant/**' }] }, /^caseKinds\.ended\.picks\[0\]\.screen must be a path pattern on one line starting with "\/", such as "\/participant\/\*\*", not "participant\/\*\*"$/],
+  [{ text: '끝난 문서', picks: [{ screen: '/doc*' }] }, /^caseKinds\.ended\.picks\[0\]\.screen has "doc\*": "\*" stands for one whole part and "\*\*" for any number of parts, so neither goes inside a part$/],
+  [{ text: '끝난 문서', picks: [{ api: '/api/***' }] }, /^caseKinds\.ended\.picks\[0\]\.api has "\*\*\*"/],
+  [{ text: '끝난 문서', picks: [{ api: 3 }] }, /^caseKinds\.ended\.picks\[0\]\.api must be a path pattern on one line starting with "\/", such as "\/api\/v1\/document\/\*\/\*\*", not 3$/],
+  [{ text: '끝난 문서', picks: [{ methods: [] }] }, /^caseKinds\.ended\.picks\[0\]\.methods must be a list of request methods in capitals, such as \["POST", "PUT"\], not \[\]$/],
+  [{ text: '끝난 문서', picks: [{ methods: ['post'] }] }, /^caseKinds\.ended\.picks\[0\]\.methods must be a list of request methods in capitals, such as \["POST", "PUT"\], not \["post"\]$/],
+  [{ text: '끝난 문서', picks: [{ methods: 'POST' }] }, /^caseKinds\.ended\.picks\[0\]\.methods must be a list of request methods in capitals/],
   [{ values: ['cancelled'] }, /^caseKinds\.ended\.text must be the description the review page shows for the kind, on one line, not undefined$/],
   [{ text: '끝난\n문서', values: ['cancelled'] }, /^caseKinds\.ended\.text must be the description the review page shows for the kind, on one line, not "끝난\\n문서"$/],
 ] as const) {

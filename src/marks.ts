@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { CASE_KIND, isPlainObject } from './config.ts';
+import type { CasePick } from './config.ts';
 import { reference } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
 import { locatePart, locateStoryPart, STORY_PART_KINDS } from './parts.ts';
@@ -29,6 +30,11 @@ export interface Part {
 
 export const PART_KINDS = ['test', 'condition', 'link'];
 
+export interface MarkRule {
+  index: number;
+  pick: CasePick;
+}
+
 // status 가 없는 표시는 코멘트고, 그 가운데 replyTo 가 있는 것은 그 ID 의 코멘트에 단 답글이다.
 // 대상이 하나면 target, 여럿이거나 없으면 targets 에 적는다.
 export interface Mark {
@@ -38,6 +44,7 @@ export interface Mark {
   status?: string;
   replyTo?: string;
   note: string;
+  rule?: MarkRule;
   author: string;
   date: string;
 }
@@ -47,6 +54,7 @@ interface NewMark {
   targets?: MarkTarget[];
   status?: string | null;
   note?: unknown;
+  rule?: MarkRule;
   author?: unknown;
 }
 
@@ -55,7 +63,7 @@ interface MarkableMap {
   calls?: { id: string; options?: { key: string }[] }[];
 }
 
-interface MarkEntry {
+export interface MarkEntry {
   key: string;
   target: MarkTarget;
   current: Mark | null;
@@ -187,7 +195,7 @@ const checkTarget = (target: MarkTarget | undefined): MarkTarget => (target?.can
 
 export const targetsOf = (m: { target?: MarkTarget; targets?: MarkTarget[] }) => m.targets ?? (m.target ? [m.target] : []);
 
-export function addMark(dir: string, { target, targets, status, note, author }: NewMark, now = new Date()) {
+export function addMark(dir: string, { target, targets, status, note, rule, author }: NewMark, now = new Date()) {
   if (targets !== undefined && !Array.isArray(targets)) throw new Error('mark targets must be a list');
   const all = (targets ?? [target]).map(checkTarget);
   const hasStatus = status !== undefined && status !== null;
@@ -206,12 +214,14 @@ export function addMark(dir: string, { target, targets, status, note, author }: 
   if (!comment && !statuses.includes(status!)) {
     throw new Error(`unknown ${checked.case !== undefined ? 'case mark' : 'mark'} status "${status}" (expected one of ${statuses.join(', ')})`);
   }
+  if (rule !== undefined && (checked.case === undefined || status !== 'not-needed')) throw new Error('only a not-needed case mark names the rule it takes its target out of');
   if (typeof author !== 'string' || !author.trim()) throw new Error('mark needs an author');
   const mark: Mark = {
     id: crypto.randomUUID(),
     ...(all.length === 1 ? { target: checked } : { targets: all }),
     ...(!comment && { status: status! }),
     note: typeof note === 'string' ? note : '',
+    ...(rule !== undefined && { rule }),
     author: author.trim(),
     date: now.toISOString(),
   };

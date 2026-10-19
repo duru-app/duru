@@ -11,27 +11,68 @@ const PACKAGE_NAME = /^(@[\w.-]+\/)?[\w.-]+$/;
 export const CASE_KIND = /^[A-Za-z][\w.-]*$/;
 const ROLE_MEMBER = new RegExp(`^(${NAME})(?:\\[(?:'([^']*)'|"([^"]*)")\\]|\\.(${NAME}))$`);
 
+export interface CasePick {
+  screen?: string;
+  methods?: string[];
+  api?: string;
+}
+
 export interface CaseKind {
   text: string;
   values: string[];
+  picks: CasePick[];
 }
 
-const CASE_KIND_KEYS = ['text', 'values'];
+const CASE_KIND_KEYS = ['text', 'values', 'picks'];
+const CASE_PICK_KEYS = ['screen', 'methods', 'api'];
+const PICK_EXAMPLE = '{ "screen": "/participant/**", "methods": ["POST", "PUT", "DELETE"] }';
+
+function pathPattern(at: string, v: unknown, example: string) {
+  if (!isOneLine(v) || !(v as string).startsWith('/')) throw new Error(`${at} must be a path pattern on one line starting with "/", such as "${example}", not ${JSON.stringify(v)}`);
+  const part = (v as string).split('/').find((p) => p.includes('*') && p !== '*' && p !== '**');
+  if (part !== undefined) throw new Error(`${at} has "${part}": "*" stands for one whole part and "**" for any number of parts, so neither goes inside a part`);
+  return v as string;
+}
+
+function casePick(at: string, rule: unknown): CasePick {
+  if (!isPlainObject(rule)) throw new Error(`${at} must be a rule such as ${PICK_EXAMPLE}, not ${JSON.stringify(rule)}`);
+  const r = rule as Record<string, unknown>;
+  const extra = Object.keys(r).filter((k) => !CASE_PICK_KEYS.includes(k));
+  if (extra.length) throw new Error(`${at} has ${extra.map((k) => JSON.stringify(k)).join(', ')}, which a rule does not take; a rule takes "screen", "methods" and "api"`);
+  if (!CASE_PICK_KEYS.some((k) => r[k] !== undefined)) throw new Error(`${at} writes none of "screen", "methods", "api"; a rule writes at least one, such as ${PICK_EXAMPLE}`);
+  const { methods } = r;
+  if (methods !== undefined && !(Array.isArray(methods) && methods.length > 0 && methods.every((m) => typeof m === 'string' && /^[A-Z]+$/.test(m)))) {
+    throw new Error(`${at}.methods must be a list of request methods in capitals, such as ["POST", "PUT"], not ${JSON.stringify(methods)}`);
+  }
+  return {
+    ...(r.screen !== undefined && { screen: pathPattern(`${at}.screen`, r.screen, '/participant/**') }),
+    ...(methods !== undefined && { methods: methods as string[] }),
+    ...(r.api !== undefined && { api: pathPattern(`${at}.api`, r.api, '/api/v1/document/*/**') }),
+  };
+}
+
+function casePicks(at: string, picks: unknown): CasePick[] {
+  if (picks === undefined) return [];
+  if (!Array.isArray(picks)) throw new Error(`${at} must be a list of rules, such as [${PICK_EXAMPLE}], not ${JSON.stringify(picks)}`);
+  if (!picks.length) throw new Error(`${at} must list at least one rule; leave it out for a kind a reviewer picks by hand`);
+  return picks.map((rule, i) => casePick(`${at}[${i}]`, rule));
+}
 
 function caseKind(kind: string, entry: any): CaseKind {
-  if (typeof entry === 'string') return { text: entry, values: [] };
+  if (typeof entry === 'string') return { text: entry, values: [], picks: [] };
   const at = `caseKinds.${kind}`;
   const extra = Object.keys(entry).filter((k) => !CASE_KIND_KEYS.includes(k));
-  if (extra.length) throw new Error(`${at} has ${extra.map((k) => JSON.stringify(k)).join(', ')}, which a kind does not take; a kind takes "text" and "values"`);
+  if (extra.length) throw new Error(`${at} has ${extra.map((k) => JSON.stringify(k)).join(', ')}, which a kind does not take; a kind takes "text", "values" and "picks"`);
   if (!isOneLine(entry.text)) throw new Error(`${at}.text must be the description the review page shows for the kind, on one line, not ${JSON.stringify(entry.text)}`);
-  if (entry.values === undefined) return { text: entry.text, values: [] };
+  const picks = casePicks(`${at}.picks`, entry.picks);
+  if (entry.values === undefined) return { text: entry.text, values: [], picks };
   if (!Array.isArray(entry.values)) throw new Error(`${at}.values must be a list of value names, such as ["cancelled", "rejected"], not ${JSON.stringify(entry.values)}`);
   if (!entry.values.length) throw new Error(`${at}.values must list at least one value; leave it out for a kind with no values`);
   const bad = entry.values.find((v: unknown) => typeof v !== 'string' || !CASE_KIND.test(v));
   if (bad !== undefined) throw new Error(`${at}.values has ${JSON.stringify(bad)}, which is not a value name: a value starts with a letter followed by letters, digits, ".", "_" or "-"`);
   const twice = entry.values.find((v: string, i: number) => entry.values.indexOf(v) !== i);
   if (twice !== undefined) throw new Error(`${at}.values lists ${JSON.stringify(twice)} twice`);
-  return { text: entry.text, values: entry.values };
+  return { text: entry.text, values: entry.values, picks };
 }
 
 export function parseRoleEntry(entry: unknown) {
@@ -183,7 +224,7 @@ export function loadConfig(configPath: string) {
     throw new Error('caseKinds must map each kind of test case a reviewer can pick for a screen or call to the description the review page shows for it, '
       + 'with each kind starting with a letter followed by letters, digits, ".", "_" or "-", and each description on one line, '
       + `such as { "boundary": "입력 경계: 빈 값, 최대 길이, 특수 문자" }, or to { "text", "values" } for a kind tested once for each of its values, `
-      + `such as { "ended": { "text": "끝난 문서", "values": ["cancelled", "rejected"] } }, not ${JSON.stringify(raw.caseKinds)}`);
+      + `such as { "ended": { "text": "끝난 문서", "values": ["cancelled", "rejected"] } }, with "picks" for rules that pick its screens or calls, not ${JSON.stringify(raw.caseKinds)}`);
   }
   const caseKinds: Record<string, CaseKind> = Object.fromEntries(Object.entries<any>(rawKinds).map(([kind, entry]) => [kind, caseKind(kind, entry)]));
   const moves = raw.moves ?? [];
