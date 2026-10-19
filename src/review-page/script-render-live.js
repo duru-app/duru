@@ -47,7 +47,7 @@ function render() {
 
 const LIST_TABS = ['screens', 'untagged'];
 
-function placeHash({ step = true } = {}) {
+function placeHash({ step = true, talk = true } = {}) {
   const p = new URLSearchParams();
   if (state.view === 'flow') {
     if (state.flowPicked) p.set('screen', state.selected);
@@ -62,18 +62,35 @@ function placeHash({ step = true } = {}) {
   } else if (state.selected !== null) {
     p.set('screen', state.selected);
   }
+  if (talk && state.talkScope === 'all' && (state.view === 'story' || screenPanesShown())) {
+    p.set('talk', 'all');
+    if (state.talkFilter !== 'all') p.set('filter', state.talkFilter);
+  }
   return `#${state.view === 'list' ? state.side : state.view}${p.size ? `?${p}` : ''}`;
+}
+
+function applyTalk(p) {
+  const all = p.get('talk') === 'all';
+  state.talkScope = all ? 'all' : 'here';
+  if (all) state.talkFilter = TALK_FILTERS.some((f) => f.key === p.get('filter')) ? p.get('filter') : 'all';
 }
 
 let shownPlace = null;
 let applyingPlace = false;
+/** @type {{ record: string, group: string | null } | null} */
+let linePressed = null;
 
 function recordPlace() {
   const hash = placeHash();
-  const place = placeHash({ step: false });
+  const place = placeHash({ step: false, talk: false });
+  const pressed = linePressed;
+  linePressed = null;
   if (hash !== location.hash) {
-    if (applyingPlace || shownPlace === null || place === shownPlace) history.replaceState(null, '', hash);
-    else history.pushState(null, '', hash);
+    if (applyingPlace || shownPlace === null || (place === shownPlace && !pressed)) history.replaceState(null, '', hash);
+    else {
+      if (pressed) history.replaceState({ line: pressed }, '', location.hash);
+      history.pushState(null, '', hash);
+    }
   }
   shownPlace = place;
 }
@@ -87,6 +104,7 @@ function applyPlace() {
     go = () => {
       state.flowPicked = screen !== null && flowScreens().some((n) => n.id === screen);
       if (state.flowPicked) {
+        applyTalk(p);
         if (state.side !== 'screens') state.caseError = null;
         state.side = 'screens';
         if (screen !== state.selected) setSelected(screen);
@@ -97,6 +115,7 @@ function applyPlace() {
   } else if (head === 'story' || head === 'stories' || head === 'flow') {
     if (state.view !== 'story') state.caseError = null;
     state.view = 'story';
+    applyTalk(p);
     const story = p.get('story');
     const candidate = p.get('candidate');
     const need = p.get('need');
@@ -118,6 +137,7 @@ function applyPlace() {
     state.view = 'list';
     state.side = head;
     if (head !== 'screens') state.flowPicked = false;
+    else applyTalk(p);
     const screen = p.get('screen');
     const test = p.get('test');
     if (head === 'screens' && screen !== state.selected && screenOf(screen)) go = () => select(screen);
@@ -136,7 +156,9 @@ function applyPlace() {
 window.addEventListener('popstate', () => {
   if (!state.data || state.ended || state.failed) return;
   if (state.bulkBusy) return history.pushState(null, '', placeHash());
+  const pressed = history.state?.line ?? null;
   applyPlace();
+  if (pressed && state.talkScope === 'all') revealLine(pressed);
 });
 
 const unsaved = (target, d) => !!d && (d.note.trim() !== '' || (d.status !== null && d.status !== (markOf(target)?.current?.status ?? null)));
