@@ -1746,8 +1746,9 @@ the list and the flow counts what its own conversation holds, leaving out what h
 pressing a line or a number therefore lands on a conversation that holds every entry counted. A comment waits for a
 reply when it has no status and no reply, the rule `wait` and `GET /api/events?unanswered` already use, though those
 also count a comment that has come off its target: a status is a verdict, not a question to the agent. A mark that
-carries only a status is left out of the numbers and of 「전체」: the status chip on the same row already shows it, and
-counting it would call a pressed status button a comment.
+carries only a status is left out of the numbers and of 「전체」, apart from case kind picks, which 「전체」 lists under
+「변경 기록」 only (see the next entry): the status chip on the same row already shows it, and counting it would call a
+pressed status button a comment.
 Alternatives compared:
 - A call's comments under its screen: a call can be called from several screens, so its comments would sit in
   several groups or in one picked at random, and pressing them would open a conversation that does not hold them.
@@ -1755,6 +1756,33 @@ Alternatives compared:
   conversation does not show.
 - Counting a mark with no text: a screen marked 「충분」 would read 「코멘트 1」 though nothing was written, and the
   badge would repeat what the status chip beside it says.
+
+**A case kind picked or taken out is left out of the conversation of its screen or call and out of every count, and
+「전체」 lists the picks under a filter of its own, 「변경 기록」, as one list by time.**
+A pick is kept as a mark so that who picked which kind where and when is not lost (see the entry on kinds of test case
+named in the config). Shown in the conversation, every press of a kind button added a 「필요」 or 「필요 없음」 line that
+could not itself be pressed, so turning a kind on and off filled the conversation with lines that are not talk with
+the agent; the current state is what the buttons under 「경우별 테스트」 show. So the conversation of a screen or call
+leaves out every mark whose target names a case, and so do 「이 화면 N」, 「전체 N」 and the counts in the list, the flow and
+the rows. This narrows the rule above that 「전체」 leaves out marks carrying only a status: the picks are status-only
+marks too, and they show only under 「변경 기록」. The mark files are written as before, and the task list and what the
+review prints do not change. A pick is told apart by its target naming a case, not by an empty note, so a pick that
+later carries a reason stays out of the conversation as well.
+「변경 기록」 is the last button of 「전체」's filter row, shown only when `caseKinds` is set. It lists every pick on its own
+line, latest first, across screens and calls rather than grouped like the other filters, because what it answers is
+who changed which kind and when; each line names its screen or call, 켬 or 끔, the kind, and always its author, even on
+a page only one reviewer has signed, where other lines leave the author out. 「답 없는 것만 N」 keeps counting the
+comments while 「변경 기록」 is chosen. Pressing a line opens the screen or call, opens the fold that holds
+「경우별 테스트」 and scrolls the middle pane to it, since that is where the pick lives now.
+Alternatives compared:
+- Keeping picks in the conversation: the lines pile up with each press and cannot be pressed to change the pick.
+- Dropping the records from the page: nothing on the page would say who picked a kind or when.
+- A 「코멘트만」 filter beside 「모두」: the conversation would still show the picks until the filter is chosen.
+- Showing the history with the comments by default or in a tab of its own, as GitLab (system notes with 「Show history
+  only」), Jira (「History」 beside 「Comments」) and GitHub (`labeled` / `unlabeled` events in the timeline) do: duru's
+  conversation is talk with the agent, and its default filter is 「모두」, so the picks would be back in the default view.
+- A 「변경 기록」 row in each screen's or call's own conversation: every screen would get a new row above its
+  conversation, and 「전체」 already has the filter row.
 
 **A comment on a step of a story is keyed by the step's number and its screen, and one on the link between two steps
 by the number of the step it leaves and both screens, under the story's own target as parts `step` and `hop`.**

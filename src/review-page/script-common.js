@@ -274,11 +274,19 @@ function selectTarget(t) {
 
 // 호출 정보는 호출 표 아래에 있어, 고른 뒤에 칸 밖에 놓이면 가운데 칸만 그 자리로 내린다.
 function revealCallInfo() {
+  revealInCenter('.call-info[open] > summary');
+}
+
+function revealCases(node) {
+  revealInCenter(`${callOf(node) ? '.call-info' : '.screen-info'}[open] > .cases > h2`);
+}
+
+function revealInCenter(selector) {
   const pane = document.getElementById('center');
-  const summary = /** @type {HTMLElement} */ (pane.querySelector('.call-info[open] > summary'));
-  if (!summary) return;
-  const top = summary.getBoundingClientRect().top - pane.getBoundingClientRect().top;
-  if (top >= 0 && top + summary.offsetHeight <= pane.clientHeight) return;
+  const el = /** @type {HTMLElement} */ (pane.querySelector(selector));
+  if (!el) return;
+  const top = el.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+  if (top >= 0 && top + el.offsetHeight <= pane.clientHeight) return;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   pane.scrollTo({ top: pane.scrollTop + top - 12, behavior: still ? 'auto' : 'smooth' });
 }

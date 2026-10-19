@@ -15,14 +15,18 @@ function scopeButtons() {
   };
   return h('div', { class: 'talk-scope', role: 'group', 'aria-label': '대화 범위' },
     h('button', { type: 'button', 'aria-pressed': String(state.talkScope === 'here'), disabled: state.storyWriting, onclick: pick('here') }, here.target ? `${here.label} ${saidCount(attachedTalk(here.target))}` : here.label),
-    h('button', { type: 'button', 'aria-pressed': String(state.talkScope === 'all'), disabled: state.storyWriting, onclick: pick('all') }, `전체 ${saidCount(state.data.marks.attached)}`));
+    h('button', { type: 'button', 'aria-pressed': String(state.talkScope === 'all'), disabled: state.storyWriting, onclick: pick('all') }, `전체 ${saidCount(talkMarks())}`));
 }
 
 const TALK_FILTERS = [
   { key: 'all', label: '모두', keep: () => true },
   { key: 'unanswered', label: '답 없는 것만', keep: unanswered },
   ...Object.entries(MARK_STATUS).map(([key, label]) => ({ key, label, keep: (m, r) => m.current?.status === key && saidIn(m).find((x) => x.status === key)?.id === r.id })),
+  { key: 'changes', label: '변경 기록' },
 ];
+const PICK_STATUS = { needed: '켬', 'not-needed': '끔' };
+const isPick = (m) => m.target.case !== undefined;
+const talkMarks = () => state.data.marks.attached.filter((m) => !isPick(m));
 
 const noTarget = (t) => t.node === undefined && t.story === undefined && t.candidate === undefined;
 const groupOf = (t) => (noTarget(t) ? 'general()' : t.candidate !== undefined ? `candidate(${t.candidate})` : t.story !== undefined ? `story(${t.story})` : t.node);
@@ -34,16 +38,11 @@ const groupTitle = (t) => (noTarget(t) ? '대상 없음' : t.candidate !== undef
 const firstLine = (note) => note.split('\n').find((line) => line.trim() !== '') ?? '';
 
 function allTalk() {
-  const lines = state.data.marks.attached.flatMap((m) => saidIn(m).map((r) => ({ m, r })));
-  const filter = TALK_FILTERS.find((f) => f.key === state.talkFilter) ?? TALK_FILTERS[0];
-  const groups = new Map();
-  for (const line of lines.filter(({ m, r }) => filter.keep(m, r)).sort((a, b) => byDate(b.r, a.r))) {
-    const key = groupOf(line.m.target);
-    if (!groups.has(key)) groups.set(key, []);
-    if (!groups.get(key).some((x) => x.r.id === line.r.id)) groups.get(key).push(line);
-  }
+  const lines = talkMarks().flatMap((m) => saidIn(m).map((r) => ({ m, r })));
+  const shownFilters = TALK_FILTERS.filter((f) => f.key !== 'changes' || Object.keys(state.data.caseKinds).length > 0);
+  const filter = shownFilters.find((f) => f.key === state.talkFilter) ?? shownFilters[0];
   const unansweredCount = onceEach(lines.filter(({ m, r }) => unanswered(m, r))).length;
-  const filters = h('div', { class: 'talk-filters', role: 'group', 'aria-label': '대화 거르기' }, TALK_FILTERS.map((f) => h('button', {
+  const filters = h('div', { class: 'talk-filters', role: 'group', 'aria-label': '대화 거르기' }, shownFilters.map((f) => h('button', {
     type: 'button',
     'aria-pressed': String(f.key === filter.key),
     onclick: () => {
@@ -51,6 +50,13 @@ function allTalk() {
       render();
     },
   }, f.key === 'unanswered' ? `${f.label} ${unansweredCount}` : f.label)));
+  if (!filter.keep) return h('div', { class: 'talk all-talk' }, filters, changeList());
+  const groups = new Map();
+  for (const line of lines.filter(({ m, r }) => filter.keep(m, r)).sort((a, b) => byDate(b.r, a.r))) {
+    const key = groupOf(line.m.target);
+    if (!groups.has(key)) groups.set(key, []);
+    if (!groups.get(key).some((x) => x.r.id === line.r.id)) groups.get(key).push(line);
+  }
   const lineItem = ({ m, r }) => {
     const replies = m.history.filter((x) => x.replyTo === r.id).sort(byDate);
     const meta = h('span', { class: 'meta' },
@@ -71,6 +77,27 @@ function allTalk() {
     groups.size
       ? [...groups.values()].map((group) => h('div', { class: 'talk-group' }, h('h3', { class: group[0].m.target.node !== undefined ? 'mono' : null }, groupTitle(group[0].m.target)), group.map(lineItem)))
       : h('p', { class: 'muted' }, lines.length ? '거른 조건에 맞는 말이 없습니다.' : '아직 남긴 말이 없습니다.'));
+}
+
+function changeList() {
+  const picks = state.data.marks.attached.filter(isPick).flatMap((m) => m.history.map((r) => ({ m, r }))).sort((a, b) => byDate(b.r, a.r));
+  if (!picks.length) return h('p', { class: 'muted' }, '경우 종류를 켜고 끈 기록이 없습니다.');
+  return h('div', { class: 'talk-changes' }, picks.map(({ m, r }) => h('button', {
+    type: 'button',
+    class: 'talk-line',
+    'data-record': r.id,
+    onclick: () => {
+      if (!callOf(m.target.node)) state.screenInfoOpen = true;
+      reachTalk(m.target, null);
+      revealCases(m.target.node);
+    },
+  },
+    h('span', { class: 'meta' },
+      h('span', { class: `chip ${r.status}` }, PICK_STATUS[r.status] ?? r.status),
+      tagChip(tagLabel(m.target)),
+      h('span', {}, `${r.author} · ${fmtDate(r.date)}`)),
+    h('span', { class: 'first mono' }, groupTitle(m.target)),
+    r.note.trim() ? h('span', { class: 'first' }, firstLine(r.note)) : null)));
 }
 
 function reachTalk(target, recordId) {
@@ -119,7 +146,7 @@ function renderScreenRight(info, dock) {
   fill(dock, markForm(state.target, 'draft', targetLabelOf(state.target, call), { folded: false }));
 }
 
-const talkIn = (marks, target) => marks.filter((m) => (target.candidate !== undefined ? m.target.candidate === target.candidate
+const talkIn = (marks, target) => marks.filter((m) => !isPick(m) && (target.candidate !== undefined ? m.target.candidate === target.candidate
   : target.story !== undefined ? m.target.story === target.story : m.target.story === undefined && m.target.node === target.node));
 const talkOf = (target) => talkIn([...state.data.marks.attached, ...state.data.marks.detached], target);
 const attachedTalk = (target) => talkIn(state.data.marks.attached, target);

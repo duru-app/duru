@@ -736,7 +736,8 @@ reason. Once opened it stays open on other screens until it is closed. Choosing 
 elsewhere, opens its details under the call table and scrolls the middle pane to them: where its option was found,
 the server match, its tests, untagged tests linked to it, where this screen calls it and the screens that use it.
 With `caseKinds` set, 「경우별 테스트」 has a button per kind for every screen, and for a call in its details: pressing one
-makes the kind a case there, with its tests by depth, and pressing it again takes it out. A picked kind with values
+makes the kind a case there, with its tests by depth, and pressing it again takes it out. Each press is listed under
+「전체」's 「변경 기록」, not in the conversation of the screen or call. A picked kind with values
 has a row per value under it, with that value's tests by depth and result, or 「테스트 없음」. The flow shows the same
 middle and right panes for a picked screen.
 
@@ -887,7 +888,7 @@ screen, call and story it is on and shows in each of their conversations; when a
 targets, it stays on the others and shows under 「떨어져 나감」 with the target that is gone.
 
 **Conversation.** For a screen or call the right pane holds only the conversation: every mark, comment and reply left
-on it, oldest first, open from the start and filling the pane, scrolling inside it when it is longer, with the form to
+on it apart from the case kinds picked or taken out there, oldest first, open from the start and filling the pane, scrolling inside it when it is longer, with the form to
 write in at the bottom. Each mark and comment carries the tags of where it was left; a reply sits under its comment,
 set apart by its author and a light background. A tag from another screen, call or story is shown after the name of
 that place. What is chosen in the middle is the default tag. A bubble replaces it while it is the only tag and adds
@@ -900,16 +901,20 @@ form behind 「대화 N」, and each entry without a status is labelled 「코�
 
 **All comments.** Two buttons at the top of the right pane switch between 「이 화면 N」 (「이 호출」 for a call, 「이 스토리」 for a
 story, 「이 후보」 for a candidate), the conversation described above, and 「전체 N」, every mark and comment with text still
-attached anywhere; N counts those, leaving out replies and marks that carry only a status. 「전체」 groups them by the
+attached anywhere; N counts those, leaving out replies and marks that carry only a status; of those,
+only the case kinds picked or taken out are listed, under 「변경 기록」. 「전체」 groups them by the
 screen, call, story or candidate they were left on, the group with the latest entry first and the latest entry first
 in each group; a line shows the status, the tag, who wrote it and when, the number of replies and the first line of
 the text. 「답 없는 것만」 keeps the comments without a status that have no reply yet, and 「더 필요」, 「없음」 and 「충분」 keep, for a
-place whose current status is that one, the latest mark with that status and text. The form is hidden while 「전체」 is
+place whose current status is that one, the latest mark with that status and text. With `caseKinds` set, the last
+filter, 「변경 기록」, lists instead every case kind picked or taken out, as one list by time, the latest first, not
+grouped: a line shows 켬 or 끔, the kind, the screen or call, who pressed it and when. Pressing one opens that screen or
+call with 「경우별 테스트」 opened and scrolled into view. The form is hidden while 「전체」 is
 shown. Pressing a line opens its screen, call, story or candidate in 「이 화면」 and scrolls the conversation to that
 entry, outlined. A comment with several tags is a line in each group it is on and is counted once in N. A comment with
 no tag is listed under 「대상 없음」 with its whole text and its replies, and pressing it opens nothing. 「전체」 and the
 numbers and dots it describes leave out what has come off its target; it stays under
-「떨어져 나감」 and in the conversation of its screen or call.
+「떨어져 나감」 and, unless it is a case kind picked or taken out, in the conversation of its screen or call.
 
 A screen in the list and in the flow, a story in the story tab, a depth row and a call cell show 「코멘트 N」 when marks or
 comments with text were left there, with a red dot while one of the comments has no reply; a test, condition or link
