@@ -941,9 +941,12 @@ filter, 「변경 기록」, lists instead every case kind picked or taken out, 
 grouped: a line shows 켬 or 끔, the kind, the screen or call, who pressed it and when. Pressing one opens that screen or
 call with 「경우별 테스트」 opened and scrolled into view. The form is hidden while 「전체」 is
 shown. Pressing a line opens its screen, call, story or candidate in 「이 화면」 and scrolls the conversation to that
-entry, outlined. A comment with several tags is a line in each group it is on and is counted once in N. A comment with
-no tag is listed under 「대상 없음」 with its whole text and its replies, and pressing it opens nothing. 「전체」 and the
-numbers and dots it describes leave out what has come off its target; it stays under
+entry, outlined. While 「전체」 is shown the address carries `&talk=all`, and `&filter=<filter>` for a filter other than
+「모두」, so going back after pressing a line shows 「전체」 with the same filter and the pressed line outlined in view,
+and going forward opens the line's place again. Changing the filter or switching between the two buttons rewrites the
+address without adding to the browser history. A comment with several tags is a line in each group it is on and is
+counted once in N. A comment with no tag is listed under 「대상 없음」 with its whole text and its replies, and pressing it
+opens nothing. 「전체」 and the numbers and dots it describes leave out what has come off its target; it stays under
 「떨어져 나감」 and, unless it is a case kind picked or taken out, in the conversation of its screen or call.
 
 A screen in the list and in the flow, a story in the story tab, a depth row and a call cell show 「코멘트 N」 when marks or

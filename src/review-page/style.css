@@ -206,6 +206,7 @@
   .tag-pick li { padding: 3px 8px; border-radius: 4px; cursor: pointer; }
   .tag-pick li.on, .tag-pick li[role=option]:hover { background: var(--selected); }
   .talk-line.general { cursor: default; }
+  .talk-line.reached { outline: 2px solid var(--accent); outline-offset: -2px; }
   .talk-line.general div { white-space: pre-wrap; }
   .talk-line.general .replies li { margin-top: 4px; padding: 4px 8px; border-radius: 6px; background: var(--bg); }
   .history li.reached { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
