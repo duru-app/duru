@@ -53,8 +53,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - The route shapes duru reads: `component={Home}`, `element={<Home />}`, `element={wrap(<Home />)}`,
   `element={<Suspense><Home /></Suspense>}`, where the screen is the element inside the wrapping ones, and
   `element={<Wrapper Page={Signer} />}`, where the screen is the first of the wrapper and the passed components whose
-  file is found, or the passed component when the wrapper is declared in the route file itself. A route whose
-  element is `element={<Navigate to=… />}` is a redirect, not a screen. The redirect element names come from
+  file is found, or the passed component when the wrapper is declared in the route file itself,
+  `render={() => <Home />}`, a render function that returns one element, read as `element=` reads it, and
+  `<Route path=…><Home /></Route>`, a child element read the same way. A route whose render function or children
+  hold other routes only wraps them. A route whose element is `element={<Navigate to=… />}` is a redirect, not a
+  screen. The redirect element names come from
   `redirectElements` in the config, default `Redirect` and `Navigate`; a config that lists them uses only the
   names listed. Paths are read as written in each route, without the path of a parent route in front, so a
   nested route written with a relative path shows on the map with that relative path.
@@ -119,6 +122,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   followed a name into another file and stopped there. An address a browser test passes through is not matched to
   that screen, and when its ID holds `{?}` the ID changes once that part is read, so do not tag tests with such an
   ID; tell the user which routes these are and where each one stopped.
+- A `route not read ← <route file>:<line>: <reason>` line names a route that draws a screen missing from the map,
+  with where it is written and why duru could not read it. There is no ID for that screen, so no test can be tagged
+  with it; tell the user which routes these are and why each one was not read. A line whose reason starts with `made for
+  each item of a list` stands for one screen per item.
 
 ## Sequence
 

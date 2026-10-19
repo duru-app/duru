@@ -95,6 +95,7 @@ export type ScreenMap = {
   silentApiModules?: Client['silentApiModules'];
   unreadRequests?: UnreadSite[];
   unreadRoutePaths?: Client['unreadRoutePaths'];
+  unreadRoutes?: Client['unreadRoutes'];
   sagas?: NonNullable<Client['sagaRuns']>;
   bodyTypeNotices?: NonNullable<Client['bodyTypeNotices']>;
   deadCalls: { screen: string; fn: string; method: string | null; url: string | null; callSite: string }[];
@@ -248,7 +249,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports } = await extractClient(config);
+  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -309,6 +310,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(silentApiModules.length && { silentApiModules }),
     ...(unreadRequests.length && { unreadRequests }),
     ...(unreadRoutePaths.length && { unreadRoutePaths }),
+    ...(unreadRoutes.length && { unreadRoutes }),
     ...(sagaRuns && { sagas: sagaRuns }),
     ...(bodyTypeNotices && { bodyTypeNotices }),
     deadCalls,

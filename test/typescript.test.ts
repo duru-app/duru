@@ -1086,10 +1086,8 @@ test('a loader whose import is not written out, and names that lead back to them
   });
 });
 
-test('the usage guide and the agent skill name the route shapes duru reads and the default redirect elements', () => {
+test('the agent skill names the route shapes duru reads, and the usage guide and the skill name the default redirect elements', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
-  for (const doc of [read('../README.md'), read('../skills/duru/SKILL.md')]) {
-    assert.match(doc, /`component=\{Home\}`[\s\S]*`element=\{<Home \/>\}`[\s\S]*`element=\{wrap\(<Home \/>\)\}`[\s\S]*`element=\{<Wrapper Page=\{Signer\} \/>\}`[\s\S]*`element=\{<Navigate to=… \/>\}`/);
-    assert.match(doc, /`redirectElements`[\s\S]*default `Redirect` and\s+`Navigate`/);
-  }
+  assert.match(read('../skills/duru/SKILL.md'), /`component=\{Home\}`[\s\S]*`element=\{<Home \/>\}`[\s\S]*`element=\{wrap\(<Home \/>\)\}`[\s\S]*`element=\{<Wrapper Page=\{Signer\} \/>\}`[\s\S]*`element=\{<Navigate to=… \/>\}`/);
+  for (const doc of [read('../README.md'), read('../skills/duru/SKILL.md')]) assert.match(doc, /`redirectElements`[\s\S]*default `Redirect` and\s+`Navigate`/);
 });

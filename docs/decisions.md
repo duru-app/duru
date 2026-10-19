@@ -2289,6 +2289,57 @@ Alternatives compared:
 - Opening the signed-out pane through the sign-out address again when the story tab comes back: a login made during
   the recording would be lost, and the app would send the reviewer to the sign-in screen, a step never walked.
 
+**A route whose `render=` function returns one element, or whose screen is its child element, is read as
+`element=` is read; every other route that draws a screen duru cannot read prints `route not read`.**
+Driver's decision in #339 (2026-10-19). Routes written `render={() => <X />}`, `render={(props) => (<X {...props} />)}`,
+`render={() => { return <X />; }}`, `render={() => wrap(<X />)}` or `<Route path=…><X /></Route>` used to leave the
+map with nothing said, 12 of the 69 single screen routes of mattermost among them. The returned element, or the
+children, go through the same reading as `element=`, and the screen read there, also one found inside wrappers,
+counts only when it resolves to a component file in the app or is a component declared in the routes file itself;
+then the map is the one `component={X}` gives. When a child anywhere among the elements drawn there is a value in
+braces and not an element, such as `{adminRoutes}`, `{renderRoutes(x)}` or `{children}`, duru does not know what is
+drawn there, so the route gives no screen and no line, as on main, also when an app component such as `<Layout>`
+holds that value. A render
+function or children that hold route elements anywhere, on either side of a branch too, only wrap those routes and say
+nothing, as the pathless `<Route>` around the layout of `test/fixtures/app` does. The rest gets a line with the
+route file, the line and the reason, and the key `unreadRoutes` in `map.json`: a route with no path that draws a
+screen (a catch-all `<Route component={NotFound} />`, an index route), a route whose path or screen may be in a
+spread (`{...route}`, as appsmith's `MainPane.tsx` passes its route table), a render function that branches,
+returns something other than one element or is not written in the route, and child elements none of which is a
+component. Any other screen, such as a package element (`<Switch>{adminRoutes}</Switch>`, `<Suspense>`,
+`<ErrorBoundary>`, a page imported from a package), gives no screen and no line, like children that are a bare value
+such as `<Route>{routes}</Route>`, as on main, which reads neither `render=` nor children. Known limits, each giving
+no screen and no line, as on main: a package component bound with `require`, an import duru cannot resolve, and a
+screen whose element has value children such as `<About>{label}</About>`. A
+`render=` or child-element route built in a loop over a list whose path is not read, such as mattermost's admin
+console route per settings page (`path={`${props.match.url}/${item.url}`}`), is a line and not a `{?}` screen:
+every item would share one ID, as in #304, and that ID would change once reading tables is settled in #305, so
+the review marks put on it would come loose. For routes, this ends the silence that the entry "Route files are
+listed in the config" names for code that spreads lists of routes. Inside a component whose name is in
+`routeElements`, such as the react-router 5 `PrivateRoute` that passes `{...rest}` on to `<Route>`, a route that
+draws its screen with `render=` or a child element gives no screen and no line, as on main, since each place
+that component is used is already read as a route, so a line would report a screen missing that is on the map, and a
+screen would add one `{?}` screen that stands for all of those uses. A `component=` or `element=` route there gives
+what it gave on main.
+Measured: the maps of `test/fixtures/app`, `test/fixtures/ts-app`, into-sign 2.0.0 (`config-role.json`, 44 screens)
+and into-sign 1.5.0 (45 screens) are the same on main and on this change apart from `generatedAt`, and none of them
+prints a `route not read` line.
+Alternatives compared:
+- Only reporting render routes: rejected by the driver, since 12 mattermost screens would stay missing.
+- Reading a branching render function as `element={cond ? <A /> : <B />}` is read: the driver chose to report it.
+  So the common react-router 5 guard `render={(props) => ok ? <X {...props} /> : <Redirect … />}` stays off the map
+  with a line, while the same branch written in `element=` gives a screen.
+- Taking only the tag of the returned element as `component=` does: the same on every shape measured, and it would
+  not read `wrap(<X />)` or a component passed to a wrapper as `element=` does.
+- Reading every element as `element=` does and setting aside only the ones that hold a value: a page imported from a
+  package would still be a screen. Reading only app files and components declared in the routes file without that
+  check: `<Layout><Switch>{adminRoutes}</Switch></Layout>` would be a `Layout` screen main never had. Both are kept,
+  so where either one cannot tell, the route is "unknown". The cost is that `<Route path=…><ExtPage /></Route>` with
+  `ExtPage` from a package gives no screen, where `component={ExtPage}` gives one.
+- Putting list-built render routes on the map with `{?}` in the path, as `component=` routes built in a loop still
+  are: not chosen for the reason above. `component=` and `element=` routes keep their screens, since taking them off
+  would move IDs on maps already reviewed.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
