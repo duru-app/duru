@@ -123,10 +123,11 @@ const testKey = (t: { file?: string | null; line?: number | null; title?: string
 function walksOf(map: any, traced: TracedTest[] = []) {
   const onMap = new Set<string>(map.screens.map((s: any) => s.id));
   const mapOrder = (order: string[]) => order.filter((id) => onMap.has(id)).filter((id, i, kept) => id !== kept[i - 1]);
+  const traceOf = (screens: string[] | undefined) => (screens && mapOrder(screens).length ? mapOrder(screens) : undefined);
   const passing = runsByTest(traced.map((t) => [testKey(t), mapOrder(t.screens)]));
   const crossing = (tests: string[][][], from: string, to: string) => tests.filter((runs) => runs.some((o) => crosses(o, from, to))).length;
   return <L extends { from: string; to: string; verdict: string }>(story: { id: string; screens: string[]; detached: boolean; links: L[] }, status: string, tests: StoryTests) => {
-    const own = status === 'pass' ? runsByTest(testsAt(tests.stories, story.id).map((t) => [testKey(t), t.screens && mapOrder(t.screens)])) : [];
+    const own = status === 'pass' ? runsByTest(testsAt(tests.stories, story.id).map((t) => [testKey(t), traceOf(t.screens)])) : [];
     const counted = !story.detached && own.length > 0 && own.every((runs) => runs.length > 0);
     const links = story.links.map((l): L & { passedBy?: number; walks?: number } => {
       const passedBy = l.verdict === 'broken' ? crossing(passing, l.from, l.to) : 0;
