@@ -320,7 +320,7 @@ test('in a browser, 「전체」 groups every attached comment by its screen, ca
         await scope.nth(1).click();
         await p.click('#right-info .talk-line:has-text("one more step?")');
         assert.equal(await p.getAttribute('#view-story', 'class'), 'on');
-        assert.match((await p.textContent('#right-dock .history li.reached'))!, /one more step\?/);
+        assert.match((await p.textContent('#right-info .history li.reached'))!, /one more step\?/);
         assert.deepEqual(await badge(p.locator('#story-list li', { hasText: '실험실을 열어' })), ['코멘트 1', true]);
 
         await reply(copy, home.id, 'yes, the home comes first', '--server', `${base}/`);
@@ -651,8 +651,7 @@ test('in a browser, the bubble of a candidate from a visit record and of one fro
         assert.deepEqual(await p.locator('#candidate-list li').evaluateAll((items) => items.map((li) => li.querySelector('.part-count')?.textContent ?? null)), ['코멘트 1', null, '코멘트 1', null]);
         await p.locator('#candidate-list li', { hasText: 'open-help' }).locator('.part-count').click();
         await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
-        assert.equal(await p.getAttribute('#right .history-toggle', 'aria-expanded'), 'true');
-        assert.deepEqual(await p.locator('#right-dock .history > li').evaluateAll((list) => list.map((li) => [li.querySelector(':scope > .tag')?.textContent, li.querySelector(':scope > div')?.textContent])), [['후보', 'why the beta inbox?']]);
+        assert.deepEqual(await p.locator('#right-info .talk .history > li').evaluateAll((list) => list.map((li) => [li.querySelector(':scope > .tag')?.textContent, li.querySelector(':scope > div')?.textContent])), [['후보', 'why the beta inbox?']]);
         assert.deepEqual(errors, []);
       })));
 });
@@ -699,7 +698,7 @@ test('in a browser, once a candidate with comments is accepted or discarded, its
         await p.click(storiesTab);
         assert.equal(await p.locator('#left .detached li').count(), 0);
         await p.click('#candidate-list li:has-text("open-help")');
-        await p.click('#right button.accept');
+        await p.click('#center button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("open-help")');
         await p.click('#candidate-list li:has-text("opens home and then help")');
         await discardCandidate(p, '도움말만 연다');

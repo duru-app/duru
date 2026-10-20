@@ -1,7 +1,7 @@
 function renderStoryRight(info, dock) {
   if (state.composing) {
-    fill(dock);
-    return fill(info, ...composeForm());
+    fill(info, h('div', { class: 'talk' }, h('h2', {}, '에이전트와 대화'), h('p', { class: 'muted compose-talk' }, '스토리를 저장한 뒤에 이 스토리에 대화를 남길 수 있습니다.')));
+    return fill(dock, composeTalkForm());
   }
   if (needOf()) {
     fill(dock);
@@ -9,19 +9,21 @@ function renderStoryRight(info, dock) {
   }
   const c = candidateOf();
   if (c) {
-    fill(dock, markForm({ candidate: c.key }, 'candidateTalk', '후보'));
-    return fill(info, ...reachSection(c, `candidate\n${c.key}`), ...candidateActions(c));
+    fill(info, talkPanel({ candidate: c.key }));
+    return fill(dock, markForm({ candidate: c.key }, 'candidateTalk', '후보'));
   }
-  const st = storyOf();
-  if (!st) {
-    fill(info, storyErrorLine());
-    return fill(dock, state.story ? markForm({ story: state.story }, 'storyDraft', '스토리') : null);
+  if (state.story === null) {
+    fill(info);
+    return fill(dock);
   }
-  fill(dock, markForm({ story: st.id }, 'storyDraft', '스토리'));
-  const steps = openSteps();
-  const order = steps ? [h('div', { id: 'steps-reach' }, ...stepsReach(steps))] : [...reachSection(st, `story\n${st.id}`), storyGaps(st)];
-  fill(info, ...order, ...storyEdit(st), ...(st.source ? unacceptAction(st) : []));
+  fill(info, talkPanel({ story: state.story }));
+  fill(dock, markForm({ story: state.story }, 'storyDraft', '스토리'));
 }
+
+const composeTalkForm = () => h('fieldset', { class: 'mark-form', disabled: true, title: '스토리를 저장한 뒤에 남길 수 있습니다' },
+  h('div', { class: 'statuses' }, Object.values(MARK_STATUS).map((text) => h('button', { type: 'button' }, text))),
+  h('textarea', { 'aria-label': '코멘트', placeholder: '스토리를 저장한 뒤에 코멘트를 남길 수 있습니다' }),
+  h('div', { class: 'save-row' }, h('button', { type: 'button', class: 'save' }, '남기기')));
 
 function renderCenter() {
   if (state.view === 'story') return renderStoryCenter();
@@ -241,10 +243,7 @@ function renderRight() {
   const view = all ? 'all' : state.view !== 'story' ? `${state.selected}\n${state.target?.node}` : state.composing ? 'compose' : state.candidate ? `candidate(${state.candidate})` : state.need ? `need(${state.need})` : `story(${state.story})`;
   const shown = shownTarget();
   const dockKey = shown ? keyOf(shown) : null;
-  if (dockKey !== state.dockKey) {
-    state.historyOpen = false;
-    state.historyFilter = null;
-  }
+  if (dockKey !== state.dockKey) state.historyFilter = null;
   state.dockKey = dockKey;
   if (all) {
     fill(info, allTalk());

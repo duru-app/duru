@@ -399,7 +399,7 @@ test('in a browser, a story file changed, added or removed outside the page show
         assert.equal(await p.evaluate(() => (window as Window & Kept).kept), true);
 
         const before = dataReads.length;
-        await p.click('#right button.save-story');
+        await p.click('#center button.save-story');
         await p.waitForSelector('#story-list li.selected:has-text("실험실 결과를 본다")');
         await p.waitForTimeout(600);
         assert.equal(dataReads.length - before, 1);

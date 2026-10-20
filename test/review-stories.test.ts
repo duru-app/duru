@@ -130,7 +130,7 @@ test('in a browser, the story list shows only the statuses that need a look, fil
         assert.deepEqual(await ids(), ['run-lab']);
 
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['실패']);
+        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['실패']);
         assert.equal(await p.textContent('#center .story-tests h2'), '스토리 테스트 2');
         assert.deepEqual(await p.locator('#center .story-tests .test').evaluateAll((items) => items.map((t) => [...t.querySelectorAll('.depth, .chip')].map((e) => e.textContent))), [
           ['API', '실패'], ['API', '통과'],
@@ -143,11 +143,11 @@ test('in a browser, the story list shows only the statuses that need a look, fil
         await p.uncheck('#left input[name=fail]');
         assert.equal((await ids()).length, 5);
         await p.click('#story-list li:has-text("문서를 연다")');
-        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['통과', '단계 확인 못 함']);
+        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['통과', '단계 확인 못 함']);
         assert.deepEqual(await stepTests(), [['UI/E2E ✓1', '코드 ✓1'], ['UI/E2E ✓3', 'API ✓1 ○1', '렌더링만 ✕1', '코드 ✓1', '데이터 ✕1'], ['API ✓1 ✕2 ○1', '데이터 ○4'], ['UI/E2E ✓1', 'API ✓3 ✕3', '데이터 ✓2 ○2']]);
 
         await p.click('#story-list li:has-text("보고서")');
-        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['테스트 없음']);
+        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['테스트 없음']);
         assert.equal(await p.textContent('#center .story-tests h2'), '스토리 테스트 0');
         assert.deepEqual(await stepTests(), [['화면 테스트 없음']]);
       }),
@@ -164,7 +164,7 @@ test('in a browser, a story whose ID is the name of an object member shows like 
         await p.waitForSelector('#screen-list li');
         await p.click('#view-story');
         await p.click('#story-list li:has-text("이상한 ID")');
-        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['일부 화면만 테스트']);
+        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['일부 화면만 테스트']);
         assert.equal(await p.textContent('#center .story-tests h2'), '스토리 테스트 0');
       }),
     );
@@ -229,15 +229,15 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
         assert.deepEqual(await p.locator('#center .story-path .step .records').allTextContents(), ['단계 1', '단계 2', '단계 3–4', '단계 5']);
         assert.equal(await p.textContent('#center .story-path .step.off-map .mono'), '/beta/inbox');
         assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['이어짐', '판정 못 함', '판정 못 함']);
-        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
-        assert.deepEqual(await p.locator('#right-info > :not(.talk-scope)').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['판정 못 함 · 화면 없음', '사전 조건']);
-        assert.deepEqual(await p.locator('#right-info h2').allTextContents(), ['사전 조건', '받기']);
+        assert.deepEqual(await p.locator('#center .verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
+        assert.equal(await p.textContent('#center .story-needs > summary'), '사전 조건 0');
+        assert.deepEqual(await p.locator('#right-info h2').allTextContents(), ['에이전트와 대화']);
         assert.equal(await p.textContent('#right-dock .mark-form .tags .tag-label'), '후보');
-        assert.deepEqual(await p.locator('#right .story-form button').allTextContents(), ['스토리로 받기', '고쳐서 받기', '버리기']);
-        assert.equal(await p.locator('#right .story-form :is(input, textarea)').count(), 0);
-        assert.equal(await p.textContent('#right button.accept'), '스토리로 받기');
+        assert.deepEqual(await p.locator('#center .story-form button').allTextContents(), ['스토리로 받기', '고쳐서 받기', '버리기']);
+        assert.equal(await p.locator('#center .story-form :is(input, textarea)').count(), 0);
+        assert.equal(await p.textContent('#center button.accept'), '스토리로 받기');
 
-        await p.click('#right button.accept');
+        await p.click('#center button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("open-help")');
         assert.deepEqual(await p.locator('#candidate-list li .name > span:first-child').allTextContents(), ['publish-document']);
         assert.equal(await p.textContent('#center h3'), 'open-help');
@@ -246,8 +246,8 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
         assert.deepEqual([saved.name, saved.author, saved.screens.length], ['open-help', 'reviewer', 4]);
 
         await p.click('#candidate-list li:has-text("publish-document")');
-        assert.deepEqual(await p.locator('#right .accepts button').allTextContents(), ['스토리로 받기', '고쳐서 받기']);
-        await p.click('#right button.accept-edited');
+        assert.deepEqual(await p.locator('#center .accepts button').allTextContents(), ['스토리로 받기', '고쳐서 받기']);
+        await p.click('#center button.accept-edited');
         await p.waitForSelector('#accept-ask[open]');
         assert.deepEqual([await p.inputValue('#accept-id'), await p.inputValue('#accept-name')], ['publish-document', 'publish-document']);
         assert.equal(await p.isVisible('#accept-ask .invalid'), false);
@@ -255,7 +255,7 @@ test('in a browser, the story list has a group of candidates, a chosen candidate
         assert.equal(await p.isVisible('#accept-ask'), false);
         assert.equal(await p.evaluate(() => document.activeElement!.className), 'accept-edited');
 
-        await p.click('#right button.accept-edited');
+        await p.click('#center button.accept-edited');
         await p.fill('#accept-name', ' ');
         assert.equal(await p.isDisabled('#accept-ask button.accept'), true);
         await p.fill('#accept-id', 'publish');
@@ -276,7 +276,7 @@ test('in a browser, a candidate discarded in another tab and read again while th
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("publish-document")');
-        await p.click('#right button.discard');
+        await p.click('#center button.discard');
         assert.equal((await postJson(base, '/api/candidates/discard', { key: HELP_KEY, reason: '베타 화면' })).status, 201);
         assert.equal((await postMark(base, { target: { node: '/lab#Lab' }, status: 'missing', note: '' })).status, 201);
         await p.waitForSelector('#candidate-list li:has-text("open-help")', { state: 'detached' });
@@ -310,7 +310,7 @@ test('in a browser, the tests with a trace that passed two screens or more are c
         await p.reload();
         await p.waitForSelector('#candidate-list li.selected:has-text("opens home and then help")');
 
-        await p.click('#right button.accept');
+        await p.click('#center button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("opens home and then help")');
         assert.deepEqual(await p.locator('#center .source li').allTextContents(), titles);
         const saved = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'opens-home-and-then-help.json'), 'utf8'));
@@ -547,25 +547,25 @@ test('in a browser, a need file deleted or made unreadable elsewhere while its e
         await p.click('#center button.edit-need');
         await p.fill('#need-name', '회원 계정');
         fs.rmSync(path.join(needs, 'member-account.json'));
-        await p.waitForSelector('#right .story-error');
-        assert.equal(await p.textContent('#right .story-error'), '공통 조건 파일 needs/member-account.json 이 없어져 고치던 칸을 닫았습니다. 적던 이름과 내용은 저장하지 않았습니다.');
+        await p.waitForSelector('#center .story-error');
+        assert.equal(await p.textContent('#center .story-error'), '공통 조건 파일 needs/member-account.json 이 없어져 고치던 칸을 닫았습니다. 적던 이름과 내용은 저장하지 않았습니다.');
         assert.equal(await p.locator('#need-name').count(), 0);
         assert.equal(await p.locator('#need-list li.selected').count(), 0);
         assert.ok(!fs.existsSync(path.join(needs, 'member-account.json')));
 
         await p.click('#need-list li:has-text("완료된 문서 하나")');
-        assert.equal(await p.locator('#right .story-error').count(), 0);
+        assert.equal(await p.locator('#center .story-error').count(), 0);
         await p.click('#center button.edit-need');
         await p.fill('#need-text', '서명이 끝난 문서가 두 개 있다');
         fs.writeFileSync(path.join(needs, 'done-document.json'), '{');
-        await p.waitForSelector('#right .story-error');
-        assert.equal(await p.textContent('#right .story-error'), '공통 조건 파일 needs/done-document.json 을 읽지 못하게 되어 고치던 칸을 닫았습니다. 적던 이름과 내용은 저장하지 않았습니다.');
+        await p.waitForSelector('#center .story-error');
+        assert.equal(await p.textContent('#center .story-error'), '공통 조건 파일 needs/done-document.json 을 읽지 못하게 되어 고치던 칸을 닫았습니다. 적던 이름과 내용은 저장하지 않았습니다.');
         assert.equal(fs.readFileSync(path.join(needs, 'done-document.json'), 'utf8'), '{');
 
         await p.click('#story-list li:has-text("실험실을 열어 결과를 본다")');
         fs.writeFileSync(path.join(needs, 'admin-account.json'), JSON.stringify({ name: '관리자 계정', text: '역할 ADMIN 계정' }));
         await p.waitForSelector('#need-list li:has-text("관리자 계정")');
-        assert.equal(await p.locator('#right .story-error').count(), 0, 'the notice does not come back once another place is chosen');
+        assert.equal(await p.locator('#center .story-error').count(), 0, 'the notice does not come back once another place is chosen');
       }),
     );
   });
@@ -589,7 +589,7 @@ test('in a browser, a candidate from a trace shows the values filled in its step
           ['테스트 ID 「amount」', '3'],
           ['라벨 「따옴표 "큰"」', 'q'],
         ]);
-        await p.click('#right button.accept');
+        await p.click('#center button.accept');
         await p.waitForSelector('#story-list li:has-text("moves to the drafts")');
         const written = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'moves-to-the-drafts-without-loading-a-page.json'), 'utf8'));
         assert.equal(written.screens[0].inputs.length, 5);
@@ -620,7 +620,7 @@ test('in a browser, a story whose story tests all pass but did not go through it
         assert.deepEqual(await p.locator('#story-list li .name .mono').allTextContents(), ['signin-to-help']);
         await p.click('#story-list li[data-story="signin-to-help"]');
         await p.uncheck('#left input[name=part-pass]');
-        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['일부 단계만 통과', '링크 없음']);
+        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['일부 단계만 통과', '링크 없음']);
         assert.deepEqual(await p.locator('#center .story-path .link').evaluateAll((links) => links.map((l) => l.classList.contains('unwalked'))), [true, false]);
         assert.deepEqual(await p.locator('#center .story-path .link .walks').allTextContents(), [
           '지나간 스토리 테스트 없음',
@@ -629,7 +629,7 @@ test('in a browser, a story whose story tests all pass but did not go through it
         ]);
         await p.click('#story-list li[data-story="help-alone"]');
         assert.equal(await p.locator('#center .story-path .link').count(), 0);
-        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['통과', '단계 확인 못 함']);
+        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['통과', '단계 확인 못 함']);
       }),
     );
   }, edits);

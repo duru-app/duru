@@ -110,7 +110,6 @@ function reachTalk(target, recordId, pressed) {
   if (target.node === undefined) {
     state.view = 'story';
     state.composing = false;
-    state.historyOpen = true;
     state.dockKey = keyOf(target.candidate !== undefined ? target : { story: target.story });
     if (target.candidate !== undefined) return selectCandidate(target.candidate);
     selectStory(target.story);
@@ -153,7 +152,7 @@ function renderScreenRight(info, dock) {
   }
   const call = state.target.node === s.id ? null : callOf(state.target.node);
   fill(info, talkPanel(state.target));
-  fill(dock, markForm(state.target, 'draft', targetLabelOf(state.target, call), { folded: false }));
+  fill(dock, markForm(state.target, 'draft', targetLabelOf(state.target, call)));
 }
 
 const talkIn = (marks, target) => marks.filter((m) => !isPick(m) && (target.candidate !== undefined ? m.target.candidate === target.candidate
@@ -167,12 +166,11 @@ function tagChip(label, remove) {
   return h('span', { class: 'tag' }, h('span', { class: 'tag-label' }, label), remove ? h('button', { type: 'button', title: '꼬리표 빼기', 'aria-label': `${label} 꼬리표 빼기`, onclick: remove }, '×') : null);
 }
 
-function talkThread(target, { labelled }) {
+function talkThread(target) {
   const talk = talkOf(target);
   const shown = state.historyFilter ? talk.filter((m) => m.key === state.historyFilter) : talk;
   const recordItem = (m, r) => h('li', { class: r.replyTo !== undefined ? 'reply' : null, 'data-record': r.id },
-    r.status ? [h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status]), ' ']
-      : labelled ? [h('span', { class: `chip ${r.replyTo !== undefined ? 'reply' : 'comment'}` }, r.replyTo !== undefined ? '답' : '코멘트'), ' '] : null,
+    r.status ? [h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status]), ' '] : null,
     r.replyTo === undefined ? [...recordTags(r, target), ' '] : null,
     h('span', { class: 'muted' }, signedAt(r)),
     r.note ? h('div', {}, r.note) : null,
@@ -188,27 +186,21 @@ function talkThread(target, { labelled }) {
   const filter = state.historyFilter && history && h('div', { class: 'history-filter' },
     '걸러 보는 중 ', tagChip(tagLabel(talk.find((m) => m.key === state.historyFilter)?.target ?? target)),
     h('button', { type: 'button', onclick: () => { state.historyFilter = null; render(); } }, '모두 보기'));
-  return { count: all.length, history, filter };
+  return { history, filter };
 }
 
 function talkPanel(target) {
-  const { history, filter } = talkThread(target, { labelled: false });
+  const { history, filter } = talkThread(target);
   return h('div', { class: 'talk' },
     h('h2', {}, '에이전트와 대화'),
     filter,
     history ?? h('p', { class: 'muted' }, '아직 대화가 없습니다.'));
 }
 
-function markForm(target, draftKey, label, { folded = true } = {}) {
+function markForm(target, draftKey, label) {
   const mark = markOf(target);
   state[draftKey] ??= { status: mark?.current?.status ?? null, note: '' };
   const draft = state[draftKey];
-  const { count, history, filter } = folded ? talkThread(target, { labelled: true }) : {};
-  const historyToggle = history && h('button', { class: 'history-toggle', onclick: () => {
-    state.historyOpen = !state.historyOpen;
-    applyHistoryFold(historyToggle, history);
-  } }, `대화 ${count}`);
-  if (history) applyHistoryFold(historyToggle, history);
   const tags = draft.tags ?? [target];
   const statusOn = onlyTag(tags, target) && target.candidate === undefined;
   const savable = () => draft.note.trim() !== '' || (statusOn && !!draft.status);
@@ -240,7 +232,7 @@ function markForm(target, draftKey, label, { folded = true } = {}) {
     onblur: () => { picker.hidden = true; },
   }, draft.note);
   return h('div', { class: 'mark-form' },
-    h('div', { class: 'talk-head' }, folded ? h('h2', {}, '에이전트와 대화') : null, h('div', { class: 'tags' }, '꼬리표 ', tags.length
+    h('div', { class: 'talk-head' }, h('div', { class: 'tags' }, '꼬리표 ', tags.length
       ? tags.map((t) => tagChip(keyOf(t) === keyOf(target) ? label : chipLabel(t, target), untag(t)))
       : [h('span', { class: 'muted', title: '어느 칸에도 붙이지 않고 묻습니다. 「전체」의 「대상 없음」에 나옵니다' }, '없음'), h('button', { type: 'button', class: 'retag', onclick: () => {
         draft.tags = undefined;
@@ -250,13 +242,6 @@ function markForm(target, draftKey, label, { folded = true } = {}) {
     h('div', { class: 'statuses' }, statuses),
     h('div', { class: 'tag-field' }, field, picker),
     state.error ? h('p', { class: 'error' }, state.error) : null,
-    h('div', { class: 'save-row' }, save, historyToggle),
-    filter,
-    history);
-}
-
-function applyHistoryFold(toggle, list) {
-  toggle.setAttribute('aria-expanded', String(state.historyOpen));
-  list.hidden = !state.historyOpen;
+    h('div', { class: 'save-row' }, save));
 }
 

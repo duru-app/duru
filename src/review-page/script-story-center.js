@@ -114,21 +114,28 @@ function renderStoryCenter() {
   const c = candidateOf();
   if (c) {
     return fillStoryCenter(center, c, [
-      h('div', { class: 'title-row' }, h('h3', {}, c.name), storyChips(c)),
+      h('div', { class: 'title-row' }, h('h3', {}, c.name), storyChips(c), ...reachChips(c), candidateActions(c)),
+      storyErrorLine(),
       sourceView(c.source, '후보가 나온'),
+      needsFold(c, `candidate\n${c.key}`),
       c.skipped ? h('div', { class: 'muted skipped-inputs', title: '기록에는 있었지만 이 후보의 단계에 입력값으로 옮기지 못한 입력' }, `옮기지 못한 입력 ${c.skipped}개`) : null,
       ...storyPath(c, c.stepRanges)]);
   }
   const st = storyOf();
-  if (!st && state.story) return fill(center, h('h3', {}, state.story), h('p', { class: 'muted', title: '스토리 파일을 읽지 못했거나 맵이 오래되어 경로를 맞춰 보지 못했습니다' }, '경로 판정 없음'));
-  if (!st) return fill(center, h('p', { class: 'muted' }, '스토리가 없습니다.'));
+  if (!st && state.story) return fill(center, h('h3', {}, state.story), h('p', { class: 'muted', title: '스토리 파일을 읽지 못했거나 맵이 오래되어 경로를 맞춰 보지 못했습니다' }, '경로 판정 없음'), storyErrorLine());
+  if (!st) return fill(center, h('p', { class: 'muted' }, '스토리가 없습니다.'), storyErrorLine());
   const storyTests = ownTests(state.data.tests.stories, st.id);
+  const steps = openSteps();
+  const judged = steps ? checkedSteps(steps) : st;
   fillStoryCenter(center, st, [
-    h('div', { class: 'title-row' }, h('h3', {}, st.name), statusChip(st), storyChips(st)),
+    h('div', { class: 'title-row' }, h('h3', {}, st.name), statusChip(st), ...(judged ? linkChips(judged) : []), walkChip(st), ...(judged ? reachChips(judged) : [])),
     h('div', { class: 'muted mono' }, `${st.id} · ${st.file}`),
     st.source ? sourceView(st.source, '받은 후보가 나온') : null,
     h('div', { class: 'muted' }, `${st.author} · ${storyDate(st.date)}`),
     st.memo ? h('p', { class: 'memo' }, st.memo) : null,
+    judged ? needsFold(judged, `story\n${st.id}`) : waitingLine(steps.steps, steps.error),
+    steps ? null : storyGaps(st),
+    h('div', { class: 'story-save' }, ...storyEdit(st), ...(st.source ? unacceptAction(st) : [])),
     storyWide(st),
     h('div', { class: 'story-tests' }, h('h2', {}, `스토리 테스트 ${storyTests.length}`),
       storyTests.length ? storyTests.map((t) => testItem(t, { depth: true, hide: [`story:${st.id}`] })) : h('p', { class: 'muted' }, '없음')),
@@ -263,16 +270,11 @@ const storyForm = (...children) => h('fieldset', { class: 'story-form', disabled
 const field = (name, control, ...rest) => h('label', { class: 'field' }, h('span', {}, name), control, ...rest);
 const storyErrorLine = () => (state.storyError ? h('p', { class: 'error story-error' }, state.storyError) : null);
 
-function candidateActions(c) {
-  return [
-    h('h2', {}, '받기'),
-    storyForm(h('div', { class: 'accepts' },
-      h('button', { class: 'accept', title: '이 화면 순서로 스토리 파일을 씁니다.', onclick: acceptChosen }, '스토리로 받기'),
-      h('button', { class: 'accept-edited', title: 'ID 와 이름을 고친 뒤에 받습니다.', onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기')),
-      h('button', { class: 'discard', title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다. 이유를 적어야 합니다', onclick: () => askDiscard(c) }, '버리기')),
-    storyErrorLine(),
-  ];
-}
+const candidateActions = (c) => h('fieldset', { class: 'story-form candidate-acts', disabled: state.storyWriting },
+  h('div', { class: 'accepts' },
+    h('button', { class: 'accept', title: '이 화면 순서로 스토리 파일을 씁니다.', onclick: acceptChosen }, '스토리로 받기'),
+    h('button', { class: 'accept-edited', title: 'ID 와 이름을 고친 뒤에 받습니다.', onclick: () => askAccept(c, 'button.accept-edited', null) }, '고쳐서 받기')),
+  h('button', { class: 'discard', title: '버린 후보 파일을 남기고, 같은 화면 순서는 다시 후보로 내지 않습니다. 이유를 적어야 합니다', onclick: () => askDiscard(c) }, '버리기'));
 
 function storyEdit(st) {
   if (state.storyEdit?.id !== st.id) state.storyEdit = { id: st.id, name: st.name, memo: st.memo, read: { name: st.name, memo: st.memo } };
@@ -285,8 +287,8 @@ function storyEdit(st) {
   return [
     h('h2', {}, '이름 · 메모'),
     storyForm(
-      field('이름', h('input', { type: 'text', id: 'story-name', value: d.name, oninput: (e) => { d.name = e.target.value; syncButton(e, canSave); } })),
-      field('메모', h('textarea', { id: 'story-memo', oninput: (e) => { d.memo = e.target.value; } }, d.memo)),
+      field('이름', h('input', { type: 'text', id: 'story-name', name: 'story-name', value: d.name, oninput: (e) => { d.name = e.target.value; syncButton(e, canSave); } })),
+      field('메모', h('textarea', { id: 'story-memo', name: 'story-memo', oninput: (e) => { d.memo = e.target.value; } }, d.memo)),
       h('button', { class: 'save-story', disabled: !canSave(), title: '스토리 파일의 이름과 메모를 고쳐 씁니다.', onclick: saveStoryEdit }, '저장')),
     storyErrorLine(),
   ];
@@ -308,7 +310,7 @@ async function writeStories(url, body) {
   state.storyError = null;
   let written = null;
   await whileWritingStories(async () => {
-    renderRight();
+    redrawStory();
     try {
       const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!res.ok) throw new Error(await res.text());
@@ -318,7 +320,7 @@ async function writeStories(url, body) {
       state.storyError = written ? `저장했지만 다시 읽지 못했습니다: ${err.message}` : `저장하지 못했습니다: ${err.message}`;
     }
   });
-  if (!written) renderRight();
+  if (!written) redrawStory();
   return written;
 }
 
@@ -338,7 +340,7 @@ async function acceptAs(c, id, name) {
 function takeStoryError() {
   const refused = state.storyError;
   state.storyError = null;
-  renderRight();
+  redrawStory();
   return refused;
 }
 
@@ -381,7 +383,7 @@ function closeAccept() {
   const { opener } = acceptJob;
   acceptJob = null;
   acceptDialog.close();
-  /** @type {HTMLElement} */ (document.querySelector(`#right ${opener}`))?.focus();
+  /** @type {HTMLElement} */ (document.querySelector(`#center ${opener}`))?.focus();
 }
 
 async function confirmAccept() {
@@ -430,7 +432,7 @@ function askDiscard(c) {
       state.candidateTalk = null;
       render();
     },
-    refocus: () => /** @type {HTMLElement} */ (document.querySelector('#right button.discard'))?.focus(),
+    refocus: () => /** @type {HTMLElement} */ (document.querySelector('#center button.discard'))?.focus(),
   });
 }
 
@@ -468,13 +470,24 @@ async function saveStoryEdit() {
   render();
 }
 
-function reachSection(st, key) {
+function redrawStory() {
+  const place = fieldPlace();
+  renderCenter();
+  restoreField(place);
+  renderRight();
+}
+
+function reachChips(st) {
   const problems = storyProblems(st);
   return [
-    (problems.length ? problems : [['reachable', '도달 가능']]).map(([cls, text]) => h('p', { class: `verdict ${cls}` }, text)),
-    st.links.some((l) => l.ways.length && l.unknownLinks) ? h('p', { class: 'muted skipped' }, '주소 못 읽은 링크 빼고 판정') : null,
-    h('h2', {}, '사전 조건'),
-    st.reach.length ? reachBlock(st, key) : h('p', { class: 'muted' }, problems.length ? '판정한 구간에 조건 없음' : '조건 없음'),
+    ...(problems.length ? problems : [['reachable', '도달 가능']]).map(([cls, text]) => h('span', { class: `chip verdict ${cls}` }, text)),
+    st.links.some((l) => l.ways.length && l.unknownLinks) ? h('span', { class: 'muted skipped' }, '주소 못 읽은 링크 빼고 판정') : null,
   ];
 }
+
+const needsFold = (st, key) => h('details', { class: 'story-needs', open: state.storyNeedsOpen, ontoggle: (e) => { state.storyNeedsOpen = e.currentTarget.open; } },
+  h('summary', {}, h('span', { class: 'title' }, `사전 조건 ${st.reach.length}`)),
+  st.reach.length ? reachBlock(st, key) : h('p', { class: 'muted' }, storyProblems(st).length ? '판정한 구간에 조건 없음' : '조건 없음'));
+
+const waitingLine = (steps, error) => h('p', { class: 'muted story-waiting' }, !steps.length ? '화면을 넣으면 끝까지 갈 수 있는지와 사전 조건을 보입니다.' : error ? '판정 못 함' : '경로를 맞춰 보는 중입니다.');
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
-import { withRebuiltFixture, withServer, browserMissing, withPage, storiesTab, postJson, postMark, untilSet, CANDIDATES } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, browserMissing, withPage, storiesTab, postJson, postMark, untilSet, CANDIDATES, holdRequests } from './review-helpers.ts';
 import type { Config, PageData } from './review-helpers.ts';
 
 declare const state: any;
@@ -82,8 +82,8 @@ test('in a browser, 「순서 고치기」 at the end of the 「화면 순서」
     assert.equal(await p.locator('#center .story-path [role="button"]').count(), 0, 'no step is a button holding other buttons');
     assert.equal(await p.locator('#center .story-path [draggable="true"], #center .story-path .grip, #center .story-path button:is(.up, .down)').count(), 0);
     assert.deepEqual(await p.locator(`${card(1)} .written-row`).allTextContents(), ['조건실험실 설정을 켠다']);
-    assert.deepEqual(await p.locator('#right-info .steps-top button').allTextContents(), ['순서 저장', '취소']);
-    assert.equal(await p.locator('#right-info .steps-top button.save-steps').isDisabled(), true, 'nothing changed yet');
+    assert.deepEqual(await p.locator('#center .path-head button').allTextContents(), ['순서 저장', '취소']);
+    assert.equal(await p.locator('#center .path-head button.save-steps').isDisabled(), true, 'nothing changed yet');
 
     await p.click('#center button.insert-before');
     assert.deepEqual(await pathOrder(p), ['step', 'link', 'mark', 'pressed', 'insert-after', 'link', 'step']);
@@ -102,7 +102,7 @@ test('in a browser, 「순서 고치기」 at the end of the 「화면 순서」
     assert.equal(await p.locator('#center .link-lost').count(), 0, 'the link into the last step of the file still leaves the step it had');
     assert.deepEqual(await p.locator('#center .story-file pre').evaluate((pre) => JSON.parse(pre.textContent!).screens), ['/help#Help', LAB_STEP, RESULT_STEP, '/signin#SignIn']);
 
-    await p.click('#right-info button.save-steps');
+    await p.click('#center button.save-steps');
     await p.waitForSelector('#center .steps-saved');
     assert.deepEqual(readStory(config).screens, ['/help#Help', LAB_STEP, RESULT_STEP, '/signin#SignIn']);
     assert.equal(await p.textContent('#center .steps-saved'), '스토리 파일 run-lab.json 에 썼습니다');
@@ -112,6 +112,42 @@ test('in a browser, 「순서 고치기」 at the end of the 「화면 순서」
     assert.deepEqual(await p.locator('#left .detached li div').allTextContents(), ['start here?']);
     const data: PageData = await (await fetch(`${base}/api/data`)).json();
     assert.ok(data.marks.attached.some((m) => JSON.stringify(m.target) === JSON.stringify(onStep(2, LAB_SCREEN))), 'a step whose number still holds its screen keeps its comment');
+    assert.deepEqual(errors, []);
+  });
+});
+
+test('in a browser, while the order is being changed 「순서 저장」 and 「취소」 sit at the 「화면 순서 N」 heading in place of 「순서 고치기」, the verdict chip, the 「링크 없음」 chip and 「사전 조건 N」 follow the order, and a Korean syllable being composed in the story\'s name is not broken when the verdict of that order arrives', { skip: browserMissing }, async () => {
+  await withLabStory(async (p, config, base, errors) => {
+    const verdicts = () => p.locator('#center .title-row .chip.verdict').allTextContents();
+    assert.deepEqual(await verdicts(), ['도달 가능']);
+    await p.click('#center button.reorder');
+    assert.deepEqual(await p.locator('#center .path-head').evaluate((row) => [...row.querySelectorAll('h2, .editing-note, button')].map((e) => e.textContent)), ['화면 순서 3', '순서 고치는 중', '순서 저장', '취소']);
+    assert.equal(await p.locator('#center button.reorder').count(), 0);
+    assert.equal(await p.locator('#right :is(button.save-steps, button.cancel-steps)').count(), 0);
+
+    const checks = holdRequests(p, '**/api/stories/check');
+    await checks.done;
+    await pickScreen(p, '/help');
+    await untilSet(() => checks.sent.length === 1, 'the check of the new order');
+    assert.equal(await p.textContent('#center .story-waiting'), '경로를 맞춰 보는 중입니다.');
+    assert.deepEqual(await verdicts(), []);
+    await p.evaluate(() => {
+      const name = document.querySelector<HTMLInputElement>('#story-name')!;
+      name.focus();
+      name.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      (window as any).composed = name;
+    });
+    const answered = p.waitForResponse('**/api/stories/check');
+    checks.release!();
+    await answered;
+    await p.waitForTimeout(100);
+    assert.equal(await p.evaluate(() => (window as any).composed.isConnected && document.activeElement === (window as any).composed), true);
+    assert.equal(await p.locator('#center .story-waiting').count(), 1, 'the verdict waits until the syllable is composed');
+    await p.evaluate(() => (window as any).composed.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })));
+    await untilJudged(p);
+    assert.deepEqual(await verdicts(), ['도달 불가 · 링크 없음 1곳']);
+    assert.equal(await p.locator('#center .title-row .chip.l-broken').count(), 1, 'the chip of a missing link follows the order being changed');
+    assert.match((await p.textContent('#center .story-needs > summary'))!, /^사전 조건 \d+$/);
     assert.deepEqual(errors, []);
   });
 });
@@ -134,14 +170,14 @@ test('in a browser, an order with the same screen twice in a row or with no step
     await takeOut(p, 2);
     await takeOut(p, 1);
     assert.deepEqual(await cardScreens(p), ['/home', '/home']);
-    assert.equal(await p.textContent('#right-info .steps-problem'), '같은 화면이 이어진 자리가 있어 저장할 수 없습니다.');
-    assert.equal(await p.locator('#right-info button.save-steps').isDisabled(), true);
+    assert.equal(await p.textContent('#center .steps-problem'), '같은 화면이 이어진 자리가 있어 저장할 수 없습니다.');
+    assert.equal(await p.locator('#center button.save-steps').isDisabled(), true);
     await takeOut(p, 1);
     await takeOut(p, 0);
     assert.equal(await p.textContent('#center .no-steps'), '단계가 하나도 없습니다.');
-    assert.equal(await p.textContent('#right-info .steps-problem'), '단계가 하나도 없어 저장할 수 없습니다.');
-    assert.equal(await p.locator('#right-info button.save-steps').isDisabled(), true);
-    await p.click('#right-info button.cancel-steps');
+    assert.equal(await p.textContent('#center .steps-problem'), '단계가 하나도 없어 저장할 수 없습니다.');
+    assert.equal(await p.locator('#center button.save-steps').isDisabled(), true);
+    await p.click('#center button.cancel-steps');
     assert.deepEqual(await p.locator('#center .story-path > .step .screen-path').allTextContents(), ['/home', '/lab', '/lab/result']);
     assert.equal(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'), before);
   }, null);
@@ -172,7 +208,7 @@ test('in a browser, taking out a step with fields written asks first with what g
     await untilJudged(p);
     let saves = 0;
     p.on('request', (r) => { if (r.url().endsWith('/api/stories/steps')) saves += 1; });
-    await p.dblclick('#right-info button.save-steps');
+    await p.dblclick('#center button.save-steps');
     await p.waitForSelector('#center .steps-saved');
     assert.equal(saves, 1, 'a second press while saving sends nothing');
     assert.deepEqual(readStory(config).screens, [HOME, { screen: RESULT, expects: ['결과 표가 보인다'] }]);
@@ -188,7 +224,7 @@ test('in a browser, only one editor is open at a time: while the order is being 
     assert.equal(await p.locator('#center button.edit-fields:not([disabled])').count(), 0);
     assert.equal(await pencils.first().getAttribute('title'), '화면 순서를 저장하거나 취소한 뒤에 고칩니다');
     await takeOut(p, 1);
-    await p.click('#right-info button.cancel-steps');
+    await p.click('#center button.cancel-steps');
     assert.equal(await p.locator('#pick-list').count(), 0);
     assert.equal(fs.readFileSync(path.join(config.storiesDir, 'run-lab.json'), 'utf8'), before);
 
@@ -211,14 +247,14 @@ test('in a browser, an order saved over a story file changed elsewhere is refuse
     assert.deepEqual(await cardScreens(p), ['/lab', '/lab/result'], 'the order being changed stays');
     await untilJudged(p);
 
-    await p.click('#right-info button.save-steps');
-    await p.waitForSelector('#right-info .steps-error');
-    assert.equal(await p.textContent('#right-info .steps-error'), '저장하지 않았습니다: 스토리 파일 run-lab.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다. 바뀐 파일을 새로 읽거나, 지금 적은 내용으로 덮어쓸 수 있습니다.');
-    assert.deepEqual(await p.locator('#right-info .steps-top button').allTextContents(), ['새로 읽기', '덮어쓰기', '취소']);
+    await p.click('#center button.save-steps');
+    await p.waitForSelector('#center .steps-error');
+    assert.equal(await p.textContent('#center .steps-error'), '저장하지 않았습니다: 스토리 파일 run-lab.json 이 읽은 뒤에 바뀌어 덮어쓰지 않았습니다. 바뀐 파일을 새로 읽거나, 지금 적은 내용으로 덮어쓸 수 있습니다.');
+    assert.deepEqual(await p.locator('#center .path-head button').allTextContents(), ['새로 읽기', '덮어쓰기', '취소']);
     assert.deepEqual(readStory(config), elsewhere);
     assert.deepEqual(errors.splice(0), ['Failed to load resource: the server responded with a status of 409 (Conflict)']);
 
-    await p.click('#right-info button.overwrite-steps');
+    await p.click('#center button.overwrite-steps');
     await p.waitForSelector('#center .steps-saved');
     assert.deepEqual(readStory(config), { ...elsewhere, screens: [{ screen: LAB_SCREEN, needs: ['실험실 설정을 켠다'], expects: ['실험 목록이 보인다'] }, RESULT_STEP] });
   });
@@ -230,12 +266,12 @@ test('in a browser, after a refused order save 「새로 읽기」 starts again 
     await takeOut(p, 0);
     fs.writeFileSync(path.join(config.storiesDir, 'run-lab.json'), JSON.stringify({ ...FILLED, screens: [HOME, LAB_SCREEN] }, null, 2));
     await p.waitForFunction(() => state.data.stories.list.find((s: { id: string }) => s.id === 'run-lab').steps.length === 2);
-    await p.click('#right-info button.save-steps');
-    await p.waitForSelector('#right-info button.reread-steps');
+    await p.click('#center button.save-steps');
+    await p.waitForSelector('#center button.reread-steps');
     errors.splice(0);
-    await p.click('#right-info button.reread-steps');
+    await p.click('#center button.reread-steps');
     assert.deepEqual(await cardScreens(p), ['/home', '/lab']);
-    assert.equal(await p.locator('#right-info button.save-steps').isDisabled(), true);
+    assert.equal(await p.locator('#center button.save-steps').isDisabled(), true);
   });
 });
 
@@ -246,25 +282,25 @@ test('in a browser, 「받기 되돌리기」 on a story with fields written say
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
         await p.click('#candidate-list li:has-text("open-help")');
-        await p.click('#right button.accept');
+        await p.click('#center button.accept');
         await p.waitForSelector('#story-list li.selected:has-text("open-help")');
-        const plain = await p.getAttribute('#right button.unaccept', 'title');
+        const plain = await p.getAttribute('#center button.unaccept', 'title');
         assert.doesNotMatch(plain!, /조건 · 입력값 · 기대 결과/);
         const data: PageData = await (await fetch(`${base}/api/data`)).json();
         const st = data.stories.list.find((s) => s.id === 'open-help')!;
         const res = await postJson(base, '/api/stories/fields', { id: 'open-help', place: { kind: 'story' }, fields: { expects: ['도움말이 열린다'] }, contentHash: st.contentHash });
         assert.equal(res.status, 200);
         await p.waitForSelector('#center .story-wide .written-row');
-        assert.equal(await p.getAttribute('#right button.unaccept', 'title'), '스토리 파일을 지우고, 같은 화면 순서를 후보 목록에 다시 올립니다. 이 스토리에 적은 조건 · 입력값 · 기대 결과도 파일과 함께 사라집니다. 이 스토리에 남은 코멘트는 「떨어져 나감」으로 갑니다.');
+        assert.equal(await p.getAttribute('#center button.unaccept', 'title'), '스토리 파일을 지우고, 같은 화면 순서를 후보 목록에 다시 올립니다. 이 스토리에 적은 조건 · 입력값 · 기대 결과도 파일과 함께 사라집니다. 이 스토리에 남은 코멘트는 「떨어져 나감」으로 갑니다.');
 
         const asked: string[] = [];
         p.once('dialog', (d) => { asked.push(d.message()); void d.dismiss(); });
-        await p.click('#right button.unaccept');
+        await p.click('#center button.unaccept');
         await untilSet(() => asked.length === 1, 'the question');
         assert.deepEqual(asked, ['받기를 되돌리면 스토리 파일 open-help.json 을 지우므로, 이 스토리에 적은 조건 · 입력값 · 기대 결과도 함께 사라집니다. 그래도 되돌릴까요?']);
         assert.equal(fs.existsSync(path.join(config.storiesDir, 'open-help.json')), true);
         p.once('dialog', (d) => void d.accept());
-        await p.click('#right button.unaccept');
+        await p.click('#center button.unaccept');
         await p.waitForSelector('#candidate-list li.selected:has-text("open-help")');
         assert.equal(fs.existsSync(path.join(config.storiesDir, 'open-help.json')), false);
       })));

@@ -34,18 +34,10 @@ function dropCompose() {
 
 const canSaveCompose = (c) => STORY_ID.test(c.id) && Boolean(c.name.trim()) && c.steps.length > 0 && !repeatedStep(composeScreens(c)) && !c.walk;
 
-function composeReach(c) {
-  const checked = checkedCompose(c);
-  return [
-    ...(checked ? reachSection(checked, 'compose') : [h('p', { class: 'muted' }, c.steps.length ? '경로를 맞춰 보는 중입니다.' : '화면을 넣으면 여기에서 끝까지 갈 수 있는지와 사전 조건을 보입니다.')]),
-    repeatedStep(composeScreens(c)) ? h('p', { class: 'error repeated' }, '같은 화면이 이어진 자리가 있어 저장할 수 없습니다.') : null,
-  ];
-}
-
-// 이름을 치는 동안 판정이 도착해도 입력 칸은 다시 만들지 않는다. 다시 만들면 조합 중이던 한글이 끊긴다.
 // 흐름 그림은 판정이 나온 뒤에 한 번만 다시 그린다.
 function renderCompose(focus, { drawing = false, pressed = null } = {}) {
   if (!composeShown()) return;
+  if (composingNow()) return deferLive('draw');
   if (state.compose.walk) renderLeft();
   else {
     renderPickList();
@@ -54,9 +46,6 @@ function renderCompose(focus, { drawing = false, pressed = null } = {}) {
     restoreField(place);
     if (drawing) renderFlow({ bar: false, pressed });
   }
-  const info = document.getElementById('right-info');
-  if (info.querySelector('#compose-reach')) syncComposeForm(info);
-  else renderRight();
   if (focus) (focus.map((selector) => document.querySelector(`#center ${selector}`)).find((el) => el && !el.disabled))?.focus();
 }
 
@@ -205,10 +194,13 @@ function composeCenter() {
   };
   const pending = h('div', { class: 'link l-pending' }, c.error ? '판정 못 함' : '맞춰 보는 중');
   return [
-    h('div', { class: 'title-row' }, h('h3', {}, c.name.trim() || '새 스토리'), checked ? storyChips(checked) : null, walkStart()),
+    h('div', { class: 'title-row' }, h('h3', {}, c.name.trim() || '새 스토리'), ...(checked ? [storyChips(checked), ...reachChips(checked)] : []), walkStart()),
     h('p', { class: 'muted' }, COMPOSE_GUIDE[c.diagram]),
     c.walkNote ? h('p', { class: `walk-note ${c.walkNote.error ? 'error' : 'muted'}` }, c.walkNote.text) : null,
     c.refused ?? c.error ? h('p', { class: 'error compose-error' }, c.refused ?? c.error) : null,
+    checked ? needsFold(checked, 'compose') : waitingLine(c.steps, c.error),
+    repeatedStep(composeScreens(c)) ? h('p', { class: 'error repeated' }, '같은 화면이 이어진 자리가 있어 저장할 수 없습니다.') : null,
+    h('div', { class: 'story-save' }, ...composeForm()),
     composeWide(c),
     h('h2', {}, `화면 순서 ${c.steps.length}`),
     c.steps.length
@@ -225,16 +217,15 @@ function composeForm() {
   const badId = () => Boolean(c.id) && !STORY_ID.test(c.id);
   const canSave = () => canSaveCompose(c);
   return [
-    h('div', { id: 'compose-reach' }, ...composeReach(c)),
     h('h2', {}, '새 스토리 저장'),
     storyForm(
-      field('ID', h('input', { type: 'text', id: 'compose-id', value: c.id, oninput: (e) => {
+      field('ID', h('input', { type: 'text', id: 'compose-id', name: 'compose-id', value: c.id, oninput: (e) => {
         c.id = e.target.value;
         e.target.nextElementSibling.hidden = !badId();
         syncButton(e, canSave);
       } }), h('small', { class: 'invalid', hidden: !badId() }, '영문 소문자, 숫자, -, _ 만 쓸 수 있습니다.')),
-      field('이름', h('input', { type: 'text', id: 'compose-name', value: c.name, oninput: (e) => { c.name = e.target.value; syncButton(e, canSave); } })),
-      field('메모', h('textarea', { id: 'compose-memo', oninput: (e) => { c.memo = e.target.value; } }, c.memo)),
+      field('이름', h('input', { type: 'text', id: 'compose-name', name: 'compose-name', value: c.name, oninput: (e) => { c.name = e.target.value; syncButton(e, canSave); } })),
+      field('메모', h('textarea', { id: 'compose-memo', name: 'compose-memo', oninput: (e) => { c.memo = e.target.value; } }, c.memo)),
       h('button', { class: 'save-compose', disabled: !canSave(), title: c.walk ? '「기록 끝」을 누른 뒤에 저장합니다.' : '이 화면 순서로 스토리 파일을 씁니다.', onclick: saveCompose }, '스토리 저장'),
       h('button', { class: 'drop-draft', disabled: Boolean(c.walk), title: c.walk ? '「기록 끝」을 누른 뒤에 버립니다' : '쓰던 순서와 이름을 버리고 스토리 목록으로 돌아갑니다', onclick: dropCompose }, '쓰던 것 버리기')),
     storyErrorLine(),
@@ -259,7 +250,7 @@ async function saveCompose() {
   const unpicked = unpickedCompose(c);
   if (unpicked) {
     state.storyError = `저장하지 않았습니다: ${unpicked}`;
-    return renderRight();
+    return redrawStory();
   }
   const { needs, expects } = fieldsToSend(c.wide);
   if (!(await writeStories('/api/stories/add', { id: c.id, name: c.name, memo: c.memo, needs, expects, screens: c.steps.map(sentStep) }))) return;
