@@ -2660,7 +2660,10 @@ set of sources and are named `SchemaAdminSettings`, so the review does not tell 
 first component only wraps a section (`LicensedSectionContainer`, two items) is named after it, and its ID changes when
 the order inside the item changes. Thirteen addresses are shared by two items, the page for a licensed server and its
 feature-discovery page, and a test opened at such an address goes to the first matching screen. No link into an item
-screen is read, so each is an entry screen. When the outer address cannot be filled, each item gives its own `route
+screen is read, so each is an entry screen. On mattermost the run with the table no longer fits Node's default heap
+(2240 MB on the machine measured): main already peaks close to it while TypeScript reads the types, and following the
+items' components into about a hundred files keeps some 60 MB more, so `extract` stops with `JavaScript heap out of
+memory`; with `NODE_OPTIONS=--max-old-space-size=4096` it ends in 47 s. When the outer address cannot be filled, each item gives its own `route
 path not read` line at the same route line. A table written in a route file, or in a screen's own component file, stays
 with all it imports in the sources of every screen that holds that file. outline builds its settings table inside a hook from lazy component
 constants (`Profile.Component`), with no top-level const, and appsmith passes its route tables by spread

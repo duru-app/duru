@@ -144,7 +144,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 ## Sequence
 
 1. **Rebuild the map.** Run `duru rebuild <config>`. It writes `map.json` and `tests.json` and prints a summary.
-   Stop and report if it fails.
+   Stop and report if it fails. When it fails with `JavaScript heap out of memory`, run it once more with
+   `NODE_OPTIONS=--max-old-space-size=4096` in front, and tell the user it needed a larger Node heap.
    When the summary also prints an `unchecked` count and a line saying the server API list is absent, the
    config has no server endpoint list (or one with no endpoint lines), so no call was compared with the server:
    a call's server match is `unchecked`, no call is dead and no screen is a dead screen. The task list then

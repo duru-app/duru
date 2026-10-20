@@ -43,6 +43,8 @@ npm test
 Requires Node 22.18 or later (23.6 or later on Node 23), which runs duru's own TypeScript files without a flag. Run
 duru from its clone, or link it (`npm link`, or `npm install <path to the clone>`): Node does not run TypeScript
 files from inside `node_modules`, so a copy installed there, as from a packed `.tgz`, stops on its first `.ts` file.
+A run over a large app can stop with `JavaScript heap out of memory`; run it again with a larger Node heap, such as
+`NODE_OPTIONS=--max-old-space-size=4096 node src/cli.ts rebuild path/to/project-config.json`.
 
 ## Config
 
