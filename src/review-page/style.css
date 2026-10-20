@@ -520,7 +520,7 @@
   .story-path .link.l-broken { border-left: 2px dotted var(--fail); }
   .story-path .link.l-off-map, .story-path .link.l-unknown { border-left: 2px dotted var(--more); }
   .story-path .link .walks { margin: 4px 0 0; font-size: 12px; } .story-path .link .walks.moves-missing { color: var(--more); }
-  .story-path .link.unwalked { border-left-color: var(--muted); }
+  .story-path .link.unwalked { background: color-mix(in srgb, var(--muted) 12%, transparent); }
   .verdict { margin: 2px 0; } .verdict.unreachable { color: var(--fail); } .verdict.reachable { color: var(--pass); } .verdict.unjudged { color: var(--more); }
   .ways li { margin: 4px 0 0; }
   .memo { white-space: pre-wrap; }
