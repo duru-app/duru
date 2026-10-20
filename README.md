@@ -487,8 +487,8 @@ and is listed with the tags that point at nothing on the map.
 `tests.json` lists the tests per node and per story with depth, status (pass, fail, pending; skipped and todo
 count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
 nothing on the map, and the tests with no tag as `untagged`. `traced`
-lists each Playwright test that passed, with the trace of its passing run, as its report, its title and the screens
-it passed in order; an address no screen matches stays in that list as its path. A story test whose passing run left a trace
+lists each Playwright test that passed, with the trace of its passing run, as its report, its title, its file and
+line, and the screens it passed in order; an address no screen matches stays in that list as its path. A story test whose passing run left a trace
 carries the same order as `screens`.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
@@ -603,8 +603,9 @@ fails and one is pending, pass when all pass. Without such tests it is `partial`
 test, and `untested` when none has.
 
 A passing story also says, from the traces of its passing Playwright story tests, whether one of them opened its
-screens one after another, and how many went across each link; with a story test that ran without a trace it is
-not known. Where the map has no link between two steps but passing tests went straight across, the link says how
+screens one after another, and how many went across each link. It is not known, and the links show no count, when
+a story test has no trace (a test that is not a Playwright test never has one) or a screen of the story is not on
+the map. Where the map has no link between two steps but passing tests went straight across, the link says how
 many: the config's `moves` may be missing that move.
 
 ## Story candidates

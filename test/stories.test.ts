@@ -741,20 +741,20 @@ test('a story test run in several Playwright projects counts once, and goes thro
   assert.deepEqual(walkOf(steps, storyRuns(ran('a', [HOME]), ran('a', undefined, 'pass', 'firefox'), ran('b', [LAB]))), { walked: 'no', walks: [0], passedBy: [undefined] });
 });
 
-test('a passing story is not known to be gone through when a story test without a trace passed and none with one went through, or when a screen is off the map, and its links then count nothing; a story that does not pass gets no answer', () => {
+test('a passing story is not known to be gone through when a story test without a trace passed and none with one went through, or when a screen is off the map, and its links then count nothing, nor does a link to a screen off the map; a story that does not pass gets no answer', () => {
   const steps = [SIGNIN, HOME];
   assert.deepEqual(walkOf(steps, storyRuns(ran('a'))), { walked: 'unknown', walks: [undefined], passedBy: [undefined] });
   assert.deepEqual(walkOf(steps, storyRuns(ran('a'), ran('b', [HOME]))), { walked: 'unknown', walks: [undefined], passedBy: [undefined] });
   assert.deepEqual(walkOf(steps, storyRuns(ran('a'), ran('b', steps))), { walked: 'yes', walks: [undefined], passedBy: [undefined] });
-  assert.equal(walkOf([HOME, '/gone#Gone'], storyRuns(ran('a', [HOME]))).walked, 'unknown');
+  assert.deepEqual(walkOf([HOME, '/gone#Gone'], storyRuns(ran('a', [HOME]))), { walked: 'unknown', walks: [undefined], passedBy: [undefined] });
   assert.deepEqual(walkOf(steps, storyRuns(ran('a', steps), ran('b', undefined, 'fail'))), { walked: undefined, walks: [undefined], passedBy: [undefined] });
   assert.deepEqual(walkOf(steps, storyRuns(ran('a', steps), ran('b', undefined, 'pending'))), { walked: undefined, walks: [undefined], passedBy: [undefined] });
 });
 
-test('a link the map has no link for counts the passing tests with a trace that went straight across it, whatever the story tests did, a test run in several projects once, and a link the map has does not', () => {
-  const run = (title: string, screens: string[]) => ({ report: 'r.json', title, screens });
-  const traced = [run('a', [HOME, '/help#Help']), run('a', [HOME, '/help#Help']), run('b', [HOME, '/nowhere', '/help#Help']), run('c', ['/help#Help', HOME]), run('d', [HOME, LAB])];
-  assert.deepEqual(walkOf([HOME, '/help#Help', LAB], { nodes: {}, stories: {}, traced }), { walked: undefined, walks: [undefined, undefined], passedBy: [2, undefined] });
+test('a link the map has no link for counts the passing tests with a trace that went straight across it, whatever the story tests did, a test run in several projects or result files once and two tests with one title in two files apart, and a link the map has does not', () => {
+  const run = (title: string, screens: string[], report = 'r.json', file = 'a.spec.ts') => ({ report, title, file, line: 1, screens });
+  const traced = [run('a', [HOME, '/help#Help']), run('a', [HOME, '/help#Help'], 'firefox.json'), run('a', [HOME, '/help#Help'], 'r.json', 'b.spec.ts'), run('b', [HOME, '/nowhere', '/help#Help']), run('c', ['/help#Help', HOME]), run('d', [HOME, LAB])];
+  assert.deepEqual(walkOf([HOME, '/help#Help', LAB], { nodes: {}, stories: {}, traced }), { walked: undefined, walks: [undefined, undefined], passedBy: [3, undefined] });
   assert.deepEqual(walkOf([HOME, LAB], { nodes: {}, stories: {}, traced }).passedBy, [undefined]);
 });
 

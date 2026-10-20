@@ -369,8 +369,8 @@ test('rebuild counts the story candidates from the visit records and from traces
     assert.equal(fs.readdirSync(path.join(copy, 'example-stories/candidates')).length, 4);
     const orders = JSON.parse(fs.readFileSync(path.join(copy, 'out/tests.json'), 'utf8')).traced;
     const report = 'results/playwright-traced/visits.json';
-    assert.deepEqual(orders.find((t: { title: string }) => t.title === 'opens home and then help'), { report, title: 'opens home and then help', screens: ['/home#Home', '/help#Help'] });
-    assert.deepEqual(orders.find((t: { title: string }) => t.title === 'presses the button on home'), { report, title: 'presses the button on home', screens: ['/home#Home'] });
+    assert.deepEqual(orders.find((t: { title: string }) => t.title === 'opens home and then help'), { report, title: 'opens home and then help', file: 'visits.spec.ts', line: 3, screens: ['/home#Home', '/help#Help'] });
+    assert.deepEqual(orders.find((t: { title: string }) => t.title === 'presses the button on home'), { report, title: 'presses the button on home', file: 'visits.spec.ts', line: 8, screens: ['/home#Home'] });
 
     const again = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     assert.match(again, /^story candidates 4 \| from traces 2 \| newly stored 0 \| files skipped 1$/m);
