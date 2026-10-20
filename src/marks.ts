@@ -47,6 +47,7 @@ export interface Mark {
   rule?: MarkRule;
   author: string;
   date: string;
+  via?: string;
 }
 
 interface NewMark {
@@ -56,6 +57,7 @@ interface NewMark {
   note?: unknown;
   rule?: MarkRule;
   author?: unknown;
+  via?: string;
 }
 
 interface MarkableMap {
@@ -197,7 +199,7 @@ const checkTarget = (target: MarkTarget | undefined): MarkTarget => (target?.can
 
 export const targetsOf = (m: { target?: MarkTarget; targets?: MarkTarget[] }) => m.targets ?? (m.target ? [m.target] : []);
 
-export function addMark(dir: string, { target, targets, status, note, rule, author }: NewMark, now = new Date()) {
+export function addMark(dir: string, { target, targets, status, note, rule, author, via }: NewMark, now = new Date()) {
   if (targets !== undefined && !Array.isArray(targets)) throw new Error('mark targets must be a list');
   const all = (targets ?? [target]).map(checkTarget);
   const hasStatus = status !== undefined && status !== null;
@@ -226,6 +228,7 @@ export function addMark(dir: string, { target, targets, status, note, rule, auth
     ...(rule !== undefined && { rule }),
     author: author.trim(),
     date: now.toISOString(),
+    ...(via !== undefined && { via }),
   };
   saveMark(dir, mark);
   return mark;

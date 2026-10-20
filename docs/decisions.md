@@ -582,7 +582,8 @@ depth and option value, and a kind applies to the whole screen or call), and the
 (a pick is no judgment of the tests, and would take the place of the status the form records). The middle pane is
 the same in the list and beside the flow, so a pick works the same in both.
 A picked kind alone does not put a screen or call on the task list, as a role or setting case does not: the list
-is what a reviewer marked `needs-more`. A `@case:` tag counts for its kind on every screen and call
+is what a reviewer marked `needs-more` (since #314 a picked kind with a case no test carries is listed under
+`# Case kinds`, see the entry on deciding kinds by command below). A `@case:` tag counts for its kind on every screen and call
 the test is tagged with, whether or not a reviewer has picked the kind there, because picks are only known when the
 review page and the task list read the marks; a tag whose kind is not in `caseKinds`, or on a test with no screen
 or call tag, is reported with the tags that point at nothing. Without `caseKinds` a `@case:` tag is not read at
@@ -2252,7 +2253,7 @@ test: an ended document is cancelled, rejected, completed or expired, and a test
 rejected one, yet one test was enough to fill the kind. So a kind in `caseKinds` may be `{ "text", "values" }`, and
 wherever a reviewer picks it, each value is a case with its own tests by depth and status, as each value of an
 on/off option and each side of a setting condition already is; the tag follows theirs. The kind is still what a
-reviewer picks per screen or call, a picked kind still puts nothing on the task list by itself, and on a listed screen
+reviewer picks per screen or call, a picked kind still puts nothing on the task list by itself (until #314, below), and on a listed screen
 or call each value with no tests gets its own empty test. A tag without a value on a kind with values, a value the
 kind does not list, and a value on a kind without values are reported with the tags that point at nothing, so a typo
 in a value shows. A value follows the rule of a kind's name, so `=` cannot appear in either. The description-only form
@@ -2295,7 +2296,7 @@ the newest mark wins as before, so a later `needed` puts it back in the name of 
 mark without `rule`, such as a kind pressed off before the rule was written, leaves the rule's pick in place, and the
 page shows 「규칙」. When no rule picks the target any more, also when the kind has lost every rule, a mark with
 `rule` is listed as no longer used and the target counts as undecided; a plain `not-needed` on a target no rule picks
-keeps meaning what it meant. The index and the rule are both kept because either alone can mislead after the config
+keeps meaning what it meant (since #314 only when it has a note; without one the target is undecided). The index and the rule are both kept because either alone can mislead after the config
 changes: the index after a rule is added in front, the rule after it is edited. Old mark files are read unchanged.
 On the page the row of a kind says who picked it, 「규칙」 with the rule on hover or the author with the date on hover,
 on every kind whether it has rules or not, and a kind taken out of a rule shows as 「불필요 · <author>」 with the reason
@@ -2562,6 +2563,65 @@ Alternatives compared:
   the text of reasons and verdicts would be written twice.
 - A test code draft with the computed lines in place: the agent gets one file, but a draft hides which lines duru is
   sure of and which it guessed, and a step with no readable path or no known link would need comments inside code.
+
+**An agent decides a kind of case for a screen or call with `duru case`, which writes the same mark the page does,
+marked as written by the command; `duru undecided` lists what nobody decided and exits with 3 while anything is
+left; the task list carries both the undecided candidates and the picked cases with no tests.**
+Asked for in #314 (2026-10-19), the third part of #310; the driver chose what goes in the list, the extra field, and
+how a reasoned and an unreasoned 「불필요」 outside the rules count. A rule picks what its shape says, so whatever it
+misses has to be decided one by one, and on into-sign 1.5.0 one kind with a rule on the participant write requests
+left 182 candidates undecided (78 of them write requests), a kind without rules 243. Nobody clicks through that many
+on the page, so an agent decides them from the source, and the reviewer checks the reasons afterwards. The names are
+`case` and `undecided`, not `judge`, which `src/judgments.ts` already uses for discarding or handing over a test
+pair. `case` writes into the marks folder directly, as `reply` does without `--server`; an open page sees the mark
+once reloaded, and a way through the review server is left for another issue. The author is `agent` unless
+`--author` names one, as for `reply`, and never the config's `author` or the git name, so an agent's decision is
+not signed with the reviewer's name. A mark the command writes carries `"via": "duru case"`, the one field the page
+does not write, so the count of rule, person and agent picks and a later hold on agent picks can tell them apart;
+the page's own saves drop such a field. The command refuses, with the reason and exit code 1, a kind not in the
+config, an ID not on the map, a 「불필요」 without a note whether a rule picks the target or not, a target whose
+current mark a person left, and a 「불필요」 off the side the rules pick unless there is a mark there to take
+back (so a hand-picked 「필요」 can still be withdrawn). A 「필요」 is written also where a rule already picks the
+target, so the pick stays when the rule changes.
+A 「불필요」 outside the rules now counts only with a note: a kind pressed on and off again on the page leaves a mark
+with no note, and calling that a decision would hide the candidate. Such a candidate stays undecided and is handed to
+a person: its mark is a person's, and the agent never changes a person's mark, also where the mark leaves the target
+undecided, since the command would otherwise silently reverse what the reviewer pressed. It keeps `undecided` at 3,
+and its line says only a person can decide it, so the agent tells the user instead of looping; a place on the page
+to add the reason comes with the case kind tab (#313). The buttons work as before, and a rule's pick is still taken
+out only with a reason. A reasoned 「불필요」 outside the rules shows in 「경우별 테스트」 as 「불필요 · <author>」 with the
+reason, as one taken out of a rule does; one without a reason shows no row, as before.
+`undecided` exits with 0 when nothing is left, 3 while something is, 1 when the config, the map or the marks cannot be
+read, and 2 when called wrongly, since duru already uses 1 for failure and 2 for misuse, and grep, diff, ESLint and
+`terraform plan -detailed-exitcode` also keep "found something" apart from "failed". It needs no `tests.json`. The
+undecided candidates come write requests first (a request whose method was not read among them), then the other
+calls, then the screens, each by ID; `caseTargets` carries that order in the review data, so the page can use it
+without importing a TypeScript module. The task list gets `# Case kinds` before `# Tagging` whenever the config
+names kinds: each kind's undecided candidates, and each screen or call the kind is picked for with a case no test
+carries, with an empty test tagged `@case:<kind>=<value>`; one already listed under its marks is not repeated, but its
+cases still count, so the section and `rebuild` give the same number. This
+changes the earlier entries' "a picked kind alone does not put a screen or call on the task list": a rule's pick
+whose cases nobody tests would otherwise never reach the agent, and the rule would be there for nothing. When the
+section has work the head of the list counts it and 「No open marks.」 says the case kinds still have work, so an agent
+does not stop at that line. `rebuild` prints the undecided count and the cases with no tests for each kind.
+Reference cases: SonarQube security hotspots start as 「To review」 and are set to 「Safe」 with a comment, and its
+quality gate fails until every new hotspot is reviewed, which is where an undecided candidate staying listed until
+someone decides it comes from; SARIF 2.1.0 keeps `notApplicable`, `open` and `review` apart, which is why undecided
+and 「불필요」 are different states; Semgrep keeps ignored findings with their reason instead of dropping them.
+Alternatives compared:
+- Listing only the undecided write requests: the kind without rules would never get decided, and the driver chose
+  every candidate.
+- Telling agent marks apart by the author `agent`: a person can type that name on the page, and `--author` can name
+  anything, so the field is the only thing that says how the mark was written.
+- Counting a 「불필요」 without a note as decided: the candidates a reviewer only pressed off would never be offered.
+- Going through the review server, as `reply --server` does: needs a running review, while an agent mostly decides in
+  bulk between reviews; left for later.
+- One exit code for both "something is left" and "something failed": an agent could not tell a broken config from
+  work to do.
+Measured on main 36d357f against the branch with both example clients and into-sign 1.5.0, with no `caseKinds` and
+each with two open screen marks, an open call mark and a `needed` and a `not-needed` case mark of a kind not in the
+config (into-sign also with the five marks of the case-kind check of 2026-10-11): the task lists and what `rebuild`
+prints are identical.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

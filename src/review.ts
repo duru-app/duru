@@ -16,7 +16,7 @@ import type { CaseKind } from './config.ts';
 import { buildFlow } from './flow.ts';
 import type { MapCall, MapScreen, ScreenMap } from './map.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
-import { addMark, addReply, classifyMarks, loadMarks, mergedStatus, recordKind } from './marks.ts';
+import { addMark, addReply, classifyMarks, loadMarks, mergedStatus, recordKind, targetsOf } from './marks.ts';
 import { addNeed, checkNeeds, editNeed } from './needs.ts';
 import type { Mark } from './marks.ts';
 import { linkKey, locatePart, locateStoryPart } from './parts.ts';
@@ -124,6 +124,13 @@ function readMap(mapFile: string): ScreenMap {
 }
 
 const readTests = (config: any) => readJson(path.join(config.outDir, 'tests.json'));
+
+export function readCaseTargets(config: any) {
+  const map = readMap(path.join(config.outDir, 'map.json'));
+  const caseMarks = loadMarks(config.marksDir).filter((m) => targetsOf(m).some((t) => t.case !== undefined));
+  const { attached } = classifyMarks(caseMarks, map, [], Object.keys(config.caseKinds));
+  return { map, attached, targets: caseTargets(map, config.caseKinds, attached) };
+}
 
 export function reviewData(config: any, author: ReviewAuthor | null, app: AppHost | null = null, fileSettings: Awaited<ReturnType<AppHost['fileSettings']>> | null = null) {
   const mapFile = path.join(config.outDir, 'map.json');
@@ -382,7 +389,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
   };
   // 답글의 작성자는 페이지를 띄운 사람이 아니라 답한 에이전트다.
   const saves: Record<string, (input: any) => unknown> = {
-    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined })),
+    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined, via: undefined })),
     '/api/replies': (input) => announce(addReply(config.marksDir, { replyTo: input.replyTo, note: input.note })),
     '/api/judgments': (input) => addJudgment(config.judgmentsDir, input),
   };

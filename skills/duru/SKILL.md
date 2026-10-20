@@ -140,6 +140,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    is missing.
    When it prints a line `caseKinds <kind> picks[<i>] matches no screen` (or `no call`), that rule of the kind
    picks nothing on this map, most likely a typo in its pattern or method; tell the user, with the rule as printed.
+   A line `case kind <kind>: undecided N | cases with no tests N` counts that kind's work in the task list's
+   `# Case kinds` (step 3).
    When it prints lines starting with `tsconfig import`, each names an import that matches an alias of the
    `tsconfig` file whose targets are inside the client source but finds no file, with the number of files that write it: the alias or the import is wrong, or
    the file is missing. Tell the user, because the screens that use those files miss what they would reach.
@@ -322,6 +324,27 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    same file; on a `link need from step N` line, set it up before step N so the test can take that link. A need
    written `needs/<file> — the file is missing` or `— the file could not be read` points at a need
    file duru did not find or could not read; tell the user which one rather than guess what it holds.
+   With `caseKinds` in the config the list has `# Case kinds`, a `## <kind>` for each kind, and the head of the list
+   counts its undecided candidates and cases with no tests; with no open mark it then says the case kinds still have
+   work instead of `No open marks.`, so do not stop there. Under `undecided`, each line names a screen or call nobody
+   has decided the kind for, write requests first: read its source and decide whether that kind of case can happen
+   there, then run `duru case <config> <kind> <ID> needed`, or `duru case <config> <kind> <ID> not-needed --note
+   "<why>"` with a reason a reviewer can check from the code. The author is `agent` unless you pass `--author`; do
+   not pass the reviewer's name. When you cannot tell from the code, leave it undecided and tell the user which one
+   and why. `duru case` refuses a kind not in the config, an ID not on the map, `not-needed` without a note, a
+   person's mark and `not-needed` off the side the rules pick where there is nothing to take back, printing why with
+   exit code 1; read the reason and do not retry the same call. Run `duru undecided <config>` (or with one kind) to
+   see what is left: it exits with 3 while any candidate is undecided, 0 when none is, 1 when the map or marks cannot
+   be read and 2 when called wrongly. A candidate line ending with `so only a person can decide it` carries a mark a
+   reviewer left, mostly a kind pressed off on the page without a reason, and `duru case` will not change it. This
+   part is done when every candidate `duru undecided` still lists is one only a person can decide, such a line or
+   one you could not tell from the code, or when none is left and it exits with 0; then tell the user which are
+   left, with the author and date such a line gives, and go on with `cases with no tests`. The marks are written
+   straight into the marks folder, so an open review page shows them only once it is reloaded; tell the user so.
+   Under `cases with no tests`, each `### <ID>` is a screen or call the kind is picked for whose `no tests` tags no
+   test carries yet: write a test with its `@screen:` or `@call:` tag and each such case tag, starting from its
+   empty test, as for a case above. A candidate you mark `needed` while you work shows up under `cases with no
+   tests` the next time you run `duru tasks <config>`, which reads the marks each time; no rebuild is needed for it.
    The items under `# Tagging` (they can be listed even when no mark is open) are tests the reviewer judged to
    check a screen or API call they carry no tag for. For each, open the test at its file and line and add exactly
    the tag in `tag to add`, in the place its `where` line names, and change nothing else in the test: not its
@@ -338,7 +361,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    Its story tests and the tests already on each screen show what is covered. A story whose `reach` is
    `unreachable` or `not judged` (a step with `no link`, a screen `not on the map`) may not be walkable as
    written: when a step cannot be taken, tell the user which one instead of writing a test that skips it. Do not
-   edit or add marks, and do not change a story file to fit a test: they are the reviewer's.
+   edit or add marks other than the case marks `duru case` writes, and do not change a story file to fit a test: they
+   are the reviewer's.
 4. **Confirm the tests attached.** Run the new tests so that their results are written where the config's
    `tests` entries point, then run `duru rebuild <config>` again. Check the summary: the screens with tests
    should have gone up, the stories you wrote tests for should have moved out of `partly covered` and `no tests`,

@@ -643,3 +643,28 @@ test('in a browser, a request taken out of a rule that no longer picks it shows 
       }));
   });
 });
+
+test('in a browser, a 「불필요」 with a reason on a request no rule picks, written by duru case, shows as 「불필요 · <author>」 with its reason and the date on hover, while the data lists the kind\'s undecided requests without it, writes first', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: RULED }, (config, copy) => {
+    const read = 'GET:/api/v1/document/{documentId}';
+    execFileSync(process.execPath, [CLI, 'case', path.join(copy, 'config.json'), 'ended', read, 'not-needed', '--note', '읽기는 끝난 문서에서도 된다'], { stdio: 'pipe' });
+    return withServer(config, 'reviewer', async (base) => {
+      const { caseTargets }: { caseTargets: Record<string, { undecided: string[]; nodes: Record<string, { state: string; mark: { author: string; via?: string } | null }> }> } = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual([caseTargets.ended.nodes[read].state, caseTargets.ended.nodes[read].mark?.author, caseTargets.ended.nodes[read].mark?.via], ['not-needed', 'agent', 'duru case']);
+      assert.ok(!caseTargets.ended.undecided.includes(read));
+      const firstRead = caseTargets.ended.undecided.findIndex((id) => id.startsWith('GET:'));
+      assert.ok(firstRead > 0 && caseTargets.ended.undecided.slice(firstRead).every((id) => id.startsWith('GET:')));
+      await withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await openCall(p, '/document/:id', read);
+        const call = callCases(p);
+        const [[text, title]] = await chips(call);
+        assert.equal(text, '불필요 · agent');
+        assert.match(title!, DATE_TITLE('에 불필요로 정했습니다$'));
+        assert.equal(await call.locator('li.case-left-out .case-reason').textContent(), '이유 읽기는 끝난 문서에서도 된다');
+        assert.equal(await call.locator('.take-out').count(), 0);
+        assert.deepEqual(await kindButtons(call), [[CASE_KINDS.boundary, 'false'], [RULED.ended.text, 'false'], [RULED.legacy.text, 'false']]);
+      });
+    });
+  });
+});

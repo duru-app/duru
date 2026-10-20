@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { caseTargets, exclusionOf, matchesPattern, pickedKinds, rulePicks } from '../src/case-targets.ts';
+import { caseTargets, casesWithoutTests, commandCaseRule, exclusionOf, matchesPattern, pickedKinds, rulePicks } from '../src/case-targets.ts';
 import { loadConfig } from '../src/config.ts';
 import type { CaseKind, CasePick } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
@@ -96,13 +96,73 @@ test('a needed mark on a screen or call no rule picks makes it a target picked b
   const caseKinds = { ended: kind({ screen: '/document/**', methods: ['POST', 'PUT'] }) };
   const onCall = mark('GET:/api/v1/document/list', 'ended', 'needed', { author: 'QA 에이전트' });
   const onScreen = mark(DETAIL, 'ended', 'needed');
-  const plain = mark('/home#Home', 'ended', 'not-needed');
+  const plain = mark('/home#Home', 'ended', 'not-needed', { note: '홈에서는 문서를 바꾸지 않는다' });
   const targets = targetsOf(caseKinds, [onCall, onScreen, plain]);
   assert.deepEqual(targets.ended.nodes['GET:/api/v1/document/list'], { state: 'needed', rules: [], mark: onCall });
   assert.deepEqual(targets.ended.nodes[DETAIL], { state: 'needed', rules: [], mark: onScreen });
   assert.deepEqual(targets.ended.nodes['/home#Home'], { state: 'not-needed', rules: [], mark: plain });
   assert.equal(targets.ended.nodes['/signin#SignIn'], undefined);
   assert.deepEqual(pickedKinds(targets, DETAIL), [{ tag: 'case:ended', kind: 'case' }]);
+});
+
+test('a not-needed mark with no note on a screen or call no rule picks, such as a kind button pressed on and off again, leaves it undecided, and with a note decides it', () => {
+  const caseKinds = { ended: kind({ screen: '/document/**', methods: ['POST', 'PUT'] }), legacy: kind() };
+  const off = mark('GET:/api/v1/document/list', 'ended', 'not-needed');
+  const reasoned = mark('GET:/api/v1/document/{documentId}', 'ended', 'not-needed', { note: '읽기는 끝난 문서에서도 된다' });
+  const offScreen = mark('/home#Home', 'legacy', 'not-needed', { note: ' ' });
+  const targets = targetsOf(caseKinds, [off, reasoned, offScreen]);
+  assert.deepEqual(targets.ended.nodes['GET:/api/v1/document/list'], { state: 'undecided', rules: [], mark: null });
+  assert.deepEqual(targets.ended.nodes['GET:/api/v1/document/{documentId}'], { state: 'not-needed', rules: [], mark: reasoned });
+  assert.deepEqual(targets.legacy.nodes['/home#Home'], { state: 'undecided', rules: [], mark: null });
+  assert.deepEqual(targets.ended.unused, {});
+  assert.ok(targets.ended.undecided.includes('GET:/api/v1/document/list'));
+  assert.ok(!targets.ended.undecided.includes('GET:/api/v1/document/{documentId}'));
+});
+
+test('the undecided candidates of a kind come as requests other than GET first, then the other calls, then the screens, each group in ID order', () => {
+  const targets = targetsOf({ legacy: kind(), ended: kind({ screen: '/document/**', methods: ['POST', 'PUT'] }) }, [mark('POST:/api/v1/report/export', 'legacy', 'needed')]);
+  const calls = map.calls.map((c) => c.id).filter((id) => id !== 'POST:/api/v1/report/export');
+  const writes = calls.filter((id) => !id.startsWith('GET:')).sort();
+  const reads = calls.filter((id) => id.startsWith('GET:')).sort();
+  assert.ok(writes.length > 0 && reads.length > 0);
+  assert.deepEqual(targets.legacy.undecided, [...writes, ...reads, ...map.screens.map((s) => s.id).sort()]);
+  assert.deepEqual(targets.ended.undecided, map.calls.map((c) => c.id).filter((id) => ![ARCHIVE, RENAME].includes(id)).sort((a, b) => Number(a.startsWith('GET:')) - Number(b.startsWith('GET:')) || (a < b ? -1 : 1)));
+});
+
+test('a kind picked for a screen or call by a rule or a mark has a case with no tests for each of its values no test of that screen or call carries, or for the kind itself when it has no values', () => {
+  const ended = { ...kind({ screen: '/document/**', methods: ['POST', 'PUT'] }), values: ['cancelled', 'rejected'] };
+  const caseKinds = { ended, legacy: kind() };
+  const targets = targetsOf(caseKinds, [mark(DETAIL, 'legacy', 'needed'), mark(ARCHIVE, 'ended', 'not-needed', { note: '보관은 된다', rule: { index: 0, pick: ended.picks[0] } })]);
+  const tests = { [RENAME]: [{ cases: ['case:ended=cancelled'] }, { cases: ['case:ended'] }], [DETAIL]: [{ cases: ['case:legacy'] }] };
+  assert.deepEqual(casesWithoutTests('ended', ended, targets.ended, tests).map((c) => [c.node, c.target.state, c.tags]), [[RENAME, 'rule', ['case:ended=rejected']]]);
+  assert.deepEqual(casesWithoutTests('legacy', caseKinds.legacy, targets.legacy, tests), []);
+  assert.deepEqual(casesWithoutTests('legacy', caseKinds.legacy, targets.legacy, {}).map((c) => [c.node, c.tags]), [[DETAIL, ['case:legacy']]]);
+});
+
+test('duru case refuses a kind not in the config, a screen or call not on the map, not-needed without a note, a person\'s current mark, and not-needed off the side the rules pick unless a mark is there to take back', () => {
+  const caseKinds = { ended: kind({ screen: '/document/**', methods: ['POST', 'PUT'] }), legacy: kind() };
+  const check = (marks: Mark[], args: { kind: string; node: string; status: string; note?: string }) => commandCaseRule(map, caseKinds, classifyMarks(marks, map, [], Object.keys(caseKinds)).attached, { note: '', ...args });
+  assert.throws(() => check([], { kind: 'gone', node: RENAME, status: 'needed' }), /^Error: "gone" is not a kind in caseKinds \(it has ended, legacy\)$/);
+  assert.throws(() => check([], { kind: 'ended', node: 'PUT:/api/v1/gone', status: 'needed' }), /^Error: PUT:\/api\/v1\/gone is no screen or call on the map$/);
+  assert.throws(() => check([], { kind: 'ended', node: RENAME, status: 'not-needed' }), /a rule picks .* so taking it out needs a note saying why/);
+  assert.throws(() => check([], { kind: 'legacy', node: RENAME, status: 'not-needed', note: '  ' }), /^Error: not-needed needs a note saying why legacy need not be tested on PUT/);
+  assert.deepEqual(check([], { kind: 'ended', node: RENAME, status: 'not-needed', note: '이름은 막지 않는다' }), { index: 0, pick: caseKinds.ended.picks[0] });
+  assert.equal(check([], { kind: 'ended', node: RENAME, status: 'needed' }), undefined);
+  assert.equal(check([], { kind: 'legacy', node: DETAIL, status: 'not-needed', note: '옛 문서는 상세를 열지 않는다' }), undefined);
+
+  const person = mark(RENAME, 'legacy', 'needed', { author: '검토자' });
+  assert.throws(() => check([person], { kind: 'legacy', node: RENAME, status: 'not-needed', note: 'x' }), /^Error: 검토자 marked legacy needed on PUT:\/api\/v1\/document\/\{documentId\}\/name on 2026-10-\d\d, and duru case does not change a person's mark$/);
+  const agent = { ...mark(RENAME, 'legacy', 'needed', { author: 'agent' }), via: 'duru case' };
+  assert.equal(check([person, agent], { kind: 'legacy', node: RENAME, status: 'not-needed', note: '이름은 막지 않는다' }), undefined);
+  assert.throws(() => check([mark(RENAME, 'legacy', 'not-needed', { author: '검토자' })], { kind: 'legacy', node: RENAME, status: 'needed' }), /^Error: 검토자 marked legacy not-needed on PUT:\/api\/v1\/document\/\{documentId\}\/name on 2026-10-\d\d, and duru case does not change a person's mark$/);
+  const unused = mark(RENAME, 'legacy', 'not-needed', { note: '이름은 막지 않는다', rule: { index: 0, pick: { methods: ['PUT'] } }, author: '검토자' });
+  assert.throws(() => check([unused], { kind: 'legacy', node: RENAME, status: 'needed' }), /^Error: 검토자 marked legacy not-needed on .*, and duru case does not change a person's mark$/);
+  assert.throws(() => check([mark(RENAME, 'ended', 'not-needed', { author: '검토자' })], { kind: 'ended', node: RENAME, status: 'needed' }), /^Error: 검토자 marked ended not-needed on /);
+
+  assert.throws(() => check([], { kind: 'ended', node: DETAIL, status: 'not-needed', note: '화면은 고르지 않는다' }), /^Error: the rules of ended pick only calls, so \/document\/:id#DocumentDetail is no candidate/);
+  assert.equal(check([], { kind: 'ended', node: DETAIL, status: 'needed' }), undefined);
+  const agentOnScreen = { ...mark(DETAIL, 'ended', 'needed', { author: 'agent' }), via: 'duru case' };
+  assert.equal(check([agentOnScreen], { kind: 'ended', node: DETAIL, status: 'not-needed', note: '잘못 골랐다' }), undefined);
 });
 
 test('a rule that picks nothing is reported by its kind and its place in picks', () => {
@@ -166,6 +226,23 @@ test('the README and the agent skill say what picks takes, what its rebuild line
   assert.match(skill, /a kind of case a reviewer, or a rule in the config's `caseKinds`\s+`picks`, picked for it/);
   assert.match(skill, /`caseKinds <kind> picks\[<i>\] matches no screen` \(or `no call`\)/);
   assert.match(skill, /A `not-needed` case mark that also carries\s+`rule`, `\{ "index", "pick" \}`/);
+});
+
+test('the README, the agent skill and the decision record say what case and undecided do, their exit codes, the field case writes and how to read the case kinds section', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /`case <config> <kind> <screen or call ID> needed\|not-needed \[--note "<why>"\] \[--author <name>\]`/);
+  assert.match(readme, /It exits with 0 when none is left, 3 while any is, 1 when the config, the\s+map or a mark file cannot be read/);
+  assert.match(readme, /`"via": "duru case"`/);
+  assert.match(readme, /`case kind <kind>: undecided N \| cases with no tests N`/);
+  assert.match(readme, /\*\*Case kinds\.\*\* With `caseKinds` set, `# Case kinds` comes before `# Tagging`/);
+  const skill = read('../skills/duru/SKILL.md');
+  assert.match(skill, /`duru case <config> <kind> <ID> needed`/);
+  assert.match(skill, /This\s+part is done when every candidate `duru undecided` still lists is one only a person can decide/);
+  assert.match(skill, /an open review page shows them only once it is reloaded/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*An agent decides a kind of case for a screen or call with `duru case`/);
+  assert.match(decisions, /since #314 a picked kind with a case no test carries is listed under\s+`# Case kinds`/);
 });
 
 test('the decision record says the review server\'s check and rebuild call the rule matcher the page data uses, without reading its table', () => {
