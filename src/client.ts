@@ -481,6 +481,22 @@ export async function extractClient(config: any) {
     return found;
   }
 
+  // srcRoot 아래 파일 맨 위의 `const <name> = { … }`. 그런 선언이 없거나 값이 객체 리터럴이 아니면 null 이다.
+  function topLevelObject(file: string, name: string): NodePath<ObjectExpression> | null {
+    const absFile = path.join(config.srcRoot, file);
+    const { ast } = parseSource(absFile);
+    programFile.set(ast.program, absFile);
+    let init: NodePath<ObjectExpression> | null = null;
+    traverse(ast, {
+      VariableDeclarator(p) {
+        if ((p.parent as VariableDeclaration).kind !== 'const' || !p.scope.path.isProgram() || !p.get('id').isIdentifier({ name })) return;
+        if (p.get('init').isObjectExpression()) init = p.get('init') as NodePath<ObjectExpression>;
+        p.stop();
+      },
+    });
+    return init;
+  }
+
   function loadSettingsDefaults() {
     const values: Record<string, any> = {};
     const incomplete: Record<string, string[][]> = {};
@@ -497,16 +513,7 @@ export async function extractClient(config: any) {
         incomplete[root] = [];
         continue;
       }
-      const { ast } = parseSource(path.join(config.srcRoot, file));
-      programFile.set(ast.program, path.join(config.srcRoot, file));
-      let init: NodePath<ObjectExpression> | null = null;
-      traverse(ast, {
-        VariableDeclarator(p) {
-          if ((p.parent as VariableDeclaration).kind !== 'const' || !p.scope.path.isProgram() || !p.get('id').isIdentifier({ name })) return;
-          if (p.get('init').isObjectExpression()) init = p.get('init') as NodePath<ObjectExpression>;
-          p.stop();
-        },
-      });
+      const init = topLevelObject(file, name);
       if (!init) throw new Error(`settingsDefaults.${root}: ${file} has no top-level const ${name} holding an object`);
       values[root] = evaluate(init);
       incomplete[root] = incompleteDefaults(init);
