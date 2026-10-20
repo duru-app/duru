@@ -727,18 +727,21 @@ dashed with 「링크 없음」 where the map has no link, and orange dotted whe
 could not be read; the 「i」 above the line shows these. Pressing a box outlines it and that step's card, scrolling the
 cards only when that card is out of view; pressing the line between two steps brings that link's row into view. The
 outline stays on the pressed step while the cards scroll, and a line wider than the pane slides sideways to keep it in
-view. Below the line are the story's cards: its name, tests, 「스토리 전체」 box, then each step and the link into it. The
-right column has the story's 「사전 조건」, a folded 「손볼 화면 N」 listing the failing and untested screens on its path, each
-bringing up its step card, then the name and memo and the conversation. The address of a story is `#story?story=<ID>`,
+view. Below the line are the story's cards: its name with its link verdict beside it, a folded 「사전 조건 N」, a folded
+「손볼 화면 N」 listing the failing and untested screens on its path, each bringing up its step card, the name and memo
+with 「저장」, the 「스토리 전체」 box, its tests, then each step and the link into it. The right column holds the
+story's conversation, as for a screen. The address of a story is `#story?story=<ID>`,
 with `&step=<N>` added while step N is outlined, so opening that address, going back to it or reloading it outlines
 the same step and brings its card into view. Pressing another step changes the address without adding to the browser
 history.
 
 **A new story.** 「새 스토리」 is made in the story tab only. The flow tab's bar has a 「새 스토리」 button (「새 스토리 이어
 쓰기」 once it has steps) that moves to the story tab's new-story screen, and `#flow?new=1` and `#stories?new=1` open
-the same screen. The left column lists the screens, the middle shows the steps chosen so far above the whole flow, and
-the right column holds the verdict, and ID, name and memo with 「스토리 저장」. Pressing a screen in the list or a box in
-the drawing adds that screen as the next step, and the drawing scrolls to keep the box pressed in place where it can.
+the same screen. The left column lists the screens, and the middle shows the verdict beside the title, a folded
+「사전 조건 N」, and ID, name and memo with 「스토리 저장」 above the steps chosen so far and the whole flow. The right column
+shows the conversation form greyed out, with a line saying a conversation can be left once the story is saved.
+Pressing a screen in the list or a box in the drawing adds that screen as the next step, and the drawing scrolls to
+keep the box pressed in place where it can.
 Each chosen box carries its step number. Two neighbouring steps are joined in the style of their verdict: on the link
 itself when the second box hangs under the first, otherwise by a mark in each of the two boxes with the other step's
 number. Pressing a step shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」 on it, as in 「순서
@@ -749,12 +752,14 @@ picked screen of the flow tab are left as they were and do not change the drawin
 
 **Recording a walk through the app.** When `app` is set, the title row of 「새 스토리」 has 「● 기록」. It opens the app in
 the middle column in place of the drawing, and the screens the app passes through stack up as steps in the left column
-in place of the screen list, after the steps chosen before. Each address change is read, an address on the same screen
-as the step before joins that step, and an address no screen matches becomes a step marked 「맵에 없는 화면」. A value
-typed into a box found by its placeholder, label or test ID is kept on its step; a password, a select, a checkbox or a
-box with none of these is only counted. The bar above the app chooses the account it is open as: the default
-account, each role in `app.roles`, or signed out when `app.signedOutPaths` is set. Choosing another one keeps the
-addresses so far as one record and starts a new one. 「기록 끝」 writes the record into `records/` in `storiesDir` as
+in place of the screen list, after the steps chosen before, under the verdict and a folded 「사전 조건 N」 of the steps
+so far. While the app is open the ID, name and memo are put away, and 「기록 끝」 shows them again as they were typed.
+Each address change is read, an address on the same screen as the step before joins that step, and an address no
+screen matches becomes a step marked 「맵에 없는 화면」. A value typed into a box found by its placeholder, label or test
+ID is kept on its step; a password, a select, a checkbox or a box with none of these is only counted. The bar above
+the app chooses the account it is open as: the default account, each role in `app.roles`, or signed out when
+`app.signedOutPaths` is set. Choosing another one keeps the addresses so far as one record and starts a new one.
+「기록 끝」 writes the record into `records/` in `storiesDir` as
 `{ "steps": [{ "url": "/home" }, { "url": "/signin", "inputs": [...], "skipped": 1 }] }`, with the path, the query and
 what follows `#` and no host or port, in a file named by the date and a random ID (`2026-10-15-1a2b3c4d.json`) that is
 never changed or deleted; keep the folder in git with the stories. The record is listed as a candidate even if the
@@ -882,15 +887,17 @@ next screen picked goes (「취소」 on the mark sends it to the end again), an
 dragged; a step in the wrong place is taken out and put in again. A kept step keeps its conditions, inputs and
 expected results, a step put in has none, and the conditions of the link into a step stay only while the step
 before it is the one it had, which its link row says before the order is saved. Taking out a step with lines written
-asks first, naming what goes with it, with 「제외」 and 「취소」. The right pane shows the verdict and 「사전 조건」 of the
-order being changed, with 「순서 저장」 and 「취소」 under the verdict; an order with the
-same screen twice in a row or with no step is not saved and says why, and a file changed elsewhere is refused with
+asks first, naming what goes with it, with 「제외」 and 「취소」. The verdict and the link chips beside the name and
+「사전 조건 N」 follow the order being changed, and 「순서 저장」 and 「취소」 take the place of 「순서 고치기」 in the
+「화면 순서」 heading; an order with the same screen twice in a row or with no step is not saved and says why, and a
+file changed elsewhere is refused with
 「새로 읽기」 and 「덮어쓰기」 as in the table. While the order is open the pencils wait, and while a table is open
 「순서 고치기」 waits. A comment on a step whose number no longer holds its screen then shows under 「떨어져 나감」. Candidates are
-listed below with 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」; the address of a chosen candidate holds its screen order, as
-`#story?candidate=/home#Home+>+/help#Help`. 「버리기」 opens the window that 「제외」 opens, naming the candidate and its
-screen order, and the candidate is discarded only once a reason is written there. 「버리기」 in the window or Ctrl+Enter
-saves it and moves on to the next candidate; 「취소」 or Escape closes the window, and a click outside it does not. If
+listed below; a chosen one has 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」 at the right end of its title row; the
+address of a chosen candidate holds its screen order, as `#story?candidate=/home#Home+>+/help#Help`. 「버리기」 opens
+the window that 「제외」 opens, naming the candidate and its screen order, and the candidate is discarded only once a
+reason is written there. 「버리기」 in the window or Ctrl+Enter saves it and moves on to the next candidate; 「취소」 or
+Escape closes the window, and a click outside it does not. If
 the discard is not saved, the window stays open with the reason and the error. A story accepted from a candidate has
 「받기 되돌리기」 below its name and memo: it deletes the story file and the candidate is listed again and chosen. It
 asks first only when conditions, inputs or expected results are written in the story, and its title then says they go
@@ -990,8 +997,7 @@ to the tags otherwise. Typing `@` in the text lists the depths of the place and 
 one is added with the arrow keys and Enter or with a click, and Escape closes the list. Each tag's × takes it off:
 taking off the last tag that is not the default brings the default back, and taking off the default as well leaves
 「없음」, so the comment is saved with no target, until 「… 다시 붙이기」 puts the default back. A status can be picked
-only while the default tag is the one tag on. For a story or a candidate the conversation sits under the
-form behind 「대화 N」, and each entry without a status is labelled 「코멘트」 or 「답」.
+only while the default tag is the one tag on. A story and a candidate show their conversation the same way.
 
 **All comments.** Two buttons at the top of the right pane switch between 「이 화면 N」 (「이 호출」 for a call, 「이 스토리」 for a
 story, 「이 후보」 for a candidate), the conversation described above, and 「전체 N」, every mark and comment with text still

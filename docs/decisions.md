@@ -1470,7 +1470,7 @@ Alternatives compared:
 - Switching between info and conversation inside the right pane: either is one click away, but the conversation is
   hidden while the info is read, and the middle pane already has room under its tables.
 The story tab's right pane is not changed here: its steps and 「사전 조건」 stay above, and its conversation stays
-under the form behind 「대화 N」.
+under the form behind 「대화 N」, until #358 unfolded it at the top of the right pane (see below).
 
 **The line an agent gets for a comment on a test names the result file instead of carrying the failure message.**
 The Playwright, Vitest and JUnit readers keep only each test's status, and only a verdict line keeps the text after
@@ -2783,6 +2783,27 @@ Alternatives compared:
   would be caught only by the browser tests.
 - The page keeps its own calculation and `duru story` gets a copy: nothing to move, but two copies of the same rules
   drift apart.
+
+**The story tab shows the conversation unfolded at the top of the right pane, as a screen does, and stacks the
+verdict, 「사전 조건」, 「손볼 화면」, the save fields and the accept buttons in the middle.**
+Asked for in #358 (2026-10-20); the driver chose the shape on mock-ups of a new story, a saved story and a candidate.
+Before, those filled the top of the right pane and the conversation was folded into the form behind 「대화 N」, or
+left out while a new story was written. The verdict is a chip beside the name, 「사전 조건 N」 and 「손볼 화면 N」 are
+folded lines, and the accept buttons sit at the right end of a candidate's title row. On the mock-ups this moves the
+step order down by 320px for a new story, 347px for a saved story and 39px for a candidate. Details settled on the way:
+- A new story has no ID until it is saved, so its conversation form is greyed out with a line saying a conversation
+  can be left once the story is saved; #365 gives the story being written a conversation.
+- While 「● 기록」 fills the middle with the app there is no room for the save fields, so they are put away and come
+  back after 「기록 끝」 with what was typed; saving already waited for 「기록 끝」. The verdict and 「사전 조건 N」 of the
+  steps so far move to the top of the left column, above the steps passed, so they stay in sight while recording as
+  they did in the right pane before.
+- 「순서 저장」 and 「취소」 take the place of 「순서 고치기」 in the 「화면 순서」 heading, beside the order being changed.
+- The middle pane is now drawn again while a name or memo is typed, when a verdict arrives or a save fails, so those
+  fields carry a `name` and the redraw waits while a Korean syllable is being composed.
+Alternatives compared:
+- Splitting the middle into the info beside the steps: the driver chose one column, stacked.
+- Keeping the info at the top of the right pane and unfolding the conversation under it: the two would share one
+  360px pane, as #244 found for a screen.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
