@@ -284,7 +284,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   });
 
   const placesById = new Map<string, { file: string; line: number }[]>();
-  for (const s of mapped) placesById.set(s.id, [...(placesById.get(s.id) ?? []), { file: s.routeFile, line: s.line }]);
+  for (const s of mapped) placesById.set(s.id, [...(placesById.get(s.id) ?? []), s.tableItem ? { file: s.tableItem.file, line: s.tableItem.line } : { file: s.routeFile, line: s.line }]);
   const duplicateIds = [...placesById].filter(([, places]) => places.length > 1).map(([id, places]) => ({ id, places }));
 
   for (const s of mapped) s.dead = s.apiCalls.some((c: { endpoints: Endpoint[] | null }) => (c.endpoints ?? []).some((e) => e.server.status === 'none'));

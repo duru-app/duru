@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { casesWithoutTests, kindTags } from './case-targets.ts';
 import type { CaseTarget, KindTargets } from './case-targets.ts';
+import type { TableItem } from './client.ts';
 import { compare } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { GENERAL, recordKind } from './marks.ts';
@@ -158,7 +159,9 @@ const PART_SECTIONS: PartSection[] = [
   ['link', 'comments on incoming links', linkHead],
 ];
 
-const screenAt = (s: any) => (s.onMap === false ? `${s.id}, not on the map` : `${s.id}, component ${s.componentFile ?? 'file not found'}, route at ${s.routeFile}:${s.line}`);
+export const atTableItem = ({ tableItem: t }: { tableItem?: TableItem }) => (t ? `, table item ${t.key} at ${t.file}:${t.line}` : '');
+
+const screenAt = (s: any) => (s.onMap === false ? `${s.id}, not on the map` : `${s.id}, component ${s.componentFile ?? 'file not found'}, route at ${s.routeFile}:${s.line}${atTableItem(s)}`);
 
 function stepHead(m: any) {
   return `  - step ${m.target.part.key.step}: ${within(screenAt(m.where.screen), '    ')}`;
@@ -635,7 +638,7 @@ export function taskList(config: any) {
       '- marks:',
       ...marks.flatMap((m) => entryLines(m, cellText(m.target, 'whole screen'))),
       ...partLines(partsOf(s.id), 'screen'),
-      `- component: ${s.componentFile}, route at ${s.routeFile}:${s.line}`,
+      `- component: ${s.componentFile}, route at ${s.routeFile}:${s.line}${atTableItem(s)}`,
       ...(appLinks[s.id] ? [`- app: ${appLinks[s.id]}`] : []),
       ...accessLines(s.access, restricted),
       ...caseLines(`screen:${s.id}`, s.cases, tests.nodes[s.id], config.caseKinds),

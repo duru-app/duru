@@ -100,7 +100,25 @@ interface RouteScreen {
   routeFile: string;
   routeGuards: string[];
   line: number;
+  tableItem?: TableItem;
   outerFill: OuterFill;
+}
+
+export type TableItem = { key: string; file: string; line: number };
+
+interface RouteTable {
+  route: string;
+  table: { file: string; const: string };
+  items: string;
+}
+
+interface LoopRoute {
+  line: number;
+  page: Page;
+  pathExpr: NodePath;
+  item: { node: Node; field: string };
+  guards: string[];
+  wrappers: string[];
 }
 
 type StoppedAt = { text: string; file: string | null; line: number };
@@ -245,6 +263,10 @@ export async function extractClient(config: any) {
   const constantModuleFiles = new Set(constantFileOf.values());
   const constantFiles = new Set([...constantFileOf].filter(([name]) => !settingsOnly.has(name)).map(([, file]) => file));
   const settingsRoots = new Set<string>(config.settingsRoots);
+  const routeTables = new Map<string, RouteTable & { at: string }>((config.routeTables as RouteTable[]).map((t, i) => [t.route, { ...t, at: `routeTables[${i}]` }]));
+  const tableFiles = new Set((config.routeTables as RouteTable[]).map((t) => path.join(config.srcRoot, t.table.file)));
+  // 라우트 파일에 적은 표는 그 라우트 파일을 그리는 화면의 소스에 남는다.
+  for (const f of config.routeFiles as string[]) tableFiles.delete(path.join(config.srcRoot, f));
   const [routeRoot, ...routeRest] = routeChain ?? [];
   const guardInits = new Map<string, Map<string, GuardEntry>>();
   const guardSettings = new Map<string, Map<string, GuardSetting | null>>();
@@ -1008,7 +1030,7 @@ export async function extractClient(config: any) {
     const stack = [entryFile];
     while (stack.length) {
       const f = stack.pop()!;
-      if (seen.has(f) || apiModuleFiles.has(f) || calledFiles.has(f) || constantFiles.has(f)) continue;
+      if (seen.has(f) || apiModuleFiles.has(f) || calledFiles.has(f) || constantFiles.has(f) || (f !== entryFile && tableFiles.has(f))) continue;
       if (!/\.(jsx?|tsx?)$/.test(f)) continue;
       seen.add(f);
       const { imports, dynamicOnly } = fileFacts(f);
@@ -1025,15 +1047,15 @@ export async function extractClient(config: any) {
   const readWhole = (v: unknown) => typeof v === 'number' || (typeof v === 'string' && !v.includes(UNKNOWN));
 
   // filled 말고 읽지 못한 부분이 없으면 null 이다.
-  function unreadPiece(p: NodePath, seen = new Set<Node>(), filled: Node | null = null): NodePath | null {
-    if (p.node === filled) return null;
+  function unreadPiece(p: NodePath, seen = new Set<Node>(), filled: Node[] = []): NodePath | null {
+    if (filled.includes(p.node)) return null;
     const pieces = p.isTemplateLiteral() ? (p.get('expressions') as NodePath[]) : p.isBinaryExpression({ operator: '+' }) ? [p.get('left'), p.get('right')] : null;
     if (pieces) {
       for (const x of pieces) {
         const found = !readWhole(evaluate(x)) && unreadPiece(x, seen, filled);
         if (found) return found;
       }
-      return filled ? null : p;
+      return filled.length ? null : p;
     }
     const chain = p.isIdentifier() || p.isMemberExpression() ? memberChain(p.node) : null;
     const value = chain?.length === 1 ? declaredValue(p.scope, chain[0]) : chain?.length === 2 ? namespaceMember(p.scope, chain) : null;
@@ -1054,6 +1076,9 @@ export async function extractClient(config: any) {
     programFile.set(ast.program, absFile);
     const note = guardNote(routeFile, src);
     const screens: RouteScreen[] = [];
+    const table = routeTables.get(routeFile);
+    const loopRoutes: LoopRoute[] = [];
+    let loopAt = -1;
     traverse(ast, {
       JSXElement(p) {
         const tag = tagOf(p.node.openingElement.name);
@@ -1098,6 +1123,12 @@ export async function extractClient(config: any) {
         if (!page) return;
         const pathWritten = pathAttr.get('value');
         const pathExpr = (pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten) as NodePath;
+        const item = table ? loopItem(p, pathExpr) : null;
+        if (item) {
+          if (loopAt < 0) loopAt = screens.length;
+          loopRoutes.push({ line, page, pathExpr, item, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
+          return;
+        }
         const pathValue = evaluate(pathExpr);
         const routePath = typeof pathValue === 'string' ? pathValue : UNKNOWN;
         let unreadPath: OuterFill['unreadPath'] = null;
@@ -1105,7 +1136,7 @@ export async function extractClient(config: any) {
         if (routePath.includes(UNKNOWN)) {
           const stoppedAt = stopOf(unreadPiece(pathExpr)!);
           if (drawnInFunctionOrChildren && madeInLoop(p)) return unread(`made for each item of a list, and its path stopped at ${stoppedAt.text}`);
-          const rest = outerAddress && unreadPiece(pathExpr, new Set(), outerAddress.node);
+          const rest = outerAddress && unreadPiece(pathExpr, new Set(), [outerAddress.node]);
           unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt }, restStoppedAt: rest ? stopOf(rest) : null };
           unreadRoutePaths.push(unreadPath.entry);
         }
@@ -1121,7 +1152,113 @@ export async function extractClient(config: any) {
         });
       },
     });
+    if (table) screens.splice(loopAt < 0 ? screens.length : loopAt, 0, ...tableScreens(table, loopRoutes, routeFile));
     return screens;
+  }
+
+  function tableScreens(table: RouteTable & { at: string }, routes: LoopRoute[], routeFile: string): RouteScreen[] {
+    if (!routes.length) throw new Error(`${table.at}: ${routeFile} has no route made for each item of a list whose path reads a field of the item`);
+    if (routes.length > 1) throw new Error(`${table.at}: ${routeFile} has ${routes.length} routes made for each item of a list, at ${routes.map((r) => `${routeFile}:${r.line}`).join(' and ')}; a route file takes one table`);
+    const [{ line, page, pathExpr, item, guards, wrappers }] = routes;
+    const { file, const: name } = table.table;
+    const object = topLevelObject(file, name);
+    if (!object) throw new Error(`${table.at}: ${file} has no top-level const ${name} holding an object`);
+    const items = tableItems(object, table.items.split('.')).flatMap((it) => {
+      const field = propertyValue(it.object, item.field);
+      return field ? [{ ...it, field }] : [];
+    });
+    if (!items.length) throw new Error(`${table.at}: items "${table.items}" finds no item with a ${item.field} in ${name}, which the route at ${routeFile}:${line} reads`);
+    return items.flatMap(({ key, line: itemLine, object: itemObject, field }) => {
+      const value = evaluate(field);
+      if (!readWhole(value)) return [];
+      const components = itemComponents(itemObject);
+      const routePath = pathText(pathExpr, item.node, String(value));
+      const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
+      let unreadPath: OuterFill['unreadPath'] = null;
+      if (routePath.includes(UNKNOWN)) {
+        const rest = outerAddress && unreadPiece(pathExpr, new Set(), [outerAddress.node, item.node]);
+        unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt: stopOf(unreadPiece(pathExpr, new Set(), [item.node])!) }, restStoppedAt: rest ? stopOf(rest) : null };
+        unreadRoutePaths.push(unreadPath.entry);
+      }
+      const shown = components[0] ?? page;
+      return [{
+        path: routePath,
+        component: shown.component,
+        componentFile: shown.componentFile,
+        wrapperFiles: [...new Set([page.componentFile, ...page.files, ...components.map((c) => c.componentFile), ...wrappers].filter(Boolean) as string[])],
+        routeFile,
+        routeGuards: guards,
+        line,
+        tableItem: { key, file, line: itemLine },
+        outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
+      }];
+    });
+  }
+
+  const pathText = (p: NodePath, filled: Node, value: string): string => (p.node === filled ? value
+    : p.isTemplateLiteral() ? p.node.quasis.map((q, i) => (i ? pathText(p.get(`expressions.${i - 1}`) as NodePath, filled, value) : '') + q.value.cooked).join('')
+      : p.isBinaryExpression({ operator: '+' }) ? pathText(p.get('left'), filled, value) + pathText(p.get('right'), filled, value)
+        : textOf(evaluate(p)));
+
+  // 이름은 같은 파일의 const 나 import 한 값으로 따라간다.
+  function objectAt(p: NodePath, seen = new Set<Node>()): NodePath<ObjectExpression> | null {
+    if (p.isObjectExpression()) return p;
+    if (!p.isIdentifier() || seen.has(p.node)) return null;
+    seen.add(p.node);
+    const declared = declaredValue(p.scope, p.node.name);
+    return declared ? objectAt(declared, seen) : null;
+  }
+
+  function propertiesOf(object: NodePath<ObjectExpression>, seen = new Set<Node>()): NodePath<ObjectProperty>[] {
+    return object.get('properties').flatMap((prop) => {
+      if (prop.isSpreadElement()) {
+        const spread = objectAt(prop.get('argument'));
+        return spread && !seen.has(spread.node) ? propertiesOf(spread, seen.add(spread.node)) : [];
+      }
+      return prop.isObjectProperty() && !prop.node.computed ? [prop] : [];
+    });
+  }
+
+  const propertyValue = (object: NodePath<ObjectExpression>, key: string) => propertiesOf(object).findLast((prop) => keyName(prop.node) === key)?.get('value') as NodePath | undefined;
+
+  function tableItems(object: NodePath<ObjectExpression>, segments: string[], keys: string[] = [], line = object.node.loc!.start.line): { key: string; line: number; object: NodePath<ObjectExpression> }[] {
+    if (!segments.length) return [{ key: keys.join('.'), line, object }];
+    const [first, ...rest] = segments;
+    return propertiesOf(object).flatMap((prop) => {
+      const name = keyName(prop.node);
+      const inner = (first === '*' || first === name) && objectAt(prop.get('value'));
+      return inner ? tableItems(inner, rest, [...keys, name], prop.node.loc!.start.line) : [];
+    });
+  }
+
+  function componentValues(p: NodePath, seen: Set<Node>): NodePath[] {
+    if (seen.has(p.node)) return [];
+    seen.add(p.node);
+    if (p.isIdentifier()) {
+      const declared = declaredValue(p.scope, p.node.name);
+      return declared ? componentValues(declared, seen) : [];
+    }
+    if (p.isObjectExpression()) {
+      return p.get('properties').flatMap((prop) => (prop.isSpreadElement() ? componentValues(prop.get('argument'), seen)
+        : !prop.isObjectProperty() || prop.node.computed ? []
+          : keyName(prop.node) === 'component' ? [prop.get('value') as NodePath] : componentValues(prop.get('value') as NodePath, seen)));
+    }
+    if (p.isArrayExpression()) return p.get('elements').flatMap((e) => (!e.node ? [] : componentValues(e.isSpreadElement() ? e.get('argument') : e as NodePath, seen)));
+    return [];
+  }
+
+  // 항목 안 어느 깊이에 있든 `component:` 에 적은 컴포넌트를 적힌 차례대로 모은다.
+  function itemComponents(object: NodePath<ObjectExpression>) {
+    const found = new Map<string, Omit<Page, 'files'>>();
+    for (const written of componentValues(object, new Set())) {
+      const expr = unwrapCalls(written)!;
+      const component = expr.node && memberChain(expr.node)?.join('.');
+      const fromFile = component && programFile.get(expr.scope.getProgramParent().block);
+      if (!fromFile) continue;
+      const componentFile = components.find(expr.scope, component, fromFile, written.isCallExpression()).file;
+      if (!found.has(`${component}\0${componentFile}`)) found.set(`${component}\0${componentFile}`, { component, componentFile });
+    }
+    return [...found.values()];
   }
 
   const leadingPiece = (p: NodePath): NodePath => (p.isTemplateLiteral() && p.node.quasis[0].value.cooked === '' && p.node.expressions.length ? leadingPiece(p.get('expressions.0') as NodePath)
@@ -1175,10 +1312,25 @@ export async function extractClient(config: any) {
   }
 
   const LOOP_METHODS = ['map', 'flatMap', 'forEach', 'reduce'];
-  const madeInLoop = (route: NodePath) => Boolean(route.findParent((a) => {
+  const loopCallback = (a: NodePath) => {
     const callee = a.isFunction() && a.listKey === 'arguments' && (a.parent as CallExpression).callee;
     return Boolean(callee) && (callee as Node).type.endsWith('MemberExpression') && LOOP_METHODS.includes(((callee as MemberExpression).property as Identifier).name);
-  }));
+  };
+  const madeInLoop = (route: NodePath) => Boolean(route.findParent(loopCallback));
+
+  const piecesOf = (p: NodePath): NodePath[] => (p.isTemplateLiteral() ? (p.get('expressions') as NodePath[]).flatMap(piecesOf)
+    : p.isBinaryExpression({ operator: '+' }) ? [...piecesOf(p.get('left')), ...piecesOf(p.get('right'))] : [p]);
+
+  // 목록을 도는 함수가 받는 항목에서 꺼낸 칸 하나(`item.url`)를 경로에 한 번 쓰는 라우트의 그 칸.
+  function loopItem(route: NodePath, pathExpr: NodePath) {
+    const fn = route.findParent(loopCallback);
+    const param = fn && (fn.get('params') as NodePath[])[0];
+    if (!param?.isIdentifier()) return null;
+    const { name } = param.node;
+    const binding = fn!.scope.getBinding(name);
+    const reads = piecesOf(pathExpr).filter((x): x is NodePath<MemberExpression> => x.isMemberExpression() && !x.node.computed && x.get('object').isIdentifier({ name }) && x.scope.getBinding(name) === binding);
+    return reads.length === 1 ? { node: reads[0].node, field: (reads[0].node.property as Identifier).name } : null;
+  }
 
   function wrappersOf(routePath: NodePath, routesFile: string) {
     const files: string[] = [];
