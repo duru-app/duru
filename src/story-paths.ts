@@ -107,19 +107,32 @@ function statusOf(story: { id: string; screens: string[] }, tests: StoryTests) {
 const crosses = (order: string[], from: string, to: string) => order.some((id, i) => id === from && order[i + 1] === to);
 const goesThrough = (order: string[], screens: string[]) => order.some((_, i) => screens.every((id, k) => order[i + k] === id));
 
-function walksOf(map: any) {
+// 한 테스트를 Playwright 프로젝트 여럿에서 돌린 실행은 그 테스트 하나로 센다.
+function runsByTest<T>(list: T[], keyOf: (t: T) => string, orderOf: (t: T) => string[] | undefined, mapOrder: (order: string[]) => string[]) {
+  const byKey = new Map<string, string[][]>();
+  for (const t of list) {
+    const runs = byKey.get(keyOf(t)) ?? [];
+    const order = orderOf(t);
+    if (order) runs.push(mapOrder(order));
+    byKey.set(keyOf(t), runs);
+  }
+  return [...byKey.values()];
+}
+
+function walksOf(map: any, traced: StoryTests['traced'] = []) {
   const onMap = new Set<string>(map.screens.map((s: any) => s.id));
   const mapOrder = (order: string[]) => order.filter((id) => onMap.has(id)).filter((id, i, kept) => id !== kept[i - 1]);
+  const passing = runsByTest(traced as { report?: string; title?: string; screens: string[] }[], (t) => `${t.report} ${t.title}`, (t) => t.screens, mapOrder);
+  const crossing = (tests: string[][][], from: string, to: string) => tests.filter((runs) => runs.some((o) => crosses(o, from, to))).length;
   return <L extends { from: string; to: string; verdict: string }>(story: { id: string; screens: string[]; detached: boolean; links: L[] }, status: string, tests: StoryTests) => {
-    const runs = (tests.traced ?? []).map((t) => mapOrder(t.screens));
-    const own = status === 'pass' ? testsAt(tests.stories, story.id).map((t) => t.screens && mapOrder(t.screens)) : [];
-    const traced = own.filter((o): o is string[] => Boolean(o));
+    const own = status === 'pass' ? runsByTest(testsAt(tests.stories, story.id), (t) => `${t.source} ${t.file}:${t.line} ${t.title}`, (t) => t.screens, mapOrder) : [];
+    const allTraced = own.length > 0 && own.every((runs) => runs.length > 0);
     const links = story.links.map((l): L & { passedBy?: number; walks?: number } => {
-      const passedBy = l.verdict === 'broken' ? runs.filter((o) => crosses(o, l.from, l.to)).length : 0;
-      return { ...l, ...(passedBy > 0 && { passedBy }), ...(traced.length > 0 && { walks: traced.filter((o) => crosses(o, l.from, l.to)).length }) };
+      const passedBy = l.verdict === 'broken' ? crossing(passing, l.from, l.to) : 0;
+      return { ...l, ...(passedBy > 0 && { passedBy }), ...(allTraced && { walks: crossing(own, l.from, l.to) }) };
     });
     if (status !== 'pass') return { links };
-    const walked: Walked = !story.detached && traced.some((o) => goesThrough(o, story.screens)) ? 'yes' : story.detached || traced.length < own.length ? 'unknown' : 'no';
+    const walked: Walked = !story.detached && own.some((runs) => runs.some((o) => goesThrough(o, story.screens))) ? 'yes' : story.detached || !allTraced ? 'unknown' : 'no';
     return { links, walked };
   };
 }
@@ -152,7 +165,7 @@ export function checkStoryFiles(map: any, dir: string, mapFile: string, tests: S
   if (stories.length && linksWithoutConditions(map)) {
     return { ids, list: [], notices, unknownTags, stale: staleMapMessage(mapFile, '스토리') };
   }
-  const walks = walksOf(map);
+  const walks = walksOf(map, tests.traced);
   const list = checkStories(map, stories).map((s) => {
     const status = statusOf(s, tests);
     return { ...s, status, ...walks(s, status, tests) };

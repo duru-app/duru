@@ -602,12 +602,10 @@ A story also gets a status from its tests: fail when a test tagged `@story:<its 
 fails and one is pending, pass when all pass. Without such tests it is `partial` when a screen on its path has a
 test, and `untested` when none has.
 
-A passing story also says whether its story tests went through its screens. It is gone through when the trace of
-one passing story test holds every screen of the story one after another; addresses the map has no screen for are
-left out first. It is not gone through when every story test has a trace and none of them does, and not known
-when a story test ran without a trace or a screen of the story is not on the map. Each link counts the story tests
-that went from the one screen straight to the next. Where the map has no link between two steps but passing runs
-with a trace went straight across, the link says how many: the config's `moves` may be missing that move.
+A passing story also says, from the traces of its passing Playwright story tests, whether one of them opened its
+screens one after another, and how many went across each link; with a story test that ran without a trace it is
+not known. Where the map has no link between two steps but passing tests went straight across, the link says how
+many: the config's `moves` may be missing that move.
 
 ## Story candidates
 

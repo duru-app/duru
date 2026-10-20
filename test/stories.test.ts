@@ -721,7 +721,7 @@ test('a story fails when one story test fails whatever the others did, waits whe
 const SIGNIN = '/signin#SignIn';
 const HOME = '/home#Home';
 const LAB = '/lab#Lab';
-const ran = (screens?: string[], status = 'pass') => ({ title: 'x', status, depth: 'ui', ...(screens && { screens }) });
+const ran = (title: string, screens?: string[], status = 'pass', project = 'chromium') => ({ title, file: 'walk.spec.ts', line: 1, source: 'r.json', project, status, depth: 'ui', ...(screens && { screens }) });
 const walkOf = (screens: string[], tests: StoryTests) => withStoriesDir({ 'walk.json': { ...STORY, screens } }, (dir) => {
   const [s] = checkStoryFiles(map, dir, 'out/map.json', tests).list;
   return { walked: s.walked, walks: s.links.map((l) => l.walks), passedBy: s.links.map((l) => l.passedBy) };
@@ -730,23 +730,30 @@ const storyRuns = (...runs: ReturnType<typeof ran>[]) => ({ nodes: {}, stories: 
 
 test('a passing story is gone through when a story test passed with a trace that went through its screens one after another, leaving out addresses off the map, and each link counts the story tests that went straight across it', () => {
   const steps = [SIGNIN, HOME, LAB];
-  assert.deepEqual(walkOf(steps, storyRuns(ran([SIGNIN, '/nowhere', SIGNIN, HOME, LAB, '/help#Help']), ran([HOME, LAB]))), { walked: 'yes', walks: [1, 2], passedBy: [undefined, undefined] });
-  assert.deepEqual(walkOf(steps, storyRuns(ran([SIGNIN, HOME, '/help#Help', LAB]))), { walked: 'no', walks: [1, 0], passedBy: [undefined, undefined] });
-  assert.deepEqual(walkOf(steps, storyRuns(ran([SIGNIN, LAB]), ran([HOME, LAB, SIGNIN, HOME]))), { walked: 'no', walks: [1, 1], passedBy: [undefined, undefined] });
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a', [SIGNIN, '/nowhere', SIGNIN, HOME, LAB, '/help#Help']), ran('b', [HOME, LAB]))), { walked: 'yes', walks: [1, 2], passedBy: [undefined, undefined] });
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a', [SIGNIN, HOME, '/help#Help', LAB]))), { walked: 'no', walks: [1, 0], passedBy: [undefined, undefined] });
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a', [SIGNIN, LAB]), ran('b', [HOME, LAB, SIGNIN, HOME]))), { walked: 'no', walks: [1, 1], passedBy: [undefined, undefined] });
 });
 
-test('a passing story is not known to be gone through when a story test without a trace passed and none with one went through, or when a screen is off the map, and a story that does not pass gets no answer', () => {
+test('a story test run in several Playwright projects counts once, and goes through when the trace of any of its runs does', () => {
+  const steps = [HOME, LAB];
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a', steps), ran('a', steps, 'pass', 'firefox'))), { walked: 'yes', walks: [1], passedBy: [undefined] });
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a', [HOME]), ran('a', undefined, 'pass', 'firefox'), ran('b', [LAB]))), { walked: 'no', walks: [0], passedBy: [undefined] });
+});
+
+test('a passing story is not known to be gone through when a story test without a trace passed and none with one went through, or when a screen is off the map, and its links then count nothing; a story that does not pass gets no answer', () => {
   const steps = [SIGNIN, HOME];
-  assert.deepEqual(walkOf(steps, storyRuns(ran())), { walked: 'unknown', walks: [undefined], passedBy: [undefined] });
-  assert.deepEqual(walkOf(steps, storyRuns(ran(), ran([HOME]))), { walked: 'unknown', walks: [0], passedBy: [undefined] });
-  assert.deepEqual(walkOf(steps, storyRuns(ran(), ran(steps))), { walked: 'yes', walks: [1], passedBy: [undefined] });
-  assert.equal(walkOf([HOME, '/gone#Gone'], storyRuns(ran([HOME]))).walked, 'unknown');
-  assert.deepEqual(walkOf(steps, storyRuns(ran(steps), ran(undefined, 'fail'))), { walked: undefined, walks: [undefined], passedBy: [undefined] });
-  assert.deepEqual(walkOf(steps, storyRuns(ran(steps), ran(undefined, 'pending'))), { walked: undefined, walks: [undefined], passedBy: [undefined] });
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a'))), { walked: 'unknown', walks: [undefined], passedBy: [undefined] });
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a'), ran('b', [HOME]))), { walked: 'unknown', walks: [undefined], passedBy: [undefined] });
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a'), ran('b', steps))), { walked: 'yes', walks: [undefined], passedBy: [undefined] });
+  assert.equal(walkOf([HOME, '/gone#Gone'], storyRuns(ran('a', [HOME]))).walked, 'unknown');
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a', steps), ran('b', undefined, 'fail'))), { walked: undefined, walks: [undefined], passedBy: [undefined] });
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a', steps), ran('b', undefined, 'pending'))), { walked: undefined, walks: [undefined], passedBy: [undefined] });
 });
 
-test('a link the map has no link for counts the passing runs with a trace that went straight across it, whatever the story tests did, and a link the map has does not', () => {
-  const traced = [{ screens: [HOME, '/help#Help'] }, { screens: [HOME, '/nowhere', '/help#Help'] }, { screens: ['/help#Help', HOME] }, { screens: [HOME, LAB] }];
+test('a link the map has no link for counts the passing tests with a trace that went straight across it, whatever the story tests did, a test run in several projects once, and a link the map has does not', () => {
+  const run = (title: string, screens: string[]) => ({ report: 'r.json', title, screens });
+  const traced = [run('a', [HOME, '/help#Help']), run('a', [HOME, '/help#Help']), run('b', [HOME, '/nowhere', '/help#Help']), run('c', ['/help#Help', HOME]), run('d', [HOME, LAB])];
   assert.deepEqual(walkOf([HOME, '/help#Help', LAB], { nodes: {}, stories: {}, traced }), { walked: undefined, walks: [undefined, undefined], passedBy: [2, undefined] });
   assert.deepEqual(walkOf([HOME, LAB], { nodes: {}, stories: {}, traced }).passedBy, [undefined]);
 });

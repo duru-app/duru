@@ -342,9 +342,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 4. **Confirm the tests attached.** Run the new tests so that their results are written where the config's
    `tests` entries point, then run `duru rebuild <config>` again. Check the summary: the screens with tests
    should have gone up, the stories you wrote tests for should have moved out of `partly covered` and `no tests`,
-   and no `unknown` line should name one of your tags. Fix and repeat until they attach. A story test that passes
-   without opening the story's screens one after another counts in `passing stories no story test went through
-   from end to end`: make the test open them in order, and run Playwright with its `trace` option on so that
-   rebuild can tell.
+   and no `unknown` line should name one of your tags. Fix and repeat until they attach. A passing story counts in
+   `passing stories no story test went through from end to end` when none of its traced story tests opened its
+   screens one after another, and in `not known` when one of its story tests ran without a trace: make the test
+   open the story's screens in order, and run Playwright with its `trace` option on so that rebuild can tell.
    A screen, call or story stays in `duru tasks` until a reviewer marks it `fine`, so an unchanged list is expected;
    offer the user another review round instead.
