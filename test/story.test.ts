@@ -351,3 +351,9 @@ test('a link with several ways gets the lines under each way', () => {
     ]);
   }, WITH_ROLES);
 });
+
+test('the user guide says what the account and setting lines under the preconditions of one story mean, and the decision record says why the setting changes are worked out on the server', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  assert.match(read('../README.md'), /## One story[\s\S]*`tasks` does not print these lines[\s\S]*the password is never printed[\s\S]*`source default; deployed settings not checked`[\s\S]*`setting not read:`/);
+  assert.match(read('../docs/decisions.md'), /\*\*The setting changes the review page's settings bar shows and the `setting` lines of `duru story` are worked out in one server module[\s\S]*Alternatives compared:\n- The page runs the same function, pasted into it/);
+});

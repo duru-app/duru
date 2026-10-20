@@ -409,7 +409,16 @@ Fill a route variable with a real value yourself.
 The `need`, `link need from step N`, `input`, `expect`, `needs` and `expects at the end` lines are text a person
 wrote that duru did not check, and a `needs/<file>` need comes with its file's name and text. The `reach` and
 `preconditions` lines say what a step needs (a role, a setting) and which steps have no link; when a step cannot be
-taken, tell the user instead of writing a test that skips it. The `empty tests` at the end carry the `@story:` tag
+taken, tell the user instead of writing a test that skips it. Under a precondition, an `accounts` or `role` line
+names, for each role that passes, the account in `app.roles` and the environment variable that holds its password:
+pick one of these accounts yourself and log in with the password read from that variable; duru never prints a
+password, and when a role has no account, tell the user. A `setting` line speaks for one setting, not for the whole
+guard: `met with no change` needs nothing; otherwise set the setting to the value it names before the step, and for
+`not known` set it too, since duru could not read its whole default. When the line says `deployed settings not
+checked`, duru judged by the default in the source, which the deployed app may override, as an app does that takes
+its settings from an API: check the setting in the app before trusting the line. A line that says duru does not know
+which value to put, and a `setting not read` line, leave the setting to you: find the value in the source the guard
+names, or ask the user. The `empty tests` at the end carry the `@story:` tag
 and a `@screen:` tag for each screen on the map: copy the one for your runner, as under the task list.
 The tests you write attach the same way as in step 4. Standard output holds only this text, and a line on standard
 error says why when the exit code is 1 (no such story ID, a story file that could not be read, or a map built by an

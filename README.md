@@ -338,7 +338,9 @@ client with example results and a config to start from.
   settings without touching the test server: `path` is where the app requests it, `global` the object the file
   assigns, `root` the `settingsRoots` entry it feeds (it needs a `settingsDefaults` entry too), and `merged` the
   top-level sections the app merges one level deep over its defaults. Only settings in a `merged` section can be
-  changed; changes last until the review ends and are never sent to the server.
+  changed; changes last until the review ends and are never sent to the server. `story` reads the same file, without
+  logging in, to say whether each setting a story needs is already met; a file at a web address that does not answer
+  in 10 seconds counts as not read.
 
 ## The map
 
@@ -1082,7 +1084,19 @@ Playwright code that finds the box with every word written for it, each matched 
 `number N`, and puts the value in, such as
 `await page.getByPlaceholder("이메일", { exact: true }).and(page.getByTestId("login-email")).fill("member@example.com");`
 in a code span, followed by `(duru did not try it on the screen)`. The lines a person wrote (`need`, `link need from step N`,
-`input`, `expect`, `needs`, `expects at the end`) are not checked by duru. The text ends with empty tests carrying
+`input`, `expect`, `needs`, `expects at the end`) are not checked by duru. Under `preconditions`, the first-screen
+line gets an `accounts` line when the roles that open it were read, and each guard of a link between steps (under each way when there are several) and of a
+route gets lines of its own; `tasks` does not print these lines. A role guard gets `role <roles>:` with, for each role,
+the account in `app.roles` and the environment variable that holds its password (`no account in app.roles` when it
+has none, `no app.roles in the config` when the config has none); the password is never printed. On the route of
+the first screen, a role whose accounts the first-screen line already gives says so instead of repeating them. A
+setting guard gets one `setting` line for each setting it reads, which speaks for that setting only, not for other
+checks joined to it with `&&`: `met with no change`, `not met with no change` with the value to put, or `not known,
+its default was not read in full` with the value to put; a setting that only has to be there has no value to put. In
+brackets it says what it was judged against: `checked against <file>` when `app.settingsFile` is set and its file ran
+(read and run the way the review page does), or `source default; deployed settings not checked`, followed by the file
+and why when the file is not found or could not be run. A role guard whose roles duru could not read gets `role not read:`, and a setting guard duru could not read gets
+`setting not read:` and the reason. A guard that is neither a role nor a setting stays as its text on the precondition line. The text ends with empty tests carrying
 `@story:` and the `@screen:` of each screen on the map. Standard output holds only that text; for a story ID that is
 not there, a story file that could not be read or a map that must be rebuilt, one line goes to standard error and the
 exit code is 1; a wrong call exits with 2.
