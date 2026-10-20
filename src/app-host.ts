@@ -222,22 +222,27 @@ export function answerReviewPage(origins: string[]) {
   const normal = (text: string) => text.replace(/[\u200b\u00ad]/g, '').trim().replace(/\s+/g, ' ');
   const LABELLED = ['BUTTON', 'METER', 'OUTPUT', 'PROGRESS', 'SELECT', 'TEXTAREA'];
   const labelledBy = (el: any): any[] => {
-    const root = el.getRootNode();
     const ids: string[] = el.getAttribute('aria-labelledby')?.split(' ').filter(Boolean) ?? [];
+    if (!ids.length) return [];
+    const root = el.getRootNode();
     return [...new Set(ids.map((id) => root.getElementById?.(id)).filter(Boolean))];
   };
+  const labelable = (el: any) => LABELLED.includes(el?.nodeName) || (el?.nodeName === 'INPUT' && el.type !== 'hidden');
   // Playwright 의 getByLabel 처럼 aria-labelledby, aria-label, <label> 차례로 보고 처음 있는 쪽의 글을 모두 돌려준다.
   const labelsOf = (el: any): string[] => {
     const refs = labelledBy(el);
     if (refs.length) return refs.map((r) => r.textContent ?? '');
     const aria = el.getAttribute('aria-label');
     if (aria?.trim()) return [aria];
-    const labelable = LABELLED.includes(el.nodeName) || (el.nodeName === 'INPUT' && el.type !== 'hidden');
-    return labelable ? [...(el.labels ?? [])].map((l: any) => l.textContent ?? '') : [];
+    return labelable(el) ? [...(el.labels ?? [])].map((l: any) => l.textContent ?? '') : [];
   };
-  const has = (el: any, kind: string, text: string) => (kind === 'label'
-    ? labelsOf(el).some((l) => normal(l) === text)
-    : el.getAttribute(kind === 'testId' ? 'data-testid' : kind) === text);
+  const hasLabel = (el: any, text: string, labelled: Set<unknown>) => {
+    const refs = labelledBy(el);
+    if (refs.length) return refs.some((r) => normal(r.textContent ?? '') === text);
+    const aria = el.getAttribute('aria-label');
+    if (aria?.trim()) return normal(aria) === text;
+    return labelled.has(el);
+  };
   const boxOf = (el: any) => {
     const words: Record<string, string> = {};
     const found = [['placeholder', el.getAttribute('placeholder')], ['label', labelsOf(el).map(normal).find(Boolean)], ['testId', el.getAttribute('data-testid')]];
@@ -246,6 +251,9 @@ export function answerReviewPage(origins: string[]) {
     }
     const kinds = Object.entries(words);
     if (!kinds.length) return null;
+    const labelled = new Set(words.label === undefined ? [] : [...w.document.querySelectorAll('label')]
+      .filter((l: any) => normal(l.textContent ?? '') === words.label).map((l: any) => l.control).filter(labelable));
+    const has = (f: any, kind: string, text: string) => (kind === 'label' ? hasLabel(f, text, labelled) : f.getAttribute(kind === 'testId' ? 'data-testid' : kind) === text);
     const alike = [...w.document.querySelectorAll('*')].filter((f) => kinds.every(([kind, text]) => has(f, kind, text)));
     return alike.length > 1 ? { ...words, nth: alike.indexOf(el) + 1 } : words;
   };

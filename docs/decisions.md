@@ -2238,7 +2238,8 @@ Asked for in #277 (2026-10-18), on the input box of #275. The trace's `before` l
 `placeholder` and `testId`. The trailing `i` or `s` (not exact or exact) is ignored, since the story box has no place
 for it. The words of a locator that was not exact may be only part of what the screen shows, or differ in case, while
 the code `duru story` writes for an input matches them exactly (the entry on that code below), so that code may find
-no box; this is a known limit. `>> nth=N` is carried as `nth` N + 1, since the trace counts from 0 and the story
+no box, or with `nth` another box, since the trace counted `nth` among the boxes the inexact locator found; this is a
+known limit. `>> nth=N` is carried as `nth` N + 1, since the trace counts from 0 and the story
 from 1; a locator with anything else chained (`nth=-1`, a filter, a parent) is not a box the story can name. A fill found
 by CSS or role, a fill with a blank value (a story value must have text), a fill whose box words are blank, and a locator
 of another shape are counted as skipped, and the candidate page shows the count. A role locator is skipped because it
@@ -2716,8 +2717,11 @@ names, else `aria-label`, else the box's `<label>`s, taking the first that has t
 does; the placeholder and the test ID as written, spaces at the ends included. `nth` counts every element of the page
 that has all the words, in document order, as `.nth()` counts what `.and()` finds, so a search button with the same
 `aria-label` as its box counts too. A browser test walks the boxes of the measured page and runs the code of each one
-it recorded. The page saves a word a walk or the story file gave as it is, and cuts spaces at the ends only from a
-word typed or changed in the table, so the spaces a walk kept reach the story file.
+it recorded. To count `nth` for a label the walk collects the boxes the matching `<label>`s point at (`control`) once,
+rather than reading `labels` of every element: on a page of 35,000 elements reading `labels` made the first typed value
+take 1.7 s, and collecting them once takes 22 ms (measured in Chromium). The page saves a word a walk or the story file
+gave as it is, and cuts spaces at the ends only from a word typed or changed in the table, so the spaces a walk kept
+reach the story file.
 duru does not run the code, so the line ends `(duru did not try it on the screen)`, and `duru tasks` gets no such line;
 its input lines keep `(not checked against the code)` and now join the words with `and`, as the code needs all of them.
 The review page still finds a box by any one word (the entry on pressing an input line), so a box the page points at
@@ -2727,8 +2731,11 @@ line still reads as one span.
 Known limits: a project whose Playwright config sets `testIdAttribute` gets `getByTestId` looking at that attribute,
 while a walk, the page and a trace read only `data-testid`, so its test ID lines may find no box. No config key was
 added for it: none of the projects on hand is known to set it (a guess; into-sign was not measured), and a key can be
-added later without changing story files. A `<style>` inside a `<label>` is read by the walk, which takes the label's
-`textContent`, but left out by Playwright, so such a label is written with the style's text and the code finds no box.
+added later without changing story files. A `<style>`, `<script>` or `<noscript>` inside a `<label>` or inside an
+element `aria-labelledby` names is read by the walk, which takes its `textContent`, but left out by Playwright, so such
+a label is written with that text and the code finds no box (measured for `<style>` inside a `<label>`; the rest read
+from Playwright's source). The page compares a label word with the first `<label>` of a box only, so a box whose first
+`<label>` has no text and a later one has is recorded with the later one's text and not found on the page.
 A box inside an open shadow root is found by Playwright, which looks inside it, but not counted by the walk (read from
 Playwright's source, not measured). Stories recorded before keep `nth` counted the old way, among the inputs and
 textareas with exactly the same words; they are not rewritten, since no story in use is known to have `nth` (a
