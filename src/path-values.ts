@@ -112,7 +112,7 @@ function withQuery(path: string | null, names: string[], values: Record<string, 
   return pairs.length ? `${path}?${pairs.join('&')}` : path;
 }
 
-const escapeText = (s: string) => s.replace(/[.+*?=^!:${}()[\]|/\\]/g, '\\$&');
+export const escapeText = (s: string) => s.replace(/[.+*?=^!:${}()[\]|/\\]/g, '\\$&');
 
 // exact 라우트처럼 경로 전체가 맞아야 하고, path-to-regexp 1.x 처럼 끝의 / 하나와 대소문자는 가리지 않는다.
 export function routePattern(routePath: string) {
