@@ -239,11 +239,11 @@ test('an item whose components only redirect gives no screen and no line, while 
   }, { edits });
 });
 
-test('an item whose address is not read, or that has none while others do, gives no screen and a route not read line naming the item', async () => {
+test('an item whose address is not read, or that has none while others do, gives no screen and a route not read line naming the item and where reading stopped', async () => {
   const edits: [string, string, string][] = [
-    [TABLE, '      plain: {', "      computed: {\n        url: pathOf('users'),\n        schema: { id: 'Computed', component: Users },\n      },\n      nameless: {\n        schema: { id: 'Nameless', component: Users },\n      },\n      plain: {"],
-    [TABLE, "import License from './License';", "import License from './License';\nimport { pathOf } from './patterns';"],
-    ['admin/patterns.js', "export const ID_PATTERN = '[a-z0-9]{26}';", "export const ID_PATTERN = '[a-z0-9]{26}';\nexport const pathOf = (name) => `${name}/computed`;"],
+    [TABLE, '      plain: {', "      computed: {\n        url: pathOf('users'),\n        schema: { id: 'Computed', component: Users },\n      },\n      nameless: {\n        schema: { id: 'Nameless', component: Users },\n      },\n      elsewhere: {\n        url: OTHER_URL,\n        schema: { id: 'Elsewhere', component: Users },\n      },\n      plain: {"],
+    [TABLE, "import License from './License';", "import License from './License';\nimport { pathOf, OTHER_URL } from './patterns';"],
+    ['admin/patterns.js', "export const ID_PATTERN = '[a-z0-9]{26}';", "export const ID_PATTERN = '[a-z0-9]{26}';\nexport const pathOf = (name) => `${name}/computed`;\nexport const OTHER_URL = pathOf('other');"],
   ];
   await withTableCopy(async ({ configFile, src, cli }) => {
     const map = await build(configFile);
@@ -252,6 +252,7 @@ test('an item whose address is not read, or that has none while others do, gives
     assert.deepEqual(routeLines(cli('extract')), [
       `  route not read ← ${route}: table item users.subsections.computed at ${TABLE}:${itemLine(src, 'computed')}: its url stopped at pathOf('users')`,
       `  route not read ← ${route}: table item users.subsections.nameless at ${TABLE}:${itemLine(src, 'nameless')} has no url`,
+      `  route not read ← ${route}: table item users.subsections.elsewhere at ${TABLE}:${itemLine(src, 'elsewhere')}: its url stopped at pathOf('other') in admin/patterns.js:${lineIn(src, 'admin/patterns.js', 'OTHER_URL')}`,
     ]);
   }, { edits });
 });
@@ -325,4 +326,12 @@ test('a table entry that finds no table, no item or no route made for each item,
     const other = lineIn(src, CONSOLE, '<Route key={item.url}', first);
     assert.match(failure(configFile), new RegExp(`routeTables\\[0\\]: admin/AdminConsole\\.js has 2 routes made for each item of a list, at admin/AdminConsole\\.js:${first} and admin/AdminConsole\\.js:${other}; a route file takes one table`));
   }, { edits: [[CONSOLE, LOOP_ROUTE, second]] });
+});
+
+test('the usage guide, the agent skill and the decision record describe routeTables', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  assert.match(read('../README.md'), /`routeTables` — route files that make one route for each item of a table[\s\S]*The items give screens/);
+  assert.match(read('../README.md'), /For a screen made from a table item, `, table item <key> at <file>:<line>` follows\./);
+  assert.match(read('../skills/duru/SKILL.md'), /add a\s+`routeTables` entry to the config yourself as you add the other config items[\s\S]*tell the user which screens appeared/);
+  assert.match(read('../docs/decisions.md'), /\*\*A route made for each item of a table gives screens for its items when the config names the table in `routeTables`,\nand a table file of its own is in no screen's sources\.\*\*/);
 });

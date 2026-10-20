@@ -49,7 +49,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   and the `route at <file>:<line>` in the task list, name the route file the route is written in. When a screen
   you expect is missing from the map, check that the file holding its route is listed before reading the code
   for another cause. A `duplicate screen ID` line in the `rebuild` summary names the file and line of every
-  route that makes the same ID.
+  route that makes the same ID. For a screen made from an item of a table in `routeTables`, the task list adds
+  `table item <key> at <file>:<line>` after `route at`, and the `duplicate screen ID` line names that item's file
+  and line instead of the route's.
 - The route shapes duru reads: `component={Home}`, `element={<Home />}`, `element={wrap(<Home />)}`,
   `element={<Suspense><Home /></Suspense>}`, where the screen is the element inside the wrapping ones, and
   `element={<Wrapper Page={Signer} />}`, where the screen is the first of the wrapper and the passed components whose
@@ -61,7 +63,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `redirectElements` in the config, default `Redirect` and `Navigate`; a config that lists them uses only the
   names listed. A route file that another screen draws, whose paths start with the address that screen's route
   matched (`${match.url}/…`, `useRouteMatch().path`), gets that screen's path in front; a nested route written with
-  a relative path shows on the map with that relative path.
+  a relative path shows on the map with that relative path. A route made for each item of a table, in a route file
+  the config's `routeTables` names, gives screens for its items; the conditions written in an item (such as
+  `isHidden`) are not read, so such a screen shows none of them.
 - API code whose methods find their address in a table, or get a prefix when the request is sent, is read through
   `calledApiModules` and `requestFunction`: duru calls each method with fake values and records the request it hands
   to the app's request function, or to `get`, `post`, `put`, `patch` and `delete` of the app's request object when
@@ -116,7 +120,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   A call whose file is a store class the screen gets from a React context hook (`useStores()`) can sit outside
   `sourceFiles`: the screen calls the store method that sends it, so it is the screen's to test like any other.
 - A `component file not found` line in the `extract` summary names a screen whose component file duru could
-  not find and the route it is written at. The map then holds only what the components wrapping that route
+  not find and the route it is written at, followed by `table item <key> at <file>:<line>` for a screen made from a
+  table item, where its components are written. The map then holds only what the components wrapping that route
   bring: the screen's own source files, API calls, setting reads and links are missing.
 - A `route path not read ← <route file>:<line>: stopped at <piece>` line names a route whose path holds `{?}`,
   with the first piece duru could not read where it stopped; an `in <file>:<line>` after it appears only when duru
@@ -126,7 +131,15 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - A `route not read ← <route file>:<line>: <reason>` line names a route that draws a screen missing from the map,
   with where it is written and why duru could not read it. There is no ID for that screen, so no test can be tagged
   with it; tell the user which routes these are and why each one was not read. A line whose reason starts with `made for
-  each item of a list` stands for one screen per item.
+  each item of a list` stands for one screen per item, built from a list. When that list comes from a table written
+  in the source and the route's path reads one field of the list item once, as `item.url` does in
+  `${props.match.url}/${item.url}`, find the file and top-level const that hold it and the keys from that const to each item, add a
+  `routeTables` entry to the config yourself as you add the other config items, such as
+  `{ "route": "<the route file>", "table": { "file": "<table file>", "const": "<const>" }, "items": "*.subsections.*" }`
+  with `*` for every key at that place, run `duru rebuild` again, and tell the user which screens appeared. A line
+  whose reason starts with `table item <key> at <file>:<line>` names an item of such a table that gives no screen,
+  because it has no value for the field the route reads or that value could not be read; tell the user which items
+  these are.
 
 ## Sequence
 
@@ -223,7 +236,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `{ "story": "<ID>", "part": … }`:
    - `"kind": "step"`: `key` has `step`, the step's number counted from 1, and `screen`. `where` has `file`, the
      story file under the config's `storiesDir`, and `screen` with its `componentFile`, `routeFile` and route
-     `line` (`"onMap": false` when the screen is not on the map). Add what the comment asks to check on that
+     `line`, and `tableItem` (`key`, `file`, `line`) for a screen made from a table item (`"onMap": false` when the
+     screen is not on the map). Add what the comment asks to check on that
      screen to the story's test.
    - `"kind": "hop"`: `key` has `step`, the number of the step the link leaves, and `from` and `to`, the two
      screens. `where` has `file`, `from` and `to` in the same shape, the link's `verdict` and `ways` (where it is
