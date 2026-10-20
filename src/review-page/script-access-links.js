@@ -93,15 +93,21 @@ function pickedBy(kind, id) {
   return kindTargets?.nodes[id] ?? { state: 'undecided', rules: [], mark: null };
 }
 
-const takenOut = (by) => (by.state === 'not-needed' && by.mark?.rule) || by.state === 'unused';
+const takenOut = (by) => by.state === 'not-needed' || by.state === 'unused';
+
+function outTitle(kind, by) {
+  const { mark } = by;
+  if (by.state === 'unused') return `${fmtDate(mark.date)} 에 규칙에서 뺐습니다\n${nowRules(kind)}`;
+  if (!mark.rule) return `${fmtDate(mark.date)} 에 불필요로 정했습니다`;
+  return `${fmtDate(mark.date)} 에 규칙에서 뺐습니다\n${ruleText(kind, mark.rule.index, mark.rule.pick)}`;
+}
 
 function pickChip(kind, by) {
   const { mark } = by;
   if (by.state === 'rule') return h('span', { class: 'chip pick-rule', title: `규칙이 골랐습니다: ${rulesText(kind, by.rules)}` }, '규칙');
   if (by.state === 'needed') return h('span', { class: 'chip pick-person', title: `${fmtDate(mark.date)} 에 골랐습니다${by.rules.length ? `\n규칙도 골랐습니다: ${rulesText(kind, by.rules)}` : ''}` }, mark.author);
   if (!takenOut(by)) return null;
-  const from = mark.rule ? `\n${ruleText(kind, mark.rule.index, mark.rule.pick)}` : '';
-  return h('span', { class: `chip ${by.state === 'unused' ? 'pick-unused' : 'pick-out'}`, title: by.state === 'unused' ? `${fmtDate(mark.date)} 에 규칙에서 뺐습니다\n${nowRules(kind)}` : `${fmtDate(mark.date)} 에 규칙에서 뺐습니다${from}` }, `불필요 · ${mark.author}`);
+  return h('span', { class: `chip ${by.state === 'unused' ? 'pick-unused' : 'pick-out'}`, title: outTitle(kind, by) }, `불필요 · ${mark.author}`);
 }
 
 function askTakeOut(id, kind, refocus) {

@@ -1,3 +1,4 @@
+import { compare } from './config.ts';
 import type { CaseKind, CasePick } from './config.ts';
 import type { Mark, MarkEntry, MarkRule } from './marks.ts';
 
@@ -25,6 +26,7 @@ export interface KindTargets {
   rules: RulePicks[];
   nodes: Record<string, CaseTarget>;
   unused: Record<string, Mark>;
+  undecided: string[];
 }
 
 const parts = (p: string) => p.split('/').filter(Boolean);
@@ -78,6 +80,8 @@ export function exclusionOf(mapOf: () => TargetMap, caseKinds: Record<string, Ca
 export function caseTargets(map: TargetMap, caseKinds: Record<string, CaseKind>, attached: MarkEntry[]): Record<string, KindTargets> {
   const allScreens = map.screens.map((s) => s.id);
   const allCalls = (map.calls ?? []).map((c) => c.id);
+  const methods = new Map((map.calls ?? []).map((c) => [c.id, c.method]));
+  const undecidedGroup = (id: string) => (!methods.has(id) ? 2 : methods.get(id) === 'GET' ? 1 : 0);
   return Object.fromEntries(Object.entries(caseKinds).map(([kind, caseKind]) => {
     const rules = rulePicks(map, caseKind);
     const sides = caseKind.picks.length
@@ -98,17 +102,48 @@ export function caseTargets(map: TargetMap, caseKinds: Record<string, CaseKind>,
       let target: CaseTarget;
       if (mark?.status === 'needed') target = { state: 'needed', rules: picked, mark };
       else if (mark?.status === 'not-needed' && picked.length) target = mark.rule ? { state: 'not-needed', rules: picked, mark } : { state: 'rule', rules: picked, mark: null };
-      else if (mark?.status === 'not-needed' && !mark.rule) target = { state: 'not-needed', rules: [], mark };
+      else if (mark?.status === 'not-needed' && !mark.rule && mark.note?.trim()) target = { state: 'not-needed', rules: [], mark };
       else {
-        if (mark) unused[id] = mark;
+        if (mark?.rule) unused[id] = mark;
         target = { state: picked.length ? 'rule' : 'undecided', rules: picked, mark: null };
       }
       if (candidates.has(id) || target.state !== 'undecided') nodes[id] = target;
     }
-    return [kind, { sides, rules, nodes, unused }];
+    const undecided = Object.keys(nodes).filter((id) => nodes[id].state === 'undecided').sort((a, b) => undecidedGroup(a) - undecidedGroup(b) || compare(a, b));
+    return [kind, { sides, rules, nodes, unused, undecided }];
   }));
 }
 
 export const pickedKinds = (targets: Record<string, KindTargets>, id: string) => Object.entries(targets)
   .filter(([, t]) => ['rule', 'needed'].includes(t.nodes[id]?.state))
   .map(([kind]) => ({ tag: `case:${kind}`, kind: 'case' }));
+
+export const kindTags = (kind: string, caseKind: CaseKind) => (caseKind.values.length ? caseKind.values.map((v) => `case:${kind}=${v}`) : [`case:${kind}`]);
+
+export function casesWithoutTests(kind: string, caseKind: CaseKind, targets: KindTargets, tests: Record<string, { cases?: string[] }[]>) {
+  return Object.entries(targets.nodes)
+    .filter(([, t]) => t.state === 'rule' || t.state === 'needed')
+    .map(([node, target]) => ({ node, target, tags: kindTags(kind, caseKind).filter((tag) => !(tests[node] ?? []).some((t) => t.cases?.includes(tag))) }))
+    .filter((c) => c.tags.length);
+}
+
+export function commandCaseRule(map: TargetMap, caseKinds: Record<string, CaseKind>, attached: MarkEntry[], { kind, node, status, note }: { kind: string; node: string; status: string; note: string }) {
+  if (!Object.hasOwn(caseKinds, kind)) {
+    const kinds = Object.keys(caseKinds);
+    throw new Error(`"${kind}" is not a kind in caseKinds (${kinds.length ? `it has ${kinds.join(', ')}` : 'it has none'})`);
+  }
+  const isCall = (map.calls ?? []).some((c) => c.id === node);
+  if (!isCall && !map.screens.some((s) => s.id === node)) throw new Error(`${node} is no screen or call on the map`);
+  const current = attached.find((e) => e.target.case === kind && e.target.node === node)?.current ?? null;
+  if (current && current.via === undefined) {
+    throw new Error(`${current.author} marked ${kind} ${current.status} on ${node} on ${current.date.slice(0, 10)}, and duru case does not change a person's mark`);
+  }
+  if (status !== 'not-needed') return undefined;
+  const rule = exclusionOf(() => map, caseKinds, { target: { node, case: kind }, status, note });
+  if (!note.trim()) throw new Error(`not-needed needs a note saying why ${kind} need not be tested on ${node}`);
+  const { sides } = caseTargets(map, { [kind]: caseKinds[kind] }, [])[kind];
+  if (!(isCall ? sides.calls : sides.screens) && !current) {
+    throw new Error(`the rules of ${kind} pick only ${isCall ? 'screens' : 'calls'}, so ${node} is no candidate, and not-needed there only takes back a mark, which it does not have`);
+  }
+  return rule;
+}

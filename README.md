@@ -35,6 +35,8 @@ node src/cli.ts tasks path/to/project-config.json > tasks.md        # task list 
 node src/cli.ts story path/to/project-config.json <story ID>   # one story for a coding agent: addresses, arrival lines, empty tests
 node src/cli.ts reply path/to/project-config.json <comment ID> "<text>" [--server <review page address>]   # answer a comment
 node src/cli.ts wait path/to/project-config.json --server <review page address>   # exits with the comments not yet answered
+node src/cli.ts case path/to/project-config.json <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name>]   # decide a case kind for one screen or call
+node src/cli.ts undecided path/to/project-config.json [<kind>]   # exits with 3 while a candidate of a case kind is undecided
 npm test
 ```
 
@@ -447,6 +449,10 @@ listing the places whose value the source does not show in full.
   how many of them the same rules did not pick on the baseline map.
 - `caseKinds <kind> picks[<i>] matches no screen|call: <rule>` — a rule of that kind, counted from 0 and shown as
   written, that picks nothing on this map.
+- `case kind <kind>: undecided N | cases with no tests N` — printed by `rebuild` for each kind in `caseKinds`, after
+  the tests are read: how many of its candidates are undecided (see **Task list**), and how many cases of the
+  screens and calls it is picked for no test carries yet, a case for each value of a kind with values. When the marks
+  cannot be read, `  case kinds not counted: <why>` takes the place of these lines.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
   newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
   file that is not there and each need file it could not read with why, the links from untagged tests to screens and the trace or test files it could not read, the judged test
@@ -771,7 +777,8 @@ person or agent who did, with the date on hover and, when a rule picks it too, t
 out picked, and while it is picked, whoever picked it, its row has 「이 요청은 규칙에서 빼기…」 (「이 화면은 규칙에서 빼기…」 on a screen);
 that and pressing its button both open a dialog that saves only with a reason. The kind then shows as 「불필요 ·
 <author>」 with the date and the rule on hover and the reason on the line below, and pressing its button again picks
-it back in that person's name. When no rule picks
+it back in that person's name. A kind marked 「불필요」 with a reason on a screen or call no rule picks, as `case` writes
+it, shows the same row, with the date on hover; one pressed off with no reason shows no row. When no rule picks
 that screen or call any more, the row also says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. The flow shows the same
 middle and right panes for a picked screen.
 
@@ -884,11 +891,13 @@ a target that already has one. Each mark and each judgment
 is its own new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so marks made on two machines merge in
 git without a conflict and the newest is the current state. A mark whose target is gone from a rebuilt map shows
 under 「떨어져 나감」. A case kind picked or taken out on a screen or call is kept the same way, as a mark with the
-status `needed` or `not-needed`; it puts nothing on the task list, and one whose kind has left `caseKinds` shows
-under 「떨어져 나감」. A `not-needed` mark on a screen or call that a rule of its kind picks needs a note, and the
+status `needed` or `not-needed`, and one whose kind has left `caseKinds` shows under 「떨어져 나감」. A `not-needed`
+mark on a screen or call that a rule of its kind picks needs a note, and the
 review server refuses one without; it also carries `rule`, `{ "index": <place in picks, from 0>, "pick": <the
 rule as written> }`, naming the rule it took the target out of. Only such a mark wins over a rule; a `not-needed`
-mark without `rule`, such as a kind pressed off before the rule was written, leaves the rule's pick in place.
+mark without `rule`, such as a kind pressed off before the rule was written, leaves the rule's pick in place. On a
+screen or call no rule picks, a `not-needed` mark with a note says the kind is not needed there, and one without a
+note leaves the kind undecided there. A mark written by `case` also carries `"via": "duru case"`.
 
 **Test rows.** A test row under a screen, call or story shows the test's title without its tags. The tags of the screen, call, story and depth
 the row sits under are left out, and every other tag (a role, a setting, a story, another screen …) follows the
@@ -1077,6 +1086,37 @@ for each value with no tests, carrying `@case:<kind>=<value>`. The writer puts w
 checks in place of `<what it checks>`, since the Playwright empty tests of an item all carry that same title, fills
 in the data setup and the checks, and the test attaches after a `rebuild`. Pairs handed over on the review page follow under
 `# Tagging`, each with the test, the tag to add and where it goes. duru never edits a test file.
+
+**Case kinds.** With `caseKinds` set, `# Case kinds` comes before `# Tagging`, with a `## <kind>` for each kind: its
+description, its values and rules, `undecided: N` with a line for each undecided candidate, and `cases with no
+tests: N`. A candidate is any screen or call for a kind without rules, and otherwise one on the side its rules pick
+(screens or calls); it is undecided while no rule picks it and its current mark of that kind is none, or a
+`not-needed` with no note. A candidate line is `<ID> — call, sent from <screens>` or `<ID> — screen, component
+<file>, route at <file>:<line>`, requests other than `GET` first (a request whose method was not read among them),
+then the other calls, then the screens, each group by ID. A candidate whose current mark a person left ends with
+`— <author> marked it not-needed without a note on <date>, so only a person can decide it` (`took it out of a rule
+that no longer picks it` for a mark whose rule no longer picks it): `case` does not change that mark. Each screen or
+call the kind is picked for, by a rule or a mark, with a case no test carries follows as `### <ID>` with `picked by:`
+(a rule and its place in `picks`, or the author, date and note of the mark), `no tests:` with the tags, and `empty
+tests` for each; one listed above under its own marks is not repeated, and `cases with no tests: N` counts its cases
+too, adding `, N of them under screens and calls listed above`. When this section has anything to do, the head of
+the list adds `N undecided case candidates, N cases with no tests`, and with no open marks the list says the case
+kinds below still have work instead of `No open marks.` Without `caseKinds` the list has no such section.
+
+`case <config> <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name>]` writes a case mark
+of that kind for that screen or call, as the review page would, directly into `marksDir`: the author is `agent`
+unless `--author` names one, and the file also carries `"via": "duru case"`. An open review page shows it the next
+time it is loaded. It prints nothing when the mark is written, and stops with a line saying why and exit code 1,
+writing nothing, for a kind not in `caseKinds`, an ID not on the map, `not-needed` without `--note`, a screen or call
+whose current mark of that kind a person left (any mark without `via`), also one that leaves it undecided, and `not-needed`
+on a screen or call off the side the kind's rules pick that has no mark of that kind to take back. `needed` is also
+written where a rule already picks the target, so it stays picked when the rule changes. A `not-needed` where a rule
+picks the target carries `rule` like one saved on the page.
+
+`undecided <config> [<kind>]` prints, for every kind or the one named, `case kind <kind>: N undecided` followed by its
+undecided candidates as in the task list. It exits with 0 when none is left, 3 while any is, 1 when the config, the
+map or a mark file cannot be read (a missing map is one line asking for `rebuild`), and 2 when it is called wrongly
+or names a kind not in `caseKinds`. `tests.json` is not needed.
 
 ## Agent skill
 

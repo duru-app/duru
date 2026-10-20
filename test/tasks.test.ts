@@ -702,6 +702,7 @@ test('a tagged Playwright test added for a listed screen shows on the page and i
 
 const CASE_KINDS = { boundary: '입력 경계: 빈 값, 최대 길이, 특수 문자', legacy: '옛 데이터: 이전 버전에서 만든 문서', retry: '실패와 복구' };
 const ARCHIVE = 'POST:/api/v1/archive/document';
+const RENAME = 'PUT:/api/v1/document/{documentId}/name';
 
 test('a kind of case a reviewer picked for a listed screen or call is a case of it in the task list with its tests, and gets an empty test while it has none', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
@@ -724,7 +725,7 @@ test('a kind of case a reviewer picked for a listed screen or call is a case of 
     const tasks = cli('tasks');
     const section = (id: string) => tasks.split(`\n## ${id}\n`)[1].split('\n## ')[0].split('\n# ')[0];
 
-    assert.match(tasks, /^# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks\n/);
+    assert.match(tasks, /^# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks, \d+ undecided case candidates, \d+ cases? with no tests\n/);
     assert.ok(tasks.includes('and the tag of each case under `cases` it checks: a role or setting case of a screen that opens only under one, or a kind of case a reviewer picked for the screen or call, tagged `@case:<kind>`)'));
     assert.ok(tasks.includes('a screen or call gets one set for each open mark and one more for each case with no tests, and a story one set'));
     assert.ok(!tasks.includes('\n## /lab#Lab\n'), 'a picked kind alone does not list a screen');
@@ -827,15 +828,89 @@ test('a kind a rule picked for a listed screen or call is a case of it in the ta
   } });
 });
 
-test('with case kinds configured but none picked, the task list differs from one without them only in its intro', () => {
+test('with case kinds configured but none picked, the task list differs from one without them in its intro, the undecided count in its head and a section of case kinds at the end', () => {
   withFixtureCopy(({ cli }) => {
     cli('rebuild');
-    const [head, intro, ...rest] = cli('tasks').split('\n\n');
+    const tasks = cli('tasks');
+    const [listed, kinds] = tasks.split('\n# Case kinds\n');
+    const [head, intro, ...rest] = listed.split('\n\n');
     const [expectedHead, expectedIntro, ...expectedRest] = EXPECTED.split('\n\n');
-    assert.equal(head, expectedHead);
+    const candidates = 11 + 10;
+    assert.equal(head, `${expectedHead}, ${candidates * 3} undecided case candidates, 0 cases with no tests`);
     assert.notEqual(intro, expectedIntro);
     assert.deepEqual(rest, expectedRest);
+    assert.deepEqual([...kinds.matchAll(/^## (\S+)$/gm)].map((m) => m[1]), Object.keys(CASE_KINDS));
+    assert.deepEqual([...kinds.matchAll(/^- undecided: (.+)$/gm)].map((m) => m[1]), Array(3).fill(String(candidates)));
+    assert.deepEqual([...kinds.matchAll(/^- rules: (.+)$/gm)].map((m) => m[1]), Array(3).fill('none, so every screen and call is a candidate'));
   }, { caseKinds: CASE_KINDS });
+});
+
+test('the case kinds section lists each kind\'s undecided candidates, writes first, and each screen or call picked for it whose cases have no tests, with who picked it, the tags and empty tests, leaving out those listed above under their marks while counting their cases as rebuild does', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    const specs = [`refuses a cancelled rename @call:${RENAME} @case:ended=cancelled`].map((title, i) => ({ title, file: 'cases.spec.ts', line: i + 1, tests: [{ status: 'expected', projectName: 'chromium' }] }));
+    fs.writeFileSync(path.join(copy, 'results/playwright/cases.json'), JSON.stringify({ suites: [{ title: 'cases.spec.ts', file: 'cases.spec.ts', specs }] }));
+    cli('rebuild');
+    const { marksDir } = loadConfig(configFile);
+    addMark(marksDir, { target: { node: '/lab#Lab', case: 'ended' }, status: 'needed', note: '실험 화면도 문서를 쓴다', author: 'agent', via: 'duru case' }, new Date('2026-10-04T01:00:00Z'));
+    addMark(marksDir, { target: { node: 'POST:/api/v1/report/export', case: 'ended' }, status: 'not-needed', note: '내보내기는 읽기만 한다', author: 'agent', via: 'duru case' }, new Date('2026-10-04T01:00:00Z'));
+    const tasks = cli('tasks');
+    const kinds = tasks.slice(tasks.indexOf('\n# Case kinds\n'));
+    const ended = kinds.slice(kinds.indexOf('\n## ended\n'));
+    assert.match(tasks, /^# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks, 7 undecided case candidates, 5 cases with no tests\n/);
+    assert.ok(kinds.includes('Read the source of each undecided candidate, write requests first as they are listed, and decide it: run `duru case <config> <kind> <ID> needed`'));
+    assert.ok(ended.startsWith([
+      '',
+      '## ended',
+      '',
+      `- description: ${ENDED.text}`,
+      '- values: cancelled, rejected',
+      '- rules:',
+      '  - `picks[0]` {"screen":"/document/**","methods":["POST","PUT"]}',
+      '- undecided: 7',
+      '  - POST:/api/v1/auth/sign-in — call, sent from /signin#SignIn',
+      '  - POST:/api/v1/report/archive — call, sent from /admin/audit#AdminAudit, /admin/report#AdminReport',
+      '  - POST:/api/v1/report/schedule — call, sent from /admin/audit#AdminAudit, /admin/report#AdminReport',
+      '  - GET:/api/v1/document/list — call, sent from /home#Home',
+      '  - GET:/api/v1/document/{documentId} — call, sent from /document/:id#DocumentDetail',
+      '  - GET:/api/v1/lab/experiment — call, sent from /lab#Lab',
+      '  - GET:/api/v1/member/list — call, sent from /admin/member#AdminMember',
+      '- cases with no tests: 5, 2 of them under screens and calls listed above',
+      '',
+      '### /lab#Lab',
+      '',
+      '- screen, component components/Lab.js, route at Routes.js:44',
+    ].join('\n')));
+    assert.ok(ended.includes([
+      '- picked by: agent, 2026-10-04 — "실험 화면도 문서를 쓴다"',
+      '- no tests: `@case:ended=cancelled`, `@case:ended=rejected`',
+      emptyTests(['@screen:/lab#Lab @case:ended=cancelled', 'screen_lab_Lab_case_ended_cancelled'], ['@screen:/lab#Lab @case:ended=rejected', 'screen_lab_Lab_case_ended_rejected']),
+      '',
+      `### ${RENAME}`,
+      '',
+      '- call, sent from /document/:id#DocumentDetail',
+      '- picked by: a rule, `caseKinds.ended.picks[0]`',
+      '- no tests: `@case:ended=rejected`',
+      emptyTests([`@call:${RENAME} @case:ended=rejected`, 'call_PUT_api_v1_document_documentId_name_case_ended_rejected']),
+    ].join('\n')));
+    assert.ok(!ended.includes(`### ${ARCHIVE}`), 'a call listed above under its mark is not repeated');
+    const counted = cli('rebuild').match(/^case kind ended: undecided (\d+) \| cases with no tests (\d+)$/m)!;
+    assert.deepEqual([...counted].slice(1), ['7', '5']);
+    assert.match(tasks, /^# Test tasks — .*, 7 undecided case candidates, 5 cases with no tests\n/);
+    assert.ok(tasks.split(`\n## ${ARCHIVE}\n`)[1].includes(`@call:${ARCHIVE} @case:ended=cancelled`));
+  }, { caseKinds: { ended: { ...ENDED, picks: [{ screen: '/document/**', methods: ['POST', 'PUT'] }] } } });
+});
+
+test('with no open marks but cases with no tests the task list says the case kinds below still have work, and once nothing is left there it says only that no mark is open', () => {
+  const pick = { screen: '/**' };
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    cli('rebuild');
+    const { marksDir, outDir } = loadConfig(configFile);
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 11 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have undecided candidates or cases with no tests\.\n\n# Case kinds\n/);
+    const map: ScreenMap = JSON.parse(fs.readFileSync(path.join(outDir, 'map.json'), 'utf8'));
+    for (const s of map.screens) addMark(marksDir, { target: { node: s.id, case: 'boundary' }, status: 'not-needed', note: '입력 칸이 없다', rule: { index: 0, pick }, author: 'agent', via: 'duru case' });
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks\.\n\n# Case kinds\n[\s\S]*\n- undecided: none\n- cases with no tests: none\n$/);
+  }, { caseKinds: { boundary: { text: CASE_KINDS.boundary, picks: [pick] } } });
 });
 
 test('with no open marks the task list says so', () => {

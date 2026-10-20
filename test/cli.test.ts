@@ -60,7 +60,7 @@ test('rebuild prints for each case kind with rules how many screens and calls th
     const ended = { text: '끝난 문서', picks: [{ screen: '/admin/*' }, { screen: '/document/**', methods: ['POST', 'PUT'] }, { screen: '/participant/**' }, { api: '/api/v2/**' }] };
     fs.writeFileSync(configFile, JSON.stringify({ ...config, caseKinds: { boundary: '경계', ended, legacy: { text: '옛 데이터', picks: [{ screen: '/help' }] } } }));
     const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
-    assert.deepEqual(stdout.split('\n').filter((l) => /^(case kind |  caseKinds )/.test(l)), [
+    assert.deepEqual(stdout.split('\n').filter((l) => /^(case kind \S+: rules |  caseKinds )/.test(l)), [
       'case kind ended: rules pick 4 screens, 2 calls',
       '  caseKinds ended picks[2] matches no screen: {"screen":"/participant/**"}',
       '  caseKinds ended picks[3] matches no call: {"api":"/api/v2/**"}',
@@ -69,6 +69,120 @@ test('rebuild prints for each case kind with rules how many screens and calls th
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
+});
+
+const ENDED_KINDS = { ended: { text: '끝난 문서', values: ['cancelled', 'rejected'], picks: [{ screen: '/document/**', methods: ['POST', 'PUT'] }] }, legacy: '옛 데이터' };
+const ENDED_WRITES = ['POST:/api/v1/auth/sign-in', 'POST:/api/v1/report/archive', 'POST:/api/v1/report/export', 'POST:/api/v1/report/schedule'];
+const ENDED_READS = ['GET:/api/v1/document/list', 'GET:/api/v1/document/{documentId}', 'GET:/api/v1/lab/experiment', 'GET:/api/v1/member/list'];
+
+function withCaseKinds(fn: (configFile: string, run: (...args: string[]) => { status: number | null; stdout: string; stderr: string }) => void) {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), marksDir: 'case-marks', caseKinds: ENDED_KINDS }));
+    const run = (command: string, ...args: string[]) => {
+      try {
+        return { status: 0, stdout: execFileSync(process.execPath, [CLI, command, configFile, ...args], { encoding: 'utf8', stdio: 'pipe' }), stderr: '' };
+      } catch (err) {
+        const { status, stdout, stderr } = err as Failure & { stdout: string };
+        return { status, stdout, stderr };
+      }
+    };
+    fn(configFile, run as never);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+}
+
+const caseMarks = (configFile: string) => {
+  const dir = path.join(path.dirname(configFile), 'case-marks');
+  return fs.existsSync(dir) ? (fs.readdirSync(dir, { recursive: true }) as string[]).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as Mark) : [];
+};
+
+test('undecided says in one line that there is no map before a rebuild and exits with 1, then lists each undecided candidate, writes first, and exits with 3 while any is left and with 0 once none is; a kind not in the config exits with 2', () => {
+  withCaseKinds((configFile, run) => {
+    const before = run('undecided');
+    assert.equal(before.status, 1);
+    assert.equal(before.stderr, `${path.join(path.dirname(configFile), 'out', 'map.json')} does not exist — run "duru rebuild" first\n`);
+    run('rebuild');
+    const ended = run('undecided', 'ended');
+    assert.equal(ended.status, 3);
+    assert.deepEqual(ended.stdout.split('\n').filter(Boolean).map((l) => l.split(' — ')[0]), ['case kind ended: 8 undecided', ...[...ENDED_WRITES, ...ENDED_READS].map((id) => `  ${id}`)]);
+    assert.match(run('undecided').stdout, /\ncase kind legacy: 21 undecided\n {2}POST:/);
+    assert.equal(run('undecided', 'gone').status, 2);
+    for (const id of ENDED_WRITES) assert.equal(run('case', 'ended', id, 'not-needed', '--note', '문서를 바꾸지 않는다').status, 0);
+    for (const id of ENDED_READS) assert.equal(run('case', 'ended', id, 'needed').status, 0);
+    assert.deepEqual(run('undecided', 'ended'), { status: 0, stdout: 'case kind ended: 0 undecided\n', stderr: '' });
+    assert.equal(run('undecided').status, 3);
+  });
+});
+
+test('case writes a mark file the review reads, by agent unless --author names someone, with a field saying the command wrote it, and the rule it takes a target out of', () => {
+  withCaseKinds((configFile, run) => {
+    run('rebuild');
+    assert.deepEqual(run('case', 'ended', 'PUT:/api/v1/document/{documentId}/name', 'not-needed', '--note', '이름은 막지 않는다'), { status: 0, stdout: '', stderr: '' });
+    assert.equal(run('case', 'legacy', '/lab#Lab', 'needed', '--author', 'QA 에이전트', '--note', '옛 실험 데이터가 있다').status, 0);
+    const marks = caseMarks(configFile).map(({ target, status, note, rule, author, via }) => ({ target, status, note, rule, author, via }));
+    assert.deepEqual(marks.sort((a, b) => a.target!.node!.localeCompare(b.target!.node!)), [
+      { target: { node: '/lab#Lab', case: 'legacy' }, status: 'needed', note: '옛 실험 데이터가 있다', rule: undefined, author: 'QA 에이전트', via: 'duru case' },
+      { target: { node: 'PUT:/api/v1/document/{documentId}/name', case: 'ended' }, status: 'not-needed', note: '이름은 막지 않는다', rule: { index: 0, pick: ENDED_KINDS.ended.picks[0] }, author: 'agent', via: 'duru case' },
+    ]);
+  });
+});
+
+test('case refuses with a reason and exits with 1 a kind not in the config, an ID not on the map, not-needed without a note and a person\'s mark, writing nothing; a call it cannot read exits with 2', () => {
+  withCaseKinds((configFile, run) => {
+    run('rebuild');
+    addMark(path.join(path.dirname(configFile), 'case-marks'), { target: { node: '/home#Home', case: 'legacy' }, status: 'needed', author: 'Kim Min' }, new Date('2026-10-05T01:00:00Z'));
+    for (const [args, stderr] of [
+      [['gone', '/home#Home', 'needed'], '"gone" is not a kind in caseKinds (it has ended, legacy)\n'],
+      [['ended', '/nowhere#Nowhere', 'needed'], '/nowhere#Nowhere is no screen or call on the map\n'],
+      [['legacy', '/lab#Lab', 'not-needed'], 'not-needed needs a note saying why legacy need not be tested on /lab#Lab\n'],
+      [['ended', 'POST:/api/v1/archive/document', 'not-needed'], 'a rule picks POST:/api/v1/archive/document for ended (caseKinds.ended.picks[0]), so taking it out needs a note saying why\n'],
+      [['legacy', '/home#Home', 'not-needed', '--note', '홈은 옛 데이터를 읽지 않는다'], 'Kim Min marked legacy needed on /home#Home on 2026-10-05, and duru case does not change a person\'s mark\n'],
+    ] as [string[], string][]) assert.deepEqual(run('case', ...args), { status: 1, stdout: '', stderr }, args.join(' '));
+    assert.equal(caseMarks(configFile).length, 1);
+    for (const args of [['ended', '/lab#Lab'], ['ended', '/lab#Lab', 'maybe'], ['ended', '/lab#Lab', 'needed', '--note'], ['ended', '/lab#Lab', 'needed', '--why', 'x'], ['ended', '/lab#Lab', 'needed', '--note', 'a', '--note', 'b']]) {
+      const misused = run('case', ...args);
+      assert.equal(misused.status, 2, args.join(' '));
+      assert.match(misused.stderr, /\n {7}duru case <config\.json> <kind> <screen or call ID> needed\|not-needed \[--note <why>\] \[--author <name>\]\n/);
+    }
+  });
+});
+
+test('a candidate a person marked not-needed without a note stays undecided, keeps undecided at 3 and says only a person can decide it, and case refuses to change that mark, writing nothing', () => {
+  withCaseKinds((configFile, run) => {
+    run('rebuild');
+    addMark(path.join(path.dirname(configFile), 'case-marks'), { target: { node: 'GET:/api/v1/lab/experiment', case: 'ended' }, status: 'not-needed', author: 'Kim Min' }, new Date('2026-10-05T01:00:00Z'));
+    assert.deepEqual(run('case', 'ended', 'GET:/api/v1/lab/experiment', 'needed'), { status: 1, stdout: '', stderr: 'Kim Min marked ended not-needed on GET:/api/v1/lab/experiment on 2026-10-05, and duru case does not change a person\'s mark\n' });
+    assert.equal(caseMarks(configFile).length, 1);
+    for (const id of ENDED_WRITES) run('case', 'ended', id, 'not-needed', '--note', '문서를 바꾸지 않는다');
+    for (const id of ENDED_READS.filter((id) => id !== 'GET:/api/v1/lab/experiment')) run('case', 'ended', id, 'needed');
+    assert.deepEqual(run('undecided', 'ended'), {
+      status: 3,
+      stdout: 'case kind ended: 1 undecided\n  GET:/api/v1/lab/experiment — call, sent from /lab#Lab — Kim Min marked it not-needed without a note on 2026-10-05, so only a person can decide it\n',
+      stderr: '',
+    });
+  });
+});
+
+test('undecided whose reader stops early still exits with 3 while candidates are left, with nothing on stderr', () => {
+  withCaseKinds((configFile, run) => {
+    run('rebuild');
+    const piped = execFileSync('bash', ['-c', '"$0" "$1" undecided "$2" 2>"$3" | true; echo "${PIPESTATUS[0]}"', process.execPath, CLI, configFile, path.join(path.dirname(configFile), 'stderr.txt')], { encoding: 'utf8' });
+    assert.equal(piped, '3\n');
+    assert.equal(fs.readFileSync(path.join(path.dirname(configFile), 'stderr.txt'), 'utf8'), '');
+  });
+});
+
+test('rebuild prints for each case kind how many candidates are undecided and how many cases of the screens and calls picked for it have no tests', () => {
+  withCaseKinds((configFile, run) => {
+    const lines = (stdout: string) => stdout.split('\n').filter((l) => /^case kind \S+: undecided /.test(l));
+    assert.deepEqual(lines(run('rebuild').stdout), ['case kind ended: undecided 8 | cases with no tests 4', 'case kind legacy: undecided 21 | cases with no tests 0']);
+    run('case', 'legacy', '/lab#Lab', 'needed');
+    assert.deepEqual(lines(run('rebuild').stdout), ['case kind ended: undecided 8 | cases with no tests 4', 'case kind legacy: undecided 20 | cases with no tests 1']);
+  });
 });
 
 function rebuildTraced(change: (results: string) => void = () => {}) {
@@ -389,7 +503,7 @@ test('rebuild counts the story candidates from the visit records and from traces
   }
 });
 
-for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc'], ['reply', 'x.json', 'id'], ['reply', 'x.json', 'id', 'text', '--port', '5000'], ['review', 'x.json', '--server', 'http://127.0.0.1:1/'], ['wait', 'x.json'], ['wait', 'x.json', '--server'], ['wait', 'x.json', '--port', '5000']]) {
+for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc'], ['reply', 'x.json', 'id'], ['reply', 'x.json', 'id', 'text', '--port', '5000'], ['review', 'x.json', '--server', 'http://127.0.0.1:1/'], ['wait', 'x.json'], ['wait', 'x.json', '--server'], ['wait', 'x.json', '--port', '5000'], ['case', 'x.json', 'ended', '/lab#Lab'], ['undecided', 'x.json', 'ended', 'legacy']]) {
   test(`"${args.join(' ')}" prints usage and exits with 2`, () => {
     assert.throws(
       () => execFileSync(process.execPath, [CLI, ...args], { encoding: 'utf8', stdio: 'pipe' }),

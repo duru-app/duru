@@ -115,7 +115,7 @@ test('with baselineMap, rebuild also prints how many screens and calls the rules
     fs.mkdirSync(path.dirname(baselineFile), { recursive: true });
     fs.writeFileSync(baselineFile, JSON.stringify(olderMap(readMap(copy))));
     setConfig({ baselineMap: 'releases/1.0/map.json', caseKinds: { boundary: '경계', ended: { text: '끝난 문서', picks: [{ screen: '/lab/**' }, { api: '/api/v1/lab/**' }, { methods: ['DELETE'] }] } } });
-    assert.deepEqual(rebuild().split('\n').filter((l) => /^(case kind |  caseKinds )/.test(l)), [
+    assert.deepEqual(rebuild().split('\n').filter((l) => /^(case kind \S+: rules |  caseKinds )/.test(l)), [
       `case kind ended: rules pick 2 screens, 1 call | new since ${baselineFile} 2`,
       '  caseKinds ended picks[2] matches no call: {"methods":["DELETE"]}',
     ]);
