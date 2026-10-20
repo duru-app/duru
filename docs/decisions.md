@@ -2525,9 +2525,9 @@ Driver's decision in #262 (2026-10-19). into-sign 1.5.0's story 「서명자가 
 signed document's screen; none of the 90 passing runs with a trace goes from the signing screen to it. Such a story
 gets its own status, `part-pass` 「일부 단계만 통과」, each link shows how many story tests went across it, in grey
 when none did, and a story whose passing story tests include one without a trace, with none of the traced ones
-going through, stays 「통과」 with 「단계 확인 못 함」 beside it. A trace that opened pages none of which is a screen on
-the map counts as no trace, since the map rather than the test may be missing the screen; a trace that opened no
-page at all is a test that did not go through. Only a run that goes from one screen straight to the next counts for that link, and the whole
+going through, stays 「통과」 with 「단계 확인 못 함」 beside it. A trace that holds no screen on the map counts as no
+trace: the map rather than the test may be missing the screen, and an empty trace may be one that could not see where
+the test went. A story test that opens no page at all therefore leaves its story 「통과」 with 「단계 확인 못 함」. Only a run that goes from one screen straight to the next counts for that link, and the whole
 story counts only when one run holds every screen one after another.
 - A story test and its trace are paired in rebuild, where the test's result line and its trace are read together:
   the story test's entry in `tests.json` carries `screens`, the screens its passing run went through. The issue
