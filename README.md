@@ -32,6 +32,7 @@ npm run rebuild -- path/to/project-config.json   # map.json + tests.json
 npm run extract -- path/to/project-config.json   # map.json only
 node src/cli.ts review path/to/project-config.json [--port 4400]   # review page on 127.0.0.1, task list when it ends
 node src/cli.ts tasks path/to/project-config.json > tasks.md        # task list for a coding agent
+node src/cli.ts story path/to/project-config.json <story ID>   # one story for a coding agent: addresses, arrival lines, empty tests
 node src/cli.ts reply path/to/project-config.json <comment ID> "<text>" [--server <review page address>]   # answer a comment
 node src/cli.ts wait path/to/project-config.json --server <review page address>   # exits with the comments not yet answered
 npm test
@@ -1033,6 +1034,18 @@ then the comment's JSON line. Marks and replies are not sent. When the socket ca
 **Ending.** Pressing 「리뷰 끝」, or Ctrl+C in the terminal, closes the server and prints the task list on standard
 output, so a coding agent that launched the page receives it as soon as the reviewer is done. Open pages stop
 listening for new saves when the review ends.
+
+## One story
+
+`story <config> <story ID>` prints one story as text for a coding agent, marked or not. It has the lines of a story
+under `# Stories` in the task list, without `marks`, and under each step: `open`, on the first step, the route path
+(after `appUrl` when the config has it) with a route variable left as it is; `arrives`, a `toHaveURL` line matching the whole address for the
+step's screen, or the reason when its route path was not read or it is not on the map; and `what to press`, under a
+link, saying duru does not know which element to press (only under a link that exists in the source, not under `no link`, a screen not on the map, or a move written in `moves`). The lines a person wrote (`need`, `link need from step N`,
+`input`, `expect`, `needs`, `expects at the end`) are not checked by duru. The text ends with empty tests carrying
+`@story:` and the `@screen:` of each screen on the map. Standard output holds only that text; for a story ID that is
+not there, a story file that could not be read or a map that must be rebuilt, one line goes to standard error and the
+exit code is 1; a wrong call exits with 2.
 
 ## Task list
 

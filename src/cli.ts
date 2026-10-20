@@ -19,10 +19,10 @@ import { reviewAuthor, startReviewServer } from './review.ts';
 import type { AnnouncedMark } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { checkStoryFiles } from './story-paths.ts';
-import { taskList } from './tasks.ts';
+import { storyBrief, taskList } from './tasks.ts';
 import { linkTests } from './test-links.ts';
 
-const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'reply', 'wait'];
+const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'story', 'reply', 'wait'];
 const DEFAULT_PORT = 4400;
 const AUTHOR_SOURCES: Record<string, string> = { config: 'config', git: 'git user.name', user: 'computer user name' };
 const KEPT_BY: Record<string, string> = { source: 'the source', config: 'bodyOptions' };
@@ -31,9 +31,9 @@ const unreadText = (r: { url: string | null; reason: string }) => `address not r
 const portArg = command === 'review' && extra[0] === '--port' && extra.length === 2 ? Number(extra[1]) : null;
 const replyArgs = command === 'reply' && (extra.length === 2 || (extra.length === 4 && extra[2] === '--server')) ? { id: extra[0], text: extra[1], server: extra[3] ?? null } : null;
 const waitServer = command === 'wait' && extra.length === 2 && extra[0] === '--server' ? extra[1] : null;
-const argsFit = command === 'reply' ? replyArgs : command === 'wait' ? waitServer : extra.length === 0 || Number.isInteger(portArg);
+const argsFit = command === 'story' ? extra.length === 1 && extra[0] !== '' : command === 'reply' ? replyArgs : command === 'wait' ? waitServer : extra.length === 0 || Number.isInteger(portArg);
 if (!COMMANDS.includes(command) || !configPath || !argsFit) {
-  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>`);
+  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru story <config.json> <story ID>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>`);
   process.exit(2);
 }
 
@@ -41,6 +41,19 @@ const config = loadConfig(configPath);
 
 if (command === 'tasks') {
   process.stdout.write(taskList(config));
+} else if (command === 'story') {
+  let brief;
+  try {
+    brief = storyBrief(config, extra[0]);
+  } catch (err: any) {
+    console.error(err.message);
+    process.exit(1);
+  }
+  if ('error' in brief) {
+    console.error(brief.error);
+    process.exit(1);
+  }
+  process.stdout.write(brief.text);
 } else if (command === 'reply') {
   const { id, text, server } = replyArgs!;
   try {
