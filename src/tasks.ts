@@ -1,5 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { Described } from './access.ts';
+import { readSettingsFile, settingsFilePlace } from './app-host.ts';
+import type { AppAccount } from './app-host.ts';
 import { casesWithoutTests, kindTags } from './case-targets.ts';
 import type { CaseTarget, KindTargets } from './case-targets.ts';
 import type { TableItem } from './client.ts';
@@ -10,6 +13,9 @@ import type { MarkEntry } from './marks.ts';
 import { findNeed, needPath } from './needs.ts';
 import { reviewData } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
+import { settingChange } from './setting-changes.ts';
+import type { MapDefaults, SettingsFileValues } from './setting-changes.ts';
+import type { SettingNeed } from './setting-needs.ts';
 import { BOX_WORDS } from './stories.ts';
 import { fillCode } from './playwright-trace.ts';
 import { testsAt } from './story-paths.ts';
@@ -380,10 +386,18 @@ function needText(need: any, needs: any) {
 
 const needTexts = (list: any[] | undefined, needs: any) => list?.map((n) => needText(n, needs));
 
+export interface Conditions {
+  accounts: Record<string, AppAccount>;
+  settings: SettingsFileValues | null;
+  defaults: MapDefaults;
+  judged: (need: SettingNeed) => string;
+}
+
 export interface StoryBrief {
   screensById: Map<string, any>;
   appUrl: string | null;
   base: string;
+  conditions: Conditions;
 }
 
 const ROUTE_END = '(?:\\/(?=$))?$';
@@ -434,16 +448,65 @@ function reachProblems(story: any) {
   ].filter(Boolean);
 }
 
-function preconditionLines(r: any, { screensById, restricted }: MapInfo) {
+const SETTING_REASON: Record<string, string> = {
+  call: 'it calls a function, so duru cannot tell which value meets it',
+  'not-equal': 'it checks that a value is not equal to another, so no one value meets it',
+  or: 'its parts are joined by "or", so no one value meets it',
+  'non-literal': 'it compares with something that is not a fixed value',
+  order: 'it compares sizes, so no one value meets it',
+  negated: 'it is a negated condition, so no one value meets it',
+  other: 'duru does not read a condition of this shape',
+  conflict: 'another condition in the same file has the same text and reads a different setting',
+  'not-found': 'duru did not find where it reads a setting',
+};
+
+function accountsText(roles: string[], accounts: Record<string, AppAccount>) {
+  if (!Object.keys(accounts).length) return 'no app.roles in the config';
+  return roles.map((r) => (Object.hasOwn(accounts, r) ? `${r} ${accounts[r].id}, password in ${accounts[r].passwordEnv}` : `${r} no account in app.roles`)).join('; ');
+}
+
+const needName = (n: SettingNeed) => `${n.path.join('.')} ${n.need === 'equals' ? `= ${JSON.stringify(n.value)}` : n.need === 'includes' ? `includes ${JSON.stringify(n.value)}` : n.need}`;
+
+function settingLine(n: SettingNeed, c: Conditions) {
+  const change = settingChange(n, c.settings, c.defaults);
+  const { set } = change;
+  const toSet = !set ? 'duru does not know which value to put' : set.item !== undefined ? `put ${JSON.stringify(set.item)} in the list` : `set it to ${JSON.stringify(set.value)}`;
+  const now = ['on', 'off', 'equals'].includes(n.need) && change.unchanged !== undefined ? ` (${JSON.stringify(change.unchanged)})` : '';
+  const verdict = change.met ? 'met with no change' : change.met === false ? `not met with no change${now}; ${toSet}` : `not known, its default was not read in full; ${toSet}`;
+  return `setting ${needName(n)}: ${verdict} (${c.judged(n)})`;
+}
+
+function conditionLines(g: Described, c: Conditions, indent: string, shownRoles: string[] = []) {
+  const lines: string[] = [];
+  if (g.kinds.includes('role')) {
+    if (!g.roles) lines.push('role not read: duru does not know which accounts pass it');
+    else if (g.roles.every((r) => shownRoles.includes(r))) lines.push(`role ${g.roles.join(' or ')}: the accounts are on the first screen line`);
+    else lines.push(`role ${g.roles.join(' or ')}: ${accountsText(g.roles, c.accounts)}`);
+  }
+  if (g.kinds.includes('setting')) {
+    if (g.settings) lines.push(...g.settings.map((n) => settingLine(n, c)));
+    else lines.push(`setting not read: ${SETTING_REASON[g.settingsReason!] ?? g.settingsReason}`);
+  }
+  return lines.map((l) => `${indent}- ${l}`);
+}
+
+function preconditionLines(r: any, { screensById, restricted }: MapInfo, c?: Conditions, start?: any) {
+  const under = (guards: Described[], indent: string, shownRoles?: string[]) => (c ? guards.flatMap((g) => conditionLines(g, c, indent, shownRoles)) : []);
   if (r.kind === 'start') {
     const roles = r.roleValues ? `; roles that open it: ${r.roleValues.join(', ')}` : r.roleValues === null ? '; the roles that open it could not be read' : '';
-    return [`  - ${r.screen}, the first screen, ${needsText(r.kinds)}${roles}`, ...linkInLines(screensById.get(r.screen).access.links, restricted).map((l) => `  ${l}`)];
+    const accounts = c && r.roleValues ? [`    - accounts: ${accountsText(r.roleValues, c.accounts)}`] : [];
+    return [`  - ${r.screen}, the first screen, ${needsText(r.kinds)}${roles}`, ...accounts, ...linkInLines(screensById.get(r.screen).access.links, restricted).map((l) => `  ${l}`)];
   }
-  if (r.kind === 'route') return [`  - ${r.screen} route at ${r.file}:${r.line}, guard ${r.guards.map(guardText).join('; ')}`];
+  if (r.kind === 'route') {
+    const shownRoles = start?.screen === r.screen ? start.roleValues ?? [] : [];
+    return [`  - ${r.screen} route at ${r.file}:${r.line}, guard ${r.guards.map(guardText).join('; ')}`, ...under(r.guards, '    ', shownRoles)];
+  }
   const way = (w: any) => `${place(w)}, guard ${w.conditions.map(guardText).join('; ')}`;
   const head = `  - link ${r.from} → ${r.to}`;
   return [
-    ...(r.ways.length === 1 ? [`${head} at ${way(r.ways[0])}`] : [`${head}, one of ${r.ways.length}:`, ...r.ways.map((w: any) => `    - at ${way(w)}`)]),
+    ...(r.ways.length === 1
+      ? [`${head} at ${way(r.ways[0])}`, ...under(r.ways[0].conditions, '    ')]
+      : [`${head}, one of ${r.ways.length}:`, ...r.ways.flatMap((w: any) => [`    - at ${way(w)}`, ...under(w.conditions, '      ')])]),
     ...(r.unknownLinks ? [`    - judged without links to a path duru cannot read: ${unreadText(r.unknownLinks)}`] : []),
   ];
 }
@@ -466,7 +529,7 @@ export function storyLines(story: any, marks: any[] | null, parts: any[], tests:
     ...writtenList('- expects at the end:', story.expects),
     `- reach: ${problems.length ? problems.join('; ') : 'reachable'}`,
     ...(story.reach.length
-      ? ['- preconditions:', ...story.reach.flatMap((r: any) => preconditionLines(r, mapInfo))]
+      ? ['- preconditions:', ...story.reach.flatMap((r: any) => preconditionLines(r, mapInfo, brief?.conditions, story.reach.find((x: any) => x.kind === 'start')))]
       : [`- preconditions: ${problems.length ? 'none where links were found' : 'none'}`]),
     ...emptyTestLines(formats, [[`story:${story.id}`, ...new Set<string>(story.steps.filter((s: any) => s.onMap).map((s: any) => `screen:${s.screen}`))]]),
   ];
@@ -691,9 +754,27 @@ export function taskList(config: any) {
   return out.join('\n') + '\n';
 }
 
-const STORY_INTRO = "Write a test that goes through the screens of this story in order, and put `@story:<story ID>` on it. The lines under each step come from the map: `open` is the address to open for the first step, with a route variable left as it is in the route path, and `arrives` is the line to check that the step's screen is open. `what to press` says duru does not know which element moves from one screen to the next, and appears only under a link that exists in the source, not under a link marked `no link` or `not judged, a screen is not on the map`, or a move written in the config's `moves`; the link's verdict and where it is written are on the `to` line. A `fill` line under an `input` line is Playwright code that finds the box with every word written for it, each matched exactly, takes the Nth of those boxes when the input has a number, and puts the value in; duru did not try it on the screen, so when it finds no box, try each word alone, and when that finds none either, tell the user which input it is. The `need`, `link need from step N`, `input` and `expect` lines, and the `needs` and `expects at the end` lists, are text a person wrote that duru did not check against the code; a need written `<name> (needs/<file>): <text>` is kept as a file and picked by several stories. The `reach` and `preconditions` lines say why a step may not open. `story tests` are the tests already tagged with this story. Under `empty tests` are the empty tests with the `@story:` tag and the `@screen:` tag of each screen on the map already in place and held back from passing (`test.fixme`, `test.todo`, `@Disabled` with `import org.junit.jupiter.api.Disabled;`, or no verdict word): copy the one for your runner, put what the test checks in place of `<what it checks>`, remove what holds it back and fill in the data setup and the checks.";
+const STORY_INTRO = "Write a test that goes through the screens of this story in order, and put `@story:<story ID>` on it. The lines under each step come from the map: `open` is the address to open for the first step, with a route variable left as it is in the route path, and `arrives` is the line to check that the step's screen is open. `what to press` says duru does not know which element moves from one screen to the next, and appears only under a link that exists in the source, not under a link marked `no link` or `not judged, a screen is not on the map`, or a move written in the config's `moves`; the link's verdict and where it is written are on the `to` line. A `fill` line under an `input` line is Playwright code that finds the box with every word written for it, each matched exactly, takes the Nth of those boxes when the input has a number, and puts the value in; duru did not try it on the screen, so when it finds no box, try each word alone, and when that finds none either, tell the user which input it is. The `need`, `link need from step N`, `input` and `expect` lines, and the `needs` and `expects at the end` lists, are text a person wrote that duru did not check against the code; a need written `<name> (needs/<file>): <text>` is kept as a file and picked by several stories. The `reach` and `preconditions` lines say why a step may not open. Under a precondition, an `accounts` line and a `role` line name, for each role that passes, the account in `app.roles` and the environment variable that holds its password; duru never prints a password, and you pick the account. A `setting` line covers one setting the condition reads, not the whole condition: met with no change, or not met or not known with the value to put, and in brackets what it was judged against, the settings file in `app.settingsFile` or the source default; when deployed settings were not checked, check the setting in the app before trusting the line. A `setting not read` line says why duru could not tell the value. `story tests` are the tests already tagged with this story. Under `empty tests` are the empty tests with the `@story:` tag and the `@screen:` tag of each screen on the map already in place and held back from passing (`test.fixme`, `test.todo`, `@Disabled` with `import org.junit.jupiter.api.Disabled;`, or no verdict word): copy the one for your runner, put what the test checks in place of `<what it checks>`, remove what holds it back and fill in the data setup and the checks.";
 
-export function storyBrief(config: any, id: string): { text: string } | { error: string } {
+async function storyConditions(config: any, map: MapDefaults): Promise<Conditions> {
+  const accounts = config.app?.roles ?? {};
+  const settingsFile = config.app?.settingsFile;
+  if (!settingsFile) return { accounts, settings: null, defaults: map, judged: () => 'source default; deployed settings not checked' };
+  const app = { files: config.app.files, settingsFile };
+  const at = settingsFilePlace(app);
+  const where = /^https?:/.test(at) ? at : path.relative(config.configDir, at).split(path.sep).join('/');
+  const { file, fileError, found } = await readSettingsFile(app);
+  const why = fileError !== null ? `, ${where} could not be run: ${fileError}` : !found ? `, ${where} not found` : null;
+  const read = (n: SettingNeed) => n.root === settingsFile.root && n.path.length >= 2 && settingsFile.merged.includes(n.path[0]);
+  return {
+    accounts,
+    settings: { root: settingsFile.root, merged: settingsFile.merged, file },
+    defaults: map,
+    judged: (n) => (!read(n) ? 'source default; deployed settings not checked' : why === null ? `checked against ${where}` : `source default; deployed settings not checked${why}`),
+  };
+}
+
+export async function storyBrief(config: any, id: string): Promise<{ text: string } | { error: string }> {
   const { map, tests, stories, needs } = reviewData(config, null);
   if (stories.stale) return { error: stories.stale };
   const story = stories.list.find((s) => s.id === id);
@@ -711,7 +792,7 @@ export function storyBrief(config: any, id: string): { text: string } | { error:
     STORY_INTRO,
     '',
     `Source files are under \`${relative(config.srcRoot)}\`. Story files are in \`${relative(config.storiesDir)}\`.`,
-    ...storyLines(story, null, [], tests, needs, mapInfo, formats, { screensById, appUrl: config.appUrl ?? null, base: appBase(config.appUrl ?? null) }),
+    ...storyLines(story, null, [], tests, needs, mapInfo, formats, { screensById, appUrl: config.appUrl ?? null, base: appBase(config.appUrl ?? null), conditions: await storyConditions(config, map) }),
   ];
   return { text: out.join('\n') + '\n' };
 }
