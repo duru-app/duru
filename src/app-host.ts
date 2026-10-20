@@ -219,21 +219,41 @@ export function answerReviewPage(origins: string[]) {
   const TYPED = ['text', 'email', 'search', 'tel', 'url', 'number', 'date', 'datetime-local', 'month', 'time', 'week'];
   const NOT_INPUTS = ['hidden', 'submit', 'button', 'reset', 'image'];
   const clean = (text: unknown) => (typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : '');
-  const wordsOf = (el: any) => {
-    const words: Record<string, string> = {};
-    const label = clean(el.labels?.[0]?.textContent) || clean(el.getAttribute('aria-label'));
-    for (const [kind, text] of [['placeholder', clean(el.getAttribute('placeholder'))], ['label', label], ['testId', clean(el.getAttribute('data-testid'))]]) {
-      if (text) words[kind] = text;
-    }
-    return words;
+  const normal = (text: string) => text.replace(/[\u200b\u00ad]/g, '').trim().replace(/\s+/g, ' ');
+  const LABELLED = ['BUTTON', 'METER', 'OUTPUT', 'PROGRESS', 'SELECT', 'TEXTAREA'];
+  const labelledBy = (el: any): any[] => {
+    const root = el.getRootNode();
+    const ids: string[] = el.getAttribute('aria-labelledby')?.split(' ').filter(Boolean) ?? [];
+    return [...new Set(ids.map((id) => root.getElementById?.(id)).filter(Boolean))];
   };
+  // Playwright 의 getByLabel 처럼 aria-labelledby, aria-label, <label> 차례로 보고 처음 있는 쪽의 글을 모두 돌려준다.
+  const labelsOf = (el: any): string[] => {
+    const refs = labelledBy(el);
+    if (refs.length) return refs.map((r) => r.textContent ?? '');
+    const aria = el.getAttribute('aria-label');
+    if (aria?.trim()) return [aria];
+    const labelable = LABELLED.includes(el.nodeName) || (el.nodeName === 'INPUT' && el.type !== 'hidden');
+    return labelable ? [...(el.labels ?? [])].map((l: any) => l.textContent ?? '') : [];
+  };
+  const has = (el: any, kind: string, text: string) => (kind === 'label'
+    ? labelsOf(el).some((l) => normal(l) === text)
+    : el.getAttribute(kind === 'testId' ? 'data-testid' : kind) === text);
   const boxOf = (el: any) => {
-    const words = wordsOf(el);
-    if (!Object.keys(words).length) return null;
-    const key = JSON.stringify(words);
-    const alike = [...w.document.querySelectorAll('input, textarea')].filter((f) => JSON.stringify(wordsOf(f)) === key);
+    const words: Record<string, string> = {};
+    const found = [['placeholder', el.getAttribute('placeholder')], ['label', labelsOf(el).map(normal).find(Boolean)], ['testId', el.getAttribute('data-testid')]];
+    for (const [kind, text] of found) {
+      if (text?.trim()) words[kind] = text;
+    }
+    const kinds = Object.entries(words);
+    if (!kinds.length) return null;
+    const alike = [...w.document.querySelectorAll('*')].filter((f) => kinds.every(([kind, text]) => has(f, kind, text)));
     return alike.length > 1 ? { ...words, nth: alike.indexOf(el) + 1 } : words;
   };
+  const pageWords = (el: any): Record<string, unknown[]> => ({
+    placeholder: [el.getAttribute('placeholder')],
+    label: [el.labels?.[0]?.textContent, el.getAttribute('aria-label'), ...labelledBy(el).map((r) => r.textContent)],
+    testId: [el.getAttribute('data-testid')],
+  });
   w.addEventListener('change', (e: any) => {
     const el = e.target;
     if (!['input', 'textarea', 'select'].includes(el?.localName) || (el.localName === 'input' && NOT_INPUTS.includes(el.type))) return;
@@ -273,7 +293,10 @@ export function answerReviewPage(origins: string[]) {
     const wanted = ['placeholder', 'label', 'testId'].filter((kind) => clean(box[kind]));
     afterQuiet(() => {
       const matched = [...w.document.querySelectorAll('input, textarea')]
-        .map((el) => ({ el, kinds: wanted.filter((kind) => wordsOf(el)[kind] === clean(box[kind])) }))
+        .map((el) => {
+          const words = pageWords(el);
+          return { el, kinds: wanted.filter((kind) => words[kind].some((text) => clean(text) === clean(box[kind]))) };
+        })
         .filter((m) => m.kinds.length);
       const whole = matched.filter((m) => m.kinds.length === wanted.length);
       const found = whole.length >= (Number.isInteger(box.nth) && box.nth > 0 ? box.nth : 1) ? whole : matched;
