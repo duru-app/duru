@@ -83,12 +83,16 @@ interface StoryTest {
   file?: string | null;
   line?: number;
   title?: string;
+  screens?: string[];
 }
 
 export interface StoryTests {
   nodes: Record<string, StoryTest[]>;
   stories: Record<string, StoryTest[]>;
+  traced?: { screens: string[] }[];
 }
+
+type Walked = 'yes' | 'no' | 'unknown';
 
 const NO_TESTS: StoryTests = { nodes: {}, stories: {} };
 // 스토리 파일에 적힌 ID 가 constructor 같은 이름이어도 Object 의 기본 속성을 읽지 않게 자기 키만 본다.
@@ -98,6 +102,26 @@ function statusOf(story: { id: string; screens: string[] }, tests: StoryTests) {
   const own = testsAt(tests.stories, story.id);
   if (own.length) return own.some((t) => t.status === 'fail') ? 'fail' : own.some((t) => t.status === 'pending') ? 'pending' : 'pass';
   return story.screens.some((id: string) => testsAt(tests.nodes, id).length) ? 'partial' : 'untested';
+}
+
+const crosses = (order: string[], from: string, to: string) => order.some((id, i) => id === from && order[i + 1] === to);
+const goesThrough = (order: string[], screens: string[]) => order.some((_, i) => screens.every((id, k) => order[i + k] === id));
+
+function walksOf(map: any) {
+  const onMap = new Set<string>(map.screens.map((s: any) => s.id));
+  const mapOrder = (order: string[]) => order.filter((id) => onMap.has(id)).filter((id, i, kept) => id !== kept[i - 1]);
+  return <L extends { from: string; to: string; verdict: string }>(story: { id: string; screens: string[]; detached: boolean; links: L[] }, status: string, tests: StoryTests) => {
+    const runs = (tests.traced ?? []).map((t) => mapOrder(t.screens));
+    const own = status === 'pass' ? testsAt(tests.stories, story.id).map((t) => t.screens && mapOrder(t.screens)) : [];
+    const traced = own.filter((o): o is string[] => Boolean(o));
+    const links = story.links.map((l): L & { passedBy?: number; walks?: number } => {
+      const passedBy = l.verdict === 'broken' ? runs.filter((o) => crosses(o, l.from, l.to)).length : 0;
+      return { ...l, ...(passedBy > 0 && { passedBy }), ...(traced.length > 0 && { walks: traced.filter((o) => crosses(o, l.from, l.to)).length }) };
+    });
+    if (status !== 'pass') return { links };
+    const walked: Walked = !story.detached && traced.some((o) => goesThrough(o, story.screens)) ? 'yes' : story.detached || traced.length < own.length ? 'unknown' : 'no';
+    return { links, walked };
+  };
 }
 
 function unknownStoryTags(stories: { id: string }[], tests: StoryTests) {
@@ -128,7 +152,12 @@ export function checkStoryFiles(map: any, dir: string, mapFile: string, tests: S
   if (stories.length && linksWithoutConditions(map)) {
     return { ids, list: [], notices, unknownTags, stale: staleMapMessage(mapFile, '스토리') };
   }
-  return { ids, list: checkStories(map, stories).map((s) => ({ ...s, status: statusOf(s, tests) })), notices, unknownTags };
+  const walks = walksOf(map);
+  const list = checkStories(map, stories).map((s) => {
+    const status = statusOf(s, tests);
+    return { ...s, status, ...walks(s, status, tests) };
+  });
+  return { ids, list, notices, unknownTags };
 }
 
 export function checkScreens(map: any, mapFile: string, screens: string[]) {

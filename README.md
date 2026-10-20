@@ -488,7 +488,8 @@ and is listed with the tags that point at nothing on the map.
 count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
 nothing on the map, and the tests with no tag as `untagged`. `traced`
 lists each Playwright test that passed, with the trace of its passing run, as its report, its title and the screens
-it passed in order; an address no screen matches stays in that list as its path.
+it passed in order; an address no screen matches stays in that list as its path. A story test whose passing run left a trace
+carries the same order as `screens`.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that
@@ -600,6 +601,13 @@ the end: what the first screen needs and the conditions on the way.
 A story also gets a status from its tests: fail when a test tagged `@story:<its ID>` fails, pending when none
 fails and one is pending, pass when all pass. Without such tests it is `partial` when a screen on its path has a
 test, and `untested` when none has.
+
+A passing story also says whether its story tests went through its screens. It is gone through when the trace of
+one passing story test holds every screen of the story one after another; addresses the map has no screen for are
+left out first. It is not gone through when every story test has a trace and none of them does, and not known
+when a story test ran without a trace or a screen of the story is not on the map. Each link counts the story tests
+that went from the one screen straight to the next. Where the map has no link between two steps but passing runs
+with a trace went straight across, the link says how many: the config's `moves` may be missing that move.
 
 ## Story candidates
 
@@ -788,8 +796,10 @@ pair waits under 「태그 대기」 until the tag is in the results. The 「태
 judge several pairs at once.
 
 **Stories.** The story tab lists the stories with their status and link verdicts, a search box by name or ID and
-filters by status and missing links; choosing one shows its steps,
-the link between each two and its 「사전 조건」, and lets its name and memo be changed. The story's own `needs` and
+filters by status and missing links; a passing story that no story test went through from end to end shows
+「끝까지 지나간 테스트 없음」, and one that is not known shows 「지나갔는지 모름」. Choosing one shows its steps,
+the link between each two with how many story tests went across it and its 「사전 조건」, and lets its name and memo be
+changed. The story's own `needs` and
 `expects` show in a 「스토리 전체」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs`
 show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. The pencil on the box, a
 card or a link row, shown while the pointer is over it or the keyboard is on it and always on a touch screen, opens a

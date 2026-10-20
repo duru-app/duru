@@ -132,7 +132,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const linked = readTests(config);
   const { traced, ...tests } = applyJudgments(linked, loadJudgments(config.judgmentsDir).judgments);
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
-  const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, tests);
+  const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, { ...tests, traced });
   const caseKinds: Record<string, CaseKind> = config.caseKinds;
   const kinds = Object.keys(caseKinds);
   const candidates = storyCandidates(config, map, mapFile, traced);

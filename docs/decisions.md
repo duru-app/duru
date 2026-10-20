@@ -2518,6 +2518,31 @@ Alternatives compared:
 - A screen for each outer path (two boxes for each integrations screen): the driver chose one box with one joined
   path, so the number of screens does not grow.
 
+**A passing story says whether a story test went through its screens from end to end, from the traces rebuild
+already reads; the status stays 「통과」.**
+Driver's decision in #262 (2026-10-19). into-sign 1.5.0's story 「서명자가 받은 링크로 문서를 열어 서명하고 서명한 문서를
+본다」 passes on its `@story` test, but that test checks the signature through the server API and never opens the
+signed document's screen; none of the 90 passing runs with a trace goes from the signing screen to it. The status
+stays 「통과」 with 「끝까지 지나간 테스트 없음」 beside it, each link shows how many story tests went across it, and a
+story whose passing story tests include one without a trace, with none of the traced ones going through, is
+「지나갔는지 모름」. Only a run that goes from one screen straight to the next counts for that link, and the whole
+story counts only when one run holds every screen one after another.
+- A story test and its trace are paired in rebuild, where the test's result line and its trace are read together:
+  the story test's entry in `tests.json` carries `screens`, the screens its passing run went through. The issue
+  planned to pair them by title, since a trace holds no file and line; the result line has both, so two tests with
+  one title stay apart, and a `tests.json` from an older duru, without `screens`, reads as not known.
+- An address the map has no screen for is left out before counting, so a run that goes A → an address off the map
+  → B crosses from A to B. A story can only name screens on the map. Measured on into-sign 1.5.0: none of the 90
+  passing traces holds an address off the map, so the choice changes no story there.
+- When the map has no link between two steps but passing runs with a trace went straight across, the link row and
+  rebuild say how many and that a move may be missing from `moves`. This counts every passing traced run, not only
+  story tests: into-sign 1.5.0's sign-in story has no story test, and 57 of the 90 runs go from sign-in to the
+  user home with no link on the map.
+Left out: tests that go through a whole story without its tag are not offered as tests to tag (57 runs would be
+offered for the sign-in story, and passing on one would need a judgment kind of its own); ranking by how often
+people use a path (no data for it yet); calls between steps (a trace order holds no calls). `duru tasks` does not
+show it yet.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

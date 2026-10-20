@@ -271,6 +271,13 @@ if (command === 'tasks') {
     console.log(`stories ${list.length} | broken paths ${list.filter((s) => s.broken).length} | detached ${list.filter((s) => s.detached).length} | unjudged steps ${unjudged} | story files skipped ${notices.length}`);
     const inStatus = (status: string) => list.filter((s) => s.status === status).length;
     console.log(`stories passing ${inStatus('pass')} | failing ${inStatus('fail')} | pending ${inStatus('pending')} | partly covered ${inStatus('partial')} | no tests ${inStatus('untested')}`);
+    const walked = (w: string) => list.filter((s) => s.walked === w).length;
+    console.log(`passing stories no story test went through from end to end ${walked('no')} | not known, for want of a trace or a screen on the map ${walked('unknown')}`);
+    for (const s of list) {
+      s.links.forEach((l, i) => {
+        if (l.passedBy) console.log(`  story ${s.id} step ${i + 1} → ${i + 2}: no link on the map, but ${l.passedBy} passing test${l.passedBy > 1 ? 's' : ''} went from ${l.from} to ${l.to}; a move may be missing from moves`);
+      });
+    }
     for (const n of notices) console.log(`  story file ${n.file}: ${n.reason}`);
     if (stale) console.log(`  ${stale}`);
     const needs = checkNeeds(config.storiesDir, list);
