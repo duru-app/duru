@@ -217,6 +217,28 @@ test('a table written in the route file itself gives the same item screens, and 
   }, { configPatch, edits: [['Routes.js', "import AdminConsole from './admin/AdminConsole';", "import AdminConsole from './admin';"]] });
 });
 
+test('an item whose components only redirect gives no screen and no line, while one that also draws a page stays a screen', async () => {
+  const redirects: Record<string, string> = {
+    'admin/UsersRedirect.js': "import { Redirect } from 'react-router-dom';\n\nconst UsersRedirect = ({ match }) => (\n  <Redirect to={match.url.replace(/old$/, '')} />\n);\n\nexport default UsersRedirect;\n",
+    'admin/MovedRedirect.js': "import { Redirect } from 'react-router-dom';\n\nexport default function MovedRedirect() {\n  return <Redirect to=\"/admin_console/users\" />;\n}\n",
+    'admin/Gate.js': "import { Redirect } from 'react-router-dom';\nimport Users from './Users';\n\nconst Gate = ({ ok }) => (ok ? <Users /> : <Redirect to=\"/admin_console\" />);\n\nexport default Gate;\n",
+  };
+  const items = Object.entries({ old: 'UsersRedirect', moved: 'MovedRedirect', gate: 'Gate' })
+    .map(([key, component]) => `      ${key}: {\n        url: 'users/${key}',\n        schema: { id: '${component}', component: ${component} },\n      },\n`).join('');
+  const edits: [string, string, string][] = [
+    [TABLE, '      plain: {', `${items}      plain: {`],
+    [TABLE, "import License from './License';", "import License from './License';\nimport UsersRedirect from './UsersRedirect';\nimport MovedRedirect from './MovedRedirect';\nimport Gate from './Gate';"],
+  ];
+  await withTableCopy(async ({ configFile, src, cli }) => {
+    for (const [file, text] of Object.entries(redirects)) fs.writeFileSync(path.join(src, file), text);
+    const map = await build(configFile);
+    const paths = tableScreens(map).map((s) => s.path);
+    assert.ok(paths.includes('/admin_console/users/gate'), paths.join(', '));
+    assert.ok(!paths.includes('/admin_console/users/old') && !paths.includes('/admin_console/users/moved'), paths.join(', '));
+    assert.deepEqual(routeLines(cli('extract')), []);
+  }, { edits });
+});
+
 test('two items that make the same screen ID are reported at their lines in the table, and the task list and the summary name the table item of a screen', async () => {
   const edits: [string, string, string][] = [
     [TABLE, "      plain: {", "      again: {\n        url: 'users',\n        schema: { id: 'Users', component: Users },\n      },\n      outside: {\n        url: 'users/outside',\n        schema: { id: 'Outside', component: OutsidePage },\n      },\n      plain: {"],

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { CallExpression, Expression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
+import type { ArrowFunctionExpression, CallExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import type { Constants, GuardInit, GuardSetting } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
@@ -1172,6 +1172,7 @@ export async function extractClient(config: any) {
       const value = evaluate(field);
       if (!readWhole(value)) return [];
       const components = itemComponents(itemObject);
+      if (components.length && components.every((c) => c.redirects)) return [];
       const routePath = pathText(pathExpr, item.node, String(value));
       const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
       let unreadPath: OuterFill['unreadPath'] = null;
@@ -1249,16 +1250,36 @@ export async function extractClient(config: any) {
 
   // 항목 안 어느 깊이에 있든 `component:` 에 적은 컴포넌트를 적힌 차례대로 모은다.
   function itemComponents(object: NodePath<ObjectExpression>) {
-    const found = new Map<string, Omit<Page, 'files'>>();
+    const found = new Map<string, Omit<Page, 'files'> & { redirects: boolean }>();
     for (const written of componentValues(object, new Set())) {
       const expr = unwrapCalls(written)!;
       const component = expr.node && memberChain(expr.node)?.join('.');
       const fromFile = component && programFile.get(expr.scope.getProgramParent().block);
       if (!fromFile) continue;
       const componentFile = components.find(expr.scope, component, fromFile, written.isCallExpression()).file;
-      if (!found.has(`${component}\0${componentFile}`)) found.set(`${component}\0${componentFile}`, { component, componentFile });
+      if (!found.has(`${component}\0${componentFile}`)) found.set(`${component}\0${componentFile}`, { component, componentFile, redirects: onlyRedirects(expr) });
     }
     return [...found.values()];
+  }
+
+  // 함수 컴포넌트가 돌려주는 것이 다른 주소로 보내는 요소 하나뿐인가. 다른 파일에 있으면 그 파일의 선언을 읽는다.
+  function onlyRedirects(expr: NodePath) {
+    const fn = expr.isIdentifier() ? declaredFunction(expr.scope, expr.node.name) : null;
+    const element = fn && onlyReturned(fn);
+    const tag = element?.isJSXElement() && tagOf(element.node.openingElement.name);
+    return Boolean(tag) && config.redirectElements.includes(tag);
+  }
+
+  function declaredFunction(scope: Scope, name: string): NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration> | null {
+    const binding = scope.getBinding(name);
+    if (binding?.path.isFunctionDeclaration()) return binding.path;
+    const from = binding?.kind === 'module' ? importedName(binding) : null;
+    const found = from && from.name !== '*' && from.file ? follower.declaration(from.file, from.name) : null;
+    const program = found && programOf(found.file);
+    const declared = !program ? null : found!.name === 'default' ? program.get('body').find((s) => s.isExportDefaultDeclaration())?.get('declaration') as NodePath | undefined : program.scope.getBinding(found!.name)?.path;
+    if (declared?.isFunctionDeclaration()) return declared;
+    const value = declaredValue(scope, name);
+    return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
   }
 
   const leadingPiece = (p: NodePath): NodePath => (p.isTemplateLiteral() && p.node.quasis[0].value.cooked === '' && p.node.expressions.length ? leadingPiece(p.get('expressions.0') as NodePath)
@@ -1375,14 +1396,19 @@ export async function extractClient(config: any) {
     return withFiles(pickPage(pages), pages.flatMap((c) => c.files));
   }
 
+  // 함수 본문이 돌려주는 값 하나. 문장이 return 하나뿐이 아니면 undefined 이다.
+  function onlyReturned(fn: NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration>) {
+    const body = fn.get('body') as NodePath;
+    const statements = body.isBlockStatement() ? body.get('body') : null;
+    const returned = statements ? (statements.length === 1 && statements[0].isReturnStatement() ? (statements[0].get('argument') as NodePath) : null) : body;
+    return unwrapCalls(returned ?? undefined);
+  }
+
   function renderPage(renderAttr: NodePath<JSXAttribute>, routesFile: string): Page | typeof REDIRECT | string | null {
     const value = renderAttr.get('value');
     const fn = value.isJSXExpressionContainer() ? (value.get('expression') as NodePath) : null;
     if (!fn?.isArrowFunctionExpression() && !fn?.isFunctionExpression()) return 'render is not a function written in the route';
-    const body = fn.get('body') as NodePath;
-    const statements = body.isBlockStatement() ? body.get('body') : null;
-    const returned = statements ? (statements.length === 1 && statements[0].isReturnStatement() ? (statements[0].get('argument') as NodePath) : null) : body;
-    const element = unwrapCalls(returned ?? undefined);
+    const element = onlyReturned(fn);
     if (element?.isJSXElement() && holdsValue(element)) return null;
     const page = element?.isJSXElement() ? pageOf(element, routesFile) : null;
     if (isPage(page) && !isAppScreen(page, renderAttr.scope)) return null;
