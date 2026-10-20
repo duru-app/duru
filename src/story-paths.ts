@@ -127,13 +127,13 @@ function walksOf(map: any, traced: TracedTest[] = []) {
   const crossing = (tests: string[][][], from: string, to: string) => tests.filter((runs) => runs.some((o) => crosses(o, from, to))).length;
   return <L extends { from: string; to: string; verdict: string }>(story: { id: string; screens: string[]; detached: boolean; links: L[] }, status: string, tests: StoryTests) => {
     const own = status === 'pass' ? runsByTest(testsAt(tests.stories, story.id).map((t) => [testKey(t), t.screens && mapOrder(t.screens)])) : [];
-    const allTraced = own.length > 0 && own.every((runs) => runs.length > 0);
+    const counted = !story.detached && own.length > 0 && own.every((runs) => runs.length > 0);
     const links = story.links.map((l): L & { passedBy?: number; walks?: number } => {
       const passedBy = l.verdict === 'broken' ? crossing(passing, l.from, l.to) : 0;
-      return { ...l, ...(passedBy > 0 && { passedBy }), ...(allTraced && l.verdict !== 'off-map' && { walks: crossing(own, l.from, l.to) }) };
+      return { ...l, ...(passedBy > 0 && { passedBy }), ...(counted && { walks: crossing(own, l.from, l.to) }) };
     });
     if (status !== 'pass') return { links };
-    const walked: Walked = !story.detached && own.some((runs) => runs.some((o) => goesThrough(o, story.screens))) ? 'yes' : story.detached || !allTraced ? 'unknown' : 'no';
+    const walked: Walked = !story.detached && own.some((runs) => runs.some((o) => goesThrough(o, story.screens))) ? 'yes' : counted ? 'no' : 'unknown';
     return { links, walked };
   };
 }
