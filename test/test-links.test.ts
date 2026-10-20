@@ -700,6 +700,30 @@ test('a test already tagged with a screen is not among the tests that passed thr
   assert.equal(Object.values(tracedLinks.passed).flat().some((t) => t.title === 'wanders off the map'), false);
 });
 
+test('a story test that passed with a trace carries the screens its run went through in order, an address off the map as its path, and one without a trace carries none', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(path.join(path.dirname(FIXTURE_CONFIG), 'results/playwright-traced'), dir, { recursive: true });
+    const file = path.join(dir, 'visits.json');
+    const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const tag = (suite: any) => {
+      for (const spec of suite.specs ?? []) if (['opens home and then help', 'opens help without a trace', 'wanders off the map'].includes(spec.title)) spec.tags = ['@story:walk'];
+      for (const child of suite.suites ?? []) tag(child);
+    };
+    report.suites.forEach(tag);
+    fs.writeFileSync(file, JSON.stringify(report));
+    const own = { ...config, tests: [{ format: 'playwright', path: dir, depth: 'ui' }] };
+    const { stories } = linkTests(own, await buildMap(own));
+    assert.deepEqual(stories.walk.map((t) => [t.title, t.screens]), [
+      ['opens help without a trace', undefined],
+      ['opens home and then help', ['/home#Home', '/help#Help']],
+      ['wanders off the map', ['/nowhere']],
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('tests that passed through a screen leave the tests of the screens, the untagged list of the other results and the screens with tests as they were', () => {
   const covered = (l: Links) => Object.keys(l.nodes).filter((id) => !id.includes(':/')).sort();
   assert.deepEqual(covered(tracedLinks), covered(links));

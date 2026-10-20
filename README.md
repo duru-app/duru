@@ -488,8 +488,9 @@ and is listed with the tags that point at nothing on the map.
 `tests.json` lists the tests per node and per story with depth, status (pass, fail, pending; skipped and todo
 count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
 nothing on the map, and the tests with no tag as `untagged`. `traced`
-lists each Playwright test that passed, with the trace of its passing run, as its report, its title and the screens
-it passed in order; an address no screen matches stays in that list as its path.
+lists each Playwright test that passed, with the trace of its passing run, as its report, its title, its file and
+line, and the screens it passed in order; an address no screen matches stays in that list as its path. A story test whose passing run left a trace
+carries the same order as `screens`.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that
@@ -599,8 +600,15 @@ address of. A story with a screen the map does not have is detached. 「사전 �
 the end: what the first screen needs and the conditions on the way.
 
 A story also gets a status from its tests: fail when a test tagged `@story:<its ID>` fails, pending when none
-fails and one is pending, pass when all pass. Without such tests it is `partial` when a screen on its path has a
-test, and `untested` when none has.
+fails and one is pending, pass when all pass. When all pass but the traces of its Playwright story tests show that
+none of them opened its screens one after another, it is `part-pass`, and each link says how many story tests went
+across it. Whether they went through is not known, and the story stays `pass`, when a story test has no trace (a
+test that is not a Playwright test never has one), its trace holds no screen on the map (also when the test opened
+no page at all), or a screen of the story is not on the map. Without story tests
+it is `partial` when a screen on its path has a test, and `untested` when none has.
+
+Where the map has no link between two steps but passing tests went straight across, the link says how
+many: the config's `moves` may be missing that move.
 
 ## Story candidates
 
@@ -789,8 +797,10 @@ pair waits under 「태그 대기」 until the tag is in the results. The 「태
 judge several pairs at once.
 
 **Stories.** The story tab lists the stories with their status and link verdicts, a search box by name or ID and
-filters by status and missing links; choosing one shows its steps,
-the link between each two and its 「사전 조건」, and lets its name and memo be changed. The story's own `needs` and
+filters by status and missing links; `part-pass` shows as 「일부 단계만 통과」, and a passing story whose steps are
+not known shows 「단계 확인 못 함」. Choosing one shows its steps,
+the link between each two with how many story tests went across it, in grey when none did, and its 「사전 조건」, and lets its name and memo be
+changed. The story's own `needs` and
 `expects` show in a 「스토리 전체」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs`
 show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. The pencil on the box, a
 card or a link row, shown while the pointer is over it or the keyboard is on it and always on a touch screen, opens a

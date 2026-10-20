@@ -22,7 +22,7 @@ test('in a browser, the story list has its own tab beside the list and the flow,
           '홈에서 개인 설정을 바꾼다', '홈에서 바로 도움말을 연다', '로그인해 문서 목록에서 문서를 연다', '관리자가 보고서를 본다', '실험실을 열어 결과를 본다',
         ]);
         assert.deepEqual(await p.locator('#story-list li').evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent))), [
-          ['일부 화면만 테스트', '화면 없음'], ['보류', '링크 없음'], [], ['테스트 없음'], ['실패'],
+          ['일부 화면만 테스트', '화면 없음'], ['보류', '링크 없음'], ['단계 확인 못 함'], ['테스트 없음'], ['실패'],
         ]);
         assert.equal(await p.locator('#story-list li:has-text("개인 설정") .chip.l-off-map').getAttribute('title'), '맵에서 찾을 수 없는 화면: /settings#Settings');
         assert.match((await p.textContent('#left .notices'))!, /lab-shortcut\.json.*screens 는/);

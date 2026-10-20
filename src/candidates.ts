@@ -66,6 +66,8 @@ interface VisitRecord {
 export interface TracedTest {
   report: string;
   title: string;
+  file?: string | null;
+  line?: number | null;
   screens: string[];
   inputs?: StepInput[][];
   skipped?: number;

@@ -3,6 +3,7 @@ import type { Described } from './access.ts';
 import { compare } from './config.ts';
 import path from 'node:path';
 import { isScreenList, loadStories, STORY_ID } from './stories.ts';
+import type { TracedTest } from './candidates.ts';
 
 interface Way {
   file: string;
@@ -83,12 +84,16 @@ interface StoryTest {
   file?: string | null;
   line?: number;
   title?: string;
+  screens?: string[];
 }
 
 export interface StoryTests {
   nodes: Record<string, StoryTest[]>;
   stories: Record<string, StoryTest[]>;
+  traced?: TracedTest[];
 }
+
+type Walked = 'yes' | 'no' | 'unknown';
 
 const NO_TESTS: StoryTests = { nodes: {}, stories: {} };
 // 스토리 파일에 적힌 ID 가 constructor 같은 이름이어도 Object 의 기본 속성을 읽지 않게 자기 키만 본다.
@@ -98,6 +103,44 @@ function statusOf(story: { id: string; screens: string[] }, tests: StoryTests) {
   const own = testsAt(tests.stories, story.id);
   if (own.length) return own.some((t) => t.status === 'fail') ? 'fail' : own.some((t) => t.status === 'pending') ? 'pending' : 'pass';
   return story.screens.some((id: string) => testsAt(tests.nodes, id).length) ? 'partial' : 'untested';
+}
+
+const crosses = (order: string[], from: string, to: string) => order.some((id, i) => id === from && order[i + 1] === to);
+const goesThrough = (order: string[], screens: string[]) => order.some((_, i) => screens.every((id, k) => order[i + k] === id));
+
+// 한 테스트를 Playwright 프로젝트 여럿이나 결과 파일 여럿에서 돌린 실행은 그 테스트 하나로 센다.
+function runsByTest(runs: [string, string[] | undefined][]) {
+  const byTest = new Map<string, string[][]>();
+  for (const [test, order] of runs) {
+    if (!byTest.has(test)) byTest.set(test, []);
+    if (order) byTest.get(test)!.push(order);
+  }
+  return [...byTest.values()];
+}
+
+const testKey = (t: { file?: string | null; line?: number | null; title?: string }) => `${t.file}:${t.line} ${t.title}`;
+
+function walksOf(map: any, traced: TracedTest[] = []) {
+  const onMap = new Set<string>(map.screens.map((s: any) => s.id));
+  const mapOrder = (order: string[]) => order.filter((id) => onMap.has(id)).filter((id, i, kept) => id !== kept[i - 1]);
+  const traceOf = (screens: string[] | undefined) => {
+    if (!screens) return undefined;
+    const order = mapOrder(screens);
+    return order.length ? order : undefined;
+  };
+  const passing = runsByTest(traced.map((t) => [testKey(t), mapOrder(t.screens)]));
+  const crossing = (tests: string[][][], from: string, to: string) => tests.filter((runs) => runs.some((o) => crosses(o, from, to))).length;
+  return <L extends { from: string; to: string; verdict: string }>(story: { id: string; screens: string[]; detached: boolean; links: L[] }, status: string, tests: StoryTests) => {
+    const own = status === 'pass' ? runsByTest(testsAt(tests.stories, story.id).map((t) => [testKey(t), traceOf(t.screens)])) : [];
+    const counted = !story.detached && own.length > 0 && own.every((runs) => runs.length > 0);
+    const links = story.links.map((l): L & { passedBy?: number; walks?: number } => {
+      const passedBy = l.verdict === 'broken' ? crossing(passing, l.from, l.to) : 0;
+      return { ...l, ...(passedBy > 0 && { passedBy }), ...(counted && { walks: crossing(own, l.from, l.to) }) };
+    });
+    if (status !== 'pass') return { links };
+    const walked: Walked = !story.detached && own.some((runs) => runs.some((o) => goesThrough(o, story.screens))) ? 'yes' : counted ? 'no' : 'unknown';
+    return { links, walked };
+  };
 }
 
 function unknownStoryTags(stories: { id: string }[], tests: StoryTests) {
@@ -128,7 +171,13 @@ export function checkStoryFiles(map: any, dir: string, mapFile: string, tests: S
   if (stories.length && linksWithoutConditions(map)) {
     return { ids, list: [], notices, unknownTags, stale: staleMapMessage(mapFile, '스토리') };
   }
-  return { ids, list: checkStories(map, stories).map((s) => ({ ...s, status: statusOf(s, tests) })), notices, unknownTags };
+  const walks = walksOf(map, tests.traced);
+  const list = checkStories(map, stories).map((s) => {
+    const passed = statusOf(s, tests);
+    const walk = walks(s, passed, tests);
+    return { ...s, status: walk.walked === 'no' ? 'part-pass' : passed, ...walk };
+  });
+  return { ids, list, notices, unknownTags };
 }
 
 export function checkScreens(map: any, mapFile: string, screens: string[]) {

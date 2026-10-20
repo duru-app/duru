@@ -27,6 +27,7 @@ const SCREEN_FILTERS = [
 
 const STORY_STATUS = {
   pass: { label: '통과', title: '스토리 테스트가 모두 통과했습니다' },
+  'part-pass': { label: '일부 단계만 통과', title: '스토리 테스트는 모두 통과했지만, 어느 테스트도 스토리의 화면을 처음부터 끝까지 차례로 지나가지 않았습니다' },
   fail: { label: '실패', title: '실패한 스토리 테스트가 있습니다' },
   pending: { label: '보류', title: '실패한 스토리 테스트는 없고 보류한 것이 있습니다' },
   partial: { label: '일부 화면만 테스트', title: '스토리 테스트는 없고, 경로의 화면 가운데 테스트가 붙은 화면이 있습니다' },
@@ -34,7 +35,7 @@ const STORY_STATUS = {
 };
 // 상태는 고른 것 가운데 하나만 맞아도 남기고, 「링크 없음」은 그 결과를 한 번 더 거른다.
 const STORY_FILTERS = [
-  ...['untested', 'partial', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
+  ...['untested', 'partial', 'part-pass', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
 const state = { data: /** @type {PageData} */ (null), selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyOpen: false, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateTalk: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, discardedOpen: false, undiscardError: null, callInfoShut: null, storyQuery: '', storyStep: null, storyGapsOpen: false, talkScope: 'here', talkFilter: 'all', reachRecord: null, storyFileOpen: false, need: null, needEdit: null, needSaved: null, fieldsEdit: null, fieldsSaved: null, stepsEdit: null, stepsSaved: null, point: null, storyApp: null, boxFinds: new Map() };

@@ -140,10 +140,11 @@ export function linkTests(config: any, map: any) {
           }
         }
         const trace = t.trace ? linkByTrace(t.trace) : null;
+        const passedOrder = trace && !trace.reason && t.status === 'pass' && t.traceRunPassed ? trace.order! : null;
         if (trace) {
           const traced = { title: t.title, tags: t.tags, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status };
           if (trace.reason) traceNotices.push({ file: shownPath(t.trace), test: { title: t.title, file: t.file, line: t.line }, reason: trace.reason });
-          else if (t.status === 'pass' && t.traceRunPassed) screenOrders.push({ report: resultPath.split(path.sep).join('/'), title: t.title, screens: trace.order!, ...(trace.inputs!.some((i) => i.length) && { inputs: trace.inputs! }), ...(trace.skipped! > 0 && { skipped: trace.skipped! }) });
+          else if (passedOrder) screenOrders.push({ report: resultPath.split(path.sep).join('/'), title: t.title, file: t.file, line: t.line, screens: passedOrder, ...(trace.inputs!.some((i) => i.length) && { inputs: trace.inputs! }), ...(trace.skipped! > 0 && { skipped: trace.skipped! }) });
           for (const [id, level] of trace.screens ?? []) {
             if (t.tags.includes(`screen:${id}`)) continue;
             (passed[id] ??= []).push({ ...traced, level });
@@ -175,7 +176,8 @@ export function linkTests(config: any, map: any) {
           const own = { ...entry, ...(kind === 'call' && { options: options.filter((o) => callOptions.get(id)!.has(o.key)) }), ...(cases.length > 0 && { cases }) };
           (nodes[id] ??= []).push(own);
         }
-        for (const tag of storyTags) (stories[tag.match(STORY_TAG)![1]] ??= []).push(entry);
+        const storyEntry = passedOrder ? { ...entry, screens: passedOrder } : entry;
+        for (const tag of storyTags) (stories[tag.match(STORY_TAG)![1]] ??= []).push(storyEntry);
       }
     }
   }

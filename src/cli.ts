@@ -283,7 +283,13 @@ if (command === 'tasks') {
     const unjudged = list.flatMap((s) => s.links).filter((l) => l.verdict === 'unknown').length;
     console.log(`stories ${list.length} | broken paths ${list.filter((s) => s.broken).length} | detached ${list.filter((s) => s.detached).length} | unjudged steps ${unjudged} | story files skipped ${notices.length}`);
     const inStatus = (status: string) => list.filter((s) => s.status === status).length;
-    console.log(`stories passing ${inStatus('pass')} | failing ${inStatus('fail')} | pending ${inStatus('pending')} | partly covered ${inStatus('partial')} | no tests ${inStatus('untested')}`);
+    console.log(`stories passing ${inStatus('pass')} | passing on part of the path ${inStatus('part-pass')} | failing ${inStatus('fail')} | pending ${inStatus('pending')} | partly covered ${inStatus('partial')} | no tests ${inStatus('untested')}`);
+    console.log(`passing stories not known to go through every step, for want of a trace or a screen on the map ${list.filter((s) => s.walked === 'unknown').length}`);
+    for (const s of list) {
+      s.links.forEach((l, i) => {
+        if (l.passedBy) console.log(`  story ${s.id} step ${i + 1} → ${i + 2}: no link on the map, but ${l.passedBy} passing test${l.passedBy > 1 ? 's' : ''} went from ${l.from} to ${l.to}; a move may be missing from moves`);
+      });
+    }
     for (const n of notices) console.log(`  story file ${n.file}: ${n.reason}`);
     if (stale) console.log(`  ${stale}`);
     const needs = checkNeeds(config.storiesDir, list);

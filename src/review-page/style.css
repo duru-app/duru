@@ -466,6 +466,7 @@
   .views.side .tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .views.side .tab-count { flex: none; position: relative; top: .5px; padding: 0 4px; border-radius: 8px; background: var(--line); font-size: 11px; font-weight: 600; line-height: 16px; }
   .views.side button.on .tab-count { background: var(--accent); color: var(--panel); }
+  .chip.part-pass { color: var(--pending); border-style: dashed; } .chip.walk-unknown { color: var(--muted); border-style: dotted; }
   .chip.l-open, .chip.l-configured { color: var(--pass); } .chip.l-conditioned { color: var(--accent); } .chip.l-broken { color: var(--fail); } .chip.l-off-map, .chip.l-unknown { color: var(--more); }
   .story-path { margin-top: 8px; }
   .story-path .step { display: flex; gap: 10px; align-items: baseline; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
@@ -518,6 +519,8 @@
   .story-path .link.l-conditioned { border-left: 2px dashed var(--accent); }
   .story-path .link.l-broken { border-left: 2px dotted var(--fail); }
   .story-path .link.l-off-map, .story-path .link.l-unknown { border-left: 2px dotted var(--more); }
+  .story-path .link .walks { margin: 4px 0 0; font-size: 12px; } .story-path .link .walks.moves-missing { color: var(--more); }
+  .story-path .link.unwalked { background: color-mix(in srgb, var(--muted) 12%, transparent); }
   .verdict { margin: 2px 0; } .verdict.unreachable { color: var(--fail); } .verdict.reachable { color: var(--pass); } .verdict.unjudged { color: var(--more); }
   .ways li { margin: 4px 0 0; }
   .memo { white-space: pre-wrap; }
