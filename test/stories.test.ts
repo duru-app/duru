@@ -735,6 +735,13 @@ test('a passing story is gone through when a story test passed with a trace that
   assert.deepEqual(walkOf(steps, storyRuns(ran('a', [SIGNIN, LAB]), ran('b', [HOME, LAB, SIGNIN, HOME]))), { walked: 'no', walks: [1, 1], passedBy: [undefined, undefined] });
 });
 
+test('a story whose story tests all pass but none went through its screens one after another is passing on part of the path, and one not known stays passing', () => {
+  withStoriesDir({ 'walked.json': { ...STORY, screens: [HOME, LAB] }, 'skipped.json': { ...STORY, screens: [HOME, LAB] }, 'unknown.json': { ...STORY, screens: [HOME, LAB] } }, (dir) => {
+    const tests = { nodes: {}, stories: { walked: [ran('a', [HOME, LAB])], skipped: [ran('b', [HOME])], unknown: [ran('c')] } };
+    assert.deepEqual(statuses(dir, tests), [['skipped', 'part-pass'], ['unknown', 'pass'], ['walked', 'pass']]);
+  });
+});
+
 test('a story test run in several Playwright projects counts once, and goes through when the trace of any of its runs does', () => {
   const steps = [HOME, LAB];
   assert.deepEqual(walkOf(steps, storyRuns(ran('a', steps), ran('a', steps, 'pass', 'firefox'))), { walked: 'yes', walks: [1], passedBy: [undefined] });

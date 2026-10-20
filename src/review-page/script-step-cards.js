@@ -126,9 +126,9 @@ function linkItem(l, story, i, fields) {
     l.verdict === 'off-map' ? h('span', { class: 'muted' }, ' 화면 없음') : null,
     l.verdict === 'configured' ? h('span', { class: 'muted' }, ` ${l.reasons.join(', ')}`) : null,
     l.verdict === 'unknown' ? h('span', { class: 'muted' }, ' 주소 못 읽은 링크') : null);
-  return h('div', { class: `link l-${l.verdict}`, 'data-hop': i },
+  return h('div', { class: `link l-${l.verdict}${l.walks === 0 ? ' unwalked' : ''}`, 'data-hop': i },
     story ? slotRow(head, hopTarget(story, i, l), SLOT_WORDS.hop) : head,
-    l.walks !== undefined ? h('div', { class: `walks${l.walks ? ' muted' : ' none'}`, title: '통과한 스토리 테스트 가운데, trace 를 보면 앞 화면에서 곧장 이 화면으로 넘어간 테스트 수' }, l.walks ? `스토리 테스트 ${l.walks}개가 지나감` : '지나간 스토리 테스트 없음') : null,
+    l.walks !== undefined ? h('div', { class: 'walks muted', title: '통과한 스토리 테스트 가운데, trace 를 보면 앞 화면에서 곧장 이 화면으로 넘어간 테스트 수' }, l.walks ? `스토리 테스트 ${l.walks}개가 지나감` : '지나간 스토리 테스트 없음') : null,
     l.passedBy ? h('div', { class: 'walks moves-missing' }, `맵에는 링크가 없지만 통과한 테스트 ${l.passedBy}개가 이 사이를 지나갔습니다. 설정의 moves 가 빠졌을 수 있습니다`) : null,
     l.verdict === 'broken' ? goesOn(l.from) : null,
     l.verdict === 'unknown' ? unknownList(l.unknownLinks) : null,

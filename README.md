@@ -599,13 +599,13 @@ address of. A story with a screen the map does not have is detached. 「사전 �
 the end: what the first screen needs and the conditions on the way.
 
 A story also gets a status from its tests: fail when a test tagged `@story:<its ID>` fails, pending when none
-fails and one is pending, pass when all pass. Without such tests it is `partial` when a screen on its path has a
-test, and `untested` when none has.
+fails and one is pending, pass when all pass. When all pass but the traces of its Playwright story tests show that
+none of them opened its screens one after another, it is `part-pass`, and each link says how many story tests went
+across it. Whether they went through is not known, and the story stays `pass`, when a story test has no trace (a
+test that is not a Playwright test never has one) or a screen of the story is not on the map. Without story tests
+it is `partial` when a screen on its path has a test, and `untested` when none has.
 
-A passing story also says, from the traces of its passing Playwright story tests, whether one of them opened its
-screens one after another, and how many went across each link. It is not known, and the links show no count, when
-a story test has no trace (a test that is not a Playwright test never has one) or a screen of the story is not on
-the map. Where the map has no link between two steps but passing tests went straight across, the link says how
+Where the map has no link between two steps but passing tests went straight across, the link says how
 many: the config's `moves` may be missing that move.
 
 ## Story candidates
@@ -795,9 +795,9 @@ pair waits under 「태그 대기」 until the tag is in the results. The 「태
 judge several pairs at once.
 
 **Stories.** The story tab lists the stories with their status and link verdicts, a search box by name or ID and
-filters by status and missing links; a passing story that no story test went through from end to end shows
-「끝까지 지나간 테스트 없음」, and one that is not known shows 「지나갔는지 모름」. Choosing one shows its steps,
-the link between each two with how many story tests went across it and its 「사전 조건」, and lets its name and memo be
+filters by status and missing links; `part-pass` shows as 「일부 단계만 통과」, and a passing story whose steps are
+not known shows 「단계 확인 못 함」. Choosing one shows its steps,
+the link between each two with how many story tests went across it, in grey when none did, and its 「사전 조건」, and lets its name and memo be
 changed. The story's own `needs` and
 `expects` show in a 「스토리 전체」 box, apart from the 「사전 조건」 duru found in the code, a step's own ones and its `inputs`
 show inside its card, and its `linkNeeds` show as 「들어오는 링크 조건」 on the link row before it. The pencil on the box, a

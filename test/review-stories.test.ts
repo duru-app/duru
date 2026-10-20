@@ -102,7 +102,7 @@ test('in a browser, a map.json built before links carried their conditions shows
   });
 });
 
-test('in a browser, the story list shows only the statuses that need a look, filters by 테스트 없음, 일부 화면만 테스트, 실패 and 링크 없음, and a chosen story shows its status, its story tests and the tests on each screen by depth and status', { skip: browserMissing }, async () => {
+test('in a browser, the story list shows only the statuses that need a look, filters by 테스트 없음, 일부 화면만 테스트, 일부 단계만 통과, 실패 and 링크 없음, and a chosen story shows its status, its story tests and the tests on each screen by depth and status', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ storiesDir: 'example-stories' }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -113,7 +113,7 @@ test('in a browser, the story list shows only the statuses that need a look, fil
         const ids = () => p.locator('#story-list li .name .mono').allTextContents();
         assert.deepEqual(await p.locator('#left .filters legend').allTextContents(), ['상태 · 하나라도 맞으면', '그리고']);
         assert.deepEqual(await p.locator('#left .filters fieldset').evaluateAll((els) => els.map((e) => [...e.querySelectorAll('label')].map((l) => l.textContent))),
-          [['테스트 없음', '일부 화면만 테스트', '실패'], ['링크 없음']]);
+          [['테스트 없음', '일부 화면만 테스트', '일부 단계만 통과', '실패'], ['링크 없음']]);
         await p.check('#left input[name=untested]');
         assert.deepEqual(await ids(), ['read-reports']);
         await p.check('#left input[name=partial]');
@@ -143,7 +143,7 @@ test('in a browser, the story list shows only the statuses that need a look, fil
         await p.uncheck('#left input[name=fail]');
         assert.equal((await ids()).length, 5);
         await p.click('#story-list li:has-text("문서를 연다")');
-        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['통과', '지나갔는지 모름']);
+        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['통과', '단계 확인 못 함']);
         assert.deepEqual(await stepTests(), [['UI/E2E ✓1', '코드 ✓1'], ['UI/E2E ✓3', 'API ✓1 ○1', '렌더링만 ✕1', '코드 ✓1', '데이터 ✕1'], ['API ✓1 ✕2 ○1', '데이터 ○4'], ['UI/E2E ✓1', 'API ✓3 ✕3', '데이터 ✓2 ○2']]);
 
         await p.click('#story-list li:has-text("보고서")');
@@ -601,23 +601,27 @@ test('in a browser, a candidate from a trace shows the values filled in its step
 const tagged = (title: string, tags: string[]): [string, string, string] => ['results/playwright-traced/visits.json', `"title": "${title}",\n          "ok": true,\n          "tags": []`, `"title": "${title}",\n          "ok": true,\n          "tags": ${JSON.stringify(tags)}`];
 const WALK_STORIES = { 'help-alone.json': ['/help#Help'], 'home-help.json': ['/home#Home', '/help#Help'], 'signin-to-help.json': ['/signin#SignIn', '/home#Home', '/help#Help'] };
 
-test('in a browser, a passing story whose story tests did not go through its screens from end to end, or ran without a trace, says so beside its status, and each link shows how many story tests went across it and how many passing tests crossed a link the map does not have', { skip: browserMissing }, async () => {
+test('in a browser, a story whose story tests all pass but did not go through its screens from end to end is passing on part of the path, with the links no story test went across in grey, one with a story test that ran without a trace passes and says its steps are not known, and each link shows how many story tests went across it and how many passing tests crossed a link the map does not have', { skip: browserMissing }, async () => {
   const edits = [tagged('opens home and then help', ['@story:home-help', '@story:signin-to-help']), tagged('opens help without a trace', ['@story:help-alone'])];
   await withRebuiltFixture({ ...TRACED, storiesDir: 'walk-stories' }, async (config, copy) => {
     fs.mkdirSync(path.join(copy, 'walk-stories'), { recursive: true });
     for (const [file, screens] of Object.entries(WALK_STORIES)) fs.writeFileSync(path.join(copy, 'walk-stories', file), JSON.stringify({ name: file, screens, author: 'a', date: '2026-10-20' }));
     const stdout = rebuild(copy);
-    assert.match(stdout, /^stories passing 3 \|/m);
-    assert.match(stdout, /^passing stories no story test went through from end to end 1 \| not known, for want of a trace or a screen on the map 1$/m);
+    assert.match(stdout, /^stories passing 2 \| passing on part of the path 1 \|/m);
+    assert.match(stdout, /^passing stories not known to go through every step, for want of a trace or a screen on the map 1$/m);
     assert.match(stdout, /^ {2}story home-help step 1 → 2: no link on the map, but 4 passing tests went from \/home#Home to \/help#Help; a move may be missing from moves$/m);
     assert.match(stdout, /^ {2}story signin-to-help step 2 → 3: no link on the map, but 4 passing tests /m);
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await p.click(storiesTab);
-        assert.deepEqual(await chipsIn(p, '#story-list'), [['지나갔는지 모름'], ['링크 없음'], ['링크 없음', '끝까지 지나간 테스트 없음']]);
+        assert.deepEqual(await chipsIn(p, '#story-list'), [['단계 확인 못 함'], ['링크 없음'], ['일부 단계만 통과', '링크 없음']]);
+        await p.check('#left input[name=part-pass]');
+        assert.deepEqual(await p.locator('#story-list li .name .mono').allTextContents(), ['signin-to-help']);
         await p.click('#story-list li[data-story="signin-to-help"]');
-        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['통과', '링크 없음', '끝까지 지나간 테스트 없음']);
+        await p.uncheck('#left input[name=part-pass]');
+        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['일부 단계만 통과', '링크 없음']);
+        assert.deepEqual(await p.locator('#center .story-path .link').evaluateAll((links) => links.map((l) => l.classList.contains('unwalked'))), [true, false]);
         assert.deepEqual(await p.locator('#center .story-path .link .walks').allTextContents(), [
           '지나간 스토리 테스트 없음',
           '스토리 테스트 1개가 지나감',
@@ -625,7 +629,7 @@ test('in a browser, a passing story whose story tests did not go through its scr
         ]);
         await p.click('#story-list li[data-story="help-alone"]');
         assert.equal(await p.locator('#center .story-path .link').count(), 0);
-        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['통과', '지나갔는지 모름']);
+        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['통과', '단계 확인 못 함']);
       }),
     );
   }, edits);

@@ -14,6 +14,7 @@ const MIXED_KINDS = 'differs by link';
 
 const STORY_STATUS: Record<string, string> = {
   pass: 'pass — every story test passes',
+  'part-pass': 'part-pass — every story test passes, but none went through every screen of the story in order',
   fail: 'fail — a story test fails',
   pending: 'pending — no story test fails and one is pending',
   partial: 'partial — no story test, and a screen on the path has tests',

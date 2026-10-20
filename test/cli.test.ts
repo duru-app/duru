@@ -221,8 +221,8 @@ test('rebuild counts the stories with broken paths or screens gone from the map,
     const configFile = path.join(copy, 'config.json');
     const plain = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     assert.match(plain, /^stories 0 \| broken paths 0 \| detached 0 \| unjudged steps 0 \| story files skipped 0$/m);
-    assert.match(plain, /^stories passing 0 \| failing 0 \| pending 0 \| partly covered 0 \| no tests 0$/m);
-    assert.match(plain, /^passing stories no story test went through from end to end 0 \| not known, for want of a trace or a screen on the map 0$/m);
+    assert.match(plain, /^stories passing 0 \| passing on part of the path 0 \| failing 0 \| pending 0 \| partly covered 0 \| no tests 0$/m);
+    assert.match(plain, /^passing stories not known to go through every step, for want of a trace or a screen on the map 0$/m);
     assert.match(plain, /^ {2}unknown story:run-lab ← com\.example\.lab\.LabFlowTest:null /m);
 
     fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), storiesDir: 'example-stories' }));
@@ -231,8 +231,8 @@ test('rebuild counts the stories with broken paths or screens gone from the map,
     fs.writeFileSync(path.join(copy, 'example-stories/lab-to-sign-in.json'), JSON.stringify({ name: 'n', screens: ['/lab#Lab', '/signin#SignIn'], author: 'a', date: '2026-10-02' }));
     const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     assert.match(stdout, /^stories 6 \| broken paths 1 \| detached 1 \| unjudged steps 1 \| story files skipped 1$/m);
-    assert.match(stdout, /^stories passing 1 \| failing 1 \| pending 1 \| partly covered 2 \| no tests 1$/m);
-    assert.match(stdout, /^passing stories no story test went through from end to end 0 \| not known, for want of a trace or a screen on the map 1$/m);
+    assert.match(stdout, /^stories passing 1 \| passing on part of the path 0 \| failing 1 \| pending 1 \| partly covered 2 \| no tests 1$/m);
+    assert.match(stdout, /^passing stories not known to go through every step, for want of a trace or a screen on the map 1$/m);
     assert.match(stdout, /^ {2}unknown story:print-document ← stories\.spec\.ts:12 prints a document @story:print-document$/m);
     assert.doesNotMatch(stdout, /unknown story:run-lab/);
     assert.match(stdout, /^ {2}story file lab-shortcut\.json: screens 는 /m);

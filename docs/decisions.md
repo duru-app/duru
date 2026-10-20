@@ -2518,14 +2518,14 @@ Alternatives compared:
 - A screen for each outer path (two boxes for each integrations screen): the driver chose one box with one joined
   path, so the number of screens does not grow.
 
-**A passing story says whether a story test went through its screens from end to end, from the traces rebuild
-already reads; the status stays 「통과」.**
+**A story whose story tests all pass is 「일부 단계만 통과」 when the traces rebuild already reads show that none
+of them went through its screens from end to end.**
 Driver's decision in #262 (2026-10-19). into-sign 1.5.0's story 「서명자가 받은 링크로 문서를 열어 서명하고 서명한 문서를
 본다」 passes on its `@story` test, but that test checks the signature through the server API and never opens the
-signed document's screen; none of the 90 passing runs with a trace goes from the signing screen to it. The status
-stays 「통과」 with 「끝까지 지나간 테스트 없음」 beside it, each link shows how many story tests went across it, and a
-story whose passing story tests include one without a trace, with none of the traced ones going through, is
-「지나갔는지 모름」. Only a run that goes from one screen straight to the next counts for that link, and the whole
+signed document's screen; none of the 90 passing runs with a trace goes from the signing screen to it. Such a story
+gets its own status, `part-pass` 「일부 단계만 통과」, each link shows how many story tests went across it, in grey
+when none did, and a story whose passing story tests include one without a trace, with none of the traced ones
+going through, stays 「통과」 with 「단계 확인 못 함」 beside it. Only a run that goes from one screen straight to the next counts for that link, and the whole
 story counts only when one run holds every screen one after another.
 - A story test and its trace are paired in rebuild, where the test's result line and its trace are read together:
   the story test's entry in `tests.json` carries `screens`, the screens its passing run went through. The issue
@@ -2540,8 +2540,14 @@ story counts only when one run holds every screen one after another.
   user home with no link on the map.
 Left out: tests that go through a whole story without its tag are not offered as tests to tag (57 runs would be
 offered for the sign-in story, and passing on one would need a judgment kind of its own); ranking by how often
-people use a path (no data for it yet); calls between steps (a trace order holds no calls). `duru tasks` does not
-show it yet.
+people use a path (no data for it yet); calls between steps (a trace order holds no calls).
+Alternatives compared:
+- 「통과」 kept with 「끝까지 지나간 테스트 없음」 beside it, as the driver first chose in #262: dropped on 2026-10-20 once
+  the page showed it, since 「통과」 next to 「테스트 없음」 reads as two answers that contradict each other. Codecov
+  marks a line `partial` (yellow, not counted as hit) when only some of its branches ran, Cucumber shows a step that
+  did not run as `skipped` and a scenario passes only when every step passes, and Xray gives a requirement its own
+  `UNKNOWN`. The status and the grey links follow the first two; 「단계 확인 못 함」 follows the third.
+- One chip 「통과 · 일부 단계만」: shorter, but the status filters and rebuild's counts could not pick these stories out.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

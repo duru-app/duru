@@ -168,8 +168,9 @@ export function checkStoryFiles(map: any, dir: string, mapFile: string, tests: S
   }
   const walks = walksOf(map, tests.traced);
   const list = checkStories(map, stories).map((s) => {
-    const status = statusOf(s, tests);
-    return { ...s, status, ...walks(s, status, tests) };
+    const passed = statusOf(s, tests);
+    const walk = walks(s, passed, tests);
+    return { ...s, status: walk.walked === 'no' ? 'part-pass' : passed, ...walk };
   });
   return { ids, list, notices, unknownTags };
 }
