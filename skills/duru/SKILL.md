@@ -346,7 +346,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    pass is `passing on part of the path` when none of their traces opened its screens one after another, and is
    counted as `not known to go through every step` when one of them ran without a trace or its trace matched no
    screen on the map: make the test open the story's screens in order, and run Playwright with its `trace` option
-   on so that rebuild can tell. When the trace is on and the story is still not known, either a screen of the story is
-   not on the map or none of the addresses the test opened is; tell the user which.
+   on so that rebuild can tell. When the trace is on and the story is still not known, a screen of the story is not
+   on the map, none of the addresses the test opened is, or the test opened no page at all; fix the last in the test,
+   and tell the user which of the others it is.
    A screen, call or story stays in `duru tasks` until a reviewer marks it `fine`, so an unchanged list is expected;
    offer the user another review round instead.

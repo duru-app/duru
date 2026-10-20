@@ -602,8 +602,8 @@ A story also gets a status from its tests: fail when a test tagged `@story:<its 
 fails and one is pending, pass when all pass. When all pass but the traces of its Playwright story tests show that
 none of them opened its screens one after another, it is `part-pass`, and each link says how many story tests went
 across it. Whether they went through is not known, and the story stays `pass`, when a story test has no trace (a
-test that is not a Playwright test never has one), its trace holds no screen on the map, or a screen of the story is
-not on the map. Without story tests
+test that is not a Playwright test never has one), its trace holds no screen on the map (also when the test opened
+no page at all), or a screen of the story is not on the map. Without story tests
 it is `partial` when a screen on its path has a test, and `untested` when none has.
 
 Where the map has no link between two steps but passing tests went straight across, the link says how

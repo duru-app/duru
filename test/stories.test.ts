@@ -754,6 +754,7 @@ test('a passing story is not known to be gone through when a story test without 
   assert.deepEqual(walkOf(steps, storyRuns(ran('a'), ran('b', [HOME]))), { walked: 'unknown', walks: [undefined], passedBy: [undefined] });
   assert.deepEqual(walkOf(steps, storyRuns(ran('a', ['/nowhere']))), { walked: 'unknown', walks: [undefined], passedBy: [undefined] });
   assert.deepEqual(walkOf(steps, storyRuns(ran('a', []))), { walked: 'unknown', walks: [undefined], passedBy: [undefined] });
+  assert.deepEqual(walkOf(steps, storyRuns(ran('a', []), ran('b', [HOME]))), { walked: 'unknown', walks: [undefined], passedBy: [undefined] });
   assert.deepEqual(walkOf(steps, storyRuns(ran('a'), ran('b', steps))), { walked: 'yes', walks: [undefined], passedBy: [undefined] });
   assert.deepEqual(walkOf([SIGNIN, HOME, '/gone#Gone'], storyRuns(ran('a', [SIGNIN, HOME]))), { walked: 'unknown', walks: [undefined, undefined], passedBy: [undefined, undefined] });
   assert.deepEqual(walkOf(steps, storyRuns(ran('a', steps), ran('b', undefined, 'fail'))), { walked: undefined, walks: [undefined], passedBy: [undefined] });

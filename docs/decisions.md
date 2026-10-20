@@ -2527,8 +2527,9 @@ gets its own status, `part-pass` 「일부 단계만 통과」, each link shows 
 when none did, and a story whose passing story tests include one without a trace, with none of the traced ones
 going through, stays 「통과」 with 「단계 확인 못 함」 beside it. A trace that holds no screen on the map counts as no
 trace: the map rather than the test may be missing the screen, and an empty trace may be one that could not see where
-the test went. A story test that opens no page at all therefore leaves its story 「통과」 with 「단계 확인 못 함」. Only a run that goes from one screen straight to the next counts for that link, and the whole
-story counts only when one run holds every screen one after another.
+the test went. A story test that opens no page at all therefore leaves its story 「통과」 with 「단계 확인 못 함」.
+Only a run that goes from one screen straight to the next counts for that link, and the whole story counts only when
+one run holds every screen one after another.
 - A story test and its trace are paired in rebuild, where the test's result line and its trace are read together:
   the story test's entry in `tests.json` carries `screens`, the screens its passing run went through. The issue
   planned to pair them by title, since a trace holds no file and line; the result line has both, so two tests with
