@@ -192,7 +192,7 @@ function renderSettingsBar() {
     unreadable.map((u) => h('span', { class: 'setting blocked', title: sourceLabel(u.source) }, h('code', {}, u.guard), h('span', { class: 'reason' }, settingReasonText(u.reason)))),
     others.length ? h('span', { class: 'others' }, '다른 화면에서 바꾼 설정 ', others.map((o) => h('span', { class: 'setting changed' }, h('code', {}, overrideText(o))))) : null,
     list.length ? h('button', { class: 'reset', onclick: () => updateSettings(() => []) }, '기본값으로') : null,
-    state.data.app.settings?.fileError ? h('span', { class: 'file-error' }, state.data.app.settings.fileError) : null,
+    state.data.app.settings?.fileError ? h('span', { class: 'file-error' }, `설정 파일을 돌려 보지 못해 맵의 기본값으로 판단합니다 (${state.data.app.settings.fileError})`) : null,
     state.settingsError ? h('span', { class: 'error' }, state.settingsError) : null);
 }
 

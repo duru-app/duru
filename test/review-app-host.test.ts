@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { loadConfig } from '../src/config.ts';
-import { applyOverrides } from '../src/app-host.ts';
+import { applyOverrides, readSettingsFile } from '../src/app-host.ts';
 import { startReviewServer } from '../src/review.ts';
 import { FIXTURE, withRebuiltFixture, signer, withServer, PASSWORD_ENV, ADMIN_PASSWORD_ENV, AUDITOR_PASSWORD_ENV, ACCOUNTS, withFakeApi, appSettings, SETTINGS_FILE, withSettingsFile, rewrite, rebuild, LIST_API, API_KEY_ENV, API_KEY, ISSUING_API, VIEW_TOKEN_API, VIEW_ROUTE, loginWithHeader, roleSettings, withPasswords, withPassword, ALL_PASSWORDS, pathValueSettings } from './review-helpers.ts';
 import type { Config, PageData } from './review-helpers.ts';
@@ -616,12 +616,12 @@ test('the page gets what the settings file sets in the merged sections, without 
           writeFile("throw new Error('boom');\n");
           const thrown = await settingsOf();
           assert.equal(thrown.file, null);
-          assert.match(thrown.fileError, /설정 파일.*boom/);
+          assert.equal(thrown.fileError, 'boom');
 
           writeFile('while (true) {}\n');
           const endless = await settingsOf();
           assert.equal(endless.file, null);
-          assert.match(endless.fileError, /설정 파일/);
+          assert.match(endless.fileError, /timed out/);
 
           fs.rmSync(path.join(copy, 'build/settings.js'));
           assert.deepEqual((await settingsOf()).file, {});
@@ -630,6 +630,42 @@ test('the page gets what the settings file sets in the merged sections, without 
       ),
     ),
   );
+});
+
+test('the settings file is read without logging in: whether it is there, what it sets in the merged sections, or the error that stopped it', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    const app = { files: dir, settingsFile: SETTINGS_FILE };
+    assert.deepEqual(await readSettingsFile(app), { file: {}, fileError: null, found: false });
+    fs.writeFileSync(path.join(dir, 'settings.js'), "window.FAKE_SETTINGS = { SYSTEM: { A: 1 }, DISPLAY: { B: 2 } };\n");
+    assert.deepEqual(await readSettingsFile(app), { file: { SYSTEM: { A: 1 } }, fileError: null, found: true });
+    fs.writeFileSync(path.join(dir, 'settings.js'), "throw new Error('boom');\n");
+    assert.deepEqual(await readSettingsFile(app), { file: null, fileError: 'boom', found: true });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a settings file at a web address that does not answer in time is given up with an error, and one the address does not have is not found', async () => {
+  const server = http.createServer((req, res) => {
+    if (req.url === '/missing/settings.js') {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const started = Date.now();
+    const silent = await readSettingsFile({ files: `${base}/silent`, settingsFile: SETTINGS_FILE }, { fetchMs: 200 });
+    assert.ok(Date.now() - started < 5000);
+    assert.equal(silent.file, null);
+    assert.match(silent.fileError!, /timeout/i);
+    assert.deepEqual(await readSettingsFile({ files: `${base}/missing`, settingsFile: SETTINGS_FILE }), { file: {}, fileError: null, found: false });
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
 });
 
 test('a change inside a default the source does not show in full is refused unless the settings file sets that key, while replacing the whole key is allowed', async () => {
