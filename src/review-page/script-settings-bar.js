@@ -189,7 +189,7 @@ function renderSettingsBar() {
   fill(bar,
     h('span', { class: 'title' }, list.length ? `설정 ${list.length}개 바꿈` : '설정'),
     rows.map((r) => settingControl(r, list)),
-    unreadable.map((u) => h('span', { class: 'setting blocked', title: sourceLabel(u.source) }, h('code', {}, u.guard), h('span', { class: 'reason' }, u.reason))),
+    unreadable.map((u) => h('span', { class: 'setting blocked', title: sourceLabel(u.source) }, h('code', {}, u.guard), h('span', { class: 'reason' }, settingReasonText(u.reason)))),
     others.length ? h('span', { class: 'others' }, '다른 화면에서 바꾼 설정 ', others.map((o) => h('span', { class: 'setting changed' }, h('code', {}, overrideText(o))))) : null,
     list.length ? h('button', { class: 'reset', onclick: () => updateSettings(() => []) }, '기본값으로') : null,
     state.data.app.settings?.fileError ? h('span', { class: 'file-error' }, state.data.app.settings.fileError) : null,

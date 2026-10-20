@@ -549,7 +549,7 @@ export async function extractClient(config: any) {
   const resultOf = settingsResultFinder(settingsCalls as ReturnType<typeof findSettingsCalls>);
   const settingsResult = (id: NodePath) => resultOf(id, programFile.get(id.scope.getProgramParent().block));
   const needs = settingNeeds(config.settingsRoots ?? [], settingsDefaults, settingsResult);
-  const CONFLICT = { reason: '같은 파일에 글자는 같고 읽는 설정이 다른 조건이 있어 켤 값을 정할 수 없습니다' };
+  const CONFLICT: GuardSetting = { reason: 'conflict' };
 
   function noteSettings(file: string, text: string, result: GuardSetting | null) {
     const known = mapOf(guardSettings, file);

@@ -31,7 +31,7 @@ const needText = (n, { short = false } = {}) => {
 
 const withMore = (items) => (items.length > 1 ? `${items[0]} 외 ${items.length - 1}` : items[0]);
 const overlap = (lists) => lists.reduce((left, values) => left.filter((v) => values.includes(v)));
-const unreadText = (u) => `${u.guard} (${u.reason})`;
+const unreadText = (u) => `${u.guard} (${settingReasonText(u.reason)})`;
 const unreadRolesTip = (guards) => `읽지 못한 역할 조건: ${guards.join(', ')}`;
 const unsettledTip = (text) => `정하지 못한 설정 조건: ${text}`;
 

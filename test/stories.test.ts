@@ -143,7 +143,7 @@ test('a step that a move in the config joins, such as the screen opening after s
 });
 
 const TINY_CONFIG = { settingsRoots: ['globalSettings'], roleIdentifiers: ['memberRole'], entryPaths: [] };
-const NO_SETTING_READ = { settings: null, settingsReason: '조건에서 설정을 읽는 곳을 찾지 못했습니다' };
+const NO_SETTING_READ = { settings: null, settingsReason: 'not-found' };
 
 type TinyLink = Parameters<typeof screenAccess>[0][number]['links'][number];
 
