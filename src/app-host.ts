@@ -262,12 +262,23 @@ export function answerReviewPage(origins: string[]) {
     label: [el.labels?.[0]?.textContent, el.getAttribute('aria-label'), ...labelledBy(el).map((r) => r.textContent)],
     testId: [el.getAttribute('data-testid')],
   });
+  // 같은 낱말을 가진 단추나 목록이 나타나거나 사라지면 같은 칸의 nth 가 바뀌므로, 칸이 지난번에 보낸 상자와 다르면 그 상자를 was 로 함께 보낸다.
+  // 그 뒤로 다른 칸이 같은 상자를 보냈다면 리뷰 페이지가 그 상자로 받은 값은 다른 칸의 것이므로 was 를 보내지 않는다.
+  const sent = new WeakMap<object, string>();
+  const lastSender = new Map<string, object>();
   w.addEventListener('change', (e: any) => {
     const el = e.target;
     if (!['input', 'textarea', 'select'].includes(el?.localName) || (el.localName === 'input' && NOT_INPUTS.includes(el.type))) return;
     const typed = el.localName === 'textarea' || (el.localName === 'input' && TYPED.includes(el.type));
     const box = typed ? boxOf(el) : null;
-    if (box) return post({ box, value: el.value });
+    if (box) {
+      const key = JSON.stringify(box);
+      const was = sent.get(el);
+      const moved = was !== undefined && was !== key && lastSender.get(was) === el;
+      sent.set(el, key);
+      lastSender.set(key, el);
+      return post({ box, value: el.value, ...(moved && { was: JSON.parse(was) }) });
+    }
     if (skippedHere.has(el)) return;
     skippedHere.add(el);
     post({ skipped: true });

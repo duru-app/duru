@@ -1943,9 +1943,12 @@ cutting spaces at the ends and making runs of spaces one: the placeholder, `data
 `aria-label` counted only for a box without a `<label>`). It takes the boxes that have every written word; when fewer
 boxes have them all than `nth`, it takes the boxes that have any one of them. `nth` counts in document order within
 the boxes it took. A walk writes `nth` among every element of the page that has all its words, as the code
-`duru story` writes counts them (the entry on that code below), so a walked box is counted as the walk counted it as
-long as only inputs and textareas carry those words. Where a button or a wrapper carries them too, as a search box and
-a search button with one `aria-label`, the page's number can differ from the walk's and the code's: the driver chose
+`duru story` writes counts them (the entry on that code below), and takes a label only from the first of
+`aria-labelledby`, `aria-label` and `<label>` that a box has, while the page counts only inputs and textareas and
+takes a label word from any of the three. Where a button or a wrapper carries the words too, as a search box and a
+search button with one `aria-label`, or where a box's `<label>` has the word and its `aria-label` another, as a box
+with the `<label>` 「메모」 and the `aria-label` 「서명자 메모」 before a box with only the `<label>` 「메모」,
+the page's number can differ from the walk's and the code's: the driver chose
 in #348 to keep the page's lookup as it was, and this is a known limit. Several kinds are written so that the box can
 still be found when one of them changes (the entry above). The task list joined them with `or` until the code
 `duru story` writes for an input needed a box with every word (the entry on that code below); it now joins them with
@@ -2716,8 +2719,15 @@ A walk therefore reads the words the way these locators match them: the label fr
 names, else `aria-label`, else the box's `<label>`s, taking the first that has text, with spaces made one as Playwright
 does; the placeholder and the test ID as written, spaces at the ends included. `nth` counts every element of the page
 that has all the words, in document order, as `.nth()` counts what `.and()` finds, so a search button with the same
-`aria-label` as its box counts too. A browser test walks the boxes of the measured page and runs the code of each one
-it recorded. To count `nth` for a label the walk collects the boxes the matching `<label>`s point at (`control`) once,
+`aria-label` as its box counts too. Such a button, or a list the app shows while a box is typed in, can come and go
+while the box keeps its value, so one box can be sent with a different `nth` from one change to the next; the walk then
+also sends the box it last sent for that element, and the review page moves the value and the row recorded under that
+box to the new one, or drops both when the box is cleared (measured in Chromium with a search button shown only while
+its box has text). The walk does not send that box when another element has sent it since, as when a row of boxes with
+the same words is removed or added above and the rows are typed in again: what the page holds under it is then the other
+element's value, so the page keeps it, as it did before the walk sent the box last sent. A browser test walks a page of the measured shapes and a few more, placeholders and a test ID
+written with extra spaces, two search boxes, a box with `data-qa` and a textarea, 28 boxes in all, and runs the code of
+each one it recorded. To count `nth` for a label the walk collects the boxes the matching `<label>`s point at (`control`) once,
 rather than reading `labels` of every element: on a page of 35,000 elements reading `labels` made the first typed value
 take 1.7 s, and collecting them once takes 22 ms (measured in Chromium). The page saves a word a walk or the story file
 gave as it is, and cuts spaces at the ends only from a word typed or changed in the table, so the spaces a walk kept
@@ -2750,6 +2760,10 @@ Alternatives compared:
   every word.
 - A `testIdAttribute` config key read by the walk, the page and the trace reader: those projects would work, but it is
   a setting users write and duru keeps, with no project known to need it.
+- Counting `nth` only among inputs and textareas, as before: one box would keep one number, but the code for a search
+  box beside a search button with the same `aria-label` would find both.
+- Taking a box with `nth` 1 and the same box without `nth` as one: misses a button drawn before its box, and would
+  join two boxes with the same words once the first of them is removed.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

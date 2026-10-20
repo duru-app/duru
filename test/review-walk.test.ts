@@ -194,6 +194,114 @@ test('in a browser, a recorded value cleared in the app leaves its step and the 
   );
 });
 
+function search(frame: Frame, value: string, { button }: { button: boolean }) {
+  return frame.evaluate(({ value, button }) => {
+    let field = document.getElementById('q') as HTMLInputElement | null;
+    if (!field) {
+      field = document.createElement('input');
+      field.id = 'q';
+      field.setAttribute('aria-label', '검색');
+      document.body.append(field);
+    }
+    document.getElementById('q-clear')?.remove();
+    if (button) field.insertAdjacentHTML('afterend', '<button id="q-clear" aria-label="검색">x</button>');
+    field.value = value;
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }, { value, button });
+}
+
+test('in a browser, a box whose number changes while a button with its words comes and goes stays one input on its step, and clearing it leaves the step and the record', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            await startNewStory(p);
+            await p.click('#center button.walk-start');
+            const frame = await walkFrame(p, app.url);
+            await goTo(frame, '/signin');
+            await untilWalkSteps(p, 2);
+            const signin = (p: Page, text: string) => p.waitForFunction((text) => document.querySelector('#walk-steps > li:nth-child(2) .name')?.textContent === text, text);
+            await search(frame, 'abc', { button: true });
+            await signin(p, '/signin/signin라벨 「검색」 · 1 번째 → abc');
+            await goTo(frame, '/signin?page=2');
+            await search(frame, 'abcd', { button: false });
+            await signin(p, '/signin/signin → /signin?page=2라벨 「검색」 → abcd');
+            await search(frame, '', { button: true });
+            await signin(p, '/signin/signin → /signin?page=2');
+            await goTo(frame, '/help');
+            await untilWalkSteps(p, 3);
+            await p.click('#center .walk-bar button.end-walk');
+            await untilSet(() => recordFiles(config.storiesDir).length === 1, 'the record');
+            assert.deepEqual(recordFiles(config.storiesDir), [{ steps: [{ url: '/' }, { url: '/signin' }, { url: '/signin?page=2' }, { url: '/help' }] }]);
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+function signerRow(frame: Frame, id: string, change: { add?: 'first' | 'last'; value?: string; remove?: true }) {
+  return frame.evaluate(({ id, change }) => {
+    let rows = document.getElementById('signers');
+    if (!rows) {
+      rows = document.createElement('div');
+      rows.id = 'signers';
+      document.body.append(rows);
+    }
+    if (change.add) {
+      const added = document.createElement('input');
+      added.id = id;
+      added.setAttribute('placeholder', '서명자');
+      if (change.add === 'first') rows.prepend(added);
+      else rows.append(added);
+    }
+    const field = document.getElementById(id) as HTMLInputElement;
+    if (change.remove) return field.remove();
+    if (change.value !== undefined) {
+      field.value = change.value;
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }, { id, change });
+}
+
+test('in a browser, when a row of boxes with the same words is removed or added above, a value typed in another row afterwards keeps the values still shown in the other rows on the step', { skip: browserMissing }, async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(appSettings(api), (config) =>
+        withServer(config, 'reviewer', (base) =>
+          withPage(base, async (p) => {
+            const { app } = await (await fetch(`${base}/api/data`)).json();
+            await startNewStory(p);
+            await p.click('#center button.walk-start');
+            const frame = await walkFrame(p, app.url);
+            const stepIs = (n: number, text: string) => p.waitForFunction(([n, text]) => document.querySelector(`#walk-steps > li:nth-child(${n}) .name`)?.textContent === text, [n, text] as const);
+            await goTo(frame, '/signin');
+            await untilWalkSteps(p, 2);
+            for (const id of ['a', 'b', 'c']) await signerRow(frame, id, { add: 'last' });
+            for (const [id, value] of [['a', 'A'], ['b', 'B'], ['c', 'C']]) await signerRow(frame, id, { value });
+            await stepIs(2, '/signin/signin안내 글 「서명자」 · 1 번째 → A안내 글 「서명자」 · 2 번째 → B안내 글 「서명자」 · 3 번째 → C');
+            await signerRow(frame, 'a', { remove: true });
+            await signerRow(frame, 'c', { value: 'C2' });
+            await signerRow(frame, 'b', { value: 'B2' });
+            await stepIs(2, '/signin/signin안내 글 「서명자」 · 1 번째 → B2안내 글 「서명자」 · 2 번째 → C2');
+
+            await goTo(frame, '/help');
+            await untilWalkSteps(p, 3);
+            await frame.evaluate(() => document.getElementById('signers')?.remove());
+            for (const id of ['d', 'e']) await signerRow(frame, id, { add: 'last' });
+            for (const [id, value] of [['d', 'D'], ['e', 'E']]) await signerRow(frame, id, { value });
+            await signerRow(frame, 'f', { add: 'first', value: 'F' });
+            await signerRow(frame, 'd', { value: 'D2' });
+            await stepIs(3, '/help/help안내 글 「서명자」 · 1 번째 → F안내 글 「서명자」 · 2 번째 → D2');
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
 test('in a browser, after a recording the values typed can be changed and conditions and expected results written for the whole story and for a step, all saved with the story and the box words as the walk read them, whose screen order then hides the candidate of the record file', { skip: browserMissing }, async () => {
   await withFakeApi((api) =>
     withPassword('s3cret', () =>

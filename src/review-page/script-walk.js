@@ -131,30 +131,38 @@ function takeSkipped(c) {
   renderWalk();
 }
 
-function takeInput(c, box, value) {
+// 같은 화면에 머문 주소의 기록마다 그 칸의 값을 지워야, 후보가 화면별로 입력값을 합칠 때 지운 값이 되살아나지 않는다.
+function forgetBoxes(c, keys) {
+  const { record } = c.walk;
+  const step = c.steps.at(-1);
+  for (let i = record.length - 1; i >= 0 && walkScreenOf(record[i].url) === step.screen; i--) {
+    record[i].inputs = record[i].inputs.filter((input) => !keys.includes(boxKey(input.box)));
+  }
+  step.rows.inputs = step.rows.inputs.filter((r) => !keys.includes(r.recorded));
+}
+
+// was 는 같은 입력 필드를 지난번에 기록한 box 다. 그 뒤로 이 box 로 기록된 다른 필드는 없다.
+function takeInput(c, box, value, was) {
   const at = c.walk.record.at(-1);
   const step = c.steps.at(-1);
   if (!at || !step) return;
   const input = { box, value };
-  const kept = at.inputs.findIndex((i) => boxKey(i.box) === boxKey(box));
-  if (kept >= 0) at.inputs[kept] = input;
+  const key = boxKey(box);
+  const old = was === undefined ? key : boxKey(was);
+  const kept = at.inputs.findIndex((i) => boxKey(i.box) === key);
+  const before = kept >= 0 ? kept : at.inputs.findIndex((i) => boxKey(i.box) === old);
+  if (before >= 0) at.inputs[before] = input;
   else at.inputs.push(input);
-  const row = step.rows.inputs.find((r) => r.recorded === boxKey(box));
-  if (row) Object.assign(row, inputRowOf(input), { key: row.key, recorded: row.recorded });
-  else step.rows.inputs.push({ ...inputRowOf(input), recorded: boxKey(box) });
+  const row = step.rows.inputs.find((r) => r.recorded === key) ?? step.rows.inputs.find((r) => r.recorded === old);
+  if (row) Object.assign(row, inputRowOf(input), { key: row.key, recorded: key });
+  else step.rows.inputs.push({ ...inputRowOf(input), recorded: key });
+  if (old !== key) forgetBoxes(c, [old]);
   renderWalk();
 }
 
-// 같은 화면에 머문 주소의 기록마다 그 칸의 값을 지워야, 후보가 화면별로 입력값을 합칠 때 지운 값이 되살아나지 않는다.
-function takeCleared(c, box) {
-  const { record } = c.walk;
-  const step = c.steps.at(-1);
-  if (!step) return;
-  const key = boxKey(box);
-  for (let i = record.length - 1; i >= 0 && walkScreenOf(record[i].url) === step.screen; i--) {
-    record[i].inputs = record[i].inputs.filter((input) => boxKey(input.box) !== key);
-  }
-  step.rows.inputs = step.rows.inputs.filter((r) => r.recorded !== key);
+function takeCleared(c, box, was) {
+  if (!c.steps.at(-1)) return;
+  forgetBoxes(c, was ? [boxKey(box), boxKey(was)] : [boxKey(box)]);
   renderWalk();
 }
 
@@ -165,12 +173,13 @@ window.addEventListener('message', (e) => {
   const frame = /** @type {HTMLIFrameElement | null} */ (document.querySelector('#center .walk-stage iframe.app'));
   if (!c?.walk || !frame || e.source !== frame.contentWindow || e.origin !== c.walk.origin || e.data?.duru !== 'walk') return;
   const { url, box, value, skipped } = e.data;
+  const was = isBox(e.data.was) ? e.data.was : undefined;
   if (typeof url === 'string') {
     if (url.startsWith('/') && !url.startsWith('//')) takeAddress(c, url);
   } else if (skipped === true) takeSkipped(c);
   else if (isBox(box) && typeof value === 'string') {
-    if (value.trim()) takeInput(c, box, value);
-    else takeCleared(c, box);
+    if (value.trim()) takeInput(c, box, value, was);
+    else takeCleared(c, box, was);
   }
 });
 
