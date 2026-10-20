@@ -2716,7 +2716,8 @@ names, else `aria-label`, else the box's `<label>`s, taking the first that has t
 does; the placeholder and the test ID as written, spaces at the ends included. `nth` counts every element of the page
 that has all the words, in document order, as `.nth()` counts what `.and()` finds, so a search button with the same
 `aria-label` as its box counts too. A browser test walks the boxes of the measured page and runs the code of each one
-it recorded.
+it recorded. The page saves a word a walk or the story file gave as it is, and cuts spaces at the ends only from a
+word typed or changed in the table, so the spaces a walk kept reach the story file.
 duru does not run the code, so the line ends `(duru did not try it on the screen)`, and `duru tasks` gets no such line;
 its input lines keep `(not checked against the code)` and now join the words with `and`, as the code needs all of them.
 The review page still finds a box by any one word (the entry on pressing an input line), so a box the page points at

@@ -194,7 +194,7 @@ test('in a browser, a recorded value cleared in the app leaves its step and the 
   );
 });
 
-test('in a browser, after a recording the values typed can be changed and conditions and expected results written for the whole story and for a step, all saved with the story, whose screen order then hides the candidate of the record file', { skip: browserMissing }, async () => {
+test('in a browser, after a recording the values typed can be changed and conditions and expected results written for the whole story and for a step, all saved with the story and the box words as the walk read them, whose screen order then hides the candidate of the record file', { skip: browserMissing }, async () => {
   await withFakeApi((api) =>
     withPassword('s3cret', () =>
       withRebuiltFixture(appSettings(api), (config) =>
@@ -208,6 +208,7 @@ test('in a browser, after a recording the values typed can be changed and condit
             const frame = await walkFrame(p, app.url);
             await goTo(frame, '/signin');
             await typeInto(frame, { placeholder: '이메일' }, EMAIL.value);
+            await typeInto(frame, { placeholder: '확인 코드 ', 'data-testid': ' code ' }, '1234');
             await goTo(frame, '/help');
             await untilWalkSteps(p, 3);
             await p.click('#center .walk-bar button.end-walk');
@@ -217,7 +218,7 @@ test('in a browser, after a recording the values typed can be changed and condit
 
             await p.hover('#center .compose-step[data-step="1"]');
             await p.click('#center .compose-step[data-step="1"] button.edit-fields');
-            const value = p.locator('#center .compose-step[data-step="1"] .fields-edit input[aria-label="값"]');
+            const value = p.locator('#center .compose-step[data-step="1"] .fields-edit input[aria-label="값"]').first();
             assert.equal(await value.inputValue(), EMAIL.value);
             await value.fill('other@example.com');
             await p.click('#center .compose-step[data-step="1"] .fields-part.expects button.add-line');
@@ -238,7 +239,7 @@ test('in a browser, after a recording the values typed can be changed and condit
             const { date, ...saved } = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'walked-help.json'), 'utf8'));
             assert.deepEqual(saved, {
               name: '로그인하고 도움말을 연다',
-              screens: ['/home#Home', { screen: '/signin#SignIn', inputs: [{ box: { placeholder: '이메일' }, value: 'other@example.com' }], expects: ['로그인 칸이 보인다'] }, '/help#Help'],
+              screens: ['/home#Home', { screen: '/signin#SignIn', inputs: [{ box: { placeholder: '이메일' }, value: 'other@example.com' }, { box: { placeholder: '확인 코드 ', testId: ' code ' }, value: '1234' }], expects: ['로그인 칸이 보인다'] }, '/help#Help'],
               needs: ['회원 계정이 있다'],
               memo: '',
               author: 'reviewer',
