@@ -123,7 +123,10 @@ const testKey = (t: { file?: string | null; line?: number | null; title?: string
 function walksOf(map: any, traced: TracedTest[] = []) {
   const onMap = new Set<string>(map.screens.map((s: any) => s.id));
   const mapOrder = (order: string[]) => order.filter((id) => onMap.has(id)).filter((id, i, kept) => id !== kept[i - 1]);
-  const traceOf = (screens: string[] | undefined) => (screens && mapOrder(screens).length ? mapOrder(screens) : undefined);
+  const traceOf = (screens: string[] | undefined) => {
+    const order = screens && mapOrder(screens);
+    return order && (order.length || !screens!.length) ? order : undefined;
+  };
   const passing = runsByTest(traced.map((t) => [testKey(t), mapOrder(t.screens)]));
   const crossing = (tests: string[][][], from: string, to: string) => tests.filter((runs) => runs.some((o) => crosses(o, from, to))).length;
   return <L extends { from: string; to: string; verdict: string }>(story: { id: string; screens: string[]; detached: boolean; links: L[] }, status: string, tests: StoryTests) => {

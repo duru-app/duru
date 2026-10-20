@@ -19,7 +19,7 @@ const storyChips = (st) => [
   st.broken ? h('span', { class: 'chip l-broken', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있습니다' }, '링크 없음') : null,
   st.detached ? h('span', { class: 'chip l-off-map', title: `맵에서 찾을 수 없는 화면: ${st.steps.filter((s) => !s.onMap).map((s) => s.screen).join(', ')}` }, '화면 없음') : null,
   st.unjudged ? h('span', { class: 'chip l-unknown', title: '주소를 읽지 못한 링크 때문에 판정하지 못한 자리가 있습니다' }, '판정 못 함') : null,
-  st.walked === 'unknown' ? h('span', { class: 'chip walk-unknown', title: 'trace 없이 통과한 스토리 테스트가 있거나 맵에 없는 화면이 있어, 화면을 차례로 지나갔는지 알 수 없습니다' }, '단계 확인 못 함') : null,
+  st.walked === 'unknown' ? h('span', { class: 'chip walk-unknown', title: '통과한 스토리 테스트 가운데 trace 가 없거나 trace 에 맵의 화면이 하나도 없는 것이 있어서, 또는 스토리에 맵에 없는 화면이 있어서 화면을 차례로 지나갔는지 알 수 없습니다' }, '단계 확인 못 함') : null,
 ];
 
 function visibleStories() {
