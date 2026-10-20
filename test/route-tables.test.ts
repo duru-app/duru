@@ -239,6 +239,23 @@ test('an item whose components only redirect gives no screen and no line, while 
   }, { edits });
 });
 
+test('an item whose address is not read, or that has none while others do, gives no screen and a route not read line naming the item', async () => {
+  const edits: [string, string, string][] = [
+    [TABLE, '      plain: {', "      computed: {\n        url: pathOf('users'),\n        schema: { id: 'Computed', component: Users },\n      },\n      nameless: {\n        schema: { id: 'Nameless', component: Users },\n      },\n      plain: {"],
+    [TABLE, "import License from './License';", "import License from './License';\nimport { pathOf } from './patterns';"],
+    ['admin/patterns.js', "export const ID_PATTERN = '[a-z0-9]{26}';", "export const ID_PATTERN = '[a-z0-9]{26}';\nexport const pathOf = (name) => `${name}/computed`;"],
+  ];
+  await withTableCopy(async ({ configFile, src, cli }) => {
+    const map = await build(configFile);
+    assert.deepEqual(tableScreens(map).map((s) => s.tableItem!.key), ['about.subsections.license', 'users.subsections.list', 'users.subsections.detail', 'users.subsections.site', 'users.subsections.plain']);
+    const route = `${CONSOLE}:${lineIn(src, CONSOLE, '<Route key={item.url}')}`;
+    assert.deepEqual(routeLines(cli('extract')), [
+      `  route not read ← ${route}: table item users.subsections.computed at ${TABLE}:${itemLine(src, 'computed')}: its url stopped at pathOf('users')`,
+      `  route not read ← ${route}: table item users.subsections.nameless at ${TABLE}:${itemLine(src, 'nameless')} has no url`,
+    ]);
+  }, { edits });
+});
+
 test('two items that make the same screen ID are reported at their lines in the table, and the task list and the summary name the table item of a screen', async () => {
   const edits: [string, string, string][] = [
     [TABLE, "      plain: {", "      again: {\n        url: 'users',\n        schema: { id: 'Users', component: Users },\n      },\n      outside: {\n        url: 'users/outside',\n        schema: { id: 'Outside', component: OutsidePage },\n      },\n      plain: {"],

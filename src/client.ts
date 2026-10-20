@@ -1163,14 +1163,20 @@ export async function extractClient(config: any) {
     const { file, const: name } = table.table;
     const object = topLevelObject(file, name);
     if (!object) throw new Error(`${table.at}: ${file} has no top-level const ${name} holding an object`);
-    const items = tableItems(object, table.items.split('.')).flatMap((it) => {
-      const field = propertyValue(it.object, item.field);
-      return field ? [{ ...it, field }] : [];
-    });
-    if (!items.length) throw new Error(`${table.at}: items "${table.items}" finds no item with a ${item.field} in ${name}, which the route at ${routeFile}:${line} reads`);
+    const items = tableItems(object, table.items.split('.')).map((it) => ({ ...it, field: propertyValue(it.object, item.field) }));
+    if (!items.some((it) => it.field)) throw new Error(`${table.at}: items "${table.items}" finds no item with a ${item.field} in ${name}, which the route at ${routeFile}:${line} reads`);
     return items.flatMap(({ key, line: itemLine, object: itemObject, field }) => {
+      const place = `table item ${key} at ${file}:${itemLine}`;
+      if (!field) {
+        unreadRoutes.push({ file: routeFile, line, reason: `${place} has no ${item.field}` });
+        return [];
+      }
       const value = evaluate(field);
-      if (!readWhole(value)) return [];
+      if (!readWhole(value)) {
+        const at = stopOf(unreadPiece(field) ?? field);
+        unreadRoutes.push({ file: routeFile, line, reason: `${place}: its ${item.field} stopped at ${at.text}${at.file === file ? '' : ` in ${at.file}:${at.line}`}` });
+        return [];
+      }
       const components = itemComponents(itemObject);
       if (components.length && components.every((c) => c.redirects)) return [];
       const routePath = pathText(pathExpr, item.node, String(value));
