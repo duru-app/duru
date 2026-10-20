@@ -379,7 +379,7 @@ test('a marked story carries under each step the inputs a person wrote, after it
     assert.equal(item.slice(item.indexOf('- screens:'), item.indexOf('- reach:')), [
       '- screens:',
       '  1. /signin#SignIn — tests: ui pass 1, code pass 1',
-      '     - input: placeholder "이메일" or testId "login-email" → "member@example.com" (not checked against the code)',
+      '     - input: placeholder "이메일" and testId "login-email" → "member@example.com" (not checked against the code)',
       '     - input: label "비밀번호" → "test 1234 " (not checked against the code)',
       '     - to /home#Home: open at components/SignIn.js:12',
       `  2. /home#Home — ${HOME_TESTS}`,
@@ -390,7 +390,7 @@ test('a marked story carries under each step the inputs a person wrote, after it
       '     - expect: 도움말 목록이 보인다',
       '',
     ].join('\n'));
-    assert.match(tasks.split('\n')[2], / An `input` line under a step names a box to fill at that step by the words on the screen it is found by, `placeholder`, `label` or `testId` \(several joined by `or` find the same box\), with `number N` when it is the Nth of the boxes those words find, and the value to put in it as a JSON string\. duru did not look for the box in the code; if the test cannot find it, suspect the story first and tell the user which input it is\./);
+    assert.match(tasks.split('\n')[2], / An `input` line under a step names a box to fill at that step by the words on the screen it is found by, `placeholder`, `label` or `testId`, several joined by `and` for a box that has all of them, with `number N` when it is the Nth of the elements that have them all, and the value to put in it as a JSON string\. duru did not look for the box in the code; if the test cannot find it by all the words, try each word alone, and if it still cannot, suspect the story first and tell the user which input it is\./);
 
     fs.writeFileSync(file, JSON.stringify({ ...story, screens: [{ screen: '/signin#SignIn', inputs: [{ box: { label: '비밀번호' }, value: 'test1234' }] }, '/home#Home', '/help#Help'] }));
     cli('rebuild');

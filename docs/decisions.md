@@ -1914,8 +1914,10 @@ names: Playwright recommends finding a box by its label or placeholder rather th
 (https://testing-library.com/docs/queries/about/). Writing which kind of words they are lets a test pick
 `getByPlaceholder`, `getByLabel` or `getByTestId` without guessing. Several kinds may be written for one box, as the
 Chrome DevTools Recorder keeps several selectors for one step
-(https://developer.chrome.com/docs/devtools/recorder/reference), so the box can still be found when one of them
-changes. `nth`, counted from 1, names one of several boxes the same words find, as Maestro picks the Nth match
+(https://developer.chrome.com/docs/devtools/recorder/reference), so the review page can still find the box when one
+of them changes. The code `duru story` writes for an input needs a box that has every word (the entry on that code
+below), so an agent whose code finds no box tries each word alone. `nth`, counted from 1, names one of several boxes
+the same words find, as Maestro picks the Nth match
 (https://docs.maestro.dev/api-reference/selectors); all read on 2026-10-15. A file with a box that has no words,
 empty words, a kind duru does not know, or an `nth` below 1 is not read, like any other malformed story file, so
 a test never gets a box it cannot look for. duru does not look for the box in the code, so the task list writes
@@ -1939,8 +1941,9 @@ the walk report goes only there. The script reads each box's words the way a wal
 label's text or `aria-label`, `data-testid`) and takes the boxes that have every written word; when fewer boxes have
 them all than `nth`, it takes the boxes that have any one of them. `nth` counts in document order within the boxes it
 took. A walk writes `nth` among the boxes that have all its words, so a walked box is counted as the walk counted it,
-and several kinds are written so that the box can still be found when one of them changes (the entry above), which is why
-the task list joins them with `or`. The script counts once the page has had no change
+and several kinds are written so that the box can still be found when one of them changes (the entry above). The task
+list joined them with `or` until the code `duru story` writes for an input needed a box with every word (the entry on
+that code below); it now joins them with `and`. The script counts once the page has had no change
 for 300 ms, waiting at most 3 s, so a box the app draws when its data arrives is counted, and the count does not depend
 on how fast the data came.
 The cut is the live app in a frame of its own at the app width, made taller, up to 4000 px, only as far as the counted
@@ -2227,8 +2230,10 @@ taken from the first trace read for that screen order.**
 Asked for in #277 (2026-10-18), on the input box of #275. The trace's `before` line for a `fill` holds the locator as
 `internal:label="…"i`, `internal:attr=[placeholder="…"i]` or `internal:testid=[data-testid="…"s]` and the text as
 `value` (read from a trace recorded with Playwright 1.60.0, format 8), so the three forms map to the story box's `label`,
-`placeholder` and `testId`. The trailing `i` or `s` (not exact or exact) is ignored: the story box has no place for it,
-and the words are the same either way. `>> nth=N` is carried as `nth` N + 1, since the trace counts from 0 and the story
+`placeholder` and `testId`. The trailing `i` or `s` (not exact or exact) is ignored, since the story box has no place
+for it. The words of a locator that was not exact may be only part of what the screen shows, or differ in case, while
+the code `duru story` writes for an input matches them exactly (the entry on that code below), so that code may find
+no box; this is a known limit. `>> nth=N` is carried as `nth` N + 1, since the trace counts from 0 and the story
 from 1; a locator with anything else chained (`nth=-1`, a filter, a parent) is not a box the story can name. A fill found
 by CSS or role, a fill with a blank value (a story value must have text), a fill whose box words are blank, and a locator
 of another shape are counted as skipped, and the candidate page shows the count. A role locator is skipped because it
@@ -2556,8 +2561,8 @@ Alternatives compared:
 **`duru story <config> <story ID>` prints a story in the text shape of `duru tasks`, plus the lines duru computes for each step, rather than JSON or a test code draft.**
 An agent that writes a test already reads the story part of `duru tasks`, so the same code makes the same lines and
 a story that no reviewer marked is read the same way. What duru can compute (the address to open, a `toHaveURL`
-line from the route path) is given as lines; what it cannot (which element to press, how to find a box) is said to
-be unknown, and the agent fills it from the source the line names.
+line from the route path, the code that fills an input's box from its words) is given as lines; what it cannot
+(which element to press) is said to be unknown, and the agent fills it from the source the line names.
 Alternatives compared:
 - JSON for the agent to read: each field is exact, but it is a second shape to keep beside the task list's text, and
   the text of reasons and verdicts would be written twice.
@@ -2679,6 +2684,46 @@ Alternatives compared:
 - One screen with each page as a sub-address under it: mattermost's and outline's items each have their own
   component, address, sidebar entry and condition, which fits a screen per item; appsmith's editor table picks panes
   inside one screen and would fit sub-addresses, but duru does not read it.
+
+**`duru story` writes under each input a Playwright line that finds the box with every word written for it, each
+matched exactly, joined by `.and()` in the order placeholder, label, test ID, with `.nth(N - 1)` for `nth`, and marks
+the line as not tried on the screen.**
+Driver's decision in #348 (2026-10-20). The line is
+`await page.getByPlaceholder("<placeholder>", { exact: true }).and(page.getByLabel("<label>", { exact: true })).and(page.getByTestId("<test ID>")).nth(N - 1).fill("<value>");`
+without the words the input does not have. Each kind sits in one table in `src/playwright-trace.ts` with the locator
+the code uses and the selector a trace's `fill` records, so reading inputs from a trace and writing code for them
+cannot drift apart. The order is fixed, so one box written with its words in any order gives the same code.
+Measured with playwright-core 1.60.0 and Chromium on a test page of boxes that share words: one label inside another
+(「메모」, 「서명자 메모」), the same label twice, labels that differ in case and spaces, a box with a placeholder before one
+without, a `<label>` and an `aria-label` that disagree, `aria-labelledby`, a label around the box, a search box and a
+button with the same `aria-label`, a test ID on a wrapper and on its box, three boxes with the placeholder 「메모장」 of
+which one also has a test ID, a hidden box, a select with the same label, and two labels on one box. The code reached
+each of the 25 boxes recorded by a walk that reads words and counts `nth` as Playwright does, and no other box; with the
+walk as it then read words, 7 of the 24 boxes it recorded were reached as another box or not at all. `exact` is needed
+because 「메모」 without it also finds 「서명자 메모」. With `exact`, Playwright compares a label after collapsing spaces but
+a placeholder and a test ID as written, so the words a trace keeps are not trimmed. The inputs read from
+`test/fixtures/app/traces/inputs.zip` fill the boxes the recorded test filled when their code runs on the recorded page,
+which a browser test keeps. `.and()` needs Playwright 1.34 or later (from Playwright's documents, not measured).
+duru does not run the code, so the line ends `(duru did not try it on the screen)`, and `duru tasks` gets no such line;
+its input lines keep `(not checked against the code)` and now join the words with `and`, as the code needs all of them.
+The review page still finds a box by any one word (the entry on pressing an input line), so a box the page points at
+may be one the code does not find: the intro and the skill tell the agent to try each word alone when the code finds
+no box, and then to tell the user which input it is. Code that holds a backtick is put in a longer code span, so the
+line still reads as one span.
+Known limit: a project whose Playwright config sets `testIdAttribute` gets `getByTestId` looking at that attribute,
+while a walk, the page and a trace read only `data-testid`, so its test ID lines may find no box. No config key was
+added for it: none of the projects on hand is known to set it (a guess; into-sign was not measured), and a key can be
+added later without changing story files.
+Alternatives compared:
+- `.or()` between the words: Playwright's strict mode stops the fill as soon as another box shares one word; the three
+  「메모장」 boxes were all matched at once.
+- The first word alone in the fixed order: the 「메모장」 box with its own test ID would need `nth` to be told from the
+  other two, which a walk does not write for it.
+- Locators without `exact`: a word that is part of another box's word finds both.
+- Keeping `or` on the input line and changing only its explanation: the input line would say `or` above code that needs
+  every word.
+- A `testIdAttribute` config key read by the walk, the page and the trace reader: those projects would work, but it is
+  a setting users write and duru keeps, with no project known to need it.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

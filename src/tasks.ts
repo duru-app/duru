@@ -11,6 +11,7 @@ import { findNeed, needPath } from './needs.ts';
 import { reviewData } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { BOX_WORDS } from './stories.ts';
+import { fillCode } from './playwright-trace.ts';
 import { testsAt } from './story-paths.ts';
 import { escapeText, readableRoute, routePattern } from './path-values.ts';
 import { DEPTHS } from './test-links.ts';
@@ -359,8 +360,15 @@ function linkText(link: any) {
 
 const writtenLines = (label: string, lines: string[] | undefined, indent: string) => (lines ?? []).map((text) => `${indent}- ${label}${within(text, `${indent}  `)}`);
 const writtenList = (head: string, lines: string[] | undefined) => (lines?.length ? [head, ...writtenLines('', lines, '  ')] : []);
-const boxText = (box: any) => BOX_WORDS.filter((k) => box[k] !== undefined).map((k) => `${k} ${JSON.stringify(box[k])}`).join(' or ') + (box.nth ? `, number ${box.nth}` : '');
-const inputLines = (inputs: any[] | undefined, indent: string) => (inputs ?? []).map((x) => `${indent}- input: ${boxText(x.box)} → ${JSON.stringify(x.value)} (not checked against the code)`);
+const boxText = (box: any) => BOX_WORDS.filter((k) => box[k] !== undefined).map((k) => `${k} ${JSON.stringify(box[k])}`).join(' and ') + (box.nth ? `, number ${box.nth}` : '');
+const codeSpan = (code: string) => {
+  const fence = '`'.repeat(Math.max(0, ...(code.match(/`+/g) ?? []).map((run) => run.length)) + 1);
+  return `${fence}${code}${fence}`;
+};
+const inputLines = (inputs: any[] | undefined, indent: string, brief?: StoryBrief) => (inputs ?? []).flatMap((x) => [
+  `${indent}- input: ${boxText(x.box)} → ${JSON.stringify(x.value)} (not checked against the code)`,
+  ...(brief ? [`${indent}  - fill: ${codeSpan(fillCode(x))} (duru did not try it on the screen)`] : []),
+]);
 
 function needText(need: any, needs: any) {
   if (typeof need === 'string') return need;
@@ -405,7 +413,7 @@ function stepLines(story: any, tests: any, needs: any, brief?: StoryBrief) {
     const indent = ' '.repeat(2 + no.length);
     const line = `  ${no}${within(step.screen, indent)} — ${step.onMap ? testSummary(testsAt(tests.nodes, step.screen)) : 'not on the map'}`;
     const fields = story.stepFields?.[i] ?? {};
-    const written = [...writtenLines(`link need from step ${i}: `, needTexts(fields.linkNeeds, needs), indent), ...writtenLines('need: ', needTexts(fields.needs, needs), indent), ...inputLines(fields.inputs, indent), ...writtenLines('expect: ', fields.expects, indent)];
+    const written = [...writtenLines(`link need from step ${i}: `, needTexts(fields.linkNeeds, needs), indent), ...writtenLines('need: ', needTexts(fields.needs, needs), indent), ...inputLines(fields.inputs, indent, brief), ...writtenLines('expect: ', fields.expects, indent)];
     const link = story.links[i];
     const pressed = brief && link && !['broken', 'off-map', 'configured'].includes(link.verdict) ? [`${indent}  - what to press: duru does not know`] : [];
     return [line, ...(brief ? briefLines(step, i === 0, brief, indent) : []), ...written, ...(link ? [`${indent}- to ${within(link.to, `${indent}  `)}: ${linkText(link)}`, ...pressed] : [])];
@@ -610,7 +618,7 @@ export function taskList(config: any) {
     out[2] += ' A person wrote the `needs` and `expects at the end` lines of a story and the `link need from step N`, `need` and `expect` lines under a step: what has to hold before the story or the step starts, what has to hold on the link from step N, the step before, for the story to take it into this step, what should be seen at that step, and what should hold once the last step is done. duru only carries them and does not check them against the code; set up each need and each link need from a step in the story test and check each expect there.';
   }
   if (stories.list.some((s) => storyMarks.some((m) => m.target.story === s.id) && hasInputs(s))) {
-    out[2] += ' An `input` line under a step names a box to fill at that step by the words on the screen it is found by, `placeholder`, `label` or `testId` (several joined by `or` find the same box), with `number N` when it is the Nth of the boxes those words find, and the value to put in it as a JSON string. duru did not look for the box in the code; if the test cannot find it, suspect the story first and tell the user which input it is.';
+    out[2] += ' An `input` line under a step names a box to fill at that step by the words on the screen it is found by, `placeholder`, `label` or `testId`, several joined by `and` for a box that has all of them, with `number N` when it is the Nth of the elements that have them all, and the value to put in it as a JSON string. duru did not look for the box in the code; if the test cannot find it by all the words, try each word alone, and if it still cannot, suspect the story first and tell the user which input it is.';
   }
   if (stories.list.some((s) => storyMarks.some((m) => m.target.story === s.id) && picksNeedFile(s))) {
     out[2] += ' A need written `<name> (needs/<file>): <text>` is one a person keeps as a file in the `needs` folder of the story folder and picks for several stories: set it up from its text the same way in every story test that has it, and on a `link need from step N` line set it up before step N so the test can take that link. A need that says the file is missing or could not be read points at a need file duru did not find or could not read; tell the user and do not guess what it holds.';
@@ -683,7 +691,7 @@ export function taskList(config: any) {
   return out.join('\n') + '\n';
 }
 
-const STORY_INTRO = "Write a test that goes through the screens of this story in order, and put `@story:<story ID>` on it. The lines under each step come from the map: `open` is the address to open for the first step, with a route variable left as it is in the route path, and `arrives` is the line to check that the step's screen is open. `what to press` says duru does not know which element moves from one screen to the next, and appears only under a link that exists in the source, not under a link marked `no link` or `not judged, a screen is not on the map`, or a move written in the config's `moves`; the link's verdict and where it is written are on the `to` line. The `need`, `link need from step N`, `input` and `expect` lines, and the `needs` and `expects at the end` lists, are text a person wrote that duru did not check against the code; a need written `<name> (needs/<file>): <text>` is kept as a file and picked by several stories. The `reach` and `preconditions` lines say why a step may not open. `story tests` are the tests already tagged with this story. Under `empty tests` are the empty tests with the `@story:` tag and the `@screen:` tag of each screen on the map already in place and held back from passing (`test.fixme`, `test.todo`, `@Disabled` with `import org.junit.jupiter.api.Disabled;`, or no verdict word): copy the one for your runner, put what the test checks in place of `<what it checks>`, remove what holds it back and fill in the data setup and the checks.";
+const STORY_INTRO = "Write a test that goes through the screens of this story in order, and put `@story:<story ID>` on it. The lines under each step come from the map: `open` is the address to open for the first step, with a route variable left as it is in the route path, and `arrives` is the line to check that the step's screen is open. `what to press` says duru does not know which element moves from one screen to the next, and appears only under a link that exists in the source, not under a link marked `no link` or `not judged, a screen is not on the map`, or a move written in the config's `moves`; the link's verdict and where it is written are on the `to` line. A `fill` line under an `input` line is Playwright code that finds the box with every word written for it, each matched exactly, takes the Nth of those boxes when the input has a number, and puts the value in; duru did not try it on the screen, so when it finds no box, try each word alone, and when that finds none either, tell the user which input it is. The `need`, `link need from step N`, `input` and `expect` lines, and the `needs` and `expects at the end` lists, are text a person wrote that duru did not check against the code; a need written `<name> (needs/<file>): <text>` is kept as a file and picked by several stories. The `reach` and `preconditions` lines say why a step may not open. `story tests` are the tests already tagged with this story. Under `empty tests` are the empty tests with the `@story:` tag and the `@screen:` tag of each screen on the map already in place and held back from passing (`test.fixme`, `test.todo`, `@Disabled` with `import org.junit.jupiter.api.Disabled;`, or no verdict word): copy the one for your runner, put what the test checks in place of `<what it checks>`, remove what holds it back and fill in the data setup and the checks.";
 
 export function storyBrief(config: any, id: string): { text: string } | { error: string } {
   const { map, tests, stories, needs } = reviewData(config, null);

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
-import type { InputBox, StepInput } from './stories.ts';
+import type { BOX_WORDS, StepInput } from './stories.ts';
 
 type StepKind = 'visit' | 'assert' | 'interact';
 
@@ -34,10 +34,10 @@ const INTERACTIONS = new Set([
   'mouseMove', 'mouseClick', 'mouseDown', 'mouseUp', 'mouseWheel', 'touchscreenTap',
 ]);
 const QUOTED = '("(?:[^"\\\\]|\\\\.)*")';
-const BOX_SELECTORS: [keyof InputBox, RegExp][] = [
-  ['label', new RegExp(`^internal:label=${QUOTED}[is]?(?: >> nth=(\\d+))?$`)],
-  ['placeholder', new RegExp(`^internal:attr=\\[placeholder=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`)],
-  ['testId', new RegExp(`^internal:testid=\\[data-testid=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`)],
+const BOX_LOCATORS: { word: (typeof BOX_WORDS)[number]; selector: RegExp; locator: (text: string) => string }[] = [
+  { word: 'placeholder', selector: new RegExp(`^internal:attr=\\[placeholder=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`), locator: (text) => `getByPlaceholder(${JSON.stringify(text)}, { exact: true })` },
+  { word: 'label', selector: new RegExp(`^internal:label=${QUOTED}[is]?(?: >> nth=(\\d+))?$`), locator: (text) => `getByLabel(${JSON.stringify(text)}, { exact: true })` },
+  { word: 'testId', selector: new RegExp(`^internal:testid=\\[data-testid=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`), locator: (text) => `getByTestId(${JSON.stringify(text)})` },
 ];
 const VALUE_WRITES = new Set(['type', 'selectOption', 'check', 'uncheck', 'setInputFiles']);
 const NOT_THE_APP = /^(about|data|blob|chrome|chrome-error):/;
@@ -47,8 +47,8 @@ const DIRECTORY_ENTRY = 0x02014b50;
 function fillOf(params: any): StepInput | 'skipped' {
   const value = params?.value;
   if (typeof value !== 'string' || !value.trim() || typeof params.selector !== 'string') return 'skipped';
-  for (const [word, pattern] of BOX_SELECTORS) {
-    const found = params.selector.match(pattern);
+  for (const { word, selector } of BOX_LOCATORS) {
+    const found = params.selector.match(selector);
     if (!found) continue;
     try {
       const text = JSON.parse(found[1]);
@@ -59,6 +59,11 @@ function fillOf(params: any): StepInput | 'skipped' {
     }
   }
   return 'skipped';
+}
+
+export function fillCode({ box, value }: StepInput) {
+  const [first, ...rest] = BOX_LOCATORS.filter(({ word }) => box[word] !== undefined).map(({ word, locator }) => `page.${locator(box[word]!)}`);
+  return `await ${first}${rest.map((r) => `.and(${r})`).join('')}${box.nth ? `.nth(${box.nth - 1})` : ''}.fill(${JSON.stringify(value)});`;
 }
 
 function zipEntries(buffer: Buffer): Map<string, () => Buffer> {
