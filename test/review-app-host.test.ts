@@ -632,6 +632,24 @@ test('the page gets what the settings file sets in the merged sections, without 
   );
 });
 
+test('each setting need the page gets carries its value with no change, read through the settings file, whether that meets it, the change to write and why it cannot be written', async () => {
+  await withFakeApi((api) =>
+    withPassword('s3cret', () =>
+      withRebuiltFixture(withSettingsFile(api), (config) =>
+        withServer(config, 'reviewer', async (base) => {
+          const { map } = await (await fetch(`${base}/api/data`)).json();
+          const needsOf = (id: string) => map.screens.find((s: any) => s.id === id).access.settings.flatMap((x: any) => x.needs);
+          assert.deepEqual(needsOf('/lab#Lab')[0].change, { unchanged: false, known: true, met: false, set: { path: ['SYSTEM', 'LAB_ENABLED'], value: true }, blocked: null });
+          assert.deepEqual(needsOf('/help#Help')[0].change, { unchanged: true, known: true, met: true, set: { path: ['SYSTEM', 'HELP_LINK_ENABLED'], value: true }, blocked: null });
+          const admin = needsOf('/admin/report#AdminReport');
+          assert.deepEqual(admin.find((n: any) => n.need === 'includes').change.unchanged, true);
+          assert.deepEqual(admin.find((n: any) => n.need === 'present').change, { unchanged: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] }, known: true, met: true, set: null, blocked: 'no-value' });
+        }),
+      ),
+    ),
+  );
+});
+
 test('the settings file is read without logging in: whether it is there, what it sets in the merged sections, or the error that stopped it', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {

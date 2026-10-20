@@ -22,6 +22,7 @@ import type { Mark } from './marks.ts';
 import { linkKey, locatePart, locateStoryPart } from './parts.ts';
 import type { StoryPath } from './parts.ts';
 import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './path-values.ts';
+import { settingChange } from './setting-changes.ts';
 import { addStory, editStory, FileChanged, writeStoryFields, writeStorySteps } from './stories.ts';
 import { checkScreens, checkStoryFiles } from './story-paths.ts';
 import { DEPTHS } from './test-links.ts';
@@ -146,13 +147,14 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const marks = classifyMarks(loadMarks(config.marksDir).map(mergedStatus), map, storyIds, kinds, linked, config.roleGuards, candidates.list.map((c) => c.key), stories.list as StoryPath[]);
   const targets = caseTargets(map, caseKinds, marks.attached);
   const pickedCases = (id: string) => pickedKinds(targets, id);
+  const settingsFile = config.app?.settingsFile ? { root: config.app.settingsFile.root, merged: config.app.settingsFile.merged, file: fileSettings?.file ?? null } : null;
   const screens = map.screens.map((s) => ({
     ...s,
     callOptions: screenCallOptions(s, callsById),
     cases: [...screenCases(s.access), ...pickedCases(s.id)],
     access: {
       ...s.access,
-      ...(s.access.settings && { settings: s.access.settings.map((source) => ({ ...source, needs: source.needs.map((need) => ({ ...need, condition: settingConditionName(need) })) })) }),
+      ...(s.access.settings && { settings: s.access.settings.map((source) => ({ ...source, needs: source.needs.map((need) => ({ ...need, condition: settingConditionName(need), change: settingChange(need, settingsFile, map) })) })) }),
       links: s.access.links.map((l) => ({ ...l, part: linkKey(l) })),
     },
   }));

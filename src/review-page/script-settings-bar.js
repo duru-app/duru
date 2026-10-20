@@ -5,57 +5,26 @@ const overrideIn = (list, path, item) => list.find((o) => samePlace(o, path, ite
 const overrides = () => state.data.app?.settings?.overrides ?? [];
 const quoted = (v) => JSON.stringify(v);
 const sourceLabel = (source) => (source.from === 'route' ? '라우트' : source.inherited ? `${source.from} 에서 물려받음` : `${source.from} 에서 오는 링크`);
-const valueAt = (v, keys) => keys.reduce((o, k) => (o !== null && typeof o === 'object' ? o[k] : undefined), v);
 
-function fileDefines(section, key) {
-  const values = state.data.app.settings?.file?.[section];
-  return values !== null && typeof values === 'object' && Object.hasOwn(values, key);
-}
-
-function unchangedKnown(n) {
-  const incomplete = state.data.map.settingsDefaultsIncomplete?.[n.root] ?? [];
-  return !incomplete.some((p) => p.every((k, i) => k === n.path[i])) || fileDefines(n.path[0], n.path[1]);
-}
-
-function blockOf(n) {
-  const settings = state.data.app.settings;
-  if (!settings) return '설정 파일(app.settingsFile)을 적지 않아 바꿀 수 없습니다';
-  if (n.root !== settings.root) return `${n.root} 로 읽는 설정이라 설정 파일로 바꿀 수 없습니다`;
-  if (n.path.length < 2) return '섹션 전체는 바꿀 수 없습니다';
-  const [section, key] = n.path;
-  if (!settings.merged.includes(section)) return `앱이 설정 파일에서 ${section} 섹션을 읽지 않아 바꿀 수 없습니다`;
-  if ((n.need === 'includes' || n.path.length > 2) && !unchangedKnown(n)) {
-    return `${section}.${key} 기본값을 소스에서 다 읽지 못해, 설정 파일이 이 키를 정하지 않는 한 안쪽 값만 바꾸면 나머지가 사라질 수 있어 바꿀 수 없습니다`;
-  }
-  if (n.need === 'present') return '어떤 값이 있어야 하는지 몰라 넣을 수 없습니다';
-  return null;
-}
-
-function unchangedOf(n) {
-  const settings = state.data.app.settings;
-  if (!settings || n.root !== settings.root || n.path.length < 2 || !settings.merged.includes(n.path[0])) return n.default;
-  const [section, key, ...rest] = n.path;
-  const top = fileDefines(section, key) ? settings.file[section][key] : state.data.map.settingsDefaults?.[n.root]?.[section]?.[key];
-  return valueAt(top, rest);
-}
-
-const unchangedIncludes = (n) => {
-  const list = unchangedOf(n);
-  return Array.isArray(list) && list.includes(n.value);
+const BLOCK_TEXT = {
+  'no-settings-file': () => '설정 파일(app.settingsFile)을 적지 않아 바꿀 수 없습니다',
+  'other-root': (n) => `${n.root} 로 읽는 설정이라 설정 파일로 바꿀 수 없습니다`,
+  'whole-section': () => '섹션 전체는 바꿀 수 없습니다',
+  'section-not-merged': (n) => `앱이 설정 파일에서 ${n.path[0]} 섹션을 읽지 않아 바꿀 수 없습니다`,
+  'default-incomplete': (n) => `${n.path[0]}.${n.path[1]} 기본값을 소스에서 다 읽지 못해, 설정 파일이 이 키를 정하지 않는 한 안쪽 값만 바꾸면 나머지가 사라질 수 있어 바꿀 수 없습니다`,
+  'no-value': () => '어떤 값이 있어야 하는지 몰라 넣을 수 없습니다',
 };
+const blockOf = (n) => (n.change.blocked ? BLOCK_TEXT[n.change.blocked](n) : null);
 
 function currentOf(n, list) {
-  if (n.need === 'includes') return overrideIn(list, n.path, n.value)?.value ?? unchangedIncludes(n);
-  const o = overrideIn(list, n.path);
-  return o ? o.value : unchangedOf(n);
+  const o = overrideIn(list, n.path, n.need === 'includes' ? n.value : undefined);
+  return o ? o.value : n.change.unchanged;
 }
 
 function satisfied(n, list) {
   const v = currentOf(n, list);
   return { on: Boolean(v), off: !v, equals: v === n.value, includes: v === true, present: Boolean(v) }[n.need];
 }
-
-const wantedOf = (n) => (n.need === 'includes' ? { path: n.path, item: n.value, value: true } : { path: n.path, value: n.need === 'equals' ? n.value : n.need === 'on' });
 
 function withOverride(list, op, isDefault) {
   const rest = list.filter((o) => !samePlace(o, op.path, op.item));
@@ -69,8 +38,8 @@ function autoOverrides(s, list) {
   // 원래 값을 다 읽지 못한 설정은 조건을 채웠는지 알 수 없으므로 필요한 값을 직접 적는다.
   const written = (n) => overrideIn(list, n.path, n.need === 'includes' ? n.value : undefined);
   const needs = sources.filter((x) => x.from === 'route' || x === link).flatMap((x) => x.needs)
-    .filter((n) => !blockOf(n) && (!satisfied(n, list) || (!unchangedKnown(n) && !written(n))));
-  return needs.length ? needs.reduce((next, n) => withOverride(next, wantedOf(n), unchangedKnown(n) && satisfied(n, [])), list) : null;
+    .filter((n) => !blockOf(n) && (!satisfied(n, list) || (!n.change.known && !written(n))));
+  return needs.length ? needs.reduce((next, n) => withOverride(next, n.change.set, n.change.met === true), list) : null;
 }
 
 // 한 단계가 실패해도 다음 단계는 돌고 프레임은 언제나 열린다.
@@ -145,7 +114,7 @@ function settingControl(row, list) {
   const disabled = Boolean(block);
   if (n.need === 'includes') {
     const inList = currentOf(n, list);
-    const isDefault = (on) => on === unchangedIncludes(n);
+    const isDefault = (on) => on === n.change.unchanged;
     return h('label', { class: cls, title }, name, h('span', {}, `에 ${quoted(n.value)}`),
       h('input', { type: 'checkbox', checked: inList, disabled, onchange: (e) => {
         const on = e.target.checked;
@@ -155,7 +124,7 @@ function settingControl(row, list) {
   const values = [...new Map(row.needs.filter((x) => x.need === 'equals').map((x) => [quoted(x.value), x.value])).values()];
   if (values.length) {
     const current = overrideIn(list, n.path);
-    const unchanged = unchangedKnown(n) ? unchangedOf(n) : undefined;
+    const unchanged = n.change.known ? n.change.unchanged : undefined;
     return h('span', { class: cls, title }, name,
       h('select', { disabled, onchange: (e) => {
         const picked = e.target.value;
@@ -167,7 +136,7 @@ function settingControl(row, list) {
       reason);
   }
   const on = Boolean(currentOf(n, list));
-  const set = (value) => () => updateSettings((l) => withOverride(l, { path: n.path, value }, unchangedKnown(n) && value === Boolean(unchangedOf(n))));
+  const set = (value) => () => updateSettings((l) => withOverride(l, { path: n.path, value }, n.change.known && value === Boolean(n.change.unchanged)));
   return h('span', { class: cls, title }, name,
     h('button', { class: on ? 'on' : '', disabled, onclick: set(true) }, '켜기'),
     h('button', { class: on ? '' : 'on', disabled, onclick: set(false) }, '끄기'),
