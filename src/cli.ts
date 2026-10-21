@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { baselineLine, compareMaps, readBaseline } from './baseline.ts';
+import { baselineLine, compareMaps, newUndecided, readBaseline } from './baseline.ts';
 import { storeCandidates, storyCandidates } from './candidates.ts';
 import { casesWithoutTests, picksCalls, rulePicks } from './case-targets.ts';
 import { isPlainObject, loadConfig } from './config.ts';
@@ -34,10 +34,11 @@ const portArg = command === 'review' && extra[0] === '--port' && extra.length ==
 const replyArgs = command === 'reply' && (extra.length === 2 || (extra.length === 4 && extra[2] === '--server')) ? { id: extra[0], text: extra[1], server: extra[3] ?? null } : null;
 const waitServer = command === 'wait' && extra.length === 2 && extra[0] === '--server' ? extra[1] : null;
 const caseArgs = command === 'case' ? caseArgsOf(extra) : null;
+const undecidedArgs = command === 'undecided' ? undecidedArgsOf(extra) : null;
 const candidateArgs = command === 'candidate' && (extra.length === 2 || (extra.length === 4 && extra[2] === '--server' && extra[3])) && extra[1] ? { comment: extra[0], from: extra[1], server: extra[3] ?? null } : null;
-const argsFit = command === 'story' ? extra.length === 1 && extra[0] !== '' : command === 'reply' ? replyArgs : command === 'wait' ? waitServer : command === 'case' ? caseArgs : command === 'undecided' ? extra.length <= 1 : command === 'candidate' ? candidateArgs : extra.length === 0 || Number.isInteger(portArg);
+const argsFit = command === 'story' ? extra.length === 1 && extra[0] !== '' : command === 'reply' ? replyArgs : command === 'wait' ? waitServer : command === 'case' ? caseArgs : command === 'undecided' ? undecidedArgs : command === 'candidate' ? candidateArgs : extra.length === 0 || Number.isInteger(portArg);
 if (!COMMANDS.includes(command) || !configPath || !argsFit) {
-  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru story <config.json> <story ID>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>\n       duru case <config.json> <kind> <screen or call ID> needed|not-needed [--note <why>] [--author <name> | --server <review page address>]\n       duru undecided <config.json> [<kind>]\n       duru candidate <config.json> <comment ID> <candidate.json | -> [--server <review page address>]`);
+  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru story <config.json> <story ID>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>\n       duru case <config.json> <kind> <screen or call ID> needed|not-needed [--note <why>] [--author <name> | --server <review page address>]\n       duru undecided <config.json> [<kind>] [--new]\n       duru candidate <config.json> <comment ID> <candidate.json | -> [--server <review page address>]`);
   process.exit(2);
 }
 if (caseArgs && caseArgs.server !== null && caseArgs.author !== null) {
@@ -54,6 +55,11 @@ function caseArgsOf(args: string[]) {
     options[rest[i]] = rest[i + 1];
   }
   return { kind, node, status, note: options['--note'] ?? '', author: options['--author'] ?? null, server: options['--server'] ?? null };
+}
+
+function undecidedArgsOf(args: string[]) {
+  const rest = args.filter((a) => a !== '--new');
+  return args.length - rest.length <= 1 && rest.length <= 1 ? { only: rest[0], newOnly: rest.length < args.length } : null;
 }
 
 async function sendToReview(server: string, route: string, body: unknown) {
@@ -120,24 +126,30 @@ if (command === 'tasks') {
   const steps = written.links.map((l, i) => `step ${i + 1} → ${i + 2}: from ${l.from} to ${l.to} — ${linkText(l)}`);
   process.stdout.write([`wrote ${written.file}`, ...steps].map((l) => `${l}\n`).join(''));
 } else if (command === 'undecided') {
+  const { only, newOnly } = undecidedArgs!;
+  if (newOnly && !config.baselineMap) {
+    console.error('--new needs baselineMap in the config');
+    process.exit(2);
+  }
   let read: ReturnType<typeof readCaseTargets>;
+  let since = null;
   try {
     read = readCaseTargets(config);
+    if (newOnly) since = { file: config.baselineMap, changes: compareMaps(readBaseline(config.baselineMap), read.map) };
   } catch (err: any) {
     console.error(err.message);
     process.exit(1);
   }
-  const [only] = extra;
   if (only !== undefined && !Object.hasOwn(config.caseKinds, only)) {
     console.error(`"${only}" is not a kind in caseKinds`);
     process.exit(2);
   }
   const kinds = only === undefined ? config.caseKinds : { [only]: config.caseKinds[only] };
   if (!Object.keys(kinds).length) console.error('caseKinds names no kind, so nothing is undecided');
-  const left = Object.keys(kinds).some((kind) => read.targets[kind].undecided.length);
+  const left = Object.keys(kinds).some((kind) => (since ? newUndecided(since.changes, read.targets[kind].undecided) : read.targets[kind].undecided).length);
   const done = () => process.exit(left ? UNDECIDED_LEFT : 0);
   process.stdout.on('error', done);
-  process.stdout.write(undecidedLines(read.map, kinds, read.targets, read.attached).map((l) => `${l}\n`).join(''), done);
+  process.stdout.write(undecidedLines(read.map, kinds, read.targets, read.attached, since).map((l) => `${l}\n`).join(''), done);
 } else if (command === 'reply') {
   const { id, text, server } = replyArgs!;
   try {
@@ -271,7 +283,7 @@ if (command === 'tasks') {
     console.error(err.message);
     process.exit(1);
   });
-  const changes = baseline && baselineLine(config.baselineMap, compareMaps(baseline, map));
+  const changes = baseline && compareMaps(baseline, map);
   console.log(`wrote ${write('map.json', map)}`);
   const allEndpoints = Object.values<any>(map.apiFunctions).flatMap((f) => f.endpoints);
   const count = (st: string) => allEndpoints.filter((e) => e.server.status === st).length;
@@ -319,7 +331,7 @@ if (command === 'tasks') {
   for (const { file, line, reason } of map.unreadRoutes ?? []) console.log(`  route not read ← ${file}:${line}: ${reason}`);
 
   if (command === 'rebuild') {
-    if (changes) console.log(changes);
+    if (changes) console.log(baselineLine(config.baselineMap, changes));
     for (const [kind, caseKind] of Object.entries<CaseKind>(config.caseKinds)) {
       if (!caseKind.picks.length) continue;
       const rules = rulePicks(map, caseKind);
@@ -361,8 +373,9 @@ if (command === 'tasks') {
         const { targets } = readCaseTargets(config);
         for (const [kind, caseKind] of Object.entries<CaseKind>(config.caseKinds)) {
           const untested = casesWithoutTests(kind, caseKind, targets[kind], judged.nodes).reduce((n, c) => n + c.tags.length, 0);
-          const review = targets[kind].review.length;
-          console.log(`case kind ${kind}: undecided ${targets[kind].undecided.length} | cases with no tests ${untested}${review ? ` | under review ${review}` : ''}`);
+          const { undecided, review } = targets[kind];
+          const fresh = changes ? `, ${newUndecided(changes, undecided).length} of them new since ${config.baselineMap}` : '';
+          console.log(`case kind ${kind}: undecided ${undecided.length}${fresh} | cases with no tests ${untested}${review.length ? ` | under review ${review.length}` : ''}`);
         }
       } catch (err: any) {
         console.log(`  case kinds not counted: ${err.message}`);

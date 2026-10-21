@@ -2970,6 +2970,54 @@ without, the example marks, a person's `needed` and an agent's `needed`: what `r
 undecided` print is identical. With an agent `not-needed` accepted and another reverted, main's `duru undecided`
 leaves the accepted one out and lists the reverted one as a person's 「대상 아님」 without a note.
 
+**A new undecided candidate is a screen or call undecided now that the `baselineMap` map does not have; it is worked
+out each time, `duru undecided --new` ends on those alone, and the page marks them 「신규」.**
+Asked for in #316, on top of #315. Some kinds keep their older candidates undecided for later: on into-sign 1.5.0 the
+two kinds had 182 and 243. Counting undecided as one number then never reaches 0, so it cannot tell whether what the
+new version brought was looked at. Now the candidates undecided on this map that are not on the baseline map, by the
+IDs `compareMaps` already matches, are counted apart. Nothing is stored and `caseTargets` is unchanged; a candidate
+under review is not undecided, so it is not a new undecided one either. On into-sign 1.4.2 → 1.5.0 this gave 7 of
+182 (4 write requests, 3 reads) and 9 of 243 (4 writes, 3 reads, 2 screens); 1.5.0 → 1.5.1 gave none for either. A
+screen whose route variable was made optional gets a new ID and so counts as new, as the baseline comparison already
+does.
+`duru undecided <config> [<kind>] --new` lists only those, under `case kind <kind>: M new undecided since <file> (N
+undecided in all)`, and exits with 3 while any is left and 0 once none is, whatever older ones are left. Without
+`baselineMap` it says `--new needs baselineMap in the config` and exits with 2, as for a call that cannot work.
+`rebuild` adds `, M of them new since <file>` after each kind's undecided count; `new since` is already taken on the
+line above for what the rules newly pick, so the words say which count they belong to. The driver decided (2026-10-21)
+that plain `duru undecided`, the task list and the tab number 「경우 종류 N」 do not read the baseline map: if they did,
+a broken `baselineMap` would stop `duru undecided`, `duru tasks` and the task list printed at the end of a review,
+which work today. The task list only adds a sentence on when to run `--new` while the config names `baselineMap`.
+The agent's guidance tells it to use `--new` only for a kind whose older candidates the user said to leave for
+later, and never for a kind added to `caseKinds` after the baseline map was built, whose candidates all count as
+older, so `--new` would end at 0 at once.
+On the page, from the driver's choice on drawings (2026-10-21): the kind's line reads 「미판정 N (신규 M)」 and the
+undecided box has 「신규 M」 under it; each new candidate carries a 「신규」 chip in the colour of the screen list's mark for
+a screen the baseline does not have, with 「<folder> 지도에 없던 요청입니다」 (or 「화면」) as `title` and `aria-label`; a 「신규
+M」 button above the list shows only them. 「경우별 테스트」 puts the same chip on an undecided kind's line, since a new
+call had no mark anywhere. Names on the page are one or two words or an icon, with the meaning on hover: the screen
+list's 「생김」 became 「신규」, the same meaning, and 「사람이 정할 것 N」 became a person icon with the number and 「직접
+판정」 on hover. A view that hides lines must not save lines checked before they were hidden, so 「대상」 and 「대상
+아님…」 save, and count, only the checked lines shown; the person view had the same fault and is fixed with it.
+Choosing another kind shows every candidate again.
+Reference cases: SonarQube's default quality gate fails while any security hotspot in new code is not reviewed, so old
+debt does not keep the gate from being used; SARIF 2.1.0 gives each result a `baselineState` (§3.27.24) of new,
+unchanged, updated or absent; Semgrep's `--baseline-commit` reports only findings the baseline commit did not have;
+AltWalker counts the whole and the part not yet visited side by side.
+Alternatives compared:
+- Also counting as new a candidate a rule picked on the baseline map but no longer picks: wider than the issue, 0 on
+  into-sign, and one a person had marked 「대상 아님」 would then be new, which an agent cannot change, so `--new`
+  could never reach 0.
+- Building the old map from a git ref, storing the map a reviewer last saw, or storing the date each candidate was
+  first seen: the `baselineMap` decision above and the issue settled these.
+- Plain `duru undecided` and the task list reading the baseline map and adding 「M new since …」: an agent would see the
+  new ones first, but a broken baseline map would stop commands that work now.
+- 「경우 종류 425 · 새로 16」 on the tab: with three-digit counts the tab already moves to a second line in a 300 px list.
+- The chip alone, or the chip with new candidates moved to the top of each group: finding 7 among 182 by the chip
+  alone means reading 182 lines, and moving lines changes the order the agent's list and the page share.
+- `--new` whenever the config names `baselineMap`: older misses in a kind decided all at once would pass without a
+  word, and a kind added after the baseline map would end at once.
+
 **A new story asks the coding agent through its own conversation: the steps chosen so far become a 「화면 순서」 tag,
 「링크 없음」 between two steps adds that gap to it, and the comment carries the gaps and the fields typed at each step.**
 Asked for in #253 and built in #365. The driver chose on mock-ups of the review page (2026-10-20) to have no separate

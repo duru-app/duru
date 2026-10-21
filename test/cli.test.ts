@@ -233,6 +233,60 @@ test('rebuild prints for each case kind how many candidates are undecided and ho
   });
 });
 
+const NEW_SINCE = ['POST:/api/v1/report/schedule', 'GET:/api/v1/lab/experiment'];
+
+function setBaseline(configFile: string, file: string) {
+  const dir = path.dirname(configFile);
+  const map = JSON.parse(fs.readFileSync(path.join(dir, 'out', 'map.json'), 'utf8'));
+  map.screens = map.screens.filter((s: { id: string }) => s.id !== '/lab/result#LabResult');
+  map.calls = map.calls.filter((c: { id: string }) => !NEW_SINCE.includes(c.id));
+  fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+  fs.writeFileSync(path.join(dir, file), JSON.stringify(map));
+  fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), baselineMap: file }));
+  return path.join(dir, file);
+}
+
+test('undecided --new lists only the undecided candidates the baseline map does not have under a line with both counts, exits with 3 while one is left and with 0 once none is though older ones are, leaves out one under review, and plain undecided stays as it was', () => {
+  withCaseKinds((configFile, run) => {
+    run('rebuild');
+    assert.deepEqual(run('undecided', '--new'), { status: 2, stdout: '', stderr: '--new needs baselineMap in the config\n' });
+    const plain = run('undecided');
+    const baselineFile = setBaseline(configFile, 'releases/1.0/map.json');
+    assert.deepEqual(run('undecided'), plain);
+    assert.deepEqual(run('undecided', 'ended', '--new'), {
+      status: 3,
+      stdout: `case kind ended: 2 new undecided since ${baselineFile} (8 undecided in all)\n  POST:/api/v1/report/schedule — call, sent from /admin/audit#AdminAudit, /admin/report#AdminReport\n  GET:/api/v1/lab/experiment — call, sent from /lab#Lab\n`,
+      stderr: '',
+    });
+    assert.deepEqual(run('undecided', '--new', 'legacy').stdout.split('\n').filter(Boolean).map((l) => l.split(' — ')[0]), [
+      `case kind legacy: 3 new undecided since ${baselineFile} (21 undecided in all)`,
+      ...NEW_SINCE.map((id) => `  ${id}`),
+      '  /lab/result#LabResult',
+    ]);
+    assert.equal(run('undecided', 'gone', '--new').status, 2);
+
+    assert.equal(run('case', 'ended', NEW_SINCE[0], 'needed').status, 0);
+    assert.equal(run('case', 'ended', NEW_SINCE[1], 'not-needed', '--note', '실험 화면은 문서를 쓰지 않는다').status, 0);
+    assert.deepEqual(run('undecided', 'ended', '--new'), {
+      status: 0,
+      stdout: `case kind ended: 0 new undecided since ${baselineFile} (6 undecided in all)\n1 under review: not-needed marks of the agent that wait for a reviewer to accept or revert them on the review page\n`,
+      stderr: '',
+    });
+    assert.equal(run('undecided', 'ended').status, 3);
+    assert.equal(run('undecided', '--new').status, 3);
+  });
+});
+
+test('undecided --new stops with 1 naming a baseline map that cannot be read, while plain undecided does not read it', () => {
+  withCaseKinds((configFile, run) => {
+    run('rebuild');
+    const plain = run('undecided');
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), baselineMap: 'releases/gone/map.json' }));
+    assert.deepEqual(run('undecided', '--new'), { status: 1, stdout: '', stderr: `baselineMap ${path.join(path.dirname(configFile), 'releases/gone/map.json')} does not exist\n` });
+    assert.deepEqual(run('undecided'), plain);
+  });
+});
+
 function rebuildTraced(change: (results: string) => void = () => {}) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
@@ -551,7 +605,7 @@ test('rebuild counts the story candidates from the visit records and from traces
   }
 });
 
-for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc'], ['reply', 'x.json', 'id'], ['reply', 'x.json', 'id', 'text', '--port', '5000'], ['review', 'x.json', '--server', 'http://127.0.0.1:1/'], ['wait', 'x.json'], ['wait', 'x.json', '--server'], ['wait', 'x.json', '--port', '5000'], ['case', 'x.json', 'ended', '/lab#Lab'], ['undecided', 'x.json', 'ended', 'legacy']]) {
+for (const args of [['nope', 'x.json'], ['extract', 'x.json', 'out.json'], ['rebuild', 'x.json', '--port', '5000'], ['tasks', 'x.json', '--port', '5000'], ['review', 'x.json', '--port', 'abc'], ['reply', 'x.json', 'id'], ['reply', 'x.json', 'id', 'text', '--port', '5000'], ['review', 'x.json', '--server', 'http://127.0.0.1:1/'], ['wait', 'x.json'], ['wait', 'x.json', '--server'], ['wait', 'x.json', '--port', '5000'], ['case', 'x.json', 'ended', '/lab#Lab'], ['undecided', 'x.json', 'ended', 'legacy'], ['undecided', 'x.json', 'ended', '--new', '--new']]) {
   test(`"${args.join(' ')}" prints usage and exits with 2`, () => {
     assert.throws(
       () => execFileSync(process.execPath, [CLI, ...args], { encoding: 'utf8', stdio: 'pipe' }),

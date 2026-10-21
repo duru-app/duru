@@ -157,7 +157,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    picks nothing on this map, most likely a typo in its pattern or method; tell the user, with the rule as printed.
    A line `case kind <kind>: undecided N | cases with no tests N` counts that kind's work in the task list's
    `# Case kinds` (step 3); `| under review N` after it counts your `not-needed` marks still waiting for a reviewer,
-   which are no work for you.
+   which are no work for you. With `baselineMap`, `, M of them new since <file>` after the undecided count says how
+   many of those candidates that earlier map does not have (see `--new` in step 3).
    When it prints lines starting with `tsconfig import`, each names an import that matches an alias of the
    `tsconfig` file whose targets are inside the client source but finds no file, with the number of files that write it: the alias or the import is wrong, or
    the file is missing. Tell the user, because the screens that use those files miss what they would reach.
@@ -395,9 +396,17 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    will not change it. This
    part is done when every candidate `duru undecided` still lists is one only a person can decide, such a line or
    one you could not tell from the code, or when none is left and it exits with 0; then tell the user which are
-   left, with the author and date such a line gives, and that the review page's 「경우 종류」 tab lists those with such
-   a line under 「사람이 정할 것」 to decide several at once, and how many of your `not-needed` wait under 「검토 중」 there
-   to be accepted or reverted; then go on with `cases with no tests`. Without `--server` the
+   left, with the author and date such a line gives, and that the review page's 「경우 종류」 tab shows those with such
+   a line under the button with a person icon (「직접 판정」 on hover) to decide several at once, and how many of your `not-needed` wait under 「검토 중」 there
+   to be accepted or reverted; then go on with `cases with no tests`.
+   When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config>
+   <kind> --new` for that kind instead: it lists only the undecided candidates that the map named by `baselineMap`
+   does not have, under `case kind <kind>: M new undecided since <file> (N undecided in all)`, and exits with 0 once
+   none of them is left, even while older ones are; for that kind the part is done then. Use it only for a kind the
+   user said so of, and plain `duru undecided` for every other kind, so that older candidates nobody decided are not
+   passed over without a word. Do not use `--new` for a kind added to `caseKinds` after that map was built: its
+   candidates are all on that map and count as older, so `--new` ends at once with nothing decided. Without
+   `baselineMap` it prints `--new needs baselineMap in the config` and exits with 2; tell the user. Without `--server` the
    marks are written straight into the marks folder, so an open review page shows them only once it is reloaded;
    tell the user so.
    Under `cases with no tests`, each `### <ID>` is a screen or call the kind is picked for whose `no tests` tags no

@@ -122,6 +122,48 @@ test('with baselineMap, rebuild also prints how many screens and calls the rules
   });
 });
 
+test('with baselineMap, rebuild says for each case kind how many of its undecided candidates the baseline map does not have, leaving out one picked or under review; without it the line is as before', async () => {
+  await withCopy(({ copy, configFile, setConfig, rebuild }) => {
+    setConfig({ caseKinds: { boundary: '경계', ended: { text: '끝난 문서', picks: [{ screen: '/document/**', methods: ['POST', 'PUT'] }] } } });
+    const undecidedLines = (out: string) => out.split('\n').filter((l) => /^case kind \S+: undecided /.test(l));
+    const plain = undecidedLines(rebuild());
+    assert.deepEqual(plain, ['case kind boundary: undecided 21 | cases with no tests 0', 'case kind ended: undecided 8 | cases with no tests 2']);
+    const baselineFile = path.join(copy, 'releases/1.0/map.json');
+    fs.mkdirSync(path.dirname(baselineFile), { recursive: true });
+    fs.writeFileSync(baselineFile, JSON.stringify(olderMap(readMap(copy))));
+    setConfig({ baselineMap: 'releases/1.0/map.json' });
+    assert.deepEqual(undecidedLines(rebuild()), [
+      `case kind boundary: undecided 21, 2 of them new since ${baselineFile} | cases with no tests 0`,
+      `case kind ended: undecided 8, 1 of them new since ${baselineFile} | cases with no tests 2`,
+    ]);
+    execFileSync(process.execPath, [CLI, 'case', configFile, 'boundary', '/lab/result#LabResult', 'needed'], { encoding: 'utf8' });
+    execFileSync(process.execPath, [CLI, 'case', configFile, 'ended', 'GET:/api/v1/lab/experiment', 'not-needed', '--note', '실험 화면은 문서를 쓰지 않는다'], { encoding: 'utf8' });
+    assert.deepEqual(undecidedLines(rebuild()), [
+      `case kind boundary: undecided 20, 1 of them new since ${baselineFile} | cases with no tests 1`,
+      `case kind ended: undecided 7, 0 of them new since ${baselineFile} | cases with no tests 2 | under review 1`,
+    ]);
+  });
+});
+
+test('the README, the agent skill and the decision record say what undecided --new lists and exits with, the new count rebuild prints, the 「신규」 marks of the page, and when an agent uses --new', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /undecided path\/to\/project-config\.json \[<kind>\] \[--new\]/);
+  assert.match(readme, /With `--new` it lists only the undecided candidates[\s\S]*`case kind <kind>: M new undecided since <file> \(N\s+undecided in all\)`[\s\S]*`--new needs baselineMap in the config` and exits with 2/);
+  assert.match(readme, /`, M of them new since <file>`/);
+  assert.match(readme, /「\(신규 M\)」 follows\s+「미판정 N」[\s\S]*「신규 M」 beside\s+the person button shows only those/);
+  assert.match(readme, /decides the chosen ones among the lines shown/);
+  assert.match(readme, /A screen in the list carries 「신규」/);
+  assert.doesNotMatch(readme, /A screen in the list carries 「생김」/);
+  const skill = read('../skills/duru/SKILL.md');
+  assert.match(skill, /When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config>\s+<kind> --new`/);
+  assert.match(skill, /Do not use `--new` for a kind added to `caseKinds` after that map was built/);
+  assert.doesNotMatch(skill, /사람이 정할 것/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*A new undecided candidate is a screen or call undecided now that the `baselineMap` map does not have/);
+  assert.match(decisions, /- Also counting as new a candidate a rule picked on the baseline map but no longer picks/);
+});
+
 async function pageBaseline(configFile: string) {
   const server = await startReviewServer(loadConfig(configFile), { author: AUTHOR });
   try {
@@ -292,7 +334,7 @@ test('in a browser, with baselineMap the page names the baseline, marks each cha
       assert.equal(await p.textContent('#left .baseline-filter'), 'v1.0 와 비교바뀐 화면만 5');
 
       const chips = (title: string) => p.locator(`#screen-list li[title="${title}"] .badges .chip:is(.change-new, .change-condition, .change-calls)`).allTextContents();
-      assert.deepEqual(await chips('/lab/result LabResult'), ['생김']);
+      assert.deepEqual(await chips('/lab/result LabResult'), ['신규']);
       assert.deepEqual(await chips('/admin/member AdminMember'), ['조건 바뀜']);
       assert.deepEqual(await chips('/help Help'), ['조건 바뀜', '호출 −1']);
       assert.deepEqual(await chips('/lab Lab'), ['호출 +1']);

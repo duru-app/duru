@@ -76,7 +76,13 @@ export function compareMaps(baseline: any, map: any) {
   };
 }
 
-type BaselineChanges = ReturnType<typeof compareMaps>;
+export type BaselineChanges = ReturnType<typeof compareMaps>;
+
+// 비교 기준 지도에도 있던 후보는 예전 지도에서 규칙이 골랐다가 이제 고르지 않더라도 새것으로 치지 않는다.
+export function newUndecided({ screens, calls }: BaselineChanges, undecided: string[]) {
+  const added = new Set([...screens.added, ...calls.added]);
+  return undecided.filter((id) => added.has(id));
+}
 
 export const baselineLine = (file: string, { screens, calls }: BaselineChanges) =>
   `changes since ${file} | screens new ${screens.added.length} removed ${screens.removed.length} condition ${screens.conditions.length} calls-changed ${screens.calls.length} | calls new ${calls.added.length} removed ${calls.removed.length} server ${calls.server.length}`;
