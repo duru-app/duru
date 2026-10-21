@@ -231,13 +231,16 @@ test('the answer to an agent\'s not-needed copies its reason on accepting, the p
   assert.throws(() => answerProposal(map, caseKinds, attached([ruled, mark(RENAME, 'ended', 'needed')]), { kind: 'ended', node: RENAME, of: ruled.id, answer: 'accept' }), (err) => err instanceof ProposalChanged && /^no agent not-needed for ended on PUT:.* waits for a reviewer any more$/.test(err.message));
 });
 
-test('duru case may put a not-needed over a person\'s mark, but not a needed, and once a reviewer reverted the agent\'s not-needed it refuses both', () => {
+test('duru case may put a not-needed over a person\'s mark, but not a needed, also not over its own not-needed that waits on top of that mark, and once a reviewer reverted the agent\'s not-needed it refuses both', () => {
   const caseKinds = { ended: kind({ screen: '/document/**', methods: ['POST', 'PUT'] }) };
   const check = (marks: Mark[], status: string) => commandCaseRule(map, caseKinds, classifyMarks(marks, map, [], ['ended']).attached, { kind: 'ended', node: 'GET:/api/v1/document/list', status, note: '목록은 읽기만 한다' });
   const person = mark('GET:/api/v1/document/list', 'ended', 'needed', { author: '김민' });
   assert.equal(check([person], 'not-needed'), undefined);
   assert.throws(() => check([person], 'needed'), /duru case does not change a person's mark$/);
   const proposal = agentOut('GET:/api/v1/document/list', 'ended', '목록은 읽기만 한다');
+  assert.throws(() => check([person, proposal], 'needed'), /^Error: 김민 marked ended needed on GET:\/api\/v1\/document\/list on 2026-10-\d\d, and duru case does not change a person's mark$/);
+  assert.equal(check([person, proposal], 'not-needed'), undefined);
+  assert.equal(check([proposal], 'needed'), undefined);
   const accepted = mark('GET:/api/v1/document/list', 'ended', 'not-needed', { note: proposal.note, author: '김민', of: proposal.id });
   assert.equal(check([proposal, accepted], 'not-needed'), undefined);
   const reverted = { ...mark('GET:/api/v1/document/list', 'ended', 'not-needed', { author: '김민', of: proposal.id }), date: '2026-10-30T00:00:00.000Z' };

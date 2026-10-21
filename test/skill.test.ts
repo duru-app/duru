@@ -172,7 +172,7 @@ test('the agent skill says how to read the account and setting lines under the p
 test('the agent skill says an agent\'s not-needed waits under review, how undecided and the task list count it, that it may go over a person\'s mark, and that after a revert only a person decides', () => {
   assert.match(SKILL, /A `not-needed` you write does not take the candidate out: it waits\s+under review until a reviewer accepts or reverts it on the review page/);
   assert.match(SKILL, /You may write `not-needed` on a candidate a person\s+already decided[\s\S]*the person's mark holds while it waits/);
-  assert.match(SKILL, /`needed` over a\s+person's mark, anything where a reviewer reverted your `not-needed`/);
+  assert.match(SKILL, /`needed` over a\s+person's mark, also while your `not-needed` waits on top of it, anything where a reviewer\s+reverted your\s+`not-needed`/);
   assert.match(SKILL, /Candidates under\s+review are not undecided[\s\S]*`, N under review`[\s\S]*exits with 0 when only those are\s+left; in the task list they are under `under review`/);
   assert.match(SKILL, /`\| under review N`/);
 });

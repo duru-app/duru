@@ -157,8 +157,9 @@ export function commandCaseRule(map: TargetMap, caseKinds: Record<string, CaseKi
   if (revert) {
     throw new Error(`${revert.author} took back the agent's not-needed for ${kind} on ${node} on ${revert.date.slice(0, 10)}, so only a person decides it now`);
   }
-  if (current && current.via === undefined && status !== 'not-needed') {
-    throw new Error(`${current.author} marked ${kind} ${current.status} on ${node} on ${current.date.slice(0, 10)}, and duru case does not change a person's mark`);
+  const held = current && isProposal(current) ? entry!.history.find((m) => m.status !== undefined && !isProposal(m)) : current;
+  if (held && held.via === undefined && status !== 'not-needed') {
+    throw new Error(`${held.author} marked ${kind} ${held.status} on ${node} on ${held.date.slice(0, 10)}, and duru case does not change a person's mark`);
   }
   if (status !== 'not-needed') return undefined;
   const rule = exclusionOf(() => map, caseKinds, { target: { node, case: kind }, status, note });

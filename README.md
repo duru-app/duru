@@ -1246,12 +1246,13 @@ prints it on standard error as a `"mark"` line and shows it on every open page a
 reads neither the map nor the marks. `--author` with `--server` stops with `a case sent with --server is always by
 agent; leave out --author` and exit code 2. It prints nothing when the mark is written, and stops with a line saying
 why and exit code 1, writing nothing, for a kind not in `caseKinds`, an ID not on the map, `not-needed` without
-`--note`, `needed` on a screen or call whose current mark of that kind a person left (any mark without `via`), also
-one that leaves it undecided, either status where a reviewer reverted an agent's `not-needed` of that kind (`<reviewer>
-took back the agent's not-needed for <kind> on <ID> on <date>, so only a person decides it now`), and `not-needed` on
-a screen or call off the side the kind's rules pick that has no mark of that kind to take back, the same line with
-or without `--server`. A `not-needed` over a person's mark is written and waits for a reviewer, with that person's
-mark holding until then. A review that cannot be reached stops it with `could
+`--note`, `needed` on a screen or call where a mark of that kind a person left holds (any mark without `via`), also
+one that leaves it undecided or one under an agent's `not-needed` waiting for a reviewer, either status where a
+reviewer reverted an agent's `not-needed` of that kind (`<reviewer> took back the agent's not-needed for <kind> on
+<ID> on <date>, so only a person decides it now`), and `not-needed` on a screen or call off the side the kind's rules
+pick that has no mark of that kind to take back, the same line with or without `--server`. A `not-needed` over a
+person's mark is written and waits for a reviewer, with that person's mark holding until then.
+A review that cannot be reached stops it with `could
 not reach the review page at <address>: …` and exit code 1, and a review started by an older duru answers `not
 found`. `needed` is also
 written where a rule already picks the target, so it stays picked when the rule changes. A `not-needed` where a rule

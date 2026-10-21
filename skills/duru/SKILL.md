@@ -372,10 +372,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    was, a rule's pick still picked with its cases with no tests. You may write `not-needed` on a candidate a person
    already decided, when the code shows the kind cannot happen there; the person's mark holds while it waits.
    `duru case` refuses a kind not in the config, an ID not on the map, `not-needed` without a note, `needed` over a
-   person's mark, anything where a reviewer reverted your `not-needed` (`… took back the agent's not-needed …, so
-   only a person decides it now`: after that only a person decides it) and `not-needed` off the side the rules pick
-   where there is nothing to take back, printing why with exit code 1; read the reason and do not retry the same
-   call. Run `duru undecided <config>` (or with one kind) to see what is left: it exits with 3 while any candidate is
+   person's mark, also while your `not-needed` waits on top of it, anything where a reviewer reverted your
+   `not-needed` (`… took back the agent's not-needed …, so only a person decides it now`: after that only a person
+   decides it) and `not-needed` off the side the rules pick where there is nothing to take back, printing why with
+   exit code 1; read the reason and do not retry the same call.
+   Run `duru undecided <config>` (or with one kind) to see what is left: it exits with 3 while any candidate is
    undecided, 0 when none is, 1 when the map or marks cannot be read and 2 when called wrongly. Candidates under
    review are not undecided: they are left out of its list, the kind's line ends with `, N under review` and a last
    line counts them, and it exits with 0 when only those are left; in the task list they are under `under review`.
