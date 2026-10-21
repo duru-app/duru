@@ -262,6 +262,7 @@ test('under a link between steps, a role gets the account of each role that pass
       '    - setting SYSTEM.MAIN_MENU.ADMIN.LIST includes "ADMIN_REPORT": met with no change (checked against build/settings.js)',
       `    - role ADMIN or OWNER: ${ACCOUNTS}`,
       '    - setting SYSTEM.MAIN_MENU.ADMIN present: met with no change (checked against build/settings.js)',
+      '    - judged without links to a path duru cannot read: components/SideMenu.js:19 `{?}`',
     ]);
     assert.match(preconditions(res.stdout), new RegExp(`^ {2}- /admin/report#AdminReport, the first screen, [^\\n]*\\n {4}- accounts: ${ACCOUNTS}\\n`));
   }, WITH_SETTINGS_FILE));
@@ -330,6 +331,7 @@ test('a setting guard duru could not read says why in English, and a guard that 
       '    - setting SYSTEM.MAIN_MENU.ADMIN.LIST includes "ADMIN_REPORT": met with no change (source default; deployed settings not checked)',
       `    - role ADMIN or OWNER: ${ACCOUNTS}`,
       '    - setting not read: it checks that a value is not equal to another, so no one value meets it',
+      '    - judged without links to a path duru cannot read: components/SideMenu.js:19 `{?}`',
     ]);
   }, WITH_ROLES);
 });
@@ -350,6 +352,7 @@ test('a link with several ways gets the lines under each way', () => {
       '      - setting SYSTEM.MAIN_MENU.ADMIN present: met with no change (source default; deployed settings not checked)',
       '    - at components/SideMenu.js:18',
       '      - setting SYSTEM.LAB_ENABLED on: not met with no change (false); set it to true (source default; deployed settings not checked)',
+      '    - judged without links to a path duru cannot read: components/SideMenu.js:20 `{?}`',
     ]);
   }, WITH_ROLES);
 });

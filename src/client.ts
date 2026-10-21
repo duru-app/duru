@@ -3,7 +3,8 @@ import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
 import type { ArrowFunctionExpression, CallExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
-import type { Constants, GuardInit, GuardSetting } from './access.ts';
+import { routerTargets } from './access.ts';
+import type { Constants, GuardInit, GuardSetting, RouteNode } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
 import { compare, ROUTES_FILE } from './config.ts';
@@ -15,7 +16,8 @@ import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
-import { screenRequestReader } from './screen-requests.ts';
+import { screenLinkReader } from './screen-links.ts';
+import { importedAs, screenRequestReader } from './screen-requests.ts';
 import type { UnresolvedReason } from './server.ts';
 import { typedMembers } from './typed-members.ts';
 import { settingNeeds } from './setting-needs.ts';
@@ -66,7 +68,8 @@ type DispatchSite = { line: number; types: () => ActionType[] };
 type WatcherSite = { watches: Watch[] };
 type SettingRead = Site & { key: string };
 type RouteRef = Site & { route: string; tail?: string };
-type FollowedSite = ApiCallSite | DispatchSite | WatcherSite | RouteRef;
+type RouterLink = Site & { to: string };
+type FollowedSite = ApiCallSite | DispatchSite | WatcherSite | RouteRef | RouterLink;
 
 interface Facts {
   imports: string[];
@@ -75,6 +78,7 @@ interface Facts {
   watchers: WatcherSite[];
   settingReads: SettingRead[];
   routeRefs: RouteRef[];
+  routerLinks: RouterLink[];
   dynamicOnly?: Set<string>;
 }
 
@@ -113,12 +117,24 @@ interface RouteTable {
 }
 
 interface LoopRoute {
+  element: Node;
   line: number;
   page: Page;
   pathExpr: NodePath;
   item: { node: Node; field: string };
   guards: string[];
   wrappers: string[];
+}
+
+interface DrawnNode {
+  kind: RouteNode['kind'];
+  path: string | null;
+  exact: boolean;
+  from: string | null;
+  to: string;
+  screens: RouteScreen[];
+  entry: string | null;
+  children: DrawnNode[];
 }
 
 type StoppedAt = { text: string; file: string | null; line: number };
@@ -134,6 +150,7 @@ export const UNKNOWN = '{?}';
 export const VARIABLE_SEGMENT = '{*}';
 const UNREADABLE_PIECE = '\0';
 const GUARD_TEXT_LIMIT = 160;
+const HISTORY_MAKERS = ['createBrowserHistory', 'createHashHistory'];
 
 export function memberChain(node: { type: string }) {
   const names: string[] = [];
@@ -283,7 +300,7 @@ export async function extractClient(config: any) {
   };
   const siteStart = new WeakMap<FollowedSite, number>();
   const siteFile = new WeakMap<ApiCallSite, string>();
-  const linkSites = (facts: Facts): RouteRef[] => facts.routeRefs;
+  const linkSites = (facts: Facts): (RouteRef | RouterLink)[] => [...facts.routeRefs, ...facts.routerLinks];
   const sitesOf = (file: string) => {
     const facts = fileFacts(file);
     return [...facts.apiCalls, ...facts.dispatches, ...facts.watchers, ...linkSites(facts)].map((site) => ({ start: siteStart.get(site)!, site }));
@@ -754,6 +771,18 @@ export async function extractClient(config: any) {
     return typeof value === 'string' || typeof value === 'number' ? String(value) : UNREADABLE_PIECE;
   }
 
+  function pathSegments(text: string) {
+    const pathText = text.split(/[?#]/)[0];
+    if (!pathText.startsWith('/')) return null;
+    return pathText === '/' ? [] : pathText.replace(/\/$/, '').slice(1).split('/');
+  }
+
+  // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
+  function linkAddress(p: NodePath) {
+    const segments = pathSegments(tailText(p));
+    return segments ? `/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}` : UNKNOWN;
+  }
+
   // 라우트 상수 뒤에 '/' 로 이어 붙은 주소. 조각마다 글자 그대로이거나 변수 하나일 때만 돌려주고, 아니면 '' 을 돌려준다.
   function routeTail(p: NodePath) {
     let tail = '';
@@ -767,10 +796,8 @@ export async function extractClient(config: any) {
       } else break;
       whole = parent;
     }
-    const tailPath = tail.split(/[?#]/)[0].replace(/\/$/, '');
-    if (!tailPath.startsWith('/')) return '';
-    const segments = tailPath.slice(1).split('/').map((s) => (s === UNREADABLE_PIECE ? VARIABLE_SEGMENT : s));
-    return segments.every((s) => s && !s.includes(UNREADABLE_PIECE)) ? `/${segments.join('/')}` : '';
+    const segments = pathSegments(tail)?.map((s) => (s === UNREADABLE_PIECE ? VARIABLE_SEGMENT : s));
+    return segments?.length && segments.every((s) => s && !s.includes(UNREADABLE_PIECE)) ? `/${segments.join('/')}` : '';
   }
 
   // ---------- API 모듈: 내보낸 함수마다 호출하는 endpoint ----------
@@ -853,11 +880,34 @@ export async function extractClient(config: any) {
     },
   });
 
+  const routeFileSet = new Set((config.routeFiles as string[]).map((f) => path.join(config.srcRoot, f)));
+  const historyFile = config.history ? madeHistoryFile(config.history) : null;
+  const historyImports = new Map<string, boolean>();
+  const screenLinks = screenLinkReader({
+    configuredHistory(binding) {
+      const from = historyFile ? importedAs(binding) : null;
+      const file = from && from.name !== '*' ? programFile.get(binding.scope.getProgramParent().block) : null;
+      if (!file) return false;
+      const resolved = imports.resolve(file, from!.spec);
+      const key = `${resolved}\0${from!.name}`;
+      if (!historyImports.has(key)) historyImports.set(key, Boolean(resolved) && follower.origin(resolved, from!.name, (f) => f === historyFile)?.name === config.history.name);
+      return historyImports.get(key)!;
+    },
+  });
+  const madeHistories = new Map<string, string>();
+
+  function madeHistoryFile({ import: from, name }: { import: string; name: string }) {
+    const file = imports.resolve(path.join(config.srcRoot, 'index.js'), from);
+    if (!file || !file.startsWith(config.srcRoot + path.sep)) throw new Error(`history.import ${from} names no file under srcRoot ${config.srcRoot}`);
+    if (!follower.declaration(file, name)) throw new Error(`history.name ${name} is not exported by ${path.relative(config.srcRoot, file)}`);
+    return file;
+  }
+
   function fileFacts(file: string): Facts {
     if (factCache.has(file)) return factCache.get(file)!;
     const { src, ast } = parse(file);
     programFile.set(ast.program, file);
-    const facts: Facts = { imports: [], apiCalls: [], dispatches: [], watchers: [], settingReads: [], routeRefs: [] };
+    const facts: Facts = { imports: [], apiCalls: [], dispatches: [], watchers: [], settingReads: [], routeRefs: [], routerLinks: [] };
     const apiNamed = new Map<string, string>();
     const apiNamespaces = new Set<string>();
     const calledNamed = new Map<string, { file: string; exportName: string }>();
@@ -866,7 +916,7 @@ export async function extractClient(config: any) {
     const relFile = path.relative(config.srcRoot, file);
     const note = guardNote(relFile, src);
 
-    function record(kind: 'apiCalls' | 'settingReads' | 'routeRefs', entry: object, nodePath: NodePath, ownGuards: string[] = []) {
+    function record(kind: 'apiCalls' | 'settingReads' | 'routeRefs' | 'routerLinks', entry: object, nodePath: NodePath, ownGuards: string[] = []) {
       const guards = [...ownGuards, ...guardsOf(nodePath, src, note)];
       const owner = enclosingFunctionName(nodePath);
       const item = { ...entry, line: nodePath.node.loc!.start.line, guards };
@@ -1005,6 +1055,28 @@ export async function extractClient(config: any) {
       },
     });
 
+    // 라우트 상수를 적은 자리는 그 링크 하나만 남긴다.
+    const routeRefAt = facts.routeRefs.map((r) => siteStart.get(r)!);
+    const recordLinks = (addresses: NodePath[]) => {
+      for (const at of addresses) {
+        if (routeRefAt.some((start) => start >= at.node.start! && start < at.node.end!)) continue;
+        record('routerLinks', { to: linkAddress(at) }, at);
+      }
+    };
+    const inRouteFile = routeFileSet.has(file);
+    traverse(ast, {
+      JSXElement(p) {
+        recordLinks(screenLinks.element(p, inRouteFile));
+      },
+      CallExpression(p) {
+        recordLinks(screenLinks.call(p));
+        const callee = p.get('callee');
+        const binding = !config.history && callee.isIdentifier() ? callee.scope.getBinding(callee.node.name) : undefined;
+        const from = binding ? importedAs(binding) : null;
+        if (from?.spec === 'history' && HISTORY_MAKERS.includes(from.name) && !madeHistories.has(relFile)) madeHistories.set(relFile, from.name);
+      },
+    });
+
     // 지역 함수가 조건 안에서 이름으로 쓰이면(예: onClick={openHelp}) 그 조건을 함수 안의 참조에도 붙인다.
     traverse(ast, {
       Identifier(p) {
@@ -1078,6 +1150,7 @@ export async function extractClient(config: any) {
     const note = guardNote(routeFile, src);
     const screens: RouteScreen[] = [];
     const table = routeTables.get(routeFile);
+    const elementScreens = new Map<Node, RouteScreen[]>();
     const loopRoutes: LoopRoute[] = [];
     let loopAt = -1;
     traverse(ast, {
@@ -1127,7 +1200,7 @@ export async function extractClient(config: any) {
         const item = table ? loopItem(p, pathExpr) : null;
         if (item) {
           if (loopAt < 0) loopAt = screens.length;
-          loopRoutes.push({ line, page, pathExpr, item, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
+          loopRoutes.push({ element: p.node, line, page, pathExpr, item, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
           return;
         }
         const pathValue = evaluate(pathExpr);
@@ -1141,7 +1214,7 @@ export async function extractClient(config: any) {
           unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt }, restStoppedAt: rest ? stopOf(rest) : null };
           unreadRoutePaths.push(unreadPath.entry);
         }
-        screens.push({
+        const screen: RouteScreen = {
           path: routePath,
           component: page.component,
           componentFile: page.componentFile,
@@ -1150,11 +1223,55 @@ export async function extractClient(config: any) {
           routeGuards: guardsOf(p, src, note),
           line,
           outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
-        });
+        };
+        screens.push(screen);
+        elementScreens.set(p.node, [screen]);
       },
     });
-    if (table) screens.splice(loopAt < 0 ? screens.length : loopAt, 0, ...tableScreens(table, loopRoutes, routeFile));
-    return screens;
+    if (table) {
+      const listed = tableScreens(table, loopRoutes, routeFile);
+      elementScreens.set(loopRoutes[0].element, listed);
+      screens.splice(loopAt < 0 ? screens.length : loopAt, 0, ...listed);
+    }
+    return { screens, roots: drawnTree(ast, absFile, elementScreens) };
+  }
+
+  function drawnTree(ast: ReturnType<typeof parseSource>['ast'], absFile: string, elementScreens: Map<Node, RouteScreen[]>) {
+    const nodes = new Map<Node, DrawnNode>();
+    const roots: DrawnNode[] = [];
+    traverse(ast, {
+      JSXElement(p) {
+        const tag = tagOf(p.node.openingElement.name);
+        if (!tag || definesRouteElement(p)) return;
+        const attr = (name: string) => {
+          const found = p.get('openingElement.attributes').find((a) => (a.node as JSXAttribute).name?.name === name) as NodePath<JSXAttribute> | undefined;
+          if (!found) return undefined;
+          const value = found.get('value') as NodePath<any>;
+          return value.node ? (value.isJSXExpressionContainer() ? value.get('expression') as NodePath : value) : null;
+        };
+        const exact = attr('exact');
+        const text = (p: NodePath | undefined | null) => {
+          const value = p ? evaluate(p) : undefined;
+          return typeof value === 'string' ? value : UNKNOWN;
+        };
+        const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || (Boolean(exact) && evaluate(exact!) === true), from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, children: [] };
+        if (tag === 'Switch') node.kind = 'switch';
+        else if (config.redirectElements.includes(tag)) {
+          const from = attr('from');
+          const to = attr('to');
+          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? linkAddress(to) : UNKNOWN });
+        } else if (config.routeElements.includes(tag)) {
+          const at = attr('path');
+          node.path = node.screens.length ? node.screens[0].path : at === undefined ? null : text(at);
+        } else if (!/^[a-z]/.test(tag.split('.').pop()!) || (tag.includes('.') && !fromPackage(p.scope, tag, absFile))) {
+          node.entry = resolveTag(p.scope, tag, absFile) ?? null;
+        }
+        nodes.set(p.node, node);
+        const parent = p.findParent((a) => a.isJSXElement() && nodes.has(a.node));
+        (parent ? nodes.get(parent.node)!.children : roots).push(node);
+      },
+    });
+    return roots;
   }
 
   function tableScreens(table: RouteTable & { at: string }, routes: LoopRoute[], routeFile: string): RouteScreen[] {
@@ -1166,7 +1283,7 @@ export async function extractClient(config: any) {
     if (!object) throw new Error(`${table.at}: ${file} has no top-level const ${name} holding an object`);
     const items = tableItems(object, table.items.split('.')).map((it) => ({ ...it, field: propertyValue(it.object, item.field) }));
     if (!items.some((it) => it.field)) throw new Error(`${table.at}: items "${table.items}" finds no item with a ${item.field} in ${name}, which the route at ${routeFile}:${line} reads`);
-    return items.flatMap(({ key, line: itemLine, object: itemObject, field }) => {
+    return items.flatMap(({ key, line: itemLine, object: itemObject, field }): RouteScreen[] => {
       const place = `table item ${key} at ${file}:${itemLine}`;
       if (!field) {
         unreadRoutes.push({ file: routeFile, line, reason: `${place} has no ${item.field}` });
@@ -1527,6 +1644,42 @@ export async function extractClient(config: any) {
     });
   }
 
+  function routeTree(drawn: { file: string; roots: DrawnNode[] }[], extracted: RouteScreen[], sourced: { s: { path: string; componentFile: string | null | undefined } }[]) {
+    const indexOf = new Map(extracted.map((s, i) => [s, i]));
+    const closures = new Map<string, Set<string>>();
+    const closure = (f: string) => {
+      if (!closures.has(f)) closures.set(f, new Set(closureOf(f, (g) => screenFiles.has(g) && g !== f)));
+      return closures.get(f)!;
+    };
+    // 다른 라우트 파일을 거쳐서 닿는 라우트 파일은 그 파일에 둔다.
+    const heldFiles = (entries: string[], own: string) => {
+      const reached = new Set(entries.flatMap((e) => [...closure(e)]));
+      const held = [...routeFileSet].filter((f) => f !== own && reached.has(f));
+      return held.filter((f) => !held.some((g) => g !== f && closure(g).has(f)));
+    };
+    const holding = new Map<RouteNode & { kind: 'route' }, string[]>();
+    const convert = (n: DrawnNode, file: string): RouteNode => {
+      if (n.kind === 'switch') return { kind: 'switch', children: n.children.map((c) => convert(c, file)) };
+      if (n.kind === 'redirect') return { kind: 'redirect', from: n.from, exact: n.exact, to: n.to };
+      const screens = n.screens.map((s) => indexOf.get(s)!);
+      const entries = screens.length ? screens.flatMap((i) => sourced[i].s.componentFile ?? []) : n.entry ? [n.entry] : [];
+      const node = { kind: 'route' as const, path: screens.length ? sourced[screens[0]].s.path : n.path, exact: n.exact, screens, children: n.children.map((c) => convert(c, file)) };
+      const held = heldFiles(entries, file);
+      if (held.length) holding.set(node, held);
+      return node;
+    };
+    const rootsOf = new Map(drawn.map((d) => [d.file, d.roots.map((r) => convert(r, d.file))]));
+    const held = new Set<string>();
+    for (const [node, files] of holding) {
+      for (const f of files) {
+        node.children.push(...rootsOf.get(f)!);
+        held.add(f);
+      }
+    }
+    const roots = drawn.filter((d) => !held.has(d.file)).flatMap((d) => rootsOf.get(d.file)!);
+    return roots.length ? roots : rootsOf.get(drawn[0].file)!;
+  }
+
   function joinedPaths(paths: string[], rest: string) {
     if (!paths.length || paths.some((p) => p.includes(UNKNOWN))) return null;
     if (paths.length === 1) return paths[0];
@@ -1551,7 +1704,8 @@ export async function extractClient(config: any) {
   const rel = (f: string | null | undefined) => (f ? path.relative(config.srcRoot, f) : null);
 
   if (!config.routeFiles.length) throw new Error(`the config has no routesFile, which takes ${ROUTES_FILE}`);
-  const extracted = (config.routeFiles as string[]).flatMap(extractScreens);
+  const drawn = (config.routeFiles as string[]).map((f) => ({ file: path.join(config.srcRoot, f), ...extractScreens(f) }));
+  const extracted = drawn.flatMap((d) => d.screens);
   const screenFiles = new Set(extracted.map((s) => s.componentFile).filter(Boolean));
   const sourced = extracted.map(({ wrapperFiles, outerFill, ...s }) => {
     const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
@@ -1559,6 +1713,7 @@ export async function extractClient(config: any) {
     return { s, outerFill, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))] };
   });
   fillOuterAddresses(sourced);
+  const routedScreens = routerTargets(routeTree(drawn, extracted, sourced));
   // POST 가 아닌 페이지 이동의 주소가 앱의 라우트와 맞으면 서버가 아니라 앱의 다른 화면이 열린다. 고정 문자열 부분이 없는 라우트는 어떤 주소에나 맞으므로 견주지 않는다.
   const screenRoutes = sourced.map((x) => x.s).filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
   const opensScreen = (url: string) => screenRoutes.some((route) => route.test(url.replaceAll(UNKNOWN, '\0').split(/[?#]/)[0]));
@@ -1617,7 +1772,7 @@ export async function extractClient(config: any) {
     const own = new Set<ApiCallSite>();
     const dispatched = new Map<string, { type: ActionType; at: Set<string> }>();
     const settingReads: (SettingRead & { file: string | null })[] = [];
-    const links: (Omit<RouteRef, 'tail'> & { to: unknown; tail?: string; file: string | null })[] = [];
+    const links: (Site & { route?: string; to: unknown; tail?: string; reaches?: number[]; file: string | null })[] = [];
     const takeCalls = (f: string, facts: Facts) => {
       for (const c of facts.apiCalls) {
         if (!reached.has(c) || !sends(c, outsideRequestFunction)) continue;
@@ -1638,6 +1793,10 @@ export async function extractClient(config: any) {
       for (const r of facts.settingReads) settingReads.push({ ...r, file: rel(f) });
       for (const ref of linkSites(facts)) {
         if (!reached.has(ref)) continue;
+        if (!('route' in ref)) {
+          links.push({ ...ref, file: rel(f), reaches: routedScreens(ref.to) });
+          continue;
+        }
         const { tail, ...r } = ref;
         const value = routeValues[r.route];
         links.push(typeof value === 'string' && tail ? { ...r, to: value + tail, tail, file: rel(f) } : { ...r, to: value ?? UNKNOWN, file: rel(f) });
@@ -1660,5 +1819,5 @@ export async function extractClient(config: any) {
   });
 
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved() };
+  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })) };
 }

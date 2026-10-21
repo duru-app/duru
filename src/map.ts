@@ -60,7 +60,7 @@ interface ApiFunctions {
 export type MapScreen = Omit<ClientScreen, 'apiCalls' | 'links'> & {
   id: string;
   apiCalls: (Omit<ClientScreen['apiCalls'][number], 'request' | 'navigation'> & { direct?: true; endpoints: Endpoint[] | null })[];
-  links: (ClientScreen['links'][number] & { conditions: Access['linkConditions'][number][number] })[];
+  links: (Omit<ClientScreen['links'][number], 'reaches'> & { targets: string[]; conditions: Access['linkConditions'][number][number] })[];
   access: Access['access'][number];
   dead: boolean;
   codeHash?: string;
@@ -122,6 +122,7 @@ export type ScreenMap = {
   settingsDefaultsIncomplete: Client['settingsDefaultsIncomplete'];
   settingsCallNotices?: Client['settingsCallNotices'];
   unresolvedAliasImports?: Client['unresolvedAliasImports'];
+  madeHistories?: Client['madeHistories'];
 } & ReturnType<typeof configuredCallLinks> & ReturnType<typeof configuredMoves>;
 
 // JUnit 태그에 쓸 수 없는 문자. 이 문자만 없으면 Playwright · Vitest 제목에서도 그대로 태그로 쓸 수 있다.
@@ -258,7 +259,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports } = await extractClient(config);
+  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, madeHistories } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -286,10 +287,10 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     }),
   }));
   const unreadRequests = unreadSites(mapped, true);
-  const { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
+  const { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions, linkScreens } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
   mapped.forEach((s, i) => {
     s.access = access[i];
-    s.links = s.links.map((l: object, j: number) => ({ ...l, conditions: linkConditions[i][j] }));
+    s.links = s.links.map(({ reaches, ...l }: { reaches?: number[] }, j: number) => ({ ...l, targets: [...new Set(linkScreens[i][j].map((k) => mapped[k].id))], conditions: linkConditions[i][j] }));
   });
 
   const placesById = new Map<string, { file: string; line: number }[]>();
@@ -343,5 +344,6 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     settingsDefaultsIncomplete,
     ...(config.settingsFunctions.length > 0 && { settingsCallNotices }),
     ...(config.tsconfig && { unresolvedAliasImports }),
+    ...(madeHistories.length > 0 && { madeHistories }),
   };
 }

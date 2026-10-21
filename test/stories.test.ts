@@ -81,17 +81,21 @@ test('a story through a guarded link carries the link\'s condition and source, a
   const lab = { guard: 'globalSettings.SYSTEM.LAB_ENABLED', kinds: ['setting'], settings: [{ root: 'globalSettings', path: ['SYSTEM', 'LAB_ENABLED'], need: 'on', default: false }] };
   assert.deepEqual(story.links[0].ways, [{ file: 'components/Home.js', line: 19, conditions: [lab] }]);
   assert.deepEqual(story.reach, [
-    { kind: 'link', from: '/home#Home', to: '/lab#Lab', ways: [{ file: 'components/Home.js', line: 19, conditions: [lab] }] },
+    { kind: 'link', from: '/home#Home', to: '/lab#Lab', ways: [{ file: 'components/Home.js', line: 19, conditions: [lab] }], unknownLinks: [{ file: 'components/SideMenu.js', line: 19, to: '{?}' }] },
     { kind: 'route', screen: '/lab#Lab', file: 'Routes.js', line: 44, guards: [lab] },
   ]);
   assert.equal(story.broken, false);
 });
 
-test('a story with no link between two neighbouring screens marks that spot as broken', () => {
+test('a story step with no link from a screen that also links to an address duru cannot read is not judged, and the story is not broken', () => {
   const story = checked['help-from-home'];
-  assert.deepEqual(verdicts(story), ['/signin#SignIn → /home#Home open', '/home#Home → /help#Help broken']);
-  assert.deepEqual(story.links[1].ways, []);
-  assert.equal(story.broken, true);
+  assert.deepEqual(verdicts(story), ['/signin#SignIn → /home#Home open', '/home#Home → /help#Help unknown']);
+  const step = story.links[1];
+  assert.ok(step.verdict === 'unknown');
+  assert.deepEqual(step.ways, []);
+  assert.deepEqual(step.unknownLinks, [{ file: 'components/SideMenu.js', line: 19, to: '{?}' }]);
+  assert.equal(story.broken, false);
+  assert.equal(story.unjudged, true);
   assert.equal(story.detached, false);
 });
 
@@ -149,8 +153,8 @@ type TinyLink = Parameters<typeof screenAccess>[0][number]['links'][number];
 
 function tinyMap(links: Record<string, TinyLink[]>) {
   const screens = Object.entries(links).map(([id, out]) => ({ id, path: id, line: 1, routeGuards: [], routeFile: 'routes.js', links: out }));
-  const { access, linkConditions } = screenAccess(screens, [], TINY_CONFIG, new Map(), {}, new Map());
-  return { screens: screens.map((s, i) => ({ ...s, access: access[i], links: s.links.map((l, j) => ({ ...l, conditions: linkConditions[i][j] })) })) };
+  const { access, linkConditions, linkScreens } = screenAccess(screens, [], TINY_CONFIG, new Map(), {}, new Map());
+  return { screens: screens.map((s, i) => ({ ...s, access: access[i], links: s.links.map((l, j) => ({ ...l, targets: linkScreens[i][j].map((k) => screens[k].id), conditions: linkConditions[i][j] })) })) };
 }
 
 test('a link guarded by a condition that is neither a setting nor a role is still a condition on the way', () => {
@@ -763,8 +767,8 @@ test('a passing story is not known to be gone through when a story test without 
 
 test('a link the map has no link for counts the passing tests with a trace that went straight across it, whatever the story tests did, a test run in several projects or result files once and two tests with one title in two files apart, and a link the map has does not', () => {
   const run = (title: string, screens: string[], report = 'r.json', file = 'a.spec.ts') => ({ report, title, file, line: 1, screens });
-  const traced = [run('a', [HOME, '/help#Help']), run('a', [HOME, '/help#Help'], 'firefox.json'), run('a', [HOME, '/help#Help'], 'r.json', 'b.spec.ts'), run('b', [HOME, '/nowhere', '/help#Help']), run('c', ['/help#Help', HOME]), run('d', [HOME, LAB])];
-  assert.deepEqual(walkOf([HOME, '/help#Help', LAB], { nodes: {}, stories: {}, traced }), { walked: undefined, walks: [undefined, undefined], passedBy: [3, undefined] });
+  const traced = [run('a', [LAB, '/help#Help']), run('a', [LAB, '/help#Help'], 'firefox.json'), run('a', [LAB, '/help#Help'], 'r.json', 'b.spec.ts'), run('b', [LAB, '/nowhere', '/help#Help']), run('c', ['/help#Help', LAB]), run('d', [HOME, LAB])];
+  assert.deepEqual(walkOf([LAB, '/help#Help', SIGNIN], { nodes: {}, stories: {}, traced }), { walked: undefined, walks: [undefined, undefined], passedBy: [3, undefined] });
   assert.deepEqual(walkOf([HOME, LAB], { nodes: {}, stories: {}, traced }).passedBy, [undefined]);
 });
 

@@ -190,9 +190,9 @@ ${emptyTests(['@story:change-settings @screen:/home#Home', 'story_change_setting
   1. /signin#SignIn — tests: ui pass 1, code pass 1
      - to /home#Home: open at components/SignIn.js:12
   2. /home#Home — ${HOME_TESTS}
-     - to /help#Help: no link
+     - to /help#Help: not judged, links to a path duru cannot read: components/SideMenu.js:19 \`{?}\`
   3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1
-- reach: unreachable, no link at 1 step
+- reach: not judged, a link to a path duru cannot read
 - preconditions: none where links were found
 ${emptyTests(['@story:help-from-home @screen:/signin#SignIn @screen:/home#Home @screen:/help#Help', 'story_help_from_home'])}
 
@@ -216,6 +216,7 @@ ${emptyTests(['@story:help-from-home @screen:/signin#SignIn @screen:/home#Home @
 - reach: reachable
 - preconditions:
   - link /home#Home → /lab#Lab at components/Home.js:19, guard \`globalSettings.SYSTEM.LAB_ENABLED\` (setting)
+    - judged without links to a path duru cannot read: components/SideMenu.js:19 \`{?}\`
   - /lab#Lab route at Routes.js:44, guard \`globalSettings.SYSTEM.LAB_ENABLED\` (setting)
 ${emptyTests(['@story:run-lab @screen:/home#Home @screen:/lab#Lab @screen:/lab/result#LabResult', 'story_run_lab'])}
 `;
@@ -348,7 +349,7 @@ test('a marked story carries the needs and expects a person wrote for the whole 
       '     - expect: 로그인하면 홈으로 간다',
       '     - to /home#Home: open at components/SignIn.js:12',
       `  2. /home#Home — ${HOME_TESTS}`,
-      '     - to /help#Help: no link',
+      '     - to /help#Help: not judged, links to a path duru cannot read: components/SideMenu.js:19 `{?}`',
       '  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1',
       '     - need: 도움말 설정을 켠다',
       '     - expect: 도움말 목록이 보인다',
@@ -383,7 +384,7 @@ test('a marked story carries under each step the inputs a person wrote, after it
       '     - input: label "비밀번호" → "test 1234 " (not checked against the code)',
       '     - to /home#Home: open at components/SignIn.js:12',
       `  2. /home#Home — ${HOME_TESTS}`,
-      '     - to /help#Help: no link',
+      '     - to /help#Help: not judged, links to a path duru cannot read: components/SideMenu.js:19 `{?}`',
       '  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1',
       '     - need: 도움말 설정을 켠다',
       '     - input: label "서명자 \\"메모\\"", number 2 → "확인했습니다\\n고맙습니다" (not checked against the code)',
@@ -417,7 +418,7 @@ test('a marked story carries under each step the conditions a person wrote for t
       '     - to /home#Home: open at components/SignIn.js:12',
       `  2. /home#Home — ${HOME_TESTS}`,
       '     - link need from step 1: 로그인에 성공한 경우',
-      '     - to /help#Help: no link',
+      '     - to /help#Help: not judged, links to a path duru cannot read: components/SideMenu.js:19 `{?}`',
       '  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1',
       '     - link need from step 2: 도움말 링크를',
       '       누른 경우',
@@ -454,7 +455,7 @@ test('a marked story carries each need it picks from the needs folder with its n
       '     - need: needs/old-admin.json — the file is missing',
       '     - to /home#Home: open at components/SignIn.js:12',
       `  2. /home#Home — ${HOME_TESTS}`,
-      '     - to /help#Help: no link',
+      '     - to /help#Help: not judged, links to a path duru cannot read: components/SideMenu.js:19 `{?}`',
       '  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1',
       '     - need: needs/broken.json — the file could not be read; `duru rebuild` prints why',
       '',
@@ -479,7 +480,7 @@ test('a marked story carries a need file picked by a condition on the link into 
       '     - to /home#Home: open at components/SignIn.js:12',
       `  2. /home#Home — ${HOME_TESTS}`,
       '     - link need from step 1: 일반 회원 계정 (needs/member-account.json): 역할 USER 로 가입한 계정',
-      '     - to /help#Help: no link',
+      '     - to /help#Help: not judged, links to a path duru cannot read: components/SideMenu.js:19 `{?}`',
       '  3. /help#Help — tests: ui pass 1, ui fail 1, api fail 1, code pending 1',
       '     - link need from step 2: needs/old-admin.json — the file is missing',
       '',

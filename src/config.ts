@@ -336,6 +336,11 @@ export function loadConfig(configPath: string) {
       + 'or, when the API code calls get, post, put, patch and delete of a request object with the address first, { "import", "name", "object": true }, '
       + `such as { "import": "axios", "name": "default", "object": true }, not ${JSON.stringify(requestFunction)}`);
   }
+  const history = raw.history ?? null;
+  if (history !== null && !(isPlainObject(history) && Object.keys(history).every((k) => ['import', 'name'].includes(k)) && isText(history.import) && isText(history.name) && (history.name === 'default' || IDENTIFIER.test(history.name)))) {
+    throw new Error('history must be { "import", "name" }: the import path and name the app imports the history it made by, '
+      + `as a function returning it or the history itself, such as { "import": "utils/browser_history", "name": "getHistory" }, not ${JSON.stringify(raw.history)}`);
+  }
   if (raw.tsconfig !== undefined && !isText(raw.tsconfig)) {
     throw new Error(`tsconfig must be the path of the tsconfig file that declares the import aliases, such as "client/tsconfig.json", not ${JSON.stringify(raw.tsconfig)}`);
   }
@@ -375,6 +380,7 @@ export function loadConfig(configPath: string) {
     apiModules,
     calledApiModules,
     requestFunction,
+    history,
     bodyArgKeys,
     bodyOptions,
     bodyTypeExclusions,

@@ -41,6 +41,7 @@ test('links carry their own guard, and a handler used under a guard passes it to
       to: '/admin/report',
       guards: ["globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'", "['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1", 'MENUS.ADMIN'],
     },
+    { to: '{?}', guards: [] },
   ]);
 
   const help = screen(map, '/signin#SignIn').links.find((l) => l.to === '/help')!;
@@ -1004,7 +1005,7 @@ test('a menu built from a settings list links to each listed screen, under the l
       unreadable: [],
     })),
   });
-  assert.deepEqual(screen(map, '/home#Home').links.filter((l) => l.file === 'components/SideMenu.js').map((l) => l.to), ['/admin/report']);
+  assert.deepEqual(screen(map, '/home#Home').links.filter((l) => l.file === 'components/SideMenu.js').map((l) => l.to), ['/admin/report', '{?}']);
 });
 
 test('a setting-guarded screen lists the setting values its route and each guarded link into it need, with the defaults', async () => {
@@ -1135,7 +1136,7 @@ const menuLinks = (map: ScreenMap, id: string) => screen(map, id).links.filter((
 test('a component wrapping routes in the routes file is part of every screen it wraps', async () => {
   const map = await buildFixture();
   for (const id of wrapped) {
-    assert.deepEqual(menuLinks(map, id), ['/admin/report'], id);
+    assert.deepEqual(menuLinks(map, id), ['/admin/report', '{?}'], id);
     assert.ok(screen(map, id).settingReads.some((r) => r.file === 'components/SideMenu.js'), id);
   }
   for (const id of ['/signin#SignIn', '/help#Help', '/admin/report#AdminReport']) assert.deepEqual(menuLinks(map, id), [], id);
@@ -1147,7 +1148,7 @@ test('a route wrapped by two components gets both, and a wrapping component that
     ['client/src/Routes.js', '          </Switch>\n', '          </Switch>\n          </Lab>\n'],
   ]);
   for (const id of wrapped) {
-    assert.deepEqual(menuLinks(map, id), ['/admin/report'], id);
+    assert.deepEqual(menuLinks(map, id), ['/admin/report', '{?}'], id);
     assert.ok(screen(map, id).links.some((l) => l.file === 'components/Lab.js' && l.to === '/lab/result'), id);
     assert.ok(screen(map, id).apiCalls.some((c) => c.fn === 'ajaxLabExperiment'), id);
   }
@@ -1163,7 +1164,7 @@ test('a conditional route inside a wrapping component keeps its guard and gets t
     ],
   ]);
   assert.deepEqual(screen(map, '/document/:id#DocumentDetail').routeGuards, ['memberRole']);
-  assert.deepEqual(menuLinks(map, '/document/:id#DocumentDetail'), ['/admin/report']);
+  assert.deepEqual(menuLinks(map, '/document/:id#DocumentDetail'), ['/admin/report', '{?}']);
 });
 
 test('a guard around the wrapping component guards every screen inside it, so the wrapper links come from restricted screens', async () => {

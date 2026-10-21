@@ -8,7 +8,7 @@ import { jsonFiles } from './json-files.ts';
 import { loadMarks, orderKey, recordKind, recordName, targetsOf, writeNewRecord } from './marks.ts';
 import { addStory, CANDIDATES, DISCARDED, inputsProblem, RECORDS, isDate, isScreenList, isSource, isText, loadStories, SOURCE_SHAPES, STEP_FIELDS, stepProblem, writableStoriesFolder } from './stories.ts';
 import type { CommentSource, StepFields, StepInput } from './stories.ts';
-import { checkStories, linksWithoutConditions, staleMapMessage } from './story-paths.ts';
+import { checkStories, linksFromOldDuru, staleMapMessage } from './story-paths.ts';
 import { withoutTags } from './verdict.ts';
 
 const relative = (configDir: string, file: string) => path.relative(configDir, file).split(path.sep).join('/');
@@ -412,7 +412,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const all = [...notices, ...[...discardedNotices, ...storedNotices].map((n) => ({ ...n, file: relative(config.configDir, path.join(config.storiesDir, n.file)) }))];
   const current = discardedNow(discarded);
   const shown = shownDiscarded(current);
-  if (linksWithoutConditions(map)) {
+  if (linksFromOldDuru(map)) {
     return { list: [], discarded: shown, notices: all, stale: records.length || traced.length || stored.length ? staleMapMessage(mapFile, '후보') : undefined };
   }
   const screenAt = screenFinder(map);
@@ -486,7 +486,7 @@ export function addCommentCandidate(config: any, map: any, mapFile: string, trac
   if (!order) throw new Error(`코멘트 ${comment} 는 화면 순서에 단 코멘트가 아닙니다`);
   if (!isText(name)) throw new Error('name 에 후보 이름을 적어야 합니다');
   const steps = agentSteps(screens);
-  if (linksWithoutConditions(map)) throw new Error(staleMapMessage(mapFile, '후보'));
+  if (linksFromOldDuru(map)) throw new Error(staleMapMessage(mapFile, '후보'));
   const onMap = new Set(map.screens.map((s: any) => s.id));
   const off = steps.findIndex((s) => !onMap.has(s.screen));
   if (off >= 0) throw new Error(`screens 의 ${off + 1} 번째 단계의 ${steps[off].screen} 는 맵에 없는 화면입니다`);

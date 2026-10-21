@@ -1,5 +1,5 @@
-// 링크에 조건이 없는 예전 맵으로는 화면 순서를 대조하지 못한다.
-const oldMap = () => state.data.map.screens.some((sc) => sc.links.some((l) => !Array.isArray(l.conditions)));
+// 링크에 조건이나 이어지는 화면이 적혀 있지 않은 예전 맵으로는 화면 순서를 대조하지 못한다.
+const oldMap = () => state.data.map.screens.some((sc) => sc.links.some((l) => !Array.isArray(l.conditions) || !Array.isArray(l.targets)));
 const newCompose = () => ({ steps: [], gaps: [], wide: { needs: [], expects: [] }, at: null, selected: null, id: '', name: '', memo: '', checked: null, turn: 0, error: null, refused: null, query: '', editing: null, diagram: 'whole', walked: false, walk: null, pane: null, walkNote: null });
 // 앱에서 받은 주소에 맞는 화면이 맵에 없으면 그 경로를 화면 자리에 두고 unmapped 로 표시한다.
 const newStep = (screen, more = {}) => ({ screen, rows: { needs: [], inputs: [], expects: [] }, urls: [], skipped: 0, unmapped: false, ...more });

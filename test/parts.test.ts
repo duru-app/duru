@@ -164,7 +164,7 @@ test('an incoming link is named by its start screen and the roles and settings r
 
 test('a screen order is located with the files of each screen and the verdict between each two neighbours, and not at all on a map whose links carry no conditions', () => {
   const screen = (id: string, links: object[]) => ({ id, path: id, routeFile: 'Routes.js', line: 3, componentFile: `components${id}.js`, access: { route: [] }, links });
-  const map = { screens: [screen('/a', [{ to: '/b', file: 'components/a.js', line: 7, conditions: [] }]), screen('/b', []), screen('/c', [])] };
+  const map = { screens: [screen('/a', [{ to: '/b', targets: ['/b'], file: 'components/a.js', line: 7, conditions: [] }]), screen('/b', []), screen('/c', [])] };
   assert.deepEqual(locateOrder(['/a', '/b', '/c'], map), {
     screens: [
       { id: '/a', componentFile: 'components/a.js', routeFile: 'Routes.js', line: 3 },

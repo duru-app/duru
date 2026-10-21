@@ -519,7 +519,7 @@ test('with a map built before links carried their conditions, visit records or t
     const empty = { storiesDir: path.join(dir, 'stories') };
     const withRecords = candidatesOf(empty, stale, path.join(dir, 'map.json'));
     assert.deepEqual(withRecords.list, []);
-    assert.equal((withRecords as { stale?: string }).stale, `${path.join(dir, 'map.json')} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요`);
+    assert.equal((withRecords as { stale?: string }).stale, `${path.join(dir, 'map.json')} 은 링크에 조건이나 이어지는 화면이 적혀 있지 않은 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요`);
     assert.equal((candidatesOf({ ...empty, visitRecords: [] }, stale) as { stale?: string }).stale, undefined);
     assert.deepEqual(tracedCandidatesOf(empty, stale, path.join(dir, 'map.json')), { list: [], discarded: [], notices: [], stale: (withRecords as { stale?: string }).stale });
   });
@@ -955,7 +955,7 @@ test('a candidate for a comment is refused when its screen order is already a st
   withOrderComment({ screens: LAB_ORDER }, ({ cfg, comment, post, files }) => {
     const stale: { screens: { links: { conditions?: unknown }[] }[] } = structuredClone(map);
     for (const s of stale.screens) for (const l of s.links) delete l.conditions;
-    assert.throws(() => post({}, stale), { message: `${path.join(cfg.configDir, 'map.json')} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요` });
+    assert.throws(() => post({}, stale), { message: `${path.join(cfg.configDir, 'map.json')} 은 링크에 조건이나 이어지는 화면이 적혀 있지 않은 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요` });
     assert.deepEqual(files(), []);
     post({});
     assert.throws(() => post({ name: '다시' }), { message: '이미 후보 「로그인해 실험을 연다」의 화면 순서입니다' });
