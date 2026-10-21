@@ -357,7 +357,7 @@ function serverText(server: any) {
 const place = (p: { file: string; line: number }) => `${p.file}:${p.line}`;
 const unreadText = (links: any[]) => links.map((l) => `${place(l)} \`${l.to}\``).join(', ');
 
-function linkText(link: any) {
+export function linkText(link: any) {
   if (link.verdict === 'broken') return 'no link';
   if (link.verdict === 'off-map') return 'not judged, a screen is not on the map';
   if (link.verdict === 'configured') return `a move in the config (${link.reasons.join(', ')})`;

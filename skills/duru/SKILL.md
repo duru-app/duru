@@ -253,7 +253,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    The key is its screen IDs joined with ` > `, for a candidate from a visit record as for one from a Playwright
    trace. Its line carries `where` with the candidate's `name`, its `screens` in order and its
    `source`: `{ "record", "steps" }` with `stepRanges`, the steps of the record behind each screen, or
-   `{ "report", "tests" }`, the result file and the titles of the tests that passed through that order. `where` is
+   `{ "report", "tests" }`, the result file and the titles of the tests that passed through that order, or
+   `{ "comment", "added", "written" }` for one posted with `duru candidate`: the comment it answers, the steps put in
+   with their reasons and the lines written by the agent. `where` is
    `null` once the candidate has been accepted or discarded, or when the map or `tests.json` could not be read at
    that moment. Such a comment asks about the order before the reviewer accepts it: answer why that order came out,
    citing the record and the steps behind each screen, or the test by its title and the steps it takes in the
@@ -269,11 +271,19 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    and `ways`, as for a link between two steps of a story. `where` is `null` while the map cannot be read or was built
    before stories; then answer from the screen IDs, and tell the user to run `duru rebuild`. Follow the links of the
    map from each screen to the next to find the screens between them that fit the note; with `gaps`, fill only those
-   gaps and keep the other neighbours as they are. Keep what the reviewer typed in `steps` as it is and work out only
-   the fields left empty. Reply with the whole order you found, naming the screens you put in and why, and each link
-   that is broken or needs a condition; if no way joins two of them, say so. Do not write a story file or a candidate
-   file for it. A comment on a screen order takes no status and never appears in the task list, so act on it when
-   its line arrives.
+   gaps and keep the other neighbours as they are, and with none, fill every gap. Keep what the reviewer typed in
+   `steps` as it is and fill in only the fields left empty. When you find a way, post it as a story candidate with
+   `duru candidate <config> <the comment's id> - --server <the review page address>`, the candidate JSON on standard
+   input: `name`, a short name for the story, and `screens`, every step in order as in a story file. The reviewer's
+   screens keep what they typed, copied unchanged, beside the fields you filled; each screen you put in carries
+   `reason`, one line on why it is needed, citing the source file and line that show it, as `{ "screen":
+   "/home#Home", "reason": "…", "expects": [ … ] }`. Once the review has ended, run it without `--server`; the
+   candidate file is then written directly. It prints the file written and the verdict of each link between two
+   steps. If it exits with 1, its standard error says why: fix the candidate and post it again, and if it is still
+   refused, tell the user. Then answer the comment with `duru reply`, naming the screens you put in and why and each
+   link that is broken or needs a condition. If no way joins two of them, post no candidate and say so in the
+   reply. Never write a story file or a candidate file yourself; only `duru candidate` writes a candidate. A comment
+   on a screen order takes no status and never appears in the task list, so act on it when its line arrives.
    A comment can also be on several targets or on none. Its line then has `targets`, a list of targets in the shapes
    above, in place of `target`, and `wheres`, the `where` of each target in the same order (`null` for one that has
    none or is no longer found). Answer it once, covering every target it names. With an empty `targets` the reviewer
