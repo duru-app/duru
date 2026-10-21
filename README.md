@@ -351,12 +351,12 @@ usable as a test tag. The pattern a path variable carries is left out of the ID,
 gives `/document/:tab#DocumentList`; the screen's path keeps it. It lists its route file and line, its component
 file, its `sourceFiles`, the API calls it reaches, the settings it reads, and its links to other screens with the
 conditions guarding them. A screen made from an item of a table in `routeTables` also has `tableItem`: the item's
-keys joined with `.`, the table file and the item's line. The settings and links come from every file in `sourceFiles`. The API calls are only
-those the screen's code reaches, so a file in `sourceFiles` can hold calls the screen does not list, and a call
-sent by a method of a store the screen gets from a React context hook can be written in a file outside them; each
-call names the file and line where it is written. A call a saga makes for the screen names the line in the saga
-and lists under `actions` each action type that leads to it, with the places the screen dispatches that type
-(`dispatchedAt`).
+keys joined with `.`, the table file and the item's line. The settings come from every file in `sourceFiles`. The
+API calls and links are only those the screen's code reaches, so a file in `sourceFiles` can hold calls and links
+the screen does not list, and a call sent by a method of a store the screen gets from a React context hook can be
+written in a file outside them; each call and link names the file and line where it is written. A call a saga makes
+for the screen names the line in the saga and lists under `actions` each action type that leads to it, with the
+places the screen dispatches that type (`dispatchedAt`).
 A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
 inside it.
 
