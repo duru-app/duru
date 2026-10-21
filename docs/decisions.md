@@ -2908,6 +2908,34 @@ Alternatives compared:
 Measured on main 29fae93 against the branch with the example client, with the kinds 「끝난 문서」 and 「입력 경계」 and four
 marks by a person and two by `duru case`: the task list and what `rebuild` prints are identical.
 
+**A new story asks the coding agent through its own conversation: the steps chosen so far become a 「화면 순서」 tag,
+「링크 없음」 between two steps adds that gap to it, and the comment carries the gaps and the fields typed at each step.**
+Asked for in #253 and built in #365. The driver chose on mock-ups of the review page (2026-10-20) to have no separate
+「에이전트에게 맡기기」 button: the request is an ordinary comment left with 「남기기」 under 「에이전트와 대화」, as VS Code's
+「Add Element to Chat」, Figma Make and Miro AI put what was picked into the chat and take the instruction as text. One
+request per story, with the gaps as marks on it, because a request and a candidate for each gap would have to be put
+back together after they were accepted. The new story stays open after the comment is left, since what was typed in
+it is not written anywhere until 「스토리 저장」. The fields typed so far go with the request, so the agent fills only
+the empty ones.
+The target is `{ "screens": [ … ] }` and its comments are written to `<marksDir>/stories/orders/<IDs joined with
+" > ">/`, as settled on #253 (2026-10-15); this was first built on a branch whose page part, pressing boxes in the flow
+to build the order, was dropped on 2026-10-15 for 「새 스토리」. The order takes comments only and never enters the task
+list. The line an agent gets carries each screen's files and the verdict of each link between two neighbours, judged
+as a story's are, and `null` on a map built before stories rather than a guess.
+The gaps and the fields go into the target as `gaps` and `steps`, and the key and the folder are made from the screens
+alone:
+- `gaps` are pairs of neighbouring step numbers, `[2, 3]`, as the PRD names them. One number for the step a gap leaves
+  is shorter, but a story's link part already pairs that number with the two screens, and a bare number reads as a
+  step.
+- `steps` hold the step number and the fields under the names a story file uses, checked by the same rules, so the
+  agent can hand them on unchanged to a candidate. Only steps with something typed are listed; a list parallel to the
+  screens would be mostly empty objects.
+- Putting them on the mark beside `note` instead would leave a reply without them, while a reply copies its comment's
+  target, and the agent reads the line of a reply as well.
+- Making them part of the key would split comments on one order into one conversation per set of gaps.
+A comment on a screen order shows its note and replies in place under 「전체」, as a comment with no target does: the
+page has no screen to open for it once the new story that made it is saved or thrown away.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

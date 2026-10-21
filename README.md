@@ -739,7 +739,9 @@ history.
 쓰기」 once it has steps) that moves to the story tab's new-story screen, and `#flow?new=1` and `#stories?new=1` open
 the same screen. The left column lists the screens, and the middle shows the verdict beside the title, a folded
 「사전 조건 N」, and ID, name and memo with 「스토리 저장」 above the steps chosen so far and the whole flow. The right column
-shows the conversation form greyed out, with a line saying a conversation can be left once the story is saved.
+shows 「에이전트와 대화」 on the screen order chosen so far, and its form carries that order as the tag 「화면 순서 /signin →
+/home」, which follows each step added or taken out (see **Comments on a screen order**); before the first step the form
+is greyed out, with a line saying the order chosen becomes its tag.
 Pressing a screen in the list or a box in the drawing adds that screen as the next step, and the drawing scrolls to
 keep the box pressed in place where it can.
 Each chosen box carries its step number. Two neighbouring steps are joined in the style of their verdict: on the link
@@ -1001,6 +1003,21 @@ enter the task list, so they reach a coding agent only as the lines printed whil
 comments shows their number; pressing it opens the candidate's conversation. Once the candidate is accepted or
 discarded and leaves the list, its comments show under 「떨어져 나감」 of the story tab with the candidate's name.
 
+**Comments on a screen order.** While a new story is written, the form under 「에이전트와 대화」 carries the steps
+chosen so far as the tag 「화면 순서 …」, so the reviewer can ask the coding agent to fill in the way between them, often
+after choosing only its ends. Pressing 「링크 없음」 between two steps adds that gap to the tag as 「2-3 링크 없음」, to ask for
+that gap only, and pressing it again takes it out; a gap moves with its two steps and leaves the tag when one of them
+is taken out. 「남기기」 saves the comment with `"target": { "screens": [ … ] }`, the screen IDs in order, with `"gaps":
+[[2, 3]]` for the gaps pressed and `"steps": [{ "step": 3, "expects": [ … ] }]` for the conditions, values and
+expected results typed at each step so far, under the names a story file uses. It is written to
+`<marksDir>/stories/orders/<key>/`, the key being the IDs joined with ` > ` and shortened as for a candidate, so
+comments on the same order share one conversation whatever gaps they carry. A screen order takes comments only: a
+status sent with one is refused with the reason, and its comments never enter the task list, so they reach a coding
+agent only as the lines printed while the review runs. The new story stays open with what was typed, and the comment
+shows at the top of 「에이전트와 대화」 while the same order is chosen. Under 「전체」 it shows under the order with its
+replies in place. Once a screen of the order leaves the map, the comment shows under 「떨어져 나감」 of the screens list
+with the order.
+
 **Comments on a step or a link of a story.** In the story tab each step of the chosen story and each link between
 two of its steps has the same bubble and count. Pressing such a comment under 「전체」 opens the story and brings its
 card up under the line. A step is saved as `"part": {
@@ -1079,7 +1096,11 @@ instead when the screen is not on the map); on a
 `hop`, `{"file","from","to","verdict","ways","preconditions"}`, the two screens in the same shape, the link's verdict
 and where it is written as on the story, and the preconditions of the story that concern that link. It is `null` once
 the story no longer has that step or link, and while the story file or the map cannot be read or the map was built
-before stories. A coding agent that launched the page can act on it without waiting for the end. Every open page
+before stories. A comment or reply on a screen order carries `"where": {"screens","links"}`: `screens` has each screen
+in the order in the shape of a step's screen, and `links` has, for each two neighbouring screens, `from`, `to`, the
+verdict of the link between them and `ways`, as for a link between two steps of a story; the gaps and fields picked
+come in its `target`. It is `null` while the map cannot be read or was built before stories. A coding agent that
+launched the page can act on it without waiting for the end. Every open page
 receives the same save at once and shows it without a reload, so a mark left in one window appears in another.
 
 **Replies.** `reply <config> <comment ID> "<text>"` answers a comment. The reply is a mark with no status, saved as
