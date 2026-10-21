@@ -9,6 +9,9 @@ interface RawSource {
   steps?: unknown;
   report?: unknown;
   tests?: unknown;
+  comment?: unknown;
+  added?: unknown;
+  written?: unknown;
 }
 
 interface RawStory {
@@ -43,6 +46,14 @@ export interface StepFields {
   expects?: string[];
 }
 
+export interface CommentSource {
+  comment: string;
+  added: { step: number; reason: string }[];
+  written: ({ step: number } & StepFields)[];
+}
+
+export type StorySource = { record: string; steps: [number, number] } | { report: string; tests: string[] } | CommentSource;
+
 export interface Story {
   id: string;
   name: string;
@@ -53,7 +64,7 @@ export interface Story {
   memo: string;
   author: string;
   date: string;
-  source?: { record: string; steps: [number, number] } | { report: string; tests: string[] };
+  source?: StorySource;
   file: string;
   contentHash: string;
 }
@@ -100,7 +111,17 @@ const FIELD_RULES = {
 const isStep = (v: number) => Number.isInteger(v) && v > 0;
 const isRecordSource = (v: RawSource) => isText(v.record) && Array.isArray(v.steps) && v.steps.length === 2 && v.steps.every(isStep) && v.steps[0] <= v.steps[1];
 const isTestsSource = (v: RawSource) => isText(v.report) && Array.isArray(v.tests) && v.tests.length > 0 && v.tests.every(isText);
-export const isSource = (v: RawSource) => isPlainObject(v) && Object.keys(v).length === 2 && (isRecordSource(v) || isTestsSource(v));
+const ascending = (list: any[]) => list.every((x, i) => isStep(x.step) && (i === 0 || x.step > list[i - 1].step));
+const isAddedStep = (v: any) => isPlainObject(v) && Object.keys(v).length === 2 && isText(v.reason);
+function isWrittenStep(v: any) {
+  if (!isPlainObject(v)) return false;
+  const { step, ...fields } = v;
+  return Object.keys(fields).length > 0 && !('screen' in fields) && stepProblem({ ...fields, screen: 'x' }, '', step === 1) === null;
+}
+const isCommentSource = (v: RawSource) => isText(v.comment) && Array.isArray(v.added) && v.added.every(isAddedStep) && ascending(v.added)
+  && Array.isArray(v.written) && v.written.every(isWrittenStep) && ascending(v.written);
+export const isSource = (v: RawSource) => isPlainObject(v) && (Object.keys(v).length === 2 ? isRecordSource(v) || isTestsSource(v) : Object.keys(v).length === 3 && isCommentSource(v));
+export const SOURCE_SHAPES = 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] }, { "report": 보고 파일, "tests": [시험 제목, ...] }, { "comment": 코멘트 ID, "added": [{ "step", "reason" }, ...], "written": [{ "step", 칸 이름: [줄, ...] }, ...] } 가운데 하나여야 합니다';
 // Date.parse 는 2026-02-30 을 3월 2일로 넘겨 받으므로, 날짜 부분이 그대로 되돌아오는지 본다.
 export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v))
   && new Date(`${v.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === v.slice(0, 10);
@@ -173,7 +194,7 @@ function problemOf(story: RawStory) {
   if (story.memo !== undefined && typeof story.memo !== 'string') return 'memo 는 글자여야 합니다';
   if (!isText(story.author)) return 'author 에 작성자를 적어야 합니다';
   if (!isDate(story.date)) return 'date 는 2026-10-02 같은 날짜여야 합니다';
-  if (story.source !== undefined && !isSource(story.source)) return 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] } 나 { "report": 보고 파일, "tests": [시험 제목, ...] } 여야 합니다';
+  if (story.source !== undefined && !isSource(story.source)) return SOURCE_SHAPES;
   return null;
 }
 

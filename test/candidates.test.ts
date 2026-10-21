@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { acceptCandidate, discardCandidate, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
+import { acceptCandidate, addCommentCandidate, discardCandidate, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
+import { addMark, addReply } from '../src/marks.ts';
 import { editStory, loadStories, writeStorySteps } from '../src/stories.ts';
 import type { StepInput } from '../src/stories.ts';
 import { linkTests } from '../src/test-links.ts';
@@ -812,5 +813,127 @@ test('a records entry in the stories folder that is a file is noted with the can
   withFolder({ 'stories/records': 'x' }, (dir: string) => {
     const { notices } = candidatesOf({ configDir: dir, visitRecords: [], storiesDir: path.join(dir, 'stories') });
     assert.deepEqual(notices, [{ file: 'stories/records', reason: 'records 는 리뷰 페이지에서 남긴 방문 기록을 담는 폴더여야 합니다' }]);
+  });
+});
+
+const LAB_ORDER = ['/signin#SignIn', '/lab#Lab'];
+const LAB_PATH = ['/signin#SignIn', '/home#Home', '/lab#Lab'];
+const ASKED_STEPS = [{ step: 1, inputs: [EMAIL_INPUT] }, { step: 2, expects: ['실험 목록이 보인다'] }];
+const THROUGH_HOME = '로그인하면 홈으로만 갑니다 (components/SignIn.js:12)';
+const AGENT_SCREENS = [
+  { screen: '/signin#SignIn', inputs: [EMAIL_INPUT] },
+  { screen: '/home#Home', reason: THROUGH_HOME, expects: ['홈이 보인다'] },
+  { screen: '/lab#Lab', needs: ['실험 메뉴가 켜져 있다'], expects: ['실험 목록이 보인다'] },
+];
+
+function withOrderComment(target: Record<string, unknown>, fn: (ctx: { cfg: typeof config; comment: string; post: (input: Record<string, unknown>, onMap?: object) => ReturnType<typeof addCommentCandidate>; files: () => string[] }) => void) {
+  withFolder({}, (dir: string) => {
+    const cfg = { ...config, configDir: dir, visitRecords: [], storiesDir: path.join(dir, 'stories'), marksDir: path.join(dir, 'marks') };
+    const { id: comment } = addMark(cfg.marksDir, { target, note: '로그인한 뒤 실험으로 가는 길을 채워 줘\n둘째 줄', author: 'hit' }, new Date('2026-10-20T01:00:00Z'));
+    const post = (input: Record<string, unknown>, onMap: object = map) => addCommentCandidate(cfg, onMap, path.join(dir, 'map.json'), [], { comment, name: '로그인해 실험을 연다', screens: AGENT_SCREENS, ...input }, new Date('2026-10-21T02:00:00Z'));
+    const files = () => (fs.existsSync(cfg.storiesDir) ? (fs.readdirSync(cfg.storiesDir, { recursive: true }) as string[]).sort() : []);
+    fn({ cfg, comment, post, files });
+  });
+}
+
+test('a candidate an agent posts for a comment on a screen order is written into the candidates folder with the comment it answers, the steps it put in with why, and the lines it wrote, the reviewer\'s lines kept, and is listed with the links between its steps judged', () => {
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, comment, post }) => {
+    const posted = post({});
+    assert.match(posted.file, /^stories\/candidates\/2026-10-21-[0-9a-f]{8}\.json$/);
+    assert.deepEqual([posted.key, posted.links.map((l) => [l.from, l.to, l.verdict])], [LAB_PATH.join(' > '), [['/signin#SignIn', '/home#Home', 'open'], ['/home#Home', '/lab#Lab', 'conditioned']]]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(cfg.configDir, posted.file), 'utf8')), {
+      name: '로그인해 실험을 연다',
+      screens: LAB_PATH,
+      source: {
+        comment,
+        added: [{ step: 2, reason: THROUGH_HOME }],
+        written: [{ step: 2, expects: ['홈이 보인다'] }, { step: 3, needs: ['실험 메뉴가 켜져 있다'] }],
+      },
+      date: '2026-10-21T02:00:00.000Z',
+      stepFields: [{ inputs: [EMAIL_INPUT] }, { expects: ['홈이 보인다'] }, { needs: ['실험 메뉴가 켜져 있다'], expects: ['실험 목록이 보인다'] }],
+    });
+    const { list, notices } = storyCandidates(cfg, map, path.join(config.outDir, 'map.json'));
+    assert.deepEqual(notices, []);
+    assert.deepEqual(list.map((c) => [c.key, c.name, c.source, c.links.map((l) => l.verdict)]), [[LAB_PATH.join(' > '), '로그인해 실험을 연다', JSON.parse(fs.readFileSync(path.join(cfg.configDir, posted.file), 'utf8')).source, ['open', 'conditioned']]]);
+  });
+});
+
+test('a candidate from a comment is accepted into a story file with its source and every line on its steps, and unaccepting, discarding and undoing the discard keep them', () => {
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, post }) => {
+    post({});
+    const listed = () => storyCandidates(cfg, map, path.join(config.outDir, 'map.json')).list;
+    const [candidate] = listed();
+    acceptCandidate(cfg.storiesDir, candidate, { id: 'lab', name: candidate.name, author: 'hit' });
+    const written = JSON.parse(fs.readFileSync(path.join(cfg.storiesDir, 'lab.json'), 'utf8'));
+    assert.deepEqual(written.screens, [{ screen: '/signin#SignIn', inputs: [EMAIL_INPUT] }, { screen: '/home#Home', expects: ['홈이 보인다'] }, { screen: '/lab#Lab', needs: ['실험 메뉴가 켜져 있다'], expects: ['실험 목록이 보인다'] }]);
+    assert.deepEqual(written.source, candidate.source);
+    assert.deepEqual(loadStories(cfg.storiesDir).notices, []);
+    assert.deepEqual(listed(), []);
+    unacceptStory(cfg.storiesDir, 'lab');
+    const [back] = listed();
+    assert.deepEqual([back.source, back.stepFields], [candidate.source, candidate.stepFields]);
+    discardCandidate(cfg.storiesDir, back, { reason: '실험은 따로 본다', author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+    assert.deepEqual(listed(), []);
+    undiscardCandidate(cfg.storiesDir, back.screens, { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
+    const [again] = listed();
+    assert.deepEqual([again.source, again.stepFields], [candidate.source, candidate.stepFields]);
+  });
+});
+
+test('with gaps picked on the comment, a candidate may put screens only into those gaps, while with none it may put them anywhere, before the first step and after the last too', () => {
+  const order = ['/signin#SignIn', '/home#Home', '/lab/result#LabResult'];
+  const reason = '실험 결과는 실험 목록에서만 엽니다';
+  withOrderComment({ screens: order, gaps: [[2, 3]] }, ({ post, files }) => {
+    assert.throws(() => post({ screens: ['/signin#SignIn', { screen: '/document/:tab#DocumentList', reason }, '/home#Home', { screen: '/lab#Lab', reason }, '/lab/result#LabResult'] }), {
+      message: 'screens 의 2 번째 단계는 코멘트가 고른 사이(2-3) 밖에 넣은 화면입니다',
+    });
+    assert.deepEqual(files(), []);
+    assert.equal(post({ screens: ['/signin#SignIn', '/home#Home', { screen: '/lab#Lab', reason }, '/lab/result#LabResult'] }).links.length, 3);
+  });
+  withOrderComment({ screens: ['/home#Home', '/lab#Lab'] }, ({ post }) => {
+    const posted = post({ screens: [{ screen: '/signin#SignIn', reason: '홈은 로그인해야 열립니다' }, '/home#Home', '/lab#Lab', { screen: '/lab/result#LabResult', reason }] });
+    assert.deepEqual(posted.key, ['/signin#SignIn', '/home#Home', '/lab#Lab', '/lab/result#LabResult'].join(' > '));
+  });
+});
+
+test('a candidate for a comment is refused with why, writing nothing, when a screen is not on the map, a screen follows itself, the comment is not there or is not on a screen order, a line the reviewer wrote is changed or added to, or a screen the reviewer picked is left out or moved', () => {
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, comment, post, files }) => {
+    const nodeComment = addMark(cfg.marksDir, { target: { node: '/lab#Lab' }, note: '실험 화면', author: 'hit' }).id;
+    const replied = addReply(cfg.marksDir, { replyTo: comment, note: '찾아볼게요' }).id;
+    const screens = (change: (s: Record<string, unknown>[]) => unknown[]) => change(structuredClone(AGENT_SCREENS));
+    const refusals: [Record<string, unknown>, string][] = [
+      [{ screens: screens((s) => s.with(1, { ...s[1], screen: '/nowhere' })) }, 'screens 의 2 번째 단계의 /nowhere 는 맵에 없는 화면입니다'],
+      [{ screens: screens((s) => [s[0], s[1], { screen: '/home#Home', reason: 'x' }, s[2]]) }, 'screens 의 2 번째와 3 번째가 같은 화면입니다'],
+      [{ comment: 'no-such-id' }, '코멘트 no-such-id 가 없습니다'],
+      [{ comment: nodeComment }, `코멘트 ${nodeComment} 는 화면 순서에 단 코멘트가 아닙니다`],
+      [{ comment: replied }, `코멘트 ${replied} 가 없습니다`],
+      [{ screens: screens((s) => s.with(2, { ...s[2], expects: ['실험이 보인다'] })) }, 'screens 의 3 번째 단계 /lab#Lab 의 expects 는 검토자가 적은 줄이라 바꿀 수 없습니다'],
+      [{ screens: screens((s) => s.with(0, { ...s[0], inputs: [EMAIL_INPUT, MEMO_INPUT] })) }, 'screens 의 1 번째 단계 /signin#SignIn 의 inputs 는 검토자가 적은 줄이라 바꿀 수 없습니다'],
+      [{ screens: screens((s) => s.with(0, { screen: '/signin#SignIn' })) }, 'screens 의 1 번째 단계 /signin#SignIn 의 inputs 는 검토자가 적은 줄이라 바꿀 수 없습니다'],
+      [{ screens: screens((s) => [s[0], s[2], { screen: '/help#Help' }]) }, '이유를 적지 않은 단계는 코멘트가 고른 화면 순서 /signin#SignIn > /lab#Lab 그대로여야 합니다. 에이전트가 넣은 화면에는 reason 에 이유를 적습니다'],
+      [{ screens: screens((s) => s.with(1, { ...s[1], reason: ' ' })) }, 'screens 의 2 번째 단계의 reason 에 이 화면을 넣은 이유를 적어야 합니다'],
+      [{ screens: screens((s) => s.with(1, { ...s[1], expects: '홈' })) }, 'screens 의 2 번째 단계의 expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다'],
+      [{ name: ' ' }, 'name 에 후보 이름을 적어야 합니다'],
+      [{ screens: [] }, 'screens 는 화면 ID 나 { "screen", "reason", "needs", "linkNeeds", "inputs", "expects" } 객체를 하나 이상 차례대로 담은 목록이어야 합니다'],
+    ];
+    for (const [input, message] of refusals) assert.throws(() => post(input), { message }, message);
+    assert.deepEqual(files(), []);
+  });
+});
+
+test('a candidate for a comment is refused when its screen order is already a story, a candidate or a discarded candidate, or the map was built before links carried their conditions', () => {
+  withOrderComment({ screens: LAB_ORDER }, ({ cfg, post, files }) => {
+    const stale: { screens: { links: { conditions?: unknown }[] }[] } = structuredClone(map);
+    for (const s of stale.screens) for (const l of s.links) delete l.conditions;
+    assert.throws(() => post({}, stale), { message: `${path.join(cfg.configDir, 'map.json')} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 후보를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요` });
+    assert.deepEqual(files(), []);
+    post({});
+    assert.throws(() => post({ name: '다시' }), { message: '이미 후보 「로그인해 실험을 연다」의 화면 순서입니다' });
+    const [candidate] = storyCandidates(cfg, map, path.join(config.outDir, 'map.json')).list;
+    discardCandidate(cfg.storiesDir, candidate, { reason: '버림', author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+    assert.throws(() => post({}), { message: '이 화면 순서는 버린 후보에 있습니다. 검토자가 「되돌리기」를 누른 뒤에 올릴 수 있습니다' });
+    undiscardCandidate(cfg.storiesDir, candidate.screens, { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
+    acceptCandidate(cfg.storiesDir, storyCandidates(cfg, map, path.join(config.outDir, 'map.json')).list[0], { id: 'lab', name: 'x', author: 'hit' });
+    assert.throws(() => post({}), { message: '이미 스토리 lab 의 화면 순서입니다' });
   });
 });
