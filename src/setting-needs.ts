@@ -17,7 +17,7 @@ export interface SettingNeed {
 export interface SettingNeedsResult {
   settings?: SettingNeed[];
   joined?: boolean;
-  reason?: string;
+  reason?: SettingReason;
 }
 
 export interface SettingNeeds {
@@ -27,15 +27,17 @@ export interface SettingNeeds {
   includes: (chain: string[], entry: string) => SettingNeedsResult;
 }
 
+export type SettingReason = 'call' | 'not-equal' | 'or' | 'non-literal' | 'order' | 'negated' | 'other' | 'conflict' | 'not-found';
+
 const REASONS = {
-  call: '함수를 불러 정하는 조건이라 켤 값을 정할 수 없습니다',
-  notEqual: '같지 않음을 보는 조건이라 켤 값을 하나로 정할 수 없습니다',
-  or: '「또는」으로 묶인 조건이라 켤 값을 하나로 정할 수 없습니다',
-  nonLiteral: '고정된 값이 아닌 것과 비교하는 조건이라 켤 값을 정할 수 없습니다',
-  order: '크기를 비교하는 조건이라 켤 값을 정할 수 없습니다',
-  negated: '부정한 조건이라 켤 값을 하나로 정할 수 없습니다',
-  other: '이 모양의 조건은 읽지 못합니다',
-};
+  call: 'call',
+  notEqual: 'not-equal',
+  or: 'or',
+  nonLiteral: 'non-literal',
+  order: 'order',
+  negated: 'negated',
+  other: 'other',
+} as const;
 const LITERALS = ['StringLiteral', 'NumericLiteral', 'BooleanLiteral'];
 
 // 조건식이 설정에 요구하는 값을 읽는다. 설정을 읽지 않는 조건은 null, 읽지만 값을 정할 수 없으면 { reason }.

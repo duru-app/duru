@@ -3,7 +3,7 @@ import { parseRoleEntry } from './config.ts';
 import { parseFragment, plainText } from './parse.ts';
 import { pathParts, type PathPart } from './path-values.ts';
 import type { Identifier, MemberExpression, Node, OptionalMemberExpression } from '@babel/types';
-import type { SettingNeed } from './setting-needs.ts';
+import type { SettingNeed, SettingReason } from './setting-needs.ts';
 
 export interface AccessConfig {
   roleIdentifiers?: string[];
@@ -23,7 +23,7 @@ type GuardInits = Map<string, Map<string, GuardInit>>;
 
 export interface GuardSetting {
   settings?: SettingNeed[];
-  reason?: string;
+  reason?: SettingReason;
 }
 
 type GuardSettings = Map<string, Map<string, GuardSetting | null>>;
@@ -361,7 +361,7 @@ export function linkTargets(screens: { path: string }[]) {
   };
 }
 
-const NO_SETTING_READ = '조건에서 설정을 읽는 곳을 찾지 못했습니다';
+const NO_SETTING_READ = 'not-found';
 
 function settingsOf(guardSettings: GuardSettings, guard: string, file: string) {
   const read = guardSettings.get(file)?.get(guard);

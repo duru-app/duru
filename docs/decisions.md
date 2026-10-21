@@ -2765,6 +2765,25 @@ Alternatives compared:
 - Taking a box with `nth` 1 and the same box without `nth` as one: misses a button drawn before its box, and would
   join two boxes with the same words once the first of them is removed.
 
+**The setting changes the review page's settings bar shows and the `setting` lines of `duru story` are worked out in one server module, `src/setting-changes.ts`, and the page reads its results.**
+For each setting a guard reads, the module gives the value with no change, whether that already meets the guard (or
+that it is not known, when the source default was not read in full), the change to write, and why the settings file
+cannot write it. The review server puts the result on each setting need it sends the page, and `duru story` calls the
+same module on the settings file it reads without logging in. The page keeps only the check of a value the reviewer
+just picked against the guard, since that changes with every click. The map holds the reason a guard could not be
+read as a code, which the page turns into Korean and `duru story` into English, as the page already does for the codes
+of calls whose address was not read.
+The settings file is read only when `app.settingsFile` is set, since apps take their settings in different ways
+(mattermost asks the `/config/client` API); otherwise the line says the deployed settings were not checked. Accounts
+go under links between steps, route guards and the first-screen line, but not under links into the first screen from
+screens outside the story, which the test does not take.
+Alternatives compared:
+- The page runs the same function, pasted into it as duru already pastes its settings-file rewrite into the app page:
+  one copy and the same screen, but the page's type check cannot see the pasted function, so a renamed field there
+  would be caught only by the browser tests.
+- The page keeps its own calculation and `duru story` gets a copy: nothing to move, but two copies of the same rules
+  drift apart.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

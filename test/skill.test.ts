@@ -158,3 +158,8 @@ test('the agent skill says what a comment on several targets or none carries, th
   assert.match(SKILL, /empty `targets`[\s\S]*answer from the map, the task list and the tests/);
   assert.match(SKILL, /`left on N targets:`[\s\S]*`# Comments with no target`/);
 });
+
+test('the agent skill says how to read the account and setting lines under the preconditions of one story', () => {
+  assert.match(SKILL, /an `accounts` or `role` line[\s\S]*pick one of these accounts yourself[\s\S]*duru never prints a\s+password/);
+  assert.match(SKILL, /A `setting` line speaks for one setting, not for the whole\s+guard[\s\S]*`deployed settings not\s+checked`[\s\S]*check the setting in the app before trusting the line[\s\S]*`setting not read`/);
+});

@@ -57,9 +57,12 @@ test('a story no reviewer marked is printed with a line for each step to open an
       '  - 보고서 화면이 열린다',
       '- reach: unreachable, no link at 1 step',
       '- preconditions:',
+      '  - accounts: no app.roles in the config',
       '  - /admin/report#AdminReport, the first screen, needs a role and a setting; roles that open it: ADMIN, OWNER',
     ].join('\n') + '\n');
     assert.match(story, /^ {4}- link from \/home#Home at components\/SideMenu\.js:11, guard /m);
+    assert.match(story, /^ {4}- role ADMIN or OWNER$/m);
+    assert.equal(story.split('no app.roles in the config').length, 2);
     assert.match(story, /^- empty tests:\n {2}- playwright: `test\.fixme\("<what it checks>", \{ tag: \["@story:report-detour", "@screen:\/admin\/report#AdminReport", "@screen:\/home#Home", "@screen:\/document\/:id#DocumentDetail"\] \}, async \(\{ page \}\) => \{\}\);`$/m);
   }, { appUrl: 'http://localhost:3000', storiesDir: 'brief-stories' });
 });
@@ -213,4 +216,146 @@ test('a route variable in the arrival line does not take a query or a hash for i
     for (const ok of ['/document/7', '/document/7?tab=1', '/document/7#top']) assert.equal(detail.test(`http://localhost:3000${ok}`), true, ok);
     for (const no of ['/document/?tab=1', '/document/#top', '/document/']) assert.equal(detail.test(`http://localhost:3000${no}`), false, no);
   });
+});
+
+const REPORT_DETOUR = { appUrl: 'http://localhost:3000', storiesDir: 'brief-stories' };
+const ADMIN_PASSWORD_ENV = 'DURU_TEST_ADMIN_PASSWORD';
+const APP = {
+  files: 'build',
+  server: 'http://127.0.0.1:1',
+  apiPaths: ['/api/'],
+  login: { path: '/auth/login', body: { loginId: '{id}', pw: '{password}' }, token: 'result.token', storage: { key: 'FAKE_AUTH', value: { accessToken: '{token}' } } },
+  account: { id: 'duru-admin', passwordEnv: 'DURU_TEST_APP_PASSWORD' },
+  roles: { ADMIN: { id: 'duru-boss', passwordEnv: ADMIN_PASSWORD_ENV } },
+};
+const SETTINGS_FILE = { path: '/settings.js', global: 'window.FAKE_SETTINGS', root: 'globalSettings', merged: ['SYSTEM', 'CUSTOM'] };
+const WITH_ROLES = { ...REPORT_DETOUR, app: APP };
+const WITH_SETTINGS_FILE = { ...REPORT_DETOUR, app: { ...APP, settingsFile: SETTINGS_FILE } };
+const LINK_HEAD = "  - link /document/:id#DocumentDetail → /admin/report#AdminReport at components/SideMenu.js:11, guard `globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'` (setting); `['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1` (role); `MENUS.ADMIN` (setting)";
+const ACCOUNTS = 'ADMIN duru-boss, password in DURU_TEST_ADMIN_PASSWORD; OWNER no account in app.roles';
+const preconditions = (stdout: string) => section(stdout, 'report-detour').split('- preconditions:\n')[1].split('\n- empty tests:')[0];
+const linkLines = (stdout: string) => {
+  const lines = preconditions(stdout).split('\n');
+  const at = lines.indexOf(LINK_HEAD);
+  assert.notEqual(at, -1, preconditions(stdout));
+  const end = lines.findIndex((l, i) => i > at && l.startsWith('  - '));
+  return lines.slice(at + 1, end < 0 ? undefined : end).filter(Boolean);
+};
+
+function withPasswordSet<T>(fn: () => T) {
+  process.env[ADMIN_PASSWORD_ENV] = 'pw-never-printed';
+  try {
+    return fn();
+  } finally {
+    delete process.env[ADMIN_PASSWORD_ENV];
+  }
+}
+
+test('under a link between steps, a role gets the account of each role that passes with the variable holding its password, and each setting whether it is met with no change, judged against the settings file; no password is printed', () => {
+  withPasswordSet(() => withCopy((run) => {
+    assert.equal(run('rebuild').status, 0);
+    const res = run('story', 'report-detour');
+    assert.equal(res.status, 0, res.stderr);
+    assert.doesNotMatch(res.stdout, /pw-never-printed/);
+    assert.match(res.stdout, /duru never prints a password, and you pick the account/);
+    assert.deepEqual(linkLines(res.stdout), [
+      '    - setting SYSTEM.MAIN_MENU.ADMIN.LIST includes "ADMIN_REPORT": met with no change (checked against build/settings.js)',
+      `    - role ADMIN or OWNER: ${ACCOUNTS}`,
+      '    - setting SYSTEM.MAIN_MENU.ADMIN present: met with no change (checked against build/settings.js)',
+    ]);
+    assert.match(preconditions(res.stdout), new RegExp(`^ {2}- /admin/report#AdminReport, the first screen, [^\\n]*\\n {4}- accounts: ${ACCOUNTS}\\n`));
+  }, WITH_SETTINGS_FILE));
+});
+
+test('a setting not met names the value to put, and without a settings file that runs it is judged on the source default and says why the deployed settings were not checked', () => {
+  withCopy((run, copy) => {
+    run('rebuild');
+    const settingsFile = path.join(copy, 'build/settings.js');
+    fs.writeFileSync(settingsFile, "window.FAKE_SETTINGS = { SYSTEM: { MAIN_MENU: { ADMIN: null } } };\n");
+    assert.deepEqual(linkLines(run('story', 'report-detour').stdout).filter((l) => l.includes('setting')), [
+      '    - setting SYSTEM.MAIN_MENU.ADMIN.LIST includes "ADMIN_REPORT": not met with no change; put "ADMIN_REPORT" in the list (checked against build/settings.js)',
+      '    - setting SYSTEM.MAIN_MENU.ADMIN present: not met with no change; duru does not know which value to put (checked against build/settings.js)',
+    ]);
+    fs.writeFileSync(settingsFile, "throw new Error('boom');\n");
+    assert.match(linkLines(run('story', 'report-detour').stdout)[0], /: met with no change \(source default; deployed settings not checked, build\/settings\.js could not be run: boom\)$/);
+    fs.rmSync(settingsFile);
+    assert.match(linkLines(run('story', 'report-detour').stdout)[0], /: met with no change \(source default; deployed settings not checked, build\/settings\.js not found\)$/);
+  }, WITH_SETTINGS_FILE);
+  withCopy((run) => {
+    run('rebuild');
+    assert.match(linkLines(run('story', 'report-detour').stdout)[0], /: met with no change \(source default; deployed settings not checked\)$/);
+  }, WITH_ROLES);
+});
+
+test('a setting under a default the source does not show in full is not known to be met, and still names the value to put', () => {
+  withCopy((run, copy) => {
+    const defaults = path.join(copy, 'client/src/store/settings.js');
+    fs.writeFileSync(defaults, fs.readFileSync(defaults, 'utf8').replace("ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] },", "ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] },\n      USER: window.INTO_USER_MENU || {},"));
+    run('rebuild');
+    assert.deepEqual(linkLines(run('story', 'report-detour').stdout).filter((l) => l.includes('setting')), [
+      '    - setting SYSTEM.MAIN_MENU.ADMIN.LIST includes "ADMIN_REPORT": not known, its default was not read in full; put "ADMIN_REPORT" in the list (source default; deployed settings not checked)',
+      '    - setting SYSTEM.MAIN_MENU.ADMIN present: not known, its default was not read in full; duru does not know which value to put (source default; deployed settings not checked)',
+    ]);
+  }, WITH_ROLES);
+});
+
+test('a route guard on a step gets the same lines, and a role the first screen line already gives accounts for is not given them again', () => {
+  withCopy((run, copy) => {
+    const routes = path.join(copy, 'client/src/Routes.js');
+    fs.writeFileSync(routes, fs.readFileSync(routes, 'utf8').replace('<Route path={Option.ROUTE_PATH.ADMIN_REPORT} component={AdminReport} exact />',
+      "{memberRole === 'ADMIN' && globalSettings.SYSTEM.LAB_ENABLED ? <Route path={Option.ROUTE_PATH.ADMIN_REPORT} component={AdminReport} exact /> : null}"));
+    run('rebuild');
+    const out = preconditions(run('story', 'report-detour').stdout);
+    const route = out.split('\n').filter((l) => l.startsWith('  - /admin/report#AdminReport route at'));
+    assert.equal(route.length, 2, out);
+    const under = out.split(`${route[0]}\n`)[1].split('\n  - ')[0].split('\n');
+    assert.deepEqual(under, [
+      '    - role ADMIN: the accounts are on the first screen line',
+      '    - setting SYSTEM.LAB_ENABLED on: not met with no change (false); set it to true (source default; deployed settings not checked)',
+    ]);
+    assert.equal(out.match(/duru-boss/g)!.length, 2, out);
+  }, WITH_ROLES);
+});
+
+test('a setting guard duru could not read says why in English, and a guard that is neither a role nor a setting gets no line of its own', () => {
+  withCopy((run, copy) => {
+    const menu = path.join(copy, 'client/src/components/SideMenu.js');
+    fs.writeFileSync(menu, fs.readFileSync(menu, 'utf8').replace('  if (MENUS.ADMIN) {', '  if (session.ready) if (MENUS.ADMIN !== false) {'));
+    run('rebuild');
+    const out = run('story', 'report-detour').stdout;
+    const head = preconditions(out).split('\n').find((l) => l.startsWith('  - link /document/:id#DocumentDetail'))!;
+    assert.match(head, /`session\.ready`(?! \()/);
+    const lines = preconditions(out).split(`${head}\n`)[1].split('\n  - ')[0].split('\n').filter(Boolean);
+    assert.deepEqual(lines, [
+      '    - setting SYSTEM.MAIN_MENU.ADMIN.LIST includes "ADMIN_REPORT": met with no change (source default; deployed settings not checked)',
+      `    - role ADMIN or OWNER: ${ACCOUNTS}`,
+      '    - setting not read: it checks that a value is not equal to another, so no one value meets it',
+    ]);
+  }, WITH_ROLES);
+});
+
+test('a link with several ways gets the lines under each way', () => {
+  withCopy((run, copy) => {
+    const menu = path.join(copy, 'client/src/components/SideMenu.js');
+    fs.writeFileSync(menu, fs.readFileSync(menu, 'utf8').replace('    <nav>\n', '    <nav>\n      {globalSettings.SYSTEM.LAB_ENABLED && <Link to={Option.ROUTE_PATH.ADMIN_REPORT}>Report</Link>}\n'));
+    run('rebuild');
+    const out = preconditions(run('story', 'report-detour').stdout);
+    const at = out.indexOf('  - link /document/:id#DocumentDetail → /admin/report#AdminReport, one of 2:\n');
+    assert.notEqual(at, -1, out);
+    const ways = out.slice(at).split('\n').slice(1).filter((l) => l.startsWith('    '));
+    assert.deepEqual(ways.map((l) => l.replace(/, guard .*/, '')), [
+      '    - at components/SideMenu.js:11',
+      '      - setting SYSTEM.MAIN_MENU.ADMIN.LIST includes "ADMIN_REPORT": met with no change (source default; deployed settings not checked)',
+      `      - role ADMIN or OWNER: ${ACCOUNTS}`,
+      '      - setting SYSTEM.MAIN_MENU.ADMIN present: met with no change (source default; deployed settings not checked)',
+      '    - at components/SideMenu.js:18',
+      '      - setting SYSTEM.LAB_ENABLED on: not met with no change (false); set it to true (source default; deployed settings not checked)',
+    ]);
+  }, WITH_ROLES);
+});
+
+test('the user guide says what the account and setting lines under the preconditions of one story mean, and the decision record says why the setting changes are worked out on the server', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  assert.match(read('../README.md'), /## One story[\s\S]*`tasks` does not print these lines[\s\S]*the password is never printed[\s\S]*`source default; deployed settings not checked`[\s\S]*`setting not read:`/);
+  assert.match(read('../docs/decisions.md'), /\*\*The setting changes the review page's settings bar shows and the `setting` lines of `duru story` are worked out in one server module[\s\S]*Alternatives compared:\n- The page runs the same function, pasted into it/);
 });

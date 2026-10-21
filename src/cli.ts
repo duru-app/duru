@@ -58,7 +58,7 @@ if (command === 'tasks') {
 } else if (command === 'story') {
   let brief;
   try {
-    brief = storyBrief(config, extra[0]);
+    brief = await storyBrief(config, extra[0]);
   } catch (err: any) {
     console.error(err.message);
     process.exit(1);

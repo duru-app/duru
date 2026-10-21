@@ -187,6 +187,42 @@ export function applyOverrides(names: string[], defaults: Record<string, Record<
 }
 
 const WINDOW_NAMES = ['window', 'globalThis', 'self'];
+const SETTINGS_FETCH_MS = 10_000;
+
+type SettingsFileApp = Pick<AppConfig, 'files'> & { settingsFile: AppSettingsFile };
+
+const globalNamesOf = (settingsFile: AppSettingsFile) => settingsFile.global.split('.').filter((n, i) => i > 0 || !WINDOW_NAMES.includes(n));
+const fromFolder = (app: Pick<AppConfig, 'files'>) => !/^https?:/.test(app.files);
+export const settingsFilePlace = (app: SettingsFileApp) => (fromFolder(app) ? path.join(app.files, app.settingsFile.path) : join(app.files, app.settingsFile.path));
+
+async function settingsText(app: SettingsFileApp, fetchMs = SETTINGS_FETCH_MS) {
+  const place = settingsFilePlace(app);
+  if (fromFolder(app)) return isFile(place) ? fs.readFileSync(place, 'utf8') : null;
+  const r = await fetch(place, { signal: AbortSignal.timeout(fetchMs) });
+  return r.ok ? r.text() : null;
+}
+
+export async function readSettingsFile(app: SettingsFileApp, { fetchMs = SETTINGS_FETCH_MS } = {}) {
+  let found = false;
+  try {
+    const text = await settingsText(app, fetchMs);
+    found = text !== null;
+    const context = vm.createContext({}, { microtaskMode: 'afterEvaluate' });
+    vm.runInContext('var window = globalThis, self = globalThis;', context);
+    vm.runInContext(text ?? '', context, { timeout: SETTINGS_RUN_MS });
+    const pick = `(() => {
+      let o = globalThis;
+      for (const n of ${literal(globalNamesOf(app.settingsFile))}) o = o == null ? undefined : o[n];
+      const out = {};
+      for (const s of ${literal(app.settingsFile.merged)}) if (o != null && typeof o[s] === 'object' && o[s] !== null) out[s] = o[s];
+      return JSON.stringify(out);
+    })()`;
+    const file: Record<string, Record<string, unknown>> = JSON.parse(vm.runInContext(pick, context, { timeout: SETTINGS_RUN_MS }));
+    return { file, fileError: null, found };
+  } catch (err: any) {
+    return { file: null, fileError: String(err.message), found };
+  }
+}
 
 // 앱 페이지 안에서 따로 돌기 때문에 바깥 스코프의 변수를 쓰지 않는다.
 // 다른 사이트가 앱을 iframe 에 띄워도 주소와 입력값을 받아 가지 못하게, 리뷰 페이지의 출처로만 보낸다.
@@ -349,10 +385,9 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     return logins.get(account.id)!;
   };
   const [main, ...roleLogins] = await Promise.all([app.account, ...roles.map(([, account]) => account)].map(logInOnce));
-  const fromFolder = !/^https?:/.test(app.files);
   const key = literal(app.login.storage.key);
   const { settingsFile } = app;
-  const globalNames = settingsFile?.global.split('.').filter((n, i) => i > 0 || !WINDOW_NAMES.includes(n));
+  const globalNames = settingsFile && globalNamesOf(settingsFile);
   let overrides: SettingsOverride[] = [];
 
   // 앱 스크립트보다 먼저 돌아야, 앱이 처음 읽을 때 localStorage 에 토큰이 들어 있고 앱이 처음 주소를 바꿀 때도 알린다.
@@ -383,35 +418,13 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     return `${text}\n;(${applyOverrides})(${literal(globalNames)}, ${literal(used)}, ${literal(overrides)});\n`;
   }
 
-  async function settingsText() {
-    if (fromFolder) {
-      const file = path.join(app.files, settingsFile!.path);
-      return isFile(file) ? fs.readFileSync(file, 'utf8') : '';
-    }
-    const r = await fetch(join(app.files, settingsFile!.path));
-    return r.ok ? r.text() : '';
-  }
-
   async function serveSettings(res: http.ServerResponse) {
-    send(res, 200, 'application/javascript', withOverrides(await settingsText()));
+    send(res, 200, 'application/javascript', withOverrides((await settingsText({ files: app.files, settingsFile: settingsFile! })) ?? ''));
   }
 
   async function fileSettings() {
-    try {
-      const context = vm.createContext({}, { microtaskMode: 'afterEvaluate' });
-      vm.runInContext('var window = globalThis, self = globalThis;', context);
-      vm.runInContext(await settingsText(), context, { timeout: SETTINGS_RUN_MS });
-      const pick = `(() => {
-        let o = globalThis;
-        for (const n of ${literal(globalNames)}) o = o == null ? undefined : o[n];
-        const out = {};
-        for (const s of ${literal(settingsFile!.merged)}) if (o != null && typeof o[s] === 'object' && o[s] !== null) out[s] = o[s];
-        return JSON.stringify(out);
-      })()`;
-      return { file: JSON.parse(vm.runInContext(pick, context, { timeout: SETTINGS_RUN_MS })), fileError: null };
-    } catch (err: any) {
-      return { file: null, fileError: `설정 파일을 돌려 보지 못해 맵의 기본값으로 판단합니다 (${err.message})` };
-    }
+    const { file, fileError } = await readSettingsFile({ files: app.files, settingsFile: settingsFile! });
+    return { file, fileError };
   }
 
   // 기본값을 다 읽지 못한 키는 안쪽만 바꾸면 복사본에서 읽지 못한 부분이 빠진다.
@@ -420,7 +433,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
     const partial = list.filter(({ path: at, item }) => (at.length > 2 || item !== undefined) && incomplete.some((p) => p.every((k, i) => k === at[i])));
     if (!partial.length) return;
     const { file } = await fileSettings();
-    const missing = partial.find(({ path: [section, key] }) => !(isObject(file?.[section]) && Object.hasOwn(file[section], key)));
+    const missing = partial.find(({ path: [section, key] }) => !(isObject(file?.[section]) && Object.hasOwn(file![section], key)));
     if (missing) {
       const [section, key] = missing.path;
       throw new Error(`the default of ${section}.${key} was not read in full from the source and the settings file does not set it, so only the whole of ${section}.${key} can be replaced`);
@@ -481,7 +494,7 @@ export async function startAppHost(app: AppConfig, { port = 0, rootDefaults = ()
         if (!login && pathname === SIGN_OUT_PATH) return signOutPage(res, search);
         if (settingsFile && pathname === settingsFile.path) return await serveSettings(res);
         if (app.apiPaths.some((p) => pathname.startsWith(p))) return forward(req, res);
-        if (fromFolder) return serveFolder(res, pathname, login);
+        if (fromFolder(app)) return serveFolder(res, pathname, login);
         await serveDeployed(req, res, login);
       } catch (err: any) {
         if (!res.headersSent) send(res, 502, 'text/plain', err.message);

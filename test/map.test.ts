@@ -441,7 +441,7 @@ test('an unreadable setting guard on one of several ways into a restricted origi
     ['/c', [], []],
   ];
   const screens = rows.map(([path, routeGuards, links]) => ({ id: path, path, routeFile: 'Routes.js', routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
-  const guards = new Map([[MENU_X, { settings: [setting('MENU.X', 'on')] }], [U, { reason: '읽지 못함' }]]);
+  const guards = new Map([[MENU_X, { settings: [setting('MENU.X', 'on')] }], [U, { reason: 'other' as const }]]);
   const guardSettings = new Map(['Routes.js', ...screens.map((s) => `${s.path}.js`)].map((f) => [f, guards]));
   const { access } = screenAccess(screens, [], config, new Map(), {}, guardSettings);
   for (const i of [2, 3]) assert.deepEqual(access[i].settings!.map((x) => [x.needs.map((n) => n.path.join('.')), x.unreadable]), [[['MENU.X'], []]]);
@@ -841,7 +841,7 @@ test('a let is not followed, and a const that refers back to itself is followed 
     ['client/src/components/DocumentDetail.js', '{helpEnabled && <Link', '{helpEnabled() && <Link'],
   ]);
   assert.deepEqual(fromDetail(looping)!.guards, [
-    { guard: 'helpEnabled()', kinds: ['setting'], settings: null, settingsReason: '함수를 불러 정하는 조건이라 켤 값을 정할 수 없습니다' },
+    { guard: 'helpEnabled()', kinds: ['setting'], settings: null, settingsReason: 'call' },
   ]);
 });
 
@@ -1004,24 +1004,24 @@ test('the guard of an else branch needs the opposite of its test', async () => {
   ]);
 });
 
-const UNREADABLE_ROUTE_GUARDS: [string, RegExp][] = [
-  ['globalSettings.SYSTEM.LAB_ENABLED !== false', /같지 않음/],
-  ['globalSettings.SYSTEM.LAB_ENABLED || memberRole', /또는/],
-  ['globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST.includes(memberRole)', /함수를 불러/],
-  ['globalSettings.SYSTEM.THEME === memberRole', /고정된 값이 아닌 것과 비교/],
-  ['globalSettings.SYSTEM.LEVEL > 1', /크기를 비교/],
-  ['!(globalSettings.SYSTEM.LAB_ENABLED && globalSettings.SYSTEM.HELP_LINK_ENABLED)', /부정한 조건/],
-  ['!(memberRole && globalSettings.SYSTEM.LAB_ENABLED)', /부정한 조건/],
+const UNREADABLE_ROUTE_GUARDS: [string, string][] = [
+  ['globalSettings.SYSTEM.LAB_ENABLED !== false', 'not-equal'],
+  ['globalSettings.SYSTEM.LAB_ENABLED || memberRole', 'or'],
+  ['globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST.includes(memberRole)', 'call'],
+  ['globalSettings.SYSTEM.THEME === memberRole', 'non-literal'],
+  ['globalSettings.SYSTEM.LEVEL > 1', 'order'],
+  ['!(globalSettings.SYSTEM.LAB_ENABLED && globalSettings.SYSTEM.HELP_LINK_ENABLED)', 'negated'],
+  ['!(memberRole && globalSettings.SYSTEM.LAB_ENABLED)', 'negated'],
 ];
 
 for (const [guard, reason] of UNREADABLE_ROUTE_GUARDS) {
-  test(`a route guard ${guard} cannot be read, and the screen says why`, async () => {
+  test(`a route guard ${guard} cannot be read, and the screen says why with the code ${reason}`, async () => {
     const map = await buildEditedCopy([['client/src/Routes.js', LAB_ROUTE, labRouteUnder(guard)]]);
     const { route, settings } = screen(map, '/lab#Lab').access;
     const [read] = route.filter((g) => g.kinds.includes('setting'));
     assert.equal(read.settings, null);
-    assert.match(read.settingsReason!, reason);
-    assert.deepEqual(settings![0], { from: 'route', needs: [], unreadable: [{ guard: read.guard, reason: read.settingsReason }] });
+    assert.equal(read.settingsReason, reason);
+    assert.deepEqual(settings![0], { from: 'route', needs: [], unreadable: [{ guard: read.guard, reason }] });
   });
 }
 

@@ -11,6 +11,18 @@ const UNRESOLVED_REASON = {
   'other-host': 'app.server 로 확인되지 않은 호스트로 보냄',
   'no-path': '주소에 경로가 없음',
 };
+const SETTING_REASON = {
+  call: '함수를 불러 정하는 조건이라 켤 값을 정할 수 없습니다',
+  'not-equal': '같지 않음을 보는 조건이라 켤 값을 하나로 정할 수 없습니다',
+  or: '「또는」으로 묶인 조건이라 켤 값을 하나로 정할 수 없습니다',
+  'non-literal': '고정된 값이 아닌 것과 비교하는 조건이라 켤 값을 정할 수 없습니다',
+  order: '크기를 비교하는 조건이라 켤 값을 정할 수 없습니다',
+  negated: '부정한 조건이라 켤 값을 하나로 정할 수 없습니다',
+  other: '이 모양의 조건은 읽지 못합니다',
+  conflict: '같은 파일에 글자는 같고 읽는 설정이 다른 조건이 있어 켤 값을 정할 수 없습니다',
+  'not-found': '조건에서 설정을 읽는 곳을 찾지 못했습니다',
+};
+const settingReasonText = (/** @type {string | undefined} */ reason) => (reason && Object.hasOwn(SETTING_REASON, reason) ? SETTING_REASON[/** @type {keyof typeof SETTING_REASON} */ (reason)] : reason);
 const GROUP_HEAD_TIP = '밑으로 이어 그린 화면이 없는 진입 화면입니다. 다른 화면으로 가는 링크가 없거나, 링크가 닿는 화면이 모두 다른 진입 화면이나 그 밑에 이미 그려져 있습니다.';
 const SERVER_STATE_TIP = '서버 API 목록(serverEndpoints)이 없거나 비어 있어 API 호출을 서버와 견주지 않았습니다. 목록을 채우고 duru rebuild 를 다시 하면 견줍니다.';
 const KIND_LABEL = { setting: '설정', role: '역할' };
