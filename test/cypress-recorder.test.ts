@@ -16,21 +16,20 @@ type Move = { visit: string } | { pushState: string };
 type FakeTest = { titles: string[]; moves: Move[]; state?: 'passed' | 'failed'; attempts?: FakeTest[] };
 type Hook = (this: { currentTest: unknown }) => void;
 
-type Options = { settings?: Record<string, string>; before16?: boolean; recorder?: boolean };
+type Options = { version?: 14 | 15 | 16; expose?: Record<string, string>; env?: Record<string, string> };
 
-function runSpec(projectRoot: string, spec: string, tests: FakeTest[], { settings = {}, before16 = false, recorder = true }: Options = {}) {
+function runSpec(projectRoot: string, spec: string, tests: FakeTest[], { version = 16, expose = {}, env = {} }: Options = {}) {
   const listeners = new Map<string, ((...args: unknown[]) => void)[]>();
   const emit = (event: string, ...args: unknown[]) => listeners.get(event)?.forEach((fn) => fn(...args));
   const before: Hook[] = [];
   const after: Hook[] = [];
   const fakeCypress = {
     on: (event: string, fn: (...args: unknown[]) => void) => listeners.set(event, [...(listeners.get(event) ?? []), fn]),
-    ...(before16 ? { env: (key: string) => settings[key] } : {
-      expose: (key: string) => settings[key],
-      env: () => {
-        throw new Error('`Cypress.env()` was removed in Cypress version 16.0.0.');
-      },
-    }),
+    ...(version >= 15 && { expose: (key: string) => expose[key] }),
+    env: (key: string) => {
+      if (version >= 16) throw new Error('`Cypress.env()` was removed in Cypress version 16.0.0.');
+      return env[key];
+    },
     spec: { name: path.basename(spec), relative: spec, absolute: path.join(projectRoot, spec) },
   };
   const cy = {
@@ -40,11 +39,9 @@ function runSpec(projectRoot: string, spec: string, tests: FakeTest[], { setting
       fs.writeFileSync(target, typeof contents === 'string' ? contents : JSON.stringify(contents, null, 2));
     },
   };
-  if (recorder) {
-    vm.runInNewContext(fs.readFileSync(RECORDER, 'utf8'), {
-      Cypress: fakeCypress, cy, beforeEach: (fn: Hook) => before.push(fn), afterEach: (fn: Hook) => after.push(fn),
-    });
-  }
+  vm.runInNewContext(fs.readFileSync(RECORDER, 'utf8'), {
+    Cypress: fakeCypress, cy, beforeEach: (fn: Hook) => before.push(fn), afterEach: (fn: Hook) => after.push(fn),
+  });
   for (const t of tests) {
     for (const attempt of t.attempts ?? [t]) {
       const currentTest = { title: t.titles.at(-1), titlePath: () => t.titles, fullTitle: () => t.titles.join(' '), state: undefined as string | undefined };
@@ -100,10 +97,10 @@ test('a Cypress test with the recorder that passes three screens gives, after re
 test('moves a single page app makes with pushState alone, after one visit, are steps of the record and screens of the candidate', () => {
   withProject((dir, configFile) => {
     runSpec(dir, 'cypress/e2e/documents.cy.js', [
-      { titles: ['opens a draft'], moves: [{ visit: '/home' }, { pushState: '/home?tab=recent' }, { pushState: '/document/draft' }, { pushState: '/document/42' }] },
+      { titles: ['opens a draft'], moves: [{ visit: '/home' }, { pushState: '/document/draft' }, { pushState: '/document/42' }] },
     ]);
     const record = JSON.parse(fs.readFileSync(path.join(dir, 'cypress/visits/cypress/e2e/documents.cy.js/opens a draft.json'), 'utf8'));
-    assert.deepEqual(record, { steps: ['/home', '/home?tab=recent', '/document/draft', '/document/42'].map((p) => ({ url: APP + p })) });
+    assert.deepEqual(record, { steps: ['/home', '/document/draft', '/document/42'].map((p) => ({ url: APP + p })) });
     rebuild(configFile);
     assert.deepEqual(storedCandidates(dir).map((c) => c.screens), [['/home#Home', '/document/:tab#DocumentList', '/document/:id#DocumentDetail']]);
   });
@@ -125,14 +122,25 @@ test('the recorder writes nothing for a failed test or one that opened no page, 
   });
 });
 
-test('the recorder writes into the folder duruVisitRecords names, read with Cypress.expose from Cypress 16 on and with Cypress.env before it', () => {
-  for (const before16 of [false, true]) {
+test('the recorder writes into the folder duruVisitRecords names under expose, or under env on a Cypress before 16', () => {
+  const folder = { duruVisitRecords: 'qa/records' };
+  for (const options of [{ version: 16, expose: folder }, { version: 15, expose: folder }, { version: 15, env: folder }, { version: 14, env: folder }] as Options[]) {
     withProject((dir) => {
-      runSpec(dir, 'cypress/e2e/help.cy.js', [{ titles: ['opens help'], moves: [{ visit: '/home' }, { pushState: '/help' }] }], { settings: { duruVisitRecords: 'qa/records' }, before16 });
-      assert.deepEqual(filesUnder(path.join(dir, 'cypress/visits')), []);
-      assert.deepEqual(filesUnder(path.join(dir, 'qa/records')), [path.join('cypress/e2e/help.cy.js', 'opens help.json')]);
+      runSpec(dir, 'cypress/e2e/help.cy.js', [{ titles: ['opens help'], moves: [{ visit: '/home' }, { pushState: '/help' }] }], options);
+      assert.deepEqual(filesUnder(path.join(dir, 'cypress/visits')), [], JSON.stringify(options));
+      assert.deepEqual(filesUnder(path.join(dir, 'qa/records')), [path.join('cypress/e2e/help.cy.js', 'opens help.json')], JSON.stringify(options));
     });
   }
+});
+
+test('the recorder keeps the address without its query or what follows #, so a token in it is not written, and a move that changes only those is no step', () => {
+  withProject((dir) => {
+    runSpec(dir, 'cypress/e2e/reset.cy.js', [
+      { titles: ['resets the password'], moves: [{ visit: '/signin?next=%2Fhome' }, { pushState: '/signin#reset' }, { visit: '/reset?token=s3cret' }, { pushState: '/home' }] },
+    ]);
+    const text = fs.readFileSync(path.join(dir, 'cypress/visits/cypress/e2e/reset.cy.js/resets the password.json'), 'utf8');
+    assert.deepEqual(JSON.parse(text), { steps: ['/signin', '/reset', '/home'].map((p) => ({ url: APP + p })) });
+  });
 });
 
 test('a title with characters a file name cannot hold is written under a name with them replaced', () => {
@@ -142,7 +150,7 @@ test('a title with characters a file name cannot hold is written under a name wi
   });
 });
 
-test('a title too long for a file name is cut to the first 200 bytes of the name, at a whole character', () => {
+test('a title too long for a file name is cut to the first 200 bytes of the name, without splitting the bytes of a code point', () => {
   withProject((dir) => {
     runSpec(dir, 'cypress/e2e/long.cy.js', [{ titles: ['문서'.repeat(40), '열기'.repeat(40)], moves: [{ visit: '/home' }, { pushState: '/help' }] }]);
     assert.deepEqual(filesUnder(path.join(dir, 'cypress/visits/cypress/e2e/long.cy.js')), [`${'문서'.repeat(33)}.json`]);
