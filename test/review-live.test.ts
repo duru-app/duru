@@ -339,7 +339,7 @@ test('in a browser, a reply written without --server is not pushed to the open p
   );
 });
 
-test('in a browser, a case sent with duru case --server shows in 「경우별 테스트」 on the open page without a reload, one taken out by agent with its reason and a picked one with its kind pressed and agent on it, and text being typed in the form keeps its place', { skip: browserMissing }, async () => {
+test('in a browser, a case sent with duru case --server shows in 「경우별 테스트」 on the open page without a reload, one the agent takes out waiting as 「검토 중」 with its reason and a picked one with its kind pressed and agent on it, and text being typed in the form keeps its place', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config, copy) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -353,10 +353,11 @@ test('in a browser, a case sent with duru case --server shows in 「경우별 �
         await p.keyboard.type('half');
 
         await decideCase(copy, 'boundary', read, 'not-needed', '--note', '읽기에는 입력이 없다', '--server', `${base}/`);
-        const out = cases.locator('li.case-left-out');
-        await out.waitFor();
-        assert.match((await out.locator('.case-head .chip.pick-out').textContent())!, / · agent$/);
-        assert.equal(await out.locator('.case-reason').textContent(), '이유 읽기에는 입력이 없다');
+        const review = cases.locator('li.case-review-row[data-kind="boundary"]');
+        await review.waitFor();
+        assert.match((await review.locator('.case-proposal').textContent())!, /^agent · /);
+        assert.equal(await review.locator('.case-reason').textContent(), '이유 읽기에는 입력이 없다');
+        assert.equal(await cases.locator('li.case-left-out').count(), 0);
 
         await decideCase(copy, 'legacy', read, 'needed', '--server', base);
         await cases.locator('.case-kinds button[aria-pressed="true"]', { hasText: CASE_KINDS.legacy }).waitFor();
