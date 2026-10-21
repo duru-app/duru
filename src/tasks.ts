@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Described } from './access.ts';
 import { readSettingsFile, settingsFilePlace } from './app-host.ts';
+import { newUndecided } from './baseline.ts';
+import type { BaselineChanges } from './baseline.ts';
 import type { AppAccount } from './app-host.ts';
 import { acceptsProposal, casesWithoutTests, kindTags } from './case-targets.ts';
 import type { CaseTarget, KindTargets } from './case-targets.ts';
@@ -574,7 +576,9 @@ export function taggingLines(awaitingTag: Record<string, any[]>, callIds: Set<st
   }));
 }
 
-const CASE_KINDS_INTRO = 'Each kind of case in the config\'s `caseKinds` follows. A screen or call is a candidate of a kind when the kind has no rules, or when its rules pick that side, screens or calls. A candidate is `undecided` while no rule picks it and no mark says whether the kind needs testing there; a `not-needed` mark without a note counts as undecided. Read the source of each undecided candidate, write requests first as they are listed, and decide it: run `duru case <config> <kind> <ID> needed` when that kind of case can happen there and should be tested, or `duru case <config> <kind> <ID> not-needed --note "<why>"` when it cannot or need not; then run `duru undecided <config>` again. An undecided candidate that ends with `so only a person can decide it` carries a mark a person left, which `duru case` does not change. When you cannot tell from the code, leave the candidate undecided. Stop running `duru undecided` again once it exits with 0 or every candidate it still lists is one only a person can decide or one you could not tell from the code, tell the user which are left, and go on with `cases with no tests`. Under `cases with no tests`, each screen or call a rule, a reviewer or an agent picked the kind for and whose case of that kind no test carries yet follows under its own heading, with who picked it, the tags a test of it carries and an empty test for each; one already listed above under its marks is not repeated. Write those tests as for a mark above, then run `duru rebuild` and read this list again.';
+const CASE_KINDS_INTRO = 'Each kind of case in the config\'s `caseKinds` follows. A screen or call is a candidate of a kind when the kind has no rules, or when its rules pick that side, screens or calls. A candidate is `undecided` while no rule picks it and no mark says whether the kind needs testing there; a `not-needed` mark without a note counts as undecided. Read the source of each undecided candidate, write requests first as they are listed, and decide it: run `duru case <config> <kind> <ID> needed` when that kind of case can happen there and should be tested, or `duru case <config> <kind> <ID> not-needed --note "<why>"` when it cannot or need not; then run `duru undecided <config>` again. An undecided candidate that ends with `so only a person can decide it` carries a mark a person left, which `duru case` does not change. When you cannot tell from the code, leave the candidate undecided. Stop running `duru undecided` again once it exits with 0 or every candidate it still lists is one only a person can decide or one you could not tell from the code, tell the user which are left, and go on with `cases with no tests`.';
+const NO_TESTS_INTRO = ' Under `cases with no tests`, each screen or call a rule, a reviewer or an agent picked the kind for and whose case of that kind no test carries yet follows under its own heading, with who picked it, the tags a test of it carries and an empty test for each; one already listed above under its marks is not repeated. Write those tests as for a mark above, then run `duru rebuild` and read this list again.';
+const NEW_ONLY_INTRO = ' When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config> <kind> --new` for that kind instead: it lists only the undecided candidates that the map named by `baselineMap` does not have, and exits with 0 once none of them is left, even while older ones are. Do not use `--new` for a kind added to `caseKinds` after that map was built: its candidates on that map count as older, so `--new` ends at once.';
 const UNDER_REVIEW_INTRO = ' Under `under review`, each candidate carries a `not-needed` an agent wrote with `duru case`, which waits for a reviewer to accept or revert it on the review page; until then the candidate counts as it did before, a target of a rule stays a target, and it is not undecided. Do not write it again.';
 
 const nodeText = (node: any, isCall: boolean) => (isCall
@@ -617,18 +621,21 @@ function reviewText(map: any, targets: KindTargets) {
   };
 }
 
-export function undecidedLines(map: any, caseKinds: Record<string, CaseKind>, targets: Record<string, KindTargets>, attached: MarkEntry[]) {
+export function undecidedLines(map: any, caseKinds: Record<string, CaseKind>, targets: Record<string, KindTargets>, attached: MarkEntry[], since: { file: string; changes: BaselineChanges } | null = null) {
   const lines = Object.keys(caseKinds).flatMap((kind) => {
     const text = undecidedText(map, attached, kind);
-    return [`case kind ${kind}: ${targets[kind].undecided.length} undecided${underReview(targets[kind].review.length)}`, ...targets[kind].undecided.map((id) => `  ${text(id)}`)];
+    const { undecided, review } = targets[kind];
+    if (!since) return [`case kind ${kind}: ${undecided.length} undecided${underReview(review.length)}`, ...undecided.map((id) => `  ${text(id)}`)];
+    const fresh = newUndecided(since.changes, undecided);
+    return [`case kind ${kind}: ${fresh.length} new undecided since ${since.file} (${undecided.length} undecided in all)`, ...fresh.map((id) => `  ${text(id)}`)];
   });
   const waiting = Object.keys(caseKinds).reduce((n, kind) => n + targets[kind].review.length, 0);
   return waiting ? [...lines, `${waiting} under review: not-needed marks of the agent that wait for a reviewer to accept or revert them on the review page`] : lines;
 }
 
-function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: Record<string, KindTargets>, attached: MarkEntry[], tests: Record<string, TestRow[]>, listed: Set<string>, formats: string[]) {
+function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: Record<string, KindTargets>, attached: MarkEntry[], tests: Record<string, TestRow[]>, listed: Set<string>, formats: string[], hasBaseline: boolean) {
   const nodeOf = nodesById(map);
-  const lines = ['', '# Case kinds', '', CASE_KINDS_INTRO];
+  const lines = ['', '# Case kinds', '', CASE_KINDS_INTRO + (hasBaseline ? NEW_ONLY_INTRO : '') + NO_TESTS_INTRO];
   let undecided = 0;
   let untested = 0;
   let review = 0;
@@ -688,7 +695,7 @@ export function taskList(config: any) {
   const hasPicks = Object.values<CaseKind>(config.caseKinds).some((k) => k.picks.length > 0);
   const partsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.node === id);
   const storyPartsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.story === id && m.where);
-  const caseKinds = hasKinds ? caseKindLines(map, config.caseKinds, caseTargets, marks.attached, tests.nodes, new Set([...screens, ...calls].map((n: any) => n.id)), formats) : null;
+  const caseKinds = hasKinds ? caseKindLines(map, config.caseKinds, caseTargets, marks.attached, tests.nodes, new Set([...screens, ...calls].map((n: any) => n.id)), formats, config.baselineMap !== null) : null;
   const caseWork = caseKinds && caseKinds.undecided + caseKinds.untested + caseKinds.review > 0 ? caseKinds : null;
 
   const out = [

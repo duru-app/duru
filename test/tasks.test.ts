@@ -845,6 +845,19 @@ test('with case kinds configured but none picked, the task list differs from one
   }, { caseKinds: CASE_KINDS });
 });
 
+test('with baselineMap the task list does not read that map and is the same as without it, but for one more sentence in the case kinds intro on when to run undecided --new', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const plain = cli('tasks');
+    assert.doesNotMatch(plain, /--new/);
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), baselineMap: 'releases/gone/map.json' }));
+    const tasks = cli('tasks');
+    const sentence = ' When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config> <kind> --new` for that kind instead: it lists only the undecided candidates that the map named by `baselineMap` does not have, and exits with 0 once none of them is left, even while older ones are. Do not use `--new` for a kind added to `caseKinds` after that map was built: its candidates on that map count as older, so `--new` ends at once.';
+    assert.ok(tasks.includes(`and go on with \`cases with no tests\`.${sentence.slice(0, 40)}`), 'the sentence follows where the intro tells when to stop running undecided');
+    assert.equal(tasks.replace(sentence, ''), plain);
+  }, { caseKinds: CASE_KINDS });
+});
+
 test('the case kinds section lists each kind\'s undecided candidates, writes first, and each screen or call picked for it whose cases have no tests, with who picked it, the tags and empty tests, leaving out those listed above under their marks while counting their cases as rebuild does', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     const specs = [`refuses a cancelled rename @call:${RENAME} @case:ended=cancelled`].map((title, i) => ({ title, file: 'cases.spec.ts', line: i + 1, tests: [{ status: 'expected', projectName: 'chromium' }] }));
