@@ -95,9 +95,10 @@ test('in a browser, a kind shows its picks by rule, person and agent, its rules 
         assert.deepEqual(await p.locator('#center .case-group-head').allTextContents(), [' 쓰기 요청 3메서드를 모르는 요청도 여기에 둡니다', ' 조회 요청 3']);
         assert.deepEqual(await undecidedIds(p), ['POST:/api/v1/report/archive', EXPORT, 'POST:/api/v1/report/schedule', LIST, 'GET:/api/v1/document/{documentId}', 'GET:/api/v1/lab/experiment']);
         assert.deepEqual(await p.locator('#center .case-undecided .method').evaluateAll((els) => els.map((e) => `${e.textContent} ${e.className}`)), [...Array(3).fill('POST method m-post'), ...Array(3).fill('GET method m-get')]);
+        const shown = await p.evaluate((iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }), AT.toISOString());
         assert.deepEqual(await p.locator('#center .case-held').allTextContents(), [
-          '김민 가 26. 10. 20. 오전 10:00 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다',
-          '김민 가 26. 10. 20. 오전 10:00 에 이유 없이 뺐습니다',
+          `김민 가 ${shown} 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다`,
+          `김민 가 ${shown} 에 이유 없이 뺐습니다`,
         ]);
         assert.equal(await p.textContent(`#center li.case-row[data-node="${EXPORT}"] .case-reason`), '예전 이유 보고서는 문서 상태를 보지 않는다');
 
