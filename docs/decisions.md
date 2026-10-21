@@ -1403,8 +1403,9 @@ picked screen in the flow; the right pane is one width in both, and the drawing 
 instead of half of what is left. Until it is dragged, the drawing takes half of what the right pane leaves at its
 starting width, so dragging the right edge moves only the middle pane while the drawing still grows with the
 window. The widths last only until the page is loaded again, since the page keeps nothing
-in browser storage, and there is no keyboard resizing. Each pane has a floor: 300px for the list, where its three
-tabs fit with three-digit counts and a classic scrollbar; 240px for the drawing, which scrolls sideways anyway;
+in browser storage, and there is no keyboard resizing. Each pane has a floor: 300px for the list, where 「화면」 and
+「태그 없음」 fit on one line with three-digit counts and a classic scrollbar, and 「경우 종류」 moves to a second line
+when it does not fit beside them; 240px for the drawing, which scrolls sideways anyway;
 360px for the middle pane, where the address bar over the app frame and the screen's title fit, while the table of
 tests may still scroll sideways when a test's name holds a long unbroken word such as `@screen:/home#Home`, which no
 fixed floor could cover; 320px for the right pane, where the comment form's status buttons stay on one line and its
@@ -2879,7 +2880,14 @@ kind taken out, 「불필요 · <author>」 before, now reads 「대상 아님 �
 had nothing telling it apart from one pressed off, so it gets a line with ✓ and ✕ as icons, with the words on hover
 and as `aria-label`; the kind buttons stay as they were. Details settled on the way:
 - The tab is the third button beside 「화면」 and 「태그 없음」. 「대상」 and 「대상 아님」 start folded with their counts and
-  stay open once opened; 「미판정」 is open.
+  stay open once opened; 「미판정」 is open. At the list's 300px floor with three-digit counts the three tabs do not fit on
+  one line (into-sign's counts run to three digits), and shrinking them cut every name to 「화…」, so a tab that does not
+  fit moves whole to a second line; raising the floor would have taken width from the other panes also where
+  `caseKinds` is not set.
+- A candidate taken out of a rule that no longer picks it counts as undecided, so 「경우별 테스트」 gives it the
+  「미판정」 line with who took it out and the old reason, as the tab does, instead of the 「대상 아님」 row, which would
+  say 대상 아님 where the tab says 미판정. The 「대상 아님」 row with 「이 표시는 쓰이지 않습니다」 stays only where the kind no
+  longer takes that screen or call as a candidate.
 - A candidate a person's mark keeps undecided gets a line saying who took it out and when; a candidate an agent's mark
   keeps undecided gets none, since the agent decides it again. 「사람이 정할 것 N」 above the list shows only those.
 - Pressing a rule's line shows only what that rule picks in the 「대상」 list.

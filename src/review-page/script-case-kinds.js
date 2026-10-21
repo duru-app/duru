@@ -29,14 +29,16 @@ function heldByPerson(kind, id) {
   return current && current.via === undefined ? current : null;
 }
 
+const staleRuleLines = (mark) => [
+  h('p', { class: 'case-held' }, `${mark.author} 가 ${fmtDate(mark.date)} 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다`),
+  mark.note ? h('p', { class: 'case-reason' }, '예전 이유 ', h('span', { class: 'memo' }, mark.note)) : null,
+];
+
 function heldLine(kind, id) {
   const mark = heldByPerson(kind, id);
   if (!mark) return null;
   if (!mark.rule) return h('p', { class: 'case-held' }, `${mark.author} 가 ${fmtDate(mark.date)} 에 이유 없이 뺐습니다`);
-  return [
-    h('p', { class: 'case-held' }, `${mark.author} 가 ${fmtDate(mark.date)} 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다`),
-    mark.note ? h('p', { class: 'case-reason' }, '예전 이유 ', h('span', { class: 'memo' }, mark.note)) : null,
-  ];
+  return staleRuleLines(mark);
 }
 
 function setCaseKind(kind) {

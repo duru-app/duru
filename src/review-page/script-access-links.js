@@ -204,12 +204,14 @@ function caseSection(node) {
   };
   const undecidedRow = (kind, text) => h('li', { class: 'case-undecided-row', 'data-kind': kind },
     h('span', { class: 'kind-text' }, text), h('span', { class: 'chip undecided' }, '미판정'), h('span', { class: 'muted' }, '아직 아무도 정하지 않았습니다'),
-    decideButton(kind, true), decideButton(kind, false));
+    decideButton(kind, true), decideButton(kind, false),
+    by[kind].state === 'unused' ? h('div', { class: 'case-stale' }, staleRuleLines(by[kind].mark)) : null);
+  const undecidedHere = (kind) => kindTargetsOf(kind)?.nodes[node.id]?.state === 'undecided';
   const picked = new Map(node.cases.filter((c) => c.kind === 'case').map((c) => [c.tag.slice('case:'.length), c]));
   const rows = [
     ...node.cases.filter((c) => c.kind !== 'case').map(caseRow),
-    ...kinds.map(([kind, { text }]) => (picked.has(kind) ? caseRow(picked.get(kind)) : takenOut(by[kind]) ? leftOutRow(kind, text) : null)).filter(Boolean),
-    ...kinds.filter(([kind]) => by[kind].state === 'undecided' && kindTargetsOf(kind)?.nodes[node.id]).map(([kind, { text }]) => undecidedRow(kind, text)),
+    ...kinds.map(([kind, { text }]) => (picked.has(kind) ? caseRow(picked.get(kind)) : takenOut(by[kind]) && !undecidedHere(kind) ? leftOutRow(kind, text) : null)).filter(Boolean),
+    ...kinds.filter(([kind]) => undecidedHere(kind)).map(([kind, { text }]) => undecidedRow(kind, text)),
   ];
   return h('div', { class: 'cases' },
     h('h2', {}, '경우별 테스트'),
