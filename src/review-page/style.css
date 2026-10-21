@@ -367,7 +367,8 @@
   .path-head .steps-acts { display: flex; align-items: center; gap: 8px; }
   .path-head .story-form { flex-direction: row; align-items: center; }
   .path-head .story-form button:not(.drop-draft) { padding: 2px 10px; font-size: 12px; }
-  .title-row .candidate-acts { flex-direction: row; align-items: center; gap: 8px; margin-left: auto; }
+  .title-row .candidate-acts { margin-left: auto; }
+  .candidate-buttons { display: flex; align-items: center; gap: 8px; }
   .title-row .skipped { font-size: 12px; }
   .story-save { margin: 12px 0; padding: 8px 12px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
   .story-save h2 { margin: 6px 0; }
@@ -609,6 +610,10 @@
   .written-inputs tr.input-still { cursor: help; }
   .written-inputs tr.input-still :is(.input-box, .input-value) { color: var(--muted); }
   .written-inputs tr.point-reason td { padding-top: 0; padding-bottom: 4px; font-size: 12px; color: var(--fail); }
+  input.line-pick { margin: 0 6px 0 0; vertical-align: -2px; cursor: pointer; }
+  .written-inputs td.line-pick-cell { padding-right: 0; }
+  .line-off .line-text, .written-inputs tr.line-off :is(.input-box, .input-value) { text-decoration: line-through; color: var(--muted); }
+  .candidate-acts .line-count { font-size: 12px; color: var(--muted); }
   .story-wide { margin: 12px 0 4px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--written); border-radius: 6px; background: var(--panel); }
   .story-wide h2 { margin: 0 0 6px; }
   .story-wide-head { display: flex; align-items: baseline; gap: 8px; }

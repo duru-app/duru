@@ -44,18 +44,21 @@ function inputChip(found, still) {
 }
 
 // line 은 이 입력값이 놓인 자리다: 스토리나 후보의 단계 카드면 { kind: 'step', step, screen, onMap }, 그 밖에는 { kind: 'compose' | 'order' }.
-function inputRow(input, row, line) {
+// picked 는 이 줄의 상자 { on, box } 이고, 검토자가 적은 줄이면 null 이다.
+function inputRow(input, row, line, picked = null, picking = false) {
+  const pickCell = picking ? h('td', { class: 'line-pick-cell' }, picked?.box) : null;
+  const dropped = picked && !picked.on ? ' line-off' : '';
   const words = h('td', { class: 'input-box' }, boxWords(input.box));
   const value = h('td', { class: 'input-value mono' }, input.value);
   const still = !state.data.app ? 'noApp' : line.kind !== 'step' ? line.kind : line.onMap ? null : 'offMap';
-  if (still) return h('tr', { class: 'input-still', title: STILL_INPUT[still] }, words, value, h('td', {}, inputChip(null, still)));
+  if (still) return h('tr', { class: `input-still${dropped}`, title: STILL_INPUT[still] }, pickCell, words, value, h('td', {}, inputChip(null, still)));
   const point = { step: line.step, screen: line.screen, row, box: input.box, value: input.value };
   const found = boxFindOf(line.screen, input.box);
   const on = state.point?.step === line.step && state.point.row === row;
   const press = () => pressPoint(point);
   return [
     h('tr', {
-      class: `point-line${on ? ' on' : ''}`,
+      class: `point-line${on ? ' on' : ''}${dropped}`,
       tabindex: 0,
       title: PRESS_INPUT,
       onclick: press,
@@ -64,23 +67,43 @@ function inputRow(input, row, line) {
         e.preventDefault();
         if (!e.repeat) press();
       },
-    }, words, value, h('td', {}, inputChip(found, null))),
-    found && !found.found ? h('tr', { class: 'point-reason' }, h('td', { colspan: 3 }, found.reason)) : null,
+    }, pickCell, words, value, h('td', {}, inputChip(found, null))),
+    found && !found.found ? h('tr', { class: 'point-reason' }, h('td', { colspan: picking ? 4 : 3 }, found.reason)) : null,
   ].filter(Boolean);
 }
 
-const inputsRow = (inputs, line) => (inputs?.length ? h('div', { class: 'written-row inputs' }, h('span', { class: 'written-label' }, '입력값'), h('table', { class: 'written-inputs' }, h('tbody', {}, inputs.flatMap((input, row) => inputRow(input, row, line))))) : null);
-const writtenRow = (cls, label, lines, item = (x) => x) => (lines?.length ? h('div', { class: `written-row ${cls}` }, h('span', { class: 'written-label' }, label), h('ul', {}, lines.map((x) => h('li', {}, item(x))))) : null);
-const writtenRows = (fields, needLabel, expectLabel, line) => [writtenRow('needs', needLabel, fields?.needs, needItem), inputsRow(fields?.inputs, line), writtenRow('expects', expectLabel, fields?.expects)].filter(Boolean);
-const linkWritten = (fields) => (fields?.linkNeeds?.length ? h('div', { class: 'link-written written' }, writtenRow('link-needs', LINK_NEEDS_LABEL, fields.linkNeeds, needItem)) : null);
+// pick 은 칸 이름과 줄 번호로 그 줄을 받을지 고르는 상자 { on, box } 를 내준다. 에이전트가 적지 않은 줄은 null 이다.
+function inputsRow(inputs, line, pick = null) {
+  if (!inputs?.length) return null;
+  const picks = inputs.map((_, row) => pick?.('inputs', row) ?? null);
+  const picking = picks.some(Boolean);
+  return h('div', { class: 'written-row inputs' }, h('span', { class: 'written-label' }, '입력값'),
+    h('table', { class: 'written-inputs' }, h('tbody', {}, inputs.flatMap((input, row) => inputRow(input, row, line, picks[row], picking)))));
+}
+
+function writtenItem(x, item, picked) {
+  if (!picked) return h('li', {}, item(x));
+  return h('li', { class: picked.on ? 'line-picked' : 'line-picked line-off' }, picked.box, h('span', { class: 'line-text' }, item(x)));
+}
+
+const writtenRow = (cls, label, lines, item = (x) => x, pick = null) => (lines?.length
+  ? h('div', { class: `written-row ${cls}` }, h('span', { class: 'written-label' }, label), h('ul', {}, lines.map((x, row) => writtenItem(x, item, pick?.(row)))))
+  : null);
+const pickIn = (pick, field) => pick && ((row) => pick(field, row));
+const writtenRows = (fields, needLabel, expectLabel, line, pick = null) => [
+  writtenRow('needs', needLabel, fields?.needs, needItem, pickIn(pick, 'needs')),
+  inputsRow(fields?.inputs, line, pick),
+  writtenRow('expects', expectLabel, fields?.expects, undefined, pickIn(pick, 'expects')),
+].filter(Boolean);
+const linkWritten = (fields, pick = null) => (fields?.linkNeeds?.length ? h('div', { class: 'link-written written' }, writtenRow('link-needs', LINK_NEEDS_LABEL, fields.linkNeeds, needItem, pickIn(pick, 'linkNeeds'))) : null);
 
 const hasWritten = (fields) => Boolean(fields?.needs?.length || fields?.inputs?.length || fields?.expects?.length);
 
-function stepItem(step, i, recordSteps, story, fields, reason) {
+function stepItem(step, i, recordSteps, story, fields, reason, pick = null) {
   const records = recordSteps ? h('span', { class: 'records muted', title: '방문 기록에서 이 화면에 머문 단계' }, stepsText(recordSteps)) : null;
   const slot = (name) => (story ? slotRow(name, stepTarget(story, i, step.screen), SLOT_WORDS.step) : name);
   // 적힌 글을 선택하려고 클릭해도 화면이 열리지 않게 이벤트 전파를 막는다.
-  const written = hasWritten(fields) ? h('div', { class: 'step-written written', title: '', onclick: (e) => e.stopPropagation() }, writtenRows(fields, '조건', '기대 결과', { kind: 'step', step: i, screen: step.screen, onMap: step.onMap })) : null;
+  const written = hasWritten(fields) ? h('div', { class: 'step-written written', title: '', onclick: (e) => e.stopPropagation() }, writtenRows(fields, '조건', '기대 결과', { kind: 'step', step: i, screen: step.screen, onMap: step.onMap }, pick)) : null;
   const place = { kind: 'step', step: i + 1, screen: step.screen };
   const button = story ? fieldsButton(story, place, Boolean(written)) : null;
   const below = story ? fieldsBelow(story, place, written) : [written].filter(Boolean);
@@ -122,7 +145,7 @@ const skippedLinks = (links) => [h('div', { class: 'muted skipped' }, '판정에
 
 const gapTitle = (on) => (on ? '이 사이를 대화 꼬리표에서 뺍니다' : '이 사이를 채워 달라는 뜻으로 대화 꼬리표에 더합니다');
 
-function linkItem(l, story, i, fields, gap) {
+function linkItem(l, story, i, fields, gap, pick = null) {
   const place = { kind: 'link', step: i + 2, screen: l.to };
   const head = h('span', { class: 'slot-text' },
     gap && l.verdict === 'broken'
@@ -139,6 +162,6 @@ function linkItem(l, story, i, fields, gap) {
     l.verdict === 'unknown' ? unknownList(l.unknownLinks) : null,
     l.ways.length ? h('ul', { class: 'plain ways' }, l.ways.map((w) => wayItem(w))) : null,
     l.ways.length > 0 && l.unknownLinks ? skippedLinks(l.unknownLinks) : null,
-    story ? [fieldsButton(story, place, Boolean(fields?.linkNeeds?.length)), ...fieldsBelow(story, place, linkWritten(fields))] : linkWritten(fields));
+    story ? [fieldsButton(story, place, Boolean(fields?.linkNeeds?.length)), ...fieldsBelow(story, place, linkWritten(fields))] : linkWritten(fields, pick));
 }
 

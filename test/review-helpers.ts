@@ -547,9 +547,9 @@ const AGENT_SCREENS = [
 ];
 
 // 검토자는 1 단계 입력값과 3 단계 기대 결과를, 에이전트는 2 단계 입력값 · 기대 결과와 3 단계 조건 · 들어오는 링크 조건을 적는다.
-export async function postAgentCandidate(base: string) {
+export async function postAgentCandidate(base: string, name = '로그인해 실험을 연다') {
   const comment = await (await postMark(base, { target: ASKED_ORDER, note: '로그인한 뒤 실험으로 가는 길을 채워 줘' })).json();
-  const res = await postJson(base, '/api/candidates/add', { comment: comment.id, name: '로그인해 실험을 연다', screens: AGENT_SCREENS });
+  const res = await postJson(base, '/api/candidates/add', { comment: comment.id, name, screens: AGENT_SCREENS });
   assert.equal(res.status, 201, await res.clone().text());
   return { comment: comment.id as string, file: (await res.json()).file as string };
 }
