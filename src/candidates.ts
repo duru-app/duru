@@ -79,6 +79,21 @@ interface TestsSource {
   tests: string[];
 }
 
+type LineField = keyof StepFields;
+
+// line 은 source.written 에서 그 단계 · 칸의 몇 번째 줄인지(1 부터)다.
+export interface OffLine {
+  step: number;
+  field: LineField;
+  line: number;
+}
+
+// row 는 stepFields 에서 그 단계 · 칸의 몇 번째 줄인지(0 부터)다.
+export interface AgentLine extends OffLine {
+  row: number;
+  on: boolean;
+}
+
 export interface Candidate {
   key: string;
   name: string;
@@ -87,6 +102,8 @@ export interface Candidate {
   stepRanges?: [number, number][];
   stepFields?: StepFields[];
   skipped?: number;
+  file?: string;
+  lines?: AgentLine[];
 }
 
 const inputFields = (inputs: StepInput[][] = []) => (inputs.some((i) => i.length) ? inputs.map((i) => (i.length ? { inputs: i } : {})) : undefined);
@@ -146,6 +163,19 @@ function discardedProblemOf(d: any) {
   return null;
 }
 
+const sameLine = (a: OffLine) => (b: OffLine) => a.step === b.step && a.field === b.field && a.line === b.line;
+const OFF_LINES = 'offLines 는 받을 때 뺄 줄을 { "step", "field", "line" } 으로 하나씩, source 의 written 에 있는 줄만 겹치지 않게 적은 목록이어야 합니다';
+
+function offLinesProblem(offLines: unknown, source: any) {
+  if (!('comment' in source)) return 'offLines 는 출처가 코멘트인 후보에만 둡니다';
+  if (!Array.isArray(offLines) || !offLines.length) return OFF_LINES;
+  const written: CommentSource['written'] = source.written;
+  const fits = (o: any, i: number) => isPlainObject(o) && Object.keys(o).length === 3 && Number.isInteger(o.line) && o.line > 0
+    && STEP_FIELDS.includes(o.field) && (written.find((w) => w.step === o.step)?.[o.field as LineField]?.length ?? 0) >= o.line
+    && offLines.findIndex(sameLine(o)) === i;
+  return offLines.every(fits) ? null : OFF_LINES;
+}
+
 function storedProblemOf(c: any) {
   if (!isPlainObject(c)) return '스토리 후보는 JSON 객체여야 합니다';
   if (!isText(c.name)) return 'name 에 후보 이름을 적어야 합니다';
@@ -162,7 +192,7 @@ function storedProblemOf(c: any) {
       if (problem) return problem;
     }
   }
-  return null;
+  return c.offLines === undefined ? null : offLinesProblem(c.offLines, c.source);
 }
 
 const FOLDERS = {
@@ -249,13 +279,58 @@ export const candidatePlace = ({ name, source, screens, stepRanges }: Candidate)
 
 const filledFields = (fields: Record<string, unknown> = {}): StepFields => Object.fromEntries(STEP_FIELDS.filter((k) => Array.isArray(fields[k]) && fields[k].length).map((k) => [k, fields[k]]));
 
-const withFields = ({ screens, stepFields }: Candidate) => screens.map((screen, i) => {
+const withFields = ({ screens, stepFields }: Pick<Candidate, 'screens' | 'stepFields'>) => screens.map((screen, i) => {
   const fields = filledFields(stepFields?.[i] as Record<string, unknown>);
   return Object.keys(fields).length ? { screen, ...fields } : screen;
 });
 
-export const acceptCandidate = (dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) =>
-  addStory(dir, { id, name, screens: withFields(candidate), author, source: candidate.source }, now);
+// 받은 스토리의 순서와 줄을 고치고 받기를 되돌리면 새 후보 파일의 stepFields 가 written 과 어긋날 수 있으므로, 같은 칸 안에서 글이 같은 줄끼리 앞에서부터 하나씩 짝짓는다.
+function agentLines(source: CommentSource, stepFields: StepFields[] = [], offLines: OffLine[] = []): AgentLine[] {
+  return source.written.flatMap(({ step, ...fields }) => Object.entries(fields).flatMap(([key, lines]) => {
+    const field = key as LineField;
+    const rows: unknown[] = stepFields[step - 1]?.[field] ?? [];
+    const taken = new Set<number>();
+    return (lines as unknown[]).flatMap((text, i) => {
+      const row = rows.findIndex((r, at) => !taken.has(at) && isDeepStrictEqual(r, text));
+      if (row < 0) return [];
+      taken.add(row);
+      const line = { step, field, line: i + 1 };
+      return [{ ...line, row, on: !offLines.some(sameLine(line)) }];
+    });
+  }));
+}
+
+function pickedLines({ source, stepFields, lines }: Candidate) {
+  if (!lines || !('comment' in source)) return { source, stepFields };
+  const lineOn = (step: number, field: string) => (_: unknown, i: number) => lines.some((l) => l.on && l.step === step && l.field === field && l.line === i + 1);
+  const rowKept = (step: number, field: string) => (_: unknown, row: number) => !lines.some((l) => !l.on && l.step === step && l.field === field && l.row === row);
+  const written = source.written.flatMap(({ step, ...fields }) => {
+    const kept = Object.entries(fields).map(([field, list]) => [field, (list as unknown[]).filter(lineOn(step, field))] as const).filter(([, list]) => list.length);
+    return kept.length ? [{ step, ...Object.fromEntries(kept) }] : [];
+  });
+  const picked = stepFields?.map((fields, i) => Object.fromEntries(Object.entries(fields).map(([field, list]) => [field, (list as unknown[]).filter(rowKept(i + 1, field))])));
+  return { source: { ...source, written }, stepFields: picked };
+}
+
+export function acceptCandidate(dir: string, candidate: Candidate, { id, name, author }: { id: unknown; name: unknown; author: unknown }, now = new Date()) {
+  const { source, stepFields } = pickedLines(candidate);
+  return addStory(dir, { id, name, screens: withFields({ screens: candidate.screens, stepFields }), author, source }, now);
+}
+
+const lineOrder = (a: OffLine, b: OffLine) => a.step - b.step || STEP_FIELDS.indexOf(a.field) - STEP_FIELDS.indexOf(b.field) || a.line - b.line;
+
+export function pickCandidateLine(dir: string, candidate: Candidate, { step, field, line, on }: Record<string, unknown>) {
+  if (!candidate.lines || !candidate.file) throw new Error(`후보 「${candidate.name}」는 에이전트가 올린 후보가 아니라 줄마다 고르지 않습니다`);
+  if (typeof on !== 'boolean') throw new Error('on 은 받을 줄이면 true, 뺄 줄이면 false 여야 합니다');
+  const picked = candidate.lines.find((l) => l.step === step && l.field === field && l.line === line);
+  if (!picked) throw new Error(`후보 「${candidate.name}」에는 에이전트가 ${step} 번째 단계의 ${field} 에 적은 ${line} 번째 줄이 없습니다`);
+  const file = path.join(dir, candidate.file);
+  const { offLines: before = [], ...rest } = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const others: OffLine[] = before.filter((o: OffLine) => !sameLine(picked)(o));
+  const offLines = (on ? others : [...others, { step: picked.step, field: picked.field, line: picked.line }]).sort(lineOrder);
+  fs.writeFileSync(file, JSON.stringify({ ...rest, ...(offLines.length && { offLines }) }, null, 2) + '\n');
+  return { file: candidate.file, offLines };
+}
 
 export function unacceptStory(dir: string, id: unknown) {
   if (!isFolder(dir)) throw new Error(`스토리 폴더 ${dir} 가 폴더가 아니라 스토리 파일을 지울 수 없습니다`);
@@ -374,14 +449,15 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   }
   for (const key of fromTraces.keys()) seen.add(key);
   const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
-  for (const { name, screens, source, ...rest } of byFirstSeen) {
+  for (const { name, screens, source, file, offLines, ...rest } of byFirstSeen) {
     const key = JSON.stringify(screens);
     if (seen.has(key) || taken.has(sourceKey(source))) {
       gone[screens.join(' > ')] ??= name;
       continue;
     }
     seen.add(key);
-    list.push({ key: screens.join(' > '), name, screens, source, ...carried(rest) });
+    const picks = 'comment' in source && { file, lines: agentLines(source, rest.stepFields, offLines) };
+    list.push({ key: screens.join(' > '), name, screens, source, ...carried(rest), ...picks });
   }
   return { list: checkStories(map, list), discarded: shown, gone, notices: all };
 }

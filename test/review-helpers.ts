@@ -41,7 +41,7 @@ export type PageData = {
   stories: { list: Story[]; notices: { file: string }[]; unknownTags: { tag: string }[]; stale: string };
   storiesDir: string;
   needs: { list: { file: string; name: string; text: string; stories: string[]; contentHash: string }[] };
-  candidates: { list: { key: string; name: string; source: { record?: unknown; report?: string; tests?: string[] }; screens: string[]; links: { verdict: string }[] }[]; notices: object[] };
+  candidates: { list: { key: string; name: string; source: { record?: unknown; report?: string; tests?: string[] }; screens: string[]; links: { verdict: string }[]; lines?: { step: number; field: string; line: number; on: boolean }[] }[]; notices: object[] };
   marks: { attached: Mark[]; detached: Mark[] };
   app: AppData;
 };
@@ -534,4 +534,22 @@ export function holdRequests(p: Page, pattern: string) {
   });
   held.release = () => held.gates.splice(0).forEach((open) => open());
   return held;
+}
+
+export const AGENT_KEY = '/signin#SignIn > /home#Home > /lab#Lab';
+export const EMAIL_INPUT = { box: { placeholder: '이메일' }, value: 'member@example.com' };
+const SEARCH_INPUT = { box: { label: '검색' }, value: '실험' };
+const ASKED_ORDER = { screens: ['/signin#SignIn', '/lab#Lab'], steps: [{ step: 1, inputs: [EMAIL_INPUT] }, { step: 2, expects: ['실험 목록이 보인다'] }] };
+const AGENT_SCREENS = [
+  { screen: '/signin#SignIn', inputs: [EMAIL_INPUT] },
+  { screen: '/home#Home', reason: '로그인하면 홈으로만 갑니다', inputs: [SEARCH_INPUT], expects: ['홈이 보인다'] },
+  { screen: '/lab#Lab', needs: ['실험 메뉴가 켜져 있다'], linkNeeds: ['홈에서 실험을 누른다'], expects: ['실험 목록이 보인다'] },
+];
+
+// 검토자는 1 단계 입력값과 3 단계 기대 결과를, 에이전트는 2 단계 입력값 · 기대 결과와 3 단계 조건 · 들어오는 링크 조건을 적는다.
+export async function postAgentCandidate(base: string) {
+  const comment = await (await postMark(base, { target: ASKED_ORDER, note: '로그인한 뒤 실험으로 가는 길을 채워 줘' })).json();
+  const res = await postJson(base, '/api/candidates/add', { comment: comment.id, name: '로그인해 실험을 연다', screens: AGENT_SCREENS });
+  assert.equal(res.status, 201, await res.clone().text());
+  return { comment: comment.id as string, file: (await res.json()).file as string };
 }
