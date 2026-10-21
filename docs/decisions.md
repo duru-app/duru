@@ -3179,8 +3179,9 @@ on 2026-10-19 and asked for again by the driver on 2026-10-21. Nothing is remove
 status and the reviewer decides whether to look again, unlike GitHub's dismissal of stale approvals, which the issue
 took the idea from.
 - `meta` gets `commit` (`git rev-parse HEAD` in `srcRoot`, `unknown` outside a git repository), `uncommitted`
-  (`git status --porcelain -- .` in `srcRoot` is not empty, so untracked files count and ignored ones do not; left out
-  without a commit), `duruVersion` from `package.json`, and `duruCommit` when duru's own folder is the top of a git
+  (`git status --porcelain -- .` in `srcRoot` is not empty, so untracked files count and ignored ones do not; the
+  folders duru writes are left out when they sit under `srcRoot`, since a new mark is not a change of the code; left
+  out without a commit), `duruVersion` from `package.json`, and `duruCommit` when duru's own folder is the top of a git
   checkout. The commit of duru goes beyond the issue because the version in `package.json` has stayed `1.0.0`, so it
   alone cannot tell two builds of duru apart; a duru installed inside another repository does not take that
   repository's commit.

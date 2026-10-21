@@ -24,7 +24,7 @@ test('the code state of a folder outside any git repository has its commit unkno
     assert.deepEqual({ ...codeState(dir), duruCommit: undefined }, { commit: 'unknown', duruVersion: VERSION, duruCommit: undefined });
   }));
 
-test('the code state of a git repository names its commit and whether a file under the folder was changed, added or not committed, and leaves out changes outside the folder', () =>
+test('the code state of a git repository names its commit and whether a file under the folder was changed, added or not committed, and leaves out changes outside the folder and in the folders duru writes', () =>
   withTempDir((dir) => {
     const src = path.join(dir, 'src');
     fs.mkdirSync(src);
@@ -38,6 +38,11 @@ test('the code state of a git repository names its commit and whether a file und
     assert.equal(codeState(src).uncommitted, false);
     fs.writeFileSync(path.join(dir, 'outside.txt'), 'y\n');
     assert.equal(codeState(src).uncommitted, false);
+    fs.mkdirSync(path.join(src, 'out/marks'), { recursive: true });
+    fs.writeFileSync(path.join(src, 'out/marks/m.json'), '{}\n');
+    assert.equal(codeState(src, [path.join(src, 'out'), path.join(dir, 'elsewhere')]).uncommitted, false);
+    assert.equal(codeState(src).uncommitted, true);
+    fs.rmSync(path.join(src, 'out'), { recursive: true });
     fs.writeFileSync(path.join(src, 'b.js'), 'export const b = 2;\n');
     assert.equal(codeState(src).uncommitted, true);
     fs.rmSync(path.join(src, 'b.js'));

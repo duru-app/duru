@@ -17,6 +17,10 @@ type Access = ReturnType<typeof screenAccess>;
 
 interface MapConfig extends AccessConfig {
   srcRoot: string;
+  outDir?: string;
+  marksDir?: string;
+  judgmentsDir?: string;
+  storiesDir?: string;
   clientRef?: string;
   serverRef?: string;
   serverEndpoints: string[];
@@ -312,7 +316,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   for (const c of calls) c.codeHash = hash(requestFiles.get(c.id)!);
 
   return {
-    meta: { generatedAt: new Date().toISOString(), srcRoot: config.srcRoot, clientRef: config.clientRef ?? null, serverRef: config.serverRef ?? null, ...codeState(config.srcRoot) },
+    meta: { generatedAt: new Date().toISOString(), srcRoot: config.srcRoot, clientRef: config.clientRef ?? null, serverRef: config.serverRef ?? null, ...codeState(config.srcRoot, [config.outDir, config.marksDir, config.judgmentsDir, config.storiesDir].filter((dir): dir is string => typeof dir === 'string')) },
     screens: mapped,
     apiFunctions,
     ...(unrunApiModules && { unrunApiModules }),

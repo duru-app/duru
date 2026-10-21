@@ -349,7 +349,8 @@ client with example results and a config to start from.
 `extract` writes `map.json`; `rebuild` writes it and `tests.json`.
 
 **Code state.** `meta` names the commit of the git repository `srcRoot` is in (`commit`, `unknown` when `srcRoot` is
-not in one), whether a file under `srcRoot` had changes not committed then (`uncommitted`, only with a commit), and the
+not in one), whether a file under `srcRoot` had changes not committed then (`uncommitted`, only with a commit; the folders duru
+writes, `outDir`, `marksDir`, `judgmentsDir` and `storiesDir`, do not count), and the
 duru that built the map (`duruVersion`, and `duruCommit` when duru runs from a git checkout of its own). duru reads the
 files as they are, changes not committed included. Each screen and call has `codeHash`, a hash of the code it was read
 from: the screen's `sourceFiles`, and for a call the files its requests are written in. `tests.json` has
@@ -952,7 +953,7 @@ A changed screen opens with a line saying what changed; its call table has a col
 
 **Code state.** The header follows the map's date with its commit (「커밋 <first 7 characters>」, 「커밋 모름」 when
 `srcRoot` is not in a git repository), 「+ 커밋 안 한 수정」 when files under `srcRoot` had changes not committed, and
-the duru version with its commit; hovering shows them in full. The 「비교 기준」 box shows the same for the baseline
+the duru version; hovering shows the commits in full, duru's own among them. The 「비교 기준」 box shows the same for the baseline
 map. A map built by a duru that did not record them shows none. After a `rebuild`, a mark whose screen or call
 code hash differs from the one saved with it shows 「판정 뒤 코드가 바뀜」 beside its status in the screen list and
 the tables, and so does a judged pair, under 「제외한 짝」 or 「태그 대기」 and in the 「태그 없음」 tab, when the hash of

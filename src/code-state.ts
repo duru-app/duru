@@ -38,9 +38,11 @@ function duruCommit() {
 
 const duruVersion = () => JSON.parse(fs.readFileSync(path.join(DURU_ROOT, 'package.json'), 'utf8')).version as string;
 
-export function codeState(srcRoot: string): CodeState {
+// duru 가 쓰는 폴더가 srcRoot 안에 있으면 그 파일은 소스가 아니므로 커밋하지 않은 수정으로 보지 않는다.
+export function codeState(srcRoot: string, ownFolders: string[] = []): CodeState {
   const commit = fs.existsSync(srcRoot) ? git(srcRoot, ['rev-parse', 'HEAD'])?.trim() : null;
-  const status = commit ? git(srcRoot, ['status', '--porcelain', '--', '.']) : null;
+  const inside = ownFolders.map((dir) => path.relative(srcRoot, dir)).filter((rel) => rel && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+  const status = commit ? git(srcRoot, ['status', '--porcelain', '--', '.', ...inside.map((rel) => `:(exclude)${rel.replaceAll('\\', '/')}`)]) : null;
   const own = duruCommit();
   return {
     commit: commit || UNKNOWN_COMMIT,
