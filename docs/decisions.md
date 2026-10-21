@@ -2911,6 +2911,65 @@ Alternatives compared:
 Measured on main 29fae93 against the branch with the example client, with the kinds 「끝난 문서」 and 「입력 경계」 and four
 marks by a person and two by `duru case`: the task list and what `rebuild` prints are identical.
 
+**An agent's 「대상 아님」 waits under review until a reviewer accepts it on the review page; the reviewer's answer is a
+person's mark that carries `of`, the ID of the agent's mark it answers.**
+Asked for in #315, on top of #310, #313 and #314; the driver settled the field, who decides after a revert, where a
+candidate under review counts, the exit code, the tab number, the shape of the group and the words of its buttons
+(2026-10-21). Until now `caseTargets` did not look at `via`, so an agent's `not-needed` took the target out the moment
+it was written. On into-sign 1.5.0 an agent marking all 441 candidates and rule targets `not-needed` (5.6 seconds)
+left `duru undecided` at 0, the task list at 「No open marks.」 and both kinds at 「cases with no tests: none」, before
+any person had looked. Now a current `not-needed` with `via` is under review: the candidate holds the state of the
+mark under it, so a rule's target stays a target with its cases with no tests, and a candidate no rule picks counts
+under review only, not as undecided, so `duru undecided` does not hand it back to the agent to write again. A
+person's `not-needed` still takes the target out at once, and an agent's `needed` still puts it in at once. An agent
+mark whose rule no longer picks the target is under review too, rather than unused.
+The reviewer answers on the page, and the server writes the answer through `/api/cases/answer`: accepting writes a
+person's `not-needed` with the agent's note, reverting writes again the latest mark a person left under it, or a
+`not-needed` without a note (the shape of a kind pressed off) when there is none. Both carry `"of": "<agent mark
+ID>"`, so 「변경 기록」 reads 받아들임 or 되돌림, and the reviewer's name and date are the mark's own author and date; no
+reason is asked for either, since the issue asked for who and when. The page sends the ID of the agent mark it saw,
+and the server refuses with 409 when the agent wrote again since, so a reviewer never accepts a reason they did not
+read. An older duru reads an accept as a person's `not-needed` with a note and a revert as one without, which is what
+they are. Pressing any button a person already had (a kind button, 「이 요청은 규칙에서 빼기…」, ✓ ✕ of a 「미판정」 line)
+on a candidate under review saves a person's mark, which ends the review.
+The agent may put a `not-needed` over a mark a person left, which #314 refused and left to this issue: it goes under
+review while the person's mark holds, accepting takes the target out and reverting puts the person's mark back. A
+`needed` over a person's mark is still refused. Once a reviewer reverted an agent's `not-needed` on a candidate, only
+people decide it: `duru case` refuses it, and its 「미판정」 line reads 「<reviewer> 가 <date> 에 에이전트 판정을
+되돌렸습니다」 under 「사람이 정할 것」. Handing it back to the agent would bring back the answer it already gave.
+`duru undecided`, the task list and `rebuild` add the number under review only when there is one (`, N under review`,
+`| under review N` on `rebuild` to match the other counts there), so for a project with no agent `not-needed` they
+print what they printed before, byte for byte. `duru undecided` exits with 0 when only candidates under review are
+left and says how many wait in a last line. On the page 「경우 종류 N」 adds undecided and under review, with
+「미판정 U · 검토 중 R」 on hover, since counting only undecided would show 0 while 441 wait. A chosen kind has an open
+「검토 중 R」 group above 「미판정」, in the same three groups, with check boxes and 「✓ N」 · 「✕ N」 that read 「받아들이기」 ·
+「되돌리기」 on hover and as `aria-label`; 「경우별 테스트」 gives such a kind a line with 「검토 중」 and ✓ ✕ under the kind's
+text, as #313 did for 「미판정」.
+Reference cases: SARIF 2.1.0 §3.35.3 keeps a suppression `underReview` apart from `accepted`, and a reader has to
+look at the state to know whether the result is really suppressed; SonarQube security hotspots keep the change to
+「Safe」 with its author in the activity tab. Semgrep Assistant applies an AI verdict at once and a person overturns it
+later, the opposite order, so it is not a reason for the review step.
+Known limit: an answer counts as an accept when it carries the agent's note, so a revert to a person's `not-needed`
+whose note is the very same reads as an accept in 「변경 기록」, and `duru case` then does not refuse that candidate.
+Alternatives compared:
+- A new status value, `under-review`: mixes what was decided with who decided it in one field, needs one more value to
+  revert, and stays in mark files committed to projects' repositories, so it is hard to take back.
+- A review record with no status, closest to SARIF's accepted, underReview and rejected: a record without status is
+  read as a comment, and an older `duru wait` would send it to the agent as a question to answer.
+- No new field, an accept as a person's `not-needed` with the agent's note and a revert as one without a note: keeps
+  #310's "no new file shape", but 「변경 기록」 could only show a plain 끔 and could not tell an answer from a new
+  decision. The driver chose the one field over that.
+- Asking the agent again after a revert: it already answered once, so the same answer comes back and the review
+  loops; leaving it to people also keeps "the agent does not change a person's mark".
+- Counting a candidate under review as undecided too: the agent would see it again in `duru undecided` and write it
+  again.
+- A 「검토 중」 chip and buttons on each line among 「대상」 and 「미판정」 instead of a group of its own: the driver chose the
+  group, so many can be answered at once.
+Measured on main a27d14d against the branch with the example client, the kinds 「끝난 문서」 with a rule and 「입력 경계」
+without, the example marks, a person's `needed` and an agent's `needed`: what `rebuild`, `duru tasks` and `duru
+undecided` print is identical. With an agent `not-needed` accepted and another reverted, main's `duru undecided`
+leaves the accepted one out and lists the reverted one as a person's 「대상 아님」 without a note.
+
 **A new story asks the coding agent through its own conversation: the steps chosen so far become a 「화면 순서」 tag,
 「링크 없음」 between two steps adds that gap to it, and the comment carries the gaps and the fields typed at each step.**
 Asked for in #253 and built in #365. The driver chose on mock-ups of the review page (2026-10-20) to have no separate

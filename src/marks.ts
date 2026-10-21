@@ -43,6 +43,7 @@ export interface MarkRule {
 
 // status 가 없는 표시는 코멘트고, 그 가운데 replyTo 가 있는 것은 그 ID 의 코멘트에 단 답글이다.
 // 대상이 하나면 target, 여럿이거나 없으면 targets 에 적는다.
+// 리뷰어가 에이전트의 「대상 아님」을 받아들이거나 되돌릴 때 남기는 경우 표시는 of 에 그 에이전트 표시의 ID 를 담는다.
 export interface Mark {
   id: string;
   target?: MarkTarget;
@@ -54,6 +55,7 @@ export interface Mark {
   author: string;
   date: string;
   via?: string;
+  of?: string;
 }
 
 interface NewMark {
@@ -64,6 +66,7 @@ interface NewMark {
   rule?: MarkRule;
   author?: unknown;
   via?: string;
+  of?: string;
 }
 
 interface MarkableMap {
@@ -245,7 +248,7 @@ const checkTarget = (target: MarkTarget | undefined): MarkTarget => (target?.can
 
 export const targetsOf = (m: { target?: MarkTarget; targets?: MarkTarget[] }) => m.targets ?? (m.target ? [m.target] : []);
 
-export function addMark(dir: string, { target, targets, status, note, rule, author, via }: NewMark, now = new Date()) {
+export function addMark(dir: string, { target, targets, status, note, rule, author, via, of }: NewMark, now = new Date()) {
   if (targets !== undefined && !Array.isArray(targets)) throw new Error('mark targets must be a list');
   const all = (targets ?? [target]).map(checkTarget);
   const hasStatus = status !== undefined && status !== null;
@@ -267,6 +270,7 @@ export function addMark(dir: string, { target, targets, status, note, rule, auth
     throw new Error(`unknown ${checked.case !== undefined ? 'case mark' : 'mark'} status "${status}" (expected one of ${statuses.join(', ')})`);
   }
   if (rule !== undefined && (checked.case === undefined || status !== 'not-needed')) throw new Error('only a not-needed case mark names the rule it takes its target out of');
+  if (of !== undefined && (checked.case === undefined || !hasStatus || via !== undefined)) throw new Error('only a person\'s case mark names the agent mark it answers');
   if (typeof author !== 'string' || !author.trim()) throw new Error('mark needs an author');
   const mark: Mark = {
     id: crypto.randomUUID(),
@@ -277,6 +281,7 @@ export function addMark(dir: string, { target, targets, status, note, rule, auth
     author: author.trim(),
     date: now.toISOString(),
     ...(via !== undefined && { via }),
+    ...(of !== undefined && { of }),
   };
   saveMark(dir, mark);
   return mark;

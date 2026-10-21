@@ -478,8 +478,10 @@ listing the places whose value the source does not show in full.
   written, that picks nothing on this map.
 - `case kind <kind>: undecided N | cases with no tests N` — printed by `rebuild` for each kind in `caseKinds`, after
   the tests are read: how many of its candidates are undecided (see **Task list**), and how many cases of the
-  screens and calls it is picked for no test carries yet, a case for each value of a kind with values. When the marks
-  cannot be read, `  case kinds not counted: <why>` takes the place of these lines.
+  screens and calls it is picked for no test carries yet, a case for each value of a kind with values. When an
+  agent's `not-needed` waits for a reviewer on any of its candidates (see **Case kinds tab**), `| under review N`
+  follows with how many. When the marks cannot be read, `  case kinds not counted: <why>` takes the place of these
+  lines.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
   newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
   file that is not there and each need file it could not read with why, the links from untagged tests to screens and the trace or test files it could not read, the judged test
@@ -850,20 +852,35 @@ keeps the kind undecided, the line says who left it instead of 「아직 아무�
 「경우 종류」 tab: 「<author> 가 <date> 에 이유 없이 뺐습니다」 for a kind pressed off, or 「… 에 규칙에서 뺐지만 규칙이 더는
 고르지 않습니다」 with the old reason for a kind taken out of a rule that no longer picks that screen or call. Only where
 the kind no longer takes that screen or call as a candidate at all does a kind taken out of a rule keep its 「대상
-아님」 row, which then says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. The kind buttons below stay as they
-are. The flow shows the same middle and right panes for a picked screen.
+아님」 row, which then says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. A kind an agent marked 「대상 아님」
+with `case` waits for a reviewer and has its own lines too: the kind, and below it 「검토 중」 with ✓ and ✕, the agent with
+the date, and the agent's reason. Hovering over them, or a screen reader, gives 「받아들이기 — 에이전트의 이유로 이 요청을 「대상
+아님」으로 둡니다」 and 「되돌리기 — 에이전트의 「대상 아님」을 지우고 그 전의 판정으로 돌아갑니다」 (「화면」 for a screen). Until then the kind
+stays as it was before the agent's mark, so one a rule picks stays picked with its tests. ✓ makes it 「대상 아님 ·
+<reviewer>」 with the agent's reason; ✕ puts back the mark a person left before the agent's, or, with none, leaves it
+to the rule or undecided, its 「미판정」 line then saying 「<reviewer> 가 <date> 에 에이전트 판정을 되돌렸습니다」. Pressing the kind
+button, 「이 요청은 규칙에서 빼기…」 or ✓ ✕ of a 「미판정」 line instead saves the reviewer's own mark, which also ends the wait.
+The kind buttons below stay as they are. The flow shows the same middle and right panes for a picked screen.
 
 **Case kinds tab.** With `caseKinds` set, the list has a third tab, 「경우 종류 N」, after 「화면」 and 「태그 없음」; N adds
-up the undecided candidates of every kind, and is 0 when none is left. When the three do not fit on one line, as in a
+up the undecided candidates of every kind and those waiting for a reviewer, and is 0 when none is left. Hovering
+over it gives the two apart, 「미판정 U · 검토 중 R」. When the three do not fit on one line, as in a
 narrow list with three-digit counts, 「경우 종류 N」 moves to a second line. The tab lists the kinds in config order, each
 with its text, `case:<kind>` and 「대상 N · 미판정 N · 빈칸 N」, where 빈칸 is the number of cases with no tests that
-`rebuild` prints. A chosen kind shows four numbers: 「대상」 with how many a rule, a person and an agent (`duru case`)
-picked, 「대상 아님」, 「미판정」 and 「시험 없는 값 칸」. A screen or call a rule picks and a person or agent then marked
+`rebuild` prints, and 「검토 중 N」 before 「미판정」 while any wait for a reviewer. A chosen kind shows four numbers:
+「대상」 with how many a rule, a person and an agent (`duru case`) picked, 「대상 아님」, 「미판정」 and 「시험 없는 값 칸」, and
+「검토 중」 too while any wait. A screen or call a rule picks and a person or agent then marked
 「대상」 counts as theirs, so the rule's number can be smaller than what the rule picks. Under them each rule has a line
 with what it picks, how many it picks and how many of those were taken out as 「대상 아님」, and 「아무것도 고르지 못함」
 when it picks nothing; a kind without rules says every screen and call is a candidate. Pressing a rule's line shows
 only what it picks in the 「대상」 list, until 「모두 보기」 or the line is pressed again. 「대상 N」 and 「대상 아님 N」 start
-folded and stay as they were left when the page is drawn again; 「대상 아님」 shows who, when and why. 「미판정 N」 lists the
+folded and stay as they were left when the page is drawn again; 「대상 아님」 shows who, when and why. Above 「미판정 N」,
+「검토 중 N」 lists, open and in the same three groups, the candidates on which an agent's 「대상 아님」 waits for a
+reviewer: each line has 「검토 중」, the chip of what holds until then (「규칙」 or the name of whoever picked it), the
+agent with the date and the agent's reason. These count only here, not under 「미판정」. Check boxes on the lines, on
+the group titles and its own 「모두 고르기」 choose them; once one is chosen, 「✓ N」 accepts and 「✕ N」 reverts them all,
+with 「받아들이기」 and 「되돌리기」 on hover, as ✓ and ✕ of 「경우별 테스트」 do. One the agent wrote again after the page read
+it is not saved, and the line under the buttons says which were saved and which were not. 「미판정 N」 lists the
 undecided candidates in three groups, 「쓰기 요청」 (a request whose method was not read among them), 「조회 요청」 and
 「화면」, leaving out an empty group; each request carries its method in colour (GET blue, POST green, PUT orange, PATCH
 teal, DELETE red). A candidate kept undecided by a person's mark has a line under it: 「<author> 가 <date> 에 이유 없이
@@ -875,7 +892,8 @@ one fails, saving stops, a line says which were saved and which were not, and th
 views are locked. Pressing a line shows that screen or call's conversation and comment form on the right, kept apart
 from the one chosen in 「화면」; a comment left unsaved there is asked about at 「리뷰 끝」. Pressing the name opens the
 screen, or the call on the screen that sends it. The address is `#cases?kind=<kind>&node=<ID>`; an unknown kind
-goes to 「화면」. A kind decided here is listed under 「전체」's 「변경 기록」, where 「대상」 reads 켬 and 「대상 아님」 reads 끔.
+goes to 「화면」. A kind decided here is listed under 「전체」's 「변경 기록」, where 「대상」 reads 켬 and 「대상 아님」 reads 끔, and
+a reviewer's answer to an agent's 「대상 아님」 reads 받아들임 or 되돌림.
 
 **Pane widths.** The edge on either side of the middle pane, in the list, in the story tab and beside a picked screen
 in the flow, can be dragged to widen or narrow the panes; the line lights up when the
@@ -999,7 +1017,10 @@ review server refuses one without; it also carries `rule`, `{ "index": <place in
 rule as written> }`, naming the rule it took the target out of. Only such a mark wins over a rule; a `not-needed`
 mark without `rule`, such as a kind pressed off before the rule was written, leaves the rule's pick in place. On a
 screen or call no rule picks, a `not-needed` mark with a note says the kind is not needed there, and one without a
-note leaves the kind undecided there. A mark written by `case` also carries `"via": "duru case"`.
+note leaves the kind undecided there. A mark written by `case` also carries `"via": "duru case"`; its `not-needed`
+takes nothing out until a reviewer accepts it. The mark a reviewer saves by accepting or reverting it also carries
+`"of": "<ID of the agent's mark>"`: accepting saves `not-needed` with the agent's note, and reverting saves again the
+mark a person left before the agent's, or a `not-needed` without a note when there was none.
 
 **Test rows.** A test row under a screen, call or story shows the test's title without its tags. The tags of the screen, call, story and depth
 the row sits under are left out, and every other tag (a role, a setting, a story, another screen …) follows the
@@ -1238,13 +1259,17 @@ tests: N`. A candidate is any screen or call for a kind without rules, and other
 <file>, route at <file>:<line>`, requests other than `GET` first (a request whose method was not read among them),
 then the other calls, then the screens, each group by ID. A candidate whose current mark a person left ends with
 `— <author> marked it not-needed without a note on <date>, so only a person can decide it` (`took it out of a rule
-that no longer picks it` for a mark whose rule no longer picks it): `case` does not change that mark. Each screen or
+that no longer picks it` for a mark whose rule no longer picks it, `took back the agent's not-needed` for one a
+reviewer reverted): `case` does not change that mark. While an agent's `not-needed` waits for a reviewer on any
+candidate, `under review: N` follows `undecided`, with a line for each such candidate ending with the agent, the
+date and its note; it is not counted as undecided. Each screen or
 call the kind is picked for, by a rule or a mark, with a case no test carries follows as `### <ID>` with `picked by:`
 (a rule and its place in `picks`, or the author, date and note of the mark), `no tests:` with the tags, and `empty
 tests` for each; one listed above under its own marks is not repeated, and `cases with no tests: N` counts its cases
 too, adding `, N of them under screens and calls listed above`. When this section has anything to do, the head of
-the list adds `N undecided case candidates, N cases with no tests`, and with no open marks the list says the case
-kinds below still have work instead of `No open marks.` Without `caseKinds` the list has no such section.
+the list adds `N undecided case candidates, N cases with no tests`, with `, N under review` after the first while
+any wait, and with no open marks the list says the case kinds below still have work instead of `No open marks.`
+Without `caseKinds` the list has no such section.
 
 `case <config> <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]`
 writes a case mark of that kind for that screen or call, as the review page would, directly into `marksDir`: the
@@ -1255,16 +1280,23 @@ prints it on standard error as a `"mark"` line and shows it on every open page a
 reads neither the map nor the marks. `--author` with `--server` stops with `a case sent with --server is always by
 agent; leave out --author` and exit code 2. It prints nothing when the mark is written, and stops with a line saying
 why and exit code 1, writing nothing, for a kind not in `caseKinds`, an ID not on the map, `not-needed` without
-`--note`, a screen or call whose current mark of that kind a person left (any mark without `via`), also one that
-leaves it undecided, and `not-needed` on a screen or call off the side the kind's rules pick that has no mark of that
-kind to take back, the same line with or without `--server`. A review that cannot be reached stops it with `could
+`--note`, `needed` on a screen or call where a mark of that kind a person left holds (any mark without `via`), also
+one that leaves it undecided or one under an agent's `not-needed` waiting for a reviewer, either status where a
+reviewer reverted an agent's `not-needed` of that kind (`<reviewer> took back the agent's not-needed for <kind> on
+<ID> on <date>, so only a person decides it now`), and `not-needed` on a screen or call off the side the kind's rules
+pick that has no mark of that kind to take back, the same line with or without `--server`. A `not-needed` over a
+person's mark is written and waits for a reviewer, with that person's mark holding until then.
+A review that cannot be reached stops it with `could
 not reach the review page at <address>: …` and exit code 1, and a review started by an older duru answers `not
 found`. `needed` is also
 written where a rule already picks the target, so it stays picked when the rule changes. A `not-needed` where a rule
 picks the target carries `rule` like one saved on the page.
 
 `undecided <config> [<kind>]` prints, for every kind or the one named, `case kind <kind>: N undecided` followed by its
-undecided candidates as in the task list. It exits with 0 when none is left, 3 while any is, 1 when the config, the
+undecided candidates as in the task list. While an agent's `not-needed` waits for a reviewer, the kind's line ends
+with `, N under review` and a last line says `N under review: not-needed marks of the agent that wait for a reviewer
+to accept or revert them on the review page`; those are not undecided.
+It exits with 0 when none is left, 3 while any is, 1 when the config, the
 map or a mark file cannot be read (a missing map is one line asking for `rebuild`), and 2 when it is called wrongly
 or names a kind not in `caseKinds`. `tests.json` is not needed.
 

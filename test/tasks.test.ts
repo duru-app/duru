@@ -7,7 +7,7 @@ import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment } from '../src/judgments.ts';
 import type { ScreenMap } from '../src/map.ts';
-import { addMark, addReply } from '../src/marks.ts';
+import { addMark, addReply, loadMarks } from '../src/marks.ts';
 import { reviewData } from '../src/review.ts';
 import { taggingLines } from '../src/tasks.ts';
 
@@ -856,8 +856,9 @@ test('the case kinds section lists each kind\'s undecided candidates, writes fir
     const tasks = cli('tasks');
     const kinds = tasks.slice(tasks.indexOf('\n# Case kinds\n'));
     const ended = kinds.slice(kinds.indexOf('\n## ended\n'));
-    assert.match(tasks, /^# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks, 7 undecided case candidates, 5 cases with no tests\n/);
+    assert.match(tasks, /^# Test tasks — 4 screens, 1 call, 0 stories, 5 open marks, 7 undecided case candidates, 1 under review, 5 cases with no tests\n/);
     assert.ok(kinds.includes('Read the source of each undecided candidate, write requests first as they are listed, and decide it: run `duru case <config> <kind> <ID> needed`'));
+    assert.ok(kinds.includes('read this list again. Under `under review`, each candidate carries a `not-needed` an agent wrote with `duru case`, which waits for a reviewer to accept or revert it on the review page'));
     assert.ok(ended.startsWith([
       '',
       '## ended',
@@ -874,6 +875,8 @@ test('the case kinds section lists each kind\'s undecided candidates, writes fir
       '  - GET:/api/v1/document/{documentId} — call, sent from /document/:id#DocumentDetail',
       '  - GET:/api/v1/lab/experiment — call, sent from /lab#Lab',
       '  - GET:/api/v1/member/list — call, sent from /admin/member#AdminMember',
+      '- under review: 1',
+      '  - POST:/api/v1/report/export — call, sent from /admin/audit#AdminAudit, /admin/report#AdminReport — agent, 2026-10-04 — "내보내기는 읽기만 한다"',
       '- cases with no tests: 5, 2 of them under screens and calls listed above',
       '',
       '### /lab#Lab',
@@ -893,14 +896,14 @@ test('the case kinds section lists each kind\'s undecided candidates, writes fir
       emptyTests([`@call:${RENAME} @case:ended=rejected`, 'call_PUT_api_v1_document_documentId_name_case_ended_rejected']),
     ].join('\n')));
     assert.ok(!ended.includes(`### ${ARCHIVE}`), 'a call listed above under its mark is not repeated');
-    const counted = cli('rebuild').match(/^case kind ended: undecided (\d+) \| cases with no tests (\d+)$/m)!;
-    assert.deepEqual([...counted].slice(1), ['7', '5']);
-    assert.match(tasks, /^# Test tasks — .*, 7 undecided case candidates, 5 cases with no tests\n/);
+    const counted = cli('rebuild').match(/^case kind ended: undecided (\d+) \| cases with no tests (\d+) \| under review (\d+)$/m)!;
+    assert.deepEqual([...counted].slice(1), ['7', '5', '1']);
+    assert.match(tasks, /^# Test tasks — .*, 7 undecided case candidates, 1 under review, 5 cases with no tests\n/);
     assert.ok(tasks.split(`\n## ${ARCHIVE}\n`)[1].includes(`@call:${ARCHIVE} @case:ended=cancelled`));
   }, { caseKinds: { ended: { ...ENDED, picks: [{ screen: '/document/**', methods: ['POST', 'PUT'] }] } } });
 });
 
-test('with no open marks but cases with no tests the task list says the case kinds below still have work, and once nothing is left there it says only that no mark is open', () => {
+test('with no open marks but cases with no tests the task list says the case kinds below still have work, still so while an agent\'s not-needed on every target waits under review, and once a reviewer accepted them it says only that no mark is open', () => {
   const pick = { screen: '/**' };
   withFixtureCopy(({ copy, configFile, cli }) => {
     fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
@@ -909,8 +912,21 @@ test('with no open marks but cases with no tests the task list says the case kin
     assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 11 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have undecided candidates or cases with no tests\.\n\n# Case kinds\n/);
     const map: ScreenMap = JSON.parse(fs.readFileSync(path.join(outDir, 'map.json'), 'utf8'));
     for (const s of map.screens) addMark(marksDir, { target: { node: s.id, case: 'boundary' }, status: 'not-needed', note: '입력 칸이 없다', rule: { index: 0, pick }, author: 'agent', via: 'duru case' });
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 11 under review, 11 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have undecided candidates or cases with no tests\.\n\n# Case kinds\n[\s\S]*\n- undecided: none\n- under review: 11\n/);
+    for (const m of loadMarks(marksDir)) addMark(marksDir, { target: m.target, status: 'not-needed', note: m.note, rule: m.rule, author: '김민', of: m.id }, new Date(Date.now() + 60_000));
     assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n[\s\S]*\nNo open marks\.\n\n# Case kinds\n[\s\S]*\n- undecided: none\n- cases with no tests: none\n$/);
   }, { caseKinds: { boundary: { text: CASE_KINDS.boundary, picks: [pick] } } });
+});
+
+test('with no open marks and only an agent\'s not-needed waiting on candidates no rule picks, the task list says the case kinds below still have candidates under review', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    fs.rmSync(path.join(copy, 'example-marks'), { recursive: true });
+    cli('rebuild');
+    const { marksDir, outDir } = loadConfig(configFile);
+    const map: ScreenMap = JSON.parse(fs.readFileSync(path.join(outDir, 'map.json'), 'utf8'));
+    for (const n of [...map.screens, ...map.calls]) addMark(marksDir, { target: { node: n.id, case: 'boundary' }, status: 'not-needed', note: '입력 칸이 없다', author: 'agent', via: 'duru case' });
+    assert.match(cli('tasks'), /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks, 0 undecided case candidates, 21 under review, 0 cases with no tests\n[\s\S]*\nNo open marks, but the case kinds below still have candidates under review\.\n\n# Case kinds\n/);
+  }, { caseKinds: { boundary: CASE_KINDS.boundary } });
 });
 
 test('with no open marks the task list says so', () => {

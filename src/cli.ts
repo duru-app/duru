@@ -361,7 +361,8 @@ if (command === 'tasks') {
         const { targets } = readCaseTargets(config);
         for (const [kind, caseKind] of Object.entries<CaseKind>(config.caseKinds)) {
           const untested = casesWithoutTests(kind, caseKind, targets[kind], judged.nodes).reduce((n, c) => n + c.tags.length, 0);
-          console.log(`case kind ${kind}: undecided ${targets[kind].undecided.length} | cases with no tests ${untested}`);
+          const review = targets[kind].review.length;
+          console.log(`case kind ${kind}: undecided ${targets[kind].undecided.length} | cases with no tests ${untested}${review ? ` | under review ${review}` : ''}`);
         }
       } catch (err: any) {
         console.log(`  case kinds not counted: ${err.message}`);

@@ -156,7 +156,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    When it prints a line `caseKinds <kind> picks[<i>] matches no screen` (or `no call`), that rule of the kind
    picks nothing on this map, most likely a typo in its pattern or method; tell the user, with the rule as printed.
    A line `case kind <kind>: undecided N | cases with no tests N` counts that kind's work in the task list's
-   `# Case kinds` (step 3).
+   `# Case kinds` (step 3); `| under review N` after it counts your `not-needed` marks still waiting for a reviewer,
+   which are no work for you.
    When it prints lines starting with `tsconfig import`, each names an import that matches an alias of the
    `tsconfig` file whose targets are inside the client source but finds no file, with the number of files that write it: the alias or the import is wrong, or
    the file is missing. Tell the user, because the screens that use those files miss what they would reach.
@@ -376,16 +377,27 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    not pass the reviewer's name. While a review you launched is running, add `--server <the review page address>`
    and leave out `--author`: the review writes the mark and every open page shows it at once, and the `"mark"` line
    it puts on the review's standard error asks nothing of you. When you cannot tell from the code, leave it
-   undecided and tell the user which one and why. `duru case` refuses a kind not in the config, an ID not on the map, `not-needed` without a note, a
-   person's mark and `not-needed` off the side the rules pick where there is nothing to take back, printing why with
-   exit code 1; read the reason and do not retry the same call. Run `duru undecided <config>` (or with one kind) to
-   see what is left: it exits with 3 while any candidate is undecided, 0 when none is, 1 when the map or marks cannot
-   be read and 2 when called wrongly. A candidate line ending with `so only a person can decide it` carries a mark a
-   reviewer left, mostly a kind pressed off on the page without a reason, and `duru case` will not change it. This
+   undecided and tell the user which one and why. A `not-needed` you write does not take the candidate out: it waits
+   under review until a reviewer accepts or reverts it on the review page, and until then the candidate stays as it
+   was, a rule's pick still picked with its cases with no tests. You may write `not-needed` on a candidate a person
+   already decided, when the code shows the kind cannot happen there; the person's mark holds while it waits.
+   `duru case` refuses a kind not in the config, an ID not on the map, `not-needed` without a note, `needed` over a
+   person's mark, also while your `not-needed` waits on top of it, anything where a reviewer reverted your
+   `not-needed` (`… took back the agent's not-needed …, so only a person decides it now`: after that only a person
+   decides it) and `not-needed` off the side the rules pick where there is nothing to take back, printing why with
+   exit code 1; read the reason and do not retry the same call.
+   Run `duru undecided <config>` (or with one kind) to see what is left: it exits with 3 while any candidate is
+   undecided, 0 when none is, 1 when the map or marks cannot be read and 2 when called wrongly. Candidates under
+   review are not undecided: they are left out of its list, the kind's line ends with `, N under review` and a last
+   line counts them, and it exits with 0 when only those are left; in the task list they are under `under review`.
+   Do not write them again. A candidate line ending with `so only a person can decide it` carries a mark a reviewer
+   left, mostly a kind pressed off on the page without a reason or your `not-needed` they reverted, and `duru case`
+   will not change it. This
    part is done when every candidate `duru undecided` still lists is one only a person can decide, such a line or
    one you could not tell from the code, or when none is left and it exits with 0; then tell the user which are
    left, with the author and date such a line gives, and that the review page's 「경우 종류」 tab lists those with such
-   a line under 「사람이 정할 것」 to decide several at once; then go on with `cases with no tests`. Without `--server` the
+   a line under 「사람이 정할 것」 to decide several at once, and how many of your `not-needed` wait under 「검토 중」 there
+   to be accepted or reverted; then go on with `cases with no tests`. Without `--server` the
    marks are written straight into the marks folder, so an open review page shows them only once it is reloaded;
    tell the user so.
    Under `cases with no tests`, each `### <ID>` is a screen or call the kind is picked for whose `no tests` tags no

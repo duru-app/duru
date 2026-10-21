@@ -618,29 +618,32 @@ test('in a browser, cancelling the reason dialog puts the focus back on the butt
       })));
 });
 
-test('in a browser, a request taken out of a rule that no longer picks it is undecided again, its 「미판정」 line saying who took it out and the old reason, also when an agent took it out or its kind has no rules left, as a kind pressed off with no reason says who did, while a screen the kind no longer takes as a candidate keeps its 「대상 아님」 row as no longer used', { skip: browserMissing }, async () => {
+test('in a browser, a request a person took out of a rule that no longer picks it is undecided again, its 「미판정」 line saying who took it out and the old reason, also when its kind has no rules left or the person accepted it from an agent, as a kind pressed off with no reason says who did, while one an agent took out waits under review and a screen the kind no longer takes as a candidate keeps its 「대상 아님」 row as no longer used', { skip: browserMissing }, async () => {
   const kinds = { boundary: CASE_KINDS.boundary, ended: { ...RULED.ended, picks: [{ screen: '/document/**', methods: ['POST'] }] }, legacy: CASE_KINDS.legacy };
   await withRebuiltFixture({ caseKinds: kinds }, (config) => {
     const at = new Date('2026-10-04T01:00:00Z');
     addMark(config.marksDir, { target: { node: RENAME, case: 'ended' }, status: 'not-needed', note: '이름은 막지 않는다', rule: RULE_ENDED, author: 'agent', via: 'duru case' }, at);
-    addMark(config.marksDir, { target: { node: RENAME, case: 'legacy' }, status: 'not-needed', note: '옛 문서도 같은 칸을 쓴다', rule: { index: 0, pick: { methods: ['PUT'] } }, author: 'reviewer' }, at);
+    const legacy = { target: { node: RENAME, case: 'legacy' }, status: 'not-needed', note: '옛 문서도 같은 칸을 쓴다', rule: { index: 0, pick: { methods: ['PUT'] } } };
+    const proposal = addMark(config.marksDir, { ...legacy, author: 'agent', via: 'duru case' }, new Date('2026-10-03T01:00:00Z'));
+    addMark(config.marksDir, { ...legacy, author: 'reviewer', of: proposal.id }, at);
     addMark(config.marksDir, { target: { node: RENAME, case: 'boundary' }, status: 'not-needed', author: 'reviewer' }, at);
     addMark(config.marksDir, { target: { node: '/document/:id#DocumentDetail', case: 'ended' }, status: 'not-needed', note: '상세 화면은 읽기만 한다', rule: { index: 0, pick: { screen: '/document/**' } }, author: 'reviewer' }, at);
     return withServer(config, 'reviewer', async (base) => {
-      const { caseTargets }: { caseTargets: Record<string, { undecided: string[] }> } = await (await fetch(`${base}/api/data`)).json();
-      assert.deepEqual(['boundary', 'ended', 'legacy'].map((kind) => caseTargets[kind].undecided.includes(RENAME)), [true, true, true]);
+      const { caseTargets }: { caseTargets: Record<string, { undecided: string[]; review: string[] }> } = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(['boundary', 'ended', 'legacy'].map((kind) => caseTargets[kind].undecided.includes(RENAME)), [true, false, true]);
+      assert.deepEqual(caseTargets.ended.review, [RENAME]);
       await withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await openCall(p, '/document/:id', RENAME);
         const call = callCases(p);
         assert.equal(await call.locator('li.case-left-out').count(), 0);
         const lines = call.locator('li.case-undecided-row');
-        assert.deepEqual(await lines.evaluateAll((els) => els.map((e) => e.getAttribute('data-kind'))), ['boundary', 'ended', 'legacy']);
+        assert.deepEqual(await lines.evaluateAll((els) => els.map((e) => e.getAttribute('data-kind'))), ['boundary', 'legacy']);
         assert.match((await lines.nth(0).locator('.case-held').textContent())!, /^reviewer 가 .+ 에 이유 없이 뺐습니다$/);
-        assert.match((await lines.nth(1).locator('.case-held').textContent())!, /^agent 가 .+ 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다$/);
         assert.equal(await lines.filter({ hasText: '아직 아무도 정하지 않았습니다' }).count(), 0);
-        assert.match((await lines.nth(2).locator('.case-held').textContent())!, /^reviewer 가 .+ 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다$/);
-        assert.deepEqual(await call.locator('.case-reason').allTextContents(), ['예전 이유 이름은 막지 않는다', '예전 이유 옛 문서도 같은 칸을 쓴다']);
+        assert.match((await lines.nth(1).locator('.case-held').textContent())!, /^reviewer 가 .+ 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다$/);
+        assert.equal(await call.locator('li.case-review-row').getAttribute('data-kind'), 'ended');
+        assert.deepEqual(await call.locator('.case-reason').allTextContents(), ['이유 이름은 막지 않는다', '예전 이유 옛 문서도 같은 칸을 쓴다']);
         assert.deepEqual(await kindButtons(call), [[CASE_KINDS.boundary, 'false'], [RULED.ended.text, 'false'], [CASE_KINDS.legacy, 'false']]);
 
         await openScreenInfo(p);
@@ -659,26 +662,56 @@ test('in a browser, a request taken out of a rule that no longer picks it is und
   });
 });
 
-test('in a browser, a 「대상 아님」 with a reason on a request no rule picks, written by duru case, shows as 「대상 아님 · <author>」 with its reason and the date on hover, while the data lists the kind\'s undecided requests without it, writes first', { skip: browserMissing }, async () => {
+const LAB_CALL = 'GET:/api/v1/lab/experiment';
+
+test('in a browser, a 「대상 아님」 written by duru case on a request no rule picks waits as a 「검토 중」 line with the agent, the date and its reason, out of the kind\'s undecided requests; ✓ accepts it as 「대상 아님 · <reviewer>」 with the agent\'s reason, ✕ reverts it to 「미판정」 saying who reverted it, and pressing the kind button ends the wait with the reviewer\'s pick', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: RULED }, (config, copy) => {
     const read = 'GET:/api/v1/document/{documentId}';
+    const list = 'GET:/api/v1/document/list';
     execFileSync(process.execPath, [CLI, 'case', path.join(copy, 'config.json'), 'ended', read, 'not-needed', '--note', '읽기는 끝난 문서에서도 된다'], { stdio: 'pipe' });
+    execFileSync(process.execPath, [CLI, 'case', path.join(copy, 'config.json'), 'ended', list, 'not-needed', '--note', '목록은 읽기만 한다'], { stdio: 'pipe' });
+    execFileSync(process.execPath, [CLI, 'case', path.join(copy, 'config.json'), 'ended', LAB_CALL, 'not-needed', '--note', '실험은 문서를 쓰지 않는다'], { stdio: 'pipe' });
     return withServer(config, 'reviewer', async (base) => {
-      const { caseTargets }: { caseTargets: Record<string, { undecided: string[]; nodes: Record<string, { state: string; mark: { author: string; via?: string } | null }> }> } = await (await fetch(`${base}/api/data`)).json();
-      assert.deepEqual([caseTargets.ended.nodes[read].state, caseTargets.ended.nodes[read].mark?.author, caseTargets.ended.nodes[read].mark?.via], ['not-needed', 'agent', 'duru case']);
+      const { caseTargets }: { caseTargets: Record<string, { undecided: string[]; review: string[]; nodes: Record<string, { state: string; review?: { author: string; via?: string } }> }> } = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual([caseTargets.ended.nodes[read].state, caseTargets.ended.nodes[read].review?.author, caseTargets.ended.nodes[read].review?.via], ['undecided', 'agent', 'duru case']);
       assert.ok(!caseTargets.ended.undecided.includes(read));
-      const firstRead = caseTargets.ended.undecided.findIndex((id) => id.startsWith('GET:'));
-      assert.ok(firstRead > 0 && caseTargets.ended.undecided.slice(firstRead).every((id) => id.startsWith('GET:')));
+      assert.deepEqual(caseTargets.ended.review, [list, read, LAB_CALL]);
       await withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await openCall(p, '/document/:id', read);
         const call = callCases(p);
+        const row = call.locator('li.case-review-row[data-kind="ended"]');
+        assert.match((await row.textContent())!, new RegExp(`^${RULED.ended.text}검토 중✓✕agent · .+이유 읽기는 끝난 문서에서도 된다$`));
+        assert.deepEqual(await row.locator('button').evaluateAll((els) => els.map((e) => [e.getAttribute('title'), e.getAttribute('aria-label')])), [
+          ['받아들이기 — 에이전트의 이유로 이 요청을 「대상 아님」으로 둡니다', '받아들이기 — 에이전트의 이유로 이 요청을 「대상 아님」으로 둡니다'],
+          ['되돌리기 — 에이전트의 「대상 아님」을 지우고 그 전의 판정으로 돌아갑니다', '되돌리기 — 에이전트의 「대상 아님」을 지우고 그 전의 판정으로 돌아갑니다'],
+        ]);
+        assert.equal(await call.locator('li.case-undecided-row[data-kind="ended"]').count(), 0);
+        assert.deepEqual(await kindButtons(call), [[CASE_KINDS.boundary, 'false'], [RULED.ended.text, 'false'], [RULED.legacy.text, 'false']]);
+
+        await row.locator('button.accept').click();
+        await call.locator('li.case-left-out').waitFor();
+        assert.equal(await call.locator('li.case-review-row').count(), 0);
         const [[text, title]] = await chips(call);
-        assert.equal(text, '대상 아님 · agent');
+        assert.equal(text, '대상 아님 · reviewer');
         assert.match(title!, DATE_TITLE('에 대상 아님으로 정했습니다$'));
         assert.equal(await call.locator('li.case-left-out .case-reason').textContent(), '이유 읽기는 끝난 문서에서도 된다');
-        assert.equal(await call.locator('.take-out').count(), 0);
-        assert.deepEqual(await kindButtons(call), [[CASE_KINDS.boundary, 'false'], [RULED.ended.text, 'false'], [RULED.legacy.text, 'false']]);
+
+        await openCall(p, '/home', list);
+        await call.locator('li.case-review-row[data-kind="ended"] button.revert').click();
+        await call.locator('li.case-undecided-row[data-kind="ended"] .case-held').waitFor();
+        assert.match((await call.locator('li.case-undecided-row[data-kind="ended"] .case-held').textContent())!, /^reviewer 가 .+ 에 에이전트 판정을 되돌렸습니다$/);
+        const byNode = Object.fromEntries(loadMarks(config.marksDir).filter((m) => m.via === undefined).map((m) => [m.target!.node, m]));
+        const agents = Object.fromEntries(loadMarks(config.marksDir).filter((m) => m.via !== undefined).map((m) => [m.target!.node, m.id]));
+        assert.deepEqual([byNode[read].status, byNode[read].note, byNode[read].author, byNode[read].of], ['not-needed', '읽기는 끝난 문서에서도 된다', 'reviewer', agents[read]]);
+        assert.deepEqual([byNode[list].status, byNode[list].note, byNode[list].author, byNode[list].of], ['not-needed', '', 'reviewer', agents[list]]);
+
+        await openCall(p, '/lab', LAB_CALL);
+        await call.locator('li.case-review-row[data-kind="ended"]').waitFor();
+        await call.locator('.case-kinds button[data-kind="ended"]').click();
+        await call.locator('.case-kinds button[data-kind="ended"][aria-pressed="true"]:not([disabled])').waitFor();
+        assert.equal(await call.locator('li.case-review-row').count(), 0);
+        assert.deepEqual((await chips(call)).map(([t]) => t), ['reviewer']);
       });
     });
   });
