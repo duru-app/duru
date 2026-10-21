@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { Page } from 'playwright-core';
 import { addMark } from '../src/marks.ts';
 import { taskList } from '../src/tasks.ts';
-import { FIXTURE, withRebuiltFixture, withServer, postMark, rebuild, browserMissing, withPage, TRACED, asked, why, placeOf, postJson, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate } from './review-helpers.ts';
+import { FIXTURE, withRebuiltFixture, withServer, postMark, rebuild, browserMissing, withPage, TRACED, asked, why, placeOf, postJson, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, postCandidate } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
 
 test('the data carries each story checked against the map with its status, the tests per story and the story files that could not be read, read again on every request', async () => {
@@ -206,6 +206,56 @@ test('the candidates from traces come from the screen orders rebuild wrote into 
       assert.deepEqual((await (await fetch(`${base}/api/data`)).json() as PageData).candidates.list.map((c) => c.key), visits);
     });
   });
+});
+
+test('in a browser, a candidate an agent sends with duru candidate --server shows at once in the open candidate list, with the 「에이전트」 chip beside its name in the list and the title, the comment that asked for it under the title leading to that comment, and the chip and 「이유」 only on the screens the agent put in', { skip: browserMissing }, async () => {
+  await withRebuiltFixture(CANDIDATES, (config, copy) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click(storiesTab);
+        await p.waitForSelector('#candidate-list li:has-text("open-help")');
+        const target = { screens: ['/signin#SignIn', '/lab#Lab'], steps: [{ step: 2, expects: ['실험 목록이 보인다'] }] };
+        const comment = await (await postMark(base, { target, note: '로그인한 뒤 실험으로 가는 길을 채워 줘\n둘째 줄' })).json();
+        const input = path.join(copy, 'candidate-input.json');
+        fs.writeFileSync(input, JSON.stringify({ name: '로그인해 실험을 연다', screens: ['/signin#SignIn', { screen: '/home#Home', reason: '로그인하면 홈으로만 갑니다', expects: ['홈이 보인다'] }, { screen: '/lab#Lab', expects: ['실험 목록이 보인다'] }] }));
+        await postCandidate(copy, comment.id, input, '--server', base);
+
+        const row = p.locator('#candidate-list li:has-text("로그인해 실험을 연다")');
+        await row.waitFor();
+        assert.deepEqual(await p.locator('#candidate-list li .chip.agent').allTextContents(), ['에이전트']);
+        assert.equal(await row.locator('.chip.agent').count(), 1);
+        assert.equal(await row.locator('.name .muted.mono').count(), 0);
+        const chip = row.locator('.chip.agent');
+        assert.match((await chip.getAttribute('title'))!, /에이전트/);
+        assert.ok(await chip.getAttribute('aria-label'));
+
+        await row.click();
+        assert.equal(await p.textContent('#center h3'), '로그인해 실험을 연다');
+        assert.deepEqual(await p.locator('#center .title-row .chip.agent').allTextContents(), ['에이전트']);
+        assert.match((await p.textContent('#center .source'))!, /^「로그인한 뒤 실험으로 가는 길을 채워 줘」 · reviewer · \d{1,2}\. \d{1,2}\.$/);
+        assert.deepEqual(await p.locator('#center .story-path .step').evaluateAll((steps) => steps.map((s) => [s.querySelector('.chip.agent')?.textContent ?? null, s.querySelector('.agent-reason')?.textContent ?? null])), [
+          [null, null],
+          ['에이전트', '이유 로그인하면 홈으로만 갑니다'],
+          [null, null],
+        ]);
+        assert.equal(await p.locator('#center .agent-reason b').textContent(), '이유');
+        assert.deepEqual(await p.locator('#center .story-path .step .written .expects li').allTextContents(), ['홈이 보인다', '실험 목록이 보인다']);
+
+        await p.click('#center .source');
+        await p.waitForSelector(`#right .all-talk [data-record="${comment.id}"].reached`);
+        assert.equal(await p.getAttribute('#right .talk-scope button:has-text("전체")', 'aria-pressed'), 'true');
+
+        await p.click('#candidate-list li:has-text("로그인해 실험을 연다")');
+        await p.click('#center button.accept-edited');
+        await p.fill('#accept-id', 'lab');
+        await p.keyboard.press('Enter');
+        await p.waitForSelector('#story-list li.selected:has-text("로그인해 실험을 연다")');
+        assert.match((await p.textContent('#center .source'))!, /^「로그인한 뒤 실험으로 가는 길을 채워 줘」 · reviewer · /);
+        assert.equal(await p.locator('#center .chip.agent').count(), 0);
+      }),
+    ),
+  );
 });
 
 const chipsIn = (p: Page, list: string) => p.locator(`${list} li`).evaluateAll((items) => items.map((li) => [...li.querySelectorAll('.chip')].map((c) => c.textContent)));

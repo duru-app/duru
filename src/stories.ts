@@ -9,6 +9,9 @@ interface RawSource {
   steps?: unknown;
   report?: unknown;
   tests?: unknown;
+  comment?: unknown;
+  added?: unknown;
+  written?: unknown;
 }
 
 interface RawStory {
@@ -43,6 +46,14 @@ export interface StepFields {
   expects?: string[];
 }
 
+export interface CommentSource {
+  comment: string;
+  added: { step: number; reason: string }[];
+  written: ({ step: number } & StepFields)[];
+}
+
+export type StorySource = { record: string; steps: [number, number] } | { report: string; tests: string[] } | CommentSource;
+
 export interface Story {
   id: string;
   name: string;
@@ -53,7 +64,7 @@ export interface Story {
   memo: string;
   author: string;
   date: string;
-  source?: { record: string; steps: [number, number] } | { report: string; tests: string[] };
+  source?: StorySource;
   file: string;
   contentHash: string;
 }
@@ -100,7 +111,17 @@ const FIELD_RULES = {
 const isStep = (v: number) => Number.isInteger(v) && v > 0;
 const isRecordSource = (v: RawSource) => isText(v.record) && Array.isArray(v.steps) && v.steps.length === 2 && v.steps.every(isStep) && v.steps[0] <= v.steps[1];
 const isTestsSource = (v: RawSource) => isText(v.report) && Array.isArray(v.tests) && v.tests.length > 0 && v.tests.every(isText);
-export const isSource = (v: RawSource) => isPlainObject(v) && Object.keys(v).length === 2 && (isRecordSource(v) || isTestsSource(v));
+const ascending = (list: any[]) => list.every((x, i) => isStep(x.step) && (i === 0 || x.step > list[i - 1].step));
+const isAddedStep = (v: any) => isPlainObject(v) && Object.keys(v).length === 2 && isText(v.reason);
+function isWrittenStep(v: any) {
+  if (!isPlainObject(v)) return false;
+  const { step, ...fields } = v;
+  return Object.keys(fields).length > 0 && !('screen' in fields) && stepProblem({ ...fields, screen: 'x' }, '', step === 1) === null;
+}
+const isCommentSource = (v: RawSource) => isText(v.comment) && Array.isArray(v.added) && v.added.every(isAddedStep) && ascending(v.added)
+  && Array.isArray(v.written) && v.written.every(isWrittenStep) && ascending(v.written);
+export const isSource = (v: RawSource) => isPlainObject(v) && (Object.keys(v).length === 2 ? isRecordSource(v) || isTestsSource(v) : Object.keys(v).length === 3 && isCommentSource(v));
+export const SOURCE_SHAPES = 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] }, { "report": 보고 파일, "tests": [시험 제목, ...] }, { "comment": 코멘트 ID, "added": [{ "step", "reason" }, ...], "written": [{ "step", 칸 이름: [줄, ...] }, ...] } 가운데 하나여야 합니다';
 // Date.parse 는 2026-02-30 을 3월 2일로 넘겨 받으므로, 날짜 부분이 그대로 되돌아오는지 본다.
 export const isDate = (v: unknown) => typeof v === 'string' && DATE.test(v) && !Number.isNaN(Date.parse(v))
   && new Date(`${v.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === v.slice(0, 10);
@@ -173,7 +194,7 @@ function problemOf(story: RawStory) {
   if (story.memo !== undefined && typeof story.memo !== 'string') return 'memo 는 글자여야 합니다';
   if (!isText(story.author)) return 'author 에 작성자를 적어야 합니다';
   if (!isDate(story.date)) return 'date 는 2026-10-02 같은 날짜여야 합니다';
-  if (story.source !== undefined && !isSource(story.source)) return 'source 는 { "record": 기록 파일, "steps": [첫 단계, 끝 단계] } 나 { "report": 보고 파일, "tests": [시험 제목, ...] } 여야 합니다';
+  if (story.source !== undefined && !isSource(story.source)) return SOURCE_SHAPES;
   return null;
 }
 
@@ -327,6 +348,19 @@ function withoutLinkNeeds(step: any) {
   return Object.keys(rest).length === 1 ? rest.screen : rest;
 }
 
+type Kept = Map<number, { step: number; linked: boolean }>;
+
+function sourceAfterSteps(source: any, kept: Kept) {
+  if (!isSource(source) || !('comment' in source)) return source;
+  const added = (source.added as CommentSource['added']).flatMap(({ step, reason }) => (kept.has(step) ? [{ step: kept.get(step)!.step, reason }] : []));
+  const written = (source.written as CommentSource['written']).flatMap(({ step, ...fields }) => {
+    const to = kept.get(step);
+    const lines = Object.entries(fields).filter(([k]) => k !== 'linkNeeds' || to?.linked);
+    return to && lines.length ? [{ step: to.step, ...Object.fromEntries(lines) }] : [];
+  });
+  return { ...source, added, written };
+}
+
 // 앞 단계가 바뀌면 들어오는 링크 조건을 적어 둔 링크가 없어지므로 그 조건을 뗀다.
 export function writeStorySteps(dir: string, id: string, { steps, contentHash }: { steps: unknown; contentHash: unknown }) {
   if (!Array.isArray(steps) || !steps.length) throw new Error('steps 에 단계를 하나 이상 차례대로 담아야 합니다');
@@ -336,6 +370,7 @@ export function writeStorySteps(dir: string, id: string, { steps, contentHash }:
   const picks: { step?: number; screen: string }[] = steps;
   return rewriteStory(dir, id, (raw) => {
     let last = 0;
+    const kept: Kept = new Map();
     const screens = picks.map((pick, i) => {
       if (pick.step === undefined) return pick.screen;
       if (pick.step > raw.screens.length) throw new Error(`스토리 ${id} 에는 ${pick.step} 번째 단계가 없습니다`);
@@ -344,10 +379,12 @@ export function writeStorySteps(dir: string, id: string, { steps, contentHash }:
       if (pick.step === last) throw new Error(`${pick.step} 번째 단계를 두 번 남길 수 없습니다`);
       if (pick.step < last) throw new Error(`남기는 단계는 파일에 있던 차례대로 적어야 하는데, ${pick.step} 번째 단계가 ${last} 번째 단계 뒤에 왔습니다`);
       last = pick.step;
+      const linked = i > 0 && picks[i - 1].step === pick.step - 1;
+      kept.set(pick.step, { step: i + 1, linked });
       const step = raw.screens[pick.step - 1];
-      return i > 0 && picks[i - 1].step === pick.step - 1 ? step : withoutLinkNeeds(step);
+      return linked ? step : withoutLinkNeeds(step);
     });
-    const next = { ...raw, screens };
+    const next = { ...raw, screens, ...(raw.source !== undefined && { source: sourceAfterSteps(raw.source, kept) }) };
     const problem = problemOf(next);
     if (problem) throw new Error(problem);
     return next;

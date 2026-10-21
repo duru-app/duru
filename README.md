@@ -37,6 +37,7 @@ node src/cli.ts reply path/to/project-config.json <comment ID> "<text>" [--serve
 node src/cli.ts wait path/to/project-config.json --server <review page address>   # exits with the comments not yet answered
 node src/cli.ts case path/to/project-config.json <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]   # decide a case kind for one screen or call
 node src/cli.ts undecided path/to/project-config.json [<kind>]   # exits with 3 while a candidate of a case kind is undecided
+node src/cli.ts candidate path/to/project-config.json <comment ID> <candidate.json | -> [--server <review page address>]   # post a story candidate answering a comment on a screen order
 npm test
 ```
 
@@ -698,6 +699,33 @@ its file, and the story or the discarded file keeps it out of the list. When a s
 listed with that step shown as a screen the map does not have. A candidate file that cannot be read is skipped and
 noted with its path and why.
 
+**Candidates from a comment.** A coding agent that answers a comment on a screen order (see **Comments on a screen
+order**) posts the story it found with `candidate <config> <comment ID> <candidate.json>`, or `-` in place of the
+file to read it from standard input. The candidate is a JSON object with `name` and `screens`, each step a screen ID
+or an object with `screen` and any of `needs`, `linkNeeds`, `inputs` and `expects`, as in a story file. A screen the
+agent put in carries `reason`, one line saying why it is there:
+
+```json
+{
+  "name": "로그인해 실험을 연다",
+  "screens": [
+    "/signin#SignIn",
+    { "screen": "/home#Home", "reason": "로그인하면 홈으로만 갑니다 (components/SignIn.js:12)" },
+    { "screen": "/lab#Lab", "expects": ["실험 목록이 보인다"] }
+  ]
+}
+```
+
+It is written into `candidates/` in `storiesDir` with its source, `{ "comment": <comment ID>, "added": [{ "step",
+"reason" }, …], "written": [{ "step", <field>: [ … ] }, …] }`: the steps the agent put in with their reasons and the
+lines the agent wrote, numbered by the steps of the candidate. The lines of each step, the reviewer's and the
+agent's, are in `stepFields`. A story accepted from it keeps that source, and every line goes into its steps. With
+`--server` and the address the review printed, the running review writes the file and every open page lists the
+candidate at once; without it, the file is written directly. The command prints `wrote <file>`, then one line for
+each link between two steps, `step 1 → 2: from <screen> to <screen> — <verdict>`, worded as in the task list. A
+candidate it does not take is not written: the command prints why on standard error and exits with code 1. A map
+built before links carried their conditions must be rebuilt first. A wrong call exits with 2.
+
 ## Review page
 
 `review` serves a local page that reads `map.json` and `tests.json` from `outDir` (run `rebuild` first) and writes
@@ -946,7 +974,12 @@ file changed elsewhere is refused with
 「새로 읽기」 and 「덮어쓰기」 as in the table. While the order is open the pencils wait, and while a table is open
 「순서 고치기」 waits. A comment on a step whose number no longer holds its screen then shows under 「떨어져 나감」. Candidates are
 listed below; a chosen one has 「스토리로 받기」, 「고쳐서 받기」 and 「버리기」 at the right end of its title row; the
-address of a chosen candidate holds its screen order, as `#story?candidate=/home#Home+>+/help#Help`. 「버리기」 opens
+address of a chosen candidate holds its screen order, as `#story?candidate=/home#Home+>+/help#Help`. A candidate
+posted with `candidate` has a purple 「에이전트」 chip beside its name in the list and in the title, and under the title,
+in place of the record file, the first line of the comment that asked for it, who left it and the day; pressing that
+line opens 「전체」 of the conversation at the comment. Each screen the agent put in has the same chip beside its name
+and, below its ID, 「이유」 in bold with the reason. The screens and lines the reviewer chose carry no mark. A story
+accepted from it shows the same comment line under its name. 「버리기」 opens
 the window that 「제외」 opens, naming the candidate and its screen order, and the candidate is discarded only once a
 reason is written there. 「버리기」 in the window or Ctrl+Enter saves it and moves on to the next candidate; 「취소」 or
 Escape closes the window, and a click outside it does not. If
@@ -1039,7 +1072,8 @@ comments on the same order share one conversation whatever gaps they carry. A sc
 status sent with one is refused with the reason, and its comments never enter the task list, so they reach a coding
 agent only as the lines printed while the review runs. The new story stays open with what was typed, and the comment
 shows at the top of 「에이전트와 대화」 while the same order is chosen. Under 「전체」 it shows under the order with its
-replies in place. Once a screen of the order leaves the map, the comment shows under 「떨어져 나감」 of the screens list
+replies in place. The coding agent answers with a reply, and with a story candidate posted by `candidate` when it
+finds a way (see **Candidates from a comment**). Once a screen of the order leaves the map, the comment shows under 「떨어져 나감」 of the screens list
 with the order.
 
 **Comments on a step or a link of a story.** In the story tab each step of the chosen story and each link between

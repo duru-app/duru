@@ -1011,6 +1011,100 @@ test('case with --server refuses what case refuses directly, with the same line 
   }, { marksDir: 'case-marks', caseKinds: ENDED_KINDS });
 });
 
+const runCandidate = (configFile: string, ...args: string[]) => runCli(configFile, 'candidate', ...args);
+const LAB_CANDIDATE = { name: '로그인해 실험을 연다', screens: ['/signin#SignIn', { screen: '/home#Home', reason: '로그인하면 홈으로만 갑니다' }, '/lab#Lab'] };
+const LAB_LINES = /^wrote out\/stories\/candidates\/\d{4}-\d\d-\d\d-[0-9a-f]{8}\.json\nstep 1 → 2: from \/signin#SignIn to \/home#Home — open at components\/SignIn\.js:12\nstep 2 → 3: from \/home#Home to \/lab#Lab — conditioned at components\/Home\.js:19\n$/;
+const orderComment = (configFile: string, screens: string[]) => addMark(path.join(path.dirname(configFile), 'example-marks'), { target: { screens }, note: '사이를 채워 줘', author: 'hit' }).id;
+const candidateInput = (configFile: string, body: unknown) => {
+  const file = path.join(path.dirname(configFile), 'candidate-input.json');
+  fs.writeFileSync(file, typeof body === 'string' ? body : JSON.stringify(body));
+  return file;
+};
+const storedCandidates = (configFile: string) => {
+  const dir = path.join(path.dirname(configFile), 'out/stories/candidates');
+  return fs.existsSync(dir) ? fs.readdirSync(dir).sort().map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))) : [];
+};
+
+test('candidate writes the candidate an agent made for a comment on a screen order into the candidates folder with no review running, read from a file or from stdin, and prints the file and the verdict of each link between two of its steps', async () => {
+  await withReviewFixture(async (configFile) => {
+    const comment = orderComment(configFile, ['/signin#SignIn', '/lab#Lab']);
+    const written = runCandidate(configFile, comment, candidateInput(configFile, LAB_CANDIDATE));
+    assert.equal(written.status, 0, written.stderr);
+    assert.match(written.stdout, LAB_LINES);
+    assert.deepEqual(storedCandidates(configFile).map((c) => [c.name, c.screens, c.source]), [[LAB_CANDIDATE.name, ['/signin#SignIn', '/home#Home', '/lab#Lab'], { comment, added: [{ step: 2, reason: '로그인하면 홈으로만 갑니다' }], written: [] }]]);
+
+    const other = orderComment(configFile, ['/home#Home', '/lab/result#LabResult']);
+    const body = JSON.stringify({ name: '실험 결과를 연다', screens: ['/home#Home', { screen: '/lab#Lab', reason: '결과는 실험 목록에서 엽니다' }, '/lab/result#LabResult'] });
+    const piped = execFileSync(process.execPath, [CLI, 'candidate', configFile, other, '-'], { encoding: 'utf8', input: body });
+    assert.match(piped, /^wrote out\/stories\/candidates\/\S+\.json\nstep 1 → 2: from \/home#Home to \/lab#Lab — conditioned at components\/Home\.js:19\nstep 2 → 3: from \/lab#Lab to \/lab\/result#LabResult — /);
+    assert.equal(storedCandidates(configFile).length, 2);
+  });
+});
+
+test('candidate refuses with the reason and exits with 1 a screen not on the map, a screen twice in a row, a comment that is not there or not on a screen order and a line of the reviewer changed, the same directly and with --server, writing nothing; a file it cannot read exits with 1 and a missing argument with 2', async () => {
+  await withReviewFixture(async (configFile) => {
+    const comment = addMark(path.join(path.dirname(configFile), 'example-marks'), { target: { screens: ['/signin#SignIn', '/lab#Lab'], steps: [{ step: 2, expects: ['실험 목록이 보인다'] }] }, note: '채워 줘', author: 'hit' }).id;
+    const onNode = addMark(path.join(path.dirname(configFile), 'example-marks'), { target: { node: '/lab#Lab' }, note: '실험', author: 'hit' }).id;
+    const kept = ['/signin#SignIn', { screen: '/home#Home', reason: '홈을 거친다' }, { screen: '/lab#Lab', expects: ['실험 목록이 보인다'] }];
+    const refusals: [string, unknown, string][] = [
+      [comment, { name: 'x', screens: ['/signin#SignIn', { screen: '/nowhere', reason: 'x' }, kept[2]] }, 'screens 의 2 번째 단계의 /nowhere 는 맵에 없는 화면입니다\n'],
+      [comment, { name: 'x', screens: [kept[0], kept[1], { screen: '/home#Home', reason: 'x' }, kept[2]] }, 'screens 의 2 번째와 3 번째가 같은 화면입니다\n'],
+      ['no-such-id', { name: 'x', screens: kept }, '코멘트 no-such-id 가 없습니다\n'],
+      [onNode, { name: 'x', screens: kept }, `코멘트 ${onNode} 는 화면 순서에 단 코멘트가 아닙니다\n`],
+      [comment, { name: 'x', screens: [kept[0], kept[1], { screen: '/lab#Lab', expects: ['실험이 보인다'] }] }, 'screens 의 3 번째 단계 /lab#Lab 의 expects 는 검토자가 적은 줄이라 바꿀 수 없습니다\n'],
+      [comment, '[1, 2]', 'the candidate in INPUT must be a JSON object with "name" and "screens"\n'],
+    ];
+    const { child, base, closed } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      for (const [id, body, stderr] of refusals) {
+        const input = candidateInput(configFile, body);
+        const expected = { status: 1, stdout: '', stderr: stderr.replace('INPUT', input) };
+        assert.deepEqual(runCandidate(configFile, id, input), expected, stderr);
+        assert.deepEqual(runCandidate(configFile, id, input, '--server', url), expected, `${stderr} --server`);
+      }
+      assert.deepEqual(storedCandidates(configFile), []);
+      const missing = runCandidate(configFile, comment, path.join(path.dirname(configFile), 'no-such.json'));
+      assert.equal(missing.status, 1);
+      assert.match(missing.stderr, /^could not read the candidate from \S+no-such\.json: /);
+      assert.match(runCandidate(configFile, comment, candidateInput(configFile, '{')).stderr, /^the candidate in \S+ is not JSON: /);
+      assert.equal(runCandidate(configFile, comment).status, 2);
+      assert.equal(runCandidate(configFile, comment, candidateInput(configFile, LAB_CANDIDATE), '--server').status, 2);
+      await endReview(url);
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+test('a candidate sent with --server is written by the running review in the same shape as one written directly, the command prints the same lines, and open event streams hear the stories folder change', async () => {
+  await withReviewFixture(async (configFile) => {
+    const { child, base, closed } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const events = readEvents(url);
+      await within(events.open, 'the event stream');
+      const comment = orderComment(configFile, ['/signin#SignIn', '/lab#Lab']);
+      const sent = runCandidate(configFile, comment, candidateInput(configFile, LAB_CANDIDATE), '--server', `${url}/`);
+      assert.equal(sent.status, 0, sent.stderr);
+      assert.match(sent.stdout, LAB_LINES);
+      const [stored] = storedCandidates(configFile);
+      assert.deepEqual([stored.name, stored.source.comment], [LAB_CANDIDATE.name, comment]);
+      await waitFor(() => /event: stories\n/.test(events.got.text), 'a stories event');
+      const { candidates } = (await (await fetch(`${url}/api/data`)).json()) as { candidates: { list: { name: string }[] } };
+      assert.deepEqual(candidates.list.map((c) => c.name), [LAB_CANDIDATE.name]);
+      await endReview(url);
+      await within(closed, 'exit');
+      const unreachable = runCandidate(configFile, comment, candidateInput(configFile, LAB_CANDIDATE), '--server', url);
+      assert.equal(unreachable.status, 1);
+      assert.match(unreachable.stderr, new RegExp(`^could not reach the review page at ${url}: [^\\n]+\\n$`));
+    } finally {
+      child.kill();
+    }
+  });
+});
+
 function startWait(configFile: string, server: string) {
   const child = spawn(process.execPath, [CLI, 'wait', configFile, '--server', server], { stdio: ['ignore', 'pipe', 'pipe'] });
   const out = { stdout: '', stderr: '' };

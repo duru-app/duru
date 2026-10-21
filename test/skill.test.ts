@@ -146,9 +146,12 @@ test('the agent skill says how to read a need file a story picks in the task lis
   assert.match(SKILL, /`needs\/<file> — the file is missing` or `— the file could not be read`[\s\S]*tell the user which one rather than guess/);
 });
 
-test('the agent skill says what a comment on a screen order carries and that it is answered with the screens found for the gaps picked, keeping what the reviewer typed, without writing a story or a candidate', () => {
+test('the agent skill says what a comment on a screen order carries and that it is answered with a candidate posted by duru candidate for the gaps picked, keeping what the reviewer typed and filling only empty fields, then a reply, or a reply alone when no way joins them, never writing a story or a candidate file', () => {
   assert.match(SKILL, /`\{ "screens": \[ … \] \}`[\s\S]*`gaps`[\s\S]*`steps`[\s\S]*`componentFile`[\s\S]*`links`[\s\S]*`verdict`/);
-  assert.match(SKILL, /Follow the links of the\s+map[\s\S]*with `gaps`, fill only those\s+gaps[\s\S]*Keep what the reviewer typed in `steps`[\s\S]*Do not write a story file or a candidate\s+file/);
+  assert.match(SKILL, /Follow the links of the\s+map[\s\S]*with `gaps`, fill only those\s+gaps[\s\S]*Keep what the reviewer typed in\s+`steps`[\s\S]*fill in only the fields left\s+empty/);
+  assert.match(SKILL, /`duru candidate <config> <the comment's id> - --server <the review page address>`[\s\S]*`reason`[\s\S]*Then answer the comment with `duru reply`/);
+  assert.match(SKILL, /If no way joins two of them, post no candidate and say so in the\s+reply/);
+  assert.match(SKILL, /Never write a story file or a candidate file yourself/);
 });
 
 test('the agent skill says what a comment on a story candidate carries and that it is answered from the record or the test, outside the task list', () => {

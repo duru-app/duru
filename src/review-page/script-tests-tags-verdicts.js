@@ -1,7 +1,7 @@
 const filePlace = (file, line) => `${file}:${line ?? '?'}`;
 const testPlace = (t) => filePlace(t.testFile ?? t.file, t.line);
 const viaRow = (via) => h('div', { class: 'detail' }, '불러오는 파일 ', h('span', { class: 'mono via' }, via.join(', ')));
-const screenHead = (s) => [h('span', { class: 'screen-path' }, s.path), ' ', h('span', { class: 'muted' }, s.component), h('div', { class: 'muted mono' }, s.id)];
+const screenHead = (s, chip = null) => [h('span', { class: 'screen-path' }, s.path), ' ', h('span', { class: 'muted' }, s.component), ...(chip ? [' ', chip] : []), h('div', { class: 'muted mono' }, s.id)];
 
 const isTagWord = (word) => /^@\S/.test(word);
 const bareTitle = (title) => title.split(' › ').map((part) => part.split(/\s+/).filter((w) => w && !isTagWord(w)).join(' ')).filter(Boolean).join(' › ') || title;
