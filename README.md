@@ -1006,10 +1006,12 @@ discarded and leaves the list, its comments show under 「떨어져 나감」 of
 **Comments on a screen order.** While a new story is written, the form under 「에이전트와 대화」 carries the steps
 chosen so far as the tag 「화면 순서 …」, so the reviewer can ask the coding agent to fill in the way between them, often
 after choosing only its ends. Pressing 「링크 없음」 between two steps adds that gap to the tag as 「2-3 링크 없음」, to ask for
-that gap only, and pressing it again takes it out; a gap moves with its two steps and leaves the tag when one of them
-is taken out. 「남기기」 saves the comment with `"target": { "screens": [ … ] }`, the screen IDs in order, with `"gaps":
-[[2, 3]]` for the gaps pressed and `"steps": [{ "step": 3, "expects": [ … ] }]` for the conditions, values and
-expected results typed at each step so far, under the names a story file uses. It is written to
+that gap only, and pressing it again takes it out; a gap moves with its two steps, also when a rebuilt map drops a
+step before them, and leaves the tag when one of them is taken out, when a step is put in between them, or when the
+link between them is checked again and is no longer 「링크 없음」. 「남기기」 saves the comment with
+`"target": { "screens": [ … ] }`, the screen IDs in order, with `"gaps": [[2, 3]]` for the gaps pressed and
+`"steps": [{ "step": 3, "expects": [ … ] }]` for the conditions, values and expected results typed at each step so
+far, under the names a story file uses. It is written to
 `<marksDir>/stories/orders/<key>/`, the key being the IDs joined with ` > ` and shortened as for a candidate, so
 comments on the same order share one conversation whatever gaps they carry. A screen order takes comments only: a
 status sent with one is refused with the reason, and its comments never enter the task list, so they reach a coding

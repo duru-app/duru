@@ -54,6 +54,7 @@ function renderCompose(focus, { drawing = false, pressed = null } = {}) {
 async function checkCompose(focus, pressed = null) {
   const c = state.compose;
   const turn = ++c.turn;
+  c.gaps = c.gaps.filter(([a, b]) => gapAt(c, a, b) !== null);
   renderCompose(focus, { drawing: !c.steps.length });
   if (!c.steps.length) return;
   let checked = null;
@@ -67,6 +68,7 @@ async function checkCompose(focus, pressed = null) {
   }
   if (state.compose !== c || turn !== c.turn) return;
   Object.assign(c, { checked, error });
+  if (checked) c.gaps = c.gaps.filter(([a]) => checked.links[c.steps.indexOf(a)]?.verdict === 'broken');
   renderCompose(focusedStep(), { drawing: true, pressed });
 }
 
@@ -98,7 +100,6 @@ function addComposeScreen(id, fromBox = false) {
   const box = fromBox ? document.querySelector(`#flow .box.screen[data-key="${CSS.escape(id)}"]`)?.getBoundingClientRect() : null;
   changeCompose((d) => {
     d.steps.splice(at, 0, newStep(id));
-    d.gaps = d.gaps.flatMap((k) => (at < k ? [k + 1] : at === k ? [] : [k]));
     if (d.at !== null) d.at += 1;
     if (d.selected !== null && d.selected >= at) d.selected += 1;
   }, null, box ? { key: id, top: box.top, left: box.left } : null);
@@ -108,7 +109,6 @@ function removeComposeStep(i) {
   changeCompose((d) => {
     if (d.editing?.rows === d.steps[i].rows) d.editing = null;
     d.steps.splice(i, 1);
-    d.gaps = d.gaps.flatMap((k) => (i < k - 1 ? [k - 1] : i <= k ? [] : [k]));
     Object.assign(d, { at: null, selected: null });
   }, ['.story-path']);
 }
@@ -236,12 +236,18 @@ function composeForm() {
   ];
 }
 
+function gapAt(c, a, b) {
+  const k = c.steps.indexOf(a) + 1;
+  return k > 0 && c.steps[k] === b ? k : null;
+}
+
 function gapPick(c, k) {
-  const on = c.gaps.includes(k);
+  const [a, b] = [c.steps[k - 1], c.steps[k]];
+  const on = c.gaps.some((g) => g[0] === a && g[1] === b);
   return {
     on,
     toggle: () => {
-      c.gaps = on ? c.gaps.filter((g) => g !== k) : [...c.gaps, k];
+      c.gaps = on ? c.gaps.filter((g) => g[0] !== a || g[1] !== b) : [...c.gaps, [a, b]];
       renderCompose([`.link[data-hop="${k - 1}"] button.gap-pick`]);
     },
   };
@@ -252,7 +258,7 @@ const writtenFields = (rows) => Object.fromEntries(Object.entries(rowsWritten(ro
 function composeTarget() {
   const c = state.compose;
   if (!c?.steps.length) return null;
-  const gaps = c.gaps.filter((k) => k < c.steps.length).sort((a, b) => a - b).map((k) => [k, k + 1]);
+  const gaps = c.gaps.map(([a]) => c.steps.indexOf(a) + 1).sort((a, b) => a - b).map((k) => [k, k + 1]);
   const steps = c.steps.flatMap((step, i) => (rowsWritten(step.rows) ? [{ step: i + 1, ...writtenFields(step.rows) }] : []));
   return { screens: composeScreens(c), ...(gaps.length && { gaps }), ...(steps.length && { steps }) };
 }

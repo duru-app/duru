@@ -4,12 +4,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
 import { addMark, addReply, loadMarks } from '../src/marks.ts';
-import { withRebuiltFixture, withServer, browserMissing, withPage, screenBox, boxCount, lineSteps, pathMarks, pillMarks, pathEdges, untilSet, placeOf, postJson, CANDIDATES, storiesTab, holdRequests, WALK, WALK_ON_MAP, withPathStories, textOutside, storyStack, rightPane, BAD_REQUEST } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, browserMissing, withPage, screenBox, boxCount, lineSteps, pathMarks, pillMarks, pathEdges, untilSet, placeOf, postJson, CANDIDATES, storiesTab, holdRequests, WALK, WALK_ON_MAP, withPathStories, textOutside, storyStack, rightPane, BAD_REQUEST, rebuild } from './review-helpers.ts';
 import type { Story, PageData } from './review-helpers.ts';
 
 declare const state: any;
 declare function canvas(roots: object[], options: object): { el: HTMLElement; measureWidths(): void; fit(width: number): void; measureHeights(): void; place(): void };
 declare function flowInnerWidth(flow: HTMLElement): number;
+declare function load(): Promise<void>;
+declare function render(): void;
 
 const HELP_PATH = ['/signin#SignIn', '/home#Home', '/help#Help'];
 
@@ -336,7 +338,7 @@ test('in a browser, while a new story is written the conversation form under 「
   );
 });
 
-test('in a browser, pressing 「링크 없음」 between two steps of a new story adds that gap to the tag 「화면 순서」 and pressing it again takes it out, and a picked gap moves with its two steps when a step before them is taken out', { skip: browserMissing }, async () => {
+test('in a browser, pressing 「링크 없음」 between two steps of a new story adds that gap to the tag 「화면 순서」 and pressing it again takes it out, and a picked gap moves with its two steps when a step before them is taken out or put in, and leaves when a step is put in between them', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -359,6 +361,50 @@ test('in a browser, pressing 「링크 없음」 between two steps of a new stor
         await untilJudged(p, 1);
         assert.deepEqual(await gapButtons(p), [['0', '링크 없음', 'true']]);
         assert.deepEqual(await talkTags(p), ['화면 순서 /home → /help · 1-2 링크 없음']);
+
+        await pressStep(p, '#center', 0);
+        await p.click('#center button.insert-before');
+        await pickScreen(p, '/signin');
+        await untilJudged(p, 2);
+        await p.click('#center .insert-mark button.insert-cancel');
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home → /help · 2-3 링크 없음'], 'a step put in before the gap moves it along');
+        await pressStep(p, '#center', 2);
+        await p.click('#center button.insert-before');
+        await pickScreen(p, '/lab');
+        await untilJudged(p, 3);
+        await p.click('#center .insert-mark button.insert-cancel');
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home → /lab → /help'], 'a step put in between the two steps of the gap drops it');
+      }),
+    ),
+  );
+});
+
+test('in a browser, a gap picked on a new story follows its two steps when the map drops a step before them, and leaves the tag once their link is no longer 「링크 없음」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config, copy) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const reload = (file: string, from: RegExp, to: string) => {
+          const target = path.join(copy, 'client/src', file);
+          fs.writeFileSync(target, fs.readFileSync(target, 'utf8').replace(from, to));
+          rebuild(copy);
+          return p.evaluate(async () => { await load(); render(); });
+        };
+        await startNewStory(p);
+        for (const routePath of ['/signin', '/home', '/help']) await pickScreen(p, routePath);
+        await untilJudged(p, 2);
+        await p.click('#center .link[data-hop="1"] button.gap-pick');
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home → /help · 2-3 링크 없음']);
+
+        await reload('Routes.js', /^.*ROUTE_PATH\.SIGN_IN.*\n/m, '');
+        await untilJudged(p, 1);
+        assert.deepEqual(await composeSteps(p), ['/home', '/help']);
+        assert.deepEqual(await talkTags(p), ['화면 순서 /home → /help · 1-2 링크 없음']);
+
+        await reload('components/Home.js', /^(\s*)<DocumentTable \/>\n/m, '$&$1<Link to={Option.ROUTE_PATH.HELP}>Help</Link>\n');
+        await pickScreen(p, '/lab');
+        await untilJudged(p, 2);
+        assert.deepEqual(await composeLinks(p), ['이어짐', '링크 없음']);
+        assert.deepEqual(await talkTags(p), ['화면 순서 /home → /help → /lab']);
       }),
     ),
   );
