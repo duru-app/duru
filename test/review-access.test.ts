@@ -133,38 +133,38 @@ test('in a browser, with case kinds in the config every screen and every call sh
         await p.click('#screen-list li:has-text("/signin")');
         await openScreenInfo(p);
         assert.equal(await section.locator('h2').textContent(), '경우별 테스트');
-        assert.equal(await section.locator('li').count(), 0);
+        assert.equal(await section.locator('li:not(.case-undecided-row)').count(), 0);
         assert.deepEqual(await section.locator('.case-kinds button').allTextContents(), [CASE_KINDS.boundary, CASE_KINDS.legacy]);
         assert.deepEqual(await section.locator('.case-kinds button').evaluateAll((els) => els.map((e) => [e.getAttribute('title'), e.getAttribute('aria-pressed')])), [['@case:boundary', 'false'], ['@case:legacy', 'false']]);
 
         await kindButton(CASE_KINDS.boundary).click();
-        await p.waitForSelector('#center .screen-info > .cases li');
+        await p.waitForSelector('#center .screen-info > .cases li:not(.case-undecided-row)');
         assert.deepEqual(await section.locator('li .case').allTextContents(), [CASE_KINDS.boundary]);
-        assert.equal(await section.locator('li').getAttribute('title'), '@case:boundary');
-        assert.deepEqual(await counts(section.locator('li')), ['UI/E2E ✓1']);
+        assert.equal(await section.locator('li:not(.case-undecided-row)').getAttribute('title'), '@case:boundary');
+        assert.deepEqual(await counts(section.locator('li:not(.case-undecided-row)')), ['UI/E2E ✓1']);
         assert.deepEqual(await section.locator('.case-head .chip').allTextContents(), ['reviewer']);
         assert.equal(await kindButton(CASE_KINDS.boundary).getAttribute('aria-pressed'), 'true');
         await kindButton(CASE_KINDS.legacy).click();
-        await p.waitForSelector('#center .screen-info > .cases li:nth-child(2)');
-        assert.deepEqual(await counts(section.locator('li')), ['UI/E2E ✓1', '테스트 없음']);
+        await p.waitForSelector('#center .screen-info > .cases li:not(.case-undecided-row):nth-child(2)');
+        assert.deepEqual(await counts(section.locator('li:not(.case-undecided-row)')), ['UI/E2E ✓1', '테스트 없음']);
 
         await kindButton(CASE_KINDS.boundary).click();
-        await p.waitForFunction(() => document.querySelectorAll('#center .screen-info > .cases li').length === 1);
+        await p.waitForFunction(() => document.querySelectorAll('#center .screen-info > .cases li:not(.case-undecided-row)').length === 1);
         assert.deepEqual(await section.locator('li .case').allTextContents(), [CASE_KINDS.legacy]);
 
         await p.click('#screen-list li:has-text("/admin/member")');
         await kindButton(CASE_KINDS.legacy).click();
-        await p.waitForFunction(() => document.querySelectorAll('#center .screen-info > .cases li').length === 3);
+        await p.waitForFunction(() => document.querySelectorAll('#center .screen-info > .cases li:not(.case-undecided-row)').length === 3);
         assert.deepEqual(await section.locator('li .case').allTextContents(), ['역할 ADMIN — 열림', '여는 역할이 아닌 역할 — 막힘', CASE_KINDS.legacy]);
 
         await p.click('#screen-list li:has-text("/home")');
         await p.locator('table.calls td.cell').first().click();
         const callSection = p.locator('#center .call-info > .cases');
-        assert.deepEqual(await callSection.locator('li').count(), 0);
+        assert.deepEqual(await callSection.locator('li:not(.case-undecided-row)').count(), 0);
         await callSection.locator('.case-kinds button', { hasText: CASE_KINDS.boundary }).click();
-        await p.waitForSelector('#center .call-info > .cases li');
+        await p.waitForSelector('#center .call-info > .cases li:not(.case-undecided-row)');
         assert.deepEqual(await callSection.locator('li .case').allTextContents(), [CASE_KINDS.boundary]);
-        assert.deepEqual(await counts(callSection.locator('li')), ['테스트 없음']);
+        assert.deepEqual(await counts(callSection.locator('li:not(.case-undecided-row)')), ['테스트 없음']);
         assert.match((await p.textContent('#right .mark-form .tags .tag-label'))!, /^호출 전체$/);
 
         assert.deepEqual(picks(), [
@@ -380,7 +380,7 @@ test('in a browser, a second press on a case kind button while the first is savi
           b.click();
           b.click();
         });
-        await p.waitForSelector('#center .screen-info > .cases li');
+        await p.waitForSelector('#center .screen-info > .cases li:not(.case-undecided-row)');
         await p.waitForSelector('#center .screen-info > .cases .case-kinds button:not([disabled])');
         assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target, m.status]), [[{ node: '/signin#SignIn', case: 'boundary' }, 'needed']]);
       }, { view: 'list' }),
@@ -434,7 +434,7 @@ test('in a browser, a screen picked in the flow shows the same case kind buttons
         const section = p.locator('#center .screen-info > .cases');
         assert.deepEqual(await section.locator('.case-kinds button').allTextContents(), [CASE_KINDS.boundary, CASE_KINDS.legacy]);
         await section.locator('.case-kinds button', { hasText: CASE_KINDS.boundary }).click();
-        await p.waitForSelector('#center .screen-info > .cases li');
+        await p.waitForSelector('#center .screen-info > .cases li:not(.case-undecided-row)');
         assert.deepEqual(await section.locator('li .case').allTextContents(), [CASE_KINDS.boundary]);
         assert.equal((await section.locator('li .step-tests').innerText()).replace(/\s+/g, ' ').trim(), 'UI/E2E ✓1');
         assert.deepEqual(await pickedBoxes(p), ['/signin#SignIn']);
@@ -667,4 +667,51 @@ test('in a browser, a 「대상 아님」 with a reason on a request no rule pic
       });
     });
   });
+});
+
+test('in a browser, 「경우별 테스트」 has a line for each kind nobody decided on the screen or call, with ✓ saving 「대상」 at once and ✕ asking the reason as 「대상 아님…」, while the kind buttons stay as they were', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: RULED }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const exportCall = 'POST:/api/v1/report/export';
+        const lines = (section: Locator) => section.locator('li.case-undecided-row').evaluateAll((els) => els.map((e) => [e.getAttribute('data-kind'), e.textContent]));
+        const tips = (section: Locator) => section.locator('li.case-undecided-row >> nth=0').locator('button').evaluateAll((els) => els.map((e) => [e.getAttribute('title'), e.getAttribute('aria-label')]));
+        await p.waitForSelector('#screen-list li');
+        await openCall(p, '/admin/report', exportCall);
+        const call = callCases(p);
+        assert.deepEqual(await lines(call), [
+          ['boundary', `${CASE_KINDS.boundary}미판정아직 아무도 정하지 않았습니다✓✕`],
+          ['ended', `${RULED.ended.text}미판정아직 아무도 정하지 않았습니다✓✕`],
+        ]);
+        assert.deepEqual(await tips(call), [
+          ['대상 — 이 요청에서 이 경우를 시험합니다', '대상 — 이 요청에서 이 경우를 시험합니다'],
+          ['대상 아님… — 이유를 적고 이 요청에서는 시험하지 않습니다', '대상 아님… — 이유를 적고 이 요청에서는 시험하지 않습니다'],
+        ]);
+        assert.deepEqual(await kindButtons(call), [[CASE_KINDS.boundary, 'false'], [RULED.ended.text, 'false'], [RULED.legacy.text, 'false']]);
+
+        await call.locator('li.case-undecided-row[data-kind="boundary"] button.yes').click();
+        await p.waitForFunction(() => document.querySelectorAll('#center .call-info > .cases li.case-undecided-row').length === 1);
+        assert.deepEqual(await call.locator('li .case').allTextContents(), [CASE_KINDS.boundary]);
+        assert.deepEqual((await chips(call)).map(([t]) => t), ['reviewer']);
+
+        const no = call.locator('li.case-undecided-row[data-kind="ended"] button.no');
+        await no.click();
+        await p.locator(asked).waitFor();
+        assert.equal(await p.textContent(`${asked} h2`), '이 요청에서는 이 경우를 시험하지 않습니다');
+        assert.equal(await p.textContent(`${asked} button.discard`), '대상 아님');
+        await p.click(`${asked} button.cancel`);
+        assert.equal(await p.evaluate(() => document.activeElement!.matches('#center .call-info > .cases li.case-undecided-row[data-kind="ended"] button.no')), true);
+        await no.click();
+        await p.fill(why, '보고서는 문서 상태를 보지 않는다');
+        await p.click(`${asked} button.discard`);
+        await call.locator('li.case-left-out').waitFor();
+        assert.equal(await call.locator('li.case-undecided-row').count(), 0);
+        assert.deepEqual((await chips(call)).map(([t]) => t), ['reviewer', '대상 아님 · reviewer']);
+        assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.target!.case, m.status, m.note]).sort(), [['boundary', 'needed', ''], ['ended', 'not-needed', '보고서는 문서 상태를 보지 않는다']]);
+
+        await openScreenInfo(p);
+        const screen = p.locator('#center .screen-info > .cases');
+        assert.deepEqual((await lines(screen)).map(([kind]) => kind), ['boundary']);
+        assert.deepEqual((await tips(screen)).map(([title]) => title), ['대상 — 이 화면에서 이 경우를 시험합니다', '대상 아님… — 이유를 적고 이 화면에서는 시험하지 않습니다']);
+      })));
 });

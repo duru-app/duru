@@ -47,7 +47,7 @@ function render() {
   recordPlace();
 }
 
-const LIST_TABS = ['screens', 'untagged'];
+const LIST_TABS = ['screens', 'untagged', 'cases'];
 
 function placeHash({ step = true, talk = true } = {}) {
   const p = new URLSearchParams();
@@ -61,6 +61,9 @@ function placeHash({ step = true, talk = true } = {}) {
     if (step && !state.composing && state.need === null && state.storyStep?.of === storyPlaceKey(state.candidate, state.story)) p.set('step', String(state.storyStep.step + 1));
   } else if (state.side === 'untagged') {
     if (state.untaggedTest !== null) p.set('test', state.untaggedTest);
+  } else if (state.side === 'cases') {
+    if (state.caseKind !== null) p.set('kind', state.caseKind);
+    if (state.caseNode !== null) p.set('node', state.caseNode);
   } else if (state.selected !== null) {
     p.set('screen', state.selected);
   }
@@ -142,6 +145,15 @@ function applyPlace() {
     else applyTalk(p);
     const screen = p.get('screen');
     const test = p.get('test');
+    if (head === 'cases') {
+      const kind = p.get('kind') ?? caseKindList()[0];
+      if (!Object.hasOwn(state.data.caseKinds, kind)) state.side = 'screens';
+      else {
+        setCaseKind(kind);
+        const node = p.get('node');
+        if (node !== state.caseNode) Object.assign(state, { caseNode: node !== null && kindTargetsOf(kind).nodes[node] ? node : null, caseDraft: null });
+      }
+    }
     if (head === 'screens' && screen !== state.selected && screenOf(screen)) go = () => select(screen);
     else if (head === 'untagged' && test !== state.untaggedTest && untaggedTests().some((t) => untaggedKey(t) === test)) go = () => selectUntaggedTest(test);
   }
@@ -166,7 +178,7 @@ window.addEventListener('popstate', () => {
 const unsaved = (target, d) => !!d && (d.note.trim() !== '' || (d.status !== null && d.status !== (markOf(target)?.current?.status ?? null)));
 
 function hasUnsavedMark() {
-  return unsaved(state.target, state.draft) || unsaved({ story: state.story }, state.storyDraft) || unsaved({ candidate: state.candidate }, state.candidateTalk);
+  return unsaved(state.target, state.draft) || unsaved({ story: state.story }, state.storyDraft) || unsaved({ candidate: state.candidate }, state.candidateTalk) || unsaved({ node: state.caseNode }, state.caseDraft);
 }
 
 function showEnded(message) {
@@ -179,6 +191,7 @@ function setEnding(ending) {
   state.ending = ending;
   syncHeaderLocks();
   for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('#center .bulk-bar button'))) button.disabled = bulkButtonOff(state.bulk?.picked.size);
+  syncCaseBar();
 }
 
 async function endReview() {
@@ -353,12 +366,12 @@ const ownNotHeard = new Set();
 
 async function trackOwnSave(save) {
   ownSaves++;
-  let id = null;
+  let saved = null;
   try {
-    id = await save();
+    saved = await save();
   } finally {
     ownSaves--;
-    if (id !== null && !heardDuringSave.delete(id)) ownNotHeard.add(id);
+    for (const id of [saved ?? []].flat()) if (!heardDuringSave.delete(id)) ownNotHeard.add(id);
     if (!ownSaves && heardDuringSave.size) {
       heardDuringSave.clear();
       reloadLive();

@@ -10,7 +10,7 @@ import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { screenRoutes } from './address-match.ts';
 import { acceptCandidate, candidatePlace, discardCandidate, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
-import { caseTargets, commandCaseRule, exclusionOf, pickedKinds } from './case-targets.ts';
+import { casesWithoutTests, caseTargets, commandCaseRule, exclusionOf, pickedKinds } from './case-targets.ts';
 import { isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { buildFlow } from './flow.ts';
@@ -42,6 +42,7 @@ export const PAGE_PARTS = [
   'script-story-fields.js',
   'script-story-steps.js',
   'script-untagged-center.js',
+  'script-case-kinds.js',
   'script-story-center.js',
   'script-new-story.js',
   'script-walk.js',
@@ -187,6 +188,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
     marks,
     caseKinds,
     caseTargets: targets,
+    caseGaps: Object.fromEntries(Object.entries(caseKinds).map(([kind, caseKind]) => [kind, casesWithoutTests(kind, caseKind, targets[kind], tests.nodes).map(({ node, tags }) => ({ node, tags }))])),
     stories,
     needs: checkNeeds(config.storiesDir, stories.list),
     candidates,
