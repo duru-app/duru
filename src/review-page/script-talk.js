@@ -27,6 +27,14 @@ const TALK_FILTERS = [
   { key: 'changes', label: '변경 기록' },
 ];
 const PICK_STATUS = { needed: '켬', 'not-needed': '끔' };
+
+function pickWord(r, history) {
+  if (r.of === undefined) return { text: PICK_STATUS[r.status] ?? r.status, title: null };
+  const proposal = history.find((x) => x.id === r.of);
+  return proposal && r.status === 'not-needed' && r.note === proposal.note
+    ? { text: '받아들임', title: '에이전트의 「대상 아님」을 받아들였습니다' }
+    : { text: '되돌림', title: '에이전트의 「대상 아님」을 되돌렸습니다' };
+}
 const talkMarks = () => state.data.marks.attached.filter((m) => !isPick(m));
 
 const noTarget = (t) => t.node === undefined && t.story === undefined && t.candidate === undefined && t.screens === undefined;
@@ -96,7 +104,7 @@ function changeList() {
     },
   },
     h('span', { class: 'meta' },
-      h('span', { class: `chip ${r.status}` }, PICK_STATUS[r.status] ?? r.status),
+      h('span', { class: `chip ${r.status}`, title: pickWord(r, m.history).title }, pickWord(r, m.history).text),
       tagChip(tagLabel(m.target)),
       h('span', {}, `${r.author} · ${fmtDate(r.date)}`)),
     h('span', { class: 'first mono' }, groupTitle(m.target)),

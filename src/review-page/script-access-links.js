@@ -209,11 +209,28 @@ function caseSection(node) {
       decideButton(kind, true), decideButton(kind, false),
       held ? h('div', { class: 'case-held-lines' }, heldText(held)) : null);
   };
-  const undecidedHere = (kind) => kindTargetsOf(kind)?.nodes[node.id]?.state === 'undecided';
+  const reviewOf = (kind) => kindTargetsOf(kind)?.nodes[node.id]?.review ?? null;
+  const answerButton = (kind, accept) => {
+    const tip = accept ? `받아들이기 — 에이전트의 이유로 이 ${word}을 「대상 아님」으로 둡니다` : `되돌리기 — 에이전트의 「대상 아님」을 지우고 그 전의 판정으로 돌아갑니다`;
+    return h('button', {
+      type: 'button',
+      class: `decide ${accept ? 'accept' : 'revert'}`,
+      title: tip,
+      'aria-label': tip,
+      disabled: busy,
+      onclick: () => answerCase(node.id, kind, accept ? 'accept' : 'revert'),
+    }, accept ? '✓' : '✕');
+  };
+  const reviewRow = (kind, text) => h('li', { class: 'case-review-row', 'data-kind': kind },
+    h('span', { class: 'kind-text' }, text), h('span', { class: 'chip review', title: '리뷰어가 받아들이기 전까지는 그 전의 판정을 따릅니다' }, '검토 중'),
+    answerButton(kind, true), answerButton(kind, false),
+    h('div', { class: 'case-held-lines' }, proposalLines(reviewOf(kind))));
+  const undecidedHere = (kind) => kindTargetsOf(kind)?.nodes[node.id]?.state === 'undecided' && !reviewOf(kind);
   const picked = new Map(node.cases.filter((c) => c.kind === 'case').map((c) => [c.tag.slice('case:'.length), c]));
   const rows = [
     ...node.cases.filter((c) => c.kind !== 'case').map(caseRow),
     ...kinds.map(([kind, { text }]) => (picked.has(kind) ? caseRow(picked.get(kind)) : takenOut(by[kind]) && !undecidedHere(kind) ? leftOutRow(kind, text) : null)).filter(Boolean),
+    ...kinds.filter(([kind]) => reviewOf(kind)).map(([kind, { text }]) => reviewRow(kind, text)),
     ...kinds.filter(([kind]) => undecidedHere(kind)).map(([kind, { text }]) => undecidedRow(kind, text)),
   ];
   return h('div', { class: 'cases' },
@@ -250,14 +267,30 @@ async function postPick(target, status, note = undefined) {
   return (await res.json()).id;
 }
 
+async function postAnswer(kind, node, of, answer) {
+  const res = await fetch('/api/cases/answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, node, of, answer }) });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()).id;
+}
+
+async function answerCase(node, kind, answer) {
+  if (state.caseSaving || state.bulkBusy) return;
+  const of = kindTargetsOf(kind).nodes[node].review.id;
+  return trackOwnSave(() => saveCase({ node, case: kind }, () => postAnswer(kind, node, of, answer)));
+}
+
 async function savePick(target, status) {
+  return saveCase(target, () => postPick(target, status));
+}
+
+async function saveCase(target, post) {
   state.error = null;
   state.caseError = null;
   state.caseSaving = true;
   renderCenter();
   let id;
   try {
-    id = await postPick(target, status);
+    id = await post();
   } catch (err) {
     state.caseSaving = false;
     state.caseError = { node: target.node, message: `「${targetName(target)}」 코멘트를 저장하지 못했습니다: ${err.message}` };

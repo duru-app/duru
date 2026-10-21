@@ -185,14 +185,16 @@
   .case-kinds button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
   .case-kinds button:disabled { opacity: .5; cursor: default; }
   .chip.undecided { color: var(--more); border-style: dashed; }
-  .cases .case-undecided-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13px; }
-  .cases .case-undecided-row button.decide { width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font: inherit; font-weight: 700; cursor: pointer; }
-  .cases .case-undecided-row button.yes { color: var(--pass); }
-  .cases .case-undecided-row button.no { color: var(--fail); }
-  .cases .case-undecided-row button.decide:disabled { opacity: .5; cursor: default; }
-  .cases .case-undecided-row .kind-text { flex-basis: 100%; }
-  .cases .case-undecided-row .chip.undecided { margin-left: 14px; }
-  .cases .case-undecided-row .case-held-lines { flex-basis: 100%; padding-left: 14px; }
+  .cases :is(.case-undecided-row, .case-review-row) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13px; }
+  .cases :is(.case-undecided-row, .case-review-row) button.decide { width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font: inherit; font-weight: 700; cursor: pointer; }
+  .cases :is(.case-undecided-row, .case-review-row) :is(button.yes, button.accept) { color: var(--pass); }
+  .cases :is(.case-undecided-row, .case-review-row) :is(button.no, button.revert) { color: var(--fail); }
+  .cases :is(.case-undecided-row, .case-review-row) button.decide:disabled { opacity: .5; cursor: default; }
+  .cases :is(.case-undecided-row, .case-review-row) .kind-text { flex-basis: 100%; }
+  .cases :is(.case-undecided-row .chip.undecided, .case-review-row .chip.review) { margin-left: 14px; }
+  .cases :is(.case-undecided-row, .case-review-row) .case-held-lines { flex-basis: 100%; padding-left: 14px; }
+  .chip.review { color: var(--accent); border-style: dashed; }
+  .case-proposal { margin: 0; font-size: 12px; color: var(--muted); }
   #case-kind-list li { display: block; }
   #case-kind-list .kind-counts { display: block; font-size: 12px; margin-top: 2px; }
   .case-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
@@ -209,11 +211,13 @@
   .case-filter button, button.person-only { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
   button.person-only { margin: 2px 0 6px; }
   button.person-only[aria-pressed=true] { border-color: var(--accent); background: var(--selected); font-weight: 600; }
-  .case-undecided > h2 { margin-top: 14px; }
-  .case-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; }
-  .case-bar button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
-  .case-bar button:disabled { opacity: .5; cursor: default; }
-  .case-bar .error { flex-basis: 100%; margin: 0; white-space: pre-line; }
+  :is(.case-undecided, .case-review) > h2 { margin-top: 14px; }
+  .review-bar button.accept { color: var(--pass); font-weight: 700; }
+  .review-bar button.revert { color: var(--fail); font-weight: 700; }
+  :is(.case-bar, .review-bar) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; }
+  :is(.case-bar, .review-bar) button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  :is(.case-bar, .review-bar) button:disabled { opacity: .5; cursor: default; }
+  :is(.case-bar, .review-bar) .error { flex-basis: 100%; margin: 0; white-space: pre-line; }
   .case-group-head { margin: 10px 0 4px; font-weight: 600; }
   .case-group-head .hint { margin-left: 6px; font-weight: normal; font-size: 12px; }
   li.case-row { display: flex; gap: 8px; align-items: flex-start; padding: 5px 4px; border-bottom: 1px solid var(--line); border-radius: 4px; cursor: pointer; }

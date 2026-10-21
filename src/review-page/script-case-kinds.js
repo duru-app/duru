@@ -13,6 +13,7 @@ const caseGroupOf = (id) => {
 const caseOrder = (a, b) => CASE_GROUPS.findIndex((g) => g.key === caseGroupOf(a)) - CASE_GROUPS.findIndex((g) => g.key === caseGroupOf(b)) || compareText(a, b);
 const gapCount = (kind) => (state.data.caseGaps[kind] ?? []).reduce((n, g) => n + g.tags.length, 0);
 const undecidedTotal = () => caseKindList().reduce((n, kind) => n + kindTargetsOf(kind).undecided.length, 0);
+const reviewTotal = () => caseKindList().reduce((n, kind) => n + kindTargetsOf(kind).review.length, 0);
 
 function kindCounts(kind) {
   const counts = { rule: 0, person: 0, agent: 0, out: 0 };
@@ -21,7 +22,7 @@ function kindCounts(kind) {
     else if (t.state === 'needed') counts[t.mark.via === undefined ? 'person' : 'agent']++;
     else if (t.state === 'not-needed') counts.out++;
   }
-  return { ...counts, picked: counts.rule + counts.person + counts.agent, undecided: kindTargetsOf(kind).undecided.length, gaps: gapCount(kind) };
+  return { ...counts, picked: counts.rule + counts.person + counts.agent, undecided: kindTargetsOf(kind).undecided.length, review: kindTargetsOf(kind).review.length, gaps: gapCount(kind) };
 }
 
 function heldByPerson(kind, id) {
@@ -30,6 +31,7 @@ function heldByPerson(kind, id) {
 }
 
 function heldText(mark) {
+  if (mark.of !== undefined) return h('p', { class: 'case-held' }, `${mark.author} 가 ${fmtDate(mark.date)} 에 에이전트 판정을 되돌렸습니다`);
   if (!mark.rule) return h('p', { class: 'case-held' }, `${mark.author} 가 ${fmtDate(mark.date)} 에 이유 없이 뺐습니다`);
   return [
     h('p', { class: 'case-held' }, `${mark.author} 가 ${fmtDate(mark.date)} 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다`),
@@ -44,8 +46,9 @@ function heldLine(kind, id) {
 
 function setCaseKind(kind) {
   if (kind === state.caseKind) return;
-  Object.assign(state, { caseKind: kind, caseNode: null, caseDraft: null, caseFilter: null, caseBulkError: null });
+  Object.assign(state, { caseKind: kind, caseNode: null, caseDraft: null, caseFilter: null, caseBulkError: null, reviewError: null });
   state.casePicked.clear();
+  state.reviewPicked.clear();
 }
 
 function dropLostCase() {
@@ -55,6 +58,8 @@ function dropLostCase() {
   if (state.caseNode !== null && !kindTargetsOf(state.caseKind)?.nodes[state.caseNode]) Object.assign(state, { caseNode: null, caseDraft: null });
   const undecided = new Set(state.caseKind === null ? [] : kindTargetsOf(state.caseKind).undecided);
   for (const id of state.casePicked) if (!undecided.has(id)) state.casePicked.delete(id);
+  const review = new Set(state.caseKind === null ? [] : kindTargetsOf(state.caseKind).review);
+  for (const id of state.reviewPicked) if (!review.has(id)) state.reviewPicked.delete(id);
   if (typeof state.caseFilter === 'number' && !state.data.caseKinds[state.caseKind]?.picks[state.caseFilter]) state.caseFilter = null;
   if (state.caseFilter === 'person' && ![...undecided].some((id) => heldByPerson(state.caseKind, id))) state.caseFilter = null;
 }
@@ -78,7 +83,7 @@ function caseKindItems() {
     return h('li', { class: `${kind === state.caseKind ? 'selected' : ''}${state.bulkBusy ? ' locked' : ''}`, 'data-kind': kind, onclick: () => selectCaseKind(kind) },
       h('span', { class: 'name' },
         h('span', {}, state.data.caseKinds[kind].text), ' ', h('span', { class: 'muted mono' }, `case:${kind}`),
-        h('span', { class: 'kind-counts muted' }, `대상 ${counts.picked} · 미판정 ${counts.undecided} · 빈칸 ${counts.gaps}`)));
+        h('span', { class: 'kind-counts muted' }, `대상 ${counts.picked} · ${counts.review ? `검토 중 ${counts.review} · ` : ''}미판정 ${counts.undecided} · 빈칸 ${counts.gaps}`)));
   });
 }
 
@@ -163,6 +168,7 @@ function summaryBoxes(counts) {
   return h('div', { class: 'case-counts' },
     box(counts.picked, '대상', `규칙 ${counts.rule} · 사람 ${counts.person} · 에이전트 ${counts.agent}`, '규칙이 고른 것에 사람이나 에이전트가 「대상」을 다시 적으면 그쪽으로 셉니다'),
     box(counts.out, '대상 아님'),
+    counts.review ? box(counts.review, '검토 중', null, '에이전트가 「대상 아님」으로 정해 리뷰어를 기다리는 후보입니다. 받아들이기 전까지는 그 전의 판정을 따릅니다') : null,
     box(counts.undecided, '미판정'),
     box(counts.gaps, '시험 없는 값 칸', null, '대상인 화면과 요청에서 아직 어느 테스트도 달지 않은 경우 태그의 수입니다'));
 }
@@ -174,21 +180,22 @@ function redrawCases(focusName) {
   /** @type {HTMLElement} */ (document.querySelector(`#center input[name="${CSS.escape(focusName)}"]`))?.focus();
 }
 
-function setCasePicks(ids, on, focusName) {
-  for (const id of ids) if (on) state.casePicked.add(id); else state.casePicked.delete(id);
+function setCasePicks(ids, on, focusName, picks = state.casePicked) {
+  for (const id of ids) if (on) picks.add(id); else picks.delete(id);
   redrawCases(focusName);
 }
 
-const caseBarOff = () => state.bulkBusy || state.ending || !state.casePicked.size;
+const caseBarOff = (picks = state.casePicked) => state.bulkBusy || state.ending || !picks.size;
 
 function syncCaseBar() {
   for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('#center .case-bar button'))) button.disabled = caseBarOff();
+  for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('#center .review-bar button'))) button.disabled = caseBarOff(state.reviewPicked);
 }
 
-function pickBox(name, ids, label) {
-  const picked = ids.filter((id) => state.casePicked.has(id)).length;
+function pickBox(name, ids, label, picks = state.casePicked) {
+  const picked = ids.filter((id) => picks.has(id)).length;
   const box = /** @type {HTMLInputElement} */ (h('input', { type: 'checkbox', name, 'aria-label': label, checked: ids.length > 0 && picked === ids.length, disabled: state.bulkBusy || !ids.length,
-    onchange: (e) => setCasePicks(ids, e.target.checked, name) }));
+    onchange: (e) => setCasePicks(ids, e.target.checked, name, picks) }));
   box.indeterminate = picked > 0 && picked < ids.length;
   return box;
 }
@@ -199,6 +206,44 @@ function undecidedRow(kind, id) {
     h('span', { class: 'case-row-body' },
       h('span', { class: 'case-row-head' }, h('span', { class: 'chip undecided' }, '미판정'), caseNodeName(id)),
       heldLine(kind, id)));
+}
+
+function proposalLines(mark) {
+  return [
+    h('p', { class: 'case-proposal' }, `${mark.author} · ${fmtDate(mark.date)}`),
+    h('p', { class: 'case-reason' }, '이유 ', h('span', { class: 'memo' }, mark.note)),
+  ];
+}
+
+function reviewRow(kind, id) {
+  const target = kindTargetsOf(kind).nodes[id];
+  const name = `review:${id}`;
+  return caseRowItem(kind, id,
+    h('input', { type: 'checkbox', name, 'aria-label': `${nodeNameText(id)} 고르기`, checked: state.reviewPicked.has(id), disabled: state.bulkBusy, onchange: (e) => setCasePicks([id], e.target.checked, name, state.reviewPicked) }),
+    h('span', { class: 'case-row-body' },
+      h('span', { class: 'case-row-head' }, h('span', { class: 'chip review', title: '리뷰어가 받아들이기 전까지는 그 전의 판정을 따릅니다' }, '검토 중'), caseNodeName(id), target.state === 'undecided' ? null : pickChip(kind, target)),
+      proposalLines(target.review)));
+}
+
+function reviewPart(kind) {
+  const ids = kindTargetsOf(kind).review;
+  if (!ids.length) return null;
+  const count = ids.filter((id) => state.reviewPicked.has(id)).length;
+  const off = caseBarOff(state.reviewPicked);
+  const answerButton = (answer, icon, label) => h('button', { type: 'button', class: answer, title: label, 'aria-label': label, disabled: off, onclick: () => answerPicks(kind, answer) }, `${icon} ${count}`);
+  return h('div', { class: 'case-review' },
+    h('h2', { tabindex: '-1' }, `검토 중 ${ids.length}`),
+    h('div', { class: 'review-bar' },
+      h('label', {}, pickBox('pick-all-reviews', ids, '모두 고르기', state.reviewPicked), ' 모두 고르기'),
+      count ? [answerButton('accept', '✓', '받아들이기'), answerButton('revert', '✕', '되돌리기')] : null,
+      state.reviewError ? h('p', { class: 'error case-bar-error' }, state.reviewError) : null),
+    CASE_GROUPS.map((g) => {
+      const group = ids.filter((id) => caseGroupOf(id) === g.key);
+      if (!group.length) return null;
+      return h('div', { class: `case-group ${g.key}` },
+        h('div', { class: 'case-group-head' }, h('label', {}, pickBox(`review-group:${g.key}`, group, `${g.label} 모두 고르기`, state.reviewPicked), ` ${g.label} ${group.length}`)),
+        h('ul', { class: 'plain' }, group.map((id) => reviewRow(kind, id))));
+    }));
 }
 
 function undecidedPart(kind) {
@@ -255,6 +300,7 @@ function renderCaseCenter() {
     ruleLines(kind),
     caseSectionBox(kind, 'needed', '대상', picked, ruleNote),
     caseSectionBox(kind, 'not-needed', '대상 아님', out),
+    reviewPart(kind),
     undecidedPart(kind));
 }
 
@@ -268,10 +314,16 @@ function renderCaseRight(info, dock) {
   fill(dock, markForm(target, 'caseDraft', callOf(state.caseNode) ? '호출 전체' : '화면 전체'));
 }
 
-async function saveCasePicks(kind, status, note) {
-  const chosen = kindTargetsOf(kind).undecided.filter((id) => state.casePicked.has(id));
+/**
+ * @param {string[]} chosen
+ * @param {Set<string>} picks
+ * @param {(id: string) => Promise<string>} save
+ * @param {'caseBulkError' | 'reviewError'} errorKey
+ * @param {string} heading
+ */
+async function saveEach(chosen, picks, save, errorKey, heading) {
   if (!chosen.length || state.bulkBusy) return null;
-  state.caseBulkError = null;
+  state[errorKey] = null;
   state.bulkBusy = true;
   render();
   const saved = [];
@@ -281,13 +333,13 @@ async function saveCasePicks(kind, status, note) {
     const ids = [];
     for (const id of chosen) {
       try {
-        ids.push(await postPick({ node: id, case: kind }, status, note || undefined));
+        ids.push(await save(id));
       } catch (err) {
         failure = `저장하지 못했습니다: ${err.message}`;
         break;
       }
       saved.push(id);
-      state.casePicked.delete(id);
+      picks.delete(id);
     }
     try {
       await load();
@@ -298,12 +350,24 @@ async function saveCasePicks(kind, status, note) {
   });
   state.bulkBusy = false;
   const names = (list) => list.map(nodeNameText).join(', ');
-  state.caseBulkError = failure
+  state[errorKey] = failure
     ? [failure, `저장한 것 ${saved.length}: ${names(saved) || '없음'}. 저장하지 못한 것 ${chosen.length - saved.length}: ${names(chosen.slice(saved.length))}.`, reloadError].filter(Boolean).join('\n')
     : reloadError;
   if (!state.ended) render();
-  if (!failure) /** @type {HTMLElement} */ (document.querySelector('#center .case-undecided > h2'))?.focus();
-  return failure ? state.caseBulkError : null;
+  if (!failure) /** @type {HTMLElement} */ (document.querySelector(heading))?.focus();
+  return failure ? state[errorKey] : null;
+}
+
+function saveCasePicks(kind, status, note) {
+  const chosen = kindTargetsOf(kind).undecided.filter((id) => state.casePicked.has(id));
+  return saveEach(chosen, state.casePicked, (id) => postPick({ node: id, case: kind }, status, note || undefined), 'caseBulkError', '#center .case-undecided > h2');
+}
+
+function answerPicks(kind, answer) {
+  const { review, nodes } = kindTargetsOf(kind);
+  const chosen = review.filter((id) => state.reviewPicked.has(id));
+  const seen = new Map(chosen.map((id) => [id, nodes[id].review.id]));
+  return saveEach(chosen, state.reviewPicked, (id) => postAnswer(kind, id, seen.get(id), answer), 'reviewError', '#center .case-review > h2, #center .case-undecided > h2');
 }
 
 function askCaseOut(kind) {

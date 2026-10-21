@@ -30,8 +30,8 @@ async function openKind(p: Page, kind: string) {
 }
 
 function seed(config: Config) {
-  runCli(config, 'case', 'ended', MEMBERS, 'not-needed', '--note', '회원 목록은 문서와 관계없다');
   runCli(config, 'case', 'boundary', SIGN_IN, 'needed');
+  addMark(config.marksDir, { target: { node: MEMBERS, case: 'ended' }, status: 'not-needed', note: '회원 목록은 문서와 관계없다', author: '김민' }, AT);
   addMark(config.marksDir, { target: { node: SIGN_IN, case: 'ended' }, status: 'needed', author: '김민' }, AT);
   addMark(config.marksDir, { target: { node: LIST, case: 'ended' }, status: 'not-needed', author: '김민' }, AT);
   addMark(config.marksDir, { target: { node: EXPORT, case: 'ended' }, status: 'not-needed', note: '보고서는 문서 상태를 보지 않는다', rule: { index: 0, pick: { screen: '/admin/**', methods: ['POST'] } }, author: '김민' }, AT);
@@ -103,7 +103,7 @@ test('in a browser, a kind shows its picks by rule, person and agent, its rules 
         assert.equal(await p.textContent(`#center li.case-row[data-node="${EXPORT}"] .case-reason`), '예전 이유 보고서는 문서 상태를 보지 않는다');
 
         await p.click('#center details.case-list.not-needed > summary');
-        assert.deepEqual(await p.locator('#center details.case-list.not-needed li .case-row-head').allTextContents(), [`GET/api/v1/member/list보내는 화면 /admin/member대상 아님 · agent`]);
+        assert.deepEqual(await p.locator('#center details.case-list.not-needed li .case-row-head').allTextContents(), [`GET/api/v1/member/list보내는 화면 /admin/member대상 아님 · 김민`]);
         assert.match((await p.textContent('#center details.case-list.not-needed .case-reason'))!, /· 이유 회원 목록은 문서와 관계없다$/);
         await p.click('#center .case-rules button.rule-line[data-rule="0"]');
         assert.equal(await p.locator('#center details.case-list.needed').evaluate((e) => (e as HTMLDetailsElement).open), true);
@@ -135,6 +135,63 @@ test('in a browser, a kind shows its picks by rule, person and agent, its rules 
         assert.deepEqual(await p.locator('#center .case-group-head label').allTextContents(), [' 쓰기 요청 4', ' 조회 요청 4', ' 화면 11']);
         assert.equal(await p.textContent('#center .case-group.screens li.case-row .where >> nth=0'), '컴포넌트 AdminAudit');
         assert.deepEqual(await p.locator('#center details.case-list').evaluateAll((els) => els.map((e) => (e as HTMLDetailsElement).open)), [false, false]);
+      }));
+  });
+});
+
+test('in a browser, an agent\'s 「대상 아님」 waits in an open 「검토 중」 group above 「미판정」, counted in the tab with undecided and apart on hover, in the kind\'s line and in a box of its own; checked ones are accepted with ✓ or reverted with ✕, one the agent wrote again since the page read it is refused, and 「변경 기록」 says 받아들임 or 되돌림', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: KINDS }, (config) => {
+    runCli(config, 'case', 'ended', RENAME, 'not-needed', '--note', '이름은 막지 않는다');
+    runCli(config, 'case', 'ended', MEMBERS, 'not-needed', '--note', '회원 목록은 문서와 관계없다');
+    addMark(config.marksDir, { target: { node: LIST, case: 'ended' }, status: 'needed', author: '김민' }, AT);
+    runCli(config, 'case', 'ended', LIST, 'not-needed', '--note', '목록은 읽기만 한다');
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await p.waitForSelector('#screen-list li');
+        const tab = p.locator(casesTab);
+        assert.equal(await tab.textContent(), '경우 종류 30');
+        assert.deepEqual([await tab.getAttribute('title'), await tab.getAttribute('aria-label')], ['미판정 27 · 검토 중 3', '경우 종류 30: 미판정 27 · 검토 중 3']);
+        await openKind(p, 'ended');
+        assert.equal(await p.textContent(`${kindRow('ended')} .kind-counts`), '대상 3 · 검토 중 3 · 미판정 6 · 빈칸 6');
+        assert.equal(await p.textContent(`${kindRow('boundary')} .kind-counts`), '대상 0 · 미판정 21 · 빈칸 0');
+        assert.deepEqual(await p.locator('#center .case-count').allTextContents(), ['3대상규칙 2 · 사람 1 · 에이전트 0', '0대상 아님', '3검토 중', '6미판정', '6시험 없는 값 칸']);
+        assert.deepEqual(await p.locator('#center :is(.case-review, .case-undecided) > h2').allTextContents(), ['검토 중 3', '미판정 6']);
+        const rows = p.locator('#center .case-review li.case-row');
+        assert.deepEqual(await rows.evaluateAll((els) => els.map((e) => e.getAttribute('data-node'))), [RENAME, LIST, MEMBERS]);
+        assert.deepEqual(await rows.locator('.chip').allTextContents(), ['검토 중', '규칙', '검토 중', '김민', '검토 중']);
+        assert.deepEqual(await rows.locator('.case-reason').allTextContents(), ['이유 이름은 막지 않는다', '이유 목록은 읽기만 한다', '이유 회원 목록은 문서와 관계없다']);
+        assert.match((await rows.first().locator('.case-proposal').textContent())!, /^agent · /);
+        assert.equal(await p.locator('#center .review-bar button').count(), 0);
+
+        await p.check(`#center input[name="review:${RENAME}"]`);
+        await p.check(`#center input[name="review:${MEMBERS}"]`);
+        assert.equal(await p.evaluate(() => document.activeElement!.getAttribute('name')), `review:${MEMBERS}`);
+        assert.deepEqual(await p.locator('#center .review-bar button').evaluateAll((els) => els.map((e) => [e.textContent, e.getAttribute('title'), e.getAttribute('aria-label')])), [['✓ 2', '받아들이기', '받아들이기'], ['✕ 2', '되돌리기', '되돌리기']]);
+        assert.equal(await p.locator('#center .case-bar button').count(), 0);
+        await p.click('#center .review-bar button.accept');
+        await p.waitForFunction(() => document.querySelectorAll('#center .case-review li.case-row').length === 1);
+        assert.deepEqual(await p.locator('#center .case-count strong').allTextContents(), ['2', '2', '1', '6', '4']);
+
+        runCli(config, 'case', 'ended', LIST, 'not-needed', '--note', '목록은 문서를 바꾸지 않는다');
+        await p.check(`#center input[name="review:${LIST}"]`);
+        await p.click('#center .review-bar button.revert');
+        await p.locator('#center .review-bar .case-bar-error').waitFor();
+        assert.deepEqual(errors.splice(0), ['Failed to load resource: the server responded with a status of 409 (Conflict)']);
+        assert.equal(await p.textContent('#center .review-bar .case-bar-error'), `저장하지 못했습니다: the agent wrote ended on ${LIST} again after the page read it\n저장한 것 0: 없음. 저장하지 못한 것 1: ${LIST}.`);
+        assert.equal(await p.textContent('#center .case-review .case-reason'), '이유 목록은 문서를 바꾸지 않는다');
+        await p.click('#center .review-bar button.revert');
+        await p.waitForFunction(() => !document.querySelector('#center .case-review'));
+        assert.deepEqual(await p.locator('#center .case-count').allTextContents(), ['2대상규칙 1 · 사람 1 · 에이전트 0', '2대상 아님', '6미판정', '4시험 없는 값 칸']);
+        assert.equal(await tab.getAttribute('title'), '미판정 27 · 검토 중 0');
+
+        const answers = loadMarks(config.marksDir).filter((m) => m.of !== undefined).map((m) => [m.target!.node, m.status, m.note, m.author]).sort();
+        assert.deepEqual(answers, [[MEMBERS, 'not-needed', '회원 목록은 문서와 관계없다', 'reviewer'], [RENAME, 'not-needed', '이름은 막지 않는다', 'reviewer'], [LIST, 'needed', '', 'reviewer']].sort());
+        await p.click(`#center li.case-row[data-node="${EXPORT}"] .where`);
+        await p.click('#right .talk-scope button:has-text("전체")');
+        await p.click('#right .talk-filters button:has-text("변경 기록")');
+        const changes = p.locator('#right .talk-changes .talk-line .meta .chip:first-child');
+        assert.deepEqual((await changes.allTextContents()).slice(0, 4), ['되돌림', '끔', '받아들임', '받아들임']);
+        assert.equal(await changes.filter({ hasText: '되돌림' }).getAttribute('title'), '에이전트의 「대상 아님」을 되돌렸습니다');
       }));
   });
 });

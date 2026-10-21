@@ -134,18 +134,24 @@ const screenFilterBoxes = () => [...activeScreenFilters().map((f) => h('label', 
   renderLeftList();
 } }), f.label)), baselineFilterBox()].filter(Boolean);
 
+function caseKindsTab(side) {
+  const [undecided, review] = [undecidedTotal(), reviewTotal()];
+  const parts = `미판정 ${undecided} · 검토 중 ${review}`;
+  return side('cases', '경우 종류', undecided + review, parts, `경우 종류 ${undecided + review}: ${parts}`);
+}
+
 function renderLeft() {
   const { marks, map } = state.data;
   const left = document.getElementById('left');
   if (state.view === 'story') return renderStoryLeft(left);
-  const side = (key, name, count, title) => h('button', { class: state.side === key ? 'on' : '', title, disabled: state.bulkBusy, onclick: () => setSide(key) },
+  const side = (key, name, count, title, label = null) => h('button', { class: state.side === key ? 'on' : '', title, 'aria-label': label, disabled: state.bulkBusy, onclick: () => setSide(key) },
     h('span', { class: 'tab-name' }, name),
     // 화면에는 gap 이 띄우고, 이 빈칸은 탭의 글이 「화면 11」로 읽히게 한다.
     ' ', h('span', { class: 'tab-count' }, count));
   const tabs = h('div', { class: 'views side' },
     side('screens', '화면', map.screens.length),
     side('untagged', '태그 없음', untaggedCount(), '노드 태그도 스토리 태그도 없는 테스트'),
-    caseKindList().length ? side('cases', '경우 종류', undecidedTotal(), '경우 종류마다 대상과 아직 아무도 정하지 않은 후보') : null);
+    caseKindList().length ? caseKindsTab(side) : null);
   if (state.side === 'cases') return fill(left, tabs, h('ul', { class: 'screens', id: 'case-kind-list' }, caseKindItems()));
   if (state.side === 'untagged') {
     if (!keptLeftList(left, tabs, 'untagged-list')) {
