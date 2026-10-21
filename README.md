@@ -720,12 +720,9 @@ lines the agent wrote, numbered by the steps of the candidate. The lines of each
 agent's, are in `stepFields`. A story accepted from it keeps that source, and every line goes into its steps. With
 `--server` and the address the review printed, the running review writes the file and every open page lists the
 candidate at once; without it, the file is written directly. The command prints `wrote <file>`, then one line for
-each link between two steps, `step 1 → 2: from <screen> to <screen> — <verdict>`, worded as in the task list. It
-writes nothing and stops with the reason on standard error and exit code 1 when a screen is not on the map, a screen
-comes twice in a row, the comment does not exist or is not on a screen order, the steps without `reason` are not the
-screens of the comment in order, a line the reviewer typed is changed or added to, a screen is put outside the gaps
-picked on the comment, the screen order is already a story, a candidate or a discarded candidate, or the map was
-built before links carried their conditions.
+each link between two steps, `step 1 → 2: from <screen> to <screen> — <verdict>`, worded as in the task list. A
+candidate it does not take is not written: the command prints why on standard error and exits with code 1. A map
+built before links carried their conditions must be rebuilt first. A wrong call exits with 2.
 
 ## Review page
 
