@@ -65,7 +65,7 @@ function changeChips(id) {
   const condition = x.conditions.get(id);
   const calls = x.screenCalls.get(id);
   return [
-    x.added.has(id) ? h('span', { class: 'chip change-new', title: `${label} 에 없던 화면입니다` }, '생김') : null,
+    x.added.has(id) ? newChip(id) : null,
     condition ? h('span', { class: 'chip change-condition', title: `${label}: ${conditionText(condition.before)}\n지금: ${conditionText(condition.after)}` }, '조건 바뀜') : null,
     calls ? h('span', { class: 'chip change-calls', title: `${label} 와 견주어 생긴 호출 ${calls.added.length}개, 없어진 호출 ${calls.removed.length}개` }, `호출 ${callCountText(calls)}`) : null,
   ];

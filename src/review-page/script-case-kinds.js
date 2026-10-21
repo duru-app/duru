@@ -14,6 +14,20 @@ const caseOrder = (a, b) => CASE_GROUPS.findIndex((g) => g.key === caseGroupOf(a
 const gapCount = (kind) => (state.data.caseGaps[kind] ?? []).reduce((n, g) => n + g.tags.length, 0);
 const undecidedTotal = () => caseKindList().reduce((n, kind) => n + kindTargetsOf(kind).undecided.length, 0);
 const reviewTotal = () => caseKindList().reduce((n, kind) => n + kindTargetsOf(kind).review.length, 0);
+const PERSON = () => svg('svg', { viewBox: '0 0 16 16', 'aria-hidden': 'true' }, svg('path', { d: 'M8 7.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5zM2.5 14c0-3 2.5-4.5 5.5-4.5s5.5 1.5 5.5 4.5' }));
+
+function isNewNode(id) {
+  const x = baselineIndex();
+  return Boolean(x && (x.added.has(id) || x.newCalls.has(id)));
+}
+
+const newUndecided = (kind) => kindTargetsOf(kind).undecided.filter(isNewNode);
+const freshTip = (n) => `미판정 가운데 ${state.data.baseline.label} 지도에 없던 화면과 요청 ${n}개입니다`;
+
+function newChip(id) {
+  const tip = `${state.data.baseline.label} 지도에 없던 ${callOf(id) ? '요청' : '화면'}입니다`;
+  return h('span', { class: 'chip change-new', title: tip, 'aria-label': `신규: ${tip}` }, '신규');
+}
 
 function kindCounts(kind) {
   const counts = { rule: 0, person: 0, agent: 0, out: 0 };
@@ -22,7 +36,7 @@ function kindCounts(kind) {
     else if (t.state === 'needed') counts[t.mark.via === undefined ? 'person' : 'agent']++;
     else if (t.state === 'not-needed') counts.out++;
   }
-  return { ...counts, picked: counts.rule + counts.person + counts.agent, undecided: kindTargetsOf(kind).undecided.length, review: kindTargetsOf(kind).review.length, gaps: gapCount(kind) };
+  return { ...counts, picked: counts.rule + counts.person + counts.agent, undecided: kindTargetsOf(kind).undecided.length, fresh: newUndecided(kind).length, review: kindTargetsOf(kind).review.length, gaps: gapCount(kind) };
 }
 
 function heldByPerson(kind, id) {
@@ -61,7 +75,8 @@ function dropLostCase() {
   const review = new Set(state.caseKind === null ? [] : kindTargetsOf(state.caseKind).review);
   for (const id of state.reviewPicked) if (!review.has(id)) state.reviewPicked.delete(id);
   if (typeof state.caseFilter === 'number' && !state.data.caseKinds[state.caseKind]?.picks[state.caseFilter]) state.caseFilter = null;
-  if (state.caseFilter === 'person' && ![...undecided].some((id) => heldByPerson(state.caseKind, id))) state.caseFilter = null;
+  const view = undecidedView();
+  if (view && ![...undecided].some((id) => view(state.caseKind, id))) state.caseFilter = null;
 }
 
 function selectCaseKind(kind) {
@@ -83,7 +98,8 @@ function caseKindItems() {
     return h('li', { class: `${kind === state.caseKind ? 'selected' : ''}${state.bulkBusy ? ' locked' : ''}`, 'data-kind': kind, onclick: () => selectCaseKind(kind) },
       h('span', { class: 'name' },
         h('span', {}, state.data.caseKinds[kind].text), ' ', h('span', { class: 'muted mono' }, `case:${kind}`),
-        h('span', { class: 'kind-counts muted' }, `대상 ${counts.picked} · ${counts.review ? `검토 중 ${counts.review} · ` : ''}미판정 ${counts.undecided} · 빈칸 ${counts.gaps}`)));
+        h('span', { class: 'kind-counts muted' }, `대상 ${counts.picked} · ${counts.review ? `검토 중 ${counts.review} · ` : ''}미판정 ${counts.undecided}`,
+          counts.fresh ? [' ', h('span', { class: 'kind-new', title: freshTip(counts.fresh) }, `(신규 ${counts.fresh})`)] : null, ` · 빈칸 ${counts.gaps}`)));
   });
 }
 
@@ -169,11 +185,17 @@ function summaryBoxes(counts) {
     box(counts.picked, '대상', `규칙 ${counts.rule} · 사람 ${counts.person} · 에이전트 ${counts.agent}`, '규칙이 고른 것에 사람이나 에이전트가 「대상」을 다시 적으면 그쪽으로 셉니다'),
     box(counts.out, '대상 아님'),
     counts.review ? box(counts.review, '검토 중', null, '에이전트가 「대상 아님」으로 정해 리뷰어를 기다리는 후보입니다. 받아들이기 전까지는 그 전의 판정을 따릅니다') : null,
-    box(counts.undecided, '미판정'),
+    box(counts.undecided, '미판정', counts.fresh ? `신규 ${counts.fresh}` : null, counts.fresh ? freshTip(counts.fresh) : null),
     box(counts.gaps, '시험 없는 값 칸', null, '대상인 화면과 요청에서 아직 어느 테스트도 달지 않은 경우 태그의 수입니다'));
 }
 
-const visibleUndecided = (kind) => kindTargetsOf(kind).undecided.filter((id) => state.caseFilter !== 'person' || heldByPerson(kind, id));
+const UNDECIDED_VIEWS = { person: heldByPerson, new: (kind, id) => isNewNode(id) };
+const undecidedView = () => (typeof state.caseFilter === 'string' ? UNDECIDED_VIEWS[state.caseFilter] : null);
+const visibleUndecided = (kind) => {
+  const view = undecidedView();
+  return kindTargetsOf(kind).undecided.filter((id) => !view || view(kind, id));
+};
+const pickedShown = (kind) => visibleUndecided(kind).filter((id) => state.casePicked.has(id));
 
 function redrawCases(focusName) {
   renderCaseCenter();
@@ -185,11 +207,12 @@ function setCasePicks(ids, on, focusName, picks = state.casePicked) {
   redrawCases(focusName);
 }
 
-const caseBarOff = (picks = state.casePicked) => state.bulkBusy || state.ending || !picks.size;
+const caseBarOff = (count) => state.bulkBusy || state.ending || !count;
 
 function syncCaseBar() {
-  for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('#center .case-bar button'))) button.disabled = caseBarOff();
-  for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('#center .review-bar button'))) button.disabled = caseBarOff(state.reviewPicked);
+  const shown = state.caseKind === null ? 0 : pickedShown(state.caseKind).length;
+  for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('#center .case-bar button'))) button.disabled = caseBarOff(shown);
+  for (const button of /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll('#center .review-bar button'))) button.disabled = caseBarOff(state.reviewPicked.size);
 }
 
 function pickBox(name, ids, label, picks = state.casePicked) {
@@ -204,7 +227,7 @@ function undecidedRow(kind, id) {
   return caseRowItem(kind, id,
     h('input', { type: 'checkbox', name: id, 'aria-label': `${nodeNameText(id)} 고르기`, checked: state.casePicked.has(id), disabled: state.bulkBusy, onchange: (e) => setCasePicks([id], e.target.checked, id) }),
     h('span', { class: 'case-row-body' },
-      h('span', { class: 'case-row-head' }, h('span', { class: 'chip undecided' }, '미판정'), caseNodeName(id)),
+      h('span', { class: 'case-row-head' }, h('span', { class: 'chip undecided' }, '미판정'), caseNodeName(id), isNewNode(id) ? newChip(id) : null),
       heldLine(kind, id)));
 }
 
@@ -229,7 +252,7 @@ function reviewPart(kind) {
   const ids = kindTargetsOf(kind).review;
   if (!ids.length) return null;
   const count = ids.filter((id) => state.reviewPicked.has(id)).length;
-  const off = caseBarOff(state.reviewPicked);
+  const off = caseBarOff(state.reviewPicked.size);
   const answerButton = (answer, icon, label) => h('button', { type: 'button', class: answer, title: label, 'aria-label': label, disabled: off, onclick: () => answerPicks(kind, answer) }, `${icon} ${count}`);
   return h('div', { class: 'case-review' },
     h('h2', { tabindex: '-1' }, `검토 중 ${ids.length}`),
@@ -250,21 +273,26 @@ function undecidedPart(kind) {
   const all = kindTargetsOf(kind).undecided;
   const shown = visibleUndecided(kind);
   const held = all.filter((id) => heldByPerson(kind, id)).length;
-  const count = state.casePicked.size;
-  const off = caseBarOff();
+  const fresh = newUndecided(kind).length;
+  const count = pickedShown(kind).length;
+  const off = caseBarOff(count);
+  const viewButton = (view, cls, title, label, ...content) => h('button', {
+    type: 'button',
+    class: cls,
+    'aria-pressed': String(state.caseFilter === view),
+    title,
+    'aria-label': label,
+    disabled: state.bulkBusy,
+    onclick: () => {
+      state.caseFilter = state.caseFilter === view ? null : view;
+      renderCaseCenter();
+    },
+  }, ...content);
   return h('div', { class: 'case-undecided' },
     h('h2', { tabindex: '-1' }, `미판정 ${all.length}`),
-    held ? h('button', {
-      type: 'button',
-      class: 'person-only',
-      'aria-pressed': String(state.caseFilter === 'person'),
-      title: '사람이 남긴 표시 때문에 미판정에 머문 후보입니다. 에이전트는 사람이 남긴 표시를 바꾸지 않습니다',
-      disabled: state.bulkBusy,
-      onclick: () => {
-        state.caseFilter = state.caseFilter === 'person' ? null : 'person';
-        renderCaseCenter();
-      },
-    }, `사람이 정할 것 ${held}`) : null,
+    held || fresh ? h('div', { class: 'case-views' },
+      held ? viewButton('person', 'person-only', '직접 판정: 사람이 남긴 표시 때문에 미판정에 머문 후보만 봅니다. 에이전트는 사람이 남긴 표시를 바꾸지 않습니다', `직접 판정 ${held}`, PERSON(), ` ${held}`) : null,
+      fresh ? viewButton('new', 'new-only', `${state.data.baseline.label} 지도에 없던 후보만 봅니다`, `신규 ${fresh}: ${state.data.baseline.label} 지도에 없던 후보만 보기`, `신규 ${fresh}`) : null) : null,
     all.length ? h('div', { class: 'case-bar' },
       h('label', {}, pickBox('pick-all-cases', shown, '모두 고르기'), ' 모두 고르기'),
       count ? [
@@ -359,7 +387,7 @@ async function saveEach(chosen, picks, save, errorKey, heading) {
 }
 
 function saveCasePicks(kind, status, note) {
-  const chosen = kindTargetsOf(kind).undecided.filter((id) => state.casePicked.has(id));
+  const chosen = pickedShown(kind);
   return saveEach(chosen, state.casePicked, (id) => postPick({ node: id, case: kind }, status, note || undefined), 'caseBulkError', '#center .case-undecided > h2');
 }
 
@@ -371,7 +399,7 @@ function answerPicks(kind, answer) {
 }
 
 function askCaseOut(kind) {
-  const chosen = () => kindTargetsOf(kind).undecided.filter((id) => state.casePicked.has(id));
+  const chosen = () => pickedShown(kind);
   askReason({
     verb: '대상 아님',
     reasonLabel: '대상이 아닌 이유',

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
 import { addMark, loadMarks } from '../src/marks.ts';
@@ -79,7 +80,7 @@ test('in a browser, 「경우 종류 N」 is the third list tab only while caseK
       })));
 });
 
-test('in a browser, a kind shows its picks by rule, person and agent, its rules with what each picked, folded lists of picks and of what is not a target, and its undecided candidates in write, read and screen groups with the method of each request, and 「사람이 정할 것」 lets go once nothing it lists is left', { skip: browserMissing }, async () => {
+test('in a browser, a kind shows its picks by rule, person and agent, its rules with what each picked, folded lists of picks and of what is not a target, and its undecided candidates in write, read and screen groups with the method of each request, and the person button 「직접 판정」 lets go once nothing it lists is left', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: KINDS }, (config) => {
     seed(config);
     return withServer(config, 'reviewer', (base) =>
@@ -112,10 +113,14 @@ test('in a browser, a kind shows its picks by rule, person and agent, its rules 
         assert.deepEqual(await p.locator('#center details.case-list.needed li').evaluateAll((els) => els.map((e) => e.getAttribute('data-node'))), [ARCHIVE, SIGN_IN, RENAME]);
         assert.deepEqual(await p.locator('#center details.case-list.needed .chip').allTextContents(), ['규칙', '김민', '규칙']);
 
+        assert.equal(await p.locator('#center :is(.new-only, .chip.change-new), #case-kind-list .kind-new').count(), 0);
         await p.click('#center button.person-only');
         assert.equal(await p.getAttribute('#center button.person-only', 'aria-pressed'), 'true');
         assert.deepEqual(await undecidedIds(p), [EXPORT, LIST]);
-        assert.equal(await p.textContent('#center button.person-only'), '사람이 정할 것 2');
+        assert.equal(await p.textContent('#center button.person-only'), ' 2');
+        assert.equal(await p.locator('#center button.person-only svg').count(), 1);
+        assert.equal(await p.getAttribute('#center button.person-only', 'aria-label'), '직접 판정 2');
+        assert.match((await p.getAttribute('#center button.person-only', 'title'))!, /^직접 판정: /);
         await p.click('#center button.person-only');
         assert.equal((await undecidedIds(p)).length, 6);
 
@@ -192,6 +197,106 @@ test('in a browser, an agent\'s 「대상 아님」 waits in an open 「검토 �
         const changes = p.locator('#right .talk-changes .talk-line .meta .chip:first-child');
         assert.deepEqual((await changes.allTextContents()).slice(0, 4), ['되돌림', '끔', '받아들임', '받아들임']);
         assert.equal(await changes.filter({ hasText: '되돌림' }).getAttribute('title'), '에이전트의 「대상 아님」을 되돌렸습니다');
+      }));
+  });
+});
+
+const SCHEDULE = 'POST:/api/v1/report/schedule';
+const EXPERIMENT = 'GET:/api/v1/lab/experiment';
+const LAB_RESULT = '/lab/result#LabResult';
+
+function setBaseline(config: Config, copy: string) {
+  const map = JSON.parse(fs.readFileSync(path.join(config.outDir, 'map.json'), 'utf8'));
+  map.screens = map.screens.filter((s: { id: string }) => s.id !== LAB_RESULT);
+  map.calls = map.calls.filter((c: { id: string }) => c.id !== SCHEDULE && c.id !== EXPERIMENT);
+  config.baselineMap = path.join(copy, 'v1.0/map.json');
+  fs.mkdirSync(path.dirname(config.baselineMap), { recursive: true });
+  fs.writeFileSync(config.baselineMap, JSON.stringify(map));
+}
+
+const newChipIds = (p: Page) => p.locator('#center .case-undecided li.case-row:has(.chip.change-new)').evaluateAll((els) => els.map((e) => e.getAttribute('data-node')));
+const savedNodes = (config: Config) => loadMarks(config.marksDir).filter((m) => m.target!.case === 'ended' && m.author === 'reviewer').map((m) => [m.target!.node, m.status]).sort();
+
+test('in a browser, with baselineMap a kind\'s line and its undecided box count the undecided candidates the baseline map does not have as 「신규 N」, each carries a 「신규」 chip naming that map, here and in 「경우별 테스트」, the tab count stays, and 「신규 N」 shows only those', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: KINDS }, (config, copy) => {
+    seed(config);
+    setBaseline(config, copy);
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.textContent(casesTab), '경우 종류 25');
+        await p.click(casesTab);
+        assert.deepEqual(await p.locator('#case-kind-list li .kind-counts').allTextContents(), ['대상 3 · 미판정 6 (신규 2) · 빈칸 6', '대상 2 · 미판정 19 (신규 3) · 빈칸 2']);
+        assert.equal(await p.getAttribute(`${kindRow('ended')} .kind-new`, 'title'), '미판정 가운데 v1.0 지도에 없던 화면과 요청 2개입니다');
+        await p.click(kindRow('ended'));
+        await p.locator('#center .title-row .mono:text-is("case:ended")').waitFor();
+        assert.equal(await p.locator('#center .case-count').nth(2).textContent(), '6미판정신규 2');
+        assert.deepEqual(await newChipIds(p), [SCHEDULE, EXPERIMENT]);
+        const chip = p.locator(`#center li.case-row[data-node="${SCHEDULE}"] .chip.change-new`);
+        assert.equal(await chip.textContent(), '신규');
+        assert.equal(await chip.getAttribute('title'), 'v1.0 지도에 없던 요청입니다');
+        assert.equal(await chip.getAttribute('aria-label'), '신규: v1.0 지도에 없던 요청입니다');
+
+        assert.equal(await p.textContent('#center button.new-only'), '신규 2');
+        assert.equal(await p.getAttribute('#center button.new-only', 'aria-pressed'), 'false');
+        await p.click('#center button.new-only');
+        assert.equal(await p.getAttribute('#center button.new-only', 'aria-pressed'), 'true');
+        assert.deepEqual(await undecidedIds(p), [SCHEDULE, EXPERIMENT]);
+        assert.equal(await p.getAttribute('#center button.person-only', 'aria-pressed'), 'false');
+
+        await p.click(kindRow('boundary'));
+        await p.locator('#center .title-row .mono:text-is("case:boundary")').waitFor();
+        assert.equal(await p.getAttribute('#center button.new-only', 'aria-pressed'), 'false');
+        assert.equal((await undecidedIds(p)).length, 19);
+        assert.deepEqual(await newChipIds(p), [SCHEDULE, EXPERIMENT, LAB_RESULT]);
+        assert.equal(await p.getAttribute(`#center li.case-row[data-node="${LAB_RESULT}"] .chip.change-new`, 'title'), 'v1.0 지도에 없던 화면입니다');
+
+        await p.click('#left .views.side button:has-text("화면")');
+        await p.click('#screen-list li[title="/lab/result LabResult"]');
+        const rows = p.locator('#center .screen-info > .cases li.case-undecided-row');
+        await rows.first().waitFor({ state: 'attached' });
+        assert.deepEqual(await rows.evaluateAll((els) => els.map((e) => [e.getAttribute('data-kind'), e.querySelector('.chip.change-new')?.textContent ?? null])), [['boundary', '신규']]);
+        await p.click('#screen-list li[title="/lab Lab"]');
+        await p.waitForSelector('#center .screen-info > .cases li.case-undecided-row[data-kind="boundary"]', { state: 'attached' });
+        assert.equal(await p.locator('#center .screen-info > .cases .chip.change-new').count(), 0);
+      }));
+  });
+});
+
+test('in a browser, a decide button under 「직접 판정」 or 「신규」 saves only the checked candidates that view shows, counting only those, while one checked in another view stays checked and unsaved', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: KINDS }, (config, copy) => {
+    seed(config);
+    setBaseline(config, copy);
+    return withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await openKind(p, 'ended');
+        await p.check('#center input[name="POST:/api/v1/report/archive"]');
+        assert.deepEqual(await p.locator('#center .case-bar button').allTextContents(), ['대상 (1)', '대상 아님… (1)']);
+
+        await p.click('#center button.person-only');
+        assert.equal(await p.locator('#center .case-bar button').count(), 0);
+        await p.check('#center input[name="pick-all-cases"]');
+        assert.deepEqual(await p.locator('#center .case-bar button').allTextContents(), ['대상 (2)', '대상 아님… (2)']);
+        await p.click('#center .case-bar button.pick-out');
+        await p.locator(asked).waitFor();
+        assert.equal(await p.textContent(`${asked} h2`), '고른 2개에서는 이 경우를 시험하지 않습니다');
+        await p.click(`${asked} button.cancel`);
+        await p.click('#center .case-bar button.pick-needed');
+        await p.waitForFunction(() => !document.querySelector('#center button.person-only'));
+        assert.deepEqual(savedNodes(config), [[LIST, 'needed'], [EXPORT, 'needed']]);
+        assert.equal(await p.isChecked('#center input[name="POST:/api/v1/report/archive"]'), true);
+
+        await p.click('#center button.new-only');
+        assert.equal(await p.locator('#center .case-bar button').count(), 0);
+        await p.check(`#center input[name="${SCHEDULE}"]`);
+        assert.deepEqual(await p.locator('#center .case-bar button').allTextContents(), ['대상 (1)', '대상 아님… (1)']);
+        await p.click('#center .case-bar button.pick-needed');
+        await p.waitForFunction((id) => !document.querySelector(`#center .case-undecided li.case-row[data-node="${id}"]`), SCHEDULE);
+        assert.deepEqual(savedNodes(config), [[LIST, 'needed'], [EXPORT, 'needed'], [SCHEDULE, 'needed']]);
+        assert.equal(await p.getAttribute('#center button.new-only', 'aria-pressed'), 'true');
+        assert.equal(await p.textContent('#center button.new-only'), '신규 1');
+        assert.deepEqual(await undecidedIds(p), [EXPERIMENT]);
+        assert.match(runCli(config, 'undecided', 'ended'), /^case kind ended: 3 undecided\n {2}POST:\/api\/v1\/report\/archive /);
       }));
   });
 });

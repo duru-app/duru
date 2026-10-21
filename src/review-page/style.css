@@ -208,9 +208,12 @@
   .chip.rule-empty { color: var(--more); margin-left: 6px; }
   details.case-list { margin: 6px 0; }
   details.case-list > summary { cursor: pointer; font-weight: 600; }
-  .case-filter button, button.person-only { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
-  button.person-only { margin: 2px 0 6px; }
-  button.person-only[aria-pressed=true] { border-color: var(--accent); background: var(--selected); font-weight: 600; }
+  .case-filter button, .case-views button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+  .case-views { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px; }
+  .case-views button[aria-pressed=true] { border-color: var(--accent); background: var(--selected); font-weight: 600; }
+  .case-views button.new-only { color: var(--fine); }
+  button.person-only svg { width: 12px; height: 12px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+  .kind-counts .kind-new { color: var(--fine); }
   :is(.case-undecided, .case-review) > h2 { margin-top: 14px; }
   .review-bar button.accept { color: var(--pass); font-weight: 700; }
   .review-bar button.revert { color: var(--fail); font-weight: 700; }

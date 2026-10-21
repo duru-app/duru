@@ -315,7 +315,7 @@ test('in a browser, with baselineMap the page names the baseline, marks each cha
       assert.equal(await p.textContent('#left .baseline-filter'), 'v1.0 와 비교바뀐 화면만 5');
 
       const chips = (title: string) => p.locator(`#screen-list li[title="${title}"] .badges .chip:is(.change-new, .change-condition, .change-calls)`).allTextContents();
-      assert.deepEqual(await chips('/lab/result LabResult'), ['생김']);
+      assert.deepEqual(await chips('/lab/result LabResult'), ['신규']);
       assert.deepEqual(await chips('/admin/member AdminMember'), ['조건 바뀜']);
       assert.deepEqual(await chips('/help Help'), ['조건 바뀜', '호출 −1']);
       assert.deepEqual(await chips('/lab Lab'), ['호출 +1']);
