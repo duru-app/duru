@@ -250,6 +250,7 @@ export const untaggedTab = '#left .views.side button:has-text("태그 없음")';
 
 export const reply = (copy: string, ...args: string[]) => promisify(execFile)(process.execPath, [CLI, 'reply', path.join(copy, 'config.json'), ...args], { encoding: 'utf8' });
 export const decideCase = (copy: string, ...args: string[]) => promisify(execFile)(process.execPath, [CLI, 'case', path.join(copy, 'config.json'), ...args], { encoding: 'utf8' });
+export const postCandidate = (copy: string, ...args: string[]) => promisify(execFile)(process.execPath, [CLI, 'candidate', path.join(copy, 'config.json'), ...args], { encoding: 'utf8' });
 
 export type Kept = { kept?: boolean };
 

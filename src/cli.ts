@@ -6,7 +6,7 @@ import path from 'node:path';
 import { baselineLine, compareMaps, newUndecided, readBaseline } from './baseline.ts';
 import { storeCandidates, storyCandidates } from './candidates.ts';
 import { casesWithoutTests, picksCalls, rulePicks } from './case-targets.ts';
-import { loadConfig } from './config.ts';
+import { isPlainObject, loadConfig } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { UNKNOWN } from './client.ts';
 import { buildMap, unreadSites } from './map.ts';
@@ -15,14 +15,14 @@ import { addReply } from './marks.ts';
 import { checkNeeds } from './needs.ts';
 import { CANDIDATES } from './stories.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
-import { readCaseTargets, reviewAuthor, startReviewServer, writeCaseMark } from './review.ts';
+import { readCaseTargets, reviewAuthor, startReviewServer, writeCaseMark, writeCommentCandidate } from './review.ts';
 import type { AnnouncedMark } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { checkStoryFiles } from './story-paths.ts';
-import { atTableItem, storyBrief, taskList, undecidedLines } from './tasks.ts';
+import { atTableItem, linkText, storyBrief, taskList, undecidedLines } from './tasks.ts';
 import { linkTests } from './test-links.ts';
 
-const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'story', 'reply', 'wait', 'case', 'undecided'];
+const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'story', 'reply', 'wait', 'case', 'undecided', 'candidate'];
 const DEFAULT_PORT = 4400;
 const CASE_OPTIONS = ['--note', '--author', '--server'];
 const UNDECIDED_LEFT = 3;
@@ -35,9 +35,10 @@ const replyArgs = command === 'reply' && (extra.length === 2 || (extra.length ==
 const waitServer = command === 'wait' && extra.length === 2 && extra[0] === '--server' ? extra[1] : null;
 const caseArgs = command === 'case' ? caseArgsOf(extra) : null;
 const undecidedArgs = command === 'undecided' ? undecidedArgsOf(extra) : null;
-const argsFit = command === 'story' ? extra.length === 1 && extra[0] !== '' : command === 'reply' ? replyArgs : command === 'wait' ? waitServer : command === 'case' ? caseArgs : command === 'undecided' ? undecidedArgs : extra.length === 0 || Number.isInteger(portArg);
+const candidateArgs = command === 'candidate' && (extra.length === 2 || (extra.length === 4 && extra[2] === '--server' && extra[3])) && extra[1] ? { comment: extra[0], from: extra[1], server: extra[3] ?? null } : null;
+const argsFit = command === 'story' ? extra.length === 1 && extra[0] !== '' : command === 'reply' ? replyArgs : command === 'wait' ? waitServer : command === 'case' ? caseArgs : command === 'undecided' ? undecidedArgs : command === 'candidate' ? candidateArgs : extra.length === 0 || Number.isInteger(portArg);
 if (!COMMANDS.includes(command) || !configPath || !argsFit) {
-  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru story <config.json> <story ID>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>\n       duru case <config.json> <kind> <screen or call ID> needed|not-needed [--note <why>] [--author <name> | --server <review page address>]\n       duru undecided <config.json> [<kind>] [--new]`);
+  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru story <config.json> <story ID>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>\n       duru case <config.json> <kind> <screen or call ID> needed|not-needed [--note <why>] [--author <name> | --server <review page address>]\n       duru undecided <config.json> [<kind>] [--new]\n       duru candidate <config.json> <comment ID> <candidate.json | -> [--server <review page address>]`);
   process.exit(2);
 }
 if (caseArgs && caseArgs.server !== null && caseArgs.author !== null) {
@@ -65,6 +66,25 @@ async function sendToReview(server: string, route: string, body: unknown) {
   const res = await fetch(new URL(route, server), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
     .catch((err) => Promise.reject(new Error(`could not reach the review page at ${server}: ${err.cause?.message ?? err.message}`)));
   if (!res.ok) throw new Error(await res.text());
+  return res;
+}
+
+function readCandidate(from: string) {
+  const where = from === '-' ? 'stdin' : from;
+  let text;
+  try {
+    text = fs.readFileSync(from === '-' ? 0 : from, 'utf8');
+  } catch (err: any) {
+    throw new Error(`could not read the candidate from ${where}: ${err.message}`);
+  }
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch (err: any) {
+    throw new Error(`the candidate in ${where} is not JSON: ${err.message}`);
+  }
+  if (!isPlainObject(body)) throw new Error(`the candidate in ${where} must be a JSON object with "name" and "screens"`);
+  return body;
 }
 
 const config = loadConfig(configPath);
@@ -93,6 +113,18 @@ if (command === 'tasks') {
     console.error(err.message);
     process.exit(1);
   }
+} else if (command === 'candidate') {
+  const { comment, from, server } = candidateArgs!;
+  let written: ReturnType<typeof writeCommentCandidate>;
+  try {
+    const input = { ...readCandidate(from), comment };
+    written = server ? await (await sendToReview(server, 'api/candidates/add', input)).json() as typeof written : writeCommentCandidate(config, input);
+  } catch (err: any) {
+    console.error(err.message);
+    process.exit(1);
+  }
+  const steps = written.links.map((l, i) => `step ${i + 1} → ${i + 2}: from ${l.from} to ${l.to} — ${linkText(l)}`);
+  process.stdout.write([`wrote ${written.file}`, ...steps].map((l) => `${l}\n`).join(''));
 } else if (command === 'undecided') {
   const { only, newOnly } = undecidedArgs!;
   if (newOnly && !config.baselineMap) {

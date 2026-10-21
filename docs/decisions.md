@@ -3046,6 +3046,44 @@ alone:
 A comment on a screen order shows its note and replies in place under 「전체」, as a comment with no target does: the
 page has no screen to open for it once the new story that made it is saved or thrown away.
 
+**An agent answers a comment on a screen order with `duru candidate <config> <comment ID> <candidate.json | ->
+[--server <address>]`, and the candidate keeps where it came from in a third source, `{ "comment", "added",
+"written" }`.** Asked for in #253 and built in #366. The driver chose the words on pictures of the review page
+(2026-10-20): a purple 「에이전트」 chip on the candidate and on each screen the agent put in, 「이유」 in bold before the
+reason, and under the title the comment that asked, which leads to it. The reviewer's screens and lines carry no
+mark.
+- `candidate` over `propose`, `suggest` or `story-candidate`, because the commands are named for what they write or
+  read (`reply` a reply, `case` a case mark, `story` one story), and the page and the folder already say candidate
+  (「후보」, `candidates/`).
+- The candidate as a JSON file, or `-` for standard input, over the whole candidate as one argument: nested JSON with
+  Korean text breaks on shell quoting, differently in each shell, while `reply` takes plain text. Over one option per
+  field, because the fields of each step do not fit flags. `--server` works as in `reply` and `case`.
+- The steps in the shape of a story file, with `reason` on each step put in, over a list of the step numbers put in
+  beside them, so a reason cannot point at the wrong step. The stored source numbers them, because the page and the
+  per-line choice of #367 read them by step.
+- `written` holds the lines themselves by step and field, over only the names of the fields filled: #367 puts a box
+  on each line, and the lines stay readable after the steps of the story move. A field is the reviewer's or the
+  agent's as a whole: a line added to a field the reviewer wrote is refused, not counted as the agent's.
+- One function, `addCommentCandidate` in `candidates.ts`, checks and writes for both the command without a server
+  and the review's `/api/candidates/add`, as `writeCaseMark` serves `duru case` both ways. An open page sees the new
+  file through the watch on the stories folder, so the review sends no event of its own for it.
+- Besides the refusals the issue lists, the steps without `reason` must be the comment's screens in order, since the
+  reviewer's lines are matched to them; with gaps picked, a screen goes only into those gaps, as the agent
+  instructions already said; and an order that is already a story, a candidate or a discarded candidate is refused,
+  since its file would be written but never listed.
+- Discarding a candidate keeps its step lines in the discarded file and undoing the discard writes them back, and
+  undoing the acceptance of a story from a comment keeps every line, so the agent's work does not come back empty.
+  Other stories still keep only their inputs when their acceptance is undone.
+- 「순서 고치기」 on a story from a comment moves the step numbers in `added` and `written` with their screens and drops
+  those of a screen taken out, with an agent's link condition the new order takes away, so undoing the acceptance
+  never puts the agent's mark on a reviewer's screen. Over keeping the numbers and lining the story up with the
+  candidate file on undo, because a screen the reviewer puts back where the agent's was would take the agent's mark.
+  Since the numbers then differ from the candidate file, a story from a comment keeps candidates away by the comment
+  alone, and a new candidate for a comment a story was accepted from is refused, as it would be written but never
+  listed.
+- The comment line opens 「전체」 of the conversation at the comment, since a comment on a screen order shows there with
+  its replies once the new story that made it is closed.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

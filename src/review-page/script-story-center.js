@@ -1,6 +1,6 @@
-const storyPath = (st, stepRanges, story) => [
+const storyPath = (st, stepRanges, story, added = []) => [
   h('h2', {}, `화면 순서 ${st.steps.length}`),
-  h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1], story, i - 1, st.stepFields?.[i]) : null, stepItem(step, i, stepRanges?.[i], story, st.stepFields?.[i])])),
+  h('div', { class: 'story-path' }, st.steps.flatMap((step, i) => [i > 0 ? linkItem(st.links[i - 1], story, i - 1, st.stepFields?.[i]) : null, stepItem(step, i, stepRanges?.[i], story, st.stepFields?.[i], added.find((a) => a.step === i + 1)?.reason)])),
 ];
 
 function storyWide(st) {
@@ -114,12 +114,12 @@ function renderStoryCenter() {
   const c = candidateOf();
   if (c) {
     return fillStoryCenter(center, c, [
-      h('div', { class: 'title-row' }, h('h3', {}, c.name), walkChip(c), ...reachChips(c), candidateActions(c)),
+      h('div', { class: 'title-row' }, h('h3', {}, c.name), byAgent(c) ? agentChip('candidate') : null, walkChip(c), ...reachChips(c), candidateActions(c)),
       storyErrorLine(),
       sourceView(c.source, '후보가 나온'),
       needsFold(c, `candidate\n${c.key}`),
       c.skipped ? h('div', { class: 'muted skipped-inputs', title: '기록에는 있었지만 이 후보의 단계에 입력값으로 옮기지 못한 입력' }, `옮기지 못한 입력 ${c.skipped}개`) : null,
-      ...storyPath(c, c.stepRanges)]);
+      ...storyPath(c, c.stepRanges, undefined, byAgent(c) ? c.source.added : [])]);
   }
   const st = storyOf();
   if (!st && state.story) return fill(center, h('h3', {}, state.story), h('p', { class: 'muted', title: '스토리 파일을 읽지 못했거나 맵이 오래되어 경로를 맞춰 보지 못했습니다' }, '경로 판정 없음'), storyErrorLine());
@@ -416,7 +416,7 @@ function askDiscard(c) {
       title: '이 후보를 버립니다',
       subject: [
         h('span', { class: 'label' }, '후보'),
-        h('div', {}, c.name, ' ', h('span', { class: 'muted mono' }, c.source.record ?? c.source.report)),
+        h('div', {}, c.name, ' ', byAgent(c) ? agentChip('candidate') : h('span', { class: 'muted mono' }, c.source.record ?? c.source.report)),
         h('span', { class: 'label' }, '화면 순서'),
         h('ol', {}, c.steps.map((s) => h('li', {}, s.onMap ? [screenLabel(s.screen), ' ', h('span', { class: 'muted' }, screenOf(s.screen)?.component)] : h('span', { class: 'mono' }, s.screen)))),
       ],
