@@ -542,6 +542,46 @@ test('a comment on a screen order takes no status, and an order that is empty, n
   });
 });
 
+const LONG_ORDER = ['/signin#SignIn', '/home#Home', '/lab#Lab'];
+const TYPED = { box: { label: '아이디' }, value: 'duru-admin' };
+
+test('a comment on a screen order carries the gaps picked between two neighbouring steps and the fields typed at each step in its target, in order, and a reply and a later comment with other gaps stay on the same order', () => {
+  withMarksDir((dir: string) => {
+    const comment = addMark(dir, {
+      target: { screens: LONG_ORDER, gaps: [[2, 3], [1, 2]], steps: [{ step: 3, expects: ['실행 결과가 보인다'] }, { step: 1, needs: [{ use: 'admin' }], inputs: [TYPED] }] },
+      note: 'fill in these two',
+      author: 'a',
+    } as Parameters<typeof addMark>[1]);
+    const expected = { screens: LONG_ORDER, gaps: [[1, 2], [2, 3]], steps: [{ step: 1, needs: [{ use: 'admin' }], inputs: [TYPED] }, { step: 3, expects: ['실행 결과가 보인다'] }] };
+    assert.deepEqual(comment.target, expected);
+    assert.deepEqual(addReply(dir, { replyTo: comment.id, note: 'done' }).target, expected);
+    addMark(dir, { target: { screens: LONG_ORDER }, note: 'the whole way this time', author: 'a' });
+    const [entry] = classifyMarks(loadMarks(dir), { screens: LONG_ORDER.map((id) => ({ id })) }).attached;
+    assert.deepEqual([entry.key, entry.history.length], [`order(${LONG_ORDER.join(' > ')})`, 3]);
+  });
+});
+
+test('gaps that are not two neighbouring steps of the order or come twice, and step fields at a step the order does not have, at the same step twice, with nothing written, with a field a step does not take or written against the rules of a story file are refused and nothing is written', () => {
+  withMarksDir((dir: string) => {
+    const refused: [object, RegExp][] = [
+      [{ gaps: [] }, /gaps of a screen order are a list of one or more pairs of neighbouring step numbers, such as \[1, 2\]/],
+      [{ gaps: [[1, 3]] }, /gaps of a screen order are a list of one or more pairs of neighbouring step numbers/],
+      [{ gaps: [[0, 1]] }, /gaps of a screen order are a list of one or more pairs of neighbouring step numbers/],
+      [{ gaps: [[3, 4]] }, /gap 3 - 4 is not between two steps of the order/],
+      [{ gaps: [[1, 2], [1, 2]] }, /gap 1 - 2 is picked twice/],
+      [{ steps: [] }, /steps of a screen order are a list of one or more \{ "step", \.\.\. \} objects/],
+      [{ steps: [{ step: 4, expects: ['x'] }] }, /the order has no step 4/],
+      [{ steps: [{ step: 1, expects: ['x'] }, { step: 1, needs: ['y'] }] }, /step 1 has fields twice/],
+      [{ steps: [{ step: 2 }] }, /step 2 has no fields/],
+      [{ steps: [{ step: 2, screen: '/home#Home', expects: ['x'] }] }, /step 2 of a screen order takes only needs, linkNeeds, inputs and expects: screen/],
+      [{ steps: [{ step: 1, linkNeeds: ['x'] }] }, /linkNeeds/],
+      [{ steps: [{ step: 2, inputs: [{ box: { label: '아이디' }, value: '' }] }] }, /value 에 넣을 값을 글로 적어야 합니다/],
+    ];
+    for (const [extra, message] of refused) assert.throws(() => addMark(dir, { target: { screens: LONG_ORDER, ...extra }, note: 'x', author: 'a' } as Parameters<typeof addMark>[1]), message);
+    assert.equal(fs.existsSync(dir), false);
+  });
+});
+
 const STEP = { kind: 'step', key: { step: 2, screen: '/lab#Lab' } };
 const HOP = { kind: 'hop', key: { step: 1, from: '/home#Home', to: '/lab#Lab' } };
 const LAB_PATH = {

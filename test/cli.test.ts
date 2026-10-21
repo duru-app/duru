@@ -782,7 +782,7 @@ test('a comment saved on a story candidate comes out on stderr and on open event
   }, { storiesDir: 'example-stories', visitRecords: ['example-visits'] });
 });
 
-test('a comment saved on a screen order comes out on stderr and on open event streams with the files of each screen and the verdict between each two neighbours; a reply to it carries the same, a status is refused, and the task list stays as it was', async () => {
+test('a comment saved on a screen order comes out on stderr, on open event streams and from wait with the files of each screen, the verdict between each two neighbours, the gaps picked and the fields typed at each step; a reply to it carries the same, a status is refused, and the task list stays as it was', async () => {
   await withReviewFixture(async (configFile) => {
     const tasksBefore = execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8' });
     const { child, base, closed, out } = startReview(configFile);
@@ -790,11 +790,19 @@ test('a comment saved on a screen order comes out on stderr and on open event st
       const url = await within(base, 'review page address on stderr');
       const events = readEvents(url);
       const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
-      const target = { screens: ['/signin#SignIn', '/home#Home', '/help#Help'] };
+      const target = {
+        screens: ['/signin#SignIn', '/home#Home', '/help#Help'],
+        gaps: [[2, 3]],
+        steps: [{ step: 1, inputs: [{ box: { label: '아이디' }, value: 'duru-admin' }] }, { step: 3, expects: ['도움말이 보인다'] }],
+      };
+      const waiting = startWait(configFile, url);
+      await waitFor(() => waiting.out.stderr.includes('waiting for a comment'), 'the waiting line on stderr');
       const res = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, note: 'Fill in a way to help.' }) });
       assert.equal(res.status, 201);
       const comment = (await res.json()) as Mark;
       assert.deepEqual(comment.target, target);
+      const waited = await within(waiting.closed, 'wait to exit');
+      assert.equal(waited.code, 0);
       assert.deepEqual(reply(configFile, comment.id, 'Home has no link to help.', '--server', `${url}/`), { status: 0, stderr: '' });
       await waitFor(() => records().length === 2, 'the comment and the reply on stderr');
       const { where } = records()[0];
@@ -807,7 +815,8 @@ test('a comment saved on a screen order comes out on stderr and on open event st
         ['/signin#SignIn', '/home#Home', 'open', ['components/SignIn.js:12']],
         ['/home#Home', '/help#Help', 'broken', []],
       ]);
-      assert.deepEqual([records()[1].duru, records()[1].target, records()[1].where], ['reply', target, where]);
+      assert.deepEqual([records()[0].target, records()[1].duru, records()[1].target, records()[1].where], [target, 'reply', target, where]);
+      assert.deepEqual(lines(waited.stdout), [records()[0]]);
       await waitFor(() => events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).length === 2, 'two events on the stream');
       assert.deepEqual(events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).map((e) => JSON.parse(e.slice('data: '.length))), records());
 

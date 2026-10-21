@@ -7,7 +7,8 @@ import { reference } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
 import { locatePart, locateStoryPart, STORY_PART_KINDS } from './parts.ts';
 import type { HopKey, HopPlace, LinkKey, PartContext, PartScreen, SourcePlaces, StepKey, StepPlace, StoryPath, TestPlace } from './parts.ts';
-import { isScreenList, isText, STORY_ID } from './stories.ts';
+import { isScreenList, isText, STEP_FIELDS, stepProblem, STORY_ID } from './stories.ts';
+import type { StepFields } from './stories.ts';
 import { DEPTHS } from './test-links.ts';
 
 export const MARK_STATUSES = ['needs-more', 'missing', 'fine'];
@@ -17,12 +18,16 @@ interface MarkTarget {
   story?: string;
   candidate?: string;
   screens?: string[];
+  gaps?: [number, number][];
+  steps?: OrderStep[];
   node?: string;
   option?: { key: string; value: boolean };
   depth?: string;
   case?: string;
   part?: Part;
 }
+
+type OrderStep = { step: number } & StepFields;
 
 export interface Part {
   kind: string;
@@ -133,7 +138,33 @@ function orderTarget(target: MarkTarget) {
   const repeated = screens.findIndex((s, i) => i > 0 && s === screens[i - 1]);
   if (repeated > 0) throw new Error(`screens ${repeated} and ${repeated + 1} of a screen order are the same screen`);
   if (['story', 'candidate', 'node', 'option', 'depth', 'case', 'part'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a screen order mark takes no story, candidate, node, option, depth, case or part');
-  return { screens: [...screens] };
+  return { screens: [...screens], ...(target.gaps !== undefined && { gaps: orderGaps(target.gaps, screens.length) }), ...(target.steps !== undefined && { steps: orderSteps(target.steps, screens) }) };
+}
+
+function orderGaps(gaps: unknown, length: number): [number, number][] {
+  const pair = (g: unknown) => Array.isArray(g) && g.length === 2 && stepNumber(g[0]) && g[1] === g[0] + 1;
+  if (!Array.isArray(gaps) || !gaps.length || !gaps.every(pair)) throw new Error('gaps of a screen order are a list of one or more pairs of neighbouring step numbers, such as [1, 2]');
+  const sorted = (gaps as [number, number][]).map(([a, b]): [number, number] => [a, b]).sort(([a], [b]) => a - b);
+  const outside = sorted.find(([, b]) => b > length);
+  if (outside) throw new Error(`gap ${outside[0]} - ${outside[1]} is not between two steps of the order`);
+  const twice = sorted.find(([a], i) => i > 0 && a === sorted[i - 1][0]);
+  if (twice) throw new Error(`gap ${twice[0]} - ${twice[1]} is picked twice`);
+  return sorted;
+}
+
+function orderSteps(steps: unknown, screens: string[]): OrderStep[] {
+  if (!Array.isArray(steps) || !steps.length || !steps.every((s) => isPlainObject(s) && stepNumber(s.step))) throw new Error('steps of a screen order are a list of one or more { "step", ... } objects, the step counted from 1, with the fields typed at that step');
+  const sorted = [...steps as OrderStep[]].sort((a, b) => a.step - b.step);
+  for (const [i, { step, ...fields }] of sorted.entries()) {
+    if (step > screens.length) throw new Error(`the order has no step ${step}`);
+    if (i > 0 && step === sorted[i - 1].step) throw new Error(`step ${step} has fields twice`);
+    const others = Object.keys(fields).filter((k) => !STEP_FIELDS.includes(k));
+    if (others.length) throw new Error(`step ${step} of a screen order takes only needs, linkNeeds, inputs and expects: ${others.join(', ')}`);
+    if (!Object.keys(fields).length) throw new Error(`step ${step} has no fields`);
+    const problem = stepProblem({ screen: screens[step - 1], ...fields }, `screens 의 ${step} 번째 단계`, step === 1);
+    if (problem) throw new Error(problem);
+  }
+  return sorted.map(({ step, ...fields }) => ({ step, ...Object.fromEntries(STEP_FIELDS.filter((k) => k in fields).map((k) => [k, fields[k as keyof StepFields]])) }));
 }
 
 function storyTarget(target: MarkTarget) {
