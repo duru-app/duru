@@ -75,6 +75,8 @@
   .chip.pass { color: var(--pass); } .chip.fail { color: var(--fail); } .chip.pending { color: var(--pending); }
   .chip.partial { color: var(--more); } .chip.untested { color: var(--fail); border-style: dashed; }
   .chip.needs-more { color: var(--more); } .chip.fine { color: var(--fine); }
+  .chip.code-changed { color: var(--pending); border-style: dashed; }
+  header .code-state { cursor: help; }
   .title-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   .title-row h3 { margin: 0; font-size: 18px; }
   .title-row .need-kinds:empty { display: none; }

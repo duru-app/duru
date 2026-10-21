@@ -50,6 +50,12 @@ export function codeState(srcRoot: string): CodeState {
   };
 }
 
+export function recordedState(meta: unknown): CodeState | null {
+  const { commit, uncommitted, duruVersion, duruCommit } = (meta ?? {}) as Partial<Record<keyof CodeState, unknown>>;
+  if (typeof commit !== 'string') return null;
+  return { commit, ...(typeof uncommitted === 'boolean' && { uncommitted }), duruVersion: typeof duruVersion === 'string' ? duruVersion : UNKNOWN_COMMIT, ...(typeof duruCommit === 'string' && { duruCommit }) };
+}
+
 const slashed = (p: string) => p.replaceAll('\\', '/');
 
 // 줄 끝을 \n 으로 맞춰야 git 의 autocrlf 로 줄 끝만 다르게 받은 컴퓨터에서도 같은 코드가 같은 해시가 된다.

@@ -185,6 +185,6 @@ export function linkTests(config: any, map: any) {
 
   const hash = codeHasher(config.srcRoot);
   const testFiles = new Set<string>([...Object.values(nodes), ...Object.values(stories), ...Object.values(importers), [...untagged.values()]].flat().map((t) => t.testFile).filter(Boolean));
-  const testFileHashes = Object.fromEntries([...testFiles].sort().map((f) => [f, hash([f])]));
+  const testFileHashes = Object.fromEntries([...testFiles].map((f) => f.replaceAll('\\', '/')).sort().map((f) => [f, hash([f])]));
   return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, passed, traceNotices, traced: screenOrders, untracedCount, unknownTags, untagged: [...untagged.values()].sort(byTest), untaggedCount: untagged.size, missingSources, testFileHashes };
 }

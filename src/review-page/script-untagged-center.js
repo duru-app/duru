@@ -34,7 +34,7 @@ function pairItem({ id, entry, label, cls, noteLabel }) {
   const body = h('span', { class: 'name' },
     s ? screenHead(s) : h('div', { class: call ? 'mono' : 'muted mono' }, id),
     entry.via ? viaRow(entry.via) : null,
-    entry.judgment ? judgmentMeta(entry.judgment, noteLabel) : null);
+    entry.judgment ? judgmentMeta(entry.judgment, noteLabel, entry.codeChanged) : null);
   const stateChip = h('span', { class: `chip pair-state ${cls}` }, label);
   if (!s && !call) return h('div', { class: 'step off-map pair' }, body, h('span', { class: 'chip l-off-map', title: '맵에 없는 화면이나 호출입니다' }, '맵에 없음'), stateChip);
   if (!opensOnPage(id)) return h('div', { class: 'step off-map pair' }, body, stateChip);

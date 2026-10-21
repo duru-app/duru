@@ -576,6 +576,26 @@ export function taggingLines(awaitingTag: Record<string, any[]>, callIds: Set<st
   }));
 }
 
+const CODE_CHANGED_INTRO = 'duru keeps a hash of the code of the screen or call with each mark, and of that code and the test file with each judgment of a test pair. The code changed after each of these was left, and the review page shows them as 「판정 뒤 코드가 바뀜」. They stay as they were: tell the user which ones they are, since the user decides whether to look at them again, and do not mark or judge them yourself.';
+const JUDGED: Record<string, string> = { discard: 'discarded', 'hand-over': 'handed over for tagging' };
+
+function codeChangedLines(attached: MarkEntry[], tests: { discarded: Record<string, any[]>; awaitingTag: Record<string, any[]> }) {
+  const marks = attached.filter((m) => m.codeChanged);
+  const pairs = [tests.discarded, tests.awaitingTag].flatMap((byNode) => Object.entries(byNode).flatMap(([node, list]) => list.filter((t) => t.codeChanged).map((t) => ({ node, t }))));
+  if (!marks.length && !pairs.length) return [];
+  pairs.sort((a, b) => compare(a.node, b.node) || compare(a.t.ref.file, b.t.ref.file) || compare(a.t.ref.title, b.t.ref.title));
+  const note = (text: string) => quotedNote(text, '  ');
+  return [
+    '',
+    '# Code changed after a mark or a judgment',
+    '',
+    CODE_CHANGED_INTRO,
+    '',
+    ...marks.map(({ target, current }) => `- ${targetText(target)} — marked \`${current!.status}\`${note(current!.note) ? ` ${note(current!.note)}` : ''} ${byline(current!.author, current!.date, '  ')}`),
+    ...pairs.map(({ node, t }) => `- ${node} — test "${within(t.ref.title, '  ')}" in ${t.ref.file ?? t.ref.source} ${JUDGED[t.judgment.kind]}${note(t.judgment.reason) ? ` ${note(t.judgment.reason)}` : ''} ${byline(t.judgment.author, t.judgment.date, '  ')}`),
+  ];
+}
+
 const CASE_KINDS_INTRO = 'Each kind of case in the config\'s `caseKinds` follows. A screen or call is a candidate of a kind when the kind has no rules, or when its rules pick that side, screens or calls. A candidate is `undecided` while no rule picks it and no mark says whether the kind needs testing there; a `not-needed` mark without a note counts as undecided. Read the source of each undecided candidate, write requests first as they are listed, and decide it: run `duru case <config> <kind> <ID> needed` when that kind of case can happen there and should be tested, or `duru case <config> <kind> <ID> not-needed --note "<why>"` when it cannot or need not; then run `duru undecided <config>` again. An undecided candidate that ends with `so only a person can decide it` carries a mark a person left, which `duru case` does not change. When you cannot tell from the code, leave the candidate undecided. Stop running `duru undecided` again once it exits with 0 or every candidate it still lists is one only a person can decide or one you could not tell from the code, tell the user which are left, and go on with `cases with no tests`.';
 const NO_TESTS_INTRO = ' Under `cases with no tests`, each screen or call a rule, a reviewer or an agent picked the kind for and whose case of that kind no test carries yet follows under its own heading, with who picked it, the tags a test of it carries and an empty test for each; one already listed above under its marks is not repeated. Write those tests as for a mark above, then run `duru rebuild` and read this list again.';
 const NEW_ONLY_INTRO = ' When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config> <kind> --new` for that kind instead: it lists only the undecided candidates that the map named by `baselineMap` does not have, and exits with 0 once none of them is left, even while older ones are. Do not use `--new` for a kind added to `caseKinds` after that map was built: its candidates on that map count as older, so `--new` ends at once.';
@@ -787,6 +807,7 @@ export function taskList(config: any) {
     if (story) out.push(...storyLines(story, own, storyPartsOf(id!), tests, needs, mapInfo, formats));
     else if (!stories.stale) out.push('', `## ${id}`, '', '- marks:', ...own.flatMap((m) => entryLines(m)), '- story file: could not be read; `duru rebuild` prints why');
   }
+  out.push(...codeChangedLines(marks.attached, tests));
   if (caseKinds) out.push(...caseKinds.lines);
   out.push(...taggingLines(tests.awaitingTag, new Set<string>(map.calls.map((c: any) => c.id))));
   return out.join('\n') + '\n';

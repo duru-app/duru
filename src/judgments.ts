@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileSafe, recordName, writeNewRecord } from './marks.ts';
+import { differs } from './code-state.ts';
 import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
 import { withoutTags } from './verdict.ts';
@@ -24,7 +25,7 @@ interface ResultTest extends TestRef {
 }
 
 type Referenced = ResultTest & { ref: TestRef };
-type Judged = Referenced & { judgment: Judgment; unconfirmed?: boolean };
+type Judged = Referenced & { judgment: Judgment; unconfirmed?: boolean; codeChanged?: true };
 
 export interface Judgment {
   id: string;
@@ -34,6 +35,8 @@ export interface Judgment {
   reason: string;
   author: string;
   date: string;
+  codeHash?: string;
+  testFileHash?: string;
 }
 
 interface RawJudgment {
@@ -50,6 +53,8 @@ interface NewJudgment {
   kind: string;
   reason?: string;
   author: string;
+  codeHash?: string;
+  testFileHash?: string;
 }
 
 interface Notice {
@@ -63,6 +68,7 @@ interface JudgedTests {
   nodes?: Record<string, ResultTest[]>;
   untagged?: ResultTest[];
   stories?: Record<string, ResultTest[]>;
+  testFileHashes?: Record<string, string>;
 }
 
 const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
@@ -126,7 +132,7 @@ export function loadJudgments(dir: string): { judgments: Judgment[]; notices: No
 
 export const judgmentFile = (judgment: Judgment) => path.join(fileSafe(judgment.node), recordName(judgment));
 
-export function addJudgment(dir: string, { test, node, kind, reason, author }: NewJudgment, now = new Date()) {
+export function addJudgment(dir: string, { test, node, kind, reason, author, codeHash, testFileHash }: NewJudgment, now = new Date()) {
   const judgment = {
     id: crypto.randomUUID(),
     test: isPlainObject(test) ? reference(test) : test,
@@ -135,6 +141,8 @@ export function addJudgment(dir: string, { test, node, kind, reason, author }: N
     reason: reason ?? '',
     author: typeof author === 'string' ? author.trim() : author,
     date: now.toISOString(),
+    ...(codeHash !== undefined && { codeHash }),
+    ...(testFileHash !== undefined && { testFileHash }),
   };
   const problem = problemOf(judgment);
   if (problem) throw new Error(problem);
@@ -143,13 +151,15 @@ export function addJudgment(dir: string, { test, node, kind, reason, author }: N
 }
 
 // 제외한 짝은 테스트가 결과에서 사라지면 어디에도 나오지 않는다.
-export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgment[]) {
+export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgment[], nodeHashes = new Map<string, string>()) {
   const latest = new Map<string, Judgment>();
   const ordered = [...judgments].sort((a, b) => Date.parse(a.date) - Date.parse(b.date) || compare(a.id, b.id));
   for (const j of ordered) latest.set(pairKey(j.test, j.node), j);
   const discarded: Record<string, Judged[]> = {};
   const awaitingTag: Record<string, Judged[]> = {};
   const found = new Set<string>();
+  const codeChanged = (j: Judgment) => differs(j.codeHash, nodeHashes.get(j.node)) || differs(j.testFileHash, j.test.file === null ? undefined : tests.testFileHashes?.[j.test.file]);
+  const judged = (t: ResultTest, ref: TestRef, judgment: Judgment): Judged => ({ ...t, ref, judgment, ...(codeChanged(judgment) && { codeChanged: true as const }) });
   const unjudged = (byNode: Record<string, ResultTest[]> | undefined) => {
     const left: Record<string, Referenced[]> = {};
     for (const [id, list] of Object.entries(byNode ?? {})) {
@@ -159,8 +169,8 @@ export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgm
         const judgment = latest.get(key);
         // 여러 Playwright 프로젝트에서 돈 테스트도 판단한 짝은 하나다.
         if (judgment && found.has(key)) continue;
-        if (judgment?.kind === 'discard') (discarded[id] ??= []).push({ ...t, ref, judgment });
-        else if (judgment?.kind === 'hand-over') (awaitingTag[id] ??= []).push({ ...t, ref, judgment });
+        if (judgment?.kind === 'discard') (discarded[id] ??= []).push(judged(t, ref, judgment));
+        else if (judgment?.kind === 'hand-over') (awaitingTag[id] ??= []).push(judged(t, ref, judgment));
         else (left[id] ??= []).push({ ...t, ref });
         found.add(key);
       }
@@ -183,7 +193,7 @@ export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgm
     if (found.has(key)) continue;
     const t = inResults.get(JSON.stringify(judgment.test));
     // trace 를 읽지 못한 실행으로는 테스트가 그 화면을 열었는지 알 수 없으므로, 포함한 짝을 떨어져 나간 것으로 보지 않는다.
-    if (t?.format === 'playwright' && !('unmatched' in t)) (awaitingTag[judgment.node] ??= []).push({ ...t, ref: judgment.test, judgment, unconfirmed: true });
+    if (t?.format === 'playwright' && !('unmatched' in t)) (awaitingTag[judgment.node] ??= []).push({ ...judged(t, judgment.test, judgment), unconfirmed: true });
     else (detachedHandOvers[judgment.node] ??= []).push({ ref: judgment.test, judgment });
   }
   for (const list of Object.values(detachedHandOvers)) list.sort((a, b) => compare(a.ref.file, b.ref.file) || compare(a.ref.title, b.ref.title) || compare(a.ref.source, b.ref.source));

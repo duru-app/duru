@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { differs, nodeHashes } from './code-state.ts';
 import { CASE_KIND, isPlainObject } from './config.ts';
 import type { CasePick } from './config.ts';
 import { reference } from './judgments.ts';
@@ -56,6 +57,7 @@ export interface Mark {
   date: string;
   via?: string;
   of?: string;
+  codeHash?: string;
 }
 
 interface NewMark {
@@ -67,11 +69,12 @@ interface NewMark {
   author?: unknown;
   via?: string;
   of?: string;
+  codeHash?: string;
 }
 
 interface MarkableMap {
-  screens: PartScreen[];
-  calls?: { id: string; options?: { key: string }[] }[];
+  screens: (PartScreen & { codeHash?: string })[];
+  calls?: { id: string; options?: { key: string }[]; codeHash?: string }[];
 }
 
 export interface MarkEntry {
@@ -80,6 +83,7 @@ export interface MarkEntry {
   current: Mark | null;
   history: Mark[];
   where?: TestPlace | SourcePlaces | StepPlace | HopPlace | null;
+  codeChanged?: true;
 }
 
 // 끝의 `.` 을 바꾸는 것은 Windows 가 그런 이름을 받지 않고, 화면 ID 가 `..` 이면 표시 폴더 밖을 가리키기 때문이다.
@@ -248,7 +252,7 @@ const checkTarget = (target: MarkTarget | undefined): MarkTarget => (target?.can
 
 export const targetsOf = (m: { target?: MarkTarget; targets?: MarkTarget[] }) => m.targets ?? (m.target ? [m.target] : []);
 
-export function addMark(dir: string, { target, targets, status, note, rule, author, via, of }: NewMark, now = new Date()) {
+export function addMark(dir: string, { target, targets, status, note, rule, author, via, of, codeHash }: NewMark, now = new Date()) {
   if (targets !== undefined && !Array.isArray(targets)) throw new Error('mark targets must be a list');
   const all = (targets ?? [target]).map(checkTarget);
   const hasStatus = status !== undefined && status !== null;
@@ -282,6 +286,7 @@ export function addMark(dir: string, { target, targets, status, note, rule, auth
     date: now.toISOString(),
     ...(via !== undefined && { via }),
     ...(of !== undefined && { of }),
+    ...(codeHash !== undefined && checked.node !== undefined && { codeHash }),
   };
   saveMark(dir, mark);
   return mark;
@@ -319,6 +324,7 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
   const candidates = new Set(candidateKeys);
   const paths = new Map(storyPaths.map((p) => [p.id, p]));
   const screenIds = new Set(map.screens.map((s) => s.id));
+  const hashes = nodeHashes(map);
   const isAttached = (t: MarkTarget) => (t.candidate !== undefined
     ? candidates.has(t.candidate)
     : t.screens !== undefined
@@ -350,7 +356,9 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
     const where = !target.part ? null
       : target.story !== undefined ? path && locateStoryPart(target.part, path, map.screens)
       : nodes.has(target.node!) ? locatePart(target, { tests, screens: map.screens, roleGuards }) : null;
-    const entry = { key, target, current: history.find((m) => m.status !== undefined) ?? null, history, ...(target.part && { where: where ?? null }) };
+    const current = history.find((m) => m.status !== undefined) ?? null;
+    const changed = current !== null && target.case === undefined && target.node !== undefined && differs(current.codeHash, hashes.get(target.node));
+    const entry = { key, target, current, history, ...(target.part && { where: where ?? null }), ...(changed && { codeChanged: true as const }) };
     // 읽지 못한 스토리 파일의 단계는 맞춰 볼 수 없으므로, 스토리 코멘트처럼 「목록 밖 스토리 코멘트」에 남긴다.
     const located = !target.part || where || (target.story !== undefined && !path);
     (isAttached(target) && located ? attached : detached).push(entry);
