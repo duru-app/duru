@@ -460,8 +460,9 @@ const SETTING_REASON: Record<string, string> = {
   'not-found': 'duru did not find where it reads a setting',
 };
 
+const hasAccounts = (c: Conditions) => Object.keys(c.accounts).length > 0;
+
 function accountsText(roles: string[], accounts: Record<string, AppAccount>) {
-  if (!Object.keys(accounts).length) return 'no app.roles in the config';
   return roles.map((r) => (Object.hasOwn(accounts, r) ? `${r} ${accounts[r].id}, password in ${accounts[r].passwordEnv}` : `${r} no account in app.roles`)).join('; ');
 }
 
@@ -480,6 +481,7 @@ function conditionLines(g: Described, c: Conditions, indent: string, shownRoles:
   const lines: string[] = [];
   if (g.kinds.includes('role')) {
     if (!g.roles) lines.push('role not read: duru does not know which accounts pass it');
+    else if (!hasAccounts(c)) lines.push(`role ${g.roles.join(' or ')}`);
     else if (g.roles.every((r) => shownRoles.includes(r))) lines.push(`role ${g.roles.join(' or ')}: the accounts are on the first screen line`);
     else lines.push(`role ${g.roles.join(' or ')}: ${accountsText(g.roles, c.accounts)}`);
   }
@@ -490,11 +492,18 @@ function conditionLines(g: Described, c: Conditions, indent: string, shownRoles:
   return lines.map((l) => `${indent}- ${l}`);
 }
 
+const guardsOf = (r: any): Described[] => (r.kind === 'route' ? r.guards : r.kind === 'start' ? [] : r.ways.flatMap((w: any) => w.conditions));
+
+function noAccountsLine(story: any, c?: Conditions) {
+  const roles = story.reach.some((r: any) => r.roleValues?.length || guardsOf(r).some((g) => g.kinds.includes('role') && g.roles));
+  return c && roles && !hasAccounts(c) ? ['  - accounts: no app.roles in the config'] : [];
+}
+
 function preconditionLines(r: any, { screensById, restricted }: MapInfo, c?: Conditions, start?: any) {
   const under = (guards: Described[], indent: string, shownRoles?: string[]) => (c ? guards.flatMap((g) => conditionLines(g, c, indent, shownRoles)) : []);
   if (r.kind === 'start') {
     const roles = r.roleValues ? `; roles that open it: ${r.roleValues.join(', ')}` : r.roleValues === null ? '; the roles that open it could not be read' : '';
-    const accounts = c && r.roleValues ? [`    - accounts: ${accountsText(r.roleValues, c.accounts)}`] : [];
+    const accounts = c && r.roleValues && hasAccounts(c) ? [`    - accounts: ${accountsText(r.roleValues, c.accounts)}`] : [];
     return [`  - ${r.screen}, the first screen, ${needsText(r.kinds)}${roles}`, ...accounts, ...linkInLines(screensById.get(r.screen).access.links, restricted).map((l) => `  ${l}`)];
   }
   if (r.kind === 'route') {
@@ -529,7 +538,7 @@ export function storyLines(story: any, marks: any[] | null, parts: any[], tests:
     ...writtenList('- expects at the end:', story.expects),
     `- reach: ${problems.length ? problems.join('; ') : 'reachable'}`,
     ...(story.reach.length
-      ? ['- preconditions:', ...story.reach.flatMap((r: any) => preconditionLines(r, mapInfo, brief?.conditions, story.reach.find((x: any) => x.kind === 'start')))]
+      ? ['- preconditions:', ...noAccountsLine(story, brief?.conditions), ...story.reach.flatMap((r: any) => preconditionLines(r, mapInfo, brief?.conditions, story.reach.find((x: any) => x.kind === 'start')))]
       : [`- preconditions: ${problems.length ? 'none where links were found' : 'none'}`]),
     ...emptyTestLines(formats, [[`story:${story.id}`, ...new Set<string>(story.steps.filter((s: any) => s.onMap).map((s: any) => `screen:${s.screen}`))]]),
   ];

@@ -1088,7 +1088,8 @@ in a code span, followed by `(duru did not try it on the screen)`. The lines a p
 line gets an `accounts` line when the roles that open it were read, and each guard of a link between steps (under each way when there are several) and of a
 route gets lines of its own; `tasks` does not print these lines. A role guard gets `role <roles>:` with, for each role,
 the account in `app.roles` and the environment variable that holds its password (`no account in app.roles` when it
-has none, `no app.roles in the config` when the config has none); the password is never printed. On the route of
+has none); the password is never printed. When the config has no `app.roles`, `preconditions` starts with one
+`accounts: no app.roles in the config` line, and the role lines and the first-screen line name no accounts. On the route of
 the first screen, a role whose accounts the first-screen line already gives says so instead of repeating them. A
 setting guard gets one `setting` line for each setting it reads, which speaks for that setting only, not for other
 checks joined to it with `&&`: `met with no change`, `not met with no change` with the value to put, or `not known,

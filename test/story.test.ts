@@ -57,10 +57,12 @@ test('a story no reviewer marked is printed with a line for each step to open an
       '  - 보고서 화면이 열린다',
       '- reach: unreachable, no link at 1 step',
       '- preconditions:',
+      '  - accounts: no app.roles in the config',
       '  - /admin/report#AdminReport, the first screen, needs a role and a setting; roles that open it: ADMIN, OWNER',
-      '    - accounts: no app.roles in the config',
     ].join('\n') + '\n');
     assert.match(story, /^ {4}- link from \/home#Home at components\/SideMenu\.js:11, guard /m);
+    assert.match(story, /^ {4}- role ADMIN or OWNER$/m);
+    assert.equal(story.split('no app.roles in the config').length, 2);
     assert.match(story, /^- empty tests:\n {2}- playwright: `test\.fixme\("<what it checks>", \{ tag: \["@story:report-detour", "@screen:\/admin\/report#AdminReport", "@screen:\/home#Home", "@screen:\/document\/:id#DocumentDetail"\] \}, async \(\{ page \}\) => \{\}\);`$/m);
   }, { appUrl: 'http://localhost:3000', storiesDir: 'brief-stories' });
 });

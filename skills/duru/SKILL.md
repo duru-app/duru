@@ -412,7 +412,8 @@ wrote that duru did not check, and a `needs/<file>` need comes with its file's n
 taken, tell the user instead of writing a test that skips it. Under a precondition, an `accounts` or `role` line
 names, for each role that passes, the account in `app.roles` and the environment variable that holds its password:
 pick one of these accounts yourself and log in with the password read from that variable; duru never prints a
-password, and when a role has no account, tell the user. A `setting` line speaks for one setting, not for the whole
+password, and when a role has no account, or `preconditions` starts with `accounts: no app.roles in the config`, tell
+the user. A `setting` line speaks for one setting, not for the whole
 guard: `met with no change` needs nothing; otherwise set the setting to the value it names before the step, and for
 `not known` set it too, since duru could not read its whole default. When the line says `deployed settings not
 checked`, duru judged by the default in the source, which the deployed app may override, as an app does that takes
