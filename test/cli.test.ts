@@ -75,21 +75,22 @@ const ENDED_KINDS = { ended: { text: '끝난 문서', values: ['cancelled', 'rej
 const ENDED_WRITES = ['POST:/api/v1/auth/sign-in', 'POST:/api/v1/report/archive', 'POST:/api/v1/report/export', 'POST:/api/v1/report/schedule'];
 const ENDED_READS = ['GET:/api/v1/document/list', 'GET:/api/v1/document/{documentId}', 'GET:/api/v1/lab/experiment', 'GET:/api/v1/member/list'];
 
+const runCli = (configFile: string, command: string, ...args: string[]) => {
+  try {
+    return { status: 0 as number | null, stdout: execFileSync(process.execPath, [CLI, command, configFile, ...args], { encoding: 'utf8', stdio: 'pipe' }), stderr: '' };
+  } catch (err) {
+    const { status, stdout, stderr } = err as Failure & { stdout: string };
+    return { status, stdout, stderr };
+  }
+};
+
 function withCaseKinds(fn: (configFile: string, run: (...args: string[]) => { status: number | null; stdout: string; stderr: string }) => void) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
     const configFile = path.join(copy, 'config.json');
     fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), marksDir: 'case-marks', caseKinds: ENDED_KINDS }));
-    const run = (command: string, ...args: string[]) => {
-      try {
-        return { status: 0, stdout: execFileSync(process.execPath, [CLI, command, configFile, ...args], { encoding: 'utf8', stdio: 'pipe' }), stderr: '' };
-      } catch (err) {
-        const { status, stdout, stderr } = err as Failure & { stdout: string };
-        return { status, stdout, stderr };
-      }
-    };
-    fn(configFile, run as never);
+    fn(configFile, ((command: string, ...args: string[]) => runCli(configFile, command, ...args)) as never);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
@@ -846,23 +847,8 @@ test('a reply without --server is written to the marks folder and shows in the t
   });
 });
 
-const runCase = (configFile: string, ...args: string[]) => {
-  try {
-    return { status: 0, stdout: execFileSync(process.execPath, [CLI, 'case', configFile, ...args], { encoding: 'utf8', stdio: 'pipe' }), stderr: '' };
-  } catch (err) {
-    const { status, stdout, stderr } = err as Failure & { stdout: string };
-    return { status, stdout, stderr };
-  }
-};
-const undecidedCount = (configFile: string, kind: string) => {
-  let out;
-  try {
-    out = execFileSync(process.execPath, [CLI, 'undecided', configFile, kind], { encoding: 'utf8', stdio: 'pipe' });
-  } catch (err) {
-    out = (err as Failure & { stdout: string }).stdout;
-  }
-  return Number(out.match(/^case kind \S+: (\d+) undecided$/m)![1]);
-};
+const runCase = (configFile: string, ...args: string[]) => runCli(configFile, 'case', ...args);
+const undecidedCount = (configFile: string, kind: string) => Number(runCli(configFile, 'undecided', kind).stdout.match(/^case kind \S+: (\d+) undecided$/m)![1]);
 
 test('a case sent with --server is saved by the running review in the same shape and folder as one written directly, printed on its stderr as a mark line and pushed to open event streams, and the kind has one undecided candidate less; the command reads no map', async () => {
   await withReviewFixture(async (configFile) => {

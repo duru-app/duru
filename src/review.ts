@@ -140,7 +140,6 @@ export interface CaseDecision {
   note: string;
 }
 
-// 확인과 쓰기 사이에 기다리는 일이 없어야, 리뷰 서버에서 부를 때 검토자의 저장이 그 사이에 끼어들지 못한다.
 export function writeCaseMark(config: any, { kind, node, status, note }: CaseDecision, author: string) {
   const { map, attached } = readCaseTargets(config);
   const rule = commandCaseRule(map, config.caseKinds, attached, { kind, node, status, note });
@@ -411,7 +410,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
     for (const stream of streams) stream.write(`data: ${JSON.stringify(line)}\n\n`);
     return mark;
   };
-  // 답글과 `duru case` 가 보낸 판정의 작성자는 페이지를 띄운 사람이 아니라 보낸 에이전트다.
+  // 답글의 작성자는 페이지를 띄운 사람이 아니라 답한 에이전트다.
   const saves: Record<string, (input: any) => unknown> = {
     '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, author: author.name, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined, via: undefined })),
     '/api/replies': (input) => announce(addReply(config.marksDir, { replyTo: input?.replyTo, note: input?.note })),
