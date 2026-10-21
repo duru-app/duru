@@ -1287,6 +1287,38 @@ Known limit: behind a reverse proxy the event stream needs response buffering tu
 nginx, or `X-Accel-Buffering: no`), or events wait in the proxy until the buffer fills. A page that loses the
 stream reconnects and reads the data again, so saves made while it was cut off still show.
 
+**An agent sends a case decision to a running review with `duru case … --server <review page address>`: the review
+checks and writes it with the function the command uses directly, always signed `agent`, and every open page shows
+it at once; a case written without `--server` still shows only on the next load.**
+Asked for in #350 (2026-10-21), a part of #310; the driver chose the author and kept files written directly off the
+open pages. One function in `src/review.ts` reads the case targets, checks a person's mark and the rules, and writes
+the mark with `"via": "duru case"`; the command and `/api/cases` both call it, so a refusal reads the same either
+way. Nothing in it waits, so on the server no reviewer's save lands between the check and the write. The command
+sends the kind, the ID, the status and the note, and reads neither the map nor the marks itself. Sending and its
+failures (`could not reach the review page at <address>: …`, or the server's refusal, with exit code 1 and nothing
+written) are one function shared with `reply --server`. `/api/cases` checks the body itself: an object, kind, ID and
+note as text, and a status of `needed` or `not-needed`, or 400 with nothing written, so a note that is a number is a
+refusal and not a failure further down. The page needs no change: it already reads the data again on each mark it
+did not save itself.
+The author of a case sent to the review is always `agent`, whatever the body says, and `--author` with `--server` is
+a usage error (exit code 2) that says to leave the name out. A reviewer tells a person from an agent by the chip, and
+the page does not show `via`, so a request from the same computer could otherwise sign with any name, the
+reviewer's included. The cost: an agent that names itself drops the name while a page is open. The page's own saves
+are still signed with the reviewer's name and drop `via`.
+Alternatives compared:
+- The name the agent gives, else `agent`: what the issue asked to prevent, a request that changes who wrote a mark.
+- The server also watching the marks folder, so a case written without `--server` shows at once: the reasons the
+  entry above gives for replies hold here too (`fs.watch` misses or doubles events on some systems, and an agent on
+  another machine writes into a folder the server never sees). The driver kept it to `--server`; a case written
+  directly shows on the next load, as a reply does.
+Known limits: a review started by an older duru has no `/api/cases` and answers `not found`, and the command does
+not say to start it again. When `caseKinds` changes in the config during a review, `--server` judges with the kinds
+the review read at its start and a direct write with the new ones; the page shows the kinds of the start too, so page
+and server agree. Each case makes every open page read the whole review data again (about 2.5 MB, 0.18–0.32 s on
+into-sign, measured while planning #350), and the server does nothing else for about 0.1 s per case: reading the
+case targets took 76–94 ms, and the rest is estimated to be small. After the page draws again, the focus does not
+return to a button, as after a reply; inputs, text areas and selects keep it.
+
 **The agent learns of comments with `duru wait`, a background command that exits as soon as a comment has no
 reply, printing every such comment; the agent answers them and starts it again.**
 A background command wakes the agent only when it exits, so the review's own standard error lines reached the agent
@@ -2589,10 +2621,10 @@ misses has to be decided one by one, and on into-sign 1.5.0 one kind with a rule
 left 182 candidates undecided (78 of them write requests), a kind without rules 243. Nobody clicks through that many
 on the page, so an agent decides them from the source, and the reviewer checks the reasons afterwards. The names are
 `case` and `undecided`, not `judge`, which `src/judgments.ts` already uses for discarding or handing over a test
-pair. `case` writes into the marks folder directly, as `reply` does without `--server`; an open page sees the mark
-once reloaded, and a way through the review server is left for another issue. The author is `agent` unless
-`--author` names one, as for `reply`, and never the config's `author` or the git name, so an agent's decision is
-not signed with the reviewer's name. A mark the command writes carries `"via": "duru case"`, the one field the page
+pair. `case` writes into the marks folder directly, as `reply` does without `--server`, and an open page sees the
+mark once reloaded; `--server` (#350, after the entry on `reply --server`) sends it through a running review
+instead. The author is `agent` unless `--author` names one, and never the config's `author` or the git name, so an
+agent's decision is not signed with the reviewer's name. A mark the command writes carries `"via": "duru case"`, the one field the page
 does not write, so the count of rule, person and agent picks and a later hold on agent picks can tell them apart;
 the page's own saves drop such a field. The command refuses, with the reason and exit code 1, a kind not in the
 config, an ID not on the map, a 「불필요」 without a note whether a rule picks the target or not, a target whose
@@ -2630,8 +2662,8 @@ Alternatives compared:
 - Telling agent marks apart by the author `agent`: a person can type that name on the page, and `--author` can name
   anything, so the field is the only thing that says how the mark was written.
 - Counting a 「불필요」 without a note as decided: the candidates a reviewer only pressed off would never be offered.
-- Going through the review server, as `reply --server` does: needs a running review, while an agent mostly decides in
-  bulk between reviews; left for later.
+- Going through the review server only, as `reply --server` does: needs a running review, while an agent mostly
+  decides in bulk between reviews, so the server came later as an option (#350), not as the only way.
 - One exit code for both "something is left" and "something failed": an agent could not tell a broken config from
   work to do.
 Measured on main 36d357f against the branch with both example clients and into-sign 1.5.0, with no `caseKinds` and

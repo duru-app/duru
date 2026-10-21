@@ -5,17 +5,17 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { baselineLine, compareMaps, readBaseline } from './baseline.ts';
 import { storeCandidates, storyCandidates } from './candidates.ts';
-import { casesWithoutTests, commandCaseRule, picksCalls, rulePicks } from './case-targets.ts';
+import { casesWithoutTests, picksCalls, rulePicks } from './case-targets.ts';
 import { loadConfig } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { UNKNOWN } from './client.ts';
 import { buildMap, unreadSites } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
-import { addMark, addReply } from './marks.ts';
+import { addReply } from './marks.ts';
 import { checkNeeds } from './needs.ts';
 import { CANDIDATES } from './stories.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
-import { readCaseTargets, reviewAuthor, startReviewServer } from './review.ts';
+import { readCaseTargets, reviewAuthor, startReviewServer, writeCaseMark } from './review.ts';
 import type { AnnouncedMark } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { checkStoryFiles } from './story-paths.ts';
@@ -24,7 +24,7 @@ import { linkTests } from './test-links.ts';
 
 const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'story', 'reply', 'wait', 'case', 'undecided'];
 const DEFAULT_PORT = 4400;
-const CASE_OPTIONS = ['--note', '--author'];
+const CASE_OPTIONS = ['--note', '--author', '--server'];
 const UNDECIDED_LEFT = 3;
 const AUTHOR_SOURCES: Record<string, string> = { config: 'config', git: 'git user.name', user: 'computer user name' };
 const KEPT_BY: Record<string, string> = { source: 'the source', config: 'bodyOptions' };
@@ -36,7 +36,11 @@ const waitServer = command === 'wait' && extra.length === 2 && extra[0] === '--s
 const caseArgs = command === 'case' ? caseArgsOf(extra) : null;
 const argsFit = command === 'story' ? extra.length === 1 && extra[0] !== '' : command === 'reply' ? replyArgs : command === 'wait' ? waitServer : command === 'case' ? caseArgs : command === 'undecided' ? extra.length <= 1 : extra.length === 0 || Number.isInteger(portArg);
 if (!COMMANDS.includes(command) || !configPath || !argsFit) {
-  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru story <config.json> <story ID>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>\n       duru case <config.json> <kind> <screen or call ID> needed|not-needed [--note <why>] [--author <name>]\n       duru undecided <config.json> [<kind>]`);
+  console.error(`usage: duru <extract|rebuild|tasks> <config.json>\n       duru story <config.json> <story ID>\n       duru review <config.json> [--port <n>]\n       duru reply <config.json> <comment ID> <text> [--server <review page address>]\n       duru wait <config.json> --server <review page address>\n       duru case <config.json> <kind> <screen or call ID> needed|not-needed [--note <why>] [--author <name> | --server <review page address>]\n       duru undecided <config.json> [<kind>]`);
+  process.exit(2);
+}
+if (caseArgs && caseArgs.server !== null && caseArgs.author !== null) {
+  console.error('a case sent with --server is always by agent; leave out --author');
   process.exit(2);
 }
 
@@ -45,10 +49,16 @@ function caseArgsOf(args: string[]) {
   if (!kind || !node || !['needed', 'not-needed'].includes(status)) return null;
   const options: Record<string, string> = {};
   for (let i = 0; i < rest.length; i += 2) {
-    if (!CASE_OPTIONS.includes(rest[i]) || rest[i + 1] === undefined || Object.hasOwn(options, rest[i])) return null;
+    if (!CASE_OPTIONS.includes(rest[i]) || rest[i + 1] === undefined || (rest[i] === '--server' && !rest[i + 1]) || Object.hasOwn(options, rest[i])) return null;
     options[rest[i]] = rest[i + 1];
   }
-  return { kind, node, status, note: options['--note'] ?? '', author: options['--author'] ?? 'agent' };
+  return { kind, node, status, note: options['--note'] ?? '', author: options['--author'] ?? null, server: options['--server'] ?? null };
+}
+
+async function sendToReview(server: string, route: string, body: unknown) {
+  const res = await fetch(new URL(route, server), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    .catch((err) => Promise.reject(new Error(`could not reach the review page at ${server}: ${err.cause?.message ?? err.message}`)));
+  if (!res.ok) throw new Error(await res.text());
 }
 
 const config = loadConfig(configPath);
@@ -68,7 +78,16 @@ if (command === 'tasks') {
     process.exit(1);
   }
   process.stdout.write(brief.text);
-} else if (command === 'case' || command === 'undecided') {
+} else if (command === 'case') {
+  const { kind, node, status, note, author, server } = caseArgs!;
+  try {
+    if (server) await sendToReview(server, 'api/cases', { kind, node, status, note });
+    else writeCaseMark(config, { kind, node, status, note }, author ?? 'agent');
+  } catch (err: any) {
+    console.error(err.message);
+    process.exit(1);
+  }
+} else if (command === 'undecided') {
   let read: ReturnType<typeof readCaseTargets>;
   try {
     read = readCaseTargets(config);
@@ -76,37 +95,22 @@ if (command === 'tasks') {
     console.error(err.message);
     process.exit(1);
   }
-  if (command === 'case') {
-    const { kind, node, status, note, author } = caseArgs!;
-    try {
-      const rule = commandCaseRule(read.map, config.caseKinds, read.attached, { kind, node, status, note });
-      addMark(config.marksDir, { target: { node, case: kind }, status, note, rule, author, via: 'duru case' });
-    } catch (err: any) {
-      console.error(err.message);
-      process.exit(1);
-    }
-  } else {
-    const [only] = extra;
-    if (only !== undefined && !Object.hasOwn(config.caseKinds, only)) {
-      console.error(`"${only}" is not a kind in caseKinds`);
-      process.exit(2);
-    }
-    const kinds = only === undefined ? config.caseKinds : { [only]: config.caseKinds[only] };
-    if (!Object.keys(kinds).length) console.error('caseKinds names no kind, so nothing is undecided');
-    const left = Object.keys(kinds).some((kind) => read.targets[kind].undecided.length);
-    const done = () => process.exit(left ? UNDECIDED_LEFT : 0);
-    process.stdout.on('error', done);
-    process.stdout.write(undecidedLines(read.map, kinds, read.targets, read.attached).map((l) => `${l}\n`).join(''), done);
+  const [only] = extra;
+  if (only !== undefined && !Object.hasOwn(config.caseKinds, only)) {
+    console.error(`"${only}" is not a kind in caseKinds`);
+    process.exit(2);
   }
+  const kinds = only === undefined ? config.caseKinds : { [only]: config.caseKinds[only] };
+  if (!Object.keys(kinds).length) console.error('caseKinds names no kind, so nothing is undecided');
+  const left = Object.keys(kinds).some((kind) => read.targets[kind].undecided.length);
+  const done = () => process.exit(left ? UNDECIDED_LEFT : 0);
+  process.stdout.on('error', done);
+  process.stdout.write(undecidedLines(read.map, kinds, read.targets, read.attached).map((l) => `${l}\n`).join(''), done);
 } else if (command === 'reply') {
   const { id, text, server } = replyArgs!;
   try {
     if (!server) addReply(config.marksDir, { replyTo: id, note: text });
-    else {
-      const res = await fetch(new URL('api/replies', server), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ replyTo: id, note: text }) })
-        .catch((err) => Promise.reject(new Error(`could not reach the review page at ${server}: ${err.cause?.message ?? err.message}`)));
-      if (!res.ok) throw new Error(await res.text());
-    }
+    else await sendToReview(server, 'api/replies', { replyTo: id, note: text });
   } catch (err: any) {
     console.error(err.message);
     process.exit(1);

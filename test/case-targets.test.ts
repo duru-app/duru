@@ -231,7 +231,9 @@ test('the README and the agent skill say what picks takes, what its rebuild line
 test('the README, the agent skill and the decision record say what case and undecided do, their exit codes, the field case writes and how to read the case kinds section', () => {
   const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
   const readme = read('../README.md');
-  assert.match(readme, /`case <config> <kind> <screen or call ID> needed\|not-needed \[--note "<why>"\] \[--author <name>\]`/);
+  assert.match(readme, /`case <config> <kind> <screen or call ID> needed\|not-needed \[--note "<why>"\] \[--author <name> \| --server <review page address>\]`/);
+  assert.match(readme, /With `--server` and the address the review printed, the mark\s+goes through the running review instead/);
+  assert.match(readme, /`--author` with `--server` stops with `a case sent with --server is always by\s+agent; leave out --author` and exit code 2/);
   assert.match(readme, /It exits with 0 when none is left, 3 while any is, 1 when the config, the\s+map or a mark file cannot be read/);
   assert.match(readme, /`"via": "duru case"`/);
   assert.match(readme, /`case kind <kind>: undecided N \| cases with no tests N`/);
@@ -239,9 +241,12 @@ test('the README, the agent skill and the decision record say what case and unde
   const skill = read('../skills/duru/SKILL.md');
   assert.match(skill, /`duru case <config> <kind> <ID> needed`/);
   assert.match(skill, /This\s+part is done when every candidate `duru undecided` still lists is one only a person can decide/);
-  assert.match(skill, /an open review page shows them only once it is reloaded/);
+  assert.match(skill, /Without `--server` the\s+marks are written straight into the marks folder, so an open review page shows them only once it is reloaded/);
+  assert.match(skill, /While a review you launched is running, add `--server <the review page address>`\s+and leave out `--author`/);
   const decisions = read('../docs/decisions.md');
   assert.match(decisions, /\*\*An agent decides a kind of case for a screen or call with `duru case`/);
+  assert.match(decisions, /\*\*An agent sends a case decision to a running review with `duru case … --server <review page address>`/);
+  assert.doesNotMatch(decisions, /a way through the review server is left for another issue/);
   assert.match(decisions, /since #314 a picked kind with a case no test carries is listed under\s+`# Case kinds`/);
 });
 

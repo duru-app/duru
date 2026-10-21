@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { loadMarks } from '../src/marks.ts';
 import { startReviewServer } from '../src/review.ts';
-import { withRebuiltFixture, signer, withServer, postMark, browserMissing, toList, withPage, reply, pickedBoxes, WALK, withPathStories, flowPlace, storyRow, pickPathStory, lineSteps, nowStep, CANDIDATES, storiesTab } from './review-helpers.ts';
+import { withRebuiltFixture, signer, withServer, postMark, browserMissing, toList, withPage, reply, decideCase, CASE_KINDS, pickedBoxes, WALK, withPathStories, flowPlace, storyRow, pickPathStory, lineSteps, nowStep, CANDIDATES, storiesTab } from './review-helpers.ts';
 import type { PageData, Kept } from './review-helpers.ts';
 
 declare const state: any;
@@ -334,6 +334,36 @@ test('in a browser, a reply written without --server is not pushed to the open p
         await toList(p);
         await p.click('#screen-list li:has-text("/document/:id")');
         await p.waitForSelector('#right .history > li:has-text("why is the list empty?") .replies li:has-text("the fixture has no rows")');
+      }),
+    ),
+  );
+});
+
+test('in a browser, a case sent with duru case --server shows in 「경우별 테스트」 on the open page without a reload, one taken out by agent with its reason and a picked one with its kind pressed and agent on it, and text being typed in the form keeps its place', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config, copy) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const read = 'GET:/api/v1/document/{documentId}';
+        await p.click('#screen-list li:has-text("/document/:id")');
+        await p.locator('table.calls tbody tr:not(.option)', { hasText: read }).locator('td.cell').first().click();
+        const cases = p.locator('#center .call-info > .cases');
+        await cases.waitFor();
+        await p.evaluate(() => { (window as Window & Kept).kept = true; });
+        await p.click('#right-dock textarea');
+        await p.keyboard.type('half');
+
+        await decideCase(copy, 'boundary', read, 'not-needed', '--note', '읽기에는 입력이 없다', '--server', `${base}/`);
+        const out = cases.locator('li.case-left-out');
+        await out.waitFor();
+        assert.match((await out.locator('.case-head .chip.pick-out').textContent())!, / · agent$/);
+        assert.equal(await out.locator('.case-reason').textContent(), '이유 읽기에는 입력이 없다');
+
+        await decideCase(copy, 'legacy', read, 'needed', '--server', base);
+        await cases.locator('.case-kinds button[aria-pressed="true"]', { hasText: CASE_KINDS.legacy }).waitFor();
+        assert.deepEqual(await cases.locator('.case-head .chip.pick-person').allTextContents(), ['agent']);
+        assert.equal(await p.evaluate(() => (window as Window & Kept).kept), true);
+        await p.keyboard.type(' and more');
+        assert.equal(await p.inputValue('#right-dock textarea'), 'half and more');
       }),
     ),
   );

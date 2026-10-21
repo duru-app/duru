@@ -35,7 +35,7 @@ node src/cli.ts tasks path/to/project-config.json > tasks.md        # task list 
 node src/cli.ts story path/to/project-config.json <story ID>   # one story for a coding agent: addresses, arrival lines, empty tests
 node src/cli.ts reply path/to/project-config.json <comment ID> "<text>" [--server <review page address>]   # answer a comment
 node src/cli.ts wait path/to/project-config.json --server <review page address>   # exits with the comments not yet answered
-node src/cli.ts case path/to/project-config.json <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name>]   # decide a case kind for one screen or call
+node src/cli.ts case path/to/project-config.json <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]   # decide a case kind for one screen or call
 node src/cli.ts undecided path/to/project-config.json [<kind>]   # exits with 3 while a candidate of a case kind is undecided
 npm test
 ```
@@ -1156,13 +1156,20 @@ too, adding `, N of them under screens and calls listed above`. When this sectio
 the list adds `N undecided case candidates, N cases with no tests`, and with no open marks the list says the case
 kinds below still have work instead of `No open marks.` Without `caseKinds` the list has no such section.
 
-`case <config> <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name>]` writes a case mark
-of that kind for that screen or call, as the review page would, directly into `marksDir`: the author is `agent`
-unless `--author` names one, and the file also carries `"via": "duru case"`. An open review page shows it the next
-time it is loaded. It prints nothing when the mark is written, and stops with a line saying why and exit code 1,
-writing nothing, for a kind not in `caseKinds`, an ID not on the map, `not-needed` without `--note`, a screen or call
-whose current mark of that kind a person left (any mark without `via`), also one that leaves it undecided, and `not-needed`
-on a screen or call off the side the kind's rules pick that has no mark of that kind to take back. `needed` is also
+`case <config> <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]`
+writes a case mark of that kind for that screen or call, as the review page would, directly into `marksDir`: the
+author is `agent` unless `--author` names one, and the file also carries `"via": "duru case"`. Written this way, an
+open review page shows it the next time it is loaded. With `--server` and the address the review printed, the mark
+goes through the running review instead, which checks it and writes the same file with the author always `agent`,
+prints it on standard error as a `"mark"` line and shows it on every open page at once; the command itself then
+reads neither the map nor the marks. `--author` with `--server` stops with `a case sent with --server is always by
+agent; leave out --author` and exit code 2. It prints nothing when the mark is written, and stops with a line saying
+why and exit code 1, writing nothing, for a kind not in `caseKinds`, an ID not on the map, `not-needed` without
+`--note`, a screen or call whose current mark of that kind a person left (any mark without `via`), also one that
+leaves it undecided, and `not-needed` on a screen or call off the side the kind's rules pick that has no mark of that
+kind to take back, the same line with or without `--server`. A review that cannot be reached stops it with `could
+not reach the review page at <address>: …` and exit code 1, and a review started by an older duru answers `not
+found`. `needed` is also
 written where a rule already picks the target, so it stays picked when the rule changes. A `not-needed` where a rule
 picks the target carries `rule` like one saved on the page.
 

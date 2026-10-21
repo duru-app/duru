@@ -347,8 +347,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    has decided the kind for, write requests first: read its source and decide whether that kind of case can happen
    there, then run `duru case <config> <kind> <ID> needed`, or `duru case <config> <kind> <ID> not-needed --note
    "<why>"` with a reason a reviewer can check from the code. The author is `agent` unless you pass `--author`; do
-   not pass the reviewer's name. When you cannot tell from the code, leave it undecided and tell the user which one
-   and why. `duru case` refuses a kind not in the config, an ID not on the map, `not-needed` without a note, a
+   not pass the reviewer's name. While a review you launched is running, add `--server <the review page address>`
+   and leave out `--author`: the review writes the mark and every open page shows it at once, and the `"mark"` line
+   it puts on the review's standard error asks nothing of you. When you cannot tell from the code, leave it
+   undecided and tell the user which one and why. `duru case` refuses a kind not in the config, an ID not on the map, `not-needed` without a note, a
    person's mark and `not-needed` off the side the rules pick where there is nothing to take back, printing why with
    exit code 1; read the reason and do not retry the same call. Run `duru undecided <config>` (or with one kind) to
    see what is left: it exits with 3 while any candidate is undecided, 0 when none is, 1 when the map or marks cannot
@@ -356,8 +358,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    reviewer left, mostly a kind pressed off on the page without a reason, and `duru case` will not change it. This
    part is done when every candidate `duru undecided` still lists is one only a person can decide, such a line or
    one you could not tell from the code, or when none is left and it exits with 0; then tell the user which are
-   left, with the author and date such a line gives, and go on with `cases with no tests`. The marks are written
-   straight into the marks folder, so an open review page shows them only once it is reloaded; tell the user so.
+   left, with the author and date such a line gives, and go on with `cases with no tests`. Without `--server` the
+   marks are written straight into the marks folder, so an open review page shows them only once it is reloaded;
+   tell the user so.
    Under `cases with no tests`, each `### <ID>` is a screen or call the kind is picked for whose `no tests` tags no
    test carries yet: write a test with its `@screen:` or `@call:` tag and each such case tag, starting from its
    empty test, as for a case above. A candidate you mark `needed` while you work shows up under `cases with no

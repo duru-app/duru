@@ -10,13 +10,13 @@ import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { screenRoutes } from './address-match.ts';
 import { acceptCandidate, candidatePlace, discardCandidate, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
-import { caseTargets, exclusionOf, pickedKinds } from './case-targets.ts';
+import { caseTargets, commandCaseRule, exclusionOf, pickedKinds } from './case-targets.ts';
 import { isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { buildFlow } from './flow.ts';
 import type { MapCall, MapScreen, ScreenMap } from './map.ts';
 import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
-import { addMark, addReply, classifyMarks, loadMarks, mergedStatus, recordKind, targetsOf } from './marks.ts';
+import { addMark, addReply, CASE_STATUSES, classifyMarks, loadMarks, mergedStatus, recordKind, targetsOf } from './marks.ts';
 import { addNeed, checkNeeds, editNeed } from './needs.ts';
 import type { Mark } from './marks.ts';
 import { linkKey, locatePart, locateStoryPart } from './parts.ts';
@@ -131,6 +131,27 @@ export function readCaseTargets(config: any) {
   const caseMarks = loadMarks(config.marksDir).filter((m) => targetsOf(m).some((t) => t.case !== undefined));
   const { attached } = classifyMarks(caseMarks, map, [], Object.keys(config.caseKinds));
   return { map, attached, targets: caseTargets(map, config.caseKinds, attached) };
+}
+
+export interface CaseDecision {
+  kind: string;
+  node: string;
+  status: string;
+  note: string;
+}
+
+export function writeCaseMark(config: any, { kind, node, status, note }: CaseDecision, author: string) {
+  const { map, attached } = readCaseTargets(config);
+  const rule = commandCaseRule(map, config.caseKinds, attached, { kind, node, status, note });
+  return addMark(config.marksDir, { target: { node, case: kind }, status, note, rule, author, via: 'duru case' });
+}
+
+function caseDecision(input: unknown): CaseDecision {
+  const { kind, node, status, note = '' } = (isPlainObject(input) ? input : {}) as Record<string, unknown>;
+  if (typeof kind !== 'string' || typeof node !== 'string' || !CASE_STATUSES.includes(status as string) || typeof note !== 'string') {
+    throw new Error('expected { "kind", "node", "status", "note" } with the kind, the screen or call ID and the note as text and the status needed or not-needed');
+  }
+  return { kind, node, status: status as string, note };
 }
 
 export function reviewData(config: any, author: ReviewAuthor | null, app: AppHost | null = null, fileSettings: Awaited<ReturnType<AppHost['fileSettings']>> | null = null) {
@@ -391,9 +412,10 @@ export async function startReviewServer(config: any, { port = 0, author = review
   };
   // 답글의 작성자는 페이지를 띄운 사람이 아니라 답한 에이전트다.
   const saves: Record<string, (input: any) => unknown> = {
-    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined, via: undefined })),
-    '/api/replies': (input) => announce(addReply(config.marksDir, { replyTo: input.replyTo, note: input.note })),
-    '/api/judgments': (input) => addJudgment(config.judgmentsDir, input),
+    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, author: author.name, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined, via: undefined })),
+    '/api/replies': (input) => announce(addReply(config.marksDir, { replyTo: input?.replyTo, note: input?.note })),
+    '/api/judgments': (input) => addJudgment(config.judgmentsDir, { ...input, author: author.name }),
+    '/api/cases': (input) => announce(writeCaseMark(config, caseDecision(input), 'agent')),
   };
   const sendPathValues = async (res: http.ServerResponse, id: string | null, role: string | null, typed = {}) => {
     const map = readMap(mapFile);
@@ -540,7 +562,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
           return send(res, 400, 'text/plain', err.message);
         }
         try {
-          const saved = saves[req.url!]({ ...input, author: author.name });
+          const saved = saves[req.url!](input);
           return send(res, 201, 'application/json', JSON.stringify(saved));
         } catch (err: any) {
           return send(res, 400, 'text/plain', err.message);
