@@ -43,11 +43,13 @@ npm test
 Requires Node 22.18 or later (23.6 or later on Node 23), which runs duru's own TypeScript files without a flag. Run
 duru from its clone, or link it (`npm link`, or `npm install <path to the clone>`): Node does not run TypeScript
 files from inside `node_modules`, so a copy installed there, as from a packed `.tgz`, stops on its first `.ts` file.
+A run over a large app can stop with `JavaScript heap out of memory`; run it again with a larger Node heap, such as
+`NODE_OPTIONS=--max-old-space-size=4096 node src/cli.ts rebuild path/to/project-config.json`.
 
 ## Config
 
 The project config lives **outside this repository** next to the target project's data. Paths in it are
-relative to the config file, except the files inside the client source (`routesFile`, `constants`,
+relative to the config file, except the files inside the client source (`routesFile`, `routeTables`, `constants`,
 `apiModules`, `calledApiModules`, `settingsDefaults`), which are relative to `srcRoot`. `test/fixtures/app` holds a small fake
 client with example results and a config to start from.
 
@@ -67,6 +69,24 @@ client with example results and a config to start from.
   `routeConstant` and `constants` may be left out, or set to `null` (`routeConstant` also to `""`), for an app that
   has no table of its route paths. A `routeConstant` that is not a dotted name, or whose first name is not in
   `constants`, stops the run with an error.
+- `routeTables` — route files that make one route for each item of a table (optional), such as mattermost's
+  admin console, which draws one route per settings page:
+
+  ```json
+  "routeTables": [{
+    "route": "components/admin_console/admin_console.tsx",
+    "table": { "file": "components/admin_console/admin_definition.tsx", "const": "AdminDefinition" },
+    "items": "*.subsections.*"
+  }]
+  ```
+
+  `route` is a file listed in `routesFile`, `table` the file and the top-level `const` that hold the table, and
+  `items` the keys from that const to each item, with `*` for every key at that place. The items give screens
+  whose sources hold the components each item names, with the path of the screen that draws the route file in
+  front. The conditions written in an item are not read. Without the
+  entry, such a route gives a `route not read` line whose reason starts with `made for each item of a list`. An entry of another shape, one naming a file not in `routesFile`, or a route file
+  named twice stops the run with an error, as does an entry whose route file has no such route or more than one,
+  whose table const is not there, or none of whose items has the field the route reads.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
@@ -328,7 +348,8 @@ client with example results and a config to start from.
 usable as a test tag. The pattern a path variable carries is left out of the ID, so `/document/:tab(draft|done)`
 gives `/document/:tab#DocumentList`; the screen's path keeps it. It lists its route file and line, its component
 file, its `sourceFiles`, the API calls it reaches, the settings it reads, and its links to other screens with the
-conditions guarding them. The settings and links come from every file in `sourceFiles`. The API calls are only
+conditions guarding them. A screen made from an item of a table in `routeTables` also has `tableItem`: the item's
+keys joined with `.`, the table file and the item's line. The settings and links come from every file in `sourceFiles`. The API calls are only
 those the screen's code reaches, so a file in `sourceFiles` can hold calls the screen does not list, and a call
 sent by a method of a store the screen gets from a React context hook can be written in a file outside them; each
 call names the file and line where it is written. A call a saga makes for the screen names the line in the saga
@@ -417,14 +438,16 @@ listing the places whose value the source does not show in full.
   still an option of that call, with where it comes from: `the source`, `bodyOptions`, or both joined by `and`. The
   entry can come out of the config (`keptBodyTypeExclusions`).
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
-  wrapping its route bring.
+  wrapping its route bring. For a screen made from a table item, `, table item <key> at <file>:<line>` follows.
 - `route path not read ← <route file>:<line>: stopped at <piece>` — a route whose path duru could not read in full.
   `<piece>` is the first part of the path whose value it could not read, as written where duru stopped: in the
   route file, or, followed by `in <file>:<line>`, in another file when duru followed a name into that file. `, only
   <text>` follows when a part of the path was read, with `{?}` for the rest. The screen is on the map with that path
   and an ID made from it; when the ID itself holds `{?}`, it changes once that part can be read (`unreadRoutePaths`).
 - `route not read ← <route file>:<line>: <reason>` — printed when duru sees a route that draws a screen it cannot
-  read, with the reason.
+  read, with the reason. For an item of a table in `routeTables`, the reason starts with `table item <key> at
+  <file>:<line>` and goes on with `has no <field>`, or with `: its <field> stopped at <piece>` when its value could
+  not be read in full, `<piece>` written as for `route path not read`.
   That screen is missing from the map and has no ID, so no test can be tagged with it; look at the route at that
   line to see which screen it draws (`unreadRoutes`).
 - `settingsFunctions <file>:<line> <what>` — about calls in the files the route files lead to by import: a call
@@ -432,7 +455,8 @@ listing the places whose value the source does not show in full.
   value (the map keeps that value), or that differs from another call's or cannot be compared with it (the map
   leaves the default unknown); and a function called in none of those files (`settingsCallNotices`).
 - An alias import that finds no file, with the number of files that write it (`unresolvedAliasImports`).
-- Routes that end up with the same ID, each place as `file:line` (`duplicateIds`).
+- Routes that end up with the same ID, each place as `file:line`, the table item's place for a screen made from a
+  table item (`duplicateIds`).
 - `bodyOptions` call IDs that are not on the map (`unknownBodyOptionCalls`), `bodyTypeExclusions` call IDs that are
   not on the map and fields that are not an on/off option read from that call's body type
   (`unknownBodyTypeExclusions`), `moves` paths that match no route
@@ -1008,7 +1032,8 @@ result file named in `source`. A comment or reply on a `candidate` carries `"whe
 with `stepRanges` giving the steps behind each screen, or `{"report","tests"}`, the result file and the titles of the
 tests that passed through that order. It is `null` once the candidate is no longer listed. A comment or reply on a
 `step` of a story carries `"where": {"file","screen"}`, the story file under `storiesDir` and the step's screen with
-its `componentFile`, `routeFile` and route `line` (`"onMap": false` instead when the screen is not on the map); on a
+its `componentFile`, `routeFile` and route `line`, with `tableItem` for a screen made from a table item (`"onMap": false`
+instead when the screen is not on the map); on a
 `hop`, `{"file","from","to","verdict","ways","preconditions"}`, the two screens in the same shape, the link's verdict
 and where it is written as on the story, and the preconditions of the story that concern that link. It is `null` once
 the story no longer has that step or link, and while the story file or the map cannot be read or the map was built
@@ -1059,7 +1084,8 @@ exit code is 1; a wrong call exits with 2.
 ## Task list
 
 `tasks` prints, as Markdown, every screen, API call and story whose current mark is 「테스트 필요」, written `needs-more`.
-Each screen comes with its marks, component file and route line, the app address, the settings and roles it
+Each screen comes with its marks, component file and route line (followed by `table item <key> at <file>:<line>` for
+a screen made from a table item), the app address, the settings and roles it
 needs, the tests of each role and setting case and of each case kind picked by a reviewer or a rule, or of each value of a kind with values,
 by depth and status, its API calls and the tests already attached. Calls follow under `# API calls`, with their
 picked case kinds the same way, and stories under `# Stories` with their steps, link verdicts and 「사전 조건」. A story's `needs` lines come before its

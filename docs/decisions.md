@@ -2623,6 +2623,63 @@ each with two open screen marks, an open call mark and a `needed` and a `not-nee
 config (into-sign also with the five marks of the case-kind check of 2026-10-11): the task lists and what `rebuild`
 prints are identical.
 
+**A route made for each item of a table gives screens for its items when the config names the table in `routeTables`,
+and a table file of its own is in no screen's sources.**
+Driver's decisions in #305 (2026-10-19 and 2026-10-20). mattermost's admin console makes one route for each item of
+`AdminDefinition` (`admin_definition.tsx`, 113 items) with `path={`${props.match.url}/${item.url}`}`. On main that route
+was one `route not read` line, `/admin_console#AdminConsole` held the code of every admin page (1658 source files),
+and a test opened at `/admin_console/about/license` matched no screen. The config now names only the route file, the
+table file and its top-level const, and the keys from that const to the items (`"*.subsections.*"`). duru reads the
+rest: the field of the item the route path uses, and every value under a `component` key at any depth of the item,
+following consts, imports, lists and spreads. The first component names the screen, and an item that names none
+takes the component the route draws (`SchemaAdminSettings`). An item screen holds the code of the route's component
+and of every component the item names, and gets the outer screen's path in front as in #304.
+- Leaving the table file out of screen sources is a rule of its own, not the `constants` rule: a table file need not
+  be listed in `constants`, and the `constants` rule keeps a module that only gives settings defaults. The driver
+  chose to leave it out of the outer `/admin_console` screen too: its source files go from 1658 to 1033 and its
+  requests from 5 to 2, and the three requests that leave (workspace optimization twice, brand image) show only on
+  the admin page screens that send them. Kept, each page's code would show twice, and a reviewer marking
+  `/admin_console` 「충분」 would vouch for 112 pages they never opened.
+- An item whose components all only redirect gives no screen. duru reads the component's declaration, in another
+  file too, and takes it as a redirect when it is a function component whose one returned value is a redirect
+  element, as mattermost's `user_attributes_redirect` is.
+- An item that has no value for the field the route reads, or whose value could not be read in full, gives no screen
+  and a `route not read` line naming the item.
+- Two routes made for each item of a list in one route file named in `routeTables` stop the run, with the entry and
+  both route lines. No measured app has two, so there is no key yet for choosing one; such a key would be optional, so
+  a config written now keeps working.
+- The review page shows nothing new for these screens. The map's `tableItem`, the summary lines and the task list
+  name the item's place in the table.
+Measured on mattermost f38678d: 69 screens become 181 (113 items, less the one that only redirects), with 181
+distinct IDs and no `admin_console.tsx:179` line; the other 68 screens are the same as on main. The maps of
+`test/fixtures/app`, `test/fixtures/ts-app`, into-sign 2.0.0 (`config-role.json`) and into-sign 1.5.0 are the same on
+main and on this change apart from `generatedAt`.
+Known limits: the conditions written in an item (`isHidden`, `isDisabled`) are not read, so the item screens open as
+`/admin_console` does, which had no condition on main either. The 25 items with no component of their own share one
+set of sources and are named `SchemaAdminSettings`, so the review does not tell their settings apart. An item whose
+first component only wraps a section (`LicensedSectionContainer`, two items) is named after it, and its ID changes when
+the order inside the item changes. Thirteen addresses are shared by two items, the page for a licensed server and its
+feature-discovery page, and a test opened at such an address goes to the first matching screen. No link into an item
+screen is read, so each is an entry screen. On mattermost the run with the table no longer fits Node's default heap
+(2240 MB on the machine measured): main already peaks close to it while TypeScript reads the types, and following the
+items' components into about a hundred files keeps some 60 MB more, so `extract` stops with `JavaScript heap out of
+memory`; with `NODE_OPTIONS=--max-old-space-size=4096` it ends in 47 s. When the outer address cannot be filled, each item gives its own `route
+path not read` line at the same route line. A table written in a route file, or in a screen's own component file, stays
+with all it imports in the sources of every screen that holds that file. outline builds its settings table inside a hook from lazy component
+constants (`Profile.Component`), with no top-level const, and appsmith passes its route tables by spread
+(`{...route}`); neither is read.
+Alternatives compared:
+- Writing the component fields in the config (`schema.component`, `schema.settings[].component`), as planned on
+  2026-10-19: on mattermost it misses seven components of five items without a word (membership and permission
+  policies, mobile security, posts, recaps).
+- Writing each screen in the config: it goes stale whenever the app changes, and the map's screens are meant to be
+  rebuilt by the program.
+- duru finding the tables itself: in mattermost, outline and appsmith the list reaches the route through a store
+  selector or a hook, and none was found.
+- One screen with each page as a sub-address under it: mattermost's and outline's items each have their own
+  component, address, sidebar entry and condition, which fits a screen per item; appsmith's editor table picks panes
+  inside one screen and would fit sub-addresses, but duru does not read it.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

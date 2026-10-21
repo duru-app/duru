@@ -192,6 +192,28 @@ function routeFilesOf(value: unknown, srcRoot: string) {
   return files;
 }
 
+const ROUTE_TABLE_KEYS = ['route', 'table', 'items'];
+const ITEMS_PATH = /^(\*|[\w$-]+)(\.(\*|[\w$-]+))*$/;
+
+function routeTablesOf(value: unknown, srcRoot: string, routeFiles: (string | null)[]) {
+  const inSrc = (f: string) => path.relative(srcRoot, path.join(srcRoot, f));
+  const isTable = (t: any) => isPlainObject(t) && Object.keys(t).every((k) => ROUTE_TABLE_KEYS.includes(k)) && isText(t.route) && isText(t.items) && ITEMS_PATH.test(t.items)
+    && isPlainObject(t.table) && Object.keys(t.table).length === 2 && isText(t.table.file) && isText(t.table.const) && IDENTIFIER.test(t.table.const);
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || !value.every(isTable)) {
+    throw new Error('routeTables must be a list of { "route", "table": { "file", "const" }, "items" }: a file in routesFile with a route made for each item of a table, '
+      + 'the file and top-level const holding that table, and the keys leading to its items with "*" for every key at that place, as paths from srcRoot, '
+      + `such as [{ "route": "components/admin_console/admin_console.tsx", "table": { "file": "components/admin_console/admin_definition.tsx", "const": "AdminDefinition" }, "items": "*.subsections.*" }], not ${JSON.stringify(value)}`);
+  }
+  const tables = value.map((t) => ({ route: inSrc(t.route), table: { file: inSrc(t.table.file), const: t.table.const }, items: t.items }));
+  tables.forEach(({ route }, i) => {
+    if (!routeFiles.includes(route)) throw new Error(`routeTables[${i}].route ${JSON.stringify(route)} is not listed in routesFile`);
+    const first = tables.findIndex((t) => t.route === route);
+    if (first < i) throw new Error(`routeTables[${i}].route ${JSON.stringify(route)} is named by routeTables[${first}] too; a route file takes one table`);
+  });
+  return tables;
+}
+
 export function loadConfig(configPath: string) {
   const configDir = path.dirname(path.resolve(configPath));
   const { routesFile, ...raw } = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -334,6 +356,7 @@ export function loadConfig(configPath: string) {
   ]);
   const app = raw.app === undefined ? null : appSettings(raw.app, at, raw);
   const outDir = at(raw.outDir ?? '.');
+  const routeFiles = routesFile === undefined ? [] : routeFilesOf(routesFile, at(raw.srcRoot));
   return {
     ...raw,
     constants,
@@ -341,7 +364,8 @@ export function loadConfig(configPath: string) {
     configDir,
     author: raw.author?.trim() ?? null,
     srcRoot: at(raw.srcRoot),
-    routeFiles: routesFile === undefined ? [] : routeFilesOf(routesFile, at(raw.srcRoot)),
+    routeFiles,
+    routeTables: routeTablesOf(raw.routeTables, at(raw.srcRoot), routeFiles),
     tsconfig,
     baselineMap: raw.baselineMap === undefined ? null : at(raw.baselineMap),
     aliases: tsconfig || packageRules.length ? [...packageRules, ...(tsconfig ? loadAliases(tsconfig) : [])] : null,

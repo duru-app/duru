@@ -1,6 +1,7 @@
 import { settingConditionName } from './access.ts';
 import type { Described, SettingSource } from './access.ts';
 import { testRef } from './judgments.ts';
+import type { TableItem } from './client.ts';
 import type { Part } from './marks.ts';
 
 interface LinkedTest {
@@ -28,6 +29,7 @@ export interface PartScreen {
   routeFile?: string;
   line?: number;
   componentFile?: string | null;
+  tableItem?: TableItem;
   access?: { restricted?: boolean; roleValues?: string[] | null; route?: Described[]; links?: LinkRow[]; settings?: SettingSource[] };
 }
 
@@ -161,7 +163,7 @@ export interface StoryPath {
   reach: { kind: string; from?: string; to?: string; screen?: string }[];
 }
 
-type ScreenPlace = { id: string; componentFile: string | null; routeFile: string | null; line: number | null } | { id: string; onMap: false };
+type ScreenPlace = { id: string; componentFile: string | null; routeFile: string | null; line: number | null; tableItem?: TableItem } | { id: string; onMap: false };
 
 export interface StepPlace {
   file: string;
@@ -177,7 +179,7 @@ export interface HopPlace extends StoryLink {
 
 function screenPlace(id: string, screens: PartScreen[]): ScreenPlace {
   const s = screens.find((x) => x.id === id);
-  return s ? { id, componentFile: s.componentFile ?? null, routeFile: s.routeFile ?? null, line: s.line ?? null } : { id, onMap: false };
+  return s ? { id, componentFile: s.componentFile ?? null, routeFile: s.routeFile ?? null, line: s.line ?? null, ...(s.tableItem && { tableItem: s.tableItem }) } : { id, onMap: false };
 }
 
 export function locateStoryPart(part: Part, story: StoryPath, screens: PartScreen[]): StepPlace | HopPlace | null {

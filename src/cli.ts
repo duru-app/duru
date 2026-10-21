@@ -19,7 +19,7 @@ import { readCaseTargets, reviewAuthor, startReviewServer } from './review.ts';
 import type { AnnouncedMark } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { checkStoryFiles } from './story-paths.ts';
-import { storyBrief, taskList, undecidedLines } from './tasks.ts';
+import { atTableItem, storyBrief, taskList, undecidedLines } from './tasks.ts';
 import { linkTests } from './test-links.ts';
 
 const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'story', 'reply', 'wait', 'case', 'undecided'];
@@ -275,7 +275,7 @@ if (command === 'tasks') {
   for (const n of map.settingsCallNotices ?? []) console.log(`  settingsFunctions ${n.file ? `${n.file}:${n.line} ` : ''}${n.reason}`);
   for (const { spec, files } of map.unresolvedAliasImports ?? []) console.log(`  tsconfig import ${spec} matches an alias but no file, imported in ${files} file${files === 1 ? '' : 's'}`);
   for (const d of map.duplicateIds) console.log(`  duplicate screen ID ${d.id} ← ${d.places.map((p: { file: string; line: number }) => `${p.file}:${p.line}`).join(', ')}`);
-  for (const s of map.screens.filter((s: any) => !s.componentFile)) console.log(`  component file not found for ${s.id} ← ${s.routeFile}:${s.line}`);
+  for (const s of map.screens.filter((s: any) => !s.componentFile)) console.log(`  component file not found for ${s.id} ← ${s.routeFile}:${s.line}${atTableItem(s)}`);
   for (const { file, line, path: routePath, stoppedAt: at } of map.unreadRoutePaths ?? []) {
     const elsewhere = at.file === file ? '' : ` in ${at.file}:${at.line}`;
     console.log(`  route path not read ← ${file}:${line}: stopped at ${at.text}${elsewhere}${routePath === UNKNOWN ? '' : `, only ${routePath}`}`);
