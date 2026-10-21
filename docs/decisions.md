@@ -3132,25 +3132,32 @@ reads like the page's 「접근 조건」 and 「링크 조건」.
 one line, and the recorder writes each visit record with `cy.writeFile`.**
 Asked for in #223: a browser test that is not a Playwright test had to write visit records by hand to give story
 candidates. The script listens to `url:changed`, which Cypress fires for a page load and for an address the app
-changes with `history.pushState` alike, so a single page app's moves become steps; it keeps the `http`/`https`
-addresses only, which leaves out the `about:blank` Cypress opens between tests, and an address the same as the one
-before it. Only a test that passed writes, as only a passing run of a traced Playwright test gives a candidate, and a
-test passed on a retry writes the attempt that passed. The file is named after the titles joined by ` -- `, as Cypress
-names its screenshots, without the words starting with `@`, as a trace candidate's name leaves out tags; the spec's
-path is the folder above it, so tests of the same title in two specs do not overwrite each other. The name is cut at
-200 bytes, below the 255 most file systems allow, since a `cy.writeFile` that fails fails the test in its `afterEach`
-and Cypress then skips the rest of the spec; two tests whose names agree in those 200 bytes write one file. The folder
-is read with `Cypress.expose`, since Cypress 16 removed `Cypress.env` and throws when it is called, and with
-`Cypress.env` on a Cypress older than that. The script imports nothing and is plain JavaScript, so Cypress bundles it
-into the support file in a project without TypeScript as well. Nothing under `src/` changed: duru reads these files as
-it reads any visit record.
-duru's suite does not install Cypress, since every pull request's run would download its binary. It loads the
-script with a fake `Cypress` that fires the same events the real one does, with page loads apart from `pushState`
-moves, and runs `rebuild` over what it wrote. Measured on 2026-10-22 with Cypress 16.1.1 in Electron, outside the
-repository: a spec moving `/signin → /home → /document/draft → /document/42` by `pushState` alone, and one following
-a link from `/home` to `/help`, wrote one record each, a failed test wrote none, and `rebuild` on the example client
-stored the candidates `/signin#SignIn > /home#Home > /document/:tab#DocumentList > /document/:id#DocumentDetail` and
-`/home#Home > /help#Help`.
+changes with `history.pushState` alike, so a single page app's moves become steps; it keeps only `http` and `https`
+addresses, which leaves out the `about:blank` Cypress opens between tests, and an address the same as the one before
+it. The query and what follows `#` are cut off before that: duru drops them anyway when it matches an address to a
+screen, and they can hold a sign-in token that would then sit in a file kept in git. Only a test that passed writes,
+as only a passing run of a traced Playwright test gives a candidate, and a test passed on a retry writes the attempt
+that passed. The file is named after the titles joined by ` -- `, as Cypress names its screenshots, without the words
+starting with `@`, as a trace candidate's name leaves out tags; the spec's path is the folder above it, so tests of
+the same title in two specs do not overwrite each other. The name is cut at 200 bytes, below the 255 most file systems
+allow, since a `cy.writeFile` that fails fails the test in its `afterEach` and Cypress then skips the rest of the
+spec; two tests whose names agree in those 200 bytes write one file. The folder is read with `Cypress.expose`, and
+with `Cypress.env` when that gives nothing: Cypress 15 has both and a project may still set it under `env` there,
+while Cypress 16 removed `Cypress.env` and throws when it is called, so that call is caught. The script imports
+nothing and is plain JavaScript, so Cypress bundles it into the support file in a project without TypeScript as well.
+Nothing under `src/` changed: duru reads these files as it reads any visit record. Known limits: the recorder's
+`afterEach` belongs to the root suite and so runs after the spec's own, whose moves, such as a sign-out, become steps;
+with `testIsolation` off, a test that starts on the page the one before left does not record that page; a failed test
+leaves the file an earlier passing run wrote, since `cy.writeFile` cannot delete; two tests whose names agree once
+tags are left out write one file.
+duru's suite does not install Cypress, since every pull request's run would download its binary. It loads the script
+with a fake `Cypress` that fires the same events the real one does, with page loads apart from `pushState` moves, and
+runs `rebuild` over what it wrote. Measured on 2026-10-22 with Cypress 16.1.1 in Electron, outside the repository: a
+test opening `/signin?next=%2Fhome#top` and moving on to `/home`, `/document/draft` and `/document/42` by `pushState`
+alone, and one following a link from `/home` to `/help`, wrote one record each, the first starting at `/signin`
+without the query, a failed test wrote none, with the folder left at its default so that the caught `Cypress.env` call
+ran, and `rebuild` on the example client stored the candidates `/signin#SignIn > /home#Home >
+/document/:tab#DocumentList > /document/:id#DocumentDetail` and `/home#Home > /help#Help`.
 - A `cy.task` that writes the record from `setupNodeEvents`, as #223 sketched: a task runs only once it is
   registered in the Cypress config, so the setup would be a second edit in a second file. `cy.writeFile` also writes
   from Cypress's Node side, relative to the project, and makes the folders, with nothing to register. Moving to a

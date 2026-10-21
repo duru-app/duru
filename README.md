@@ -680,12 +680,14 @@ import 'duru/recorders/cypress.js';
 `duru` resolves once duru is installed in the Cypress project with `npm install <path to the clone>`; without that,
 import the file by its path in the clone. Each test that passes writes `cypress/visits/<spec>/<titles>.json`, where
 `<spec>` is the spec's path in the project and `<titles>` the titles of its `describe` blocks and its own joined by
-` -- `, without the words starting with `@` and cut at 200 bytes. Its steps are the addresses the app was at, one
-for each change of address, also when the app changed it with `history.pushState` without loading a page. A test that
-fails or opens no page writes nothing, and a test passed on a retry writes the attempt that passed; the next run
-replaces the file.
-Name another folder, relative to the Cypress project, with `duruVisitRecords` under `expose` in the Cypress config
-(under `env` before Cypress 16). List the folder in `visitRecords`, as `["../e2e/cypress/visits"]`.
+` -- `, without the words starting with `@` and cut at 200 bytes. Its steps are the addresses the app was at without
+their query or what follows `#`, one for each change, also when the app changed the address with
+`history.pushState` without loading a page; addresses the spec's own `afterEach` opens are steps too. A test that
+passes again replaces its file, and a test passed on a retry writes the attempt that passed. A test that fails or
+opens no page writes nothing and leaves the file an earlier run wrote, so delete the folder before a run whose
+records should be the only ones. Name another folder, relative to the Cypress project, with `duruVisitRecords` under
+`expose` in the Cypress config, or under `env` before Cypress 16. List the folder in `visitRecords`, as
+`["../e2e/cypress/visits"]`.
 
 A Playwright test needs no visit record when its report is listed in `tests` and the test ran with Playwright's
 `trace` option on: the screens it passed through, read from its trace by `rebuild`, become a candidate whose source
