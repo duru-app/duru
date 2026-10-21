@@ -336,3 +336,18 @@ test('the decision record says the review server\'s check and rebuild call the r
   assert.match(decisions, /The review data and the task list, which is made from that data, read it; the review\s+server's check of a `not-needed` mark and `rebuild` call the same rule matcher \(`rulePicks`\) without the marks/);
   assert.doesNotMatch(decisions, /the review server's check and `rebuild` all read it/);
 });
+
+test('the README and the decision record say what a reviewer sees of an agent\'s not-needed under review, what the answer writes with of, and what was compared', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /`\| under review N`/);
+  assert.match(readme, /「경우 종류 N」[\s\S]*「미판정 U · 검토 중 R」/);
+  assert.match(readme, /「검토 중 N」 lists, open and in the same three groups[\s\S]*「✓ N」 accepts and 「✕ N」 reverts them all/);
+  assert.match(readme, /`"of": "<ID of the agent's mark>"`/);
+  assert.match(readme, /`under review: N` follows `undecided`/);
+  assert.match(readme, /`took back the agent's not-needed` for one a\s+reviewer reverted/);
+  assert.match(readme, /a reviewer's answer to an agent's 「대상 아님」 reads 받아들임 or 되돌림/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*An agent's 「대상 아님」 waits under review until a reviewer accepts it on the review page/);
+  assert.match(decisions, /- A new status value, `under-review`[\s\S]*- A review record with no status[\s\S]*older `duru wait`[\s\S]*- No new field/);
+});
