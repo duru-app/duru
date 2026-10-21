@@ -49,7 +49,7 @@ function caseArgsOf(args: string[]) {
   if (!kind || !node || !['needed', 'not-needed'].includes(status)) return null;
   const options: Record<string, string> = {};
   for (let i = 0; i < rest.length; i += 2) {
-    if (!CASE_OPTIONS.includes(rest[i]) || rest[i + 1] === undefined || Object.hasOwn(options, rest[i])) return null;
+    if (!CASE_OPTIONS.includes(rest[i]) || rest[i + 1] === undefined || (rest[i] === '--server' && !rest[i + 1]) || Object.hasOwn(options, rest[i])) return null;
     options[rest[i]] = rest[i + 1];
   }
   return { kind, node, status, note: options['--note'] ?? '', author: options['--author'] ?? null, server: options['--server'] ?? null };

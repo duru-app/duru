@@ -146,7 +146,7 @@ test('case refuses with a reason and exits with 1 a kind not in the config, an I
     personsCaseMark(configFile);
     for (const [args, stderr] of CASE_REFUSALS) assert.deepEqual(run('case', ...args), { status: 1, stdout: '', stderr }, args.join(' '));
     assert.equal(caseMarks(configFile).length, 1);
-    for (const args of [['ended', '/lab#Lab'], ['ended', '/lab#Lab', 'maybe'], ['ended', '/lab#Lab', 'needed', '--note'], ['ended', '/lab#Lab', 'needed', '--why', 'x'], ['ended', '/lab#Lab', 'needed', '--note', 'a', '--note', 'b'], ['ended', '/lab#Lab', 'needed', '--server']]) {
+    for (const args of [['ended', '/lab#Lab'], ['ended', '/lab#Lab', 'maybe'], ['ended', '/lab#Lab', 'needed', '--note'], ['ended', '/lab#Lab', 'needed', '--why', 'x'], ['ended', '/lab#Lab', 'needed', '--note', 'a', '--note', 'b'], ['ended', '/lab#Lab', 'needed', '--server'], ['ended', '/lab#Lab', 'needed', '--server', '']]) {
       const misused = run('case', ...args);
       assert.equal(misused.status, 2, args.join(' '));
       assert.match(misused.stderr, /\n {7}duru case <config\.json> <kind> <screen or call ID> needed\|not-needed \[--note <why>\] \[--author <name> \| --server <review page address>\]\n/);
