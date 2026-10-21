@@ -119,11 +119,13 @@ const wayItem = (w, scope = null) => h('li', {}, h('code', {}, `${w.file}:${w.li
 const unknownList = (links) => h('ul', { class: 'plain ways unknown-links' }, links.map((u) => h('li', {}, h('code', {}, `${u.file}:${u.line}`), ' → ', h('code', {}, u.to))));
 const skippedLinks = (links) => [h('div', { class: 'muted skipped' }, '판정에서 뺀 링크'), unknownList(links)];
 
+const gapTitle = (on) => (on ? '이 사이를 대화 꼬리표에서 뺍니다' : '이 사이를 채워 달라는 뜻으로 대화 꼬리표에 더합니다');
+
 function linkItem(l, story, i, fields, gap) {
   const place = { kind: 'link', step: i + 2, screen: l.to };
   const head = h('span', { class: 'slot-text' },
     gap && l.verdict === 'broken'
-      ? h('button', { type: 'button', class: 'chip link-verdict l-broken gap-pick', 'aria-pressed': String(gap.on), title: gap.on ? '이 사이를 대화 꼬리표에서 뺍니다' : '이 사이를 채워 달라는 뜻으로 대화 꼬리표에 더합니다', onclick: gap.toggle }, LINK_VERDICT[l.verdict])
+      ? h('button', { type: 'button', class: 'chip link-verdict l-broken gap-pick', 'aria-pressed': String(gap.on), title: gapTitle(gap.on), onclick: gap.toggle }, LINK_VERDICT[l.verdict])
       : h('span', { class: `chip link-verdict l-${l.verdict}`, title: LINK_VERDICT_TITLE[l.verdict] }, LINK_VERDICT[l.verdict]),
     l.verdict === 'off-map' ? h('span', { class: 'muted' }, ' 화면 없음') : null,
     l.verdict === 'configured' ? h('span', { class: 'muted' }, ` ${l.reasons.join(', ')}`) : null,

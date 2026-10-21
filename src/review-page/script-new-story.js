@@ -243,14 +243,16 @@ function gapAt(c, a, b) {
 
 function gapPick(c, k) {
   const [a, b] = [c.steps[k - 1], c.steps[k]];
-  const on = c.gaps.some((g) => g[0] === a && g[1] === b);
-  return {
-    on,
-    toggle: () => {
-      c.gaps = on ? c.gaps.filter((g) => g[0] !== a || g[1] !== b) : [...c.gaps, [a, b]];
-      renderCompose([`.link[data-hop="${k - 1}"] button.gap-pick`]);
-    },
+  const isOn = () => c.gaps.some((g) => g[0] === a && g[1] === b);
+  const flip = (focus) => {
+    const at = gapAt(c, a, b);
+    if (at === null) return;
+    const on = !isOn();
+    c.gaps = on ? [...c.gaps, [a, b]] : c.gaps.filter((g) => g[0] !== a || g[1] !== b);
+    pressGapChips(at - 1, on);
+    renderCompose(focus ? [`.link[data-hop="${at - 1}"] button.gap-pick`] : null);
   };
+  return { on: isOn(), toggle: () => flip(true), toggleInFlow: () => flip(false) };
 }
 
 const writtenFields = (rows) => Object.fromEntries(Object.entries(rowsWritten(rows) ?? {}).filter(([, list]) => list.length));

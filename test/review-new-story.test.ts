@@ -311,6 +311,7 @@ test('in a browser, a new story with no screen yet shows 「에이전트와 대�
 });
 
 const talkTags = (p: Page) => p.locator('#right-dock .tags .tag-label').allTextContents();
+const gapChips = (p: Page) => p.locator('#flow button.story-chip').evaluateAll((bs) => bs.map((b) => [(b as HTMLElement).dataset.hop, b.classList.contains('exit') ? 'exit' : 'entry', b.getAttribute('aria-pressed')]).sort());
 const gapButtons = (p: Page) => p.locator('#center .story-path .link button.gap-pick').evaluateAll((bs) => bs.map((b) => [b.closest<HTMLElement>('.link')!.dataset.hop, b.textContent, b.getAttribute('aria-pressed')]));
 
 test('in a browser, while a new story is written the conversation form under 「에이전트와 대화」 is open with the screens picked as its tag 「화면 순서」 in their order, which follows a screen added or taken out, and a screen order takes no status', { skip: browserMissing }, async () => {
@@ -338,7 +339,7 @@ test('in a browser, while a new story is written the conversation form under 「
   );
 });
 
-test('in a browser, pressing 「링크 없음」 between two steps of a new story adds that gap to the tag 「화면 순서」 and pressing it again takes it out, and a picked gap moves with its two steps when a step before them is taken out or put in, and leaves when a step is put in between them', { skip: browserMissing }, async () => {
+test('in a browser, pressing 「링크 없음」 between two steps of a new story, or its mark on a box of the flow diagram, adds that gap to the tag 「화면 순서」 without adding a step and pressing it again takes it out, both showing pressed together, and a picked gap moves with its two steps when a step before them is taken out or put in, and leaves when a step is put in between them', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -347,9 +348,25 @@ test('in a browser, pressing 「링크 없음」 between two steps of a new stor
         await untilJudged(p, 2);
         assert.deepEqual(await composeLinks(p), ['이어짐', '링크 없음']);
         assert.deepEqual(await gapButtons(p), [['1', '링크 없음', 'false']]);
+        await p.waitForSelector('#flow button.story-chip');
+        assert.deepEqual(await gapChips(p), [['1', 'entry', 'false'], ['1', 'exit', 'false']]);
+
+        await p.click('#flow button.story-chip.exit');
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home → /help · 2-3 링크 없음'], 'the 「링크 없음」 mark in the diagram picks the gap like the button in the steps');
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help'], 'and adds no step');
+        assert.deepEqual(await gapButtons(p), [['1', '링크 없음', 'true']]);
+        assert.deepEqual(await gapChips(p), [['1', 'entry', 'true'], ['1', 'exit', 'true']]);
+        assert.equal(await p.getAttribute('#flow button.story-chip.exit', 'title'), '단계 2 → 3 · 링크 없음\n이 사이를 대화 꼬리표에서 뺍니다');
+        assert.equal(await p.evaluate(() => document.activeElement?.matches('#flow button.story-chip.exit')), true);
+        await p.keyboard.press('Enter');
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home → /help']);
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
+        assert.deepEqual(await gapButtons(p), [['1', '링크 없음', 'false']]);
+        assert.deepEqual(await gapChips(p), [['1', 'entry', 'false'], ['1', 'exit', 'false']]);
 
         await p.click('#center .link[data-hop="1"] button.gap-pick');
         assert.deepEqual(await gapButtons(p), [['1', '링크 없음', 'true']]);
+        assert.deepEqual(await gapChips(p), [['1', 'entry', 'true'], ['1', 'exit', 'true']], 'the button in the steps presses the marks in the diagram too');
         assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home → /help · 2-3 링크 없음']);
         assert.equal(await p.evaluate(() => document.activeElement?.matches('#center .link[data-hop="1"] button.gap-pick')), true);
         await p.click('#center .link[data-hop="1"] button.gap-pick');
@@ -645,9 +662,9 @@ test('in a browser, 「새 스토리」 in the flow bar opens the new-story scre
         await p.click('#flow-zoom .zoom-in');
         assert.deepEqual(await p.$eval('#flow', (f) => [f.scrollTop, f.scrollLeft]), judged, 'and so does one after it');
         await p.click('#flow-zoom .zoom-out');
-        await p.click('#flow .story-chip.exit');
+        await p.click('#flow .box.screen[data-key="/home#Home"] .story-badge');
         await untilJudged(p, 3);
-        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help', '/home'], 'a press on the mark inside a box adds that box');
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help', '/home'], 'a press on the step number inside a box adds that box');
         assert.deepEqual((await pillMarks(p, 'story-badge')).sort(), [['/help#Help', '3'], ['/home#Home', '2·4'], ['/signin#SignIn', '1']]);
         await takeOutStep(p, '#center', 3);
         await untilJudged(p, 2);

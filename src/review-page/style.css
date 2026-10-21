@@ -505,6 +505,8 @@
   .story-chip.l-broken { border-style: dashed; color: var(--fail); }
   .story-chip:is(.l-off-map, .l-unknown) { border-style: dotted; color: var(--more); }
   .story-chip.hovered { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px currentColor; }
+  button.story-chip { cursor: pointer; }
+  button.story-chip[aria-pressed=true] { background: var(--fail); color: var(--panel); border: 1.5px solid var(--fail); }
   :is(.box, .pathlegend) :is(.story-badge, .story-chip) { flex: none; height: 18px; line-height: 15px; }
   :is(.box, .pathlegend) .story-badge { min-width: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; }
   .story-tag { display: inline-block; padding: 0 6px; border: 1px solid currentColor; border-radius: 4px; background: var(--panel); font-size: 11px; line-height: 16px; white-space: nowrap; }
