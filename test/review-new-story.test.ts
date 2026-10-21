@@ -402,10 +402,11 @@ test('in a browser, 「남기기」 on a new story leaves a comment on its scree
   );
 });
 
-test('in a browser, a comment on a screen order shows in 「전체」 under a heading naming its order, with its note and reply in place, and one whose screen the map no longer has is listed under 「떨어져 나감」 by its order', { skip: browserMissing }, async () => {
+test('in a browser, a comment on a screen order shows in 「전체」 under a heading naming its order, each with the gaps it was left with and its note and reply in place, and one whose screen the map no longer has is listed under 「떨어져 나감」 by its order', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
-    const asked = addMark(config.marksDir, { target: { screens: HELP_PATH, gaps: [[2, 3]] }, note: '홈에서 도움말로 가는 길을 채워 줘', author: 'reviewer' } as Parameters<typeof addMark>[1]);
-    addReply(config.marksDir, { replyTo: asked.id, note: '홈에는 도움말로 가는 링크가 없습니다.' });
+    const asked = addMark(config.marksDir, { target: { screens: HELP_PATH, gaps: [[2, 3]] }, note: '홈에서 도움말로 가는 길을 채워 줘', author: 'reviewer' } as Parameters<typeof addMark>[1], new Date('2026-10-21T01:00:00Z'));
+    addReply(config.marksDir, { replyTo: asked.id, note: '홈에는 도움말로 가는 링크가 없습니다.' }, new Date('2026-10-21T02:00:00Z'));
+    addMark(config.marksDir, { target: { screens: HELP_PATH }, note: '전체 길을 다시', author: 'reviewer' }, new Date('2026-10-21T03:00:00Z'));
     addMark(config.marksDir, { target: { screens: ['/signin#SignIn', '/gone#Gone'] }, note: '없어진 화면까지', author: 'reviewer' });
     await withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -414,8 +415,9 @@ test('in a browser, a comment on a screen order shows in 「전체」 under a he
         await p.locator('#right-info .talk-scope button').nth(1).click();
         const group = p.locator(`#right-info .talk-group[data-group="order(${HELP_PATH.join(' > ')})"]`);
         assert.equal(await group.locator('h3').textContent(), '화면 순서 /signin → /home → /help');
-        assert.deepEqual(await group.locator('.talk-line').evaluateAll((ls) => ls.map((l) => [l.localName, l.querySelector('.tag-label')!.textContent, l.querySelector(':scope > div')!.textContent, l.querySelector('.replies')!.textContent!.includes('홈에는 도움말로 가는 링크가 없습니다.')])), [
-          ['div', '화면 순서 /signin → /home → /help · 2-3 링크 없음', '홈에서 도움말로 가는 길을 채워 줘', true],
+        assert.deepEqual(await group.locator('.talk-line').evaluateAll((ls) => ls.map((l) => [l.localName, l.querySelector('.tag-label')!.textContent, l.querySelector(':scope > div')!.textContent, l.querySelector('.replies li > div')?.textContent ?? null])), [
+          ['div', '화면 순서 /signin → /home → /help', '전체 길을 다시', null],
+          ['div', '화면 순서 /signin → /home → /help · 2-3 링크 없음', '홈에서 도움말로 가는 길을 채워 줘', '홈에는 도움말로 가는 링크가 없습니다.'],
         ]);
       }));
   });

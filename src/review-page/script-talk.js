@@ -65,7 +65,7 @@ function allTalk() {
     const meta = h('span', { class: 'meta' },
       unanswered(m, r) ? h('span', { class: 'unanswered-dot', role: 'img', 'aria-label': '미답변', title: '미답변 코멘트' }) : null,
       r.status ? h('span', { class: `chip ${r.status}` }, MARK_STATUS[r.status]) : null,
-      noTarget(m.target) ? null : tagChip(tagLabel(m.target)),
+      noTarget(m.target) ? null : tagChip(tagLabel((r.targets ?? [r.target]).find((t) => t && keyOf(t) === m.key) ?? m.target)),
       h('span', {}, signedAt(r)),
       replies.length ? h('span', {}, `· 답 ${replies.length}`) : null);
     // 대상 없는 말과 화면 순서에 남긴 말은 옮겨 갈 칸이 없으므로 여기서 글 전체와 답을 보인다.
