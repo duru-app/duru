@@ -145,6 +145,25 @@ test('with baselineMap, rebuild says for each case kind how many of its undecide
   });
 });
 
+test('the README, the agent skill and the decision record say what undecided --new lists and exits with, the new count rebuild prints, the 「신규」 marks of the page, and when an agent uses --new', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /undecided path\/to\/project-config\.json \[<kind>\] \[--new\]/);
+  assert.match(readme, /With `--new` it lists only the undecided candidates[\s\S]*`case kind <kind>: M new undecided since <file> \(N\s+undecided in all\)`[\s\S]*`--new needs baselineMap in the config` and exits with 2/);
+  assert.match(readme, /`, M of them new since <file>`/);
+  assert.match(readme, /「\(신규 M\)」 follows\s+「미판정 N」[\s\S]*「신규 M」 beside\s+the person button shows only those/);
+  assert.match(readme, /decides the chosen ones among the lines shown/);
+  assert.match(readme, /A screen in the list carries 「신규」/);
+  assert.doesNotMatch(readme, /A screen in the list carries 「생김」/);
+  const skill = read('../skills/duru/SKILL.md');
+  assert.match(skill, /When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config>\s+<kind> --new`/);
+  assert.match(skill, /Do not use `--new` for a kind added to `caseKinds` after that map was built/);
+  assert.doesNotMatch(skill, /사람이 정할 것/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*A new undecided candidate is a screen or call undecided now that the `baselineMap` map does not have/);
+  assert.match(decisions, /- Also counting as new a candidate a rule picked on the baseline map but no longer picks/);
+});
+
 async function pageBaseline(configFile: string) {
   const server = await startReviewServer(loadConfig(configFile), { author: AUTHOR });
   try {

@@ -36,7 +36,7 @@ node src/cli.ts story path/to/project-config.json <story ID>   # one story for a
 node src/cli.ts reply path/to/project-config.json <comment ID> "<text>" [--server <review page address>]   # answer a comment
 node src/cli.ts wait path/to/project-config.json --server <review page address>   # exits with the comments not yet answered
 node src/cli.ts case path/to/project-config.json <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]   # decide a case kind for one screen or call
-node src/cli.ts undecided path/to/project-config.json [<kind>]   # exits with 3 while a candidate of a case kind is undecided
+node src/cli.ts undecided path/to/project-config.json [<kind>] [--new]   # exits with 3 while a candidate of a case kind is undecided
 npm test
 ```
 
@@ -479,7 +479,8 @@ listing the places whose value the source does not show in full.
   the tests are read: how many of its candidates are undecided (see **Task list**), and how many cases of the
   screens and calls it is picked for no test carries yet, a case for each value of a kind with values. When an
   agent's `not-needed` waits for a reviewer on any of its candidates (see **Case kinds tab**), `| under review N`
-  follows with how many. When the marks cannot be read, `  case kinds not counted: <why>` takes the place of these
+  follows with how many. With `baselineMap`, the undecided count is followed by `, M of them new since <file>`: how
+  many of those undecided candidates are screens or calls the baseline map does not have. When the marks cannot be read, `  case kinds not counted: <why>` takes the place of these
   lines.
 - `rebuild` also prints the story and candidate counts, how many of the candidates came from traces, how many it
   newly stored in `candidates/`, and the files skipped, the need files in `needs/`, how many conditions pick a need
@@ -817,7 +818,8 @@ that and pressing its button both open a dialog that saves only with a reason. T
 it back in that person's name. A kind marked 「대상 아님」 with a reason on a screen or call no rule picks, as `case` writes
 it, shows the same row, with the date on hover; one pressed off with no reason shows no such row. Each kind
 still undecided on that screen or call (see **Task list**) has its own lines under the others: the kind, and below it
-「「미판정」 아직 아무도 정하지 않았습니다」 with two icon buttons: ✓ saves 「대상」 at once, and ✕ asks for a reason, as 「대상 아님…」 does, and
+「「미판정」 아직 아무도 정하지 않았습니다」, with 「신규」 after 「미판정」 for a screen or call the baseline map does not have (see
+**Case kinds tab**), and two icon buttons: ✓ saves 「대상」 at once, and ✕ asks for a reason, as 「대상 아님…」 does, and
 saves nothing without one. Hovering over them, or a screen reader, gives 「대상 — 이 요청에서 이 경우를 시험합니다」 and
 「대상 아님… — 이유를 적고 이 요청에서는 시험하지 않습니다」 (「화면」 for a screen). Where a mark, a person's or an agent's,
 keeps the kind undecided, the line says who left it instead of 「아직 아무도 정하지 않았습니다」, in the words of the
@@ -839,9 +841,11 @@ up the undecided candidates of every kind and those waiting for a reviewer, and 
 over it gives the two apart, 「미판정 U · 검토 중 R」. When the three do not fit on one line, as in a
 narrow list with three-digit counts, 「경우 종류 N」 moves to a second line. The tab lists the kinds in config order, each
 with its text, `case:<kind>` and 「대상 N · 미판정 N · 빈칸 N」, where 빈칸 is the number of cases with no tests that
-`rebuild` prints, and 「검토 중 N」 before 「미판정」 while any wait for a reviewer. A chosen kind shows four numbers:
+`rebuild` prints, and 「검토 중 N」 before 「미판정」 while any wait for a reviewer. With `baselineMap`, 「(신규 M)」 follows
+「미판정 N」 while M of the undecided candidates are screens or calls the baseline map does not have; the tab's own number
+stays the same. A chosen kind shows four numbers:
 「대상」 with how many a rule, a person and an agent (`duru case`) picked, 「대상 아님」, 「미판정」 and 「시험 없는 값 칸」, and
-「검토 중」 too while any wait. A screen or call a rule picks and a person or agent then marked
+「검토 중」 too while any wait; 「미판정」 has 「신규 M」 under it while M of them are new to the baseline map. A screen or call a rule picks and a person or agent then marked
 「대상」 counts as theirs, so the rule's number can be smaller than what the rule picks. Under them each rule has a line
 with what it picks, how many it picks and how many of those were taken out as 「대상 아님」, and 「아무것도 고르지 못함」
 when it picks nothing; a kind without rules says every screen and call is a candidate. Pressing a rule's line shows
@@ -857,9 +861,13 @@ undecided candidates in three groups, 「쓰기 요청」 (a request whose metho
 「화면」, leaving out an empty group; each request carries its method in colour (GET blue, POST green, PUT orange, PATCH
 teal, DELETE red). A candidate kept undecided by a person's mark has a line under it: 「<author> 가 <date> 에 이유 없이
 뺐습니다」, or 「… 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다」 with the old reason. These are the ones `duru case`
-leaves to a person; 「사람이 정할 것 N」 above the list shows only them. A check box on each line, on each group title
-and 「모두 고르기」 choose candidates; once one is chosen, 「대상 (N)」 or 「대상 아님… (N)」 shows and decides them all, each
-with its own mark; 「대상 아님…」 asks for one reason and saves nothing without one. The marks are saved one by one; if
+leaves to a person; a button above the list with a person icon and their number, 「직접 판정」 on hover, shows only
+them. With `baselineMap`, each candidate the baseline map does not have carries 「신규」 in the colour of the screen
+list's 「신규」, with 「<folder> 지도에 없던 요청입니다」 (or 「화면」) on hover and for a screen reader, and 「신규 M」 beside
+the person button shows only those. Pressing either button again, or choosing another kind, shows every candidate.
+A check box on each line, on each group title and 「모두 고르기」 choose candidates; once one of the lines shown is
+chosen, 「대상 (N)」 or 「대상 아님… (N)」 shows and decides the chosen ones among the lines shown, each with its own
+mark, while one chosen and then hidden by a button stays chosen and is not saved; 「대상 아님…」 asks for one reason and saves nothing without one. The marks are saved one by one; if
 one fails, saving stops, a line says which were saved and which were not, and those not saved stay checked. While saving, the other tabs and
 views are locked. Pressing a line shows that screen or call's conversation and comment form on the right, kept apart
 from the one chosen in 「화면」; a comment left unsaved there is asked about at 「리뷰 끝」. Pressing the name opens the
@@ -876,7 +884,7 @@ for the middle pane, the side panes give back the width they were dragged to. Th
 loaded again.
 
 **Changes since a baseline.** With `baselineMap` set, the header names the baseline by its folder and path
-(「비교 기준」). A screen in the list carries 「생김」, 「조건 바뀜」 (the conditions before and after on hover) or
+(「비교 기준」). A screen in the list carries 「신규」 (one the baseline does not have), 「조건 바뀜」 (the conditions before and after on hover) or
 「호출 +N −N」, and 「바뀐 화면만」 in the box 「<folder> 와 비교」 keeps only those. Below the list come the screens only the
 baseline has, and how many screens changed their role or setting conditions and how many calls their server match.
 A changed screen opens with a line saying what changed; its call table has a column 「<folder> 와 비교」 with 「생김」 or
@@ -1235,7 +1243,8 @@ tests` for each; one listed above under its own marks is not repeated, and `case
 too, adding `, N of them under screens and calls listed above`. When this section has anything to do, the head of
 the list adds `N undecided case candidates, N cases with no tests`, with `, N under review` after the first while
 any wait, and with no open marks the list says the case kinds below still have work instead of `No open marks.`
-Without `caseKinds` the list has no such section.
+With `baselineMap`, the section's intro also says when to run `undecided --new` instead; the counts and lines do not
+change, and the task list does not read that map. Without `caseKinds` the list has no such section.
 
 `case <config> <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]`
 writes a case mark of that kind for that screen or call, as the review page would, directly into `marksDir`: the
@@ -1264,7 +1273,14 @@ with `, N under review` and a last line says `N under review: not-needed marks o
 to accept or revert them on the review page`; those are not undecided.
 It exits with 0 when none is left, 3 while any is, 1 when the config, the
 map or a mark file cannot be read (a missing map is one line asking for `rebuild`), and 2 when it is called wrongly
-or names a kind not in `caseKinds`. `tests.json` is not needed.
+or names a kind not in `caseKinds`. `tests.json` is not needed, and neither is the map `baselineMap` names.
+
+With `--new` it lists only the undecided candidates that are screens or calls the map named by `baselineMap` does
+not have, under `case kind <kind>: M new undecided since <file> (N undecided in all)`, and exits with 3 while any of
+those is left and with 0 once none is, even while older candidates are still undecided. This is for a kind whose
+older candidates are left for later: the new ones still have to be decided. Without `baselineMap` it prints
+`--new needs baselineMap in the config` and exits with 2; a `baselineMap` that cannot be read exits with 1, naming
+the file.
 
 ## Agent skill
 
