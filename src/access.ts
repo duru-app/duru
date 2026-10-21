@@ -402,20 +402,11 @@ export function routerTargets(roots: RouteNode[]) {
     }
     return patterns.get(routePath)![Number(whole)].test(address);
   };
-  const ranked = new Map<string, { score: number; pattern: RegExp }[]>();
-  const rankedFits = (routePath: string, address: string) => {
-    if (routePath.includes(UNKNOWN)) return [];
-    if (!ranked.has(routePath)) {
-      ranked.set(routePath, explodedPaths(routePath).map((p) => {
-        const splat = /(^|\/)\*$/.test(p);
-        return { score: rankScore(p), pattern: fittingPattern(pathParts(p.replace(/\/?\*$/, '').replace(/(.)\/$/, '$1')), !splat) };
-      }));
-    }
-    return ranked.get(routePath)!.filter((r) => r.pattern.test(address)).map((r) => r.score);
-  };
-  // Routes 는 적힌 순서가 아니라 점수가 가장 높은 경로를 고르고, 점수가 같으면 먼저 적힌 것을 고른다. 같은 경로를 적은 라우트는 Switch 처럼 모두 고른다.
+  const fitScores = (routePath: string, address: string) => explodedPaths(routePath)
+    .filter((p) => fits(p.replace(/\/?\*$/, ''), address, !/(^|\/)\*$/.test(p)))
+    .map(rankScore);
   const rankedWinners = (branches: Branch[], address: string) => {
-    const scored = branches.map((b) => ({ b, score: Math.max(...rankedFits(b.path, address)) })).filter((x) => x.score > -Infinity);
+    const scored = branches.map((b) => ({ b, score: Math.max(...fitScores(b.path, address)) })).filter((x) => x.score > -Infinity);
     const best = scored.reduce<(typeof scored)[number] | null>((a, x) => (!a || x.score > a.score ? x : a), null);
     return best ? scored.filter((x) => x.score === best.score && x.b.path === best.b.path).map((x) => x.b) : [];
   };
