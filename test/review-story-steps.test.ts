@@ -116,7 +116,7 @@ test('in a browser, 「순서 고치기」 at the end of the 「화면 순서」
   });
 });
 
-test('in a browser, while the order is being changed 「순서 저장」 and 「취소」 sit at the 「화면 순서 N」 heading in place of 「순서 고치기」, the verdict chip, the 「링크 없음」 chip and 「사전 조건 N」 follow the order, and a Korean syllable being composed in the story\'s name is not broken when the verdict of that order arrives', { skip: browserMissing }, async () => {
+test('in a browser, while the order is being changed 「순서 저장」 and 「취소」 sit at the 「화면 순서 N」 heading in place of 「순서 고치기」, the verdict chip and 「사전 조건 N」 follow the order, and a Korean syllable being composed in the story\'s name is not broken when the verdict of that order arrives', { skip: browserMissing }, async () => {
   await withLabStory(async (p, config, base, errors) => {
     const verdicts = () => p.locator('#center .title-row .chip.verdict').allTextContents();
     assert.deepEqual(await verdicts(), ['도달 가능']);
@@ -146,7 +146,6 @@ test('in a browser, while the order is being changed 「순서 저장」 and 「
     await p.evaluate(() => (window as any).composed.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })));
     await untilJudged(p);
     assert.deepEqual(await verdicts(), ['도달 불가 · 링크 없음 1곳']);
-    assert.equal(await p.locator('#center .title-row .chip.l-broken').count(), 1, 'the chip of a missing link follows the order being changed');
     assert.match((await p.textContent('#center .story-needs > summary'))!, /^사전 조건 \d+$/);
     assert.deepEqual(errors, []);
   });

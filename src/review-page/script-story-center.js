@@ -114,7 +114,7 @@ function renderStoryCenter() {
   const c = candidateOf();
   if (c) {
     return fillStoryCenter(center, c, [
-      h('div', { class: 'title-row' }, h('h3', {}, c.name), storyChips(c), ...reachChips(c), candidateActions(c)),
+      h('div', { class: 'title-row' }, h('h3', {}, c.name), walkChip(c), ...reachChips(c), candidateActions(c)),
       storyErrorLine(),
       sourceView(c.source, '후보가 나온'),
       needsFold(c, `candidate\n${c.key}`),
@@ -128,7 +128,7 @@ function renderStoryCenter() {
   const steps = openSteps();
   const judged = steps ? checkedSteps(steps) : st;
   fillStoryCenter(center, st, [
-    h('div', { class: 'title-row' }, h('h3', {}, st.name), statusChip(st), ...(judged ? linkChips(judged) : []), walkChip(st), ...(judged ? reachChips(judged) : [])),
+    h('div', { class: 'title-row' }, h('h3', {}, st.name), statusChip(st), walkChip(st), ...(judged ? reachChips(judged) : [])),
     h('div', { class: 'muted mono' }, `${st.id} · ${st.file}`),
     st.source ? sourceView(st.source, '받은 후보가 나온') : null,
     h('div', { class: 'muted' }, `${st.author} · ${storyDate(st.date)}`),

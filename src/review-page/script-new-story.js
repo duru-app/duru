@@ -194,7 +194,7 @@ function composeCenter() {
   };
   const pending = h('div', { class: 'link l-pending' }, c.error ? '판정 못 함' : '맞춰 보는 중');
   return [
-    h('div', { class: 'title-row' }, h('h3', {}, c.name.trim() || '새 스토리'), ...(checked ? [storyChips(checked), ...reachChips(checked)] : []), walkStart()),
+    h('div', { class: 'title-row' }, h('h3', {}, c.name.trim() || '새 스토리'), ...(checked ? [walkChip(checked), ...reachChips(checked)] : []), walkStart()),
     h('p', { class: 'muted' }, COMPOSE_GUIDE[c.diagram]),
     c.walkNote ? h('p', { class: `walk-note ${c.walkNote.error ? 'error' : 'muted'}` }, c.walkNote.text) : null,
     c.refused ?? c.error ? h('p', { class: 'error compose-error' }, c.refused ?? c.error) : null,

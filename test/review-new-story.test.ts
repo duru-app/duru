@@ -133,7 +133,7 @@ test('in a browser, 「새 스토리」 turns the left column into a screen pick
         assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
         assert.deepEqual(await composeLinks(p), ['이어짐', '링크 없음']);
         assert.deepEqual(await p.locator('#center .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
-        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['링크 없음']);
+        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), []);
         assert.deepEqual(await p.locator('#pick-list li .count').allTextContents(), ['넣음 1', '넣음 1', '넣음 1']);
 
         await p.fill('#compose-id', 'Help From Signin');

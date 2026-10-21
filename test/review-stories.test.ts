@@ -620,7 +620,7 @@ test('in a browser, a story whose story tests all pass but did not go through it
         assert.deepEqual(await p.locator('#story-list li .name .mono').allTextContents(), ['signin-to-help']);
         await p.click('#story-list li[data-story="signin-to-help"]');
         await p.uncheck('#left input[name=part-pass]');
-        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['일부 단계만 통과', '링크 없음']);
+        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), ['일부 단계만 통과']);
         assert.deepEqual(await p.locator('#center .story-path .link').evaluateAll((links) => links.map((l) => l.classList.contains('unwalked'))), [true, false]);
         assert.deepEqual(await p.locator('#center .story-path .link .walks').allTextContents(), [
           '지나간 스토리 테스트 없음',

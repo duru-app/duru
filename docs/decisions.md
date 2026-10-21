@@ -2798,6 +2798,9 @@ step order down by 320px for a new story, 347px for a saved story and 39px for a
   steps so far move to the top of the left column, above the steps passed, so they stay in sight while recording as
   they did in the right pane before.
 - 「순서 저장」 and 「취소」 take the place of 「순서 고치기」 in the 「화면 순서」 heading, beside the order being changed.
+- Beside the name only the verdict chip stays, not the link chips: 「도달 불가 · 링크 없음 N곳」 already says what
+  「링크 없음」 says, and the same goes for 「화면 없음」 and 「판정 못 함」 (the driver's decision, 2026-10-21). The story
+  list has no verdict chip, so it keeps the link chips.
 - The middle pane is now drawn again while a name or memo is typed, when a verdict arrives or a save fails, so those
   fields carry a `name` and the redraw waits while a Korean syllable is being composed.
 Alternatives compared:

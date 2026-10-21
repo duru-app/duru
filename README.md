@@ -887,7 +887,7 @@ next screen picked goes (「취소」 on the mark sends it to the end again), an
 dragged; a step in the wrong place is taken out and put in again. A kept step keeps its conditions, inputs and
 expected results, a step put in has none, and the conditions of the link into a step stay only while the step
 before it is the one it had, which its link row says before the order is saved. Taking out a step with lines written
-asks first, naming what goes with it, with 「제외」 and 「취소」. The verdict and the link chips beside the name and
+asks first, naming what goes with it, with 「제외」 and 「취소」. The verdict chip beside the name and
 「사전 조건 N」 follow the order being changed, and 「순서 저장」 and 「취소」 take the place of 「순서 고치기」 in the
 「화면 순서」 heading; an order with the same screen twice in a row or with no step is not saved and says why, and a
 file changed elsewhere is refused with

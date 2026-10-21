@@ -256,7 +256,7 @@ function walkList() {
 function walkVerdict(c) {
   const checked = checkedCompose(c);
   return h('div', { class: 'walk-verdict' },
-    checked ? h('div', { class: 'walk-chips' }, storyChips(checked), ...reachChips(checked)) : null,
+    checked ? h('div', { class: 'walk-chips' }, walkChip(checked), ...reachChips(checked)) : null,
     checked ? needsFold(checked, 'compose') : waitingLine(c.steps, c.error),
     repeatedStep(composeScreens(c)) ? h('p', { class: 'error repeated' }, '같은 화면이 이어진 자리가 있어 저장할 수 없습니다.') : null);
 }

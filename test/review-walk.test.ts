@@ -91,7 +91,7 @@ test('in a browser, 「● 기록」 in a new story fills the center with the ap
               '/beta/inbox 맵에 없는 화면/beta/inbox라벨 「메모」 → 첫 메모',
             ]);
             await p.waitForSelector('#left .walk-verdict .verdict.unjudged');
-            assert.deepEqual(await p.locator('#left .walk-verdict .walk-chips > *').allTextContents(), ['화면 없음', '판정 못 함 · 화면 없음']);
+            assert.deepEqual(await p.locator('#left .walk-verdict .walk-chips > *').allTextContents(), ['판정 못 함 · 화면 없음']);
             assert.equal(await p.textContent('#left .walk-verdict .story-needs summary'), '사전 조건 0');
             assert.equal(await p.textContent('#center .walk-bar .walk-at'), '/beta/inbox');
             assert.match((await p.textContent('#center .walk-bar .walk-status'))!, /받은 주소 4/);
