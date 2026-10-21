@@ -30,8 +30,8 @@ function heldByPerson(kind, id) {
   return current && current.via === undefined ? current : null;
 }
 
-function heldText(mark) {
-  if (mark.of !== undefined) return h('p', { class: 'case-held' }, `${mark.author} 가 ${fmtDate(mark.date)} 에 에이전트 판정을 되돌렸습니다`);
+function heldText(mark, history) {
+  if (mark.of !== undefined && !acceptsProposal(mark, history)) return h('p', { class: 'case-held' }, `${mark.author} 가 ${fmtDate(mark.date)} 에 에이전트 판정을 되돌렸습니다`);
   if (!mark.rule) return h('p', { class: 'case-held' }, `${mark.author} 가 ${fmtDate(mark.date)} 에 이유 없이 뺐습니다`);
   return [
     h('p', { class: 'case-held' }, `${mark.author} 가 ${fmtDate(mark.date)} 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다`),
@@ -41,7 +41,7 @@ function heldText(mark) {
 
 function heldLine(kind, id) {
   const mark = heldByPerson(kind, id);
-  return mark ? heldText(mark) : null;
+  return mark ? heldText(mark, markOf({ node: id, case: kind }).history) : null;
 }
 
 function setCaseKind(kind) {

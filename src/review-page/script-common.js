@@ -110,6 +110,10 @@ const untaggedKey = (t) => JSON.stringify([t.source, t.file, t.line, t.title]);
 const markOf = (t) => state.data.marks.attached.find((m) => m.key === keyOf(t));
 const fmtDate = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 const isPick = (m) => m.target.case !== undefined;
+const acceptsProposal = (r, history) => {
+  const proposal = history.find((x) => x.id === r.of);
+  return proposal !== undefined && r.status === 'not-needed' && r.note === proposal.note;
+};
 function othersSigned() {
   const { marks, tests, author } = state.data;
   const judged = [tests.discarded, tests.awaitingTag, tests.detachedHandOvers].flatMap((byNode) => Object.values(byNode ?? {}).flat()).map((t) => t.judgment);

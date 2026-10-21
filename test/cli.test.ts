@@ -198,6 +198,23 @@ test('an agent\'s not-needed waits under review: undecided leaves it out, exits 
   });
 });
 
+test('a not-needed of the agent a reviewer accepted, taken out of a rule that no longer picks it, is undecided again and undecided says the reviewer took it out of that rule', () => {
+  withCaseKinds((configFile, run) => {
+    run('rebuild');
+    const rename = 'PUT:/api/v1/document/{documentId}/name';
+    assert.equal(run('case', 'ended', rename, 'not-needed', '--note', '이름은 끝난 뒤에도 바꾼다').status, 0);
+    const proposal = caseMarks(configFile)[0];
+    const later = new Date(Date.now() + 60_000);
+    addMark(path.join(path.dirname(configFile), 'case-marks'), { target: { node: rename, case: 'ended' }, status: 'not-needed', note: proposal.note, rule: proposal.rule, author: 'Kim Min', of: proposal.id }, later);
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, caseKinds: { ...config.caseKinds, ended: { ...config.caseKinds.ended, picks: [{ screen: '/document/**', methods: ['POST'] }] } } }));
+    run('rebuild');
+    const { status, stdout } = run('undecided', 'ended');
+    assert.equal(status, 3);
+    assert.ok(stdout.split('\n').includes(`  ${rename} — call, sent from /document/:id#DocumentDetail — Kim Min took it out of a rule that no longer picks it on ${later.toISOString().slice(0, 10)}, so only a person can decide it`), stdout);
+  });
+});
+
 test('undecided whose reader stops early still exits with 3 while candidates are left, with nothing on stderr', () => {
   withCaseKinds((configFile, run) => {
     run('rebuild');

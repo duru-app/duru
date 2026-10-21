@@ -30,8 +30,7 @@ const PICK_STATUS = { needed: '켬', 'not-needed': '끔' };
 
 function pickWord(r, history) {
   if (r.of === undefined) return { text: PICK_STATUS[r.status] ?? r.status, title: null };
-  const proposal = history.find((x) => x.id === r.of);
-  return proposal && r.status === 'not-needed' && r.note === proposal.note
+  return acceptsProposal(r, history)
     ? { text: '받아들임', title: '에이전트의 「대상 아님」을 받아들였습니다' }
     : { text: '되돌림', title: '에이전트의 「대상 아님」을 되돌렸습니다' };
 }

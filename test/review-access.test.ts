@@ -618,12 +618,14 @@ test('in a browser, cancelling the reason dialog puts the focus back on the butt
       })));
 });
 
-test('in a browser, a request a person took out of a rule that no longer picks it is undecided again, its 「미판정」 line saying who took it out and the old reason, also when its kind has no rules left, as a kind pressed off with no reason says who did, while one an agent took out waits under review and a screen the kind no longer takes as a candidate keeps its 「대상 아님」 row as no longer used', { skip: browserMissing }, async () => {
+test('in a browser, a request a person took out of a rule that no longer picks it is undecided again, its 「미판정」 line saying who took it out and the old reason, also when its kind has no rules left or the person accepted it from an agent, as a kind pressed off with no reason says who did, while one an agent took out waits under review and a screen the kind no longer takes as a candidate keeps its 「대상 아님」 row as no longer used', { skip: browserMissing }, async () => {
   const kinds = { boundary: CASE_KINDS.boundary, ended: { ...RULED.ended, picks: [{ screen: '/document/**', methods: ['POST'] }] }, legacy: CASE_KINDS.legacy };
   await withRebuiltFixture({ caseKinds: kinds }, (config) => {
     const at = new Date('2026-10-04T01:00:00Z');
     addMark(config.marksDir, { target: { node: RENAME, case: 'ended' }, status: 'not-needed', note: '이름은 막지 않는다', rule: RULE_ENDED, author: 'agent', via: 'duru case' }, at);
-    addMark(config.marksDir, { target: { node: RENAME, case: 'legacy' }, status: 'not-needed', note: '옛 문서도 같은 칸을 쓴다', rule: { index: 0, pick: { methods: ['PUT'] } }, author: 'reviewer' }, at);
+    const legacy = { target: { node: RENAME, case: 'legacy' }, status: 'not-needed', note: '옛 문서도 같은 칸을 쓴다', rule: { index: 0, pick: { methods: ['PUT'] } } };
+    const proposal = addMark(config.marksDir, { ...legacy, author: 'agent', via: 'duru case' }, new Date('2026-10-03T01:00:00Z'));
+    addMark(config.marksDir, { ...legacy, author: 'reviewer', of: proposal.id }, at);
     addMark(config.marksDir, { target: { node: RENAME, case: 'boundary' }, status: 'not-needed', author: 'reviewer' }, at);
     addMark(config.marksDir, { target: { node: '/document/:id#DocumentDetail', case: 'ended' }, status: 'not-needed', note: '상세 화면은 읽기만 한다', rule: { index: 0, pick: { screen: '/document/**' } }, author: 'reviewer' }, at);
     return withServer(config, 'reviewer', async (base) => {

@@ -203,11 +203,12 @@ function caseSection(node) {
     }, yes ? '✓' : '✕');
   };
   const undecidedRow = (kind, text) => {
-    const held = markOf({ node: node.id, case: kind })?.current;
+    const entry = markOf({ node: node.id, case: kind });
+    const held = entry?.current;
     return h('li', { class: 'case-undecided-row', 'data-kind': kind },
       h('span', { class: 'kind-text' }, text), h('span', { class: 'chip undecided' }, '미판정'), held ? null : h('span', { class: 'muted' }, '아직 아무도 정하지 않았습니다'),
       decideButton(kind, true), decideButton(kind, false),
-      held ? h('div', { class: 'case-held-lines' }, heldText(held)) : null);
+      held ? h('div', { class: 'case-held-lines' }, heldText(held, entry.history)) : null);
   };
   const reviewOf = (kind) => kindTargetsOf(kind)?.nodes[node.id]?.review ?? null;
   const answerButton = (kind, accept) => {

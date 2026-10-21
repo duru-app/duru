@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Described } from './access.ts';
 import { readSettingsFile, settingsFilePlace } from './app-host.ts';
 import type { AppAccount } from './app-host.ts';
-import { casesWithoutTests, kindTags } from './case-targets.ts';
+import { acceptsProposal, casesWithoutTests, kindTags } from './case-targets.ts';
 import type { CaseTarget, KindTargets } from './case-targets.ts';
 import type { TableItem } from './client.ts';
 import { compare } from './config.ts';
@@ -596,11 +596,12 @@ function nodesById(map: any) {
 
 function undecidedText(map: any, attached: MarkEntry[], kind: string) {
   const nodeOf = nodesById(map);
-  const byPerson = new Map(attached.filter((e) => e.target.case === kind && e.current && e.current.via === undefined).map((e) => [e.target.node!, e.current!]));
+  const byPerson = new Map(attached.filter((e) => e.target.case === kind && e.current && e.current.via === undefined).map((e) => [e.target.node!, e]));
   return (id: string) => {
     const { node, isCall } = nodeOf(id);
-    const mark = byPerson.get(id);
-    const what = mark?.of !== undefined ? 'took back the agent\'s not-needed' : mark?.rule ? 'took it out of a rule that no longer picks it' : 'marked it not-needed without a note';
+    const entry = byPerson.get(id);
+    const mark = entry?.current;
+    const what = mark?.of !== undefined && !acceptsProposal(mark, entry!.history) ? 'took back the agent\'s not-needed' : mark?.rule ? 'took it out of a rule that no longer picks it' : 'marked it not-needed without a note';
     return `${id} — ${nodeText(node, isCall)}${mark ? ` — ${within(mark.author, '    ')} ${what} on ${mark.date.slice(0, 10)}, so only a person can decide it` : ''}`;
   };
 }
