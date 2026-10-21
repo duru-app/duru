@@ -3,6 +3,8 @@ import { clientPath, loadServerEndpoints, matchEndpoint } from './server.ts';
 import { linkTargets, screenAccess } from './access.ts';
 import { compare } from './config.ts';
 import { removeExcludedFields } from './body-type-exclusions.ts';
+import { codeHasher, codeState } from './code-state.ts';
+import type { CodeState } from './code-state.ts';
 import { withoutPatterns } from './path-values.ts';
 import type { AccessConfig } from './access.ts';
 import type { RemovedField, UnknownExclusion } from './body-type-exclusions.ts';
@@ -56,6 +58,7 @@ export type MapScreen = Omit<ClientScreen, 'apiCalls' | 'links'> & {
   links: (ClientScreen['links'][number] & { conditions: Access['linkConditions'][number][number] })[];
   access: Access['access'][number];
   dead: boolean;
+  codeHash?: string;
 };
 
 interface OptionSite {
@@ -84,10 +87,11 @@ export interface MapCall {
   apiFunctions: string[];
   screens: string[];
   options: { key: string; values: boolean[]; sources: string[]; sites: OptionSite[] }[];
+  codeHash?: string;
 }
 
 export type ScreenMap = {
-  meta: { generatedAt: string; srcRoot: string; clientRef: string | null; serverRef: string | null };
+  meta: { generatedAt: string; srcRoot: string; clientRef: string | null; serverRef: string | null } & Partial<CodeState>;
   screens: MapScreen[];
   apiFunctions: ApiFunctions;
   unrunApiModules?: NonNullable<Client['unrunApiModules']>;
@@ -301,8 +305,14 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   const bodyTypeExclusions = config.bodyTypeExclusions ?? {};
   const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
 
+  const hash = codeHasher(config.srcRoot);
+  for (const s of mapped) s.codeHash = hash(s.sourceFiles ?? []);
+  const requestFiles = new Map<string, (string | null)[]>(calls.map((c) => [c.id, c.apiFunctions.map((name: string) => apiFunctions[name]?.file ?? null)]));
+  for (const s of mapped) for (const c of s.apiCalls) if (c.direct) for (const e of c.endpoints) if (e.callId) requestFiles.get(e.callId)?.push(c.file);
+  for (const c of calls) c.codeHash = hash(requestFiles.get(c.id)!);
+
   return {
-    meta: { generatedAt: new Date().toISOString(), srcRoot: config.srcRoot, clientRef: config.clientRef ?? null, serverRef: config.serverRef ?? null },
+    meta: { generatedAt: new Date().toISOString(), srcRoot: config.srcRoot, clientRef: config.clientRef ?? null, serverRef: config.serverRef ?? null, ...codeState(config.srcRoot) },
     screens: mapped,
     apiFunctions,
     ...(unrunApiModules && { unrunApiModules }),

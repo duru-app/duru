@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { screenCases } from './access.ts';
+import { codeHasher } from './code-state.ts';
 import { compare } from './config.ts';
 import type { TracedTest } from './candidates.ts';
 import { importLinker } from './import-links.ts';
@@ -182,5 +183,8 @@ export function linkTests(config: any, map: any) {
     }
   }
 
-  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, passed, traceNotices, traced: screenOrders, untracedCount, unknownTags, untagged: [...untagged.values()].sort(byTest), untaggedCount: untagged.size, missingSources };
+  const hash = codeHasher(config.srcRoot);
+  const testFiles = new Set<string>([...Object.values(nodes), ...Object.values(stories), ...Object.values(importers), [...untagged.values()]].flat().map((t) => t.testFile).filter(Boolean));
+  const testFileHashes = Object.fromEntries([...testFiles].sort().map((f) => [f, hash([f])]));
+  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, passed, traceNotices, traced: screenOrders, untracedCount, unknownTags, untagged: [...untagged.values()].sort(byTest), untaggedCount: untagged.size, missingSources, testFileHashes };
 }
