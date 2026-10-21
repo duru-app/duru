@@ -22,5 +22,13 @@ function withoutTags(title) {
 }
 
 function fileSafe(name) {
-  return name.replace(/[\u0000-\u001f<>:"/\\|?*]/g, '-').trim();
+  let kept = '';
+  let bytes = 0;
+  for (const character of name.replace(/[\u0000-\u001f<>:"/\\|?*]/g, '-').trim()) {
+    const point = character.codePointAt(0);
+    bytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
+    if (bytes > 200) break;
+    kept += character;
+  }
+  return kept.trim();
 }

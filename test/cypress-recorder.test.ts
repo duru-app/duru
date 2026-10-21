@@ -141,3 +141,10 @@ test('a title with characters a file name cannot hold is written under a name wi
     assert.deepEqual(filesUnder(path.join(dir, 'cypress/visits')), [path.join('cypress/e2e/odd.cy.js', 'a-b- c- -- d-e.json')]);
   });
 });
+
+test('a title too long for a file name is cut to the first 200 bytes of the name, at a whole character', () => {
+  withProject((dir) => {
+    runSpec(dir, 'cypress/e2e/long.cy.js', [{ titles: ['문서'.repeat(40), '열기'.repeat(40)], moves: [{ visit: '/home' }, { pushState: '/help' }] }]);
+    assert.deepEqual(filesUnder(path.join(dir, 'cypress/visits/cypress/e2e/long.cy.js')), [`${'문서'.repeat(33)}.json`]);
+  });
+});
