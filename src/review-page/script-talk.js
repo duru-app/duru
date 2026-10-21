@@ -91,7 +91,7 @@ function allTalk() {
 
 function changeList() {
   const picks = state.data.marks.attached.filter(isPick).flatMap((m) => m.history.map((r) => ({ m, r }))).sort((a, b) => byDate(b.r, a.r));
-  if (!picks.length) return h('p', { class: 'muted' }, '경우 종류를 켜고 끈 기록이 없습니다.');
+  if (!picks.length) return h('p', { class: 'muted' }, '테스트 관점을 켜고 끈 기록이 없습니다.');
   return h('div', { class: 'talk-changes' }, picks.map(({ m, r }) => h('button', {
     type: 'button',
     class: 'talk-line',

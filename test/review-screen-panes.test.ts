@@ -21,7 +21,7 @@ test('in a browser, a screen that opens only under a role or a setting shows its
         const counts = async () => (await cases.locator('.step-tests').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
         await p.click('#screen-list li:has-text("/admin/member")');
         await openScreenInfo(p);
-        assert.equal(await p.textContent('#center .screen-info > .cases h2'), '경우별 테스트');
+        assert.equal(await p.textContent('#center .screen-info > .cases h2'), '관점별 테스트');
         assert.deepEqual(await cases.locator('.case').allTextContents(), ['역할 ADMIN — 열림', '여는 역할이 아닌 역할 — 막힘']);
         assert.deepEqual(await counts(), ['UI/E2E ✓1', 'UI/E2E ✓1']);
         await p.click('#screen-list li:has-text("/help")');
@@ -106,7 +106,7 @@ test('in a browser, the screen info lists the cases after the access conditions 
     await open();
     await openScreenInfo(p);
     const headings = (await p.locator('#center .screen-info h2').allTextContents()).map((t) => t.replace(/ \d+$/, '').replace(/^(화면 안 조건) — .*$/, '$1'));
-    assert.deepEqual(headings, ['접근 조건', '경우별 테스트', '들어오는 링크', '화면 안 조건', '소스 위치', '나가는 링크', '읽는 설정값']);
+    assert.deepEqual(headings, ['접근 조건', '관점별 테스트', '들어오는 링크', '화면 안 조건', '소스 위치', '나가는 링크', '읽는 설정값']);
   });
 });
 

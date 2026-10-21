@@ -237,7 +237,7 @@ test('in a browser, the two left tabs stay on one line inside the column, also w
       })));
 });
 
-test('in a browser, with 「경우 종류」 as a third left tab, a tab that does not fit beside the others moves whole to a second line, so no tab name is cut, also with three-digit counts and a classic scrollbar', { skip: browserMissing }, async () => {
+test('in a browser, with 「테스트 관점」 as a third left tab, a tab that does not fit beside the others moves whole to a second line, so no tab name is cut, also with three-digit counts and a classic scrollbar', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: { boundary: CASE_KINDS.boundary } }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -286,12 +286,12 @@ test('in a browser, with 「경우 종류」 as a third left tab, a tab that doe
         };
 
         let m = await show(null, false);
-        assert.deepEqual(m.labels, ['화면 11', '태그 없음 13', '경우 종류 21']);
+        assert.deepEqual(m.labels, ['화면 11', '태그 없음 13', '테스트 관점 21']);
         assert.equal(new Set(m.tops).size, 1, 'the three tabs share one line while they fit');
 
         for (const scrollbar of [false, true]) {
           m = await show({ screens: 111, untagged: 999, undecided: 425 }, scrollbar);
-          assert.deepEqual(m.labels, ['화면 111', '태그 없음 999', '경우 종류 425']);
+          assert.deepEqual(m.labels, ['화면 111', '태그 없음 999', '테스트 관점 425']);
           assert.ok(m.tops[0] === m.tops[1] && m.tops[2] > m.tops[0], `the case tab moves below the other two ${m.tops}`);
         }
       })));
