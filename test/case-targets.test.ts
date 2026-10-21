@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { caseTargets, casesWithoutTests, commandCaseRule, exclusionOf, matchesPattern, pickedKinds, rulePicks } from '../src/case-targets.ts';
+import { answerProposal, caseTargets, casesWithoutTests, commandCaseRule, exclusionOf, matchesPattern, pickedKinds, ProposalChanged, rulePicks } from '../src/case-targets.ts';
 import { loadConfig } from '../src/config.ts';
 import type { CaseKind, CasePick } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
@@ -18,10 +18,11 @@ const ARCHIVE = 'POST:/api/v1/archive/document';
 const DETAIL = '/document/:id#DocumentDetail';
 
 let seq = 0;
-const mark = (node: string, kindName: string, status: string, { note = '', rule, author = 'reviewer' }: { note?: string; rule?: MarkRule; author?: string } = {}): Mark => {
+const mark = (node: string, kindName: string, status: string, { note = '', rule, author = 'reviewer', via, of }: { note?: string; rule?: MarkRule; author?: string; via?: string; of?: string } = {}): Mark => {
   seq += 1;
-  return { id: `m${String(seq).padStart(3, '0')}`, target: { node, case: kindName }, status, note, ...(rule && { rule }), author, date: `2026-10-${String(seq).padStart(2, '0')}T00:00:00.000Z` };
+  return { id: `m${String(seq).padStart(3, '0')}`, target: { node, case: kindName }, status, note, ...(rule && { rule }), author, date: `2026-10-${String(seq).padStart(2, '0')}T00:00:00.000Z`, ...(via && { via }), ...(of && { of }) };
 };
+const agentOut = (node: string, kindName: string, note: string, rule?: MarkRule) => mark(node, kindName, 'not-needed', { note, rule, author: 'agent', via: 'duru case' });
 const targetsOf = (caseKinds: Record<string, CaseKind>, marks: Mark[]) => caseTargets(map, caseKinds, classifyMarks(marks, map, [], Object.keys(caseKinds)).attached);
 
 test('a pattern part matches only a whole path part, and ** also matches no part', () => {
@@ -151,7 +152,7 @@ test('duru case refuses a kind not in the config, a screen or call not on the ma
   assert.equal(check([], { kind: 'legacy', node: DETAIL, status: 'not-needed', note: '옛 문서는 상세를 열지 않는다' }), undefined);
 
   const person = mark(RENAME, 'legacy', 'needed', { author: '검토자' });
-  assert.throws(() => check([person], { kind: 'legacy', node: RENAME, status: 'not-needed', note: 'x' }), /^Error: 검토자 marked legacy needed on PUT:\/api\/v1\/document\/\{documentId\}\/name on 2026-10-\d\d, and duru case does not change a person's mark$/);
+  assert.throws(() => check([person], { kind: 'legacy', node: RENAME, status: 'needed' }), /^Error: 검토자 marked legacy needed on PUT:\/api\/v1\/document\/\{documentId\}\/name on 2026-10-\d\d, and duru case does not change a person's mark$/);
   const agent = { ...mark(RENAME, 'legacy', 'needed', { author: 'agent' }), via: 'duru case' };
   assert.equal(check([person, agent], { kind: 'legacy', node: RENAME, status: 'not-needed', note: '이름은 막지 않는다' }), undefined);
   assert.throws(() => check([mark(RENAME, 'legacy', 'not-needed', { author: '검토자' })], { kind: 'legacy', node: RENAME, status: 'needed' }), /^Error: 검토자 marked legacy not-needed on PUT:\/api\/v1\/document\/\{documentId\}\/name on 2026-10-\d\d, and duru case does not change a person's mark$/);
@@ -163,6 +164,86 @@ test('duru case refuses a kind not in the config, a screen or call not on the ma
   assert.equal(check([], { kind: 'ended', node: DETAIL, status: 'needed' }), undefined);
   const agentOnScreen = { ...mark(DETAIL, 'ended', 'needed', { author: 'agent' }), via: 'duru case' };
   assert.equal(check([agentOnScreen], { kind: 'ended', node: DETAIL, status: 'not-needed', note: '잘못 골랐다' }), undefined);
+});
+
+test('an agent\'s not-needed waits for a reviewer: the candidate stays as it was, a rule\'s target a target with its cases with no tests and a candidate no rule picks counted under review only, not undecided', () => {
+  const caseKinds = { ended: kind({ screen: '/document/**', methods: ['POST', 'PUT'] }) };
+  const ruled = agentOut(RENAME, 'ended', '이름은 막지 않는다', { index: 0, pick: caseKinds.ended.picks[0] });
+  const free = agentOut('GET:/api/v1/document/list', 'ended', '목록은 읽기만 한다');
+  const targets = targetsOf(caseKinds, [ruled, free]);
+  assert.deepEqual(targets.ended.nodes[RENAME], { state: 'rule', rules: [0], mark: null, review: ruled });
+  assert.deepEqual(targets.ended.nodes['GET:/api/v1/document/list'], { state: 'undecided', rules: [], mark: null, review: free });
+  assert.deepEqual(targets.ended.review, [RENAME, 'GET:/api/v1/document/list']);
+  assert.ok(!targets.ended.undecided.includes('GET:/api/v1/document/list'));
+  assert.deepEqual(pickedKinds(targets, RENAME), [{ tag: 'case:ended', kind: 'case' }]);
+  assert.deepEqual(casesWithoutTests('ended', caseKinds.ended, targets.ended, {}).map((c) => c.node), [ARCHIVE, RENAME]);
+  const person = mark('GET:/api/v1/document/{documentId}', 'ended', 'not-needed', { note: '읽기는 된다' });
+  assert.deepEqual(targetsOf(caseKinds, [person]).ended.nodes['GET:/api/v1/document/{documentId}'], { state: 'not-needed', rules: [], mark: person });
+  const agentNeeded = mark(DETAIL, 'ended', 'needed', { author: 'agent', via: 'duru case' });
+  assert.equal(targetsOf(caseKinds, [agentNeeded]).ended.nodes[DETAIL].state, 'needed');
+});
+
+test('an agent\'s not-needed over a person\'s mark leaves that mark in force while it waits, also over another not-needed of the agent, and one taken out of a rule that no longer picks it waits too instead of being no longer used', () => {
+  const caseKinds = { ended: kind({ screen: '/document/**', methods: ['POST'] }) };
+  const person = mark('GET:/api/v1/document/list', 'ended', 'needed', { author: '김민' });
+  const first = agentOut('GET:/api/v1/document/list', 'ended', '목록은 읽기만 한다');
+  const second = agentOut('GET:/api/v1/document/list', 'ended', '목록은 문서를 바꾸지 않는다');
+  const narrowed = agentOut(RENAME, 'ended', '이름은 막지 않는다', { index: 0, pick: { screen: '/document/**', methods: ['POST', 'PUT'] } });
+  const targets = targetsOf(caseKinds, [person, first, second, narrowed]);
+  assert.deepEqual(targets.ended.nodes['GET:/api/v1/document/list'], { state: 'needed', rules: [], mark: person, review: second });
+  assert.deepEqual(targets.ended.nodes[RENAME], { state: 'undecided', rules: [], mark: null, review: narrowed });
+  assert.deepEqual(targets.ended.unused, {});
+  assert.deepEqual(targets.ended.review, [RENAME, 'GET:/api/v1/document/list']);
+});
+
+test('a reviewer\'s answer naming the agent\'s mark ends the wait: accepting takes the candidate out with the agent\'s reason, reverting puts back the person\'s mark under it or, with none, leaves a rule\'s target to the rule and a candidate no rule picks undecided', () => {
+  const caseKinds = { ended: kind({ screen: '/document/**', methods: ['POST', 'PUT'] }) };
+  const rule = { index: 0, pick: caseKinds.ended.picks[0] };
+  const ruled = agentOut(RENAME, 'ended', '이름은 막지 않는다', rule);
+  const free = agentOut('GET:/api/v1/document/list', 'ended', '목록은 읽기만 한다');
+  const person = mark('GET:/api/v1/document/{documentId}', 'ended', 'needed', { author: '김민' });
+  const over = agentOut('GET:/api/v1/document/{documentId}', 'ended', '상세는 읽기만 한다');
+  const accepted = mark(RENAME, 'ended', 'not-needed', { note: ruled.note, rule, of: ruled.id });
+  const reverted = mark('GET:/api/v1/document/list', 'ended', 'not-needed', { of: free.id });
+  const back = mark('GET:/api/v1/document/{documentId}', 'ended', 'needed', { of: over.id });
+  const targets = targetsOf(caseKinds, [ruled, free, person, over, accepted, reverted, back]);
+  assert.deepEqual(targets.ended.nodes[RENAME], { state: 'not-needed', rules: [0], mark: accepted });
+  assert.deepEqual(targets.ended.nodes['GET:/api/v1/document/list'], { state: 'undecided', rules: [], mark: null });
+  assert.deepEqual(targets.ended.nodes['GET:/api/v1/document/{documentId}'], { state: 'needed', rules: [], mark: back });
+  assert.deepEqual(targets.ended.review, []);
+  const revertedRule = mark(RENAME, 'ended', 'not-needed', { of: ruled.id });
+  assert.deepEqual(targetsOf(caseKinds, [ruled, revertedRule]).ended.nodes[RENAME], { state: 'rule', rules: [0], mark: null });
+});
+
+test('the answer to an agent\'s not-needed copies its reason on accepting, the person\'s mark under it or a not-needed without a note on reverting, and names the agent\'s mark; it is refused once the agent wrote again or nothing waits', () => {
+  const caseKinds = { ended: kind({ screen: '/document/**', methods: ['POST', 'PUT'] }) };
+  const attached = (marks: Mark[]) => classifyMarks(marks, map, [], ['ended']).attached;
+  const rule = { index: 0, pick: caseKinds.ended.picks[0] };
+  const ruled = agentOut(RENAME, 'ended', '이름은 막지 않는다', rule);
+  assert.deepEqual(answerProposal(map, caseKinds, attached([ruled]), { kind: 'ended', node: RENAME, of: ruled.id, answer: 'accept' }), { target: { node: RENAME, case: 'ended' }, status: 'not-needed', note: '이름은 막지 않는다', rule, of: ruled.id });
+  assert.deepEqual(answerProposal(map, caseKinds, attached([ruled]), { kind: 'ended', node: RENAME, of: ruled.id, answer: 'revert' }), { target: { node: RENAME, case: 'ended' }, status: 'not-needed', note: '', rule: undefined, of: ruled.id });
+  const person = mark(DETAIL, 'ended', 'not-needed', { note: '상세는 읽기만 한다', author: '김민' });
+  const agentNeeded = mark(DETAIL, 'ended', 'needed', { author: 'agent', via: 'duru case' });
+  const over = agentOut(DETAIL, 'ended', '화면은 고르지 않는다');
+  assert.deepEqual(answerProposal(map, caseKinds, attached([person, agentNeeded, over]), { kind: 'ended', node: DETAIL, of: over.id, answer: 'revert' }), { target: { node: DETAIL, case: 'ended' }, status: 'not-needed', note: '상세는 읽기만 한다', rule: undefined, of: over.id });
+  const again = agentOut(RENAME, 'ended', '이름은 끝난 뒤에도 바꾼다', rule);
+  assert.throws(() => answerProposal(map, caseKinds, attached([ruled, again]), { kind: 'ended', node: RENAME, of: ruled.id, answer: 'accept' }), (err) => err instanceof ProposalChanged && /^the agent wrote ended on PUT:.* again after the page read it$/.test(err.message));
+  assert.throws(() => answerProposal(map, caseKinds, attached([ruled, mark(RENAME, 'ended', 'needed')]), { kind: 'ended', node: RENAME, of: ruled.id, answer: 'accept' }), (err) => err instanceof ProposalChanged && /^no agent not-needed for ended on PUT:.* waits for a reviewer any more$/.test(err.message));
+});
+
+test('duru case may put a not-needed over a person\'s mark, but not a needed, and once a reviewer reverted the agent\'s not-needed it refuses both', () => {
+  const caseKinds = { ended: kind({ screen: '/document/**', methods: ['POST', 'PUT'] }) };
+  const check = (marks: Mark[], status: string) => commandCaseRule(map, caseKinds, classifyMarks(marks, map, [], ['ended']).attached, { kind: 'ended', node: 'GET:/api/v1/document/list', status, note: '목록은 읽기만 한다' });
+  const person = mark('GET:/api/v1/document/list', 'ended', 'needed', { author: '김민' });
+  assert.equal(check([person], 'not-needed'), undefined);
+  assert.throws(() => check([person], 'needed'), /duru case does not change a person's mark$/);
+  const proposal = agentOut('GET:/api/v1/document/list', 'ended', '목록은 읽기만 한다');
+  const accepted = mark('GET:/api/v1/document/list', 'ended', 'not-needed', { note: proposal.note, author: '김민', of: proposal.id });
+  assert.equal(check([proposal, accepted], 'not-needed'), undefined);
+  const reverted = { ...mark('GET:/api/v1/document/list', 'ended', 'not-needed', { author: '김민', of: proposal.id }), date: '2026-10-30T00:00:00.000Z' };
+  for (const status of ['needed', 'not-needed']) {
+    assert.throws(() => check([proposal, reverted], status), /^Error: 김민 took back the agent's not-needed for ended on GET:\/api\/v1\/document\/list on 2026-10-30, so only a person decides it now$/);
+  }
 });
 
 test('a rule that picks nothing is reported by its kind and its place in picks', () => {

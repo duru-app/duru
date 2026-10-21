@@ -10,7 +10,7 @@ import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { screenRoutes } from './address-match.ts';
 import { acceptCandidate, candidatePlace, discardCandidate, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
-import { casesWithoutTests, caseTargets, commandCaseRule, exclusionOf, pickedKinds } from './case-targets.ts';
+import { answerProposal, casesWithoutTests, caseTargets, commandCaseRule, exclusionOf, pickedKinds, ProposalChanged } from './case-targets.ts';
 import { isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { buildFlow } from './flow.ts';
@@ -145,6 +145,15 @@ export function writeCaseMark(config: any, { kind, node, status, note }: CaseDec
   const { map, attached } = readCaseTargets(config);
   const rule = commandCaseRule(map, config.caseKinds, attached, { kind, node, status, note });
   return addMark(config.marksDir, { target: { node, case: kind }, status, note, rule, author, via: 'duru case' });
+}
+
+export function writeCaseAnswer(config: any, input: unknown, author: string) {
+  const { kind, node, of, answer } = (isPlainObject(input) ? input : {}) as Record<string, unknown>;
+  if (typeof kind !== 'string' || typeof node !== 'string' || typeof of !== 'string' || (answer !== 'accept' && answer !== 'revert')) {
+    throw new Error('expected { "kind", "node", "of", "answer" } with the kind, the screen or call ID and the ID of the agent\'s mark as text and the answer accept or revert');
+  }
+  const { map, attached } = readCaseTargets(config);
+  return addMark(config.marksDir, { ...answerProposal(map, config.caseKinds, attached, { kind, node, of, answer }), author });
 }
 
 function caseDecision(input: unknown): CaseDecision {
@@ -415,10 +424,11 @@ export async function startReviewServer(config: any, { port = 0, author = review
   };
   // 답글의 작성자는 페이지를 띄운 사람이 아니라 답한 에이전트다.
   const saves: Record<string, (input: any) => unknown> = {
-    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, author: author.name, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined, via: undefined })),
+    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, author: author.name, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined, via: undefined, of: undefined })),
     '/api/replies': (input) => announce(addReply(config.marksDir, { replyTo: input?.replyTo, note: input?.note })),
     '/api/judgments': (input) => addJudgment(config.judgmentsDir, { ...input, author: author.name }),
     '/api/cases': (input) => announce(writeCaseMark(config, caseDecision(input), 'agent')),
+    '/api/cases/answer': (input) => announce(writeCaseAnswer(config, input, author.name)),
   };
   const sendPathValues = async (res: http.ServerResponse, id: string | null, role: string | null, typed = {}) => {
     const map = readMap(mapFile);
@@ -568,7 +578,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
           const saved = saves[req.url!](input);
           return send(res, 201, 'application/json', JSON.stringify(saved));
         } catch (err: any) {
-          return send(res, 400, 'text/plain', err.message);
+          return send(res, err instanceof ProposalChanged ? 409 : 400, 'text/plain', err.message);
         }
       }
       send(res, 404, 'text/plain', 'not found');

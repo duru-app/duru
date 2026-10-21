@@ -142,6 +142,44 @@ test('a case sent to /api/cases is written by agent with via, whatever author it
   );
 });
 
+const postAnswer = (base: string, body: unknown) => fetch(`${base}/api/cases/answer`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+test('an answer sent to /api/cases/answer is signed with the reviewer\'s name and names the agent\'s mark it answers, accepting with the agent\'s reason and reverting to the mark under it; it is refused with 409 once the agent wrote again and with 400 for a body it cannot read, and /api/marks drops of', async () => {
+  await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      assert.equal((await postMark(base, { target: { node: '/lab#Lab', case: 'legacy' }, status: 'needed', of: 'forged' })).status, 201);
+      assert.equal(loadMarks(config.marksDir)[0].of, undefined);
+      const propose = async (node: string, note: string) => (await (await postCase(base, { kind: 'legacy', node, status: 'not-needed', note })).json()).id;
+      const lab = await propose('/lab#Lab', '실험 화면은 옛 문서를 열지 않는다');
+      const help = await propose('/help#Help', '도움말은 문서를 열지 않는다');
+      const expected = 'expected { "kind", "node", "of", "answer" } with the kind, the screen or call ID and the ID of the agent\'s mark as text and the answer accept or revert';
+      for (const body of [null, { kind: 'legacy', node: '/lab#Lab', of: lab }, { kind: 'legacy', node: '/lab#Lab', of: 5, answer: 'accept' }, { kind: 'legacy', node: '/lab#Lab', of: lab, answer: 'yes' }]) {
+        const refused = await postAnswer(base, body);
+        assert.equal(refused.status, 400, JSON.stringify(body));
+        assert.equal(await refused.text(), expected);
+      }
+
+      const accepted = await postAnswer(base, { kind: 'legacy', node: '/help#Help', of: help, answer: 'accept', author: 'agent' });
+      assert.equal(accepted.status, 201);
+      const reverted = await postAnswer(base, { kind: 'legacy', node: '/lab#Lab', of: lab, answer: 'revert' });
+      assert.equal(reverted.status, 201);
+      const answers = [await accepted.json(), await reverted.json()].map(({ target, status, note, author, via, of }) => ({ target, status, note, author, via, of }));
+      assert.deepEqual(answers, [
+        { target: { node: '/help#Help', case: 'legacy' }, status: 'not-needed', note: '도움말은 문서를 열지 않는다', author: 'reviewer', via: undefined, of: help },
+        { target: { node: '/lab#Lab', case: 'legacy' }, status: 'needed', note: '', author: 'reviewer', via: undefined, of: lab },
+      ]);
+
+      const stale = await propose('/home#Home', '홈은 옛 문서를 읽지 않는다');
+      await propose('/home#Home', '홈은 목록만 보인다');
+      const late = await postAnswer(base, { kind: 'legacy', node: '/home#Home', of: stale, answer: 'accept' });
+      assert.equal(late.status, 409);
+      assert.equal(await late.text(), 'the agent wrote legacy on /home#Home again after the page read it');
+      assert.equal((await postAnswer(base, { kind: 'legacy', node: '/lab#Lab', of: lab, answer: 'accept' })).status, 409);
+      assert.equal(loadMarks(config.marksDir).length, 7);
+    }),
+  );
+});
+
 test('rebuilding the map leaves the marks untouched, and marks on screens that disappeared are detached', async () => {
   await withRebuiltFixture({}, async (config, copy) => {
     await withServer(config, 'reviewer', async (base) => {
