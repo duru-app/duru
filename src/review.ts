@@ -9,7 +9,7 @@ import { screenCases, settingConditionName } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { screenRoutes } from './address-match.ts';
-import { acceptCandidate, candidatePlace, discardCandidate, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
+import { acceptCandidate, addCommentCandidate, candidatePlace, discardCandidate, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
 import { casesWithoutTests, caseTargets, commandCaseRule, exclusionOf, pickedKinds } from './case-targets.ts';
 import { isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
@@ -62,7 +62,7 @@ export const PAGE_PARTS = [
 ];
 const BODY_LIMIT = 64 * 1024;
 const STORIES_SETTLE_MS = 100;
-const STORY_POSTS = ['/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/steps', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add', '/api/needs/add', '/api/needs/edit', '/api/records'];
+const STORY_POSTS = ['/api/candidates/add', '/api/candidates/accept', '/api/candidates/discard', '/api/candidates/undiscard', '/api/stories/edit', '/api/stories/fields', '/api/stories/steps', '/api/stories/unaccept', '/api/stories/check', '/api/stories/add', '/api/needs/add', '/api/needs/edit', '/api/records'];
 
 function gitUserName(cwd: string) {
   try {
@@ -145,6 +145,12 @@ export function writeCaseMark(config: any, { kind, node, status, note }: CaseDec
   const { map, attached } = readCaseTargets(config);
   const rule = commandCaseRule(map, config.caseKinds, attached, { kind, node, status, note });
   return addMark(config.marksDir, { target: { node, case: kind }, status, note, rule, author, via: 'duru case' });
+}
+
+export function writeCommentCandidate(config: any, input: unknown) {
+  const mapFile = path.join(config.outDir, 'map.json');
+  const traced = fs.existsSync(path.join(config.outDir, 'tests.json')) ? readTests(config).traced : [];
+  return addCommentCandidate(config, readMap(mapFile), mapFile, traced, isPlainObject(input) ? input as Record<string, unknown> : {});
 }
 
 function caseDecision(input: unknown): CaseDecision {
@@ -537,6 +543,13 @@ export async function startReviewServer(config: any, { port = 0, author = review
             return send(res, 400, 'text/plain', err.message);
           }
           return send(res, 201, 'application/json', JSON.stringify({ record: path.relative(config.configDir, path.join(config.storiesDir, file)).split(path.sep).join('/') }));
+        }
+        if (req.url === '/api/candidates/add') {
+          try {
+            return send(res, 201, 'application/json', JSON.stringify(writeCommentCandidate(config, input)));
+          } catch (err: any) {
+            return send(res, 400, 'text/plain', err.message);
+          }
         }
         if (req.url === '/api/candidates/undiscard') {
           try {

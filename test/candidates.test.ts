@@ -914,6 +914,7 @@ test('a candidate for a comment is refused with why, writing nothing, when a scr
       [{ screens: screens((s) => s.with(1, { ...s[1], reason: ' ' })) }, 'screens 의 2 번째 단계의 reason 에 이 화면을 넣은 이유를 적어야 합니다'],
       [{ screens: screens((s) => s.with(1, { ...s[1], expects: '홈' })) }, 'screens 의 2 번째 단계의 expects 는 기대 결과를 하나씩 글로 적은 목록이어야 합니다'],
       [{ name: ' ' }, 'name 에 후보 이름을 적어야 합니다'],
+      [{ steps: [] }, '모르는 항목이 있습니다: steps'],
       [{ screens: [] }, 'screens 는 화면 ID 나 { "screen", "reason", "needs", "linkNeeds", "inputs", "expects" } 객체를 하나 이상 차례대로 담은 목록이어야 합니다'],
     ];
     for (const [input, message] of refusals) assert.throws(() => post(input), { message }, message);

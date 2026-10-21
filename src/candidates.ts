@@ -397,7 +397,10 @@ function agentSteps(screens: unknown) {
   });
 }
 
-export function addCommentCandidate(config: any, map: any, mapFile: string, traced: TracedTest[], { comment, name, screens }: { comment?: unknown; name?: unknown; screens?: unknown }, now = new Date()) {
+export function addCommentCandidate(config: any, map: any, mapFile: string, traced: TracedTest[], input: Record<string, unknown>, now = new Date()) {
+  const { comment, name, screens } = input;
+  const others = Object.keys(input).filter((k) => !['comment', 'name', 'screens'].includes(k));
+  if (others.length) throw new Error(`모르는 항목이 있습니다: ${others.join(', ')}`);
   const asked = loadMarks(config.marksDir).find((m) => m.id === comment && recordKind(m) === 'comment');
   if (!asked) throw new Error(`코멘트 ${comment} 가 없습니다`);
   const order = targetsOf(asked).find((t) => t.screens !== undefined);
