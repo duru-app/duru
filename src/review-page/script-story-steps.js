@@ -70,10 +70,9 @@ function renderSteps() {
   const e = openSteps();
   if (!e || state.view !== 'story' || !document.getElementById('pick-list')) return;
   renderPickList();
+  const place = fieldPlace();
   renderCenter();
-  const reach = document.querySelector('#right-info #steps-reach');
-  if (reach) fill(reach, ...stepsReach(e));
-  else renderRight();
+  restoreField(place);
 }
 
 async function checkSteps() {
@@ -92,6 +91,7 @@ async function checkSteps() {
   }
   if (state.stepsEdit !== e || turn !== e.turn) return;
   Object.assign(e, { checked, error });
+  if (composingNow()) return deferLive('draw');
   renderSteps();
 }
 
@@ -204,7 +204,9 @@ function stepsPath(e) {
   const checked = checkedSteps(e);
   const mark = insertMark(() => { e.at = null; renderSteps(); });
   return [
-    h('div', { class: 'path-head' }, h('h2', {}, `화면 순서 ${e.steps.length}`), h('span', { class: 'editing-note' }, '순서 고치는 중')),
+    h('div', { class: 'path-head' }, h('h2', {}, `화면 순서 ${e.steps.length}`), h('span', { class: 'steps-acts' }, h('span', { class: 'editing-note' }, '순서 고치는 중'), stepsButtons(e))),
+    stepsProblem(e) ? h('p', { class: 'error steps-problem' }, stepsProblem(e)) : null,
+    e.saveError ? h('p', { class: 'error steps-error' }, e.saveError) : null,
     h('p', { class: 'muted' }, '왼쪽 목록에서 화면을 누르면 표시한 자리에, 표시가 없으면 끝에 단계로 들어갑니다. 단계를 누르면 위아래에 「이전 단계 추가」 · 「다음 단계 추가」가, 단계 안에 「제외」가 나옵니다. 단계를 옮기려면 제외하고 맞는 자리에 다시 넣습니다. 남긴 단계의 조건 · 입력값 · 기대 결과는 그 단계에 그대로 남습니다. 순서를 바꿀 때마다 이웃한 화면 사이의 링크를 다시 맞춰 봅니다.'),
     e.refused ?? e.error ? h('p', { class: 'error steps-refused' }, e.refused ?? e.error) : null,
     e.steps.length
@@ -242,25 +244,14 @@ function savedStoryPath(st) {
 function stepsButtons(e) {
   const problem = stepsProblem(e);
   const unchanged = unchangedSteps(e);
-  return [
-    problem ? h('p', { class: 'error steps-problem' }, problem) : null,
-    e.saveError ? h('p', { class: 'error steps-error' }, e.saveError) : null,
-    storyForm(h('div', { class: 'accepts' },
-      e.changedHash === null
-        ? h('button', { type: 'button', class: 'save-steps', disabled: Boolean(problem) || unchanged || e.saving, title: unchanged ? '아직 바꾼 것이 없습니다' : '스토리 파일의 screens 를 이 순서로 고쳐 씁니다.', onclick: saveSteps }, '순서 저장')
-        : [
-          h('button', { type: 'button', class: 'reread-steps', title: '바뀐 스토리 파일의 순서를 불러오고, 고친 순서는 버립니다', onclick: rereadSteps }, '새로 읽기'),
-          h('button', { type: 'button', class: 'overwrite-steps', disabled: Boolean(problem), title: '다른 곳에서 바뀐 스토리 파일의 screens 를 이 순서로 덮어씁니다', onclick: overwriteSteps }, '덮어쓰기'),
-        ],
-      h('button', { type: 'button', class: 'drop-draft cancel-steps', disabled: e.saving, title: '고친 순서를 버리고 저장한 순서로 돌아갑니다', onclick: cancelSteps }, '취소'))),
-  ];
-}
-
-function stepsReach(e) {
-  const checked = checkedSteps(e);
-  const waiting = h('p', { class: 'muted' }, !e.steps.length ? '화면을 넣으면 여기에서 끝까지 갈 수 있는지와 사전 조건을 보입니다.' : e.error ? '판정 못 함' : '경로를 맞춰 보는 중입니다.');
-  const [verdicts, skipped, ...conditions] = checked ? reachSection(checked, `story\n${e.story}`) : [waiting, null];
-  return [h('div', { class: 'steps-top' }, verdicts, skipped, ...stepsButtons(e)), ...conditions];
+  return storyForm(
+    e.changedHash === null
+      ? h('button', { type: 'button', class: 'save-steps', disabled: Boolean(problem) || unchanged || e.saving, title: unchanged ? '아직 바꾼 것이 없습니다' : '스토리 파일의 screens 를 이 순서로 고쳐 씁니다.', onclick: saveSteps }, '순서 저장')
+      : [
+        h('button', { type: 'button', class: 'reread-steps', title: '바뀐 스토리 파일의 순서를 불러오고, 고친 순서는 버립니다', onclick: rereadSteps }, '새로 읽기'),
+        h('button', { type: 'button', class: 'overwrite-steps', disabled: Boolean(problem), title: '다른 곳에서 바뀐 스토리 파일의 screens 를 이 순서로 덮어씁니다', onclick: overwriteSteps }, '덮어쓰기'),
+      ],
+    h('button', { type: 'button', class: 'drop-draft cancel-steps', disabled: e.saving, title: '고친 순서를 버리고 저장한 순서로 돌아갑니다', onclick: cancelSteps }, '취소'));
 }
 
 const stepsFileStory = (st) => {

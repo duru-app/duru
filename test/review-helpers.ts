@@ -295,11 +295,6 @@ export const openDocumentScreenInShortViewport = async (p: Page, base: string) =
   await p.waitForSelector('#screen-list li');
   await p.click('#screen-list li:has-text("/document/:id")');
 };
-export const openHistory = async (p: Page) => {
-  const toggle = p.locator('#right .history-toggle');
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
-};
-
 export const insideRightPane = (p: Page, selector: string) => p.evaluate((sel) => {
   const pane = document.getElementById('right')!.getBoundingClientRect();
   const box = document.querySelector(sel)!.getBoundingClientRect();
@@ -512,10 +507,21 @@ export const storiesTab = '#view-story';
 export const BAD_REQUEST = 'Failed to load resource: the server responded with a status of 400 (Bad Request)';
 
 export async function discardCandidate(p: Page, reason: string) {
-  await p.click('#right button.discard');
+  await p.click('#center button.discard');
   await p.fill(why, reason);
   await p.click(`${asked} button.discard`);
 }
+
+export const storyStack = (p: Page) => p.locator('#center-body > *').evaluateAll((els) => els.map((e) =>
+  e.matches('.title-row') ? 'title' : e.matches('.source') ? 'source' : e.matches('details.story-needs') ? 'needs' : e.matches('details.story-gaps') ? 'gaps'
+  : e.matches('.story-save') ? 'save' : e.matches(':is(.story-wide, .story-wide-blank)') ? 'whole story' : e.matches('.story-path') ? 'steps' : null).filter(Boolean));
+
+export const rightPane = (p: Page) => p.evaluate(() => ({
+  top: [...document.querySelectorAll('#right-info > :not(.talk-scope)')].map((e) => e.className),
+  heading: document.querySelector('#right-info .talk h2')?.textContent ?? null,
+  bottom: [...document.querySelectorAll('#right-dock > *')].map((e) => e.className),
+  folded: document.querySelectorAll('#right-dock :is(.history, .history-toggle)').length,
+}));
 
 export function holdRequests(p: Page, pattern: string) {
   const held: { sent: string[]; gates: (() => void)[]; done?: Promise<unknown>; release?: () => void } = { sent: [], gates: [] };

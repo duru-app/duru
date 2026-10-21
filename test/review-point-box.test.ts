@@ -259,7 +259,7 @@ test('in a browser, pressing an input line puts 앱 화면 at the top of the rig
     assert.equal(await p.textContent('#right-app .point-close'), '닫기');
     assert.equal(await p.textContent('#right-app .point-which'), '1 단계 · 안내 글 「실험 이름」 또는 테스트 ID 「lab-name」 → 첫 실험');
     assert.deepEqual(await placeLines(p), ['/home', 'duru-admin 계정으로 띄움', '앱 화면에서 상자 주변만 잘라 크게 보임']);
-    assert.deepEqual(await p.locator('#right-info .verdict').allTextContents(), ['도달 불가 · 링크 없음 2곳', '판정 못 함 · 화면 없음']);
+    assert.equal(await p.textContent('#right-info .talk h2'), '에이전트와 대화');
 
     const frame = await appFrame(p, `${app.url}/home`);
     assert.equal(await frame.inputValue('input[data-testid="lab-name"]'), '', 'the box is shown as the app has it');
@@ -575,7 +575,7 @@ test('in a browser, input lines in the step-order editor and on new-story cards 
     await order.waitFor();
     assert.equal(await order.getAttribute('title'), '화면 순서를 고치는 동안에는 상자를 짚지 않습니다. 순서를 고친 뒤 단계 카드에서 눌러 짚어 볼 수 있습니다');
     assert.equal(await p.locator('#center tr.point-line').count(), 0);
-    await p.click('#right button.cancel-steps');
+    await p.click('#center button.cancel-steps');
 
     await p.click('#left button.new-story');
     await p.waitForSelector('#pick-list li');

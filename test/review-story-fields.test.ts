@@ -264,7 +264,7 @@ test('in a browser, saving the story\'s own name and memo while a table is open 
     await p.click(`${STEP_2} button:has-text("조건 더하기")`);
     await p.keyboard.type('실험실 설정을 켠다');
     await p.fill('#story-name', '실험실 결과를 본다');
-    await p.click('#right button.save-story');
+    await p.click('#center button.save-story');
     await p.waitForSelector(`#center h3:has-text("실험실 결과를 본다")`);
     await p.click(`${STEP_2} button.save-fields`);
     await p.waitForSelector(`${STEP_2} .fields-saved`);
@@ -276,7 +276,7 @@ test('in a browser, saving the story\'s own name and memo while a table is open 
     fs.writeFileSync(file, JSON.stringify({ ...readStory(config), memo: '다른 곳에서 고쳤다' }, null, 2));
     await p.waitForSelector('#center .memo:has-text("다른 곳에서 고쳤다")');
     await p.fill('#story-name', '실험실 결과를 확인한다');
-    await p.click('#right button.save-story');
+    await p.click('#center button.save-story');
     await p.waitForSelector(`#center h3:has-text("실험실 결과를 확인한다")`);
     await p.click(`${STEP_2} button.save-fields`);
     await p.waitForSelector(`${STEP_2} .fields-error`);
@@ -320,7 +320,7 @@ test('in a browser, saving the story\'s name and memo over a file changed on dis
     await p.keyboard.type('실험실 설정을 켠다');
     fs.writeFileSync(path.join(config.storiesDir, 'run-lab.json'), JSON.stringify({ ...readStory(config), expects: ['다른 곳에서 적은 기대 결과'] }, null, 2));
     await p.fill('#story-name', '실험실 결과를 본다');
-    await p.click('#right button.save-story');
+    await p.click('#center button.save-story');
     await p.waitForSelector(`#center h3:has-text("실험실 결과를 본다")`);
     await p.click(`${STEP_2} button.save-fields`);
     await p.waitForSelector(`${STEP_2} .fields-error`);
@@ -337,8 +337,8 @@ test('in a browser, an open table whose step shows another screen after the file
     await p.keyboard.type('실험실 설정을 켠다');
     const elsewhere = { ...readStory(config), screens: ['/home#Home', '/lab/result#LabResult'] };
     fs.writeFileSync(path.join(config.storiesDir, 'run-lab.json'), JSON.stringify(elsewhere, null, 2));
-    await p.waitForSelector('#right .story-error');
-    assert.equal(await p.textContent('#right .story-error'), '2 번째 단계가 다른 곳에서 바뀌어 열린 표를 닫았습니다. 표에 적던 내용은 저장하지 않았습니다.');
+    await p.waitForSelector('#center .story-error');
+    assert.equal(await p.textContent('#center .story-error'), '2 번째 단계가 다른 곳에서 바뀌어 열린 표를 닫았습니다. 표에 적던 내용은 저장하지 않았습니다.');
     assert.equal(await p.locator(EDIT).count(), 0);
     assert.equal(await p.locator('#center button.edit-fields[disabled]').count(), 0);
     assert.deepEqual(readStory(config), elsewhere);

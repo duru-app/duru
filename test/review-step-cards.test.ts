@@ -33,26 +33,27 @@ test('in a browser, the story list has its own tab beside the list and the flow,
         assert.deepEqual(await p.locator('#center .story-path .step .name > span:first-child').allTextContents(), ['/home', '/lab', '/lab/result']);
         assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['조건', '이어짐']);
         assert.match((await p.textContent('#center .story-path .link.l-conditioned'))!, /components\/Home\.js:19\s*globalSettings\.SYSTEM\.LAB_ENABLED\s*설정/);
-        assert.deepEqual(await p.locator('#right-info > :not(.talk-scope)').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['도달 가능', '사전 조건']);
-        assert.deepEqual(await p.locator('#right .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트']);
-        assert.match((await p.textContent('#right .reach-link'))!, /components\/Home\.js:19/);
-        assert.match((await p.textContent('#right .reach-route'))!, /Routes\.js:44.*globalSettings\.SYSTEM\.LAB_ENABLED/);
+        assert.deepEqual(await p.locator('#center .title-row .verdict').allTextContents(), ['도달 가능']);
+        assert.equal(await p.textContent('#center .story-needs > summary'), '사전 조건 2');
+        assert.deepEqual(await p.locator('#center .reach > li h3').allTextContents(), ['/home → /lab', '/lab 라우트']);
+        assert.match((await p.textContent('#center .reach-link'))!, /components\/Home\.js:19/);
+        assert.match((await p.textContent('#center .reach-route'))!, /Routes\.js:44.*globalSettings\.SYSTEM\.LAB_ENABLED/);
         assert.equal(await p.locator('#center iframe').count(), 0);
 
         await p.click('#story-list li:has-text("도움말")');
         assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['이어짐', '링크 없음']);
         assert.equal(await p.textContent('#center .story-path .link.l-broken .link-verdict'), '링크 없음');
         assert.match((await p.textContent('#center .story-path .link.l-broken .goes-on'))!, /^\/home 에서 갈 수 있는 화면: /);
-        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
+        assert.deepEqual(await p.locator('#center .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
 
         await p.click('#story-list li:has-text("개인 설정")');
         assert.equal(await p.textContent('#center .story-path .step.off-map .chip'), '맵에 없는 화면');
         assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['판정 못 함']);
-        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
+        assert.deepEqual(await p.locator('#center .verdict').allTextContents(), ['판정 못 함 · 화면 없음']);
 
         await p.click('#story-list li:has-text("문서를 연다")');
-        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 가능']);
-        assert.equal(await p.textContent('#right-info > p.muted'), '조건 없음');
+        assert.deepEqual(await p.locator('#center .verdict').allTextContents(), ['도달 가능']);
+        assert.equal(await p.textContent('#center .story-needs > p.muted'), '조건 없음');
         await p.click('#center .story-path .step:has-text("/document/:id")');
         assert.equal(await p.getAttribute('#left .views.side button.on', 'class'), 'on');
         assert.equal(await p.textContent('#left .views.side button.on'), '화면 11');
@@ -103,7 +104,8 @@ test('in a browser, the needs and expects written in a story file show in a 「�
         ]);
         await p.click('#center .step-written li:has-text("실험 목록이 보인다")');
         assert.equal(await p.textContent('#center h3'), '실험 결과를 확인한다', 'pressing the written lines does not open the screen');
-        assert.deepEqual(await p.locator('#right-info > :not(.talk-scope)').evaluateAll((els) => els.slice(0, 2).map((e) => e.textContent)), ['도달 가능', '사전 조건']);
+        assert.deepEqual(await p.locator('#center .title-row .verdict').allTextContents(), ['도달 가능']);
+        assert.equal(await p.textContent('#center .story-needs > summary'), '사전 조건 2');
         assert.equal(await p.textContent('#center details.story-file summary'), '스토리 파일 lab-notes.json');
         assert.equal(await p.locator('#center details.story-file[open]').count(), 0);
         await p.click('#center details.story-file summary');
@@ -197,7 +199,7 @@ test('in a browser, a step that a move in the config joins shows as 설정에 �
         assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['설정에 적은 이동']);
         assert.equal(await p.textContent('#center .story-path .link.l-configured .slot-text'), '설정에 적은 이동 로그인 뒤');
         assert.match((await p.getAttribute('#center .story-path .link.l-configured .link-verdict', 'title'))!, /moves/);
-        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 가능']);
+        assert.deepEqual(await p.locator('#center .verdict').allTextContents(), ['도달 가능']);
       }),
     );
   });
@@ -227,8 +229,8 @@ test('in a browser, a step whose first screen has no link to the next but has li
         assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['판정 못 함']);
         assert.deepEqual(await p.locator('#center .story-path .link.l-unknown li').allTextContents(), [`components/Lab.js:16 → ${UNKNOWN}`]);
         assert.doesNotMatch((await p.textContent('#center .story-path'))!, /리다이렉트/);
-        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['판정 못 함 · 주소 못 읽은 링크']);
-        assert.equal(await p.locator('#right .skipped').count(), 0);
+        assert.deepEqual(await p.locator('#center .verdict').allTextContents(), ['판정 못 함 · 주소 못 읽은 링크']);
+        assert.equal(await p.locator('#center .title-row .skipped').count(), 0);
 
         await p.click('#story-list li:has-text("실험 결과로")');
         assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['조건', '이어짐']);
@@ -237,19 +239,18 @@ test('in a browser, a step whose first screen has no link to the next but has li
         assert.match((await p.textContent('#center .story-path .link.l-conditioned .skipped'))!, /판정에서 뺀 링크/);
         assert.deepEqual(await skipped('l-open'), []);
         assert.equal(await p.locator('#center .story-path .link.l-open .skipped').count(), 0);
-        assert.match((await p.textContent('#right-info > p.skipped'))!, /주소 못 읽은 링크 빼고 판정/);
-        assert.deepEqual(await p.locator('#right .reach-link .unknown-links li').allTextContents(), [`components/Home.js:20 → ${UNKNOWN}`]);
+        assert.match((await p.textContent('#center .title-row .skipped'))!, /주소 못 읽은 링크 빼고 판정/);
+        assert.deepEqual(await p.locator('#center .reach-link .unknown-links li').allTextContents(), [`components/Home.js:20 → ${UNKNOWN}`]);
 
         await p.click('#story-list li:has-text("실험실에서 결과로")');
         assert.deepEqual(await p.locator('#center .story-path .link .link-verdict').allTextContents(), ['이어짐']);
         assert.equal(await p.locator('#center .skipped').count(), 0);
-        assert.equal(await p.locator('#right .skipped').count(), 0);
       }),
     );
   });
 });
 
-test('in a browser, the right of a story gives a verdict line for missing links and one for a screen off the map, counting the missing links', { skip: browserMissing }, async () => {
+test('in a browser, the title of a story gives a verdict chip for missing links and one for a screen off the map, counting the missing links', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
     fs.mkdirSync(config.storiesDir, { recursive: true });
     fs.writeFileSync(path.join(config.storiesDir, 'back-and-forth.json'), JSON.stringify({
@@ -260,9 +261,9 @@ test('in a browser, the right of a story gives a verdict line for missing links 
         await p.waitForSelector('#screen-list li');
         await p.click('#view-story');
         await p.click('#story-list li:has-text("도움말을 오간다")');
-        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 3곳', '판정 못 함 · 화면 없음']);
-        assert.deepEqual(await p.locator('#right .verdict').evaluateAll((els) => els.map((e) => e.className)), ['verdict unreachable', 'verdict unjudged']);
-        assert.equal(await p.textContent('#right-info > p.muted:not(.skipped)'), '판정한 구간에 조건 없음');
+        assert.deepEqual(await p.locator('#center .verdict').allTextContents(), ['도달 불가 · 링크 없음 3곳', '판정 못 함 · 화면 없음']);
+        assert.deepEqual(await p.locator('#center .verdict').evaluateAll((els) => els.map((e) => e.className)), ['chip verdict unreachable', 'chip verdict unjudged']);
+        assert.equal(await p.textContent('#center .story-needs > p.muted'), '판정한 구간에 조건 없음');
       }),
     );
   });

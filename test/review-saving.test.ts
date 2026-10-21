@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { addMark, loadMarks } from '../src/marks.ts';
 import { taskList } from '../src/tasks.ts';
-import { withRebuiltFixture, withServer, postMark, browserMissing, toList, withPage, openDocumentScreenInShortViewport, openHistory, insideRightPane, chooseScreen } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, postMark, browserMissing, toList, withPage, openDocumentScreenInShortViewport, insideRightPane, chooseScreen, rightPane } from './review-helpers.ts';
 import type { PageData, FailSave } from './review-helpers.ts';
 
 test('a mark posted from the page is saved with the server-side author and date and is there after reopening', async () => {
@@ -83,12 +83,11 @@ test('in a browser, a chosen story takes marks that are saved as files and kept 
         await p.waitForSelector('#screen-list li');
         await p.click('#view-story');
         await p.click('#story-list li:has-text("실험실을 열어")');
-        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['사전 조건', '이름 · 메모', '에이전트와 대화']);
+        assert.deepEqual(await p.locator('#right h2').allTextContents(), ['에이전트와 대화']);
         assert.equal(await p.isDisabled('#right button.save'), true);
         await p.click('#right .statuses button:has-text("충분")');
         await p.fill('#right-dock textarea', 'no test walks the lab');
         await p.click('#right button.save');
-        await openHistory(p);
         await p.waitForSelector('#right .history li:has-text("no test walks the lab")');
         await p.click('#right .statuses button:has-text("테스트 필요")');
         await p.fill('#right-dock textarea', 'the story test fails');
@@ -180,12 +179,10 @@ test('in a browser, a mark on a story whose file is there but cannot be read sho
         await unread.click();
         assert.equal(await p.textContent('#center h3'), 'run-lab');
         assert.equal(await p.textContent('#right h2'), '에이전트와 대화');
-        assert.equal(await p.locator('#right-info > :not(.talk-scope)').count(), 0);
-        assert.ok(await p.evaluate(() => document.getElementById('right-dock')!.getBoundingClientRect().top - document.getElementById('right-info')!.getBoundingClientRect().bottom) < 1, 'the form sits right under the conversation buttons');
+        assert.deepEqual(await rightPane(p), { top: ['talk'], heading: '에이전트와 대화', bottom: ['mark-form'], folded: 0 });
         assert.match((await p.textContent('#right .history'))!, /walk it/);
         await p.click('#right .statuses button:has-text("충분")');
         await p.click('#right button.save');
-        await openHistory(p);
         await p.waitForSelector('#right .history li:nth-child(2)');
         assert.equal(await p.textContent('#right .history > li:last-child .chip'), '충분');
         assert.equal(await p.textContent('#left .unread-marks li .chip'), '충분');

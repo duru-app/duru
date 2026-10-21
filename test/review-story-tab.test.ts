@@ -195,11 +195,17 @@ test('in a browser, pressing a box on the line marks that step on the line and i
     assert.equal(await p.getAttribute('#center .story-line .box.now', 'aria-current'), 'step');
     assert.equal(await flowPlace(p), '#story?story=walk-around&step=3', 'pressing the line keeps the story and puts the step in the address');
 
-    await p.evaluate(() => { document.getElementById('center')!.scrollTop = 0; });
+    await p.evaluate(() => {
+      const center = document.getElementById('center')!;
+      center.scrollTop = 0;
+      const below = document.querySelector('#center .story-path > .step[data-step="0"]')!.getBoundingClientRect().top - document.querySelector('#center .story-top')!.getBoundingClientRect().bottom;
+      center.scrollTop = below - 16;
+    });
     await nextFrame(p);
     assert.deepEqual(await nowStep(p), ['3'], 'scrolling the cards leaves the mark on the pressed step');
+    const shown = await centerTop(p);
     await box(0).click();
-    assert.equal(await centerTop(p), 0, 'a card already in view is marked without scrolling');
+    assert.equal(await centerTop(p), shown, 'a card already in view is marked without scrolling');
     assert.deepEqual(await nowStep(p), ['1']);
     assert.deepEqual(await markedCards(), ['0']);
 
@@ -258,7 +264,7 @@ test('in a browser, pressing a box on the line marks that step on the line and i
 
 test('in a browser, a story whose cards fit in the pane does not scroll, and pressing its boxes marks them without moving the cards', { skip: browserMissing }, async () => {
   await withPathStories({ short: WALK.slice(0, 3) }, async (p) => {
-    await p.setViewportSize({ width: 1440, height: 900 });
+    await p.setViewportSize({ width: 1440, height: 1200 });
     await pickPathStory(p, 'short');
     assert.equal(await p.evaluate(() => { const c = document.getElementById('center')!; return c.scrollHeight <= c.clientHeight; }), true, 'nothing below the cards makes the pane scroll');
     await p.locator('#center .story-line .box[data-step="2"]').click();
@@ -296,12 +302,12 @@ test('in a browser, the info icon above the line opens a legend of the step numb
   });
 });
 
-test('in a browser, the right pane of a story in the story tab lists, folded, the failing and untested screens on its path, and pressing one brings up its step card', { skip: browserMissing }, async () => {
+test('in a browser, the middle pane of a story in the story tab lists, folded, the failing and untested screens on its path, and pressing one brings up its step card', { skip: browserMissing }, async () => {
   await withPathStories({ 'walk-around': WALK }, async (p) => {
     await p.emulateMedia({ reducedMotion: 'reduce' });
     await p.setViewportSize({ width: 1440, height: 600 });
     await pickPathStory(p, 'walk-around');
-    const gaps = p.locator('#right details.story-gaps');
+    const gaps = p.locator('#center details.story-gaps');
     assert.equal(await gaps.evaluate((e: HTMLDetailsElement) => e.open), false);
     const expected = await p.evaluate((ids) => {
       const walk = (ns: any[]): any[] => ns.flatMap((n) => [n, ...walk(n.children)]);

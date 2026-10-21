@@ -443,7 +443,8 @@ test('in a browser, the 라우트 line of a screen and the route step of a story
 
     await p.click('#view-story');
     await p.click('#story-list li:has-text("실험실을 열어")');
-    await p.click('#right .reach-raw > summary');
-    assert.equal(await p.locator('#right .reach-route > code').textContent(), `${SECOND}:${lineOf(second, 'ROUTE_PATH.LAB}')}`);
+    await p.click('#center .story-needs > summary');
+    await p.click('#center .reach-raw > summary');
+    assert.equal(await p.locator('#center .reach-route > code').textContent(), `${SECOND}:${lineOf(second, 'ROUTE_PATH.LAB}')}`);
   }), { configPatch: { storiesDir: 'example-stories' } });
 });

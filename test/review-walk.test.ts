@@ -49,7 +49,7 @@ const recordFiles = (storiesDir: string) => {
   return fs.existsSync(folder) ? fs.readdirSync(folder).sort().map((f) => JSON.parse(fs.readFileSync(path.join(folder, f), 'utf8'))) : [];
 };
 
-test('in a browser, 「● 기록」 in a new story fills the center with the app and stacks each screen passed in the app on the left after the steps already there, with the addresses, the values typed and the inputs left out, takes no message from elsewhere, and 「기록 끝」 writes the record file and draws the path in one row', { skip: browserMissing }, async () => {
+test('in a browser, 「● 기록」 in a new story fills the center with the app and stacks each screen passed in the app on the left after the steps already there, with the addresses, the values typed and the inputs left out, takes no message from elsewhere, hides the save box while the app is open but shows the verdict and the conditions of the steps so far above them, and 「기록 끝」 writes the record file, draws the path in one row and shows the save box with what was typed in it', { skip: browserMissing }, async () => {
   await withFakeApi((api) =>
     withPassword('s3cret', () =>
       withRebuiltFixture(appSettings(api), (config) =>
@@ -60,16 +60,21 @@ test('in a browser, 「● 기록」 in a new story fills the center with the ap
             await pickScreen(p, '/signin');
             await p.waitForSelector('#center .compose-step[data-step="0"]');
             assert.equal(await p.textContent('#center .title-row button.walk-start'), '● 기록');
+            await p.fill('#compose-id', 'walked');
+            await p.fill('#compose-name', '걸어 본 길');
+            await p.fill('#compose-memo', '기록 전에 적었다');
             await p.click('#center button.walk-start');
 
             const frame = await walkFrame(p, app.url);
             assert.equal(new URL(frame.url()).pathname, '/signin');
             assert.equal(await p.isVisible('#flow'), false);
             assert.equal(await p.locator('#pick-list').count(), 0);
-            assert.equal(await p.isDisabled('#right button.save-compose'), true);
+            assert.equal(await p.locator(':is(.story-save, button.save-compose, #compose-id, #compose-name, #compose-memo)').count(), 0, 'no save box while the app fills the center');
             const [stage, center] = await Promise.all([p.locator('#center .walk-stage').boundingBox(), p.locator('#center').boundingBox()]);
             assert.ok(stage!.y + stage!.height > center!.y + center!.height - 40, 'the app reaches the bottom of the center column');
             await untilWalkSteps(p, 1);
+            await p.waitForSelector('#left .walk-verdict .verdict.reachable');
+            assert.equal(await p.textContent('#left .walk-verdict .story-needs summary'), '사전 조건 0');
 
             await typeInto(frame, { placeholder: '이메일' }, EMAIL.value);
             await typeInto(frame, { type: 'password', placeholder: '비밀번호' }, 's3cret');
@@ -85,6 +90,9 @@ test('in a browser, 「● 기록」 in a new story fills the center with the ap
               '/home/home → /home?tab=recent#top',
               '/beta/inbox 맵에 없는 화면/beta/inbox라벨 「메모」 → 첫 메모',
             ]);
+            await p.waitForSelector('#left .walk-verdict .verdict.unjudged');
+            assert.deepEqual(await p.locator('#left .walk-verdict .walk-chips > *').allTextContents(), ['판정 못 함 · 화면 없음']);
+            assert.equal(await p.textContent('#left .walk-verdict .story-needs summary'), '사전 조건 0');
             assert.equal(await p.textContent('#center .walk-bar .walk-at'), '/beta/inbox');
             assert.match((await p.textContent('#center .walk-bar .walk-status'))!, /받은 주소 4/);
             assert.ok(!(await p.content()).includes('s3cret'));
@@ -98,6 +106,7 @@ test('in a browser, 「● 기록」 in a new story fills the center with the ap
               { url: '/beta/inbox', inputs: [MEMO] },
             ] }]);
             assert.equal(await p.locator('#center .walk-stage').count(), 0);
+            assert.deepEqual(await p.locator('#center .story-save :is(input, textarea)').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value)), ['walked', '걸어 본 길', '기록 전에 적었다']);
             await p.waitForSelector('#flow .story-line .box[data-step="2"]');
             assert.deepEqual(await p.$$eval('#flow .story-line [data-step]', (els) => els.map((e) => (e as HTMLElement).dataset.screen)), ['/signin#SignIn', '/home#Home', '/beta/inbox']);
             assert.equal(await p.locator('#flow .story-line .story-hop').count(), 2);
@@ -342,7 +351,7 @@ test('in a browser, after a recording the values typed can be changed and condit
 
             await p.fill('#compose-id', 'walked-help');
             await p.fill('#compose-name', '로그인하고 도움말을 연다');
-            await p.click('#right button.save-compose');
+            await p.click('#center button.save-compose');
             await p.waitForSelector('#story-list li.selected:has-text("로그인하고 도움말을 연다")');
             const { date, ...saved } = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'walked-help.json'), 'utf8'));
             assert.deepEqual(saved, {

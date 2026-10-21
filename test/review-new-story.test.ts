@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
-import { withRebuiltFixture, withServer, browserMissing, withPage, screenBox, boxCount, lineSteps, pathMarks, pillMarks, pathEdges, untilSet, placeOf, postJson, CANDIDATES, storiesTab, holdRequests, WALK, WALK_ON_MAP, withPathStories, textOutside } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, browserMissing, withPage, screenBox, boxCount, lineSteps, pathMarks, pillMarks, pathEdges, untilSet, placeOf, postJson, CANDIDATES, storiesTab, holdRequests, WALK, WALK_ON_MAP, withPathStories, textOutside, storyStack, rightPane, BAD_REQUEST } from './review-helpers.ts';
 import type { Story, PageData } from './review-helpers.ts';
 
 declare const state: any;
@@ -123,8 +123,8 @@ test('in a browser, 「새 스토리」 turns the left column into a screen pick
         assert.equal(await p.locator('#pick-list li').count(), 11);
         assert.equal(await p.textContent('#center h3'), '새 스토리');
         assert.equal(await p.textContent('#center .no-steps'), '아직 넣은 화면이 없습니다.');
-        assert.equal(await p.isDisabled('#right button.save-compose'), true);
-        assert.equal(await p.locator('#right-dock').isVisible(), false);
+        assert.equal(await p.isDisabled('#center button.save-compose'), true);
+        assert.equal(await p.textContent('#center .story-waiting'), '화면을 넣으면 끝까지 갈 수 있는지와 사전 조건을 보입니다.');
 
         await pickScreen(p, '/signin');
         await pickScreen(p, '/home');
@@ -132,19 +132,19 @@ test('in a browser, 「새 스토리」 turns the left column into a screen pick
         await untilJudged(p, 2);
         assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
         assert.deepEqual(await composeLinks(p), ['이어짐', '링크 없음']);
-        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
-        assert.deepEqual(await p.locator('#center .title-row .chip').allTextContents(), ['링크 없음']);
+        assert.deepEqual(await p.locator('#center .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
+        assert.deepEqual(await p.locator('#center .title-row .chip:not(.verdict)').allTextContents(), []);
         assert.deepEqual(await p.locator('#pick-list li .count').allTextContents(), ['넣음 1', '넣음 1', '넣음 1']);
 
         await p.fill('#compose-id', 'Help From Signin');
         assert.equal(await p.isVisible('label:has(#compose-id) .invalid'), true);
         await p.fill('#compose-id', 'help-from-signin');
         assert.equal(await p.isVisible('label:has(#compose-id) .invalid'), false);
-        assert.equal(await p.isDisabled('#right button.save-compose'), true);
+        assert.equal(await p.isDisabled('#center button.save-compose'), true);
         await p.fill('#compose-name', '로그인해 도움말을 연다');
         await p.fill('#compose-memo', '홈에 링크가 없다.');
-        assert.equal(await p.isDisabled('#right button.save-compose'), false);
-        await p.click('#right button.save-compose');
+        assert.equal(await p.isDisabled('#center button.save-compose'), false);
+        await p.click('#center button.save-compose');
         await p.waitForSelector('#story-list li.selected:has-text("로그인해 도움말을 연다")');
 
         const { date, ...saved } = JSON.parse(fs.readFileSync(path.join(config.storiesDir, 'help-from-signin.json'), 'utf8'));
@@ -166,7 +166,7 @@ test('in a browser, a step of a new story shows nothing to add or take out until
         await pickScreen(p, '/signin');
         await pickScreen(p, '/home');
         await untilJudged(p, 1);
-        assert.deepEqual([await composeLinks(p), await p.locator('#right .verdict').allTextContents()], [['이어짐'], ['도달 가능']]);
+        assert.deepEqual([await composeLinks(p), await p.locator('#center .verdict').allTextContents()], [['이어짐'], ['도달 가능']]);
         assert.equal(await p.locator(`#center .story-path ${NO_MOVE}`).count(), 0);
         assert.equal(await p.locator('#center .story-path :is(button.add-step, .step-acts button)').count(), 0);
 
@@ -229,21 +229,78 @@ test('in a browser, a step of a new story shows nothing to add or take out until
   );
 });
 
-test('in a browser, the name being typed for a new story is left alone when a verdict arrives', { skip: browserMissing }, async () => {
+test('in a browser, a Korean syllable being composed in the name of a new story is not broken when a verdict arrives, and the verdict and the name in the title show once it is composed', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
-      withPage(base, async (p) => {
+      withPage(base, async (p, errors) => {
         await startNewStory(p);
         for (const routePath of ['/signin', '/home', '/help']) await pickScreen(p, routePath);
         await untilJudged(p, 2);
-        const name = (await p.$('#compose-name'))!;
-        await p.fill('#compose-name', '하나 빼고 다시 본다');
-
+        const checks = holdRequests(p, '**/api/stories/check');
+        await checks.done;
         await takeOutStep(p, '#center', 1);
+        await untilSet(() => checks.sent.length === 1, 'the check after taking out a step');
+        await p.evaluate(() => {
+          const name = document.querySelector<HTMLInputElement>('#compose-name')!;
+          name.focus();
+          name.value = '하나 빼고 다시 본';
+          name.dispatchEvent(new Event('input', { bubbles: true }));
+          name.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+          (window as any).composed = name;
+        });
+        const answered = p.waitForResponse('**/api/stories/check');
+        checks.release!();
+        await answered;
+        await p.waitForTimeout(100);
+        assert.equal(await p.evaluate(() => (window as any).composed.isConnected && document.activeElement === (window as any).composed), true);
+        assert.equal(await p.locator('#center .link.l-pending').count(), 1, 'the verdict waits until the syllable is composed');
+
+        await p.evaluate(() => {
+          const name = (window as any).composed as HTMLInputElement;
+          name.value = '하나 빼고 다시 본다';
+          name.dispatchEvent(new Event('input', { bubbles: true }));
+          name.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+        });
         await untilJudged(p, 1);
         assert.deepEqual(await composeSteps(p), ['/signin', '/help']);
-        assert.equal(await name.evaluate((el: HTMLInputElement) => el.isConnected && el.value), '하나 빼고 다시 본다');
+        assert.equal(await p.inputValue('#compose-name'), '하나 빼고 다시 본다');
+        assert.equal(await p.evaluate(() => document.activeElement!.id), 'compose-name');
         assert.equal(await p.textContent('#center h3'), '하나 빼고 다시 본다');
+        assert.deepEqual(errors, []);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a new story shows 「에이전트와 대화」 at the top of the right pane with a line saying a conversation can be left once the story is saved, over a greyed form whose 「남기기」 cannot be pressed, and stacks in the middle its verdict chip, the folded 「사전 조건 N」 and the save fields above 「스토리 전체」, where a refused save shows its error', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p, errors) => {
+        await startNewStory(p);
+        for (const routePath of ['/signin', '/home', '/help']) await pickScreen(p, routePath);
+        await untilJudged(p, 2);
+        assert.deepEqual(await rightPane(p), { top: ['talk'], heading: '에이전트와 대화', bottom: ['mark-form'], folded: 0 });
+        assert.equal(await p.textContent('#right-info .talk p'), '스토리를 저장한 뒤에 이 스토리에 대화를 남길 수 있습니다.');
+        assert.deepEqual(await p.locator('#right-dock :is(textarea, button)').evaluateAll((els) => els.map((e) => (e as HTMLButtonElement).matches(':disabled'))), [true, true, true, true]);
+        assert.equal(await p.textContent('#right-dock button.save'), '남기기');
+        assert.equal(await p.locator('#right :is(input, .story-form, .verdict, details)').count(), 0);
+
+        assert.deepEqual(await p.locator('#center .title-row .chip.verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
+        assert.deepEqual(await storyStack(p), ['title', 'needs', 'save', 'whole story', 'steps']);
+        assert.deepEqual(await p.locator('#center details.story-needs').evaluate((d: HTMLDetailsElement) => [d.querySelector('summary')!.textContent, d.open, d.querySelector('p')!.textContent]), ['사전 조건 0', false, '판정한 구간에 조건 없음']);
+        assert.equal(await p.textContent('#center .story-save h2'), '새 스토리 저장');
+        assert.deepEqual(await p.locator('#center .story-save :is(input, textarea)').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).name)), ['compose-id', 'compose-name', 'compose-memo']);
+        assert.deepEqual(await p.locator('#center .story-save button').allTextContents(), ['스토리 저장', '쓰던 것 버리기']);
+
+        assert.equal((await postJson(base, '/api/stories/add', { id: 'taken', name: '먼저 쓴 스토리', memo: '', screens: ['/signin#SignIn'] })).status, 201);
+        await p.fill('#compose-id', 'taken');
+        await p.fill('#compose-name', '이미 있는 ID');
+        await p.click('#center button.save-compose');
+        await p.waitForSelector('#center .story-save .story-error');
+        assert.match((await p.textContent('#center .story-save .story-error'))!, /^저장하지 못했습니다: 스토리 ID taken 는 .+ 이미 씁니다/);
+        assert.deepEqual([await p.inputValue('#compose-id'), await p.inputValue('#compose-name')], ['taken', '이미 있는 ID']);
+        assert.equal(await p.isDisabled('#center button.save-compose'), false);
+        assert.deepEqual(errors.splice(0), [BAD_REQUEST]);
       }),
     ),
   );
@@ -276,7 +333,7 @@ test('in a browser, a new story being written is a place in the address and is k
         assert.match(asked!, /^저장하지 않은 새 스토리가 있습니다/);
         assert.equal(await p.locator('#ended').count(), 0);
 
-        await p.click('#right button.drop-draft');
+        await p.click('#center button.drop-draft');
         await p.waitForSelector('#story-list li');
         assert.equal(await p.textContent('#left button.new-story'), '새 스토리');
         await p.click('#left button.new-story');
@@ -390,7 +447,7 @@ test('in a browser, 「새 스토리」 in the flow bar opens the new-story scre
         await untilJudged(p, 2);
         assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
         assert.deepEqual(await composeLinks(p), ['이어짐', '링크 없음']);
-        assert.deepEqual(await p.locator('#right .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
+        assert.deepEqual(await p.locator('#center .verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
         assert.equal(await p.locator(`#center .story-path ${NO_MOVE}`).count(), 0);
         assert.equal(await p.locator('#center .story-path :is(button.add-step, .step-acts button)').count(), 0);
         await pressStep(p, '#center', 1);
@@ -451,7 +508,7 @@ test('in a browser, 「새 스토리」 in the flow bar opens the new-story scre
   );
 });
 
-test('in a browser, a screen pressed in the list and a box pressed in the diagram add to the same new story, its name being typed is left alone when a verdict arrives, and saving writes the story file and opens the saved story', { skip: browserMissing }, async () => {
+test('in a browser, a screen pressed in the list and a box pressed in the diagram add to the same new story, its name being typed is kept when a verdict arrives, and saving writes the story file and opens the saved story', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -461,9 +518,7 @@ test('in a browser, a screen pressed in the list and a box pressed in the diagra
         await untilJudged(p, 0);
         await pressBox(p, '/home#Home');
         await untilJudged(p, 1);
-        const name = (await p.$('#compose-name'))!;
-        assert.equal(await name.inputValue(), '로그인해 도움말을 연다');
-        assert.equal(await name.evaluate((el: HTMLInputElement) => el.isConnected), true);
+        assert.equal(await p.inputValue('#compose-name'), '로그인해 도움말을 연다');
         await pickScreen(p, '/help');
         await untilJudged(p, 2);
         assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);

@@ -236,6 +236,7 @@ function walkList() {
   return [
     h('div', { class: 'compose-head' }, h('strong', {}, `지나간 화면 ${c.steps.length}`)),
     h('p', { class: 'muted walk-guide' }, '앱에서 화면을 옮길 때마다 단계가 여기 쌓입니다. 같은 화면에 머문 주소는 한 단계로 합치고, 칸에 넣은 값은 그 단계에 붙습니다.'),
+    walkVerdict(c),
     c.steps.length
       ? h('ol', { class: 'walk-steps', id: 'walk-steps' }, c.steps.map((step, i) => {
           const sc = screenOf(step.screen);
@@ -250,6 +251,14 @@ function walkList() {
         }))
       : h('p', { class: 'muted no-steps' }, '아직 지나간 화면이 없습니다.'),
   ];
+}
+
+function walkVerdict(c) {
+  const checked = checkedCompose(c);
+  return h('div', { class: 'walk-verdict' },
+    checked ? h('div', { class: 'walk-chips' }, walkChip(checked), ...reachChips(checked)) : null,
+    checked ? needsFold(checked, 'compose') : waitingLine(c.steps, c.error),
+    repeatedStep(composeScreens(c)) ? h('p', { class: 'error repeated' }, '같은 화면이 이어진 자리가 있어 저장할 수 없습니다.') : null);
 }
 
 function renderWalkLeft(left) {

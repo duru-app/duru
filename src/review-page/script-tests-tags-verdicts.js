@@ -212,7 +212,6 @@ function narrowTalk(target) {
   else moveTalkTo(target.node);
   state.dockKey = keyOf(shownTarget());
   state.historyFilter = keyOf(target);
-  state.historyOpen = true;
   render();
 }
 
@@ -226,7 +225,6 @@ function talkOnCandidate(key, history) {
       render();
     }
   }
-  if (history) state.historyOpen = true;
   render();
   if (!history) focusTalk();
 }
