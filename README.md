@@ -831,14 +831,14 @@ screen's tests by depth and its API calls, with
 a row per option value. A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
 name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
 screen, links out of it and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
-the screen, then shows the tests of each role and setting case by depth under 「경우별 테스트」, the links into it
+the screen, then shows the tests of each role and setting case by depth under 「관점별 테스트」, the links into it
 with their guards, the conditions inside the screen, where its route and component are, the links out of it and the
 settings it reads. The links into it and out of it also list the moves written in `moves` as 「설정에 적은 이동」 with their
 reason. Once opened it stays open on other screens until it is closed. Choosing a call, by its name or a count in
 the table or from a link elsewhere, opens its details under the call table and scrolls the middle pane to them: where
 its option was found, the server match, its tests, untagged tests linked to it, where this screen calls it and the
 screens that use it.
-With `caseKinds` set, 「경우별 테스트」 has a button per kind for every screen, and for a call in its details: pressing one
+With `caseKinds` set, 「관점별 테스트」 has a button per kind for every screen, and for a call in its details: pressing one
 makes the kind a case there, with its tests by depth, and pressing it again takes it out. Each press is listed under
 「전체」's 「변경 기록」, not in the conversation of the screen or call. A picked kind with values
 has a row per value under it, with that value's tests by depth and result, or 「테스트 없음」. Next to each picked
@@ -855,7 +855,7 @@ still undecided on that screen or call (see **Task list**) has its own lines und
 saves nothing without one. Hovering over them, or a screen reader, gives 「대상 — 이 요청에서 이 경우를 시험합니다」 and
 「대상 아님… — 이유를 적고 이 요청에서는 시험하지 않습니다」 (「화면」 for a screen). Where a mark, a person's or an agent's,
 keeps the kind undecided, the line says who left it instead of 「아직 아무도 정하지 않았습니다」, in the words of the
-「경우 종류」 tab: 「<author> 가 <date> 에 이유 없이 뺐습니다」 for a kind pressed off, or 「… 에 규칙에서 뺐지만 규칙이 더는
+「테스트 관점」 tab: 「<author> 가 <date> 에 이유 없이 뺐습니다」 for a kind pressed off, or 「… 에 규칙에서 뺐지만 규칙이 더는
 고르지 않습니다」 with the old reason for a kind taken out of a rule that no longer picks that screen or call. Only where
 the kind no longer takes that screen or call as a candidate at all does a kind taken out of a rule keep its 「대상
 아님」 row, which then says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. A kind an agent marked 「대상 아님」
@@ -868,10 +868,10 @@ to the rule or undecided, its 「미판정」 line then saying 「<reviewer> 가
 button, 「이 요청은 규칙에서 빼기…」 or ✓ ✕ of a 「미판정」 line instead saves the reviewer's own mark, which also ends the wait.
 The kind buttons below stay as they are. The flow shows the same middle and right panes for a picked screen.
 
-**Case kinds tab.** With `caseKinds` set, the list has a third tab, 「경우 종류 N」, after 「화면」 and 「태그 없음」; N adds
+**Case kinds tab.** With `caseKinds` set, the list has a third tab, 「테스트 관점 N」, after 「화면」 and 「태그 없음」; N adds
 up the undecided candidates of every kind and those waiting for a reviewer, and is 0 when none is left. Hovering
 over it gives the two apart, 「미판정 U · 검토 중 R」. When the three do not fit on one line, as in a
-narrow list with three-digit counts, 「경우 종류 N」 moves to a second line. The tab lists the kinds in config order, each
+narrow list with three-digit counts, 「테스트 관점 N」 moves to a second line. The tab lists the kinds in config order, each
 with its text, `case:<kind>` and 「대상 N · 미판정 N · 빈칸 N」, where 빈칸 is the number of cases with no tests that
 `rebuild` prints, and 「검토 중 N」 before 「미판정」 while any wait for a reviewer. With `baselineMap`, 「(신규 M)」 follows
 「미판정 N」 while M of the undecided candidates are screens or calls the baseline map does not have; the tab's own number
@@ -887,7 +887,7 @@ folded and stay as they were left when the page is drawn again; 「대상 아님
 reviewer: each line has 「검토 중」, the chip of what holds until then (「규칙」 or the name of whoever picked it), the
 agent with the date and the agent's reason. These count only here, not under 「미판정」. Check boxes on the lines, on
 the group titles and its own 「모두 고르기」 choose them; once one is chosen, 「✓ N」 accepts and 「✕ N」 reverts them all,
-with 「받아들이기」 and 「되돌리기」 on hover, as ✓ and ✕ of 「경우별 테스트」 do. One the agent wrote again after the page read
+with 「받아들이기」 and 「되돌리기」 on hover, as ✓ and ✕ of 「관점별 테스트」 do. One the agent wrote again after the page read
 it is not saved, and the line under the buttons says which were saved and which were not. 「미판정 N」 lists the
 undecided candidates in three groups, 「쓰기 요청」 (a request whose method was not read among them), 「조회 요청」 and
 「화면」, leaving out an empty group; each request carries its method in colour (GET blue, POST green, PUT orange, PATCH
@@ -1133,7 +1133,7 @@ the text. 「미답변」 keeps the comments without a status that have no reply
 place whose current status is that one, the latest mark with that status and text. With `caseKinds` set, the last
 filter, 「변경 기록」, lists instead every case kind picked or taken out, as one list by time, the latest first, not
 grouped: a line shows 켬 or 끔, the kind, the screen or call, who pressed it and when. Pressing one opens that screen or
-call with 「경우별 테스트」 opened and scrolled into view. The form is hidden while 「전체」 is
+call with 「관점별 테스트」 opened and scrolled into view. The form is hidden while 「전체」 is
 shown. Pressing a line opens its screen, call, story or candidate in 「이 화면」 and scrolls the conversation to that
 entry, outlined. While 「전체」 is shown the address carries `&talk=all`, and `&filter=<filter>` for a filter other than
 「모두」, so going back after pressing a line shows 「전체」 with the same filter and the pressed line outlined in view,

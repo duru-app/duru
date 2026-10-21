@@ -396,7 +396,7 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    will not change it. This
    part is done when every candidate `duru undecided` still lists is one only a person can decide, such a line or
    one you could not tell from the code, or when none is left and it exits with 0; then tell the user which are
-   left, with the author and date such a line gives, and that the review page's 「경우 종류」 tab shows those with such
+   left, with the author and date such a line gives, and that the review page's 「테스트 관점」 tab shows those with such
    a line under the button with a person icon (「직접 판정」 on hover) to decide several at once, and how many of your `not-needed` wait under 「검토 중」 there
    to be accepted or reverted; then go on with `cases with no tests`.
    When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config>
