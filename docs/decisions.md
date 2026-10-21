@@ -1914,8 +1914,10 @@ names: Playwright recommends finding a box by its label or placeholder rather th
 (https://testing-library.com/docs/queries/about/). Writing which kind of words they are lets a test pick
 `getByPlaceholder`, `getByLabel` or `getByTestId` without guessing. Several kinds may be written for one box, as the
 Chrome DevTools Recorder keeps several selectors for one step
-(https://developer.chrome.com/docs/devtools/recorder/reference), so the box can still be found when one of them
-changes. `nth`, counted from 1, names one of several boxes the same words find, as Maestro picks the Nth match
+(https://developer.chrome.com/docs/devtools/recorder/reference), so the review page can still find the box when one
+of them changes. The code `duru story` writes for an input needs a box that has every word (the entry on that code
+below), so an agent whose code finds no box tries each word alone. `nth`, counted from 1, names one of several boxes
+the same words find, as Maestro picks the Nth match
 (https://docs.maestro.dev/api-reference/selectors); all read on 2026-10-15. A file with a box that has no words,
 empty words, a kind duru does not know, or an `nth` below 1 is not read, like any other malformed story file, so
 a test never gets a box it cannot look for. duru does not look for the box in the code, so the task list writes
@@ -1935,14 +1937,23 @@ Asked for in #300 (2026-10-19). On the card alone a reviewer cannot tell which b
 page cannot read inside the app frame. It posts the box to the script duru puts after `<head>`, the one that reports a
 walk, and the script answers with where each matching `input` or `textarea` sits and which of the written kinds
 matched it, never a value. It answers only a request from its parent window at one of the review page's origins, as
-the walk report goes only there. The script reads each box's words the way a walk reads them (the placeholder, the first
-label's text or `aria-label`, `data-testid`) and takes the boxes that have every written word; when fewer boxes have
-them all than `nth`, it takes the boxes that have any one of them. `nth` counts in document order within the boxes it
-took. A walk writes `nth` among the boxes that have all its words, so a walked box is counted as the walk counted it,
-and several kinds are written so that the box can still be found when one of them changes (the entry above), which is why
-the task list joins them with `or`. The script counts once the page has had no change
-for 300 ms, waiting at most 3 s, so a box the app draws when its data arrives is counted, and the count does not depend
-on how fast the data came.
+the walk report goes only there. The script compares the words of each `input` and `textarea` with the written ones after
+cutting spaces at the ends and making runs of spaces one: the placeholder, `data-testid`, and for a label the first
+`<label>`'s text, `aria-label` or the text of the elements `aria-labelledby` names (the last two since #348; before,
+`aria-label` counted only for a box without a `<label>`). It takes the boxes that have every written word; when fewer
+boxes have them all than `nth`, it takes the boxes that have any one of them. `nth` counts in document order within
+the boxes it took. A walk writes `nth` among every element of the page that has all its words, as the code
+`duru story` writes counts them (the entry on that code below), and takes a label only from the first of
+`aria-labelledby`, `aria-label` and `<label>` that a box has, while the page counts only inputs and textareas and
+takes a label word from any of the three. Where a button or a wrapper carries the words too, as a search box and a
+search button with one `aria-label`, or where a box's `<label>` has the word and its `aria-label` another, as a box
+with the `<label>` 「메모」 and the `aria-label` 「서명자 메모」 before a box with only the `<label>` 「메모」,
+the page's number can differ from the walk's and the code's: the driver chose
+in #348 to keep the page's lookup as it was, and this is a known limit. Several kinds are written so that the box can
+still be found when one of them changes (the entry above). The task list joined them with `or` until the code
+`duru story` writes for an input needed a box with every word (the entry on that code below); it now joins them with
+`and`. The script counts once the page has had no change for 300 ms, waiting at most 3 s, so a box the app draws when
+its data arrives is counted, and the count does not depend on how fast the data came.
 The cut is the live app in a frame of its own at the app width, made taller, up to 4000 px, only as far as the counted
 box and the boxes within one cut's height of it need; the frame is scaled and moved so that their region fills the
 right pane. Boxes with the same words are cut together only while the app's text can still be read: the app is shown at
@@ -2227,8 +2238,11 @@ taken from the first trace read for that screen order.**
 Asked for in #277 (2026-10-18), on the input box of #275. The trace's `before` line for a `fill` holds the locator as
 `internal:label="…"i`, `internal:attr=[placeholder="…"i]` or `internal:testid=[data-testid="…"s]` and the text as
 `value` (read from a trace recorded with Playwright 1.60.0, format 8), so the three forms map to the story box's `label`,
-`placeholder` and `testId`. The trailing `i` or `s` (not exact or exact) is ignored: the story box has no place for it,
-and the words are the same either way. `>> nth=N` is carried as `nth` N + 1, since the trace counts from 0 and the story
+`placeholder` and `testId`. The trailing `i` or `s` (not exact or exact) is ignored, since the story box has no place
+for it. The words of a locator that was not exact may be only part of what the screen shows, or differ in case, while
+the code `duru story` writes for an input matches them exactly (the entry on that code below), so that code may find
+no box, or with `nth` another box, since the trace counted `nth` among the boxes the inexact locator found; this is a
+known limit. `>> nth=N` is carried as `nth` N + 1, since the trace counts from 0 and the story
 from 1; a locator with anything else chained (`nth=-1`, a filter, a parent) is not a box the story can name. A fill found
 by CSS or role, a fill with a blank value (a story value must have text), a fill whose box words are blank, and a locator
 of another shape are counted as skipped, and the candidate page shows the count. A role locator is skipped because it
@@ -2379,7 +2393,9 @@ the app takes the whole middle column and the steps stack where the screen list 
 used then. After 「기록 끝」 the path is drawn on one line as a saved story is, since the whole flow hides a walk of a
 few screens among many; 「전체 그림에서 보기」 brings the whole flow back for adding steps by pressing boxes. A value is
 read from the `change` event of a text-like `input` or a `textarea`, found by the words a story box finds it by, in
-the order placeholder, label, test ID, with `nth` when the same words name more than one box. A password is never
+the order placeholder, label, test ID, with `nth` when the same words name more than one element; since #348 the words
+are read and `nth` is counted as Playwright's locators do (the entry on the code `duru story` writes), so that code
+finds the box the walk recorded. A password is never
 read, and a select, a checkbox or a box with none of those words cannot be named by a story box, so each is only
 counted as `skipped`, as for a trace. A later value in the same box takes the place of the earlier one, the last value
 being what the screen was left with. Emptying a box whose value was recorded takes the value off the step and off each
@@ -2556,8 +2572,8 @@ Alternatives compared:
 **`duru story <config> <story ID>` prints a story in the text shape of `duru tasks`, plus the lines duru computes for each step, rather than JSON or a test code draft.**
 An agent that writes a test already reads the story part of `duru tasks`, so the same code makes the same lines and
 a story that no reviewer marked is read the same way. What duru can compute (the address to open, a `toHaveURL`
-line from the route path) is given as lines; what it cannot (which element to press, how to find a box) is said to
-be unknown, and the agent fills it from the source the line names.
+line from the route path, the code that fills an input's box from its words) is given as lines; what it cannot
+(which element to press) is said to be unknown, and the agent fills it from the source the line names.
 Alternatives compared:
 - JSON for the agent to read: each field is exact, but it is a second shape to keep beside the task list's text, and
   the text of reasons and verdicts would be written twice.
@@ -2679,6 +2695,75 @@ Alternatives compared:
 - One screen with each page as a sub-address under it: mattermost's and outline's items each have their own
   component, address, sidebar entry and condition, which fits a screen per item; appsmith's editor table picks panes
   inside one screen and would fit sub-addresses, but duru does not read it.
+
+**`duru story` writes under each input a Playwright line that finds the box with every word written for it, each
+matched exactly, joined by `.and()` in the order placeholder, label, test ID, with `.nth(N - 1)` for `nth`, and marks
+the line as not tried on the screen.**
+Driver's decision in #348 (2026-10-20). The line is
+`await page.getByPlaceholder("<placeholder>", { exact: true }).and(page.getByLabel("<label>", { exact: true })).and(page.getByTestId("<test ID>")).nth(N - 1).fill("<value>");`
+without the words the input does not have. Each kind sits in one table in `src/playwright-trace.ts` with the locator
+the code uses and the selector a trace's `fill` records, so reading inputs from a trace and writing code for them
+cannot drift apart. The order is fixed, so one box written with its words in any order gives the same code.
+Measured with playwright-core 1.60.0 and Chromium on a test page of boxes that share words: one label inside another
+(「메모」, 「서명자 메모」), the same label twice, labels that differ in case and spaces, a box with a placeholder before one
+without, a `<label>` and an `aria-label` that disagree, `aria-labelledby`, a label around the box, a search box and a
+button with the same `aria-label`, a test ID on a wrapper and on its box, three boxes with the placeholder 「메모장」 of
+which one also has a test ID, a hidden box, a select with the same label, and two labels on one box. The code reached
+each of the 25 boxes recorded by a walk that reads words and counts `nth` as Playwright does, and no other box; with the
+walk as it then read words, 7 of the 24 boxes it recorded were reached as another box or not at all. `exact` is needed
+because 「메모」 without it also finds 「서명자 메모」. With `exact`, Playwright compares a label after collapsing spaces but
+a placeholder and a test ID as written, so the words a trace keeps are not trimmed. The inputs read from
+`test/fixtures/app/traces/inputs.zip` fill the boxes the recorded test filled when their code runs on the recorded page,
+which a browser test keeps. `.and()` needs Playwright 1.34 or later (from Playwright's documents, not measured).
+A walk therefore reads the words the way these locators match them: the label from the elements `aria-labelledby`
+names, else `aria-label`, else the box's `<label>`s, taking the first that has text, with spaces made one as Playwright
+does; the placeholder and the test ID as written, spaces at the ends included. `nth` counts every element of the page
+that has all the words, in document order, as `.nth()` counts what `.and()` finds, so a search button with the same
+`aria-label` as its box counts too. Such a button, or a list the app shows while a box is typed in, can come and go
+while the box keeps its value, so one box can be sent with a different `nth` from one change to the next; the walk then
+also sends the box it last sent for that element, and the review page moves the value and the row recorded under that
+box to the new one, or drops both when the box is cleared (measured in Chromium with a search button shown only while
+its box has text). The walk does not send that box when another element has sent it since, as when a row of boxes with
+the same words is removed or added above and the rows are typed in again: what the page holds under it is then the other
+element's value, so the page keeps it, as it did before the walk sent the box last sent. A browser test walks a page of the measured shapes and a few more, placeholders and a test ID
+written with extra spaces, two search boxes, a box with `data-qa` and a textarea, 28 boxes in all, and runs the code of
+each one it recorded. To count `nth` for a label the walk collects the boxes the matching `<label>`s point at (`control`) once,
+rather than reading `labels` of every element: on a page of 35,000 elements reading `labels` made the first typed value
+take 1.7 s, and collecting them once takes 22 ms (measured in Chromium). The page saves a word a walk or the story file
+gave as it is, and cuts spaces at the ends only from a word typed or changed in the table, so the spaces a walk kept
+reach the story file.
+duru does not run the code, so the line ends `(duru did not try it on the screen)`, and `duru tasks` gets no such line;
+its input lines keep `(not checked against the code)` and now join the words with `and`, as the code needs all of them.
+The review page still finds a box by any one word (the entry on pressing an input line), so a box the page points at
+may be one the code does not find: the intro and the skill tell the agent to try each word alone when the code finds
+no box, and then to tell the user which input it is. Code that holds a backtick is put in a longer code span, so the
+line still reads as one span.
+Known limits: a project whose Playwright config sets `testIdAttribute` gets `getByTestId` looking at that attribute,
+while a walk, the page and a trace read only `data-testid`, so its test ID lines may find no box. No config key was
+added for it: none of the projects on hand is known to set it (a guess; into-sign was not measured), and a key can be
+added later without changing story files. A `<style>`, `<script>` or `<noscript>` inside a `<label>` or inside an
+element `aria-labelledby` names is read by the walk, which takes its `textContent`, but left out by Playwright, so such
+a label is written with that text and the code finds no box (measured for `<style>` inside a `<label>`; the rest read
+from Playwright's source). The page compares a label word with the first `<label>` of a box only, so a box whose first
+`<label>` has no text and a later one has is recorded with the later one's text and not found on the page.
+A box inside an open shadow root is found by Playwright, which looks inside it, but not counted by the walk (read from
+Playwright's source, not measured). Stories recorded before keep `nth` counted the old way, among the inputs and
+textareas with exactly the same words; they are not rewritten, since no story in use is known to have `nth` (a
+guess).
+Alternatives compared:
+- `.or()` between the words: Playwright's strict mode stops the fill as soon as another box shares one word; the three
+  「메모장」 boxes were all matched at once.
+- The first word alone in the fixed order: the 「메모장」 box with its own test ID would need `nth` to be told from the
+  other two, which a walk does not write for it.
+- Locators without `exact`: a word that is part of another box's word finds both.
+- Keeping `or` on the input line and changing only its explanation: the input line would say `or` above code that needs
+  every word.
+- A `testIdAttribute` config key read by the walk, the page and the trace reader: those projects would work, but it is
+  a setting users write and duru keeps, with no project known to need it.
+- Counting `nth` only among inputs and textareas, as before: one box would keep one number, but the code for a search
+  box beside a search button with the same `aria-label` would find both.
+- Taking a box with `nth` 1 and the same box without `nth` as one: misses a button drawn before its box, and would
+  join two boxes with the same words once the first of them is removed.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

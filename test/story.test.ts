@@ -24,7 +24,7 @@ function withCopy<T>(fn: (run: (...args: string[]) => SpawnSyncReturns<string>, 
 
 const section = (text: string, id: string) => text.split(`\n## ${id}\n`)[1];
 
-test('a story no reviewer marked is printed with a line for each step to open and to check arrival, what to press, the lines a person wrote, the reasons and the empty tests', () => {
+test('a story no reviewer marked is printed with a line for each step to open and to check arrival, what to press, the lines a person wrote with the code that fills each input, the reasons and the empty tests', () => {
   withCopy((run) => {
     assert.equal(run('rebuild').status, 0);
     const res = run('story', 'report-detour');
@@ -43,6 +43,7 @@ test('a story no reviewer marked is printed with a line for each step to open an
       '  2. /home#Home — tests: ui pass 3, api pass 1, api pending 1, render fail 1, code pass 1, data fail 1',
       '     - arrives: `await expect(page).toHaveURL(/^[a-z]+:\\/\\/[^\\/]+\\/home\\/?(?:[?#].*)?$/i);`',
       '     - input: placeholder "문서 검색" → "분기 보고" (not checked against the code)',
+      '       - fill: `await page.getByPlaceholder("문서 검색", { exact: true }).fill("분기 보고");` (duru did not try it on the screen)',
       '     - to /document/:id#DocumentDetail: open at components/DocumentTable.js:13',
       '       - what to press: duru does not know',
       '  3. /document/:id#DocumentDetail — tests: ui pass 1, api pass 3, api fail 3, data pending 2, data pass 2',
@@ -61,6 +62,38 @@ test('a story no reviewer marked is printed with a line for each step to open an
     assert.match(story, /^ {4}- link from \/home#Home at components\/SideMenu\.js:11, guard /m);
     assert.match(story, /^- empty tests:\n {2}- playwright: `test\.fixme\("<what it checks>", \{ tag: \["@story:report-detour", "@screen:\/admin\/report#AdminReport", "@screen:\/home#Home", "@screen:\/document\/:id#DocumentDetail"\] \}, async \(\{ page \}\) => \{\}\);`$/m);
   }, { appUrl: 'http://localhost:3000', storiesDir: 'brief-stories' });
+});
+
+test('the fill line finds the box by every word written for it, in the order placeholder, label, test ID whatever order the story file has, takes the Nth from 0, and puts the value in a longer code span when the code has a backtick', () => {
+  withCopy((run, copy) => {
+    const file = path.join(copy, 'example-stories/signin-inputs.json');
+    const inputs = [
+      { box: { testId: 'login-email', label: '이메일', placeholder: '이메일 주소' }, value: 'a@b.c' },
+      { box: { label: '서명자 "메모"', nth: 2 }, value: '`확인`\n끝' },
+      { box: { testId: ' pad ' }, value: 'x' },
+    ];
+    fs.writeFileSync(file, JSON.stringify({ name: 'n', screens: [{ screen: '/signin#SignIn', inputs }], author: 'a', date: '2026-10-03' }));
+    run('rebuild');
+    const story = section(run('story', 'signin-inputs').stdout, 'signin-inputs');
+    assert.deepEqual(story.split('\n').filter((l) => l.startsWith('     - input') || l.startsWith('       - fill')), [
+      '     - input: placeholder "이메일 주소" and label "이메일" and testId "login-email" → "a@b.c" (not checked against the code)',
+      '       - fill: `await page.getByPlaceholder("이메일 주소", { exact: true }).and(page.getByLabel("이메일", { exact: true })).and(page.getByTestId("login-email")).fill("a@b.c");` (duru did not try it on the screen)',
+      '     - input: label "서명자 \\"메모\\"", number 2 → "`확인`\\n끝" (not checked against the code)',
+      '       - fill: ``await page.getByLabel("서명자 \\"메모\\"", { exact: true }).nth(1).fill("`확인`\\n끝");`` (duru did not try it on the screen)',
+      '     - input: testId " pad " → "x" (not checked against the code)',
+      '       - fill: `await page.getByTestId(" pad ").fill("x");` (duru did not try it on the screen)',
+    ]);
+    fs.writeFileSync(file, JSON.stringify({ name: 'n', screens: [{ screen: '/signin#SignIn', inputs: [{ box: { placeholder: '이메일 주소', testId: 'login-email', label: '이메일' }, value: 'a@b.c' }] }], author: 'a', date: '2026-10-03' }));
+    run('rebuild');
+    assert.match(run('story', 'signin-inputs').stdout, /^ {7}- fill: `await page\.getByPlaceholder\("이메일 주소", \{ exact: true \}\)\.and\(page\.getByLabel\("이메일", \{ exact: true \}\)\)\.and\(page\.getByTestId\("login-email"\)\)\.fill\("a@b\.c"\);`/m);
+  });
+});
+
+test('the intro of one story says what the fill line is and what to do when it finds no box', () => {
+  withCopy((run) => {
+    run('rebuild');
+    assert.match(run('story', 'report-detour').stdout, /A `fill` line under an `input` line is Playwright code that finds the box with every word written for it, each matched exactly, takes the Nth of those boxes when the input has a number, and puts the value in; duru did not try it on the screen, so when it finds no box, try each word alone/);
+  }, { storiesDir: 'brief-stories' });
 });
 
 test('the story part is the story part of the task list, apart from the marks', () => {

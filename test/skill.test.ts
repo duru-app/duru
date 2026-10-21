@@ -131,9 +131,13 @@ test('the agent skill says how to read the conditions a person wrote for the lin
 
 test('the agent skill says how to read the inputs a person wrote for a step in the task list and what to do when the test cannot find the box', () => {
   assert.match(SKILL, /An `input` line under a step names a box to fill at that step and the value to put in it/);
-  assert.match(SKILL, /`placeholder`[\s\S]*`label`[\s\S]*`testId`[\s\S]*`number N` when it is the Nth box those words find/);
-  assert.match(SKILL, /Find the box in the test by those\s+words as they are/);
-  assert.match(SKILL, /when the test cannot find the box, tell the user which input it is/);
+  assert.match(SKILL, /`placeholder`[\s\S]*`label`[\s\S]*`testId`, several joined by `and`\s+for a box that has all of them, with `number N` when it is the Nth of the elements that have them all/);
+  assert.match(SKILL, /Find the box in the test by those words as they are, all of them, each matched exactly/);
+  assert.match(SKILL, /cannot find the box by all the words, try each word alone, and when it still cannot, tell the user which input\s+it is/);
+});
+
+test('the agent skill says what the fill line under an input of one story is and what to do when it finds no box', () => {
+  assert.match(SKILL, /under an `input` line, `fill`, the Playwright\s+code that finds the box with all its words[\s\S]*which duru did not try on\s+the screen: use it as it is, and when it finds no box, try each word alone/);
 });
 
 test('the agent skill says how to read a need file a story picks in the task list, and what to do when the file is missing or could not be read', () => {

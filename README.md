@@ -579,9 +579,11 @@ stays a screen ID.
 `inputs` lists the boxes to fill at that step, each as `{ "box": { ... }, "value": "<what to type>" }`. `box` finds
 the box by what the screen shows: `placeholder` (the hint text inside the box), `label` (its label) or `testId` (its
 test ID). Write the words as they read on the screen, not a translation key; give one or more of the three, all
-pointing at the same box, so the box can still be found when one of them changes. When those words find more than
-one box, such as one memo box per signer, `nth` says which one, counting from 1. `value` is the text to put in.
-duru does not look for the box in the code, so the page and the task list mark each input as not checked.
+on the same box. The review page finds the box by any one of them, so it still finds a box when one word changes, but
+the code `duru story` writes for an input needs a box that has every word written. When more than one element has
+all those words, such as one memo box per signer, `nth` says which one, counting from 1 in the order of the page.
+`value` is the text to put in. duru does not look for the box in the code, so the page and the task list mark each
+input as not checked.
 
 ```json
 {
@@ -1074,8 +1076,12 @@ listening for new saves when the review ends.
 `story <config> <story ID>` prints one story as text for a coding agent, marked or not. It has the lines of a story
 under `# Stories` in the task list, without `marks`, and under each step: `open`, on the first step, the route path
 (after `appUrl` when the config has it) with a route variable left as it is; `arrives`, a `toHaveURL` line matching the whole address for the
-step's screen, or the reason when its route path was not read or it is not on the map; and `what to press`, under a
-link, saying duru does not know which element to press (only under a link that exists in the source, not under `no link`, a screen not on the map, or a move written in `moves`). The lines a person wrote (`need`, `link need from step N`,
+step's screen, or the reason when its route path was not read or it is not on the map; `what to press`, under a
+link, saying duru does not know which element to press (only under a link that exists in the source, not under `no link`, a screen not on the map, or a move written in `moves`); and `fill`, under each `input` line,
+Playwright code that finds the box with every word written for it, each matched exactly, takes the Nth of them for
+`number N`, and puts the value in, such as
+`await page.getByPlaceholder("이메일", { exact: true }).and(page.getByTestId("login-email")).fill("member@example.com");`
+in a code span, followed by `(duru did not try it on the screen)`. The lines a person wrote (`need`, `link need from step N`,
 `input`, `expect`, `needs`, `expects at the end`) are not checked by duru. The text ends with empty tests carrying
 `@story:` and the `@screen:` of each screen on the map. Standard output holds only that text; for a story ID that is
 not there, a story file that could not be read or a map that must be rebuilt, one line goes to standard error and the
@@ -1091,7 +1097,7 @@ by depth and status, its API calls and the tests already attached. Calls follow 
 picked case kinds the same way, and stories under `# Stories` with their steps, link verdicts and 「사전 조건」. A story's `needs` lines come before its
 steps, each step's `link need from step N` (the link from the step before), `need`, `input` and `expect` lines follow
 that step, and `expects at the end` follows the last step; a story without them gets none of these lines. An
-`input` line reads like `input: placeholder "이메일" or testId "login-email", number 2 → "member@example.com" (not
+`input` line reads like `input: placeholder "이메일" and testId "login-email", number 2 → "member@example.com" (not
 checked against the code)`, with `number N` only when the input has `nth`. A picked need file is written as
 `<name> (needs/<file>): <text>`, and one that is not there or could not be read as `needs/<file> — the file is
 missing` or `needs/<file> — the file could not be read`. Under an open

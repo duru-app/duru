@@ -44,7 +44,7 @@ async function withLabStory(fn: (p: Page, config: Config, errors: string[]) => P
   });
 }
 
-test('in a browser, a step card with nothing written shows only a pencil to write, whose table takes conditions, inputs found by one or more words and expected results, keeps what is typed when the page is drawn again, and 「저장」 writes them into the story file and draws the card again', { skip: browserMissing }, async () => {
+test('in a browser, a step card with nothing written shows only a pencil to write, whose table takes conditions, inputs found by one or more words and expected results, keeps what is typed when the page is drawn again, and 「저장」 writes them into the story file, with spaces at the ends of a typed word cut, and draws the card again', { skip: browserMissing }, async () => {
   await withLabStory(async (p, config) => {
     assert.deepEqual(await editLabels(p, STEP_2), ['이 단계의 조건 · 입력값 · 기대 결과 적기']);
     assert.equal(await p.locator(`${STEP_2} .step-written`).count(), 0);
@@ -58,7 +58,7 @@ test('in a browser, a step card with nothing written shows only a pencil to writ
     await edit.locator('button:has-text("입력값 더하기")').click();
     assert.deepEqual(await edit.locator('.fields-part.inputs select option').allTextContents(), ['안내 글', '라벨', '테스트 ID']);
     await edit.locator('.fields-part.inputs select').selectOption({ label: '라벨' });
-    await edit.locator('.fields-part.inputs input[aria-label="찾는 말"]').fill('실험 이름');
+    await edit.locator('.fields-part.inputs input[aria-label="찾는 말"]').fill(' 실험 이름 ');
     await edit.locator('button:has-text("찾는 말 더하기")').click();
     assert.deepEqual(await edit.locator('.fields-part.inputs select').evaluateAll((els) => els.map((e) => (e as HTMLSelectElement).value)), ['label', 'placeholder']);
     await edit.locator('.fields-part.inputs select').nth(1).selectOption({ label: '테스트 ID' });

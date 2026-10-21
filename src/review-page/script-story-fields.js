@@ -43,7 +43,7 @@ const editingAt = (story, place) => {
   return Boolean(edit && edit.story === story && sameFieldsPlace(edit.place, place));
 };
 
-const wordRow = (kind, text) => ({ key: nextRowKey(), kind, text });
+const wordRow = (kind, text) => ({ key: nextRowKey(), kind, text, read: text });
 const inputRowOf = (input) => ({
   key: nextRowKey(),
   words: Object.keys(BOX_WORDS).filter((k) => input.box[k] !== undefined).map((k) => wordRow(k, input.box[k])),
@@ -280,7 +280,7 @@ function fieldsToSend(rows) {
   const lines = (list) => list.flatMap((r) => (r.mode === 'use' ? (r.use ? [{ use: r.use }] : []) : r.text.trim() ? [r.text.trim()] : []));
   const inputs = (list) => list
     .filter((r) => r.words.some((w) => w.text.trim()) || r.nth.trim() || r.value.trim())
-    .map((r) => ({ box: { ...Object.fromEntries(r.words.map((w) => [w.kind, w.text.trim()])), ...(r.nth.trim() && { nth: Number(r.nth) }) }, value: r.value }));
+    .map((r) => ({ box: { ...Object.fromEntries(r.words.map((w) => [w.kind, w.text === w.read ? w.text : w.text.trim()])), ...(r.nth.trim() && { nth: Number(r.nth) }) }, value: r.value }));
   return Object.fromEntries(Object.entries(rows).map(([key, list]) => [key, key === 'inputs' ? inputs(list) : lines(list)]));
 }
 

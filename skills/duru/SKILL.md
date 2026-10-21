@@ -328,12 +328,14 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    to, make the test take the link a `link need from step N` line names, check each expect at that step or at the
    end, and when one cannot be set up or checked in the app, tell the user which one instead of leaving it out.
    An `input` line under a step names a box to fill at that step and the value to put in it. The box is named by
-   the words the screen shows: `placeholder` (the hint inside the box), `label` or `testId`, several joined by `or`
-   all pointing at the same box, with `number N` when it is the Nth box those words find; the value is a JSON
-   string. Find the box in the test by those words as they are (a placeholder, label or test ID locator, taking the
-   Nth match when there is a number), fill in the value at that step, and do not swap the words for a CSS or XPath
-   selector. duru did not look for the box in the code, so the story may name a box the screen does not have:
-   when the test cannot find the box, tell the user which input it is instead of guessing another box.
+   the words the screen shows: `placeholder` (the hint inside the box), `label` or `testId`, several joined by `and`
+   for a box that has all of them, with `number N` when it is the Nth of the elements that have them all; the value
+   is a JSON string. Find the box in the test by those words as they are, all of them, each matched exactly
+   (`getByPlaceholder` and `getByLabel` with `exact: true`, `getByTestId`, joined with `.and()`, and `.nth(N - 1)`
+   when there is a number), fill in the value at that step, and do not swap the words for a CSS or XPath selector.
+   duru did not look for the box in the code, so the story may name a box the screen does not have: when the test
+   cannot find the box by all the words, try each word alone, and when it still cannot, tell the user which input
+   it is instead of guessing another box.
    A need written `<name> (needs/<file>): <text>` is a need file of the story folder that several stories pick,
    such as an account to sign in with: set it up from its text, and the same way in every story test that picks the
    same file; on a `link need from step N` line, set it up before step N so the test can take that link. A need
@@ -400,7 +402,10 @@ step: `open` (the first step only), the address to open, with a route variable l
 the app address in front when the config has `appUrl`; `arrives`, a `toHaveURL` line with a regular expression that matches the whole address of the step's screen, after the path and hash of `appUrl` if it has any, to put after the step, or why
 duru could not write it (the route path was not read, or the screen is not on the map); and under a link
 `what to press: duru does not know` (only under a link that exists in the source: not under `no link`, under `not judged, a screen is not on the map`, or under a move written in the config's `moves`), because duru gives the link's verdict and where it is written but not which
-element to press, so find that element in the source it names. Fill a route variable with a real value yourself.
+element to press, so find that element in the source it names; and under an `input` line, `fill`, the Playwright
+code that finds the box with all its words, each matched exactly, and puts the value in, which duru did not try on
+the screen: use it as it is, and when it finds no box, try each word alone before telling the user which input it is.
+Fill a route variable with a real value yourself.
 The `need`, `link need from step N`, `input`, `expect`, `needs` and `expects at the end` lines are text a person
 wrote that duru did not check, and a `needs/<file>` need comes with its file's name and text. The `reach` and
 `preconditions` lines say what a step needs (a role, a setting) and which steps have no link; when a step cannot be
