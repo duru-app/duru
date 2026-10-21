@@ -3253,6 +3253,12 @@ to the sign-in screen and, through the redirect of the signed-in `<Switch>`, to 
 are innermost at the same depth the link goes to each; `createHashHistory` is reported beside
 `createBrowserHistory`; a history taken out of a function's own parameters (`function Help({ history })`) is not
 read, as the issue lists only the shapes above.
+A route made for each item of a route table is one route per item, each with the item's path, as the router sees
+the routes the loop returns; a route at `/` without `exact` holds every address, as path-to-regexp drops the last
+`/` before matching a start. Known limits: a route file that a screen's code reaches only to import a path
+constant is put inside that screen's route, so links to its screens go nowhere; a route without a screen of its
+own whose path is built from the outer route's (`${path}/settings`) is `{?}` and never fits, so a link to a screen
+inside it goes to the outer screen, which the router draws around it.
 Alternatives compared (investigation and driver's decisions, 2026-10-21, recorded in the planning issue):
 - Moves duru cannot read left off the map: the map stays as it was, but a reviewer cannot tell that a screen goes
   somewhere duru could not read. Keeping every one as `{?}` made the paging moves of into-sign (16 of its 20

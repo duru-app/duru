@@ -206,6 +206,81 @@ test('a link goes to the screens the router draws: the first fitting child of ea
   });
 });
 
+const LAYOUT_ROUTES = `import { Route, Switch } from 'react-router-dom';
+import Start from './Start';
+import Admin from './Admin';
+import Layout from './Layout';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/start" component={Start} exact />
+      <Route path="/admin" component={Admin} />
+      <Route path="/" component={Layout} />
+    </Switch>
+  );
+}
+`;
+
+const LAYOUT = `import { Route, Switch } from 'react-router-dom';
+import Users from './Users';
+
+export default function Layout() {
+  return (
+    <Switch>
+      <Route path="/users" component={Users} exact />
+    </Switch>
+  );
+}
+`;
+
+const ADMIN = `import { Route, Switch } from 'react-router-dom';
+import AdminDefinition from './definition';
+import SchemaSettings from './SchemaSettings';
+
+export default function Admin(props) {
+  const schemas = Object.values(AdminDefinition).flatMap((section) => Object.values(section.subsections));
+  return (
+    <Switch>
+      {schemas.map((item) => (
+        <Route key={item.url} path={\`\${props.match.url}/\${item.url}\`} render={() => <SchemaSettings schema={item.schema} />} />
+      ))}
+    </Switch>
+  );
+}
+`;
+
+const DEFINITION = `import About from './About';
+import Teams from './Teams';
+
+const AdminDefinition = {
+  site: {
+    subsections: {
+      about: { url: 'about', schema: { id: 'About', component: About } },
+      teams: { url: 'teams', schema: { id: 'Teams', component: Teams } },
+    },
+  },
+};
+
+export default AdminDefinition;
+`;
+
+test('a route without exact at "/" holds every address, and each item of a route table is a route of its own', async () => {
+  const addresses = ['/users', '/admin/about', '/admin/teams'];
+  const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav>${addresses.map((a) => `<Link to="${a}">${a}</Link>`).join('')}</nav>;\n}\n`;
+  const pages = Object.fromEntries(['Users', 'About', 'Teams'].map((n) => [`${n}.js`, page(n)]));
+  const schemaSettings = 'export default function SchemaSettings({ schema }) {\n  const Component = schema.component;\n  return <Component />;\n}\n';
+  const map = await build(writeApp(
+    { ...pages, 'Routes.js': LAYOUT_ROUTES, 'Layout.js': LAYOUT, 'Admin.js': ADMIN, 'definition.js': DEFINITION, 'SchemaSettings.js': schemaSettings, 'Start.js': start },
+    { routesFile: ['Routes.js', 'Layout.js', 'Admin.js'], routeTables: [{ route: 'Admin.js', table: { file: 'definition.js', const: 'AdminDefinition' }, items: '*.subsections.*' }] },
+  ));
+  assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, l.targets])), {
+    '/users': ['/users#Users'],
+    '/admin/about': ['/admin/about#About'],
+    '/admin/teams': ['/admin/teams#Teams'],
+  });
+});
+
 const MADE_HISTORY = `import { createBrowserHistory } from 'history';
 
 const made = createBrowserHistory();

@@ -4,8 +4,7 @@ import { keyName } from './client.ts';
 import { importedAs, routerImport } from './screen-requests.ts';
 
 interface Reading {
-  // 설정의 history 키가 가리키는 이름인가. called 는 `name()` 처럼 불러서 얻은 history 인지다.
-  configuredHistory: (binding: Binding, called: boolean) => boolean;
+  configuredHistory: (binding: Binding) => boolean;
 }
 
 const LINK_ELEMENTS = new Set(['Link', 'NavLink', 'Redirect']);
@@ -73,11 +72,11 @@ export function screenLinkReader({ configuredHistory }: Reading) {
       const callee = p.get('callee');
       const binding = callee.isIdentifier() ? callee.scope.getBinding(callee.node.name) : undefined;
       if (!binding) return false;
-      return (routerImport(binding) && importedAs(binding)!.name === 'useHistory') || (!p.node.arguments.length && configuredHistory(binding, true));
+      return (routerImport(binding) && importedAs(binding)!.name === 'useHistory') || (!p.node.arguments.length && configuredHistory(binding));
     }
     if (!p.isIdentifier() || depth > FOLLOWED) return false;
     const binding = p.scope.getBinding(p.node.name);
-    if (binding?.kind === 'module') return configuredHistory(binding, false);
+    if (binding?.kind === 'module') return configuredHistory(binding);
     const declared = declaredInit(p);
     if (declared?.id.type === 'Identifier') return isHistory(declared.init, depth + 1);
     return takenFrom(p, 'history', isProps);

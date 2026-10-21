@@ -316,7 +316,7 @@ function fittingPattern(parts: PathPart[], whole = true) {
       return part.optional ? `(?:${prefix}${capture})?` : prefix + capture;
     })
     .join('');
-  return new RegExp(whole ? `^${source}/?$` : `^${source}(?:/(?=$))?(?=/|$)`, 'i');
+  return new RegExp(whole ? `^${source}/?$` : `^${source.replace(/\/$/, '')}(?:/(?=$))?(?=/|$)`, 'i');
 }
 
 export function linkTargets(screens: { path: string }[]) {
@@ -413,7 +413,12 @@ export function routerTargets(roots: RouteNode[]) {
     const redirected = hops < REDIRECT_HOPS ? redirects.filter((to) => !unreadableTarget(to)).flatMap((to) => route(to, hops + 1)) : [];
     return [...new Set([...picked, ...redirected])].sort((a, b) => a - b);
   };
-  return (to: string) => (unreadableTarget(to) || !to.startsWith('/') ? [] : route(to, 0));
+  const routed = new Map<string, number[]>();
+  return (to: string) => {
+    if (unreadableTarget(to) || !to.startsWith('/')) return [];
+    if (!routed.has(to)) routed.set(to, route(to, 0));
+    return routed.get(to)!;
+  };
 }
 
 const NO_SETTING_READ = 'not-found';

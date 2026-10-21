@@ -377,17 +377,12 @@ places the screen dispatches that type (`dispatchedAt`).
 A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
 inside it.
 
-**Links.** A link is a place where the screen's code goes to another screen: a route constant written in its
-code, the `to` of a `Link`, `NavLink` or `Redirect` imported from react-router (a `Redirect` in a route file is a
-redirect of the routes instead), and the address given to `push` or `replace` of the history react-router hands to
-the screen (`useHistory()`, `props.history`, `this.props.history`) or of the one named in `history`. Each link has
-its address `to`, with `{*}` for a piece that comes from a value, the file and line, the conditions guarding it,
-and `targets`, the IDs of the screens it goes to. A link written with react-router goes where the router would
-send it: the first fitting route of each `<Switch>`, a route that fits only the start of the address giving its
-innermost screen, and a redirect followed to its `to`. Each branch of a `? :` is a link of its own. A link whose
-address duru cannot read has `to` `{?}` and empty `targets`; a move that stays on the screen, such as
-`push({ pathname: location.pathname, state })`, is not a link. React Router 6 (`<Routes>`, `useNavigate()`) is not
-read.
+**Links.** A screen's links come from the route constants written in its code, the `to` of react-router's `Link`,
+`NavLink` and `Redirect` outside the route files, and the addresses given to `push` and `replace` of a history
+react-router hands to the screen or of the one named in `history`. Each link has its address `to`, with `{*}` for
+a piece that comes from a value, the file and line, the conditions guarding it, and `targets`, the IDs of the
+screens it goes to. A link whose address duru cannot read has `to` `{?}` and empty `targets`. React Router 6 is
+not read.
 
 **Calls.** Each API call is a node under `calls` with an ID `<METHOD>:<path>`
 (`GET:/api/v1/document/{documentId}`), its server match, the API functions that make it, the screens that reach

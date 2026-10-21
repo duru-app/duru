@@ -1658,17 +1658,21 @@ export async function extractClient(config: any) {
       return held.filter((f) => !held.some((g) => g !== f && closure(g).has(f)));
     };
     const holding = new Map<RouteNode & { kind: 'route' }, string[]>();
-    const convert = (n: DrawnNode, file: string): RouteNode => {
-      if (n.kind === 'switch') return { kind: 'switch', children: n.children.map((c) => convert(c, file)) };
-      if (n.kind === 'redirect') return { kind: 'redirect', from: n.from, exact: n.exact, to: n.to };
-      const screens = n.screens.map((s) => indexOf.get(s)!);
-      const entries = screens.length ? screens.flatMap((i) => sourced[i].s.componentFile ?? []) : n.entry ? [n.entry] : [];
-      const node = { kind: 'route' as const, path: screens.length ? sourced[screens[0]].s.path : n.path, exact: n.exact, screens, children: n.children.map((c) => convert(c, file)) };
-      const held = heldFiles(entries, file);
-      if (held.length) holding.set(node, held);
-      return node;
+    const convert = (n: DrawnNode, file: string): RouteNode[] => {
+      if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file)) }];
+      if (n.kind === 'redirect') return [{ kind: 'redirect', from: n.from, exact: n.exact, to: n.to }];
+      const byPath = new Map<string | null, number[]>();
+      for (const i of n.screens.map((s) => indexOf.get(s)!)) byPath.set(sourced[i].s.path, [...(byPath.get(sourced[i].s.path) ?? []), i]);
+      if (!byPath.size) byPath.set(n.path, []);
+      return [...byPath].map(([routePath, screens]) => {
+        const entries = screens.length ? screens.flatMap((i) => sourced[i].s.componentFile ?? []) : n.entry ? [n.entry] : [];
+        const node = { kind: 'route' as const, path: routePath, exact: n.exact, screens, children: n.children.flatMap((c) => convert(c, file)) };
+        const held = heldFiles(entries, file);
+        if (held.length) holding.set(node, held);
+        return node;
+      });
     };
-    const rootsOf = new Map(drawn.map((d) => [d.file, d.roots.map((r) => convert(r, d.file))]));
+    const rootsOf = new Map(drawn.map((d) => [d.file, d.roots.flatMap((r) => convert(r, d.file))]));
     const held = new Set<string>();
     for (const [node, files] of holding) {
       for (const f of files) {
