@@ -348,6 +348,19 @@ function withoutLinkNeeds(step: any) {
   return Object.keys(rest).length === 1 ? rest.screen : rest;
 }
 
+type Kept = Map<number, { step: number; linked: boolean }>;
+
+function sourceAfterSteps(source: any, kept: Kept) {
+  if (!isSource(source) || !('comment' in source)) return source;
+  const added = (source.added as CommentSource['added']).flatMap(({ step, reason }) => (kept.has(step) ? [{ step: kept.get(step)!.step, reason }] : []));
+  const written = (source.written as CommentSource['written']).flatMap(({ step, ...fields }) => {
+    const to = kept.get(step);
+    const lines = Object.entries(fields).filter(([k]) => k !== 'linkNeeds' || to?.linked);
+    return to && lines.length ? [{ step: to.step, ...Object.fromEntries(lines) }] : [];
+  });
+  return { ...source, added, written };
+}
+
 // 앞 단계가 바뀌면 들어오는 링크 조건을 적어 둔 링크가 없어지므로 그 조건을 뗀다.
 export function writeStorySteps(dir: string, id: string, { steps, contentHash }: { steps: unknown; contentHash: unknown }) {
   if (!Array.isArray(steps) || !steps.length) throw new Error('steps 에 단계를 하나 이상 차례대로 담아야 합니다');
@@ -357,6 +370,7 @@ export function writeStorySteps(dir: string, id: string, { steps, contentHash }:
   const picks: { step?: number; screen: string }[] = steps;
   return rewriteStory(dir, id, (raw) => {
     let last = 0;
+    const kept: Kept = new Map();
     const screens = picks.map((pick, i) => {
       if (pick.step === undefined) return pick.screen;
       if (pick.step > raw.screens.length) throw new Error(`스토리 ${id} 에는 ${pick.step} 번째 단계가 없습니다`);
@@ -365,10 +379,12 @@ export function writeStorySteps(dir: string, id: string, { steps, contentHash }:
       if (pick.step === last) throw new Error(`${pick.step} 번째 단계를 두 번 남길 수 없습니다`);
       if (pick.step < last) throw new Error(`남기는 단계는 파일에 있던 차례대로 적어야 하는데, ${pick.step} 번째 단계가 ${last} 번째 단계 뒤에 왔습니다`);
       last = pick.step;
+      const linked = i > 0 && picks[i - 1].step === pick.step - 1;
+      kept.set(pick.step, { step: i + 1, linked });
       const step = raw.screens[pick.step - 1];
-      return i > 0 && picks[i - 1].step === pick.step - 1 ? step : withoutLinkNeeds(step);
+      return linked ? step : withoutLinkNeeds(step);
     });
-    const next = { ...raw, screens };
+    const next = { ...raw, screens, ...(raw.source !== undefined && { source: sourceAfterSteps(raw.source, kept) }) };
     const problem = problemOf(next);
     if (problem) throw new Error(problem);
     return next;

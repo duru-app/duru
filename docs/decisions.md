@@ -2967,6 +2967,13 @@ mark.
 - Discarding a candidate keeps its step lines in the discarded file and undoing the discard writes them back, and
   undoing the acceptance of a story from a comment keeps every line, so the agent's work does not come back empty.
   Other stories still keep only their inputs when their acceptance is undone.
+- 「순서 고치기」 on a story from a comment moves the step numbers in `added` and `written` with their screens and drops
+  those of a screen taken out, with an agent's link condition the new order takes away, so undoing the acceptance
+  never puts the agent's mark on a reviewer's screen. Over keeping the numbers and lining the story up with the
+  candidate file on undo, because a screen the reviewer puts back where the agent's was would take the agent's mark.
+  Since the numbers then differ from the candidate file, a story from a comment keeps candidates away by the comment
+  alone, and a new candidate for a comment a story was accepted from is refused, as it would be written but never
+  listed.
 - The comment line opens 「전체」 of the conversation at the comment, since a comment on a screen order shows there with
   its replies once the new story that made it is closed.
 

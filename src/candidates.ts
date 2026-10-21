@@ -325,6 +325,9 @@ function recordSources(config: any) {
   return { sources: [...config.visitRecords, folder], notices: [] };
 }
 
+// 순서를 고치면 코멘트 출처의 단계 번호가 바뀌므로, 코멘트 출처는 코멘트로만 맞춘다.
+const sourceKey = (source: Candidate['source']) => JSON.stringify('comment' in source ? { comment: source.comment } : source);
+
 export function storyCandidates(config: any, map: any, mapFile: string, traced: TracedTest[] = []) {
   const { sources, notices: folderNotices } = recordSources(config);
   const { records, notices: recordNotices } = loadVisitRecords(sources, config.configDir);
@@ -341,13 +344,13 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const stories = loadStories(config.storiesDir).stories;
   const seen = new Set([...stories, ...current].map((s) => JSON.stringify(s.screens)));
   // 받은 뒤 화면 순서를 고친 스토리도 그 출처의 후보를 다시 올리지 않는다.
-  const taken = new Set(stories.flatMap((s) => (s.source ? [JSON.stringify(s.source)] : [])));
+  const taken = new Set(stories.flatMap((s) => (s.source ? [sourceKey(s.source)] : [])));
   const list: Candidate[] = [];
   const gone: Record<string, string> = {};
   for (const record of records) {
     const candidate = candidateOf(record, screenAt);
     const key = JSON.stringify(candidate.screens);
-    if (seen.has(key) || taken.has(JSON.stringify(candidate.source))) {
+    if (seen.has(key) || taken.has(sourceKey(candidate.source))) {
       gone[candidate.key] ??= candidate.name;
       continue;
     }
@@ -373,7 +376,7 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
   const byFirstSeen = stored.sort((a, b) => compare(a.date, b.date) || compare(a.screens.join(' > '), b.screens.join(' > ')));
   for (const { name, screens, source, ...rest } of byFirstSeen) {
     const key = JSON.stringify(screens);
-    if (seen.has(key) || taken.has(JSON.stringify(source))) {
+    if (seen.has(key) || taken.has(sourceKey(source))) {
       gone[screens.join(' > ')] ??= name;
       continue;
     }
@@ -427,8 +430,11 @@ export function addCommentCandidate(config: any, map: any, mapFile: string, trac
   }
   const ids = steps.map((s) => s.screen);
   const key = JSON.stringify(ids);
-  const story = loadStories(config.storiesDir).stories.find((s) => JSON.stringify(s.screens) === key);
+  const { stories } = loadStories(config.storiesDir);
+  const story = stories.find((s) => JSON.stringify(s.screens) === key);
   if (story) throw new Error(`이미 스토리 ${story.id} 의 화면 순서입니다`);
+  const answered = stories.find((s) => s.source && 'comment' in s.source && s.source.comment === asked.id);
+  if (answered) throw new Error(`코멘트 ${comment} 의 부탁은 이미 스토리 ${answered.id} 로 받았습니다`);
   const listed = storyCandidates(config, map, mapFile, traced);
   if (listed.discarded.some((d) => JSON.stringify(d.screens) === key)) throw new Error('이 화면 순서는 버린 후보에 있습니다. 검토자가 「되돌리기」를 누른 뒤에 올릴 수 있습니다');
   const same = listed.list.find((c) => JSON.stringify(c.screens) === key);
