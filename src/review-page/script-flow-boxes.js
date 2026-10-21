@@ -42,8 +42,16 @@ function screenPill(n, pick = () => pickScreen(n.id)) {
 
 const PATH_TAG = { conditioned: LINK_VERDICT.conditioned, configured: LINK_VERDICT.configured, broken: LINK_VERDICT.broken, unknown: LINK_VERDICT.unknown, 'off-map': '맵에 없는 화면' };
 const hopTitle = (l, i) => [`단계 ${i + 1} → ${i + 2}`, PATH_TAG[l.verdict] ?? LINK_VERDICT[l.verdict], LINK_VERDICT_TITLE[l.verdict]].filter(Boolean).join(' · ');
+const gapChipTitle = (i, on) => `${hopTitle({ verdict: 'broken' }, i)}\n${gapTitle(on)}`;
 
-function storyMarks({ st }, boxes, els) {
+function pressGapChips(i, on) {
+  for (const c of document.querySelectorAll(`#flow button.story-chip[data-hop="${i}"]`)) {
+    c.setAttribute('aria-pressed', String(on));
+    c.setAttribute('title', gapChipTitle(i, on));
+  }
+}
+
+function storyMarks({ st, gap }, boxes, els) {
   const parentOf = new Map(boxes.map((b) => [b.key, b.parent]));
   const marks = [];
   const edges = new Map();
@@ -73,8 +81,20 @@ function storyMarks({ st }, boxes, els) {
       edges.set(key, l.verdict);
       return;
     }
-    const chip = (end, ...text) => h('span', {
-      class: `story-chip ${end} l-${l.verdict}`, title: hopTitle(l, i), 'data-hop': i, onmouseenter: hover(i, true), onmouseleave: hover(i, false),
+    const pick = l.verdict === 'broken' ? gap?.(i) : null;
+    const chip = (end, ...text) => h(pick ? 'button' : 'span', {
+      class: `story-chip ${end} l-${l.verdict}`, title: pick ? gapChipTitle(i, pick.on) : hopTitle(l, i), 'data-hop': i, onmouseenter: hover(i, true), onmouseleave: hover(i, false),
+      ...(pick && {
+        type: 'button',
+        'aria-pressed': String(pick.on),
+        onclick: (e) => {
+          e.stopPropagation();
+          pick.toggleInFlow();
+        },
+        onkeydown: (e) => {
+          if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+        },
+      }),
     }, l.verdict === 'broken' ? h('b', {}, '✕') : null, ...text);
     if (from) add(after, from, chip('exit', `→ ${i + 2}`, tag ? h('small', {}, tag) : null));
     if (to) add(before, to, chip('entry', `${i + 1} →`));

@@ -259,6 +259,21 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    citing the record and the steps behind each screen, or the test by its title and the steps it takes in the
    target project. A comment on a candidate takes no status and never appears in the task list, so act on it when
    its line arrives.
+   A comment can also be on a screen order the reviewer picked while writing a new story, with `target` set to
+   `{ "screens": [ … ] }`, the screen IDs in the order picked; the reviewer often picks only the ends and writes in
+   the note what should happen between them. `target` may also carry `gaps`, pairs of neighbouring step numbers such
+   as `[2, 3]` where the reviewer pressed 「링크 없음」, and `steps`, `{ "step", … }` with the conditions, values and
+   expected results the reviewer had typed at that step, under the names a story file uses. Its line carries `where`
+   with `screens`, each screen's `id`, `componentFile`, `routeFile` and route `line` (`"onMap": false` when it is not
+   on the map), and `links`, for each two neighbouring screens `from`, `to`, the `verdict` of the link between them
+   and `ways`, as for a link between two steps of a story. `where` is `null` while the map cannot be read or was built
+   before stories; then answer from the screen IDs, and tell the user to run `duru rebuild`. Follow the links of the
+   map from each screen to the next to find the screens between them that fit the note; with `gaps`, fill only those
+   gaps and keep the other neighbours as they are. Keep what the reviewer typed in `steps` as it is and work out only
+   the fields left empty. Reply with the whole order you found, naming the screens you put in and why, and each link
+   that is broken or needs a condition; if no way joins two of them, say so. Do not write a story file or a candidate
+   file for it. A comment on a screen order takes no status and never appears in the task list, so act on it when
+   its line arrives.
    A comment can also be on several targets or on none. Its line then has `targets`, a list of targets in the shapes
    above, in place of `target`, and `wheres`, the `where` of each target in the same order (`null` for one that has
    none or is no longer found). Answer it once, covering every target it names. With an empty `targets` the reviewer

@@ -178,7 +178,7 @@ window.addEventListener('popstate', () => {
 const unsaved = (target, d) => !!d && (d.note.trim() !== '' || (d.status !== null && d.status !== (markOf(target)?.current?.status ?? null)));
 
 function hasUnsavedMark() {
-  return unsaved(state.target, state.draft) || unsaved({ story: state.story }, state.storyDraft) || unsaved({ candidate: state.candidate }, state.candidateTalk) || unsaved({ node: state.caseNode }, state.caseDraft);
+  return unsaved(state.target, state.draft) || unsaved({ story: state.story }, state.storyDraft) || unsaved({ candidate: state.candidate }, state.candidateTalk) || unsaved({ node: state.caseNode }, state.caseDraft) || Boolean(state.composeTalk?.note.trim());
 }
 
 function showEnded(message) {

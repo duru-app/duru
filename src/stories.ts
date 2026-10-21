@@ -78,7 +78,7 @@ export const STORY_ID = /^[a-z0-9_-]+$/;
 const FIELD_KEYS = ['needs', 'expects'] as const;
 const KEYS = ['name', 'screens', ...FIELD_KEYS, 'memo', 'author', 'date', 'source'];
 const STEP_FIELD_KEYS = ['needs', 'linkNeeds', 'expects'] as const;
-const STEP_FIELDS = ['needs', 'linkNeeds', 'inputs', 'expects'];
+export const STEP_FIELDS = ['needs', 'linkNeeds', 'inputs', 'expects'];
 const STEP_KEYS = ['screen', ...STEP_FIELDS];
 const INPUT_KEYS = ['box', 'value'];
 export const BOX_WORDS = ['placeholder', 'label', 'testId'] as const;
@@ -114,7 +114,7 @@ function fieldsProblem(fields: { needs?: unknown; linkNeeds?: unknown; expects?:
   return bad ? `${where}${bad} 는 ${FIELD_RULES[bad].words} 적은 목록이어야 합니다` : null;
 }
 
-function stepProblem(step: any, where: string, first: boolean) {
+export function stepProblem(step: any, where: string, first: boolean) {
   if (isText(step)) return null;
   if (!isPlainObject(step)) return `${where}는 화면 ID 글자나 { "screen", "needs", "linkNeeds", "inputs", "expects" } 객체여야 합니다`;
   const unknown = Object.keys(step).filter((k) => !STEP_KEYS.includes(k));

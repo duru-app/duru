@@ -7,7 +7,8 @@ import { reference } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
 import { locatePart, locateStoryPart, STORY_PART_KINDS } from './parts.ts';
 import type { HopKey, HopPlace, LinkKey, PartContext, PartScreen, SourcePlaces, StepKey, StepPlace, StoryPath, TestPlace } from './parts.ts';
-import { isText, STORY_ID } from './stories.ts';
+import { isScreenList, isText, STEP_FIELDS, stepProblem, STORY_ID } from './stories.ts';
+import type { StepFields } from './stories.ts';
 import { DEPTHS } from './test-links.ts';
 
 export const MARK_STATUSES = ['needs-more', 'missing', 'fine'];
@@ -16,12 +17,17 @@ export const CASE_STATUSES = ['needed', 'not-needed'];
 interface MarkTarget {
   story?: string;
   candidate?: string;
+  screens?: string[];
+  gaps?: [number, number][];
+  steps?: OrderStep[];
   node?: string;
   option?: { key: string; value: boolean };
   depth?: string;
   case?: string;
   part?: Part;
 }
+
+type OrderStep = { step: number } & StepFields;
 
 export interface Part {
   kind: string;
@@ -105,25 +111,65 @@ export const mergedStatus = (mark: Mark): Mark => (mark.status === 'missing' ? {
 function saveMark(dir: string, mark: Mark) {
   const [first] = targetsOf(mark);
   if (!first) return writeNewRecord(path.join(dir, 'general', recordName(mark)), mark);
-  const { story, candidate, node } = first;
-  const folder = candidate !== undefined ? path.join(dir, 'stories', 'candidates', candidateFolder(candidate)) : story ? path.join(dir, 'stories', story) : path.join(dir, fileSafe(node!));
+  const { story, candidate, screens, node } = first;
+  const folder = candidate !== undefined ? path.join(dir, 'stories', 'candidates', keyFolder(candidate))
+    : screens !== undefined ? path.join(dir, 'stories', 'orders', keyFolder(orderKey(screens)))
+    : story ? path.join(dir, 'stories', story) : path.join(dir, fileSafe(node!));
   writeNewRecord(path.join(folder, recordName(mark)), mark);
 }
 
-function candidateFolder(key: string) {
+function keyFolder(key: string) {
   const safe = fileSafe(key);
   return safe.length <= 80 ? safe : `${safe.slice(0, 71)}-${crypto.createHash('sha256').update(key).digest('hex').slice(0, 8)}`;
 }
 
 function candidateTarget(target: MarkTarget) {
   if (!isText(target.candidate)) throw new Error('a candidate mark needs the key of a story candidate');
-  if (['story', 'node', 'option', 'depth', 'case', 'part'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a candidate mark takes no story, node, option, depth, case or part');
+  if (['story', 'screens', 'node', 'option', 'depth', 'case', 'part'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a candidate mark takes no story, screens, node, option, depth, case or part');
   return { candidate: target.candidate };
+}
+
+// 빈칸이 든 화면 ID 는 받지 않으므로 ` > ` 로 이어도 서로 다른 순서가 같은 키가 되지 않는다.
+export const orderKey = (screens: string[]) => screens.join(' > ');
+
+function orderTarget(target: MarkTarget) {
+  const { screens } = target;
+  if (!isScreenList(screens) || screens.some((s) => /\s/.test(s))) throw new Error('a screen order mark needs a list of one or more screen IDs without spaces');
+  const repeated = screens.findIndex((s, i) => i > 0 && s === screens[i - 1]);
+  if (repeated > 0) throw new Error(`screens ${repeated} and ${repeated + 1} of a screen order are the same screen`);
+  if (['story', 'candidate', 'node', 'option', 'depth', 'case', 'part'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a screen order mark takes no story, candidate, node, option, depth, case or part');
+  return { screens: [...screens], ...(target.gaps !== undefined && { gaps: orderGaps(target.gaps, screens.length) }), ...(target.steps !== undefined && { steps: orderSteps(target.steps, screens) }) };
+}
+
+function orderGaps(gaps: unknown, length: number): [number, number][] {
+  const pair = (g: unknown) => Array.isArray(g) && g.length === 2 && stepNumber(g[0]) && g[1] === g[0] + 1;
+  if (!Array.isArray(gaps) || !gaps.length || !gaps.every(pair)) throw new Error('gaps of a screen order are a list of one or more pairs of neighbouring step numbers, such as [1, 2]');
+  const sorted = (gaps as [number, number][]).map(([a, b]): [number, number] => [a, b]).sort(([a], [b]) => a - b);
+  const outside = sorted.find(([, b]) => b > length);
+  if (outside) throw new Error(`gap ${outside[0]} - ${outside[1]} is not between two steps of the order`);
+  const twice = sorted.find(([a], i) => i > 0 && a === sorted[i - 1][0]);
+  if (twice) throw new Error(`gap ${twice[0]} - ${twice[1]} is picked twice`);
+  return sorted;
+}
+
+function orderSteps(steps: unknown, screens: string[]): OrderStep[] {
+  if (!Array.isArray(steps) || !steps.length || !steps.every((s) => isPlainObject(s) && stepNumber(s.step))) throw new Error('steps of a screen order are a list of one or more { "step", ... } objects, the step counted from 1, with the fields typed at that step');
+  const sorted = [...steps as OrderStep[]].sort((a, b) => a.step - b.step);
+  for (const [i, { step, ...fields }] of sorted.entries()) {
+    if (step > screens.length) throw new Error(`the order has no step ${step}`);
+    if (i > 0 && step === sorted[i - 1].step) throw new Error(`step ${step} has fields twice`);
+    const others = Object.keys(fields).filter((k) => !STEP_FIELDS.includes(k));
+    if (others.length) throw new Error(`step ${step} of a screen order takes only needs, linkNeeds, inputs and expects: ${others.join(', ')}`);
+    if (!Object.keys(fields).length) throw new Error(`step ${step} has no fields`);
+    const problem = stepProblem({ screen: screens[step - 1], ...fields }, `screens 의 ${step} 번째 단계`, step === 1);
+    if (problem) throw new Error(problem);
+  }
+  return sorted.map(({ step, ...fields }) => ({ step, ...Object.fromEntries(STEP_FIELDS.filter((k) => k in fields).map((k) => [k, fields[k as keyof StepFields]])) }));
 }
 
 function storyTarget(target: MarkTarget) {
   if (typeof target.story !== 'string' || !STORY_ID.test(target.story)) throw new Error(`"${target.story}" is not a story ID`);
-  if (['node', 'option', 'depth', 'case'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a story mark takes no node, option, depth or case');
+  if (['screens', 'node', 'option', 'depth', 'case'].some((k) => (target as Record<string, unknown>)[k] !== undefined)) throw new Error('a story mark takes no screens, node, option, depth or case');
   if (target.part === undefined) return { story: target.story };
   const { kind, key }: Partial<Part> = isPlainObject(target.part) ? target.part! : {};
   if (!STORY_PART_KINDS.includes(kind!)) throw new Error(`unknown story part kind "${kind}" (expected ${STORY_PART_KINDS.join(', ')})`);
@@ -195,7 +241,7 @@ function linkPartKey(key: unknown): LinkKey {
   return byConditions ? { from, conditions: sorted(conditions as string[]) } : { from, guards: sorted(guards as string[]) };
 }
 
-const checkTarget = (target: MarkTarget | undefined): MarkTarget => (target?.candidate !== undefined ? candidateTarget(target) : target?.story !== undefined ? storyTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target));
+const checkTarget = (target: MarkTarget | undefined): MarkTarget => (target?.candidate !== undefined ? candidateTarget(target) : target?.screens !== undefined ? orderTarget(target) : target?.story !== undefined ? storyTarget(target) : target?.part !== undefined ? partTarget(target) : target?.case !== undefined ? caseTarget(target) : nodeTarget(target));
 
 export const targetsOf = (m: { target?: MarkTarget; targets?: MarkTarget[] }) => m.targets ?? (m.target ? [m.target] : []);
 
@@ -207,11 +253,13 @@ export function addMark(dir: string, { target, targets, status, note, rule, auth
     if (hasStatus) throw new Error('a status takes exactly one target; a comment on several targets or none takes no status');
     if (all.some((t) => t.case !== undefined)) throw new Error('a case mark takes exactly one target');
     if (new Set(all.map(targetKey)).size !== all.length) throw new Error('a mark names the same target twice');
+    if (all.filter((t) => t.screens !== undefined).length > 1) throw new Error('a mark takes one screen order at most');
   }
   const checked: MarkTarget = all.length === 1 ? all[0] : {};
   if (checked.story !== undefined && checked.part && hasStatus) throw new Error('a comment on a step or a hop of a story takes no status; put the status on the story itself');
   if (checked.part && hasStatus) throw new Error('a comment on a part of a screen or call takes no status; put the status on the screen or call itself');
   if (checked.candidate !== undefined && hasStatus) throw new Error('a comment on a story candidate takes no status; accept it as a story to give it one');
+  if (checked.screens !== undefined && hasStatus) throw new Error('a comment on a screen order takes no status');
   const statuses = checked.case !== undefined ? CASE_STATUSES : MARK_STATUSES;
   const comment = !hasStatus && checked.case === undefined;
   if (comment && (typeof note !== 'string' || !note.trim())) throw new Error('a comment needs a note');
@@ -247,9 +295,11 @@ export function addReply(dir: string, { replyTo, note, author = 'agent' }: { rep
 
 export const GENERAL = 'general()';
 
-// story(<ID>) 와 candidate(<후보 키>) 는 노드의 키와 겹치지 않는다(map.ts 의 TAG_FORBIDDEN).
+// story(<ID>), candidate(<후보 키>), order(<화면 순서>) 는 노드의 키와 겹치지 않는다(map.ts 의 TAG_FORBIDDEN).
 const targetKey = (t: MarkTarget) => (t.candidate !== undefined
   ? `candidate(${t.candidate})`
+  : t.screens !== undefined
+  ? `order(${orderKey(t.screens)})`
   : t.story !== undefined
   ? [`story(${t.story})`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' ')
   : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
@@ -263,8 +313,11 @@ export function classifyMarks(marks: Mark[], map: MarkableMap, storyIds: string[
   const kinds = new Set(caseKinds);
   const candidates = new Set(candidateKeys);
   const paths = new Map(storyPaths.map((p) => [p.id, p]));
+  const screenIds = new Set(map.screens.map((s) => s.id));
   const isAttached = (t: MarkTarget) => (t.candidate !== undefined
     ? candidates.has(t.candidate)
+    : t.screens !== undefined
+    ? t.screens.every((id) => screenIds.has(id))
     : t.story !== undefined
     ? stories.has(t.story)
     : nodes.has(t.node!) && (!t.option || nodes.get(t.node!)!.has(t.option.key)) && (t.case === undefined || kinds.has(t.case)));

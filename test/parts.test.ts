@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { linkKey, locatePart } from '../src/parts.ts';
+import { linkKey, locateOrder, locatePart } from '../src/parts.ts';
 import type { TestPlace } from '../src/parts.ts';
 
 const SCREEN = '/document/:id#DocumentDetail';
@@ -160,4 +160,22 @@ test('an incoming link is named by its start screen and the roles and settings r
   assert.deepEqual(linkKey(SCREENS[4].access.links[0]), { from: '/lab#Lab', guards: [] });
   assert.equal(slot('/lab#Lab', 'link', { from: '/home#Home', conditions: ['setting:LAB=on'] }), null);
   assert.equal(slot('/lab#Lab', 'link', { from: '/signin#SignIn', guards: [] }), null);
+});
+
+test('a screen order is located with the files of each screen and the verdict between each two neighbours, and not at all on a map whose links carry no conditions', () => {
+  const screen = (id: string, links: object[]) => ({ id, path: id, routeFile: 'Routes.js', line: 3, componentFile: `components${id}.js`, access: { route: [] }, links });
+  const map = { screens: [screen('/a', [{ to: '/b', file: 'components/a.js', line: 7, conditions: [] }]), screen('/b', []), screen('/c', [])] };
+  assert.deepEqual(locateOrder(['/a', '/b', '/c'], map), {
+    screens: [
+      { id: '/a', componentFile: 'components/a.js', routeFile: 'Routes.js', line: 3 },
+      { id: '/b', componentFile: 'components/b.js', routeFile: 'Routes.js', line: 3 },
+      { id: '/c', componentFile: 'components/c.js', routeFile: 'Routes.js', line: 3 },
+    ],
+    links: [
+      { from: '/a', to: '/b', verdict: 'open', ways: [{ file: 'components/a.js', line: 7, conditions: [] }] },
+      { from: '/b', to: '/c', verdict: 'broken', ways: [] },
+    ],
+  });
+  const old = { screens: [screen('/a', [{ to: '/b', file: 'components/a.js', line: 7 }]), screen('/b', [])] };
+  assert.equal(locateOrder(['/b', '/a'], old), null);
 });

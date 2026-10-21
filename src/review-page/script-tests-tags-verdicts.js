@@ -57,6 +57,7 @@ function addTag(draft, target, base) {
 
 // 지금 대화의 화면 · 호출 · 스토리가 아닌 대상은 어디의 칸인지 앞에 붙인다.
 function chipLabel(t, here) {
+  if (t.screens !== undefined) return tagLabel(t);
   const own = t.candidate !== undefined ? here.candidate === t.candidate : t.story !== undefined ? here.story === t.story : here.node === t.node;
   if (own) return tagLabel(t);
   const where = t.candidate !== undefined ? `후보 ${candidateName(t.candidate)}` : t.story !== undefined ? `스토리 ${t.story}` : `${nodeWord(t.node)} ${screenLabel(t.node)}`;

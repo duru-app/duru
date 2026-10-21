@@ -1,6 +1,6 @@
 // 링크에 조건이 없는 예전 맵으로는 화면 순서를 대조하지 못한다.
 const oldMap = () => state.data.map.screens.some((sc) => sc.links.some((l) => !Array.isArray(l.conditions)));
-const newCompose = () => ({ steps: [], wide: { needs: [], expects: [] }, at: null, selected: null, id: '', name: '', memo: '', checked: null, turn: 0, error: null, refused: null, query: '', editing: null, diagram: 'whole', walked: false, walk: null, pane: null, walkNote: null });
+const newCompose = () => ({ steps: [], gaps: [], wide: { needs: [], expects: [] }, at: null, selected: null, id: '', name: '', memo: '', checked: null, turn: 0, error: null, refused: null, query: '', editing: null, diagram: 'whole', walked: false, walk: null, pane: null, walkNote: null });
 // 앱에서 받은 주소에 맞는 화면이 맵에 없으면 그 경로를 화면 자리에 두고 unmapped 로 표시한다.
 const newStep = (screen, more = {}) => ({ screen, rows: { needs: [], inputs: [], expects: [] }, urls: [], skipped: 0, unmapped: false, ...more });
 const composeScreens = (c) => c.steps.map((step) => step.screen);
@@ -29,6 +29,7 @@ function leaveCompose() {
 
 function dropCompose() {
   state.compose = null;
+  state.composeTalk = null;
   leaveCompose();
 }
 
@@ -38,20 +39,22 @@ const canSaveCompose = (c) => STORY_ID.test(c.id) && Boolean(c.name.trim()) && c
 function renderCompose(focus, { drawing = false, pressed = null } = {}) {
   if (!composeShown()) return;
   if (composingNow()) return deferLive('draw');
+  const place = fieldPlace();
   if (state.compose.walk) renderLeft();
   else {
     renderPickList();
-    const place = fieldPlace();
     renderCenter();
-    restoreField(place);
-    if (drawing) renderFlow({ bar: false, pressed });
   }
+  renderRight();
+  restoreField(place);
+  if (drawing && !state.compose.walk) renderFlow({ bar: false, pressed });
   if (focus) (focus.map((selector) => document.querySelector(`#center ${selector}`)).find((el) => el && !el.disabled))?.focus();
 }
 
 async function checkCompose(focus, pressed = null) {
   const c = state.compose;
   const turn = ++c.turn;
+  c.gaps = c.gaps.filter(([a, b]) => gapAt(c, a, b) !== null);
   renderCompose(focus, { drawing: !c.steps.length });
   if (!c.steps.length) return;
   let checked = null;
@@ -65,6 +68,7 @@ async function checkCompose(focus, pressed = null) {
   }
   if (state.compose !== c || turn !== c.turn) return;
   Object.assign(c, { checked, error });
+  if (checked) c.gaps = c.gaps.filter(([a]) => checked.links[c.steps.indexOf(a)]?.verdict === 'broken');
   renderCompose(focusedStep(), { drawing: true, pressed });
 }
 
@@ -206,7 +210,7 @@ function composeCenter() {
     c.steps.length
       ? h('div', { class: 'story-path', tabindex: '-1' }, c.steps.flatMap((step, i) => {
           const lines = c.selected === i ? addStepLines(c.at, i, false, markAt) : null;
-          return [i > 0 ? (checked ? linkItem(checked.links[i - 1], undefined, i - 1) : pending.cloneNode(true)) : null, c.at === i ? mark : lines?.before, composeStep(step, i, c), lines?.after, c.at === i + 1 && i + 1 === c.steps.length ? mark : null];
+          return [i > 0 ? (checked ? linkItem(checked.links[i - 1], undefined, i - 1, undefined, gapPick(c, i)) : pending.cloneNode(true)) : null, c.at === i ? mark : lines?.before, composeStep(step, i, c), lines?.after, c.at === i + 1 && i + 1 === c.steps.length ? mark : null];
         }))
       : h('p', { class: 'muted no-steps' }, '아직 넣은 화면이 없습니다.'),
   ];
@@ -232,9 +236,38 @@ function composeForm() {
   ];
 }
 
+function gapAt(c, a, b) {
+  const k = c.steps.indexOf(a) + 1;
+  return k > 0 && c.steps[k] === b ? k : null;
+}
+
+function gapPick(c, k) {
+  const [a, b] = [c.steps[k - 1], c.steps[k]];
+  const isOn = () => c.gaps.some((g) => g[0] === a && g[1] === b);
+  const flip = (focus) => {
+    const at = gapAt(c, a, b);
+    if (at === null) return;
+    const on = !isOn();
+    c.gaps = on ? [...c.gaps, [a, b]] : c.gaps.filter((g) => g[0] !== a || g[1] !== b);
+    pressGapChips(at - 1, on);
+    renderCompose(focus ? [`.link[data-hop="${at - 1}"] button.gap-pick`] : null);
+  };
+  return { on: isOn(), toggle: () => flip(true), toggleInFlow: () => flip(false) };
+}
+
+const writtenFields = (rows) => Object.fromEntries(Object.entries(rowsWritten(rows) ?? {}).filter(([, list]) => list.length));
+
+function composeTarget() {
+  const c = state.compose;
+  if (!c?.steps.length) return null;
+  const gaps = c.gaps.map(([a]) => c.steps.indexOf(a) + 1).sort((a, b) => a - b).map((k) => [k, k + 1]);
+  const steps = c.steps.flatMap((step, i) => (rowsWritten(step.rows) ? [{ step: i + 1, ...writtenFields(step.rows) }] : []));
+  return { screens: composeScreens(c), ...(gaps.length && { gaps }), ...(steps.length && { steps }) };
+}
+
 function sentStep(step) {
   const fields = rowsWritten(step.rows);
-  return fields ? { screen: step.screen, ...Object.fromEntries(Object.entries(fields).filter(([, list]) => list.length)) } : step.screen;
+  return fields ? { screen: step.screen, ...writtenFields(step.rows) } : step.screen;
 }
 
 function unpickedCompose(c) {
@@ -255,6 +288,7 @@ async function saveCompose() {
   const { needs, expects } = fieldsToSend(c.wide);
   if (!(await writeStories('/api/stories/add', { id: c.id, name: c.name, memo: c.memo, needs, expects, screens: c.steps.map(sentStep) }))) return;
   state.compose = null;
+  state.composeTalk = null;
   state.composing = false;
   state.view = 'story';
   selectStory(c.id);

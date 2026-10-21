@@ -69,7 +69,7 @@ function composeOverlay() {
   const c = composeDiagram() ? state.compose : null;
   if (!c?.steps.length) return null;
   const st = checkedCompose(c) ?? { steps: composeScreens(c).map((screen) => ({ screen, onMap: true })), links: [] };
-  return { st };
+  return { st, gap: (i) => gapPick(c, i + 1) };
 }
 
 function keepPressedBox(flow, pressed) {

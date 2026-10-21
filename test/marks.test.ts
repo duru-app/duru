@@ -477,12 +477,107 @@ test('a comment on a story candidate takes no status, and a candidate key mixed 
       [{ target: { candidate: 'open-help' }, note: ' ' }, /a comment needs a note/],
       [{ target: { candidate: ' ' }, note: 'x' }, /a candidate mark needs the key of a story candidate/],
       [{ target: { candidate: 3 }, note: 'x' }, /a candidate mark needs the key of a story candidate/],
-      [{ target: { candidate: 'open-help', story: 'open-help' }, note: 'x' }, /a candidate mark takes no story, node, option, depth, case or part/],
-      [{ target: { candidate: 'open-help', node: '/home#Home' }, note: 'x' }, /a candidate mark takes no story, node, option, depth, case or part/],
-      [{ target: { candidate: 'open-help', depth: 'ui' }, note: 'x' }, /a candidate mark takes no story, node, option, depth, case or part/],
-      [{ target: { candidate: 'open-help', part: { kind: 'test', key: LIST_TEST } }, note: 'x' }, /a candidate mark takes no story, node, option, depth, case or part/],
+      [{ target: { candidate: 'open-help', story: 'open-help' }, note: 'x' }, /a candidate mark takes no story, screens, node, option, depth, case or part/],
+      [{ target: { candidate: 'open-help', node: '/home#Home' }, note: 'x' }, /a candidate mark takes no story, screens, node, option, depth, case or part/],
+      [{ target: { candidate: 'open-help', depth: 'ui' }, note: 'x' }, /a candidate mark takes no story, screens, node, option, depth, case or part/],
+      [{ target: { candidate: 'open-help', part: { kind: 'test', key: LIST_TEST } }, note: 'x' }, /a candidate mark takes no story, screens, node, option, depth, case or part/],
     ];
     for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' } as Parameters<typeof addMark>[1]), message);
+    assert.equal(fs.existsSync(dir), false);
+  });
+});
+
+const ORDER = ['/home#Home', '/lab#Lab'];
+
+test('a comment on a screen order is written with the screens in its target, in a folder under stories/orders named by the screens joined with " > ", and a reply to it carries the same target', () => {
+  withMarksDir((dir: string) => {
+    const comment = addMark(dir, { target: { screens: ORDER }, note: 'fill in a way through the lab', author: 'Kim Min' }, new Date('2026-10-15T01:00:00Z'));
+    const reply = addReply(dir, { replyTo: comment.id, note: 'home links to the lab directly' }, new Date('2026-10-15T02:00:00Z'));
+    assert.deepEqual([comment.target, reply.target], [{ screens: ORDER }, { screens: ORDER }]);
+    assert.equal('status' in comment, false);
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'stories', 'orders')), ['_home#Home____lab#Lab']);
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'stories', 'orders', '_home#Home____lab#Lab')).sort(), [
+      `2026-10-15-Kim_Min-${comment.id.slice(0, 8)}.json`,
+      `2026-10-15-agent-${reply.id.slice(0, 8)}.json`,
+    ]);
+    const long = Array.from({ length: 12 }, (_, i) => `/settings/users/:userId/step${i}#UserEditPage`);
+    addMark(dir, { target: { screens: long }, note: 'why so long?', author: 'a' });
+    assert.ok(fs.readdirSync(path.join(dir, 'stories', 'orders')).some((f) => /^_settings_users__userId_step0#UserEditPage____settings_users__userId_st-[0-9a-f]{8}$/.test(f)));
+    assert.deepEqual(classifyMarks(loadMarks(dir), MAP).attached.map((m) => m.key), [`order(${ORDER.join(' > ')})`]);
+  });
+});
+
+test('a comment on a screen order is attached while every screen in it is on the map and detached once one is not, apart from a comment on a single screen of it', () => {
+  withMarksDir((dir: string) => {
+    addMark(dir, { target: { screens: ORDER }, note: 'fill in a way', author: 'a' });
+    addMark(dir, { target: { screens: ['/lab#Lab'] }, note: 'start here', author: 'a' });
+    addMark(dir, { target: { node: '/lab#Lab' }, status: 'missing', author: 'a' });
+    const kept = classifyMarks(loadMarks(dir), MAP);
+    assert.deepEqual(kept.detached, []);
+    assert.deepEqual(kept.attached.map((m) => [m.key, m.target]), [['/lab#Lab', { node: '/lab#Lab' }], ['order(/home#Home > /lab#Lab)', { screens: ORDER }], ['order(/lab#Lab)', { screens: ['/lab#Lab'] }]]);
+    const gone = classifyMarks(loadMarks(dir), { screens: [{ id: '/lab#Lab' }] });
+    assert.deepEqual(gone.detached.map((m) => m.target), [{ screens: ORDER }]);
+  });
+});
+
+test('a comment on a screen order takes no status, and an order that is empty, not a list of screen IDs, has the same screen twice in a row, is mixed with another kind of target or comes twice in one comment is refused and nothing is written', () => {
+  withMarksDir((dir: string) => {
+    const refused: [object, RegExp][] = [
+      [{ target: { screens: ORDER }, status: 'missing', note: 'x' }, /a comment on a screen order takes no status/],
+      [{ target: { screens: ORDER }, note: ' ' }, /a comment needs a note/],
+      [{ target: { screens: [] }, note: 'x' }, /a screen order mark needs a list of one or more screen IDs/],
+      [{ target: { screens: '/home#Home' }, note: 'x' }, /a screen order mark needs a list of one or more screen IDs/],
+      [{ target: { screens: ['/home#Home', ' '] }, note: 'x' }, /a screen order mark needs a list of one or more screen IDs/],
+      [{ target: { screens: ['/home#Home > /lab#Lab'] }, note: 'x' }, /a screen order mark needs a list of one or more screen IDs without spaces/],
+      [{ target: { screens: ['/home#Home', '/lab#Lab', '/lab#Lab'] }, note: 'x' }, /screens 2 and 3 of a screen order are the same screen/],
+      [{ target: { screens: ORDER, node: '/home#Home' }, note: 'x' }, /a screen order mark takes no story, candidate, node, option, depth, case or part/],
+      [{ target: { screens: ORDER, story: 'run-lab' }, note: 'x' }, /a screen order mark takes no story/],
+      [{ target: { screens: ORDER, candidate: 'open-help' }, note: 'x' }, /a candidate mark takes no story, screens/],
+      [{ targets: [{ screens: ORDER }, { screens: ['/lab#Lab'] }], note: 'x' }, /a mark takes one screen order at most/],
+    ];
+    for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' } as Parameters<typeof addMark>[1]), message);
+    assert.equal(fs.existsSync(dir), false);
+    const both = addMark(dir, { targets: [{ screens: ORDER }, { node: '/lab#Lab' }], note: 'and the lab itself?', author: 'a' });
+    assert.deepEqual(both.targets, [{ screens: ORDER }, { node: '/lab#Lab' }]);
+  });
+});
+
+const LONG_ORDER = ['/signin#SignIn', '/home#Home', '/lab#Lab'];
+const TYPED = { box: { label: '아이디' }, value: 'duru-admin' };
+
+test('a comment on a screen order carries the gaps picked between two neighbouring steps and the fields typed at each step in its target, in order, and a reply and a later comment with other gaps stay on the same order', () => {
+  withMarksDir((dir: string) => {
+    const comment = addMark(dir, {
+      target: { screens: LONG_ORDER, gaps: [[2, 3], [1, 2]], steps: [{ step: 3, expects: ['실행 결과가 보인다'] }, { step: 1, needs: [{ use: 'admin' }], inputs: [TYPED] }] },
+      note: 'fill in these two',
+      author: 'a',
+    } as Parameters<typeof addMark>[1]);
+    const expected = { screens: LONG_ORDER, gaps: [[1, 2], [2, 3]], steps: [{ step: 1, needs: [{ use: 'admin' }], inputs: [TYPED] }, { step: 3, expects: ['실행 결과가 보인다'] }] };
+    assert.deepEqual(comment.target, expected);
+    assert.deepEqual(addReply(dir, { replyTo: comment.id, note: 'done' }).target, expected);
+    addMark(dir, { target: { screens: LONG_ORDER }, note: 'the whole way this time', author: 'a' });
+    const [entry] = classifyMarks(loadMarks(dir), { screens: LONG_ORDER.map((id) => ({ id })) }).attached;
+    assert.deepEqual([entry.key, entry.history.length], [`order(${LONG_ORDER.join(' > ')})`, 3]);
+  });
+});
+
+test('gaps that are not two neighbouring steps of the order or come twice, and step fields at a step the order does not have, at the same step twice, with nothing written, with a field a step does not take or written against the rules of a story file are refused and nothing is written', () => {
+  withMarksDir((dir: string) => {
+    const refused: [object, RegExp][] = [
+      [{ gaps: [] }, /gaps of a screen order are a list of one or more pairs of neighbouring step numbers, such as \[1, 2\]/],
+      [{ gaps: [[1, 3]] }, /gaps of a screen order are a list of one or more pairs of neighbouring step numbers/],
+      [{ gaps: [[0, 1]] }, /gaps of a screen order are a list of one or more pairs of neighbouring step numbers/],
+      [{ gaps: [[3, 4]] }, /gap 3 - 4 is not between two steps of the order/],
+      [{ gaps: [[1, 2], [1, 2]] }, /gap 1 - 2 is picked twice/],
+      [{ steps: [] }, /steps of a screen order are a list of one or more \{ "step", \.\.\. \} objects/],
+      [{ steps: [{ step: 4, expects: ['x'] }] }, /the order has no step 4/],
+      [{ steps: [{ step: 1, expects: ['x'] }, { step: 1, needs: ['y'] }] }, /step 1 has fields twice/],
+      [{ steps: [{ step: 2 }] }, /step 2 has no fields/],
+      [{ steps: [{ step: 2, screen: '/home#Home', expects: ['x'] }] }, /step 2 of a screen order takes only needs, linkNeeds, inputs and expects: screen/],
+      [{ steps: [{ step: 1, linkNeeds: ['x'] }] }, /linkNeeds/],
+      [{ steps: [{ step: 2, inputs: [{ box: { label: '아이디' }, value: '' }] }] }, /value 에 넣을 값을 글로 적어야 합니다/],
+    ];
+    for (const [extra, message] of refused) assert.throws(() => addMark(dir, { target: { screens: LONG_ORDER, ...extra }, note: 'x', author: 'a' } as Parameters<typeof addMark>[1]), message);
     assert.equal(fs.existsSync(dir), false);
   });
 });
@@ -514,7 +609,7 @@ test('a comment on a step or on the link between two steps of a story is written
       [{ target: { story: 'run-lab', part: { kind: 'step', key: { step: 1.5, screen: '/lab#Lab' } } }, note: 'x' }, /a step part needs its step number/],
       [{ target: { story: 'run-lab', part: { kind: 'step', key: { step: 2 } } }, note: 'x' }, /a step part needs its step number/],
       [{ target: { story: 'run-lab', part: { kind: 'hop', key: { step: 1, from: '/home#Home' } } }, note: 'x' }, /a hop part needs the number of the step it leaves, counted from 1, and the screens it leaves and reaches/],
-      [{ target: { story: 'run-lab', node: '/lab#Lab', part: STEP }, note: 'x' }, /a story mark takes no node, option, depth or case/],
+      [{ target: { story: 'run-lab', node: '/lab#Lab', part: STEP }, note: 'x' }, /a story mark takes no screens, node, option, depth or case/],
       [{ target: { node: '/lab#Lab', part: STEP }, note: 'x' }, /unknown part kind "step" \(expected test, condition, link\)/],
     ];
     for (const [input, message] of refused) assert.throws(() => addMark(dir, { ...input, author: 'a' } as Parameters<typeof addMark>[1]), message);

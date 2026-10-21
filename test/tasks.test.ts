@@ -1070,6 +1070,7 @@ test('a comment left on two open screens shows under each with both named, and a
     addMark(marksDir, { target: { node: '/lab#Lab' }, status: 'missing', note: 'No test.', author: 'a' }, new Date('2026-10-14T01:00:00Z'));
     addMark(marksDir, { target: { node: '/help#Help' }, status: 'missing', note: 'No test.', author: 'a' }, new Date('2026-10-14T01:00:00Z'));
     addMark(marksDir, { targets: [{ node: '/lab#Lab' }, { node: '/help#Help' }], note: 'Same setting on both?', author: 'b' }, new Date('2026-10-14T02:00:00Z'));
+    addMark(marksDir, { targets: [{ screens: ['/home#Home', '/lab#Lab'] }, { node: '/lab#Lab' }], note: 'A way in?', author: 'b' }, new Date('2026-10-14T02:30:00Z'));
     const asked = addMark(marksDir, { targets: [], note: 'What does the review not cover?', author: 'b' }, new Date('2026-10-14T03:00:00Z'));
     addReply(marksDir, { replyTo: asked.id, note: 'Stories without tests.' }, new Date('2026-10-14T04:00:00Z'));
 
@@ -1077,6 +1078,7 @@ test('a comment left on two open screens shows under each with both named, and a
     const both = /^ {2}- comment, whole screen, left on 2 targets: \/lab#Lab; \/help#Help — "Same setting on both\?" \(b, 2026-10-14\)$/m;
     assert.match(out.split('## /lab#Lab\n')[1].split('\n## ')[0], both);
     assert.match(out.split('## /help#Help\n')[1].split('\n## ')[0], both);
+    assert.match(out.split('## /lab#Lab\n')[1].split('\n## ')[0], /^ {2}- comment, whole screen, left on 2 targets: screen order \/home#Home > \/lab#Lab; \/lab#Lab — "A way in\?" \(b, 2026-10-14\)$/m);
     assert.match(out, /\nSource files are under `[^`]+`\.\n\n# Comments with no target\n\n- comment — "What does the review not cover\?" \(b, 2026-10-14\)\n {2}- reply — "Stories without tests\." \(agent, 2026-10-14\)\n/);
     assert.match(out.split('\n')[2], / A comment left on several targets shows under each of them, with the list of all of them; answer it once\. Under `# Comments with no target`, /);
   });

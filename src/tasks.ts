@@ -8,7 +8,7 @@ import type { CaseTarget, KindTargets } from './case-targets.ts';
 import type { TableItem } from './client.ts';
 import { compare } from './config.ts';
 import type { CaseKind } from './config.ts';
-import { GENERAL, recordKind } from './marks.ts';
+import { GENERAL, orderKey, recordKind } from './marks.ts';
 import type { MarkEntry } from './marks.ts';
 import { findNeed, needPath } from './needs.ts';
 import { reviewData } from './review.ts';
@@ -108,6 +108,7 @@ const byline = (author: string, date: string, indent: string) => `(${within(auth
 
 function targetText(t: any) {
   if (t.candidate !== undefined) return `story candidate ${t.candidate}`;
+  if (t.screens !== undefined) return `screen order ${orderKey(t.screens)}`;
   const part = t.part && (t.part.kind === 'step' ? `step ${t.part.key.step}`
     : t.part.kind === 'hop' ? `link from step ${t.part.key.step}`
     : t.part.kind === 'test' ? `test "${t.part.key.title}"`

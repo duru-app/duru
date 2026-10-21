@@ -50,7 +50,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'part-pass', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: /** @type {PageData} */ (null), selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateTalk: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, discardedOpen: false, undiscardError: null, callInfoShut: null, storyQuery: '', storyStep: null, storyGapsOpen: false, storyNeedsOpen: false, talkScope: 'here', talkFilter: 'all', reachRecord: null, storyFileOpen: false, need: null, needEdit: null, needSaved: null, fieldsEdit: null, fieldsSaved: null, stepsEdit: null, stepsSaved: null, point: null, storyApp: null, boxFinds: new Map(), caseKind: null, caseNode: null, caseDraft: null, caseFilter: null, casePicked: new Set(), caseOpen: new Set(), caseBulkError: null };
+const state = { data: /** @type {PageData} */ (null), selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateTalk: null, composeTalk: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, discardedOpen: false, undiscardError: null, callInfoShut: null, storyQuery: '', storyStep: null, storyGapsOpen: false, storyNeedsOpen: false, talkScope: 'here', talkFilter: 'all', reachRecord: null, storyFileOpen: false, need: null, needEdit: null, needSaved: null, fieldsEdit: null, fieldsSaved: null, stepsEdit: null, stepsSaved: null, point: null, storyApp: null, boxFinds: new Map(), caseKind: null, caseNode: null, caseDraft: null, caseFilter: null, casePicked: new Set(), caseOpen: new Set(), caseBulkError: null };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -70,18 +70,24 @@ function fill(el, ...children) {
 
 const keyOf = (t) => (t.candidate !== undefined
   ? `candidate(${t.candidate})`
+  : t.screens !== undefined
+  ? `order(${t.screens.join(' > ')})`
   : t.story !== undefined
   ? [`story(${t.story})`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' ')
   : [t.node, t.option && `${t.option.key}=${t.option.value}`, t.depth, t.case && `case:${t.case}`, t.part && `part:${t.part.kind}:${JSON.stringify(t.part.key)}`].filter(Boolean).join(' '));
 const optionLabel = (o) => `${o.key} ${VALUE_LABEL[o.value]}`;
+const orderLabel = (t) => [`화면 순서 ${t.screens.map(screenLabel).join(' → ')}`, t.gaps?.length && `${t.gaps.map(([a, b]) => `${a}-${b}`).join(', ')} 링크 없음`].filter(Boolean).join(' · ');
 const targetName = (t) => (t.candidate !== undefined
   ? `후보 ${candidateName(t.candidate)}`
+  : t.screens !== undefined
+  ? orderLabel(t)
   : t.story !== undefined
   ? `스토리 ${state.data.stories.list.find((st) => st.id === t.story)?.name ?? t.story}`
   : [t.node, t.option && optionLabel(t.option), t.depth && `${DEPTH_LABELS[t.depth]} 깊이`, t.case && `경우 ${state.data.caseKinds[t.case]?.text ?? t.case}`].filter(Boolean).join(' · '));
 const conditionLabel = (key) => (key.startsWith('role:') ? `역할 ${key.slice('role:'.length)}` : `설정 ${key.slice('setting:'.length)}`);
 const tagLabel = (t) => {
   if (t.candidate !== undefined) return '후보';
+  if (t.screens !== undefined) return orderLabel(t);
   if (t.part?.kind === 'step') return `단계 ${t.part.key.step} ${screenLabel(t.part.key.screen)}`;
   if (t.part?.kind === 'hop') return `단계 ${t.part.key.step} → ${t.part.key.step + 1} 연결`;
   if (t.story !== undefined) return '스토리';

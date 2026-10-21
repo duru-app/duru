@@ -146,6 +146,11 @@ test('the agent skill says how to read a need file a story picks in the task lis
   assert.match(SKILL, /`needs\/<file> — the file is missing` or `— the file could not be read`[\s\S]*tell the user which one rather than guess/);
 });
 
+test('the agent skill says what a comment on a screen order carries and that it is answered with the screens found for the gaps picked, keeping what the reviewer typed, without writing a story or a candidate', () => {
+  assert.match(SKILL, /`\{ "screens": \[ … \] \}`[\s\S]*`gaps`[\s\S]*`steps`[\s\S]*`componentFile`[\s\S]*`links`[\s\S]*`verdict`/);
+  assert.match(SKILL, /Follow the links of the\s+map[\s\S]*with `gaps`, fill only those\s+gaps[\s\S]*Keep what the reviewer typed in `steps`[\s\S]*Do not write a story file or a candidate\s+file/);
+});
+
 test('the agent skill says what a comment on a story candidate carries and that it is answered from the record or the test, outside the task list', () => {
   assert.match(SKILL, /`\{ "candidate": "<key>" \}`/);
   assert.match(SKILL, /`\{ "record", "steps" \}` with `stepRanges`[\s\S]*`\{ "report", "tests" \}`/);
