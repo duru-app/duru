@@ -129,9 +129,8 @@ const markChip = (m) => (m?.current ? [
 const shortCommit = (commit) => (commit === 'unknown' ? '모름' : commit.slice(0, 7));
 function codeState(code) {
   if (typeof code?.commit !== 'string') return null;
-  const duru = `duru ${code.duruVersion}${code.duruCommit ? ` (${shortCommit(code.duruCommit)})` : ''}`;
   const title = [`srcRoot 커밋 ${code.commit === 'unknown' ? '모름 (git 저장소가 아님)' : code.commit}`, code.uncommitted ? '커밋하지 않은 수정이 섞여 있음' : null, `duru ${code.duruVersion}${code.duruCommit ? ` 커밋 ${code.duruCommit}` : ''}`].filter(Boolean).join('\n');
-  return h('span', { class: 'code-state', title }, `커밋 ${shortCommit(code.commit)}${code.uncommitted ? ' + 커밋 안 한 수정' : ''} · ${duru}`);
+  return h('span', { class: 'code-state', title }, `커밋 ${shortCommit(code.commit)}${code.uncommitted ? ' + 커밋 안 한 수정' : ''} · duru ${code.duruVersion}`);
 }
 const callOf = (id) => state.data.map.calls.find((c) => c.id === id);
 const nodeWord = (id) => (callOf(id) ? '호출' : '화면');

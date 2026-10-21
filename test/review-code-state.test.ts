@@ -30,6 +30,7 @@ test('a mark saved on a screen or a call, or on a part of one, keeps the code ha
         call: await saved({ target: { node: call, depth: 'api' }, status: 'needs-more', note: '' }),
         part: await saved({ target: { node: '/help#Help', part: { kind: 'condition', key: 'role:ADMIN' } }, note: 'why?' }),
         several: await saved({ targets: [{ node: '/help#Help' }, { node: HOME_NODE }], note: 'both' }),
+        listedAlone: await saved({ targets: [{ node: HOME_NODE }], note: 'one in a list' }),
       };
       const reply = await fetch(`${base}/api/replies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ replyTo: ids.part, note: 'because' }) });
       assert.equal(reply.status, 201);
@@ -39,6 +40,7 @@ test('a mark saved on a screen or a call, or on a part of one, keeps the code ha
       assert.equal(hashIn(ids.call), hashOf(config, call));
       assert.equal(hashIn(ids.part), hashOf(config, '/help#Help'));
       assert.equal(hashIn(ids.several), undefined);
+      assert.equal(hashIn(ids.listedAlone), hashOf(config, HOME_NODE));
       assert.equal(marks.find((m) => m.replyTo === ids.part)!.codeHash, undefined);
       assert.match(hashOf(config, '/help#Help'), /^[0-9a-f]{64}$/);
     })));

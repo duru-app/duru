@@ -381,7 +381,10 @@ export async function startReviewServer(config: any, { port = 0, author = review
     }
   };
   const codeHashOf = (node: unknown) => (typeof node === 'string' ? nodeHashes(readOrNull(() => readMap(mapFile)) ?? { screens: [] }).get(node) : undefined);
-  const markHash = (input: any) => (isPlainObject(input) && isPlainObject(input.target) ? codeHashOf(input.target.node) : undefined);
+  const markHash = (input: any) => {
+    const one = !isPlainObject(input) ? null : input.targets === undefined ? input.target : Array.isArray(input.targets) && input.targets.length === 1 ? input.targets[0] : null;
+    return isPlainObject(one) ? codeHashOf(one.node) : undefined;
+  };
   const judgmentHashes = (input: any) => {
     const test = isPlainObject(input) && isPlainObject(input.test) && typeof input.test.file === 'string' ? reference(input.test) : null;
     return { codeHash: isPlainObject(input) ? codeHashOf(input.node) : undefined, testFileHash: test ? readOrNull(() => readTests(config))?.testFileHashes?.[test.file!] : undefined };
