@@ -36,7 +36,7 @@ node src/cli.ts story path/to/project-config.json <story ID>   # one story for a
 node src/cli.ts reply path/to/project-config.json <comment ID> "<text>" [--server <review page address>]   # answer a comment
 node src/cli.ts wait path/to/project-config.json --server <review page address>   # exits with the comments not yet answered
 node src/cli.ts case path/to/project-config.json <kind> <screen or call ID> needed|not-needed [--note "<why>"] [--author <name> | --server <review page address>]   # decide a case kind for one screen or call
-node src/cli.ts undecided path/to/project-config.json [<kind>] [--new]   # exits with 3 while a candidate of a case kind is undecided
+node src/cli.ts undecided path/to/project-config.json [<kind>] [--new]   # exits with 3 while a candidate of a case kind is undecided; with --new, only while one missing from baselineMap is
 npm test
 ```
 
