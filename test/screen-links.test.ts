@@ -453,3 +453,121 @@ export default function Home({ query }) {
   const map = await build(writeApp({ 'Home.js': home }));
   assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', lineOf(home, 'push(target)'), [], []], ['/login', lineOf(home, '"/login"'), [], ['/login#Login']]]);
 });
+
+const V6_ROUTES = `import { Suspense } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Help from './Help';
+import Login from './Login';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <Suspense fallback={null}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/help/:page?" element={<Help />} />
+        <Route path="/home" element={<Home />} />
+        <Route path="/team/:team" element={<Team />} />
+        <Route path="/team/new" element={<Start />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
+      </Routes>
+    </Suspense>
+  );
+}
+`;
+
+test('with React Router 6, a move through the function useNavigate() returns and a Navigate outside the route files become links to the screen Routes draws', async () => {
+  const home = `import { Navigate, useNavigate } from 'react-router-dom';
+
+export default function Home({ flag, back }) {
+  const navigate = useNavigate();
+  const go = navigate;
+  if (flag.out) return <Navigate to="/login" replace />;
+  return (
+    <div>
+      <button onClick={() => navigate('/team/new')}>new</button>
+      <button onClick={() => go(\`/team/\${flag.id}\`, { replace: true })}>team</button>
+      <button onClick={() => navigate({ pathname: '/help', search: '?q=1' })}>help</button>
+      <button onClick={() => navigate('/nowhere')}>caught</button>
+      <button onClick={() => navigate(-1)}>back</button>
+      <button onClick={() => back(navigate)}>given</button>
+    </div>
+  );
+}
+`;
+  const help = `import { useNavigate } from 'react-router-dom';
+
+function leave(navigate) {
+  navigate('/start');
+}
+
+export default function Help() {
+  const navigate = useNavigate();
+  return <a onClick={() => leave(navigate)} />;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': V6_ROUTES, 'Home.js': home, 'Help.js': help }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('"/login"'), ['flag.out'], ['/login#Login']],
+    ['/team/new', at("'/team/new'"), [], ['/team/new#Start']],
+    ['/team/{*}', at('flag.id'), [], ['/team/:team#Team']],
+    ['/help', at("pathname: '/help'"), [], ['/help/:page?#Help']],
+    ['/nowhere', at("'/nowhere'"), [], ['/home#Home']],
+  ]);
+  assert.deepEqual(linksOf(map, '/help/:page?#Help'), []);
+});
+
+test('Routes picks the most specific path whatever the order, and a path fits only the whole address unless it ends in /*', async () => {
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import Docs from './Docs';
+import Doc from './Doc';
+import NewDoc from './NewDoc';
+import Files from './Files';
+import OtherFiles from './OtherFiles';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/docs/*" element={<Docs />} />
+      <Route path="/docs/:id" element={<Doc />} />
+      <Route path="/docs/new" element={<NewDoc />} />
+      <Route path="/files" element={<Files />} />
+      <Route path="/files" element={<OtherFiles />} />
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const addresses = ['/docs/new', '/docs/a', '/docs/a/b', '/docs', '/files', '/files/x'];
+  const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav>${addresses.map((a) => `<Link to="${a}">${a}</Link>`).join('')}</nav>;\n}\n`;
+  const pages = Object.fromEntries(['Docs', 'Doc', 'NewDoc', 'Files', 'OtherFiles'].map((n) => [`${n}.js`, page(n)]));
+  const map = await build(writeApp({ ...pages, 'Routes.js': routes, 'Start.js': start }));
+  assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, l.targets])), {
+    '/docs/new': ['/docs/new#NewDoc'],
+    '/docs/a': ['/docs/:id#Doc'],
+    '/docs/a/b': ['/docs/*#Docs'],
+    '/docs': ['/docs/*#Docs'],
+    '/files': ['/files#Files', '/files#OtherFiles'],
+    '/files/x': [],
+  });
+});
+
+test('a React Router 6 address not written from / stays {?} and goes to no screen', async () => {
+  const home = `import { Navigate, useNavigate } from 'react-router-dom';
+
+export default function Home({ flag }) {
+  const navigate = useNavigate();
+  if (flag.up) return <Navigate to="../team" />;
+  return <button onClick={() => navigate('help')}>help</button>;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': V6_ROUTES, 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['{?}', 5, ['flag.up'], []],
+    ['{?}', 6, [], []],
+  ]);
+});

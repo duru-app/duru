@@ -363,12 +363,34 @@ export function linkTargets(screens: { path: string }[]) {
   };
 }
 
+type RouteElement = { kind: 'route'; path: string | null; exact: boolean; screens: number[]; children: RouteNode[] };
+
+// path 는 바깥 라우트의 경로를 이어 붙인 전체 경로이고, chain 은 바깥 라우트부터 그 라우트까지다.
+export type Branch = { path: string; chain: RouteElement[] };
+
 export type RouteNode =
   | { kind: 'switch'; children: RouteNode[] }
-  | { kind: 'route'; path: string | null; exact: boolean; screens: number[]; children: RouteNode[] }
+  | { kind: 'routes'; branches: Branch[] }
+  | RouteElement
   | { kind: 'redirect'; from: string | null; exact: boolean; to: string };
 
 const REDIRECT_HOPS = 5;
+
+function explodedPaths(routePath: string): string[] {
+  const [first, ...rest] = routePath.split('/');
+  const required = first.replace(/\?$/, '');
+  const optional = first !== required;
+  if (!rest.length) return optional ? [required, ''] : [required];
+  const tails = explodedPaths(rest.join('/'));
+  const paths = [...tails.map((t) => (t === '' ? required : `${required}/${t}`)), ...(optional ? tails : [])];
+  return paths.map((p) => (routePath.startsWith('/') && p === '' ? '/' : p));
+}
+
+function rankScore(routePath: string) {
+  const segments = routePath.split('/');
+  const splat = segments.includes('*');
+  return segments.filter((s) => s !== '*').reduce((score, s) => score + (/^:[\w-]+$/.test(s) ? 3 : s === '' ? 1 : 10), segments.length + (splat ? -2 : 0));
+}
 
 export function routerTargets(roots: RouteNode[]) {
   const patterns = new Map<string, RegExp[]>();
@@ -380,7 +402,24 @@ export function routerTargets(roots: RouteNode[]) {
     }
     return patterns.get(routePath)![Number(whole)].test(address);
   };
-  const opens = (node: RouteNode, address: string) => (node.kind === 'switch' ? true
+  const ranked = new Map<string, { score: number; pattern: RegExp }[]>();
+  const rankedFits = (routePath: string, address: string) => {
+    if (routePath.includes(UNKNOWN)) return [];
+    if (!ranked.has(routePath)) {
+      ranked.set(routePath, explodedPaths(routePath).map((p) => {
+        const splat = /(^|\/)\*$/.test(p);
+        return { score: rankScore(p), pattern: fittingPattern(pathParts(p.replace(/\/?\*$/, '').replace(/(.)\/$/, '$1')), !splat) };
+      }));
+    }
+    return ranked.get(routePath)!.filter((r) => r.pattern.test(address)).map((r) => r.score);
+  };
+  // Routes 는 적힌 순서가 아니라 점수가 가장 높은 경로를 고르고, 점수가 같으면 먼저 적힌 것을 고른다. 같은 경로를 적은 라우트는 Switch 처럼 모두 고른다.
+  const rankedWinners = (branches: Branch[], address: string) => {
+    const scored = branches.map((b) => ({ b, score: Math.max(...rankedFits(b.path, address)) })).filter((x) => x.score > -Infinity);
+    const best = scored.reduce<(typeof scored)[number] | null>((a, x) => (!a || x.score > a.score ? x : a), null);
+    return best ? scored.filter((x) => x.score === best.score && x.b.path === best.b.path).map((x) => x.b) : [];
+  };
+  const opens = (node: RouteNode, address: string) => (node.kind === 'switch' || node.kind === 'routes' ? true
     : node.kind === 'redirect' ? node.from === null || fits(node.from, address, node.exact)
       : node.path === null || fits(node.path, address, node.exact));
   // 같은 경로를 적은 라우트는 무엇이 렌더링될지 적힌 순서로 정해지지 않으므로 모두 선택한다.
@@ -399,7 +438,15 @@ export function routerTargets(roots: RouteNode[]) {
         walking.add(node);
         if (node.kind === 'redirect') redirects.push(node.to);
         else if (node.kind === 'switch') walk(node.children, true, depth + 1);
-        else {
+        else if (node.kind === 'routes') {
+          for (const { chain } of rankedWinners(node.branches, address)) {
+            chain.forEach((r, i) => {
+              for (const screen of r.screens) drawn.push({ screen, whole: i === chain.length - 1, depth: depth + 1 + i });
+              walk(r.children, false, depth + 2 + i);
+            });
+            for (const c of chain.at(-1)!.children) if (c.kind === 'redirect') redirects.push(c.to);
+          }
+        } else {
           for (const screen of node.screens) drawn.push({ screen, whole: fits(node.path!, address, true), depth });
           walk(node.children, false, depth + 1);
         }
