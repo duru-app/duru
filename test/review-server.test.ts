@@ -9,7 +9,7 @@ import { loadConfig } from '../src/config.ts';
 import { loadJudgments } from '../src/judgments.ts';
 import { loadMarks } from '../src/marks.ts';
 import { PAGE_PARTS, reviewAuthor } from '../src/review.ts';
-import { FIXTURE, CLI, withRebuiltFixture, withServer, postMark, postJudgment, initGitRepoNamed } from './review-helpers.ts';
+import { FIXTURE, CLI, CASE_KINDS, withRebuiltFixture, withServer, postMark, postJudgment, initGitRepoNamed } from './review-helpers.ts';
 import type { Config, PageData } from './review-helpers.ts';
 
 const snapshot = (dir: string) =>
@@ -103,6 +103,43 @@ test('with no config author and no git user name, a mark and a judgment are sign
       }
     }
   });
+});
+
+const postCase = (base: string, body: unknown) => fetch(`${base}/api/cases`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+test('a mark or a case mark saved by the page is signed with the reviewer\'s name and carries no via, whatever author and via its body names', async () => {
+  await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const forged = { author: 'agent', via: 'duru case' };
+      assert.equal((await postMark(base, { target: { node: '/lab#Lab' }, status: 'missing', note: 'x', ...forged })).status, 201);
+      assert.equal((await postMark(base, { target: { node: '/lab#Lab', case: 'legacy' }, status: 'needed', ...forged })).status, 201);
+      assert.deepEqual(loadMarks(config.marksDir).map((m) => [m.author, m.via]), [['reviewer', undefined], ['reviewer', undefined]]);
+    }),
+  );
+});
+
+test('a case sent to /api/cases is written by agent with via, whatever author its body names; a body that is no object, a kind or ID that is not text, a status other than needed or not-needed, or a note that is not text is refused with 400 and nothing is written', async () => {
+  await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const fine = { kind: 'legacy', node: '/lab#Lab', status: 'needed', note: '' };
+      const expected = 'expected { "kind", "node", "status", "note" } with the kind, the screen or call ID and the note as text and the status needed or not-needed';
+      for (const body of [null, 5, 'legacy', [fine], { ...fine, kind: 5 }, { ...fine, kind: undefined }, { ...fine, node: null }, { ...fine, node: ['/lab#Lab'] }, { ...fine, status: 'missing' }, { ...fine, status: undefined }, { ...fine, note: 5 }, { ...fine, note: null }]) {
+        const refused = await postCase(base, body);
+        assert.equal(refused.status, 400, JSON.stringify(body));
+        assert.equal(await refused.text(), expected);
+      }
+      const plain = await fetch(`${base}/api/cases`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify(fine) });
+      assert.equal(plain.status, 415);
+      assert.equal(fs.existsSync(config.marksDir), false);
+
+      const saved = await postCase(base, { ...fine, author: 'reviewer', via: 'page' });
+      assert.equal(saved.status, 201);
+      const [written] = loadMarks(config.marksDir);
+      assert.deepEqual(await saved.json(), written);
+      assert.deepEqual([written.target, written.status, written.author, written.via], [{ node: '/lab#Lab', case: 'legacy' }, 'needed', 'agent', 'duru case']);
+      assert.equal((await postCase(base, { kind: 'legacy', node: '/help#Help', status: 'needed' })).status, 201);
+    }),
+  );
 });
 
 test('rebuilding the map leaves the marks untouched, and marks on screens that disappeared are detached', async () => {

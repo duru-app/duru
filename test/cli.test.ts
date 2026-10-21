@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { addJudgment } from '../src/judgments.ts';
-import { addMark } from '../src/marks.ts';
+import { addMark, fileSafe, loadMarks, recordName } from '../src/marks.ts';
 import type { Mark } from '../src/marks.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
@@ -131,22 +131,25 @@ test('case writes a mark file the review reads, by agent unless --author names s
   });
 });
 
+const personsCaseMark = (configFile: string) => addMark(path.join(path.dirname(configFile), 'case-marks'), { target: { node: '/home#Home', case: 'legacy' }, status: 'needed', author: 'Kim Min' }, new Date('2026-10-05T01:00:00Z'));
+const CASE_REFUSALS: [string[], string][] = [
+  [['gone', '/home#Home', 'needed'], '"gone" is not a kind in caseKinds (it has ended, legacy)\n'],
+  [['ended', '/nowhere#Nowhere', 'needed'], '/nowhere#Nowhere is no screen or call on the map\n'],
+  [['legacy', '/lab#Lab', 'not-needed'], 'not-needed needs a note saying why legacy need not be tested on /lab#Lab\n'],
+  [['ended', 'POST:/api/v1/archive/document', 'not-needed'], 'a rule picks POST:/api/v1/archive/document for ended (caseKinds.ended.picks[0]), so taking it out needs a note saying why\n'],
+  [['legacy', '/home#Home', 'not-needed', '--note', '홈은 옛 데이터를 읽지 않는다'], 'Kim Min marked legacy needed on /home#Home on 2026-10-05, and duru case does not change a person\'s mark\n'],
+];
+
 test('case refuses with a reason and exits with 1 a kind not in the config, an ID not on the map, not-needed without a note and a person\'s mark, writing nothing; a call it cannot read exits with 2', () => {
   withCaseKinds((configFile, run) => {
     run('rebuild');
-    addMark(path.join(path.dirname(configFile), 'case-marks'), { target: { node: '/home#Home', case: 'legacy' }, status: 'needed', author: 'Kim Min' }, new Date('2026-10-05T01:00:00Z'));
-    for (const [args, stderr] of [
-      [['gone', '/home#Home', 'needed'], '"gone" is not a kind in caseKinds (it has ended, legacy)\n'],
-      [['ended', '/nowhere#Nowhere', 'needed'], '/nowhere#Nowhere is no screen or call on the map\n'],
-      [['legacy', '/lab#Lab', 'not-needed'], 'not-needed needs a note saying why legacy need not be tested on /lab#Lab\n'],
-      [['ended', 'POST:/api/v1/archive/document', 'not-needed'], 'a rule picks POST:/api/v1/archive/document for ended (caseKinds.ended.picks[0]), so taking it out needs a note saying why\n'],
-      [['legacy', '/home#Home', 'not-needed', '--note', '홈은 옛 데이터를 읽지 않는다'], 'Kim Min marked legacy needed on /home#Home on 2026-10-05, and duru case does not change a person\'s mark\n'],
-    ] as [string[], string][]) assert.deepEqual(run('case', ...args), { status: 1, stdout: '', stderr }, args.join(' '));
+    personsCaseMark(configFile);
+    for (const [args, stderr] of CASE_REFUSALS) assert.deepEqual(run('case', ...args), { status: 1, stdout: '', stderr }, args.join(' '));
     assert.equal(caseMarks(configFile).length, 1);
-    for (const args of [['ended', '/lab#Lab'], ['ended', '/lab#Lab', 'maybe'], ['ended', '/lab#Lab', 'needed', '--note'], ['ended', '/lab#Lab', 'needed', '--why', 'x'], ['ended', '/lab#Lab', 'needed', '--note', 'a', '--note', 'b']]) {
+    for (const args of [['ended', '/lab#Lab'], ['ended', '/lab#Lab', 'maybe'], ['ended', '/lab#Lab', 'needed', '--note'], ['ended', '/lab#Lab', 'needed', '--why', 'x'], ['ended', '/lab#Lab', 'needed', '--note', 'a', '--note', 'b'], ['ended', '/lab#Lab', 'needed', '--server']]) {
       const misused = run('case', ...args);
       assert.equal(misused.status, 2, args.join(' '));
-      assert.match(misused.stderr, /\n {7}duru case <config\.json> <kind> <screen or call ID> needed\|not-needed \[--note <why>\] \[--author <name>\]\n/);
+      assert.match(misused.stderr, /\n {7}duru case <config\.json> <kind> <screen or call ID> needed\|not-needed \[--note <why>\] \[--author <name> \| --server <review page address>\]\n/);
     }
   });
 });
@@ -841,6 +844,90 @@ test('a reply without --server is written to the marks folder and shows in the t
       child.kill();
     }
   });
+});
+
+const runCase = (configFile: string, ...args: string[]) => {
+  try {
+    return { status: 0, stdout: execFileSync(process.execPath, [CLI, 'case', configFile, ...args], { encoding: 'utf8', stdio: 'pipe' }), stderr: '' };
+  } catch (err) {
+    const { status, stdout, stderr } = err as Failure & { stdout: string };
+    return { status, stdout, stderr };
+  }
+};
+const undecidedCount = (configFile: string, kind: string) => {
+  let out;
+  try {
+    out = execFileSync(process.execPath, [CLI, 'undecided', configFile, kind], { encoding: 'utf8', stdio: 'pipe' });
+  } catch (err) {
+    out = (err as Failure & { stdout: string }).stdout;
+  }
+  return Number(out.match(/^case kind \S+: (\d+) undecided$/m)![1]);
+};
+
+test('a case sent with --server is saved by the running review in the same shape and folder as one written directly, printed on its stderr as a mark line and pushed to open event streams, and the kind has one undecided candidate less; the command reads no map', async () => {
+  await withReviewFixture(async (configFile) => {
+    const marksDir = path.join(path.dirname(configFile), 'case-marks');
+    const elsewhere = path.join(path.dirname(configFile), 'no-map.json');
+    fs.writeFileSync(elsewhere, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), outDir: 'no-map-here' }));
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const events = readEvents(url);
+      await within(events.open, 'the event stream');
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      assert.equal(undecidedCount(configFile, 'ended'), 8);
+      assert.deepEqual(runCase(configFile, 'ended', 'GET:/api/v1/member/list', 'needed'), { status: 0, stdout: '', stderr: '' });
+      assert.equal(undecidedCount(configFile, 'ended'), 7);
+
+      assert.deepEqual(runCase(elsewhere, 'ended', 'GET:/api/v1/document/list', 'needed', '--server', `${url}/`), { status: 0, stdout: '', stderr: '' });
+      assert.deepEqual(runCase(elsewhere, 'ended', 'PUT:/api/v1/document/{documentId}/name', 'not-needed', '--note', '이름은 막지 않는다', '--server', url), { status: 0, stdout: '', stderr: '' });
+      await waitFor(() => records().length === 2, 'two mark lines on stderr');
+      assert.equal(undecidedCount(configFile, 'ended'), 6);
+
+      const byNode = Object.fromEntries(loadMarks(marksDir).map((m) => [m.target!.node, m]));
+      const direct = byNode['GET:/api/v1/member/list'];
+      const [sent, renamed] = [byNode['GET:/api/v1/document/list'], byNode['PUT:/api/v1/document/{documentId}/name']];
+      const shape = ({ id, date, target, ...rest }: Mark) => ({ ...rest, target: { ...target, node: undefined }, id: typeof id, date: typeof date });
+      assert.deepEqual(shape(sent), shape(direct));
+      assert.deepEqual(shape(sent), { target: { case: 'ended', node: undefined }, status: 'needed', note: '', author: 'agent', via: 'duru case', id: 'string', date: 'string' });
+      assert.deepEqual([renamed.rule, renamed.author, renamed.via], [{ index: 0, pick: ENDED_KINDS.ended.picks[0] }, 'agent', 'duru case']);
+      for (const m of [direct, sent, renamed]) assert.ok(fs.existsSync(path.join(marksDir, fileSafe(m.target!.node!), recordName(m))), m.target!.node);
+
+      assert.deepEqual(records(), [{ duru: 'mark', ...sent }, { duru: 'mark', ...renamed }]);
+      await waitFor(() => events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).length === 2, 'two events on the stream');
+      assert.deepEqual(events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).map((e) => JSON.parse(e.slice('data: '.length))), records());
+      await endReview(url);
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  }, { marksDir: 'case-marks', caseKinds: ENDED_KINDS });
+});
+
+test('case with --server refuses what case refuses directly, with the same line and exit code 1, writing nothing; an address with no review stops with one line and 1; --author with --server is a misuse that names it and exits with 2', async () => {
+  await withReviewFixture(async (configFile) => {
+    personsCaseMark(configFile);
+    const { child, base, closed } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      for (const [args, stderr] of CASE_REFUSALS) {
+        assert.deepEqual(runCase(configFile, ...args), { status: 1, stdout: '', stderr }, args.join(' '));
+        assert.deepEqual(runCase(configFile, ...args, '--server', url), { status: 1, stdout: '', stderr }, `${args.join(' ')} --server`);
+      }
+      const named = 'a case sent with --server is always by agent; leave out --author\n';
+      assert.deepEqual(runCase(configFile, 'legacy', '/lab#Lab', 'needed', '--author', 'QA 에이전트', '--server', url), { status: 2, stdout: '', stderr: named });
+      assert.deepEqual(runCase(configFile, 'legacy', '/lab#Lab', 'needed', '--server', url, '--author', 'agent'), { status: 2, stdout: '', stderr: named });
+      assert.equal(caseMarks(configFile).length, 1);
+      await endReview(url);
+      await within(closed, 'exit');
+      const unreachable = runCase(configFile, 'legacy', '/lab#Lab', 'needed', '--server', url);
+      assert.equal(unreachable.status, 1);
+      assert.match(unreachable.stderr, new RegExp(`^could not reach the review page at ${url}: [^\\n]+\\n$`));
+      assert.equal(caseMarks(configFile).length, 1);
+    } finally {
+      child.kill();
+    }
+  }, { marksDir: 'case-marks', caseKinds: ENDED_KINDS });
 });
 
 function startWait(configFile: string, server: string) {
