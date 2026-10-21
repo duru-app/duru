@@ -34,3 +34,7 @@
 - A field repeated in a list or a table gets a `name` that stays the same for its row when rows are added or
   removed. The page redraws while a reviewer types and puts the focus back in a field that looks the same, so fields
   that look alike lose the focus as soon as the number of rows changes.
+- A button, tab, count or chip on the page is named with one or two words or an icon, not a phrase: 「새 3」, not
+  「그중 새로 3」 or 「새로 생긴 것 3」; ✓ and ✕, not 「받아들이기 (2)」. What it means goes in `title` and `aria-label`.
+- A picture that asks the driver to choose between ways of drawing a part of the page crops that part only and puts the
+  options side by side, so the difference shows at a glance.
