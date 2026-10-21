@@ -1650,13 +1650,16 @@ Alternatives compared:
 **CI runs on pull requests only, not again on main after a merge.**
 Since CI was added (#183, 2026-10-09), every change has reached main through a pull request whose branch was first
 moved onto the tip of main, and its CI run tested that exact content. The run that `push` to main started after each
-merge tested the same content a second time. The costs: a commit pushed to main directly is not tested, and nothing
-in GitHub stops a pull request from being merged without first moving onto the tip of main (main has no branch
-protection), so that habit is what keeps main tested. The npm cache that every pull request shares is saved only by
+merge tested the same content a second time. The cost: a commit pushed to main directly is not tested. main's branch
+protection now requires the two `test` checks and a branch that is up to date with main, so a pull request is merged
+only after a run on the content it brings. The npm cache that every pull request shares is saved only by
 runs on main, so after `package-lock.json` changes, or once GitHub deletes that cache after seven days unread, each
 pull request's first run downloads the packages again.
-A pull request that changes only `CLAUDE.md` does not run CI: no test reads that file, and the run would test the
-code main already holds. `README.md`, `skills/duru/SKILL.md` and `docs/decisions.md` are read by tests and stay in.
+A pull request that changes only `CLAUDE.md` does not run the tests: no test reads that file, and the run would test
+the code main already holds. `README.md`, `skills/duru/SKILL.md` and `docs/decisions.md` are read by tests and stay in.
+Since main came to require the two `test` checks before a merge, such a pull request still runs the job, which finds
+that only `CLAUDE.md` changed against main and passes without installing or testing anything. Leaving the workflow
+out for that file, as before, left the required checks missing and the pull request blocked (#378).
 Alternatives compared:
 - Keeping both runs: main is tested whatever reaches it, at the cost of a second run of about ten minutes per merge.
 
