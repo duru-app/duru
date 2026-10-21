@@ -28,6 +28,7 @@ const composeTalkForm = () => h('fieldset', { class: 'mark-form', disabled: true
 function renderCenter() {
   if (state.view === 'story') return renderStoryCenter();
   if (state.side === 'untagged') return renderUntaggedCenter();
+  if (state.side === 'cases') return renderCaseCenter();
   const center = document.getElementById('center-body');
   const s = state.data.map.screens.find((x) => x.id === state.selected);
   renderCenterHead(s);
@@ -240,7 +241,7 @@ function renderRight() {
     return fill(dock);
   }
   const all = state.talkScope === 'all';
-  const view = all ? 'all' : state.view !== 'story' ? `${state.selected}\n${state.target?.node}` : state.composing ? 'compose' : state.candidate ? `candidate(${state.candidate})` : state.need ? `need(${state.need})` : `story(${state.story})`;
+  const view = all ? 'all' : state.view !== 'story' && state.side === 'cases' ? `cases\n${state.caseNode}` : state.view !== 'story' ? `${state.selected}\n${state.target?.node}` : state.composing ? 'compose' : state.candidate ? `candidate(${state.candidate})` : state.need ? `need(${state.need})` : `story(${state.story})`;
   const shown = shownTarget();
   const dockKey = shown ? keyOf(shown) : null;
   if (dockKey !== state.dockKey) state.historyFilter = null;
@@ -248,7 +249,7 @@ function renderRight() {
   if (all) {
     fill(info, allTalk());
     fill(dock);
-  } else (state.view === 'story' ? renderStoryRight : renderScreenRight)(info, dock);
+  } else (state.view === 'story' ? renderStoryRight : state.side === 'cases' ? renderCaseRight : renderScreenRight)(info, dock);
   const scope = scopeButtons();
   if (scope) info.prepend(scope);
   if (view !== state.rightView) {

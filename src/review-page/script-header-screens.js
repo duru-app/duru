@@ -144,7 +144,9 @@ function renderLeft() {
     ' ', h('span', { class: 'tab-count' }, count));
   const tabs = h('div', { class: 'views side' },
     side('screens', '화면', map.screens.length),
-    side('untagged', '태그 없음', untaggedCount(), '노드 태그도 스토리 태그도 없는 테스트'));
+    side('untagged', '태그 없음', untaggedCount(), '노드 태그도 스토리 태그도 없는 테스트'),
+    caseKindList().length ? side('cases', '경우 종류', undecidedTotal(), '경우 종류마다 대상과 아직 아무도 정하지 않은 후보') : null);
+  if (state.side === 'cases') return fill(left, tabs, h('ul', { class: 'screens', id: 'case-kind-list' }, caseKindItems()));
   if (state.side === 'untagged') {
     if (!keptLeftList(left, tabs, 'untagged-list')) {
       fill(left,

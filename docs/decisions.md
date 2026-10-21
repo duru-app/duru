@@ -1403,8 +1403,9 @@ picked screen in the flow; the right pane is one width in both, and the drawing 
 instead of half of what is left. Until it is dragged, the drawing takes half of what the right pane leaves at its
 starting width, so dragging the right edge moves only the middle pane while the drawing still grows with the
 window. The widths last only until the page is loaded again, since the page keeps nothing
-in browser storage, and there is no keyboard resizing. Each pane has a floor: 300px for the list, where its three
-tabs fit with three-digit counts and a classic scrollbar; 240px for the drawing, which scrolls sideways anyway;
+in browser storage, and there is no keyboard resizing. Each pane has a floor: 300px for the list, where 「화면」 and
+「태그 없음」 fit on one line with three-digit counts and a classic scrollbar, and 「경우 종류」 moves to a second line
+when it does not fit beside them; 240px for the drawing, which scrolls sideways anyway;
 360px for the middle pane, where the address bar over the app frame and the screen's title fit, while the table of
 tests may still scroll sideways when a test's name holds a long unbroken word such as `@screen:/home#Home`, which no
 fixed floor could cover; 320px for the right pane, where the comment form's status buttons stay on one line and its
@@ -2361,7 +2362,7 @@ page shows 「규칙」. When no rule picks the target any more, also when the k
 keeps meaning what it meant (since #314 only when it has a note; without one the target is undecided). The index and the rule are both kept because either alone can mislead after the config
 changes: the index after a rule is added in front, the rule after it is edited. Old mark files are read unchanged.
 On the page the row of a kind says who picked it, 「규칙」 with the rule on hover or the author with the date on hover,
-on every kind whether it has rules or not, and a kind taken out of a rule shows as 「불필요 · <author>」 with the reason
+on every kind whether it has rules or not, and a kind taken out of a rule shows as 「대상 아님 · <author>」 with the reason
 under it. 「이 요청은 규칙에서 빼기…」 on the row of a kind a rule picks, while it is picked by anyone, and the pressed kind
 button both open the reason dialog the discard flows use, which saves nothing without a reason; a kind button that
 is off picks the kind back with no reason.
@@ -2632,7 +2633,7 @@ Alternatives compared:
 marked as written by the command; `duru undecided` lists what nobody decided and exits with 3 while anything is
 left; the task list carries both the undecided candidates and the picked cases with no tests.**
 Asked for in #314 (2026-10-19), the third part of #310; the driver chose what goes in the list, the extra field, and
-how a reasoned and an unreasoned 「불필요」 outside the rules count. A rule picks what its shape says, so whatever it
+how a reasoned and an unreasoned 「대상 아님」 outside the rules count. A rule picks what its shape says, so whatever it
 misses has to be decided one by one, and on into-sign 1.5.0 one kind with a rule on the participant write requests
 left 182 candidates undecided (78 of them write requests), a kind without rules 243. Nobody clicks through that many
 on the page, so an agent decides them from the source, and the reviewer checks the reasons afterwards. The names are
@@ -2643,17 +2644,18 @@ instead. The author is `agent` unless `--author` names one, and never the config
 agent's decision is not signed with the reviewer's name. A mark the command writes carries `"via": "duru case"`, the one field the page
 does not write, so the count of rule, person and agent picks and a later hold on agent picks can tell them apart;
 the page's own saves drop such a field. The command refuses, with the reason and exit code 1, a kind not in the
-config, an ID not on the map, a 「불필요」 without a note whether a rule picks the target or not, a target whose
-current mark a person left, and a 「불필요」 off the side the rules pick unless there is a mark there to take
+config, an ID not on the map, a 「대상 아님」 without a note whether a rule picks the target or not, a target whose
+current mark a person left, and a 「대상 아님」 off the side the rules pick unless there is a mark there to take
 back (so a hand-picked 「필요」 can still be withdrawn). A 「필요」 is written also where a rule already picks the
 target, so the pick stays when the rule changes.
-A 「불필요」 outside the rules now counts only with a note: a kind pressed on and off again on the page leaves a mark
+A 「대상 아님」 outside the rules now counts only with a note: a kind pressed on and off again on the page leaves a mark
 with no note, and calling that a decision would hide the candidate. Such a candidate stays undecided and is handed to
 a person: its mark is a person's, and the agent never changes a person's mark, also where the mark leaves the target
 undecided, since the command would otherwise silently reverse what the reviewer pressed. It keeps `undecided` at 3,
-and its line says only a person can decide it, so the agent tells the user instead of looping; a place on the page
-to add the reason comes with the case kind tab (#313). The buttons work as before, and a rule's pick is still taken
-out only with a reason. A reasoned 「불필요」 outside the rules shows in 「경우별 테스트」 as 「불필요 · <author>」 with the
+and its line says only a person can decide it, so the agent tells the user instead of looping; the 「경우 종류」 tab
+(#313) shows such a candidate with a line under it saying who took it out and when, and 「사람이 정할 것」 there lists
+only those, so the reviewer decides them on the page. The buttons work as before, and a rule's pick is still taken
+out only with a reason. A reasoned 「대상 아님」 outside the rules shows in 「경우별 테스트」 as 「대상 아님 · <author>」 with the
 reason, as one taken out of a rule does; one without a reason shows no row, as before.
 `undecided` exits with 0 when nothing is left, 3 while something is, 1 when the config, the map or the marks cannot be
 read, and 2 when called wrongly, since duru already uses 1 for failure and 2 for misuse, and grep, diff, ESLint and
@@ -2671,13 +2673,13 @@ does not stop at that line. `rebuild` prints the undecided count and the cases w
 Reference cases: SonarQube security hotspots start as 「To review」 and are set to 「Safe」 with a comment, and its
 quality gate fails until every new hotspot is reviewed, which is where an undecided candidate staying listed until
 someone decides it comes from; SARIF 2.1.0 keeps `notApplicable`, `open` and `review` apart, which is why undecided
-and 「불필요」 are different states; Semgrep keeps ignored findings with their reason instead of dropping them.
+and 「대상 아님」 are different states; Semgrep keeps ignored findings with their reason instead of dropping them.
 Alternatives compared:
 - Listing only the undecided write requests: the kind without rules would never get decided, and the driver chose
   every candidate.
 - Telling agent marks apart by the author `agent`: a person can type that name on the page, and `--author` can name
   anything, so the field is the only thing that says how the mark was written.
-- Counting a 「불필요」 without a note as decided: the candidates a reviewer only pressed off would never be offered.
+- Counting a 「대상 아님」 without a note as decided: the candidates a reviewer only pressed off would never be offered.
 - Going through the review server only, as `reply --server` does: needs a running review, while an agent mostly
   decides in bulk between reviews, so the server came later as an option (#350), not as the only way.
 - One exit code for both "something is left" and "something failed": an agent could not tell a broken config from
@@ -2855,6 +2857,56 @@ Alternatives compared:
 - Splitting the middle into the info beside the steps: the driver chose one column, stacked.
 - Keeping the info at the top of the right pane and unfolding the conversation under it: the two would share one
   360px pane, as #244 found for a screen.
+
+**The review page has a 「경우 종류」 tab where the undecided candidates of a kind are decided several at once, and
+「경우별 테스트」 has a line for each kind still undecided on a screen or call, decided there with ✓ and ✕.**
+Asked for in #313; the driver chose the shape on the example app's page with each choice drawn in (2026-10-20 and
+2026-10-21). On into-sign 1.5.0 one kind leaves 182 candidates undecided and a kind without rules 243 (#314), too many
+to press one by one, so the tab works as the 「태그 없음」 tab does: a check box on each candidate and on each group, and
+「대상 (N)」 and 「대상 아님… (N)」 above the list. 「대상 아님…」 asks for one reason and writes a mark per candidate with it,
+so each candidate keeps its own record, and an empty reason saves nothing. The marks are posted one at a time through
+the same `/api/marks` as a single press; the first failure stops the run and says which were saved, so nothing is
+saved twice when the reviewer tries again. The page reads the review data once at the end and treats every mark it
+posted as its own, so the live updates of those marks do not read it again. The other tabs are locked meanwhile, as
+for the 「태그 없음」 tab. The server adds one field, `caseGaps`, the cases with no tests of each kind as `rebuild`
+counts them, so the tab's 빈칸 and `rebuild` give the same number; the order of the undecided candidates is the one
+`caseTargets` already carries. The candidates are grouped by what the reviewer mostly decides together, write
+requests, read requests and screens, with each request's method as a coloured mark, instead of a group per method:
+a kind like 「끝난 문서」 takes every write request, which would be one check box per method. Comparable tools mark the
+method by colour on each row too (Burp Suite's site map, Swagger UI), and API testing guides look at the requests
+that change state first. The words are 「대상」 and 「대상 아님…」, the same as the tab's numbers, and apart from a
+reviewer's 「테스트 필요」 and 「충분」 next to them; Azure Test Plans calls the same state 「Not applicable」. So the chip of a
+kind taken out, 「불필요 · <author>」 before, now reads 「대상 아님 · <author>」. In 「경우별 테스트」 a kind nobody decided
+had nothing telling it apart from one pressed off, so it gets a line with ✓ and ✕ as icons, with the words on hover
+and as `aria-label`; the kind buttons stay as they were. Details settled on the way:
+- The tab is the third button beside 「화면」 and 「태그 없음」. 「대상」 and 「대상 아님」 start folded with their counts and
+  stay open once opened; 「미판정」 is open. At the list's 300px floor with three-digit counts the three tabs do not fit on
+  one line (into-sign's counts run to three digits), and shrinking them cut every name to 「화…」, so a tab that does not
+  fit moves whole to a second line; raising the floor would have taken width from the other panes also where
+  `caseKinds` is not set.
+- A candidate taken out of a rule that no longer picks it counts as undecided, so 「경우별 테스트」 gives it the
+  「미판정」 line instead of the 「대상 아님」 row, which would say 대상 아님 where the tab says 미판정. Where a mark keeps a
+  kind undecided, the line says who left it and when, in the tab's words, instead of 「아직 아무도 정하지 않았습니다」,
+  which a kind pressed off would make untrue. Unlike the tab, it does so also for an agent's mark, since on a single
+  screen or call the reviewer is the one looking at it. The 「대상 아님」 row with 「이 표시는 쓰이지 않습니다」 stays only where the kind no
+  longer takes that screen or call as a candidate.
+- A candidate a person's mark keeps undecided gets a line saying who took it out and when; a candidate an agent's mark
+  keeps undecided gets none, since the agent decides it again. 「사람이 정할 것 N」 above the list shows only those.
+- Pressing a rule's line shows only what that rule picks in the 「대상」 list.
+- The right pane shows the pressed candidate's conversation and form, kept apart from what 「화면」 has chosen, so
+  going back there loses nothing. A decided kind is not part of the conversation; it shows on the line and under
+  「변경 기록」.
+- Known limit: 「변경 기록」 shows a kind as 켬 or 끔, so 「대상」 reads 켬 and 「대상 아님…」 reads 끔.
+Alternatives compared:
+- A small 「미판정」 mark beside the kind button: kept the section short for a kind without rules, but the driver chose
+  to decide where the line is.
+- Groups per method (POST, PUT, …, GET, screens): taking every write request took a check box per method.
+- 「규칙 밖 쓰기 요청 · 다른 요청 · 화면」 or 「GET 아닌 요청 · GET 요청 · 화면」 as group titles: the driver chose 「쓰기 요청 ·
+  조회 요청 · 화면」 with 「메서드를 모르는 요청도 여기에 둡니다」 beside the first.
+- One request saving every mark: a new endpoint for what `/api/marks` already does, and a failure would leave no
+  record of how far it got.
+Measured on main 29fae93 against the branch with the example client, with the kinds 「끝난 문서」 and 「입력 경계」 and four
+marks by a person and two by `duru case`: the task list and what `rebuild` prints are identical.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

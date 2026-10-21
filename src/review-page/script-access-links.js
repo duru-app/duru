@@ -98,7 +98,7 @@ const takenOut = (by) => by.state === 'not-needed' || by.state === 'unused';
 function outTitle(kind, by) {
   const { mark } = by;
   if (by.state === 'unused') return `${fmtDate(mark.date)} 에 규칙에서 뺐습니다\n${nowRules(kind)}`;
-  if (!mark.rule) return `${fmtDate(mark.date)} 에 불필요로 정했습니다`;
+  if (!mark.rule) return `${fmtDate(mark.date)} 에 대상 아님으로 정했습니다`;
   return `${fmtDate(mark.date)} 에 규칙에서 뺐습니다\n${ruleText(kind, mark.rule.index, mark.rule.pick)}`;
 }
 
@@ -107,7 +107,7 @@ function pickChip(kind, by) {
   if (by.state === 'rule') return h('span', { class: 'chip pick-rule', title: `규칙이 골랐습니다: ${rulesText(kind, by.rules)}` }, '규칙');
   if (by.state === 'needed') return h('span', { class: 'chip pick-person', title: `${fmtDate(mark.date)} 에 골랐습니다${by.rules.length ? `\n규칙도 골랐습니다: ${rulesText(kind, by.rules)}` : ''}` }, mark.author);
   if (!takenOut(by)) return null;
-  return h('span', { class: `chip ${by.state === 'unused' ? 'pick-unused' : 'pick-out'}`, title: outTitle(kind, by) }, `불필요 · ${mark.author}`);
+  return h('span', { class: `chip ${by.state === 'unused' ? 'pick-unused' : 'pick-out'}`, title: outTitle(kind, by) }, `대상 아님 · ${mark.author}`);
 }
 
 function askTakeOut(id, kind, refocus) {
@@ -191,10 +191,30 @@ function caseSection(node) {
     head(text, kind),
     h('p', { class: 'case-reason' }, '이유 ', h('span', { class: 'memo' }, by[kind].mark.note)),
     by[kind].state === 'unused' ? h('p', { class: 'case-unused' }, `규칙이 이 ${word}을 더는 고르지 않아, 이 표시는 쓰이지 않습니다`) : null);
+  const decideButton = (kind, yes) => {
+    const tip = yes ? `대상 — 이 ${word}에서 이 경우를 시험합니다` : `대상 아님… — 이유를 적고 이 ${word}에서는 시험하지 않습니다`;
+    return h('button', {
+      type: 'button',
+      class: `decide ${yes ? 'yes' : 'no'}`,
+      title: tip,
+      'aria-label': tip,
+      disabled: busy,
+      onclick: () => (yes ? pickCase({ node: node.id, case: kind }, 'needed') : askNotTarget(node.id, kind, `${scope} .case-undecided-row[data-kind="${kind}"] button.no`)),
+    }, yes ? '✓' : '✕');
+  };
+  const undecidedRow = (kind, text) => {
+    const held = markOf({ node: node.id, case: kind })?.current;
+    return h('li', { class: 'case-undecided-row', 'data-kind': kind },
+      h('span', { class: 'kind-text' }, text), h('span', { class: 'chip undecided' }, '미판정'), held ? null : h('span', { class: 'muted' }, '아직 아무도 정하지 않았습니다'),
+      decideButton(kind, true), decideButton(kind, false),
+      held ? h('div', { class: 'case-held-lines' }, heldText(held)) : null);
+  };
+  const undecidedHere = (kind) => kindTargetsOf(kind)?.nodes[node.id]?.state === 'undecided';
   const picked = new Map(node.cases.filter((c) => c.kind === 'case').map((c) => [c.tag.slice('case:'.length), c]));
   const rows = [
     ...node.cases.filter((c) => c.kind !== 'case').map(caseRow),
-    ...kinds.map(([kind, { text }]) => (picked.has(kind) ? caseRow(picked.get(kind)) : takenOut(by[kind]) ? leftOutRow(kind, text) : null)).filter(Boolean),
+    ...kinds.map(([kind, { text }]) => (picked.has(kind) ? caseRow(picked.get(kind)) : takenOut(by[kind]) && !undecidedHere(kind) ? leftOutRow(kind, text) : null)).filter(Boolean),
+    ...kinds.filter(([kind]) => undecidedHere(kind)).map(([kind, { text }]) => undecidedRow(kind, text)),
   ];
   return h('div', { class: 'cases' },
     h('h2', {}, '경우별 테스트'),

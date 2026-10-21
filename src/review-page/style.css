@@ -184,6 +184,53 @@
   .case-kinds button { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; text-align: left; }
   .case-kinds button.on { border-color: var(--accent); background: var(--selected); font-weight: 600; }
   .case-kinds button:disabled { opacity: .5; cursor: default; }
+  .chip.undecided { color: var(--more); border-style: dashed; }
+  .cases .case-undecided-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13px; }
+  .cases .case-undecided-row button.decide { width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font: inherit; font-weight: 700; cursor: pointer; }
+  .cases .case-undecided-row button.yes { color: var(--pass); }
+  .cases .case-undecided-row button.no { color: var(--fail); }
+  .cases .case-undecided-row button.decide:disabled { opacity: .5; cursor: default; }
+  .cases .case-undecided-row .kind-text { flex-basis: 100%; }
+  .cases .case-undecided-row .chip.undecided { margin-left: 14px; }
+  .cases .case-undecided-row .case-held-lines { flex-basis: 100%; padding-left: 14px; }
+  #case-kind-list li { display: block; }
+  #case-kind-list .kind-counts { display: block; font-size: 12px; margin-top: 2px; }
+  .case-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .case-count { display: flex; flex-direction: column; min-width: 96px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+  .case-count strong { font-size: 20px; }
+  .case-count span { font-size: 12px; }
+  .case-rules { margin: 0 0 10px; }
+  .case-rules button.rule-line { padding: 2px 6px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  .case-rules button.rule-line:hover { border-color: var(--line); }
+  .case-rules button.rule-line[aria-pressed=true] { border-color: var(--accent); background: var(--selected); }
+  .chip.rule-empty { color: var(--more); margin-left: 6px; }
+  details.case-list { margin: 6px 0; }
+  details.case-list > summary { cursor: pointer; font-weight: 600; }
+  .case-filter button, button.person-only { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+  button.person-only { margin: 2px 0 6px; }
+  button.person-only[aria-pressed=true] { border-color: var(--accent); background: var(--selected); font-weight: 600; }
+  .case-undecided > h2 { margin-top: 14px; }
+  .case-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; }
+  .case-bar button { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .case-bar button:disabled { opacity: .5; cursor: default; }
+  .case-bar .error { flex-basis: 100%; margin: 0; white-space: pre-line; }
+  .case-group-head { margin: 10px 0 4px; font-weight: 600; }
+  .case-group-head .hint { margin-left: 6px; font-weight: normal; font-size: 12px; }
+  li.case-row { display: flex; gap: 8px; align-items: flex-start; padding: 5px 4px; border-bottom: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+  li.case-row:hover { background: var(--bg); }
+  li.case-row.selected { background: var(--selected); }
+  li.case-row .pick-space { width: 13px; flex: none; }
+  .case-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .case-row-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+  .case-node { display: flex; flex-direction: column; }
+  .case-node-head { display: flex; align-items: baseline; gap: 6px; }
+  .case-node .where { font-size: 12px; }
+  .case-node button.node-name { padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .case-node button.node-name:hover { color: var(--accent); text-decoration: underline; }
+  .method { padding: 0 5px; border-radius: 3px; font-size: 11px; font-weight: 700; color: #fff; background: var(--muted); }
+  .method.m-get { background: #2563eb; } .method.m-post { background: #16a34a; } .method.m-put { background: #ea580c; } .method.m-patch { background: #0d9488; } .method.m-delete { background: #dc2626; }
+  :is(.case-held, .case-row .case-reason) { margin: 0; font-size: 12px; color: var(--muted); }
+  .case-held { color: var(--more); }
   #right { display: flex; flex-direction: column; padding: 0; overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere; }
   #right-info { flex: 1 1 auto; min-height: 120px; overflow: auto; padding: 12px 16px; }
   #right-dock { flex: none; padding: 10px 16px 12px; border-top: 1px solid var(--line); background: var(--panel); }
@@ -465,7 +512,7 @@
   .story-tag.l-configured { color: var(--fine); }
   .story-tag.l-broken { color: var(--fail); font-weight: 600; }
   .story-tag:is(.l-off-map, .l-unknown) { color: var(--more); }
-  .views.side { margin-bottom: 10px; }
+  .views.side { flex-wrap: wrap; margin-bottom: 10px; }
   .views.side button { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; padding: 4px 1px; white-space: nowrap; }
   .views.side .tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .views.side .tab-count { flex: none; position: relative; top: .5px; padding: 0 4px; border-radius: 8px; background: var(--line); font-size: 11px; font-weight: 600; line-height: 16px; }

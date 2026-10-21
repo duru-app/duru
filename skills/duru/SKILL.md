@@ -359,7 +359,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    reviewer left, mostly a kind pressed off on the page without a reason, and `duru case` will not change it. This
    part is done when every candidate `duru undecided` still lists is one only a person can decide, such a line or
    one you could not tell from the code, or when none is left and it exits with 0; then tell the user which are
-   left, with the author and date such a line gives, and go on with `cases with no tests`. Without `--server` the
+   left, with the author and date such a line gives, and that the review page's 「경우 종류」 tab lists those with such
+   a line under 「사람이 정할 것」 to decide several at once; then go on with `cases with no tests`. Without `--server` the
    marks are written straight into the marks folder, so an open review page shows them only once it is reloaded;
    tell the user so.
    Under `cases with no tests`, each `### <ID>` is a screen or call the kind is picked for whose `no tests` tags no

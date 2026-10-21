@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { Locator, Page } from 'playwright-core';
 import { addJudgment } from '../src/judgments.ts';
 import { loadMarks } from '../src/marks.ts';
-import { withRebuiltFixture, signer, withServer, postMark, initGitRepoNamed, rebuild, browserMissing, toList, withPage, openScreenInfo, openLinkGroups, screenBox, tipLines, needTag, DOCUMENT_TABLE, HOME_NODE } from './review-helpers.ts';
+import { withRebuiltFixture, signer, withServer, postMark, initGitRepoNamed, rebuild, browserMissing, toList, withPage, openScreenInfo, openLinkGroups, screenBox, tipLines, needTag, DOCUMENT_TABLE, HOME_NODE, CASE_KINDS } from './review-helpers.ts';
 import type { Config, PageData, Kept } from './review-helpers.ts';
 
 test('in a browser, the header does not name an author taken from the config, and a mark saved on the page is signed with the config author even when git has a name', { skip: browserMissing }, async () => {
@@ -234,6 +234,66 @@ test('in a browser, the two left tabs stay on one line inside the column, also w
         await scrollbar();
         await p.click('#left .views.side button:nth-child(2)');
         assertFits(await measure(), 'three-digit counts on every tab, a classic scrollbar and the widest tab chosen');
+      })));
+});
+
+test('in a browser, with 「경우 종류」 as a third left tab, a tab that does not fit beside the others moves whole to a second line, so no tab name is cut, also with three-digit counts and a classic scrollbar', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: { boundary: CASE_KINDS.boundary } }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        let counts: { screens: number; untagged: number; undecided: number } | null = null;
+        await p.route('**/api/data', async (route) => {
+          const res = await route.fetch();
+          const data: PageData & { caseTargets: Record<string, { undecided: string[] }> } = await res.json();
+          if (counts) {
+            const grow = <T>(list: T[], n: number) => Array.from({ length: n }, (_, i) => list[i % list.length]);
+            data.map.screens = grow(data.map.screens, counts.screens);
+            delete data.tests.untagged;
+            data.tests.untaggedCount = counts.untagged;
+            data.caseTargets.boundary.undecided = grow(data.caseTargets.boundary.undecided, counts.undecided);
+          }
+          await route.fulfill({ response: res, json: data });
+        });
+        const measure = () => p.evaluate(() => {
+          const left = document.getElementById('left')!;
+          const row = left.querySelector('.views.side')!;
+          const tabs = [...row.children];
+          return {
+            labels: tabs.map((b) => b.textContent),
+            tops: tabs.map((b) => Math.round(b.getBoundingClientRect().top)),
+            heights: tabs.map((b) => Math.round(b.getBoundingClientRect().height)),
+            cut: tabs.map((b) => {
+              const name = b.querySelector('.tab-name')!;
+              const text = document.createRange();
+              text.selectNodeContents(name);
+              return name.getBoundingClientRect().width < text.getBoundingClientRect().width - 0.1;
+            }),
+            rowScroll: [row.scrollWidth, row.clientWidth],
+            leftScroll: [left.scrollWidth, left.clientWidth],
+          };
+        });
+        const show = async (c: typeof counts, scrollbar: boolean) => {
+          counts = c;
+          await p.reload();
+          await toList(p);
+          await p.waitForSelector('#screen-list li');
+          if (scrollbar) await p.addStyleTag({ content: '#left { padding-right: 31px !important; }' });
+          const m = await measure();
+          assert.deepEqual(m.cut, [false, false, false], `${m.labels}: no tab name is cut`);
+          assert.equal(new Set(m.heights).size, 1, `${m.labels}: every tab is one line tall ${m.heights}`);
+          assert.ok(m.rowScroll[0] <= m.rowScroll[1] && m.leftScroll[0] <= m.leftScroll[1], `${m.labels}: nothing scrolls sideways`);
+          return m;
+        };
+
+        let m = await show(null, false);
+        assert.deepEqual(m.labels, ['화면 11', '태그 없음 13', '경우 종류 21']);
+        assert.equal(new Set(m.tops).size, 1, 'the three tabs share one line while they fit');
+
+        for (const scrollbar of [false, true]) {
+          m = await show({ screens: 111, untagged: 999, undecided: 425 }, scrollbar);
+          assert.deepEqual(m.labels, ['화면 111', '태그 없음 999', '경우 종류 425']);
+          assert.ok(m.tops[0] === m.tops[1] && m.tops[2] > m.tops[0], `the case tab moves below the other two ${m.tops}`);
+        }
       })));
 });
 

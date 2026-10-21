@@ -808,12 +808,44 @@ has a row per value under it, with that value's tests by depth and result, or �
 kind a chip says who picked it: 「규칙」 when a rule in `picks` did, with the rule shown on hover, or the name of the
 person or agent who did, with the date on hover and, when a rule picks it too, the rule. A kind a rule picks starts
 out picked, and while it is picked, whoever picked it, its row has 「이 요청은 규칙에서 빼기…」 (「이 화면은 규칙에서 빼기…」 on a screen);
-that and pressing its button both open a dialog that saves only with a reason. The kind then shows as 「불필요 ·
+that and pressing its button both open a dialog that saves only with a reason. The kind then shows as 「대상 아님 ·
 <author>」 with the date and the rule on hover and the reason on the line below, and pressing its button again picks
-it back in that person's name. A kind marked 「불필요」 with a reason on a screen or call no rule picks, as `case` writes
-it, shows the same row, with the date on hover; one pressed off with no reason shows no row. When no rule picks
-that screen or call any more, the row also says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. The flow shows the same
-middle and right panes for a picked screen.
+it back in that person's name. A kind marked 「대상 아님」 with a reason on a screen or call no rule picks, as `case` writes
+it, shows the same row, with the date on hover; one pressed off with no reason shows no such row. Each kind
+still undecided on that screen or call (see **Task list**) has its own lines under the others: the kind, and below it
+「「미판정」 아직 아무도 정하지 않았습니다」 with two icon buttons: ✓ saves 「대상」 at once, and ✕ asks for a reason, as 「대상 아님…」 does, and
+saves nothing without one. Hovering over them, or a screen reader, gives 「대상 — 이 요청에서 이 경우를 시험합니다」 and
+「대상 아님… — 이유를 적고 이 요청에서는 시험하지 않습니다」 (「화면」 for a screen). Where a mark, a person's or an agent's,
+keeps the kind undecided, the line says who left it instead of 「아직 아무도 정하지 않았습니다」, in the words of the
+「경우 종류」 tab: 「<author> 가 <date> 에 이유 없이 뺐습니다」 for a kind pressed off, or 「… 에 규칙에서 뺐지만 규칙이 더는
+고르지 않습니다」 with the old reason for a kind taken out of a rule that no longer picks that screen or call. Only where
+the kind no longer takes that screen or call as a candidate at all does a kind taken out of a rule keep its 「대상
+아님」 row, which then says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. The kind buttons below stay as they
+are. The flow shows the same middle and right panes for a picked screen.
+
+**Case kinds tab.** With `caseKinds` set, the list has a third tab, 「경우 종류 N」, after 「화면」 and 「태그 없음」; N adds
+up the undecided candidates of every kind, and is 0 when none is left. When the three do not fit on one line, as in a
+narrow list with three-digit counts, 「경우 종류 N」 moves to a second line. The tab lists the kinds in config order, each
+with its text, `case:<kind>` and 「대상 N · 미판정 N · 빈칸 N」, where 빈칸 is the number of cases with no tests that
+`rebuild` prints. A chosen kind shows four numbers: 「대상」 with how many a rule, a person and an agent (`duru case`)
+picked, 「대상 아님」, 「미판정」 and 「시험 없는 값 칸」. A screen or call a rule picks and a person or agent then marked
+「대상」 counts as theirs, so the rule's number can be smaller than what the rule picks. Under them each rule has a line
+with what it picks, how many it picks and how many of those were taken out as 「대상 아님」, and 「아무것도 고르지 못함」
+when it picks nothing; a kind without rules says every screen and call is a candidate. Pressing a rule's line shows
+only what it picks in the 「대상」 list, until 「모두 보기」 or the line is pressed again. 「대상 N」 and 「대상 아님 N」 start
+folded and stay as they were left when the page is drawn again; 「대상 아님」 shows who, when and why. 「미판정 N」 lists the
+undecided candidates in three groups, 「쓰기 요청」 (a request whose method was not read among them), 「조회 요청」 and
+「화면」, leaving out an empty group; each request carries its method in colour (GET blue, POST green, PUT orange, PATCH
+teal, DELETE red). A candidate kept undecided by a person's mark has a line under it: 「<author> 가 <date> 에 이유 없이
+뺐습니다」, or 「… 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다」 with the old reason. These are the ones `duru case`
+leaves to a person; 「사람이 정할 것 N」 above the list shows only them. A check box on each line, on each group title
+and 「모두 고르기」 choose candidates; once one is chosen, 「대상 (N)」 or 「대상 아님… (N)」 shows and decides them all, each
+with its own mark; 「대상 아님…」 asks for one reason and saves nothing without one. The marks are saved one by one; if
+one fails, saving stops, a line says which were saved and which were not, and those not saved stay checked. While saving, the other tabs and
+views are locked. Pressing a line shows that screen or call's conversation and comment form on the right, kept apart
+from the one chosen in 「화면」; a comment left unsaved there is asked about at 「리뷰 끝」. Pressing the name opens the
+screen, or the call on the screen that sends it. The address is `#cases?kind=<kind>&node=<ID>`; an unknown kind
+goes to 「화면」. A kind decided here is listed under 「전체」's 「변경 기록」, where 「대상」 reads 켬 and 「대상 아님」 reads 끔.
 
 **Pane widths.** The edge on either side of the middle pane, in the list, in the story tab and beside a picked screen
 in the flow, can be dragged to widen or narrow the panes; the line lights up when the
