@@ -1022,9 +1022,9 @@ test('a case sent with --server is saved by the running review in the same shape
       const byNode = Object.fromEntries(loadMarks(marksDir).map((m) => [m.target!.node, m]));
       const direct = byNode['GET:/api/v1/member/list'];
       const [sent, renamed] = [byNode['GET:/api/v1/document/list'], byNode['PUT:/api/v1/document/{documentId}/name']];
-      const shape = ({ id, date, target, ...rest }: Mark) => ({ ...rest, target: { ...target, node: undefined }, id: typeof id, date: typeof date });
+      const shape = ({ id, date, target, codeHash, ...rest }: Mark) => ({ ...rest, target: { ...target, node: undefined }, id: typeof id, date: typeof date, codeHash: typeof codeHash });
       assert.deepEqual(shape(sent), shape(direct));
-      assert.deepEqual(shape(sent), { target: { case: 'ended', node: undefined }, status: 'needed', note: '', author: 'agent', via: 'duru case', id: 'string', date: 'string' });
+      assert.deepEqual(shape(sent), { target: { case: 'ended', node: undefined }, status: 'needed', note: '', author: 'agent', via: 'duru case', id: 'string', date: 'string', codeHash: 'string' });
       assert.deepEqual([renamed.rule, renamed.author, renamed.via], [{ index: 0, pick: ENDED_KINDS.ended.picks[0] }, 'agent', 'duru case']);
       for (const m of [direct, sent, renamed]) assert.ok(fs.existsSync(path.join(marksDir, fileSafe(m.target!.node!), recordName(m))), m.target!.node);
 

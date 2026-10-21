@@ -25,7 +25,8 @@ const screensOf = (result: LinkResult) => {
   assert.ok('file' in result);
   return [...result.screens.keys()];
 };
-const withoutRun = ({ meta, ...rest }: { meta?: unknown; [key: string]: unknown }) => rest;
+const withoutHash = <T extends { codeHash?: string }>({ codeHash, ...rest }: T) => rest;
+const withoutRun = <T extends { meta?: unknown; screens: { codeHash?: string }[]; calls: { codeHash?: string }[] }>({ meta, ...rest }: T) => ({ ...rest, screens: rest.screens.map(withoutHash), calls: rest.calls.map(withoutHash) });
 
 async function inApp(callback: (dir: string) => void | Promise<void>, { rewrite = false, tsconfig = true }: { rewrite?: boolean; tsconfig?: boolean } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-alias-'));
@@ -83,7 +84,7 @@ test('a screen takes the API calls, settings reads and links of a file it import
     fs.writeFileSync(home, text.replace("'./DocumentTable'", "'@app/components/DocumentTable'"));
     const map = await buildMap(loadConfig(path.join(dir, 'config.json')));
     const expected = screen(baseline, '/home#Home');
-    assert.deepEqual(screen(map, '/home#Home'), expected);
+    assert.deepEqual(withoutHash(screen(map, '/home#Home')), withoutHash(expected));
     assert.ok(expected.sourceFiles.includes('components/DocumentTable.js'));
     assert.ok(expected.apiCalls.some((c) => c.file === 'components/DocumentTable.js'));
     assert.ok(expected.settingReads.some((r) => r.file === 'components/DocumentTable.js'));
