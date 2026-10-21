@@ -277,7 +277,8 @@ client with example results and a config to start from.
 - `storiesDir` — folder of story files, or a single story file (default: `stories` in `outDir`). The review page
   writes the visits recorded on it into `records/` there.
 - `visitRecords` — visit record files or folders that story candidates are made from (optional), as
-  `["qa/records"]`. Playwright reports in `tests` whose tests left a trace give candidates too.
+  `["qa/records"]`; duru's Cypress recorder writes such a folder (see **Story candidates**). Playwright reports in
+  `tests` whose tests left a trace give candidates too.
 - `baselineMap` — the `map.json` of an earlier version of the same client (optional), such as the map kept from
   the last release. `rebuild` and the review page then show what changed since it. Build it with the same duru as
   the current map: a map from another duru can differ for reasons in duru rather than in the client, and one from a
@@ -668,6 +669,23 @@ each address goes to the screen whose route path matches it, steps in a row on t
 an address no screen matches stays as it is. The inputs of the steps of one screen step are joined, a later value for
 the same box taking the place of the earlier one, and the counts in `skipped` are added up. A candidate with the screen order of a story or of a discarded candidate is not offered. A record that
 cannot be read is skipped and noted with its path and why.
+
+A Cypress suite writes these records with the recorder duru ships, added by one line in its support file
+(`cypress/support/e2e.js`):
+
+```js
+import 'duru/recorders/cypress.js';
+```
+
+`duru` resolves once duru is installed in the Cypress project with `npm install <path to the clone>`; without that,
+import the file by its path in the clone. Each test that passes writes `cypress/visits/<spec>/<titles>.json`, where
+`<spec>` is the spec's path in the project and `<titles>` the titles of its `describe` blocks and its own joined by
+` -- `, without the words starting with `@` and cut at 200 bytes. Its steps are the addresses the app was at, one
+for each change of address, also when the app changed it with `history.pushState` without loading a page. A test that
+fails or opens no page writes nothing, and a test passed on a retry writes the attempt that passed; the next run
+replaces the file.
+Name another folder, relative to the Cypress project, with `duruVisitRecords` under `expose` in the Cypress config
+(under `env` before Cypress 16). List the folder in `visitRecords`, as `["../e2e/cypress/visits"]`.
 
 A Playwright test needs no visit record when its report is listed in `tests` and the test ran with Playwright's
 `trace` option on: the screens it passed through, read from its trace by `rebuild`, become a candidate whose source

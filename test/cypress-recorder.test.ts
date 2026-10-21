@@ -148,3 +148,14 @@ test('a title too long for a file name is cut to the first 200 bytes of the name
     assert.deepEqual(filesUnder(path.join(dir, 'cypress/visits/cypress/e2e/long.cy.js')), [`${'문서'.repeat(33)}.json`]);
   });
 });
+
+test('the README says how to add the recorder and what it writes, and the decision record says how it is shipped and why', () => {
+  const readme = read('../README.md');
+  assert.match(readme, /import 'duru\/recorders\/cypress\.js';/);
+  assert.match(readme, /`duruVisitRecords`/);
+  assert.match(readme, /writes `cypress\/visits\/<spec>\/<titles>\.json`/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*duru ships its Cypress recorder as the plain script `recorders\/cypress\.js`/);
+  assert.match(decisions, /- A `cy\.task` that writes the record from `setupNodeEvents`/);
+  assert.match(decisions, /- A package export such as `duru\/cypress`/);
+});

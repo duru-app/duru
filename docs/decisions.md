@@ -3128,6 +3128,39 @@ reads like the page's 「접근 조건」 and 「링크 조건」.
 - The English of the README and the agent instructions keeps "case kind", as the config key and the commands do, so a
   reader can match it with `caseKinds` and `case kind ended: …`; only the Korean page names they quote changed.
 
+**duru ships its Cypress recorder as the plain script `recorders/cypress.js`, which a Cypress support file imports in
+one line, and the recorder writes each visit record with `cy.writeFile`.**
+Asked for in #223: a browser test that is not a Playwright test had to write visit records by hand to give story
+candidates. The script listens to `url:changed`, which Cypress fires for a page load and for an address the app
+changes with `history.pushState` alike, so a single page app's moves become steps; it keeps the `http`/`https`
+addresses only, which leaves out the `about:blank` Cypress opens between tests, and an address the same as the one
+before it. Only a test that passed writes, as only a passing run of a traced Playwright test gives a candidate, and a
+test passed on a retry writes the attempt that passed. The file is named after the titles joined by ` -- `, as Cypress
+names its screenshots, without the words starting with `@`, as a trace candidate's name leaves out tags; the spec's
+path is the folder above it, so tests of the same title in two specs do not overwrite each other. The name is cut at
+200 bytes, below the 255 most file systems allow, since a `cy.writeFile` that fails fails the test in its `afterEach`
+and Cypress then skips the rest of the spec; two tests whose names agree in those 200 bytes write one file. The folder
+is read with `Cypress.expose`, since Cypress 16 removed `Cypress.env` and throws when it is called, and with
+`Cypress.env` on a Cypress older than that. The script imports nothing and is plain JavaScript, so Cypress bundles it
+into the support file in a project without TypeScript as well. Nothing under `src/` changed: duru reads these files as
+it reads any visit record.
+duru's suite does not install Cypress, since every pull request's run would download its binary. It loads the
+script with a fake `Cypress` that fires the same events the real one does, with page loads apart from `pushState`
+moves, and runs `rebuild` over what it wrote. Measured on 2026-10-22 with Cypress 16.1.1 in Electron, outside the
+repository: a spec moving `/signin → /home → /document/draft → /document/42` by `pushState` alone, and one following
+a link from `/home` to `/help`, wrote one record each, a failed test wrote none, and `rebuild` on the example client
+stored the candidates `/signin#SignIn > /home#Home > /document/:tab#DocumentList > /document/:id#DocumentDetail` and
+`/home#Home > /help#Help`.
+- A `cy.task` that writes the record from `setupNodeEvents`, as #223 sketched: a task runs only once it is
+  registered in the Cypress config, so the setup would be a second edit in a second file. `cy.writeFile` also writes
+  from Cypress's Node side, relative to the project, and makes the folders, with nothing to register. Moving to a
+  task later only adds that line to each project's config.
+- A package export such as `duru/cypress`: `exports` in `package.json` would close every other path in the package to
+  an importer, a change to what duru offers that is hard to take back. Without `exports`, `duru/recorders/cypress.js`
+  resolves as a path inside the package, and an export can still be added later for the same file.
+- Listening to `window:load` or reading the address after each `cy.visit`: a `pushState` move loads no page, so it
+  would be missed.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
