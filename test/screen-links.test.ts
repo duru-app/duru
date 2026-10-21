@@ -571,3 +571,45 @@ export default function Home({ flag }) {
     ['{?}', 6, [], []],
   ]);
 });
+
+test('Routes takes the routes a Fragment or React.Fragment wraps, at whatever depth', async () => {
+  const routes = `import React, { Fragment } from 'react';
+import { Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Help from './Help';
+import Login from './Login';
+import Start from './Start';
+
+export default function AppRoutes({ auth }) {
+  return (
+    <Routes>
+      <Route path="/home" element={<Home />} />
+      {auth && (
+        <Fragment>
+          <Route path="/team" element={<Team />} />
+        </Fragment>
+      )}
+      <React.Fragment>
+        <Route path="/rf" element={<Help />} />
+      </React.Fragment>
+      <Route path="/admin">
+        <Fragment key="admin">
+          <Route path="login" element={<Login />} />
+        </Fragment>
+      </Route>
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const home = `import { Link } from 'react-router-dom';\n\nexport default function Home() {\n  return <nav><Link to="/team">team</Link><Link to="/rf">rf</Link><Link to="/admin/login">login</Link></nav>;\n}\n`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home }));
+  const login = map.screens.find((s) => s.id.endsWith('#Login'))!.id;
+  assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/home#Home')!.links.map((l) => [l.to, l.targets])), {
+    '/team': ['/team#Team'],
+    '/rf': ['/rf#Help'],
+    '/admin/login': [login],
+  });
+  assert.deepEqual(map.entries.map((e) => e.screen), ['/home#Home', '/start#Start']);
+});
