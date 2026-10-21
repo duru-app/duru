@@ -692,7 +692,8 @@ the discard kept.
 
 `rebuild` keeps each candidate as a file in `candidates/` in `storiesDir`, one for each screen order that has no
 file there yet, holding the name, the screens, the source and the date it was first seen. Files are only added,
-never changed or deleted; keep the folder in git with the stories. If a file cannot be written, `rebuild` stops
+never deleted, and changed only where the review page keeps the lines switched off on a candidate from a comment;
+keep the folder in git with the stories. If a file cannot be written, `rebuild` stops
 storing and prints why under the candidate line. The candidates listed are these files together with what the
 records and traces give now, and for a screen order in both, what they give now is shown. So a candidate stays
 after a `rebuild` whose results have no traces, or once its record is gone. An accepted or discarded candidate keeps
@@ -720,7 +721,10 @@ agent put in carries `reason`, one line saying why it is there:
 It is written into `candidates/` in `storiesDir` with its source, `{ "comment": <comment ID>, "added": [{ "step",
 "reason" }, …], "written": [{ "step", <field>: [ … ] }, …] }`: the steps the agent put in with their reasons and the
 lines the agent wrote, numbered by the steps of the candidate. The lines of each step, the reviewer's and the
-agent's, are in `stepFields`. A story accepted from it keeps that source, and every line goes into its steps. With
+agent's, are in `stepFields`. The lines of `written` switched off on the review page are kept in the same file as
+`offLines`, `[{ "step", "field", "line" }, …]`, each naming its step, its field and its place in that field from 1. A
+story accepted from it gets the reviewer's lines and the agent's lines still on, and keeps that source with only
+those lines in `written`. With
 `--server` and the address the review printed, the running review writes the file and every open page lists the
 candidate at once; without it, the file is written directly. The command prints `wrote <file>`, then one line for
 each link between two steps, `step 1 → 2: from <screen> to <screen> — <verdict>`, worded as in the task list. A
@@ -986,8 +990,13 @@ address of a chosen candidate holds its screen order, as `#story?candidate=/home
 posted with `candidate` has a purple 「에이전트」 chip beside its name in the list and in the title, and under the title,
 in place of the record file, the first line of the comment that asked for it, who left it and the day; pressing that
 line opens 「전체」 of the conversation at the comment. Each screen the agent put in has the same chip beside its name
-and, below its ID, 「이유」 in bold with the reason. The screens and lines the reviewer chose carry no mark. A story
-accepted from it shows the same comment line under its name. 「버리기」 opens
+and, below its ID, 「이유」 in bold with the reason. The screens and lines the reviewer chose carry no mark. Each line
+the agent wrote, an input, a condition of the link into a step, a condition or an expected result, has a box in
+front of it, on at first. A line switched off is struck through, and above 「스토리로 받기」 the number of lines on
+shows out of all the agent's lines, as 「3 / 4」. Each press is saved into the candidate file, so a line switched off
+stays off after a reload or when the page is opened again. 「스토리로 받기」 and 「고쳐서 받기」 then write into the
+story file only the lines on, together with the reviewer's lines, which have no box. A screen the agent put in is
+taken out after accepting, with 「순서 고치기」. A story accepted from it shows the same comment line under its name. 「버리기」 opens
 the window that 「제외」 opens, naming the candidate and its screen order, and the candidate is discarded only once a
 reason is written there. 「버리기」 in the window or Ctrl+Enter saves it and moves on to the next candidate; 「취소」 or
 Escape closes the window, and a click outside it does not. If
