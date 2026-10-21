@@ -486,7 +486,7 @@ const chips = (section: Locator) => section.locator('.case-head .chip').evaluate
 const kindButtons = (section: Locator) => section.locator('.case-kinds button').evaluateAll((els) => els.map((e) => [e.textContent, e.getAttribute('aria-pressed')]));
 const DATE_TITLE = (tail: string) => new RegExp(`^\\d{2}\\. \\d{1,2}\\. \\d{1,2}\\. (오전|오후) \\d{1,2}:\\d{2} ${tail}`);
 
-test('in a browser, 「경우별 테스트」 shows 「규칙」 for a kind a rule picked, the author for one a person picked, and 「불필요 · <author>」 with its reason under it for one taken out, with the rule or the date on hover, in screen info and call details', { skip: browserMissing }, async () => {
+test('in a browser, 「경우별 테스트」 shows 「규칙」 for a kind a rule picked, the author for one a person picked, and 「대상 아님 · <author>」 with its reason under it for one taken out, with the rule or the date on hover, in screen info and call details', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: RULED }, (config) =>
     withServer(config, 'reviewer', async (base) => {
       for (const node of [RENAME, '/admin/member#AdminMember']) assert.equal((await postMark(base, { target: { node, case: 'boundary' }, status: 'needed' })).status, 201);
@@ -508,7 +508,7 @@ test('in a browser, 「경우별 테스트」 shows 「규칙」 for a kind a ru
         assert.deepEqual(await call.locator('li .case').allTextContents(), [RULED.ended.text]);
         const out = call.locator('li.case-left-out');
         const [[text, title]] = await chips(call);
-        assert.equal(text, '불필요 · reviewer');
+        assert.equal(text, '대상 아님 · reviewer');
         assert.match(title!, DATE_TITLE(`에 규칙에서 뺐습니다\n${RULE_TEXT.replace(/[()*/.]/g, '\\$&')}$`));
         assert.equal(await out.locator('.case-reason').textContent(), '이유 보관은 끝난 문서에서도 된다');
         assert.equal(await out.locator('.case-unused').count(), 0);
@@ -526,7 +526,7 @@ test('in a browser, 「경우별 테스트」 shows 「규칙」 for a kind a ru
     }));
 });
 
-test('in a browser, 「이 요청은 규칙에서 빼기…」 and the pressed kind button of a kind a rule picked open the same dialog, which saves nothing without a reason and keeps the reason when saving fails; once saved the row is 「불필요 · <author>」 and pressing the kind again puts it back as that person\'s pick, whose row can still be taken out of the rule', { skip: browserMissing }, async () => {
+test('in a browser, 「이 요청은 규칙에서 빼기…」 and the pressed kind button of a kind a rule picked open the same dialog, which saves nothing without a reason and keeps the reason when saving fails; once saved the row is 「대상 아님 · <author>」 and pressing the kind again puts it back as that person\'s pick, whose row can still be taken out of the rule', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: RULED }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
@@ -564,7 +564,7 @@ test('in a browser, 「이 요청은 규칙에서 빼기…」 and the pressed k
         await p.click(`${asked} button.discard`);
         await call.locator('li.case-left-out').waitFor();
         assert.equal(await p.locator(asked).isVisible(), false);
-        assert.deepEqual((await chips(call)).map(([t]) => t), ['불필요 · reviewer']);
+        assert.deepEqual((await chips(call)).map(([t]) => t), ['대상 아님 · reviewer']);
         assert.equal(await call.locator('li.case-left-out .case-reason').textContent(), '이유 이름은 끝난 문서에서도 막지 않는다');
         assert.equal(await endedButton.getAttribute('aria-pressed'), 'false');
         assert.deepEqual(picks(), [[RENAME, 'ended', 'not-needed', '이름은 끝난 문서에서도 막지 않는다', RULE_ENDED]]);
@@ -618,7 +618,7 @@ test('in a browser, cancelling the reason dialog puts the focus back on the butt
       })));
 });
 
-test('in a browser, a request taken out of a rule that no longer picks it shows its 「불필요」 row as no longer used, also when its kind has no rules left, while a plain 「불필요」 shows no row', { skip: browserMissing }, async () => {
+test('in a browser, a request taken out of a rule that no longer picks it shows its 「대상 아님」 row as no longer used, also when its kind has no rules left, while a plain 「대상 아님」 shows no row', { skip: browserMissing }, async () => {
   const kinds = { boundary: CASE_KINDS.boundary, ended: { ...RULED.ended, picks: [{ screen: '/document/**', methods: ['POST'] }] }, legacy: CASE_KINDS.legacy };
   await withRebuiltFixture({ caseKinds: kinds }, (config) => {
     const at = new Date('2026-10-04T01:00:00Z');
@@ -633,9 +633,9 @@ test('in a browser, a request taken out of a rule that no longer picks it shows 
         assert.deepEqual(await call.locator('li .case').allTextContents(), [RULED.ended.text, CASE_KINDS.legacy]);
         assert.equal(await call.locator('li.case-left-out.unused').count(), 2);
         const [ended, legacy] = await chips(call);
-        assert.equal(ended[0], '불필요 · QA 에이전트');
+        assert.equal(ended[0], '대상 아님 · QA 에이전트');
         assert.match(ended[1]!, /에 규칙에서 뺐습니다\n지금 규칙: 화면 경로 \/document\/\*\* · 메서드 POST \(설정 caseKinds\.ended\.picks 1번째 줄\)$/);
-        assert.equal(legacy[0], '불필요 · reviewer');
+        assert.equal(legacy[0], '대상 아님 · reviewer');
         assert.match(legacy[1]!, /에 규칙에서 뺐습니다\n지금 규칙 없음$/);
         assert.deepEqual(await call.locator('.case-reason').allTextContents(), ['이유 이름은 막지 않는다', '이유 옛 문서도 같은 칸을 쓴다']);
         assert.deepEqual(await call.locator('.case-unused').allTextContents(), Array(2).fill('규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다'));
@@ -644,7 +644,7 @@ test('in a browser, a request taken out of a rule that no longer picks it shows 
   });
 });
 
-test('in a browser, a 「불필요」 with a reason on a request no rule picks, written by duru case, shows as 「불필요 · <author>」 with its reason and the date on hover, while the data lists the kind\'s undecided requests without it, writes first', { skip: browserMissing }, async () => {
+test('in a browser, a 「대상 아님」 with a reason on a request no rule picks, written by duru case, shows as 「대상 아님 · <author>」 with its reason and the date on hover, while the data lists the kind\'s undecided requests without it, writes first', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: RULED }, (config, copy) => {
     const read = 'GET:/api/v1/document/{documentId}';
     execFileSync(process.execPath, [CLI, 'case', path.join(copy, 'config.json'), 'ended', read, 'not-needed', '--note', '읽기는 끝난 문서에서도 된다'], { stdio: 'pipe' });
@@ -659,8 +659,8 @@ test('in a browser, a 「불필요」 with a reason on a request no rule picks, 
         await openCall(p, '/document/:id', read);
         const call = callCases(p);
         const [[text, title]] = await chips(call);
-        assert.equal(text, '불필요 · agent');
-        assert.match(title!, DATE_TITLE('에 불필요로 정했습니다$'));
+        assert.equal(text, '대상 아님 · agent');
+        assert.match(title!, DATE_TITLE('에 대상 아님으로 정했습니다$'));
         assert.equal(await call.locator('li.case-left-out .case-reason').textContent(), '이유 읽기는 끝난 문서에서도 된다');
         assert.equal(await call.locator('.take-out').count(), 0);
         assert.deepEqual(await kindButtons(call), [[CASE_KINDS.boundary, 'false'], [RULED.ended.text, 'false'], [RULED.legacy.text, 'false']]);

@@ -2361,7 +2361,7 @@ page shows 「규칙」. When no rule picks the target any more, also when the k
 keeps meaning what it meant (since #314 only when it has a note; without one the target is undecided). The index and the rule are both kept because either alone can mislead after the config
 changes: the index after a rule is added in front, the rule after it is edited. Old mark files are read unchanged.
 On the page the row of a kind says who picked it, 「규칙」 with the rule on hover or the author with the date on hover,
-on every kind whether it has rules or not, and a kind taken out of a rule shows as 「불필요 · <author>」 with the reason
+on every kind whether it has rules or not, and a kind taken out of a rule shows as 「대상 아님 · <author>」 with the reason
 under it. 「이 요청은 규칙에서 빼기…」 on the row of a kind a rule picks, while it is picked by anyone, and the pressed kind
 button both open the reason dialog the discard flows use, which saves nothing without a reason; a kind button that
 is off picks the kind back with no reason.
@@ -2632,7 +2632,7 @@ Alternatives compared:
 marked as written by the command; `duru undecided` lists what nobody decided and exits with 3 while anything is
 left; the task list carries both the undecided candidates and the picked cases with no tests.**
 Asked for in #314 (2026-10-19), the third part of #310; the driver chose what goes in the list, the extra field, and
-how a reasoned and an unreasoned 「불필요」 outside the rules count. A rule picks what its shape says, so whatever it
+how a reasoned and an unreasoned 「대상 아님」 outside the rules count. A rule picks what its shape says, so whatever it
 misses has to be decided one by one, and on into-sign 1.5.0 one kind with a rule on the participant write requests
 left 182 candidates undecided (78 of them write requests), a kind without rules 243. Nobody clicks through that many
 on the page, so an agent decides them from the source, and the reviewer checks the reasons afterwards. The names are
@@ -2643,17 +2643,17 @@ instead. The author is `agent` unless `--author` names one, and never the config
 agent's decision is not signed with the reviewer's name. A mark the command writes carries `"via": "duru case"`, the one field the page
 does not write, so the count of rule, person and agent picks and a later hold on agent picks can tell them apart;
 the page's own saves drop such a field. The command refuses, with the reason and exit code 1, a kind not in the
-config, an ID not on the map, a 「불필요」 without a note whether a rule picks the target or not, a target whose
-current mark a person left, and a 「불필요」 off the side the rules pick unless there is a mark there to take
+config, an ID not on the map, a 「대상 아님」 without a note whether a rule picks the target or not, a target whose
+current mark a person left, and a 「대상 아님」 off the side the rules pick unless there is a mark there to take
 back (so a hand-picked 「필요」 can still be withdrawn). A 「필요」 is written also where a rule already picks the
 target, so the pick stays when the rule changes.
-A 「불필요」 outside the rules now counts only with a note: a kind pressed on and off again on the page leaves a mark
+A 「대상 아님」 outside the rules now counts only with a note: a kind pressed on and off again on the page leaves a mark
 with no note, and calling that a decision would hide the candidate. Such a candidate stays undecided and is handed to
 a person: its mark is a person's, and the agent never changes a person's mark, also where the mark leaves the target
 undecided, since the command would otherwise silently reverse what the reviewer pressed. It keeps `undecided` at 3,
 and its line says only a person can decide it, so the agent tells the user instead of looping; a place on the page
 to add the reason comes with the case kind tab (#313). The buttons work as before, and a rule's pick is still taken
-out only with a reason. A reasoned 「불필요」 outside the rules shows in 「경우별 테스트」 as 「불필요 · <author>」 with the
+out only with a reason. A reasoned 「대상 아님」 outside the rules shows in 「경우별 테스트」 as 「대상 아님 · <author>」 with the
 reason, as one taken out of a rule does; one without a reason shows no row, as before.
 `undecided` exits with 0 when nothing is left, 3 while something is, 1 when the config, the map or the marks cannot be
 read, and 2 when called wrongly, since duru already uses 1 for failure and 2 for misuse, and grep, diff, ESLint and
@@ -2671,13 +2671,13 @@ does not stop at that line. `rebuild` prints the undecided count and the cases w
 Reference cases: SonarQube security hotspots start as 「To review」 and are set to 「Safe」 with a comment, and its
 quality gate fails until every new hotspot is reviewed, which is where an undecided candidate staying listed until
 someone decides it comes from; SARIF 2.1.0 keeps `notApplicable`, `open` and `review` apart, which is why undecided
-and 「불필요」 are different states; Semgrep keeps ignored findings with their reason instead of dropping them.
+and 「대상 아님」 are different states; Semgrep keeps ignored findings with their reason instead of dropping them.
 Alternatives compared:
 - Listing only the undecided write requests: the kind without rules would never get decided, and the driver chose
   every candidate.
 - Telling agent marks apart by the author `agent`: a person can type that name on the page, and `--author` can name
   anything, so the field is the only thing that says how the mark was written.
-- Counting a 「불필요」 without a note as decided: the candidates a reviewer only pressed off would never be offered.
+- Counting a 「대상 아님」 without a note as decided: the candidates a reviewer only pressed off would never be offered.
 - Going through the review server only, as `reply --server` does: needs a running review, while an agent mostly
   decides in bulk between reviews, so the server came later as an option (#350), not as the only way.
 - One exit code for both "something is left" and "something failed": an agent could not tell a broken config from

@@ -808,9 +808,9 @@ has a row per value under it, with that value's tests by depth and result, or �
 kind a chip says who picked it: 「규칙」 when a rule in `picks` did, with the rule shown on hover, or the name of the
 person or agent who did, with the date on hover and, when a rule picks it too, the rule. A kind a rule picks starts
 out picked, and while it is picked, whoever picked it, its row has 「이 요청은 규칙에서 빼기…」 (「이 화면은 규칙에서 빼기…」 on a screen);
-that and pressing its button both open a dialog that saves only with a reason. The kind then shows as 「불필요 ·
+that and pressing its button both open a dialog that saves only with a reason. The kind then shows as 「대상 아님 ·
 <author>」 with the date and the rule on hover and the reason on the line below, and pressing its button again picks
-it back in that person's name. A kind marked 「불필요」 with a reason on a screen or call no rule picks, as `case` writes
+it back in that person's name. A kind marked 「대상 아님」 with a reason on a screen or call no rule picks, as `case` writes
 it, shows the same row, with the date on hover; one pressed off with no reason shows no row. When no rule picks
 that screen or call any more, the row also says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. The flow shows the same
 middle and right panes for a picked screen.
