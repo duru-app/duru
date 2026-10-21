@@ -141,6 +141,15 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   whose reason starts with `table item <key> at <file>:<line>` names an item of such a table that gives no screen,
   because it has no value for the field the route reads or that value could not be read; tell the user which items
   these are.
+- A `history is not set; <file> calls createBrowserHistory, …` line names the file where the app makes its own
+  history, whose `push` and `replace` calls are then not links on the map, so screens reached only that way show as
+  entry screens. Find what that file exports for the rest of the app to move with, either the history or a
+  function returning it (`getHistory`), add `"history": { "import": "<the import as the app writes it>", "name":
+  "<that export>" }` to the config yourself, run `duru rebuild` again, and tell the user how the count of entry
+  screens changed.
+- A link whose `to` is `{?}` goes to an address duru could not read, such as one held in a variable; it goes to no
+  screen, and a story step from that screen with no other link to the next screen is not judged. Do not take it as
+  a missing link.
 
 ## Sequence
 

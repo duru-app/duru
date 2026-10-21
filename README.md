@@ -91,6 +91,13 @@ client with example results and a config to start from.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
+- `history` — a history the app makes itself and moves through, such as mattermost's `getHistory().push(…)`
+  (optional): `{ "import": "utils/browser_history", "name": "getHistory" }`. `import` is the module as the app
+  imports it, resolved like an import in the source, and `name` what that module exports, a function that returns
+  the history or the history itself. Its `push` and `replace` calls become links. A key of another shape, an
+  `import` that names no file under `srcRoot` or a `name` that file does not export stops the run with an error
+  naming the key. Without it, a file that makes a history with `createBrowserHistory` or `createHashHistory` gets a
+  `history is not set` line (see "What extract and rebuild print").
 - `tsconfig` — the tsconfig file that declares the app's import aliases (optional), such as
   `"client/tsconfig.json"`, relative to the config file like `srcRoot`. Name the file that holds `paths`, itself
   or through `extends`: in a project whose `tsconfig.json` only lists `references`, that is the referenced file,
@@ -370,6 +377,18 @@ places the screen dispatches that type (`dispatchedAt`).
 A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
 inside it.
 
+**Links.** A link is a place where the screen's code goes to another screen: a route constant written in its
+code, the `to` of a `Link`, `NavLink` or `Redirect` imported from react-router (a `Redirect` in a route file is a
+redirect of the routes instead), and the address given to `push` or `replace` of the history react-router hands to
+the screen (`useHistory()`, `props.history`, `this.props.history`) or of the one named in `history`. Each link has
+its address `to`, with `{*}` for a piece that comes from a value, the file and line, the conditions guarding it,
+and `targets`, the IDs of the screens it goes to. A link written with react-router goes where the router would
+send it: the first fitting route of each `<Switch>`, a route that fits only the start of the address giving its
+innermost screen, and a redirect followed to its `to`. Each branch of a `? :` is a link of its own. A link whose
+address duru cannot read has `to` `{?}` and empty `targets`; a move that stays on the screen, such as
+`push({ pathname: location.pathname, state })`, is not a link. React Router 6 (`<Routes>`, `useNavigate()`) is not
+read.
+
 **Calls.** Each API call is a node under `calls` with an ID `<METHOD>:<path>`
 (`GET:/api/v1/document/{documentId}`), its server match, the API functions that make it, the screens that reach
 it, and the on/off `options` of its request body. The server match is one of:
@@ -451,6 +470,9 @@ listing the places whose value the source does not show in full.
   entry can come out of the config (`keptBodyTypeExclusions`).
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring. For a screen made from a table item, `, table item <key> at <file>:<line>` follows.
+- `history is not set; <file> calls createBrowserHistory, and moves through the history it makes are not read as
+  links` — a file that makes a history (`createHashHistory` likewise) while the config has no `history` key, so
+  the `push` and `replace` calls on it are not links on the map. Name it in `history` (`madeHistories`).
 - `route path not read ← <route file>:<line>: stopped at <piece>` — a route whose path duru could not read in full.
   `<piece>` is the first part of the path whose value it could not read, as written where duru stopped: in the
   route file, or, followed by `in <file>:<line>`, in another file when duru followed a name into that file. `, only
