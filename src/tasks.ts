@@ -612,7 +612,7 @@ function reviewText(map: any, targets: KindTargets) {
   return (id: string) => {
     const { node, isCall } = nodeOf(id);
     const { author, date, note } = targets.nodes[id].review!;
-    return `${id} — ${nodeText(node, isCall)} — ${within(author, '    ')}, ${date.slice(0, 10)} — ${quotedNote(note, '    ')}`;
+    return `${id} — ${nodeText(node, isCall)} — ${within(author, '    ')}, ${date.slice(0, 10)} — ${quotedNote(note, '    ') ?? 'no note'}`;
   };
 }
 
