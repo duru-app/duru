@@ -229,7 +229,8 @@ test('a config with one route file written as text or as a list of one gives the
     assert.deepEqual(asList.routeFiles, ['Routes.js']);
     const [fromText, fromList] = await Promise.all([buildMap(asText), buildMap(asList)]);
     assert.ok(fromText.screens.every((s) => s.routeFile === 'Routes.js'));
-    assert.deepEqual(withoutRun({ ...fromList, meta: { ...fromList.meta, srcRoot: null } }), withoutRun({ ...fromText, meta: { ...fromText.meta, srcRoot: null } }));
+    const elsewhere = { srcRoot: null, commit: null, uncommitted: null };
+    assert.deepEqual(withoutRun({ ...fromList, meta: { ...fromList.meta, ...elsewhere } }), withoutRun({ ...fromText, meta: { ...fromText.meta, ...elsewhere } }));
     assert.deepEqual(fromText.screens.map((s) => s.id), IDS);
   });
 });

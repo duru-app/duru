@@ -108,7 +108,9 @@ test('a request a screen source sends with fetch or axios to an address written 
     direct: true,
     endpoints: [{ method: 'GET', url: '/api/mail/unread', line: 9, server: { status: 'match', labels: ['unread'], path: '/api/mail/unread' }, callId: 'GET:/api/mail/unread' }],
   });
-  assert.deepEqual(map.calls.find((c) => c.id === 'GET:/api/mail/unread'), { id: 'GET:/api/mail/unread', method: 'GET', path: '/api/mail/unread', server: { status: 'match', labels: ['unread'], path: '/api/mail/unread' }, apiFunctions: [], screens: [INBOX], options: [] });
+  const { codeHash, ...unread } = map.calls.find((c) => c.id === 'GET:/api/mail/unread')!;
+  assert.match(codeHash!, /^[0-9a-f]{64}$/);
+  assert.deepEqual(unread, { id: 'GET:/api/mail/unread', method: 'GET', path: '/api/mail/unread', server: { status: 'match', labels: ['unread'], path: '/api/mail/unread' }, apiFunctions: [], screens: [INBOX], options: [] });
   assert.deepEqual(map.deadCalls.filter((d) => d.screen === INBOX).map((d) => [d.fn, d.method, d.url, d.callSite]).slice(0, 2), [
     ['window.fetch', null, '/api/mail/seen', 'screens/Inbox.tsx:12'],
     ['fetch', null, '/api/mail/sorted', 'screens/Inbox.tsx:13'],
