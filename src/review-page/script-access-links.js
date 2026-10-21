@@ -202,10 +202,13 @@ function caseSection(node) {
       onclick: () => (yes ? pickCase({ node: node.id, case: kind }, 'needed') : askNotTarget(node.id, kind, `${scope} .case-undecided-row[data-kind="${kind}"] button.no`)),
     }, yes ? '✓' : '✕');
   };
-  const undecidedRow = (kind, text) => h('li', { class: 'case-undecided-row', 'data-kind': kind },
-    h('span', { class: 'kind-text' }, text), h('span', { class: 'chip undecided' }, '미판정'), h('span', { class: 'muted' }, '아직 아무도 정하지 않았습니다'),
-    decideButton(kind, true), decideButton(kind, false),
-    by[kind].state === 'unused' ? h('div', { class: 'case-stale' }, staleRuleLines(by[kind].mark)) : null);
+  const undecidedRow = (kind, text) => {
+    const held = markOf({ node: node.id, case: kind })?.current;
+    return h('li', { class: 'case-undecided-row', 'data-kind': kind },
+      h('span', { class: 'kind-text' }, text), h('span', { class: 'chip undecided' }, '미판정'), held ? null : h('span', { class: 'muted' }, '아직 아무도 정하지 않았습니다'),
+      decideButton(kind, true), decideButton(kind, false),
+      held ? h('div', { class: 'case-held-lines' }, heldText(held)) : null);
+  };
   const undecidedHere = (kind) => kindTargetsOf(kind)?.nodes[node.id]?.state === 'undecided';
   const picked = new Map(node.cases.filter((c) => c.kind === 'case').map((c) => [c.tag.slice('case:'.length), c]));
   const rows = [

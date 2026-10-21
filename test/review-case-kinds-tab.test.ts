@@ -79,7 +79,7 @@ test('in a browser, 「경우 종류 N」 is the third list tab only while caseK
       })));
 });
 
-test('in a browser, a kind shows its picks by rule, person and agent, its rules with what each picked, folded lists of picks and of what is not a target, and its undecided candidates in write, read and screen groups with the method of each request', { skip: browserMissing }, async () => {
+test('in a browser, a kind shows its picks by rule, person and agent, its rules with what each picked, folded lists of picks and of what is not a target, and its undecided candidates in write, read and screen groups with the method of each request, and 「사람이 정할 것」 lets go once nothing it lists is left', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: KINDS }, (config) => {
     seed(config);
     return withServer(config, 'reviewer', (base) =>
@@ -121,6 +121,11 @@ test('in a browser, a kind shows its picks by rule, person and agent, its rules 
         assert.equal((await postMark(base, { target: { node: 'GET:/api/v1/lab/experiment', case: 'ended' }, status: 'needed' })).status, 201);
         await p.waitForFunction(() => document.querySelectorAll('#center .case-undecided li.case-row').length === 5);
         assert.deepEqual(await p.locator('#center details.case-list').evaluateAll((els) => els.map((e) => (e as HTMLDetailsElement).open)), [true, true]);
+
+        await p.click('#center button.person-only');
+        for (const node of [EXPORT, LIST]) assert.equal((await postMark(base, { target: { node, case: 'ended' }, status: 'needed' })).status, 201);
+        await p.waitForFunction(() => document.querySelectorAll('#center .case-undecided li.case-row').length === 3);
+        assert.equal(await p.locator('#center button.person-only').count(), 0);
 
         await p.click(kindRow('boundary'));
         await p.locator('#center .title-row .mono:text-is("case:boundary")').waitFor();

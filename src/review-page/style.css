@@ -192,7 +192,7 @@
   .cases .case-undecided-row button.decide:disabled { opacity: .5; cursor: default; }
   .cases .case-undecided-row .kind-text { flex-basis: 100%; }
   .cases .case-undecided-row .chip.undecided { margin-left: 14px; }
-  .cases .case-undecided-row .case-stale { flex-basis: 100%; }
+  .cases .case-undecided-row .case-held-lines { flex-basis: 100%; padding-left: 14px; }
   #case-kind-list li { display: block; }
   #case-kind-list .kind-counts { display: block; font-size: 12px; margin-top: 2px; }
   .case-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }

@@ -2885,8 +2885,10 @@ and as `aria-label`; the kind buttons stay as they were. Details settled on the 
   fit moves whole to a second line; raising the floor would have taken width from the other panes also where
   `caseKinds` is not set.
 - A candidate taken out of a rule that no longer picks it counts as undecided, so 「경우별 테스트」 gives it the
-  「미판정」 line with who took it out and the old reason, as the tab does, instead of the 「대상 아님」 row, which would
-  say 대상 아님 where the tab says 미판정. The 「대상 아님」 row with 「이 표시는 쓰이지 않습니다」 stays only where the kind no
+  「미판정」 line instead of the 「대상 아님」 row, which would say 대상 아님 where the tab says 미판정. Where a mark keeps a
+  kind undecided, the line says who left it and when, in the tab's words, instead of 「아직 아무도 정하지 않았습니다」,
+  which a kind pressed off would make untrue. Unlike the tab, it does so also for an agent's mark, since on a single
+  screen or call the reviewer is the one looking at it. The 「대상 아님」 row with 「이 표시는 쓰이지 않습니다」 stays only where the kind no
   longer takes that screen or call as a candidate.
 - A candidate a person's mark keeps undecided gets a line saying who took it out and when; a candidate an agent's mark
   keeps undecided gets none, since the agent decides it again. 「사람이 정할 것 N」 above the list shows only those.

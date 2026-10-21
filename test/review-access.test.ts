@@ -618,11 +618,11 @@ test('in a browser, cancelling the reason dialog puts the focus back on the butt
       })));
 });
 
-test('in a browser, a request taken out of a rule that no longer picks it is undecided again, its 「미판정」 line saying who took it out and the old reason, also when its kind has no rules left, while a screen the kind no longer takes as a candidate keeps its 「대상 아님」 row as no longer used', { skip: browserMissing }, async () => {
+test('in a browser, a request taken out of a rule that no longer picks it is undecided again, its 「미판정」 line saying who took it out and the old reason, also when an agent took it out or its kind has no rules left, as a kind pressed off with no reason says who did, while a screen the kind no longer takes as a candidate keeps its 「대상 아님」 row as no longer used', { skip: browserMissing }, async () => {
   const kinds = { boundary: CASE_KINDS.boundary, ended: { ...RULED.ended, picks: [{ screen: '/document/**', methods: ['POST'] }] }, legacy: CASE_KINDS.legacy };
   await withRebuiltFixture({ caseKinds: kinds }, (config) => {
     const at = new Date('2026-10-04T01:00:00Z');
-    addMark(config.marksDir, { target: { node: RENAME, case: 'ended' }, status: 'not-needed', note: '이름은 막지 않는다', rule: RULE_ENDED, author: 'QA 에이전트' }, at);
+    addMark(config.marksDir, { target: { node: RENAME, case: 'ended' }, status: 'not-needed', note: '이름은 막지 않는다', rule: RULE_ENDED, author: 'agent', via: 'duru case' }, at);
     addMark(config.marksDir, { target: { node: RENAME, case: 'legacy' }, status: 'not-needed', note: '옛 문서도 같은 칸을 쓴다', rule: { index: 0, pick: { methods: ['PUT'] } }, author: 'reviewer' }, at);
     addMark(config.marksDir, { target: { node: RENAME, case: 'boundary' }, status: 'not-needed', author: 'reviewer' }, at);
     addMark(config.marksDir, { target: { node: '/document/:id#DocumentDetail', case: 'ended' }, status: 'not-needed', note: '상세 화면은 읽기만 한다', rule: { index: 0, pick: { screen: '/document/**' } }, author: 'reviewer' }, at);
@@ -636,8 +636,9 @@ test('in a browser, a request taken out of a rule that no longer picks it is und
         assert.equal(await call.locator('li.case-left-out').count(), 0);
         const lines = call.locator('li.case-undecided-row');
         assert.deepEqual(await lines.evaluateAll((els) => els.map((e) => e.getAttribute('data-kind'))), ['boundary', 'ended', 'legacy']);
-        assert.equal(await lines.nth(0).locator('.case-stale').count(), 0);
-        assert.match((await lines.nth(1).locator('.case-held').textContent())!, /^QA 에이전트 가 .+ 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다$/);
+        assert.match((await lines.nth(0).locator('.case-held').textContent())!, /^reviewer 가 .+ 에 이유 없이 뺐습니다$/);
+        assert.match((await lines.nth(1).locator('.case-held').textContent())!, /^agent 가 .+ 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다$/);
+        assert.equal(await lines.filter({ hasText: '아직 아무도 정하지 않았습니다' }).count(), 0);
         assert.match((await lines.nth(2).locator('.case-held').textContent())!, /^reviewer 가 .+ 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다$/);
         assert.deepEqual(await call.locator('.case-reason').allTextContents(), ['예전 이유 이름은 막지 않는다', '예전 이유 옛 문서도 같은 칸을 쓴다']);
         assert.deepEqual(await kindButtons(call), [[CASE_KINDS.boundary, 'false'], [RULED.ended.text, 'false'], [CASE_KINDS.legacy, 'false']]);

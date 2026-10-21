@@ -811,14 +811,16 @@ out picked, and while it is picked, whoever picked it, its row has 「이 요청
 that and pressing its button both open a dialog that saves only with a reason. The kind then shows as 「대상 아님 ·
 <author>」 with the date and the rule on hover and the reason on the line below, and pressing its button again picks
 it back in that person's name. A kind marked 「대상 아님」 with a reason on a screen or call no rule picks, as `case` writes
-it, shows the same row, with the date on hover; one pressed off with no reason shows no row. Each kind
+it, shows the same row, with the date on hover; one pressed off with no reason shows no such row. Each kind
 still undecided on that screen or call (see **Task list**) has its own lines under the others: the kind, and below it
 「「미판정」 아직 아무도 정하지 않았습니다」 with two icon buttons: ✓ saves 「대상」 at once, and ✕ asks for a reason, as 「대상 아님…」 does, and
-saves nothing without one. A kind taken out of a rule that no longer picks that screen or call is undecided again, so
-it gets this line too, with 「<author> 가 <date> 에 규칙에서 뺐지만 규칙이 더는 고르지 않습니다」 and the old reason under
-it. Only where the kind no longer takes that screen or call as a candidate at all does it keep its 「대상 아님」 row,
-which then says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. Hovering over them, or a screen reader, gives 「대상 — 이 요청에서 이 경우를 시험합니다」 and
-「대상 아님… — 이유를 적고 이 요청에서는 시험하지 않습니다」 (「화면」 for a screen). The kind buttons below stay as they
+saves nothing without one. Hovering over them, or a screen reader, gives 「대상 — 이 요청에서 이 경우를 시험합니다」 and
+「대상 아님… — 이유를 적고 이 요청에서는 시험하지 않습니다」 (「화면」 for a screen). Where a mark, a person's or an agent's,
+keeps the kind undecided, the line says who left it instead of 「아직 아무도 정하지 않았습니다」, in the words of the
+「경우 종류」 tab: 「<author> 가 <date> 에 이유 없이 뺐습니다」 for a kind pressed off, or 「… 에 규칙에서 뺐지만 규칙이 더는
+고르지 않습니다」 with the old reason for a kind taken out of a rule that no longer picks that screen or call. Only where
+the kind no longer takes that screen or call as a candidate at all does a kind taken out of a rule keep its 「대상
+아님」 row, which then says 「규칙이 이 요청을 더는 고르지 않아, 이 표시는 쓰이지 않습니다」. The kind buttons below stay as they
 are. The flow shows the same middle and right panes for a picked screen.
 
 **Case kinds tab.** With `caseKinds` set, the list has a third tab, 「경우 종류 N」, after 「화면」 and 「태그 없음」; N adds
