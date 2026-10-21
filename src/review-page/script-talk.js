@@ -3,7 +3,8 @@ function hereTalk() {
   if (state.view !== 'story') return state.target && { label: `이 ${nodeWord(state.target.node)}`, target: state.target };
   if (state.candidate && !state.composing) return { label: '이 후보', target: { candidate: state.candidate } };
   if (state.need && !state.composing) return null;
-  return { label: '이 스토리', target: state.story && !state.candidate && !state.composing ? { story: state.story } : null };
+  if (state.composing) return { label: '이 화면 순서', target: composeTarget() };
+  return { label: '이 스토리', target: state.story && !state.candidate ? { story: state.story } : null };
 }
 
 function scopeButtons() {
@@ -28,10 +29,12 @@ const TALK_FILTERS = [
 const PICK_STATUS = { needed: '켬', 'not-needed': '끔' };
 const talkMarks = () => state.data.marks.attached.filter((m) => !isPick(m));
 
-const noTarget = (t) => t.node === undefined && t.story === undefined && t.candidate === undefined;
-const groupOf = (t) => (noTarget(t) ? 'general()' : t.candidate !== undefined ? `candidate(${t.candidate})` : t.story !== undefined ? `story(${t.story})` : t.node);
+const noTarget = (t) => t.node === undefined && t.story === undefined && t.candidate === undefined && t.screens === undefined;
+const groupOf = (t) => (noTarget(t) ? 'general()' : t.candidate !== undefined ? `candidate(${t.candidate})` : t.screens !== undefined ? keyOf(t) : t.story !== undefined ? `story(${t.story})` : t.node);
 const groupTitle = (t) => (noTarget(t) ? '대상 없음' : t.candidate !== undefined
   ? `후보 ${candidateName(t.candidate)}`
+  : t.screens !== undefined
+  ? orderLabel({ screens: t.screens })
   : t.story !== undefined
   ? `스토리 ${state.data.stories.list.find((st) => st.id === t.story)?.name ?? t.story}`
   : callOf(t.node) ? `호출 ${t.node}` : screenLabel(t.node));
@@ -65,8 +68,8 @@ function allTalk() {
       noTarget(m.target) ? null : tagChip(tagLabel(m.target)),
       h('span', {}, signedAt(r)),
       replies.length ? h('span', {}, `· 답 ${replies.length}`) : null);
-    // 대상 없는 말은 옮겨 갈 칸이 없으므로 여기서 글 전체와 답을 보인다.
-    if (noTarget(m.target)) {
+    // 대상 없는 말과 화면 순서에 남긴 말은 옮겨 갈 칸이 없으므로 여기서 글 전체와 답을 보인다.
+    if (noTarget(m.target) || m.target.screens !== undefined) {
       return h('div', { class: 'talk-line general', 'data-record': r.id }, meta, h('div', {}, r.note),
         replies.length ? h('ul', { class: 'plain replies' }, replies.map((x) => h('li', { class: 'reply' }, h('span', { class: 'muted' }, signedAt(x)), h('div', {}, x.note)))) : null);
     }
@@ -157,6 +160,7 @@ function renderScreenRight(info, dock) {
 }
 
 const talkIn = (marks, target) => marks.filter((m) => !isPick(m) && (target.candidate !== undefined ? m.target.candidate === target.candidate
+  : target.screens !== undefined ? m.key === keyOf(target)
   : target.story !== undefined ? m.target.story === target.story : m.target.story === undefined && m.target.node === target.node));
 const talkOf = (target) => talkIn([...state.data.marks.attached, ...state.data.marks.detached], target);
 const attachedTalk = (target) => talkIn(state.data.marks.attached, target);
@@ -202,12 +206,12 @@ function markForm(target, draftKey, label) {
   const mark = markOf(target);
   state[draftKey] ??= { status: mark?.current?.status ?? null, note: '' };
   const draft = state[draftKey];
-  const tags = draft.tags ?? [target];
-  const statusOn = onlyTag(tags, target) && target.candidate === undefined;
+  const tags = (draft.tags ?? [target]).map((t) => (t.screens !== undefined && target.screens !== undefined ? target : t));
+  const statusOn = onlyTag(tags, target) && target.candidate === undefined && target.screens === undefined;
   const savable = () => draft.note.trim() !== '' || (statusOn && !!draft.status);
   const save = h('button', { class: 'save', disabled: !savable(), onclick: () => saveMark(tags, draftKey, statusOn) }, '남기기');
   const statuses = Object.entries(MARK_STATUS).map(([k, text]) => {
-    const button = h('button', { class: statusOn && draft.status === k ? 'on' : '', disabled: !statusOn, title: statusOn ? null : target.candidate !== undefined ? '후보에는 상태를 매기지 않습니다. 스토리로 받은 뒤에 매깁니다' : '상태는 꼬리표가 화면 · 호출 · 깊이 · 스토리 하나뿐일 때만 매깁니다', onclick: () => {
+    const button = h('button', { class: statusOn && draft.status === k ? 'on' : '', disabled: !statusOn, title: statusOn ? null : target.candidate !== undefined ? '후보에는 상태를 매기지 않습니다. 스토리로 받은 뒤에 매깁니다' : target.screens !== undefined ? '화면 순서에는 상태를 매기지 않습니다' : '상태는 꼬리표가 화면 · 호출 · 깊이 · 스토리 하나뿐일 때만 매깁니다', onclick: () => {
       draft.status = draft.status === k ? null : k;
       for (const b of statuses) b.classList.toggle('on', b === button && draft.status === k);
       save.disabled = !savable();

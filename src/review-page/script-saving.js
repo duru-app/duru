@@ -1,4 +1,4 @@
-const shownTarget = () => (state.view !== 'story' && state.side === 'cases' ? (state.caseNode === null ? null : { node: state.caseNode }) : state.view !== 'story' ? state.target : state.candidate !== null ? { candidate: state.candidate } : { story: state.story });
+const shownTarget = () => (state.view !== 'story' && state.side === 'cases' ? (state.caseNode === null ? null : { node: state.caseNode }) : state.view !== 'story' ? state.target : state.composing ? composeTarget() : state.candidate !== null ? { candidate: state.candidate } : { story: state.story });
 const isShown = (target) => {
   const shown = shownTarget();
   return !!shown && keyOf(shown) === keyOf(target);
@@ -12,13 +12,14 @@ function showSaveError(reason, target) {
 // 지금 상태를 다시 매기는 것은 아무것도 바꾸지 않으므로, 함께 쓴 글은 코멘트로 보낸다.
 const asComment = (target, draft) => draft.note.trim() !== '' && draft.status === (markOf(target)?.current?.status ?? null);
 
-const ownerOf = (draftKey) => (draftKey === 'storyDraft' ? { story: state.story } : draftKey === 'candidateTalk' ? { candidate: state.candidate } : draftKey === 'caseDraft' ? (state.caseNode === null ? null : { node: state.caseNode }) : state.target);
+const ownerOf = (draftKey) => (draftKey === 'storyDraft' ? { story: state.story } : draftKey === 'candidateTalk' ? { candidate: state.candidate } : draftKey === 'caseDraft' ? (state.caseNode === null ? null : { node: state.caseNode }) : draftKey === 'composeTalk' ? composeTarget() : state.target);
 const saveMark = (tags, draftKey, statusOn) => trackOwnSave(() => postMark(tags, draftKey, statusOn));
 
-async function postMark(tags, draftKey, statusOn) {
+async function postMark(picked, draftKey, statusOn) {
   state.error = null;
   const draft = state[draftKey];
   const owner = ownerOf(draftKey);
+  const tags = picked.map((t) => (t.screens !== undefined && owner?.screens !== undefined ? owner : t));
   const target = tags.length === 1 ? tags[0] : owner;
   let saved;
   try {

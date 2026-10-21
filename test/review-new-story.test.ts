@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
+import { addMark, addReply, loadMarks } from '../src/marks.ts';
 import { withRebuiltFixture, withServer, browserMissing, withPage, screenBox, boxCount, lineSteps, pathMarks, pillMarks, pathEdges, untilSet, placeOf, postJson, CANDIDATES, storiesTab, holdRequests, WALK, WALK_ON_MAP, withPathStories, textOutside, storyStack, rightPane, BAD_REQUEST } from './review-helpers.ts';
 import type { Story, PageData } from './review-helpers.ts';
 
@@ -272,17 +273,18 @@ test('in a browser, a Korean syllable being composed in the name of a new story 
   );
 });
 
-test('in a browser, a new story shows 「에이전트와 대화」 at the top of the right pane with a line saying a conversation can be left once the story is saved, over a greyed form whose 「남기기」 cannot be pressed, and stacks in the middle its verdict chip, the folded 「사전 조건 N」 and the save fields above 「스토리 전체」, where a refused save shows its error', { skip: browserMissing }, async () => {
+test('in a browser, a new story with no screen yet shows 「에이전트와 대화」 at the top of the right pane with a line saying the order picked becomes its tag, over a greyed form whose 「남기기」 cannot be pressed, and stacks in the middle its verdict chip, the folded 「사전 조건 N」 and the save fields above 「스토리 전체」, where a refused save shows its error', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p, errors) => {
         await startNewStory(p);
+        assert.deepEqual(await rightPane(p), { top: ['talk'], heading: '에이전트와 대화', bottom: ['mark-form'], folded: 0 });
+        assert.equal(await p.textContent('#right-info .talk p'), '화면을 고르면 그 순서가 꼬리표로 붙어, 사이를 채워 달라고 에이전트에게 부탁할 수 있습니다.');
+        assert.deepEqual(await p.locator('#right-dock :is(textarea, button)').evaluateAll((els) => els.map((e) => (e as HTMLButtonElement).matches(':disabled'))), [true, true, true, true]);
+        assert.equal(await p.textContent('#right-dock button.save'), '남기기');
         for (const routePath of ['/signin', '/home', '/help']) await pickScreen(p, routePath);
         await untilJudged(p, 2);
         assert.deepEqual(await rightPane(p), { top: ['talk'], heading: '에이전트와 대화', bottom: ['mark-form'], folded: 0 });
-        assert.equal(await p.textContent('#right-info .talk p'), '스토리를 저장한 뒤에 이 스토리에 대화를 남길 수 있습니다.');
-        assert.deepEqual(await p.locator('#right-dock :is(textarea, button)').evaluateAll((els) => els.map((e) => (e as HTMLButtonElement).matches(':disabled'))), [true, true, true, true]);
-        assert.equal(await p.textContent('#right-dock button.save'), '남기기');
         assert.equal(await p.locator('#right :is(input, .story-form, .verdict, details)').count(), 0);
 
         assert.deepEqual(await p.locator('#center .title-row .chip.verdict').allTextContents(), ['도달 불가 · 링크 없음 1곳']);
@@ -304,6 +306,119 @@ test('in a browser, a new story shows 「에이전트와 대화」 at the top of
       }),
     ),
   );
+});
+
+const talkTags = (p: Page) => p.locator('#right-dock .tags .tag-label').allTextContents();
+const gapButtons = (p: Page) => p.locator('#center .story-path .link button.gap-pick').evaluateAll((bs) => bs.map((b) => [b.closest<HTMLElement>('.link')!.dataset.hop, b.textContent, b.getAttribute('aria-pressed')]));
+
+test('in a browser, while a new story is written the conversation form under 「에이전트와 대화」 is open with the screens picked as its tag 「화면 순서」 in their order, which follows a screen added or taken out, and a screen order takes no status', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await startNewStory(p);
+        await pickScreen(p, '/signin');
+        await pickScreen(p, '/home');
+        await untilJudged(p, 1);
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home']);
+        assert.equal(await p.textContent('#right-info .talk p'), '아직 대화가 없습니다.');
+        assert.equal(await p.isDisabled('#right-dock textarea'), false);
+        assert.deepEqual(await p.locator('#right-dock .statuses button').evaluateAll((bs) => [...new Set(bs.map((b) => `${(b as HTMLButtonElement).disabled} ${b.getAttribute('title')}`))]), ['true 화면 순서에는 상태를 매기지 않습니다']);
+        assert.match((await p.textContent('#right-info .talk-scope'))!, /이 화면 순서 0/);
+
+        await pickScreen(p, '/help');
+        await untilJudged(p, 2);
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home → /help']);
+        await takeOutStep(p, '#center', 1);
+        await untilJudged(p, 1);
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /help']);
+      }),
+    ),
+  );
+});
+
+test('in a browser, pressing 「링크 없음」 between two steps of a new story adds that gap to the tag 「화면 순서」 and pressing it again takes it out, and a picked gap moves with its two steps when a step before them is taken out', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await startNewStory(p);
+        for (const routePath of ['/signin', '/home', '/help']) await pickScreen(p, routePath);
+        await untilJudged(p, 2);
+        assert.deepEqual(await composeLinks(p), ['이어짐', '링크 없음']);
+        assert.deepEqual(await gapButtons(p), [['1', '링크 없음', 'false']]);
+
+        await p.click('#center .link[data-hop="1"] button.gap-pick');
+        assert.deepEqual(await gapButtons(p), [['1', '링크 없음', 'true']]);
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home → /help · 2-3 링크 없음']);
+        assert.equal(await p.evaluate(() => document.activeElement?.matches('#center .link[data-hop="1"] button.gap-pick')), true);
+        await p.click('#center .link[data-hop="1"] button.gap-pick');
+        assert.deepEqual(await gapButtons(p), [['1', '링크 없음', 'false']]);
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home → /help']);
+
+        await p.click('#center .link[data-hop="1"] button.gap-pick');
+        await takeOutStep(p, '#center', 0);
+        await untilJudged(p, 1);
+        assert.deepEqual(await gapButtons(p), [['0', '링크 없음', 'true']]);
+        assert.deepEqual(await talkTags(p), ['화면 순서 /home → /help · 1-2 링크 없음']);
+      }),
+    ),
+  );
+});
+
+test('in a browser, 「남기기」 on a new story leaves a comment on its screen order with the gaps picked and the fields typed at each step, shows it at the top of 「에이전트와 대화」 with its tag, and leaves the new story open with its steps, fields, ID and name as they were', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await startNewStory(p);
+        for (const routePath of ['/signin', '/home', '/help']) await pickScreen(p, routePath);
+        await untilJudged(p, 2);
+        await p.fill('#compose-id', 'help-from-signin');
+        await p.fill('#compose-name', '로그인해 도움말을 연다');
+        await p.hover('#center .compose-step[data-step="2"]');
+        await p.click('#center .compose-step[data-step="2"] button.edit-fields');
+        await p.click('#center .compose-step[data-step="2"] .fields-part.expects button.add-line');
+        await p.fill('#center .compose-step[data-step="2"] .fields-part.expects input', '도움말이 보인다');
+        await p.click('#center .compose-step[data-step="2"] button.close-fields');
+        await p.click('#center .link[data-hop="1"] button.gap-pick');
+
+        await p.fill('#right-dock textarea', '홈에서 도움말로 가는 길을 채워 줘');
+        await p.click('#right-dock button.save');
+        await p.waitForSelector('#right-info .talk .history li');
+
+        const [saved] = loadMarks(config.marksDir);
+        assert.deepEqual([saved.target, saved.note, saved.author], [{ screens: HELP_PATH, gaps: [[2, 3]], steps: [{ step: 3, expects: ['도움말이 보인다'] }] }, '홈에서 도움말로 가는 길을 채워 줘', 'reviewer']);
+        assert.deepEqual(await p.locator('#right-info .talk .history li').evaluateAll((lis) => lis.map((li) => [li.querySelector('.tag-label')!.textContent, li.querySelector('div')!.textContent])), [['화면 순서 /signin → /home → /help · 2-3 링크 없음', '홈에서 도움말로 가는 길을 채워 줘']]);
+        assert.match((await p.textContent('#right-info .talk-scope'))!, /이 화면 순서 1/);
+        assert.equal(await p.inputValue('#right-dock textarea'), '');
+        assert.deepEqual(await talkTags(p), ['화면 순서 /signin → /home → /help · 2-3 링크 없음']);
+
+        assert.equal(await p.textContent('#center h3'), '로그인해 도움말을 연다');
+        assert.deepEqual(await composeSteps(p), ['/signin', '/home', '/help']);
+        assert.deepEqual([await p.inputValue('#compose-id'), await p.inputValue('#compose-name')], ['help-from-signin', '로그인해 도움말을 연다']);
+        assert.match((await p.textContent('#center .compose-step[data-step="2"] .step-written'))!, /도움말이 보인다/);
+        assert.deepEqual(await gapButtons(p), [['1', '링크 없음', 'true']]);
+        assert.equal(fs.existsSync(path.join(config.storiesDir, 'help-from-signin.json')), false);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a comment on a screen order shows in 「전체」 under a heading naming its order, with its note and reply in place, and one whose screen the map no longer has is listed under 「떨어져 나감」 by its order', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const asked = addMark(config.marksDir, { target: { screens: HELP_PATH, gaps: [[2, 3]] }, note: '홈에서 도움말로 가는 길을 채워 줘', author: 'reviewer' } as Parameters<typeof addMark>[1]);
+    addReply(config.marksDir, { replyTo: asked.id, note: '홈에는 도움말로 가는 링크가 없습니다.' });
+    addMark(config.marksDir, { target: { screens: ['/signin#SignIn', '/gone#Gone'] }, note: '없어진 화면까지', author: 'reviewer' });
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#left .detached li');
+        assert.deepEqual(await p.locator('#left .detached li code').allTextContents(), ['화면 순서 /signin → /gone#Gone']);
+        await p.locator('#right-info .talk-scope button').nth(1).click();
+        const group = p.locator(`#right-info .talk-group[data-group="order(${HELP_PATH.join(' > ')})"]`);
+        assert.equal(await group.locator('h3').textContent(), '화면 순서 /signin → /home → /help');
+        assert.deepEqual(await group.locator('.talk-line').evaluateAll((ls) => ls.map((l) => [l.localName, l.querySelector('.tag-label')!.textContent, l.querySelector(':scope > div')!.textContent, l.querySelector('.replies')!.textContent!.includes('홈에는 도움말로 가는 링크가 없습니다.')])), [
+          ['div', '화면 순서 /signin → /home → /help · 2-3 링크 없음', '홈에서 도움말로 가는 길을 채워 줘', true],
+        ]);
+      }));
+  });
 });
 
 test('in a browser, a new story being written is a place in the address and is kept while the reviewer looks at the story list, ending the review asks about it first, and 「쓰던 것 버리기」 throws it away', { skip: browserMissing }, async () => {

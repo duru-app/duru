@@ -569,6 +569,9 @@
   .story-path .link { margin: 0 0 0 18px; padding: 6px 0 6px 18px; border-left: 2px solid var(--line); font-size: 13px; }
   .story-path .link.l-conditioned { border-left: 2px dashed var(--accent); }
   .story-path .link.l-broken { border-left: 2px dotted var(--fail); }
+  button.gap-pick { background: var(--panel); font: inherit; font-size: 12px; line-height: inherit; cursor: pointer; }
+  button.gap-pick:hover { border-style: dashed; }
+  button.gap-pick[aria-pressed=true] { background: var(--fail); color: var(--panel); border-color: var(--fail); font-weight: 600; }
   .story-path .link.l-off-map, .story-path .link.l-unknown { border-left: 2px dotted var(--more); }
   .story-path .link .walks { margin: 4px 0 0; font-size: 12px; } .story-path .link .walks.moves-missing { color: var(--more); }
   .story-path .link.unwalked { background: color-mix(in srgb, var(--muted) 12%, transparent); }

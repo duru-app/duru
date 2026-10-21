@@ -1,7 +1,12 @@
 function renderStoryRight(info, dock) {
   if (state.composing) {
-    fill(info, h('div', { class: 'talk' }, h('h2', {}, '에이전트와 대화'), h('p', { class: 'muted compose-talk' }, '스토리를 저장한 뒤에 이 스토리에 대화를 남길 수 있습니다.')));
-    return fill(dock, composeTalkForm());
+    const order = composeTarget();
+    if (!order) {
+      fill(info, h('div', { class: 'talk' }, h('h2', {}, '에이전트와 대화'), h('p', { class: 'muted compose-talk' }, '화면을 고르면 그 순서가 꼬리표로 붙어, 사이를 채워 달라고 에이전트에게 부탁할 수 있습니다.')));
+      return fill(dock, composeTalkForm());
+    }
+    fill(info, talkPanel(order));
+    return fill(dock, markForm(order, 'composeTalk', tagLabel(order)));
   }
   if (needOf()) {
     fill(dock);
@@ -20,9 +25,9 @@ function renderStoryRight(info, dock) {
   fill(dock, markForm({ story: state.story }, 'storyDraft', '스토리'));
 }
 
-const composeTalkForm = () => h('fieldset', { class: 'mark-form', disabled: true, title: '스토리를 저장한 뒤에 남길 수 있습니다' },
+const composeTalkForm = () => h('fieldset', { class: 'mark-form', disabled: true, title: '화면을 고른 뒤에 남길 수 있습니다' },
   h('div', { class: 'statuses' }, Object.values(MARK_STATUS).map((text) => h('button', { type: 'button' }, text))),
-  h('textarea', { 'aria-label': '코멘트', placeholder: '스토리를 저장한 뒤에 코멘트를 남길 수 있습니다' }),
+  h('textarea', { 'aria-label': '코멘트', placeholder: '화면을 고른 뒤에 코멘트를 남길 수 있습니다' }),
   h('div', { class: 'save-row' }, h('button', { type: 'button', class: 'save' }, '남기기')));
 
 function renderCenter() {
