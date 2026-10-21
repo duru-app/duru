@@ -112,8 +112,8 @@ test('undecided says in one line that there is no map before a rebuild and exits
     assert.deepEqual(ended.stdout.split('\n').filter(Boolean).map((l) => l.split(' — ')[0]), ['case kind ended: 8 undecided', ...[...ENDED_WRITES, ...ENDED_READS].map((id) => `  ${id}`)]);
     assert.match(run('undecided').stdout, /\ncase kind legacy: 21 undecided\n {2}POST:/);
     assert.equal(run('undecided', 'gone').status, 2);
-    for (const id of ENDED_WRITES) assert.equal(run('case', 'ended', id, 'not-needed', '--note', '문서를 바꾸지 않는다').status, 0);
     for (const id of ENDED_READS) assert.equal(run('case', 'ended', id, 'needed').status, 0);
+    for (const id of ENDED_WRITES) addMark(path.join(path.dirname(configFile), 'case-marks'), { target: { node: id, case: 'ended' }, status: 'not-needed', note: '문서를 바꾸지 않는다', author: 'Kim Min' });
     assert.deepEqual(run('undecided', 'ended'), { status: 0, stdout: 'case kind ended: 0 undecided\n', stderr: '' });
     assert.equal(run('undecided').status, 3);
   });
@@ -138,7 +138,7 @@ const CASE_REFUSALS: [string[], string][] = [
   [['ended', '/nowhere#Nowhere', 'needed'], '/nowhere#Nowhere is no screen or call on the map\n'],
   [['legacy', '/lab#Lab', 'not-needed'], 'not-needed needs a note saying why legacy need not be tested on /lab#Lab\n'],
   [['ended', 'POST:/api/v1/archive/document', 'not-needed'], 'a rule picks POST:/api/v1/archive/document for ended (caseKinds.ended.picks[0]), so taking it out needs a note saying why\n'],
-  [['legacy', '/home#Home', 'not-needed', '--note', '홈은 옛 데이터를 읽지 않는다'], 'Kim Min marked legacy needed on /home#Home on 2026-10-05, and duru case does not change a person\'s mark\n'],
+  [['legacy', '/home#Home', 'needed', '--note', '홈은 옛 데이터를 읽는다'], 'Kim Min marked legacy needed on /home#Home on 2026-10-05, and duru case does not change a person\'s mark\n'],
 ];
 
 test('case refuses with a reason and exits with 1 a kind not in the config, an ID not on the map, not-needed without a note and a person\'s mark, writing nothing; a call it cannot read exits with 2', () => {
@@ -161,11 +161,38 @@ test('a candidate a person marked not-needed without a note stays undecided, kee
     addMark(path.join(path.dirname(configFile), 'case-marks'), { target: { node: 'GET:/api/v1/lab/experiment', case: 'ended' }, status: 'not-needed', author: 'Kim Min' }, new Date('2026-10-05T01:00:00Z'));
     assert.deepEqual(run('case', 'ended', 'GET:/api/v1/lab/experiment', 'needed'), { status: 1, stdout: '', stderr: 'Kim Min marked ended not-needed on GET:/api/v1/lab/experiment on 2026-10-05, and duru case does not change a person\'s mark\n' });
     assert.equal(caseMarks(configFile).length, 1);
-    for (const id of ENDED_WRITES) run('case', 'ended', id, 'not-needed', '--note', '문서를 바꾸지 않는다');
+    for (const id of ENDED_WRITES) run('case', 'ended', id, 'needed');
     for (const id of ENDED_READS.filter((id) => id !== 'GET:/api/v1/lab/experiment')) run('case', 'ended', id, 'needed');
     assert.deepEqual(run('undecided', 'ended'), {
       status: 3,
       stdout: 'case kind ended: 1 undecided\n  GET:/api/v1/lab/experiment — call, sent from /lab#Lab — Kim Min marked it not-needed without a note on 2026-10-05, so only a person can decide it\n',
+      stderr: '',
+    });
+  });
+});
+
+test('an agent\'s not-needed waits under review: undecided leaves it out, exits with 0 when only those are left and says how many wait, rebuild counts them, and once a reviewer reverted one case refuses it and undecided says who took it back', () => {
+  withCaseKinds((configFile, run) => {
+    run('rebuild');
+    const marksDir = path.join(path.dirname(configFile), 'case-marks');
+    addMark(marksDir, { target: { node: 'GET:/api/v1/document/list', case: 'ended' }, status: 'needed', author: 'Kim Min' }, new Date('2026-10-05T01:00:00Z'));
+    for (const id of [...ENDED_WRITES, ...ENDED_READS]) assert.equal(run('case', 'ended', id, 'not-needed', '--note', '문서를 바꾸지 않는다').status, 0, id);
+    const waiting = [...ENDED_WRITES, ...ENDED_READS].length;
+    assert.deepEqual(run('undecided', 'ended'), {
+      status: 0,
+      stdout: `case kind ended: 0 undecided, ${waiting} under review\n${waiting} under review: not-needed marks of the agent that wait for a reviewer to accept or revert them on the review page\n`,
+      stderr: '',
+    });
+    assert.match(run('rebuild').stdout, /^case kind ended: undecided 0 \| cases with no tests 6 \| under review 8$/m);
+
+    const agentMark = caseMarks(configFile).find((m) => m.target!.node === ENDED_WRITES[0] && m.via)!;
+    const later = new Date(Date.now() + 60_000);
+    const day = later.toISOString().slice(0, 10);
+    addMark(marksDir, { target: { node: ENDED_WRITES[0], case: 'ended' }, status: 'not-needed', note: '', author: 'Kim Min', of: agentMark.id }, later);
+    assert.deepEqual(run('case', 'ended', ENDED_WRITES[0], 'needed'), { status: 1, stdout: '', stderr: `Kim Min took back the agent's not-needed for ended on ${ENDED_WRITES[0]} on ${day}, so only a person decides it now\n` });
+    assert.deepEqual(run('undecided', 'ended'), {
+      status: 3,
+      stdout: `case kind ended: 1 undecided, ${waiting - 1} under review\n  ${ENDED_WRITES[0]} — call, sent from /signin#SignIn — Kim Min took back the agent's not-needed on ${day}, so only a person can decide it\n${waiting - 1} under review: not-needed marks of the agent that wait for a reviewer to accept or revert them on the review page\n`,
       stderr: '',
     });
   });
@@ -899,7 +926,7 @@ test('a reply without --server is written to the marks folder and shows in the t
 });
 
 const runCase = (configFile: string, ...args: string[]) => runCli(configFile, 'case', ...args);
-const undecidedCount = (configFile: string, kind: string) => Number(runCli(configFile, 'undecided', kind).stdout.match(/^case kind \S+: (\d+) undecided$/m)![1]);
+const undecidedCount = (configFile: string, kind: string) => Number(runCli(configFile, 'undecided', kind).stdout.match(/^case kind \S+: (\d+) undecided(?:, \d+ under review)?$/m)![1]);
 
 test('a case sent with --server is saved by the running review in the same shape and folder as one written directly, printed on its stderr as a mark line and pushed to open event streams, and the kind has one undecided candidate less; the command reads no map', async () => {
   await withReviewFixture(async (configFile) => {

@@ -575,6 +575,7 @@ export function taggingLines(awaitingTag: Record<string, any[]>, callIds: Set<st
 }
 
 const CASE_KINDS_INTRO = 'Each kind of case in the config\'s `caseKinds` follows. A screen or call is a candidate of a kind when the kind has no rules, or when its rules pick that side, screens or calls. A candidate is `undecided` while no rule picks it and no mark says whether the kind needs testing there; a `not-needed` mark without a note counts as undecided. Read the source of each undecided candidate, write requests first as they are listed, and decide it: run `duru case <config> <kind> <ID> needed` when that kind of case can happen there and should be tested, or `duru case <config> <kind> <ID> not-needed --note "<why>"` when it cannot or need not; then run `duru undecided <config>` again. An undecided candidate that ends with `so only a person can decide it` carries a mark a person left, which `duru case` does not change. When you cannot tell from the code, leave the candidate undecided. Stop running `duru undecided` again once it exits with 0 or every candidate it still lists is one only a person can decide or one you could not tell from the code, tell the user which are left, and go on with `cases with no tests`. Under `cases with no tests`, each screen or call a rule, a reviewer or an agent picked the kind for and whose case of that kind no test carries yet follows under its own heading, with who picked it, the tags a test of it carries and an empty test for each; one already listed above under its marks is not repeated. Write those tests as for a mark above, then run `duru rebuild` and read this list again.';
+const UNDER_REVIEW_INTRO = ' Under `under review`, each candidate carries a `not-needed` an agent wrote with `duru case`, which waits for a reviewer to accept or revert it on the review page; until then the candidate counts as it did before, a target of a rule stays a target, and it is not undecided. Do not write it again.';
 
 const nodeText = (node: any, isCall: boolean) => (isCall
   ? `call, sent from ${node.screens.length ? node.screens.join(', ') : 'no screen'}`
@@ -599,16 +600,29 @@ function undecidedText(map: any, attached: MarkEntry[], kind: string) {
   return (id: string) => {
     const { node, isCall } = nodeOf(id);
     const mark = byPerson.get(id);
-    const what = mark?.rule ? 'took it out of a rule that no longer picks it' : 'marked it not-needed without a note';
+    const what = mark?.of !== undefined ? 'took back the agent\'s not-needed' : mark?.rule ? 'took it out of a rule that no longer picks it' : 'marked it not-needed without a note';
     return `${id} — ${nodeText(node, isCall)}${mark ? ` — ${within(mark.author, '    ')} ${what} on ${mark.date.slice(0, 10)}, so only a person can decide it` : ''}`;
   };
 }
 
+const underReview = (n: number) => (n ? `, ${n} under review` : '');
+
+function reviewText(map: any, targets: KindTargets) {
+  const nodeOf = nodesById(map);
+  return (id: string) => {
+    const { node, isCall } = nodeOf(id);
+    const { author, date, note } = targets.nodes[id].review!;
+    return `${id} — ${nodeText(node, isCall)} — ${within(author, '    ')}, ${date.slice(0, 10)} — ${quotedNote(note, '    ')}`;
+  };
+}
+
 export function undecidedLines(map: any, caseKinds: Record<string, CaseKind>, targets: Record<string, KindTargets>, attached: MarkEntry[]) {
-  return Object.keys(caseKinds).flatMap((kind) => {
+  const lines = Object.keys(caseKinds).flatMap((kind) => {
     const text = undecidedText(map, attached, kind);
-    return [`case kind ${kind}: ${targets[kind].undecided.length} undecided`, ...targets[kind].undecided.map((id) => `  ${text(id)}`)];
+    return [`case kind ${kind}: ${targets[kind].undecided.length} undecided${underReview(targets[kind].review.length)}`, ...targets[kind].undecided.map((id) => `  ${text(id)}`)];
   });
+  const waiting = Object.keys(caseKinds).reduce((n, kind) => n + targets[kind].review.length, 0);
+  return waiting ? [...lines, `${waiting} under review: not-needed marks of the agent that wait for a reviewer to accept or revert them on the review page`] : lines;
 }
 
 function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: Record<string, KindTargets>, attached: MarkEntry[], tests: Record<string, TestRow[]>, listed: Set<string>, formats: string[]) {
@@ -616,6 +630,7 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
   const lines = ['', '# Case kinds', '', CASE_KINDS_INTRO];
   let undecided = 0;
   let untested = 0;
+  let review = 0;
   for (const [kind, caseKind] of Object.entries(caseKinds)) {
     const own = targets[kind];
     const all = casesWithoutTests(kind, caseKind, own, tests);
@@ -623,8 +638,10 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
     const cellCount = all.reduce((n, c) => n + c.tags.length, 0);
     const above = cellCount - cells.reduce((n, c) => n + c.tags.length, 0);
     const text = undecidedText(map, attached, kind);
+    const waiting = reviewText(map, own);
     undecided += own.undecided.length;
     untested += cellCount;
+    review += own.review.length;
     lines.push(
       '',
       `## ${kind}`,
@@ -634,6 +651,7 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
       ...(caseKind.picks.length ? ['- rules:', ...caseKind.picks.map((p, i) => `  - \`picks[${i}]\` ${JSON.stringify(p)}`)] : ['- rules: none, so every screen and call is a candidate']),
       `- undecided: ${own.undecided.length || 'none'}`,
       ...own.undecided.map((id) => `  - ${text(id)}`),
+      ...(own.review.length ? [`- under review: ${own.review.length}`, ...own.review.map((id) => `  - ${waiting(id)}`)] : []),
       `- cases with no tests: ${cellCount || 'none'}${above ? `, ${above} of them under screens and calls listed above` : ''}`,
     );
     for (const c of cells) {
@@ -649,7 +667,8 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
       );
     }
   }
-  return { lines, undecided, untested };
+  if (review) lines[3] += UNDER_REVIEW_INTRO;
+  return { lines, undecided, untested, review };
 }
 
 export function taskList(config: any) {
@@ -669,10 +688,10 @@ export function taskList(config: any) {
   const partsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.node === id);
   const storyPartsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.story === id && m.where);
   const caseKinds = hasKinds ? caseKindLines(map, config.caseKinds, caseTargets, marks.attached, tests.nodes, new Set([...screens, ...calls].map((n: any) => n.id)), formats) : null;
-  const caseWork = caseKinds && caseKinds.undecided + caseKinds.untested > 0 ? caseKinds : null;
+  const caseWork = caseKinds && caseKinds.undecided + caseKinds.untested + caseKinds.review > 0 ? caseKinds : null;
 
   const out = [
-    `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}${caseWork ? `, ${count(caseWork.undecided, 'undecided case candidate')}, ${count(caseWork.untested, 'case')} with no tests` : ''}`,
+    `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}${caseWork ? `, ${count(caseWork.undecided, 'undecided case candidate')}${underReview(caseWork.review)}, ${count(caseWork.untested, 'case')} with no tests` : ''}`,
     '',
     `A reviewer marked these screens, API calls and stories as needing tests (\`needs-more\`). Write the tests, put \`@screen:<screen ID>\` on each test, in its \`tag\` option for Playwright and in its title for the other formats (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and ${hasKinds ? 'the tag of each case under `cases` it checks: a role or setting case of a screen that opens only under one, or a kind of case ' + (hasPicks ? 'a reviewer or a rule in the config' : 'a reviewer') + ' picked for the screen or call, tagged `@case:<kind>`' + (hasValues ? ', or `@case:<kind>=<value>` for a value of a kind with values' : '') : 'for a screen that opens only under a role or a setting the tag of each case under `cases` it checks'}), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` on it as well. Under \`empty tests\`, a screen or call gets one set for each open mark${hasKinds ? ' and one more for each case with no tests' : ', a screen one more for each case with no tests'}, and a story one set: an empty test for each test format in the config, with the tags already in place and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, put what the test checks in place of \`<what it checks>\` (the Playwright ones of an item all carry that title), remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
     '',
@@ -709,7 +728,8 @@ export function taskList(config: any) {
     out.push('', '# Comments with no target', '', ...comments.flatMap((c: any) => [markLine(c, undefined, ''), ...repliesTo(general, c).map((reply: any) => markLine(reply, undefined, '  '))]));
   }
   if (map.serverNotCompared) out.push('', `${SERVER_NOT_COMPARED}, so no call below is written as missing on the server.`);
-  if (!open.length) out.push('', caseWork ? 'No open marks, but the case kinds below still have undecided candidates or cases with no tests.' : 'No open marks.');
+  const caseLeft = caseWork && (caseWork.undecided + caseWork.untested ? 'No open marks, but the case kinds below still have undecided candidates or cases with no tests.' : 'No open marks, but the case kinds below still have candidates under review.');
+  if (!open.length) out.push('', caseLeft || 'No open marks.');
   for (const s of screens) {
     const marks = open.filter((m) => m.target.node === s.id);
     out.push(
