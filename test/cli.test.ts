@@ -782,6 +782,48 @@ test('a comment saved on a story candidate comes out on stderr and on open event
   }, { storiesDir: 'example-stories', visitRecords: ['example-visits'] });
 });
 
+test('a comment saved on a screen order comes out on stderr and on open event streams with the files of each screen and the verdict between each two neighbours; a reply to it carries the same, a status is refused, and the task list stays as it was', async () => {
+  await withReviewFixture(async (configFile) => {
+    const tasksBefore = execFileSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8' });
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const events = readEvents(url);
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      const target = { screens: ['/signin#SignIn', '/home#Home', '/help#Help'] };
+      const res = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, note: 'Fill in a way to help.' }) });
+      assert.equal(res.status, 201);
+      const comment = (await res.json()) as Mark;
+      assert.deepEqual(comment.target, target);
+      assert.deepEqual(reply(configFile, comment.id, 'Home has no link to help.', '--server', `${url}/`), { status: 0, stderr: '' });
+      await waitFor(() => records().length === 2, 'the comment and the reply on stderr');
+      const { where } = records()[0];
+      assert.deepEqual(where.screens.map((s: { id: string; routeFile: string; line: unknown; componentFile: unknown }) => [s.id, s.routeFile, typeof s.line, typeof s.componentFile]), [
+        ['/signin#SignIn', 'Routes.js', 'number', 'string'],
+        ['/home#Home', 'Routes.js', 'number', 'string'],
+        ['/help#Help', 'Routes.js', 'number', 'string'],
+      ]);
+      assert.deepEqual(where.links.map((l: { from: string; to: string; verdict: string; ways: { file: string; line: number }[] }) => [l.from, l.to, l.verdict, l.ways.map((w) => `${w.file}:${w.line}`)]), [
+        ['/signin#SignIn', '/home#Home', 'open', ['components/SignIn.js:12']],
+        ['/home#Home', '/help#Help', 'broken', []],
+      ]);
+      assert.deepEqual([records()[1].duru, records()[1].target, records()[1].where], ['reply', target, where]);
+      await waitFor(() => events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).length === 2, 'two events on the stream');
+      assert.deepEqual(events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).map((e) => JSON.parse(e.slice('data: '.length))), records());
+
+      const refused = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, status: 'missing', note: 'x' }) });
+      assert.equal(refused.status, 400);
+      assert.match(await refused.text(), /a comment on a screen order takes no status/);
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const { code, stdout } = await within(closed, 'exit');
+      assert.equal(code, 0);
+      assert.equal(stdout, tasksBefore);
+    } finally {
+      child.kill();
+    }
+  });
+});
+
 test('a reply sent with --server is saved by the running review, printed on its stderr as a "reply" line and pushed to open event streams; ending the review closes the streams and still exits with the task list', async () => {
   await withReviewFixture(async (configFile) => {
     const { child, base, closed, out } = startReview(configFile);

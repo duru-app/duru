@@ -3,6 +3,7 @@ import type { Described, SettingSource } from './access.ts';
 import { testRef } from './judgments.ts';
 import type { TableItem } from './client.ts';
 import type { Part } from './marks.ts';
+import { checkStories, linksWithoutConditions } from './story-paths.ts';
 
 interface LinkedTest {
   title: string;
@@ -193,4 +194,15 @@ export function locateStoryPart(part: Part, story: StoryPath, screens: PartScree
   const { verdict, ways, reasons, unknownLinks } = story.links[at];
   const preconditions = [...new Map(story.reach.map((r) => [JSON.stringify(r), r])).values()].filter((r) => (r.kind === 'link' && r.from === from && r.to === to) || (r.kind === 'route' && r.screen === to) || (r.kind === 'start' && at === 0 && r.screen === from));
   return { file: story.file, from: screenPlace(from, screens), to: screenPlace(to, screens), verdict, ways, ...(reasons && { reasons }), ...(unknownLinks && { unknownLinks }), preconditions };
+}
+
+export interface OrderPlace {
+  screens: ScreenPlace[];
+  links: ({ from: string; to: string } & StoryLink)[];
+}
+
+export function locateOrder(screens: string[], map: { screens: PartScreen[] }): OrderPlace | null {
+  if (linksWithoutConditions(map)) return null;
+  const [{ links }] = checkStories(map, [{ screens }]);
+  return { screens: screens.map((id) => screenPlace(id, map.screens)), links };
 }
