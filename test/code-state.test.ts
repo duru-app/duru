@@ -92,3 +92,18 @@ test('the test links keep a code hash of each test file found under srcRoot, by 
     const hash = codeHasher(config.srcRoot);
     assert.deepEqual(links.testFileHashes, Object.fromEntries(['components/DocumentDetail.spec.js', 'components/DocumentTable.spec.js', 'components/Help.spec.js', 'components/formatDate.spec.js', 'store/settings.spec.js'].map((f) => [f, hash([f])])));
   }));
+
+test('the user guide, the agent instructions and the decisions say what the map records of the code, what marks and judgments keep and where 「판정 뒤 코드가 바뀜」 shows', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /\*\*Code state\.\*\* `meta` names the commit[\s\S]*`unknown` when `srcRoot` is\s+not in one[\s\S]*`uncommitted`[\s\S]*`duruVersion`[\s\S]*`codeHash`[\s\S]*`testFileHashes`/);
+  assert.match(readme, /\*\*Code state\.\*\* The header follows the map's date with its commit[\s\S]*「비교 기준」 box shows the same[\s\S]*「판정 뒤 코드가 바뀜」[\s\S]*saved without a hash shows as it always did/);
+  assert.match(readme, /`# Code changed after a mark or a judgment` lists each mark/);
+  const skill = read('../skills/duru/SKILL.md');
+  assert.match(skill, /`# Code changed after a mark or a judgment`[\s\S]*「판정 뒤 코드가 바뀜」[\s\S]*They are not tasks[\s\S]*do not mark, judge or change them/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*The map records the code it was read from, and each new mark and judgment keeps a hash/);
+  assert.match(decisions, /- What is hashed: for a screen, its `sourceFiles`; for a call, the files of the API functions[\s\S]*Hashing only the function was\s+compared/);
+  assert.match(decisions, /- The hash function: SHA-256[\s\S]*Git's blob and tree hashes were compared/);
+  assert.match(decisions, /- Where it is stored:[\s\S]*Hashing `srcRoot` when the mark is saved was compared/);
+});
