@@ -255,6 +255,68 @@ test('a file reached through a barrel file that re-exports it belongs to the scr
   }
 });
 
+const SHARED_NAV = [
+  "import { Link } from 'react-router-dom';",
+  "import Option from '_define/Option';",
+  '',
+  'export const LAB_PATH = Option.ROUTE_PATH.LAB;',
+  '',
+  'function openHelp(history) {',
+  '  history.push(Option.ROUTE_PATH.HELP);',
+  '}',
+  '',
+  'export function goAudit(history) {',
+  '  history.push(Option.ROUTE_PATH.ADMIN_AUDIT);',
+  '}',
+  '',
+  'export function HelpButton({ history, globalSettings }) {',
+  '  return globalSettings.SYSTEM.HELP_LINK_ENABLED && <button onClick={() => openHelp(history)}>Help</button>;',
+  '}',
+  '',
+  'export function AdminMenu({ globalSettings }) {',
+  '  return globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST.map((menu) => <Link to={Option.ROUTE_PATH[menu]}>{menu}</Link>);',
+  '}',
+  '',
+].join('\n');
+
+async function buildWithSharedNav(screens: Record<string, string>) {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true });
+    const components = path.join(copy, 'client/src/components');
+    fs.writeFileSync(path.join(components, 'nav.js'), SHARED_NAV);
+    for (const [file, src] of Object.entries(screens)) fs.writeFileSync(path.join(components, file), src);
+    return await buildFixture(copy);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+}
+
+const navLinks = (map: ScreenMap, id: string) =>
+  screen(map, id).links.filter((l) => l.file === 'components/nav.js').map((l) => [l.to, l.line, l.guards, (l.inheritedGuards ?? []).map((g) => [g.via, g.guards])]);
+
+test('a link written in a file several screens share goes only to the screens whose code reaches the declaration holding it', async () => {
+  const map = await buildWithSharedNav({
+    'Help.js': "import { goAudit } from './nav';\n\nexport default function Help({ history }) {\n  return <article onClick={() => goAudit(history)}>Help</article>;\n}\n",
+    'LabResult.js': "import { HelpButton, LAB_PATH } from './nav';\n\nexport default function LabResult(props) {\n  return <section><a href={LAB_PATH}>Lab</a><HelpButton {...props} /></section>;\n}\n",
+    'AdminGroup.js': "import { AdminMenu } from './nav';\n\nexport default function AdminGroup({ globalSettings }) {\n  return <AdminMenu globalSettings={globalSettings} />;\n}\n",
+  });
+  assert.deepEqual(navLinks(map, '/help#Help'), [['/admin/audit', 11, [], []]]);
+  assert.deepEqual(navLinks(map, '/lab/result#LabResult'), [
+    ['/lab', 4, [], []],
+    ['/help', 7, [], [['openHelp', ['globalSettings.SYSTEM.HELP_LINK_ENABLED']]]],
+  ]);
+  assert.deepEqual(navLinks(map, '/admin/group#AdminGroup'), [['/admin/report', 19, ["globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'"], []]]);
+  for (const id of ['/help#Help', '/lab/result#LabResult', '/admin/group#AdminGroup']) assert.ok(screen(map, id).sourceFiles.includes('components/nav.js'), id);
+});
+
+test('a shared file used in a way duru cannot follow by name gives the screen all of its links', async () => {
+  const map = await buildWithSharedNav({
+    'Help.js': "import * as nav from './nav';\n\nconst actions = Object.values(nav);\n\nexport default function Help() {\n  return <article>{actions.length}</article>;\n}\n",
+  });
+  assert.deepEqual(navLinks(map, '/help#Help').map(([to]) => to), ['/lab', '/help', '/admin/audit', '/admin/report']);
+});
+
 test('screen and call IDs stay the same after unrelated files change', async () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {

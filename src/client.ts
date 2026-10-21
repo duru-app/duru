@@ -64,9 +64,9 @@ type BodyOption = { key: string; line: number };
 type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: UnresolvedReason }; navigation?: true; actions?: { type: string; dispatchedAt: string[] }[] };
 type DispatchSite = { line: number; types: () => ActionType[] };
 type WatcherSite = { watches: Watch[] };
-type FollowedSite = ApiCallSite | DispatchSite | WatcherSite;
 type SettingRead = Site & { key: string };
 type RouteRef = Site & { route: string; tail?: string };
+type FollowedSite = ApiCallSite | DispatchSite | WatcherSite | RouteRef;
 
 interface Facts {
   imports: string[];
@@ -283,9 +283,10 @@ export async function extractClient(config: any) {
   };
   const siteStart = new WeakMap<FollowedSite, number>();
   const siteFile = new WeakMap<ApiCallSite, string>();
+  const linkSites = (facts: Facts): RouteRef[] => facts.routeRefs;
   const sitesOf = (file: string) => {
-    const { apiCalls, dispatches, watchers } = fileFacts(file);
-    return [...apiCalls, ...dispatches, ...watchers].map((site) => ({ start: siteStart.get(site)!, site }));
+    const facts = fileFacts(file);
+    return [...facts.apiCalls, ...facts.dispatches, ...facts.watchers, ...linkSites(facts)].map((site) => ({ start: siteStart.get(site)!, site }));
   };
   const follower = nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf });
   const programFile = new WeakMap<Node, string>();
@@ -1635,7 +1636,9 @@ export async function extractClient(config: any) {
         }
       }
       for (const r of facts.settingReads) settingReads.push({ ...r, file: rel(f) });
-      for (const { tail, ...r } of facts.routeRefs) {
+      for (const ref of linkSites(facts)) {
+        if (!reached.has(ref)) continue;
+        const { tail, ...r } = ref;
         const value = routeValues[r.route];
         links.push(typeof value === 'string' && tail ? { ...r, to: value + tail, tail, file: rel(f) } : { ...r, to: value ?? UNKNOWN, file: rel(f) });
       }
