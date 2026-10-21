@@ -364,7 +364,7 @@ whole is not followed; a call assigned with `let` is printed, not read; a call t
 one file is a setting condition at both places when one of them reads the returned object. A call in a file the
 route files do not lead to, such as an app shell or a provider rendered around the routes, gives no defaults.
 
-**A screen gets the API calls that the names it uses reach; its links and setting reads still come from every
+**A screen gets the API calls and the links that the names it uses reach; its setting reads still come from every
 file of its sources.**
 duru reads the screen's component file and the components wrapped around its route whole, and follows each name
 they use to its declaration, through files that re-export it (`export *` included), then the names that
@@ -398,7 +398,9 @@ Alternatives compared (driver's decision, 2026-10-07, recorded in the planning i
   files import it, so most screens carried the same 74 calls.
 - Following names for calls, links and setting reads alike: the links and setting reads of the 1.5.0 map would
   move too, and the work is about three times as large; on 2.0.0 the stop at other screens' component files had
-  already cleared the links and setting reads.
+  already cleared the links and setting reads. Neither claim about links was measured. When links came to follow
+  names (#359), the 1.5.0 map's links did not change, and 2.0.0 still had 72 link rows from shared files whose
+  declarations the screens do not reach.
 Choices made inside it:
 - Starting from the whole component file rather than from the component's name: the file's other declarations
   are mostly helpers of that component, and reading it whole cannot drop a call the screen's own file writes.
@@ -508,6 +510,20 @@ about a second longer on either version (1.5.0 2.1 → 3.0 s, 2.0.0 2.8 → 3.6 
 The limits: a declaration reached is reached whole, so using one member of an exported object or class brings
 the calls of all its members; a name written in a branch that never runs still counts; a top-level statement
 of a reached file brings every name it uses.
+
+Links written with `routeConstant` follow the same rule since #359 (2026-10-21). A link written in a file the
+screen's sources hold is the screen's only when the screen's code reaches the declaration it is written in, or the
+file runs it on import; where a shape cannot be followed, the file's links all count, as its calls do. Setting
+reads still come from every file of the sources, and `inheritedGuards` is still gathered from the whole file, so
+each link keeps the conditions it had; narrowing either is left undecided.
+Measured on main 29fae93 against the branch: the two example maps and the into-sign 1.5.0 map (571 link rows) are
+identical apart from the time they were written. On into-sign 2.0.0 link rows go 411 → 339 on 23 screens, and none
+is added: 69 rows of `utils/route/navigationUtils.ts`, and 3 of `utils/domain/member/menuUtils.ts:205`, where
+`Option.ROUTE_PATH.SYSTEM_SETTINGS` is compared in a menu function the publish screens do not call. Of the 247
+pairs of screens joined by a link, 244 remain; the three that go lead from the basic, link and flexible publish
+screens to `/system-settings/:type?#SystemSetting`. The conditions of the remaining pairs, the entry screens and
+each screen's kinds and role values are unchanged, and in the flow every screen keeps its place; only those three
+jumps go (227 → 224).
 
 **The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
 the name.**
