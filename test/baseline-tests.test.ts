@@ -251,6 +251,17 @@ test('a title shared by two tests of one file and one test of another file is sp
   ]);
 });
 
+test('a current test whose tags name only screens or calls the map does not have is not on a screen or call now, in every project its baseline ran in, and a test that also has a tag the map does not know is compared once', () => {
+  const base = was({ title: 'old settings @screen:/z#Z', project: 'chromium', status: 'pass' }, { title: 'old settings @screen:/z#Z', project: 'firefox', status: 'pass' }, { title: 'kept', line: 2, status: 'pass' });
+  const unknownTags = [
+    { tag: 'screen:/z#Z', test: { title: 'old settings @screen:/z#Z', file: 'a.spec.ts', line: 1 } },
+    { tag: 'depth:e2e', test: { title: 'kept @screen:/a#A @depth:e2e', file: 'a.spec.ts', line: 2 } },
+  ];
+  const comparison = compareTests(base, { ...now({ nodes: { '/a#A': [{ title: 'kept @screen:/a#A @depth:e2e', line: 2, status: 'fail' }] } }), unknownTags }, MAP);
+  assert.deepEqual(baselineTestsLines(comparison), [summary(1, 1, 0, 2, 0, 0), '  pass→fail ← a.spec.ts:2 kept @screen:/a#A @depth:e2e — screen /a#A']);
+  assert.deepEqual(comparison.onlyInBaselineFiles, []);
+});
+
 test('a baseline test only in the baseline is listed under each screen or call on the map its tags name, and under none when its tags name a screen the map does not have', () => {
   const base = was({ title: 'gone @screen:/a#A', tags: ['screen:/a#A', 'call:GET:/api/x'], line: 4, status: 'pass' }, { title: 'gone too', tags: ['screen:/z#Z'], line: 9, status: 'fail' });
   const { onlyInBaselineByNode } = compareTests(base, now({ nodes: { '/b#B': [{ title: 'kept', status: 'pass' }] } }), MAP);
@@ -420,7 +431,7 @@ function keepRelease(copy: string) {
 }
 
 const TEST_LINES = [
-  'test results since releases/1.5.0 | compared 45 | pass→fail 1 pass→pending 1 | not on a screen or call now 14 | only in baseline 8 | only now 1',
+  'test results since releases/1.5.0 | compared 45 | pass→fail 1 pass→pending 1 | not on a screen or call now 17 | only in baseline 5 | only now 1',
   '  pass→fail ← components/DocumentTable.spec.js:6 DocumentTable › lists the documents it is given — screen /document/:tab#DocumentList, screen /home#Home',
   '  pass→pending ← home.spec.ts:20 opens the lab @screen:/lab#Lab (chromium) — screen /lab#Lab',
   "  only in baseline ← export.spec.ts: 5 tests, none of this file's tests are in the current results",

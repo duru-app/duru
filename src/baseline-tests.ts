@@ -88,7 +88,7 @@ export interface CurrentTests {
   discarded?: Rows;
   stories?: Rows;
   untagged?: any[];
-  unknownTags?: { test: { file: string | null } }[];
+  unknownTags?: { tag: string; test: { title: string; file: string | null; line: number | null } }[];
 }
 
 const UNDER_NODE = [['nodes', 'tag'], ['importers', 'import'], ['passed', 'trace'], ['awaitingTag', 'hand-over']] as const;
@@ -131,7 +131,7 @@ interface CurrentTest {
   tags: string[];
   file: string | null;
   project: string | null;
-  status: TestStatus;
+  status: TestStatus | null;
   place: Place;
   rows: TestRow[];
   offNode: TestStatus[];
@@ -143,7 +143,9 @@ const byPlace = (a: Place, b: Place) => compare(a.file ?? '', b.file ?? '') || (
 
 const statusIn = (t: any, project: string | null): TestStatus => (project !== null && t.projects?.[project]) || t.status;
 
-function currentTests(current: CurrentTests, calls: Set<string>) {
+const tagsInTitle = (title: string) => (title.match(/@\S+/g) ?? []).map((t) => t.slice(1));
+
+function currentTests(current: CurrentTests, calls: Set<string>, projectsOf: (title: string) => (string | null)[]) {
   const runs = new Map<string, CurrentTest>();
   const runsOf = (t: any) => (t.projects ? Object.keys(t.projects) : [t.project ?? null]).map((project: string | null) => {
     const id = JSON.stringify([t.source, t.file, t.line, t.title, project]);
@@ -160,7 +162,17 @@ function currentTests(current: CurrentTests, calls: Set<string>) {
   }
   const offNode = [...OFF_NODE.flatMap((field) => Object.values(current[field] ?? {}).flat()), ...(current.untagged ?? [])];
   for (const t of offNode) for (const run of runsOf(t)) run.offNode.push(statusIn(t, run.project));
-  for (const test of runs.values()) test.status = worst(test.rows.length ? test.rows.map((r) => r.status) : test.offNode);
+  for (const test of runs.values()) test.status = test.rows.length ? worst(test.rows.map((r) => r.status)) : worst(test.offNode);
+  const listed = new Set([...runs.values()].map((r) => JSON.stringify([r.file, r.place.line, r.title])));
+  const offMap = groupBy(current.unknownTags ?? [], (u) => JSON.stringify([u.test.file, u.test.line, u.test.title]));
+  for (const [key, entries] of offMap) {
+    if (listed.has(key) || !entries.some((u) => NODE_TAG.test(u.tag))) continue;
+    const { title, file, line } = entries[0].test;
+    const tags = [...new Set([...tagsInTitle(title), ...entries.map((u) => u.tag)])];
+    for (const project of projectsOf(title)) {
+      runs.set(JSON.stringify([null, file, line, title, project]), { title, tags, file, project, status: null, place: { file, line, title, project }, rows: [], offNode: [] });
+    }
+  }
   return [...runs.values()];
 }
 
@@ -217,7 +229,12 @@ function matchKeys<B extends Matched, N extends Matched>(baseline: B[], current:
 }
 
 export function compareTests(baseline: BaselineTests, current: CurrentTests, map: { screens: string[]; calls: string[] }) {
-  const tests = currentTests(current, new Set(map.calls));
+  const baselineProjects = groupBy(baseline.tests, (t) => withoutTags(t.title));
+  const projectsOf = (title: string) => {
+    const projects = [...new Set((baselineProjects.get(withoutTags(title)) ?? []).map((t) => t.project))];
+    return projects.length ? projects : [null];
+  };
+  const tests = currentTests(current, new Set(map.calls), projectsOf);
   const { before, now } = matchKeys(baseline.tests, tests);
   const nowFiles = [...tests.map((t) => t.file), ...(current.unknownTags ?? []).map((u) => u.test.file)];
   const onMap = new Set([...map.screens, ...map.calls]);
@@ -239,7 +256,7 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
     if (!match.some((t) => t.rows.length)) notUnderNode += 1;
     else {
       compared += 1;
-      const nowStatus = worst(match.map((t) => t.status));
+      const nowStatus = worst(match.flatMap((t) => t.status ?? []));
       if (status !== 'pass' || nowStatus === 'pass') continue;
       const under = match.filter((t) => t.rows.length);
       const results = new Set(tests.map((t) => t.result));

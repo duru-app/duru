@@ -1529,8 +1529,9 @@ Limits:
   `only now`. A test told apart only by its tags is not matched either once its tags change.
 - A Playwright test linked to a screen only by its trace is on no screen when it was skipped, so it counts in
   `not on a screen or call now` and not as `pass→pending`.
-- A test whose tags all name screens or calls the current map does not have keeps no status in `tests.json`, so its
-  baseline run counts as `only in baseline`; `rebuild` already prints the tag as `unknown @screen:…`.
+- A test whose tags all name screens or calls the current map does not have is kept in `tests.json` only with those
+  tags, without its Playwright projects, so it counts in `not on a screen or call now` for every project its baseline
+  ran in, even one that no longer runs it.
 - A test file that breaks on import gives no test in a Vitest or Jest report, so its tests show as `only in baseline`
   and the file as gone, not as `pass→fail`.
 - Verdict logs that write `PASS` and `FAIL`, as into-sign's do, read as pending and give no `pass→fail`.

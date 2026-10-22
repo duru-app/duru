@@ -519,10 +519,11 @@ listing the places whose value the source does not show in full.
   reviewer discarded does not. `pass→fail` and `pass→pending`: those that passed in the baseline and now fail, or now
   did not run or gave no verdict; a `pass→pending` test may have been skipped because a test before it in a `serial`
   group, or a `setup` project it depends on, failed. `not on a screen or call now`: baseline tests that match a
-  current test which is on no screen or call now, such as an untagged test, one only under a story, or one whose
-  pairs a reviewer all discarded. When `not on a screen or call now` is large, those tests could not be compared
-  because nothing links them to a screen or call now; a browser test linked only by its trace, for one, is not
-  linked when it was skipped and left no trace. `only in baseline`: baseline tests no current test matches.
+  current test which is on no screen or call now, such as an untagged test, one only under a story, one whose tags
+  name only screens or calls the map does not have, or one whose pairs a reviewer all discarded. When
+  `not on a screen or call now` is large, those tests could not be compared because nothing links them to a screen
+  or call now; a browser test linked only by its trace, for one, is not linked when it was skipped and left no
+  trace. `only in baseline`: baseline tests no current test matches.
   `only now`: tests under a screen or call now that no baseline test matches; they are not regressions.
   `compared`, `not on a screen or call now` and `only in baseline` add up to the tests of the baseline.
 - `  no test was compared: no baseline test matches a test under a screen or call now` — follows when `compared` is 0,
