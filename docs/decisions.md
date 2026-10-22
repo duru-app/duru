@@ -3557,6 +3557,8 @@ cannot read, the `route path not read` line says where in the class's file it st
 When the value given at the call is read, it is used and the getter is not: an object written at the call
 (`teamPath({ path: '/login' })`) is what the function gets, and an argument left out gives `{?}` as before, since
 such a call fails when it runs.
+A member read with `?.` (`team?.path ?? '/start'`) also keeps the branch where the parameter is missing, so a
+`??` or `||` after it still gives its link, as it did when the member was a piece duru cannot read.
 The class is found when it is declared in the same file, imported as a value, or imported only as a type
 (`import type Document from`, `import { type Help, other } from`), through value re-exports between
 (`export { default as Doc } from`). duru removes type-only import lines and `type` specifiers from a TypeScript

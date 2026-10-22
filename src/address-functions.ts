@@ -291,7 +291,8 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       const getter = opaque(o) ? getterOf(object, key) : null;
       if (!getter) return [member(o, key, p)];
       if (reading.has(getter.node) || at.depth >= FOLLOWED) return [unknownAt(p)];
-      return followed(getter, p, () => returnedValues(getter, new Map(), p, at.depth + 1));
+      const read = followed(getter, p, () => returnedValues(getter, new Map(), p, at.depth + 1));
+      return p.isOptionalMemberExpression() ? [...read, known(undefined)] : read;
     });
   }
 

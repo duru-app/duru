@@ -1834,6 +1834,52 @@ export default function Home({ team, local, box }) {
   ]);
 });
 
+test('a getter read with ?. keeps the branch where the parameter is missing, so a ?? or || fallback still gives its link', async () => {
+  const team = `export default class Team {
+  slug = '';
+
+  get path() {
+    return '/login';
+  }
+
+  get page() {
+    return \`/team/\${this.slug}\`;
+  }
+}
+`;
+  const paths = `import Team from './models/Team';
+
+export const orPath = (team?: Team) => team?.path || '/start';
+export function nullishPath(team: Team) {
+  return team?.path ?? '/start';
+}
+export const pagePath = (team?: Team) => team?.page ?? '/start';
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { nullishPath, orPath, pagePath } from './paths';
+
+export default function Home({ team }) {
+  return (
+    <nav>
+      <Link to={orPath(team)}>or</Link>
+      <Link to={nullishPath(team)}>nullish</Link>
+      <Link to={pagePath(team)}>page</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/Team.ts': team }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('orPath('), [], ['/login#Login']],
+    ['/start', at('orPath('), [], ['/start#Start']],
+    ['/login', at('nullishPath('), [], ['/login#Login']],
+    ['/start', at('nullishPath('), [], ['/start#Start']],
+    ['/team/{*}', at('pagePath('), [], ['/team/:team#Team']],
+    ['/start', at('pagePath('), [], ['/start#Start']],
+  ]);
+});
+
 test('a getter the class inherits, a field that is not a getter, a parameter typed with a union or a type alias, and a call that leaves the argument out are not read, so the address stays {?}', async () => {
   const paths = `import { Base } from './models/Base';
 
