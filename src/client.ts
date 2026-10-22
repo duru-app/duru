@@ -4,7 +4,7 @@ import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
 import type { ArrowFunctionExpression, CallExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
-import { addressReader, UNREADABLE_PIECE } from './address-functions.ts';
+import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
 import type { AddressFunction } from './address-functions.ts';
 import type { Branch, Constants, GuardInit, GuardSetting, RouteNode } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
@@ -785,11 +785,17 @@ export async function extractClient(config: any) {
   const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction });
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
+  // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니다.
   function linkAddresses(p: NodePath) {
-    return [...new Set(linkReading.branches(p).map(({ text }) => {
+    const read = linkReading.branches(p);
+    if ('tooMany' in read) return [UNKNOWN];
+    const found = new Set<string>();
+    for (const { text, made } of read.branches) {
       const segments = pathSegments(text);
-      return segments ? `/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}` : UNKNOWN;
-    }))];
+      if (segments) found.add(`/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}`);
+      else if (!made || text.includes(UNREADABLE_PIECE)) found.add(UNKNOWN);
+    }
+    return found.size > MOST_ADDRESSES ? [UNKNOWN] : [...found];
   }
 
   const oneAddress = (p: NodePath) => {
@@ -1165,7 +1171,9 @@ export async function extractClient(config: any) {
   });
 
   function readRoutePath(p: NodePath) {
-    const read = routeReading.branches(p);
+    const found = routeReading.branches(p);
+    if ('tooMany' in found) return { path: UNKNOWN, stops: [p] };
+    const read = found.branches;
     const paths = [...new Set(read.map((b) => b.text.replaceAll(UNREADABLE_PIECE, UNKNOWN)))];
     return paths.length === 1 ? { path: paths[0], stops: read[0].stops } : { path: UNKNOWN, stops: [p] };
   }

@@ -1173,3 +1173,129 @@ export default function Home({ row }) {
   const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
   assert.deepEqual(linksOf(map, '/home#Home'), [['/team/{*}', 6, [], ['/team/:team#Team']], ['/team/new', 6, [], ['/team/:team#Team']]]);
 });
+
+test('an address function that picks its address by a condition duru cannot read, written with if and a return below it, if and else, or ? :, gives a link for each branch, with the conditions of the place it is called and none from inside the function', async () => {
+  const paths = `import { env } from 'app-env';
+import { store } from './store';
+
+export const helpPath = () => (env.cloud ? '/help/cloud' : '/help');
+
+export function teamPath(user) {
+  if (user.admin) return '/team/admin';
+  return \`/team/\${user.team}\`;
+}
+
+export function homePath() {
+  if (store.signedIn) {
+    return '/home';
+  } else {
+    return '/login';
+  }
+}
+`;
+  const home = `import { Link, useHistory } from 'react-router-dom';
+import { helpPath, homePath, teamPath } from './paths';
+
+export default function Home({ user, open }) {
+  const history = useHistory();
+  return (
+    <nav>
+      <Link to={helpPath()}>help</Link>
+      {open && <Link to={teamPath(user)}>team</Link>}
+      <button onClick={() => history.push(homePath())}>home</button>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths, 'store.js': 'export const store = { signedIn: window.signedIn };\n' }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/help/cloud', at('helpPath()'), [], ['/help/:page?#Help']],
+    ['/help', at('helpPath()'), [], ['/help/:page?#Help']],
+    ['/team/admin', at('teamPath(user)'), ['open'], ['/team/:team#Team']],
+    ['/team/{*}', at('teamPath(user)'), ['open'], ['/team/:team#Team']],
+    ['/home', at('homePath()'), [], ['/home#Home']],
+    ['/login', at('homePath()'), [], ['/login#Login']],
+  ]);
+});
+
+test('a branch not written from / gives no link, and branches that give the same address give one link', async () => {
+  const paths = `export const relativePath = (flag) => (flag.relative ? 'settings' : '/settings');
+export const emptyPath = (flag) => (flag.none ? '' : '/start');
+export const samePath = (flag) => (flag.query ? '/help?x=1' : '/help#top');
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { emptyPath, relativePath, samePath } from './paths';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      <Link to={relativePath(flag)}>settings</Link>
+      <Link to={emptyPath(flag)}>start</Link>
+      <Link to={samePath(flag)}>help</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['/settings', at('relativePath(flag)')], ['/start', at('emptyPath(flag)')], ['/help', at('samePath(flag)')]]);
+});
+
+test('an address whose leading piece is the empty text an address function returns in one branch is {?} in that branch, so that branch goes to no screen', async () => {
+  const routes = `import { Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Login from './Login';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/login" component={Login} exact />
+      <Route path="/home" component={Home} exact />
+      <Route path="/:team" component={Team} />
+    </Switch>
+  );
+}
+`;
+  const paths = `export function teamUrl(team) {
+  if (!team) return '';
+  return \`/\${team.name}\`;
+}
+
+export const channelUrl = (team, channel) => teamUrl(team) + '/channels/' + channel.name;
+`;
+  const home = `import { useHistory } from 'react-router-dom';
+import { channelUrl } from './paths';
+
+export default function Home({ team, channel }) {
+  const history = useHistory();
+  return <a onClick={() => history.push(channelUrl(team, channel))}>channel</a>;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home, 'paths.js': paths }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', 6, [], []], ['/{*}/channels/{*}', 6, [], ['/:team#Team']]]);
+});
+
+test('more than 8 different addresses at one place give one {?} link', async () => {
+  const tabs = (name: string, count: number) => `export function ${name}(tab) {\n${Array.from({ length: count - 1 }, (_, i) => `  if (tab.is${i}) return '/team/${i}';\n`).join('')}  return '/team/last';\n}\n`;
+  const home = `import { Link } from 'react-router-dom';
+import { eight, nine } from './tabs';
+
+export default function Home({ tab }) {
+  return (
+    <nav>
+      <Link to={eight(tab)}>eight</Link>
+      <Link to={nine(tab)}>nine</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'tabs.js': tabs('eight', 8) + tabs('nine', 9) }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [
+    ...[0, 1, 2, 3, 4, 5, 6].map((i) => [`/team/${i}`, at('eight(tab)')]),
+    ['/team/last', at('eight(tab)')],
+    ['{?}', at('nine(tab)')],
+  ]);
+});
