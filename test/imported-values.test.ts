@@ -402,3 +402,31 @@ export default function ImportedRoutes() {
   assert.deepEqual(reasons('Satisfied'), [{ kind: 'redirect', file: 'ImportedRoutes.tsx', line: lineOf('to="team"') }]);
   assert.deepEqual(reasons('Objected'), [{ kind: 'redirect', file: 'ImportedRoutes.tsx', line: lineOf('PATHS.OBJECT') }]);
 });
+
+test('a route file redirect whose to puts a member of a constant object inside a template or after + still makes its screen an entry', async () => {
+  const routes = `import { Navigate, Route, Routes } from 'react-router-dom';
+import { PATHS } from './paths/simple';
+import Simple from './pages/Simple';
+import Satisfied from './pages/Satisfied';
+import Objected from './pages/Objected';
+
+const TABS = { GENERAL: 'general' };
+
+export default function ImportedRoutes() {
+  return (
+    <Routes>
+      <Route path="/app/object" element={<Objected />} />
+      <Route path="/settings/general" element={<Satisfied />} />
+      <Route path="/settings/:tab" element={<Simple />} />
+      <Route path="/old" element={<Navigate to={\`/app\${PATHS.OBJECT}\`} replace />} />
+      <Route path="/older" element={<Navigate to={'/settings/' + TABS.GENERAL} replace />} />
+    </Routes>
+  );
+}
+`;
+  const map = await build(fixtureCopy({ ...PATH_FILES, 'ImportedRoutes.tsx': routes }));
+  const lineOf = (text: string) => routes.split('\n').findIndex((l) => l.includes(text)) + 1;
+  const reasons = (component: string) => map.entries.find((e) => e.screen === map.screens.find((s) => s.component === component)!.id)?.reasons.filter((r) => r.kind === 'redirect');
+  assert.deepEqual(reasons('Objected'), [{ kind: 'redirect', file: 'ImportedRoutes.tsx', line: lineOf('PATHS.OBJECT') }]);
+  assert.deepEqual(reasons('Satisfied'), [{ kind: 'redirect', file: 'ImportedRoutes.tsx', line: lineOf('TABS.GENERAL') }]);
+});

@@ -1076,22 +1076,20 @@ export default function Home() {
   ]);
 });
 
-test('an address function that calls another address function is read through it, and a / the inner function ends with is not doubled', async () => {
+test('an address function that calls another address function is read through it', async () => {
   const paths = `const base = () => '/team';
-const root = () => '/';
 export const teamPath = (id) => \`\${base()}/\${id}\`;
 export const membersPath = (id) => teamPath(id) + '/members';
-export const homePath = () => \`\${root()}/home\`;
 `;
   const home = `import { Link } from 'react-router-dom';
-import { homePath, membersPath } from './paths';
+import { membersPath } from './paths';
 
 export default function Home() {
-  return <nav><Link to={membersPath('a')}>members</Link><Link to={homePath()}>home</Link></nav>;
+  return <nav><Link to={membersPath('a')}>members</Link></nav>;
 }
 `;
   const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
-  assert.deepEqual(addressesAt(map, '/home#Home'), [['/team/a/members', 5], ['/home', 5]]);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['/team/a/members', 5]]);
 });
 
 test('a parameter with a default or written as an object pattern takes the default when the argument is left out, and the property of the object given otherwise', async () => {
@@ -1379,9 +1377,9 @@ export default function Home(props) {
   assert.deepEqual(addressesAt(map, '/home#Home'), [['/start', at("same('/start')")], ['/home', at('fallback(')]]);
 });
 
-test('the usage guide, the agent skill and the decision record say that duru reads the address a function declared in the source returns, and what a route path not read line adds when that function gives several paths', () => {
+test('the decision record says that duru reads the address a function declared in the source returns, the usage guide and the agent skill say what a route path not read line adds when that function gives several paths, and the usage guide does not say how such a call is read', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
-  assert.match(read('README.md'), /When a piece of an address is a call of a function declared in the source, duru reads\s+the\s+address\s+that\s+function returns\./);
+  assert.doesNotMatch(read('README.md'), /a call of a function declared in the source/);
   assert.match(read('README.md'), /`, which gives <paths>`/);
   assert.match(read('skills/duru/SKILL.md'), /`, which gives <paths>`/);
   const decisions = read('docs/decisions.md');
@@ -1452,6 +1450,325 @@ export default function Home({ tab, tabs }) {
     ['{?}', at('looped(tabs)')],
     ['{?}', at('counted()')],
     ['/login', at('logged(tab)')],
+  ]);
+});
+
+test('an address function whose body changes a value of its own through an index or a destructuring assignment stays {?}', async () => {
+  const paths = `export function indexed(id) {
+  const parts = ['team', 'me'];
+  if (id) parts[1] = id;
+  return '/' + parts.join('/');
+}
+
+export function destructured(opts) {
+  let base = '/login';
+  ({ base } = opts);
+  return base;
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { destructured, indexed } from './paths';
+
+export default function Home({ id, opts }) {
+  return (
+    <nav>
+      <Link to={indexed(id)}>indexed</Link>
+      <Link to={destructured(opts)}>destructured</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['{?}', at('indexed(id)')], ['{?}', at('destructured(opts)')]]);
+});
+
+test('an address function whose declaration, return or if test changes a value of its own stays {?}', async () => {
+  const paths = `export function declared(tab) {
+  const parts = ['', 'team'];
+  const n = parts.push(tab);
+  return parts.join('/');
+}
+
+export function returned(tab) {
+  const parts = ['', 'team'];
+  return parts.push(tab) && parts.join('/');
+}
+
+export function tested(tab) {
+  const parts = ['', 'team'];
+  if (parts.push(tab)) return parts.join('/');
+  return '/home';
+}
+
+export function assigned(tab) {
+  const o = { path: '/team' };
+  const same = Object.assign(o, { path: \`/team/\${tab}\` });
+  return o.path;
+}
+
+export function found(tabs) {
+  let target = '/team';
+  const on = tabs.find((t) => {
+    target = \`/team/\${t.id}\`;
+    return t.on;
+  });
+  return target;
+}
+
+export function conditioned(tab) {
+  let url = '/team';
+  if (tab && (url = \`/team/\${tab}\`)) return url;
+  return url;
+}
+
+export function reassigned(tab) {
+  const parts = ['', 'team'];
+  let n = 0;
+  n = parts.push(tab);
+  return parts.join('/');
+}
+
+export const arrowed = (tab, parts = ['', 'team']) => parts.push(tab) && parts.join('/');
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { arrowed, assigned, conditioned, declared, found, reassigned, returned, tested } from './paths';
+
+export default function Home({ tab, tabs }) {
+  return (
+    <nav>
+      <Link to={declared(tab)}>declared</Link>
+      <Link to={returned(tab)}>returned</Link>
+      <Link to={tested(tab)}>tested</Link>
+      <Link to={assigned(tab)}>assigned</Link>
+      <Link to={found(tabs)}>found</Link>
+      <Link to={conditioned(tab)}>conditioned</Link>
+      <Link to={reassigned(tab)}>reassigned</Link>
+      <Link to={arrowed(tab)}>arrowed</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), ['declared(tab)', 'returned(tab)', 'tested(tab)', 'assigned(tab)', 'found(tabs)', 'conditioned(tab)', 'reassigned(tab)', 'arrowed(tab)'].map((call) => ['{?}', at(call)]));
+});
+
+test('a property read with ?. on an argument left out or given as null is undefined, so a condition on it picks its branch', async () => {
+  const paths = `export function helpUrl(options) {
+  return options?.page ? \`/team/\${options.page}\` : '/help';
+}
+
+export function startUrl(options) {
+  const team = options?.team;
+  if (team) return '/team/' + team;
+  return '/start';
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { helpUrl, startUrl } from './paths';
+
+export default function Home() {
+  return (
+    <nav>
+      <Link to={helpUrl()}>a</Link>
+      <Link to={helpUrl(null)}>b</Link>
+      <Link to={startUrl()}>c</Link>
+      <Link to={helpUrl({ page: 'x' })}>d</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['/help', 7], ['/help', 8], ['/start', 9], ['/team/x', 10]]);
+});
+
+test('an object argument with a spread duru cannot read leaves every key unknown that the spread may give, but a key written after the spread keeps its value', async () => {
+  const paths = `export function docUrl({ edit }) {
+  return edit ? '/login' : '/start';
+}
+
+export const entryUrl = (loc) => loc;
+
+export function memberUrl(o) {
+  if (!o.id) return '/login';
+  return '/team/' + o.id;
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { docUrl, entryUrl, memberUrl } from './paths';
+
+export default function Home({ member, next, ...props }) {
+  return (
+    <nav>
+      <Link to={docUrl({ edit: false, ...props })}>a</Link>
+      <Link to={entryUrl({ pathname: '/start', ...next })}>b</Link>
+      <Link to={memberUrl({ ...member })}>c</Link>
+      <Link to={docUrl({ ...props, edit: false })}>d</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [
+    ['/login', at('edit: false, ...props')],
+    ['/start', at('edit: false, ...props')],
+    ['{?}', at('entryUrl(')],
+    ['/login', at('memberUrl(')],
+    ['/team/{*}', at('memberUrl(')],
+    ['/start', at('...props, edit: false')],
+  ]);
+});
+
+test('a / an address function returns followed by a piece written from / gives {?} for that branch of a link, since the app would build //', async () => {
+  const routes = `import { Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Login from './Login';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/home" component={Home} exact />
+      <Route path="/:team/channels/:channel" component={Login} />
+      <Route path="/:team" component={Team} />
+    </Switch>
+  );
+}
+`;
+  const teams = `export function relativeTeamUrl(state, teamId) {
+  const team = state.teams[teamId];
+  if (!team) {
+    return '/';
+  }
+  return \`/\${team.name}\`;
+}
+`;
+  const home = `import { useHistory } from 'react-router-dom';
+import { relativeTeamUrl } from './teams';
+
+export default function Home({ state, teamId, channel }) {
+  const history = useHistory();
+  return <a onClick={() => history.push(relativeTeamUrl(state, teamId) + '/channels/' + channel.name)}>channel</a>;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home, 'teams.js': teams }));
+  const line = lineOf(home, 'relativeTeamUrl(state');
+  assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', line, [], []], ['/{*}/channels/{*}', line, [], ['/:team/channels/:channel#Login']]]);
+});
+
+test('an empty text an address function body puts in front of its address, by ? :, by a let it changes or by a const, makes that branch {?}', async () => {
+  const routes = `import { Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Login from './Login';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/home" component={Home} exact />
+      <Route path="/:team/channels/:channel" component={Login} />
+      <Route path="/:team" component={Team} />
+    </Switch>
+  );
+}
+`;
+  const urls = `export function byTernary(team, channel) {
+  return \`\${team ? \`/\${team.name}\` : ''}/channels/\${channel.name}\`;
+}
+
+export function byLet(team, channel) {
+  let prefix = '';
+  if (team) prefix = \`/\${team.name}\`;
+  return \`\${prefix}/channels/\${channel.name}\`;
+}
+
+export function byConst(team, channel) {
+  const prefix = team ? '/' + team.name : '';
+  return prefix + '/channels/' + channel.name;
+}
+
+export function middle(team, channel) {
+  return \`/\${team.name}\${channel ? '' : '/none'}/channels\`;
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { byConst, byLet, byTernary, middle } from './urls';
+
+export default function Home({ team, channel }) {
+  return (
+    <nav>
+      <Link to={byTernary(team, channel)}>a</Link>
+      <Link to={byLet(team, channel)}>b</Link>
+      <Link to={byConst(team, channel)}>c</Link>
+      <Link to={middle(team, channel)}>d</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home, 'urls.js': urls }));
+  const both = (line: number) => [['/{*}/channels/{*}', line, [], ['/:team/channels/:channel#Login']], ['{?}', line, [], []]];
+  const links = linksOf(map, '/home#Home');
+  for (const name of ['byTernary', 'byLet', 'byConst']) {
+    const line = lineOf(home, `${name}(`);
+    assert.deepEqual(links.filter((l) => l[1] === line).sort(), both(line).sort(), name);
+  }
+  const line = lineOf(home, 'middle(');
+  assert.deepEqual(links.filter((l) => l[1] === line).map((l) => l[0]).sort(), ['/{*}/channels', '/{*}/none/channels']);
+});
+
+test('an address function call with a member of a constant object as its argument is {?} in a link, while a route path reads it whole', async () => {
+  const routes = `import { Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Help from './Help';
+import { settingsPath } from './paths';
+import { TABS } from './tabs';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/home" component={Home} exact />
+      <Route path={settingsPath(TABS.GENERAL)} component={Help} exact />
+      <Route path="/settings/:tab" component={Team} />
+    </Switch>
+  );
+}
+`;
+  const home = `import { useHistory } from 'react-router-dom';
+import { settingsPath } from './paths';
+import { TABS } from './tabs';
+
+export default function Home() {
+  const history = useHistory();
+  return <a onClick={() => history.push(settingsPath(TABS.GENERAL))}>general</a>;
+}
+`;
+  const files = { 'Routes.js': routes, 'Home.js': home, 'tabs.js': `export const TABS = { GENERAL: 'general' };\n`, 'paths.js': 'export function settingsPath(tab) {\n  return `/settings/${tab}`;\n}\n' };
+  const map = await build(writeApp(files));
+  assert.equal(map.screens.find((s) => s.component === 'Help')!.path, '/settings/general');
+  assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', lineOf(home, 'history.push('), [], []]]);
+});
+
+test('an address function call that gives more than 8 different addresses inside a longer address is one {*} piece of it, as are two calls whose addresses together pass 8', async () => {
+  const segments = (name: string, count: number) => `export function ${name}(kind) {\n${Array.from({ length: count - 1 }, (_, i) => `  if (kind === ${i}) return '${name}${i}';\n`).join('')}  return '${name}-last';\n}\n`;
+  const home = `import { Link } from 'react-router-dom';
+import { nine, three, other } from './segments';
+
+export default function Home({ team, kind, mode }) {
+  return (
+    <nav>
+      <Link to={\`/team/\${team}/\${nine(kind)}\`}>nine</Link>
+      <Link to={\`/team/\${team}/\${three(kind)}/\${other(mode)}\`}>three by three</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'segments.js': segments('nine', 9) + segments('three', 3) + segments('other', 3) }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/team/{*}/{*}', lineOf(home, 'nine(kind)'), [], ['/team/:team#Team']],
+    ['/team/{*}/{*}/{*}', lineOf(home, 'three(kind)'), [], ['/team/:team#Team']],
   ]);
 });
 
