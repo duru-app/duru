@@ -203,5 +203,9 @@ test('a route path that starts with the outer route\'s address and goes on with 
     assert.ok(map.screens.some((s) => s.path === '/:team/:section(integrations|emoji){?}'), JSON.stringify(map.screens.map((s) => s.path)));
     assert.ok(!map.screens.some((s) => s.routeFile === 'outer/Backstage.js' && s.path === '/:team/:section(integrations|emoji)'));
     assert.deepEqual(backstageEntries(map), [['/:team/:section(integrations|emoji){?}', 'tabPath(props.admin)']]);
+    const line = fs.readFileSync(backstage, 'utf8').split('\n').findIndex((l) => l.includes('tabPath(props.admin)')) + 1;
+    assert.deepEqual(routeLines(configFile).filter((l) => l.includes('outer/Backstage.js')), [
+      `  route path not read ← outer/Backstage.js:${line}: stopped at tabPath(props.admin), which gives /:team/:section(integrations|emoji)/admin/profile and /:team/:section(integrations|emoji)/profile, only /:team/:section(integrations|emoji){?}`,
+    ]);
   }, OUTER_ROUTES, route);
 });

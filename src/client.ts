@@ -784,21 +784,38 @@ export async function extractClient(config: any) {
   }
 
   const passThrough = (name: string) => (config.passThroughCalls ?? []).includes(name);
-  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction, passThrough });
+  const linkReading = addressReader({
+    leaf(p) {
+      if (lossless(p)) return { value: evaluate(p) };
+      const value = evaluate(p);
+      return { parts: [p], withheld: typeof value === 'number' || (typeof value === 'string' && !value.includes(UNKNOWN)) };
+    },
+    declaredValue,
+    declaredFunction,
+    namespaceFunction,
+    passThrough,
+    mergesSlashes: false,
+  });
+
+  const writtenAddress = (text: string) => {
+    const segments = pathSegments(text);
+    return segments ? `/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}` : UNKNOWN;
+  };
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
-  // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니다.
+  // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니고, // 가 생기는 것은 {?} 다.
+  // 갈래가 너무 많으면 함수를 따라가지 않고, 호출마다 읽지 못한 조각으로 둔 주소 하나를 준다.
   function linkAddresses(p: NodePath) {
     const read = linkReading.branches(p);
-    if ('tooMany' in read) return [UNKNOWN];
+    if ('tooMany' in read) return [writtenAddress(tailText(p))];
     const found = new Set<string>();
     for (const { text, made, whole } of read.branches) {
       if (made && whole && !addresses(whole).length) continue;
-      const segments = pathSegments(text);
-      if (segments) found.add(`/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}`);
+      if (made && text.split(/[?#]/)[0].includes('//')) found.add(UNKNOWN);
+      else if (pathSegments(text)) found.add(writtenAddress(text));
       else if (!made || text.includes(UNREADABLE_PIECE)) found.add(UNKNOWN);
     }
-    return found.size > MOST_ADDRESSES ? [UNKNOWN] : [...found];
+    return found.size > MOST_ADDRESSES ? [writtenAddress(tailText(p))] : [...found];
   }
 
   const oneAddress = (p: NodePath) => {
@@ -1182,6 +1199,7 @@ export async function extractClient(config: any) {
     declaredFunction,
     namespaceFunction,
     passThrough,
+    mergesSlashes: true,
   });
 
   // 주소 함수가 돌려준 갈래 가운데 쿼리를 붙이는 것과, 고정된 마디가 있는 갈래 옆에서 경로 변수만 남은 것은 경로가 아니다.
@@ -1225,10 +1243,10 @@ export async function extractClient(config: any) {
         if (config.redirectElements.includes(tag)) {
           const toValue = attr('to')?.get('value');
           const toExpr = toValue?.node ? (toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue) as NodePath : null;
-          const read = toExpr ? oneAddress(toExpr) : UNKNOWN;
-          // 링크로 읽지 못한 to 는 글자 값으로 다시 읽어, 상대 경로와 이름으로 import 한 상수 객체의 멤버를 남긴다.
-          const written = read === UNKNOWN && toExpr ? evaluate(toExpr) : undefined;
-          redirects.push({ to: typeof written === 'string' ? written : read, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
+          // 글자 값으로 끝까지 읽히는 to 는 그 값을 쓰고, 아니면 링크로 읽는다. 링크로도 읽지 못하면 글자 값을 남긴다.
+          const written = toExpr ? evaluate(toExpr) : undefined;
+          const read = typeof written === 'string' && !written.includes(UNKNOWN) ? written : toExpr ? oneAddress(toExpr) : UNKNOWN;
+          redirects.push({ to: read === UNKNOWN && typeof written === 'string' ? written : read, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
           return;
         }
         if (!config.routeElements.includes(tag)) return;
@@ -1706,7 +1724,9 @@ export async function extractClient(config: any) {
       return around.filter((j) => !around.some((k) => sourced[k].s.routeFile !== sourced[j].s.routeFile && holds[j].has(routeFileOf(k))));
     };
     const filled = new Map<number, string>();
+    const outers = new Map<number, string>();
     const filling = new Set<number>();
+    const behind = (outer: string, rest: string) => outer.replace(/\/$/, '') + rest || '/';
     const addressOf = (i: number): string => {
       const { s, outerFill } = sourced[i];
       if (!outerFill.startsWithOuterAddress || filling.has(i)) return s.path;
@@ -1715,7 +1735,8 @@ export async function extractClient(config: any) {
         const rest = s.path.slice(UNKNOWN.length);
         const outer = joinedPaths([...new Set(outersOf(i).map(addressOf))], rest);
         filling.delete(i);
-        filled.set(i, outer === null ? s.path : outer.replace(/\/$/, '') + rest || '/');
+        if (outer !== null) outers.set(i, outer);
+        filled.set(i, outer === null ? s.path : behind(outer, rest));
       }
       return filled.get(i)!;
     };
@@ -1725,7 +1746,9 @@ export async function extractClient(config: any) {
       if (address === x.s.path) return;
       x.s.path = address;
       if (!unreadPath) return;
-      if (address.includes(UNKNOWN)) Object.assign(unreadPath.entry, { path: address, stoppedAt: unreadPath.restStoppedAt ?? unreadPath.entry.stoppedAt });
+      const outer = outers.get(i)!;
+      const paths = unreadPath.entry.paths?.map((p) => (p.startsWith(UNKNOWN) ? behind(outer, p.slice(UNKNOWN.length)) : p));
+      if (address.includes(UNKNOWN)) Object.assign(unreadPath.entry, { path: address, stoppedAt: unreadPath.restStoppedAt ?? unreadPath.entry.stoppedAt, ...(paths && { paths }) });
       else unreadRoutePaths.splice(unreadRoutePaths.indexOf(unreadPath.entry), 1);
     });
   }

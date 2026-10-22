@@ -8,7 +8,8 @@ const MOST_BRANCHES = 64;
 
 export type AddressFunction = NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration>;
 // value 는 끝까지 읽은 값이고, parts 는 고정 문자열과 읽다 멈춘 지점을 순서대로 담는다.
-export type Leaf = { value: unknown } | { parts: (string | NodePath)[] };
+// withheld 는 값을 알지만 이 읽기가 받지 않는 조각이라, 함수 호출을 거쳐 주소에 들어가면 그 호출을 읽지 못한 조각으로 둔다.
+export type Leaf = { value: unknown } | { parts: (string | NodePath)[]; withheld?: boolean };
 // whole 은 함수가 받은 인자를 그대로 돌려준 갈래의, 부른 곳에 적힌 그 인자다.
 export type Branch = { text: string; stops: NodePath[]; made: boolean; whole?: NodePath };
 export type Read = { branches: Branch[] } | { tooMany: true };
@@ -19,10 +20,11 @@ interface Reading {
   declaredFunction: (scope: Scope, name: string) => AddressFunction | null;
   namespaceFunction: (scope: Scope, chain: string[]) => AddressFunction | null;
   passThrough: (name: string) => boolean;
+  mergesSlashes: boolean;
 }
 
 // empty 는 함수가 돌려준 빈 문자열이다. 주소 맨 앞에 오면 읽지 못한 조각으로 본다.
-type Piece = { text: string; made?: boolean } | { stop: NodePath } | { empty: NodePath };
+type Piece = { text: string; made?: boolean } | { stop: NodePath; withheld?: boolean } | { empty: NodePath };
 type Val =
   | { pieces: Piece[] }
   | { value: unknown }
@@ -60,12 +62,12 @@ function piecesOf({ val }: Out, at: NodePath): Piece[] {
   return [{ stop: 'unknown' in val ? val.unknown : at }];
 }
 
-function joined(parts: [Out, NodePath][]): Out {
+function joined(parts: [Out, NodePath][], mergesSlashes: boolean): Out {
   const pieces: Piece[] = [];
   for (const piece of parts.flatMap(([out, at]) => piecesOf(out, at))) {
     const last = pieces.at(-1);
     if ('empty' in piece && pieces.length) continue;
-    if ('text' in piece && last && 'text' in last && last.text.endsWith('/') && piece.text.startsWith('/') && (last.made || piece.made)) {
+    if ('text' in piece && last && 'text' in last && last.text.endsWith('/') && piece.text.startsWith('/') && (last.made || piece.made) && mergesSlashes) {
       if (piece.text.length > 1) pieces.push({ ...piece, text: piece.text.slice(1) });
     } else pieces.push(piece);
   }
@@ -92,11 +94,18 @@ function truth(out: Out): boolean | undefined {
 function member(out: Out, key: string, at: NodePath): Out {
   const { val } = out;
   if ('props' in val) return val.props.get(key) ?? (val.open ? unknownAt(at) : known(undefined));
+  if (at.isOptionalMemberExpression() && 'value' in val && (val.value === undefined || val.value === null)) return known(undefined);
   if ('items' in val) return key === 'length' ? known(val.items.length) : unknownAt(at);
   if ('unknown' in val) return out;
   const value = plain(out);
   if (typeof value === 'string' && key === 'length') return known(value.length);
   return value !== null && typeof value === 'object' ? known((value as Record<string, unknown>)[key]) : unknownAt(at);
+}
+
+function withheldIn({ val }: Out): boolean {
+  if ('pieces' in val) return val.pieces.some((x) => 'withheld' in x && x.withheld);
+  if ('props' in val) return [...val.props.values()].some(withheldIn);
+  return 'items' in val && val.items.some(withheldIn);
 }
 
 const keyOfOut = ({ val, made, whole }: Out) => ('pieces' in val ? `${made}\0${whole?.node.start}\0${val.pieces.map((x) => ('text' in x ? x.text : 'stop' in x ? UNREADABLE_PIECE : '\u0001')).join('')}` : null);
@@ -132,14 +141,55 @@ function touchesOwn(x: NodePath<any>, fn: AddressFunction): boolean {
   return found;
 }
 
+const CHANGING_METHODS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin', 'set', 'add', 'delete', 'clear']);
+
+function changesOwn(x: NodePath<any>, fn: AddressFunction): boolean {
+  const changes = (p: NodePath<any>): boolean => {
+    if (p.isAssignmentExpression()) return touchesOwn(p.get('left'), fn);
+    if (p.isUpdateExpression() || p.isUnaryExpression({ operator: 'delete' })) return touchesOwn(p.get('argument') as NodePath<any>, fn);
+    if (!p.isCallExpression() && !p.isOptionalCallExpression()) return false;
+    const callee = p.get('callee') as NodePath<any>;
+    if ((!callee.isMemberExpression() && !callee.isOptionalMemberExpression()) || callee.node.computed) return false;
+    const name = (callee.node.property as Identifier).name;
+    const object = callee.get('object') as NodePath<any>;
+    if (object.isIdentifier({ name: 'Object' }) && name === 'assign') {
+      const [target] = p.get('arguments') as NodePath<any>[];
+      return Boolean(target && touchesOwn(target, fn));
+    }
+    return CHANGING_METHODS.has(name) && touchesOwn(object, fn);
+  };
+  if (changes(x)) return true;
+  let found = false;
+  x.traverse({
+    enter(p) {
+      if (!changes(p)) return;
+      found = true;
+      p.stop();
+    },
+  });
+  return found;
+}
+
+// 갈래로 고르거나 이름에 넣는 빈 문자열. 함수 몸통에서 이것이 주소 맨 앞에 오면 함수가 돌려준 빈 문자열처럼 읽지 못한 조각으로 본다.
+function choosesText(p: NodePath): boolean {
+  const { parentPath: parent, key } = p;
+  if (!parent) return false;
+  if (parent.isParenthesizedExpression() || parent.isTSAsExpression()) return choosesText(parent);
+  if (parent.isConditionalExpression()) return key !== 'test';
+  if (parent.isLogicalExpression() || parent.isAssignmentExpression() || parent.isAssignmentPattern()) return key === 'right';
+  return parent.isVariableDeclarator() || parent.isReturnStatement() || parent.isArrowFunctionExpression();
+}
+
 const unwrapped = (p: NodePath<any>): NodePath<any> => (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isTypeCastExpression() || p.isParenthesizedExpression() ? unwrapped(p.get('expression') as NodePath<any>) : p);
 
-export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, passThrough }: Reading) {
+export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, passThrough, mergesSlashes }: Reading) {
   const reading = new Set<Node>();
+  const join = (parts: [Out, NodePath][]) => joined(parts, mergesSlashes);
 
   function leafOut(p: NodePath): Out {
     const found = leaf(p);
-    if ('parts' in found) return { val: { pieces: found.parts.flatMap((x): Piece[] => (typeof x !== 'string' ? [{ stop: x }] : x ? [{ text: x }] : [])) }, made: false };
+    const withheld = 'withheld' in found && found.withheld ? { withheld: true } : {};
+    if ('parts' in found) return { val: { pieces: found.parts.flatMap((x): Piece[] => (typeof x !== 'string' ? [{ stop: x, ...withheld }] : x ? [{ text: x }] : [])) }, made: false };
     return found.value === undefined ? unknownAt(p) : known(found.value);
   }
 
@@ -177,7 +227,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   function joinedItems(list: Out, separator: Out, at: NodePath): Out {
     const glue = plain(separator);
     if (typeof glue !== 'string') return unknownAt(at);
-    if ('items' in list.val) return joined(list.val.items.flatMap((item, i): [Out, NodePath][] => (i ? [[textOut(glue), at], [item, at]] : [[item, at]])));
+    if ('items' in list.val) return join(list.val.items.flatMap((item, i): [Out, NodePath][] => (i ? [[textOut(glue), at], [item, at]] : [[item, at]])));
     const value = plain(list);
     return Array.isArray(value) ? known(value.join(glue)) : unknownAt(at);
   }
@@ -199,6 +249,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     reading.add(fn.node);
     try {
       const outs = distinct(lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((e) => returnedValues(fn, e, p, at.depth + 1))));
+      if (outs.some(withheldIn)) return [unknownAt(p)];
       return limited(outs).map((o) => {
         const whole = o.whole && { whole: o.whole };
         if (!('pieces' in o.val)) return { val: o.val, made: true, ...whole };
@@ -249,7 +300,10 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   function returnedValues(fn: AddressFunction, env: Env, at: NodePath, depth: number): Out[] {
     const body = fn.get('body') as NodePath<any>;
-    if (!body.isBlockStatement()) return values(body, { env, fn, branching: true, depth });
+    if (!body.isBlockStatement()) {
+      if (changesOwn(body, fn)) throw new Unreadable();
+      return values(body, { env, fn, branching: true, depth });
+    }
     const { returned, open } = walk(body.get('body'), [env], fn, depth);
     return [...returned, ...open.map(() => unknownAt(at))];
   }
@@ -260,9 +314,11 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     for (const s of statements) {
       if (!envs.length) break;
       if (s.isReturnStatement()) {
+        if (s.node.argument && changesOwn(s.get('argument') as NodePath<any>, fn)) throw new Unreadable();
         for (const e of envs) returned.push(...(s.node.argument ? values(s.get('argument'), inner(e)) : [known(undefined)]));
         envs = [];
       } else if (s.isIfStatement()) {
+        if (changesOwn(s.get('test'), fn)) throw new Unreadable();
         const next: Env[] = [];
         for (const e of envs) {
           const truths = values(s.get('test'), inner(e)).map(truth);
@@ -285,6 +341,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       } else if (s.isVariableDeclaration()) {
         for (const d of s.get('declarations')) {
           const init = d.get('init') as NodePath<any>;
+          if (init.node && changesOwn(init, fn)) throw new Unreadable();
           envs = envs.flatMap((e) => (init.node ? values(init, inner(e)) : [known(undefined)]).flatMap((o) => bind(d.get('id'), o, [e], inner)));
         }
       } else if (s.isExpressionStatement()) {
@@ -295,7 +352,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         }
         const left = x.get('left') as NodePath<any>;
         const binding = left.isIdentifier() ? left.scope.getBinding(left.node.name) : undefined;
-        if (!left.isIdentifier() && inEnv(left, inner(envs[0]))) throw new Unreadable();
+        if ((!left.isIdentifier() && touchesOwn(left, fn)) || changesOwn(x.get('right'), fn)) throw new Unreadable();
         if (!binding?.path.isDescendant(fn)) continue;
         envs = envs.flatMap((e) => values(x.get('right'), inner(e)).map((o) => {
           const before = e.get(binding) ?? unknownAt(left);
@@ -311,7 +368,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   function added(left: Out, right: Out, leftAt: NodePath, rightAt: NodePath): Out {
     const [a, b] = [plain(left), plain(right)];
-    return typeof a === 'number' && typeof b === 'number' ? known(a + b) : joined([[left, leftAt], [right, rightAt]]);
+    return typeof a === 'number' && typeof b === 'number' ? known(a + b) : join([[left, leftAt], [right, rightAt]]);
   }
 
   function choose(outs: Out[], pick: (out: Out) => boolean | undefined, then: (out: Out) => Out[], otherwise: (out: Out) => Out[]): Out[] {
@@ -328,7 +385,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   }
 
   function valuesOf(p: NodePath<any>, at: At): Out[] {
-    if (p.isStringLiteral()) return [textOut(p.node.value)];
+    if (p.isStringLiteral()) return [at.fn && !p.node.value && choosesText(p) ? { val: { pieces: [{ empty: p }] }, made: false } : textOut(p.node.value)];
     if (p.isNumericLiteral() || p.isBooleanLiteral()) return [known(p.node.value)];
     if (p.isNullLiteral()) return [known(null)];
     if (p.isTemplateLiteral()) {
@@ -338,7 +395,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         const expression = p.get(`expressions.${i}`) as NodePath;
         return [quasi, values(expression, at).map((o): [Out, NodePath] => [o, expression])];
       });
-      return product(lists).map(joined);
+      return product(lists).map(join);
     }
     if (p.isBinaryExpression()) {
       const [left, right] = [p.get('left') as NodePath, p.get('right') as NodePath];
@@ -383,9 +440,13 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         const out = outs[i];
         if (prop.isObjectProperty() && !prop.node.computed) found.set(keyOf(prop.node.key), out);
         else if (prop.isSpreadElement() && 'props' in out.val) {
+          if (out.val.open) found.clear();
           for (const [key, value] of out.val.props) found.set(key, value);
           open ||= out.val.open;
-        } else open = true;
+        } else {
+          found.clear();
+          open = true;
+        }
       });
       return { val: { props: found, open }, made: false };
     });
