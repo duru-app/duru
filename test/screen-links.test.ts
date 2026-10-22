@@ -803,7 +803,7 @@ export default function ${name}() {
   }
 });
 
-test('a * route with nothing before the star in a Routes drawn beside another is a link\'s screen beside the other Routes\' screen, but not beside one of its own Routes', async () => {
+test('a catch-all * or /* route in a Routes drawn beside another is a link\'s screen beside the other Routes\' screen, but not beside a route of its own Routes that wins', async () => {
   for (const star of ['*', '/*']) {
     const users = `<Routes>
         <Route path="/users" element={<Users />} />
@@ -831,7 +831,9 @@ export default function ${name}() {
     const pages = Object.fromEntries(['Users', 'Admin', 'NotFound'].map((n) => [`${n}.js`, page(n)]));
     for (const [shape, files, keys] of [
       ['in one file', { 'Routes.js': file('AppRoutes', users, admin) }, {}],
+      ['in one file, the catch-all Routes first', { 'Routes.js': file('AppRoutes', admin, users) }, {}],
       ['in two route files', { 'Routes.js': file('AppRoutes', users), 'Extra.js': file('Extra', admin) }, { routesFile: ['Routes.js', 'Extra.js'] }],
+      ['in two route files, the catch-all file first', { 'Routes.js': file('AppRoutes', users), 'Extra.js': file('Extra', admin) }, { routesFile: ['Extra.js', 'Routes.js'] }],
     ] as const) {
       const map = await build(writeApp({ ...pages, ...files, 'Start.js': start }, keys));
       const notFound = `${star}#NotFound`;

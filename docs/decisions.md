@@ -3308,8 +3308,8 @@ constants are already links of the helper's file; one readable link, `navigate('
 the sign-in screen and the user home; entry screens stay 24, since every other move there is written with the route
 constant. into-sign 1.5.0 gives the same map as before.
 Driver's decision (2026-10-22) on a `<Routes>` drawn inside a route, whether in a route file under an outer route
-ending in `/*` or written as the route's `element`: a path not written from `/` is joined to the outer route's path
-without its `/*`, so `<Route path="/app/*" element={<App />} />` around App's
+ending in `/*` or written as the route's `element`: a path not written from `/` is joined to the outer route's whole path,
+with the paths of the routes around it and without its `/*`, so `<Route path="/app/*" element={<App />} />` around App's
 `<Route path="settings" … />` takes `/app/settings`, as v6 does; a path written from `/` matches the whole address,
 which keeps into-sign 2.0.0, whose route files write the whole path, as it was. v6 6.30 matches every path of an
 inner `<Routes>`, one written from `/` as well, against what the outer `/*` route leaves; duru matches a path written
