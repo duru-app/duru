@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { extractClient, UNKNOWN } from './client.ts';
 import { clientPath, loadServerEndpoints, matchEndpoint } from './server.ts';
 import { linkTargets, screenAccess } from './access.ts';
@@ -316,7 +317,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   for (const c of calls) c.codeHash = hash(requestFiles.get(c.id)!);
 
   return {
-    meta: { generatedAt: new Date().toISOString(), srcRoot: config.srcRoot, clientRef: config.clientRef ?? null, serverRef: config.serverRef ?? null, ...codeState(config.srcRoot, [config.outDir, config.marksDir, config.judgmentsDir, config.storiesDir].filter((dir): dir is string => typeof dir === 'string')) },
+    meta: { generatedAt: new Date().toISOString(), srcRoot: config.srcRoot, clientRef: config.clientRef ?? null, serverRef: config.serverRef ?? null, ...codeState(config.srcRoot, [...(config.outDir ? [config.outDir, ...['map.json', 'tests.json'].map((name) => path.join(config.outDir!, name))] : []), config.marksDir, config.judgmentsDir, config.storiesDir].filter((p): p is string => typeof p === 'string')) },
     screens: mapped,
     apiFunctions,
     ...(unrunApiModules && { unrunApiModules }),
