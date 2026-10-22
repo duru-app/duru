@@ -635,6 +635,95 @@ export default function Home({ flag }) {
   ]);
 });
 
+const OPTION = "export default { ROUTE_PATH: { HOME: '/home', LOGIN: '/login', HELP: '/help', TEAM: '/team' } };\n";
+const withRouteConstant = (files: Record<string, string>) => writeApp(
+  { 'Option.js': OPTION, ...files },
+  { routeConstant: 'Option.ROUTE_PATH', constants: { Option: 'Option.js' } },
+);
+const targetsOf = (map: ScreenMap, id: string) => linksOf(map, id).map(([to, , , targets]) => [to, targets]);
+
+test('with React Router 6, a link written as a route constant followed by a tail goes to the screen Routes draws for the whole address, as the same address written as text does, while under a Switch it still goes where the bare route constant goes', async () => {
+  const home = `import { Link } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home({ a, b }) {
+  return (
+    <nav>
+      <Link to={Option.ROUTE_PATH.LOGIN + '/x'}>constant</Link>
+      <Link to="/login/x">text</Link>
+      <Link to={\`\${Option.ROUTE_PATH.HELP}/\${a}/\${b}\`}>two pieces</Link>
+    </nav>
+  );
+}
+`;
+  const v6 = await build(withRouteConstant({ 'Routes.js': V6_ROUTES, 'Home.js': home }));
+  assert.deepEqual(targetsOf(v6, '/home#Home'), [
+    ['/login/x', ['/home#Home']],
+    ['/help/{*}/{*}', ['/home#Home']],
+    ['/login/x', ['/home#Home']],
+  ]);
+  const v5 = await build(withRouteConstant({ 'Home.js': home }));
+  assert.deepEqual(targetsOf(v5, '/home#Home'), [
+    ['/login/x', ['/login#Login']],
+    ['/help/{*}/{*}', ['/help/:page?#Help']],
+    ['/login/x', ['/home#Home']],
+  ]);
+});
+
+test('with React Router 6, a route constant written as a link\'s address through a const of the same file goes to the screen Routes draws', async () => {
+  const home = `import { useNavigate } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home() {
+  const navigate = useNavigate();
+  const to = Option.ROUTE_PATH.LOGIN + '/x';
+  return <button onClick={() => navigate(to)}>login</button>;
+}
+`;
+  const map = await build(withRouteConstant({ 'Routes.js': V6_ROUTES, 'Home.js': home }));
+  assert.deepEqual(targetsOf(map, '/home#Home'), [['/login/x', ['/home#Home']]]);
+});
+
+test('with React Router 6, a route constant handed to a function or kept in a table, not written as a link\'s address, still goes to the routes that add parameters to it', async () => {
+  const home = `import { useNavigate } from 'react-router-dom';
+import Option from './Option';
+import open from './open';
+
+const TABS = { team: Option.ROUTE_PATH.TEAM };
+
+export default function Home() {
+  const navigate = useNavigate();
+  return <button onClick={() => open(navigate, Option.ROUTE_PATH.TEAM, TABS)}>team</button>;
+}
+`;
+  const open = "export default function open(navigate, to) {\n  navigate(to + '/' + Math.random());\n}\n";
+  const map = await build(withRouteConstant({ 'Routes.js': V6_ROUTES, 'Home.js': home, 'open.js': open }));
+  assert.deepEqual(targetsOf(map, '/home#Home'), [
+    ['/team', ['/team/:team#Team']],
+    ['/team', ['/team/:team#Team']],
+  ]);
+});
+
+test('with React Router 6, a route constant followed by a tail duru cannot read as whole segments still goes where the bare route constant goes, and one followed only by a query goes to the screen Routes draws for the constant', async () => {
+  const home = `import { Link } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home({ id, tab }) {
+  return (
+    <nav>
+      <Link to={Option.ROUTE_PATH.TEAM + '/t-' + id}>team</Link>
+      <Link to={Option.ROUTE_PATH.TEAM + '?tab=' + tab}>tab</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(withRouteConstant({ 'Routes.js': V6_ROUTES, 'Home.js': home }));
+  assert.deepEqual(targetsOf(map, '/home#Home'), [
+    ['/team', ['/team/:team#Team']],
+    ['/team', ['/home#Home']],
+  ]);
+});
+
 test('Routes takes the routes a Fragment or React.Fragment wraps, at whatever depth', async () => {
   const routes = `import React, { Fragment } from 'react';
 import { Route, Routes } from 'react-router-dom';

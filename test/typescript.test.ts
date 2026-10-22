@@ -55,8 +55,14 @@ test('extraction runs to the end on a client mixing TypeScript and JavaScript fi
     map.screens.flatMap((s) => s.access.links.map((l) => `${l.from} → ${s.id} ${l.file}:${l.line}`)),
     [
       '/document/:id#DocumentDetail → /home#Home screens/DocumentDetail.js:5',
+      '/archive#Archive → /document#DocumentList screens/Archive.tsx:5',
+      '/home#Home → /document#DocumentList components/Banner.tsx:7',
       '/home#Home → /document#DocumentList screens/Home.tsx:14',
+      '/home#Home → /document#DocumentList screens/Home.tsx:16',
+      '/home#Home → /document#DocumentList screens/Home.tsx:17',
+      '/inbox#Inbox → /document#DocumentList screens/Inbox.tsx:9',
       '/lab#Lab → /document#DocumentList screens/Lab.tsx:13',
+      '/profile#LazyPage.Profile → /document#DocumentList screens/Profile.tsx:6',
       '/document#DocumentList → /document/:id#DocumentDetail screens/DocumentList.jsx:9',
       '/home#Home → /document/:id#DocumentDetail screens/Home.tsx:15',
       '/home#Home → /admin#Admin screens/Home.tsx:16',
@@ -706,14 +712,16 @@ test('the screens, conditions and redirects of routes written with element are r
     [ROUTES, 'element={<Home />}', 'component={Home}'],
     [ROUTES, 'element={framed(<DocumentList />)}', 'component={framed(DocumentList)}'],
     [ROUTES, 'element={<Signed Page={DocumentDetail} />}', 'component={DocumentDetail}'],
-    [ROUTES, '<Route path="*" element={<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />} />', '<Redirect to={Option.ROUTE_PATH.DOCUMENT} />'],
     [ADMIN_ROUTES, 'element={<Admin />}', 'component={Admin}'],
     [ADMIN_ROUTES, 'element={<Checked Page={Lab} />}', 'component={Lab}'],
     [ADMIN_ROUTES, 'element={<Checked Page={Report} />}', 'component={Report}'],
   ];
+  const asRedirect = [ROUTES, '<Route path="*" element={<Navigate to={Option.ROUTE_PATH.DOCUMENT} replace />} />', '<Redirect to={Option.ROUTE_PATH.DOCUMENT} />'];
   const elements = await buildFixture();
   const components = await inCopy(asComponents, (copy) => buildFixture(copy));
   assert.deepEqual(withoutMeta(elements), withoutMeta(components));
+  const redirected = await inCopy([...asComponents, asRedirect], (copy) => buildFixture(copy));
+  assert.deepEqual([redirected.screens.map((s) => s.id), redirected.entries], [elements.screens.map((s) => s.id), elements.entries]);
   assert.deepEqual(screen(elements, '/admin#Admin').routeGuards, ["(memberRole as Role) === 'ADMIN'"]);
   assert.deepEqual(screen(elements, '/lab#Lab').routeGuards, ['globalSettings!.SYSTEM.LAB_ENABLED as boolean']);
 });

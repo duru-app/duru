@@ -419,7 +419,8 @@ export function routerTargets(roots: RouteNode[]) {
     if (first?.kind !== 'route' || first.path === null) return first ? [first] : [];
     return nodes.filter((n) => n === first || (n.kind === 'route' && n.path === first.path && opens(n, address)));
   };
-  const route = (address: string, hops: number): number[] => {
+  const route = (address: string, hops: number): { screens: number[]; underRoutes: boolean } => {
+    let underRoutes = false;
     const drawn: { screen: number; whole: boolean; fits: boolean; depth: number }[] = [];
     const redirects: string[] = [];
     const walking = new Set<RouteNode>();
@@ -430,6 +431,7 @@ export function routerTargets(roots: RouteNode[]) {
         if (node.kind === 'redirect') redirects.push(node.to);
         else if (node.kind === 'switch') walk(node.children, true, depth + 1);
         else if (node.kind === 'routes') {
+          underRoutes = true;
           for (const { path: branchPath, chain } of rankedWinners(node.branches, address)) {
             const splat = /(^|\/)\*$/.test(branchPath);
             chain.forEach((r, i) => {
@@ -461,15 +463,19 @@ export function routerTargets(roots: RouteNode[]) {
     const whole = drawn.filter((d) => d.whole);
     const deepest = Math.max(...drawn.map((d) => d.depth));
     const picked = (whole.length ? whole : drawn.filter((d) => d.depth === deepest)).map((d) => d.screen);
-    const redirected = hops < REDIRECT_HOPS ? redirects.filter((to) => !unreadableTarget(to)).flatMap((to) => route(to, hops + 1)) : [];
-    return [...new Set([...picked, ...redirected])].sort((a, b) => a - b);
+    const redirected = hops < REDIRECT_HOPS ? redirects.filter((to) => !unreadableTarget(to)).map((to) => route(to, hops + 1)) : [];
+    return {
+      screens: [...new Set([...picked, ...redirected.flatMap((r) => r.screens)])].sort((a, b) => a - b),
+      underRoutes: underRoutes || redirected.some((r) => r.underRoutes),
+    };
   };
-  const routed = new Map<string, number[]>();
-  return (to: string) => {
-    if (unreadableTarget(to) || !to.startsWith('/')) return [];
+  const routed = new Map<string, { screens: number[]; underRoutes: boolean }>();
+  const routedTo = (to: string) => {
+    if (unreadableTarget(to) || !to.startsWith('/')) return { screens: [], underRoutes: false };
     if (!routed.has(to)) routed.set(to, route(to, 0));
     return routed.get(to)!;
   };
+  return { screens: (to: string) => routedTo(to).screens, underRoutes: (to: string) => routedTo(to).underRoutes };
 }
 
 const NO_SETTING_READ = 'not-found';
