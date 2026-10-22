@@ -39,7 +39,8 @@ type Val =
   | { unknown: NodePath };
 type Out = { val: Val; made: boolean; whole?: NodePath };
 type Env = Map<Binding, Out>;
-interface At { env: Env | null; fn: AddressFunction | null; branching: boolean; depth: number }
+// consts 이면 fn 안에서 const 로 선언한 이름을 그 초기값으로 읽는다.
+interface At { env: Env | null; fn: AddressFunction | null; branching: boolean; depth: number; consts?: boolean }
 type MovePlace = { at: NodePath<CallExpression>; addresses: NodePath[] };
 
 const OUTSIDE: At = { env: null, fn: null, branching: false, depth: 0 };
@@ -166,7 +167,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   function identifier(p: NodePath<Identifier>, at: At): Out[] {
     const binding = p.scope.getBinding(p.node.name);
     if (binding && at.env?.has(binding)) return [at.env.get(binding)!];
-    if (binding && at.fn && binding.path.isDescendant(at.fn)) return [unknownAt(p)];
+    if (binding && at.fn && binding.path.isDescendant(at.fn)) return at.consts ? constValues(p, binding, at) : [unknownAt(p)];
     if (!binding && p.node.name === 'undefined') return [known(undefined)];
     const out = leafOut(p);
     if (plain(out) !== NOT_KNOWN || 'value' in out.val) return [out];
@@ -177,6 +178,18 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       return values(declared, { ...OUTSIDE, depth: at.depth });
     } finally {
       reading.delete(declared.node);
+    }
+  }
+
+  function constValues(p: NodePath<Identifier>, binding: Binding, at: At): Out[] {
+    const declarator = binding.path;
+    if (binding.kind !== 'const' || !declarator.isVariableDeclarator() || !declarator.node.init || reading.has(declarator.node)) return [unknownAt(p)];
+    reading.add(declarator.node);
+    try {
+      const inner = (env: Env): At => ({ ...at, env });
+      return values(declarator.get('init') as NodePath, at).flatMap((o) => bind(declarator.get('id'), o, [new Map(at.env)], inner).map((e) => e.get(binding) ?? unknownAt(p)));
+    } finally {
+      reading.delete(declarator.node);
     }
   }
 
@@ -472,18 +485,45 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     return found;
   }
 
+  // 몸통에서 다시 대입하는 매개변수는 부른 곳의 값으로 읽지 않는다. 값이 undefined · null 로 정해진 주소는 버린다.
   function placeOuts(fn: AddressFunction, env: Env, depth: number): Out[] {
-    const at: At = { env, fn, branching: true, depth };
+    const at: At = { env: new Map([...env].map(([b, o]) => [b, b.constant ? o : unknownAt(b.path)])), fn, branching: true, depth, consts: true };
     const outs: Out[] = [];
     for (const place of placesOf(fn)) {
+      if (!reached(place.at, fn, at)) continue;
       for (const a of place.addresses) {
         for (const o of values(a, at)) {
           const located = address(wholeOr(o, a), a);
-          if (located) outs.push(located);
+          const value = located && plain(located);
+          if (located && value !== undefined && value !== null) outs.push(located);
         }
       }
     }
     return limited(outs, distinct);
+  }
+
+  // fn 안에서 p 를 둘러싼 if · ? : · && · || 가운데 값이 정해져 p 로 가지 않는 것이 있으면 거짓이다.
+  function reached(p: NodePath, fn: AddressFunction, at: At): boolean {
+    for (let child = p, up = p.parentPath; up && up.node !== fn.node; child = up, up = up.parentPath) {
+      let test: NodePath<any>;
+      let wanted: boolean;
+      if ((up.isIfStatement() || up.isConditionalExpression()) && (child.key === 'consequent' || child.key === 'alternate')) {
+        test = up.get('test') as NodePath<any>;
+        wanted = child.key === 'consequent';
+      } else if (up.isLogicalExpression() && up.node.operator !== '??' && child.key === 'right') {
+        test = up.get('left');
+        wanted = up.node.operator === '&&';
+      } else continue;
+      let truths: (boolean | undefined)[];
+      try {
+        truths = values(test, at).map(truth);
+      } catch (error) {
+        if (error instanceof TooMany) continue;
+        throw error;
+      }
+      if (!truths.includes(wanted) && !truths.includes(undefined)) return false;
+    }
+    return true;
   }
 
   function helperOuts(p: NodePath<CallExpression>, fn: AddressFunction, at: At): Out[] {

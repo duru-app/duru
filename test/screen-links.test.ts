@@ -1569,3 +1569,115 @@ export function LoginButton() {
   assert.deepEqual(linksOf(map, '/home#Home'), [['/team/a', lineOf(nav, "go('/team/a')"), [], ['/team/:team#Team']]]);
   assert.deepEqual(linksOf(map, '/start#Start'), [['/login', lineOf(nav, "go('/login')"), [], ['/login#Login']]]);
 });
+
+const PICKERS = `import { getHistory } from './utils/browser_history';
+
+export const onSelect = (type, payload) => {
+  switch (type) {
+    case 'dispatch':
+      store.dispatch(payload);
+      break;
+    case 'redirect':
+      if (getHistory().location.pathname !== payload.path) {
+        getHistory().push(payload.path);
+      }
+      break;
+    default:
+  }
+};
+
+export function pushWithQuery(path, query) {
+  if (query) {
+    getHistory().push({ pathname: path, search: query.toString() });
+  } else {
+    getHistory().push(path);
+  }
+}
+
+export function openFrom(payload) {
+  const { path } = payload;
+  getHistory().push(path);
+}
+`;
+
+test('a helper that moves to a property of what it is given, or to a location whose pathname it is given, reads it from each call, and a call that does not give it gives no link', async () => {
+  const home = `import { onSelect, pushWithQuery, openFrom } from './pickers';
+
+export default function Home({ query }) {
+  return (
+    <nav>
+      <a onClick={() => onSelect('redirect', { path: '/start' })}>a</a>
+      <a onClick={() => onSelect('dispatch', { type: 'x' })}>b</a>
+      <a onClick={() => onSelect('redirect', { path: null })}>c</a>
+      <a onClick={() => pushWithQuery('/login', query)}>d</a>
+      <a onClick={() => openFrom({ path: '/help/faq' })}>e</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp(
+    { 'Home.js': home, 'pickers.js': PICKERS, 'utils/browser_history.js': MADE_HISTORY },
+    { history: { import: './utils/browser_history', name: 'getHistory' } },
+  ));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/start', at("path: '/start'"), [], ['/start#Start']],
+    ['/login', at("pushWithQuery('/login'"), [], ['/login#Login']],
+    ['/help/faq', at("openFrom("), [], ['/help/:page?#Help']],
+  ]);
+});
+
+const LEAVERS = `import { getHistory } from './utils/browser_history';
+
+export function logOut(redirectTo = '/login', signal = true) {
+  clearCookie(signal);
+  getHistory().push(redirectTo);
+}
+
+export function switchTo(url, team) {
+  if (team) {
+    selectTeam(team);
+  } else {
+    getHistory().push(url);
+  }
+}
+
+export function openIf(page, on) {
+  on && getHistory().push(page);
+}
+
+export function openTeam(path) {
+  path = '/team' + path;
+  getHistory().push(path);
+}
+`;
+
+test('a helper parameter left out takes its default, a condition in the helper that the arguments decide keeps only the move it leads to while one they cannot decide keeps every move without its text, and a parameter the helper changes is not read from the call', async () => {
+  const home = `import { logOut, switchTo, openIf, openTeam } from './leavers';
+
+export default function Home({ team }) {
+  return (
+    <nav>
+      <a onClick={() => logOut()}>a</a>
+      <a onClick={() => logOut('/start')}>b</a>
+      <a onClick={() => switchTo('/team/a')}>c</a>
+      <a onClick={() => switchTo('/team/b', team)}>d</a>
+      <a onClick={() => switchTo('/help', { id: 1 })}>e</a>
+      <a onClick={() => openIf('/start', false)}>f</a>
+      <a onClick={() => openTeam('/a')}>g</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp(
+    { 'Home.js': home, 'leavers.js': LEAVERS, 'utils/browser_history.js': MADE_HISTORY },
+    { history: { import: './utils/browser_history', name: 'getHistory' } },
+  ));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('logOut()'), [], ['/login#Login']],
+    ['/start', at("logOut('/start')"), [], ['/start#Start']],
+    ['/team/a', at("switchTo('/team/a')"), [], ['/team/:team#Team']],
+    ['/team/b', at("switchTo('/team/b'"), [], ['/team/:team#Team']],
+  ]);
+});
