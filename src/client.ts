@@ -1162,7 +1162,7 @@ export async function extractClient(config: any) {
   const routeReading = addressReader({
     leaf(p) {
       const value = evaluate(p);
-      if (value === undefined) return { parts: [unreadPiece(p) ?? p] };
+      if (value === undefined || (typeof value !== 'string' && !lossless(p))) return { parts: [unreadPiece(p) ?? p] };
       if (typeof value !== 'string' || !value.includes(UNKNOWN)) return { value };
       const stop = unreadPiece(p) ?? p;
       return { parts: value.split(UNKNOWN).flatMap((part, i) => (i ? [stop, part] : [part])) };

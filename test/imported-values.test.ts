@@ -305,3 +305,41 @@ export default function ImportedRoutes() {
     `  route path not read ← ImportedRoutes.tsx:${lineOf('someBase()')}: stopped at someBase(), which gives {?}/team and /app/team`,
   ]);
 });
+
+test('a route path whose function joins a list holding a value it cannot read is {?} with a route path not read line', async () => {
+  const paths = `export function projectPath(id: string) {
+  const parts = ['', 'projects', id];
+  return parts.join('/');
+}
+
+export function adminPath(...segments: string[]) {
+  const all = ['', 'admin', ...segments];
+  return all.join('/');
+}
+
+export function fixedPath() {
+  const parts = ['', 'fixed', 'list'];
+  return parts.join('/');
+}
+`;
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import { adminPath, fixedPath, projectPath } from './paths/lists';
+import Simple from './pages/Simple';
+import Satisfied from './pages/Satisfied';
+import Joined from './pages/Joined';
+
+export default function ImportedRoutes() {
+  return (
+    <Routes>
+      <Route path={projectPath(':id')} element={<Simple />} />
+      <Route path={adminPath('users', ':userId')} element={<Satisfied />} />
+      <Route path={fixedPath()} element={<Joined />} />
+    </Routes>
+  );
+}
+`;
+  const map = await build(fixtureCopy({ 'paths/lists.ts': paths, 'ImportedRoutes.tsx': routes }));
+  assert.deepEqual([pathsOf(map).Simple, pathsOf(map).Satisfied, pathsOf(map).Joined], ['{?}', '{?}', '/fixed/list']);
+  const lineOf = (text: string) => routes.split('\n').findIndex((l) => l.includes(text)) + 1;
+  assert.deepEqual(map.unreadRoutePaths!.map((u) => u.line), [lineOf('projectPath('), lineOf('adminPath(')]);
+});
