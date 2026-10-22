@@ -18,7 +18,7 @@ const CALLED = {
   requestFunction: { import: './contracts/api/request', name: 'executeRequest', method: '0.endpoint.method', url: '0.url' },
 };
 
-function fixtureCopy(files: Record<string, string | null>) {
+function fixtureCopy(files: Record<string, string | null>, keys: Record<string, unknown> = {}) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   copies.push(copy);
   fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
@@ -30,7 +30,7 @@ function fixtureCopy(files: Record<string, string | null>) {
   const configFile = path.join(copy, 'config.json');
   const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
   if (files['sagas/SagaRoutes.tsx']) config.routesFile.push('sagas/SagaRoutes.tsx');
-  fs.writeFileSync(configFile, JSON.stringify({ ...config, ...CALLED }, null, 2));
+  fs.writeFileSync(configFile, JSON.stringify({ ...config, ...CALLED, ...keys }, null, 2));
   return configFile;
 }
 
@@ -342,20 +342,120 @@ test('a middleware made with @redux-saga/core in one file and run in another, ef
   ]);
 });
 
-test('without a saga run, or without redux-saga, no request of a saga comes to a screen, and the summary says when redux-saga is imported but nothing runs it', async () => {
+test('without a saga run, or without redux-saga, no request or link of a saga comes to a screen, and the summary says when redux-saga is imported but nothing runs it', async () => {
   const unrun = fixtureCopy({ ...SAGA_APP, 'sagas/store.ts': null });
   const map = await build(unrun);
   assert.deepEqual(map.screens.flatMap((s) => s.apiCalls.filter((c) => c.actions)), []);
   assert.deepEqual(map.sagas, { runs: [], watchers: 0 });
   const out = spawnSync(process.execPath, [CLI, 'extract', unrun], { encoding: 'utf8' });
   assert.equal(out.status, 0, out.stderr);
-  assert.match(out.stdout, /^redux-saga is imported, but no run of a createSagaMiddleware\(\) result was found, so no request of a saga is put on a screen$/m);
+  assert.match(out.stdout, /^redux-saga is imported, but no run of a createSagaMiddleware\(\) result was found, so no request or link of a saga is put on a screen$/m);
 
   const ran = fixtureCopy(SAGA_APP);
   const summary = spawnSync(process.execPath, [CLI, 'extract', ran], { encoding: 'utf8' });
   assert.equal(summary.status, 0, summary.stderr);
-  assert.match(summary.stdout, /^redux-saga runs from sagas\/store\.ts:6 \| watchers 8 \| requests of sagas on screens 7$/m);
+  assert.match(summary.stdout, /^redux-saga runs from sagas\/store\.ts:6 \| watchers 8 \| requests of sagas on screens 7 \| links of sagas on screens 0$/m);
 
   const plain = await build(fixtureCopy({}));
   assert.equal(plain.sagas, undefined);
+});
+
+const MOVES = `import { fork, takeEvery, takeLatest } from 'redux-saga/effects';
+import Option from '../_define/Option';
+import history from './history';
+import { goNotes } from './go';
+import { ActionTypes } from './types';
+
+function* afterContracts(action: { payload: string; url: string }) {
+  history.push('/contracts');
+  history.push(Option.ROUTE_PATH.HOME);
+  history.push(\`/notes/\${action.payload}\`);
+  history.push(action.url);
+  history.push(urlOf(action.payload));
+  goNotes();
+}
+
+function* afterSigned() {
+  history.replace('/quiet');
+}
+
+function* unwatched() {
+  history.push('/signed');
+}
+
+export function* moveSaga() {
+  yield takeLatest(ActionTypes.LOAD_CONTRACTS, afterContracts);
+  yield takeEvery([ActionTypes.LOAD_SIGNED, ActionTypes.UPDATE_TERMS], afterSigned);
+  yield fork(unwatched);
+}
+
+const urlOf = (x: string) => '/' + x;
+`;
+
+const MOVING_APP = {
+  ...SAGA_APP,
+  'sagas/history.ts': "import { createBrowserHistory } from 'history';\n\nexport default createBrowserHistory();\n",
+  'sagas/go.ts': "import history from './history';\nexport const goNotes = () => history.push('/notes');\n",
+  'sagas/moves.ts': MOVES,
+  'sagas/root.ts': ROOT.replace("import * as handlers from './handlers';", "import * as handlers from './handlers';\nimport { moveSaga } from './moves';").replace('fork(afterNotices),', 'fork(afterNotices),\n    fork(moveSaga),'),
+  'sagas/screens/Notes.tsx': `import { useDispatch } from 'react-redux';
+import { store } from '../appStore';
+import { tagNotes } from '../actions';
+import { ActionTypes } from '../constants';
+import { goNotes } from '../go';
+
+export default function Notes() {
+  const dispatch = useDispatch();
+  const search = (q: string) => dispatch({ type: ActionTypes.SEARCH_NOTES, payload: q });
+  const tag = () => store.dispatch(tagNotes('red'));
+  const remove = () => dispatch({ type: 'REMOVE_NOTES' });
+  const reload = () => {
+    goNotes();
+    dispatch({ type: ActionTypes.LOAD_CONTRACTS });
+  };
+  return <input onChange={(e) => search(e.target.value)} onBlur={tag} onFocus={remove} onClick={reload} />;
+}
+`,
+};
+const HISTORY = { history: { import: './sagas/history', name: 'default' } };
+
+const linksOf = (map: ScreenMap, id: string) =>
+  map.screens.find((s) => s.id === id)!.links.map((l) => [l.to, `${l.file}:${l.line}`, l.targets, l.actions?.map((a) => `${a.type} ← ${a.dispatchedAt.join(', ')}`)]);
+
+test('a move a saga makes is a link of each screen that dispatches an action the saga waits for, with the action types and the places the screen dispatches them', async () => {
+  const map = await build(fixtureCopy(MOVING_APP, HISTORY));
+  const loaded = ['ActionTypes.LOAD_CONTRACTS ← sagas/screens/Contracts.tsx:8'];
+  assert.deepEqual(linksOf(map, '/contracts#Contracts'), [
+    ['/notes', 'sagas/go.ts:2', ['/notes#Notes'], loaded],
+    ['/contracts', 'sagas/moves.ts:8', ['/contracts#Contracts'], loaded],
+    ['/home', 'sagas/moves.ts:9', ['/home#Home'], loaded],
+    ['/notes/{*}', 'sagas/moves.ts:10', ['/notes#Notes'], loaded],
+  ]);
+  assert.deepEqual(linksOf(map, '/signed#Signed'), [
+    ['/quiet', 'sagas/moves.ts:17', ['/quiet#Quiet'], ['ActionTypes.LOAD_SIGNED ← sagas/screens/Signed.tsx:9', 'ActionTypes.UPDATE_TERMS ← sagas/screens/Signed.tsx:11']],
+  ]);
+  const entries = map.entries.map((e) => e.screen);
+  for (const id of ['/contracts#Contracts', '/notes#Notes', '/quiet#Quiet']) assert.ok(!entries.includes(id), id);
+  assert.ok(entries.includes('/signed#Signed'));
+});
+
+test('a saga move whose address comes from the action or cannot be read gives no link and no {?}, nor does a move in a saga no watcher starts, and a move the screen\'s own code also reaches is listed once without actions', async () => {
+  const map = await build(fixtureCopy(MOVING_APP, HISTORY));
+  const fromSagas = map.screens.flatMap((s) => s.links.filter((l) => l.file === 'sagas/moves.ts').map((l) => l.to));
+  assert.ok(!fromSagas.includes('{?}'));
+  assert.ok(!fromSagas.includes('/signed'));
+  const loaded = ['ActionTypes.LOAD_CONTRACTS ← sagas/screens/Notes.tsx:14'];
+  assert.deepEqual(linksOf(map, '/notes#Notes'), [
+    ['/notes', 'sagas/go.ts:2', ['/notes#Notes'], undefined],
+    ['/contracts', 'sagas/moves.ts:8', ['/contracts#Contracts'], loaded],
+    ['/home', 'sagas/moves.ts:9', ['/home#Home'], loaded],
+    ['/notes/{*}', 'sagas/moves.ts:10', ['/notes#Notes'], loaded],
+  ]);
+  assert.deepEqual(linksOf(map, '/notices#Notices'), []);
+});
+
+test('the summary counts the moves of sagas that are links of some screen', () => {
+  const out = spawnSync(process.execPath, [CLI, 'extract', fixtureCopy(MOVING_APP, HISTORY)], { encoding: 'utf8' });
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /^redux-saga runs from sagas\/store\.ts:6 \| watchers 11 \| requests of sagas on screens 7 \| links of sagas on screens 5$/m);
 });

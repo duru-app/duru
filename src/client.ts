@@ -63,7 +63,8 @@ interface Site {
 }
 
 type BodyOption = { key: string; line: number };
-type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: UnresolvedReason }; navigation?: true; actions?: { type: string; dispatchedAt: string[] }[] };
+type ApiCallSite = Site & { fn: string; options: BodyOption[]; request?: { method: string | null; url: string | null; unresolved?: UnresolvedReason }; navigation?: true; actions?: DispatchedActions };
+type DispatchedActions = { type: string; dispatchedAt: string[] }[];
 type DispatchSite = { line: number; types: () => ActionType[] };
 type WatcherSite = { watches: Watch[] };
 type SettingRead = Site & { key: string };
@@ -299,7 +300,7 @@ export async function extractClient(config: any) {
     return parsed.get(file)!;
   };
   const siteStart = new WeakMap<FollowedSite, number>();
-  const siteFile = new WeakMap<ApiCallSite, string>();
+  const siteFile = new WeakMap<FollowedSite, string>();
   const linkSites = (facts: Facts): (RouteRef | RouterLink)[] => [...facts.routeRefs, ...facts.routerLinks];
   const sitesOf = (file: string) => {
     const facts = fileFacts(file);
@@ -921,7 +922,7 @@ export async function extractClient(config: any) {
       const owner = enclosingFunctionName(nodePath);
       const item = { ...entry, line: nodePath.node.loc!.start.line, guards };
       siteStart.set(item as ApiCallSite, nodePath.node.start!);
-      if (kind === 'apiCalls') siteFile.set(item as ApiCallSite, file);
+      if (kind !== 'settingReads') siteFile.set(item as ApiCallSite, file);
       (facts[kind] as Site[]).push(item);
       if (owner) {
         if (!localFnRefs.has(owner.name)) localFnRefs.set(owner.name, { fnPath: owner.fnPath, items: [] });
@@ -1741,14 +1742,17 @@ export async function extractClient(config: any) {
       for (const w of site.watches) watchesOf.set(w.type.key, [...(watchesOf.get(w.type.key) ?? []), w]);
     }
   }
-  const handled = new Map<string, ApiCallSite[]>();
-  const sentByHandler = ({ file, span }: Handler) => {
+  // saga 안에서 이동하는 주소를 읽지 못하면 화면 코드와 달리 {?} 로도 남기지 않는다.
+  const readAddress = (l: RouteRef | RouterLink) => ('route' in l ? typeof routeValues[l.route] === 'string' : l.to !== UNKNOWN);
+  const handled = new Map<string, { sent: ApiCallSite[]; moves: (RouteRef | RouterLink)[] }>();
+  const byHandler = ({ file, span }: Handler) => {
     const key = `${file}\0${span.join('-')}`;
     if (!handled.has(key)) {
       const starts = [{ file, span }];
       const reached = follower.reach(starts, sagaScope);
       const outside = requestFile && sagaScope(requestFile) ? follower.reach(starts, (f) => sagaScope(f) && f !== requestFile) : reached;
-      handled.set(key, [...reached].filter(isApiCall).filter((c) => sends(c, outside)));
+      const moves = [...reached].filter((l): l is RouteRef | RouterLink => 'route' in l || 'to' in l).filter(readAddress);
+      handled.set(key, { sent: [...reached].filter(isApiCall).filter((c) => sends(c, outside)), moves });
     }
     return handled.get(key)!;
   };
@@ -1776,7 +1780,8 @@ export async function extractClient(config: any) {
     const own = new Set<ApiCallSite>();
     const dispatched = new Map<string, { type: ActionType; at: Set<string> }>();
     const settingReads: (SettingRead & { file: string | null })[] = [];
-    const links: (Site & { route?: string; to: unknown; tail?: string; reaches?: number[]; file: string | null })[] = [];
+    const links: (Site & { route?: string; to: unknown; tail?: string; reaches?: number[]; file: string | null; actions?: DispatchedActions })[] = [];
+    const ownLinks = new Set<FollowedSite>();
     const takeCalls = (f: string, facts: Facts) => {
       for (const c of facts.apiCalls) {
         if (!reached.has(c) || !sends(c, outsideRequestFunction)) continue;
@@ -1797,6 +1802,7 @@ export async function extractClient(config: any) {
       for (const r of facts.settingReads) settingReads.push({ ...r, file: rel(f) });
       for (const ref of linkSites(facts)) {
         if (!reached.has(ref)) continue;
+        ownLinks.add(ref);
         if (!('route' in ref)) {
           links.push({ ...ref, file: rel(f), reaches: routedScreens(ref.to) });
           continue;
@@ -1808,17 +1814,34 @@ export async function extractClient(config: any) {
     }
     // 훅으로만 받은 스토어 파일의 dispatch 는 읽지 않는다.
     for (const f of received) takeCalls(f, fileFacts(f));
-    const bySaga = new Map<ApiCallSite, NonNullable<ApiCallSite['actions']>>();
+    const bySaga = new Map<ApiCallSite, DispatchedActions>();
+    const movedBySaga = new Map<RouteRef | RouterLink, DispatchedActions>();
     for (const { type, at } of dispatched.values()) {
-      const sent = new Set((watchesOf.get(type.key) ?? []).flatMap((w) => sentByHandler(w.handler)));
-      for (const c of sent) {
+      const handlers = (watchesOf.get(type.key) ?? []).map((w) => byHandler(w.handler));
+      const action = { type: type.name, dispatchedAt: [...at].sort() };
+      for (const c of new Set(handlers.flatMap((h) => h.sent))) {
         if (own.has(c)) continue;
         if (!bySaga.has(c)) bySaga.set(c, []);
-        bySaga.get(c)!.push({ type: type.name, dispatchedAt: [...at].sort() });
+        bySaga.get(c)!.push(action);
+      }
+      for (const l of new Set(handlers.flatMap((h) => h.moves))) {
+        if (ownLinks.has(l)) continue;
+        if (!movedBySaga.has(l)) movedBySaga.set(l, []);
+        movedBySaga.get(l)!.push(action);
       }
     }
-    const sagaCalls = [...bySaga].map(([c, actions]) => ({ ...c, file: rel(siteFile.get(c)), actions: actions.sort((a, b) => compare(a.type, b.type) || compare(a.dispatchedAt[0], b.dispatchedAt[0])) }));
+    const byType = (actions: DispatchedActions) => actions.sort((a, b) => compare(a.type, b.type) || compare(a.dispatchedAt[0], b.dispatchedAt[0]));
+    const sagaCalls = [...bySaga].map(([c, actions]) => ({ ...c, file: rel(siteFile.get(c)), actions: byType(actions) }));
     sagaCalls.sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.fn, b.fn));
+    const sagaLinks = [...movedBySaga].map(([ref, actions]) => {
+      const file = rel(siteFile.get(ref));
+      if (!('route' in ref)) return { ...ref, file, reaches: routedScreens(ref.to), actions: byType(actions) };
+      const { tail, ...r } = ref;
+      const value = routeValues[r.route] as string;
+      return tail ? { ...r, to: value + tail, tail, file, actions: byType(actions) } : { ...r, to: value, file, actions: byType(actions) };
+    });
+    sagaLinks.sort((a, b) => compare(a.file, b.file) || a.line - b.line);
+    links.push(...sagaLinks);
     return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls: [...apiCalls, ...sagaCalls], settingReads, links };
   });
 
