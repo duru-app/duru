@@ -3158,6 +3158,10 @@ alone, and one following a link from `/home` to `/help`, wrote one record each, 
 without the query, a failed test wrote none, with the folder left at its default so that the caught `Cypress.env` call
 ran, and `rebuild` on the example client stored the candidates `/signin#SignIn > /home#Home >
 /document/:tab#DocumentList > /document/:id#DocumentDetail` and `/home#Home > /help#Help`.
+The steps are cleared on `test:before:run`, which comes before the spec's `before` hook, not in a root `beforeEach`,
+which runs after it: measured with Cypress 16.1.1 on 2026-10-22, a spec opening `/signin` and moving to `/home` in
+`before` and to `/help` in its first test recorded `/signin`, `/home`, `/help`, where the `beforeEach` reset recorded
+`/help` alone.
 - A `cy.task` that writes the record from `setupNodeEvents`, as #223 sketched: a task runs only once it is
   registered in the Cypress config, so the setup would be a second edit in a second file. `cy.writeFile` also writes
   from Cypress's Node side, relative to the project, and makes the folders, with nothing to register. Moving to a
