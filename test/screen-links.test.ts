@@ -1683,3 +1683,8 @@ export default function Home({ item }) {
   const at = (part: string) => lineOf(home, part);
   assert.deepEqual(addressesAt(map, '/home#Home'), [['{?}', at('startPath(')], ['{?}', at('loginPath(')]]);
 });
+
+test('the decision record says a parameter typed with a class is read through the class\'s own getter, and why a type import is looked up apart from following names', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '..', 'docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*A member an address function reads from a parameter typed with a class is read through that class's own\s+getter, and a class imported only as a type is found from the import as written\.\*\*/);
+});

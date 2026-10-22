@@ -3510,6 +3510,60 @@ Known limits:
   place of a call with none; the coming reading of helpers that move to an address they are given, which has to read
   `history.push(url)` inside a body with the caller's arguments, will need that inner reading exported.
 
+**A member an address function reads from a parameter typed with a class is read through that class's own
+getter, and a class imported only as a type is found from the import as written.**
+When a parameter of an address function has a type written as one class name (`doc: Document`, `doc?: Document`,
+`box: Box<string>`), the body reads a member of it (`doc.path`), and duru cannot read the value given at the call,
+it finds the class and reads the getter of that name written in the class's own body (`get path()`, neither static
+nor computed) as it reads an address function's body. A `this.title` in the getter is a value duru cannot read: a
+`{*}` piece inside an address, `{?}` when the address starts with it, and an `if` on it gives a link for each
+branch. A getter that calls an address function with `this` is read through that function, `this` being an
+argument duru cannot read. A getter counts as one of the 8 steps a call is followed, and coming back to a getter
+being read is a piece duru cannot read. Route paths use the same reading, so when a getter returns a value duru
+cannot read, the `route path not read` line says where in the class's file it stopped
+(`stopped at this.url in models/Collection.ts:232` in outline instead of `collection.path` in
+`utils/routeHelpers.ts`).
+When the value given at the call is read, it is used and the getter is not: an object written at the call
+(`teamPath({ path: '/login' })`) is what the function gets, and an argument left out gives `{?}` as before, since
+such a call fails when it runs.
+The class is found when it is declared in the same file, imported as a value, or imported only as a type
+(`import type Document from`, `import { type Help, other } from`), through value re-exports between
+(`export { default as Doc } from`). duru removes type-only import lines and `type` specifiers from a TypeScript
+file before reading it (`src/parse.ts`), so a name imported that way has no binding, and the name following of
+`src/follow-names.ts` does not join files through type imports. Keeping those lines would change every binding and
+the files name following attaches to a screen (#307) in every app. So only when a parameter's type name has no
+binding does duru read that file again as written, once per file, and look the name up in its import lines, as
+`src/constants.ts` does to find route constants. The issue (#397) first said to follow the binding babel makes for a
+type import; after the removal there is none, and a trial build that way left outline's map unchanged.
+Measured while planning with a trial build of this rule on the base branch (d7b2f85), with the counts of
+`396-count.ts`:
+- outline: link lines 1248 both, lines that reach a screen 524 to 775, entry screens 32 to 30, screens with a link
+  from another screen 11 to 15. The 8 `documentEditPath` places (96 lines) reach the document edit screen, which
+  goes from 0 links in to 89 and stops being an entry; the history screen goes from 0 to 6. `Collection`'s
+  `get path()` returns `this.url`, so collection links and route paths stay `{?}`.
+- mattermost, appsmith and into-sign 1.5.0: the map is the same apart from the time it was written; into-sign has
+  no TypeScript file.
+- outline's extract took 13.4–14.4 s before and 13.5–13.7 s after, three runs each, so the second read of a file
+  costs less than the runs vary.
+Alternatives compared:
+- Returning the removed type imports from `parseSource` beside the tree: no second read, but what every caller of
+  `parseSource` gets changes. The second read cost no time that could be measured, so this waits for a cost.
+- Keeping type imports in the tree: changes name following and the files attached to screens for every app, which
+  is what looking the import up apart avoids.
+- Asking the TypeScript checker of `src/typed-members.ts` for the parameter's type: that checker is built after
+  links are read, over the screens' source files, to send method calls to classes.
+Known limits:
+- Not read: a getter the class inherits from a parent, a field that is not a getter (`path = '/x'`), a method, a
+  union (`Document | undefined`), a dotted type name (`models.Document`), a type alias, a destructured parameter,
+  and a class re-exported only as a type (`export type { X } from`, `export { type X } from`); each stays a piece
+  duru cannot read.
+- The getter of the type written on the parameter is read; a subclass passed at the call that overrides it is not
+  seen.
+- A model's member read at the link itself (`to={doc.path}`) is not read; only parameters of address functions are.
+- outline's `/doc/{*}` links (8 places, 148 lines) reach the shared document screen `/doc/:documentSlug#Shared` as
+  well as the document screen, since a link is matched in each of two `Switch`es drawn side by side (#385).
+- A class outside `srcRoot` is found only as far as functions are followed.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
