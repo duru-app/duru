@@ -401,18 +401,17 @@ test('in a browser, the badges of a screen list row sit below the route and leav
     assert.ok(Math.abs(crowded.name.width - crowded.content) < 1, `${crowded.name.width} of ${crowded.content}`);
     assert.ok(crowded.badgesTop >= crowded.name.bottom && bare.badgesTop >= bare.name.bottom);
 
-    const line = await row('home').evaluate((li) => {
-      const boxes = [...li.querySelectorAll('.badges > *')].map((el) => el.getBoundingClientRect());
-      return {
-        tops: boxes.map((b) => b.top),
-        widths: boxes.map((b) => b.width),
-        gaps: boxes.slice(1).map((b, i) => b.left - boxes[i].right),
-        content: li.querySelector('.name')!.getBoundingClientRect().width,
-      };
-    });
-    assert.ok(line.widths.reduce((sum, w) => sum + w, 0) + 8 * (line.widths.length - 1) <= line.content, `the badges fit in one row width: ${line.widths} of ${line.content}`);
-    assert.ok(Math.max(...line.tops) - Math.min(...line.tops) < 4, `the badges share one line: ${line.tops}`);
-    assert.ok(line.gaps.every((gap) => Math.abs(gap - 8) < 0.5), `adjacent badges are 8px apart: ${line.gaps}`);
+    const lines = await row('home').evaluate((li) => [...li.querySelectorAll('.badge-line')].map((line) => {
+      const boxes = [...line.children].map((el) => el.getBoundingClientRect());
+      return { texts: [...line.children].map((el) => el.textContent), tops: boxes.map((b) => b.top), bottom: Math.max(...boxes.map((b) => b.bottom)), widths: boxes.map((b) => b.width), gaps: boxes.slice(1).map((b, i) => b.left - boxes[i].right) };
+    }));
+    assert.deepEqual(lines.map((l) => l.texts), [['죽은 화면', '충분'], ['테스트 8', '불러옴 2']]);
+    for (const line of lines) {
+      assert.ok(line.widths.reduce((sum, w) => sum + w, 0) + 8 * (line.widths.length - 1) <= crowded.content, `the badges fit in one row width: ${line.widths} of ${crowded.content}`);
+      assert.ok(Math.max(...line.tops) - Math.min(...line.tops) < 4, `the badges share one line: ${line.tops}`);
+      assert.ok(line.gaps.every((gap) => Math.abs(gap - 8) < 0.5), `adjacent badges are 8px apart: ${line.gaps}`);
+    }
+    assert.ok(Math.min(...lines[1].tops) >= lines[0].bottom, `the counts sit under the chips: ${lines[1].tops} under ${lines[0].bottom}`);
   });
 });
 

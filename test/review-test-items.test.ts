@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Page } from 'playwright-core';
+import type { Locator, Page } from 'playwright-core';
 import { addJudgment, loadJudgments } from '../src/judgments.ts';
 import { withRebuiltFixture, withServer, browserMissing, toList, withPage, untaggedTab, waitCallInfoInView, screenBox, statusLine, chooseScreen, TRACED, asked, why, excludeIn, DOCUMENT_TABLE, bulk, judgedBy, DETAIL_CALL, closeCallInfo } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
@@ -33,6 +33,40 @@ test('in a browser, a screen shows the unit tests that import its source files a
 
         await p.click('#screen-list li:has-text("/admin/member")');
         assert.equal(await p.locator('#center .importers').count(), 0);
+      })));
+});
+
+test('in a browser, a screen in the screen list or the gap list with a chip or a comment count shows its test counts on the line under them, and one without either right under its name', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const layout = (row: Locator) => row.evaluate((li) => {
+          const box = (el: Element | null) => el?.getBoundingClientRect() ?? null;
+          const lines = [...li.querySelectorAll('.badge-line')];
+          return { name: box(li.querySelector('.name'))!.bottom, lines: lines.map((l) => ({ text: [...l.children].map((c) => c.textContent).join(' '), top: box(l)!.top, bottom: box(l)!.bottom })) };
+        });
+        const home = await layout(p.locator('#screen-list li[title="/home Home"]'));
+        assert.deepEqual(home.lines.map((l) => l.text), ['죽은 화면', '테스트 8 불러옴 1']);
+        assert.ok(home.lines[1].top >= home.lines[0].bottom && home.lines[0].top >= home.name);
+        const detail = await layout(p.locator('#screen-list li[title="/document/:id DocumentDetail"]'));
+        assert.deepEqual(detail.lines.map((l) => l.text), ['테스트 11 불러옴 1']);
+        assert.ok(detail.lines[0].top >= detail.name && detail.lines[0].top - detail.name < 6);
+
+        await p.click('#screen-list li[title="/help Help"]');
+        await p.fill('#right textarea', 'why?');
+        await p.click('#right button:has-text("남기기")');
+        await p.waitForSelector('#screen-list li[title="/help Help"] .talk-count');
+        const help = await layout(p.locator('#screen-list li[title="/help Help"]'));
+        assert.equal(help.lines.length, 2);
+        assert.match(help.lines[0].text, /^코멘트 1$/);
+
+        await p.click('header button:has-text("흐름")');
+        const gapRow = p.locator('.gap-list li[title="/home Home"]');
+        await gapRow.waitFor();
+        const gap = await layout(gapRow);
+        assert.deepEqual(gap.lines.map((l) => l.text), ['죽은 화면', '테스트 8 불러옴 1']);
+        assert.ok(gap.lines[1].top >= gap.lines[0].bottom);
       })));
 });
 

@@ -228,17 +228,21 @@ const routeSegments = (path) => path.split(/(?=\/)/).flatMap((seg, i) => [i ? h(
 function screenItem(s, { selected, onclick }) {
   const n = testsOf(s.id).length;
   const waiting = awaitingTagOf(s.id).length;
+  const chips = [
+    s.dead ? h('span', { class: 'chip dead', title: '서버에 없는 호출이 있습니다' }, '죽은 화면') : null,
+    changeChips(s.id),
+    markChip(markOf({ node: s.id })),
+    talkCount(attachedTalk({ node: s.id })),
+  ].flat().filter(Boolean);
   return h('li', { class: selected ? 'selected' : '', title: `${s.path} ${s.component}`, onclick },
     h('span', { class: 'name' }, h('span', {}, routeSegments(s.path)), ' ', h('span', { class: 'muted component' }, s.component)),
     h('span', { class: 'badges' },
-      s.dead ? h('span', { class: 'chip dead', title: '서버에 없는 호출이 있습니다' }, '죽은 화면') : null,
-      changeChips(s.id),
-      markChip(markOf({ node: s.id })),
-      talkCount(attachedTalk({ node: s.id })),
-      h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'),
-      importersOf(s.id).length ? h('span', { class: 'count importer-count', title: '이 화면의 소스 파일을 불러오는 단위 테스트' }, `불러옴 ${importersOf(s.id).length}`) : null,
-      passedOf(s.id).length ? h('span', { class: 'count passed-count', title: '이 화면의 태그 없이, 도는 동안 이 화면을 연 브라우저 테스트' }, `지나감 ${passedOf(s.id).length}`) : null,
-      waiting ? h('span', { class: 'count awaiting-count', title: '이 화면의 테스트로 포함해 태그를 기다리는 테스트' }, `태그 대기 ${waiting}`) : null));
+      chips.length ? h('span', { class: 'badge-line' }, chips) : null,
+      h('span', { class: 'badge-line' },
+        h('span', { class: `count${n ? '' : ' none'}` }, n ? `테스트 ${n}` : '테스트 없음'),
+        importersOf(s.id).length ? h('span', { class: 'count importer-count', title: '이 화면의 소스 파일을 불러오는 단위 테스트' }, `불러옴 ${importersOf(s.id).length}`) : null,
+        passedOf(s.id).length ? h('span', { class: 'count passed-count', title: '이 화면의 태그 없이, 도는 동안 이 화면을 연 브라우저 테스트' }, `지나감 ${passedOf(s.id).length}`) : null,
+        waiting ? h('span', { class: 'count awaiting-count', title: '이 화면의 테스트로 포함해 태그를 기다리는 테스트' }, `태그 대기 ${waiting}`) : null)));
 }
 
 function renderLeftList() {
