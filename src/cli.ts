@@ -295,10 +295,11 @@ if (command === 'tasks') {
   const direct = new Map<string, any>(map.screens.flatMap((s: any) => s.apiCalls.filter((c: any) => c.direct).map((c: any) => [`${c.file}\n${c.line}\n${c.fn}\n${c.endpoints[0].method} ${c.endpoints[0].url}`, c])));
   if (direct.size) console.log(`requests and navigations written in screen sources ${direct.size} | address not read ${map.unreadRequests?.length ?? 0}`);
   for (const r of map.unreadRequests ?? []) console.log(`  request ${r.fn} ← ${r.file}:${r.line}: ${unreadText(r)}`);
-  if (map.sagas && !map.sagas.runs.length) console.log('redux-saga is imported, but no run of a createSagaMiddleware() result was found, so no request of a saga is put on a screen');
+  if (map.sagas && !map.sagas.runs.length) console.log('redux-saga is imported, but no run of a createSagaMiddleware() result was found, so no request or link of a saga is put on a screen');
   else if (map.sagas) {
     const bySaga = new Set(map.screens.flatMap((s: any) => s.apiCalls.filter((c: any) => c.actions).map((c: any) => `${c.file}\n${c.line}\n${c.fn}`)));
-    console.log(`redux-saga runs from ${map.sagas.runs.join(', ')} | watchers ${map.sagas.watchers} | requests of sagas on screens ${bySaga.size}`);
+    const movedBySaga = new Set(map.screens.flatMap((s: any) => s.links.filter((l: any) => l.actions).map((l: any) => `${l.file}\n${l.line}\n${l.to}`)));
+    console.log(`redux-saga runs from ${map.sagas.runs.join(', ')} | watchers ${map.sagas.watchers} | requests of sagas on screens ${bySaga.size} | links of sagas on screens ${movedBySaga.size}`);
   }
   for (const s of map.outsideStandIns ?? []) console.log(`  calledApiModules ran ${s.spec} as a stand-in, though it is ${s.file} outside srcRoot, imported by ${s.importedBy.join(', ')}`);
   for (const n of map.bodyTypeNotices ?? []) {

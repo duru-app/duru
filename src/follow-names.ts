@@ -27,8 +27,10 @@ interface Edge {
   whole?: string | null;
 }
 
+type Ref = { pos: number; edge: Edge };
+
 interface Region {
-  edges: Edge[];
+  edges: Ref[];
   // 멤버 단위로 추적하는 클래스의 멤버를 참조할 수 있는 위치
   uses: number[];
   wholeClass?: true;
@@ -43,7 +45,7 @@ interface ExportEntry {
 
 interface Analysis {
   regions: Region[];
-  refs: { pos: number; edge: Edge }[];
+  refs: Ref[];
   regionAt: (pos: number) => number | null;
   exports: Map<string, ExportEntry>;
   stars: (string | null)[];
@@ -359,16 +361,18 @@ function analyze(file: string, parse: NameFollowerOptions<unknown>['parse'], res
         const member = (parent.isMemberExpression() || parent.isOptionalMemberExpression() || parent.isJSXMemberExpression()) && parent.node.object === p.node && !(parent.node as { computed?: boolean }).computed;
         edge = member ? { file: edge.file, name: exportedName(parent.node.property as Named) } : { whole: edge.file };
       }
-      regions[at].edges.push(edge);
-      refs.push({ pos: p.node.start!, edge });
+      const ref = { pos: p.node.start!, edge };
+      regions[at].edges.push(ref);
+      refs.push(ref);
     },
     CallExpression(p) {
       const arg = p.node.arguments[0];
       if (p.node.callee.type !== 'Import' || arg?.type !== 'StringLiteral') return;
       const at = regionAt(p.node.start!);
       if (at === null) return;
-      regions[at].edges.push({ whole: resolve(file, arg.value) });
-      refs.push({ pos: p.node.start!, edge: { whole: resolve(file, arg.value) } });
+      const ref = { pos: p.node.start!, edge: { whole: resolve(file, arg.value) } };
+      regions[at].edges.push(ref);
+      refs.push(ref);
     },
     MemberExpression: readsMember,
     OptionalMemberExpression: readsMember,
@@ -438,7 +442,8 @@ export function nameFollower<Site>({ parse, resolve, sitesOf, members = null }: 
   }
 
   // starts 의 name 이 null 이면 파일 전체에서, span 이 있으면 그 [시작, 끝) 안의 코드에서 시작한다.
-  function reach(starts: ({ file: string; name: string | null } | { file: string; span: Span })[], canEnter: CanEnter, { missed, loaded = () => true }: { missed?: Set<string>; loaded?: (file: string) => boolean } = {}) {
+  // cut(file, pos) 가 참인 위치에 적힌 이름은 추적하지 않는다.
+  function reach(starts: ({ file: string; name: string | null } | { file: string; span: Span })[], canEnter: CanEnter, { missed, loaded = () => true, cut }: { missed?: Set<string>; loaded?: (file: string) => boolean; cut?: (file: string, pos: number) => boolean } = {}) {
     const seen = new Set<string>();
     const whole = new Set<string | null>();
     const visited = new Map<string, Set<number>>();
@@ -515,7 +520,7 @@ export function nameFollower<Site>({ parse, resolve, sitesOf, members = null }: 
         if (!a) continue;
         visited.get(item.file!)!.add(item.region);
         const region = a.regions[item.region];
-        for (const edge of region.edges) follow(item.file, edge);
+        for (const { pos, edge } of region.edges) if (!cut?.(item.file!, pos)) follow(item.file, edge);
         for (const at of region.uses) {
           for (const t of members!.targets(item.file!, at, self)) stack.push({ file: t.file, member: { at: t.at, name: t.member, quiet: region.wholeClass || t.quiet }, self: t.self });
         }
