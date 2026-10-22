@@ -1695,7 +1695,9 @@ export async function extractClient(config: any) {
       return around.filter((j) => !around.some((k) => sourced[k].s.routeFile !== sourced[j].s.routeFile && holds[j].has(routeFileOf(k))));
     };
     const filled = new Map<number, string>();
+    const outers = new Map<number, string>();
     const filling = new Set<number>();
+    const behind = (outer: string, rest: string) => outer.replace(/\/$/, '') + rest || '/';
     const addressOf = (i: number): string => {
       const { s, outerFill } = sourced[i];
       if (!outerFill.startsWithOuterAddress || filling.has(i)) return s.path;
@@ -1704,7 +1706,8 @@ export async function extractClient(config: any) {
         const rest = s.path.slice(UNKNOWN.length);
         const outer = joinedPaths([...new Set(outersOf(i).map(addressOf))], rest);
         filling.delete(i);
-        filled.set(i, outer === null ? s.path : outer.replace(/\/$/, '') + rest || '/');
+        if (outer !== null) outers.set(i, outer);
+        filled.set(i, outer === null ? s.path : behind(outer, rest));
       }
       return filled.get(i)!;
     };
@@ -1714,7 +1717,9 @@ export async function extractClient(config: any) {
       if (address === x.s.path) return;
       x.s.path = address;
       if (!unreadPath) return;
-      if (address.includes(UNKNOWN)) Object.assign(unreadPath.entry, { path: address, stoppedAt: unreadPath.restStoppedAt ?? unreadPath.entry.stoppedAt });
+      const outer = outers.get(i)!;
+      const paths = unreadPath.entry.paths?.map((p) => (p.startsWith(UNKNOWN) ? behind(outer, p.slice(UNKNOWN.length)) : p));
+      if (address.includes(UNKNOWN)) Object.assign(unreadPath.entry, { path: address, stoppedAt: unreadPath.restStoppedAt ?? unreadPath.entry.stoppedAt, ...(paths && { paths }) });
       else unreadRoutePaths.splice(unreadRoutePaths.indexOf(unreadPath.entry), 1);
     });
   }
