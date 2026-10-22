@@ -3311,14 +3311,16 @@ Driver's decision (2026-10-22) on a `<Routes>` drawn inside a route, whether in 
 ending in `/*` or written as the route's `element`: a path not written from `/` is joined to the part of the address
 the outer `/*` route matched, so `<Route path="/app/*" element={<App />} />` around App's
 `<Route path="settings" … />` takes `/app/settings`, as v6 does; a path written from `/` matches the whole address,
-which keeps into-sign 2.0.0, whose route files write the whole path, as it was. A path written from `/` that does not
-start with the outer route's path, which v6 stops on as an error, also matches the whole address, so no link reaches
-it: the outer route has to fit first.
+which keeps into-sign 2.0.0, whose route files write the whole path, as it was. v6 6.30 matches every path of an
+inner `<Routes>`, one written from `/` as well, against what the outer `/*` route leaves; duru matches a path written
+from `/` against the whole address because into-sign writes its inner paths that way, so a link reaches such a path
+only when it also starts with the outer route's path: the outer route has to fit first.
 Choices made without a driver's answer, each cheap to change: two routes with the same path in one `<Routes>` both
 win, as two routes with one path in a `<Switch>` do, although v6 itself takes the first; the screen of a route ending
-in `*` is a link's screen only when no screen of a route that fits the whole address is drawn with it, so a link to
-`/app/settings` goes to Settings and not also to App, as a `<Switch>` route without `exact` around an inner one gives
-the inner one.
+in `*` is a link's screen unless a screen drawn inside it fits the whole address, so a link to `/app/settings` goes to
+Settings and not also to App, as a `<Switch>` route without `exact` around an inner one gives the inner one, while a
+link to `/settings/zzz` that only an inner `*` route takes goes to both screens, and `/docs/1` goes to the screen of
+`/docs/*` as well as to that of `/docs/:id` in a `<Routes>` drawn beside it.
 Known limits: an `index` route never fits, and a route without a path is drawn only around the routes it holds;
 a v6 route file the route files do not reach from one another is drawn beside the others, so into-sign's
 `navigate('/')` goes to the sign-in screen through the catch-all of the signed-out routes as well as to the user home.
