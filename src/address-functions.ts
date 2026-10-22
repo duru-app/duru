@@ -1,5 +1,5 @@
-import type { NodePath, Scope } from '@babel/traverse';
-import type { ArrowFunctionExpression, FunctionDeclaration, FunctionExpression, Identifier, Node } from '@babel/types';
+import type { Binding, NodePath, Scope } from '@babel/traverse';
+import type { ArrowFunctionExpression, FunctionDeclaration, FunctionExpression, Identifier, Node, StringLiteral } from '@babel/types';
 
 export const UNREADABLE_PIECE = '\0';
 
@@ -10,82 +10,358 @@ export type Branch = { text: string; stops: NodePath[]; made: boolean };
 
 interface Reading {
   leaf: (p: NodePath) => Leaf;
+  declaredValue: (scope: Scope, name: string) => NodePath | null;
   declaredFunction: (scope: Scope, name: string) => AddressFunction | null;
   namespaceFunction: (scope: Scope, chain: string[]) => AddressFunction | null;
 }
 
 type Piece = { text: string; made?: boolean } | { stop: NodePath };
-type Out = { pieces: Piece[]; made: boolean };
+type Val =
+  | { pieces: Piece[] }
+  | { value: unknown }
+  | { props: Map<string, Out>; open: boolean }
+  | { items: Out[] }
+  | { unknown: NodePath };
+type Out = { val: Val; made: boolean };
+type Env = Map<Binding, Out>;
+interface At { env: Env | null; fn: AddressFunction | null }
 
-const text = (value: string): Out => ({ pieces: value ? [{ text: value }] : [], made: false });
+const OUTSIDE: At = { env: null, fn: null };
+const NOT_KNOWN = Symbol('not known');
+const COMPARE: Record<string, (a: any, b: any) => boolean> = {
+  '===': (a, b) => a === b,
+  '!==': (a, b) => a !== b,
+  '==': (a, b) => a == b,
+  '!=': (a, b) => a != b,
+  '<': (a, b) => a < b,
+  '>': (a, b) => a > b,
+  '<=': (a, b) => a <= b,
+  '>=': (a, b) => a >= b,
+};
 
-function joined(outs: Out[]): Out {
+class Unreadable extends Error {}
+
+const textOut = (text: string): Out => ({ val: { pieces: text ? [{ text }] : [] }, made: false });
+const known = (value: unknown): Out => (typeof value === 'string' ? textOut(value) : { val: { value }, made: false });
+const unknownAt = (at: NodePath): Out => ({ val: { unknown: at }, made: false });
+const keyOf = (key: Node) => (key as Identifier).name ?? (key as StringLiteral).value;
+
+function piecesOf({ val }: Out, at: NodePath): Piece[] {
+  if ('pieces' in val) return val.pieces;
+  if ('value' in val && typeof val.value === 'number') return [{ text: String(val.value) }];
+  return [{ stop: 'unknown' in val ? val.unknown : at }];
+}
+
+function joined(parts: [Out, NodePath][]): Out {
   const pieces: Piece[] = [];
-  for (const piece of outs.flatMap((o) => o.pieces)) {
+  for (const piece of parts.flatMap(([out, at]) => piecesOf(out, at))) {
     const last = pieces.at(-1);
     if ('text' in piece && last && 'text' in last && last.text.endsWith('/') && piece.text.startsWith('/') && (last.made || piece.made)) {
       if (piece.text.length > 1) pieces.push({ ...piece, text: piece.text.slice(1) });
     } else pieces.push(piece);
   }
-  return { pieces, made: outs.some((o) => o.made) };
+  return { val: { pieces }, made: parts.some(([out]) => out.made) };
 }
 
-const product = (lists: Out[][]): Out[] => lists.reduce<Out[][]>((acc, list) => acc.flatMap((a) => list.map((o) => [...a, o])), [[]]).map(joined);
+function product<T>(lists: T[][]): T[][] {
+  return lists.reduce<T[][]>((acc, list) => acc.flatMap((a) => list.map((x) => [...a, x])), [[]]);
+}
 
-export function addressReader({ leaf, declaredFunction, namespaceFunction }: Reading) {
+// 다 읽은 값이면 그 값, 아니면 NOT_KNOWN
+function plain({ val }: Out): unknown {
+  if ('pieces' in val) return val.pieces.every((x) => 'text' in x) ? val.pieces.map((x) => (x as { text: string }).text).join('') : NOT_KNOWN;
+  return 'value' in val ? val.value : NOT_KNOWN;
+}
+
+function truth(out: Out): boolean | undefined {
+  const { val } = out;
+  if ('props' in val || 'items' in val || ('pieces' in val && val.pieces.some((x) => 'text' in x && x.text))) return true;
+  const value = plain(out);
+  return value === NOT_KNOWN ? undefined : Boolean(value);
+}
+
+function member(out: Out, key: string, at: NodePath): Out {
+  const { val } = out;
+  if ('props' in val) return val.props.get(key) ?? (val.open ? unknownAt(at) : known(undefined));
+  if ('items' in val) return key === 'length' ? known(val.items.length) : unknownAt(at);
+  if ('unknown' in val) return out;
+  const value = plain(out);
+  if (typeof value === 'string' && key === 'length') return known(value.length);
+  return value !== null && typeof value === 'object' ? known((value as Record<string, unknown>)[key]) : unknownAt(at);
+}
+
+const unwrapped = (p: NodePath<any>): NodePath<any> => (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isTypeCastExpression() || p.isParenthesizedExpression() ? unwrapped(p.get('expression') as NodePath<any>) : p);
+
+export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction }: Reading) {
   const reading = new Set<Node>();
 
-  function fromLeaf(p: NodePath): Out {
+  function leafOut(p: NodePath): Out {
     const found = leaf(p);
-    if ('parts' in found) return { pieces: found.parts.map((x) => (typeof x === 'string' ? { text: x } : { stop: x })).filter((x) => !('text' in x) || x.text), made: false };
-    return typeof found.value === 'string' || typeof found.value === 'number' ? text(String(found.value)) : { pieces: [{ stop: p }], made: false };
+    if ('parts' in found) return { val: { pieces: found.parts.flatMap((x): Piece[] => (typeof x !== 'string' ? [{ stop: x }] : x ? [{ text: x }] : [])) }, made: false };
+    return found.value === undefined ? unknownAt(p) : known(found.value);
   }
 
-  function calledFunction(p: NodePath<any>) {
+  const inEnv = (p: NodePath<any>, at: At): boolean => {
+    if (p.isMemberExpression() || p.isOptionalMemberExpression()) return !p.node.computed && inEnv(p.get('object') as NodePath<any>, at);
+    const binding = p.isIdentifier() ? p.scope.getBinding(p.node.name) : undefined;
+    return Boolean(binding && at.env?.has(binding));
+  };
+
+  function identifier(p: NodePath<Identifier>, at: At): Out[] {
+    const binding = p.scope.getBinding(p.node.name);
+    if (binding && at.env?.has(binding)) return [at.env.get(binding)!];
+    if (binding && at.fn && binding.path.isDescendant(at.fn)) return [unknownAt(p)];
+    if (!binding && p.node.name === 'undefined') return [known(undefined)];
+    const out = leafOut(p);
+    if (plain(out) !== NOT_KNOWN || 'value' in out.val) return [out];
+    const declared = declaredValue(p.scope, p.node.name);
+    if (!declared || !unwrapped(declared).isCallExpression() || reading.has(declared.node)) return [out];
+    reading.add(declared.node);
+    try {
+      return values(declared, OUTSIDE);
+    } finally {
+      reading.delete(declared.node);
+    }
+  }
+
+  function calledFunction(p: NodePath<any>, at: At) {
     const callee = p.get('callee') as NodePath<any>;
+    if (inEnv(callee, at)) return null;
     if (callee.isIdentifier()) return declaredFunction(p.scope, callee.node.name);
     const object = callee.isMemberExpression() && !callee.node.computed ? callee.get('object') as NodePath<any> : null;
     return object?.isIdentifier() ? namespaceFunction(p.scope, [object.node.name, (callee.node.property as Identifier).name]) : null;
   }
 
-  function returned(fn: AddressFunction) {
-    const body = fn.get('body') as NodePath<any>;
-    if (!body.isBlockStatement()) return body;
-    const [only, ...rest] = body.get('body') as NodePath<any>[];
-    return only?.isReturnStatement() && only.node.argument && !rest.length ? (only.get('argument') as NodePath) : null;
+  function joinedItems(list: Out, separator: Out, at: NodePath): Out {
+    const glue = plain(separator);
+    if (typeof glue !== 'string') return unknownAt(at);
+    if ('items' in list.val) return joined(list.val.items.flatMap((item, i): [Out, NodePath][] => (i ? [[textOut(glue), at], [item, at]] : [[item, at]])));
+    const value = plain(list);
+    return Array.isArray(value) ? known(value.join(glue)) : unknownAt(at);
   }
 
-  function call(p: NodePath): Out[] | null {
-    const fn = calledFunction(p);
-    if (!fn || fn.node.async || fn.node.generator || reading.has(fn.node)) return null;
-    const body = returned(fn);
-    if (!body) return null;
+  function call(p: NodePath<any>, at: At): Out[] {
+    const callee = p.get('callee') as NodePath<any>;
+    const args = p.get('arguments') as NodePath<any>[];
+    if (callee.isMemberExpression() && !callee.node.computed && (callee.node.property as Identifier).name === 'join' && inEnv(callee.get('object'), at)) {
+      const separators = args[0] ? values(args[0], at) : [textOut(',')];
+      return product([values(callee.get('object'), at), separators]).map(([list, separator]) => joinedItems(list, separator, p));
+    }
+    const fn = calledFunction(p, at);
+    if (!fn || fn.node.async || fn.node.generator || reading.has(fn.node)) return [leafOut(p)];
+    const spread = args.findIndex((a) => a.isSpreadElement());
+    const given = product((spread < 0 ? args : args.slice(0, spread)).map((a) => values(a, at)));
     reading.add(fn.node);
     try {
-      return values(body).map((o) => ({ pieces: o.pieces.map((x) => ('text' in x ? { ...x, made: true } : x)), made: true }));
+      const outs = given.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread]).flatMap((e) => returnedValues(fn, e, p)));
+      return outs.map((o) => ({ val: 'pieces' in o.val ? { pieces: o.val.pieces.map((x) => ('text' in x ? { ...x, made: true } : x)) } : o.val, made: true }));
+    } catch (error) {
+      if (error instanceof Unreadable) return [unknownAt(p)];
+      throw error;
     } finally {
       reading.delete(fn.node);
     }
   }
 
-  function values(p: NodePath<any>): Out[] {
-    if (p.isStringLiteral()) return [text(p.node.value)];
-    if (p.isTemplateLiteral()) {
-      const quasis = p.node.quasis.map((q) => [text(q.value.cooked ?? '')]);
-      return product(quasis.flatMap((q, i) => (i < p.node.expressions.length ? [q, values(p.get(`expressions.${i}`) as NodePath)] : [q])));
-    }
-    if (p.isBinaryExpression({ operator: '+' })) return product([values(p.get('left')), values(p.get('right'))]);
-    if (p.isCallExpression()) return call(p) ?? [fromLeaf(p)];
-    return [fromLeaf(p)];
+  function bound(fn: AddressFunction, given: Out[], spread: NodePath | null): Env[] {
+    let envs: Env[] = [new Map()];
+    const inner = (env: Env): At => ({ env, fn });
+    (fn.get('params') as NodePath<any>[]).forEach((param, i) => {
+      if (param.isRestElement()) envs = bind(param.get('argument'), spread ? unknownAt(spread) : { val: { items: given.slice(i) }, made: false }, envs, inner);
+      else envs = bind(param, spread && i >= given.length ? unknownAt(spread) : given[i], envs, inner);
+    });
+    return envs;
   }
 
-  function branch({ pieces, made }: Out): Branch {
+  function bind(pattern: NodePath<any>, out: Out | undefined, envs: Env[], inner: (env: Env) => At): Env[] {
+    if (pattern.isIdentifier()) {
+      const binding = pattern.scope.getBinding(pattern.node.name)!;
+      return envs.map((e) => new Map(e).set(binding, out ?? known(undefined)));
+    }
+    if (pattern.isAssignmentPattern()) {
+      if (out && plain(out) !== undefined) return bind(pattern.get('left'), out, envs, inner);
+      return envs.flatMap((e) => values(pattern.get('right'), inner(e)).flatMap((d) => bind(pattern.get('left'), d, [e], inner)));
+    }
+    if (pattern.isObjectPattern()) {
+      for (const prop of pattern.get('properties') as NodePath<any>[]) {
+        if (prop.isObjectProperty() && !prop.node.computed) envs = bind(prop.get('value'), out ? member(out, keyOf(prop.node.key), prop) : unknownAt(prop), envs, inner);
+        else envs = bind((prop.isRestElement() ? prop.get('argument') : prop.get('value')) as NodePath<any>, unknownAt(prop), envs, inner);
+      }
+      return envs;
+    }
+    const names = Object.keys(pattern.getBindingIdentifiers());
+    return envs.map((e) => {
+      const next = new Map(e);
+      for (const name of names) next.set(pattern.scope.getBinding(name)!, unknownAt(pattern));
+      return next;
+    });
+  }
+
+  function returnedValues(fn: AddressFunction, env: Env, at: NodePath): Out[] {
+    const body = fn.get('body') as NodePath<any>;
+    if (!body.isBlockStatement()) return values(body, { env, fn });
+    const { returned, open } = walk(body.get('body'), [env], fn);
+    return [...returned, ...open.map(() => unknownAt(at))];
+  }
+
+  function walk(statements: NodePath<any>[], envs: Env[], fn: AddressFunction): { returned: Out[]; open: Env[] } {
+    const returned: Out[] = [];
+    const inner = (env: Env): At => ({ env, fn });
+    for (const s of statements) {
+      if (!envs.length) break;
+      if (s.isReturnStatement()) {
+        for (const e of envs) returned.push(...(s.node.argument ? values(s.get('argument'), inner(e)) : [known(undefined)]));
+        envs = [];
+      } else if (s.isIfStatement()) {
+        const next: Env[] = [];
+        for (const e of envs) {
+          const truths = values(s.get('test'), inner(e)).map(truth);
+          if (truths.includes(undefined)) throw new Unreadable();
+          for (const [taken, branch] of [[true, s.get('consequent')], [false, s.get('alternate')]] as const) {
+            if (!truths.includes(taken)) continue;
+            if (!branch.node) {
+              next.push(e);
+              continue;
+            }
+            const found = walk([branch as NodePath], [new Map(e)], fn);
+            returned.push(...found.returned);
+            next.push(...found.open);
+          }
+        }
+        envs = next;
+      } else if (s.isBlockStatement()) {
+        const found = walk(s.get('body'), envs, fn);
+        returned.push(...found.returned);
+        envs = found.open;
+      } else if (s.isVariableDeclaration()) {
+        for (const d of s.get('declarations')) {
+          const init = d.get('init') as NodePath<any>;
+          envs = envs.flatMap((e) => (init.node ? values(init, inner(e)) : [known(undefined)]).flatMap((o) => bind(d.get('id'), o, [e], inner)));
+        }
+      } else if (s.isExpressionStatement()) {
+        const x = s.get('expression') as NodePath<any>;
+        if (!x.isAssignmentExpression()) continue;
+        const left = x.get('left') as NodePath<any>;
+        const binding = left.isIdentifier() ? left.scope.getBinding(left.node.name) : undefined;
+        if (!left.isIdentifier() && inEnv(left, inner(envs[0]))) throw new Unreadable();
+        if (!binding?.path.isDescendant(fn)) continue;
+        envs = envs.flatMap((e) => values(x.get('right'), inner(e)).map((o) => {
+          const before = e.get(binding) ?? unknownAt(left);
+          const after = x.node.operator === '=' ? o : x.node.operator === '+=' ? added(before, o, left, x.get('right')) : unknownAt(x);
+          return new Map(e).set(binding, after);
+        }));
+      } else if (s.isThrowStatement()) envs = [];
+      else if (!s.isEmptyStatement() && !(s.isDeclaration() && !s.isVariableDeclaration())) throw new Unreadable();
+    }
+    return { returned, open: envs };
+  }
+
+  function added(left: Out, right: Out, leftAt: NodePath, rightAt: NodePath): Out {
+    const [a, b] = [plain(left), plain(right)];
+    return typeof a === 'number' && typeof b === 'number' ? known(a + b) : joined([[left, leftAt], [right, rightAt]]);
+  }
+
+  function choose(outs: Out[], pick: (out: Out) => boolean | undefined, then: (out: Out) => Out[], otherwise: (out: Out) => Out[]): Out[] {
+    return outs.flatMap((o) => {
+      const picked = pick(o);
+      if (picked === undefined) throw new Unreadable();
+      return picked ? then(o) : otherwise(o);
+    });
+  }
+
+  function values(p: NodePath<any>, at: At): Out[] {
+    p = unwrapped(p);
+    if (p.isStringLiteral()) return [textOut(p.node.value)];
+    if (p.isNumericLiteral() || p.isBooleanLiteral()) return [known(p.node.value)];
+    if (p.isNullLiteral()) return [known(null)];
+    if (p.isTemplateLiteral()) {
+      const lists = p.node.quasis.flatMap((q, i): [Out, NodePath][][] => {
+        const quasi: [Out, NodePath][] = [[textOut(q.value.cooked ?? ''), p]];
+        if (i === p.node.expressions.length) return [quasi];
+        const expression = p.get(`expressions.${i}`) as NodePath;
+        return [quasi, values(expression, at).map((o): [Out, NodePath] => [o, expression])];
+      });
+      return product(lists).map(joined);
+    }
+    if (p.isBinaryExpression()) {
+      const [left, right] = [p.get('left') as NodePath, p.get('right') as NodePath];
+      const operator = p.node.operator;
+      if (operator !== '+' && !Object.hasOwn(COMPARE, operator)) return [leafOut(p)];
+      return product([values(left, at), values(right, at)]).map(([l, r]) => {
+        if (operator === '+') return added(l, r, left, right);
+        const [a, b] = [plain(l), plain(r)];
+        return a === NOT_KNOWN || b === NOT_KNOWN ? unknownAt(p) : known(COMPARE[operator](a, b));
+      });
+    }
+    if (p.isUnaryExpression({ operator: '!' })) {
+      return values(p.get('argument'), at).map((o) => {
+        const t = truth(o);
+        return t === undefined ? unknownAt(p) : known(!t);
+      });
+    }
+    if (p.isConditionalExpression() && at.env) return choose(values(p.get('test'), at), truth, () => values(p.get('consequent'), at), () => values(p.get('alternate'), at));
+    if (p.isLogicalExpression() && at.env) {
+      const right = () => values(p.get('right'), at);
+      const left = values(p.get('left'), at);
+      if (p.node.operator === '??') return choose(left, (o) => (plain(o) === NOT_KNOWN && !truth(o) ? undefined : plain(o) === null || plain(o) === undefined), right, (o) => [o]);
+      return choose(left, truth, p.node.operator === '||' ? (o) => [o] : right, p.node.operator === '||' ? right : (o) => [o]);
+    }
+    if (p.isIdentifier()) return identifier(p, at);
+    if ((p.isMemberExpression() || p.isOptionalMemberExpression()) && inEnv(p, at)) {
+      const key = (p.node.property as Identifier).name;
+      return values(p.get('object') as NodePath, at).map((o) => member(o, key, p));
+    }
+    if (p.isCallExpression()) return call(p, at);
+    if (p.isObjectExpression()) return objectValues(p, at);
+    return [leafOut(p)];
+  }
+
+  function objectValues(p: NodePath<any>, at: At): Out[] {
+    const props = p.get('properties') as NodePath<any>[];
+    const lists = props.map((prop): Out[] => (prop.isObjectProperty() ? values(prop.get('value'), at) : prop.isSpreadElement() ? values(prop.get('argument'), at) : [unknownAt(prop)]));
+    return product(lists).map((outs) => {
+      const found = new Map<string, Out>();
+      let open = false;
+      props.forEach((prop, i) => {
+        const out = outs[i];
+        if (prop.isObjectProperty() && !prop.node.computed) found.set(keyOf(prop.node.key), out);
+        else if (prop.isSpreadElement() && 'props' in out.val) {
+          for (const [key, value] of out.val.props) found.set(key, value);
+          open ||= out.val.open;
+        } else open = true;
+      });
+      return { val: { props: found, open }, made: false };
+    });
+  }
+
+  function address(out: Out, at: NodePath): Out | null {
+    const { val } = out;
+    if ('props' in val) {
+      const pathname = val.props.get('pathname');
+      if (pathname) return address({ ...pathname, made: out.made || pathname.made }, at);
+      return val.open ? { ...unknownAt(at), made: out.made } : null;
+    }
+    const value = 'value' in val ? val.value : undefined;
+    if (value === null || typeof value !== 'object') return out;
+    const pathname = (value as Record<string, unknown>).pathname;
+    return typeof pathname === 'string' ? { ...known(pathname), made: out.made } : 'pathname' in value ? { ...unknownAt(at), made: out.made } : null;
+  }
+
+  function branch(out: Out, at: NodePath): Branch {
+    const pieces = piecesOf(out, at);
     return {
       text: pieces.map((x) => ('text' in x ? x.text : UNREADABLE_PIECE)).join(''),
       stops: pieces.flatMap((x) => ('stop' in x ? [x.stop] : [])),
-      made,
+      made: out.made,
     };
   }
 
-  return { branches: (p: NodePath): Branch[] => values(p).map(branch) };
+  function branches(p: NodePath): Branch[] {
+    return values(p, OUTSIDE).flatMap((out) => {
+      const found = address(out, p);
+      return found ? [branch(found, p)] : [];
+    });
+  }
+
+  return { branches };
 }

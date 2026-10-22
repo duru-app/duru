@@ -782,7 +782,7 @@ export async function extractClient(config: any) {
     return pathText === '/' ? [] : pathText.replace(/\/$/, '').slice(1).split('/');
   }
 
-  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredFunction, namespaceFunction });
+  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction });
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
   function linkAddresses(p: NodePath) {
@@ -1159,6 +1159,7 @@ export async function extractClient(config: any) {
       const stop = unreadPiece(p) ?? p;
       return { parts: value.split(UNKNOWN).flatMap((part, i) => (i ? [stop, part] : [part])) };
     },
+    declaredValue,
     declaredFunction,
     namespaceFunction,
   });
