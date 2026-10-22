@@ -1499,17 +1499,20 @@ reviewer's judgment does not take the other projects' runs out of the comparison
 Tests are matched in steps. The rows of one test on the current side (one result file, test file, line, title and
 project) are first made one test; an untagged test is one test for each Playwright project it ran in, and in a
 project where the test has rows under a screen or call its status comes from those rows alone, so a run without a
-trace in another project does not change it. Then the title without its `@` words and the Playwright project are
-matched. A group that shares that key within one side gets the end of its test file paths added, one folder at a
-time, at the shortest end that tells apart every different file in the group; a group with one file gets none, and
-when the two sides need different lengths the longer is used on both. Tests that still share a key, such as verdict
-lines of one name in one log, get their sorted tags added, and those still alike are one test with the worst
+trace in another project does not change it. Then the title without its `@` words, the Playwright project and the
+test file are matched. The test file is the path the result gives; an absolute path, as Jest and Vitest write, is
+taken from the folder holding every absolute path of its side, since the checkout sits in another place on another
+machine, and when that folder sits deeper on one side (its tests were all under `src/`, say), the folders at the end
+of it are put back in front of that side's paths as far as makes the most files the same on both sides. Tests that
+still share a key, such as verdict lines of one name in one log, get their sorted tags added, and those still alike are one test with the worst
 status of their runs (fail, pending, pass). Such a test is under a screen or call when one of its runs is, and its
-regression line shows the first file and line among the runs that are. Paths are compared only by their ends because Jest writes absolute paths
-that differ from one checkout to another. Whether a baseline test file is gone from the current results is decided
-file by file, at the shortest end that tells that file apart on each side, the longer of the two; a file one of
-whose tests matches a current test is never gone, whatever its end. Alternative compared for the length of the end,
-settled in a comment on #404:
+regression line shows the first file and line among the runs that are. A baseline test file is gone from the
+current results when no current test has that file. Alternatives compared:
+- Only as much of the end of the paths as tells apart the different files of one title, decided in a comment on #404
+  before building: two files of one name in different folders got the same end when each side had only one of them,
+  so a test of a deleted file was matched with a new test of the same title in another file and gave a false
+  `pass→fail`, and an end long enough for two deep files of one name reached past the checkout for a shallower file
+  of the same title, so its regression was missed when the two checkout folders had other names.
 - One end length for the whole group, as the PRD reads word for word: two tests of one title in one file never come
   apart by any end, so the whole group would go without ends, and a test of another file would be merged with them;
   its pass→fail would then be printed under the other file's name, or hidden by a failure already there.
@@ -1541,9 +1544,9 @@ Limits:
 - A run of only some test files, kept as the baseline or run now, prints one `only in baseline ←` line for each file
   left out, which can be hundreds in a large repository.
 - A verdict log's `file` is its file name alone, so logs of one name in different folders are one file.
-- When a file right at the checkout's top must be told apart from a file of the same name deeper down, its end
-  reaches the checkout folder's name, so a baseline kept from a checkout of another name does not match that file;
-  when none of its tests matches either, it is printed as gone under a name that holds the checkout folder.
+- When the results of one side come from checkouts in different places, such as two reports written on two
+  machines, and the other side's do not, their absolute paths share no folder below the checkouts, so their tests
+  count as `only in baseline` and `only now`.
 - `"baselineTests": []` compares nothing and prints nothing, the same as leaving the key out.
 Reference cases: GitLab's unit test report in a merge request compares with the target branch's pipeline and shows
 newly failed tests apart from existing and resolved failures, keeping only the first of tests with the same name,

@@ -111,7 +111,7 @@ interface TestRow {
 
 interface OnlyInBaseline {
   title: string;
-  tail: string;
+  file: string;
   line: number | null;
   project: string | null;
   status: TestStatus;
@@ -179,14 +179,32 @@ function currentTests(current: CurrentTests, calls: Set<string>, projectsOf: (ti
 type Matched = { title: string; tags: string[]; file: string | null; project: string | null };
 
 const segments = (file: string | null) => (file ?? '').split(/[\\/]+/).filter(Boolean);
-const tail = (file: string | null, length: number) => segments(file).slice(-length).join('/');
+const isAbsolute = (file: string | null) => file !== null && /^(?:[\\/]|[A-Za-z]:[\\/])/.test(file);
 
-function separatingLength(files: (string | null)[]) {
-  const distinct = [...new Set(files.map((f) => tail(f, Infinity)))];
-  if (distinct.length < 2) return 0;
-  let length = 1;
-  while (new Set(distinct.map((f) => tail(f, length))).size < distinct.length) length += 1;
-  return length;
+function belowCommonFolder(files: (string | null)[]) {
+  const folders = [...new Set(files.filter(isAbsolute))].map((f) => segments(f).slice(0, -1));
+  let depth = 0;
+  while (folders.length && depth < folders[0].length && folders.every((f) => f[depth] === folders[0][depth])) depth += 1;
+  return { folder: folders[0]?.slice(0, depth) ?? [], relative: (file: string | null) => (isAbsolute(file) ? segments(file).slice(depth) : segments(file)) };
+}
+
+// 한쪽 공통 폴더의 끝 폴더들을 그쪽 경로 앞에 다시 붙여 보아, 두 쪽에 같은 파일이 가장 많아지는 것을 쓴다.
+function fileKeys(beforeFiles: (string | null)[], nowFiles: (string | null)[]) {
+  const [before, now] = [belowCommonFolder(beforeFiles), belowCommonFolder(nowFiles)];
+  const keyed = (side: typeof before, files: (string | null)[], prefix: string[]) => new Map(files.map((f) => [f, [...(isAbsolute(f) ? prefix : []), ...side.relative(f)].join('/')]));
+  const prefixes: [string[], string[]][] = [[[], []]];
+  for (let k = 1; k <= Math.max(before.folder.length, now.folder.length); k += 1) {
+    if (k <= before.folder.length) prefixes.push([before.folder.slice(-k), []]);
+    if (k <= now.folder.length) prefixes.push([[], now.folder.slice(-k)]);
+  }
+  let best = { same: -1, before: new Map<string | null, string>(), now: new Map<string | null, string>() };
+  for (const [beforePrefix, nowPrefix] of prefixes) {
+    const keys = { before: keyed(before, beforeFiles, beforePrefix), now: keyed(now, nowFiles, nowPrefix) };
+    const nowKeys = new Set(keys.now.values());
+    const same = new Set([...keys.before.values()].filter((k) => nowKeys.has(k))).size;
+    if (same > best.same) best = { same, ...keys };
+  }
+  return best;
 }
 
 const groupBy = <T>(list: T[], keyOf: (item: T) => string) => {
@@ -195,35 +213,16 @@ const groupBy = <T>(list: T[], keyOf: (item: T) => string) => {
   return groups;
 };
 
-function ownLengths(files: (string | null)[]) {
-  const distinct = [...new Set(files.map((f) => tail(f, Infinity)))];
-  const lengths = new Map<string, number>();
-  for (let length = 1; lengths.size < distinct.length; length += 1) {
-    const counts = new Map<string, number>();
-    for (const f of distinct) counts.set(tail(f, length), (counts.get(tail(f, length)) ?? 0) + 1);
-    for (const f of distinct) if (!lengths.has(f) && counts.get(tail(f, length)) === 1) lengths.set(f, length);
-  }
-  return lengths;
-}
-
 const tagSet = (t: Matched) => [...new Set(t.tags)].sort().join(' ');
 const overlaps = (tests: Matched[] = []) => tests.length > 1 && new Set(tests.map(tagSet)).size > 1;
 
-function matchKeys<B extends Matched, N extends Matched>(baseline: B[], current: N[]) {
-  const titleKey = (t: Matched) => JSON.stringify([withoutTags(t.title), t.project]);
-  const [before, now] = [groupBy<Matched>(baseline, titleKey), groupBy<Matched>(current, titleKey)];
+function matchKeys<B extends Matched, N extends Matched>(baseline: B[], current: N[], files: ReturnType<typeof fileKeys>) {
+  const keyOf = (keys: Map<string | null, string>) => (t: Matched) => JSON.stringify([withoutTags(t.title), t.project, keys.get(t.file)]);
+  const [before, now] = [groupBy<Matched>(baseline, keyOf(files.before)), groupBy<Matched>(current, keyOf(files.now))];
   const keys = new Map<Matched, string>();
   for (const key of new Set([...before.keys(), ...now.keys()])) {
-    const sides = [before.get(key) ?? [], now.get(key) ?? []];
-    const length = Math.max(...sides.map((tests) => separatingLength(tests.map((t) => t.file))));
-    const tailOf = (t: Matched) => (length ? tail(t.file, length) : '');
-    const [tailedBefore, tailedNow] = sides.map((tests) => groupBy(tests, tailOf));
-    for (const tests of sides) {
-      for (const t of tests) {
-        const withTags = overlaps(tailedBefore.get(tailOf(t))) || overlaps(tailedNow.get(tailOf(t)));
-        keys.set(t, JSON.stringify([key, tailOf(t), withTags ? tagSet(t) : '']));
-      }
-    }
+    const withTags = overlaps(before.get(key)) || overlaps(now.get(key));
+    for (const t of [...(before.get(key) ?? []), ...(now.get(key) ?? [])]) keys.set(t, JSON.stringify([key, withTags ? tagSet(t) : '']));
   }
   return { before: groupBy(baseline, (t) => keys.get(t)!), now: groupBy(current, (t) => keys.get(t)!) };
 }
@@ -235,11 +234,10 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
     return projects.length ? projects : [null];
   };
   const tests = currentTests(current, new Set(map.calls), projectsOf);
-  const { before, now } = matchKeys(baseline.tests, tests);
-  const nowFiles = [...tests.map((t) => t.file), ...(current.unknownTags ?? []).map((u) => u.test.file)];
+  const files = fileKeys(baseline.tests.map((t) => t.file), [...tests.map((t) => t.file), ...(current.unknownTags ?? []).map((u) => u.test.file)]);
+  const { before, now } = matchKeys(baseline.tests, tests, files);
   const onMap = new Set([...map.screens, ...map.calls]);
   const gone: BaselineTest[][] = [];
-  const foundFiles = new Set<string>();
   let compared = 0;
   let notUnderNode = 0;
   let onlyInBaseline = 0;
@@ -252,7 +250,6 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
       gone.push(tests);
       continue;
     }
-    for (const t of tests) foundFiles.add(tail(t.file, Infinity));
     if (!match.some((t) => t.rows.length)) notUnderNode += 1;
     else {
       compared += 1;
@@ -280,7 +277,7 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
     onlyNow,
     regressions,
     byNode: countsByNode(regressions.map((r) => r.rows)),
-    ...onlyInBaselineOf(gone, baseline.tests, nowFiles, foundFiles, onMap),
+    ...onlyInBaselineOf(gone, files, onMap),
   };
 }
 
@@ -301,23 +298,18 @@ function countsByNode(regressed: TestRow[][]) {
   return byNode;
 }
 
-// 두 쪽에서 저마다 그 파일을 다른 파일과 가르는 가장 짧은 꼬리를 구하고, 긴 쪽의 길이로 꼬리가 같으면 같은 파일이다.
-function onlyInBaselineOf(gone: BaselineTest[][], all: BaselineTest[], nowFiles: (string | null)[], foundFiles: Set<string>, onMap: Set<string>) {
-  const [beforeLengths, nowLengths] = [ownLengths(all.map((t) => t.file)), ownLengths(nowFiles)];
-  const kept = (file: string) => foundFiles.has(file) || [...nowLengths].some(([other, length]) => {
-    const longer = Math.max(beforeLengths.get(file)!, length);
-    return tail(file, longer) === tail(other, longer);
-  });
+function onlyInBaselineOf(gone: BaselineTest[][], keys: ReturnType<typeof fileKeys>, onMap: Set<string>) {
+  const nowFiles = new Set(keys.now.values());
   const files = new Map<string, OnlyInBaseline[]>();
   for (const tests of gone) {
     const [first] = [...tests].sort((a, b) => (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title));
-    const file = tail(first.file, Infinity);
+    const file = keys.before.get(first.file)!;
     const nodes = [...new Set(tests.flatMap((t) => t.tags.map((tag) => tag.match(NODE_TAG)?.[2]).filter((id): id is string => id !== undefined && onMap.has(id))))].sort(compare);
-    const entry = { title: first.title, tail: tail(file, beforeLengths.get(file)!), line: first.line, project: first.project, status: worst(tests.map((t) => t.status)), result: first.result, nodes };
+    const entry = { title: first.title, file, line: first.line, project: first.project, status: worst(tests.map((t) => t.status)), result: first.result, nodes };
     files.set(file, [...(files.get(file) ?? []), entry]);
   }
   const byLine = (a: OnlyInBaseline, b: OnlyInBaseline) => (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.project ?? '', b.project ?? '');
-  const onlyInBaselineFiles = [...files].map(([file, tests]) => ({ tail: tests[0].tail, whole: !kept(file), tests: tests.sort(byLine) })).sort((a, b) => compare(a.tail, b.tail));
+  const onlyInBaselineFiles = [...files].map(([file, tests]) => ({ file, whole: !nowFiles.has(file), tests: tests.sort(byLine) })).sort((a, b) => compare(a.file, b.file));
   const onlyInBaselineByNode: Record<string, OnlyInBaseline[]> = {};
   for (const { tests } of onlyInBaselineFiles) for (const t of tests) for (const id of t.nodes) (onlyInBaselineByNode[id] ??= []).push(t);
   return { onlyInBaselineFiles, onlyInBaselineByNode };
@@ -338,7 +330,7 @@ export function baselineTestsLines(c: TestComparison) {
     const at = test.line === null ? test.file : `${test.file}:${test.line}`;
     lines.push(`  ${change} ← ${at} ${test.title}${test.project ? ` (${test.project})` : ''} — ${nodesOf(rows)}`);
   }
-  for (const { tail: file, whole, tests } of c.onlyInBaselineFiles) {
+  for (const { file, whole, tests } of c.onlyInBaselineFiles) {
     if (whole) lines.push(`  only in baseline ← ${file}: ${tests.length} test${tests.length === 1 ? '' : 's'}, none of this file's tests are in the current results`);
   }
   return lines;

@@ -298,7 +298,7 @@ client with example results and a config to start from.
   straight into that version's folder, such as `releases/1.5.0/`; copy JUnit XML and verdict logs with their modified
   time kept (`cp -p`), since that is the time duru takes for when they ran. Keeping the results of a run of only some
   of the tests leaves the rest as `only in baseline`. Tests of the two results are matched by their title without
-  tags and their Playwright project, so a test renamed or moved to another file counts once in
+  tags, their Playwright project and their test file, so a test renamed or moved to another file counts once in
   `only in baseline` and once in `only now`.
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
   variables to it.
@@ -533,8 +533,8 @@ listing the places whose value the source does not show in full.
   and call the test is on. `:<line>` is left out when the result gives no line (JUnit), and `(<project>)` when the
   test has no Playwright project.
 - `  only in baseline ← <file>: N tests, none of this file's tests are in the current results` — a test file of the
-  baseline with no test in the current results: it no longer loads, or the current run left it out. `<file>` is as
-  much of the end of its path as tells it apart.
+  baseline with no test in the current results: it no longer loads, or the current run left it out. `<file>` is its
+  path in the baseline results, from the folder holding all of their test files when the paths are absolute.
 - A `baselineTests` path that is missing, a result file that cannot be read, or an entry that gives no test stops
   `rebuild` with `baselineTests <path> could not be read: <why>`, before anything is written. Files of another format
   in a folder, and verdict logs with no verdict line, are skipped as in `tests`.
