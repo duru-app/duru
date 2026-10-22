@@ -1176,16 +1176,18 @@ export async function extractClient(config: any) {
   // 주소 함수가 돌려준 갈래 가운데 쿼리를 붙이는 것과, 고정된 마디가 있는 갈래 옆에서 경로 변수만 남은 것은 경로가 아니다.
   function readRoutePath(p: NodePath): { path: string; stops: NodePath[]; paths?: string[]; manyPaths?: true } {
     const calledAt = piecesOf(p).find((x) => x.isCallExpression()) ?? p;
+    const lead = leadingPiece(p);
+    const unread = lead.node !== p.node && readsMatchedRoute(lead) ? UNKNOWN + UNKNOWN : UNKNOWN;
     const found = routeReading.branches(p);
-    if ('tooMany' in found) return { path: UNKNOWN, stops: [calledAt], manyPaths: true };
+    if ('tooMany' in found) return { path: unread, stops: [calledAt], manyPaths: true };
     const segments = (b: { text: string }) => b.text.split('/').filter(Boolean);
     const fixed = (b: { text: string }) => segments(b).some((x) => !x.startsWith(':') && !x.includes(UNREADABLE_PIECE) && x !== '*');
     let read = found.branches.filter((b) => !b.made || !b.text.replace(/:\w+(\([^)]*\))?\?/g, '').includes('?'));
     if (read.some(fixed)) read = read.filter((b) => !b.made || fixed(b) || !segments(b).length || !segments(b).every((x) => x.startsWith(':')));
     const paths = [...new Set(read.map((b) => b.text.replaceAll(UNREADABLE_PIECE, UNKNOWN)))];
     if (paths.length === 1) return { path: paths[0], stops: read[0].stops };
-    if (!paths.length) return { path: UNKNOWN, stops: [p] };
-    return { path: UNKNOWN, stops: [calledAt], ...(paths.length > MOST_ADDRESSES ? { manyPaths: true as const } : { paths }) };
+    if (!paths.length) return { path: unread, stops: [p] };
+    return { path: unread, stops: [calledAt], ...(paths.length > MOST_ADDRESSES ? { manyPaths: true as const } : { paths }) };
   }
 
   function stopOf(p: NodePath) {

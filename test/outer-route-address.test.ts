@@ -192,3 +192,16 @@ test('the variable that joins two outer paths takes a name the inner path does n
     assert.ok(map.screens.some((s) => s.path === '/:team/:section2(integrations|emoji)/:section/edit'), JSON.stringify(map.screens.map((s) => s.path)));
   }, OUTER_ROUTES, route);
 });
+
+test('a route path that starts with the outer route\'s address and goes on with a function giving several paths keeps the outer path in front and stays unread', async () => {
+  const route = '      <Route path={`${props.match.url}${tabPath(props.admin)}`} component={Bots} />\n';
+  await withOuterRoutes(async ({ configFile, src }) => {
+    const backstage = path.join(src, 'outer/Backstage.js');
+    fs.writeFileSync(backstage, `import { tabPath } from './paths';\n${fs.readFileSync(backstage, 'utf8')}`);
+    fs.appendFileSync(path.join(src, 'outer/paths.js'), `\nexport function tabPath(admin) {\n  if (admin) return '/admin/profile';\n  return '/profile';\n}\n`);
+    const map = await build(configFile);
+    assert.ok(map.screens.some((s) => s.path === '/:team/:section(integrations|emoji){?}'), JSON.stringify(map.screens.map((s) => s.path)));
+    assert.ok(!map.screens.some((s) => s.routeFile === 'outer/Backstage.js' && s.path === '/:team/:section(integrations|emoji)'));
+    assert.deepEqual(backstageEntries(map), [['/:team/:section(integrations|emoji){?}', 'tabPath(props.admin)']]);
+  }, OUTER_ROUTES, route);
+});
