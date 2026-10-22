@@ -132,6 +132,35 @@ function touchesOwn(x: NodePath<any>, fn: AddressFunction): boolean {
   return found;
 }
 
+const CHANGING_METHODS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin', 'set', 'add', 'delete', 'clear']);
+
+function changesOwn(x: NodePath<any>, fn: AddressFunction): boolean {
+  const changes = (p: NodePath<any>): boolean => {
+    if (p.isAssignmentExpression()) return touchesOwn(p.get('left'), fn);
+    if (p.isUpdateExpression() || p.isUnaryExpression({ operator: 'delete' })) return touchesOwn(p.get('argument') as NodePath<any>, fn);
+    if (!p.isCallExpression() && !p.isOptionalCallExpression()) return false;
+    const callee = p.get('callee') as NodePath<any>;
+    if ((!callee.isMemberExpression() && !callee.isOptionalMemberExpression()) || callee.node.computed) return false;
+    const name = (callee.node.property as Identifier).name;
+    const object = callee.get('object') as NodePath<any>;
+    if (object.isIdentifier({ name: 'Object' }) && name === 'assign') {
+      const [target] = p.get('arguments') as NodePath<any>[];
+      return Boolean(target && touchesOwn(target, fn));
+    }
+    return CHANGING_METHODS.has(name) && touchesOwn(object, fn);
+  };
+  if (changes(x)) return true;
+  let found = false;
+  x.traverse({
+    enter(p) {
+      if (!changes(p)) return;
+      found = true;
+      p.stop();
+    },
+  });
+  return found;
+}
+
 const unwrapped = (p: NodePath<any>): NodePath<any> => (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isTypeCastExpression() || p.isParenthesizedExpression() ? unwrapped(p.get('expression') as NodePath<any>) : p);
 
 export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, passThrough }: Reading) {
@@ -249,7 +278,10 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   function returnedValues(fn: AddressFunction, env: Env, at: NodePath, depth: number): Out[] {
     const body = fn.get('body') as NodePath<any>;
-    if (!body.isBlockStatement()) return values(body, { env, fn, branching: true, depth });
+    if (!body.isBlockStatement()) {
+      if (changesOwn(body, fn)) throw new Unreadable();
+      return values(body, { env, fn, branching: true, depth });
+    }
     const { returned, open } = walk(body.get('body'), [env], fn, depth);
     return [...returned, ...open.map(() => unknownAt(at))];
   }
@@ -260,9 +292,11 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     for (const s of statements) {
       if (!envs.length) break;
       if (s.isReturnStatement()) {
+        if (s.node.argument && changesOwn(s.get('argument') as NodePath<any>, fn)) throw new Unreadable();
         for (const e of envs) returned.push(...(s.node.argument ? values(s.get('argument'), inner(e)) : [known(undefined)]));
         envs = [];
       } else if (s.isIfStatement()) {
+        if (changesOwn(s.get('test'), fn)) throw new Unreadable();
         const next: Env[] = [];
         for (const e of envs) {
           const truths = values(s.get('test'), inner(e)).map(truth);
@@ -285,6 +319,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       } else if (s.isVariableDeclaration()) {
         for (const d of s.get('declarations')) {
           const init = d.get('init') as NodePath<any>;
+          if (init.node && changesOwn(init, fn)) throw new Unreadable();
           envs = envs.flatMap((e) => (init.node ? values(init, inner(e)) : [known(undefined)]).flatMap((o) => bind(d.get('id'), o, [e], inner)));
         }
       } else if (s.isExpressionStatement()) {
@@ -295,7 +330,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         }
         const left = x.get('left') as NodePath<any>;
         const binding = left.isIdentifier() ? left.scope.getBinding(left.node.name) : undefined;
-        if (!left.isIdentifier() && touchesOwn(left, fn)) throw new Unreadable();
+        if ((!left.isIdentifier() && touchesOwn(left, fn)) || changesOwn(x.get('right'), fn)) throw new Unreadable();
         if (!binding?.path.isDescendant(fn)) continue;
         envs = envs.flatMap((e) => values(x.get('right'), inner(e)).map((o) => {
           const before = e.get(binding) ?? unknownAt(left);

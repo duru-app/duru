@@ -1484,3 +1484,74 @@ export default function Home({ id, opts }) {
   const at = (part: string) => lineOf(home, part);
   assert.deepEqual(addressesAt(map, '/home#Home'), [['{?}', at('indexed(id)')], ['{?}', at('destructured(opts)')]]);
 });
+
+test('an address function whose declaration, return or if test changes a value of its own stays {?}', async () => {
+  const paths = `export function declared(tab) {
+  const parts = ['', 'team'];
+  const n = parts.push(tab);
+  return parts.join('/');
+}
+
+export function returned(tab) {
+  const parts = ['', 'team'];
+  return parts.push(tab) && parts.join('/');
+}
+
+export function tested(tab) {
+  const parts = ['', 'team'];
+  if (parts.push(tab)) return parts.join('/');
+  return '/home';
+}
+
+export function assigned(tab) {
+  const o = { path: '/team' };
+  const same = Object.assign(o, { path: \`/team/\${tab}\` });
+  return o.path;
+}
+
+export function found(tabs) {
+  let target = '/team';
+  const on = tabs.find((t) => {
+    target = \`/team/\${t.id}\`;
+    return t.on;
+  });
+  return target;
+}
+
+export function conditioned(tab) {
+  let url = '/team';
+  if (tab && (url = \`/team/\${tab}\`)) return url;
+  return url;
+}
+
+export function reassigned(tab) {
+  const parts = ['', 'team'];
+  let n = 0;
+  n = parts.push(tab);
+  return parts.join('/');
+}
+
+export const arrowed = (tab, parts = ['', 'team']) => parts.push(tab) && parts.join('/');
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { arrowed, assigned, conditioned, declared, found, reassigned, returned, tested } from './paths';
+
+export default function Home({ tab, tabs }) {
+  return (
+    <nav>
+      <Link to={declared(tab)}>declared</Link>
+      <Link to={returned(tab)}>returned</Link>
+      <Link to={tested(tab)}>tested</Link>
+      <Link to={assigned(tab)}>assigned</Link>
+      <Link to={found(tabs)}>found</Link>
+      <Link to={conditioned(tab)}>conditioned</Link>
+      <Link to={reassigned(tab)}>reassigned</Link>
+      <Link to={arrowed(tab)}>arrowed</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), ['declared(tab)', 'returned(tab)', 'tested(tab)', 'assigned(tab)', 'found(tabs)', 'conditioned(tab)', 'reassigned(tab)', 'arrowed(tab)'].map((call) => ['{?}', at(call)]));
+});
