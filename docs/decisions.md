@@ -3298,11 +3298,15 @@ highest score wins and, between equal scores, the one written first. A path fits
 ends in `/*`, which fits the address up to a `/` and the address without the rest; `*` alone fits every address.
 The winning route and its outer routes are drawn, the link goes to the screen of the winning one, and a `Navigate`
 that is the winning route's `element` sends the link on to the screens of its `to`, as a winning `Redirect` does.
-Measured on into-sign 2.0.0 (2026-10-22, against the map of the branch before): 44 screens, links 339 → 381, of
-which `{?}` 0 → 41 on 31 screens (22 of them the side menu's `navigate(href)` and 9 the fallback of
-`useBackOrNavigate`); one readable link, `navigate('/')` of the sign-in screen, goes to the sign-in screen and the user
-home; entry screens stay 24 and screens with links in stay 22, since every other move there is written with the
-route constant. into-sign 1.5.0 gives the same map as before.
+A `Navigate` the `element` shows only under a condition, as in `element={user ? <Home /> : <Navigate to="/login" />}`,
+sends nothing on: following it put the sign-in screen beside the home screen for every link to `/home`, and the map
+already leaves out the screens a v5 `render` guard sends to. One wrapped in a fragment or a type assertion is not
+read as the `element` either. The into-sign 2.0.0 map below is the same with and without this rule.
+Measured on into-sign 2.0.0 (2026-10-22, against main): 44 screens, links 339 → 346, of which `{?}` 0 → 6 on 5
+screens, each a `navigate` to the address an app helper returns (`resolveMetaDocumentDetailNavigation`), whose route
+constants are already links of the helper's file; one readable link, `navigate('/')` of the sign-in screen, goes to
+the sign-in screen and the user home; entry screens stay 24, since every other move there is written with the route
+constant. into-sign 1.5.0 gives the same map as before.
 Choices made without a driver's answer, each cheap to change: two routes with the same path in one `<Routes>` both
 win, as two routes with one path in a `<Switch>` do, although v6 itself takes the first; the `<Routes>` of each route
 file matches the whole address, as into-sign's top routes clear the outer route's matched part before drawing them,
