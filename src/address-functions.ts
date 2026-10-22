@@ -19,6 +19,7 @@ interface Reading {
   declaredFunction: (scope: Scope, name: string) => AddressFunction | null;
   namespaceFunction: (scope: Scope, chain: string[]) => AddressFunction | null;
   passThrough: (name: string) => boolean;
+  mergesSlashes: boolean;
 }
 
 // empty 는 함수가 돌려준 빈 문자열이다. 주소 맨 앞에 오면 읽지 못한 조각으로 본다.
@@ -60,12 +61,12 @@ function piecesOf({ val }: Out, at: NodePath): Piece[] {
   return [{ stop: 'unknown' in val ? val.unknown : at }];
 }
 
-function joined(parts: [Out, NodePath][]): Out {
+function joined(parts: [Out, NodePath][], mergesSlashes: boolean): Out {
   const pieces: Piece[] = [];
   for (const piece of parts.flatMap(([out, at]) => piecesOf(out, at))) {
     const last = pieces.at(-1);
     if ('empty' in piece && pieces.length) continue;
-    if ('text' in piece && last && 'text' in last && last.text.endsWith('/') && piece.text.startsWith('/') && (last.made || piece.made)) {
+    if ('text' in piece && last && 'text' in last && last.text.endsWith('/') && piece.text.startsWith('/') && (last.made || piece.made) && mergesSlashes) {
       if (piece.text.length > 1) pieces.push({ ...piece, text: piece.text.slice(1) });
     } else pieces.push(piece);
   }
@@ -162,10 +163,21 @@ function changesOwn(x: NodePath<any>, fn: AddressFunction): boolean {
   return found;
 }
 
+// 갈래로 고르거나 이름에 넣는 빈 문자열. 함수 몸통에서 이것이 주소 맨 앞에 오면 함수가 돌려준 빈 문자열처럼 읽지 못한 조각으로 본다.
+function choosesText(p: NodePath): boolean {
+  const { parentPath: parent, key } = p;
+  if (!parent) return false;
+  if (parent.isParenthesizedExpression() || parent.isTSAsExpression()) return choosesText(parent);
+  if (parent.isConditionalExpression()) return key !== 'test';
+  if (parent.isLogicalExpression() || parent.isAssignmentExpression() || parent.isAssignmentPattern()) return key === 'right';
+  return parent.isVariableDeclarator() || parent.isReturnStatement() || parent.isArrowFunctionExpression();
+}
+
 const unwrapped = (p: NodePath<any>): NodePath<any> => (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isTypeCastExpression() || p.isParenthesizedExpression() ? unwrapped(p.get('expression') as NodePath<any>) : p);
 
-export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, passThrough }: Reading) {
+export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, passThrough, mergesSlashes }: Reading) {
   const reading = new Set<Node>();
+  const join = (parts: [Out, NodePath][]) => joined(parts, mergesSlashes);
 
   function leafOut(p: NodePath): Out {
     const found = leaf(p);
@@ -207,7 +219,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   function joinedItems(list: Out, separator: Out, at: NodePath): Out {
     const glue = plain(separator);
     if (typeof glue !== 'string') return unknownAt(at);
-    if ('items' in list.val) return joined(list.val.items.flatMap((item, i): [Out, NodePath][] => (i ? [[textOut(glue), at], [item, at]] : [[item, at]])));
+    if ('items' in list.val) return join(list.val.items.flatMap((item, i): [Out, NodePath][] => (i ? [[textOut(glue), at], [item, at]] : [[item, at]])));
     const value = plain(list);
     return Array.isArray(value) ? known(value.join(glue)) : unknownAt(at);
   }
@@ -347,7 +359,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   function added(left: Out, right: Out, leftAt: NodePath, rightAt: NodePath): Out {
     const [a, b] = [plain(left), plain(right)];
-    return typeof a === 'number' && typeof b === 'number' ? known(a + b) : joined([[left, leftAt], [right, rightAt]]);
+    return typeof a === 'number' && typeof b === 'number' ? known(a + b) : join([[left, leftAt], [right, rightAt]]);
   }
 
   function choose(outs: Out[], pick: (out: Out) => boolean | undefined, then: (out: Out) => Out[], otherwise: (out: Out) => Out[]): Out[] {
@@ -364,7 +376,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   }
 
   function valuesOf(p: NodePath<any>, at: At): Out[] {
-    if (p.isStringLiteral()) return [textOut(p.node.value)];
+    if (p.isStringLiteral()) return [at.fn && !p.node.value && choosesText(p) ? { val: { pieces: [{ empty: p }] }, made: false } : textOut(p.node.value)];
     if (p.isNumericLiteral() || p.isBooleanLiteral()) return [known(p.node.value)];
     if (p.isNullLiteral()) return [known(null)];
     if (p.isTemplateLiteral()) {
@@ -374,7 +386,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         const expression = p.get(`expressions.${i}`) as NodePath;
         return [quasi, values(expression, at).map((o): [Out, NodePath] => [o, expression])];
       });
-      return product(lists).map(joined);
+      return product(lists).map(join);
     }
     if (p.isBinaryExpression()) {
       const [left, right] = [p.get('left') as NodePath, p.get('right') as NodePath];

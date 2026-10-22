@@ -1076,22 +1076,20 @@ export default function Home() {
   ]);
 });
 
-test('an address function that calls another address function is read through it, and a / the inner function ends with is not doubled', async () => {
+test('an address function that calls another address function is read through it', async () => {
   const paths = `const base = () => '/team';
-const root = () => '/';
 export const teamPath = (id) => \`\${base()}/\${id}\`;
 export const membersPath = (id) => teamPath(id) + '/members';
-export const homePath = () => \`\${root()}/home\`;
 `;
   const home = `import { Link } from 'react-router-dom';
-import { homePath, membersPath } from './paths';
+import { membersPath } from './paths';
 
 export default function Home() {
-  return <nav><Link to={membersPath('a')}>members</Link><Link to={homePath()}>home</Link></nav>;
+  return <nav><Link to={membersPath('a')}>members</Link></nav>;
 }
 `;
   const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
-  assert.deepEqual(addressesAt(map, '/home#Home'), [['/team/a/members', 5], ['/home', 5]]);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['/team/a/members', 5]]);
 });
 
 test('a parameter with a default or written as an object pattern takes the default when the argument is left out, and the property of the object given otherwise', async () => {
@@ -1621,4 +1619,101 @@ export default function Home({ member, next, ...props }) {
     ['/team/{*}', at('memberUrl(')],
     ['/start', at('...props, edit: false')],
   ]);
+});
+
+test('a / an address function returns followed by a piece written from / gives {?} for that branch of a link, since the app would build //', async () => {
+  const routes = `import { Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Login from './Login';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/home" component={Home} exact />
+      <Route path="/:team/channels/:channel" component={Login} />
+      <Route path="/:team" component={Team} />
+    </Switch>
+  );
+}
+`;
+  const teams = `export function relativeTeamUrl(state, teamId) {
+  const team = state.teams[teamId];
+  if (!team) {
+    return '/';
+  }
+  return \`/\${team.name}\`;
+}
+`;
+  const home = `import { useHistory } from 'react-router-dom';
+import { relativeTeamUrl } from './teams';
+
+export default function Home({ state, teamId, channel }) {
+  const history = useHistory();
+  return <a onClick={() => history.push(relativeTeamUrl(state, teamId) + '/channels/' + channel.name)}>channel</a>;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home, 'teams.js': teams }));
+  const line = lineOf(home, 'relativeTeamUrl(state');
+  assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', line, [], []], ['/{*}/channels/{*}', line, [], ['/:team/channels/:channel#Login']]]);
+});
+
+test('an empty text an address function body puts in front of its address, by ? :, by a let it changes or by a const, makes that branch {?}', async () => {
+  const routes = `import { Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Login from './Login';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/home" component={Home} exact />
+      <Route path="/:team/channels/:channel" component={Login} />
+      <Route path="/:team" component={Team} />
+    </Switch>
+  );
+}
+`;
+  const urls = `export function byTernary(team, channel) {
+  return \`\${team ? \`/\${team.name}\` : ''}/channels/\${channel.name}\`;
+}
+
+export function byLet(team, channel) {
+  let prefix = '';
+  if (team) prefix = \`/\${team.name}\`;
+  return \`\${prefix}/channels/\${channel.name}\`;
+}
+
+export function byConst(team, channel) {
+  const prefix = team ? '/' + team.name : '';
+  return prefix + '/channels/' + channel.name;
+}
+
+export function middle(team, channel) {
+  return \`/\${team.name}\${channel ? '' : '/none'}/channels\`;
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { byConst, byLet, byTernary, middle } from './urls';
+
+export default function Home({ team, channel }) {
+  return (
+    <nav>
+      <Link to={byTernary(team, channel)}>a</Link>
+      <Link to={byLet(team, channel)}>b</Link>
+      <Link to={byConst(team, channel)}>c</Link>
+      <Link to={middle(team, channel)}>d</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home, 'urls.js': urls }));
+  const both = (line: number) => [['/{*}/channels/{*}', line, [], ['/:team/channels/:channel#Login']], ['{?}', line, [], []]];
+  const links = linksOf(map, '/home#Home');
+  for (const name of ['byTernary', 'byLet', 'byConst']) {
+    const line = lineOf(home, `${name}(`);
+    assert.deepEqual(links.filter((l) => l[1] === line).sort(), both(line).sort(), name);
+  }
+  const line = lineOf(home, 'middle(');
+  assert.deepEqual(links.filter((l) => l[1] === line).map((l) => l[0]).sort(), ['/{*}/channels', '/{*}/none/channels']);
 });

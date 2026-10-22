@@ -783,10 +783,10 @@ export async function extractClient(config: any) {
   }
 
   const passThrough = (name: string) => (config.passThroughCalls ?? []).includes(name);
-  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction, passThrough });
+  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction, passThrough, mergesSlashes: false });
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
-  // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니다.
+  // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니고, // 가 생기는 것은 {?} 다.
   function linkAddresses(p: NodePath) {
     const read = linkReading.branches(p);
     if ('tooMany' in read) return [UNKNOWN];
@@ -794,7 +794,8 @@ export async function extractClient(config: any) {
     for (const { text, made, whole } of read.branches) {
       if (made && whole && !addresses(whole).length) continue;
       const segments = pathSegments(text);
-      if (segments) found.add(`/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}`);
+      if (made && text.split(/[?#]/)[0].includes('//')) found.add(UNKNOWN);
+      else if (segments) found.add(`/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}`);
       else if (!made || text.includes(UNREADABLE_PIECE)) found.add(UNKNOWN);
     }
     return found.size > MOST_ADDRESSES ? [UNKNOWN] : [...found];
@@ -1171,6 +1172,7 @@ export async function extractClient(config: any) {
     declaredFunction,
     namespaceFunction,
     passThrough,
+    mergesSlashes: true,
   });
 
   // 주소 함수가 돌려준 갈래 가운데 쿼리를 붙이는 것과, 고정된 마디가 있는 갈래 옆에서 경로 변수만 남은 것은 경로가 아니다.

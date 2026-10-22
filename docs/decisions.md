@@ -3447,9 +3447,12 @@ link, and branches that give the same address give one link. When the function g
 empty text is the first piece of the address, that piece is one duru cannot read, so the link of that branch is
 `{?}` and a route path keeps what follows it (`${basePath()}/team` is `{?}/team`) (driver's decision, 2026-10-22, in
 #396): mattermost's `getTeamRelativeUrl(team)` returns `''` when there is no team, and `getChannelURL` puts
-`'/channels/' + name` after it, which `/:team(…)` takes with `channels` as a team name. A function's result that ends
-in `/` followed by a piece that starts with `/` loses one of them, so `${homePath()}/:tab?` with `homePath()` giving
-`/` is `/:tab?`. More than 8 different addresses at one place give one `{?}` link (`MOST_ADDRESSES` in
+`'/channels/' + name` after it, which `/:team(…)` takes with `channels` as a team name. The same holds for `''` the
+body itself puts in front of its address as a branch of `? :`, `||`, `&&` or `??`, or as the value of a name
+(`let prefix = ''` changed by an `if`). In a route path, a function's result that ends in `/` followed by a piece
+that starts with `/` loses one of them, so `${homePath()}/:tab?` with `homePath()` giving `/` is `/:tab?`, as React
+Router joins route paths; in a link that branch is `{?}`, since the app builds `//` there (mattermost's
+`getRelativeTeamUrl` returns `/` when the team is missing). More than 8 different addresses at one place give one `{?}` link (`MOST_ADDRESSES` in
 `src/address-functions.ts`); where to show how many branches such a link had is not decided yet, and the summary
 prints nothing for it. On outline, mattermost, appsmith and into-sign no place gives more than 2 different addresses
 before that cap; two places of mattermost (`getPostURL(…)` in `components/permalink_view/actions.ts`) stop at the
