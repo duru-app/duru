@@ -4,7 +4,7 @@ import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
 import type { ArrowFunctionExpression, CallExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
-import type { Constants, GuardInit, GuardSetting, RouteNode } from './access.ts';
+import type { Branch, Constants, GuardInit, GuardSetting, RouteNode } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
 import { compare, ROUTES_FILE } from './config.ts';
@@ -17,7 +17,7 @@ import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
 import { madeFrom, screenLinkReader } from './screen-links.ts';
-import { importedAs, screenRequestReader } from './screen-requests.ts';
+import { importedAs, routerImport, screenRequestReader } from './screen-requests.ts';
 import type { UnresolvedReason } from './server.ts';
 import { typedMembers } from './typed-members.ts';
 import { settingNeeds } from './setting-needs.ts';
@@ -134,6 +134,9 @@ interface DrawnNode {
   to: string;
   screens: RouteScreen[];
   entry: string | null;
+  isRoute: boolean;
+  isFragment: boolean;
+  redirectAsElement: boolean;
   children: DrawnNode[];
 }
 
@@ -1254,14 +1257,23 @@ export async function extractClient(config: any) {
           const value = p ? evaluate(p) : undefined;
           return typeof value === 'string' ? value : UNKNOWN;
         };
-        const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || (Boolean(exact) && evaluate(exact!) === true), from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, children: [] };
+        const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || (Boolean(exact) && evaluate(exact!) === true), from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, redirectAsElement: false, children: [] };
+        const binding = p.scope.getBinding(tag);
+        const reactAs = (b: Binding | undefined) => {
+          const from = b && importedAs(b);
+          return from?.spec === 'react' ? from.name : null;
+        };
+        node.isFragment = tag === 'Fragment' ? reactAs(binding) === 'Fragment' : tag === 'React.Fragment' && ['default', '*'].includes(reactAs(p.scope.getBinding('React')) ?? '');
         if (tag === 'Switch') node.kind = 'switch';
+        else if (routerImport(binding) && importedAs(binding!)!.name === 'Routes') node.kind = 'routes';
         else if (config.redirectElements.includes(tag)) {
           const from = attr('from');
           const to = attr('to');
-          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? linkAddress(to) : UNKNOWN });
+          const holder = p.parentPath.isJSXExpressionContainer() ? p.parentPath.parentPath : null;
+          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? linkAddress(to) : UNKNOWN, redirectAsElement: Boolean(holder?.isJSXAttribute() && holder.node.name.name === 'element') });
         } else if (config.routeElements.includes(tag)) {
           const at = attr('path');
+          node.isRoute = true;
           node.path = node.screens.length ? node.screens[0].path : at === undefined ? null : text(at);
         } else if (!/^[a-z]/.test(tag.split('.').pop()!) || (tag.includes('.') && !fromPackage(p.scope, tag, absFile))) {
           node.entry = resolveTag(p.scope, tag, absFile) ?? null;
@@ -1657,26 +1669,57 @@ export async function extractClient(config: any) {
       const held = [...routeFileSet].filter((f) => f !== own && reached.has(f));
       return held.filter((f) => !held.some((g) => g !== f && closure(g).has(f)));
     };
-    const holding = new Map<RouteNode & { kind: 'route' }, string[]>();
-    const convert = (n: DrawnNode, file: string): RouteNode[] => {
-      if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file)) }];
+    const holding = new Map<RouteNode & { kind: 'route' }, { files: string[]; base: string; around: string[] }>();
+    let around: string[] = [];
+    const convert = (n: DrawnNode, file: string, base = ''): RouteNode[] => {
+      if (n.kind === 'routes') {
+        const branches: Branch[] = [];
+        const unwrapped = (nodes: DrawnNode[]): DrawnNode[] => nodes.flatMap((c) => (c.isFragment ? unwrapped(c.children) : [c]));
+        const flatten = (routes: DrawnNode[], outerPath: string, chain: Branch['chain']) => {
+          for (const r of unwrapped(routes).filter((c) => c.isRoute)) {
+            const drawnBy = unwrapped(r.children).filter((c) => !c.isRoute && (c.kind !== 'redirect' || c.redirectAsElement));
+            for (const node of convert({ ...r, children: drawnBy }, file, outerPath) as Branch['chain']) {
+              const own = node.path === null ? null : node.path.startsWith('/') ? node.path : `${outerPath}/${node.path}`.replace(/\/{2,}/g, '/');
+              flatten(r.children, own ?? outerPath, [...chain, node]);
+              if (own !== null) branches.push({ path: own, chain: [...chain, node] });
+            }
+          }
+        };
+        flatten(n.children, base, []);
+        return [{ kind: 'routes', branches }];
+      }
+      if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file, base)) }];
       if (n.kind === 'redirect') return [{ kind: 'redirect', from: n.from, exact: n.exact, to: n.to }];
       const byPath = new Map<string | null, number[]>();
       for (const i of n.screens.map((s) => indexOf.get(s)!)) byPath.set(sourced[i].s.path, [...(byPath.get(sourced[i].s.path) ?? []), i]);
       if (!byPath.size) byPath.set(n.path, []);
       return [...byPath].map(([routePath, screens]) => {
         const entries = screens.length ? screens.flatMap((i) => sourced[i].s.componentFile ?? []) : n.entry ? [n.entry] : [];
-        const node = { kind: 'route' as const, path: routePath, exact: n.exact, screens, children: n.children.flatMap((c) => convert(c, file)) };
+        const full = routePath === null || routePath.startsWith('/') ? routePath : `${base}/${routePath}`.replace(/\/{2,}/g, '/');
+        const inner = full === null ? base : full.endsWith('/*') ? full.slice(0, -2) : '';
+        const node = { kind: 'route' as const, path: routePath, exact: n.exact, screens, children: n.children.flatMap((c) => convert(c, file, inner)) };
         const held = heldFiles(entries, file);
-        if (held.length) holding.set(node, held);
+        if (held.length) holding.set(node, { files: held, base: inner, around });
         return node;
       });
     };
-    const rootsOf = new Map(drawn.map((d) => [d.file, d.roots.flatMap((r) => convert(r, d.file))]));
+    const converted = (file: string, roots: DrawnNode[], base: string, outer: string[]) => {
+      around = [...outer, file];
+      return roots.flatMap((r) => convert(r, file, base));
+    };
+    const rootsOf = new Map(drawn.map((d) => [d.file, converted(d.file, d.roots, '', [])]));
+    const drawnRoots = new Map(drawn.map((d) => [d.file, d.roots]));
+    const based = new Map<string, RouteNode[]>();
+    const rootsUnder = (f: string, base: string, outer: string[]) => {
+      if (!base || outer.includes(f)) return rootsOf.get(f)!;
+      const key = `${f}\0${base}`;
+      if (!based.has(key)) based.set(key, converted(f, drawnRoots.get(f)!, base, outer));
+      return based.get(key)!;
+    };
     const held = new Set<string>();
-    for (const [node, files] of holding) {
+    for (const [node, { files, base, around: outer }] of holding) {
       for (const f of files) {
-        node.children.push(...rootsOf.get(f)!);
+        node.children.push(...rootsUnder(f, base, outer));
         held.add(f);
       }
     }

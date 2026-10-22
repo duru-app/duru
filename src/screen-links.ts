@@ -7,7 +7,8 @@ interface Reading {
   configuredHistory: (binding: Binding) => boolean;
 }
 
-const LINK_ELEMENTS = new Set(['Link', 'NavLink', 'Redirect']);
+const LINK_ELEMENTS = new Set(['Link', 'NavLink', 'Redirect', 'Navigate']);
+const REDIRECTS = new Set(['Redirect', 'Navigate']);
 const MOVES = new Set(['push', 'replace']);
 const FOLLOWED = 8;
 
@@ -59,6 +60,8 @@ function readsLocation(p: NodePath<any>, key: string, depth = 0): boolean {
 }
 
 const readsPathname = (p: NodePath<any>) => readsLocation(p, 'pathname');
+
+const isNumber = (p: NodePath<any>) => p.isNumericLiteral() || (p.isUnaryExpression({ operator: '-' }) && p.get('argument').isNumericLiteral());
 
 const queryOrHash = (text: string | null | undefined) => text === '' || /^[?#]/.test(text ?? '-');
 
@@ -136,19 +139,31 @@ export function screenLinkReader({ configuredHistory }: Reading) {
     const name = p.node.openingElement.name;
     const binding = name.type === 'JSXIdentifier' ? p.scope.getBinding(name.name) : undefined;
     const tag = binding && routerImport(binding) ? importedAs(binding)!.name : null;
-    if (!tag || !LINK_ELEMENTS.has(tag) || (tag === 'Redirect' && inRouteFile)) return [];
+    if (!tag || !LINK_ELEMENTS.has(tag) || (REDIRECTS.has(tag) && inRouteFile)) return [];
     const to = (p.get('openingElement.attributes') as NodePath<any>[]).find((a) => a.isJSXAttribute() && a.node.name.name === 'to') as NodePath<JSXAttribute> | undefined;
     const value = to?.get('value') as NodePath<any> | undefined;
     if (!value?.node) return [];
     return addresses(value.isJSXExpressionContainer() ? value.get('expression') : value);
   }
 
+  function isNavigate(p: NodePath<any>, depth = 0): boolean {
+    if (p.isCallExpression()) {
+      const callee = p.get('callee');
+      const binding = callee.isIdentifier() ? callee.scope.getBinding(callee.node.name) : undefined;
+      return routerImport(binding) && importedAs(binding!)!.name === 'useNavigate';
+    }
+    if (!p.isIdentifier() || depth > FOLLOWED) return false;
+    const declared = declaredInit(p);
+    return declared?.id.type === 'Identifier' && isNavigate(declared.init, depth + 1);
+  }
+
   function call(p: NodePath<CallExpression>): NodePath[] {
     const callee = p.get('callee') as NodePath<any>;
-    if (!callee.isMemberExpression() || callee.node.computed || !MOVES.has(((callee.node as MemberExpression).property as Identifier).name)) return [];
     const [address] = p.get('arguments') as NodePath<any>[];
-    if (!address || address.isSpreadElement() || !isHistory(callee.get('object'))) return [];
-    return addresses(address);
+    if (!address || address.isSpreadElement()) return [];
+    if (callee.isIdentifier()) return isNavigate(callee) && !isNumber(address) ? addresses(address) : [];
+    if (!callee.isMemberExpression() || callee.node.computed || !MOVES.has(((callee.node as MemberExpression).property as Identifier).name)) return [];
+    return isHistory(callee.get('object')) ? addresses(address) : [];
   }
 
   return { element, call };

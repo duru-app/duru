@@ -3286,7 +3286,57 @@ Alternatives compared (investigation and driver's decisions, 2026-10-21, recorde
 - The first of two routes with the same path winning: the 13 no-licence notices of mattermost's admin console stay
   entry screens no link reaches.
 - react-router v6 (`<Routes>`, `useNavigate()`, `<Navigate>`) picks the more specific route instead of the first and
-  needs the whole address to fit unless the path ends in `/*`; it is left for its own work.
+  needs the whole address to fit unless the path ends in `/*`; it was left for its own work, written below.
+
+**With React Router 6, the function `useNavigate()` returns and `<Navigate to>` give links too, and inside `<Routes>`
+the screen of an address is the one React Router 6 ranks highest, not the first written.**
+duru reads the address given to the function `useNavigate()` returns, also through a name it is copied to
+(`const go = navigate`), and the `to` of a `Navigate` imported from a react-router package outside the route files;
+a `Navigate` in a route file stays a redirect. The address is read as for `Link`. A number (`navigate(-1)`) is a move
+back, not a link, and a `navigate` a function is given as an argument is not read, as with a history. An address not
+written from `/` is relative to the current route in v6 and is `{?}`: it stays among the screen's links and goes to
+no screen.
+A `<Routes>` imported from a react-router package is kept in the route tree as its routes flattened the way v6 does:
+a route's path is joined to its outer routes' paths unless it starts with `/`, an optional segment (`:type?`) gives
+one path with it and one without, and each path gets v6's score (10 for a written segment, 3 for a variable, 1 for an
+empty one, the number of segments added, 2 taken off for a trailing `*`). Of the paths that fit the address, the
+highest score wins and, between equal scores, the one written first. A path fits only the whole address unless it
+ends in `/*`, which fits the address up to a `/` and the address without the rest; `*` alone fits every address.
+The winning route and its outer routes are drawn, the link goes to the screen of the winning one, and a `Navigate`
+that is the winning route's `element` sends the link on to the screens of its `to`, as a winning `Redirect` does.
+A `Navigate` the `element` shows only under a condition, as in `element={user ? <Home /> : <Navigate to="/login" />}`,
+sends nothing on: following it put the sign-in screen beside the home screen for every link to `/home`, and the map
+already leaves out the screens a v5 `render` guard sends to. One wrapped in a fragment or a type assertion is not
+read as the `element` either. The into-sign 2.0.0 map below is the same with and without this rule.
+Measured on into-sign 2.0.0 (2026-10-22, against main): 44 screens, links 339 → 346, of which `{?}` 0 → 6 on 5
+screens, each a `navigate` to the address an app helper returns (`resolveMetaDocumentDetailNavigation`), whose route
+constants are already links of the helper's file; one readable link, `navigate('/')` of the sign-in screen, goes to
+the sign-in screen and the user home; entry screens stay 24, since every other move there is written with the route
+constant. into-sign 1.5.0 gives the same map as before.
+Driver's decision (2026-10-22) on a `<Routes>` drawn inside a route, whether in a route file under an outer route
+ending in `/*` or written as the route's `element`: a path not written from `/` is joined to the outer route's whole path,
+with the paths of the routes around it and without its `/*`, so `<Route path="/app/*" element={<App />} />` around App's
+`<Route path="settings" … />` takes `/app/settings`, as v6 does; a path written from `/` matches the whole address,
+which keeps into-sign 2.0.0, whose route files write the whole path, as it was. v6 6.30 matches every path of an
+inner `<Routes>`, one written from `/` as well, against what the outer `/*` route leaves; duru matches a path written
+from `/` against the whole address because into-sign writes its inner paths that way, so a link reaches such a path
+only when it also starts with the outer route's path: the outer route has to fit first.
+Choices made without a driver's answer, each cheap to change: two routes with the same path in one `<Routes>` both
+win, as two routes with one path in a `<Switch>` do, although v6 itself takes the first; the screen of a route ending
+in `*` is a link's screen unless a screen drawn inside it fits the whole address, so a link to `/app/settings` goes to
+Settings and not also to App, as a `<Switch>` route without `exact` around an inner one gives the inner one, while a
+link to `/settings/zzz` that only an inner `*` route takes goes to both screens, and `/docs/1` goes to the screen of
+`/docs/*` as well as to that of `/docs/:id` in a `<Routes>` drawn beside it.
+Known limits: an `index` route never fits, and a route without a path is drawn only around the routes it holds;
+a v6 route file the route files do not reach from one another is drawn beside the others, so into-sign's
+`navigate('/')` goes to the sign-in screen through the catch-all of the signed-out routes as well as to the user home.
+A route file drawn again inside a route file it holds is drawn there with its paths not joined to the outer ones,
+since joining them each time would never end.
+Alternatives compared:
+- Keeping the first fitting route as in a `<Switch>`: an app that writes `/docs/:id` before `/docs/new`, or `*`
+  before the rest, would send the link to a screen v6 does not draw.
+- Matching a `/*` route through the existing prefix matching of a route without `exact`: the same in effect, but a
+  path without `/*` would then take longer addresses, which v6 does not.
 
 **A history the app makes itself is named in the config as `history`, `{ "import", "name" }`, and duru tells from
 how it is used whether the name is a function returning the history or the history itself.**
