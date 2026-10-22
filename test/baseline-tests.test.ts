@@ -478,3 +478,25 @@ test('a baselineTests item of an unknown format or depth stops the way tests doe
     assert.equal(loadConfig(configFile).baselineTests, null);
   });
 });
+
+test('the README and the decision record say what baselineTests takes, what the test results line and each of its words mean, how to keep the results of a release, and why the comparison is made this way', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md').replace(/\n {2}(?=\S)/g, ' ');
+  assert.match(readme, /- `baselineTests` — the test results of an earlier version of the same client \(optional\), written like `tests`/);
+  assert.match(readme, /An empty list compares nothing and prints no line about it\./);
+  assert.match(readme, /straight into that version's folder[\s\S]*`cp -p`[\s\S]*only some of the tests leaves the rest as `only in baseline`/);
+  assert.match(readme, /by their title without tags and their Playwright project, so a test renamed or moved to another file counts once in\s+`only in baseline` and once in `only now`/);
+  assert.match(readme, /- `test results since <folder> \| compared N \| pass→fail N pass→pending N \| not on a screen or call now N \| only in baseline N \| only now N` —/);
+  assert.match(readme, /now\s+did not run or gave no verdict; a `pass→pending` test may have been skipped because a test before it in a `serial`\s+group, or a `setup` project it depends on, failed/);
+  assert.match(readme, /When `not on a screen or call now` is large/);
+  assert.match(readme, /`compared`, `not on a screen or call now` and `only in baseline` add up to the tests of the baseline/);
+  assert.match(readme, /- `  no test was compared: no baseline test matches a test under a screen or call now` —/);
+  assert.match(readme, /- `  pass→fail ← <test file>:<line> <title> \(<project>\) — screen <id>, call <id>, …` —/);
+  assert.match(readme, /- `  only in baseline ← <file>: N tests, none of this file's tests are in the current results` —/);
+  assert.match(readme, /`baselineTests <path> could not be read: <why>`/);
+  assert.match(readme, /An untagged Playwright test carries the projects it ran\s+in as `projects`\./);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*`baselineTests` names the result files kept from an earlier release in the shape of `tests`/);
+  assert.match(decisions, /the shortest end that tells apart every different file in the group/);
+  assert.match(decisions, /- One end length for the whole group, as the PRD reads word for word:/);
+});
