@@ -331,9 +331,26 @@ const sameTest = (ref: TestRef, key: unknown) => {
   return ref.source === k?.source && ref.file === k?.file && ref.title === k?.title;
 };
 
-export function passedInFolder(c: TestComparison, target: PartTarget) {
+type MarkRecord = { status?: string; date: string; target?: { node?: string; option?: unknown; depth?: string } };
+
+export function wholeFines(records: MarkRecord[]) {
+  const fines = new Map<string, string>();
+  for (const { status, date, target } of records) {
+    if (status !== 'fine' || target?.node === undefined || target.option !== undefined || target.depth !== undefined) continue;
+    const last = fines.get(target.node);
+    if (last === undefined || Date.parse(date) > Date.parse(last)) fines.set(target.node, date);
+  }
+  return fines;
+}
+
+const latestStart = (results: BaselineResult[]) => Math.max(...results.map((r) => Date.parse(r.startedAt)));
+
+export function passedInFolder(c: TestComparison, fines: Map<string, string>, target: PartTarget, date: string) {
   const { node, part } = target;
   if (part?.kind !== 'test' || node === undefined) return null;
-  const regressed = c.regressions.some((r) => r.rows.some((row) => row.node === node && row.status !== 'pass' && sameTest(row.ref, part.key)));
+  const at = Date.parse(date);
+  const fine = fines.get(node);
+  if (fine !== undefined && at <= Date.parse(fine)) return null;
+  const regressed = c.regressions.some((r) => at > latestStart(r.baseline) && r.rows.some((row) => row.node === node && row.status !== 'pass' && sameTest(row.ref, part.key)));
   return regressed ? c.folder : null;
 }

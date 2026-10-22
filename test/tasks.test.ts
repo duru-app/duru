@@ -1776,11 +1776,70 @@ test('with baselineTests and no comment on a regressed test the task list is the
   });
 });
 
-test('a comment on a test that did not regress lists no screen', () => {
-  withRelease(({ cli, comment }) => {
+test('a comment on a test that did not regress lists no screen, and under a screen marked for another reason its line carries no passed in', () => {
+  withRelease(({ cli, marksDir, comment }) => {
     comment(RECENT_JUNIT, '2026-10-12T02:00:00Z');
     const tasks = cli('tasks');
     assert.match(tasks, /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n/);
     assert.match(tasks, /\nNo open marks\.\n/);
+    addMark(marksDir, { target: { node: '/home#Home' }, status: 'needs-more', author: 'a' }, new Date('2026-10-12T03:00:00Z'));
+    const marked = cli('tasks');
+    assert.match(marked, /^# Test tasks — 1 screen, 0 calls, 0 stories, 1 open mark\n/);
+    assert.match(sectionOf(marked, '/home#Home'), /^ {2}- test "Home service › lists recent documents" at com\.example\.home\.HomeServiceTest — pass, tagged with this screen, from results\/junit\/TEST-com\.example\.home\.HomeServiceTest\.xml\n {4}- comment — /m);
+  }, { marksDir: 'marks' });
+});
+
+const listedIds = (tasks: string) => tasks.match(/^## \S+$/gm)?.map((h) => h.slice(3)) ?? [];
+
+test('a comment left before the baseline ran lists no screen, by the start written in a Playwright report and by the modified time of a Vitest report without one, a JUnit file and a verdict log, and a reply left after the run to a comment left before it lists none either', () => {
+  withRelease(({ cli, marksDir, comment }) => {
+    const listedBy = (target: object, at: string) => {
+      fs.rmSync(marksDir, { recursive: true, force: true });
+      comment(target, at);
+      return listedIds(cli('tasks'));
+    };
+    const table = { ...TABLE_ON_HOME, node: '/document/:tab#DocumentList' };
+    const draft = onTest('/home#Home', 'Home service › moves a draft & keeps the list order', 'com.example.home.HomeServiceTest', 'results/junit/TEST-com.example.home.HomeServiceTest.xml');
+    assert.deepEqual(listedBy(LAB_E2E, '2026-09-29T00:00:00Z'), []);
+    assert.deepEqual(listedBy(LAB_E2E, '2026-09-30T06:00:00Z'), ['/lab#Lab']);
+    assert.deepEqual(listedBy(table, '2026-09-30T06:00:00Z'), []);
+    assert.deepEqual(listedBy(table, '2026-10-02T00:00:00Z'), ['/document/:tab#DocumentList']);
+    assert.deepEqual(listedBy(draft, '2026-02-01T00:00:00Z'), []);
+    assert.deepEqual(listedBy(draft, '2026-10-02T00:00:00Z'), ['/home#Home']);
+    assert.deepEqual(listedBy(SORT_VERDICT, '2026-09-30T06:00:00Z'), []);
+    assert.deepEqual(listedBy(SORT_VERDICT, '2026-10-02T00:00:00Z'), ['/document/:tab#DocumentList']);
+    fs.rmSync(marksDir, { recursive: true, force: true });
+    const early = comment(LAB_E2E, '2026-09-29T00:00:00Z');
+    addReply(marksDir, { replyTo: early.id, note: 'It waits for the lab data.' }, new Date('2026-10-12T00:00:00Z'));
+    assert.deepEqual(listedIds(cli('tasks')), []);
+  }, { marksDir: 'marks' });
+});
+
+test('a comment on a verdict name that two lines under the screen share lists the screen when only one of them regressed', () => {
+  withRelease(({ copy, cli, comment }) => {
+    fs.appendFileSync(path.join(copy, 'results/verdict/documents/document-checks.log'), 'VERDICT sort by date: UPHOLDS — sorted in the browser @screen:/document/:tab#DocumentList @depth:ui\n');
+    assert.match(cli('rebuild'), /^ {2}pass→fail ← document-checks\.log:9 sort by date — screen \/document\/:tab#DocumentList$/m);
+    comment(SORT_VERDICT, '2026-10-12T02:00:00Z');
+    assert.deepEqual(listedIds(cli('tasks')), ['/document/:tab#DocumentList']);
+  }, { marksDir: 'marks' });
+});
+
+test('a screen listed for a commented regression leaves once the test passes again after a rebuild, or once the whole screen is marked fine, not for a fine on one depth, and comes back with a comment after that fine', () => {
+  withRelease(({ copy, cli, marksDir, comment }) => {
+    const mark = (target: object, at: string) => addMark(marksDir, { target, status: 'fine', author: 'a' }, new Date(at));
+    comment(LAB_E2E, '2026-10-12T02:00:00Z');
+    assert.deepEqual(listedIds(cli('tasks')), ['/lab#Lab']);
+    mark({ node: '/lab#Lab', depth: 'ui' }, '2026-10-12T03:00:00Z');
+    assert.deepEqual(listedIds(cli('tasks')), ['/lab#Lab']);
+    mark({ node: '/lab#Lab' }, '2026-10-12T04:00:00Z');
+    assert.deepEqual(listedIds(cli('tasks')), []);
+    comment(LAB_E2E, '2026-10-12T05:00:00Z', 'Still pending.');
+    assert.deepEqual(listedIds(cli('tasks')), ['/lab#Lab']);
+    const report = path.join(copy, 'results/playwright/e2e.json');
+    const json = JSON.parse(fs.readFileSync(report, 'utf8'));
+    for (const t of json.suites.flatMap((s: any) => s.specs).find((s: any) => s.title.startsWith('opens the lab')).tests) t.status = 'expected';
+    fs.writeFileSync(report, JSON.stringify(json));
+    cli('rebuild');
+    assert.deepEqual(listedIds(cli('tasks')), []);
   }, { marksDir: 'marks' });
 });

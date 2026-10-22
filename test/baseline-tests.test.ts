@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { baselineTestsLines, compareTests, passedInFolder, readBaselineTests } from '../src/baseline-tests.ts';
+import { baselineTestsLines, compareTests, passedInFolder, readBaselineTests, wholeFines } from '../src/baseline-tests.ts';
 import type { BaselineTests } from '../src/baseline-tests.ts';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment } from '../src/judgments.ts';
@@ -473,12 +473,65 @@ test('the README and the decision record say what baselineTests takes, what the 
 });
 
 const onRow = (node: string, title: string, file = 'a.spec.ts', source = 'results/e2e.json') => ({ node, part: { kind: 'test', key: { source, file, title } } });
+const NO_FINE = new Map<string, string>();
+const AFTER = '2026-10-12T00:00:00.000Z';
 
 test('a comment on a test row that regressed under that screen gives the baseline folder, and one on a row of a test that did not regress, or on the same test under another screen it did not regress on, gives none', () => {
   const base = was({ title: 'opens a', status: 'pass' }, { title: 'keeps a', line: 2, status: 'pass' });
   const comparison = compareTests(base, now({ nodes: { '/a#A': [{ title: 'opens a @screen:/a#A', status: 'fail' }, { title: 'keeps a @screen:/a#A', line: 2, status: 'pass' }] } }), MAP);
-  assert.equal(passedInFolder(comparison, onRow('/a#A', 'opens a')), 'releases/1.5.0');
-  assert.equal(passedInFolder(comparison, onRow('/a#A', 'keeps a')), null);
-  assert.equal(passedInFolder(comparison, onRow('/b#B', 'opens a')), null);
-  assert.equal(passedInFolder(comparison, { node: '/a#A' }), null);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'opens a'), AFTER), 'releases/1.5.0');
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'keeps a'), AFTER), null);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/b#B', 'opens a'), AFTER), null);
+  assert.equal(passedInFolder(comparison, NO_FINE, { node: '/a#A' }, AFTER), null);
+});
+
+test('a comment left before the run of the baseline result file its regressed test came from gives none, one left after it gives the folder, and a test merged from two result files takes the later start', () => {
+  const base: BaselineTests = {
+    ...was(),
+    results: [{ result: 'releases/1.5.0/chromium.json', startedAt: '2026-09-30T00:00:00.000Z' }, { result: 'releases/1.5.0/firefox.json', startedAt: '2026-10-02T00:00:00.000Z' }],
+    tests: [
+      { title: 'opens a', tags: [], file: 'a.spec.ts', line: 1, project: null, status: 'pass', result: 'releases/1.5.0/chromium.json' },
+      { title: 'opens b', tags: [], file: 'a.spec.ts', line: 2, project: null, status: 'pass', result: 'releases/1.5.0/chromium.json' },
+      { title: 'opens b', tags: [], file: 'a.spec.ts', line: 2, project: null, status: 'pass', result: 'releases/1.5.0/firefox.json' },
+    ],
+  };
+  const comparison = compareTests(base, now({ nodes: { '/a#A': [{ title: 'opens a', status: 'fail' }, { title: 'opens b', line: 2, status: 'fail' }] } }), MAP);
+  const at = (title: string, date: string) => passedInFolder(comparison, NO_FINE, onRow('/a#A', title), date);
+  assert.equal(at('opens a', '2026-09-29T23:59:59.000Z'), null);
+  assert.equal(at('opens a', '2026-09-30T06:00:00.000Z'), 'releases/1.5.0');
+  assert.equal(at('opens b', '2026-10-01T00:00:00.000Z'), null);
+  assert.equal(at('opens b', '2026-10-02T06:00:00.000Z'), 'releases/1.5.0');
+});
+
+test('a comment on a name several verdict lines share gives the folder when one of those lines regressed, and none when the regressed test\'s own row passed', () => {
+  const verdict = { file: 'checks.log', source: 'results/checks.log', format: 'verdict' };
+  const shared = compareTests(
+    was({ title: 'sort by date @screen:/a#A', file: 'checks.log', status: 'pass' }, { title: 'sort by date @screen:/a#A @depth:ui', file: 'checks.log', line: 2, status: 'pass' }),
+    now({ nodes: { '/a#A': [{ ...verdict, title: 'sort by date @screen:/a#A', status: 'fail' }, { ...verdict, title: 'sort by date @screen:/a#A @depth:ui', line: 2, status: 'pass' }] } }),
+    MAP,
+  );
+  assert.equal(passedInFolder(shared, NO_FINE, onRow('/a#A', 'sort by date', 'checks.log', 'results/checks.log'), AFTER), 'releases/1.5.0');
+  const merged = compareTests(
+    was({ title: 'walks', status: 'pass' }),
+    now({ passed: { '/a#A': [{ title: 'walks', status: 'fail', level: 'interact' }], '/b#B': [{ title: 'walks', line: 2, status: 'pass', level: 'interact' }] } }),
+    MAP,
+  );
+  assert.equal(merged.regressions.length, 1);
+  assert.equal(passedInFolder(merged, NO_FINE, onRow('/a#A', 'walks'), AFTER), 'releases/1.5.0');
+  assert.equal(passedInFolder(merged, NO_FINE, onRow('/b#B', 'walks'), AFTER), null);
+});
+
+test('a fine on the whole screen after the comment stops it, a fine on one depth or one option does not, and a comment after the fine gives the folder again', () => {
+  const comparison = compareTests(was({ title: 'opens a', status: 'pass' }), now({ nodes: { '/a#A': [{ title: 'opens a', status: 'fail' }] } }), MAP);
+  const mark = (target: object, date: string, status = 'fine') => ({ id: date, target, status, note: '', author: 'a', date });
+  const fines = wholeFines([
+    mark({ node: '/a#A' }, '2026-10-10T00:00:00.000Z'),
+    mark({ node: '/a#A' }, '2026-10-05T00:00:00.000Z'),
+    mark({ node: '/b#B', depth: 'ui' }, '2026-10-10T00:00:00.000Z'),
+    mark({ node: '/b#B', option: { key: 'x', value: true } }, '2026-10-10T00:00:00.000Z'),
+    mark({ node: '/b#B' }, '2026-10-10T00:00:00.000Z', 'needs-more'),
+  ]);
+  assert.deepEqual([...fines], [['/a#A', '2026-10-10T00:00:00.000Z']]);
+  assert.equal(passedInFolder(comparison, fines, onRow('/a#A', 'opens a'), '2026-10-09T00:00:00.000Z'), null);
+  assert.equal(passedInFolder(comparison, fines, onRow('/a#A', 'opens a'), '2026-10-11T00:00:00.000Z'), 'releases/1.5.0');
 });

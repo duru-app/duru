@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Described } from './access.ts';
 import { readSettingsFile, settingsFilePlace } from './app-host.ts';
 import { newUndecided } from './baseline.ts';
-import { compareTests, nodeIds, passedInFolder, readBaselineTests } from './baseline-tests.ts';
+import { compareTests, nodeIds, passedInFolder, readBaselineTests, wholeFines } from './baseline-tests.ts';
 import type { TestComparison } from './baseline-tests.ts';
 import type { BaselineChanges } from './baseline.ts';
 import type { AppAccount } from './app-host.ts';
@@ -710,8 +710,9 @@ export function taskList(config: any) {
     if (config.baselineTests) comparison = compareTests(readBaselineTests(config), tests, nodeIds(map));
   } catch {}
   const passedIn = new Map<MarkEntry, string>();
+  const fines = wholeFines(marks.attached.flatMap((m) => m.history));
   for (const m of marks.attached) {
-    const folder = comparison && m.history.some((r) => r.replyTo === undefined) ? passedInFolder(comparison, m.target) : null;
+    const folder = comparison && m.history.filter((r) => r.replyTo === undefined).map((r) => passedInFolder(comparison, fines, m.target, r.date)).find(Boolean);
     if (folder) passedIn.set(m, folder);
   }
   const regressed = new Set([...passedIn.keys()].map((m) => m.target.node));
