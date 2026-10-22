@@ -143,8 +143,6 @@ const byPlace = (a: Place, b: Place) => compare(a.file ?? '', b.file ?? '') || (
 
 const statusIn = (t: any, project: string | null): TestStatus => (project !== null && t.projects?.[project]) || t.worstStatus || t.status;
 
-const tagsInTitle = (title: string) => (title.match(/@\S+/g) ?? []).map((t) => t.slice(1));
-
 function currentTests(current: CurrentTests, onMap: Set<string>, calls: Set<string>, projectsOf: (title: string) => (string | null)[]) {
   const runs = new Map<string, CurrentTest>();
   const runsOf = (t: any) => (t.projects ? Object.keys(t.projects) : [t.project ?? null]).map((project: string | null) => {
@@ -167,13 +165,15 @@ function currentTests(current: CurrentTests, onMap: Set<string>, calls: Set<stri
   const offNode = [...OFF_NODE.flatMap((field) => Object.values(current[field] ?? {}).flat()), ...(current.untagged ?? [])];
   for (const t of offNode) for (const run of runsOf(t)) run.offNode.push(statusIn(t, run.project));
   for (const test of runs.values()) test.status = test.rows.length ? worst(test.rows.map((r) => r.status)) : worst(test.offNode);
-  const listed = new Set([...runs.values()].map((r) => JSON.stringify([r.file, r.place.line, r.title])));
+  const listed = new Set([...runs.values()].map((r) => JSON.stringify([r.file, r.place.line, r.title, r.project])));
+  const tagged = new Set([...runs.values()].filter((r) => r.rows.some((row) => row.via === 'tag')).map((r) => JSON.stringify([r.file, r.place.line, r.title])));
   const offMap = groupBy(current.unknownTags ?? [], (u) => JSON.stringify([u.test.file, u.test.line, u.test.title]));
   for (const [key, entries] of offMap) {
-    if (listed.has(key) || !entries.some((u) => NODE_TAG.test(u.tag))) continue;
     const { title, file, line } = entries[0].test;
-    const tags = [...new Set([...tagsInTitle(title), ...entries.map((u) => u.tag)])];
+    const tags = [...new Set(entries.map((u) => u.tag).filter((tag) => NODE_TAG.test(tag)))];
+    if (!tags.length || tagged.has(key)) continue;
     for (const project of projectsOf(title)) {
+      if (listed.has(JSON.stringify([file, line, title, project]))) continue;
       runs.set(JSON.stringify([null, file, line, title, project]), { title, tags, file, project, status: null, place: { file, line, title, project }, rows: [], offNode: [] });
     }
   }
@@ -217,7 +217,7 @@ const groupBy = <T>(list: T[], keyOf: (item: T) => string) => {
   return groups;
 };
 
-const tagSet = (t: Matched) => [...new Set(t.tags)].sort().join(' ');
+const tagSet = (t: Matched) => [...new Set(t.tags.filter((tag) => NODE_TAG.test(tag)))].sort().join(' ');
 const overlaps = (tests: Matched[] = []) => tests.length > 1 && new Set(tests.map(tagSet)).size > 1;
 
 function matchKeys<B extends Matched, N extends Matched>(baseline: B[], current: N[], files: ReturnType<typeof fileKeys>) {

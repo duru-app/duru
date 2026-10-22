@@ -310,6 +310,19 @@ test('a current test whose tags name only screens or calls the map does not have
   assert.deepEqual(comparison.onlyInBaselineFiles, []);
 });
 
+test('a test whose screen tags all left the map is not on a screen or call now in a project where it left no row, and its other tags do not keep it from its baseline run', () => {
+  const lab = { title: 'opens the lab @screen:/old#Old', tags: ['screen:/old#Old'] };
+  const base = was({ ...lab, project: 'chromium', status: 'pass' }, { ...lab, project: 'firefox', status: 'pass' });
+  const unknownLab = [{ tag: 'screen:/old#Old', test: { title: lab.title, file: 'a.spec.ts', line: 1 } }];
+  assert.deepEqual(baselineTestsLines(compareTests(base, { ...now({ passed: { '/a#A': [{ ...lab, project: 'chromium', status: 'fail', level: 'interact' }] } }), unknownTags: unknownLab }, MAP)), [
+    summary(1, 1, 0, 1, 0, 0),
+    '  pass→fail ← a.spec.ts:1 opens the lab @screen:/old#Old (chromium) — screen /a#A',
+  ]);
+  const verdict = (line: number, tags: string[]) => ({ title: 'cleanup', file: 'checks.log', line, tags, status: 'pass' as const });
+  const unknownVerdict = [{ tag: 'screen:/z#Z', test: { title: 'cleanup', file: 'checks.log', line: 5 } }];
+  assert.deepEqual(baselineTestsLines(compareTests(was(verdict(3, ['screen:/a#A']), verdict(5, ['screen:/z#Z', 'depth:data'])), { ...now({ nodes: { '/a#A': [verdict(3, ['screen:/a#A'])] } }), unknownTags: unknownVerdict }, MAP)), [summary(1, 0, 0, 1, 0, 0)]);
+});
+
 test('a baseline test only in the baseline is listed under each screen or call on the map its tags name, and under none when its tags name a screen the map does not have', () => {
   const base = was({ title: 'gone @screen:/a#A', tags: ['screen:/a#A', 'call:GET:/api/x'], line: 4, status: 'pass' }, { title: 'gone too', tags: ['screen:/z#Z'], line: 9, status: 'fail' });
   const { onlyInBaselineByNode } = compareTests(base, now({ nodes: { '/b#B': [{ title: 'kept', status: 'pass' }] } }), MAP);

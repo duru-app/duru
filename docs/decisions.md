@@ -1505,7 +1505,7 @@ alone dropped with its ` › `), the Playwright project and the test file are ma
 taken from the folder holding every absolute path of its side, since the checkout sits in another place on another
 machine, and when that folder sits deeper on one side (its tests were all under `src/`, say), the folders at the end
 of it are put back in front of that side's paths as far as makes the most files the same on both sides. Tests that
-still share a key, such as verdict lines of one name in one log, get their sorted tags added, and those still alike are one test with the worst
+still share a key, such as verdict lines of one name in one log, get their sorted screen and call tags added, and those still alike are one test with the worst
 status of their runs (fail, pending, pass); in the baseline a pending run is left out when another run ran, since a
 run skipped there, such as one browser's run in a Playwright JUnit report that names no project, would otherwise
 hide another run's `pass→fail`. Such a test is under a screen or call when one of its runs is, and its
@@ -1533,7 +1533,7 @@ as for `baselineMap`, so `map.json` and `tests.json` are the same with and witho
 counts regressions is recorded with the review page.
 Limits:
 - A test renamed or moved to another file is not matched: it counts once in `only in baseline` and once in
-  `only now`. A test told apart only by its tags is not matched either once its tags change, nor are tests of one
+  `only now`. A test told apart only by its screen and call tags is not matched either once those tags change, nor are tests of one
   title in one file that had the same tags in the baseline and have different ones now, such as two verdict lines of
   one name tagged with two screens after the release.
 - A Playwright test linked to a screen only by its trace is on no screen when it was skipped, so it counts in
