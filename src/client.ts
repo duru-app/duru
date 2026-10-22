@@ -5,7 +5,7 @@ import type { Binding, NodePath, Scope } from '@babel/traverse';
 import type { ArrowFunctionExpression, CallExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
-import type { AddressFunction } from './address-functions.ts';
+import type { AddressFunction, Read } from './address-functions.ts';
 import type { Branch, Constants, GuardInit, GuardSetting, RouteNode } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
@@ -783,12 +783,23 @@ export async function extractClient(config: any) {
   }
 
   const passThrough = (name: string) => (config.passThroughCalls ?? []).includes(name);
-  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction, passThrough });
+  const linkReading = addressReader({
+    leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }),
+    declaredValue,
+    declaredFunction,
+    namespaceFunction,
+    passThrough,
+    moves: {
+      moveOf: (p) => screenLinks.moveOf(p),
+      linked: (p) => addresses(p).length > 0 && linkAddresses(p).length > 0,
+    },
+  });
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
+  const linkAddresses = (p: NodePath) => addressesOf(linkReading.branches(p));
+
   // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니다.
-  function linkAddresses(p: NodePath) {
-    const read = linkReading.branches(p);
+  function addressesOf(read: Read) {
     if ('tooMany' in read) return [UNKNOWN];
     const found = new Set<string>();
     for (const { text, made, whole } of read.branches) {
@@ -1085,6 +1096,11 @@ export async function extractClient(config: any) {
         for (const to of linkAddresses(at)) record('routerLinks', { to }, at);
       }
     };
+    const recordHelperLinks = (p: NodePath<CallExpression>) => {
+      if (screenLinks.moveOf(p)) return;
+      const read = linkReading.helperBranches(p);
+      for (const to of read ? addressesOf(read) : []) record('routerLinks', { to }, p);
+    };
     const inRouteFile = routeFileSet.has(file);
     traverse(ast, {
       JSXElement(p) {
@@ -1092,6 +1108,7 @@ export async function extractClient(config: any) {
       },
       CallExpression(p) {
         recordLinks(screenLinks.call(p));
+        recordHelperLinks(p);
         const callee = p.get('callee');
         const binding = !config.history && callee.isIdentifier() ? callee.scope.getBinding(callee.node.name) : undefined;
         const from = binding ? importedAs(binding) : null;

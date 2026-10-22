@@ -106,16 +106,19 @@ export function madeFrom(p: NodePath<any>, depth = 0): NodePath[] {
   return declared ? [p, ...madeFrom(declared.init, depth + 1)] : [p];
 }
 
-export function addresses(p: NodePath<any>): NodePath[] {
-  if (p.isConditionalExpression()) return [...addresses(p.get('consequent')), ...addresses(p.get('alternate'))];
+export function addresses(p: NodePath<any>, keepHandedIn = false): NodePath[] {
+  if (p.isConditionalExpression()) return [...addresses(p.get('consequent'), keepHandedIn), ...addresses(p.get('alternate'), keepHandedIn)];
   if (p.isObjectExpression()) {
     const pathname = lastValue(p, 'pathname');
-    return pathname ? addresses(pathname) : [];
+    return pathname ? addresses(pathname, keepHandedIn) : [];
   }
   const declared = p.isIdentifier() ? declaredInit(p) : null;
-  if (declared?.id.type === 'Identifier' && declared.init.isObjectExpression()) return addresses(declared.init);
-  return staysHere(p) || handedIn(p) ? [] : [p];
+  if (declared?.id.type === 'Identifier' && declared.init.isObjectExpression()) return addresses(declared.init, keepHandedIn);
+  return staysHere(p) || (!keepHandedIn && handedIn(p)) ? [] : [p];
 }
+
+// history 는 useNavigate() 가 돌려준 함수로 옮길 때 null 이다.
+export type Move = { address: NodePath; history: NodePath | null; recognized: boolean };
 
 export function screenLinkReader({ configuredHistory }: Reading) {
   function isHistory(p: NodePath<any>, depth = 0): boolean {
@@ -157,14 +160,20 @@ export function screenLinkReader({ configuredHistory }: Reading) {
     return declared?.id.type === 'Identifier' && isNavigate(declared.init, depth + 1);
   }
 
-  function call(p: NodePath<CallExpression>): NodePath[] {
+  function moveOf(p: NodePath<CallExpression>): Move | null {
     const callee = p.get('callee') as NodePath<any>;
     const [address] = p.get('arguments') as NodePath<any>[];
-    if (!address || address.isSpreadElement()) return [];
-    if (callee.isIdentifier()) return isNavigate(callee) && !isNumber(address) ? addresses(address) : [];
-    if (!callee.isMemberExpression() || callee.node.computed || !MOVES.has(((callee.node as MemberExpression).property as Identifier).name)) return [];
-    return isHistory(callee.get('object')) ? addresses(address) : [];
+    if (!address || address.isSpreadElement()) return null;
+    if (callee.isIdentifier()) return isNavigate(callee) && !isNumber(address) ? { address, history: null, recognized: true } : null;
+    if (!callee.isMemberExpression() || callee.node.computed || !MOVES.has(((callee.node as MemberExpression).property as Identifier).name)) return null;
+    const history = callee.get('object');
+    return { address, history, recognized: isHistory(history) };
   }
 
-  return { element, call };
+  function call(p: NodePath<CallExpression>): NodePath[] {
+    const move = moveOf(p);
+    return move?.recognized ? addresses(move.address) : [];
+  }
+
+  return { element, call, moveOf, isHistory };
 }

@@ -1,6 +1,7 @@
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { ArrowFunctionExpression, FunctionDeclaration, FunctionExpression, Identifier, Node, StringLiteral } from '@babel/types';
-import { FOLLOWED } from './screen-links.ts';
+import type { ArrowFunctionExpression, CallExpression, FunctionDeclaration, FunctionExpression, Identifier, Node, StringLiteral } from '@babel/types';
+import { addresses, FOLLOWED } from './screen-links.ts';
+import type { Move } from './screen-links.ts';
 
 export const UNREADABLE_PIECE = '\0';
 export const MOST_ADDRESSES = 8;
@@ -19,6 +20,13 @@ interface Reading {
   declaredFunction: (scope: Scope, name: string) => AddressFunction | null;
   namespaceFunction: (scope: Scope, chain: string[]) => AddressFunction | null;
   passThrough: (name: string) => boolean;
+  moves?: Moves;
+}
+
+// linked 는 주소 자리 하나가 지금 규칙으로 링크를 내는가다.
+interface Moves {
+  moveOf: (p: NodePath<CallExpression>) => Move | null;
+  linked: (p: NodePath) => boolean;
 }
 
 // empty 는 함수가 돌려준 빈 문자열이다. 주소 맨 앞에 오면 읽지 못한 조각으로 본다.
@@ -32,6 +40,7 @@ type Val =
 type Out = { val: Val; made: boolean; whole?: NodePath };
 type Env = Map<Binding, Out>;
 interface At { env: Env | null; fn: AddressFunction | null; branching: boolean; depth: number }
+type MovePlace = { at: NodePath<CallExpression>; addresses: NodePath[] };
 
 const OUTSIDE: At = { env: null, fn: null, branching: false, depth: 0 };
 const NOT_KNOWN = Symbol('not known');
@@ -132,10 +141,15 @@ function touchesOwn(x: NodePath<any>, fn: AddressFunction): boolean {
   return found;
 }
 
+const hasText = ({ val }: Out) => 'pieces' in val && val.pieces.some((x) => 'text' in x);
+// 부른 곳에 적힌 값 그대로인 것에는 그 식을 whole 로 단다.
+const wholeOr = (o: Out, p: NodePath): Out => (o.made || o.whole || hasText(o) ? o : { ...o, whole: p });
+
 const unwrapped = (p: NodePath<any>): NodePath<any> => (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isTypeCastExpression() || p.isParenthesizedExpression() ? unwrapped(p.get('expression') as NodePath<any>) : p);
 
-export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, passThrough }: Reading) {
+export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, passThrough, moves }: Reading) {
   const reading = new Set<Node>();
+  const placesFound = new WeakMap<Node, MovePlace[]>();
 
   function leafOut(p: NodePath): Out {
     const found = leaf(p);
@@ -324,7 +338,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   function values(p: NodePath<any>, at: At): Out[] {
     const outs = limited(valuesOf(unwrapped(p), at), distinct);
-    return at.env ? outs : outs.map((o) => (o.made || o.whole || 'pieces' in o.val && o.val.pieces.some((x) => 'text' in x) ? o : { ...o, whole: p }));
+    return at.env ? outs : outs.map((o) => wholeOr(o, p));
   }
 
   function valuesOf(p: NodePath<any>, at: At): Out[] {
@@ -434,5 +448,89 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     return { branches: [...found.values()] };
   }
 
-  return { branches };
+  // 함수 몸통에서 지금 규칙으로 링크가 나오지 않는 이동 자리와 그 주소 후보
+  function placesOf(fn: AddressFunction): MovePlace[] {
+    if (placesFound.has(fn.node)) return placesFound.get(fn.node)!;
+    const outer = [...reading];
+    reading.clear();
+    const found: MovePlace[] = [];
+    try {
+      const visit = (c: NodePath<CallExpression>) => {
+        if (c.getFunctionParent()?.node !== fn.node) return;
+        const move = moves!.moveOf(c);
+        if (!move?.recognized) return;
+        const kept = addresses(move.address, true).filter((a) => !moves!.linked(a));
+        if (kept.length) found.push({ at: c, addresses: kept });
+      };
+      const body = fn.get('body') as NodePath<any>;
+      if (body.isCallExpression()) visit(body);
+      body.traverse({ CallExpression: visit });
+    } finally {
+      for (const node of outer) reading.add(node);
+    }
+    placesFound.set(fn.node, found);
+    return found;
+  }
+
+  function placeOuts(fn: AddressFunction, env: Env, depth: number): Out[] {
+    const at: At = { env, fn, branching: true, depth };
+    const outs: Out[] = [];
+    for (const place of placesOf(fn)) {
+      for (const a of place.addresses) {
+        for (const o of values(a, at)) {
+          const located = address(wholeOr(o, a), a);
+          if (located) outs.push(located);
+        }
+      }
+    }
+    return limited(outs, distinct);
+  }
+
+  function helperOuts(p: NodePath<CallExpression>, fn: AddressFunction, at: At): Out[] {
+    if (reading.has(fn.node) || at.depth >= FOLLOWED) return [];
+    const args = p.get('arguments') as NodePath<any>[];
+    const spread = args.findIndex((a) => a.isSpreadElement());
+    const given = { ...at, branching: true };
+    const lists = limited(product((spread < 0 ? args : args.slice(0, spread)).map((a) => values(a, given).map((o) => wholeOr(o, a)))));
+    reading.add(fn.node);
+    try {
+      return lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1)));
+    } finally {
+      reading.delete(fn.node);
+    }
+  }
+
+  // 받은 주소로 옮기는 함수를 부른 곳에서, 그 이동이 가는 주소를 부른 곳의 인자로 읽는다. 그런 함수가 아니면 null 이다.
+  function helperBranches(p: NodePath<CallExpression>): Read | null {
+    if (!moves || inAddress(p)) return null;
+    const callee = p.get('callee') as NodePath<any>;
+    if (callee.isIdentifier() && passThrough(callee.node.name)) return null;
+    const fn = calledFunction(p, OUTSIDE);
+    if (!fn || fn.node.generator || !placesOf(fn).length) return null;
+    let outs: Out[];
+    try {
+      outs = helperOuts(p, fn, OUTSIDE);
+    } catch (error) {
+      if (error instanceof TooMany) return { tooMany: true };
+      throw error;
+    }
+    const found = new Map<string, Branch>();
+    for (const out of outs) {
+      const read = { ...branch(out, p), made: true };
+      const key = `${read.whole?.node.start}\0${read.text}`;
+      if (!found.has(key)) found.set(key, read);
+    }
+    return { branches: [...found.values()] };
+  }
+
+  // 이동의 주소 자리나 링크 요소의 to 안에 있는 호출
+  function inAddress(p: NodePath<any>): boolean {
+    for (let child = p, up = p.parentPath; up && !up.isFunction() && !up.isStatement(); child = up, up = up.parentPath) {
+      if (up.isCallExpression() && child.listKey === 'arguments' && child.key === 0 && moves!.moveOf(up)) return true;
+      if (up.isJSXAttribute() && up.node.name.name === 'to') return true;
+    }
+    return false;
+  }
+
+  return { branches, helperBranches };
 }
