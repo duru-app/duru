@@ -3113,6 +3113,21 @@ land on different lines and the place of the counts moved from row to row. The d
 their own line once a row has any chip (2026-10-22, while checking 「코드 바뀜」 of #331), over leaving the run-on
 line, which takes the fewest lines. A row without a chip keeps its counts right under the name.
 
+**The review page calls the case kinds 「테스트 관점」 and the tests of each kind on a screen or call
+「관점별 테스트」, while the config key `caseKinds` and the `case kind …` lines the commands print keep their names.**
+Asked for in #381. Until then the tab read 「경우 종류 N」 and that part of the screen information and the call details
+「경우별 테스트」, and the entries above keep the names the page had when they were written. 「경우 종류」 did not
+say that it gathers the angles a screen or call is tested from, such as 「끝난 문서」 or 「입력 경계」. The driver chose
+「테스트 관점」 (2026-10-21) after the test viewpoints (テスト観点) of Japanese QA and their matrix, which sets what is
+tested against the viewpoints and marks each cell required, optional or out of scope, as duru sets screens and calls
+against kinds with 「대상」, 「대상 아님」 and 「미판정」. The test condition of ISTQB (테스트 조건) was not chosen, since it
+reads like the page's 「접근 조건」 and 「링크 조건」.
+- 「경우」 before one kind's text, as in a target's name and the change list (「경우 끝난 문서」), and 「이 경우를
+  시험합니다」 in the hints of the buttons stay: they name one kind, not the place that lists them, and the issue named
+  only the two parts. Changing them too is the same few strings in the page.
+- The English of the README and the agent instructions keeps "case kind", as the config key and the commands do, so a
+  reader can match it with `caseKinds` and `case kind ended: …`; only the Korean page names they quote changed.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

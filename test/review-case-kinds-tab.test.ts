@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
 import { addMark, loadMarks } from '../src/marks.ts';
-import { CLI, withRebuiltFixture, withServer, withPage, postMark, CASE_KINDS, asked, why, browserMissing, SAVE_REFUSED } from './review-helpers.ts';
+import { CLI, withRebuiltFixture, withServer, withPage, postMark, CASE_KINDS, asked, why, browserMissing, SAVE_REFUSED, openScreenInfo } from './review-helpers.ts';
 import type { Config } from './review-helpers.ts';
 
 const RENAME = 'PUT:/api/v1/document/{documentId}/name';
@@ -18,7 +18,7 @@ const ENDED = { text: '끝난 문서: 끝난 뒤의 쓰기 요청은 거부된�
 const KINDS = { ended: ENDED, boundary: CASE_KINDS.boundary };
 const AT = new Date('2026-10-20T01:00:00Z');
 
-const casesTab = '#left .views.side button:has-text("경우 종류")';
+const casesTab = '#left .views.side button:has-text("테스트 관점")';
 const kindRow = (kind: string) => `#case-kind-list li[data-kind="${kind}"]`;
 const undecidedIds = (p: Page) => p.locator('#center .case-undecided li.case-row').evaluateAll((els) => els.map((e) => e.getAttribute('data-node')));
 const runCli = (config: Config, ...args: string[]) => spawnSync(process.execPath, [CLI, ...args.slice(0, 1), path.join(config.configDir, 'config.json'), ...args.slice(1)], { encoding: 'utf8' }).stdout;
@@ -52,7 +52,7 @@ test('the review data carries, for each case kind, the screens and calls picked 
     }));
 });
 
-test('in a browser, 「경우 종류 N」 is the third list tab only while caseKinds is set, N adding up every kind\'s undecided candidates, and each kind\'s line counts its picks, undecided candidates and cases with no tests', { skip: browserMissing }, async () => {
+test('in a browser, 「테스트 관점 N」 is the third list tab only while caseKinds is set, N adding up every kind\'s undecided candidates, and each kind\'s line counts its picks, undecided candidates and cases with no tests', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -65,7 +65,7 @@ test('in a browser, 「경우 종류 N」 is the third list tab only while caseK
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        assert.deepEqual(await p.locator('#left .views.side button').allTextContents(), ['화면 11', '태그 없음 13', '경우 종류 29']);
+        assert.deepEqual(await p.locator('#left .views.side button').allTextContents(), ['화면 11', '태그 없음 13', '테스트 관점 29']);
         await p.click(casesTab);
         assert.deepEqual(await p.locator('#case-kind-list li .kind-counts').allTextContents(), ['대상 2 · 미판정 8 · 빈칸 4', '대상 0 · 미판정 21 · 빈칸 0']);
         assert.equal(await p.evaluate(() => location.hash), '#cases?kind=ended');
@@ -74,7 +74,7 @@ test('in a browser, 「경우 종류 N」 is the third list tab only while caseK
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        assert.equal(await p.textContent(casesTab), '경우 종류 0');
+        assert.equal(await p.textContent(casesTab), '테스트 관점 0');
         await p.click(casesTab);
         assert.equal(await p.textContent('#center .case-undecided p.muted'), '미판정 후보가 없습니다.');
       })));
@@ -154,8 +154,8 @@ test('in a browser, an agent\'s 「대상 아님」 waits in an open 「검토 �
       withPage(base, async (p, errors) => {
         await p.waitForSelector('#screen-list li');
         const tab = p.locator(casesTab);
-        assert.equal(await tab.textContent(), '경우 종류 30');
-        assert.deepEqual([await tab.getAttribute('title'), await tab.getAttribute('aria-label')], ['미판정 27 · 검토 중 3', '경우 종류 30: 미판정 27 · 검토 중 3']);
+        assert.equal(await tab.textContent(), '테스트 관점 30');
+        assert.deepEqual([await tab.getAttribute('title'), await tab.getAttribute('aria-label')], ['미판정 27 · 검토 중 3', '테스트 관점 30: 미판정 27 · 검토 중 3']);
         await openKind(p, 'ended');
         assert.equal(await p.textContent(`${kindRow('ended')} .kind-counts`), '대상 3 · 검토 중 3 · 미판정 6 · 빈칸 6');
         assert.equal(await p.textContent(`${kindRow('boundary')} .kind-counts`), '대상 0 · 미판정 21 · 빈칸 0');
@@ -217,14 +217,14 @@ function setBaseline(config: Config, copy: string) {
 const newChipIds = (p: Page) => p.locator('#center .case-undecided li.case-row:has(.chip.change-new)').evaluateAll((els) => els.map((e) => e.getAttribute('data-node')));
 const savedNodes = (config: Config) => loadMarks(config.marksDir).filter((m) => m.target!.case === 'ended' && m.author === 'reviewer').map((m) => [m.target!.node, m.status]).sort();
 
-test('in a browser, with baselineMap a kind\'s line and its undecided box count the undecided candidates the baseline map does not have as 「신규 N」, each carries a 「신규」 chip naming that map, here and in 「경우별 테스트」, the tab count stays, and 「신규 N」 shows only those', { skip: browserMissing }, async () => {
+test('in a browser, with baselineMap a kind\'s line and its undecided box count the undecided candidates the baseline map does not have as 「신규 N」, each carries a 「신규」 chip naming that map, here and in 「관점별 테스트」, the tab count stays, and 「신규 N」 shows only those', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: KINDS }, (config, copy) => {
     seed(config);
     setBaseline(config, copy);
     return withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
-        assert.equal(await p.textContent(casesTab), '경우 종류 25');
+        assert.equal(await p.textContent(casesTab), '테스트 관점 25');
         await p.click(casesTab);
         assert.deepEqual(await p.locator('#case-kind-list li .kind-counts').allTextContents(), ['대상 3 · 미판정 6 (신규 2) · 빈칸 6', '대상 2 · 미판정 19 (신규 3) · 빈칸 2']);
         assert.equal(await p.getAttribute(`${kindRow('ended')} .kind-new`, 'title'), '미판정 가운데 v1.0 지도에 없던 화면과 요청 2개입니다');
@@ -371,7 +371,7 @@ test('in a browser, saving checked candidates stops at the first failure, says w
       })));
 });
 
-test('in a browser, the case tab keeps its kind and pressed candidate in the address, shows that candidate\'s conversation and form on the right apart from the screen tab\'s, opens a screen or call from its name, and a later mark from 「경우별 테스트」 wins over the tab\'s', { skip: browserMissing }, async () => {
+test('in a browser, the case tab keeps its kind and pressed candidate in the address, shows that candidate\'s conversation and form on the right apart from the screen tab\'s, opens a screen or call from its name, and a later mark from 「관점별 테스트」 wins over the tab\'s', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: KINDS }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -435,4 +435,47 @@ test('in a browser, a focused candidate checkbox keeps the focus while another c
         assert.equal(await p.evaluate(() => document.activeElement!.getAttribute('name')), LIST);
         assert.equal(await p.isChecked(`#center input[name="${LIST}"]`), true);
       })));
+});
+
+const OLD_NAMES = /경우 종류|경우별 테스트/;
+const oldNamesShown = (p: Page) => p.evaluate((source) => {
+  const old = new RegExp(source);
+  const attrs = [...document.querySelectorAll('[title], [aria-label], [placeholder]')].flatMap((e) => ['title', 'aria-label', 'placeholder'].map((a) => e.getAttribute(a) ?? ''));
+  return [document.body.innerText, ...attrs].filter((t) => old.test(t));
+}, OLD_NAMES.source);
+
+test('in a browser, the page calls the case kinds 「테스트 관점」 on the tab, the screen info and the reason dialog, and the tests of each 「관점별 테스트」, and no text, title or aria-label says 「경우 종류」 or 「경우별 테스트」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ caseKinds: KINDS }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        const tab = p.locator('#left .views.side button >> nth=2');
+        assert.equal(await tab.textContent(), '테스트 관점 29');
+        assert.equal(await tab.getAttribute('aria-label'), '테스트 관점 29: 미판정 29 · 검토 중 0');
+        assert.deepEqual(await oldNamesShown(p), []);
+
+        await tab.click();
+        await p.click(kindRow('ended'));
+        await p.locator('#center .title-row .mono:text-is("case:ended")').waitFor();
+        assert.deepEqual(await oldNamesShown(p), []);
+
+        await p.click('#left .views.side button:has-text("화면")');
+        await p.click('#screen-list li:has-text("/admin/member")');
+        await openScreenInfo(p);
+        const cases = p.locator('#center .screen-info > .cases');
+        assert.equal(await cases.locator('h2').textContent(), '관점별 테스트');
+        assert.equal(await cases.locator('> p.muted').textContent(), '이 화면에서 시험할 테스트 관점');
+        assert.deepEqual(await oldNamesShown(p), []);
+
+        await cases.locator('li.case-undecided-row button.no').first().click();
+        await p.locator(asked).waitFor();
+        assert.equal(await p.locator(`${asked} .subject .label`).first().textContent(), '테스트 관점');
+        assert.deepEqual(await oldNamesShown(p), []);
+      })));
+});
+
+test('no file of the review page has 「경우 종류」 or 「경우별 테스트」 in it, so states the browser tests do not reach do not show them either', () => {
+  const dir = path.join(import.meta.dirname, '../src/review-page');
+  const left = fs.readdirSync(dir).filter((f) => OLD_NAMES.test(fs.readFileSync(path.join(dir, f), 'utf8')));
+  assert.deepEqual(left, []);
 });

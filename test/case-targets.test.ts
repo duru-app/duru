@@ -344,7 +344,7 @@ test('the README and the decision record say what a reviewer sees of an agent\'s
   const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
   const readme = read('../README.md');
   assert.match(readme, /`\| under review N`/);
-  assert.match(readme, /「경우 종류 N」[\s\S]*「미판정 U · 검토 중 R」/);
+  assert.match(readme, /「테스트 관점 N」[\s\S]*「미판정 U · 검토 중 R」/);
   assert.match(readme, /「검토 중 N」 lists, open and in the same three groups[\s\S]*「✓ N」 accepts and 「✕ N」 reverts them all/);
   assert.match(readme, /`"of": "<ID of the agent's mark>"`/);
   assert.match(readme, /`under review: N` follows `undecided`/);
@@ -353,4 +353,15 @@ test('the README and the decision record say what a reviewer sees of an agent\'s
   const decisions = read('../docs/decisions.md');
   assert.match(decisions, /\*\*An agent's 「대상 아님」 waits under review until a reviewer accepts it on the review page/);
   assert.match(decisions, /- A new status value, `under-review`[\s\S]*- A review record with no status[\s\S]*older `duru wait`[\s\S]*- No new field/);
+});
+
+test('the README, the agent instructions and the decision record quote the page as 「테스트 관점」 and 「관점별 테스트」, while the config key and the command lines keep caseKinds and case kind', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const [readme, skill, decisions] = [read('../README.md'), read('../skills/duru/SKILL.md'), read('../docs/decisions.md')];
+  for (const doc of [readme, skill]) assert.doesNotMatch(doc, /「경우 종류|「경우별 테스트」/);
+  assert.match(readme, /the list has a third tab, 「테스트 관점 N」/);
+  assert.match(readme, /With `caseKinds` set, 「관점별 테스트」 has a button per kind/);
+  assert.match(readme, /`case kind <kind>: undecided N/);
+  assert.match(skill, /the review page's 「테스트 관점」 tab/);
+  assert.match(decisions, /\*\*The review page calls the case kinds 「테스트 관점」 and the tests of each kind on a screen or call\s+「관점별 테스트」/);
 });

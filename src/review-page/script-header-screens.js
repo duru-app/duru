@@ -137,7 +137,7 @@ const screenFilterBoxes = () => [...activeScreenFilters().map((f) => h('label', 
 function caseKindsTab(side) {
   const [undecided, review] = [undecidedTotal(), reviewTotal()];
   const parts = `미판정 ${undecided} · 검토 중 ${review}`;
-  return side('cases', '경우 종류', undecided + review, parts, `경우 종류 ${undecided + review}: ${parts}`);
+  return side('cases', '테스트 관점', undecided + review, parts, `테스트 관점 ${undecided + review}: ${parts}`);
 }
 
 function renderLeft() {
@@ -163,7 +163,7 @@ function renderLeft() {
     }
     return renderUntaggedList();
   }
-  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined && m.target.candidate === undefined), (m) => (m.target.part ? `${m.target.node} · ${tagLabel(m.target)}` : m.target.screens !== undefined ? orderLabel({ screens: m.target.screens }) : m.key), h('p', { class: 'muted' }, '맵에서 사라진 노드, 화면 하나가 맵에서 사라진 화면 순서, 설정에서 빠진 경우 종류, 결과에서 사라진 테스트, 화면에서 사라진 접근 조건과 들어오는 링크에 달린 코멘트가 여기 남습니다.'));
+  const detached = markList('떨어져 나감', 'detached', marks.detached.filter((m) => m.target.story === undefined && m.target.candidate === undefined), (m) => (m.target.part ? `${m.target.node} · ${tagLabel(m.target)}` : m.target.screens !== undefined ? orderLabel({ screens: m.target.screens }) : m.key), h('p', { class: 'muted' }, '맵에서 사라진 노드, 화면 하나가 맵에서 사라진 화면 순서, 설정에서 빠진 테스트 관점, 결과에서 사라진 테스트, 화면에서 사라진 접근 조건과 들어오는 링크에 달린 코멘트가 여기 남습니다.'));
   const list = keptLeftList(left, tabs, 'screen-list');
   if (list) {
     const search = left.querySelector(':scope > .filters > input[type=search]');

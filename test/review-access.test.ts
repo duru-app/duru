@@ -132,7 +132,7 @@ test('in a browser, with case kinds in the config every screen and every call sh
 
         await p.click('#screen-list li:has-text("/signin")');
         await openScreenInfo(p);
-        assert.equal(await section.locator('h2').textContent(), '경우별 테스트');
+        assert.equal(await section.locator('h2').textContent(), '관점별 테스트');
         assert.equal(await section.locator('li:not(.case-undecided-row)').count(), 0);
         assert.deepEqual(await section.locator('.case-kinds button').allTextContents(), [CASE_KINDS.boundary, CASE_KINDS.legacy]);
         assert.deepEqual(await section.locator('.case-kinds button').evaluateAll((els) => els.map((e) => [e.getAttribute('title'), e.getAttribute('aria-pressed')])), [['@case:boundary', 'false'], ['@case:legacy', 'false']]);
@@ -486,7 +486,7 @@ const chips = (section: Locator) => section.locator('.case-head .chip').evaluate
 const kindButtons = (section: Locator) => section.locator('.case-kinds button').evaluateAll((els) => els.map((e) => [e.textContent, e.getAttribute('aria-pressed')]));
 const DATE_TITLE = (tail: string) => new RegExp(`^\\d{2}\\. \\d{1,2}\\. \\d{1,2}\\. (오전|오후) \\d{1,2}:\\d{2} ${tail}`);
 
-test('in a browser, 「경우별 테스트」 shows 「규칙」 for a kind a rule picked, the author for one a person picked, and 「대상 아님 · <author>」 with its reason under it for one taken out, with the rule or the date on hover, in screen info and call details', { skip: browserMissing }, async () => {
+test('in a browser, 「관점별 테스트」 shows 「규칙」 for a kind a rule picked, the author for one a person picked, and 「대상 아님 · <author>」 with its reason under it for one taken out, with the rule or the date on hover, in screen info and call details', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: RULED }, (config) =>
     withServer(config, 'reviewer', async (base) => {
       for (const node of [RENAME, '/admin/member#AdminMember']) assert.equal((await postMark(base, { target: { node, case: 'boundary' }, status: 'needed' })).status, 201);
@@ -539,7 +539,7 @@ test('in a browser, 「이 요청은 규칙에서 빼기…」 and the pressed k
         await call.locator('.take-out').click();
         await p.locator(asked).waitFor();
         assert.equal(await p.textContent(`${asked} h2`), '이 요청을 규칙에서 뺍니다');
-        assert.equal(await p.textContent(`${asked} .subject`), `경우 종류${RULED.ended.text} case:ended요청${RENAME}규칙${RULE_TEXT}`);
+        assert.equal(await p.textContent(`${asked} .subject`), `테스트 관점${RULED.ended.text} case:ended요청${RENAME}규칙${RULE_TEXT}`);
         assert.equal(await p.textContent(`${asked} button.discard`), '빼기');
         assert.equal(await p.isDisabled(`${asked} button.discard`), true);
         await p.fill(why, '   ');
@@ -590,7 +590,7 @@ test('in a browser, 「이 요청은 규칙에서 빼기…」 and the pressed k
         await openScreenInfo(p);
         await p.locator('#center .screen-info > .cases .take-out').click();
         assert.equal(await p.textContent(`${asked} h2`), '이 화면을 규칙에서 뺍니다');
-        assert.match((await p.textContent(`${asked} .subject`))!, /^경우 종류.*case:legacy화면\/admin\/member AdminMember규칙화면 경로 \/admin\/\* \(설정 caseKinds\.legacy\.picks 1번째 줄\)$/);
+        assert.match((await p.textContent(`${asked} .subject`))!, /^테스트 관점.*case:legacy화면\/admin\/member AdminMember규칙화면 경로 \/admin\/\* \(설정 caseKinds\.legacy\.picks 1번째 줄\)$/);
         await p.click(`${asked} button.cancel`);
         assert.equal(picks().length, 2);
       })));
@@ -717,7 +717,7 @@ test('in a browser, a 「대상 아님」 written by duru case on a request no r
   });
 });
 
-test('in a browser, 「경우별 테스트」 has a line for each kind nobody decided on the screen or call, with ✓ saving 「대상」 at once and ✕ asking the reason as 「대상 아님…」, while the kind buttons stay as they were', { skip: browserMissing }, async () => {
+test('in a browser, 「관점별 테스트」 has a line for each kind nobody decided on the screen or call, with ✓ saving 「대상」 at once and ✕ asking the reason as 「대상 아님…」, while the kind buttons stay as they were', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: RULED }, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {

@@ -489,7 +489,7 @@ test('in a browser, pressing a case kind on and off on a screen or a call leaves
   });
 });
 
-test('in a browser, 「변경 기록」 under 「전체」 lists each case kind picked or taken out in time order, newest first, with on or off, the kind, its screen or call, who and when, and leaves them out of the other filters; a line opens its screen or call with 「경우별 테스트」 in view, and with no case kinds in the config the filter is not there', { skip: browserMissing }, async () => {
+test('in a browser, 「변경 기록」 under 「전체」 lists each case kind picked or taken out in time order, newest first, with on or off, the kind, its screen or call, who and when, and leaves them out of the other filters; a line opens its screen or call with 「관점별 테스트」 in view, and with no case kinds in the config the filter is not there', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config) => {
     addMark(config.marksDir, { target: { node: '/lab#Lab' }, note: 'is the lab done?', author: 'reviewer' }, new Date('2026-10-12T01:00:00Z'));
     addMark(config.marksDir, { target: { node: '/lab#Lab', case: 'boundary' }, status: 'needed', author: 'reviewer' }, new Date('2026-10-12T02:00:00Z'));

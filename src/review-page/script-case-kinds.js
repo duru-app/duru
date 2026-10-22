@@ -314,7 +314,7 @@ function renderCaseCenter() {
   clearCenterHead();
   const center = document.getElementById('center-body');
   const kind = state.caseKind;
-  if (kind === null) return fill(center, h('p', { class: 'muted' }, '설정에 경우 종류(caseKinds)가 없습니다.'));
+  if (kind === null) return fill(center, h('p', { class: 'muted' }, '설정에 테스트 관점(caseKinds)이 없습니다.'));
   const { nodes } = kindTargetsOf(kind);
   const ids = Object.keys(nodes).sort(caseOrder);
   const rule = typeof state.caseFilter === 'number' ? state.caseFilter : null;
@@ -408,7 +408,7 @@ function askCaseOut(kind) {
       return {
         title: `고른 ${ids.length}개에서는 이 경우를 시험하지 않습니다`,
         subject: [
-          h('span', { class: 'label' }, '경우 종류'),
+          h('span', { class: 'label' }, '테스트 관점'),
           h('div', {}, state.data.caseKinds[kind].text, ' ', h('span', { class: 'muted mono' }, `case:${kind}`)),
           h('span', { class: 'label' }, '고른 것'),
           h('div', { class: 'mono' }, ids.map(nodeNameText).join(', ')),
@@ -430,7 +430,7 @@ function askNotTarget(id, kind, refocus) {
     describe: () => ({
       title: `이 ${word}에서는 이 경우를 시험하지 않습니다`,
       subject: [
-        h('span', { class: 'label' }, '경우 종류'),
+        h('span', { class: 'label' }, '테스트 관점'),
         h('div', {}, state.data.caseKinds[kind].text, ' ', h('span', { class: 'muted mono' }, `case:${kind}`)),
         h('span', { class: 'label' }, word),
         h('div', {}, callOf(id) ? h('span', { class: 'mono' }, id) : [screenLabel(id), ' ', h('span', { class: 'muted' }, screenOf(id)?.component)]),

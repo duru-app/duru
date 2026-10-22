@@ -339,7 +339,7 @@ test('in a browser, a reply written without --server is not pushed to the open p
   );
 });
 
-test('in a browser, a case sent with duru case --server shows in 「경우별 테스트」 on the open page without a reload, one the agent takes out waiting as 「검토 중」 with its reason and a picked one with its kind pressed and agent on it, and text being typed in the form keeps its place', { skip: browserMissing }, async () => {
+test('in a browser, a case sent with duru case --server shows in 「관점별 테스트」 on the open page without a reload, one the agent takes out waiting as 「검토 중」 with its reason and a picked one with its kind pressed and agent on it, and text being typed in the form keeps its place', { skip: browserMissing }, async () => {
   await withRebuiltFixture({ caseKinds: CASE_KINDS }, (config, copy) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {

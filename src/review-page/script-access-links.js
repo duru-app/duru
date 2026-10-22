@@ -118,7 +118,7 @@ function askTakeOut(id, kind, refocus) {
     describe: () => ({
       title: `이 ${word}을 규칙에서 뺍니다`,
       subject: [
-        h('span', { class: 'label' }, '경우 종류'),
+        h('span', { class: 'label' }, '테스트 관점'),
         h('div', {}, state.data.caseKinds[kind].text, ' ', h('span', { class: 'muted mono' }, `case:${kind}`)),
         h('span', { class: 'label' }, word),
         h('div', {}, callOf(id) ? h('span', { class: 'mono' }, id) : [screenLabel(id), ' ', h('span', { class: 'muted' }, screenOf(id)?.component)]),
@@ -235,10 +235,10 @@ function caseSection(node) {
     ...kinds.filter(([kind]) => undecidedHere(kind)).map(([kind, { text }]) => undecidedRow(kind, text)),
   ];
   return h('div', { class: 'cases' },
-    h('h2', {}, '경우별 테스트'),
+    h('h2', {}, '관점별 테스트'),
     rows.length ? h('ul', { class: 'plain' }, rows) : null,
     kinds.length ? [
-      h('p', { class: 'muted' }, `이 ${nodeWord(node.id)}에서 시험할 경우 종류`),
+      h('p', { class: 'muted' }, `이 ${nodeWord(node.id)}에서 시험할 테스트 관점`),
       h('div', { class: 'case-kinds' }, kinds.map(([kind, { text, values }]) => {
         const on = picked.has(kind);
         const ruled = on && by[kind].rules.length > 0;
