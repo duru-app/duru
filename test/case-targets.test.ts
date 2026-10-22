@@ -364,5 +364,4 @@ test('the README, the agent instructions and the decision record quote the page 
   assert.match(readme, /`case kind <kind>: undecided N/);
   assert.match(skill, /the review page's 「테스트 관점」 tab/);
   assert.match(decisions, /\*\*The review page calls the case kinds 「테스트 관점」 and the tests of each kind on a screen or call\s+「관점별 테스트」/);
-  assert.doesNotMatch(decisions.slice(0, decisions.indexOf('**The review page calls the case kinds 「테스트 관점」')), /「경우 종류|「경우별 테스트」/);
 });

@@ -591,7 +591,7 @@ saving at once lose one another's picks, and the file keeps no author or date), 
 config (no record of who picked what when, and a reviewer would leave the page to edit a file). Marks already keep
 the author, the date and the history, merge in git without a conflict because each is a new file, and come through
 the same reader, which marks a pick detached when its node leaves the map or its kind leaves `caseKinds`.
-The buttons sit under 「관점별 테스트」, where the role and setting cases already show their tests: for a screen in
+The buttons sit under 「경우별 테스트」, where the role and setting cases already show their tests: for a screen in
 its screen info, and for a call in the call's details (both in the right pane until the right pane was given to the
 conversation, see below). Compared: a column in the middle table (the table is laid out by
 depth and option value, and a kind applies to the whole screen or call), and the status buttons of the mark form
@@ -1404,7 +1404,7 @@ instead of half of what is left. Until it is dragged, the drawing takes half of 
 starting width, so dragging the right edge moves only the middle pane while the drawing still grows with the
 window. The widths last only until the page is loaded again, since the page keeps nothing
 in browser storage, and there is no keyboard resizing. Each pane has a floor: 300px for the list, where 「화면」 and
-「태그 없음」 fit on one line with three-digit counts and a classic scrollbar, and 「테스트 관점」 moves to a second line
+「태그 없음」 fit on one line with three-digit counts and a classic scrollbar, and 「경우 종류」 moves to a second line
 when it does not fit beside them; 240px for the drawing, which scrolls sideways anyway;
 360px for the middle pane, where the address bar over the app frame and the screen's title fit, while the table of
 tests may still scroll sideways when a test's name holds a long unbroken word such as `@screen:/home#Home`, which no
@@ -1816,7 +1816,7 @@ Alternatives compared:
 A pick is kept as a mark so that who picked which kind where and when is not lost (see the entry on kinds of test case
 named in the config). Shown in the conversation, every press of a kind button added a 「필요」 or 「필요 없음」 line that
 could not itself be pressed, so turning a kind on and off filled the conversation with lines that are not talk with
-the agent; the current state is what the buttons under 「관점별 테스트」 show. So the conversation of a screen or call
+the agent; the current state is what the buttons under 「경우별 테스트」 show. So the conversation of a screen or call
 leaves out every mark whose target names a case, and so do 「이 화면 N」, 「전체 N」 and the counts in the list, the flow and
 the rows. This narrows the rule above that 「전체」 leaves out marks carrying only a status: the picks are status-only
 marks too, and they show only under 「변경 기록」. The mark files are written as before, and the task list and what the
@@ -1827,7 +1827,7 @@ line, latest first, across screens and calls rather than grouped like the other 
 who changed which kind and when; each line names its screen or call, 켬 or 끔, the kind, and always its author, even on
 a page only one reviewer has signed, where other lines leave the author out. 「미답변 N」 keeps counting the
 comments while 「변경 기록」 is chosen. Pressing a line opens the screen or call, opens the fold that holds
-「관점별 테스트」 and scrolls the middle pane to it, since that is where the pick lives now.
+「경우별 테스트」 and scrolls the middle pane to it, since that is where the pick lives now.
 Alternatives compared:
 - Keeping picks in the conversation: the lines pile up with each press and cannot be pressed to change the pick.
 - Dropping the records from the page: nothing on the page would say who picked a kind or when.
@@ -2655,10 +2655,10 @@ A 「대상 아님」 outside the rules now counts only with a note: a kind pres
 with no note, and calling that a decision would hide the candidate. Such a candidate stays undecided and is handed to
 a person: its mark is a person's, and the agent never changes a person's mark, also where the mark leaves the target
 undecided, since the command would otherwise silently reverse what the reviewer pressed. It keeps `undecided` at 3,
-and its line says only a person can decide it, so the agent tells the user instead of looping; the 「테스트 관점」 tab
+and its line says only a person can decide it, so the agent tells the user instead of looping; the 「경우 종류」 tab
 (#313) shows such a candidate with a line under it saying who took it out and when, and 「사람이 정할 것」 there lists
 only those, so the reviewer decides them on the page. The buttons work as before, and a rule's pick is still taken
-out only with a reason. A reasoned 「대상 아님」 outside the rules shows in 「관점별 테스트」 as 「대상 아님 · <author>」 with the
+out only with a reason. A reasoned 「대상 아님」 outside the rules shows in 「경우별 테스트」 as 「대상 아님 · <author>」 with the
 reason, as one taken out of a rule does; one without a reason shows no row, as before.
 `undecided` exits with 0 when nothing is left, 3 while something is, 1 when the config, the map or the marks cannot be
 read, and 2 when called wrongly, since duru already uses 1 for failure and 2 for misuse, and grep, diff, ESLint and
@@ -2861,8 +2861,8 @@ Alternatives compared:
 - Keeping the info at the top of the right pane and unfolding the conversation under it: the two would share one
   360px pane, as #244 found for a screen.
 
-**The review page has a 「테스트 관점」 tab where the undecided candidates of a kind are decided several at once, and
-「관점별 테스트」 has a line for each kind still undecided on a screen or call, decided there with ✓ and ✕.**
+**The review page has a 「경우 종류」 tab where the undecided candidates of a kind are decided several at once, and
+「경우별 테스트」 has a line for each kind still undecided on a screen or call, decided there with ✓ and ✕.**
 Asked for in #313; the driver chose the shape on the example app's page with each choice drawn in (2026-10-20 and
 2026-10-21). On into-sign 1.5.0 one kind leaves 182 candidates undecided and a kind without rules 243 (#314), too many
 to press one by one, so the tab works as the 「태그 없음」 tab does: a check box on each candidate and on each group, and
@@ -2879,7 +2879,7 @@ a kind like 「끝난 문서」 takes every write request, which would be one ch
 method by colour on each row too (Burp Suite's site map, Swagger UI), and API testing guides look at the requests
 that change state first. The words are 「대상」 and 「대상 아님…」, the same as the tab's numbers, and apart from a
 reviewer's 「테스트 필요」 and 「충분」 next to them; Azure Test Plans calls the same state 「Not applicable」. So the chip of a
-kind taken out, 「불필요 · <author>」 before, now reads 「대상 아님 · <author>」. In 「관점별 테스트」 a kind nobody decided
+kind taken out, 「불필요 · <author>」 before, now reads 「대상 아님 · <author>」. In 「경우별 테스트」 a kind nobody decided
 had nothing telling it apart from one pressed off, so it gets a line with ✓ and ✕ as icons, with the words on hover
 and as `aria-label`; the kind buttons stay as they were. Details settled on the way:
 - The tab is the third button beside 「화면」 and 「태그 없음」. 「대상」 and 「대상 아님」 start folded with their counts and
@@ -2887,7 +2887,7 @@ and as `aria-label`; the kind buttons stay as they were. Details settled on the 
   one line (into-sign's counts run to three digits), and shrinking them cut every name to 「화…」, so a tab that does not
   fit moves whole to a second line; raising the floor would have taken width from the other panes also where
   `caseKinds` is not set.
-- A candidate taken out of a rule that no longer picks it counts as undecided, so 「관점별 테스트」 gives it the
+- A candidate taken out of a rule that no longer picks it counts as undecided, so 「경우별 테스트」 gives it the
   「미판정」 line instead of the 「대상 아님」 row, which would say 대상 아님 where the tab says 미판정. Where a mark keeps a
   kind undecided, the line says who left it and when, in the tab's words, instead of 「아직 아무도 정하지 않았습니다」,
   which a kind pressed off would make untrue. Unlike the tab, it does so also for an agent's mark, since on a single
@@ -2940,10 +2940,10 @@ people decide it: `duru case` refuses it, and its 「미판정」 line reads 「
 `duru undecided`, the task list and `rebuild` add the number under review only when there is one (`, N under review`,
 `| under review N` on `rebuild` to match the other counts there), so for a project with no agent `not-needed` they
 print what they printed before, byte for byte. `duru undecided` exits with 0 when only candidates under review are
-left and says how many wait in a last line. On the page 「테스트 관점 N」 adds undecided and under review, with
+left and says how many wait in a last line. On the page 「경우 종류 N」 adds undecided and under review, with
 「미판정 U · 검토 중 R」 on hover, since counting only undecided would show 0 while 441 wait. A chosen kind has an open
 「검토 중 R」 group above 「미판정」, in the same three groups, with check boxes and 「✓ N」 · 「✕ N」 that read 「받아들이기」 ·
-「되돌리기」 on hover and as `aria-label`; 「관점별 테스트」 gives such a kind a line with 「검토 중」 and ✓ ✕ under the kind's
+「되돌리기」 on hover and as `aria-label`; 「경우별 테스트」 gives such a kind a line with 「검토 중」 and ✓ ✕ under the kind's
 text, as #313 did for 「미판정」.
 Reference cases: SARIF 2.1.0 §3.35.3 keeps a suppression `underReview` apart from `accepted`, and a reader has to
 look at the state to know whether the result is really suppressed; SonarQube security hotspots keep the change to
@@ -2985,7 +2985,7 @@ undecided in all)`, and exits with 3 while any is left and 0 once none is, whate
 `baselineMap` it says `--new needs baselineMap in the config` and exits with 2, as for a call that cannot work.
 `rebuild` adds `, M of them new since <file>` after each kind's undecided count; `new since` is already taken on the
 line above for what the rules newly pick, so the words say which count they belong to. The driver decided (2026-10-21)
-that plain `duru undecided`, the task list and the tab number 「테스트 관점 N」 do not read the baseline map: if they did,
+that plain `duru undecided`, the task list and the tab number 「경우 종류 N」 do not read the baseline map: if they did,
 a broken `baselineMap` would stop `duru undecided`, `duru tasks` and the task list printed at the end of a review,
 which work today. The task list only adds a sentence on when to run `--new` while the config names `baselineMap`.
 The agent's guidance tells it to use `--new` only for a kind whose older candidates the user said to leave for
@@ -2994,7 +2994,7 @@ older, so `--new` would end at 0 at once.
 On the page, from the driver's choice on drawings (2026-10-21): the kind's line reads 「미판정 N (신규 M)」 and the
 undecided box has 「신규 M」 under it; each new candidate carries a 「신규」 chip in the colour of the screen list's mark for
 a screen the baseline does not have, with 「<folder> 지도에 없던 요청입니다」 (or 「화면」) as `title` and `aria-label`; a 「신규
-M」 button above the list shows only them. 「관점별 테스트」 puts the same chip on an undecided kind's line, since a new
+M」 button above the list shows only them. 「경우별 테스트」 puts the same chip on an undecided kind's line, since a new
 call had no mark anywhere. Names on the page are one or two words or an icon, with the meaning on hover: the screen
 list's 「생김」 became 「신규」, the same meaning, and 「사람이 정할 것 N」 became a person icon with the number and 「직접
 판정」 on hover. A view that hides lines must not save lines checked before they were hidden, so 「대상」 and 「대상
@@ -3012,7 +3012,7 @@ Alternatives compared:
   first seen: the `baselineMap` decision above and the issue settled these.
 - Plain `duru undecided` and the task list reading the baseline map and adding 「M new since …」: an agent would see the
   new ones first, but a broken baseline map would stop commands that work now.
-- 「테스트 관점 425 · 새로 16」 on the tab: with three-digit counts the tab already moves to a second line in a 300 px list.
+- 「경우 종류 425 · 새로 16」 on the tab: with three-digit counts the tab already moves to a second line in a 300 px list.
 - The chip alone, or the chip with new candidates moved to the top of each group: finding 7 among 182 by the chip
   alone means reading 182 lines, and moving lines changes the order the agent's list and the page share.
 - `--new` whenever the config names `baselineMap`: older misses in a kind decided all at once would pass without a
@@ -3116,7 +3116,7 @@ line, which takes the fewest lines. A row without a chip keeps its counts right 
 **The review page calls the case kinds 「테스트 관점」 and the tests of each kind on a screen or call
 「관점별 테스트」, while the config key `caseKinds` and the `case kind …` lines the commands print keep their names.**
 Asked for in #381. Until then the tab read 「경우 종류 N」 and that part of the screen information and the call details
-「경우별 테스트」, and the entries above used those names until they were changed with the page. 「경우 종류」 did not
+「경우별 테스트」, and the entries above keep the names the page had when they were written. 「경우 종류」 did not
 say that it gathers the angles a screen or call is tested from, such as 「끝난 문서」 or 「입력 경계」. The driver chose
 「테스트 관점」 (2026-10-21) after the test viewpoints (テスト観点) of Japanese QA and their matrix, which sets what is
 tested against the viewpoints and marks each cell required, optional or out of scope, as duru sets screens and calls
