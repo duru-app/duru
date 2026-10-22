@@ -185,6 +185,23 @@ test('a pair a reviewer judged for a test that passed through a screen in two pr
   ]);
 });
 
+test('a judged pair keeps the worst run of a test run twice without a project or twice in one project, and a pair whose judgment was undone keeps every project\'s run', () => {
+  const judgment = (kind: string, date = '2026-10-01T00:00:00Z') => ({ id: date, date, author: 'r', reason: 'r', kind, node: '/a#A', test: { source: 'results/e2e.json', file: 'sign.spec.ts', title: 'signs' } });
+  const signs = { title: 'signs', file: 'sign.spec.ts', line: 5, tags: [], source: 'results/e2e.json' };
+  const run = (project: string | null, status: TestStatus) => ({ ...signs, format: project ? 'playwright' : 'vitest', project, status, level: 'interact' });
+  const compared = (base: BaselineTests, judged: object) => baselineTestsLines(compareTests(base, judged, MAP));
+  const twice = was({ ...signs, status: 'pass' }, { ...signs, status: 'pass' });
+  assert.deepEqual(compared(twice, applyJudgments({ importers: { '/a#A': [run(null, 'pass'), run(null, 'fail')] } }, [judgment('hand-over')])), [summary(1, 1, 0, 0, 0, 0), '  pass→fail ← sign.spec.ts:5 signs — screen /a#A']);
+  const inProjects = was({ ...signs, project: 'chromium', status: 'pass' }, { ...signs, project: 'firefox', status: 'pass' });
+  const regressed = [summary(2, 1, 0, 0, 0, 0), '  pass→fail ← sign.spec.ts:5 signs (chromium) — screen /a#A'];
+  const repeated = { passed: { '/a#A': [run('chromium', 'pass'), run('chromium', 'fail'), run('firefox', 'pass'), run('firefox', 'pass')] } };
+  assert.deepEqual(compared(inProjects, applyJudgments(repeated, [judgment('hand-over')])), regressed);
+  assert.deepEqual(compared(inProjects, applyJudgments(repeated, [judgment('hand-over'), judgment('undo', '2026-10-02T00:00:00Z')])), regressed);
+  const story = { ...signs, title: 'signs @story:sign', tags: ['story:sign'], format: 'playwright' };
+  const fromStory = { stories: { sign: [{ ...story, project: 'chromium', status: 'pass' }, { ...story, project: 'chromium', status: 'fail' }] }, nodes: {} };
+  assert.deepEqual(compared(was({ ...signs, project: 'chromium', status: 'pass' }), applyJudgments(fromStory, [judgment('hand-over')])), [summary(1, 1, 0, 0, 0, 0), '  pass→fail ← sign.spec.ts:5 signs @story:sign (chromium) — screen /a#A']);
+});
+
 test('tests of the same title in different files are told apart by their files, whose absolute paths differ before the checkout', () => {
   const base = was(
     { title: 'renders', file: '/ci/app/src/a.test.js', status: 'pass' },

@@ -1494,8 +1494,9 @@ confirmed; comparing only tagged tests would compare nothing on mattermost, apps
 no `@screen:` or `@call:` tag. The current side is the judged list `rebuild` prints from, not the result files read
 again, so that the counts match the page and a result file overwritten since (as into-sign's are) does not point the
 test rows and the regressions at different runs. A judged pair stays one row there however many Playwright projects
-the test ran in, as the page shows it, and carries the status of each project's run in `projects`, so that a
-reviewer's judgment does not take the other projects' runs out of the comparison.
+the test ran in, as the page shows it, and carries the worst status of each project's runs in `projects`, or of
+its runs without a project in `worstStatus`, so that a reviewer's judgment, or one taken back, does not take the
+test's other runs out of the comparison.
 Tests are matched in steps. The rows of one test on the current side (one result file, test file, line, title and
 project) are first made one test; an untagged test is one test for each Playwright project it ran in, and in a
 project where the test has rows under a screen or call its status comes from those rows alone, so a run without a

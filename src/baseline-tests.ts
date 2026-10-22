@@ -141,7 +141,7 @@ const worst = (statuses: TestStatus[]) => statuses.reduce((w, s) => (STATUS_RANK
 const byRow = (a: TestRow, b: TestRow) => compare(a.kind === 'call', b.kind === 'call') || compare(a.node, b.node) || compare(a.source, b.source) || compare(a.project ?? '', b.project ?? '');
 const byPlace = (a: Place, b: Place) => compare(a.file ?? '', b.file ?? '') || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.project ?? '', b.project ?? '');
 
-const statusIn = (t: any, project: string | null): TestStatus => (project !== null && t.projects?.[project]) || t.status;
+const statusIn = (t: any, project: string | null): TestStatus => (project !== null && t.projects?.[project]) || t.worstStatus || t.status;
 
 const tagsInTitle = (title: string) => (title.match(/@\S+/g) ?? []).map((t) => t.slice(1));
 
