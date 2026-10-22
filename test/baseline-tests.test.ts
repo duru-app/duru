@@ -172,6 +172,15 @@ test('tests the same in title, project, path end and tags are one test with the 
   ]);
 });
 
+test('runs made one test where only some are under a screen count as under it, and the regression shows the first place among those', () => {
+  const formats = (file: string, line: number, status: TestStatus) => ({ title: 'formats', file, line, format: 'vitest', status });
+  const base = was(formats('/ci/f.test.js', 2, 'pass'), formats('/ci/f.test.js', 8, 'pass'));
+  assert.deepEqual(lines(base, { importers: { '/a#A': [formats('/me/f.test.js', 8, 'fail')] }, discarded: { '/b#B': [formats('/me/f.test.js', 2, 'pass')] } }), [
+    summary(1, 1, 0, 0, 0, 0),
+    '  pass→fail ← /me/f.test.js:8 formats — screen /a#A',
+  ]);
+});
+
 test('a Jest test whose absolute path differs only before the checkout is the same test', () => {
   const base = was({ title: 'works', file: '/home/u1/repo/src/x/a.test.js', status: 'pass' }, { title: 'works', file: '/home/u1/repo/src/y/a.test.js', status: 'pass' });
   assert.deepEqual(lines(base, { importers: { '/a#A': [

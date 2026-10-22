@@ -1502,7 +1502,8 @@ matched. A group that shares that key within one side gets the end of its test f
 time, at the shortest end that tells apart every different file in the group; a group with one file gets none, and
 when the two sides need different lengths the longer is used on both. Tests that still share a key, such as verdict
 lines of one name in one log, get their sorted tags added, and those still alike are one test with the worst
-status of their runs (fail, pending, pass). Paths are compared only by their ends because Jest writes absolute paths
+status of their runs (fail, pending, pass). Such a test is under a screen or call when one of its runs is, and its
+regression line shows the first file and line among the runs that are. Paths are compared only by their ends because Jest writes absolute paths
 that differ from one checkout to another. Whether a baseline test file is gone from the current results is decided
 file by file, at the shortest end that tells that file apart on each side, the longer of the two. Alternative
 compared for the length of the end, settled in a comment on #404:
