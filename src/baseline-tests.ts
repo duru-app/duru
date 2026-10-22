@@ -141,9 +141,11 @@ const worst = (statuses: TestStatus[]) => statuses.reduce((w, s) => (STATUS_RANK
 const byRow = (a: TestRow, b: TestRow) => compare(a.kind === 'call', b.kind === 'call') || compare(a.node, b.node) || compare(a.source, b.source) || compare(a.project ?? '', b.project ?? '');
 const byPlace = (a: Place, b: Place) => compare(a.file ?? '', b.file ?? '') || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.project ?? '', b.project ?? '');
 
+const statusIn = (t: any, project: string | null): TestStatus => (project !== null && t.projects?.[project]) || t.status;
+
 function currentTests(current: CurrentTests, calls: Set<string>) {
   const runs = new Map<string, CurrentTest>();
-  const runsOf = (t: any) => (t.project != null ? [t.project] : t.projects?.length ? t.projects : [null]).map((project: string | null) => {
+  const runsOf = (t: any) => (t.projects ? Object.keys(t.projects) : [t.project ?? null]).map((project: string | null) => {
     const id = JSON.stringify([t.source, t.file, t.line, t.title, project]);
     if (!runs.has(id)) runs.set(id, { title: t.title, tags: t.tags ?? [], file: t.file ?? null, project, status: t.status, place: { file: t.testFile ?? t.file ?? null, line: t.line ?? null, title: t.title, project }, rows: [], offNode: [] });
     return runs.get(id)!;
@@ -152,12 +154,12 @@ function currentTests(current: CurrentTests, calls: Set<string>) {
     for (const [node, list] of Object.entries(current[field] ?? {})) {
       for (const t of list) {
         const listed = via !== 'trace' || LISTED_LEVELS.includes(t.level);
-        for (const run of runsOf(t)) run.rows.push({ node, kind: calls.has(node) ? 'call' : 'screen', via, ...(t.level && { level: t.level }), status: t.status, listed, ref: t.ref ?? testRef(t), source: t.source, project: run.project });
+        for (const run of runsOf(t)) run.rows.push({ node, kind: calls.has(node) ? 'call' : 'screen', via, ...(t.level && { level: t.level }), status: statusIn(t, run.project), listed, ref: t.ref ?? testRef(t), source: t.source, project: run.project });
       }
     }
   }
   const offNode = [...OFF_NODE.flatMap((field) => Object.values(current[field] ?? {}).flat()), ...(current.untagged ?? [])];
-  for (const t of offNode) for (const run of runsOf(t)) run.offNode.push(t.status);
+  for (const t of offNode) for (const run of runsOf(t)) run.offNode.push(statusIn(t, run.project));
   for (const test of runs.values()) test.status = worst(test.rows.length ? test.rows.map((r) => r.status) : test.offNode);
   return [...runs.values()];
 }

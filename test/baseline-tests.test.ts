@@ -7,7 +7,7 @@ import path from 'node:path';
 import { baselineTestsLines, compareTests, readBaselineTests } from '../src/baseline-tests.ts';
 import type { BaselineTests } from '../src/baseline-tests.ts';
 import { loadConfig } from '../src/config.ts';
-import { addJudgment } from '../src/judgments.ts';
+import { addJudgment, applyJudgments } from '../src/judgments.ts';
 import type { TestStatus } from '../src/verdict.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
@@ -15,7 +15,7 @@ const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 const MAP = { screens: ['/a#A', '/b#B', '/c#C'], calls: ['GET:/api/x', 'GET:/api/y'] };
 
 type Run = { title: string; status: TestStatus; file?: string | null; line?: number | null; project?: string | null; tags?: string[] };
-type Row = Run & { source?: string; format?: string; testFile?: string; level?: string; projects?: string[] };
+type Row = Run & { source?: string; format?: string; testFile?: string; level?: string; projects?: Record<string, TestStatus> };
 type Now = Partial<Record<'nodes' | 'importers' | 'passed' | 'awaitingTag' | 'discarded' | 'stories', Record<string, Row[]>>> & { untagged?: Row[] };
 
 const was = (...runs: Run[]): BaselineTests => ({
@@ -124,7 +124,7 @@ test('a skipped Playwright test left only in the untagged list counts as not on 
   );
   assert.deepEqual(lines(base, {
     nodes: { '/a#A': [{ title: 'opens a @screen:/a#A', project: 'chromium', status: 'pass' }] },
-    untagged: [{ title: 'opens b', projects: ['chromium', 'firefox'], status: 'pending' }],
+    untagged: [{ title: 'opens b', projects: { chromium: 'pending', firefox: 'pending' }, status: 'pending' }],
   }), [summary(1, 0, 0, 2, 1, 0)]);
 });
 
@@ -132,8 +132,22 @@ test('a test that passed through a screen in one project and ran without a trace
   const base = was({ title: 'walks', project: 'chromium', status: 'pass' }, { title: 'walks', project: 'firefox', status: 'pass' });
   assert.deepEqual(lines(base, {
     passed: { '/b#B': [{ title: 'walks', project: 'chromium', status: 'pass', level: 'visit' }] },
-    untagged: [{ title: 'walks', projects: ['chromium', 'firefox'], status: 'fail' }],
+    untagged: [{ title: 'walks', projects: { chromium: 'pass', firefox: 'fail' }, status: 'fail' }],
   }), [summary(1, 0, 0, 1, 0, 0)]);
+});
+
+test('a pair handed over from an untagged test that ran without a trace in two projects is compared project by project, each with the status of its own run', () => {
+  const signs = { title: 'signs', file: 'sign.spec.ts', line: 5 };
+  const handedOver = (projects: Record<string, TestStatus>, status: TestStatus) => applyJudgments(
+    { untagged: [{ ...signs, tags: [], source: 'results/e2e.json', format: 'playwright', status, projects }] },
+    [{ id: '1', date: '2026-10-01T00:00:00Z', author: 'r', reason: '', kind: 'hand-over', node: '/a#A', test: { source: 'results/e2e.json', file: 'sign.spec.ts', title: 'signs' } }],
+  );
+  const base = (webkit: TestStatus) => was({ ...signs, project: 'chromium', status: 'pass' }, { ...signs, project: 'webkit', status: webkit });
+  assert.deepEqual(baselineTestsLines(compareTests(base('pass'), handedOver({ chromium: 'pass', webkit: 'fail' }, 'fail'), MAP)), [
+    summary(2, 1, 0, 0, 0, 0),
+    '  pass→fail ← sign.spec.ts:5 signs (webkit) — screen /a#A',
+  ]);
+  assert.deepEqual(baselineTestsLines(compareTests(base('pending'), handedOver({ chromium: 'pass', webkit: 'pending' }, 'pending'), MAP)), [summary(2, 0, 0, 0, 0, 0)]);
 });
 
 test('tests of the same title in different files are told apart by the end of their paths, one folder deep or two', () => {
@@ -527,7 +541,7 @@ test('the README and the decision record say what baselineTests takes, what the 
   assert.match(readme, /- `  pass→fail ← <test file>:<line> <title> \(<project>\) — screen <id>, call <id>, …` —/);
   assert.match(readme, /- `  only in baseline ← <file>: N tests, none of this file's tests are in the current results` —/);
   assert.match(readme, /`baselineTests <path> could not be read: <why>`/);
-  assert.match(readme, /An untagged Playwright test carries the projects it ran\s+in as `projects`\./);
+  assert.match(readme, /An untagged Playwright test carries the projects it ran\s+in as `projects`, each with the worst status of the test's runs in it\./);
   const decisions = read('../docs/decisions.md');
   assert.match(decisions, /\*\*`baselineTests` names the result files kept from an earlier release in the shape of `tests`/);
   assert.match(decisions, /the shortest end that tells apart every different file in the group/);

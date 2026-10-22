@@ -1512,9 +1512,11 @@ compared for the length of the end, settled in a comment on #404:
   its pass→fail would then be printed under the other file's name, or hidden by a failure already there.
 Untagged tests carry their Playwright projects in `tests.json` (`projects`) but stay one entry, since the page and the
 `tests without a node or story tag` count group them without a project; without the projects a Playwright test
-skipped this time, and so left without a trace, would count as deleted. `not on a screen or call now` is counted so
-that tests silently lost from the comparison do not read as a full comparison, and `no test was compared` is printed
-so that no regression is not read as nothing broken. A baseline that cannot be read, or an entry that gives no test,
+skipped this time, and so left without a trace, would count as deleted. Each project carries the worst status of the
+test's runs in it, since the entry's own status is the worst over all projects, and a pair handed over from such a
+test would otherwise show a failure in one project as a regression in another where the test passed.
+`not on a screen or call now` is counted so that tests silently lost from the comparison do not read as a full
+comparison, and `no test was compared` is printed so that no regression is not read as nothing broken. A baseline that cannot be read, or an entry that gives no test,
 stops `rebuild` before anything is written, since a missing baseline would read as no regression; the check is per
 entry, so a verdict folder holding a log with no verdict line (2 of into-sign's 14) still reads. Nothing is stored,
 as for `baselineMap`, so `map.json` and `tests.json` are the same with and without the key. How the screen list
@@ -1532,8 +1534,6 @@ Limits:
 - A failed test in a `serial` group or a failed `setup` project makes the tests after it show as `pass→pending`.
 - A run of only some test files, kept as the baseline or run now, prints one `only in baseline ←` line for each file
   left out, which can be hundreds in a large repository.
-- An untagged test's status is the worst over its projects, and a handed-over pair copied from it keeps that status,
-  so a test that failed in one project only shows as a regression in the project where it passed too.
 - A judged pair keeps only the row of its first project, so a test run in two projects and handed over counts its
   second project's run as `not on a screen or call now`, as the page's 「태그 대기」 count does.
 - A verdict log's `file` is its file name alone, so logs of one name in different folders are one file.
