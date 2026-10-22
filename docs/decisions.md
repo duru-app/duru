@@ -1526,7 +1526,9 @@ as for `baselineMap`, so `map.json` and `tests.json` are the same with and witho
 counts regressions is recorded with the review page.
 Limits:
 - A test renamed or moved to another file is not matched: it counts once in `only in baseline` and once in
-  `only now`. A test told apart only by its tags is not matched either once its tags change.
+  `only now`. A test told apart only by its tags is not matched either once its tags change, nor are tests of one
+  title in one file that had the same tags in the baseline and have different ones now, such as two verdict lines of
+  one name tagged with two screens after the release.
 - A Playwright test linked to a screen only by its trace is on no screen when it was skipped, so it counts in
   `not on a screen or call now` and not as `pass→pending`.
 - A test whose tags all name screens or calls the current map does not have is kept in `tests.json` only with those
