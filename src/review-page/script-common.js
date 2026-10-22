@@ -120,8 +120,8 @@ function othersSigned() {
   return [...marks.attached.filter((m) => !isPick(m)), ...marks.detached].flatMap((m) => m.history).concat(judged).some((record) => record.author !== author);
 }
 const signedAt = (record) => (othersSigned() ? `${record.author} · ${fmtDate(record.date)}` : fmtDate(record.date));
-const CODE_CHANGED = '판정 뒤 코드가 바뀜';
-const codeChangedChip = (title) => h('span', { class: 'chip code-changed', title }, CODE_CHANGED);
+const CODE_CHANGED = '코드 바뀜';
+const codeChangedChip = (title) => h('span', { class: 'chip code-changed', title, 'aria-label': title }, CODE_CHANGED);
 const markChip = (m) => (m?.current ? [
   h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status] ?? CASE_STATUS[m.current.status]),
   m.codeChanged ? codeChangedChip(`이 표시를 남긴 뒤 이 ${nodeWord(m.target.node)}의 코드가 바뀌었습니다. 표시는 그대로 두었으니 다시 볼지 정해 주세요`) : null,

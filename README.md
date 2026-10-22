@@ -955,7 +955,7 @@ A changed screen opens with a line saying what changed; its call table has a col
 `srcRoot` is not in a git repository), 「+ 커밋 안 한 수정」 when files under `srcRoot` had changes not committed, and
 the duru version; hovering shows the commits in full, duru's own among them. The 「비교 기준」 box shows the same for the baseline
 map. A map built by a duru that did not record them shows none. After a `rebuild`, a mark whose screen or call
-code hash differs from the one saved with it shows 「판정 뒤 코드가 바뀜」 beside its status in the screen list and
+code hash differs from the one saved with it shows 「코드 바뀜」 beside its status in the screen list and
 the tables, and so does a judged pair, under 「제외한 짝」 or 「태그 대기」 and in the 「태그 없음」 tab, when the hash of
 its screen or call or of its test file differs. The mark or judgment stays as it was; whether to look again is the
 reviewer's call. A mark or judgment saved without a hash shows as it always did.
@@ -1309,7 +1309,7 @@ in the data setup and the checks, and the test attaches after a `rebuild`. Pairs
 `# Tagging`, each with the test, the tag to add and where it goes. duru never edits a test file.
 Before `# Case kinds` and `# Tagging`, `# Code changed after a mark or a judgment` lists each mark, with its target
 and status, and each discarded or handed-over pair whose code changed after it was left, as the review page shows
-「판정 뒤 코드가 바뀜」; it is left out while there is none.
+「코드 바뀜」; it is left out while there is none.
 
 **Case kinds.** With `caseKinds` set, `# Case kinds` comes before `# Tagging`, with a `## <kind>` for each kind: its
 description, its values and rules, `undecided: N` with a line for each undecided candidate, and `cases with no

@@ -576,7 +576,7 @@ export function taggingLines(awaitingTag: Record<string, any[]>, callIds: Set<st
   }));
 }
 
-const CODE_CHANGED_INTRO = 'duru keeps a hash of the code of the screen or call with each mark, and of that code and the test file with each judgment of a test pair. The code changed after each of these was left, and the review page shows them as 「판정 뒤 코드가 바뀜」. They stay as they were: tell the user which ones they are, since the user decides whether to look at them again, and do not mark or judge them yourself.';
+const CODE_CHANGED_INTRO = 'duru keeps a hash of the code of the screen or call with each mark, and of that code and the test file with each judgment of a test pair. The code changed after each of these was left, and the review page shows them as 「코드 바뀜」. They stay as they were: tell the user which ones they are, since the user decides whether to look at them again, and do not mark or judge them yourself.';
 const JUDGED: Record<string, string> = { discard: 'discarded', 'hand-over': 'handed over for tagging' };
 
 function codeChangedLines(attached: MarkEntry[], tests: { discarded: Record<string, any[]>; awaitingTag: Record<string, any[]> }) {

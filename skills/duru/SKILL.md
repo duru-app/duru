@@ -414,7 +414,7 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    empty test, as for a case above. A candidate you mark `needed` while you work shows up under `cases with no
    tests` the next time you run `duru tasks <config>`, which reads the marks each time; no rebuild is needed for it.
    The items under `# Code changed after a mark or a judgment` are marks and judged test pairs whose screen or call
-   code, or test file, changed after the reviewer left them; the review page shows them as 「판정 뒤 코드가 바뀜」.
+   code, or test file, changed after the reviewer left them; the review page shows them as 「코드 바뀜」.
    They are not tasks: tell the user which ones they are, since the user decides whether to look at them again,
    and do not mark, judge or change them. A `fine` mark there still keeps its screen or call out of the list.
    The items under `# Tagging` (they can be listed even when no mark is open) are tests the reviewer judged to

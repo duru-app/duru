@@ -119,7 +119,7 @@ test('after a rebuild, a mark whose screen or call code changed and a judgment w
 const VERSION = readJson(path.join(import.meta.dirname, '../package.json')).version;
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' }).trim();
 
-test('in a browser, the header names the commit and duru version of the map and of the baseline map, and 「판정 뒤 코드가 바뀜」 shows beside a mark or judgment whose code changed and nowhere else', { skip: browserMissing }, () =>
+test('in a browser, the header names the commit and duru version of the map and of the baseline map, and 「코드 바뀜」 shows beside a mark or judgment whose code changed and nowhere else', { skip: browserMissing }, () =>
   withRebuiltFixture({}, async (_, copy) => {
     git(copy, 'init', '-q');
     git(copy, 'add', '.');
@@ -142,7 +142,7 @@ test('in a browser, the header names the commit and duru version of the map and 
         assert.equal(await changedIn('/help'), 1);
         assert.equal(await changedIn('/home'), 0);
         assert.equal(await changedIn('/lab'), 0);
-        assert.equal(await p.textContent('#screen-list li:has-text("/help") .chip.code-changed'), '판정 뒤 코드가 바뀜');
+        assert.equal(await p.textContent('#screen-list li:has-text("/help") .chip.code-changed'), '코드 바뀜');
         await p.click('#screen-list li:has-text("/help")');
         assert.equal(await p.locator('#center td.mark .chip.code-changed').count(), 2);
         assert.equal(await p.locator('#center .awaiting-tag .chip.code-changed').count(), 1);
@@ -163,7 +163,7 @@ test('the task list names under its own heading each mark and judgment whose cod
       assert.doesNotMatch(tasksBefore, /Code changed after/);
       const tasks = taskList(config);
       const section = tasks.slice(tasks.indexOf('# Code changed after a mark or a judgment'));
-      assert.match(section, /^# Code changed after a mark or a judgment\n\nduru keeps a hash [^\n]*「판정 뒤 코드가 바뀜」[^\n]*do not mark or judge them yourself\.\n\n/);
+      assert.match(section, /^# Code changed after a mark or a judgment\n\nduru keeps a hash [^\n]*「코드 바뀜」[^\n]*do not mark or judge them yourself\.\n\n/);
       const items = section.split('\n\n')[2].split('\n').filter((line) => line.startsWith('- '));
       const helpTitle = readJson(path.join(config.outDir, 'tests.json')).importers['/help#Help'].find((t: { title: string }) => t.title.includes('renders the help text')).title;
       assert.deepEqual(items.map((line) => line.replace(/ \(reviewer, \d{4}-\d{2}-\d{2}\)$/, '')), [

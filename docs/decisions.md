@@ -3174,7 +3174,7 @@ passing on a retry records only the pages of that attempt.
   would be missed.
 
 **The map records the code it was read from, and each new mark and judgment keeps a hash of its screen's or call's
-code, so one left before that code changed shows 「판정 뒤 코드가 바뀜」 after a `rebuild`.** Asked for in #331, put off
+code, so one left before that code changed shows 「코드 바뀜」 after a `rebuild`.** Asked for in #331, put off
 on 2026-10-19 and asked for again by the driver on 2026-10-21. Nothing is removed or changed: the mark keeps its
 status and the reviewer decides whether to look again, unlike GitHub's dismissal of stale approvals, which the issue
 took the idea from.
@@ -3255,7 +3255,7 @@ On a React Router client with 45 routes:
 
 ## Open
 
-- **「판정 뒤 코드가 바뀜」 on case marks and stories.** A case mark already keeps its screen's or call's hash, but the
+- **「코드 바뀜」 on case marks and stories.** A case mark already keeps its screen's or call's hash, but the
   case kinds tab does not compare it yet; a story's code would be the code of all its screens, and no hash is kept for
   it.
 
