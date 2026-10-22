@@ -1751,3 +1751,118 @@ export default function Home() {
     ['/login', at('ROUTE_PATH.LOGIN')],
   ]);
 });
+
+const THUNKS = `import { getHistory } from './utils/browser_history';
+
+export function switchTeam(url, team) {
+  return (dispatch) => {
+    if (team) {
+      dispatch({ type: 'select', team });
+    } else {
+      getHistory().push(url);
+    }
+  };
+}
+
+export function logOut(redirectTo = '/login') {
+  dispatch(logout()).then(() => {
+    getHistory().push(redirectTo);
+  }).catch(() => {
+    getHistory().push(redirectTo);
+  });
+}
+`;
+
+test('a helper that returns a function moving to the address it was given, as a redux thunk does, or moves inside a callback, is a link at the call of the helper', async () => {
+  const home = `import { useDispatch } from 'react-redux';
+import { switchTeam, logOut } from './thunks';
+
+export default function Home({ team }) {
+  const dispatch = useDispatch();
+  return (
+    <nav>
+      <a onClick={() => dispatch(switchTeam('/team/a'))}>a</a>
+      <a onClick={() => dispatch(switchTeam('/team/b', team))}>b</a>
+      <a onClick={() => dispatch(switchTeam('/help', { id: 1 }))}>c</a>
+      <a onClick={() => logOut()}>d</a>
+      <a onClick={() => logOut('/start')}>e</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp(
+    { 'Home.js': home, 'thunks.js': THUNKS, 'utils/browser_history.js': MADE_HISTORY },
+    { history: { import: './utils/browser_history', name: 'getHistory' } },
+  ));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/team/a', at("switchTeam('/team/a')"), [], ['/team/:team#Team']],
+    ['/team/b', at("switchTeam('/team/b'"), [], ['/team/:team#Team']],
+    ['/login', at('logOut()'), [], ['/login#Login']],
+    ['/start', at("logOut('/start')"), [], ['/start#Start']],
+  ]);
+});
+
+test('a call of a function taken from props or a parameter is not read as a helper', async () => {
+  const home = `import { useHistory } from 'react-router-dom';
+
+export default function Home(props) {
+  const history = useHistory();
+  const { go } = props;
+  const run = (open) => open('/start');
+  return (
+    <nav>
+      <a onClick={() => props.go('/start')}>a</a>
+      <a onClick={() => props.actions.go('/login')}>b</a>
+      <a onClick={() => go('/help')}>c</a>
+      <a onClick={() => run((u) => history.push(u))}>d</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home'), []);
+});
+
+test('a helper that hands what it is given to another helper is read through both, up to 8 deep, a helper that comes back to one it is reading stops there, and a call in a helper that does not use what the helper is given stays a link only where it is written', async () => {
+  const steps = Array.from({ length: 8 }, (_, i) => `const step${i + 2} = (u) => step${i + 1}(u);`).join('\n');
+  const home = `import { useHistory } from 'react-router-dom';
+
+export default function Home() {
+  const history = useHistory();
+  const step1 = (u) => history.push(u);
+${steps}
+  const again = (u) => {
+    history.push(u);
+    again(u);
+  };
+  const ping = (u) => pong(u);
+  const pong = (u) => {
+    ping(u);
+    history.replace(u);
+  };
+  const both = (u) => {
+    step1('/login');
+    step1(u);
+  };
+  return (
+    <nav>
+      <a onClick={() => step8('/start')}>a</a>
+      <a onClick={() => step9('/login')}>b</a>
+      <a onClick={() => again('/help')}>c</a>
+      <a onClick={() => ping('/team/a')}>d</a>
+      <a onClick={() => both('/start')}>e</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at("step1('/login')"), [], ['/login#Login']],
+    ['/start', at("step8('/start')"), [], ['/start#Start']],
+    ['/help', at("again('/help')"), [], ['/help/:page?#Help']],
+    ['/team/a', at("ping('/team/a')"), [], ['/team/:team#Team']],
+    ['/start', at("both('/start')"), [], ['/start#Start']],
+  ]);
+});
