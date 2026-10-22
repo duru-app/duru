@@ -1717,3 +1717,36 @@ export default function Home({ team, channel }) {
   const line = lineOf(home, 'middle(');
   assert.deepEqual(links.filter((l) => l[1] === line).map((l) => l[0]).sort(), ['/{*}/channels', '/{*}/none/channels']);
 });
+
+test('an address function call with a member of a constant object as its argument is {?} in a link, while a route path reads it whole', async () => {
+  const routes = `import { Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Help from './Help';
+import { settingsPath } from './paths';
+import { TABS } from './tabs';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/home" component={Home} exact />
+      <Route path={settingsPath(TABS.GENERAL)} component={Help} exact />
+      <Route path="/settings/:tab" component={Team} />
+    </Switch>
+  );
+}
+`;
+  const home = `import { useHistory } from 'react-router-dom';
+import { settingsPath } from './paths';
+import { TABS } from './tabs';
+
+export default function Home() {
+  const history = useHistory();
+  return <a onClick={() => history.push(settingsPath(TABS.GENERAL))}>general</a>;
+}
+`;
+  const files = { 'Routes.js': routes, 'Home.js': home, 'tabs.js': `export const TABS = { GENERAL: 'general' };\n`, 'paths.js': 'export function settingsPath(tab) {\n  return `/settings/${tab}`;\n}\n' };
+  const map = await build(writeApp(files));
+  assert.equal(map.screens.find((s) => s.component === 'Help')!.path, '/settings/general');
+  assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', lineOf(home, 'history.push('), [], []]]);
+});

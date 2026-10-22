@@ -783,7 +783,18 @@ export async function extractClient(config: any) {
   }
 
   const passThrough = (name: string) => (config.passThroughCalls ?? []).includes(name);
-  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction, passThrough, mergesSlashes: false });
+  const linkReading = addressReader({
+    leaf(p) {
+      if (lossless(p)) return { value: evaluate(p) };
+      const value = evaluate(p);
+      return { parts: [p], withheld: typeof value === 'number' || (typeof value === 'string' && !value.includes(UNKNOWN)) };
+    },
+    declaredValue,
+    declaredFunction,
+    namespaceFunction,
+    passThrough,
+    mergesSlashes: false,
+  });
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
   // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니고, // 가 생기는 것은 {?} 다.

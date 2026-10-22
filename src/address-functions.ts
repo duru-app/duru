@@ -8,7 +8,8 @@ const MOST_BRANCHES = 64;
 
 export type AddressFunction = NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration>;
 // value 는 끝까지 읽은 값이고, parts 는 고정 문자열과 읽다 멈춘 지점을 순서대로 담는다.
-export type Leaf = { value: unknown } | { parts: (string | NodePath)[] };
+// withheld 는 값을 알지만 이 읽기가 받지 않는 조각이라, 함수 호출을 거쳐 주소에 들어가면 그 호출을 읽지 못한 조각으로 둔다.
+export type Leaf = { value: unknown } | { parts: (string | NodePath)[]; withheld?: boolean };
 // whole 은 함수가 받은 인자를 그대로 돌려준 갈래의, 부른 곳에 적힌 그 인자다.
 export type Branch = { text: string; stops: NodePath[]; made: boolean; whole?: NodePath };
 export type Read = { branches: Branch[] } | { tooMany: true };
@@ -23,7 +24,7 @@ interface Reading {
 }
 
 // empty 는 함수가 돌려준 빈 문자열이다. 주소 맨 앞에 오면 읽지 못한 조각으로 본다.
-type Piece = { text: string; made?: boolean } | { stop: NodePath } | { empty: NodePath };
+type Piece = { text: string; made?: boolean } | { stop: NodePath; withheld?: boolean } | { empty: NodePath };
 type Val =
   | { pieces: Piece[] }
   | { value: unknown }
@@ -99,6 +100,12 @@ function member(out: Out, key: string, at: NodePath): Out {
   const value = plain(out);
   if (typeof value === 'string' && key === 'length') return known(value.length);
   return value !== null && typeof value === 'object' ? known((value as Record<string, unknown>)[key]) : unknownAt(at);
+}
+
+function withheldIn({ val }: Out): boolean {
+  if ('pieces' in val) return val.pieces.some((x) => 'withheld' in x && x.withheld);
+  if ('props' in val) return [...val.props.values()].some(withheldIn);
+  return 'items' in val && val.items.some(withheldIn);
 }
 
 const keyOfOut = ({ val, made, whole }: Out) => ('pieces' in val ? `${made}\0${whole?.node.start}\0${val.pieces.map((x) => ('text' in x ? x.text : 'stop' in x ? UNREADABLE_PIECE : '\u0001')).join('')}` : null);
@@ -181,7 +188,8 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   function leafOut(p: NodePath): Out {
     const found = leaf(p);
-    if ('parts' in found) return { val: { pieces: found.parts.flatMap((x): Piece[] => (typeof x !== 'string' ? [{ stop: x }] : x ? [{ text: x }] : [])) }, made: false };
+    const withheld = 'withheld' in found && found.withheld ? { withheld: true } : {};
+    if ('parts' in found) return { val: { pieces: found.parts.flatMap((x): Piece[] => (typeof x !== 'string' ? [{ stop: x, ...withheld }] : x ? [{ text: x }] : [])) }, made: false };
     return found.value === undefined ? unknownAt(p) : known(found.value);
   }
 
@@ -241,6 +249,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     reading.add(fn.node);
     try {
       const outs = distinct(lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((e) => returnedValues(fn, e, p, at.depth + 1))));
+      if (outs.some(withheldIn)) return [unknownAt(p)];
       return limited(outs).map((o) => {
         const whole = o.whole && { whole: o.whole };
         if (!('pieces' in o.val)) return { val: o.val, made: true, ...whole };

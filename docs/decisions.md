@@ -3410,12 +3410,16 @@ route `path=`, the path of a route without a screen, or the `from` or `to` of a 
 name (`draftsPath()`) or through a namespace import (`paths.draftsPath()`), duru finds the declaration through the
 same file, imports and re-exports, as it does for constants, and reads what the body returns: a function
 declaration, or an arrow or function expression held by a `const`, neither `async` nor a generator. The reading is
-the module `src/address-functions.ts`, which the client gives its name following and its value reading, so links,
+the module `src/address-functions.ts`, which the client gives its name following and its value reading. Links,
 route paths and both readings of a route file's `Redirect` (the redirect list that makes entry screens and the
-route tree that sends links on) give one answer for a call. Where that reading gives `{?}`, the redirect list reads
-`to` as text as it did before, so a relative `to` (`<Navigate to="team">` in an index route) and a member of an
-object imported by name (`ROUTES.HOME`) still make their screen an entry; the route tree leaves those `{?}`, as it
-did before. The body is read statement by statement: `return`, `if` with or
+route tree that sends links on) read a call the same way, except for a value whose text duru knows but a link does
+not take whole, such as a member of an object imported by name (`TABS.GENERAL`): a route path reads it, while a
+link that gets it through a call reads that call as a piece it cannot read, so `settingsPath(TABS.GENERAL)` is
+`{?}` as a link and `/settings/general` as a route path. The redirect list reads `to` as text first, as it did
+before, when that text has no piece left unread, so `'/settings/' + TABS.GENERAL`, a relative `to`
+(`<Navigate to="team">` in an index route) and `ROUTES.HOME` still make their screen an entry; otherwise it reads
+`to` as a link, and keeps the text when the link is `{?}`. The route tree leaves a relative `to` and `ROUTES.HOME`
+`{?}`, as it did before. The body is read statement by statement: `return`, `if` with or
 without `else`, `const` and `let` with the values of the parameters, `let` given another value or added to with
 `+=`, `? :`, `&&`, `||`, `??`, `.join` of the rest arguments, `.length`, and calls of other such functions, which
 are read the same way. An object with a `pathname` that the function returns is read by its `pathname`, as a
