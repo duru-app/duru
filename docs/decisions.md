@@ -3432,8 +3432,9 @@ The arguments of the call are put into the parameters: a parameter left out take
 takes the property of the object given, and a rest parameter takes the arguments left. A value duru cannot read
 (props, state, what a package function returns) is a `{*}` piece of the address, and an address that starts with
 one is `{?}`, as in a link written in the screen's code. A condition is decided only when every value in it is read
-whole: written values, arguments given as written values, an argument left out, the number of rest arguments,
-comparisons and `!`. A list or an object is taken as a value only when the source shows all of it, in route paths
+whole: written values, arguments given as written values, an argument left out, a property read with `?.` on an
+argument left out or given as `null`, the number of rest arguments, comparisons and `!`. A key written before a
+spread duru cannot read (`{ edit: false, ...props }`) is not known, since the spread may give it. A list or an object is taken as a value only when the source shows all of it, in route paths
 as in links, so `['', 'projects', id].join('/')` with `id` a parameter is a piece duru cannot read and not
 `/projects/`. A value with a piece duru cannot read decides nothing, since the client's reading of a
 template puts `{?}` text in place of that piece, which is not empty and would pass as true. Otherwise each branch is

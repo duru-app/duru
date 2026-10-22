@@ -92,6 +92,7 @@ function truth(out: Out): boolean | undefined {
 function member(out: Out, key: string, at: NodePath): Out {
   const { val } = out;
   if ('props' in val) return val.props.get(key) ?? (val.open ? unknownAt(at) : known(undefined));
+  if (at.isOptionalMemberExpression() && 'value' in val && (val.value === undefined || val.value === null)) return known(undefined);
   if ('items' in val) return key === 'length' ? known(val.items.length) : unknownAt(at);
   if ('unknown' in val) return out;
   const value = plain(out);
@@ -418,9 +419,13 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         const out = outs[i];
         if (prop.isObjectProperty() && !prop.node.computed) found.set(keyOf(prop.node.key), out);
         else if (prop.isSpreadElement() && 'props' in out.val) {
+          if (out.val.open) found.clear();
           for (const [key, value] of out.val.props) found.set(key, value);
           open ||= out.val.open;
-        } else open = true;
+        } else {
+          found.clear();
+          open = true;
+        }
       });
       return { val: { props: found, open }, made: false };
     });

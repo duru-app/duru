@@ -1555,3 +1555,70 @@ export default function Home({ tab, tabs }) {
   const at = (part: string) => lineOf(home, part);
   assert.deepEqual(addressesAt(map, '/home#Home'), ['declared(tab)', 'returned(tab)', 'tested(tab)', 'assigned(tab)', 'found(tabs)', 'conditioned(tab)', 'reassigned(tab)', 'arrowed(tab)'].map((call) => ['{?}', at(call)]));
 });
+
+test('a property read with ?. on an argument left out or given as null is undefined, so a condition on it picks its branch', async () => {
+  const paths = `export function helpUrl(options) {
+  return options?.page ? \`/team/\${options.page}\` : '/help';
+}
+
+export function startUrl(options) {
+  const team = options?.team;
+  if (team) return '/team/' + team;
+  return '/start';
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { helpUrl, startUrl } from './paths';
+
+export default function Home() {
+  return (
+    <nav>
+      <Link to={helpUrl()}>a</Link>
+      <Link to={helpUrl(null)}>b</Link>
+      <Link to={startUrl()}>c</Link>
+      <Link to={helpUrl({ page: 'x' })}>d</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['/help', 7], ['/help', 8], ['/start', 9], ['/team/x', 10]]);
+});
+
+test('an object argument with a spread duru cannot read leaves every key unknown that the spread may give, but a key written after the spread keeps its value', async () => {
+  const paths = `export function docUrl({ edit }) {
+  return edit ? '/login' : '/start';
+}
+
+export const entryUrl = (loc) => loc;
+
+export function memberUrl(o) {
+  if (!o.id) return '/login';
+  return '/team/' + o.id;
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { docUrl, entryUrl, memberUrl } from './paths';
+
+export default function Home({ member, next, ...props }) {
+  return (
+    <nav>
+      <Link to={docUrl({ edit: false, ...props })}>a</Link>
+      <Link to={entryUrl({ pathname: '/start', ...next })}>b</Link>
+      <Link to={memberUrl({ ...member })}>c</Link>
+      <Link to={docUrl({ ...props, edit: false })}>d</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [
+    ['/login', at('edit: false, ...props')],
+    ['/start', at('edit: false, ...props')],
+    ['{?}', at('entryUrl(')],
+    ['/login', at('memberUrl(')],
+    ['/team/{*}', at('memberUrl(')],
+    ['/start', at('...props, edit: false')],
+  ]);
+});
