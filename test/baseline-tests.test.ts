@@ -241,6 +241,15 @@ test('verdict lines of the same name are told apart by their tags', () => {
   ]);
 });
 
+test('verdict lines of the same name are split by their screen tags when the tags differ on one side only', () => {
+  const verdict = (line: number, screen: string, status: TestStatus) => ({ title: 'cleanup', file: 'checks.log', line, tags: [`screen:${screen}`], status });
+  assert.deepEqual(lines(was(verdict(3, '/a#A', 'pass')), { nodes: { '/a#A': [verdict(3, '/a#A', 'pass')], '/b#B': [verdict(9, '/b#B', 'fail')] } }), [summary(1, 0, 0, 0, 0, 1)]);
+  assert.deepEqual(lines(was(verdict(3, '/a#A', 'pass'), verdict(5, '/b#B', 'fail')), { nodes: { '/a#A': [verdict(3, '/a#A', 'fail')] } }), [
+    summary(1, 1, 0, 0, 1, 0),
+    '  pass→fail ← checks.log:3 cleanup — screen /a#A',
+  ]);
+});
+
 test('tests the same in title, project, file and tags are one test with the worst status of their runs', () => {
   const verdict = (line: number, status: TestStatus) => ({ title: 'cleanup', file: 'checks.log', line, tags: ['screen:/a#A'], status });
   assert.deepEqual(lines(was(verdict(3, 'pass'), verdict(5, 'pass')), { nodes: { '/a#A': [verdict(3, 'pass'), verdict(8, 'pending')] } }), [
@@ -257,6 +266,25 @@ test('runs made one test in the baseline take the worst status of the runs that 
   ]);
   assert.deepEqual(lines(was(signs('pass'), signs('fail')), { nodes: { '/a#A': [signs('fail'), signs('fail')] } }), [summary(1, 0, 0, 0, 0, 0)]);
   assert.deepEqual(lines(was(signs('pending'), signs('pending')), { nodes: { '/a#A': [signs('fail')] } }), [summary(1, 0, 0, 0, 0, 0)]);
+});
+
+test('regressions in one file are ordered by line, and a test merged from runs on several lines shows the first of them', () => {
+  const run = (title: string, line: number, status: TestStatus) => ({ title, line, status });
+  assert.deepEqual(lines(was(run('zeta', 2, 'pass'), run('alpha', 9, 'pass'), run('dup', 8, 'pass')), { nodes: { '/a#A': [run('alpha', 9, 'fail'), run('zeta', 2, 'fail'), run('dup', 8, 'fail'), run('dup', 3, 'pass')] } }), [
+    summary(3, 3, 0, 0, 0, 0),
+    '  pass→fail ← a.spec.ts:2 zeta — screen /a#A',
+    '  pass→fail ← a.spec.ts:3 dup — screen /a#A',
+    '  pass→fail ← a.spec.ts:9 alpha — screen /a#A',
+  ]);
+});
+
+test('a test merged from runs under a screen and runs off it fails now when a run off it fails', () => {
+  const formats = (file: string, line: number, status: TestStatus) => ({ title: 'formats', file, line, format: 'vitest', status });
+  const base = was(formats('/ci/f.test.js', 2, 'pass'), formats('/ci/f.test.js', 8, 'pass'));
+  assert.deepEqual(lines(base, { importers: { '/a#A': [formats('/me/f.test.js', 8, 'pass')] }, discarded: { '/b#B': [formats('/me/f.test.js', 2, 'fail')] } }), [
+    summary(1, 1, 0, 0, 0, 0),
+    '  pass→fail ← /me/f.test.js:8 formats — screen /a#A',
+  ]);
 });
 
 test('runs made one test where only some are under a screen count as under it, and the regression shows the first place among those', () => {
@@ -474,6 +502,18 @@ test('the baseline is named by the nearest folder holding every baselineTests pa
     assert.deepEqual(named(['vitest', 'releases/1.5.0/unit']), ['releases/1.5.0/unit', 'unit']);
     assert.deepEqual(named(['playwright', 'e2e.json']), ['.', 'project']);
     assert.deepEqual(named(['playwright', '../kept/1.5.0/e2e.json']), [path.join(dir, 'kept/1.5.0'), '1.5.0']);
+  });
+});
+
+test('a Playwright report of a project with no name is read with the empty project name and matched with the current run of it', () => {
+  const report = { suites: [{ title: 'a.spec.ts', specs: [{ title: 'opens a', file: 'a.spec.ts', line: 1, tests: [{ projectName: '', status: 'expected' }] }] }] };
+  inFolder({ 'releases/1.5.0/e2e.json': report }, (dir) => {
+    const base = readBaselineTests({ configDir: dir, baselineTests: [{ format: 'playwright', path: path.join(dir, 'releases/1.5.0/e2e.json') }] });
+    assert.deepEqual(base.tests.map((t) => t.project), ['']);
+    assert.deepEqual(baselineTestsLines(compareTests(base, now({ nodes: { '/a#A': [{ title: 'opens a', project: '', status: 'fail' }] } }), MAP)), [
+      summary(1, 1, 0, 0, 0, 0),
+      '  pass→fail ← a.spec.ts:1 opens a — screen /a#A',
+    ]);
   });
 });
 

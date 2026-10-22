@@ -657,7 +657,7 @@ test('an untagged Playwright test carries the projects it ran in, sorted, each w
   const byTitle = (title: string) => links.untagged.find((t) => t.title === title)!;
   assert.deepEqual(byTitle('loads without errors @smoke').projects, { chromium: 'pass', firefox: 'pass' });
   assert.equal('projects' in byTitle('DocumentTable › lists the documents it is given'), false);
-  const runs = [['webkit', 'expected'], ['chromium', 'skipped'], ['firefox', 'expected'], ['webkit', 'unexpected']];
+  const runs = [['webkit', 'unexpected'], ['chromium', 'skipped'], ['firefox', 'expected'], ['webkit', 'expected']];
   const report = reportOf([{ title: 'a.spec.ts', specs: [{ title: 'opens a', file: 'a.spec.ts', line: 1, tests: runs.map(([projectName, status]) => ({ projectName, status })) }] }]);
   withResults({ 'e2e.json': report }, (own) => {
     const result = linkTests(own, { screens: [] });
@@ -665,6 +665,12 @@ test('an untagged Playwright test carries the projects it ran in, sorted, each w
     assert.deepEqual(result.untagged.map((t) => [t.title, t.status, t.projects]), [['opens a', 'fail', { chromium: 'pending', firefox: 'pass', webkit: 'fail' }]]);
     assert.deepEqual(Object.keys(result.untagged[0].projects!), ['chromium', 'firefox', 'webkit']);
   });
+  for (const statuses of [['unexpected', 'expected'], ['expected', 'unexpected']]) {
+    const unnamed = reportOf([{ title: 'a.spec.ts', specs: [{ title: 'opens a', file: 'a.spec.ts', line: 1, tests: statuses.map((status) => ({ projectName: '', status })) }] }]);
+    withResults({ 'e2e.json': unnamed }, (own) => {
+      assert.deepEqual(linkTests(own, { screens: [] }).untagged.map((t) => t.projects), [{ '': 'fail' }]);
+    });
+  }
 });
 
 test('the untagged list is ordered by the test file the page shows, not by the path of the machine that ran the tests', () => {
