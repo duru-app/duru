@@ -445,10 +445,9 @@ test('rebuild counts the stories with broken paths or screens gone from the map,
     const lab = path.join(copy, 'client/src/components/Lab.js');
     fs.writeFileSync(lab, fs.readFileSync(lab, 'utf8').replace('</section>', '  <Link to={Option.ROUTE_PATH.NOPE}>Nope</Link>\n    </section>'));
     fs.writeFileSync(path.join(copy, 'example-stories/lab-to-sign-in.json'), JSON.stringify({ name: 'n', screens: ['/lab#Lab', '/signin#SignIn'], author: 'a', date: '2026-10-02' }));
-    fs.writeFileSync(path.join(copy, 'example-stories/result-to-help.json'), JSON.stringify({ name: 'n', screens: ['/lab/result#LabResult', '/help#Help'], author: 'a', date: '2026-10-02' }));
     const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
-    assert.match(stdout, /^stories 7 \| broken paths 1 \| detached 1 \| unjudged steps 2 \| story files skipped 1$/m);
-    assert.match(stdout, /^stories passing 1 \| passing on part of the path 0 \| failing 1 \| pending 1 \| partly covered 3 \| no tests 1$/m);
+    assert.match(stdout, /^stories 6 \| broken paths 1 \| detached 1 \| unjudged steps 1 \| story files skipped 1$/m);
+    assert.match(stdout, /^stories passing 1 \| passing on part of the path 0 \| failing 1 \| pending 1 \| partly covered 2 \| no tests 1$/m);
     assert.match(stdout, /^passing stories not known to go through every step, for want of a trace or a screen on the map 1$/m);
     assert.match(stdout, /^ {2}unknown story:print-document ← stories\.spec\.ts:12 prints a document @story:print-document$/m);
     assert.doesNotMatch(stdout, /unknown story:run-lab/);
@@ -476,7 +475,7 @@ test('rebuild counts the need files, the needs that pick a need file that is not
     const stdout = execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
     assert.match(stdout, /^need files 1 \| needs picking a need file that is not there 2 \| need files skipped 1$/m);
     assert.match(stdout, /^ {2}need file needs\/broken\.json: text 에 공통 조건 내용을 적어야 합니다$/m);
-    assert.match(stdout, /^stories 5 \| broken paths 0 \| detached 1 \| unjudged steps 1 \| story files skipped 1$/m);
+    assert.match(stdout, /^stories 5 \| broken paths 1 \| detached 1 \| unjudged steps 0 \| story files skipped 1$/m);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
@@ -912,7 +911,7 @@ test('a comment saved on a screen order comes out on stderr, on open event strea
       ]);
       assert.deepEqual(where.links.map((l: { from: string; to: string; verdict: string; ways: { file: string; line: number }[] }) => [l.from, l.to, l.verdict, l.ways.map((w) => `${w.file}:${w.line}`)]), [
         ['/signin#SignIn', '/home#Home', 'open', ['components/SignIn.js:12']],
-        ['/home#Home', '/help#Help', 'unknown', []],
+        ['/home#Home', '/help#Help', 'broken', []],
       ]);
       assert.deepEqual([records()[0].target, records()[1].duru, records()[1].target, records()[1].where], [target, 'reply', target, where]);
       assert.deepEqual(lines(waited.stdout), [records()[0]]);

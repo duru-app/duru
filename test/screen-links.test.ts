@@ -74,7 +74,7 @@ export default function Home({ flag, team, location }) {
       <Link to={{ pathname: '/help/faq', search: '?q=1' }}>faq</Link>
       <Link to="/help?topic=x#top">help</Link>
       <Link to={flag.admin ? '/login' : '/start'}>either</Link>
-      <Link to={team.url}>somewhere</Link>
+      <Link to={urlOf(team)}>somewhere</Link>
       <Other to="/login">not a router link</Other>
       <Spring to={{ opacity: 1 }} />
       <button onClick={go}>go</button>
@@ -99,7 +99,7 @@ test('router links and history moves become links to the screen the router draws
     ['/help', at('topic=x'), [], ['/help/:page?#Help']],
     ['/login', at('flag.admin ?'), ['flag.admin'], ['/login#Login']],
     ['/start', at('flag.admin ?'), ['!(flag.admin)'], ['/start#Start']],
-    ['{?}', at('team.url'), [], []],
+    ['{?}', at('urlOf(team)'), [], []],
   ]);
 });
 
@@ -378,4 +378,44 @@ export default function Home({ flags }) {
   ]);
   assert.deepEqual(map.screens.find((s) => s.id === '/team/:team#Team')!.access.links.map((l) => [l.from, l.file, l.line]), [['/home#Home', 'Home.js', 4]]);
   assert.deepEqual(map.entries.map((e) => e.screen), ['/login#Login', '/help/:page?#Help', '/home#Home', '/start#Start']);
+});
+
+test('an address a router link or a move takes from a function parameter or props gives no link, nor one made from a route constant through a variable or an object field, which is a link where the constant is written', async () => {
+  const home = `import { Link, useHistory } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home(props) {
+  const { menus, backUrl = '' } = props;
+  const history = useHistory();
+  const items = [];
+  menus.forEach((menu) => {
+    items.push({ title: menu, href: Option.ROUTE_PATH[menu] });
+  });
+  const help = Option.ROUTE_PATH.HELP;
+  const login = { href: Option.ROUTE_PATH.LOGIN };
+  const { href: signIn } = login;
+  const goTo = (href) => history.push(href);
+  const open = (pathname) => history.push({ pathname, state: { open: true } });
+  return (
+    <nav>
+      {items.map((item) => <Link key={item.href} to={item.href}>{item.title}</Link>)}
+      <Link to={help}>help</Link>
+      <Link to={{ pathname: help }}>help again</Link>
+      <Link to={login.href}>login</Link>
+      <Link to={signIn}>sign in</Link>
+      <button onClick={() => goTo('/start')}>start</button>
+      <button onClick={() => open(props.next)}>next</button>
+      <button onClick={() => history.replace(backUrl)}>back</button>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp(
+    { 'Home.js': home, 'Option.js': "export default { ROUTE_PATH: { HELP: '/help', LOGIN: '/login' } };\n" },
+    { routeConstant: 'Option.ROUTE_PATH', constants: { Option: 'Option.js' } },
+  ));
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/help', lineOf(home, 'ROUTE_PATH.HELP')],
+    ['/login', lineOf(home, 'ROUTE_PATH.LOGIN')],
+  ]);
 });

@@ -3224,7 +3224,8 @@ route constant is: written pieces as they are, a value piece as `{*}`, the query
 that starts with a value, or is not written from `/`, is `{?}`: it stays among the screen's links and goes to no
 screen. A move back to the screen's own address (`push({ pathname: location.pathname, state })`, an object with no
 `pathname`, `` `${location.pathname}?tab=2` ``) changes only the page or the state and is not a link. Where a route
-constant is written inside the address, that place gives only the route constant's link, judged by where it sits in
+constant is written inside the address, or the address takes it through a local variable or an object field
+(`const help = Option.ROUTE_PATH.HELP`), that place gives only the route constant's link, judged by where it sits in
 the code and not by its text; into-sign 1.5.0 writes `Option.ROUTE_PATH` at 75 of its 96 moves.
 Which screens a link goes to is written on the link as `targets`, so the flow, the screen info, `tasks` and the
 story verdicts give one answer; a map written before has no `targets`, and story checks then ask for `rebuild` as
@@ -3252,7 +3253,14 @@ draws one `<Switch>` per signed-in state) has all of them drawn side by side, so
 to the sign-in screen and, through the redirect of the signed-in `<Switch>`, to the user home; when several screens
 are innermost at the same depth the link goes to each; `createHashHistory` is reported beside
 `createBrowserHistory`; a history taken out of a function's own parameters (`function Help({ history })`) is not
-read, as the issue lists only the shapes above.
+read, as the issue lists only the shapes above; an address a link or a move takes from a function parameter or from
+props (`items.map((item) => <Link to={item.href}>)`, `const go = (href) => history.push(href)`) gives no link, as
+the value is written where it is handed in and a route constant there is already a link, so a written address
+handed in that way is missed (5 such places gave into-sign 1.5.0 30 `{?}` links on 26 screens). Keeping these as
+`{?}` instead was measured on 2026-10-22 and turned down by the driver in #392: it adds 1,996 `{?}` lines on 170 of
+mattermost's 181 screens, 213 on outline and 32 on appsmith, mostly from wrapper link components and actions many
+screens share, and changes no entry screen in any of the four apps; an array literal mapped in the same file, the
+one handed-in shape duru could read, occurs in none of them.
 A route made for each item of a route table is one route per item, each with the item's path, as the router sees
 the routes the loop returns; a route at `/` without `exact` holds every address, as path-to-regexp drops the last
 `/` before matching a start. Known limits: a route file that a screen's code reaches only to import a path

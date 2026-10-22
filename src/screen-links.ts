@@ -54,6 +54,25 @@ function staysHere(p: NodePath<any>) {
   return right.isStringLiteral() ? queryOrHash(right.node.value) : right.isTemplateLiteral() && queryOrHash(right.node.quasis[0].value.cooked);
 }
 
+const isMember = (p: NodePath<any>) => p.isMemberExpression() || p.isOptionalMemberExpression();
+
+function handedIn(p: NodePath<any>, depth = 0): boolean {
+  if (isProps(p)) return true;
+  if (depth > FOLLOWED) return false;
+  if (isMember(p)) return handedIn(p.get('object') as NodePath<any>, depth + 1);
+  if (!p.isIdentifier()) return false;
+  if (p.scope.getBinding(p.node.name)?.kind === 'param') return true;
+  const declared = declaredInit(p);
+  return Boolean(declared) && handedIn(declared!.init, depth + 1);
+}
+
+export function madeFrom(p: NodePath<any>, depth = 0): NodePath[] {
+  if (depth > FOLLOWED) return [p];
+  if (isMember(p)) return [p, ...madeFrom(p.get('object') as NodePath<any>, depth + 1)];
+  const declared = p.isIdentifier() ? declaredInit(p) : null;
+  return declared ? [p, ...madeFrom(declared.init, depth + 1)] : [p];
+}
+
 function addresses(p: NodePath<any>): NodePath[] {
   if (p.isConditionalExpression()) return [...addresses(p.get('consequent')), ...addresses(p.get('alternate'))];
   if (p.isObjectExpression()) {
@@ -62,7 +81,7 @@ function addresses(p: NodePath<any>): NodePath[] {
   }
   const declared = p.isIdentifier() ? declaredInit(p) : null;
   if (declared?.id.type === 'Identifier' && declared.init.isObjectExpression()) return addresses(declared.init);
-  return staysHere(p) ? [] : [p];
+  return staysHere(p) || handedIn(p) ? [] : [p];
 }
 
 export function screenLinkReader({ configuredHistory }: Reading) {

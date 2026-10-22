@@ -16,7 +16,7 @@ import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
-import { screenLinkReader } from './screen-links.ts';
+import { madeFrom, screenLinkReader } from './screen-links.ts';
 import { importedAs, screenRequestReader } from './screen-requests.ts';
 import type { UnresolvedReason } from './server.ts';
 import { typedMembers } from './typed-members.ts';
@@ -1055,11 +1055,11 @@ export async function extractClient(config: any) {
       },
     });
 
-    // 라우트 상수를 적은 자리는 그 링크 하나만 남긴다.
     const routeRefAt = facts.routeRefs.map((r) => siteStart.get(r)!);
+    const holdsRouteRef = (p: NodePath) => routeRefAt.some((start) => start >= p.node.start! && start < p.node.end!);
     const recordLinks = (addresses: NodePath[]) => {
       for (const at of addresses) {
-        if (routeRefAt.some((start) => start >= at.node.start! && start < at.node.end!)) continue;
+        if (madeFrom(at).some(holdsRouteRef)) continue;
         record('routerLinks', { to: linkAddress(at) }, at);
       }
     };
