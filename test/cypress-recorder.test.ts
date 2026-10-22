@@ -13,7 +13,7 @@ const APP = 'http://localhost:3000';
 const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
 
 type Move = { visit: string } | { pushState: string };
-type FakeTest = { titles: string[]; moves: Move[]; state?: 'passed' | 'failed'; attempts?: FakeTest[] };
+type FakeTest = { titles: string[]; moves: Move[]; state?: 'passed' | 'failed'; attempts?: FakeTest[]; beforeAll?: Move[] };
 type Hook = (this: { currentTest: unknown }) => void;
 
 type Options = { version?: 14 | 15 | 16; expose?: Record<string, string>; env?: Record<string, string> };
@@ -42,18 +42,23 @@ function runSpec(projectRoot: string, spec: string, tests: FakeTest[], { version
   vm.runInNewContext(fs.readFileSync(RECORDER, 'utf8'), {
     Cypress: fakeCypress, cy, beforeEach: (fn: Hook) => before.push(fn), afterEach: (fn: Hook) => after.push(fn),
   });
-  for (const t of tests) {
-    for (const attempt of t.attempts ?? [t]) {
+  const go = (moves: Move[]) => {
+    for (const move of moves) {
+      if ('visit' in move) {
+        emit('window:before:load');
+        emit('url:changed', APP + move.visit);
+        emit('window:load');
+      } else emit('url:changed', APP + move.pushState);
+    }
+  };
+  for (const [index, t] of tests.entries()) {
+    for (const [tries, attempt] of (t.attempts ?? [t]).entries()) {
       const currentTest = { title: t.titles.at(-1), titlePath: () => t.titles, fullTitle: () => t.titles.join(' '), state: undefined as string | undefined };
+      emit('test:before:run');
       emit('url:changed', 'about:blank');
+      if (index === 0 && tries === 0) go(t.beforeAll ?? []);
       before.forEach((fn) => fn.call({ currentTest }));
-      for (const move of attempt.moves) {
-        if ('visit' in move) {
-          emit('window:before:load');
-          emit('url:changed', APP + move.visit);
-          emit('window:load');
-        } else emit('url:changed', APP + move.pushState);
-      }
+      go(attempt.moves);
       currentTest.state = attempt.state ?? 'passed';
       after.forEach((fn) => fn.call({ currentTest }));
     }
@@ -103,6 +108,18 @@ test('moves a single page app makes with pushState alone, after one visit, are s
     assert.deepEqual(record, { steps: ['/home', '/document/draft', '/document/42'].map((p) => ({ url: APP + p })) });
     rebuild(configFile);
     assert.deepEqual(storedCandidates(dir).map((c) => c.screens), [['/home#Home', '/document/:tab#DocumentList', '/document/:id#DocumentDetail']]);
+  });
+});
+
+test('pages the spec opens in its before hook start the record of the first test', () => {
+  withProject((dir) => {
+    runSpec(dir, 'cypress/e2e/signed-in.cy.js', [
+      { titles: ['opens help'], beforeAll: [{ visit: '/signin' }, { pushState: '/home' }], moves: [{ pushState: '/help' }] },
+      { titles: ['opens the lab'], moves: [{ visit: '/home' }, { pushState: '/lab' }] },
+    ]);
+    const steps = (name: string) => JSON.parse(fs.readFileSync(path.join(dir, 'cypress/visits/cypress/e2e/signed-in.cy.js', name), 'utf8')).steps.map((s: { url: string }) => s.url);
+    assert.deepEqual(steps('opens help.json'), ['/signin', '/home', '/help'].map((p) => APP + p));
+    assert.deepEqual(steps('opens the lab.json'), ['/home', '/lab'].map((p) => APP + p));
   });
 });
 

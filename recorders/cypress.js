@@ -5,7 +5,7 @@ Cypress.on('url:changed', (address) => {
   if (/^https?:/i.test(url) && steps.at(-1)?.url !== url) steps.push({ url });
 });
 
-beforeEach(() => {
+Cypress.on('test:before:run', () => {
   steps = [];
 });
 
