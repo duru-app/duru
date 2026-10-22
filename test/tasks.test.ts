@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -1842,4 +1842,44 @@ test('a screen listed for a commented regression leaves once the test passes aga
     cli('rebuild');
     assert.deepEqual(listedIds(cli('tasks')), []);
   }, { marksDir: 'marks' });
+});
+
+const NOT_LISTED = 'screens and calls a reviewer sent by commenting on a regressed test are not listed';
+
+test('a baselineTests that cannot be read leaves duru tasks at exit 0 with a line under the head saying so and the needs-more items as before', () => {
+  withFixtureCopy(({ copy, configFile, cli }) => {
+    cli('rebuild');
+    const plain = cli('tasks').split('\n');
+    const setBaseline = (baselineTests: unknown) => fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), baselineTests }));
+    const tasks = () => {
+      const run = spawnSync(process.execPath, [CLI, 'tasks', configFile], { encoding: 'utf8' });
+      assert.equal(run.status, 0, run.stderr);
+      return run.stdout.split('\n');
+    };
+    setBaseline([{ format: 'playwright', path: 'releases/gone/e2e.json', depth: 'ui' }]);
+    const gone = tasks();
+    assert.equal(gone[1], `baselineTests releases/gone/e2e.json could not be read: it does not exist; ${NOT_LISTED}`);
+    assert.deepEqual(gone.filter((_, i) => i !== 1), plain);
+    fs.mkdirSync(path.join(copy, 'releases/1.5.0'), { recursive: true });
+    fs.writeFileSync(path.join(copy, 'releases/1.5.0/e2e.json'), '{ "suites": [');
+    setBaseline([{ format: 'playwright', path: 'releases/1.5.0/e2e.json', depth: 'ui' }]);
+    const broken = tasks();
+    assert.match(broken[1], new RegExp(`^baselineTests releases/1\\.5\\.0/e2e\\.json could not be read: cannot read Playwright report .*; ${NOT_LISTED}$`));
+    assert.deepEqual(broken.filter((_, i) => i !== 1), plain);
+  });
+});
+
+test('extract, undecided and story run as before with a baselineTests that cannot be read', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const run = (...args: string[]) => {
+      const { status, stdout, stderr } = spawnSync(process.execPath, [CLI, args[0], configFile, ...args.slice(1)], { encoding: 'utf8' });
+      return { status, stdout, stderr };
+    };
+    const outputs = () => [run('extract'), run('undecided'), run('story', 'report-detour')];
+    const before = outputs();
+    assert.deepEqual(before.map((r) => r.status), [0, 3, 0]);
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), baselineTests: [{ format: 'playwright', path: 'releases/gone/e2e.json', depth: 'ui' }] }));
+    assert.deepEqual(outputs(), before);
+  }, { storiesDir: 'brief-stories', caseKinds: CASE_KINDS });
 });

@@ -706,9 +706,12 @@ export function taskList(config: any) {
   const { map, tests, marks, appLinks, stories, needs, caseTargets } = reviewData(config, null);
   const open = marks.attached.filter((m) => m.current?.status === 'needs-more');
   let comparison: TestComparison | null = null;
+  let unread = '';
   try {
     if (config.baselineTests) comparison = compareTests(readBaselineTests(config), tests, nodeIds(map));
-  } catch {}
+  } catch (err) {
+    unread = `\n${(err as Error).message}; screens and calls a reviewer sent by commenting on a regressed test are not listed`;
+  }
   const passedIn = new Map<MarkEntry, string>();
   const fines = wholeFines(marks.attached.flatMap((m) => m.history));
   for (const m of marks.attached) {
@@ -734,7 +737,7 @@ export function taskList(config: any) {
   const caseWork = caseKinds && caseKinds.undecided + caseKinds.untested + caseKinds.review > 0 ? caseKinds : null;
 
   const out = [
-    `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}${passedIn.size ? `, ${count(passedIn.size, 'commented regression')}` : ''}${caseWork ? `, ${count(caseWork.undecided, 'undecided case candidate')}${underReview(caseWork.review)}, ${count(caseWork.untested, 'case')} with no tests` : ''}`,
+    `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}${passedIn.size ? `, ${count(passedIn.size, 'commented regression')}` : ''}${caseWork ? `, ${count(caseWork.undecided, 'undecided case candidate')}${underReview(caseWork.review)}, ${count(caseWork.untested, 'case')} with no tests` : ''}${unread}`,
     '',
     `A reviewer marked these screens, API calls and stories as needing tests (\`needs-more\`). Write the tests, put \`@screen:<screen ID>\` on each test, in its \`tag\` option for Playwright and in its title for the other formats (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and ${hasKinds ? 'the tag of each case under `cases` it checks: a role or setting case of a screen that opens only under one, or a kind of case ' + (hasPicks ? 'a reviewer or a rule in the config' : 'a reviewer') + ' picked for the screen or call, tagged `@case:<kind>`' + (hasValues ? ', or `@case:<kind>=<value>` for a value of a kind with values' : '') : 'for a screen that opens only under a role or a setting the tag of each case under `cases` it checks'}), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` on it as well. Under \`empty tests\`, a screen or call gets one set for each open mark${hasKinds ? ' and one more for each case with no tests' : ', a screen one more for each case with no tests'}, and a story one set: an empty test for each test format in the config, with the tags already in place and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, put what the test checks in place of \`<what it checks>\` (the Playwright ones of an item all carry that title), remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
     '',
