@@ -877,3 +877,68 @@ export default function ${name}() {
     }
   }
 });
+
+test('a move or a link whose address is a call of a function the source declares takes the address the function returns, whether the function is in the same file or imported from another', async () => {
+  const home = `import { Link, useHistory } from 'react-router-dom';
+import { helpPath } from './paths';
+import * as paths from './paths';
+import { teamPath } from './more';
+
+const loginPath = () => '/login';
+function startPath() {
+  return '/start';
+}
+
+export default function Home() {
+  const history = useHistory();
+  return (
+    <nav>
+      <Link to={loginPath()}>login</Link>
+      <button onClick={() => history.push(startPath())}>start</button>
+      <Link to={helpPath()}>help</Link>
+      <Link to={\`\${paths.teamsPath()}/a\`}>team a</Link>
+      <Link to={teamPath()}>team b</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({
+    'Home.js': home,
+    'paths.js': "export const helpPath = () => '/help';\n\nexport function teamsPath() {\n  return '/team';\n}\n",
+    'more.js': "export { teamPath } from './team-path';\n",
+    'team-path.js': "export const teamPath = function () {\n  return '/team/b';\n};\n",
+  }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('loginPath()}'), [], ['/login#Login']],
+    ['/start', at('startPath())'), [], ['/start#Start']],
+    ['/help', at('helpPath()'), [], ['/help/:page?#Help']],
+    ['/team/a', at('teamsPath()'), [], ['/team/:team#Team']],
+    ['/team/b', at('teamPath()}'), [], ['/team/:team#Team']],
+  ]);
+});
+
+test('an address function call in a file several screens share goes only to the screens whose code reaches the component holding it, with the conditions of that place', async () => {
+  const nav = `import { Link, useHistory } from 'react-router-dom';
+import { teamPath } from './paths';
+
+const loginPath = () => '/login';
+
+export function TeamLink({ open }) {
+  return open ? <Link to={teamPath()}>team</Link> : null;
+}
+
+export function LoginLink() {
+  const history = useHistory();
+  return <a onClick={() => history.push(loginPath())}>login</a>;
+}
+`;
+  const map = await build(writeApp({
+    'nav.js': nav,
+    'paths.js': "export const teamPath = () => '/team/a';\n",
+    'Home.js': "import { TeamLink } from './nav';\n\nexport default function Home() {\n  return <TeamLink open />;\n}\n",
+    'Start.js': "import { LoginLink } from './nav';\n\nexport default function Start() {\n  return <LoginLink />;\n}\n",
+  }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/team/a', lineOf(nav, 'teamPath()'), ['open'], ['/team/:team#Team']]]);
+  assert.deepEqual(linksOf(map, '/start#Start'), [['/login', lineOf(nav, 'loginPath()'), [], ['/login#Login']]]);
+});

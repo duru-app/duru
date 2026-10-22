@@ -400,7 +400,8 @@ export function* moveSaga() {
   yield fork(unwatched);
 }
 
-const urlOf = (x: string) => '/' + x;
+const pages: Record<string, string> = {};
+const urlOf = (x: string) => pages[x];
 `;
 
 const MOVING_APP = {

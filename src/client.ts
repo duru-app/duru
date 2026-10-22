@@ -4,6 +4,8 @@ import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
 import type { ArrowFunctionExpression, CallExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
+import { addressReader, UNREADABLE_PIECE } from './address-functions.ts';
+import type { AddressFunction } from './address-functions.ts';
 import type { Branch, Constants, GuardInit, GuardSetting, RouteNode } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
@@ -152,7 +154,6 @@ interface OuterFill {
 const traverse = _traverse.default ?? _traverse;
 export const UNKNOWN = '{?}';
 export const VARIABLE_SEGMENT = '{*}';
-const UNREADABLE_PIECE = '\0';
 const GUARD_TEXT_LIMIT = 160;
 const HISTORY_MAKERS = ['createBrowserHistory', 'createHashHistory'];
 
@@ -781,11 +782,20 @@ export async function extractClient(config: any) {
     return pathText === '/' ? [] : pathText.replace(/\/$/, '').slice(1).split('/');
   }
 
+  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredFunction, namespaceFunction });
+
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
-  function linkAddress(p: NodePath) {
-    const segments = pathSegments(tailText(p));
-    return segments ? `/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}` : UNKNOWN;
+  function linkAddresses(p: NodePath) {
+    return [...new Set(linkReading.branches(p).map(({ text }) => {
+      const segments = pathSegments(text);
+      return segments ? `/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}` : UNKNOWN;
+    }))];
   }
+
+  const oneAddress = (p: NodePath) => {
+    const [only, ...more] = linkAddresses(p);
+    return more.length ? UNKNOWN : only;
+  };
 
   // 라우트 상수 뒤에 '/' 로 이어 붙은 주소. 조각마다 글자 그대로이거나 변수 하나일 때만 돌려주고, 아니면 '' 을 돌려준다.
   function routeTail(p: NodePath) {
@@ -1064,7 +1074,7 @@ export async function extractClient(config: any) {
     const recordLinks = (addresses: NodePath[]) => {
       for (const at of addresses) {
         if (madeFrom(at).some(holdsRouteRef)) continue;
-        record('routerLinks', { to: linkAddress(at) }, at);
+        for (const to of linkAddresses(at)) record('routerLinks', { to }, at);
       }
     };
     const inRouteFile = routeFileSet.has(file);
@@ -1271,7 +1281,7 @@ export async function extractClient(config: any) {
           const from = attr('from');
           const to = attr('to');
           const holder = p.parentPath.isJSXExpressionContainer() ? p.parentPath.parentPath : null;
-          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? linkAddress(to) : UNKNOWN, redirectAsElement: Boolean(holder?.isJSXAttribute() && holder.node.name.name === 'element') });
+          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? oneAddress(to) : UNKNOWN, redirectAsElement: Boolean(holder?.isJSXAttribute() && holder.node.name.name === 'element') });
         } else if (config.routeElements.includes(tag)) {
           const at = attr('path');
           node.isRoute = true;
@@ -1407,16 +1417,29 @@ export async function extractClient(config: any) {
     return Boolean(tag) && config.redirectElements.includes(tag);
   }
 
-  function declaredFunction(scope: Scope, name: string): NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration> | null {
+  function declaredFunction(scope: Scope, name: string): AddressFunction | null {
     const binding = scope.getBinding(name);
     if (binding?.path.isFunctionDeclaration()) return binding.path;
     const from = binding?.kind === 'module' ? importedName(binding) : null;
-    const found = from && from.name !== '*' && from.file ? follower.declaration(from.file, from.name) : null;
+    const exported = from && from.name !== '*' ? exportedFunction(from.file, from.name) : null;
+    if (exported) return exported;
+    const value = declaredValue(scope, name);
+    return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
+  }
+
+  function exportedFunction(file: string | null, name: string): AddressFunction | null {
+    const found = file ? follower.declaration(file, name) : null;
     const program = found && programOf(found.file);
     const declared = !program ? null : found!.name === 'default' ? program.get('body').find((s) => s.isExportDefaultDeclaration())?.get('declaration') as NodePath | undefined : program.scope.getBinding(found!.name)?.path;
     if (declared?.isFunctionDeclaration()) return declared;
-    const value = declaredValue(scope, name);
+    const value = declared?.isVariableDeclarator() && declared.get('id').isIdentifier() && (declared.parent as VariableDeclaration).kind === 'const' ? declared.get('init') as NodePath : declared;
     return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
+  }
+
+  function namespaceFunction(scope: Scope, chain: string[]) {
+    const binding = scope.getBinding(chain[0]);
+    const from = binding?.kind === 'module' ? importedName(binding) : null;
+    return from?.name === '*' ? exportedFunction(from.file, chain[1]) : null;
   }
 
   const leadingPiece = (p: NodePath): NodePath => (p.isTemplateLiteral() && p.node.quasis[0].value.cooked === '' && p.node.expressions.length ? leadingPiece(p.get('expressions.0') as NodePath)
