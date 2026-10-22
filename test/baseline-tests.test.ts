@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { baselineTestsLines, compareTests, readBaselineTests } from '../src/baseline-tests.ts';
 import type { BaselineTests } from '../src/baseline-tests.ts';
 import { loadConfig } from '../src/config.ts';
+import { addJudgment } from '../src/judgments.ts';
 import type { TestStatus } from '../src/verdict.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
@@ -395,16 +396,75 @@ test('with baselineTests and no baselineMap, rebuild prints the same test lines'
   });
 });
 
-test('a baselineTests path that is missing stops rebuild with exit 1, naming the path, before anything is written', () => {
+test('a baselineTests path that is missing, a result file that cannot be read, or an item that gives no test stops rebuild with exit 1, naming the path, before anything is written', () => {
   withCopy(({ copy, configFile, setConfig }) => {
+    const stopped = (said: string) => {
+      const run = spawnSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+      assert.equal(run.status, 1, run.stderr);
+      assert.equal(run.stdout, '');
+      assert.equal(run.stderr.trim(), said);
+      assert.equal(fs.existsSync(path.join(copy, 'out')), false);
+    };
+    setConfig({ baselineTests: [{ format: 'playwright', path: 'releases/1.5.0/e2e.json', depth: 'ui' }] });
+    stopped('baselineTests releases/1.5.0/e2e.json could not be read: it does not exist');
+    const report = path.join(copy, 'releases/1.5.0/e2e.json');
+    fs.mkdirSync(path.dirname(report), { recursive: true });
+    fs.writeFileSync(report, '{ "suites": [');
+    const broken = (() => { try { JSON.parse('{ "suites": ['); } catch (err) { return (err as Error).message; } })();
+    stopped(`baselineTests releases/1.5.0/e2e.json could not be read: cannot read Playwright report ${report}: ${broken}`);
+    fs.writeFileSync(report, JSON.stringify({ cookies: [] }));
+    stopped('baselineTests releases/1.5.0/e2e.json could not be read: it holds no playwright test result');
+    fs.mkdirSync(path.join(copy, 'releases/1.5.0/verdict'));
+    fs.writeFileSync(path.join(copy, 'releases/1.5.0/verdict/notes.log'), 'no verdict here\n');
+    fs.writeFileSync(report, JSON.stringify(playwrightReport('t')));
+    setConfig({ baselineTests: [{ format: 'playwright', path: 'releases/1.5.0/e2e.json', depth: 'ui' }, { format: 'verdict', path: 'releases/1.5.0/verdict', depth: 'api' }] });
+    stopped('baselineTests releases/1.5.0/verdict could not be read: it holds no verdict test result');
+  });
+});
+
+test('a folder in baselineTests skips files of another format and verdict logs with no verdict line', () => {
+  withCopy(({ copy, setConfig, rebuild }) => {
+    keepRelease(copy);
+    fs.mkdirSync(path.join(copy, 'releases/1.5.0/playwright/.auth'));
+    fs.writeFileSync(path.join(copy, 'releases/1.5.0/playwright/.auth/user.json'), JSON.stringify({ cookies: [], origins: [] }));
+    fs.writeFileSync(path.join(copy, 'releases/1.5.0/verdict/documents/notes.log'), 'checked by hand, no verdict\n');
+    setConfig({ baselineTests: BASELINE_TESTS });
+    assert.deepEqual(testLines(rebuild()), TEST_LINES);
+  });
+});
+
+test('extract, undecided and tasks run as before with a broken baselineTests', () => {
+  withCopy(({ configFile, setConfig, rebuild }) => {
+    rebuild();
     setConfig({ baselineTests: [{ format: 'playwright', path: 'releases/gone/e2e.json', depth: 'ui' }] });
-    assert.throws(() => execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8', stdio: 'pipe' }), (err: Error & { status: number; stdout: string; stderr: string }) => {
-      assert.equal(err.status, 1);
-      assert.equal(err.stdout, '');
-      assert.equal(err.stderr.trim(), 'baselineTests releases/gone/e2e.json could not be read: it does not exist');
-      return true;
+    for (const command of ['extract', 'undecided', 'tasks']) execFileSync(process.execPath, [CLI, command, configFile], { encoding: 'utf8' });
+  });
+});
+
+test('rebuild leaves out a pair a reviewer discarded and compares a pair handed over for tagging of the same test', () => {
+  withCopy(({ copy, configFile, setConfig, rebuild }) => {
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    setConfig({ tests: [...config.tests, { format: 'playwright', path: 'results/playwright-traced', depth: 'ui' }], baselineTests: [{ format: 'playwright', path: 'releases/1.5.0/visits.json', depth: 'ui' }] });
+    fs.mkdirSync(path.join(copy, 'releases/1.5.0'), { recursive: true });
+    fs.copyFileSync(path.join(copy, 'results/playwright-traced/visits.json'), path.join(copy, 'releases/1.5.0/visits.json'));
+    const title = 'follows a link while waiting for the new address';
+    editJson(path.join(copy, 'results/playwright-traced/visits.json'), (report) => {
+      for (const t of report.suites.flatMap((s: any) => s.specs).find((s: any) => s.title === title).tests) t.status = 'unexpected';
     });
-    assert.equal(fs.existsSync(path.join(copy, 'out')), false);
+    const judgmentsDir = path.join(copy, 'out/judgments');
+    const followed = { source: 'results/playwright-traced/visits.json', file: 'visits.spec.ts', title };
+    addJudgment(judgmentsDir, { test: followed, node: '/home#Home', kind: 'discard', reason: 'only starts there', author: 'a' });
+    addJudgment(judgmentsDir, { test: followed, node: '/help#Help', kind: 'hand-over', author: 'a' });
+    assert.deepEqual(testLines(rebuild()).filter((l) => l.startsWith('  pass→')), [`  pass→fail ← visits.spec.ts:34 ${title} (chromium) — screen /help#Help`]);
+  });
+});
+
+test('a baselineTests that is not a list, or an item that is not an object with a path, stops with what to write', () => {
+  withCopy(({ configFile, setConfig }) => {
+    for (const baselineTests of ['releases', {}, [null], [{ format: 'playwright' }]]) {
+      setConfig({ baselineTests });
+      assert.throws(() => loadConfig(configFile), new RegExp(`^Error: baselineTests must be a list of \\{ "format", "path", "depth" \\} like tests, such as \\[\\{ "format": "playwright", "path": "releases/1\\.5\\.0/e2e\\.json", "depth": "ui" \\}\\], not ${JSON.stringify(baselineTests).replace(/[[\]{}.]/g, '\\$&')}$`));
+    }
   });
 });
 

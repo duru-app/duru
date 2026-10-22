@@ -59,12 +59,19 @@ export function readBaselineTests(config: { configDir: string; baselineTests: So
     const fail = (reason: string) => new Error(`baselineTests ${fromConfig(config.configDir, source.path)} could not be read: ${reason}`);
     if (!fs.existsSync(source.path)) throw fail('it does not exist');
     folders.push(fs.statSync(source.path).isDirectory() ? source.path : path.dirname(source.path));
+    const before = tests.length;
     for (const file of resultFiles(source.path, READERS[source.format].extensions)) {
       const result = fromConfig(config.configDir, file);
-      const read = READERS[source.format].read(file) ?? [];
+      let read;
+      try {
+        read = READERS[source.format].read(file) ?? [];
+      } catch (err) {
+        throw fail((err as Error).message);
+      }
       if (read.length) results.push({ result, startedAt: startedAt(source.format, file) });
       for (const t of read) tests.push({ title: t.title, tags: t.tags, file: t.file ?? null, line: t.line ?? null, project: t.project ?? null, status: t.status, result });
     }
+    if (tests.length === before) throw fail(`it holds no ${source.format} test result`);
   }
   const folder = commonFolder(folders);
   const relative = path.relative(config.configDir, folder);

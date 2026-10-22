@@ -349,6 +349,10 @@ export function loadConfig(configPath: string) {
   if (raw.baselineMap !== undefined && !isText(raw.baselineMap)) {
     throw new Error(`baselineMap must be the path of a map.json written by an earlier rebuild, such as "releases/1.5.0/map.json", not ${JSON.stringify(raw.baselineMap)}`);
   }
+  const isTestSource = (t: unknown) => isPlainObject(t) && isText((t as Record<string, unknown>).path);
+  if (raw.baselineTests !== undefined && !(Array.isArray(raw.baselineTests) && raw.baselineTests.every(isTestSource))) {
+    throw new Error(`baselineTests must be a list of { "format", "path", "depth" } like tests, such as [{ "format": "playwright", "path": "releases/1.5.0/e2e.json", "depth": "ui" }], not ${JSON.stringify(raw.baselineTests)}`);
+  }
   const baselineTests = raw.baselineTests === undefined ? [] : testSources(raw.baselineTests, 'baselineTests: ');
   const sourcePackages = raw.sourcePackages ?? {};
   if (!isPlainObject(sourcePackages) || !Object.entries(sourcePackages).every(([name, folder]) => PACKAGE_NAME.test(name) && isText(folder))) {
