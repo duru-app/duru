@@ -766,30 +766,39 @@ export default function SettingsPage() {
 });
 
 test('Routes drawn side by side each give their screen, so a /* route\'s screen stays beside one of the other Routes that fits the whole address', async () => {
-  const routes = `import { Route, Routes } from 'react-router-dom';
+  const imports = `import { Route, Routes } from 'react-router-dom';
 import Docs from './Docs';
 import Doc from './Doc';
 import Start from './Start';
-
-export default function AppRoutes() {
-  return (
-    <>
-      <Routes>
+`;
+  const docs = `<Routes>
         <Route path="/docs/*" element={<Docs />} />
         <Route path="/start" element={<Start />} />
-      </Routes>
-      <Routes>
+      </Routes>`;
+  const doc = `<Routes>
         <Route path="/docs/:id" element={<Doc />} />
-      </Routes>
+      </Routes>`;
+  const file = (name: string, ...drawn: string[]) => `${imports}
+export default function ${name}() {
+  return (
+    <>
+      ${drawn.join('\n      ')}
     </>
   );
 }
 `;
   const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav><Link to="/docs/1">doc</Link><Link to="/docs">docs</Link></nav>;\n}\n`;
   const pages = Object.fromEntries(['Docs', 'Doc'].map((n) => [`${n}.js`, page(n)]));
-  const map = await build(writeApp({ ...pages, 'Routes.js': routes, 'Start.js': start }));
-  assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, l.targets])), {
-    '/docs/1': ['/docs/*#Docs', '/docs/:id#Doc'],
-    '/docs': ['/docs/*#Docs'],
-  });
+  for (const [shape, files, keys] of [
+    ['in one file', { 'Routes.js': file('AppRoutes', docs, doc) }, {}],
+    ['in one file, the other Routes first', { 'Routes.js': file('AppRoutes', doc, docs) }, {}],
+    ['in two route files', { 'Routes.js': file('AppRoutes', docs), 'Extra.js': file('Extra', doc) }, { routesFile: ['Routes.js', 'Extra.js'] }],
+    ['in two route files, the other file first', { 'Routes.js': file('AppRoutes', docs), 'Extra.js': file('Extra', doc) }, { routesFile: ['Extra.js', 'Routes.js'] }],
+  ] as const) {
+    const map = await build(writeApp({ ...pages, ...files, 'Start.js': start }, keys));
+    assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, [...l.targets].sort()])), {
+      '/docs/1': ['/docs/*#Docs', '/docs/:id#Doc'],
+      '/docs': ['/docs/*#Docs'],
+    }, shape);
+  }
 });
