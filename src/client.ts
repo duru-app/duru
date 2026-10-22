@@ -18,7 +18,7 @@ import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
-import { madeFrom, screenLinkReader } from './screen-links.ts';
+import { addresses, madeFrom, screenLinkReader } from './screen-links.ts';
 import { importedAs, routerImport, screenRequestReader } from './screen-requests.ts';
 import type { UnresolvedReason } from './server.ts';
 import { typedMembers } from './typed-members.ts';
@@ -782,7 +782,8 @@ export async function extractClient(config: any) {
     return pathText === '/' ? [] : pathText.replace(/\/$/, '').slice(1).split('/');
   }
 
-  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction });
+  const passThrough = (name: string) => (config.passThroughCalls ?? []).includes(name);
+  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction, passThrough });
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
   // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니다.
@@ -790,7 +791,8 @@ export async function extractClient(config: any) {
     const read = linkReading.branches(p);
     if ('tooMany' in read) return [UNKNOWN];
     const found = new Set<string>();
-    for (const { text, made } of read.branches) {
+    for (const { text, made, whole } of read.branches) {
+      if (made && whole && !addresses(whole).length) continue;
       const segments = pathSegments(text);
       if (segments) found.add(`/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}`);
       else if (!made || text.includes(UNREADABLE_PIECE)) found.add(UNKNOWN);
@@ -1168,6 +1170,7 @@ export async function extractClient(config: any) {
     declaredValue,
     declaredFunction,
     namespaceFunction,
+    passThrough,
   });
 
   // 주소 함수가 돌려준 갈래 가운데 쿼리를 붙이는 것과, 고정된 마디가 있는 갈래 옆에서 경로 변수만 남은 것은 경로가 아니다.

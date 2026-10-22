@@ -1299,3 +1299,82 @@ export default function Home({ tab }) {
     ['{?}', at('nine(tab)')],
   ]);
 });
+
+test('an address function that comes back to a function it is reading, or calls more than 8 deep, stops with {?}', async () => {
+  const chain = Array.from({ length: 8 }, (_, i) => `export const f${i + 1} = () => f${i + 2}();\n`).join('');
+  const paths = `export const ping = () => pong();
+const pong = () => ping();
+${chain}const f9 = () => '/team/deep';
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { f1, f2, ping } from './paths';
+
+export default function Home() {
+  return (
+    <nav>
+      <Link to={ping()}>ping</Link>
+      <Link to={f2()}>eight deep</Link>
+      <Link to={f1()}>nine deep</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['{?}', at('ping()')], ['/team/deep', at('f2()')], ['{?}', at('f1()')]]);
+});
+
+test('a function that takes its address out of a table by a computed key or from a package function stays {?}', async () => {
+  const paths = `import { generatePath } from 'react-router-dom';
+
+const TABLE = { a: '/team/a', b: '/team/b' };
+export const tablePath = (key) => TABLE[key];
+export const packagePath = (id) => generatePath('/team/:id', { id });
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { packagePath, tablePath } from './paths';
+
+export default function Home() {
+  return <nav><Link to={tablePath('a')}>a</Link><Link to={packagePath('b')}>b</Link></nav>;
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['{?}', 5], ['{?}', 5]]);
+});
+
+test('a name in passThroughCalls is read as its first argument even when a function of that name is declared in the source', async () => {
+  const home = `import { Link } from 'react-router-dom';
+
+const wrap = (address) => '/login';
+
+export default function Home() {
+  return <Link to={wrap('/start')}>start</Link>;
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }, { passThroughCalls: ['wrap'] }));
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['/start', 6]]);
+});
+
+test('an address function that returns its argument whole gives no link when the argument comes from props or a parameter', async () => {
+  const home = `import { Link, useHistory } from 'react-router-dom';
+
+const same = (url) => url;
+const fallback = (url) => url || '/home';
+
+export default function Home(props) {
+  const history = useHistory();
+  const goTo = (href) => history.push(same(href));
+  return (
+    <nav>
+      <Link to={same(props.next)}>next</Link>
+      <button onClick={() => goTo('/team/a')}>team</button>
+      <Link to={same('/start')}>start</Link>
+      <Link to={fallback(props.back)}>back</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['/start', at("same('/start')")], ['/home', at('fallback(')]]);
+});
