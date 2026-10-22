@@ -1378,3 +1378,13 @@ export default function Home(props) {
   const at = (part: string) => lineOf(home, part);
   assert.deepEqual(addressesAt(map, '/home#Home'), [['/start', at("same('/start')")], ['/home', at('fallback(')]]);
 });
+
+test('the usage guide, the agent skill and the decision record say that duru reads the address a function declared in the source returns, and what a route path not read line adds when that function gives several paths', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
+  assert.match(read('README.md'), /When a piece of an address is a call of a function declared in the source, duru reads\s+the\s+address\s+that\s+function returns\./);
+  assert.match(read('README.md'), /`, which gives <paths>`/);
+  assert.match(read('skills/duru/SKILL.md'), /`, which gives <paths>`/);
+  const decisions = read('docs/decisions.md');
+  assert.match(decisions, /\*\*A link address or route path that calls a function declared in the source is read through the function's body/);
+  assert.doesNotMatch(decisions, /What an imported function\s+returns \(`draftsPath\(\)`, `settingsPath\("groups", ":id"\)`\) is not read/);
+});

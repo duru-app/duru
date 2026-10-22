@@ -2260,8 +2260,9 @@ name is declared with the import resolution it already has, tsconfig aliases inc
 constant written beside the route: literals, templates and joins of constants of that file, objects, enum members,
 `as const`, `satisfies` and a default export. The 26 constants behind those paths on the three apps were all
 literals or templates of constants of their own file. A name two `export *` give from different declarations is
-not exported, as in ES modules, and a name whose value leads back to itself is not read. What an imported function
-returns (`draftsPath()`, `settingsPath("groups", ":id")`) is not read; each route path left with `{?}` gets a
+not exported, as in ES modules, and a name whose value leads back to itself is not read. What a function
+returns (`draftsPath()`, `settingsPath("groups", ":id")`) is read only in link addresses, route paths and the
+redirects of route files, as the entry on address functions below writes; each route path left with `{?}` gets a
 `route path not read` line in the summary that names where duru stopped. The same reading serves route paths,
 redirects, the request addresses in screen sources and API modules, and role conditions, so a request address with an
 imported constant in it is read too, and `imported-piece` is left to a function's result or a name whose declaration
@@ -3401,6 +3402,85 @@ a watcher, a type only another saga `put`s, and the dispatch shapes the saga req
 a watcher registered under a condition gives its links without that condition; a route constant written in a
 saga counts as a link even where it is not a move, as in a screen; the review page shows a saga link with its saga
 file and line but not its `actions`, as for saga requests, and a screen's `codeHash` does not cover saga files.
+
+**A link address or route path that calls a function declared in the source is read through the function's body,
+with a link for each branch duru cannot decide, and `{?}` only for a value it cannot read.**
+When a piece of a link address (the `to` of a link element, an address given to `push`, `replace` or `navigate`), a
+route `path=`, the path of a route without a screen, or the `from` or `to` of a route file's `Redirect` is a call by
+name (`draftsPath()`) or through a namespace import (`paths.draftsPath()`), duru finds the declaration through the
+same file, imports and re-exports, as it does for constants, and reads what the body returns: a function
+declaration, or an arrow or function expression held by a `const`, neither `async` nor a generator. The reading is
+the module `src/address-functions.ts`, which the client gives its name following and its value reading, so links,
+route paths and both readings of a route file's `Redirect` (the redirect list that makes entry screens and the
+route tree that sends links on) give one answer. The body is read statement by statement: `return`, `if` with or
+without `else`, `const` and `let` with the values of the parameters, `let` given another value or added to with
+`+=`, `? :`, `&&`, `||`, `??`, `.join` of the rest arguments, `.length`, and calls of other such functions, which
+are read the same way. An object with a `pathname` that the function returns is read by its `pathname`, as a
+link's `{ pathname }` is. A body with another statement (a loop, `switch`, `try`) is not read, and the call is a
+piece duru cannot read. A name at the link holding what such a call returns (`const base = searchPath()`) is read
+through the call.
+The arguments of the call are put into the parameters: a parameter left out takes its default, an object pattern
+takes the property of the object given, and a rest parameter takes the arguments left. A value duru cannot read
+(props, state, what a package function returns) is a `{*}` piece of the address, and an address that starts with
+one is `{?}`, as in a link written in the screen's code. A condition is decided only when every value in it is read
+whole: written values, arguments given as written values, an argument left out, the number of rest arguments,
+comparisons and `!`. A value with a piece duru cannot read decides nothing, since the client's reading of a
+template puts `{?}` text in place of that piece, which is not empty and would pass as true. Otherwise each branch is
+followed and gives its own link. The links of one place carry only the conditions written around that place,
+where the call is: a condition inside the function is written in another file and tests its parameters, which mean
+something only at each call, while duru reads a condition by its text in the file it is written in. A `? :` inside
+an argument is followed into each branch without its condition.
+Of the branches a function gives, one that is read whole and is not written from `/` (`''`, `settings`) gives no
+link, and branches that give the same address give one link. When the function gives `''` in a branch and that
+empty text is the first piece of the address, the address of that branch is `{?}` (driver's decision, 2026-10-22, in
+#396): mattermost's `getTeamRelativeUrl(team)` returns `''` when there is no team, and `getChannelURL` puts
+`'/channels/' + name` after it, which `/:team(…)` takes with `channels` as a team name. A function's result that ends
+in `/` followed by a piece that starts with `/` loses one of them, so `${homePath()}/:tab?` with `homePath()` giving
+`/` is `/:tab?`. More than 8 different addresses at one place give one `{?}` link (`MOST_ADDRESSES` in
+`src/address-functions.ts`); where to show how many branches there were is not decided yet, and the summary prints
+nothing for it. Before turning branches into addresses the module merges branches with the same text and stops at 64.
+A route path drops a branch that adds a query (a `?` not right after a path variable), so `${searchPath()}/:query?`
+is `/search/:query?`, and a branch that leaves only path variables when a branch with a written segment is left, so
+outline's home route `${homePath()}/:tab?` is `/home/:tab?`. A relative path a function returns is kept, so React
+Router 6 joins it to the outer route's path. When two or more different paths are left, the path is `{?}` and the
+`route path not read` line names the call and the paths (`stopped at homePath(), which gives / and /home`), or says
+`more than 8 paths`.
+A call is followed 8 deep (`FOLLOWED` of `src/screen-links.ts`); the 9th call, and a call of a function duru is
+already reading, is a piece it cannot read. A name listed in `passThroughCalls` is read as its first argument
+before any body is looked for, as the config says. A function that returns its argument as it is gives that
+argument back to the link rules: an argument taken from props or a parameter gives no link, as decided in #392.
+The first decision (driver, 2026-10-22, in #363) followed the body and left a function whose address depends on
+the app's state `{?}`; the answer given while planning (#395) changed it to a link for each branch, as duru does for
+a condition in the screen's code, so whether a place is `{?}` depends on whether its pieces can be read, not on its
+conditions.
+Alternatives compared:
+- Running the module that declares the function, as `constants` does: every app needs stand-ins and a module that
+  fills the app's state, the run has side effects that differ by app, and in outline it left `doc` unknown and
+  missed the links of 16 places to the document screen.
+- Reading calls wherever a value is read (request addresses, role conditions, route tables): a request address
+  would change its call ID, which marks hang on, and a request has no shape for several addresses at one place.
+- Attaching mattermost's `/channels/{*}` to the team screen, or dropping the `''` branch from the function's result:
+  the first adds 5 lines to a screen the app does not mean to open, the second loses the real address of a function
+  that returns `''` for the app's root (`basePath()`).
+Known limits:
+- Calls in route table items (`routeTables`), request addresses and role conditions are not read; mattermost's route
+  tables have no `url:` written with a call.
+- Methods of an object or a class in the source (`paths.home()` on an object literal, `urlBuilder.build()`) are not
+  followed. Counted before this change, of the link places that reach a screen, none of outline's 52, mattermost's
+  14 and appsmith's 40 builds its address with such a method; the methods there are built-in ones such as
+  `.substring` and `.slice`, and appsmith's `urlBuilder.build()` is called inside named functions like
+  `builderURL`, which stay `{?}`. Of built-in methods only `.join` of rest arguments is computed.
+- outline's `patchLocation(history.location, { hash })` (10 places, 134 lines before this change) returns an
+  object whose `pathname` is spread from its parameter, and the argument is `history.location`, a move that stays on
+  the screen; telling that would need the argument rule above for one piece of an object, so it stays `{?}`.
+- outline's `homePath()` gives `/` or `/home` by `env.ROOT_SHARE_ID`, so its places get a `/` link beside `/home`,
+  and the router sends `/` to the shared and sign-in screens. Both links are kept as the rule above decides.
+- The condition of a `? :` inside an argument is not added to the link. Counted before this change, 2 link places of
+  outline had one (both in the `search` of `patchLocation`) and none of mattermost or appsmith; to add it, the place
+  would pass the condition to `record()` as its own guards.
+- The module's inner reading takes an expression and the values of the parameters, and `branches(p)` reads the
+  place of a call with none; the coming reading of helpers that move to an address they are given, which has to read
+  `history.push(url)` inside a body with the caller's arguments, will need that inner reading exported.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
