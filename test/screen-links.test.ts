@@ -485,3 +485,395 @@ export default function Home({ query }) {
   const map = await build(writeApp({ 'Home.js': home }));
   assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', lineOf(home, 'push(target)'), [], []], ['/login', lineOf(home, '"/login"'), [], ['/login#Login']]]);
 });
+
+const V6_ROUTES = `import { Suspense } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Help from './Help';
+import Login from './Login';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <Suspense fallback={null}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/help/:page?" element={<Help />} />
+        <Route path="/home" element={<Home />} />
+        <Route path="/team/:team" element={<Team />} />
+        <Route path="/team/new" element={<Start />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
+      </Routes>
+    </Suspense>
+  );
+}
+`;
+
+test('with React Router 6, a move through the function useNavigate() returns and a Navigate outside the route files become links to the screen Routes draws', async () => {
+  const home = `import { Navigate, useNavigate } from 'react-router-dom';
+
+export default function Home({ flag, back }) {
+  const navigate = useNavigate();
+  const go = navigate;
+  if (flag.out) return <Navigate to="/login" replace />;
+  return (
+    <div>
+      <button onClick={() => navigate('/team/new')}>new</button>
+      <button onClick={() => go(\`/team/\${flag.id}\`, { replace: true })}>team</button>
+      <button onClick={() => navigate({ pathname: '/help', search: '?q=1' })}>help</button>
+      <button onClick={() => navigate('/nowhere')}>caught</button>
+      <button onClick={() => navigate(-1)}>back</button>
+      <button onClick={() => back(navigate)}>given</button>
+    </div>
+  );
+}
+`;
+  const help = `import { useNavigate } from 'react-router-dom';
+
+function leave(navigate) {
+  navigate('/start');
+}
+
+export default function Help() {
+  const navigate = useNavigate();
+  return <a onClick={() => leave(navigate)} />;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': V6_ROUTES, 'Home.js': home, 'Help.js': help }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('"/login"'), ['flag.out'], ['/login#Login']],
+    ['/team/new', at("'/team/new'"), [], ['/team/new#Start']],
+    ['/team/{*}', at('flag.id'), [], ['/team/:team#Team']],
+    ['/help', at("pathname: '/help'"), [], ['/help/:page?#Help']],
+    ['/nowhere', at("'/nowhere'"), [], ['/home#Home']],
+  ]);
+  assert.deepEqual(linksOf(map, '/help/:page?#Help'), []);
+});
+
+test('with React Router 6, a link goes on to a Navigate that is the element of the route it reaches, not to one the element shows only under a condition', async () => {
+  const routes = `import { Navigate, Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Login from './Login';
+import Start from './Start';
+
+export default function AppRoutes({ user }) {
+  return (
+    <Routes>
+      <Route path="/login" element={!user ? <Login /> : <Navigate to="/home" />} />
+      <Route path="/home" element={user ? <Home /> : <Navigate to="/login" replace />} />
+      <Route path="/old" element={<Navigate to="/home" replace />} />
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const start = `import { Link } from 'react-router-dom';
+
+export default function Start() {
+  return <nav><Link to="/home">home</Link><Link to="/login">login</Link><Link to="/old">old</Link></nav>;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Start.js': start }));
+  assert.deepEqual(linksOf(map, '/start#Start').map(([to, , , targets]) => [to, targets]), [
+    ['/home', ['/home#Home']],
+    ['/login', ['/login#Login']],
+    ['/old', ['/home#Home']],
+  ]);
+});
+
+test('Routes picks the most specific path whatever the order, and a path fits only the whole address unless it ends in /*', async () => {
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import Docs from './Docs';
+import Doc from './Doc';
+import NewDoc from './NewDoc';
+import Files from './Files';
+import OtherFiles from './OtherFiles';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/docs/*" element={<Docs />} />
+      <Route path="/docs/:id" element={<Doc />} />
+      <Route path="/docs/new" element={<NewDoc />} />
+      <Route path="/files" element={<Files />} />
+      <Route path="/files" element={<OtherFiles />} />
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const addresses = ['/docs/new', '/docs/a', '/docs/a/b', '/docs', '/files', '/files/x'];
+  const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav>${addresses.map((a) => `<Link to="${a}">${a}</Link>`).join('')}</nav>;\n}\n`;
+  const pages = Object.fromEntries(['Docs', 'Doc', 'NewDoc', 'Files', 'OtherFiles'].map((n) => [`${n}.js`, page(n)]));
+  const map = await build(writeApp({ ...pages, 'Routes.js': routes, 'Start.js': start }));
+  assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, l.targets])), {
+    '/docs/new': ['/docs/new#NewDoc'],
+    '/docs/a': ['/docs/:id#Doc'],
+    '/docs/a/b': ['/docs/*#Docs'],
+    '/docs': ['/docs/*#Docs'],
+    '/files': ['/files#Files', '/files#OtherFiles'],
+    '/files/x': [],
+  });
+});
+
+test('a React Router 6 address not written from / stays {?} and goes to no screen', async () => {
+  const home = `import { Navigate, useNavigate } from 'react-router-dom';
+
+export default function Home({ flag }) {
+  const navigate = useNavigate();
+  if (flag.up) return <Navigate to="../team" />;
+  return <button onClick={() => navigate('help')}>help</button>;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': V6_ROUTES, 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['{?}', 5, ['flag.up'], []],
+    ['{?}', 6, [], []],
+  ]);
+});
+
+test('Routes takes the routes a Fragment or React.Fragment wraps, at whatever depth', async () => {
+  const routes = `import React, { Fragment } from 'react';
+import { Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Help from './Help';
+import Login from './Login';
+import Start from './Start';
+
+export default function AppRoutes({ auth }) {
+  return (
+    <Routes>
+      <Route path="/home" element={<Home />} />
+      {auth && (
+        <Fragment>
+          <Route path="/team" element={<Team />} />
+        </Fragment>
+      )}
+      <React.Fragment>
+        <Route path="/rf" element={<Help />} />
+      </React.Fragment>
+      <Route path="/admin">
+        <Fragment key="admin">
+          <Route path="login" element={<Login />} />
+        </Fragment>
+      </Route>
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const home = `import { Link } from 'react-router-dom';\n\nexport default function Home() {\n  return <nav><Link to="/team">team</Link><Link to="/rf">rf</Link><Link to="/admin/login">login</Link></nav>;\n}\n`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home }));
+  const login = map.screens.find((s) => s.id.endsWith('#Login'))!.id;
+  assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/home#Home')!.links.map((l) => [l.to, l.targets])), {
+    '/team': ['/team#Team'],
+    '/rf': ['/rf#Help'],
+    '/admin/login': [login],
+  });
+  assert.deepEqual(map.entries.map((e) => e.screen), ['/home#Home', '/start#Start']);
+});
+
+test('a nested Routes joins a relative path to the outer /* route\'s path, and matches a path written from / against the whole address', async () => {
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import App from './App';
+import Help from './Help';
+import Team from './Team';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/app/*" element={<App />} />
+      <Route path="/x/*" element={<Routes><Route path="y" element={<Team />} /></Routes>} />
+      <Route path="/full/*" element={<Routes><Route path="/full/help" element={<Help />} /></Routes>} />
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const app = `import { Route, Routes } from 'react-router-dom';
+import Settings from './Settings';
+import Login from './Login';
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="settings" element={<Settings />} />
+      <Route path="/login" element={<Login />} />
+    </Routes>
+  );
+}
+`;
+  const addresses = ['/app/settings', '/settings', '/x/y', '/y', '/full/help', '/login'];
+  const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav>${addresses.map((a) => `<Link to="${a}">${a}</Link>`).join('')}</nav>;\n}\n`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'App.js': app, 'Settings.js': page('Settings'), 'Start.js': start }, { routesFile: ['Routes.js', 'App.js'] }));
+  const id = (name: string) => map.screens.find((s) => s.id.endsWith(`#${name}`))!.id;
+  assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, l.targets])), {
+    '/app/settings': [id('Settings')],
+    '/settings': [],
+    '/x/y': [id('Team')],
+    '/y': [],
+    '/full/help': [id('Help')],
+    '/login': [],
+  });
+});
+
+test('a route file drawn again inside a route file it holds does not join the outer path again', async () => {
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import Section from './Section';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="a/*" element={<Section />} />
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const section = `import { Route, Routes } from 'react-router-dom';
+import Back from './Back';
+import Team from './Team';
+
+export default function Section() {
+  return (
+    <Routes>
+      <Route path="b/*" element={<Back />} />
+      <Route path="team" element={<Team />} />
+    </Routes>
+  );
+}
+`;
+  const back = `import AppRoutes from './Routes';\n\nexport default function Back() {\n  return <AppRoutes />;\n}\n`;
+  const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav><Link to="/a/team">team</Link></nav>;\n}\n`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Section.js': section, 'Back.js': back, 'Start.js': start }, { routesFile: ['Routes.js', 'Section.js'] }));
+  assert.deepEqual(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => l.targets), [[map.screens.find((s) => s.id.endsWith('#Team'))!.id]]);
+});
+
+test('the screen of an outer /* route stays a link\'s screen beside the screen of an inner * route, unless a screen drawn inside it fits the whole address', async () => {
+  const inner = '<Routes><Route path="profile" element={<Profile />} /><Route path="*" element={<NotFound />} /></Routes>';
+  const routes = (element: string) => `import { Route, Routes } from 'react-router-dom';
+import SettingsPage from './SettingsPage';
+import Profile from './Profile';
+import NotFound from './NotFound';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/settings/*" element={${element}} />
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const settingsFile = `import { Route, Routes } from 'react-router-dom';
+import Profile from './Profile';
+import NotFound from './NotFound';
+
+export default function SettingsPage() {
+  return (
+    ${inner}
+  );
+}
+`;
+  const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav><Link to="/settings/zzz">zzz</Link><Link to="/settings/profile">profile</Link></nav>;\n}\n`;
+  const pages = Object.fromEntries(['SettingsPage', 'Profile', 'NotFound'].map((n) => [`${n}.js`, page(n)]));
+  for (const [shape, files, keys] of [
+    ['in a route file', { 'Routes.js': routes('<SettingsPage />'), 'SettingsPage.js': settingsFile }, { routesFile: ['Routes.js', 'SettingsPage.js'] }],
+    ['in the element', { 'Routes.js': routes(`<SettingsPage>${inner}</SettingsPage>`) }, {}],
+  ] as const) {
+    const map = await build(writeApp({ ...pages, ...files, 'Start.js': start }, keys));
+    const id = (name: string) => map.screens.find((s) => s.id.endsWith(`#${name}`))!.id;
+    assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, l.targets])), {
+      '/settings/zzz': [id('SettingsPage'), id('NotFound')],
+      '/settings/profile': [id('Profile')],
+    }, shape);
+  }
+});
+
+test('Routes drawn side by side each give their screen, so a /* route\'s screen stays beside one of the other Routes that fits the whole address', async () => {
+  const imports = `import { Route, Routes } from 'react-router-dom';
+import Docs from './Docs';
+import Doc from './Doc';
+import Start from './Start';
+`;
+  const docs = `<Routes>
+        <Route path="/docs/*" element={<Docs />} />
+        <Route path="/start" element={<Start />} />
+      </Routes>`;
+  const doc = `<Routes>
+        <Route path="/docs/:id" element={<Doc />} />
+      </Routes>`;
+  const file = (name: string, ...drawn: string[]) => `${imports}
+export default function ${name}() {
+  return (
+    <>
+      ${drawn.join('\n      ')}
+    </>
+  );
+}
+`;
+  const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav><Link to="/docs/1">doc</Link><Link to="/docs">docs</Link></nav>;\n}\n`;
+  const pages = Object.fromEntries(['Docs', 'Doc'].map((n) => [`${n}.js`, page(n)]));
+  for (const [shape, files, keys] of [
+    ['in one file', { 'Routes.js': file('AppRoutes', docs, doc) }, {}],
+    ['in one file, the other Routes first', { 'Routes.js': file('AppRoutes', doc, docs) }, {}],
+    ['in two route files', { 'Routes.js': file('AppRoutes', docs), 'Extra.js': file('Extra', doc) }, { routesFile: ['Routes.js', 'Extra.js'] }],
+    ['in two route files, the other file first', { 'Routes.js': file('AppRoutes', docs), 'Extra.js': file('Extra', doc) }, { routesFile: ['Extra.js', 'Routes.js'] }],
+  ] as const) {
+    const map = await build(writeApp({ ...pages, ...files, 'Start.js': start }, keys));
+    assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, [...l.targets].sort()])), {
+      '/docs/1': ['/docs/*#Docs', '/docs/:id#Doc'],
+      '/docs': ['/docs/*#Docs'],
+    }, shape);
+  }
+});
+
+test('a catch-all * or /* route in a Routes drawn beside another is a link\'s screen beside the other Routes\' screen, but not beside a route of its own Routes that wins', async () => {
+  for (const star of ['*', '/*']) {
+    const users = `<Routes>
+        <Route path="/users" element={<Users />} />
+        <Route path="/start" element={<Start />} />
+      </Routes>`;
+    const admin = `<Routes>
+        <Route path="/admin" element={<Admin />} />
+        <Route path="${star}" element={<NotFound />} />
+      </Routes>`;
+    const file = (name: string, ...drawn: string[]) => `import { Route, Routes } from 'react-router-dom';
+import Users from './Users';
+import Admin from './Admin';
+import NotFound from './NotFound';
+import Start from './Start';
+
+export default function ${name}() {
+  return (
+    <>
+      ${drawn.join('\n      ')}
+    </>
+  );
+}
+`;
+    const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav><Link to="/users">users</Link><Link to="/admin">admin</Link><Link to="/zzz">zzz</Link></nav>;\n}\n`;
+    const pages = Object.fromEntries(['Users', 'Admin', 'NotFound'].map((n) => [`${n}.js`, page(n)]));
+    for (const [shape, files, keys] of [
+      ['in one file', { 'Routes.js': file('AppRoutes', users, admin) }, {}],
+      ['in one file, the catch-all Routes first', { 'Routes.js': file('AppRoutes', admin, users) }, {}],
+      ['in two route files', { 'Routes.js': file('AppRoutes', users), 'Extra.js': file('Extra', admin) }, { routesFile: ['Routes.js', 'Extra.js'] }],
+      ['in two route files, the catch-all file first', { 'Routes.js': file('AppRoutes', users), 'Extra.js': file('Extra', admin) }, { routesFile: ['Extra.js', 'Routes.js'] }],
+    ] as const) {
+      const map = await build(writeApp({ ...pages, ...files, 'Start.js': start }, keys));
+      const notFound = `${star}#NotFound`;
+      assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, [...l.targets].sort()])), {
+        '/users': [notFound, '/users#Users'].sort(),
+        '/admin': ['/admin#Admin'],
+        '/zzz': [notFound],
+      }, `${star} ${shape}`);
+    }
+  }
+});
