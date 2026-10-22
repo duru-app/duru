@@ -202,6 +202,17 @@ test('a judged pair keeps the worst run of a test run twice without a project or
   assert.deepEqual(compared(was({ ...signs, project: 'chromium', status: 'pass' }), applyJudgments(fromStory, [judgment('hand-over')])), [summary(1, 1, 0, 0, 0, 0), '  pass→fail ← sign.spec.ts:5 signs @story:sign (chromium) — screen /a#A']);
 });
 
+test('a pair handed over to a screen or call the map no longer has does not put the test under a screen or call', () => {
+  const help = { title: 'opens help', file: 'help.spec.ts', line: 5, tags: [], source: 'results/e2e.json', format: 'playwright' };
+  for (const node of ['/gone#Gone', 'POST:/api/v1/gone']) {
+    const judged = applyJudgments({ untagged: [{ ...help, status: 'fail', projects: { chromium: 'fail' } }] }, [{ id: '1', date: '2026-10-01T00:00:00Z', author: 'r', reason: '', kind: 'hand-over', node, test: { source: 'results/e2e.json', file: 'help.spec.ts', title: 'opens help' } }]);
+    assert.deepEqual(baselineTestsLines(compareTests(was({ ...help, project: 'chromium', status: 'pass' }), judged, MAP)), [
+      summary(0, 0, 0, 1, 0, 0),
+      '  no test was compared: no baseline test matches a test under a screen or call now',
+    ]);
+  }
+});
+
 test('tests of the same title in different files are told apart by their files, whose absolute paths differ before the checkout', () => {
   const base = was(
     { title: 'renders', file: '/ci/app/src/a.test.js', status: 'pass' },

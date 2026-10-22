@@ -145,7 +145,7 @@ const statusIn = (t: any, project: string | null): TestStatus => (project !== nu
 
 const tagsInTitle = (title: string) => (title.match(/@\S+/g) ?? []).map((t) => t.slice(1));
 
-function currentTests(current: CurrentTests, calls: Set<string>, projectsOf: (title: string) => (string | null)[]) {
+function currentTests(current: CurrentTests, onMap: Set<string>, calls: Set<string>, projectsOf: (title: string) => (string | null)[]) {
   const runs = new Map<string, CurrentTest>();
   const runsOf = (t: any) => (t.projects ? Object.keys(t.projects) : [t.project ?? null]).map((project: string | null) => {
     const id = JSON.stringify([t.source, t.file, t.line, t.title, project]);
@@ -155,6 +155,10 @@ function currentTests(current: CurrentTests, calls: Set<string>, projectsOf: (ti
   for (const [field, via] of UNDER_NODE) {
     for (const [node, list] of Object.entries(current[field] ?? {})) {
       for (const t of list) {
+        if (!onMap.has(node)) {
+          for (const run of runsOf(t)) run.offNode.push(statusIn(t, run.project));
+          continue;
+        }
         const listed = via !== 'trace' || LISTED_LEVELS.includes(t.level);
         for (const run of runsOf(t)) run.rows.push({ node, kind: calls.has(node) ? 'call' : 'screen', via, ...(t.level && { level: t.level }), status: statusIn(t, run.project), listed, ref: t.ref ?? testRef(t), source: t.source, project: run.project });
       }
@@ -233,10 +237,10 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
     const projects = [...new Set((baselineProjects.get(titleWithoutTags(title)) ?? []).map((t) => t.project))];
     return projects.length ? projects : [null];
   };
-  const tests = currentTests(current, new Set(map.calls), projectsOf);
+  const onMap = new Set([...map.screens, ...map.calls]);
+  const tests = currentTests(current, onMap, new Set(map.calls), projectsOf);
   const files = fileKeys(baseline.tests.map((t) => t.file), [...tests.map((t) => t.file), ...(current.unknownTags ?? []).map((u) => u.test.file)]);
   const { before, now } = matchKeys(baseline.tests, tests, files);
-  const onMap = new Set([...map.screens, ...map.calls]);
   const gone: BaselineTest[][] = [];
   let compared = 0;
   let notUnderNode = 0;

@@ -1490,7 +1490,7 @@ traces and the baseline would need traces too; a story test that also carries a 
 that screen.
 Every test row under a screen or call now is compared, whether a tag, an import, a trace or a reviewer's hand-over
 puts it there, since the page shows all of them as that screen's tests and a handed-over pair is one a reviewer
-confirmed; comparing only tagged tests would compare nothing on mattermost, appsmith and outline, whose sources hold
+confirmed; a pair handed over to a screen or call the map no longer has puts the test on none; comparing only tagged tests would compare nothing on mattermost, appsmith and outline, whose sources hold
 no `@screen:` or `@call:` tag. The current side is the judged list `rebuild` prints from, not the result files read
 again, so that the counts match the page and a result file overwritten since (as into-sign's are) does not point the
 test rows and the regressions at different runs. A judged pair stays one row there however many Playwright projects
