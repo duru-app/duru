@@ -21,7 +21,6 @@ type Options = { version?: 14 | 15 | 16; expose?: Record<string, string>; env?: 
 function runSpec(projectRoot: string, spec: string, tests: FakeTest[], { version = 16, expose = {}, env = {} }: Options = {}) {
   const listeners = new Map<string, ((...args: unknown[]) => void)[]>();
   const emit = (event: string, ...args: unknown[]) => listeners.get(event)?.forEach((fn) => fn(...args));
-  const before: Hook[] = [];
   const after: Hook[] = [];
   const fakeCypress = {
     on: (event: string, fn: (...args: unknown[]) => void) => listeners.set(event, [...(listeners.get(event) ?? []), fn]),
@@ -40,7 +39,7 @@ function runSpec(projectRoot: string, spec: string, tests: FakeTest[], { version
     },
   };
   vm.runInNewContext(fs.readFileSync(RECORDER, 'utf8'), {
-    Cypress: fakeCypress, cy, beforeEach: (fn: Hook) => before.push(fn), afterEach: (fn: Hook) => after.push(fn),
+    Cypress: fakeCypress, cy, afterEach: (fn: Hook) => after.push(fn),
   });
   const go = (moves: Move[]) => {
     for (const move of moves) {
@@ -57,7 +56,6 @@ function runSpec(projectRoot: string, spec: string, tests: FakeTest[], { version
       emit('test:before:run');
       emit('url:changed', 'about:blank');
       if (index === 0 && tries === 0) go(t.beforeAll ?? []);
-      before.forEach((fn) => fn.call({ currentTest }));
       go(attempt.moves);
       currentTest.state = attempt.state ?? 'passed';
       after.forEach((fn) => fn.call({ currentTest }));
