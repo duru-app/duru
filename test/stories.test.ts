@@ -149,8 +149,8 @@ type TinyLink = Parameters<typeof screenAccess>[0][number]['links'][number];
 
 function tinyMap(links: Record<string, TinyLink[]>) {
   const screens = Object.entries(links).map(([id, out]) => ({ id, path: id, line: 1, routeGuards: [], routeFile: 'routes.js', links: out }));
-  const { access, linkConditions } = screenAccess(screens, [], TINY_CONFIG, new Map(), {}, new Map());
-  return { screens: screens.map((s, i) => ({ ...s, access: access[i], links: s.links.map((l, j) => ({ ...l, conditions: linkConditions[i][j] })) })) };
+  const { access, linkConditions, linkScreens } = screenAccess(screens, [], TINY_CONFIG, new Map(), {}, new Map());
+  return { screens: screens.map((s, i) => ({ ...s, access: access[i], links: s.links.map((l, j) => ({ ...l, targets: linkScreens[i][j].map((k) => screens[k].id), conditions: linkConditions[i][j] })) })) };
 }
 
 test('a link guarded by a condition that is neither a setting nor a role is still a condition on the way', () => {

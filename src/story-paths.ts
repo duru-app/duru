@@ -1,4 +1,4 @@
-import { linkTargets, unreadableTarget } from './access.ts';
+import { unreadableTarget } from './access.ts';
 import type { Described } from './access.ts';
 import { compare } from './config.ts';
 import path from 'node:path';
@@ -21,7 +21,6 @@ const byPlace = (a: { file: string; line: number }, b: { file: string; line: num
 
 export function checkStories<S extends { screens: string[] }>(map: any, stories: S[]) {
   const indexOf = new Map<string, number>(map.screens.map((s: any, i: number) => [s.id, i]));
-  const targetsOf = linkTargets(map.screens);
   const movesBetween = new Map<string, string[]>();
   for (const m of map.moves ?? []) {
     const key = `${m.from} ${m.to}`;
@@ -29,10 +28,9 @@ export function checkStories<S extends { screens: string[] }>(map: any, stories:
   }
 
   const linkBetween = (fromId: string, toId: string): LinkVerdict => {
-    const fromIndex = indexOf.get(fromId)!;
-    const from = map.screens[fromIndex];
+    const from = map.screens[indexOf.get(fromId)!];
     const ways = from.links
-      .filter((l: any) => targetsOf(l.to, l.tail, fromIndex).includes(indexOf.get(toId)!))
+      .filter((l: any) => l.targets.includes(toId))
       .map((l: any) => ({ file: l.file, line: l.line, conditions: l.conditions }))
       .sort(byPlace);
     // 조건 없는 링크가 하나라도 있으면 빼 둔 링크가 판정을 바꾸지 못하므로 알리지 않는다.
@@ -161,14 +159,14 @@ function idsInFolder(stories: { id: string }[], notices: { file: string }[]) {
   return [...new Set([...stories.map((s) => s.id), ...unread])].sort(compare);
 }
 
-export const linksWithoutConditions = (map: any) => map.screens.some((s: any) => s.links.some((l: any) => !Array.isArray(l.conditions)));
-export const staleMapMessage = (mapFile: string, what: string) => `${mapFile} 은 링크에 조건이 없는 예전 duru 로 만든 맵이라 ${what}를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요`;
+export const linksFromOldDuru = (map: any) => map.screens.some((s: any) => s.links.some((l: any) => !Array.isArray(l.conditions) || !Array.isArray(l.targets)));
+export const staleMapMessage = (mapFile: string, what: string) => `${mapFile} 은 링크에 조건이나 이어지는 화면이 적혀 있지 않은 예전 duru 로 만든 맵이라 ${what}를 맞춰 보지 못했습니다. duru rebuild 로 맵을 다시 만드세요`;
 
 export function checkStoryFiles(map: any, dir: string, mapFile: string, tests: StoryTests = NO_TESTS) {
   const { stories, notices } = loadStories(dir);
   const unknownTags = unknownStoryTags(stories, tests);
   const ids = idsInFolder(stories, notices);
-  if (stories.length && linksWithoutConditions(map)) {
+  if (stories.length && linksFromOldDuru(map)) {
     return { ids, list: [], notices, unknownTags, stale: staleMapMessage(mapFile, '스토리') };
   }
   const walks = walksOf(map, tests.traced);
@@ -182,6 +180,6 @@ export function checkStoryFiles(map: any, dir: string, mapFile: string, tests: S
 
 export function checkScreens(map: any, mapFile: string, screens: string[]) {
   if (!isScreenList(screens)) throw new Error('screens 는 화면 ID 를 하나 이상 차례대로 담은 목록이어야 합니다');
-  if (linksWithoutConditions(map)) throw new Error(staleMapMessage(mapFile, '스토리'));
+  if (linksFromOldDuru(map)) throw new Error(staleMapMessage(mapFile, '스토리'));
   return checkStories(map, [{ screens }])[0];
 }

@@ -38,6 +38,7 @@ interface Expr {
 interface ScreenLink {
   to: string | null;
   tail?: string;
+  reaches?: number[];
   file: string;
   line: number;
   guards: string[];
@@ -303,7 +304,8 @@ const compiles = (pattern: string) => {
 };
 
 // path-to-regexp 1.x 가 만드는 정규식을 따르되, 대소문자는 구분하지 않고 주소의 {*} 는 어떤 변수 자리와도 맞게 한다.
-function fittingPattern(parts: PathPart[]) {
+// whole 이 아니면 react-router 의 exact 없는 라우트처럼 주소의 앞부분이 세그먼트 경계까지 일치하면 된다.
+function fittingPattern(parts: PathPart[], whole = true) {
   const source = parts
     .map((part) => {
       if (typeof part === 'string') return escapeRegExp(part);
@@ -314,7 +316,7 @@ function fittingPattern(parts: PathPart[]) {
       return part.optional ? `(?:${prefix}${capture})?` : prefix + capture;
     })
     .join('');
-  return new RegExp(`^${source}/?$`, 'i');
+  return new RegExp(whole ? `^${source}/?$` : `^${source.replace(/\/$/, '')}(?:/(?=$))?(?=/|$)`, 'i');
 }
 
 export function linkTargets(screens: { path: string }[]) {
@@ -358,6 +360,64 @@ export function linkTargets(screens: { path: string }[]) {
       guessing(() => samePath(bare)),
       guessing(() => addingParameters(bare)),
     ]);
+  };
+}
+
+export type RouteNode =
+  | { kind: 'switch'; children: RouteNode[] }
+  | { kind: 'route'; path: string | null; exact: boolean; screens: number[]; children: RouteNode[] }
+  | { kind: 'redirect'; from: string | null; exact: boolean; to: string };
+
+const REDIRECT_HOPS = 5;
+
+export function routerTargets(roots: RouteNode[]) {
+  const patterns = new Map<string, RegExp[]>();
+  const fits = (routePath: string, address: string, whole: boolean) => {
+    if (routePath.includes(UNKNOWN)) return false;
+    if (!patterns.has(routePath)) {
+      const parts = pathParts(routePath.replace(/(.)\/$/, '$1'));
+      patterns.set(routePath, [fittingPattern(parts, false), fittingPattern(parts, true)]);
+    }
+    return patterns.get(routePath)![Number(whole)].test(address);
+  };
+  const opens = (node: RouteNode, address: string) => (node.kind === 'switch' ? true
+    : node.kind === 'redirect' ? node.from === null || fits(node.from, address, node.exact)
+      : node.path === null || fits(node.path, address, node.exact));
+  // 같은 경로를 적은 라우트는 무엇이 렌더링될지 적힌 순서로 정해지지 않으므로 모두 선택한다.
+  const winners = (nodes: RouteNode[], address: string) => {
+    const first = nodes.find((n) => opens(n, address));
+    if (first?.kind !== 'route' || first.path === null) return first ? [first] : [];
+    return nodes.filter((n) => n === first || (n.kind === 'route' && n.path === first.path && opens(n, address)));
+  };
+  const route = (address: string, hops: number): number[] => {
+    const drawn: { screen: number; whole: boolean; depth: number }[] = [];
+    const redirects: string[] = [];
+    const walking = new Set<RouteNode>();
+    const walk = (nodes: RouteNode[], inSwitch: boolean, depth: number) => {
+      for (const node of inSwitch ? winners(nodes, address) : nodes.filter((n) => n.kind !== 'redirect' && opens(n, address))) {
+        if (walking.has(node)) continue;
+        walking.add(node);
+        if (node.kind === 'redirect') redirects.push(node.to);
+        else if (node.kind === 'switch') walk(node.children, true, depth + 1);
+        else {
+          for (const screen of node.screens) drawn.push({ screen, whole: fits(node.path!, address, true), depth });
+          walk(node.children, false, depth + 1);
+        }
+        walking.delete(node);
+      }
+    };
+    walk(roots, false, 0);
+    const whole = drawn.filter((d) => d.whole);
+    const deepest = Math.max(...drawn.map((d) => d.depth));
+    const picked = (whole.length ? whole : drawn.filter((d) => d.depth === deepest)).map((d) => d.screen);
+    const redirected = hops < REDIRECT_HOPS ? redirects.filter((to) => !unreadableTarget(to)).flatMap((to) => route(to, hops + 1)) : [];
+    return [...new Set([...picked, ...redirected])].sort((a, b) => a - b);
+  };
+  const routed = new Map<string, number[]>();
+  return (to: string) => {
+    if (unreadableTarget(to) || !to.startsWith('/')) return [];
+    if (!routed.has(to)) routed.set(to, route(to, 0));
+    return routed.get(to)!;
   };
 }
 
@@ -422,13 +482,16 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
   const outgoing: AccessLink[][] = screens.map(() => []);
   const targetsOf = linkTargets(screens);
   const linkConditions: Described[][][] = screens.map(() => []);
+  const linkScreens: number[][][] = screens.map(() => []);
   screens.forEach((s, from) => {
     for (const l of s.links) {
       const own = describe(l.guards, l.file);
       const uses = (l.inheritedGuards ?? []).map((h) => describe(h.guards, l.file, h.via));
       linkConditions[from].push(held(own, uses));
       const guards = held(blocks(own), uses.map(blocks));
-      for (const to of targetsOf(l.to, l.tail, from)) {
+      const targets = l.reaches ?? targetsOf(l.to, l.tail, from);
+      linkScreens[from].push(targets);
+      for (const to of targets) {
         if (to === from) continue;
         const link = { from, to, file: l.file, line: l.line, guards };
         incoming[to].push(link);
@@ -568,7 +631,7 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
   const guarding = [...route.flat(), ...linkConditions.flat(2)];
   const usedRoleGuards = new Set(roleGuards(guarding).map((g) => g.guard));
   const unknownRoleGuards = Object.keys(configured).filter((g) => !usedRoleGuards.has(g)).sort();
-  return { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions };
+  return { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions, linkScreens };
 }
 
 const caseName = (need: SettingNeed) => `${need.path.join('.')}${need.need === 'includes' || need.need === 'equals' ? `:${need.value}` : ''}`;

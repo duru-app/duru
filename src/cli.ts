@@ -313,6 +313,7 @@ if (command === 'tasks') {
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s: any) => s.dead).length}`);
   console.log(`entry screens ${map.entries.length} | screens opening only under a setting or role ${map.screens.filter((s: any) => s.access.restricted).length}`);
   for (const p of map.unknownEntryPaths) console.log(`  entryPaths ${p} matches no route`);
+  for (const { file, call } of map.madeHistories ?? []) console.log(`  history is not set; ${file} calls ${call}, and moves through the history it makes are not read as links`);
   for (const p of map.unknownMovePaths) console.log(`  moves ${p} matches no route`);
   for (const id of map.unknownBodyOptionCalls) console.log(`  bodyOptions ${id} matches no call`);
   for (const { call, field } of map.unknownBodyTypeExclusions ?? []) {

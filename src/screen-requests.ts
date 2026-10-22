@@ -56,6 +56,19 @@ function navigatedAddress(url: unknown) {
   return placeUnknown(address, [MASK]) ? null : unmasked(sentAddress(address));
 }
 
+export function importedAs(binding: Binding) {
+  if (binding.kind !== 'module') return null;
+  const declaration = binding.path.parent as ImportDeclaration;
+  const specifier = binding.path.node as ImportDeclaration['specifiers'][number];
+  if (declaration.importKind === 'type') return null;
+  if (specifier.type === 'ImportNamespaceSpecifier') return { spec: declaration.source.value, name: '*' };
+  if (specifier.type === 'ImportDefaultSpecifier') return { spec: declaration.source.value, name: 'default' };
+  if (specifier.importKind === 'type') return null;
+  return { spec: declaration.source.value, name: (specifier.imported as { name?: string }).name ?? (specifier.imported as StringLiteral).value };
+}
+
+export const routerImport = (binding: Binding | undefined) => Boolean(binding && ROUTER_PACKAGES.has(importedAs(binding)?.spec ?? ''));
+
 export function screenRequestReader({ requestFunction, evaluate, objectLiteral, isRequestFunction, server }: Reading) {
   const serverHost = server && new URL(server).host;
   const tagName = (name: JSXOpeningElement['name']): string => (name.type === 'JSXIdentifier' ? name.name : name.type === 'JSXMemberExpression' ? `${tagName(name.object)}.${name.property.name}` : `${name.namespace.name}:${name.name.name}`);
@@ -86,19 +99,6 @@ export function screenRequestReader({ requestFunction, evaluate, objectLiteral, 
     const base = hidesText(given) ? undefined : evaluate(given);
     return typeof base === 'string' ? base || null : UNKNOWN;
   }
-
-  function importedAs(binding: Binding) {
-    if (binding.kind !== 'module') return null;
-    const declaration = binding.path.parent as ImportDeclaration;
-    const specifier = binding.path.node as ImportDeclaration['specifiers'][number];
-    if (declaration.importKind === 'type') return null;
-    if (specifier.type === 'ImportNamespaceSpecifier') return { spec: declaration.source.value, name: '*' };
-    if (specifier.type === 'ImportDefaultSpecifier') return { spec: declaration.source.value, name: 'default' };
-    if (specifier.importKind === 'type') return null;
-    return { spec: declaration.source.value, name: (specifier.imported as { name?: string }).name ?? (specifier.imported as StringLiteral).value };
-  }
-
-  const routerImport = (binding: Binding | undefined) => Boolean(binding && ROUTER_PACKAGES.has(importedAs(binding)?.spec ?? ''));
 
   function makingCall(binding: Binding | undefined) {
     const init = binding?.path.isVariableDeclarator() ? (binding.path.get('init') as NodePath<any>) : null;

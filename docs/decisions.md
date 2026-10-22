@@ -3212,6 +3212,91 @@ took the idea from.
   shows as it always did. A test file no longer found under `srcRoot` does not count as changed, since the pair then
   leaves the results or shows as detached.
 
+**Links also come from react-router's link elements and history moves, and each goes to the screens the router
+would draw for its address, worked out from the route files in the order the router reads them.**
+Besides the route constant, duru reads the `to` of `Link`, `NavLink` and `Redirect` imported from a react-router
+package (a `Redirect` in a route file stays a redirect, as before), and the address given to `push` or `replace` of
+a history: the one `useHistory()` returns, `props.history`, `this.props.history`, a history taken out of
+`this.props` or `props` (`const { history } = this.props`), and the one the `history` key names. A history a
+function is given as an argument is not read, nor `goBack()` or `go()`. The address is read as the tail after a
+route constant is: written pieces as they are, a value piece as `{*}`, the query and the part after `#` dropped,
+`{ pathname }` by its `pathname`, and each branch of `? :` as a link of its own carrying its condition. An address
+that starts with a value, or is not written from `/`, is `{?}`: it stays among the screen's links and goes to no
+screen. A move back to the screen's own address (`push({ pathname: location.pathname, state })`, an object with no
+`pathname`, `` `${location.pathname}?tab=2` ``, `location.pathname + location.search`, an address starting with `?` or
+`#`) changes only the page or the state and is not a link. Where a route
+constant is written inside the address, or the address takes it through a local variable or an object field
+(`const help = Option.ROUTE_PATH.HELP`), that place gives only the route constant's link, judged by where it sits in
+the code and not by its text; into-sign 1.5.0 writes `Option.ROUTE_PATH` at 75 of its 96 moves.
+Which screens a link goes to is written on the link as `targets`, so the flow, the screen info, `tasks` and the
+story verdicts give one answer; a map written before has no `targets`, and story checks then ask for `rebuild` as
+they did for links without conditions.
+The screens of an address are found by walking the route files as the router does. Each route file is kept as the
+elements are nested in it: `<Switch>`, routes with or without a path, routes holding routes, redirects with or
+without `from`, and other elements as routes without a path. The route files that a screen's or an element's
+component reaches by import, and that no other such route file reaches first, are put inside that element. In a
+`<Switch>` the first child that fits wins, separately in each nested `<Switch>`; a child without a path always fits,
+and one whose path duru could not read never does. A route fits the whole address with `exact`, and otherwise when
+the address starts with its path up to a `/`. Outside a `<Switch>` everything that fits is drawn. Of the drawn
+screens the link goes to every one whose path fits the whole address, and when none does, to the innermost one.
+A redirect that wins goes on to the screens of its `to`. Two routes with the same path in one `<Switch>` both win:
+mattermost's admin console lists the page and its no-licence notice under one path and drops one of them by the
+licence before the `<Switch>` sees them, so the order written does not say which is drawn (driver's decision,
+2026-10-21). Paths are matched with the pattern used for link addresses, where `{*}` fits any variable, so
+`/:team([a-z0-9\-_]+)` takes `/{*}`; the browser test address pattern does not, and left mattermost at 57 entry
+screens instead of 33.
+Links written with the route constant keep the matching they had (the same path, a route the constant's path
+starts, then routes that only add parameters), so the into-sign map keeps every link it had. Moving them to the
+router walk would have sent every link of the JavaScript example app into the route without a path that wraps its
+layout, which in a `<Switch>` takes every address after the sign-in screen.
+Choices made without a driver's answer, each cheap to change: a route file holding several JSX trees (into-sign
+draws one `<Switch>` per signed-in state) has all of them drawn side by side, so `history.push('/')` there goes both
+to the sign-in screen and, through the redirect of the signed-in `<Switch>`, to the user home; when several screens
+are innermost at the same depth the link goes to each; `createHashHistory` is reported beside
+`createBrowserHistory`; a history taken out of a function's own parameters (`function Help({ history })`) is not
+read, as the issue lists only the shapes above; an address a link or a move takes from a function parameter or from
+props (`items.map((item) => <Link to={item.href}>)`, `const go = (href) => history.push(href)`) gives no link, as
+the value is written where it is handed in and a route constant there is already a link, so a written address
+handed in that way is missed (5 such places gave into-sign 1.5.0 30 `{?}` links on 26 screens). Keeping these as
+`{?}` instead was measured on 2026-10-22 and turned down by the driver in #392: it adds 1,996 `{?}` lines on 170 of
+mattermost's 181 screens, 213 on outline and 32 on appsmith, mostly from wrapper link components and actions many
+screens share, and changes no entry screen in any of the four apps; an array literal mapped in the same file, the
+one handed-in shape duru could read, occurs in none of them.
+A route made for each item of a route table is one route per item, each with the item's path, as the router sees
+the routes the loop returns; a route at `/` without `exact` holds every address, as path-to-regexp drops the last
+`/` before matching a start. Known limits: a route file that a screen's code reaches only to import a path
+constant is put inside that screen's route, so links to its screens go nowhere; a route without a screen of its
+own whose path is built from the outer route's (`${path}/settings`) is `{?}` and never fits, so a link to a screen
+inside it goes to the outer screen, which the router draws around it.
+Alternatives compared (investigation and driver's decisions, 2026-10-21, recorded in the planning issue):
+- Moves duru cannot read left off the map: the map stays as it was, but a reviewer cannot tell that a screen goes
+  somewhere duru could not read. Keeping every one as `{?}` made the paging moves of into-sign (16 of its 20
+  unread moves) mark story steps as not judged for a move that stays on the screen.
+- The nearest `<Switch>` alone deciding: mattermost's `/:team` sits in a `<Switch>` inside a child without a path
+  of the outer one, and judged alone it took `/login`, `/admin_console` and 16 more, giving its screen 56 links in
+  where the router gives one.
+- Every drawn screen getting the link when only the start of the address fits: the team screen would get 6 links in
+  where the router draws one inner screen.
+- The first of two routes with the same path winning: the 13 no-licence notices of mattermost's admin console stay
+  entry screens no link reaches.
+- react-router v6 (`<Routes>`, `useNavigate()`, `<Navigate>`) picks the more specific route instead of the first and
+  needs the whole address to fit unless the path ends in `/*`; it is left for its own work.
+
+**A history the app makes itself is named in the config as `history`, `{ "import", "name" }`, and duru tells from
+how it is used whether the name is a function returning the history or the history itself.**
+mattermost moves through `getHistory().push(…)` 118 times and appsmith through `history` from `utils/history` 152
+times; neither is a history react-router hands out, so nothing in the source marks it as one. The key works like
+`requestFunction`: the import is resolved as the app imports it, a name that comes to that file through files that
+re-export it counts, and a key of another shape, an `import` that names no file of the source or a `name` that file
+does not export stops the run naming the key. `name().push(…)` and `name.push(…)` are both read with the same key,
+so the key has no field saying which it is. Without the key, a file that calls `createBrowserHistory` or
+`createHashHistory` of the `history` package is named in the summary, since its moves are then missing.
+Alternatives compared:
+- Taking every `createBrowserHistory()` result as a history without a key: the value is usually handed out through a
+  function or a module object, and following it there is guessing; a key names it once.
+- A list of histories, or a field for function or object: one app makes one history, and the shape of the call
+  already says which it is.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
