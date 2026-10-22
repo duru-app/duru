@@ -6,7 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import type { Page, Route } from 'playwright-core';
 import { loadMarks } from '../src/marks.ts';
-import { withRebuiltFixture, withServer, rebuild, browserMissing, toList, withPage, openScreenInfo, LAB_SETTING, ADMIN_ROLE, LONG_SETTING, asked, why, askedFocused, SAVE_REFUSED, untilSet, postJson, postMark, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, holdRequests, storyStack, rightPane } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, rebuild, browserMissing, toList, withPage, openScreenInfo, LAB_SETTING, ADMIN_ROLE, LONG_SETTING, asked, why, askedFocused, SAVE_REFUSED, untilSet, postJson, postMark, CANDIDATES, HELP_RECORD, HELP_KEY, PUBLISH_KEY, storiesTab, BAD_REQUEST, discardCandidate, holdRequests, storyStack, rightPane, postAgentCandidate, AGENT_KEY } from './review-helpers.ts';
 import type { Guard, PageData, Reach } from './review-helpers.ts';
 
 const HOME = '/home#Home';
@@ -410,6 +410,37 @@ test('a candidate discarded through the page is kept in the discarded folder wit
       assert.ok(!data.stories.list.some((s) => s.name === 'open-help'));
     });
   });
+});
+
+test('a line an agent wrote on a candidate is switched off and on again through the page in the candidate file, and a pick is refused with why for a candidate from a visit record, a candidate not listed or a line the agent did not write', async () => {
+  await withRebuiltFixture(CANDIDATES, (config) =>
+    withServer(config, 'reviewer', async (base) => {
+      const { file } = await postAgentCandidate(base);
+      const stored = path.join(config.configDir, file);
+      const before = fs.readFileSync(stored, 'utf8');
+      const pick = (body: object) => postJson(base, '/api/candidates/lines', { key: AGENT_KEY, step: 3, field: 'needs', line: 1, ...body });
+      const res = await pick({ on: false });
+      assert.equal(res.status, 200);
+      assert.deepEqual((await res.json()).offLines, [{ step: 3, field: 'needs', line: 1 }]);
+      assert.deepEqual(JSON.parse(fs.readFileSync(stored, 'utf8')).offLines, [{ step: 3, field: 'needs', line: 1 }]);
+      const data: PageData = await (await fetch(`${base}/api/data`)).json();
+      assert.deepEqual(data.candidates.list.find((c) => c.key === AGENT_KEY)!.lines!.map((l) => [l.step, l.field, l.on]), [[2, 'inputs', true], [2, 'expects', true], [3, 'needs', false], [3, 'linkNeeds', true]]);
+      assert.equal((await pick({ on: true })).status, 200);
+      assert.equal(fs.readFileSync(stored, 'utf8'), before);
+
+      const refusals: [object, number, string][] = [
+        [{ key: HELP_KEY, on: false }, 400, '후보 「open-help」는 에이전트가 올린 후보가 아니라 줄마다 고르지 않습니다'],
+        [{ key: 'nowhere', on: false }, 404, '후보 nowhere 가 없습니다'],
+        [{ step: 3, field: 'expects', on: false }, 400, '후보 「로그인해 실험을 연다」에는 에이전트가 3 번째 단계의 expects 에 적은 1 번째 줄이 없습니다'],
+        [{ on: 'off' }, 400, 'on 은 받을 줄이면 true, 뺄 줄이면 false 여야 합니다'],
+      ];
+      for (const [body, status, text] of refusals) {
+        const refused = await pick(body);
+        assert.deepEqual([refused.status, await refused.text()], [status, text]);
+      }
+      assert.equal(fs.readFileSync(stored, 'utf8'), before);
+    }),
+  );
 });
 
 test('a story name and memo edited through the page are written into its file', async () => {

@@ -4,11 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { acceptCandidate, addCommentCandidate, discardCandidate, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
+import { acceptCandidate, addCommentCandidate, discardCandidate, pickCandidateLine, saveVisitRecord, storeCandidates, storyCandidates, unacceptStory, undiscardCandidate } from '../src/candidates.ts';
 import { compare, loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { addMark, addReply } from '../src/marks.ts';
-import { editStory, loadStories, writeStorySteps } from '../src/stories.ts';
+import { editStory, loadStories, writeStoryFields, writeStorySteps } from '../src/stories.ts';
 import type { StepInput } from '../src/stories.ts';
 import { linkTests } from '../src/test-links.ts';
 import { traceLinker } from '../src/trace-links.ts';
@@ -968,5 +968,128 @@ test('a candidate for a comment is refused when its screen order is already a st
     const viaList = ['/signin#SignIn', { screen: '/document/:tab#DocumentList', reason: '문서 목록을 거쳐도 됩니다' }, '/lab#Lab'];
     assert.throws(() => post({ screens: viaList }), { message: `코멘트 ${comment} 의 부탁은 이미 스토리 lab 로 받았습니다` });
     assert.equal(files().filter((f) => f.startsWith('candidates/')).length, 1);
+  });
+});
+
+const PICK_SCREENS = [
+  { screen: '/signin#SignIn', inputs: [EMAIL_INPUT] },
+  { screen: '/home#Home', reason: THROUGH_HOME, expects: ['홈이 보인다', '알림이 보인다'] },
+  { screen: '/lab#Lab', needs: ['실험 메뉴가 켜져 있다'], linkNeeds: ['홈에서 실험을 누른다'], expects: ['실험 목록이 보인다'] },
+];
+const MAP_FILE = path.join(config.outDir, 'map.json');
+const off = (step: number, field: string, line: number) => ({ step, field, line, on: false });
+const on = (step: number, field: string, line: number) => ({ step, field, line, on: true });
+
+test('each line the agent wrote on a candidate from a comment is listed switched on with the row it sits on, a line switched off is written into the candidate file and read back off, and switching it on again leaves the file as it was', () => {
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, post }) => {
+    const file = path.join(cfg.configDir, post({ screens: PICK_SCREENS }).file);
+    const before = fs.readFileSync(file, 'utf8');
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list[0];
+    assert.deepEqual(listed().lines, [
+      { step: 2, field: 'expects', line: 1, row: 0, on: true },
+      { step: 2, field: 'expects', line: 2, row: 1, on: true },
+      { step: 3, field: 'needs', line: 1, row: 0, on: true },
+      { step: 3, field: 'linkNeeds', line: 1, row: 0, on: true },
+    ]);
+    assert.equal(listed().file, path.join('candidates', path.basename(file)));
+    assert.deepEqual(pickCandidateLine(cfg.storiesDir, listed(), off(3, 'linkNeeds', 1)).offLines, [{ step: 3, field: 'linkNeeds', line: 1 }]);
+    pickCandidateLine(cfg.storiesDir, listed(), off(2, 'expects', 2));
+    pickCandidateLine(cfg.storiesDir, listed(), off(2, 'expects', 2));
+    const written = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.deepEqual(written.offLines, [{ step: 2, field: 'expects', line: 2 }, { step: 3, field: 'linkNeeds', line: 1 }]);
+    assert.deepEqual({ ...written, offLines: undefined }, { ...JSON.parse(before), offLines: undefined });
+    assert.deepEqual(storyCandidates(cfg, map, MAP_FILE).notices, []);
+    assert.deepEqual(listed().lines!.map((l) => l.on), [true, false, true, false]);
+    pickCandidateLine(cfg.storiesDir, listed(), on(2, 'expects', 2));
+    pickCandidateLine(cfg.storiesDir, listed(), on(3, 'linkNeeds', 1));
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+  });
+});
+
+test('accepting a candidate from a comment writes of the agent\'s lines only those switched on, and the reviewer\'s lines as they are, keeps only those in the source of the story, and unaccepting lists the candidate file again with the lines switched off as they were', () => {
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, comment, post }) => {
+    post({ screens: PICK_SCREENS });
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list;
+    for (const line of [off(2, 'expects', 1), off(2, 'expects', 2), off(3, 'needs', 1)]) pickCandidateLine(cfg.storiesDir, listed()[0], line);
+    acceptCandidate(cfg.storiesDir, listed()[0], { id: 'lab', name: '로그인해 실험을 연다', author: 'hit' });
+    const story = JSON.parse(fs.readFileSync(path.join(cfg.storiesDir, 'lab.json'), 'utf8'));
+    assert.deepEqual(story.screens, [
+      { screen: '/signin#SignIn', inputs: [EMAIL_INPUT] },
+      '/home#Home',
+      { screen: '/lab#Lab', linkNeeds: ['홈에서 실험을 누른다'], expects: ['실험 목록이 보인다'] },
+    ]);
+    assert.deepEqual(story.source, { comment, added: [{ step: 2, reason: THROUGH_HOME }], written: [{ step: 3, linkNeeds: ['홈에서 실험을 누른다'] }] });
+    assert.deepEqual(loadStories(cfg.storiesDir).notices, []);
+    unacceptStory(cfg.storiesDir, 'lab');
+    assert.deepEqual(listed()[0].lines!.map((l) => l.on), [false, false, false, true]);
+  });
+});
+
+test('a line the reviewer changed in a story from a comment has no box on the candidate written when the acceptance of the reordered story is undone, while a line of the agent left as it was keeps its box on the row it sits on', () => {
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, post }) => {
+    post({ screens: PICK_SCREENS });
+    const reordered = [...PICK_SCREENS.map((s) => s.screen), '/help#Help'];
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list.find((c) => isDeepStrictEqual(c.screens, reordered))!;
+    acceptCandidate(cfg.storiesDir, storyCandidates(cfg, map, MAP_FILE).list[0], { id: 'lab', name: '로그인해 실험을 연다', author: 'hit' });
+    const read = () => loadStories(cfg.storiesDir).stories[0];
+    writeStoryFields(cfg.storiesDir, 'lab', { place: { kind: 'step', step: 2, screen: '/home#Home' }, fields: { expects: ['홈 화면이 보인다', '알림이 보인다'] }, contentHash: read().contentHash });
+    writeStorySteps(cfg.storiesDir, 'lab', { steps: [...PICK_SCREENS.map((s, i) => ({ step: i + 1, screen: s.screen })), { screen: '/help#Help' }], contentHash: read().contentHash });
+    unacceptStory(cfg.storiesDir, 'lab');
+    assert.deepEqual(listed().lines!.filter((l) => l.step === 2), [{ step: 2, field: 'expects', line: 2, row: 1, on: true }]);
+    pickCandidateLine(cfg.storiesDir, listed(), off(2, 'expects', 2));
+    assert.throws(() => pickCandidateLine(cfg.storiesDir, listed(), off(2, 'expects', 1)), { message: '후보 「lab」에는 에이전트가 2 번째 단계의 expects 에 적은 1 번째 줄이 없습니다' });
+    acceptCandidate(cfg.storiesDir, listed(), { id: 'lab-again', name: '로그인해 실험을 연다', author: 'hit' });
+    assert.deepEqual(loadStories(cfg.storiesDir).stories[0].stepFields![1], { expects: ['홈 화면이 보인다'] });
+  });
+});
+
+test('discarding a candidate from a comment and undoing the discard lists its lines switched off as they were', () => {
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, post }) => {
+    post({ screens: PICK_SCREENS });
+    const listed = () => storyCandidates(cfg, map, MAP_FILE).list;
+    pickCandidateLine(cfg.storiesDir, listed()[0], off(3, 'needs', 1));
+    discardCandidate(cfg.storiesDir, listed()[0], { reason: '실험은 따로 본다', author: 'hit' }, new Date('2026-10-21T03:00:00Z'));
+    undiscardCandidate(cfg.storiesDir, PICK_SCREENS.map((s) => s.screen), { author: 'hit' }, new Date('2026-10-21T04:00:00Z'));
+    assert.deepEqual(listed()[0].lines!.map((l) => l.on), [true, true, false, true]);
+  });
+});
+
+test('picking a line is refused with why, writing nothing, on a candidate from a visit record, for a line the agent did not write, or without on as true or false, and candidates from other sources carry no lines', () => {
+  const record = candidatesOf().list[0];
+  assert.deepEqual(['lines' in record, 'file' in record], [false, false]);
+  assert.throws(() => pickCandidateLine(EXAMPLE_STORIES, record, off(1, 'needs', 1)), { message: `후보 「${record.name}」는 에이전트가 올린 후보가 아니라 줄마다 고르지 않습니다` });
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, post }) => {
+    const file = path.join(cfg.configDir, post({ screens: PICK_SCREENS }).file);
+    const before = fs.readFileSync(file, 'utf8');
+    const [candidate] = storyCandidates(cfg, map, MAP_FILE).list;
+    const refusals: [Record<string, unknown>, string][] = [
+      [off(1, 'inputs', 1), '후보 「로그인해 실험을 연다」에는 에이전트가 1 번째 단계의 inputs 에 적은 1 번째 줄이 없습니다'],
+      [off(3, 'expects', 1), '후보 「로그인해 실험을 연다」에는 에이전트가 3 번째 단계의 expects 에 적은 1 번째 줄이 없습니다'],
+      [off(2, 'expects', 3), '후보 「로그인해 실험을 연다」에는 에이전트가 2 번째 단계의 expects 에 적은 3 번째 줄이 없습니다'],
+      [{ step: 2, field: 'expects', line: 1 }, 'on 은 받을 줄이면 true, 뺄 줄이면 false 여야 합니다'],
+    ];
+    for (const [input, message] of refusals) assert.throws(() => pickCandidateLine(cfg.storiesDir, candidate, input), { message }, message);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+  });
+});
+
+test('a candidate file whose lines switched off are not lines the agent wrote, repeat one, are empty or sit on a candidate from a visit record is noted with why and not listed', () => {
+  withOrderComment({ screens: LAB_ORDER, steps: ASKED_STEPS }, ({ cfg, post }) => {
+    const file = path.join(cfg.configDir, post({ screens: PICK_SCREENS }).file);
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const lines = 'offLines 는 받을 때 뺄 줄을 { "step", "field", "line" } 으로 하나씩, source 의 written 에 있는 줄만 겹치지 않게 적은 목록이어야 합니다';
+    const cases: [object, string][] = [
+      [{ offLines: [{ step: 1, field: 'inputs', line: 1 }] }, lines],
+      [{ offLines: [{ step: 2, field: 'expects', line: 3 }] }, lines],
+      [{ offLines: [{ step: 2, field: 'expects', line: 1 }, { step: 2, field: 'expects', line: 1 }] }, lines],
+      [{ offLines: [{ step: 2, field: 'expects', line: 1, on: false }] }, lines],
+      [{ offLines: [] }, lines],
+      [{ source: { record: 'example-visits/open-help.json', steps: [1, 2] }, offLines: [{ step: 2, field: 'expects', line: 1 }] }, 'offLines 는 출처가 코멘트인 후보에만 둡니다'],
+    ];
+    for (const [patch, reason] of cases) {
+      fs.writeFileSync(file, JSON.stringify({ ...stored, ...patch }));
+      const { list, notices } = storyCandidates(cfg, map, MAP_FILE);
+      assert.deepEqual([list, notices.map((n) => n.reason)], [[], [reason]], JSON.stringify(patch));
+    }
   });
 });

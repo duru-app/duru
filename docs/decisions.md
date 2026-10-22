@@ -3084,6 +3084,29 @@ mark.
 - The comment line opens 「전체」 of the conversation at the comment, since a comment on a screen order shows there with
   its replies once the new story that made it is closed.
 
+**A candidate from a comment is accepted line by line: each line the agent wrote has a box, and the lines switched
+off are kept in the candidate file as `offLines`, `[{ "step", "field", "line" }, …]`.** Asked for in #253 and built
+in #367. The driver chose the look on a picture of the review page (2026-10-20): the three buttons stay as they were,
+each line of the agent has a box, on at first, a line switched off is struck through, and the number of lines on
+shows above the buttons.
+- Kept in the candidate file, each press saved at once, over keeping the lines switched off only in the open page
+  until a button is pressed. The page alone would write nothing until accepting and keep candidate files written
+  once, but the choices would be gone after a reload or when the page is opened again; the driver chose the file
+  for that (2026-10-21, on #367).
+- The lines switched off over the lines switched on, so a candidate as posted, with every line on, carries no new
+  field. A line is named by its step, field and place in `written`, over its text, since two lines of a field may
+  read the same and `written` does not change once the candidate is written.
+- Each press sends the state of one line, and the server reads the file just before rewriting it, so two reviewers
+  switching different lines both keep theirs; no mark of the file read is sent, as it is for story files, since
+  nothing else in a candidate file is rewritten.
+- On accepting, `written` in the source of the story keeps only the lines switched on, so it names only lines the
+  story has. Undoing the acceptance lists the candidate file again with its lines switched off as they were.
+- The lines of `written` are paired with those of `stepFields` by their text, field by field and in order. A story
+  whose order was changed gives a new candidate file when its acceptance is undone, and a line of the agent the
+  reviewer changed in that story then has no box and goes in as it is: changing a line in a story does not change
+  `written`.
+- Taking out a screen the agent put in is left to 「순서 고치기」 after accepting.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
