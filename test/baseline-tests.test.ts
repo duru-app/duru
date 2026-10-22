@@ -270,6 +270,14 @@ test('a test file none of whose tests are in the current results is one whole mi
   assert.deepEqual(comparison.onlyInBaselineFiles.map((f) => [f.tail, f.whole, f.tests.map((t) => t.title)]), [['gone.spec.ts', true, ['two', 'one']], ['left.spec.ts', false, ['four']]]);
 });
 
+test('a baseline test file one of whose tests is compared is never whole missing, even when its end must reach the checkout folder', () => {
+  const run = (title: string, file: string) => ({ title, file, status: 'pass' as const });
+  const base = was(run('a', '/ci/app-release/index.test.js'), run('gone', '/ci/app-release/index.test.js'), run('b', '/ci/app-release/lib/index.test.js'));
+  const comparison = compareTests(base, now({ importers: { '/a#A': [run('a', '/home/me/app/index.test.js'), run('b', '/home/me/app/lib/index.test.js')] } }), MAP);
+  assert.deepEqual(baselineTestsLines(comparison), [summary(2, 0, 0, 0, 1, 0)]);
+  assert.deepEqual(comparison.onlyInBaselineFiles.map((f) => [f.whole, f.tests.map((t) => t.title)]), [[false, ['gone']]]);
+});
+
 test('with nothing compared the comparison prints a line saying no baseline test matched', () => {
   assert.deepEqual(lines(was({ title: 'old', status: 'pass' }), { untagged: [{ title: 'old', status: 'fail' }], nodes: { '/a#A': [{ title: 'new', status: 'fail' }] } }), [
     summary(0, 0, 0, 1, 0, 1),

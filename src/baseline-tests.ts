@@ -222,6 +222,7 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
   const nowFiles = [...tests.map((t) => t.file), ...(current.unknownTags ?? []).map((u) => u.test.file)];
   const onMap = new Set([...map.screens, ...map.calls]);
   const gone: BaselineTest[][] = [];
+  const foundFiles = new Set<string>();
   let compared = 0;
   let notUnderNode = 0;
   let onlyInBaseline = 0;
@@ -232,8 +233,10 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
     if (!match) {
       onlyInBaseline += 1;
       gone.push(tests);
+      continue;
     }
-    else if (!match.some((t) => t.rows.length)) notUnderNode += 1;
+    for (const t of tests) foundFiles.add(tail(t.file, Infinity));
+    if (!match.some((t) => t.rows.length)) notUnderNode += 1;
     else {
       compared += 1;
       const nowStatus = worst(match.map((t) => t.status));
@@ -260,7 +263,7 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
     onlyNow,
     regressions,
     byNode: countsByNode(regressions.map((r) => r.rows)),
-    ...onlyInBaselineOf(gone, baseline.tests, nowFiles, onMap),
+    ...onlyInBaselineOf(gone, baseline.tests, nowFiles, foundFiles, onMap),
   };
 }
 
@@ -282,9 +285,9 @@ function countsByNode(regressed: TestRow[][]) {
 }
 
 // 두 쪽에서 저마다 그 파일을 다른 파일과 가르는 가장 짧은 꼬리를 구하고, 긴 쪽의 길이로 꼬리가 같으면 같은 파일이다.
-function onlyInBaselineOf(gone: BaselineTest[][], all: BaselineTest[], nowFiles: (string | null)[], onMap: Set<string>) {
+function onlyInBaselineOf(gone: BaselineTest[][], all: BaselineTest[], nowFiles: (string | null)[], foundFiles: Set<string>, onMap: Set<string>) {
   const [beforeLengths, nowLengths] = [ownLengths(all.map((t) => t.file)), ownLengths(nowFiles)];
-  const kept = (file: string) => [...nowLengths].some(([other, length]) => {
+  const kept = (file: string) => foundFiles.has(file) || [...nowLengths].some(([other, length]) => {
     const longer = Math.max(beforeLengths.get(file)!, length);
     return tail(file, longer) === tail(other, longer);
   });
