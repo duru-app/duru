@@ -3533,6 +3533,13 @@ Known limits:
   read though nothing of the function changes.
 - The limit of 64 is checked after the combinations of argument values, and of the pieces of a template, are built,
   so a call with many arguments of several values each builds all their combinations before it stops.
+- A piece duru cannot read takes a whole segment, as in a link written in the screen's code, so a function that
+  glues its argument to written text with no `/` between (``(sub) => `/admin${sub}` ``, `BASE + path`) or returns a
+  method's result that holds several segments (`'/' + parts.filter(Boolean).join('/')`) gives `/{*}`, which goes to
+  a route like `/:team` or a catch-all one.
+- A condition built with a string method (`path.startsWith('/')`) or on a member of anything but a name
+  (`(options || {}).team`) is not decided, so both branches give links even where the arguments settle it, and a
+  branch the call never takes can go to a catch-all route.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
