@@ -218,11 +218,12 @@ export function loadConfig(configPath: string) {
   const configDir = path.dirname(path.resolve(configPath));
   const { routesFile, ...raw } = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   const at = (p: string) => path.resolve(configDir, p);
-  const tests = (raw.tests ?? []).map((t: any) => {
-    if (!TEST_FORMATS.includes(t.format)) throw new Error(`unknown test format "${t.format}" (expected one of ${TEST_FORMATS.join(', ')})`);
-    if (!DEPTHS.includes(t.depth)) throw new Error(`unknown depth "${t.depth}" for ${t.path} (expected one of ${DEPTHS.join(', ')})`);
+  const testSources = (list: any[], key = '') => list.map((t: any) => {
+    if (!TEST_FORMATS.includes(t.format)) throw new Error(`${key}unknown test format "${t.format}" (expected one of ${TEST_FORMATS.join(', ')})`);
+    if (!DEPTHS.includes(t.depth)) throw new Error(`${key}unknown depth "${t.depth}" for ${t.path} (expected one of ${DEPTHS.join(', ')})`);
     return { ...t, path: at(t.path) };
   });
+  const tests = testSources(raw.tests ?? []);
   (raw.roleIdentifiers ?? []).forEach(parseRoleEntry);
   const bodyArgKeys = raw.bodyArgKeys ?? [];
   if (!Array.isArray(bodyArgKeys) || !bodyArgKeys.every((k) => typeof k === 'string')) {
@@ -348,6 +349,7 @@ export function loadConfig(configPath: string) {
   if (raw.baselineMap !== undefined && !isText(raw.baselineMap)) {
     throw new Error(`baselineMap must be the path of a map.json written by an earlier rebuild, such as "releases/1.5.0/map.json", not ${JSON.stringify(raw.baselineMap)}`);
   }
+  const baselineTests = raw.baselineTests === undefined ? [] : testSources(raw.baselineTests, 'baselineTests: ');
   const sourcePackages = raw.sourcePackages ?? {};
   if (!isPlainObject(sourcePackages) || !Object.entries(sourcePackages).every(([name, folder]) => PACKAGE_NAME.test(name) && isText(folder))) {
     throw new Error(`sourcePackages must map package names the app imports to the folders holding their source, as paths from the config file, such as { "@mattermost/client": "webapp/platform/client/src" }, not ${JSON.stringify(raw.sourcePackages)}`);
@@ -373,6 +375,7 @@ export function loadConfig(configPath: string) {
     routeTables: routeTablesOf(raw.routeTables, at(raw.srcRoot), routeFiles),
     tsconfig,
     baselineMap: raw.baselineMap === undefined ? null : at(raw.baselineMap),
+    baselineTests: baselineTests.length ? baselineTests : null,
     aliases: tsconfig || packageRules.length ? [...packageRules, ...(tsconfig ? loadAliases(tsconfig) : [])] : null,
     roleIdentifiers: raw.roleIdentifiers ?? [],
     caseKinds,

@@ -48,9 +48,9 @@ const KIND_TAG = /^case:([^=]*)(?:=(.*))?$/;
 const byKey = (a: { key: string }, b: { key: string }) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 const shownFile = (t: { testFile?: string; file?: string | null }) => t.testFile ?? t.file ?? '';
 const byTest = (a: UntaggedTest, b: UntaggedTest) => compare(shownFile(a), shownFile(b)) || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.source, b.source);
-const STATUS_RANK: Record<string, number> = { pass: 0, pending: 1, fail: 2 };
+export const STATUS_RANK: Record<string, number> = { pass: 0, pending: 1, fail: 2 };
 
-function resultFiles(p: string, extensions: string[]) {
+export function resultFiles(p: string, extensions: string[]) {
   if (!fs.statSync(p).isDirectory()) return [p];
   return fs
     .readdirSync(p, { recursive: true, withFileTypes: true })
