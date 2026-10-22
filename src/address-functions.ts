@@ -118,6 +118,20 @@ function limited<T>(list: T[], merge: (list: T[]) => T[] = (x) => x) {
   return kept;
 }
 
+function touchesOwn(x: NodePath<any>, fn: AddressFunction): boolean {
+  const own = (p: NodePath<any>) => Boolean(p.scope.getBinding(p.node.name)?.path.isDescendant(fn));
+  if (x.isIdentifier()) return own(x);
+  let found = false;
+  x.traverse({
+    Identifier(p) {
+      if (!own(p)) return;
+      found = true;
+      p.stop();
+    },
+  });
+  return found;
+}
+
 const unwrapped = (p: NodePath<any>): NodePath<any> => (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isTypeCastExpression() || p.isParenthesizedExpression() ? unwrapped(p.get('expression') as NodePath<any>) : p);
 
 export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, passThrough }: Reading) {
@@ -275,7 +289,10 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         }
       } else if (s.isExpressionStatement()) {
         const x = s.get('expression') as NodePath<any>;
-        if (!x.isAssignmentExpression()) continue;
+        if (!x.isAssignmentExpression()) {
+          if (touchesOwn(x, fn)) throw new Unreadable();
+          continue;
+        }
         const left = x.get('left') as NodePath<any>;
         const binding = left.isIdentifier() ? left.scope.getBinding(left.node.name) : undefined;
         if (!left.isIdentifier() && inEnv(left, inner(envs[0]))) throw new Unreadable();

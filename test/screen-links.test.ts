@@ -1388,3 +1388,69 @@ test('the usage guide, the agent skill and the decision record say that duru rea
   assert.match(decisions, /\*\*A link address or route path that calls a function declared in the source is read through the function's body/);
   assert.doesNotMatch(decisions, /What an imported function\s+returns \(`draftsPath\(\)`, `settingsPath\("groups", ":id"\)`\) is not read/);
 });
+
+test('an address function whose body changes a value of its own through a call, a callback, an assignment inside an expression or ++ stays {?}', async () => {
+  const paths = `export function pushed(tab) {
+  const parts = ['', 'team'];
+  if (tab) parts.push(tab);
+  return parts.join('/');
+}
+
+export function guarded(tab) {
+  let url = '/team';
+  tab && (url = \`/team/\${tab}\`);
+  return url;
+}
+
+export function assigned(tab) {
+  const o = { path: '/team' };
+  Object.assign(o, { path: \`/team/\${tab}\` });
+  return o.path;
+}
+
+export function looped(tabs) {
+  let target = '/team';
+  tabs.forEach((t) => {
+    if (t.on) target = \`/team/\${t.id}\`;
+  });
+  return target;
+}
+
+export function counted() {
+  let n = 0;
+  n++;
+  return \`/team/\${n}\`;
+}
+
+export function logged(tab) {
+  console.info('moving');
+  return '/login';
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { assigned, counted, guarded, logged, looped, pushed } from './paths';
+
+export default function Home({ tab, tabs }) {
+  return (
+    <nav>
+      <Link to={pushed(tab)}>pushed</Link>
+      <Link to={guarded(tab)}>guarded</Link>
+      <Link to={assigned(tab)}>assigned</Link>
+      <Link to={looped(tabs)}>looped</Link>
+      <Link to={counted()}>counted</Link>
+      <Link to={logged(tab)}>logged</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [
+    ['{?}', at('pushed(tab)')],
+    ['{?}', at('guarded(tab)')],
+    ['{?}', at('assigned(tab)')],
+    ['{?}', at('looped(tabs)')],
+    ['{?}', at('counted()')],
+    ['/login', at('logged(tab)')],
+  ]);
+});
