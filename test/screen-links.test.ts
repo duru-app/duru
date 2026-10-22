@@ -131,6 +131,38 @@ export default function Help(props) {
   assert.deepEqual(linksOf(map, '/help/:page?#Help'), [['/team/{*}', 6, [], ['/team/:team#Team']]]);
 });
 
+test('a move through the history a function component takes out of its first parameter becomes a link, and one taken out of a lowercase function, a later parameter or a function wrapped in a call is not read', async () => {
+  const help = `function leave({ history }) {
+  history.push('/login');
+}
+
+const Back = ({ history: back }) => <a onClick={() => back.replace('/home')} />;
+
+function Pick(team, { history }) {
+  return <a onClick={() => history.push('/login')} />;
+}
+
+const Wrapped = withRouter(({ history }) => <a onClick={() => history.push('/login')} />);
+
+export default function Help({ history, team }) {
+  return <div onClick={() => history.push('/start')} onBlur={() => leave({ history })}><Back /><Pick /><Wrapped /><Panel /></div>;
+}
+
+function Panel({ history }) {
+  return <a onClick={() => history.push('/login')} />;
+}
+`;
+  const start = `export default ({ history }) => <a onClick={() => history.push('/help')} />;
+`;
+  const map = await build(writeApp({ 'Help.js': help, 'Start.js': start }));
+  assert.deepEqual(linksOf(map, '/help/:page?#Help'), [
+    ['/home', 5, [], ['/home#Home']],
+    ['/start', 14, [], ['/start#Start']],
+    ['/login', 18, [], ['/login#Login']],
+  ]);
+  assert.deepEqual(linksOf(map, '/start#Start'), [['/help', 1, [], ['/help/:page?#Help']]]);
+});
+
 test('a router Redirect outside the route files is a link, and the one in the route file is not', async () => {
   const login = `import { Redirect } from 'react-router-dom';
 

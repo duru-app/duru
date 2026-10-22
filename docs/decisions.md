@@ -3217,7 +3217,8 @@ would draw for its address, worked out from the route files in the order the rou
 Besides the route constant, duru reads the `to` of `Link`, `NavLink` and `Redirect` imported from a react-router
 package (a `Redirect` in a route file stays a redirect, as before), and the address given to `push` or `replace` of
 a history: the one `useHistory()` returns, `props.history`, `this.props.history`, a history taken out of
-`this.props` or `props` (`const { history } = this.props`), and the one the `history` key names. A history a
+`this.props` or `props` (`const { history } = this.props`), the `history` a function component not wrapped in a
+call takes out of its first parameter (`function Help({ history })`), and the one the `history` key names. A history a
 function is given as an argument is not read, nor `goBack()` or `go()`. The address is read as the tail after a
 route constant is: written pieces as they are, a value piece as `{*}`, the query and the part after `#` dropped,
 `{ pathname }` by its `pathname`, and each branch of `? :` as a link of its own carrying its condition. An address
@@ -3253,8 +3254,13 @@ Choices made without a driver's answer, each cheap to change: a route file holdi
 draws one `<Switch>` per signed-in state) has all of them drawn side by side, so `history.push('/')` there goes both
 to the sign-in screen and, through the redirect of the signed-in `<Switch>`, to the user home; when several screens
 are innermost at the same depth the link goes to each; `createHashHistory` is reported beside
-`createBrowserHistory`; a history taken out of a function's own parameters (`function Help({ history })`) is not
-read, as the issue lists only the shapes above; an address a link or a move takes from a function parameter or from
+`createBrowserHistory`; a history taken out of a function's own parameters is read only from the first parameter
+of a component: a function declaration whose name starts with a capital letter, a function or arrow given to a
+variable whose name starts with a capital letter, or the function that is the default export itself. A lowercase
+helper (`function leave({ history })`), a later parameter, a component wrapped in a call
+(`withRouter(({ history }) => …)`) and a parameter with a default (`({ history } = {})`) are not read, and a prop
+named `history` that is not the router's history is read as one (in mattermost this adds 5 links from the team
+creation and workspace preparation screens and changes no entry screen); an address a link or a move takes from a function parameter or from
 props (`items.map((item) => <Link to={item.href}>)`, `const go = (href) => history.push(href)`) gives no link, as
 the value is written where it is handed in and a route constant there is already a link, so a written address
 handed in that way is missed (5 such places gave into-sign 1.5.0 30 `{?}` links on 26 screens). Keeping these as
