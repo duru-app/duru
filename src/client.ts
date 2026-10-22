@@ -792,6 +792,7 @@ export async function extractClient(config: any) {
     moves: {
       moveOf: (p) => screenLinks.moveOf(p),
       linked: (p) => addresses(p).length > 0 && linkAddresses(p).length > 0,
+      linkedCall: (p) => addressesOf(linkReading.helperBranches(p) ?? { branches: [] }).length > 0,
       isHistory: (p) => screenLinks.isHistory(p),
       holdsRouteConstant: (p) => Boolean(routeChain) && holdsRouteConstant(p),
     },

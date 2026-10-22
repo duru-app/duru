@@ -23,10 +23,11 @@ interface Reading {
   moves?: Moves;
 }
 
-// linked 는 주소 자리 하나가 지금 규칙으로 링크를 내는가다.
+// linked 는 주소 자리 하나가, linkedCall 은 옮겨 주는 함수를 부른 자리 하나가 그 자리에 링크를 내는가다.
 interface Moves {
   moveOf: (p: NodePath<CallExpression>) => Move | null;
   linked: (p: NodePath) => boolean;
+  linkedCall: (p: NodePath<CallExpression>) => boolean;
   isHistory: (p: NodePath) => boolean;
   holdsRouteConstant: (p: NodePath) => boolean;
 }
@@ -156,6 +157,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   const reading = new Set<Node>();
   const placesFound = new WeakMap<Node, Places>();
   const helperFound = new WeakMap<Node, boolean>();
+  const callLinked = new WeakMap<Node, boolean>();
 
   function leafOut(p: NodePath): Out {
     const found = leaf(p);
@@ -499,6 +501,22 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     return found;
   }
 
+  // 읽는 중에 같은 호출로 되돌아오면 링크가 있는 것으로 보고 따라가지 않는다.
+  function linkedWhereWritten(c: NodePath<CallExpression>): boolean {
+    if (callLinked.has(c.node)) return callLinked.get(c.node)!;
+    callLinked.set(c.node, true);
+    const outer = [...reading];
+    reading.clear();
+    try {
+      const linked = moves!.linkedCall(c);
+      callLinked.set(c.node, linked);
+      return linked;
+    } finally {
+      reading.clear();
+      for (const node of outer) reading.add(node);
+    }
+  }
+
   // x 가 fn 의 매개변수를, 바로 또는 fn 안 const 의 초기값을 거쳐 쓰는가
   function usesParam(x: NodePath<any>, fn: AddressFunction, depth = 0): boolean {
     const names: NodePath<Identifier>[] = x.isIdentifier() ? [x] : [];
@@ -548,7 +566,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     const outs: Out[] = [];
     const { moves: places, calls } = placesOf(fn);
     for (const call of calls) {
-      if (reached(call.at, fn, at) && isHelper(call.fn)) outs.push(...helperOuts(call.at, call.fn, at));
+      if (reached(call.at, fn, at) && isHelper(call.fn) && !linkedWhereWritten(call.at)) outs.push(...helperOuts(call.at, call.fn, at));
     }
     for (const place of places) {
       if (!reached(place.at, fn, at)) continue;

@@ -3535,8 +3535,9 @@ with a history the function is given is a link only where the call hands it a va
 for a move (`leave(props.history)`, `leave({ history })` inside a component that takes `history` from its props), so
 the address of such a move is read from the call even when it is written as text.
 A move that is already a link in the function's body (`` (id) => history.push(`/doc/${id}`) ``) keeps that link and
-adds none at the calls, and a move that stays on the screen gives none in either place; a call in the body that does
-not use what the function is given stays a link only where it is written. So every link the map had keeps its file,
+adds none at the calls, and a move that stays on the screen gives none in either place; a call of another such
+function in the body that does not use what the function is given, or that is already a link where it is written
+(`` step(`/team/${id}`) ``), stays a link only there. So every link the map had keeps its file,
 line and conditions, and one move is never two links (chosen before the driver's answer, in #398; moving a body's
 link to each call would change the lines story verdicts were written against, and keeping both would show one move
 twice).

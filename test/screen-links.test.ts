@@ -1824,7 +1824,7 @@ export default function Home(props) {
   assert.deepEqual(linksOf(map, '/home#Home'), []);
 });
 
-test('a helper that hands what it is given to another helper is read through both, up to 8 deep, a helper that comes back to one it is reading stops there, and a call in a helper that does not use what the helper is given stays a link only where it is written', async () => {
+test('a helper that hands what it is given to another helper is read through both, up to 8 deep, a helper that comes back to one it is reading stops there, and a call in a helper that does not use what the helper is given, or is already a link where it is written, stays a link only there', async () => {
   const steps = Array.from({ length: 8 }, (_, i) => `const step${i + 2} = (u) => step${i + 1}(u);`).join('\n');
   const home = `import { useHistory } from 'react-router-dom';
 
@@ -1845,6 +1845,7 @@ ${steps}
     step1('/login');
     step1(u);
   };
+  const team = (id) => step1(\`/team/\${id}\`);
   return (
     <nav>
       <a onClick={() => step8('/start')}>a</a>
@@ -1852,6 +1853,7 @@ ${steps}
       <a onClick={() => again('/help')}>c</a>
       <a onClick={() => ping('/team/a')}>d</a>
       <a onClick={() => both('/start')}>e</a>
+      <a onClick={() => team('b')}>f</a>
     </nav>
   );
 }
@@ -1860,6 +1862,7 @@ ${steps}
   const at = (part: string) => lineOf(home, part);
   assert.deepEqual(linksOf(map, '/home#Home'), [
     ['/login', at("step1('/login')"), [], ['/login#Login']],
+    ['/team/{*}', at('step1(`/team/'), [], ['/team/:team#Team']],
     ['/start', at("step8('/start')"), [], ['/start#Start']],
     ['/help', at("again('/help')"), [], ['/help/:page?#Help']],
     ['/team/a', at("ping('/team/a')"), [], ['/team/:team#Team']],
