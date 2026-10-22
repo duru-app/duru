@@ -38,6 +38,7 @@ const STATUS: Record<string, TestStatus> = {
 const PREFIX = 'VERDICT ';
 const isTag = (token: string) => /^@\S/.test(token);
 export const withoutTags = (text: string) => text.split(/\s+/).filter((t) => t && !isTag(t)).join(' ');
+export const titleWithoutTags = (title: string) => title.split(' › ').map(withoutTags).filter(Boolean).join(' › ') || title;
 
 // 판정 줄: `VERDICT <이름>: <판정> — <설명> @screen:<id>`
 export function readVerdicts(file: string): VerdictResult[] {

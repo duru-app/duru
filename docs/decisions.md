@@ -1499,8 +1499,8 @@ reviewer's judgment does not take the other projects' runs out of the comparison
 Tests are matched in steps. The rows of one test on the current side (one result file, test file, line, title and
 project) are first made one test; an untagged test is one test for each Playwright project it ran in, and in a
 project where the test has rows under a screen or call its status comes from those rows alone, so a run without a
-trace in another project does not change it. Then the title without its `@` words, the Playwright project and the
-test file are matched. The test file is the path the result gives; an absolute path, as Jest and Vitest write, is
+trace in another project does not change it. Then the title without its `@` words (a describe title of `@` words
+alone dropped with its ` › `), the Playwright project and the test file are matched. The test file is the path the result gives; an absolute path, as Jest and Vitest write, is
 taken from the folder holding every absolute path of its side, since the checkout sits in another place on another
 machine, and when that folder sits deeper on one side (its tests were all under `src/`, say), the folders at the end
 of it are put back in front of that side's paths as far as makes the most files the same on both sides. Tests that

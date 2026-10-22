@@ -4,7 +4,7 @@ import { compare } from './config.ts';
 import { testRef } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
 import { NODE_TAG, READERS, resultFiles } from './test-links.ts';
-import { STATUS_RANK, withoutTags } from './verdict.ts';
+import { STATUS_RANK, titleWithoutTags } from './verdict.ts';
 import type { TestStatus } from './verdict.ts';
 
 export interface BaselineTest {
@@ -217,7 +217,7 @@ const tagSet = (t: Matched) => [...new Set(t.tags)].sort().join(' ');
 const overlaps = (tests: Matched[] = []) => tests.length > 1 && new Set(tests.map(tagSet)).size > 1;
 
 function matchKeys<B extends Matched, N extends Matched>(baseline: B[], current: N[], files: ReturnType<typeof fileKeys>) {
-  const keyOf = (keys: Map<string | null, string>) => (t: Matched) => JSON.stringify([withoutTags(t.title), t.project, keys.get(t.file)]);
+  const keyOf = (keys: Map<string | null, string>) => (t: Matched) => JSON.stringify([titleWithoutTags(t.title), t.project, keys.get(t.file)]);
   const [before, now] = [groupBy<Matched>(baseline, keyOf(files.before)), groupBy<Matched>(current, keyOf(files.now))];
   const keys = new Map<Matched, string>();
   for (const key of new Set([...before.keys(), ...now.keys()])) {
@@ -228,9 +228,9 @@ function matchKeys<B extends Matched, N extends Matched>(baseline: B[], current:
 }
 
 export function compareTests(baseline: BaselineTests, current: CurrentTests, map: { screens: string[]; calls: string[] }) {
-  const baselineProjects = groupBy(baseline.tests, (t) => withoutTags(t.title));
+  const baselineProjects = groupBy(baseline.tests, (t) => titleWithoutTags(t.title));
   const projectsOf = (title: string) => {
-    const projects = [...new Set((baselineProjects.get(withoutTags(title)) ?? []).map((t) => t.project))];
+    const projects = [...new Set((baselineProjects.get(titleWithoutTags(title)) ?? []).map((t) => t.project))];
     return projects.length ? projects : [null];
   };
   const tests = currentTests(current, new Set(map.calls), projectsOf);

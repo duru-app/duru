@@ -88,6 +88,15 @@ test('a test under a screen by its imports, by passing through it, by a call it 
   ]);
 });
 
+test('a test whose tag moved out of a describe title holding only tags, or into one, is compared with its baseline run', () => {
+  const base = was({ title: '@screen:/a#A › opens help', status: 'pass' }, { title: 'Suite › opens', line: 2, status: 'pass' });
+  assert.deepEqual(lines(base, { nodes: { '/a#A': [{ title: 'opens help', tags: ['screen:/a#A'], status: 'fail' }, { title: 'Suite › @screen:/a#A › opens', line: 2, status: 'fail' }] } }), [
+    summary(2, 2, 0, 0, 0, 0),
+    '  pass→fail ← a.spec.ts:1 opens help — screen /a#A',
+    '  pass→fail ← a.spec.ts:2 Suite › @screen:/a#A › opens — screen /a#A',
+  ]);
+});
+
 test('a test on two screens is compared once and its regression names both screens', () => {
   const run = { title: 'opens a and b @screen:/a#A @screen:/b#B', status: 'fail' as const };
   assert.deepEqual(lines(was({ title: 'opens a and b', status: 'pass' }), { nodes: { '/b#B': [run], '/a#A': [run] } }), [
