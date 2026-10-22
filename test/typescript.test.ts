@@ -11,6 +11,7 @@ import { linkTests } from '../src/test-links.ts';
 
 type Edit = string[];
 
+const withoutCode = (map: ScreenMap) => ({ ...map, meta: null, screens: map.screens.map(({ codeHash, ...s }) => s), calls: map.calls.map(({ codeHash, ...c }) => c) });
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/ts-app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 const buildFixture = (dir = FIXTURE) => buildMap(loadConfig(path.join(dir, 'config.json')));
@@ -102,8 +103,8 @@ const WITHOUT_WRAPPERS = [
 test('a setting read, a route address with a value appended and a request body option wrapped in as, satisfies or ! are read as if the wrapper were not there', async () => {
   const wrapped = await buildFixture();
   const plain = await inCopy(WITHOUT_WRAPPERS, (copy) => buildFixture(copy));
-  const shown = WITHOUT_WRAPPERS.reduce((json, [, from, to]) => json.split(from).join(to), JSON.stringify({ ...wrapped, meta: null }));
-  assert.deepEqual(JSON.parse(shown), { ...plain, meta: null });
+  const shown = WITHOUT_WRAPPERS.reduce((json, [, from, to]) => json.split(from).join(to), JSON.stringify(withoutCode(wrapped)));
+  assert.deepEqual(JSON.parse(shown), withoutCode(plain));
 
   const home = screen(wrapped, '/home#Home');
   assert.deepEqual(home.links.filter((l) => l.file === 'screens/Home.tsx').map((l) => [l.line, l.to, l.tail ?? null]), [
@@ -242,7 +243,7 @@ test('decorators on class fields, accessors, methods and classes, before or afte
     ['client/src/screens/DocumentList.jsx', 'export default function DocumentList', `${untyped}export default function DocumentList`],
   ], async (copy) => {
     const after = await buildFixture(copy);
-    assert.deepEqual({ ...after, meta: null }, { ...before, meta: null });
+    assert.deepEqual(withoutCode(after), withoutCode(before));
   });
 });
 

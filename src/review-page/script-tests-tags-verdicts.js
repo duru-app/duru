@@ -372,9 +372,10 @@ function judgmentForm(t, node) {
     h('button', { class: 'hand-over', title: `이 ${word}의 테스트로 보고, 테스트에 이 ${word}의 태그를 달도록 작업 목록에 올립니다`, onclick: () => saveJudgment({ test: t.ref, node, kind: 'hand-over', reason: '' }, key) }, '포함'));
 }
 
-const judgmentMeta = (j, label) => h('div', { class: 'detail' },
+const judgmentMeta = (j, label, codeChanged = false) => h('div', { class: 'detail' },
   j.reason.trim() ? [`${label} `, h('span', { class: 'memo' }, j.reason)] : null,
-  h('span', { class: 'muted' }, `${j.reason.trim() ? ' · ' : ''}${signedAt(j)}`));
+  h('span', { class: 'muted' }, `${j.reason.trim() ? ' · ' : ''}${signedAt(j)}`),
+  codeChanged ? [' ', codeChangedChip(`이 판단을 남긴 뒤 이 ${nodeWord(j.node)}의 코드나 테스트 파일이 바뀌었습니다. 판단은 그대로 두었으니 다시 볼지 정해 주세요`)] : null);
 
 const undoButton = (t, node) => h('button', { class: 'undo', onclick: () => saveJudgment({ test: t.ref, node, kind: 'undo' }, judgmentKey(t, node)) }, '되돌리기');
 
@@ -433,7 +434,7 @@ function untaggedPairs(node) {
   const detached = detachedOf(node);
   const row = (t, ...rest) => h('div', { class: `pair-test ${byTrace(t) ? 'passer' : 'importer'}` }, ...rest, judgmentErrorOf(judgmentKey(t, node)));
   const openRow = (t) => row(t, partRow(pairTestItem(t), node, t), judgmentForm(t, node));
-  const judgedRow = (item, t, label) => row(t, item, judgmentMeta(t.judgment, label), undoButton(t, node));
+  const judgedRow = (item, t, label) => row(t, item, judgmentMeta(t.judgment, label, t.codeChanged), undoButton(t, node));
   return [
     passed.length ? h('div', { class: 'passed' },
       h('h2', {}, text.passed(passed.length)),

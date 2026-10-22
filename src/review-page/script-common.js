@@ -120,7 +120,18 @@ function othersSigned() {
   return [...marks.attached.filter((m) => !isPick(m)), ...marks.detached].flatMap((m) => m.history).concat(judged).some((record) => record.author !== author);
 }
 const signedAt = (record) => (othersSigned() ? `${record.author} · ${fmtDate(record.date)}` : fmtDate(record.date));
-const markChip = (m) => (m?.current ? h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status] ?? CASE_STATUS[m.current.status]) : null);
+const CODE_CHANGED = '코드 바뀜';
+const codeChangedChip = (title) => h('span', { class: 'chip code-changed', title, 'aria-label': title }, CODE_CHANGED);
+const markChip = (m) => (m?.current ? [
+  h('span', { class: `chip ${m.current.status}`, title: m.current.note || '' }, MARK_STATUS[m.current.status] ?? CASE_STATUS[m.current.status]),
+  m.codeChanged ? codeChangedChip(`이 표시를 남긴 뒤 이 ${nodeWord(m.target.node)}의 코드가 바뀌었습니다. 표시는 그대로 두었으니 다시 볼지 정해 주세요`) : null,
+] : null);
+const shortCommit = (commit) => (commit === 'unknown' ? '모름' : commit.slice(0, 7));
+function codeState(code) {
+  if (typeof code?.commit !== 'string') return null;
+  const title = [`srcRoot 커밋 ${code.commit === 'unknown' ? '모름 (git 저장소가 아님)' : code.commit}`, code.uncommitted ? '커밋하지 않은 수정이 섞여 있음' : null, `duru ${code.duruVersion}${code.duruCommit ? ` 커밋 ${code.duruCommit}` : ''}`].filter(Boolean).join('\n');
+  return h('span', { class: 'code-state', title }, `커밋 ${shortCommit(code.commit)}${code.uncommitted ? ' + 커밋 안 한 수정' : ''} · duru ${code.duruVersion}`);
+}
 const callOf = (id) => state.data.map.calls.find((c) => c.id === id);
 const nodeWord = (id) => (callOf(id) ? '호출' : '화면');
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];

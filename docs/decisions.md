@@ -3173,6 +3173,45 @@ passing on a retry records only the pages of that attempt.
 - Listening to `window:load` or reading the address after each `cy.visit`: a `pushState` move loads no page, so it
   would be missed.
 
+**The map records the code it was read from, and each new mark and judgment keeps a hash of its screen's or call's
+code, so one left before that code changed shows 「코드 바뀜」 after a `rebuild`.** Asked for in #331, put off
+on 2026-10-19 and asked for again by the driver on 2026-10-21. Nothing is removed or changed: the mark keeps its
+status and the reviewer decides whether to look again, unlike GitHub's dismissal of stale approvals, which the issue
+took the idea from.
+- `meta` gets `commit` (`git rev-parse HEAD` in `srcRoot`, `unknown` outside a git repository), `uncommitted`
+  (`git status --porcelain -- .` in `srcRoot` is not empty, so untracked files count and ignored ones do not; the
+  folders duru writes are left out when they sit under `srcRoot`, since a new mark is not a change of the code; left
+  out without a commit), `duruVersion` from `package.json`, and `duruCommit` when duru's own folder is the top of a git
+  checkout. The commit of duru goes beyond the issue because the version in `package.json` has stayed `1.0.0`, so it
+  alone cannot tell two builds of duru apart; a duru installed inside another repository does not take that
+  repository's commit.
+- What is hashed: for a screen, its `sourceFiles`; for a call, the files of the API functions that make it and the
+  files where a screen's code sends it directly. A call is hashed by whole files, not by the function that makes it:
+  every call of a shared API module is flagged when any line of that module changes. Hashing only the function was
+  compared and left for later: the map keeps the line a function starts on but not where it ends, and a function
+  span would need its own parse, while a whole file cannot miss a change. A judgment of a test pair also keeps
+  `testFileHash`, from `testFileHashes` in `tests.json`, only for a test file found under `srcRoot` (a unit test
+  linked by its imports); a browser test whose file is outside `srcRoot` keeps the screen's or call's hash alone.
+- The hash function: SHA-256 over the files sorted by their path with `/`, each as its path and the SHA-256 of its
+  content with `\r\n` turned into `\n`, written in full hex as `hashOf` in `stories.ts` writes a need file's. Line
+  endings are turned so a checkout with `core.autocrlf` gives the same hash; the path is in so a renamed file
+  counts as a change. Git's blob and tree hashes were compared: they need git, and they describe the committed
+  files, while duru reads the files with changes not committed. One commit ID per mark was compared too: any commit
+  anywhere in the repository would flag every mark.
+- Where it is stored: the hashes are worked out once by `rebuild` and kept on each screen and call in `map.json`;
+  the review server copies the one of the mark's or judgment's screen or call from `map.json` on disk into the
+  record it writes, and drops any hash the page sends. Hashing `srcRoot` when the mark is saved was compared: the
+  hash would then describe code the reviewer did not see on the page whenever it changed after the `rebuild`, and the
+  page would have to read the source again to compare.
+- Which records keep one: every new mark whose one target names a screen or call (a status, a comment, a case mark,
+  and one on a depth, option or part), and every judgment. A reply, a comment on several targets, and a mark on a
+  story, a story candidate or a screen order keep none. Only the current status mark of a screen or call, and a
+  discarded or handed-over pair, are compared and shown; a case mark keeps its hash but is not shown as changed yet,
+  and a story is not hashed (open below).
+- Two hashes differ only when both are known: a record saved without one, or a screen or call whose map has none,
+  shows as it always did. A test file no longer found under `srcRoot` does not count as changed, since the pair then
+  leaves the results or shows as detached.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
@@ -3215,6 +3254,10 @@ On a React Router client with 45 routes:
 - One run takes about 1.6 seconds.
 
 ## Open
+
+- **「코드 바뀜」 on case marks and stories.** A case mark already keeps its screen's or call's hash, but the
+  case kinds tab does not compare it yet; a story's code would be the code of all its screens, and no hash is kept for
+  it.
 
 - **Order of the deferred layers.** Cross-file button conditions filled in by the agent, the menu tree,
   and roots without a screen all come after the first version; which comes first is not decided.

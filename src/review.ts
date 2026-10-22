@@ -13,9 +13,10 @@ import { acceptCandidate, addCommentCandidate, candidatePlace, discardCandidate,
 import { answerProposal, casesWithoutTests, caseTargets, commandCaseRule, exclusionOf, pickedKinds, ProposalChanged } from './case-targets.ts';
 import { isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
+import { nodeHashes, recordedState } from './code-state.ts';
 import { buildFlow } from './flow.ts';
 import type { MapCall, MapScreen, ScreenMap } from './map.ts';
-import { addJudgment, applyJudgments, loadJudgments } from './judgments.ts';
+import { addJudgment, applyJudgments, loadJudgments, reference } from './judgments.ts';
 import { addMark, addReply, CASE_STATUSES, classifyMarks, loadMarks, mergedStatus, recordKind, targetsOf } from './marks.ts';
 import { addNeed, checkNeeds, editNeed } from './needs.ts';
 import type { Mark } from './marks.ts';
@@ -144,7 +145,7 @@ export interface CaseDecision {
 export function writeCaseMark(config: any, { kind, node, status, note }: CaseDecision, author: string) {
   const { map, attached } = readCaseTargets(config);
   const rule = commandCaseRule(map, config.caseKinds, attached, { kind, node, status, note });
-  return addMark(config.marksDir, { target: { node, case: kind }, status, note, rule, author, via: 'duru case' });
+  return addMark(config.marksDir, { target: { node, case: kind }, status, note, rule, author, via: 'duru case', codeHash: nodeHashes(map).get(node) });
 }
 
 export function writeCaseAnswer(config: any, input: unknown, author: string) {
@@ -153,7 +154,7 @@ export function writeCaseAnswer(config: any, input: unknown, author: string) {
     throw new Error('expected { "kind", "node", "of", "answer" } with the kind, the screen or call ID and the ID of the agent\'s mark as text and the answer accept or revert');
   }
   const { map, attached } = readCaseTargets(config);
-  return addMark(config.marksDir, { ...answerProposal(map, config.caseKinds, attached, { kind, node, of, answer }), author });
+  return addMark(config.marksDir, { ...answerProposal(map, config.caseKinds, attached, { kind, node, of, answer }), author, codeHash: nodeHashes(map).get(node) });
 }
 
 export function writeCommentCandidate(config: any, input: unknown) {
@@ -175,7 +176,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const read = readMap(mapFile);
   const map = { ...read, screens: [...new Map(read.screens.map((s) => [s.id, s])).values()] };
   const linked = readTests(config);
-  const { traced, ...tests } = applyJudgments(linked, loadJudgments(config.judgmentsDir).judgments);
+  const { traced, ...tests } = applyJudgments(linked, loadJudgments(config.judgmentsDir).judgments, nodeHashes(map));
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, { ...tests, traced });
   const caseKinds: Record<string, CaseKind> = config.caseKinds;
@@ -235,7 +236,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
 
 function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: ReturnType<typeof readBaseline> | null, version: ReturnType<typeof storiesVersion>) {
   const fromConfig = baseline && path.relative(config.configDir, config.baselineMap);
-  const changes = baseline && { file: fromConfig!.startsWith('..') ? config.baselineMap : fromConfig, label: baselineLabel(config.baselineMap), ...compareMaps(baseline, data.map) };
+  const changes = baseline && { file: fromConfig!.startsWith('..') ? config.baselineMap : fromConfig, label: baselineLabel(config.baselineMap), code: recordedState(baseline.meta), ...compareMaps(baseline, data.map) };
   return { ...data, baseline: changes, storiesVersion: version };
 }
 
@@ -379,6 +380,15 @@ export async function startReviewServer(config: any, { port = 0, author = review
       return null;
     }
   };
+  const codeHashOf = (node: unknown) => (typeof node === 'string' ? nodeHashes(readOrNull(() => readMap(mapFile)) ?? { screens: [] }).get(node) : undefined);
+  const markHash = (input: any) => {
+    const one = !isPlainObject(input) ? null : input.targets === undefined ? input.target : Array.isArray(input.targets) && input.targets.length === 1 ? input.targets[0] : null;
+    return isPlainObject(one) ? codeHashOf(one.node) : undefined;
+  };
+  const judgmentHashes = (input: any) => {
+    const test = isPlainObject(input) && isPlainObject(input.test) && typeof input.test.file === 'string' ? reference(input.test) : null;
+    return { codeHash: isPlainObject(input) ? codeHashOf(input.node) : undefined, testFileHash: test ? readOrNull(() => readTests(config))?.testFileHashes?.[test.file!] : undefined };
+  };
   const storyPartWhere = ({ story, part }: Target) => {
     const map = readOrNull(() => readMap(mapFile));
     const found = map && readOrNull(() => (checkStoryFiles(map, config.storiesDir, mapFile).list as StoryPath[]).find((s) => s.id === story));
@@ -430,9 +440,9 @@ export async function startReviewServer(config: any, { port = 0, author = review
   };
   // 답글의 작성자는 페이지를 띄운 사람이 아니라 답한 에이전트다.
   const saves: Record<string, (input: any) => unknown> = {
-    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, author: author.name, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined, via: undefined, of: undefined })),
+    '/api/marks': (input) => announce(addMark(config.marksDir, { ...input, author: author.name, rule: isPlainObject(input) ? exclusionOf(() => readMap(mapFile), config.caseKinds, input) : undefined, via: undefined, of: undefined, codeHash: markHash(input) })),
     '/api/replies': (input) => announce(addReply(config.marksDir, { replyTo: input?.replyTo, note: input?.note })),
-    '/api/judgments': (input) => addJudgment(config.judgmentsDir, { ...input, author: author.name }),
+    '/api/judgments': (input) => addJudgment(config.judgmentsDir, { ...input, author: author.name, ...judgmentHashes(input) }),
     '/api/cases': (input) => announce(writeCaseMark(config, caseDecision(input), 'agent')),
     '/api/cases/answer': (input) => announce(writeCaseAnswer(config, input, author.name)),
   };

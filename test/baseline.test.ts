@@ -8,6 +8,7 @@ import path from 'node:path';
 import { chromium } from 'playwright-core';
 import type { Page } from 'playwright-core';
 import { compareMaps } from '../src/baseline.ts';
+import { recordedState } from '../src/code-state.ts';
 import { loadConfig } from '../src/config.ts';
 import { startReviewServer } from '../src/review.ts';
 
@@ -181,7 +182,7 @@ test('the review page data carries what changed since baselineMap, with the map 
     fs.mkdirSync(path.join(copy, 'v1.0'));
     fs.writeFileSync(path.join(copy, 'v1.0/map.json'), JSON.stringify(olderMap(readMap(copy))));
     setConfig({ baselineMap: 'v1.0/map.json' });
-    assert.deepEqual(await pageBaseline(configFile), { file: path.join('v1.0', 'map.json'), label: 'v1.0', ...EXPECTED });
+    assert.deepEqual(await pageBaseline(configFile), { file: path.join('v1.0', 'map.json'), label: 'v1.0', code: recordedState(readMap(copy).meta), ...EXPECTED });
   });
 });
 
@@ -330,7 +331,7 @@ test('in a browser, with baselineMap the page names the baseline, marks each cha
     });
     setConfig({ baselineMap: 'v1.0/map.json' });
     await onPage(configFile, async (p) => {
-      assert.equal(await p.textContent('header #baseline'), `비교 기준 v1.0 ${path.join('v1.0', 'map.json')}`);
+      assert.ok((await p.textContent('header #baseline'))!.startsWith(`비교 기준 v1.0 ${path.join('v1.0', 'map.json')} 커밋 모름 · duru `));
       assert.equal(await p.textContent('#left .baseline-filter'), 'v1.0 와 비교바뀐 화면만 5');
 
       const chips = (title: string) => p.locator(`#screen-list li[title="${title}"] .badges .chip:is(.change-new, .change-condition, .change-calls)`).allTextContents();

@@ -9,8 +9,11 @@ function placeStateTip(e) {
 function renderHeader() {
   const { map, tests } = state.data;
   const { screens, tested } = state.data.flow.summary;
+  const mapCode = codeState(map.meta);
   fill(document.getElementById('meta'),
-    `화면 ${screens} · 테스트 있는 화면 ${tested} · 맵 ${fmtDate(map.meta.generatedAt)} · 테스트 연결 ${fmtDate(tests.meta.generatedAt)}`,
+    `화면 ${screens} · 테스트 있는 화면 ${tested} · 맵 ${fmtDate(map.meta.generatedAt)}`,
+    mapCode ? [' (', mapCode, ')'] : null,
+    ` · 테스트 연결 ${fmtDate(tests.meta.generatedAt)}`,
     map.serverNotCompared ? [
       h('button', { type: 'button', class: 'chip state', 'aria-describedby': 'server-state-tip', onmouseenter: placeStateTip, onfocus: placeStateTip }, '서버 대조 안 함'),
       h('span', { class: 'state-tip', id: 'server-state-tip', role: 'note' }, SERVER_STATE_TIP),
@@ -18,7 +21,8 @@ function renderHeader() {
   const b = state.data.baseline;
   const pill = document.getElementById('baseline');
   pill.hidden = !b;
-  fill(pill, b ? [h('span', {}, '비교 기준'), ' ', h('strong', {}, b.label), ' ', h('code', {}, b.file)] : []);
+  const baselineCode = b && codeState(b.code);
+  fill(pill, b ? [h('span', {}, '비교 기준'), ' ', h('strong', {}, b.label), ' ', h('code', {}, b.file), ...(baselineCode ? [' ', baselineCode] : [])] : []);
   const author = document.getElementById('author');
   const guessed = state.data.authorSource === 'user';
   author.title = guessed ? '설정의 author 에도 git 의 user.name 에도 이름이 없어, 컴퓨터 사용자 이름으로 코멘트와 판단을 남깁니다' : '';

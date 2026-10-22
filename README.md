@@ -348,6 +348,14 @@ client with example results and a config to start from.
 
 `extract` writes `map.json`; `rebuild` writes it and `tests.json`.
 
+**Code state.** `meta` names the commit of the git repository `srcRoot` is in (`commit`, `unknown` when `srcRoot` is
+not in one), whether a file under `srcRoot` had changes not committed then (`uncommitted`, only with a commit; the folders duru
+writes, `outDir`, `marksDir`, `judgmentsDir` and `storiesDir`, do not count), and the
+duru that built the map (`duruVersion`, and `duruCommit` when duru runs from a git checkout of its own). duru reads the
+files as they are, changes not committed included. Each screen and call has `codeHash`, a hash of the code it was read
+from: the screen's `sourceFiles`, and for a call the files its requests are written in. `tests.json` has
+`testFileHashes`, a hash of each test file found under `srcRoot`, by its path there.
+
 **Screens.** Each screen has an ID made of its route path and component name (`/document/:id#DocumentDetail`),
 usable as a test tag. The pattern a path variable carries is left out of the ID, so `/document/:tab(draft|done)`
 gives `/document/:tab#DocumentList`; the screen's path keeps it. It lists its route file and line, its component
@@ -943,6 +951,15 @@ A changed screen opens with a line saying what changed; its call table has a col
 「서버 대조 바뀜 (before → after)」, and the calls it no longer sends are listed struck through with 「없어짐」. A
 `baselineMap` that cannot be read stops `review` before the page is served.
 
+**Code state.** The header follows the map's date with its commit (「커밋 <first 7 characters>」, 「커밋 모름」 when
+`srcRoot` is not in a git repository), 「+ 커밋 안 한 수정」 when files under `srcRoot` had changes not committed, and
+the duru version; hovering shows the commits in full, duru's own among them. The 「비교 기준」 box shows the same for the baseline
+map. A map built by a duru that did not record them shows none. After a `rebuild`, a mark whose screen or call
+code hash differs from the one saved with it shows 「코드 바뀜」 beside its status in the screen list and
+the tables, and so does a judged pair, under 「제외한 짝」 or 「태그 대기」 and in the 「태그 없음」 tab, when the hash of
+its screen or call or of its test file differs. The mark or judgment stays as it was; whether to look again is the
+reviewer's call. A mark or judgment saved without a hash shows as it always did.
+
 **Untagged tests.** An untagged test linked to a screen by its imports or its trace has 「제외」, to discard the
 pair with a reason asked for in a window, and 「포함」, to hand it over so a coding agent adds the tag. A handed-over
 pair waits under 「태그 대기」 until the tag is in the results. The 「태그 없음」 tab lists every untagged test and can
@@ -1046,7 +1063,10 @@ status is a comment: it shows in the conversation with no status, keeps the curr
 follows the open mark it was written after. Pressing a picked status again lets it go, so a comment can be left on
 a target that already has one. Each mark and each judgment
 is its own new file, `<marksDir>/<node>/<date>-<author>-<short ID>.json`, so marks made on two machines merge in
-git without a conflict and the newest is the current state. A mark whose target is gone from a rebuilt map shows
+git without a conflict and the newest is the current state. A mark on a screen or call, or on a depth, option,
+case or part of one, also keeps `codeHash`, the screen's or call's hash on the map when it was saved; a judgment keeps
+`codeHash` for its screen or call and `testFileHash` for its test file when the test file was found under
+`srcRoot`. A mark whose target is gone from a rebuilt map shows
 under 「떨어져 나감」. A case kind picked or taken out on a screen or call is kept the same way, as a mark with the
 status `needed` or `not-needed`, and one whose kind has left `caseKinds` shows under 「떨어져 나감」. A `not-needed`
 mark on a screen or call that a rule of its kind picks needs a note, and the
@@ -1287,6 +1307,9 @@ for each value with no tests, carrying `@case:<kind>=<value>`. The writer puts w
 checks in place of `<what it checks>`, since the Playwright empty tests of an item all carry that same title, fills
 in the data setup and the checks, and the test attaches after a `rebuild`. Pairs handed over on the review page follow under
 `# Tagging`, each with the test, the tag to add and where it goes. duru never edits a test file.
+Before `# Case kinds` and `# Tagging`, `# Code changed after a mark or a judgment` lists each mark, with its target
+and status, and each discarded or handed-over pair whose code changed after it was left, as the review page shows
+「코드 바뀜」; it is left out while there is none.
 
 **Case kinds.** With `caseKinds` set, `# Case kinds` comes before `# Tagging`, with a `## <kind>` for each kind: its
 description, its values and rules, `undecided: N` with a line for each undecided candidate, and `cases with no
