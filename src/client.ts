@@ -18,7 +18,7 @@ import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
-import { addresses, madeFrom, screenLinkReader } from './screen-links.ts';
+import { addresses, FOLLOWED, madeFrom, screenLinkReader } from './screen-links.ts';
 import { importedAs, routerImport, screenRequestReader } from './screen-requests.ts';
 import type { UnresolvedReason } from './server.ts';
 import { typedMembers } from './typed-members.ts';
@@ -792,8 +792,32 @@ export async function extractClient(config: any) {
     moves: {
       moveOf: (p) => screenLinks.moveOf(p),
       linked: (p) => addresses(p).length > 0 && linkAddresses(p).length > 0,
+      isHistory: (p) => screenLinks.isHistory(p),
+      holdsRouteConstant: (p) => Boolean(routeChain) && holdsRouteConstant(p),
     },
   });
+
+  const routeChainOf = (chain: string[] | null) => chain !== null && chain[0] === routeRoot && chain.length === routeRest.length + 1 && routeRest.every((k: string, i: number) => chain[i + 1] === k);
+  const isRouteConstant = (p: NodePath<any>) => (p.isMemberExpression() || p.isOptionalMemberExpression()) && routeChainOf(memberChain(p.node.object));
+
+  // 식 안이나, 식이 쓴 이름의 초기값을 따라간 곳에 라우트 상수가 있는가
+  function holdsRouteConstant(p: NodePath<any>, depth = 0): boolean {
+    if (depth > FOLLOWED) return false;
+    if (isRouteConstant(p)) return true;
+    const names: NodePath[] = p.isIdentifier() ? [p] : [];
+    let found = false;
+    p.traverse({
+      'MemberExpression|OptionalMemberExpression'(m: NodePath<any>) {
+        if (!isRouteConstant(m)) return;
+        found = true;
+        m.stop();
+      },
+      Identifier(i) {
+        if (i.isReferencedIdentifier()) names.push(i);
+      },
+    });
+    return found || names.some((i) => madeFrom(i).slice(1).some((x) => holdsRouteConstant(x, depth + 1)));
+  }
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
   const linkAddresses = (p: NodePath) => addressesOf(linkReading.branches(p));
@@ -1097,7 +1121,7 @@ export async function extractClient(config: any) {
       }
     };
     const recordHelperLinks = (p: NodePath<CallExpression>) => {
-      if (screenLinks.moveOf(p)) return;
+      if (screenLinks.moveOf(p) || (p.get('arguments') as NodePath[]).some((a) => madeFrom(a).some(holdsRouteRef))) return;
       const read = linkReading.helperBranches(p);
       for (const to of read ? addressesOf(read) : []) record('routerLinks', { to }, p);
     };

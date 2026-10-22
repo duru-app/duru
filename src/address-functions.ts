@@ -27,6 +27,8 @@ interface Reading {
 interface Moves {
   moveOf: (p: NodePath<CallExpression>) => Move | null;
   linked: (p: NodePath) => boolean;
+  isHistory: (p: NodePath) => boolean;
+  holdsRouteConstant: (p: NodePath) => boolean;
 }
 
 // empty 는 함수가 돌려준 빈 문자열이다. 주소 맨 앞에 오면 읽지 못한 조각으로 본다.
@@ -41,7 +43,8 @@ type Out = { val: Val; made: boolean; whole?: NodePath };
 type Env = Map<Binding, Out>;
 // consts 이면 fn 안에서 const 로 선언한 이름을 그 초기값으로 읽는다.
 interface At { env: Env | null; fn: AddressFunction | null; branching: boolean; depth: number; consts?: boolean }
-type MovePlace = { at: NodePath<CallExpression>; addresses: NodePath[] };
+// history 는 함수가 매개변수로 받은 history 로 옮기는 자리의 그 매개변수다.
+type MovePlace = { at: NodePath<CallExpression>; addresses: NodePath[]; history: NodePath | null };
 
 const OUTSIDE: At = { env: null, fn: null, branching: false, depth: 0 };
 const NOT_KNOWN = Symbol('not known');
@@ -471,9 +474,10 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       const visit = (c: NodePath<CallExpression>) => {
         if (c.getFunctionParent()?.node !== fn.node) return;
         const move = moves!.moveOf(c);
-        if (!move?.recognized) return;
-        const kept = addresses(move.address, true).filter((a) => !moves!.linked(a));
-        if (kept.length) found.push({ at: c, addresses: kept });
+        const history = move && !move.recognized ? givenHistory(move.history, fn) : null;
+        if (!move?.recognized && !history) return;
+        const kept = addresses(move!.address, true).filter((a) => !moves!.holdsRouteConstant(a) && (history || !moves!.linked(a)));
+        if (kept.length) found.push({ at: c, addresses: kept, history });
       };
       const body = fn.get('body') as NodePath<any>;
       if (body.isCallExpression()) visit(body);
@@ -485,12 +489,18 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     return found;
   }
 
+  function givenHistory(history: NodePath | null, fn: AddressFunction): NodePath | null {
+    const binding = history?.isIdentifier() ? history.scope.getBinding(history.node.name) : undefined;
+    return binding?.kind === 'param' && binding.scope.block === fn.node ? history : null;
+  }
+
   // 몸통에서 다시 대입하는 매개변수는 부른 곳의 값으로 읽지 않는다. 값이 undefined · null 로 정해진 주소는 버린다.
   function placeOuts(fn: AddressFunction, env: Env, depth: number): Out[] {
     const at: At = { env: new Map([...env].map(([b, o]) => [b, b.constant ? o : unknownAt(b.path)])), fn, branching: true, depth, consts: true };
     const outs: Out[] = [];
     for (const place of placesOf(fn)) {
       if (!reached(place.at, fn, at)) continue;
+      if (place.history && !values(place.history, at).some((o) => o.whole && moves!.isHistory(o.whole))) continue;
       for (const a of place.addresses) {
         for (const o of values(a, at)) {
           const located = address(wholeOr(o, a), a);

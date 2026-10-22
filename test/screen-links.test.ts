@@ -103,7 +103,7 @@ test('router links and history moves become links to the screen the router draws
   ]);
 });
 
-test('a move through the history of props, this.props or a history taken out of this.props becomes a link, and a history given to a function is not read', async () => {
+test('a move through the history of props, this.props or a history taken out of this.props becomes a link, and a function given that history is a link where it is called', async () => {
   const team = `import { Component } from 'react';
 
 export default class Team extends Component {
@@ -128,10 +128,10 @@ export default function Help(props) {
     ['/home', 4, [], ['/home#Home']],
     ['/login', 8, [], ['/login#Login']],
   ]);
-  assert.deepEqual(linksOf(map, '/help/:page?#Help'), [['/team/{*}', 6, [], ['/team/:team#Team']]]);
+  assert.deepEqual(linksOf(map, '/help/:page?#Help'), [['/team/{*}', 6, [], ['/team/:team#Team']], ['/start', 6, [], ['/start#Start']]]);
 });
 
-test('a move through the history a function component takes out of its first parameter becomes a link, and one taken out of a lowercase function, a later parameter or a function wrapped in a call is not read', async () => {
+test('a move through the history a function component takes out of its first parameter becomes a link, the move in a lowercase function that takes it out of its parameter is a link where that function is called, and one taken out of a later parameter or a function wrapped in a call is not read', async () => {
   const help = `function leave({ history }) {
   history.push('/login');
 }
@@ -158,6 +158,7 @@ function Panel({ history }) {
   assert.deepEqual(linksOf(map, '/help/:page?#Help'), [
     ['/home', 5, [], ['/home#Home']],
     ['/start', 14, [], ['/start#Start']],
+    ['/login', 14, [], ['/login#Login']],
     ['/login', 18, [], ['/login#Login']],
   ]);
   assert.deepEqual(linksOf(map, '/start#Start'), [['/help', 1, [], ['/help/:page?#Help']]]);
@@ -1679,5 +1680,74 @@ export default function Home({ team }) {
     ['/start', at("logOut('/start')"), [], ['/start#Start']],
     ['/team/a', at("switchTo('/team/a')"), [], ['/team/:team#Team']],
     ['/team/b', at("switchTo('/team/b'"), [], ['/team/:team#Team']],
+  ]);
+});
+
+test('a helper given the history it moves with is a link at each call that hands it a history by the rules for a move, whether as an argument or a property of one, and none where it hands something else', async () => {
+  const home = `import { useHistory } from 'react-router-dom';
+
+function openTeam(history, data) {
+  history.push(\`/team/\${data.id}\`);
+}
+
+function leave({ history }) {
+  history.replace('/login');
+}
+
+function relay(history) {
+  openTeam(history, { id: 'b' });
+}
+
+export default function Home({ flag }) {
+  const history = useHistory();
+  return (
+    <nav>
+      <a onClick={() => openTeam(history, { id: 'a' })}>a</a>
+      <a onClick={() => flag && leave({ history })}>b</a>
+      <a onClick={() => openTeam(window.history, { id: 'c' })}>c</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/team/a', at("id: 'a'"), [], ['/team/:team#Team']],
+    ['/login', at('flag && leave'), ['flag'], ['/login#Login']],
+  ]);
+});
+
+test('a helper call that holds a route constant, or whose move in the helper holds one, gives only the route constant link where the constant is written', async () => {
+  const home = `import { useHistory } from 'react-router-dom';
+import Option from './Option';
+
+const TEAM_ROUTES = { a: Option.ROUTE_PATH.TEAM, b: Option.ROUTE_PATH.HELP };
+
+function openMeta(history, data) {
+  const route = TEAM_ROUTES[data.type];
+  if (route) history.push(\`\${route}/\${data.id}\`);
+}
+
+export default function Home() {
+  const history = useHistory();
+  const login = Option.ROUTE_PATH.LOGIN;
+  const go = (href) => history.push(href);
+  return (
+    <nav>
+      <a onClick={() => go(login)}>a</a>
+      <a onClick={() => openMeta(history, { type: 'a', id: 1 })}>b</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp(
+    { 'Home.js': home, 'Option.js': "export default { ROUTE_PATH: { TEAM: '/team', HELP: '/help', LOGIN: '/login' } };\n" },
+    { routeConstant: 'Option.ROUTE_PATH', constants: { Option: 'Option.js' } },
+  ));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/team', at('TEAM_ROUTES = ')],
+    ['/help', at('TEAM_ROUTES = ')],
+    ['/login', at('ROUTE_PATH.LOGIN')],
   ]);
 });
