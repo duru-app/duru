@@ -692,7 +692,7 @@ test('the README and the decision record say what baselineTests takes, what the 
   const readme = read('../README.md').replace(/\n {2}(?=\S)/g, ' ');
   assert.match(readme, /- `baselineTests` — the test results of an earlier version of the same client \(optional\), written like `tests`/);
   assert.match(readme, /An empty list compares nothing and prints no line about it\./);
-  assert.match(readme, /straight into that version's folder[\s\S]*`cp -p`[\s\S]*only some of the tests leaves the rest as `only in baseline`/);
+  assert.match(readme, /straight into that version's folder[\s\S]*`cp -p`[\s\S]*only some of the tests leaves the rest out of the comparison: those under a screen or call now count as `only now`/);
   assert.match(readme, /by their title without\s+tags, their Playwright project and their test file, so a test renamed or moved to another file counts once in\s+`only in baseline` and once in `only now`/);
   assert.match(readme, /- `test results since <folder> \| compared N \| pass→fail N pass→pending N \| not on a screen or call now N \| only in baseline N \| only now N` —/);
   assert.match(readme, /now\s+did not run or gave no verdict; a `pass→pending` test may have been skipped because a test before it in a `serial`\s+group, or a `setup` project it depends on, failed/);
@@ -705,7 +705,7 @@ test('the README and the decision record say what baselineTests takes, what the 
   assert.match(readme, /An untagged Playwright test carries the projects it ran\s+in as `projects`, each with the worst status of the test's runs in it\./);
   const decisions = read('../docs/decisions.md');
   assert.match(decisions, /\*\*`baselineTests` names the result files kept from an earlier release in the shape of `tests`/);
-  assert.match(decisions, /an absolute path, as Jest and Vitest write, is\s+taken from the folder holding every absolute path of its side/);
+  assert.match(decisions, /an absolute path, as Jest and Vitest write, is\s+taken from the folder holding every absolute path of its\s+side/);
   assert.match(decisions, /- Only as much of the end of the paths as tells apart the different files of one title, decided in a comment on #404/);
   assert.match(decisions, /- One end length for the whole group, as the PRD reads word for word:/);
 });

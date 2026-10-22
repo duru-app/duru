@@ -1501,12 +1501,13 @@ Tests are matched in steps. The rows of one test on the current side (one result
 project) are first made one test; an untagged test is one test for each Playwright project it ran in, and in a
 project where the test has rows under a screen or call its status comes from those rows alone, so a run without a
 trace in another project does not change it. Then the title without its `@` words (a describe title of `@` words
-alone dropped with its ` › `), the Playwright project and the test file are matched. The test file is the path the result gives; an absolute path, as Jest and Vitest write, is
-taken from the folder holding every absolute path of its side, since the checkout sits in another place on another
-machine, and when that folder sits deeper on one side (its tests were all under `src/`, say), the folders at the end
-of it are put back in front of that side's paths as far as makes the most files the same on both sides. Tests that
-still share a key, such as verdict lines of one name in one log, get their sorted screen and call tags added, and those still alike are one test with the worst
-status of their runs (fail, pending, pass); in the baseline a pending run is left out when another run ran, since a
+alone dropped with its ` › `), the Playwright project and the test file are matched. The test file is the path the
+result gives; an absolute path, as Jest and Vitest write, is taken from the folder holding every absolute path of its
+side, since the checkout sits in another place on another machine, and when that folder sits deeper on one side (its
+tests were all under `src/`, say), the folders at the end of it are put back in front of that side's paths as far as
+makes the most files the same on both sides. Tests that still share a key, such as verdict lines of one name in one
+log, get their sorted screen and call tags added, and those still alike are one test with the worst status of their
+runs (fail, pending, pass); in the baseline a pending run is left out when another run ran, since a
 run skipped there, such as one browser's run in a Playwright JUnit report that names no project, would otherwise
 hide another run's `pass→fail`. Such a test is under a screen or call when one of its runs is, and its
 regression line shows the first file and line among the runs that are. A baseline test file is gone from the
@@ -1545,8 +1546,14 @@ Limits:
   and the file as gone, not as `pass→fail`.
 - Verdict logs that write `PASS` and `FAIL`, as into-sign's do, read as pending and give no `pass→fail`.
 - A failed test in a `serial` group or a failed `setup` project makes the tests after it show as `pass→pending`.
-- A run of only some test files, kept as the baseline or run now, prints one `only in baseline ←` line for each file
-  left out, which can be hundreds in a large repository.
+- A run of only some test files now prints one `only in baseline ←` line for each file it left out, which can be
+  hundreds in a large repository; kept as the baseline, it leaves the other tests out of the comparison, and those
+  under a screen or call now count as `only now`.
+- duru reads the trace of a Playwright test's last attempt only. With `trace: 'on-first-retry'` and two retries, a
+  test that fails every attempt has its trace on the middle one, so a test linked to a screen only by its trace is on
+  no screen and its `pass→fail` counts in `not on a screen or call now`.
+- A reviewer's judgment names a test by its result file, test file and title without tags, so two tests of one file
+  whose titles differ only by `@` words share one judged pair, and both are compared as the first of them.
 - A verdict log's `file` is its file name alone, so logs of one name in different folders are one file.
 - When the results of one side come from checkouts in different places, such as two reports written on two
   machines, and the other side's do not, their absolute paths share no folder below the checkouts, so their tests

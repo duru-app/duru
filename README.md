@@ -297,7 +297,7 @@ client with example results and a config to start from.
   line about it. To keep the results of a release, run the whole suite on that version and copy its result files
   straight into that version's folder, such as `releases/1.5.0/`; copy JUnit XML and verdict logs with their modified
   time kept (`cp -p`), since that is the time duru takes for when they ran. Keeping the results of a run of only some
-  of the tests leaves the rest as `only in baseline`. Tests of the two results are matched by their title without
+  of the tests leaves the rest out of the comparison: those under a screen or call now count as `only now`. Tests of the two results are matched by their title without
   tags, their Playwright project and their test file, so a test renamed or moved to another file counts once in
   `only in baseline` and once in `only now`.
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
