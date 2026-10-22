@@ -802,7 +802,7 @@ export async function extractClient(config: any) {
 
   const oneAddress = (p: NodePath) => {
     const [only, ...more] = linkAddresses(p);
-    return more.length ? UNKNOWN : only;
+    return more.length || only === undefined ? UNKNOWN : only;
   };
 
   // 라우트 상수 뒤에 '/' 로 이어 붙은 주소. 조각마다 글자 그대로이거나 변수 하나일 때만 돌려주고, 아니면 '' 을 돌려준다.
@@ -1213,8 +1213,11 @@ export async function extractClient(config: any) {
         const attr = (name: string) => p.get('openingElement.attributes').find((a) => (a.node as JSXAttribute).name?.name === name) as NodePath<JSXAttribute> | undefined;
         if (config.redirectElements.includes(tag)) {
           const toValue = attr('to')?.get('value');
-          const to = toValue?.node ? oneAddress((toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue) as NodePath) : UNKNOWN;
-          redirects.push({ to, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
+          const toExpr = toValue?.node ? (toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue) as NodePath : null;
+          const read = toExpr ? oneAddress(toExpr) : UNKNOWN;
+          // 링크로 읽지 못한 to 는 글자 값으로 다시 읽어, 상대 경로와 이름으로 import 한 상수 객체의 멤버를 남긴다.
+          const written = read === UNKNOWN && toExpr ? evaluate(toExpr) : undefined;
+          redirects.push({ to: typeof written === 'string' ? written : read, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
           return;
         }
         if (!config.routeElements.includes(tag)) return;

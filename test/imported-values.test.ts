@@ -343,3 +343,30 @@ export default function ImportedRoutes() {
   const lineOf = (text: string) => routes.split('\n').findIndex((l) => l.includes(text)) + 1;
   assert.deepEqual(map.unreadRoutePaths!.map((u) => u.line), [lineOf('projectPath('), lineOf('adminPath(')]);
 });
+
+test('a route file redirect to a relative path or to a member of a constant object imported by name still makes its screen an entry', async () => {
+  const routes = `import { Navigate, Route, Routes } from 'react-router-dom';
+import { PATHS } from './paths/simple';
+import Simple from './pages/Simple';
+import Satisfied from './pages/Satisfied';
+import Objected from './pages/Objected';
+
+export default function ImportedRoutes() {
+  return (
+    <Routes>
+      <Route path="/app" element={<Simple />}>
+        <Route index element={<Navigate to="team" replace />} />
+        <Route path="team" element={<Satisfied />} />
+      </Route>
+      <Route path="/object" element={<Objected />} />
+      <Route path="/old" element={<Navigate to={PATHS.OBJECT} replace />} />
+    </Routes>
+  );
+}
+`;
+  const map = await build(fixtureCopy({ ...PATH_FILES, 'ImportedRoutes.tsx': routes }));
+  const lineOf = (text: string) => routes.split('\n').findIndex((l) => l.includes(text)) + 1;
+  const reasons = (component: string) => map.entries.find((e) => e.screen === map.screens.find((s) => s.component === component)!.id)?.reasons.filter((r) => r.kind === 'redirect');
+  assert.deepEqual(reasons('Satisfied'), [{ kind: 'redirect', file: 'ImportedRoutes.tsx', line: lineOf('to="team"') }]);
+  assert.deepEqual(reasons('Objected'), [{ kind: 'redirect', file: 'ImportedRoutes.tsx', line: lineOf('PATHS.OBJECT') }]);
+});
