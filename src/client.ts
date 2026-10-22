@@ -1671,7 +1671,6 @@ export async function extractClient(config: any) {
     };
     const holding = new Map<RouteNode & { kind: 'route' }, { files: string[]; base: string; around: string[] }>();
     let around: string[] = [];
-    // base 는 바깥 /* 라우트에 매칭된 앞부분이다.
     const convert = (n: DrawnNode, file: string, base = ''): RouteNode[] => {
       if (n.kind === 'routes') {
         const branches: Branch[] = [];
