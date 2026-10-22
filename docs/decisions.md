@@ -1493,7 +1493,9 @@ puts it there, since the page shows all of them as that screen's tests and a han
 confirmed; comparing only tagged tests would compare nothing on mattermost, appsmith and outline, whose sources hold
 no `@screen:` or `@call:` tag. The current side is the judged list `rebuild` prints from, not the result files read
 again, so that the counts match the page and a result file overwritten since (as into-sign's are) does not point the
-test rows and the regressions at different runs.
+test rows and the regressions at different runs. A judged pair stays one row there however many Playwright projects
+the test ran in, as the page shows it, and carries the status of each project's run in `projects`, so that a
+reviewer's judgment does not take the other projects' runs out of the comparison.
 Tests are matched in steps. The rows of one test on the current side (one result file, test file, line, title and
 project) are first made one test; an untagged test is one test for each Playwright project it ran in, and in a
 project where the test has rows under a screen or call its status comes from those rows alone, so a run without a
@@ -1534,8 +1536,6 @@ Limits:
 - A failed test in a `serial` group or a failed `setup` project makes the tests after it show as `pass→pending`.
 - A run of only some test files, kept as the baseline or run now, prints one `only in baseline ←` line for each file
   left out, which can be hundreds in a large repository.
-- A judged pair keeps only the row of its first project, so a test run in two projects and handed over counts its
-  second project's run as `not on a screen or call now`, as the page's 「태그 대기」 count does.
 - A verdict log's `file` is its file name alone, so logs of one name in different folders are one file.
 - When a file right at the checkout's top must be told apart from a file of the same name deeper down, its end
   reaches the checkout folder's name, so a baseline kept from a checkout of another name does not match that file.

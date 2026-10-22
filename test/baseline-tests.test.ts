@@ -150,6 +150,31 @@ test('a pair handed over from an untagged test that ran without a trace in two p
   assert.deepEqual(baselineTestsLines(compareTests(base('pending'), handedOver({ chromium: 'pass', webkit: 'pending' }, 'pending'), MAP)), [summary(2, 0, 0, 0, 0, 0)]);
 });
 
+test('a pair a reviewer judged for a test that passed through a screen in two projects keeps the run of each project, whichever project the report lists first', () => {
+  const signs = { title: 'signs', file: 'sign.spec.ts', line: 5, tags: [], source: 'results/e2e.json', format: 'playwright' };
+  const judgedAs = (kind: string, projects: string[]) => applyJudgments(
+    { passed: { '/a#A': projects.map((project) => ({ ...signs, project, status: project === 'webkit' ? 'fail' : 'pass', level: 'interact' })) }, untagged: [{ ...signs, status: 'fail', projects: { chromium: 'pass', webkit: 'fail' } }] },
+    [{ id: '1', date: '2026-10-01T00:00:00Z', author: 'r', reason: 'r', kind, node: '/a#A', test: { source: 'results/e2e.json', file: 'sign.spec.ts', title: 'signs' } }],
+  );
+  const base = was({ ...signs, project: 'chromium', status: 'pass' }, { ...signs, project: 'webkit', status: 'pass' });
+  for (const projects of [['chromium', 'webkit'], ['webkit', 'chromium']]) {
+    assert.deepEqual(baselineTestsLines(compareTests(base, judgedAs('hand-over', projects), MAP)), [
+      summary(2, 1, 0, 0, 0, 0),
+      '  pass→fail ← sign.spec.ts:5 signs (webkit) — screen /a#A',
+    ]);
+    assert.deepEqual(baselineTestsLines(compareTests(base, judgedAs('discard', projects), MAP))[0], summary(0, 0, 0, 2, 0, 0));
+  }
+  const story = { ...signs, title: 'signs @story:sign', tags: ['story:sign'] };
+  const fromStory = applyJudgments(
+    { stories: { sign: [{ ...story, project: 'chromium', status: 'pass' }, { ...story, project: 'webkit', status: 'fail' }] }, nodes: {} },
+    [{ id: '1', date: '2026-10-01T00:00:00Z', author: 'r', reason: '', kind: 'hand-over', node: '/a#A', test: { source: 'results/e2e.json', file: 'sign.spec.ts', title: 'signs' } }],
+  );
+  assert.deepEqual(baselineTestsLines(compareTests(base, fromStory, MAP)), [
+    summary(2, 1, 0, 0, 0, 0),
+    '  pass→fail ← sign.spec.ts:5 signs @story:sign (webkit) — screen /a#A',
+  ]);
+});
+
 test('tests of the same title in different files are told apart by the end of their paths, one folder deep or two', () => {
   const base = was(
     { title: 'renders', file: '/ci/app/src/a.test.js', status: 'pass' },

@@ -8,7 +8,7 @@ import { importLinker } from './import-links.ts';
 import { readJunit } from './junit.ts';
 import { readPlaywright } from './playwright.ts';
 import { traceLinker } from './trace-links.ts';
-import { readVerdicts } from './verdict.ts';
+import { STATUS_RANK, readVerdicts, withProjectRun } from './verdict.ts';
 import type { TestStatus } from './verdict.ts';
 import { readVitest } from './vitest.ts';
 
@@ -49,8 +49,6 @@ const KIND_TAG = /^case:([^=]*)(?:=(.*))?$/;
 const byKey = (a: { key: string }, b: { key: string }) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 const shownFile = (t: { testFile?: string; file?: string | null }) => t.testFile ?? t.file ?? '';
 const byTest = (a: UntaggedTest, b: UntaggedTest) => compare(shownFile(a), shownFile(b)) || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.source, b.source);
-export const STATUS_RANK: Record<string, number> = { pass: 0, pending: 1, fail: 2 };
-const worse = (a: TestStatus | undefined, b: TestStatus) => (a !== undefined && STATUS_RANK[a] >= STATUS_RANK[b] ? a : b);
 
 export function resultFiles(p: string, extensions: string[]) {
   if (!fs.statSync(p).isDirectory()) return [p];
@@ -160,11 +158,11 @@ export function linkTests(config: any, map: any) {
         }
         if (nodeTags.length === 0 && storyTags.length === 0) {
           const seen = untagged.get(testKey);
-          if (!seen) untagged.set(testKey, { title: t.title, tags: t.tags, file: t.file, line: t.line, source: resultPath, format: source.format, status: t.status, ...(link?.file && { testFile: link.file }), ...(trace?.unmatched && { unmatched: trace.unmatched }), ...(t.project != null && { projects: { [t.project]: t.status } }) });
+          if (!seen) untagged.set(testKey, { title: t.title, tags: t.tags, file: t.file, line: t.line, source: resultPath, format: source.format, status: t.status, ...(link?.file && { testFile: link.file }), ...(trace?.unmatched && { unmatched: trace.unmatched }), ...(t.project != null && { projects: withProjectRun(undefined, t.project, t.status) }) });
           else {
             if (STATUS_RANK[t.status] > STATUS_RANK[seen.status]) seen.status = t.status;
             if (trace?.unmatched) seen.unmatched = [...new Set([...(seen.unmatched ?? []), ...trace.unmatched])];
-            if (t.project != null) seen.projects = Object.fromEntries(Object.entries({ ...seen.projects, [t.project]: worse(seen.projects?.[t.project], t.status) }).sort(([a], [b]) => compare(a, b)));
+            if (t.project != null) seen.projects = withProjectRun(seen.projects, t.project, t.status);
           }
           continue;
         }

@@ -3,8 +3,8 @@ import path from 'node:path';
 import { compare } from './config.ts';
 import { testRef } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
-import { NODE_TAG, READERS, STATUS_RANK, resultFiles } from './test-links.ts';
-import { withoutTags } from './verdict.ts';
+import { NODE_TAG, READERS, resultFiles } from './test-links.ts';
+import { STATUS_RANK, withoutTags } from './verdict.ts';
 import type { TestStatus } from './verdict.ts';
 
 export interface BaselineTest {
