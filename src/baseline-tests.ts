@@ -298,8 +298,12 @@ function countsByNode(regressed: TestRow[][]) {
   return byNode;
 }
 
+// jest-junit 은 기본으로 시험 이름을 classname 에 적어, 그런 이름은 시험 파일을 가리키지 않는다.
+const namesItself = (t: BaselineTest) => t.file !== null && (t.title === t.file || t.title.endsWith(` › ${t.file}`));
+
 function onlyInBaselineOf(gone: BaselineTest[][], keys: ReturnType<typeof fileKeys>, onMap: Set<string>) {
   const nowFiles = new Set(keys.now.values());
+  const testFiles = new Set<string>();
   const files = new Map<string, OnlyInBaseline[]>();
   for (const tests of gone) {
     const [first] = [...tests].sort((a, b) => (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title));
@@ -307,9 +311,10 @@ function onlyInBaselineOf(gone: BaselineTest[][], keys: ReturnType<typeof fileKe
     const nodes = [...new Set(tests.flatMap((t) => t.tags.map((tag) => tag.match(NODE_TAG)?.[2]).filter((id): id is string => id !== undefined && onMap.has(id))))].sort(compare);
     const entry = { title: first.title, file, line: first.line, project: first.project, status: worst(tests.map((t) => t.status)), result: first.result, nodes };
     files.set(file, [...(files.get(file) ?? []), entry]);
+    if (!tests.every(namesItself)) testFiles.add(file);
   }
   const byLine = (a: OnlyInBaseline, b: OnlyInBaseline) => (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.project ?? '', b.project ?? '');
-  const onlyInBaselineFiles = [...files].map(([file, tests]) => ({ file, whole: !nowFiles.has(file), tests: tests.sort(byLine) })).sort((a, b) => compare(a.file, b.file));
+  const onlyInBaselineFiles = [...files].map(([file, tests]) => ({ file, whole: testFiles.has(file) && !nowFiles.has(file), tests: tests.sort(byLine) })).sort((a, b) => compare(a.file, b.file));
   const onlyInBaselineByNode: Record<string, OnlyInBaseline[]> = {};
   for (const { tests } of onlyInBaselineFiles) for (const t of tests) for (const id of t.nodes) (onlyInBaselineByNode[id] ??= []).push(t);
   return { onlyInBaselineFiles, onlyInBaselineByNode };

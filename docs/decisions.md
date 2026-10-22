@@ -1507,7 +1507,8 @@ of it are put back in front of that side's paths as far as makes the most files 
 still share a key, such as verdict lines of one name in one log, get their sorted tags added, and those still alike are one test with the worst
 status of their runs (fail, pending, pass). Such a test is under a screen or call when one of its runs is, and its
 regression line shows the first file and line among the runs that are. A baseline test file is gone from the
-current results when no current test has that file. Alternatives compared:
+current results when no current test has that file; a JUnit class name that is the test's own name, as jest-junit
+writes by default, names no file and is never gone. Alternatives compared:
 - Only as much of the end of the paths as tells apart the different files of one title, decided in a comment on #404
   before building: two files of one name in different folders got the same end when each side had only one of them,
   so a test of a deleted file was matched with a new test of the same title in another file and gave a false

@@ -8,6 +8,7 @@ import { baselineTestsLines, compareTests, readBaselineTests } from '../src/base
 import type { BaselineTests } from '../src/baseline-tests.ts';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment, applyJudgments } from '../src/judgments.ts';
+import { readJunit } from '../src/junit.ts';
 import type { TestStatus } from '../src/verdict.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
@@ -288,6 +289,17 @@ test('a test file none of whose tests are in the current results is one whole mi
   const comparison = compareTests(base, now({ nodes: { '/a#A': [{ title: 'three', file: 'left.spec.ts', status: 'pass' }] } }), MAP);
   assert.deepEqual(baselineTestsLines(comparison), [summary(1, 0, 0, 0, 3, 0), "  only in baseline ← gone.spec.ts: 2 tests, none of this file's tests are in the current results"]);
   assert.deepEqual(comparison.onlyInBaselineFiles.map((f) => [f.file, f.whole, f.tests.map((t) => t.title)]), [['gone.spec.ts', true, ['two', 'one']], ['left.spec.ts', false, ['four']]]);
+});
+
+test('a JUnit test whose class name is its own name, as jest-junit writes by default, is not printed as a whole missing file when it is gone', () => {
+  const xml = (names: string[]) => `<testsuites><testsuite name="Button">${names.map((n) => `<testcase classname="Button ${n}" name="Button ${n}"/>`).join('')}</testsuite></testsuites>`;
+  inFolder({ 'releases/1.5.0/junit.xml': xml(['renders the label', 'is disabled while busy']), 'results/junit.xml': xml(['renders the label', 'is disabled while loading']) }, (dir) => {
+    const base = readBaselineTests({ configDir: dir, baselineTests: [{ format: 'junit', path: path.join(dir, 'releases/1.5.0/junit.xml') }] });
+    const rows = readJunit(path.join(dir, 'results/junit.xml'))!.map((t) => ({ ...t, source: 'results/junit.xml', format: 'junit' }));
+    assert.deepEqual(baselineTestsLines(compareTests(base, { nodes: { '/a#A': rows } }, MAP)), [
+      'test results since releases/1.5.0 | compared 1 | pass→fail 0 pass→pending 0 | not on a screen or call now 0 | only in baseline 1 | only now 1',
+    ]);
+  });
 });
 
 test('a baseline test file one of whose tests is compared is never whole missing, even when the checkout folders have other names', () => {
