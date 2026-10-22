@@ -412,6 +412,23 @@ test('with baselineTests and no baselineMap, rebuild prints the same test lines'
   });
 });
 
+test('without baselineTests, a current result file that cannot be read stops rebuild after the map comparison line and the case kind lines', () => {
+  withCopy(({ copy, configFile, setConfig, rebuild }) => {
+    rebuild();
+    fs.copyFileSync(path.join(copy, 'out/map.json'), path.join(copy, 'releases-map.json'));
+    setConfig({ baselineMap: 'releases-map.json', caseKinds: { ended: { text: '끝난 문서', picks: [{ methods: ['DELETE'] }] } } });
+    fs.writeFileSync(path.join(copy, 'results/playwright/e2e.json'), '{ "suites": [');
+    const run = spawnSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /cannot read Playwright report /);
+    assert.deepEqual(run.stdout.trimEnd().split('\n').slice(-3), [
+      `changes since ${path.join(copy, 'releases-map.json')} | screens new 0 removed 0 condition 0 calls-changed 0 | calls new 0 removed 0 server 0`,
+      `case kind ended: rules pick 0 screens, 0 calls | new since ${path.join(copy, 'releases-map.json')} 0`,
+      '  caseKinds ended picks[0] matches no call: {"methods":["DELETE"]}',
+    ]);
+  });
+});
+
 test('a baselineTests path that is missing, a result file that cannot be read, or an item that gives no test stops rebuild with exit 1, naming the path, before anything is written', () => {
   withCopy(({ copy, configFile, setConfig }) => {
     const stopped = (said: string) => {

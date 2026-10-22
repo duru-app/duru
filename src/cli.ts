@@ -336,13 +336,16 @@ if (command === 'tasks') {
   for (const { file, line, reason } of map.unreadRoutes ?? []) console.log(`  route not read ← ${file}:${line}: ${reason}`);
 
   if (command === 'rebuild') {
-    const links = linkTests(config, map);
-    const { judgments, notices: judgmentNotices } = loadJudgments(config.judgmentsDir);
-    const judged = applyJudgments(links, judgments);
+    const readTests = () => {
+      const links = linkTests(config, map);
+      const { judgments, notices: judgmentNotices } = loadJudgments(config.judgmentsDir);
+      return { links, judgmentNotices, judged: applyJudgments(links, judgments) };
+    };
     if (changes) console.log(baselineLine(config.baselineMap, changes));
-    if (baselineTests) {
+    const readEarly = baselineTests && readTests();
+    if (baselineTests && readEarly) {
       const nodes = { screens: map.screens.map((s: any) => s.id), calls: map.calls.map((c: any) => c.id) };
-      for (const line of baselineTestsLines(compareTests(baselineTests, judged, nodes))) console.log(line);
+      for (const line of baselineTestsLines(compareTests(baselineTests, readEarly.judged, nodes))) console.log(line);
     }
     for (const [kind, caseKind] of Object.entries<CaseKind>(config.caseKinds)) {
       if (!caseKind.picks.length) continue;
@@ -357,6 +360,7 @@ if (command === 'tasks') {
         if (!r.screens.length && !r.calls.length) console.log(`  caseKinds ${kind} picks[${i}] matches no ${picksCalls(r.pick) ? 'call' : 'screen'}: ${JSON.stringify(r.pick)}`);
       });
     }
+    const { links, judgmentNotices, judged } = readEarly || readTests();
     console.log(`wrote ${write('tests.json', links)}`);
     const { list, notices, stale, unknownTags: unknownStories } = checkStoryFiles(map, config.storiesDir, path.join(config.outDir, 'map.json'), links);
     const unknownTags = [...links.unknownTags, ...unknownStories];
