@@ -179,3 +179,15 @@ test('the agent skill says an agent\'s not-needed waits under review, how undeci
   assert.match(SKILL, /Candidates under\s+review are not undecided[\s\S]*`, N under review`[\s\S]*exits with 0 when only those are\s+left; in the task list they are under `under review`/);
   assert.match(SKILL, /`\| under review N`/);
 });
+
+test('the agent skill says how to read the rebuild regression lines, not to fit a test to the current result for a regression alone, what to do for an item listed for comments on regressed tests and for a comment whose where carries passedIn, that such a list starts with the regression sentence without No open marks, and to tell the user when baselineTests could not be read', () => {
+  const flat = SKILL.replace(/\s+/g, ' ');
+  assert.match(flat, /`test results since <folder> \| …` line, and under it `pass→fail ←`, `pass→pending ←` and `only in baseline ←` lines or a `no test was compared` line, [^.]*; they ask nothing of you/);
+  assert.match(flat, /Do not change a test to match the current result only because it regressed/);
+  assert.match(flat, /A run that stops with a line starting with `baselineTests` names results that are missing, unreadable or hold no test: tell the user/);
+  assert.match(flat, /When `where` also carries `passedIn`[^:]*: do not write a new test for it; fix the app or the test as the comment says/);
+  assert.match(flat, /ends with `, passed in <folder>` is such a regressed test, and an item whose marks line reads `marks: none, listed for comments on regressed tests`[^:]*: write no new test for them; fix the app or the test as each comment says, run the tests and `duru rebuild`, and read the list again/);
+  assert.match(flat, /`N commented regressions`[^;]*; with no open mark it starts with that instead of `No open marks\.`, so do not stop there/);
+  assert.match(flat, /`baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`, means [^:]*: tell the user/);
+  assert.match(flat, /One listed only for comments on regressed tests also leaves once those tests pass again after a `rebuild`/);
+});

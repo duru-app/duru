@@ -472,6 +472,19 @@ test('the README and the decision record say what baselineTests takes, what the 
   assert.match(decisions, /- One end length for the whole group, as the PRD reads word for word:/);
 });
 
+test('the README says which screens and calls a comment on a regressed test lists and how they read, when they leave, the line for a baselineTests that could not be read, and passedIn in the where of a comment', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md').replace(/\n {2}(?=\S)/g, ' ').replace(/\n(?=\S)/g, ' ');
+  assert.match(readme, /With `baselineTests` in the config, it also lists each screen and API call with a test that passed in that earlier release and fails or is pending now, when a reviewer commented on that test's row after the release's run/);
+  assert.match(readme, /starts with `- marks: none, listed for comments on regressed tests` when it has no open mark, and then has no `empty tests`/);
+  assert.match(readme, /ends with `, passed in <folder>`[\s\S]*`N commented regressions`[\s\S]*does not say `No open marks\.`/);
+  assert.match(readme, /leaves once those tests pass again after a `rebuild`, or once a reviewer marks the whole screen or call `fine`; a comment after that brings it back/);
+  assert.match(readme, /`baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`, the rest of the list is as without it, and `tasks` does not stop/);
+  assert.match(readme, /`detail` for a verdict line, and `passedIn`, the `baselineTests` folder,/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*A comment on a regressed test lists its screen or call in `duru tasks` until the test passes again or the whole\s+screen or call is marked `fine`, and the line of a comment on such a test carries `passedIn`\.\*\*/);
+});
+
 const onRow = (node: string, title: string, file = 'a.spec.ts', source = 'results/e2e.json') => ({ node, part: { kind: 'test', key: { source, file, title } } });
 const NO_FINE = new Map<string, string>();
 const AFTER = '2026-10-12T00:00:00.000Z';
