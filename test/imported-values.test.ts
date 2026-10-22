@@ -206,3 +206,70 @@ test('a pattern a path variable carries is left out of the screen ID and kept in
   assert.equal(screenAt('/my-team/drafts'), '/:team/drafts#Simple');
   assert.equal(screenAt('/My.Team/drafts'), null);
 });
+
+const BRANCHING_PATHS = `import { settings } from 'app-settings';
+
+export const homePath = () => (settings.root ? '/' : '/home');
+export const searchPath = () => (settings.term ? \`/search?term=\${settings.term}\` : '/search');
+export const twoPath = () => (settings.beta ? '/beta' : '/two');
+export function manyPath() {
+${Array.from({ length: 8 }, (_, i) => `  if (settings.at${i}) return '/many/${i}';\n`).join('')}  return '/many/last';
+}
+`;
+
+const BRANCHING_ROUTES = `import { Route, Routes } from 'react-router-dom';
+import { homePath, manyPath, searchPath, twoPath } from './paths/branching';
+import Simple from './pages/Simple';
+import Satisfied from './pages/Satisfied';
+import Joined from './pages/Joined';
+import Enumed from './pages/Enumed';
+import Defaulted from './pages/Defaulted';
+
+export default function ImportedRoutes() {
+  return (
+    <Routes>
+      <Route path={\`\${homePath()}/:tab?\`} element={<Simple />} />
+      <Route path={\`\${searchPath()}/:query?\`} element={<Satisfied />} />
+      <Route path={twoPath()} element={<Joined />} />
+      <Route path={manyPath()} element={<Defaulted />} />
+      <Route path="/start" element={<Enumed />} />
+    </Routes>
+  );
+}
+`;
+
+const START = `import { useNavigate } from 'react-router-dom';
+import { homePath } from '../paths/branching';
+
+export default function Enumed() {
+  const navigate = useNavigate();
+  return <a onClick={() => navigate(homePath())}>home</a>;
+}
+`;
+
+const branchingApp = () => fixtureCopy({ 'paths/branching.ts': BRANCHING_PATHS, 'ImportedRoutes.tsx': BRANCHING_ROUTES, 'pages/Enumed.tsx': START });
+
+test('a route path whose function adds a query in one branch drops that branch', async () => {
+  const map = await build(branchingApp());
+  assert.equal(pathsOf(map).Satisfied, '/search/:query?');
+});
+
+test('a route path whose function branches leave only a path variable in one branch drops that branch, and a link to the other branch reaches the screen', async () => {
+  const map = await build(branchingApp());
+  assert.equal(pathsOf(map).Simple, '/home/:tab?');
+  const start = map.screens.find((s) => s.component === 'Enumed')!;
+  assert.deepEqual(start.links.map((l) => [l.to, l.targets]), [['/', []], ['/home', ['/home/:tab?#Simple']]]);
+});
+
+test('a route path whose function gives two different paths is {?}, and its route path not read line names the call and the paths, or how many there are past 8', async () => {
+  const configFile = branchingApp();
+  const map = await build(configFile);
+  assert.deepEqual([pathsOf(map).Joined, pathsOf(map).Defaulted], ['{?}', '{?}']);
+  const lineOf = (text: string) => BRANCHING_ROUTES.split('\n').findIndex((l) => l.includes(text)) + 1;
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('route path not read')), [
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('twoPath()')}: stopped at twoPath(), which gives /beta and /two`,
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('manyPath()')}: stopped at manyPath(), which gives more than 8 paths`,
+  ]);
+});

@@ -144,7 +144,7 @@ interface DrawnNode {
 }
 
 type StoppedAt = { text: string; file: string | null; line: number };
-type UnreadRoutePath = { file: string; line: number; path: string; stoppedAt: StoppedAt };
+type UnreadRoutePath = { file: string; line: number; path: string; stoppedAt: StoppedAt; paths?: string[]; manyPaths?: true };
 
 interface OuterFill {
   startsWithOuterAddress: boolean;
@@ -1170,12 +1170,19 @@ export async function extractClient(config: any) {
     namespaceFunction,
   });
 
-  function readRoutePath(p: NodePath) {
+  // 주소 함수가 돌려준 갈래 가운데 쿼리를 붙이는 것과, 고정된 마디가 있는 갈래 옆에서 경로 변수만 남은 것은 경로가 아니다.
+  function readRoutePath(p: NodePath): { path: string; stops: NodePath[]; paths?: string[]; manyPaths?: true } {
+    const calledAt = piecesOf(p).find((x) => x.isCallExpression()) ?? p;
     const found = routeReading.branches(p);
-    if ('tooMany' in found) return { path: UNKNOWN, stops: [p] };
-    const read = found.branches;
+    if ('tooMany' in found) return { path: UNKNOWN, stops: [calledAt], manyPaths: true };
+    const segments = (b: { text: string }) => b.text.split('/').filter(Boolean);
+    const fixed = (b: { text: string }) => segments(b).some((x) => !x.startsWith(':') && !x.includes(UNREADABLE_PIECE) && x !== '*');
+    let read = found.branches.filter((b) => !b.made || !b.text.replace(/:\w+(\([^)]*\))?\?/g, '').includes('?'));
+    if (read.some(fixed)) read = read.filter((b) => !b.made || fixed(b) || !segments(b).length || !segments(b).every((x) => x.startsWith(':')));
     const paths = [...new Set(read.map((b) => b.text.replaceAll(UNREADABLE_PIECE, UNKNOWN)))];
-    return paths.length === 1 ? { path: paths[0], stops: read[0].stops } : { path: UNKNOWN, stops: [p] };
+    if (paths.length === 1) return { path: paths[0], stops: read[0].stops };
+    if (!paths.length) return { path: UNKNOWN, stops: [p] };
+    return { path: UNKNOWN, stops: [calledAt], ...(paths.length > MOST_ADDRESSES ? { manyPaths: true as const } : { paths }) };
   }
 
   function stopOf(p: NodePath) {
@@ -1244,7 +1251,7 @@ export async function extractClient(config: any) {
           loopRoutes.push({ element: p.node, line, page, pathExpr, item, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
           return;
         }
-        const { path: routePath, stops } = readRoutePath(pathExpr);
+        const { path: routePath, stops, ...gives } = readRoutePath(pathExpr);
         let unreadPath: OuterFill['unreadPath'] = null;
         const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
         if (routePath.includes(UNKNOWN)) {
@@ -1252,7 +1259,7 @@ export async function extractClient(config: any) {
           if (drawnInFunctionOrChildren && madeInLoop(p)) return unread(`made for each item of a list, and its path stopped at ${stoppedAt.text}`);
           const outerStops = outerAddress && new Set(readRoutePath(outerAddress).stops.map((x) => x.node));
           const rest = outerStops && stops.find((x) => !outerStops.has(x.node));
-          unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt }, restStoppedAt: rest ? stopOf(rest) : null };
+          unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt, ...gives }, restStoppedAt: rest ? stopOf(rest) : null };
           unreadRoutePaths.push(unreadPath.entry);
         }
         const screen: RouteScreen = {
