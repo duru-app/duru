@@ -419,3 +419,37 @@ export default function Home(props) {
     ['/login', lineOf(home, 'ROUTE_PATH.LOGIN')],
   ]);
 });
+
+test('a move to a query or a hash alone, or to the pathname followed by any query or hash, stays on the screen and gives no link, while a name given another value later is left unread', async () => {
+  const home = `import { Link, useHistory, useLocation } from 'react-router-dom';
+import qs from 'qs';
+
+export default function Home({ query }) {
+  const history = useHistory();
+  const location = useLocation();
+  const { pathname, search } = location;
+  const second = '?page=2';
+  let target = '?tab=1';
+  if (query.edit) target = '/login';
+  return (
+    <div>
+      <Link to="#top">top</Link>
+      <Link to={\`?page=\${query.page + 1}\`}>next</Link>
+      <button onClick={() => history.push('?page=2')}>page 2</button>
+      <button onClick={() => history.push('?' + qs.stringify(query))}>query</button>
+      <button onClick={() => history.push(location.pathname + '?' + qs.stringify(query))}>filter</button>
+      <button onClick={() => history.replace(location.pathname + location.search)}>reload</button>
+      <button onClick={() => history.replace(location.pathname + location.search + location.hash)}>same</button>
+      <button onClick={() => history.replace(location.search)}>search</button>
+      <button onClick={() => history.push(search)}>taken search</button>
+      <button onClick={() => history.push(pathname + search)}>taken pathname</button>
+      <button onClick={() => history.push(second)}>named query</button>
+      <button onClick={() => history.push(target)}>assigned again</button>
+      <Link to="/login">login</Link>
+    </div>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', lineOf(home, 'push(target)'), [], []], ['/login', lineOf(home, '"/login"'), [], ['/login#Login']]]);
+});

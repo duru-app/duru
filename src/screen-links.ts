@@ -36,22 +36,40 @@ function takenFrom(p: NodePath<Identifier>, key: string, from: (init: NodePath<a
 const isLocation = (p: NodePath<any>): boolean => p.isIdentifier({ name: 'location' }) || named(p, 'location')
   || (p.isCallExpression() && p.get('callee').isIdentifier({ name: 'useLocation' }));
 
-function readsPathname(p: NodePath<any>, depth = 0): boolean {
-  if (named(p, 'pathname')) return isLocation(p.get('object') as NodePath<any>);
-  if (!p.isIdentifier() || depth > FOLLOWED) return false;
+const neverAssigned = (p: NodePath<any>) => p.isIdentifier() && Boolean(p.scope.getBinding(p.node.name)?.constant);
+
+function readsLocation(p: NodePath<any>, key: string, depth = 0): boolean {
+  if (named(p, key)) return isLocation(p.get('object') as NodePath<any>);
+  if (!neverAssigned(p) || depth > FOLLOWED) return false;
   const declared = declaredInit(p);
-  if (declared?.id.type === 'Identifier') return readsPathname(declared.init, depth + 1);
-  return takenFrom(p, 'pathname', isLocation);
+  if (declared?.id.type === 'Identifier') return readsLocation(declared.init, key, depth + 1);
+  return takenFrom(p, key, isLocation);
 }
+
+const readsPathname = (p: NodePath<any>) => readsLocation(p, 'pathname');
 
 const queryOrHash = (text: string | null | undefined) => text === '' || /^[?#]/.test(text ?? '-');
 
+function startsWithQueryOrHash(p: NodePath<any>, depth = 0): boolean {
+  if (p.isStringLiteral()) return /^[?#]/.test(p.node.value);
+  if (p.isTemplateLiteral()) return /^[?#]/.test(p.node.quasis[0].value.cooked ?? '');
+  if (readsLocation(p, 'search') || readsLocation(p, 'hash')) return true;
+  const declared = neverAssigned(p) && depth <= FOLLOWED ? declaredInit(p as NodePath<Identifier>) : null;
+  return declared?.id.type === 'Identifier' && startsWithQueryOrHash(declared.init, depth + 1);
+}
+const afterPathname = (p: NodePath<any>) => (p.isStringLiteral() ? queryOrHash(p.node.value)
+  : p.isTemplateLiteral() ? queryOrHash(p.node.quasis[0].value.cooked) : startsWithQueryOrHash(p));
+
 function staysHere(p: NodePath<any>) {
-  if (readsPathname(p)) return true;
+  if (readsPathname(p) || startsWithQueryOrHash(p)) return true;
   if (p.isTemplateLiteral()) return p.node.quasis[0].value.cooked === '' && readsPathname(p.get('expressions.0') as NodePath) && queryOrHash(p.node.quasis[1].value.cooked);
-  if (!p.isBinaryExpression({ operator: '+' }) || !readsPathname(p.get('left'))) return false;
-  const right = p.get('right');
-  return right.isStringLiteral() ? queryOrHash(right.node.value) : right.isTemplateLiteral() && queryOrHash(right.node.quasis[0].value.cooked);
+  let left = p;
+  let right: NodePath<any> | null = null;
+  while (left.isBinaryExpression({ operator: '+' })) {
+    right = left.get('right');
+    left = left.get('left');
+  }
+  return right !== null && (startsWithQueryOrHash(left) || (readsPathname(left) && afterPathname(right)));
 }
 
 const isMember = (p: NodePath<any>) => p.isMemberExpression() || p.isOptionalMemberExpression();

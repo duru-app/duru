@@ -3223,7 +3223,8 @@ route constant is: written pieces as they are, a value piece as `{*}`, the query
 `{ pathname }` by its `pathname`, and each branch of `? :` as a link of its own carrying its condition. An address
 that starts with a value, or is not written from `/`, is `{?}`: it stays among the screen's links and goes to no
 screen. A move back to the screen's own address (`push({ pathname: location.pathname, state })`, an object with no
-`pathname`, `` `${location.pathname}?tab=2` ``) changes only the page or the state and is not a link. Where a route
+`pathname`, `` `${location.pathname}?tab=2` ``, `location.pathname + location.search`, an address starting with `?` or
+`#`) changes only the page or the state and is not a link. Where a route
 constant is written inside the address, or the address takes it through a local variable or an object field
 (`const help = Option.ROUTE_PATH.HELP`), that place gives only the route constant's link, judged by where it sits in
 the code and not by its text; into-sign 1.5.0 writes `Option.ROUTE_PATH` at 75 of its 96 moves.
