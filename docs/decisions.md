@@ -3247,10 +3247,12 @@ licence before the `<Switch>` sees them, so the order written does not say which
 2026-10-21). Paths are matched with the pattern used for link addresses, where `{*}` fits any variable, so
 `/:team([a-z0-9\-_]+)` takes `/{*}`; the browser test address pattern does not, and left mattermost at 57 entry
 screens instead of 33.
-Links written with the route constant keep the matching they had (the same path, a route the constant's path
-starts, then routes that only add parameters), so the into-sign map keeps every link it had. Moving them to the
-router walk would have sent every link of the JavaScript example app into the route without a path that wraps its
-layout, which in a `<Switch>` takes every address after the sign-in screen.
+Under a `<Switch>`, links written with the route constant keep the matching they had (the same path, a route the
+constant's path starts, then routes that only add parameters), so the into-sign map keeps every link it had. Moving
+them to the router walk would have sent every link of the JavaScript example app into the route without a path that
+wraps its layout, which in a `<Switch>` takes every address after the sign-in screen. Under `<Routes>` a route
+constant that is a link's whole address is walked like a written address, as the entry after the React Router 6 one
+says.
 Choices made without a driver's answer, each cheap to change: a route file holding several JSX trees (into-sign
 draws one `<Switch>` per signed-in state) has all of them drawn side by side, so `history.push('/')` there goes both
 to the sign-in screen and, through the redirect of the signed-in `<Switch>`, to the user home; when several screens
@@ -3313,7 +3315,7 @@ Measured on into-sign 2.0.0 (2026-10-22, against main): 44 screens, links 339 â†
 screens, each a `navigate` to the address an app helper returns (`resolveMetaDocumentDetailNavigation`), whose route
 constants are already links of the helper's file; one readable link, `navigate('/')` of the sign-in screen, goes to
 the sign-in screen and the user home; entry screens stay 24, since every other move there is written with the route
-constant. into-sign 1.5.0 gives the same map as before.
+constant, which then kept its old matching. into-sign 1.5.0 gives the same map as before.
 Driver's decision (2026-10-22) on a `<Routes>` drawn inside a route, whether in a route file under an outer route
 ending in `/*` or written as the route's `element`: a path not written from `/` is joined to the outer route's whole path,
 with the paths of the routes around it and without its `/*`, so `<Route path="/app/*" element={<App />} />` around App's
@@ -3338,6 +3340,40 @@ Alternatives compared:
   before the rest, would send the link to a screen v6 does not draw.
 - Matching a `/*` route through the existing prefix matching of a route without `exact`: the same in effect, but a
   path without `/*` would then take longer addresses, which v6 does not.
+
+**Under `<Routes>`, a route constant written as a link's whole address, with a tail duru reads to the end or none,
+goes to the screens React Router 6 draws for it, as the same address written as text does; elsewhere a route
+constant keeps its old matching.**
+A route constant is walked through the route files like a written address when all three hold:
+- It is the whole address of a link or a move: the `to` of `Link`, `NavLink`, `Navigate` or `Redirect`, or the
+  address given to a history's `push` or `replace` or to the function `useNavigate()` returns, with the tail written
+  after it, also through a `const` of the same file. A route constant handed to a function
+  (`navigateLazyDesignRoute(navigate, Option.ROUTE_PATH.X, data)`), kept in a table or written inside a longer
+  address is material for an address made somewhere else, and walking it alone sends the link to a screen the app
+  does not draw there.
+- Its tail is read to the end: there is none, it is whole segments (`/x`, `/{*}/edit`), or it is only a query or a
+  `#` part. A tail duru cannot cut into segments (`HELP + topic`, `` `${HELP}/page-${x}` ``) leaves the address
+  unknown.
+- Walking the address passes a `<Routes>`. An address that passes only `<Switch>` keeps the old matching, for the
+  reason given in the links entry above.
+A saga's move is judged the same way. A link walked this way, like a written address, does not go on to the bare
+route constant when it finds only the screen it sits in.
+Driver's decisions (2026-10-22, in #402): the rule takes only a whole address as above, and the `*` route of a route
+file drawn beside the others now reaches route constant links too, as it already reaches written ones.
+Measured while planning, on a prototype of this rule (2026-10-22, against the branch reading function bodies):
+into-sign 2.0.0 changes 53 of its 368 link lines (32 places), each keeping the screens it had and adding the sign-in
+screen and the user home through the catch-alls of route files drawn side by side, and keeps 24 entry screens;
+outline, mattermost and appsmith name no route constant in their config, and into-sign 1.5.0 uses only `<Switch>`, so
+their maps do not change.
+Known limits: a `<Routes>` anywhere on the walk counts, so in an app mixing `<Switch>` and `<Routes>` an address
+passing a `<Routes>` that takes none of it is walked too; an address kept in a `const` of another file keeps the old
+matching; the catch-all of a route file drawn beside the others is added to route constant links, as written above.
+Alternatives compared:
+- Every route constant written in screen code: on into-sign 2.0.0, 199 link lines (25 places) lost the screens they
+  had and kept only the sign-in screen and the user home, and five editing and publishing screens became entry
+  screens (24 â†’ 29), since those constants are handed to helpers that append an id.
+- Deciding per app whether it uses `<Routes>`: an app's choice does not say which tree one address passes through,
+  and looking per address costs the same.
 
 **A history the app makes itself is named in the config as `history`, `{ "import", "name" }`, and duru tells from
 how it is used whether the name is a function returning the history or the history itself.**

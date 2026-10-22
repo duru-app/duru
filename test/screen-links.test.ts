@@ -724,6 +724,12 @@ export default function Home({ id, tab }) {
   ]);
 });
 
+test('the decision record says that under Routes a route constant written as a link\'s whole address goes to the screens React Router 6 draws, and that a Switch keeps the old matching', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '..', 'docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*Under `<Routes>`, a route constant written as a link's whole address, with a tail duru reads to the end or none,\s+goes to the screens React Router 6 draws for it/);
+  assert.match(decisions, /Under a `<Switch>`, links written with the route constant keep the matching they had/);
+});
+
 test('Routes takes the routes a Fragment or React.Fragment wraps, at whatever depth', async () => {
   const routes = `import React, { Fragment } from 'react';
 import { Route, Routes } from 'react-router-dom';
