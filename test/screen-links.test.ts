@@ -802,3 +802,44 @@ export default function ${name}() {
     }, shape);
   }
 });
+
+test('a * route with nothing before the star in a Routes drawn beside another is a link\'s screen beside the other Routes\' screen, but not beside one of its own Routes', async () => {
+  for (const star of ['*', '/*']) {
+    const users = `<Routes>
+        <Route path="/users" element={<Users />} />
+        <Route path="/start" element={<Start />} />
+      </Routes>`;
+    const admin = `<Routes>
+        <Route path="/admin" element={<Admin />} />
+        <Route path="${star}" element={<NotFound />} />
+      </Routes>`;
+    const file = (name: string, ...drawn: string[]) => `import { Route, Routes } from 'react-router-dom';
+import Users from './Users';
+import Admin from './Admin';
+import NotFound from './NotFound';
+import Start from './Start';
+
+export default function ${name}() {
+  return (
+    <>
+      ${drawn.join('\n      ')}
+    </>
+  );
+}
+`;
+    const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav><Link to="/users">users</Link><Link to="/admin">admin</Link><Link to="/zzz">zzz</Link></nav>;\n}\n`;
+    const pages = Object.fromEntries(['Users', 'Admin', 'NotFound'].map((n) => [`${n}.js`, page(n)]));
+    for (const [shape, files, keys] of [
+      ['in one file', { 'Routes.js': file('AppRoutes', users, admin) }, {}],
+      ['in two route files', { 'Routes.js': file('AppRoutes', users), 'Extra.js': file('Extra', admin) }, { routesFile: ['Routes.js', 'Extra.js'] }],
+    ] as const) {
+      const map = await build(writeApp({ ...pages, ...files, 'Start.js': start }, keys));
+      const notFound = `${star}#NotFound`;
+      assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, [...l.targets].sort()])), {
+        '/users': [notFound, '/users#Users'].sort(),
+        '/admin': ['/admin#Admin'],
+        '/zzz': [notFound],
+      }, `${star} ${shape}`);
+    }
+  }
+});
