@@ -321,3 +321,19 @@ export function baselineTestsLines(c: TestComparison) {
   }
   return lines;
 }
+
+export const nodeIds = (map: { screens: { id: string }[]; calls: { id: string }[] }) => ({ screens: map.screens.map((s) => s.id), calls: map.calls.map((c) => c.id) });
+
+type PartTarget = { node?: string; part?: { kind: string; key: unknown } };
+
+const sameTest = (ref: TestRef, key: unknown) => {
+  const k = key as Partial<TestRef> | null;
+  return ref.source === k?.source && ref.file === k?.file && ref.title === k?.title;
+};
+
+export function passedInFolder(c: TestComparison, target: PartTarget) {
+  const { node, part } = target;
+  if (part?.kind !== 'test' || node === undefined) return null;
+  const regressed = c.regressions.some((r) => r.rows.some((row) => row.node === node && row.status !== 'pass' && sameTest(row.ref, part.key)));
+  return regressed ? c.folder : null;
+}

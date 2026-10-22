@@ -4,7 +4,7 @@ import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { baselineLine, compareMaps, newUndecided, readBaseline } from './baseline.ts';
-import { baselineTestsLines, compareTests, readBaselineTests } from './baseline-tests.ts';
+import { baselineTestsLines, compareTests, nodeIds, readBaselineTests } from './baseline-tests.ts';
 import { storeCandidates, storyCandidates } from './candidates.ts';
 import { casesWithoutTests, picksCalls, rulePicks } from './case-targets.ts';
 import { isPlainObject, loadConfig } from './config.ts';
@@ -340,10 +340,7 @@ if (command === 'tasks') {
     const { judgments, notices: judgmentNotices } = loadJudgments(config.judgmentsDir);
     const judged = applyJudgments(links, judgments);
     if (changes) console.log(baselineLine(config.baselineMap, changes));
-    if (baselineTests) {
-      const nodes = { screens: map.screens.map((s: any) => s.id), calls: map.calls.map((c: any) => c.id) };
-      for (const line of baselineTestsLines(compareTests(baselineTests, judged, nodes))) console.log(line);
-    }
+    if (baselineTests) for (const line of baselineTestsLines(compareTests(baselineTests, judged, nodeIds(map)))) console.log(line);
     for (const [kind, caseKind] of Object.entries<CaseKind>(config.caseKinds)) {
       if (!caseKind.picks.length) continue;
       const rules = rulePicks(map, caseKind);

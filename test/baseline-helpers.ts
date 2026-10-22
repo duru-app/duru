@@ -39,3 +39,11 @@ export function keepRelease(copy: string) {
   keepTimes(path.join(copy, 'releases/1.5.0'));
   fs.rmSync(path.join(copy, 'results/playwright/export.json'));
 }
+
+export function regressMore(copy: string) {
+  const kept = (file: string) => path.join(copy, 'releases/1.5.0', file);
+  const edit = (file: string, change: (text: string) => string) => fs.writeFileSync(kept(file), change(fs.readFileSync(kept(file), 'utf8')));
+  edit('junit/TEST-com.example.home.HomeServiceTest.xml', (xml) => xml.replace(/<failure[\s\S]*?<\/failure>/, ''));
+  edit('verdict/documents/document-checks.log', (log) => log.replace('VERDICT sort by date: VIOLATES', 'VERDICT sort by date: UPHOLDS'));
+  keepTimes(path.join(copy, 'releases/1.5.0'));
+}

@@ -10,6 +10,7 @@ import type { ScreenMap } from '../src/map.ts';
 import { addMark, addReply, loadMarks } from '../src/marks.ts';
 import { reviewData } from '../src/review.ts';
 import { taggingLines } from '../src/tasks.ts';
+import { BASELINE_TESTS, keepRelease, regressMore } from './baseline-helpers.ts';
 
 type Row = { title: string; source: string; format: string; depth: string; status: string };
 type NewJudgment = Parameters<typeof addJudgment>[1];
@@ -1702,4 +1703,84 @@ test('a mark\'s note is printed trimmed, and a mark whose note is only whitespac
     assert.match(tasks, /^ {2}- needs-more, whole screen — "checks the start\n {4}and the end" \(a, 2026-10-03\)$/m);
     assert.match(tasks, /^ {2}- needs-more, whole screen \(a, 2026-10-04\)$/m);
   });
+});
+
+const onTest = (node: string, title: string, file: string, source: string) => ({ node, part: { kind: 'test', key: { source, file, title } } });
+const LAB_E2E = onTest('/lab#Lab', 'opens the lab', 'home.spec.ts', 'results/playwright/e2e.json');
+const SORT_VERDICT = onTest('/document/:tab#DocumentList', 'sort by date', 'document-checks.log', 'results/verdict/documents/document-checks.log');
+const TABLE_ON_HOME = onTest('/home#Home', 'DocumentTable › lists the documents it is given', 'components/DocumentTable.spec.js', 'results/vitest/client-unit.json');
+const RECENT_JUNIT = onTest('/home#Home', 'Home service › lists recent documents', 'com.example.home.HomeServiceTest', 'results/junit/TEST-com.example.home.HomeServiceTest.xml');
+const REGRESSION_INTRO = 'A test under `comments on tests` that ends with `, passed in releases/1.5.0` passed in that earlier release and fails or is pending now, and a reviewer commented on it after that release\'s run. Do not write a new test for it: fix the code or the test as the comment says, then run the tests and `duru rebuild`, and read this list again. A screen or API call whose marks line reads `none, listed for comments on regressed tests` is here only for such comments, and leaves this list once those tests pass again or a reviewer marks the whole screen or call `fine`.';
+const sectionOf = (tasks: string, id: string) => tasks.split(`\n## ${id}\n\n`)[1]?.split('\n## ')[0].split('\n# ')[0];
+
+function withRelease(fn: (ctx: Ctx & { marksDir: string; comment: (target: object, at: string, note?: string) => ReturnType<typeof addMark> }) => void, configPatch: Record<string, unknown> = {}) {
+  withFixtureCopy((ctx) => {
+    keepRelease(ctx.copy);
+    regressMore(ctx.copy);
+    ctx.cli('rebuild');
+    const { marksDir } = loadConfig(ctx.configFile);
+    const comment = (target: object, at: string, note = 'Why does this fail now?') => addMark(marksDir, { target, note, author: 'b' }, new Date(at));
+    fn({ ...ctx, marksDir, comment });
+  }, { baselineTests: BASELINE_TESTS, ...configPatch });
+}
+
+test('a comment on a regressed test lists its screen with marks none and the test line ending passed in the baseline folder, counts the commented regression in the head, opens the intro with the regression sentence, and has neither empty tests nor No open marks', () => {
+  withRelease(({ cli, comment }) => {
+    comment(LAB_E2E, '2026-10-12T02:00:00Z');
+    const tasks = cli('tasks');
+    const lines = tasks.split('\n');
+    assert.equal(lines[0], '# Test tasks — 1 screen, 0 calls, 0 stories, 0 open marks, 1 commented regression');
+    assert.ok(lines[2].startsWith(REGRESSION_INTRO), lines[2]);
+    assert.doesNotMatch(lines[2], /Write the tests|empty tests/);
+    assert.doesNotMatch(tasks, /No open marks/);
+    const lab = sectionOf(tasks, '/lab#Lab');
+    assert.match(lab, new RegExp([
+      '^- marks: none, listed for comments on regressed tests',
+      '- comments on tests:',
+      '  - test "opens the lab" at home\\.spec\\.ts:20 — pending, tagged with this screen, from results/playwright/e2e\\.json, passed in releases/1\\.5\\.0',
+      '    - comment — "Why does this fail now\\?" \\(b, 2026-10-12\\)',
+      '- component: ',
+    ].join('\n')));
+    assert.doesNotMatch(lab, /empty tests/);
+  }, { marksDir: 'marks' });
+});
+
+test('with open marks too, the intro keeps writing tests and adds the regression sentence, a marked screen with a commented regression keeps its marks and empty tests with passed in on that line, and a listed screen\'s cases with no tests stay under Case kinds', () => {
+  withRelease(({ cli, marksDir, comment }) => {
+    addMark(marksDir, { target: { node: '/document/:tab#DocumentList', case: 'boundary' }, status: 'needed', author: 'a' }, new Date('2026-10-04T01:00:00Z'));
+    comment(TABLE_ON_HOME, '2026-10-12T02:00:00Z');
+    comment(SORT_VERDICT, '2026-10-12T03:00:00Z');
+    const tasks = cli('tasks');
+    const lines = tasks.split('\n');
+    assert.match(lines[0], /^# Test tasks — 5 screens, 1 call, 0 stories, 5 open marks, 2 commented regressions, /);
+    assert.match(lines[2], /^A reviewer marked these screens, API calls and stories as needing tests \(`needs-more`\)\. Write the tests, /);
+    assert.ok(lines[2].includes(`stays here until a reviewer marks it \`fine\`. ${REGRESSION_INTRO}`), lines[2]);
+    const home = sectionOf(tasks, '/home#Home');
+    assert.match(home, /^- marks:\n {2}- needs-more, data depth — /);
+    assert.match(home, /^ {2}- test "DocumentTable › lists the documents it is given" at components\/DocumentTable\.spec\.js:6 — fail, imports a source file of this screen without its tag, from results\/vitest\/client-unit\.json, passed in releases\/1\.5\.0$/m);
+    assert.match(home, /^- empty tests:$/m);
+    const list = sectionOf(tasks, '/document/:tab#DocumentList');
+    assert.match(list, /^- marks: none, listed for comments on regressed tests\n- comments on tests:\n {2}- test "sort by date" at document-checks\.log:9 — fail, tagged with this screen, from results\/verdict\/documents\/document-checks\.log, passed in releases\/1\.5\.0 — sorting ignores the time of day$/m);
+    assert.doesNotMatch(list, /empty tests/);
+    const kinds = tasks.slice(tasks.indexOf('\n# Case kinds\n'));
+    assert.match(kinds, /^### \/document\/:tab#DocumentList$/m);
+    assert.doesNotMatch(kinds.split('\n## boundary\n')[1].split('\n### ')[0], /under screens and calls listed above/);
+  }, { caseKinds: CASE_KINDS });
+});
+
+test('with baselineTests and no comment on a regressed test the task list is the same as without baselineTests', () => {
+  withRelease(({ cli, configFile }) => {
+    const withBaseline = cli('tasks');
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), baselineTests: undefined }));
+    assert.equal(withBaseline, cli('tasks'));
+  });
+});
+
+test('a comment on a test that did not regress lists no screen', () => {
+  withRelease(({ cli, comment }) => {
+    comment(RECENT_JUNIT, '2026-10-12T02:00:00Z');
+    const tasks = cli('tasks');
+    assert.match(tasks, /^# Test tasks — 0 screens, 0 calls, 0 stories, 0 open marks\n/);
+    assert.match(tasks, /\nNo open marks\.\n/);
+  }, { marksDir: 'marks' });
 });

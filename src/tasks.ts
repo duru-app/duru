@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { Described } from './access.ts';
 import { readSettingsFile, settingsFilePlace } from './app-host.ts';
 import { newUndecided } from './baseline.ts';
+import { compareTests, nodeIds, passedInFolder, readBaselineTests } from './baseline-tests.ts';
+import type { TestComparison } from './baseline-tests.ts';
 import type { BaselineChanges } from './baseline.ts';
 import type { AppAccount } from './app-host.ts';
 import { acceptsProposal, casesWithoutTests, kindTags } from './case-targets.ts';
@@ -26,6 +28,7 @@ import { DEPTHS } from './test-links.ts';
 
 const KIND_NAMES: Record<string, string> = { setting: 'a setting', role: 'a role' };
 const MIXED_KINDS = 'differs by link';
+const REGRESSION_ONLY = '- marks: none, listed for comments on regressed tests';
 
 const STORY_STATUS: Record<string, string> = {
   pass: 'pass — every story test passes',
@@ -137,11 +140,11 @@ const RELATION_TEXT: Record<string, (word: string) => string> = {
   called: (word) => `sent this ${word} while running, without its tag`,
 };
 
-function testHead(m: any, word: string) {
+function testHead(m: any, word: string, passedIn?: string) {
   const { title } = m.target.part.key;
   const { file, line, status, relation, source, detail } = m.where;
   const at = file ? ` at ${line ? `${file}:${line}` : file}` : '';
-  return `  - test "${within(title, '    ')}"${at} — ${status}, ${RELATION_TEXT[relation](word)}, from ${source}${detail ? ` — ${within(detail, '    ')}` : ''}`;
+  return `  - test "${within(title, '    ')}"${at} — ${status}, ${RELATION_TEXT[relation](word)}, from ${source}${passedIn ? `, passed in ${passedIn}` : ''}${detail ? ` — ${within(detail, '    ')}` : ''}`;
 }
 
 function placeText(p: any) {
@@ -161,7 +164,7 @@ function linkHead(m: any) {
   return `  - link from ${from} ${read}, at ${m.where.places.map((p: any) => `${p.file}:${p.line}`).join(', ')}`;
 }
 
-type PartSection = [string, string, (m: any, word: string) => string];
+type PartSection = [string, string, (m: any, word: string, passedIn?: string) => string];
 
 const PART_SECTIONS: PartSection[] = [
   ['test', 'comments on tests', testHead],
@@ -188,13 +191,13 @@ const STORY_PART_SECTIONS: PartSection[] = [
   ['hop', 'comments on links between steps', hopHead],
 ];
 
-function partLines(entries: any[], word: string, sections = PART_SECTIONS) {
+function partLines(entries: any[], word: string, sections = PART_SECTIONS, passedIn = new Map<unknown, string>()) {
   return sections.flatMap(([kind, title, head]) => {
     const own = entries.filter((m) => m.target.part.kind === kind);
     if (!own.length) return [];
     return [`- ${title}:`, ...own.flatMap((m) => {
       const comments = [...m.history].reverse().filter((r: any) => r.replyTo === undefined);
-      return [head(m, word), ...comments.flatMap((c: any) => [markLine(c, undefined, '    '), ...repliesTo(m, c).map((reply: any) => markLine(reply, undefined, '      '))])];
+      return [head(m, word, passedIn.get(m)), ...comments.flatMap((c: any) => [markLine(c, undefined, '    '), ...repliesTo(m, c).map((reply: any) => markLine(reply, undefined, '      '))])];
     })];
   });
 }
@@ -702,9 +705,20 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
 export function taskList(config: any) {
   const { map, tests, marks, appLinks, stories, needs, caseTargets } = reviewData(config, null);
   const open = marks.attached.filter((m) => m.current?.status === 'needs-more');
+  let comparison: TestComparison | null = null;
+  try {
+    if (config.baselineTests) comparison = compareTests(readBaselineTests(config), tests, nodeIds(map));
+  } catch {}
+  const passedIn = new Map<MarkEntry, string>();
+  for (const m of marks.attached) {
+    const folder = comparison && m.history.some((r) => r.replyTo === undefined) ? passedInFolder(comparison, m.target) : null;
+    if (folder) passedIn.set(m, folder);
+  }
+  const regressed = new Set([...passedIn.keys()].map((m) => m.target.node));
   const marked = (node: any) => open.some((m) => m.target.node === node.id);
-  const screens = map.screens.filter(marked).sort((a: any, b: any) => a.id.localeCompare(b.id));
-  const calls = map.calls.filter(marked);
+  const listed = (node: any) => marked(node) || regressed.has(node.id);
+  const screens = map.screens.filter(listed).sort((a: any, b: any) => a.id.localeCompare(b.id));
+  const calls = map.calls.filter(listed);
   const storyMarks = open.filter((m) => m.target.story !== undefined);
   const restricted = new Set<string>(map.screens.filter((s: any) => s.access.restricted).map((s: any) => s.id));
   const relative = (p: string) => path.relative(config.configDir, p).split(path.sep).join('/');
@@ -715,16 +729,20 @@ export function taskList(config: any) {
   const hasPicks = Object.values<CaseKind>(config.caseKinds).some((k) => k.picks.length > 0);
   const partsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.node === id);
   const storyPartsOf = (id: string) => marks.attached.filter((m) => m.target.part && m.target.story === id && m.where);
-  const caseKinds = hasKinds ? caseKindLines(map, config.caseKinds, caseTargets, marks.attached, tests.nodes, new Set([...screens, ...calls].map((n: any) => n.id)), formats, config.baselineMap !== null) : null;
+  const caseKinds = hasKinds ? caseKindLines(map, config.caseKinds, caseTargets, marks.attached, tests.nodes, new Set([...screens, ...calls].filter(marked).map((n: any) => n.id)), formats, config.baselineMap !== null) : null;
   const caseWork = caseKinds && caseKinds.undecided + caseKinds.untested + caseKinds.review > 0 ? caseKinds : null;
 
   const out = [
-    `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}${caseWork ? `, ${count(caseWork.undecided, 'undecided case candidate')}${underReview(caseWork.review)}, ${count(caseWork.untested, 'case')} with no tests` : ''}`,
+    `# Test tasks — ${count(screens.length, 'screen')}, ${count(calls.length, 'call')}, ${count(storyMarks.length, 'story', 'stories')}, ${count(open.length, 'open mark')}${passedIn.size ? `, ${count(passedIn.size, 'commented regression')}` : ''}${caseWork ? `, ${count(caseWork.undecided, 'undecided case candidate')}${underReview(caseWork.review)}, ${count(caseWork.untested, 'case')} with no tests` : ''}`,
     '',
     `A reviewer marked these screens, API calls and stories as needing tests (\`needs-more\`). Write the tests, put \`@screen:<screen ID>\` on each test, in its \`tag\` option for Playwright and in its title for the other formats (\`@call:<call ID>\` for a test of one API call, with \`@option:<key>=true|false\` for each on/off option the test sets, and ${hasKinds ? 'the tag of each case under `cases` it checks: a role or setting case of a screen that opens only under one, or a kind of case ' + (hasPicks ? 'a reviewer or a rule in the config' : 'a reviewer') + ' picked for the screen or call, tagged `@case:<kind>`' + (hasValues ? ', or `@case:<kind>=<value>` for a value of a kind with values' : '') : 'for a screen that opens only under a role or a setting the tag of each case under `cases` it checks'}), add \`@depth:<${DEPTHS.join('|')}>\` when the depth of the result source does not fit, then run \`duru rebuild\` and read this list again. For a story, write a test that goes through its screens in order and put \`@story:<story ID>\` on it as well. Under \`empty tests\`, a screen or call gets one set for each open mark${hasKinds ? ' and one more for each case with no tests' : ', a screen one more for each case with no tests'}, and a story one set: an empty test for each test format in the config, with the tags already in place and held back from passing (\`test.fixme\`, \`test.todo\`, \`@Disabled\` with \`import org.junit.jupiter.api.Disabled;\`, or no verdict word). Copy the one for your runner, keep the tags, put what the test checks in place of \`<what it checks>\` (the Playwright ones of an item all carry that title), remove what holds it back and fill in the data setup and the checks. A screen, call or story stays here until a reviewer marks it \`fine\`.`,
     '',
     `Source files are under \`${relative(config.srcRoot)}\`.`,
   ];
+  if (passedIn.size) {
+    const regression = `A test under \`comments on tests\` that ends with \`, passed in ${comparison!.folder}\` passed in that earlier release and fails or is pending now, and a reviewer commented on it after that release's run. Do not write a new test for it: fix the code or the test as the comment says, then run the tests and \`duru rebuild\`, and read this list again. A screen or API call whose marks line reads \`none, listed for comments on regressed tests\` is here only for such comments, and leaves this list once those tests pass again or a reviewer marks the whole screen or call \`fine\`.`;
+    out[2] = open.length ? `${out[2]} ${regression}` : regression;
+  }
   if (open.some((m) => laterComments(m).length)) out[2] += ' A `comment` line under a mark is a comment a reviewer left on the same target after that mark.';
   if (open.some((m) => laterComments(m).some((c: any) => repliesTo(m, c).length))) out[2] += ' A `reply` line under a comment is an answer to that comment.';
   const partKinds = new Set([...screens, ...calls].flatMap((n) => partsOf(n.id).map((m) => m.target.part!.kind)));
@@ -757,23 +775,23 @@ export function taskList(config: any) {
   }
   if (map.serverNotCompared) out.push('', `${SERVER_NOT_COMPARED}, so no call below is written as missing on the server.`);
   const caseLeft = caseWork && (caseWork.undecided + caseWork.untested ? 'No open marks, but the case kinds below still have undecided candidates or cases with no tests.' : 'No open marks, but the case kinds below still have candidates under review.');
-  if (!open.length) out.push('', caseLeft || 'No open marks.');
+  if (!open.length && !passedIn.size) out.push('', caseLeft || 'No open marks.');
   for (const s of screens) {
     const marks = open.filter((m) => m.target.node === s.id);
     out.push(
       '',
       `## ${s.id}`,
       '',
-      '- marks:',
+      marks.length ? '- marks:' : REGRESSION_ONLY,
       ...marks.flatMap((m) => entryLines(m, cellText(m.target, 'whole screen'))),
-      ...partLines(partsOf(s.id), 'screen'),
+      ...partLines(partsOf(s.id), 'screen', PART_SECTIONS, passedIn),
       `- component: ${s.componentFile}, route at ${s.routeFile}:${s.line}${atTableItem(s)}`,
       ...(appLinks[s.id] ? [`- app: ${appLinks[s.id]}`] : []),
       ...accessLines(s.access, restricted),
       ...caseLines(`screen:${s.id}`, s.cases, tests.nodes[s.id], config.caseKinds),
       ...callLines(s, tests.nodes, resultLines),
       ...testLines(tests.nodes[s.id]),
-      ...emptyTestLines(formats, [...marks.map((m) => cellTags('screen', m.target as Cell)), ...untestedCases(`screen:${s.id}`, s.cases, tests.nodes[s.id], config.caseKinds)]),
+      ...(marks.length ? emptyTestLines(formats, [...marks.map((m) => cellTags('screen', m.target as Cell)), ...untestedCases(`screen:${s.id}`, s.cases, tests.nodes[s.id], config.caseKinds)]) : []),
     );
   }
   if (calls.length) out.push('', '# API calls');
@@ -783,16 +801,16 @@ export function taskList(config: any) {
       '',
       `## ${c.id}`,
       '',
-      '- marks:',
+      marks.length ? '- marks:' : REGRESSION_ONLY,
       ...marks.flatMap((m) => entryLines(m, cellText(m.target, 'whole call'))),
-      ...partLines(partsOf(c.id), 'call'),
+      ...partLines(partsOf(c.id), 'call', PART_SECTIONS, passedIn),
       `- called from: ${c.screens.length ? c.screens.join(', ') : 'no screen'}`,
       `- server: ${serverText(c.server)}`,
       ...resultLines(c.id, ''),
       ...caseLines(`call:${c.id}`, c.cases, tests.nodes[c.id], config.caseKinds),
       ...markedOptionLines(c, marks, tests.nodes[c.id]),
       ...testLines(tests.nodes[c.id]),
-      ...emptyTestLines(formats, [...marks.map((m) => cellTags('call', m.target as Cell)), ...untestedCases(`call:${c.id}`, c.cases, tests.nodes[c.id], config.caseKinds)]),
+      ...(marks.length ? emptyTestLines(formats, [...marks.map((m) => cellTags('call', m.target as Cell)), ...untestedCases(`call:${c.id}`, c.cases, tests.nodes[c.id], config.caseKinds)]) : []),
     );
   }
   if (storyMarks.length) out.push('', '# Stories', '', `Story files are in \`${relative(config.storiesDir)}\`.`);

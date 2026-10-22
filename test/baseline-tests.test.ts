@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { baselineTestsLines, compareTests, readBaselineTests } from '../src/baseline-tests.ts';
+import { baselineTestsLines, compareTests, passedInFolder, readBaselineTests } from '../src/baseline-tests.ts';
 import type { BaselineTests } from '../src/baseline-tests.ts';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment } from '../src/judgments.ts';
@@ -470,4 +470,15 @@ test('the README and the decision record say what baselineTests takes, what the 
   assert.match(decisions, /\*\*`baselineTests` names the result files kept from an earlier release in the shape of `tests`/);
   assert.match(decisions, /the shortest end that tells apart every different file in the group/);
   assert.match(decisions, /- One end length for the whole group, as the PRD reads word for word:/);
+});
+
+const onRow = (node: string, title: string, file = 'a.spec.ts', source = 'results/e2e.json') => ({ node, part: { kind: 'test', key: { source, file, title } } });
+
+test('a comment on a test row that regressed under that screen gives the baseline folder, and one on a row of a test that did not regress, or on the same test under another screen it did not regress on, gives none', () => {
+  const base = was({ title: 'opens a', status: 'pass' }, { title: 'keeps a', line: 2, status: 'pass' });
+  const comparison = compareTests(base, now({ nodes: { '/a#A': [{ title: 'opens a @screen:/a#A', status: 'fail' }, { title: 'keeps a @screen:/a#A', line: 2, status: 'pass' }] } }), MAP);
+  assert.equal(passedInFolder(comparison, onRow('/a#A', 'opens a')), 'releases/1.5.0');
+  assert.equal(passedInFolder(comparison, onRow('/a#A', 'keeps a')), null);
+  assert.equal(passedInFolder(comparison, onRow('/b#B', 'opens a')), null);
+  assert.equal(passedInFolder(comparison, { node: '/a#A' }), null);
 });
