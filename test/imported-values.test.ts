@@ -14,7 +14,7 @@ const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 const copies: string[] = [];
 after(() => copies.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
 
-const PAGES = ['Simple', 'Satisfied', 'Joined', 'Enumed', 'Defaulted', 'Spaced', 'Objected', 'Starred', 'Renamed', 'Passed', 'Aliased', 'Twice', 'Circled', 'Called', 'Packaged'];
+const PAGES = ['Simple', 'Satisfied', 'Joined', 'Enumed', 'Defaulted', 'Spaced', 'Objected', 'Starred', 'Renamed', 'Passed', 'Aliased', 'Twice', 'Circled', 'Called', 'Computed', 'PackageCalled', 'Packaged'];
 
 function fixtureCopy(files: Record<string, string>, keys: Record<string, unknown> = {}) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
@@ -55,7 +55,15 @@ export enum Section {
   'paths/both.ts': `export * from './one';\nexport * from './two';\n`,
   'paths/ping.ts': `import { PONG } from './pong';\nexport const PING = \`\${PONG}/ping\`;\n`,
   'paths/pong.ts': `import { PING } from './ping';\nexport const PONG = \`\${PING}/pong\`;\n`,
-  'paths/build.ts': `export const draftsPath = () => '/drafts';\n`,
+  'paths/build.ts': `import { generatePath } from 'react-router-dom';
+
+const TABLE: Record<string, string> = { a: '/a' };
+export const draftsPath = () => '/drafts';
+export const computedPath = (key: string) => TABLE[key];
+export function packagePath() {
+  return generatePath('/package/:id', { id: 1 });
+}
+`,
 };
 
 const ROUTES = `import { Navigate, Route, Routes } from 'react-router-dom';
@@ -66,7 +74,7 @@ import { HOME as STARRED_HOME, RENAMED, PASSED } from './paths';
 import { ALIASED } from '@paths/aliased';
 import { TWICE } from './paths/both';
 import { PING } from './paths/ping';
-import { draftsPath } from './paths/build';
+import { computedPath, draftsPath, packagePath } from './paths/build';
 import { OUTSIDE } from 'outside-package';
 import Simple from './pages/Simple';
 import Satisfied from './pages/Satisfied';
@@ -82,6 +90,8 @@ import Aliased from './pages/Aliased';
 import Twice from './pages/Twice';
 import Circled from './pages/Circled';
 import Called from './pages/Called';
+import Computed from './pages/Computed';
+import PackageCalled from './pages/PackageCalled';
 import Packaged from './pages/Packaged';
 
 export default function ImportedRoutes() {
@@ -101,6 +111,8 @@ export default function ImportedRoutes() {
       <Route path={TWICE} element={<Twice />} />
       <Route path={PING} element={<Circled />} />
       <Route path={draftsPath()} element={<Called />} />
+      <Route path={computedPath('a')} element={<Computed />} />
+      <Route path={packagePath()} element={<PackageCalled />} />
       <Route path={OUTSIDE} element={<Packaged />} />
       <Route path="*" element={<Navigate to={P.HOME} replace />} />
     </Routes>
@@ -115,25 +127,33 @@ test('a route path written with a name imported from another file is read from t
     Object.fromEntries(['Simple', 'Satisfied', 'Joined', 'Enumed', 'Defaulted', 'Spaced', 'Objected', 'Starred', 'Renamed', 'Passed', 'Aliased'].map((c) => [c, paths[c]])),
     { Simple: '/home', Satisfied: '/list', Joined: '/team/joined/:id', Enumed: '/mail', Defaulted: '/base', Spaced: '/team/deep', Objected: '/object', Starred: '/home/starred', Renamed: '/inner', Passed: '/passed', Aliased: '/aliased' },
   );
-  assert.deepEqual(map.entries.find((e) => e.screen === '/home#Simple')!.reasons[0], { kind: 'redirect', file: 'ImportedRoutes.tsx', line: 45 });
+  assert.deepEqual(map.entries.find((e) => e.screen === '/home#Simple')!.reasons[0], { kind: 'redirect', file: 'ImportedRoutes.tsx', line: ROUTES.split('\n').findIndex((l) => l.includes('<Navigate')) + 1 });
 });
 
-test('a route path is not read when the name is exported by two export * of different values, when following the names comes back to a name it is reading, when it is what an imported function returns, or when it comes from a package', async () => {
+test('a route path is not read when the name is exported by two export * of different values, when following the names comes back to a name it is reading, when the function it calls takes its value out of a table by a computed key or calls a package function, or when it comes from a package', async () => {
   const map = await build(fixtureCopy({ ...PATH_FILES, 'ImportedRoutes.tsx': ROUTES }));
   const paths = pathsOf(map);
-  assert.deepEqual([paths.Twice, paths.Called, paths.Packaged], ['{?}', '{?}', '{?}']);
+  assert.deepEqual([paths.Twice, paths.Computed, paths.PackageCalled, paths.Packaged], ['{?}', '{?}', '{?}', '{?}']);
   assert.match(paths.Circled, /\{\?\}/);
+});
+
+test('a route path written as a call of a function the source declares is read from what the function returns', async () => {
+  const map = await build(fixtureCopy({ ...PATH_FILES, 'ImportedRoutes.tsx': ROUTES }));
+  assert.equal(pathsOf(map).Called, '/drafts');
+  assert.ok(map.screens.some((s) => s.id === '/drafts#Called'));
 });
 
 test('extract prints a line for each route path it could not read, with the route, the piece it stopped at and, when that piece is in a file it followed a name into, that file and line', async () => {
   const configFile = fixtureCopy({ ...PATH_FILES, 'ImportedRoutes.tsx': ROUTES });
   const lineOf = (text: string) => ROUTES.split('\n').findIndex((l) => l.includes(text)) + 1;
+  const buildLine = (text: string) => PATH_FILES['paths/build.ts'].split('\n').findIndex((l) => l.includes(text)) + 1;
   const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('route path not read')), [
     `  route path not read ← ImportedRoutes.tsx:${lineOf('path={TWICE}')}: stopped at TWICE`,
     `  route path not read ← ImportedRoutes.tsx:${lineOf('path={PING}')}: stopped at PING in paths/pong.ts:2, only {?}/pong/ping`,
-    `  route path not read ← ImportedRoutes.tsx:${lineOf('path={draftsPath()}')}: stopped at draftsPath()`,
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('path={computedPath')}: stopped at TABLE[key] in paths/build.ts:${buildLine('TABLE[key]')}`,
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('path={packagePath')}: stopped at generatePath('/package/:id', { id: 1 }) in paths/build.ts:${buildLine('generatePath(')}`,
     `  route path not read ← ImportedRoutes.tsx:${lineOf('path={OUTSIDE}')}: stopped at OUTSIDE`,
   ]);
   const map = JSON.parse(fs.readFileSync(path.join(path.dirname(configFile), 'out/map.json'), 'utf8'));

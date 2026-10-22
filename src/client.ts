@@ -1151,6 +1151,24 @@ export async function extractClient(config: any) {
     return unreadPiece(value, seen, filled) ?? p;
   }
 
+  const routeReading = addressReader({
+    leaf(p) {
+      const value = evaluate(p);
+      if (value === undefined) return { parts: [unreadPiece(p) ?? p] };
+      if (typeof value !== 'string' || !value.includes(UNKNOWN)) return { value };
+      const stop = unreadPiece(p) ?? p;
+      return { parts: value.split(UNKNOWN).flatMap((part, i) => (i ? [stop, part] : [part])) };
+    },
+    declaredFunction,
+    namespaceFunction,
+  });
+
+  function readRoutePath(p: NodePath) {
+    const read = routeReading.branches(p);
+    const paths = [...new Set(read.map((b) => b.text.replaceAll(UNREADABLE_PIECE, UNKNOWN)))];
+    return paths.length === 1 ? { path: paths[0], stops: read[0].stops } : { path: UNKNOWN, stops: [p] };
+  }
+
   function stopOf(p: NodePath) {
     const file = programFile.get(p.scope.getProgramParent().block) ?? null;
     return { text: file ? sliceText(parse(file).src, p.node) : '?', file: rel(file), line: p.node.loc!.start.line };
@@ -1174,8 +1192,8 @@ export async function extractClient(config: any) {
         const attr = (name: string) => p.get('openingElement.attributes').find((a) => (a.node as JSXAttribute).name?.name === name) as NodePath<JSXAttribute> | undefined;
         if (config.redirectElements.includes(tag)) {
           const toValue = attr('to')?.get('value');
-          const to = toValue && evaluate(toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue);
-          redirects.push({ to: typeof to === 'string' ? to : UNKNOWN, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
+          const to = toValue?.node ? oneAddress((toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue) as NodePath) : UNKNOWN;
+          redirects.push({ to, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
           return;
         }
         if (!config.routeElements.includes(tag)) return;
@@ -1217,14 +1235,14 @@ export async function extractClient(config: any) {
           loopRoutes.push({ element: p.node, line, page, pathExpr, item, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
           return;
         }
-        const pathValue = evaluate(pathExpr);
-        const routePath = typeof pathValue === 'string' ? pathValue : UNKNOWN;
+        const { path: routePath, stops } = readRoutePath(pathExpr);
         let unreadPath: OuterFill['unreadPath'] = null;
         const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
         if (routePath.includes(UNKNOWN)) {
-          const stoppedAt = stopOf(unreadPiece(pathExpr)!);
+          const stoppedAt = stopOf(stops[0] ?? pathExpr);
           if (drawnInFunctionOrChildren && madeInLoop(p)) return unread(`made for each item of a list, and its path stopped at ${stoppedAt.text}`);
-          const rest = outerAddress && unreadPiece(pathExpr, new Set(), [outerAddress.node]);
+          const outerStops = outerAddress && new Set(readRoutePath(outerAddress).stops.map((x) => x.node));
+          const rest = outerStops && stops.find((x) => !outerStops.has(x.node));
           unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt }, restStoppedAt: rest ? stopOf(rest) : null };
           unreadRoutePaths.push(unreadPath.entry);
         }
@@ -1264,10 +1282,7 @@ export async function extractClient(config: any) {
           return value.node ? (value.isJSXExpressionContainer() ? value.get('expression') as NodePath : value) : null;
         };
         const exact = attr('exact');
-        const text = (p: NodePath | undefined | null) => {
-          const value = p ? evaluate(p) : undefined;
-          return typeof value === 'string' ? value : UNKNOWN;
-        };
+        const text = (p: NodePath | undefined | null) => (p ? readRoutePath(p).path : UNKNOWN);
         const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || (Boolean(exact) && evaluate(exact!) === true), from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, redirectAsElement: false, children: [] };
         const binding = p.scope.getBinding(tag);
         const reactAs = (b: Binding | undefined) => {

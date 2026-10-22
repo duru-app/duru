@@ -82,7 +82,9 @@ export default function Settings() {
   return <Route path={\`\${settingsPath()}/groups\`} component={Groups} />;
 }
 `,
-  'outer/paths.js': `export const settingsPath = () => '/settings';
+  'outer/paths.js': `import { generatePath } from 'react-router-dom';
+
+export const settingsPath = () => generatePath('/settings');
 `,
 };
 const PAGES = ['Confirm', 'Bots', 'AddCommand', 'OAuthToEmail', 'ClaimHome', 'MfaSetup', 'Groups'];
@@ -139,7 +141,7 @@ test('a route path that starts with the address the outer route matched gets the
     ]);
     assert.deepEqual(map.duplicateIds, []);
     const settingsLine = fs.readFileSync(path.join(src, 'outer/Settings.js'), 'utf8').split('\n').findIndex((l) => l.includes('<Route')) + 1;
-    assert.deepEqual(routeLines(configFile), [`  route path not read ← outer/Settings.js:${settingsLine}: stopped at settingsPath(), only {?}/groups`]);
+    assert.deepEqual(routeLines(configFile), [`  route path not read ← outer/Settings.js:${settingsLine}: stopped at generatePath('/settings') in outer/paths.js:3, only {?}/groups`]);
   });
 });
 

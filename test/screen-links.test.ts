@@ -942,3 +942,60 @@ export function LoginLink() {
   assert.deepEqual(linksOf(map, '/home#Home'), [['/team/a', lineOf(nav, 'teamPath()'), ['open'], ['/team/:team#Team']]]);
   assert.deepEqual(linksOf(map, '/start#Start'), [['/login', lineOf(nav, 'loginPath()'), [], ['/login#Login']]]);
 });
+
+test('a route path whose function returns a path not written from / is joined to the outer route\'s path', async () => {
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import App from './App';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/app/*" element={<App />} />
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const app = `import { Route, Routes } from 'react-router-dom';
+import Settings from './Settings';
+import { settingsTab } from './tabs';
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path={settingsTab()} element={<Settings />} />
+    </Routes>
+  );
+}
+`;
+  const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <Link to="/app/settings">settings</Link>;\n}\n`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'App.js': app, 'tabs.js': "export const settingsTab = () => 'settings';\n", 'Settings.js': page('Settings'), 'Start.js': start }, { routesFile: ['Routes.js', 'App.js'] }));
+  const settings = map.screens.find((s) => s.id.endsWith('#Settings'))!;
+  assert.equal(settings.path, 'settings');
+  assert.deepEqual(linksOf(map, '/start#Start'), [['/app/settings', 4, [], [settings.id]]]);
+});
+
+test('a route file Redirect whose from or to is a call of a function the source declares sends a link to the screen of the address the function returns and makes that screen an entry', async () => {
+  const routes = `import { Redirect, Route, Switch } from 'react-router-dom';
+import { oldPath, startPath } from './paths';
+import Home from './Home';
+import Start from './Start';
+import Login from './Login';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/login" component={Login} exact />
+      <Route path="/home" component={Home} exact />
+      <Route path="/start" component={Start} exact />
+      <Redirect from={oldPath()} to={startPath()} />
+    </Switch>
+  );
+}
+`;
+  const home = `import { Link } from 'react-router-dom';\n\nexport default function Home() {\n  return <Link to="/old">old</Link>;\n}\n`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home, 'paths.js': "export const oldPath = () => '/old';\nexport const startPath = () => '/start';\n" }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/old', 4, [], ['/start#Start']]]);
+  assert.deepEqual(map.entries.find((e) => e.screen === '/start#Start')!.reasons, [{ kind: 'redirect', file: 'Routes.js', line: lineOf(routes, '<Redirect') }]);
+});
