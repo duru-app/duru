@@ -1454,3 +1454,33 @@ export default function Home({ tab, tabs }) {
     ['/login', at('logged(tab)')],
   ]);
 });
+
+test('an address function whose body changes a value of its own through an index or a destructuring assignment stays {?}', async () => {
+  const paths = `export function indexed(id) {
+  const parts = ['team', 'me'];
+  if (id) parts[1] = id;
+  return '/' + parts.join('/');
+}
+
+export function destructured(opts) {
+  let base = '/login';
+  ({ base } = opts);
+  return base;
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { destructured, indexed } from './paths';
+
+export default function Home({ id, opts }) {
+  return (
+    <nav>
+      <Link to={indexed(id)}>indexed</Link>
+      <Link to={destructured(opts)}>destructured</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['{?}', at('indexed(id)')], ['{?}', at('destructured(opts)')]]);
+});

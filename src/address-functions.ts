@@ -295,7 +295,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         }
         const left = x.get('left') as NodePath<any>;
         const binding = left.isIdentifier() ? left.scope.getBinding(left.node.name) : undefined;
-        if (!left.isIdentifier() && inEnv(left, inner(envs[0]))) throw new Unreadable();
+        if (!left.isIdentifier() && touchesOwn(left, fn)) throw new Unreadable();
         if (!binding?.path.isDescendant(fn)) continue;
         envs = envs.flatMap((e) => values(x.get('right'), inner(e)).map((o) => {
           const before = e.get(binding) ?? unknownAt(left);
