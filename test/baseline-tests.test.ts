@@ -191,9 +191,10 @@ test('a Jest test whose absolute path differs only before the checkout is the sa
 
 test('a shared test run twice in two Vitest projects without a project name is one test with the worst status', () => {
   const shared = { title: 'formats', file: '/ci/shared/format.test.js', line: 4 };
-  assert.deepEqual(lines(was({ ...shared, status: 'pass' }, { ...shared, status: 'pass' }), { importers: { '/a#A': [{ ...shared, status: 'pass' }, { ...shared, status: 'fail' }] } }), [
+  const moved = { ...shared, file: '/builds/repo/shared/format.test.js' };
+  assert.deepEqual(lines(was({ ...shared, status: 'pass' }, { ...shared, status: 'pass' }), { importers: { '/a#A': [{ ...moved, status: 'pass' }, { ...moved, status: 'fail' }] } }), [
     summary(1, 1, 0, 0, 0, 0),
-    '  pass→fail ← /ci/shared/format.test.js:4 formats — screen /a#A',
+    '  pass→fail ← /builds/repo/shared/format.test.js:4 formats — screen /a#A',
   ]);
 });
 
@@ -237,7 +238,7 @@ test('with nothing compared the comparison prints a line saying no baseline test
   ]);
 });
 
-test('a Jest test file whose absolute path differs only before the checkout is not missing, even beside files deeper down that need a longer end to tell apart', () => {
+test('a Jest test file whose absolute path differs only before the checkout is not missing, even beside files deeper down that need a longer end to tell apart, and a gone file is missing beside current files of its name in other folders', () => {
   const base = was(...[['/home/u1/repo/a.test.js', 'one'], ['/home/u1/repo/x/deep/b.test.js', 'two'], ['/home/u1/repo/y/deep/b.test.js', 'three'], ['/home/u1/repo/gone.test.js', 'four']]
     .map(([file, title]) => ({ title, file, status: 'pass' as const })));
   const renamed = [['/builds/repo/a.test.js', 'one'], ['/builds/repo/x/deep/b.test.js', 'two'], ['/builds/repo/y/deep/b.test.js', 'three']].map(([file, title]) => ({ title: `${title} renamed`, file, status: 'pass' as const }));
@@ -245,6 +246,12 @@ test('a Jest test file whose absolute path differs only before the checkout is n
     summary(0, 0, 0, 0, 4, 3),
     '  no test was compared: no baseline test matches a test under a screen or call now',
     "  only in baseline ← gone.test.js: 1 test, none of this file's tests are in the current results",
+  ]);
+  const syncs = (title: string, file: string) => ({ title, file, status: 'pass' as const });
+  assert.deepEqual(lines(was(syncs('old', '/ci/a/x.test.js')), { importers: { '/a#A': [syncs('new', '/me/b/x.test.js'), syncs('newer', '/me/c/x.test.js')] } }), [
+    summary(0, 0, 0, 0, 1, 2),
+    '  no test was compared: no baseline test matches a test under a screen or call now',
+    "  only in baseline ← x.test.js: 1 test, none of this file's tests are in the current results",
   ]);
 });
 
