@@ -39,7 +39,7 @@ export const READERS: Record<string, Reader> = {
   verdict: { read: readVerdicts, extensions: ['.txt', '.log'] },
 };
 export const DEPTHS = ['ui', 'api', 'render', 'code', 'data', 'output'];
-const NODE_TAG = /^(screen|call):(.+)$/;
+export const NODE_TAG = /^(screen|call):(.+)$/;
 const STORY_TAG = /^story:(.+)$/;
 const DEPTH_TAG = /^depth:(.*)$/;
 const OPTION_TAG = /^option:(.*)$/;

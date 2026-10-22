@@ -200,6 +200,43 @@ test('a title shared by two tests of one file and one test of another file is sp
   ]);
 });
 
+test('a baseline test only in the baseline is listed under each screen or call on the map its tags name, and under none when its tags name a screen the map does not have', () => {
+  const base = was({ title: 'gone @screen:/a#A', tags: ['screen:/a#A', 'call:GET:/api/x'], line: 4, status: 'pass' }, { title: 'gone too', tags: ['screen:/z#Z'], line: 9, status: 'fail' });
+  const { onlyInBaselineByNode } = compareTests(base, now({ nodes: { '/b#B': [{ title: 'kept', status: 'pass' }] } }), MAP);
+  const gone = { title: 'gone @screen:/a#A', tail: 'a.spec.ts', line: 4, project: null, status: 'pass', result: 'releases/1.5.0/e2e.json', nodes: ['/a#A', 'GET:/api/x'] };
+  assert.deepEqual(onlyInBaselineByNode, { '/a#A': [gone], 'GET:/api/x': [gone] });
+});
+
+test('a test file none of whose tests are in the current results is one whole missing file, and a file with a test left is not', () => {
+  const base = was(
+    { title: 'one', file: 'gone.spec.ts', line: 2, status: 'pass' },
+    { title: 'two', file: 'gone.spec.ts', line: 1, status: 'fail' },
+    { title: 'three', file: 'left.spec.ts', status: 'pass' },
+    { title: 'four', file: 'left.spec.ts', line: 3, status: 'pass' },
+  );
+  const comparison = compareTests(base, now({ nodes: { '/a#A': [{ title: 'three', file: 'left.spec.ts', status: 'pass' }] } }), MAP);
+  assert.deepEqual(baselineTestsLines(comparison), [summary(1, 0, 0, 0, 3, 0), "  only in baseline ← gone.spec.ts: 2 tests, none of this file's tests are in the current results"]);
+  assert.deepEqual(comparison.onlyInBaselineFiles.map((f) => [f.tail, f.whole, f.tests.map((t) => t.title)]), [['gone.spec.ts', true, ['two', 'one']], ['left.spec.ts', false, ['four']]]);
+});
+
+test('with nothing compared the comparison prints a line saying no baseline test matched', () => {
+  assert.deepEqual(lines(was({ title: 'old', status: 'pass' }), { untagged: [{ title: 'old', status: 'fail' }], nodes: { '/a#A': [{ title: 'new', status: 'fail' }] } }), [
+    summary(0, 0, 0, 1, 0, 1),
+    '  no test was compared: no baseline test matches a test under a screen or call now',
+  ]);
+});
+
+test('a Jest test file whose absolute path differs only before the checkout is not missing, even beside files deeper down that need a longer end to tell apart', () => {
+  const base = was(...[['/home/u1/repo/a.test.js', 'one'], ['/home/u1/repo/x/deep/b.test.js', 'two'], ['/home/u1/repo/y/deep/b.test.js', 'three'], ['/home/u1/repo/gone.test.js', 'four']]
+    .map(([file, title]) => ({ title, file, status: 'pass' as const })));
+  const renamed = [['/builds/repo/a.test.js', 'one'], ['/builds/repo/x/deep/b.test.js', 'two'], ['/builds/repo/y/deep/b.test.js', 'three']].map(([file, title]) => ({ title: `${title} renamed`, file, status: 'pass' as const }));
+  assert.deepEqual(lines(base, { importers: { '/a#A': renamed } }), [
+    summary(0, 0, 0, 0, 4, 3),
+    '  no test was compared: no baseline test matches a test under a screen or call now',
+    "  only in baseline ← gone.test.js: 1 test, none of this file's tests are in the current results",
+  ]);
+});
+
 function inFolder(files: Record<string, unknown>, fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-baseline-tests-'));
   try {
@@ -280,10 +317,11 @@ const TEST_LINES = [
   'test results since releases/1.5.0 | compared 45 | pass→fail 1 pass→pending 1 | not on a screen or call now 14 | only in baseline 8 | only now 1',
   '  pass→fail ← components/DocumentTable.spec.js:6 DocumentTable › lists the documents it is given — screen /document/:tab#DocumentList, screen /home#Home',
   '  pass→pending ← home.spec.ts:20 opens the lab @screen:/lab#Lab (chromium) — screen /lab#Lab',
+  "  only in baseline ← export.spec.ts: 5 tests, none of this file's tests are in the current results",
 ];
 const testLines = (out: string) => out.split('\n').filter((l) => /^(test results since |  (pass→|no test was compared|only in baseline ←))/.test(l));
 
-test('with baselineTests, rebuild prints the test results line right after the map comparison line and a line for each regression, the same on every run, and writes the same map.json and tests.json as without it', () => {
+test('with baselineTests, rebuild prints the test results line right after the map comparison line, a line for each regression and for each test file gone, the same on every run, and writes the same map.json and tests.json as without it', () => {
   withCopy(({ copy, setConfig, rebuild }) => {
     keepRelease(copy);
     const plain = rebuild();
