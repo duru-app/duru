@@ -459,3 +459,82 @@ test('the summary counts the moves of sagas that are links of some screen', () =
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /^redux-saga runs from sagas\/store\.ts:6 \| watchers 11 \| requests of sagas on screens 7 \| links of sagas on screens 5$/m);
 });
+
+const lineOf = (text: string, part: string) => text.split('\n').findIndex((l) => l.includes(part)) + 1;
+const RUN_AT_LOAD = (exports: string, imports = '') => `import createSagaMiddleware from 'redux-saga';
+import { createBrowserHistory } from 'history';
+${imports}import { rootSaga } from './root';
+
+export const history = createBrowserHistory();
+const sagaMiddleware = createSagaMiddleware();
+${exports}
+sagaMiddleware.run(rootSaga);
+`;
+const MOVES_FROM_STORE = (imports: string, guard: string, after = '') => `import { call, fork, select, takeEvery, takeLatest } from 'redux-saga/effects';
+${imports}
+import { ActionTypes } from './types';
+
+function* afterContracts() {
+  ${guard}history.push('/contracts');
+}
+
+function* afterSigned() {
+  history.replace('/quiet');${after}
+}
+
+function* unwatched() {
+  history.push('/signed');
+}
+
+export function* moveSaga() {
+  yield takeLatest(ActionTypes.LOAD_CONTRACTS, afterContracts);
+  yield takeEvery(ActionTypes.LOAD_SIGNED, afterSigned);
+  yield fork(unwatched);
+}
+`;
+const STORE_SHAPES = [
+  {
+    name: 'a history and a saga the store file makes',
+    store: RUN_AT_LOAD('export function* refresh() {\n  yield call(noteApi.fetchItems);\n}', "import { call } from 'redux-saga/effects';\nimport { noteApi } from '../contracts/api';\n"),
+    moves: MOVES_FROM_STORE("import { history, refresh } from './store';", '', '\n  yield call(refresh);'),
+    history: { history: { import: './sagas/store', name: 'history' } },
+    helper: true,
+  },
+  {
+    name: 'a type imported from the store file without import type',
+    store: RUN_AT_LOAD('export const store = { getState: () => ({ user: null as string | null }) };\nexport type RootState = ReturnType<typeof store.getState>;'),
+    moves: MOVES_FROM_STORE("import history from './history';\nimport { RootState } from './store';", 'const user: string | null = yield select((s: RootState) => s.user);\n  if (!user) '),
+    history: HISTORY,
+  },
+];
+
+for (const shape of STORE_SHAPES) {
+  test(`when the store file runs the root saga as it loads, a saga that imports ${shape.name} does not reach the run again: a move only fork starts gives no link, and requests and links stay with the screens that dispatch what the saga waits for`, async () => {
+    const configFile = fixtureCopy({
+      ...SAGA_APP,
+      'sagas/root.ts': MOVING_APP['sagas/root.ts'],
+      'sagas/store.ts': shape.store,
+      'sagas/moves.ts': shape.moves,
+      'sagas/history.ts': "import { createBrowserHistory } from 'history';\n\nexport default createBrowserHistory();\n",
+    }, shape.history);
+    const map = await build(configFile);
+    const at = (part: string) => `sagas/moves.ts:${lineOf(shape.moves, part)}`;
+    assert.deepEqual(linksOf(map, '/notices#Notices'), []);
+    assert.deepEqual(linksOf(map, '/contracts#Contracts'), [
+      ['/contracts', at("push('/contracts')"), ['/contracts#Contracts'], ['ActionTypes.LOAD_CONTRACTS ← sagas/screens/Contracts.tsx:8']],
+    ]);
+    const signed = ['ActionTypes.LOAD_SIGNED ← sagas/screens/Signed.tsx:9'];
+    assert.deepEqual(linksOf(map, '/signed#Signed'), [['/quiet', at("replace('/quiet')"), ['/quiet#Quiet'], signed]]);
+    const fromStore = shape.helper ? [['noteApi.fetchItems', `sagas/store.ts:${lineOf(shape.store, 'fetchItems')}`, signed]] : [];
+    assert.deepEqual(bySaga(map, '/signed#Signed').filter(([fn]) => fn === 'noteApi.fetchItems'), fromStore);
+    assert.deepEqual(bySaga(map, '/notices#Notices'), [
+      ['fetchNotices', 'sagas/handlers.ts:6', ['ActionTypes.LOAD_NOTICES ← sagas/screens/Notices.tsx:8']],
+    ]);
+    const entries = map.entries.map((e) => e.screen);
+    for (const id of ['/signed#Signed', '/notices#Notices']) assert.ok(entries.includes(id), id);
+    const out = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+    assert.equal(out.status, 0, out.stderr);
+    const runAt = lineOf(shape.store, 'sagaMiddleware.run');
+    assert.match(out.stdout, new RegExp(`^redux-saga runs from sagas/store\\.ts:${runAt} \\| watchers 10 \\| requests of sagas on screens ${shape.helper ? 8 : 7} \\| links of sagas on screens 2$`, 'm'));
+  });
+}

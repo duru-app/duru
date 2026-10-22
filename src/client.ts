@@ -1742,6 +1742,8 @@ export async function extractClient(config: any) {
       for (const w of site.watches) watchesOf.set(w.type.key, [...(watchesOf.get(w.type.key) ?? []), w]);
     }
   }
+  // 핸들러가 도달한 파일의 top-level 코드가 saga 를 실행해도, 그 run 에 넘긴 saga 는 탐색하지 않는다.
+  const inRun = (file: string, pos: number) => runs.some((r) => r.file === file && pos >= r.span[0] && pos < r.span[1]);
   // saga 안에서 이동하는 주소를 읽지 못하면 화면 코드와 달리 {?} 로도 남기지 않는다.
   const readAddress = (l: RouteRef | RouterLink) => ('route' in l ? typeof routeValues[l.route] === 'string' : l.to !== UNKNOWN);
   const handled = new Map<string, { sent: ApiCallSite[]; moves: (RouteRef | RouterLink)[] }>();
@@ -1749,8 +1751,8 @@ export async function extractClient(config: any) {
     const key = `${file}\0${span.join('-')}`;
     if (!handled.has(key)) {
       const starts = [{ file, span }];
-      const reached = follower.reach(starts, sagaScope);
-      const outside = requestFile && sagaScope(requestFile) ? follower.reach(starts, (f) => sagaScope(f) && f !== requestFile) : reached;
+      const reached = follower.reach(starts, sagaScope, { cut: inRun });
+      const outside = requestFile && sagaScope(requestFile) ? follower.reach(starts, (f) => sagaScope(f) && f !== requestFile, { cut: inRun }) : reached;
       const moves = [...reached].filter((l): l is RouteRef | RouterLink => 'route' in l || 'to' in l).filter(readAddress);
       handled.set(key, { sent: [...reached].filter(isApiCall).filter((c) => sends(c, outside)), moves });
     }
