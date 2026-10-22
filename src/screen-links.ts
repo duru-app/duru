@@ -33,6 +33,18 @@ function takenFrom(p: NodePath<Identifier>, key: string, from: (init: NodePath<a
   return prop?.value.type === 'Identifier' && prop.value.name === p.node.name && from(declared.init);
 }
 
+const isComponent = (fn: NodePath<any>) => {
+  if (fn.parentPath?.isExportDefaultDeclaration()) return true;
+  const id = fn.isFunctionDeclaration() ? fn.node.id : fn.key === 'init' && fn.parentPath?.isVariableDeclarator() ? fn.parentPath.node.id : null;
+  return id?.type === 'Identifier' && /^[A-Z]/.test(id.name);
+};
+
+function takenFromComponentProps(p: NodePath<Identifier>, binding: Binding) {
+  const param = binding.path;
+  if (!param.isObjectPattern() || param.listKey !== 'params' || param.key !== 0 || !isComponent(param.parentPath!)) return false;
+  return param.node.properties.some((x) => x.type === 'ObjectProperty' && !x.computed && keyName(x) === 'history' && x.value.type === 'Identifier' && x.value.name === p.node.name);
+}
+
 const isLocation = (p: NodePath<any>): boolean => p.isIdentifier({ name: 'location' }) || named(p, 'location')
   || (p.isCallExpression() && p.get('callee').isIdentifier({ name: 'useLocation' }));
 
@@ -114,6 +126,7 @@ export function screenLinkReader({ configuredHistory }: Reading) {
     if (!p.isIdentifier() || depth > FOLLOWED) return false;
     const binding = p.scope.getBinding(p.node.name);
     if (binding?.kind === 'module') return configuredHistory(binding);
+    if (binding?.kind === 'param') return takenFromComponentProps(p, binding);
     const declared = declaredInit(p);
     if (declared?.id.type === 'Identifier') return isHistory(declared.init, depth + 1);
     return takenFrom(p, 'history', isProps);
