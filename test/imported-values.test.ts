@@ -273,3 +273,35 @@ test('a route path whose function gives two different paths is {?}, and its rout
     `  route path not read ← ImportedRoutes.tsx:${lineOf('manyPath()')}: stopped at manyPath(), which gives more than 8 paths`,
   ]);
 });
+
+test('a route path whose function gives the empty text as its leading piece keeps the rest of the path, and names the call where it stopped', async () => {
+  const paths = `import { settings } from 'app-settings';
+
+export const basePath = () => '';
+export const someBase = () => (settings.nested ? '' : '/app');
+`;
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import { basePath, someBase } from './paths/base-path';
+import Simple from './pages/Simple';
+import Satisfied from './pages/Satisfied';
+
+export default function ImportedRoutes() {
+  return (
+    <Routes>
+      <Route path={\`\${basePath()}/team\`} element={<Simple />} />
+      <Route path={\`\${someBase()}/team\`} element={<Satisfied />} />
+    </Routes>
+  );
+}
+`;
+  const configFile = fixtureCopy({ 'paths/base-path.ts': paths, 'ImportedRoutes.tsx': routes });
+  const map = await build(configFile);
+  assert.deepEqual([pathsOf(map).Simple, pathsOf(map).Satisfied], ['{?}/team', '{?}']);
+  const lineOf = (text: string) => routes.split('\n').findIndex((l) => l.includes(text)) + 1;
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('route path not read')), [
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('basePath()')}: stopped at basePath(), only {?}/team`,
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('someBase()')}: stopped at someBase(), which gives {?}/team and /app/team`,
+  ]);
+});

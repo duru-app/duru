@@ -21,7 +21,7 @@ interface Reading {
   passThrough: (name: string) => boolean;
 }
 
-// empty 는 함수가 돌려준 빈 문자열이다. 주소 맨 앞에 오면 그 주소를 읽지 못한 것으로 본다.
+// empty 는 함수가 돌려준 빈 문자열이다. 주소 맨 앞에 오면 읽지 못한 조각으로 본다.
 type Piece = { text: string; made?: boolean } | { stop: NodePath } | { empty: NodePath };
 type Val =
   | { pieces: Piece[] }
@@ -390,7 +390,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   function branch(out: Out, at: NodePath): Branch {
     const all = piecesOf(out, at);
     const [first] = all;
-    const pieces = first && 'empty' in first && all.length > 1 ? [{ stop: first.empty }] : all;
+    const pieces = first && 'empty' in first && all.length > 1 ? [{ stop: first.empty }, ...all.slice(1)] : all;
     return {
       text: pieces.map((x) => ('text' in x ? x.text : 'stop' in x ? UNREADABLE_PIECE : '')).join(''),
       stops: pieces.flatMap((x) => ('stop' in x ? [x.stop] : [])),
