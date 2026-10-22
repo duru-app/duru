@@ -306,6 +306,32 @@ export default function ImportedRoutes({ group }: { group: any }) {
   ]);
 });
 
+test('a route path whose function joins a getter\'s text ending in / with a text starting with / has one / there', async () => {
+  const group = `export default class Group {
+  id = '';
+
+  get path() {
+    return \`/groups/\${this.id}/\`;
+  }
+}
+`;
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import { groupPath } from './paths/group';
+import Simple from './pages/Simple';
+
+export default function ImportedRoutes({ group }: { group: any }) {
+  return (
+    <Routes>
+      <Route path={groupPath(group)} element={<Simple />} />
+    </Routes>
+  );
+}
+`;
+  const paths = "import Group from '../models/Group';\n\nexport const groupPath = (g: Group) => `${g.path}/old`;\n";
+  const map = await build(fixtureCopy({ 'models/Group.ts': group, 'paths/group.ts': paths, 'ImportedRoutes.tsx': routes }));
+  assert.equal(pathsOf(map).Simple, '/groups/{?}/old');
+});
+
 test('a route path whose function gives the empty text as its leading piece keeps the rest of the path, and names the call where it stopped', async () => {
   const paths = `import { settings } from 'app-settings';
 
