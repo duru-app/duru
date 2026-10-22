@@ -3,8 +3,8 @@ import path from 'node:path';
 import { compare } from './config.ts';
 import { testRef } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
-import { NODE_TAG, READERS, STATUS_RANK, resultFiles } from './test-links.ts';
-import { withoutTags } from './verdict.ts';
+import { NODE_TAG, READERS, resultFiles } from './test-links.ts';
+import { STATUS_RANK, titleWithoutTags } from './verdict.ts';
 import type { TestStatus } from './verdict.ts';
 
 export interface BaselineTest {
@@ -88,7 +88,7 @@ export interface CurrentTests {
   discarded?: Rows;
   stories?: Rows;
   untagged?: any[];
-  unknownTags?: { test: { file: string | null } }[];
+  unknownTags?: { tag: string; test: { title: string; file: string | null; line: number | null } }[];
 }
 
 const UNDER_NODE = [['nodes', 'tag'], ['importers', 'import'], ['passed', 'trace'], ['awaitingTag', 'hand-over']] as const;
@@ -111,7 +111,7 @@ interface TestRow {
 
 interface OnlyInBaseline {
   title: string;
-  tail: string;
+  file: string;
   line: number | null;
   project: string | null;
   status: TestStatus;
@@ -131,7 +131,7 @@ interface CurrentTest {
   tags: string[];
   file: string | null;
   project: string | null;
-  status: TestStatus;
+  status: TestStatus | null;
   place: Place;
   rows: TestRow[];
   offNode: TestStatus[];
@@ -141,9 +141,11 @@ const worst = (statuses: TestStatus[]) => statuses.reduce((w, s) => (STATUS_RANK
 const byRow = (a: TestRow, b: TestRow) => compare(a.kind === 'call', b.kind === 'call') || compare(a.node, b.node) || compare(a.source, b.source) || compare(a.project ?? '', b.project ?? '');
 const byPlace = (a: Place, b: Place) => compare(a.file ?? '', b.file ?? '') || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.project ?? '', b.project ?? '');
 
-function currentTests(current: CurrentTests, calls: Set<string>) {
+const statusIn = (t: any, project: string | null): TestStatus => (project !== null && t.projects?.[project]) || t.worstStatus || t.status;
+
+function currentTests(current: CurrentTests, onMap: Set<string>, calls: Set<string>, projectsOf: (title: string) => (string | null)[]) {
   const runs = new Map<string, CurrentTest>();
-  const runsOf = (t: any) => (t.project != null ? [t.project] : t.projects?.length ? t.projects : [null]).map((project: string | null) => {
+  const runsOf = (t: any) => (t.projects ? Object.keys(t.projects) : [t.project ?? null]).map((project: string | null) => {
     const id = JSON.stringify([t.source, t.file, t.line, t.title, project]);
     if (!runs.has(id)) runs.set(id, { title: t.title, tags: t.tags ?? [], file: t.file ?? null, project, status: t.status, place: { file: t.testFile ?? t.file ?? null, line: t.line ?? null, title: t.title, project }, rows: [], offNode: [] });
     return runs.get(id)!;
@@ -151,28 +153,62 @@ function currentTests(current: CurrentTests, calls: Set<string>) {
   for (const [field, via] of UNDER_NODE) {
     for (const [node, list] of Object.entries(current[field] ?? {})) {
       for (const t of list) {
+        if (!onMap.has(node)) {
+          for (const run of runsOf(t)) run.offNode.push(statusIn(t, run.project));
+          continue;
+        }
         const listed = via !== 'trace' || LISTED_LEVELS.includes(t.level);
-        for (const run of runsOf(t)) run.rows.push({ node, kind: calls.has(node) ? 'call' : 'screen', via, ...(t.level && { level: t.level }), status: t.status, listed, ref: t.ref ?? testRef(t), source: t.source, project: run.project });
+        for (const run of runsOf(t)) run.rows.push({ node, kind: calls.has(node) ? 'call' : 'screen', via, ...(t.level && { level: t.level }), status: statusIn(t, run.project), listed, ref: t.ref ?? testRef(t), source: t.source, project: run.project });
       }
     }
   }
   const offNode = [...OFF_NODE.flatMap((field) => Object.values(current[field] ?? {}).flat()), ...(current.untagged ?? [])];
-  for (const t of offNode) for (const run of runsOf(t)) run.offNode.push(t.status);
-  for (const test of runs.values()) test.status = worst(test.rows.length ? test.rows.map((r) => r.status) : test.offNode);
+  for (const t of offNode) for (const run of runsOf(t)) run.offNode.push(statusIn(t, run.project));
+  for (const test of runs.values()) test.status = test.rows.length ? worst(test.rows.map((r) => r.status)) : worst(test.offNode);
+  const listed = new Set([...runs.values()].map((r) => JSON.stringify([r.file, r.place.line, r.title, r.project])));
+  const tagged = new Set([...runs.values()].filter((r) => r.rows.some((row) => row.via === 'tag')).map((r) => JSON.stringify([r.file, r.place.line, r.title])));
+  const offMap = groupBy(current.unknownTags ?? [], (u) => JSON.stringify([u.test.file, u.test.line, u.test.title]));
+  for (const [key, entries] of offMap) {
+    const { title, file, line } = entries[0].test;
+    const tags = [...new Set(entries.map((u) => u.tag).filter((tag) => NODE_TAG.test(tag)))];
+    if (!tags.length || tagged.has(key)) continue;
+    for (const project of projectsOf(title)) {
+      if (listed.has(JSON.stringify([file, line, title, project]))) continue;
+      runs.set(JSON.stringify([null, file, line, title, project]), { title, tags, file, project, status: null, place: { file, line, title, project }, rows: [], offNode: [] });
+    }
+  }
   return [...runs.values()];
 }
 
 type Matched = { title: string; tags: string[]; file: string | null; project: string | null };
 
 const segments = (file: string | null) => (file ?? '').split(/[\\/]+/).filter(Boolean);
-const tail = (file: string | null, length: number) => segments(file).slice(-length).join('/');
+const isAbsolute = (file: string | null) => file !== null && /^(?:[\\/]|[A-Za-z]:[\\/])/.test(file);
 
-function separatingLength(files: (string | null)[]) {
-  const distinct = [...new Set(files.map((f) => tail(f, Infinity)))];
-  if (distinct.length < 2) return 0;
-  let length = 1;
-  while (new Set(distinct.map((f) => tail(f, length))).size < distinct.length) length += 1;
-  return length;
+function belowCommonFolder(files: (string | null)[]) {
+  const folders = [...new Set(files.filter(isAbsolute))].map((f) => segments(f).slice(0, -1));
+  let depth = 0;
+  while (folders.length && depth < folders[0].length && folders.every((f) => f[depth] === folders[0][depth])) depth += 1;
+  return { folder: folders[0]?.slice(0, depth) ?? [], relative: (file: string | null) => (isAbsolute(file) ? segments(file).slice(depth) : segments(file)) };
+}
+
+// 한쪽 공통 폴더의 끝 폴더들을 그쪽 경로 앞에 다시 붙여 보아, 두 쪽에 같은 파일이 가장 많아지는 것을 쓴다.
+function fileKeys(beforeFiles: (string | null)[], nowFiles: (string | null)[]) {
+  const [before, now] = [belowCommonFolder(beforeFiles), belowCommonFolder(nowFiles)];
+  const keyed = (side: typeof before, files: (string | null)[], prefix: string[]) => new Map(files.map((f) => [f, [...(isAbsolute(f) ? prefix : []), ...side.relative(f)].join('/')]));
+  const prefixes: [string[], string[]][] = [[[], []]];
+  for (let k = 1; k <= Math.max(before.folder.length, now.folder.length); k += 1) {
+    if (k <= before.folder.length) prefixes.push([before.folder.slice(-k), []]);
+    if (k <= now.folder.length) prefixes.push([[], now.folder.slice(-k)]);
+  }
+  let best = { same: -1, before: new Map<string | null, string>(), now: new Map<string | null, string>() };
+  for (const [beforePrefix, nowPrefix] of prefixes) {
+    const keys = { before: keyed(before, beforeFiles, beforePrefix), now: keyed(now, nowFiles, nowPrefix) };
+    const nowKeys = new Set(keys.now.values());
+    const same = new Set([...keys.before.values()].filter((k) => nowKeys.has(k))).size;
+    if (same > best.same) best = { same, ...keys };
+  }
+  return best;
 }
 
 const groupBy = <T>(list: T[], keyOf: (item: T) => string) => {
@@ -181,60 +217,48 @@ const groupBy = <T>(list: T[], keyOf: (item: T) => string) => {
   return groups;
 };
 
-function ownLengths(files: (string | null)[]) {
-  const distinct = [...new Set(files.map((f) => tail(f, Infinity)))];
-  const lengths = new Map<string, number>();
-  for (let length = 1; lengths.size < distinct.length; length += 1) {
-    const counts = new Map<string, number>();
-    for (const f of distinct) counts.set(tail(f, length), (counts.get(tail(f, length)) ?? 0) + 1);
-    for (const f of distinct) if (!lengths.has(f) && counts.get(tail(f, length)) === 1) lengths.set(f, length);
-  }
-  return lengths;
-}
-
-const tagSet = (t: Matched) => [...new Set(t.tags)].sort().join(' ');
+const tagSet = (t: Matched) => [...new Set(t.tags.filter((tag) => NODE_TAG.test(tag)))].sort().join(' ');
 const overlaps = (tests: Matched[] = []) => tests.length > 1 && new Set(tests.map(tagSet)).size > 1;
 
-function matchKeys<B extends Matched, N extends Matched>(baseline: B[], current: N[]) {
-  const titleKey = (t: Matched) => JSON.stringify([withoutTags(t.title), t.project]);
-  const [before, now] = [groupBy<Matched>(baseline, titleKey), groupBy<Matched>(current, titleKey)];
+function matchKeys<B extends Matched, N extends Matched>(baseline: B[], current: N[], files: ReturnType<typeof fileKeys>) {
+  const keyOf = (keys: Map<string | null, string>) => (t: Matched) => JSON.stringify([titleWithoutTags(t.title), t.project, keys.get(t.file)]);
+  const [before, now] = [groupBy<Matched>(baseline, keyOf(files.before)), groupBy<Matched>(current, keyOf(files.now))];
   const keys = new Map<Matched, string>();
   for (const key of new Set([...before.keys(), ...now.keys()])) {
-    const sides = [before.get(key) ?? [], now.get(key) ?? []];
-    const length = Math.max(...sides.map((tests) => separatingLength(tests.map((t) => t.file))));
-    const tailOf = (t: Matched) => (length ? tail(t.file, length) : '');
-    const [tailedBefore, tailedNow] = sides.map((tests) => groupBy(tests, tailOf));
-    for (const tests of sides) {
-      for (const t of tests) {
-        const withTags = overlaps(tailedBefore.get(tailOf(t))) || overlaps(tailedNow.get(tailOf(t)));
-        keys.set(t, JSON.stringify([key, tailOf(t), withTags ? tagSet(t) : '']));
-      }
-    }
+    const withTags = overlaps(before.get(key)) || overlaps(now.get(key));
+    for (const t of [...(before.get(key) ?? []), ...(now.get(key) ?? [])]) keys.set(t, JSON.stringify([key, withTags ? tagSet(t) : '']));
   }
   return { before: groupBy(baseline, (t) => keys.get(t)!), now: groupBy(current, (t) => keys.get(t)!) };
 }
 
 export function compareTests(baseline: BaselineTests, current: CurrentTests, map: { screens: string[]; calls: string[] }) {
-  const tests = currentTests(current, new Set(map.calls));
-  const { before, now } = matchKeys(baseline.tests, tests);
-  const nowFiles = [...tests.map((t) => t.file), ...(current.unknownTags ?? []).map((u) => u.test.file)];
+  const baselineProjects = groupBy(baseline.tests, (t) => titleWithoutTags(t.title));
+  const projectsOf = (title: string) => {
+    const projects = [...new Set((baselineProjects.get(titleWithoutTags(title)) ?? []).map((t) => t.project))];
+    return projects.length ? projects : [null];
+  };
   const onMap = new Set([...map.screens, ...map.calls]);
+  const tests = currentTests(current, onMap, new Set(map.calls), projectsOf);
+  const files = fileKeys(baseline.tests.map((t) => t.file), [...tests.map((t) => t.file), ...(current.unknownTags ?? []).map((u) => u.test.file)]);
+  const { before, now } = matchKeys(baseline.tests, tests, files);
   const gone: BaselineTest[][] = [];
   let compared = 0;
   let notUnderNode = 0;
   let onlyInBaseline = 0;
   const regressions = [];
   for (const [key, tests] of before) {
-    const status = worst(tests.map((t) => t.status));
+    const ran = tests.filter((t) => t.status !== 'pending');
+    const status = worst((ran.length ? ran : tests).map((t) => t.status));
     const match = now.get(key);
     if (!match) {
       onlyInBaseline += 1;
       gone.push(tests);
+      continue;
     }
-    else if (!match.some((t) => t.rows.length)) notUnderNode += 1;
+    if (!match.some((t) => t.rows.length)) notUnderNode += 1;
     else {
       compared += 1;
-      const nowStatus = worst(match.map((t) => t.status));
+      const nowStatus = worst(match.flatMap((t) => t.status ?? []));
       if (status !== 'pass' || nowStatus === 'pass') continue;
       const under = match.filter((t) => t.rows.length);
       const results = new Set(tests.map((t) => t.result));
@@ -258,7 +282,7 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
     onlyNow,
     regressions,
     byNode: countsByNode(regressions.map((r) => r.rows)),
-    ...onlyInBaselineOf(gone, baseline.tests, nowFiles, onMap),
+    ...onlyInBaselineOf(gone, files, onMap),
   };
 }
 
@@ -279,23 +303,23 @@ function countsByNode(regressed: TestRow[][]) {
   return byNode;
 }
 
-// 두 쪽에서 저마다 그 파일을 다른 파일과 가르는 가장 짧은 꼬리를 구하고, 긴 쪽의 길이로 꼬리가 같으면 같은 파일이다.
-function onlyInBaselineOf(gone: BaselineTest[][], all: BaselineTest[], nowFiles: (string | null)[], onMap: Set<string>) {
-  const [beforeLengths, nowLengths] = [ownLengths(all.map((t) => t.file)), ownLengths(nowFiles)];
-  const kept = (file: string) => [...nowLengths].some(([other, length]) => {
-    const longer = Math.max(beforeLengths.get(file)!, length);
-    return tail(file, longer) === tail(other, longer);
-  });
+// jest-junit 은 기본으로 시험 이름을 classname 에 적어, 그런 이름은 시험 파일을 가리키지 않는다.
+const namesItself = (t: BaselineTest) => t.file !== null && (t.title === t.file || t.title.endsWith(` › ${t.file}`));
+
+function onlyInBaselineOf(gone: BaselineTest[][], keys: ReturnType<typeof fileKeys>, onMap: Set<string>) {
+  const nowFiles = new Set(keys.now.values());
+  const testFiles = new Set<string>();
   const files = new Map<string, OnlyInBaseline[]>();
   for (const tests of gone) {
     const [first] = [...tests].sort((a, b) => (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title));
-    const file = tail(first.file, Infinity);
+    const file = keys.before.get(first.file)!;
     const nodes = [...new Set(tests.flatMap((t) => t.tags.map((tag) => tag.match(NODE_TAG)?.[2]).filter((id): id is string => id !== undefined && onMap.has(id))))].sort(compare);
-    const entry = { title: first.title, tail: tail(file, beforeLengths.get(file)!), line: first.line, project: first.project, status: worst(tests.map((t) => t.status)), result: first.result, nodes };
+    const entry = { title: first.title, file, line: first.line, project: first.project, status: worst(tests.map((t) => t.status)), result: first.result, nodes };
     files.set(file, [...(files.get(file) ?? []), entry]);
+    if (!tests.every(namesItself)) testFiles.add(file);
   }
   const byLine = (a: OnlyInBaseline, b: OnlyInBaseline) => (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.project ?? '', b.project ?? '');
-  const onlyInBaselineFiles = [...files].map(([file, tests]) => ({ tail: tests[0].tail, whole: !kept(file), tests: tests.sort(byLine) })).sort((a, b) => compare(a.tail, b.tail));
+  const onlyInBaselineFiles = [...files].map(([file, tests]) => ({ file, whole: testFiles.has(file) && !nowFiles.has(file), tests: tests.sort(byLine) })).sort((a, b) => compare(a.file, b.file));
   const onlyInBaselineByNode: Record<string, OnlyInBaseline[]> = {};
   for (const { tests } of onlyInBaselineFiles) for (const t of tests) for (const id of t.nodes) (onlyInBaselineByNode[id] ??= []).push(t);
   return { onlyInBaselineFiles, onlyInBaselineByNode };
@@ -316,7 +340,7 @@ export function baselineTestsLines(c: TestComparison) {
     const at = test.line === null ? test.file : `${test.file}:${test.line}`;
     lines.push(`  ${change} ← ${at} ${test.title}${test.project ? ` (${test.project})` : ''} — ${nodesOf(rows)}`);
   }
-  for (const { tail: file, whole, tests } of c.onlyInBaselineFiles) {
+  for (const { file, whole, tests } of c.onlyInBaselineFiles) {
     if (whole) lines.push(`  only in baseline ← ${file}: ${tests.length} test${tests.length === 1 ? '' : 's'}, none of this file's tests are in the current results`);
   }
   return lines;

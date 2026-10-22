@@ -3,6 +3,14 @@ import path from 'node:path';
 
 export type TestStatus = 'pass' | 'fail' | 'pending';
 
+export const STATUS_RANK: Record<string, number> = { pass: 0, pending: 1, fail: 2 };
+
+export function withProjectRun<S extends string>(projects: Record<string, S> | undefined, project: string, status: S) {
+  const kept = projects?.[project];
+  const merged = { ...projects, [project]: kept !== undefined && STATUS_RANK[kept] >= STATUS_RANK[status] ? kept : status };
+  return Object.fromEntries(Object.entries(merged).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
 export interface VerdictResult {
   title: string;
   file: string;
@@ -30,6 +38,7 @@ const STATUS: Record<string, TestStatus> = {
 const PREFIX = 'VERDICT ';
 const isTag = (token: string) => /^@\S/.test(token);
 export const withoutTags = (text: string) => text.split(/\s+/).filter((t) => t && !isTag(t)).join(' ');
+export const titleWithoutTags = (title: string) => title.split(' › ').map(withoutTags).filter(Boolean).join(' › ') || title;
 
 // 판정 줄: `VERDICT <이름>: <판정> — <설명> @screen:<id>`
 export function readVerdicts(file: string): VerdictResult[] {

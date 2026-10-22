@@ -1490,54 +1490,74 @@ traces and the baseline would need traces too; a story test that also carries a 
 that screen.
 Every test row under a screen or call now is compared, whether a tag, an import, a trace or a reviewer's hand-over
 puts it there, since the page shows all of them as that screen's tests and a handed-over pair is one a reviewer
-confirmed; comparing only tagged tests would compare nothing on mattermost, appsmith and outline, whose sources hold
+confirmed; a pair handed over to a screen or call the map no longer has puts the test on none; comparing only tagged tests would compare nothing on mattermost, appsmith and outline, whose sources hold
 no `@screen:` or `@call:` tag. The current side is the judged list `rebuild` prints from, not the result files read
 again, so that the counts match the page and a result file overwritten since (as into-sign's are) does not point the
-test rows and the regressions at different runs.
+test rows and the regressions at different runs. A judged pair stays one row there however many Playwright projects
+the test ran in, as the page shows it, and carries the worst status of each project's runs in `projects`, or of
+its runs without a project in `worstStatus`, so that a reviewer's judgment, or one taken back, does not take the
+test's other runs out of the comparison.
 Tests are matched in steps. The rows of one test on the current side (one result file, test file, line, title and
 project) are first made one test; an untagged test is one test for each Playwright project it ran in, and in a
 project where the test has rows under a screen or call its status comes from those rows alone, so a run without a
-trace in another project does not change it. Then the title without its `@` words and the Playwright project are
-matched. A group that shares that key within one side gets the end of its test file paths added, one folder at a
-time, at the shortest end that tells apart every different file in the group; a group with one file gets none, and
-when the two sides need different lengths the longer is used on both. Tests that still share a key, such as verdict
-lines of one name in one log, get their sorted tags added, and those still alike are one test with the worst
-status of their runs (fail, pending, pass). Paths are compared only by their ends because Jest writes absolute paths
-that differ from one checkout to another. Whether a baseline test file is gone from the current results is decided
-file by file, at the shortest end that tells that file apart on each side, the longer of the two. Alternative
-compared for the length of the end, settled in a comment on #404:
+trace in another project does not change it. Then the title without its `@` words (a describe title of `@` words
+alone dropped with its ` › `), the Playwright project and the test file are matched. The test file is the path the
+result gives; an absolute path, as Jest and Vitest write, is taken from the folder holding every absolute path of its
+side, since the checkout sits in another place on another machine, and when that folder sits deeper on one side (its
+tests were all under `src/`, say), the folders at the end of it are put back in front of that side's paths as far as
+makes the most files the same on both sides. Tests that still share a key, such as verdict lines of one name in one
+log, get their sorted screen and call tags added, and those still alike are one test with the worst status of their
+runs (fail, pending, pass); in the baseline a pending run is left out when another run ran, since a
+run skipped there, such as one browser's run in a Playwright JUnit report that names no project, would otherwise
+hide another run's `pass→fail`. Such a test is under a screen or call when one of its runs is, and its
+regression line shows the first file and line among the runs that are. A baseline test file is gone from the
+current results when no current test has that file; a JUnit class name that is the test's own name, as jest-junit
+writes by default, names no file and is never gone. Alternatives compared:
+- Only as much of the end of the paths as tells apart the different files of one title, decided in a comment on #404
+  before building: two files of one name in different folders got the same end when each side had only one of them,
+  so a test of a deleted file was matched with a new test of the same title in another file and gave a false
+  `pass→fail`, and an end long enough for two deep files of one name reached past the checkout for a shallower file
+  of the same title, so its regression was missed when the two checkout folders had other names.
 - One end length for the whole group, as the PRD reads word for word: two tests of one title in one file never come
   apart by any end, so the whole group would go without ends, and a test of another file would be merged with them;
   its pass→fail would then be printed under the other file's name, or hidden by a failure already there.
 Untagged tests carry their Playwright projects in `tests.json` (`projects`) but stay one entry, since the page and the
 `tests without a node or story tag` count group them without a project; without the projects a Playwright test
-skipped this time, and so left without a trace, would count as deleted. `not on a screen or call now` is counted so
-that tests silently lost from the comparison do not read as a full comparison, and `no test was compared` is printed
-so that no regression is not read as nothing broken. A baseline that cannot be read, or an entry that gives no test,
+skipped this time, and so left without a trace, would count as deleted. Each project carries the worst status of the
+test's runs in it, since the entry's own status is the worst over all projects, and a pair handed over from such a
+test would otherwise show a failure in one project as a regression in another where the test passed.
+`not on a screen or call now` is counted so that tests silently lost from the comparison do not read as a full
+comparison, and `no test was compared` is printed so that no regression is not read as nothing broken. A baseline that cannot be read, or an entry that gives no test,
 stops `rebuild` before anything is written, since a missing baseline would read as no regression; the check is per
 entry, so a verdict folder holding a log with no verdict line (2 of into-sign's 14) still reads. Nothing is stored,
 as for `baselineMap`, so `map.json` and `tests.json` are the same with and without the key. How the screen list
 counts regressions is recorded with the review page.
 Limits:
 - A test renamed or moved to another file is not matched: it counts once in `only in baseline` and once in
-  `only now`. A test told apart only by its tags is not matched either once its tags change.
+  `only now`. A test told apart only by its screen and call tags is not matched either once those tags change, nor are tests of one
+  title in one file that had the same tags in the baseline and have different ones now, such as two verdict lines of
+  one name tagged with two screens after the release.
 - A Playwright test linked to a screen only by its trace is on no screen when it was skipped, so it counts in
   `not on a screen or call now` and not as `pass→pending`.
-- A test whose tags all name screens or calls the current map does not have keeps no status in `tests.json`, so its
-  baseline run counts as `only in baseline`; `rebuild` already prints the tag as `unknown @screen:…`.
+- A test whose tags all name screens or calls the current map does not have is kept in `tests.json` only with those
+  tags, without its Playwright projects, so it counts in `not on a screen or call now` for every project its baseline
+  ran in, even one that no longer runs it.
 - A test file that breaks on import gives no test in a Vitest or Jest report, so its tests show as `only in baseline`
   and the file as gone, not as `pass→fail`.
 - Verdict logs that write `PASS` and `FAIL`, as into-sign's do, read as pending and give no `pass→fail`.
 - A failed test in a `serial` group or a failed `setup` project makes the tests after it show as `pass→pending`.
-- A run of only some test files, kept as the baseline or run now, prints one `only in baseline ←` line for each file
-  left out, which can be hundreds in a large repository.
-- An untagged test's status is the worst over its projects, and a handed-over pair copied from it keeps that status,
-  so a test that failed in one project only shows as a regression in the project where it passed too.
-- A judged pair keeps only the row of its first project, so a test run in two projects and handed over counts its
-  second project's run as `not on a screen or call now`, as the page's 「태그 대기」 count does.
+- A run of only some test files now prints one `only in baseline ←` line for each file it left out, which can be
+  hundreds in a large repository; kept as the baseline, it leaves the other tests out of the comparison, and those
+  under a screen or call now count as `only now`.
+- duru reads the trace of a Playwright test's last attempt only. With `trace: 'on-first-retry'` and two retries, a
+  test that fails every attempt has its trace on the middle one, so a test linked to a screen only by its trace is on
+  no screen and its `pass→fail` counts in `not on a screen or call now`.
+- A reviewer's judgment names a test by its result file, test file and title without tags, so two tests of one file
+  whose titles differ only by `@` words share one judged pair, and both are compared as the first of them.
 - A verdict log's `file` is its file name alone, so logs of one name in different folders are one file.
-- When a file right at the checkout's top must be told apart from a file of the same name deeper down, its end
-  reaches the checkout folder's name, so a baseline kept from a checkout of another name does not match that file.
+- When the results of one side come from checkouts in different places, such as two reports written on two
+  machines, and the other side's do not, their absolute paths share no folder below the checkouts, so their tests
+  count as `only in baseline` and `only now`.
 - `"baselineTests": []` compares nothing and prints nothing, the same as leaving the key out.
 Reference cases: GitLab's unit test report in a merge request compares with the target branch's pipeline and shows
 newly failed tests apart from existing and resolved failures, keeping only the first of tests with the same name,

@@ -430,6 +430,9 @@ test('a judged pair of a test that ran in several Playwright projects is one pai
   const tests = { passed: { '/help#Help': inProjects, '/home#Home': inProjects }, nodes: {} };
   const judged = applyJudgments(tests, [handOver(browserTest, '/help#Help'), { ...handOver(browserTest, '/lab#Lab'), kind: 'discard', reason: 'r' }]);
   assert.deepEqual(judged.awaitingTag['/help#Help'].map((t) => t.project), ['chromium']);
+  const failingIn = (project: string) => ({ passed: { '/help#Help': inProjects.map((t) => (t.project === project ? { ...t, status: 'fail' } : t)) }, nodes: {} });
+  assert.deepEqual(applyJudgments(failingIn('firefox'), [handOver(browserTest, '/help#Help')]).awaitingTag['/help#Help'].map((t) => [t.project, t.status, t.projects]), [['chromium', 'pass', { chromium: 'pass', firefox: 'fail' }]]);
+  assert.equal('projects' in applyJudgments({ passed: { '/help#Help': inProjects.slice(0, 1) }, nodes: {} }, [handOver(browserTest, '/help#Help')]).awaitingTag['/help#Help'][0], false);
   assert.deepEqual(judged.passed['/home#Home'].map((t) => t.project), ['chromium', 'firefox']);
   const discardedTwice = applyJudgments(tests, [{ ...handOver(browserTest, '/home#Home'), kind: 'discard', reason: 'r' }]);
   assert.deepEqual(discardedTwice.discarded['/home#Home'].map((t) => t.project), ['chromium']);

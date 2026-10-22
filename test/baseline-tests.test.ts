@@ -7,7 +7,8 @@ import path from 'node:path';
 import { baselineTestsLines, compareTests, passedInFolder, readBaselineTests, wholeFines } from '../src/baseline-tests.ts';
 import type { BaselineTests } from '../src/baseline-tests.ts';
 import { loadConfig } from '../src/config.ts';
-import { addJudgment } from '../src/judgments.ts';
+import { addJudgment, applyJudgments } from '../src/judgments.ts';
+import { readJunit } from '../src/junit.ts';
 import { BASELINE_TESTS, editJson, keepRelease } from './baseline-helpers.ts';
 import type { TestStatus } from '../src/verdict.ts';
 
@@ -16,7 +17,7 @@ const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 const MAP = { screens: ['/a#A', '/b#B', '/c#C'], calls: ['GET:/api/x', 'GET:/api/y'] };
 
 type Run = { title: string; status: TestStatus; file?: string | null; line?: number | null; project?: string | null; tags?: string[] };
-type Row = Run & { source?: string; format?: string; testFile?: string; level?: string; projects?: string[] };
+type Row = Run & { source?: string; format?: string; testFile?: string; level?: string; projects?: Record<string, TestStatus> };
 type Now = Partial<Record<'nodes' | 'importers' | 'passed' | 'awaitingTag' | 'discarded' | 'stories', Record<string, Row[]>>> & { untagged?: Row[] };
 
 const was = (...runs: Run[]): BaselineTests => ({
@@ -89,6 +90,15 @@ test('a test under a screen by its imports, by passing through it, by a call it 
   ]);
 });
 
+test('a test whose tag moved out of a describe title holding only tags, or into one, is compared with its baseline run', () => {
+  const base = was({ title: '@screen:/a#A › opens help', status: 'pass' }, { title: 'Suite › opens', line: 2, status: 'pass' });
+  assert.deepEqual(lines(base, { nodes: { '/a#A': [{ title: 'opens help', tags: ['screen:/a#A'], status: 'fail' }, { title: 'Suite › @screen:/a#A › opens', line: 2, status: 'fail' }] } }), [
+    summary(2, 2, 0, 0, 0, 0),
+    '  pass→fail ← a.spec.ts:1 opens help — screen /a#A',
+    '  pass→fail ← a.spec.ts:2 Suite › @screen:/a#A › opens — screen /a#A',
+  ]);
+});
+
 test('a test on two screens is compared once and its regression names both screens', () => {
   const run = { title: 'opens a and b @screen:/a#A @screen:/b#B', status: 'fail' as const };
   assert.deepEqual(lines(was({ title: 'opens a and b', status: 'pass' }), { nodes: { '/b#B': [run], '/a#A': [run] } }), [
@@ -125,7 +135,7 @@ test('a skipped Playwright test left only in the untagged list counts as not on 
   );
   assert.deepEqual(lines(base, {
     nodes: { '/a#A': [{ title: 'opens a @screen:/a#A', project: 'chromium', status: 'pass' }] },
-    untagged: [{ title: 'opens b', projects: ['chromium', 'firefox'], status: 'pending' }],
+    untagged: [{ title: 'opens b', projects: { chromium: 'pending', firefox: 'pending' }, status: 'pending' }],
   }), [summary(1, 0, 0, 2, 1, 0)]);
 });
 
@@ -133,11 +143,78 @@ test('a test that passed through a screen in one project and ran without a trace
   const base = was({ title: 'walks', project: 'chromium', status: 'pass' }, { title: 'walks', project: 'firefox', status: 'pass' });
   assert.deepEqual(lines(base, {
     passed: { '/b#B': [{ title: 'walks', project: 'chromium', status: 'pass', level: 'visit' }] },
-    untagged: [{ title: 'walks', projects: ['chromium', 'firefox'], status: 'fail' }],
+    untagged: [{ title: 'walks', projects: { chromium: 'pass', firefox: 'fail' }, status: 'fail' }],
   }), [summary(1, 0, 0, 1, 0, 0)]);
 });
 
-test('tests of the same title in different files are told apart by the end of their paths, one folder deep or two', () => {
+test('a pair handed over from an untagged test that ran without a trace in two projects is compared project by project, each with the status of its own run', () => {
+  const signs = { title: 'signs', file: 'sign.spec.ts', line: 5 };
+  const handedOver = (projects: Record<string, TestStatus>, status: TestStatus) => applyJudgments(
+    { untagged: [{ ...signs, tags: [], source: 'results/e2e.json', format: 'playwright', status, projects }] },
+    [{ id: '1', date: '2026-10-01T00:00:00Z', author: 'r', reason: '', kind: 'hand-over', node: '/a#A', test: { source: 'results/e2e.json', file: 'sign.spec.ts', title: 'signs' } }],
+  );
+  const base = (webkit: TestStatus) => was({ ...signs, project: 'chromium', status: 'pass' }, { ...signs, project: 'webkit', status: webkit });
+  assert.deepEqual(baselineTestsLines(compareTests(base('pass'), handedOver({ chromium: 'pass', webkit: 'fail' }, 'fail'), MAP)), [
+    summary(2, 1, 0, 0, 0, 0),
+    '  pass→fail ← sign.spec.ts:5 signs (webkit) — screen /a#A',
+  ]);
+  assert.deepEqual(baselineTestsLines(compareTests(base('pending'), handedOver({ chromium: 'pass', webkit: 'pending' }, 'pending'), MAP)), [summary(2, 0, 0, 0, 0, 0)]);
+});
+
+test('a pair a reviewer judged for a test that passed through a screen in two projects keeps the run of each project, whichever project the report lists first', () => {
+  const signs = { title: 'signs', file: 'sign.spec.ts', line: 5, tags: [], source: 'results/e2e.json', format: 'playwright' };
+  const judgedAs = (kind: string, projects: string[]) => applyJudgments(
+    { passed: { '/a#A': projects.map((project) => ({ ...signs, project, status: project === 'webkit' ? 'fail' : 'pass', level: 'interact' })) }, untagged: [{ ...signs, status: 'fail', projects: { chromium: 'pass', webkit: 'fail' } }] },
+    [{ id: '1', date: '2026-10-01T00:00:00Z', author: 'r', reason: 'r', kind, node: '/a#A', test: { source: 'results/e2e.json', file: 'sign.spec.ts', title: 'signs' } }],
+  );
+  const base = was({ ...signs, project: 'chromium', status: 'pass' }, { ...signs, project: 'webkit', status: 'pass' });
+  for (const projects of [['chromium', 'webkit'], ['webkit', 'chromium']]) {
+    assert.deepEqual(baselineTestsLines(compareTests(base, judgedAs('hand-over', projects), MAP)), [
+      summary(2, 1, 0, 0, 0, 0),
+      '  pass→fail ← sign.spec.ts:5 signs (webkit) — screen /a#A',
+    ]);
+    assert.deepEqual(baselineTestsLines(compareTests(base, judgedAs('discard', projects), MAP))[0], summary(0, 0, 0, 2, 0, 0));
+  }
+  const story = { ...signs, title: 'signs @story:sign', tags: ['story:sign'] };
+  const fromStory = applyJudgments(
+    { stories: { sign: [{ ...story, project: 'chromium', status: 'pass' }, { ...story, project: 'webkit', status: 'fail' }] }, nodes: {} },
+    [{ id: '1', date: '2026-10-01T00:00:00Z', author: 'r', reason: '', kind: 'hand-over', node: '/a#A', test: { source: 'results/e2e.json', file: 'sign.spec.ts', title: 'signs' } }],
+  );
+  assert.deepEqual(baselineTestsLines(compareTests(base, fromStory, MAP)), [
+    summary(2, 1, 0, 0, 0, 0),
+    '  pass→fail ← sign.spec.ts:5 signs @story:sign (webkit) — screen /a#A',
+  ]);
+});
+
+test('a judged pair keeps the worst run of a test run twice without a project or twice in one project, and a pair whose judgment was undone keeps every project\'s run', () => {
+  const judgment = (kind: string, date = '2026-10-01T00:00:00Z') => ({ id: date, date, author: 'r', reason: 'r', kind, node: '/a#A', test: { source: 'results/e2e.json', file: 'sign.spec.ts', title: 'signs' } });
+  const signs = { title: 'signs', file: 'sign.spec.ts', line: 5, tags: [], source: 'results/e2e.json' };
+  const run = (project: string | null, status: TestStatus) => ({ ...signs, format: project ? 'playwright' : 'vitest', project, status, level: 'interact' });
+  const compared = (base: BaselineTests, judged: object) => baselineTestsLines(compareTests(base, judged, MAP));
+  const twice = was({ ...signs, status: 'pass' }, { ...signs, status: 'pass' });
+  assert.deepEqual(compared(twice, applyJudgments({ importers: { '/a#A': [run(null, 'pass'), run(null, 'fail')] } }, [judgment('hand-over')])), [summary(1, 1, 0, 0, 0, 0), '  pass→fail ← sign.spec.ts:5 signs — screen /a#A']);
+  const inProjects = was({ ...signs, project: 'chromium', status: 'pass' }, { ...signs, project: 'firefox', status: 'pass' });
+  const regressed = [summary(2, 1, 0, 0, 0, 0), '  pass→fail ← sign.spec.ts:5 signs (chromium) — screen /a#A'];
+  const repeated = { passed: { '/a#A': [run('chromium', 'pass'), run('chromium', 'fail'), run('firefox', 'pass'), run('firefox', 'pass')] } };
+  assert.deepEqual(compared(inProjects, applyJudgments(repeated, [judgment('hand-over')])), regressed);
+  assert.deepEqual(compared(inProjects, applyJudgments(repeated, [judgment('hand-over'), judgment('undo', '2026-10-02T00:00:00Z')])), regressed);
+  const story = { ...signs, title: 'signs @story:sign', tags: ['story:sign'], format: 'playwright' };
+  const fromStory = { stories: { sign: [{ ...story, project: 'chromium', status: 'pass' }, { ...story, project: 'chromium', status: 'fail' }] }, nodes: {} };
+  assert.deepEqual(compared(was({ ...signs, project: 'chromium', status: 'pass' }), applyJudgments(fromStory, [judgment('hand-over')])), [summary(1, 1, 0, 0, 0, 0), '  pass→fail ← sign.spec.ts:5 signs @story:sign (chromium) — screen /a#A']);
+});
+
+test('a pair handed over to a screen or call the map no longer has does not put the test under a screen or call', () => {
+  const help = { title: 'opens help', file: 'help.spec.ts', line: 5, tags: [], source: 'results/e2e.json', format: 'playwright' };
+  for (const node of ['/gone#Gone', 'POST:/api/v1/gone']) {
+    const judged = applyJudgments({ untagged: [{ ...help, status: 'fail', projects: { chromium: 'fail' } }] }, [{ id: '1', date: '2026-10-01T00:00:00Z', author: 'r', reason: '', kind: 'hand-over', node, test: { source: 'results/e2e.json', file: 'help.spec.ts', title: 'opens help' } }]);
+    assert.deepEqual(baselineTestsLines(compareTests(was({ ...help, project: 'chromium', status: 'pass' }), judged, MAP)), [
+      summary(0, 0, 0, 1, 0, 0),
+      '  no test was compared: no baseline test matches a test under a screen or call now',
+    ]);
+  }
+});
+
+test('tests of the same title in different files are told apart by their files, whose absolute paths differ before the checkout', () => {
   const base = was(
     { title: 'renders', file: '/ci/app/src/a.test.js', status: 'pass' },
     { title: 'renders', file: '/ci/app/src/b.test.js', status: 'pass' },
@@ -165,11 +242,58 @@ test('verdict lines of the same name are told apart by their tags', () => {
   ]);
 });
 
-test('tests the same in title, project, path end and tags are one test with the worst status of their runs', () => {
+test('verdict lines of the same name are split by their screen tags when the tags differ on one side only', () => {
+  const verdict = (line: number, screen: string, status: TestStatus) => ({ title: 'cleanup', file: 'checks.log', line, tags: [`screen:${screen}`], status });
+  assert.deepEqual(lines(was(verdict(3, '/a#A', 'pass')), { nodes: { '/a#A': [verdict(3, '/a#A', 'pass')], '/b#B': [verdict(9, '/b#B', 'fail')] } }), [summary(1, 0, 0, 0, 0, 1)]);
+  assert.deepEqual(lines(was(verdict(3, '/a#A', 'pass'), verdict(5, '/b#B', 'fail')), { nodes: { '/a#A': [verdict(3, '/a#A', 'fail')] } }), [
+    summary(1, 1, 0, 0, 1, 0),
+    '  pass→fail ← checks.log:3 cleanup — screen /a#A',
+  ]);
+});
+
+test('tests the same in title, project, file and tags are one test with the worst status of their runs', () => {
   const verdict = (line: number, status: TestStatus) => ({ title: 'cleanup', file: 'checks.log', line, tags: ['screen:/a#A'], status });
   assert.deepEqual(lines(was(verdict(3, 'pass'), verdict(5, 'pass')), { nodes: { '/a#A': [verdict(3, 'pass'), verdict(8, 'pending')] } }), [
     summary(1, 0, 1, 0, 0, 0),
     '  pass→pending ← checks.log:3 cleanup — screen /a#A',
+  ]);
+});
+
+test('runs made one test in the baseline take the worst status of the runs that ran, so a skipped run does not hide a regression and a failed one does', () => {
+  const signs = (status: TestStatus) => ({ title: 'login › signs in', file: 'login.spec.ts', line: null, status });
+  assert.deepEqual(lines(was(signs('pass'), signs('pending')), { nodes: { '/a#A': [signs('fail'), signs('pending')] } }), [
+    summary(1, 1, 0, 0, 0, 0),
+    '  pass→fail ← login.spec.ts login › signs in — screen /a#A',
+  ]);
+  assert.deepEqual(lines(was(signs('pass'), signs('fail')), { nodes: { '/a#A': [signs('fail'), signs('fail')] } }), [summary(1, 0, 0, 0, 0, 0)]);
+  assert.deepEqual(lines(was(signs('pending'), signs('pending')), { nodes: { '/a#A': [signs('fail')] } }), [summary(1, 0, 0, 0, 0, 0)]);
+});
+
+test('regressions in one file are ordered by line, and a test merged from runs on several lines shows the first of them', () => {
+  const run = (title: string, line: number, status: TestStatus) => ({ title, line, status });
+  assert.deepEqual(lines(was(run('zeta', 2, 'pass'), run('alpha', 9, 'pass'), run('dup', 8, 'pass')), { nodes: { '/a#A': [run('alpha', 9, 'fail'), run('zeta', 2, 'fail'), run('dup', 8, 'fail'), run('dup', 3, 'pass')] } }), [
+    summary(3, 3, 0, 0, 0, 0),
+    '  pass→fail ← a.spec.ts:2 zeta — screen /a#A',
+    '  pass→fail ← a.spec.ts:3 dup — screen /a#A',
+    '  pass→fail ← a.spec.ts:9 alpha — screen /a#A',
+  ]);
+});
+
+test('a test merged from runs under a screen and runs off it fails now when a run off it fails', () => {
+  const formats = (file: string, line: number, status: TestStatus) => ({ title: 'formats', file, line, format: 'vitest', status });
+  const base = was(formats('/ci/f.test.js', 2, 'pass'), formats('/ci/f.test.js', 8, 'pass'));
+  assert.deepEqual(lines(base, { importers: { '/a#A': [formats('/me/f.test.js', 8, 'pass')] }, discarded: { '/b#B': [formats('/me/f.test.js', 2, 'fail')] } }), [
+    summary(1, 1, 0, 0, 0, 0),
+    '  pass→fail ← /me/f.test.js:8 formats — screen /a#A',
+  ]);
+});
+
+test('runs made one test where only some are under a screen count as under it, and the regression shows the first place among those', () => {
+  const formats = (file: string, line: number, status: TestStatus) => ({ title: 'formats', file, line, format: 'vitest', status });
+  const base = was(formats('/ci/f.test.js', 2, 'pass'), formats('/ci/f.test.js', 8, 'pass'));
+  assert.deepEqual(lines(base, { importers: { '/a#A': [formats('/me/f.test.js', 8, 'fail')] }, discarded: { '/b#B': [formats('/me/f.test.js', 2, 'pass')] } }), [
+    summary(1, 1, 0, 0, 0, 0),
+    '  pass→fail ← /me/f.test.js:8 formats — screen /a#A',
   ]);
 });
 
@@ -183,13 +307,14 @@ test('a Jest test whose absolute path differs only before the checkout is the sa
 
 test('a shared test run twice in two Vitest projects without a project name is one test with the worst status', () => {
   const shared = { title: 'formats', file: '/ci/shared/format.test.js', line: 4 };
-  assert.deepEqual(lines(was({ ...shared, status: 'pass' }, { ...shared, status: 'pass' }), { importers: { '/a#A': [{ ...shared, status: 'pass' }, { ...shared, status: 'fail' }] } }), [
+  const moved = { ...shared, file: '/builds/repo/shared/format.test.js' };
+  assert.deepEqual(lines(was({ ...shared, status: 'pass' }, { ...shared, status: 'pass' }), { importers: { '/a#A': [{ ...moved, status: 'pass' }, { ...moved, status: 'fail' }] } }), [
     summary(1, 1, 0, 0, 0, 0),
-    '  pass→fail ← /ci/shared/format.test.js:4 formats — screen /a#A',
+    '  pass→fail ← /builds/repo/shared/format.test.js:4 formats — screen /a#A',
   ]);
 });
 
-test('a title shared by two tests of one file and one test of another file is split by the path end first, with the length either side needs', () => {
+test('a title shared by two tests of one file and one test of another file is split by the file first, and a file of one side is found among files of its name on the other', () => {
   const verdict = (file: string, line: number, status: TestStatus) => ({ title: 'cleanup', file, line, tags: ['screen:/a#A'], status });
   const base = was(verdict('document-checks.log', 3, 'pass'), verdict('document-checks.log', 9, 'pass'), verdict('storage-checks.txt', 2, 'pass'));
   assert.deepEqual(lines(base, { nodes: { '/a#A': [verdict('document-checks.log', 3, 'pass'), verdict('document-checks.log', 9, 'pass'), verdict('storage-checks.txt', 2, 'fail')] } }), [
@@ -203,10 +328,34 @@ test('a title shared by two tests of one file and one test of another file is sp
   ]);
 });
 
+test('a current test whose tags name only screens or calls the map does not have is not on a screen or call now, in every project its baseline ran in, and a test that also has a tag the map does not know is compared once', () => {
+  const base = was({ title: 'old settings @screen:/z#Z', project: 'chromium', status: 'pass' }, { title: 'old settings @screen:/z#Z', project: 'firefox', status: 'pass' }, { title: 'kept', line: 2, status: 'pass' });
+  const unknownTags = [
+    { tag: 'screen:/z#Z', test: { title: 'old settings @screen:/z#Z', file: 'a.spec.ts', line: 1 } },
+    { tag: 'depth:e2e', test: { title: 'kept @screen:/a#A @depth:e2e', file: 'a.spec.ts', line: 2 } },
+  ];
+  const comparison = compareTests(base, { ...now({ nodes: { '/a#A': [{ title: 'kept @screen:/a#A @depth:e2e', line: 2, status: 'fail' }] } }), unknownTags }, MAP);
+  assert.deepEqual(baselineTestsLines(comparison), [summary(1, 1, 0, 2, 0, 0), '  pass→fail ← a.spec.ts:2 kept @screen:/a#A @depth:e2e — screen /a#A']);
+  assert.deepEqual(comparison.onlyInBaselineFiles, []);
+});
+
+test('a test whose screen tags all left the map is not on a screen or call now in a project where it left no row, and its other tags do not keep it from its baseline run', () => {
+  const lab = { title: 'opens the lab @screen:/old#Old', tags: ['screen:/old#Old'] };
+  const base = was({ ...lab, project: 'chromium', status: 'pass' }, { ...lab, project: 'firefox', status: 'pass' });
+  const unknownLab = [{ tag: 'screen:/old#Old', test: { title: lab.title, file: 'a.spec.ts', line: 1 } }];
+  assert.deepEqual(baselineTestsLines(compareTests(base, { ...now({ passed: { '/a#A': [{ ...lab, project: 'chromium', status: 'fail', level: 'interact' }] } }), unknownTags: unknownLab }, MAP)), [
+    summary(1, 1, 0, 1, 0, 0),
+    '  pass→fail ← a.spec.ts:1 opens the lab @screen:/old#Old (chromium) — screen /a#A',
+  ]);
+  const verdict = (line: number, tags: string[]) => ({ title: 'cleanup', file: 'checks.log', line, tags, status: 'pass' as const });
+  const unknownVerdict = [{ tag: 'screen:/z#Z', test: { title: 'cleanup', file: 'checks.log', line: 5 } }];
+  assert.deepEqual(baselineTestsLines(compareTests(was(verdict(3, ['screen:/a#A']), verdict(5, ['screen:/z#Z', 'depth:data'])), { ...now({ nodes: { '/a#A': [verdict(3, ['screen:/a#A'])] } }), unknownTags: unknownVerdict }, MAP)), [summary(1, 0, 0, 1, 0, 0)]);
+});
+
 test('a baseline test only in the baseline is listed under each screen or call on the map its tags name, and under none when its tags name a screen the map does not have', () => {
   const base = was({ title: 'gone @screen:/a#A', tags: ['screen:/a#A', 'call:GET:/api/x'], line: 4, status: 'pass' }, { title: 'gone too', tags: ['screen:/z#Z'], line: 9, status: 'fail' });
   const { onlyInBaselineByNode } = compareTests(base, now({ nodes: { '/b#B': [{ title: 'kept', status: 'pass' }] } }), MAP);
-  const gone = { title: 'gone @screen:/a#A', tail: 'a.spec.ts', line: 4, project: null, status: 'pass', result: 'releases/1.5.0/e2e.json', nodes: ['/a#A', 'GET:/api/x'] };
+  const gone = { title: 'gone @screen:/a#A', file: 'a.spec.ts', line: 4, project: null, status: 'pass', result: 'releases/1.5.0/e2e.json', nodes: ['/a#A', 'GET:/api/x'] };
   assert.deepEqual(onlyInBaselineByNode, { '/a#A': [gone], 'GET:/api/x': [gone] });
 });
 
@@ -219,7 +368,26 @@ test('a test file none of whose tests are in the current results is one whole mi
   );
   const comparison = compareTests(base, now({ nodes: { '/a#A': [{ title: 'three', file: 'left.spec.ts', status: 'pass' }] } }), MAP);
   assert.deepEqual(baselineTestsLines(comparison), [summary(1, 0, 0, 0, 3, 0), "  only in baseline ← gone.spec.ts: 2 tests, none of this file's tests are in the current results"]);
-  assert.deepEqual(comparison.onlyInBaselineFiles.map((f) => [f.tail, f.whole, f.tests.map((t) => t.title)]), [['gone.spec.ts', true, ['two', 'one']], ['left.spec.ts', false, ['four']]]);
+  assert.deepEqual(comparison.onlyInBaselineFiles.map((f) => [f.file, f.whole, f.tests.map((t) => t.title)]), [['gone.spec.ts', true, ['two', 'one']], ['left.spec.ts', false, ['four']]]);
+});
+
+test('a JUnit test whose class name is its own name, as jest-junit writes by default, is not printed as a whole missing file when it is gone', () => {
+  const xml = (names: string[]) => `<testsuites><testsuite name="Button">${names.map((n) => `<testcase classname="Button ${n}" name="Button ${n}"/>`).join('')}</testsuite></testsuites>`;
+  inFolder({ 'releases/1.5.0/junit.xml': xml(['renders the label', 'is disabled while busy']), 'results/junit.xml': xml(['renders the label', 'is disabled while loading']) }, (dir) => {
+    const base = readBaselineTests({ configDir: dir, baselineTests: [{ format: 'junit', path: path.join(dir, 'releases/1.5.0/junit.xml') }] });
+    const rows = readJunit(path.join(dir, 'results/junit.xml'))!.map((t) => ({ ...t, source: 'results/junit.xml', format: 'junit' }));
+    assert.deepEqual(baselineTestsLines(compareTests(base, { nodes: { '/a#A': rows } }, MAP)), [
+      'test results since releases/1.5.0 | compared 1 | pass→fail 0 pass→pending 0 | not on a screen or call now 0 | only in baseline 1 | only now 1',
+    ]);
+  });
+});
+
+test('a baseline test file one of whose tests is compared is never whole missing, even when the checkout folders have other names', () => {
+  const run = (title: string, file: string) => ({ title, file, status: 'pass' as const });
+  const base = was(run('a', '/ci/app-release/index.test.js'), run('gone', '/ci/app-release/index.test.js'), run('b', '/ci/app-release/lib/index.test.js'));
+  const comparison = compareTests(base, now({ importers: { '/a#A': [run('a', '/home/me/app/index.test.js'), run('b', '/home/me/app/lib/index.test.js')] } }), MAP);
+  assert.deepEqual(baselineTestsLines(comparison), [summary(2, 0, 0, 0, 1, 0)]);
+  assert.deepEqual(comparison.onlyInBaselineFiles.map((f) => [f.whole, f.tests.map((t) => t.title)]), [[false, ['gone']]]);
 });
 
 test('with nothing compared the comparison prints a line saying no baseline test matched', () => {
@@ -229,7 +397,7 @@ test('with nothing compared the comparison prints a line saying no baseline test
   ]);
 });
 
-test('a Jest test file whose absolute path differs only before the checkout is not missing, even beside files deeper down that need a longer end to tell apart', () => {
+test('a Jest test file whose absolute path differs only before the checkout is not missing, even beside files deeper down that need a longer end to tell apart, and a gone file is missing beside current files of its name in other folders', () => {
   const base = was(...[['/home/u1/repo/a.test.js', 'one'], ['/home/u1/repo/x/deep/b.test.js', 'two'], ['/home/u1/repo/y/deep/b.test.js', 'three'], ['/home/u1/repo/gone.test.js', 'four']]
     .map(([file, title]) => ({ title, file, status: 'pass' as const })));
   const renamed = [['/builds/repo/a.test.js', 'one'], ['/builds/repo/x/deep/b.test.js', 'two'], ['/builds/repo/y/deep/b.test.js', 'three']].map(([file, title]) => ({ title: `${title} renamed`, file, status: 'pass' as const }));
@@ -238,6 +406,57 @@ test('a Jest test file whose absolute path differs only before the checkout is n
     '  no test was compared: no baseline test matches a test under a screen or call now',
     "  only in baseline ← gone.test.js: 1 test, none of this file's tests are in the current results",
   ]);
+  const syncs = (title: string, file: string) => ({ title, file, status: 'pass' as const });
+  assert.deepEqual(lines(was(syncs('old', '/ci/a/x.test.js')), { importers: { '/a#A': [syncs('new', '/me/b/x.test.js'), syncs('newer', '/me/c/x.test.js')] } }), [
+    summary(0, 0, 0, 0, 1, 2),
+    '  no test was compared: no baseline test matches a test under a screen or call now',
+    "  only in baseline ← x.test.js: 1 test, none of this file's tests are in the current results",
+  ]);
+});
+
+test('a test in a file of another path is another test, even when its title is used once on each side or the file has the name of a gone file', () => {
+  const none = '  no test was compared: no baseline test matches a test under a screen or call now';
+  const goneFile = (file: string, count = 1) => `  only in baseline ← ${file}: ${count} test${count === 1 ? '' : 's'}, none of this file's tests are in the current results`;
+  assert.deepEqual(lines(was({ title: 'opens a', file: 'old.spec.ts', status: 'pass' }), { nodes: { '/a#A': [{ title: 'opens a', file: 'new.spec.ts', status: 'fail' }] } }), [summary(0, 0, 0, 0, 1, 1), none, goneFile('old.spec.ts')]);
+  assert.deepEqual(lines(was({ title: 'renders', file: '/ci/src/OldWidget.test.tsx', status: 'pass' }), { importers: { '/a#A': [{ title: 'renders', file: '/h/src/NewScreen.test.tsx', status: 'fail' }] } }), [summary(0, 0, 0, 0, 1, 1), none, goneFile('OldWidget.test.tsx')]);
+  const crashing = (file: string, status: TestStatus) => ({ title: 'renders without crashing', file, status });
+  assert.deepEqual(lines(was(crashing('/home/runner/work/app/app/src/components/Button/index.test.tsx', 'pass'), crashing('/home/runner/work/app/app/src/App.test.tsx', 'pass')), { importers: { '/a#A': [
+    crashing('/home/me/app/src/pages/Settings/index.test.tsx', 'fail'),
+    crashing('/home/me/app/src/App.test.tsx', 'pass'),
+  ] } }), [summary(1, 0, 0, 0, 1, 1), goneFile('components/Button/index.test.tsx')]);
+  const users = (title: string, file: string) => ({ title, file, status: 'pass' as const });
+  assert.deepEqual(lines(was(users('lists users', 'admin/users.spec.ts'), users('removes a user', 'admin/users.spec.ts'), users('opens home', 'home.spec.ts')), { nodes: { '/a#A': [users('opens home', 'home.spec.ts'), users('edits my profile', 'account/users.spec.ts')] } }), [
+    summary(1, 0, 0, 0, 2, 1),
+    goneFile('admin/users.spec.ts', 2),
+  ]);
+});
+
+test('a test file is the same file below the folder holding every test file of its side, whatever the checkout folders are called and however deep the files of the same name sit', () => {
+  const run = (title: string, file: string, status: TestStatus = 'pass') => ({ title, file, status });
+  const base = was(run('renders', '/builds/ci/repo/src/index.test.ts'), run('other', '/builds/ci/repo/src/index.test.ts'), run('renders', '/builds/ci/repo/packages/ui/src/index.test.ts'));
+  assert.deepEqual(lines(base, { importers: { '/a#A': [
+    run('renders', '/home/me/myrepo/src/index.test.ts', 'fail'), run('other', '/home/me/myrepo/src/index.test.ts'), run('renders', '/home/me/myrepo/packages/ui/src/index.test.ts'),
+  ] } }), [summary(3, 1, 0, 0, 0, 0), '  pass→fail ← /home/me/myrepo/src/index.test.ts:1 renders — screen /a#A']);
+  const crashing = (root: string, status: TestStatus) => ['src/App.test.tsx', 'src/pages/a/list/index.test.tsx', 'src/pages/b/list/index.test.tsx'].map((file, i) => run('renders without crashing', `${root}/${file}`, i ? 'pass' : status));
+  assert.deepEqual(lines(was(...crashing('/home/runner/work/app/app', 'pass')), { importers: { '/a#A': crashing('/home/me/app-wt', 'fail') } }), [
+    summary(3, 1, 0, 0, 0, 0),
+    '  pass→fail ← /home/me/app-wt/src/App.test.tsx:1 renders without crashing — screen /a#A',
+  ]);
+  assert.deepEqual(lines(was(run('syncs', '/ci/a/x.test.js'), run('syncs', '/ci/b/x.test.js', 'fail')), { importers: { '/a#A': [run('syncs', '/me/a/x.test.js', 'fail')] } }), [
+    summary(1, 1, 0, 0, 1, 0),
+    '  pass→fail ← /me/a/x.test.js:1 syncs — screen /a#A',
+    "  only in baseline ← b/x.test.js: 1 test, none of this file's tests are in the current results",
+  ]);
+  assert.deepEqual(lines(was(run('works', '/ci/repo/src/a.test.js')), { importers: { '/a#A': [run('works', '/home/me/myrepo/src/a.test.js', 'fail'), run('added', '/home/me/myrepo/tests/b.test.js')] } }), [
+    summary(1, 1, 0, 0, 0, 1),
+    '  pass→fail ← /home/me/myrepo/src/a.test.js:1 works — screen /a#A',
+  ]);
+});
+
+test('a baseline test file whose test matches a current test on no screen is not whole missing', () => {
+  const run = (title: string, file: string) => ({ title, file, status: 'pass' as const });
+  const base = was(run('a', '/ci/app-release/index.test.js'), run('gone', '/ci/app-release/index.test.js'), run('b', '/ci/app-release/lib/index.test.js'));
+  assert.deepEqual(lines(base, { untagged: [run('a', '/home/me/app/index.test.js')], importers: { '/a#A': [run('b', '/home/me/app/lib/index.test.js')] } }), [summary(1, 0, 0, 1, 1, 0)]);
 });
 
 test('a regression on a row that only passed through a screen or only sent a call shows on that row but is not counted for the screen list', () => {
@@ -287,6 +506,18 @@ test('the baseline is named by the nearest folder holding every baselineTests pa
   });
 });
 
+test('a Playwright report of a project with no name is read with the empty project name and matched with the current run of it', () => {
+  const report = { suites: [{ title: 'a.spec.ts', specs: [{ title: 'opens a', file: 'a.spec.ts', line: 1, tests: [{ projectName: '', status: 'expected' }] }] }] };
+  inFolder({ 'releases/1.5.0/e2e.json': report }, (dir) => {
+    const base = readBaselineTests({ configDir: dir, baselineTests: [{ format: 'playwright', path: path.join(dir, 'releases/1.5.0/e2e.json') }] });
+    assert.deepEqual(base.tests.map((t) => t.project), ['']);
+    assert.deepEqual(baselineTestsLines(compareTests(base, now({ nodes: { '/a#A': [{ title: 'opens a', project: '', status: 'fail' }] } }), MAP)), [
+      summary(1, 1, 0, 0, 0, 0),
+      '  pass→fail ← a.spec.ts:1 opens a — screen /a#A',
+    ]);
+  });
+});
+
 test('baselineTests gives each result file its start time: Playwright stats.startTime, Vitest or Jest startTime, and the file\'s modified time for JUnit, verdict logs and a report that has none', () => {
   const junit = '<testsuite name="S"><testcase classname="com.example.T" name="t"/></testsuite>';
   inFolder({
@@ -328,7 +559,7 @@ function withCopy(fn: (copy: Copy) => void) {
 const readOut = (copy: string, name: string) => JSON.parse(fs.readFileSync(path.join(copy, 'out', name), 'utf8'));
 const withoutDate = ({ meta, ...rest }: { meta: object }) => rest;
 const TEST_LINES = [
-  'test results since releases/1.5.0 | compared 45 | pass→fail 1 pass→pending 1 | not on a screen or call now 14 | only in baseline 8 | only now 1',
+  'test results since releases/1.5.0 | compared 45 | pass→fail 1 pass→pending 1 | not on a screen or call now 17 | only in baseline 5 | only now 1',
   '  pass→fail ← components/DocumentTable.spec.js:6 DocumentTable › lists the documents it is given — screen /document/:tab#DocumentList, screen /home#Home',
   '  pass→pending ← home.spec.ts:20 opens the lab @screen:/lab#Lab (chromium) — screen /lab#Lab',
   "  only in baseline ← export.spec.ts: 5 tests, none of this file's tests are in the current results",
@@ -364,6 +595,23 @@ test('with baselineTests and no baselineMap, rebuild prints the same test lines'
     assert.doesNotMatch(out, /^changes since /m);
     assert.deepEqual(testLines(out), TEST_LINES);
     assert.match(out, /^entry screens [^\n]*\ntest results since /m);
+  });
+});
+
+test('without baselineTests, a current result file that cannot be read stops rebuild after the map comparison line and the case kind lines', () => {
+  withCopy(({ copy, configFile, setConfig, rebuild }) => {
+    rebuild();
+    fs.copyFileSync(path.join(copy, 'out/map.json'), path.join(copy, 'releases-map.json'));
+    setConfig({ baselineMap: 'releases-map.json', caseKinds: { ended: { text: '끝난 문서', picks: [{ methods: ['DELETE'] }] } } });
+    fs.writeFileSync(path.join(copy, 'results/playwright/e2e.json'), '{ "suites": [');
+    const run = spawnSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /cannot read Playwright report /);
+    assert.deepEqual(run.stdout.trimEnd().split('\n').slice(-3), [
+      `changes since ${path.join(copy, 'releases-map.json')} | screens new 0 removed 0 condition 0 calls-changed 0 | calls new 0 removed 0 server 0`,
+      `case kind ended: rules pick 0 screens, 0 calls | new since ${path.join(copy, 'releases-map.json')} 0`,
+      '  caseKinds ended picks[0] matches no call: {"methods":["DELETE"]}',
+    ]);
   });
 });
 
@@ -455,8 +703,8 @@ test('the README and the decision record say what baselineTests takes, what the 
   const readme = read('../README.md').replace(/\n {2}(?=\S)/g, ' ');
   assert.match(readme, /- `baselineTests` — the test results of an earlier version of the same client \(optional\), written like `tests`/);
   assert.match(readme, /An empty list compares nothing and prints no line about it\./);
-  assert.match(readme, /straight into that version's folder[\s\S]*`cp -p`[\s\S]*only some of the tests leaves the rest as `only in baseline`/);
-  assert.match(readme, /by their title without tags and their Playwright project, so a test renamed or moved to another file counts once in\s+`only in baseline` and once in `only now`/);
+  assert.match(readme, /straight into that version's folder[\s\S]*`cp -p`[\s\S]*only some of the tests leaves the rest out of the comparison: those under a screen or call now count as `only now`/);
+  assert.match(readme, /by their title without\s+tags, their Playwright project and their test file, so a test renamed or moved to another file counts once in\s+`only in baseline` and once in `only now`/);
   assert.match(readme, /- `test results since <folder> \| compared N \| pass→fail N pass→pending N \| not on a screen or call now N \| only in baseline N \| only now N` —/);
   assert.match(readme, /now\s+did not run or gave no verdict; a `pass→pending` test may have been skipped because a test before it in a `serial`\s+group, or a `setup` project it depends on, failed/);
   assert.match(readme, /When `not on a screen or call now` is large/);
@@ -465,10 +713,11 @@ test('the README and the decision record say what baselineTests takes, what the 
   assert.match(readme, /- `  pass→fail ← <test file>:<line> <title> \(<project>\) — screen <id>, call <id>, …` —/);
   assert.match(readme, /- `  only in baseline ← <file>: N tests, none of this file's tests are in the current results` —/);
   assert.match(readme, /`baselineTests <path> could not be read: <why>`/);
-  assert.match(readme, /An untagged Playwright test carries the projects it ran\s+in as `projects`\./);
+  assert.match(readme, /An untagged Playwright test carries the projects it ran\s+in as `projects`, each with the worst status of the test's runs in it\./);
   const decisions = read('../docs/decisions.md');
   assert.match(decisions, /\*\*`baselineTests` names the result files kept from an earlier release in the shape of `tests`/);
-  assert.match(decisions, /the shortest end that tells apart every different file in the group/);
+  assert.match(decisions, /an absolute path, as Jest and Vitest write, is\s+taken from the folder holding every absolute path of its\s+side/);
+  assert.match(decisions, /- Only as much of the end of the paths as tells apart the different files of one title, decided in a comment on #404/);
   assert.match(decisions, /- One end length for the whole group, as the PRD reads word for word:/);
 });
 

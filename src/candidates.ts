@@ -9,10 +9,9 @@ import { loadMarks, orderKey, recordKind, recordName, targetsOf, writeNewRecord 
 import { addStory, CANDIDATES, DISCARDED, inputsProblem, RECORDS, isDate, isScreenList, isSource, isText, loadStories, SOURCE_SHAPES, STEP_FIELDS, stepProblem, writableStoriesFolder } from './stories.ts';
 import type { CommentSource, StepFields, StepInput } from './stories.ts';
 import { checkStories, linksFromOldDuru, staleMapMessage } from './story-paths.ts';
-import { withoutTags } from './verdict.ts';
+import { titleWithoutTags } from './verdict.ts';
 
 const relative = (configDir: string, file: string) => path.relative(configDir, file).split(path.sep).join('/');
-const shownTitle = (title: string) => title.split(' › ').map(withoutTags).filter(Boolean).join(' › ') || title;
 
 function recordFiles(source: string): { reason?: string; files: string[] } {
   if (!fs.existsSync(source)) return { reason: '방문 기록 출처가 없습니다', files: [] };
@@ -440,9 +439,9 @@ export function storyCandidates(config: any, map: any, mapFile: string, traced: 
     if (source) {
       if (source.report === report && !source.tests.includes(title)) source.tests.push(title);
     } else if (screens.length > 1 && seen.has(key)) {
-      gone[screens.join(' > ')] ??= shownTitle(title);
+      gone[screens.join(' > ')] ??= titleWithoutTags(title);
     } else if (screens.length > 1) {
-      const candidate = { key: screens.join(' > '), name: shownTitle(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) };
+      const candidate = { key: screens.join(' > '), name: titleWithoutTags(title), screens, source: { report, tests: [title] }, ...carried({ stepFields: inputFields(inputs), skipped }) };
       fromTraces.set(key, candidate.source);
       list.push(candidate);
     }

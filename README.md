@@ -297,8 +297,8 @@ client with example results and a config to start from.
   line about it. To keep the results of a release, run the whole suite on that version and copy its result files
   straight into that version's folder, such as `releases/1.5.0/`; copy JUnit XML and verdict logs with their modified
   time kept (`cp -p`), since that is the time duru takes for when they ran. Keeping the results of a run of only some
-  of the tests leaves the rest as `only in baseline`. Tests of the two results are matched by their title without
-  tags and their Playwright project, so a test renamed or moved to another file counts once in
+  of the tests leaves the rest out of the comparison: those under a screen or call now count as `only now`. Tests of the two results are matched by their title without
+  tags, their Playwright project and their test file, so a test renamed or moved to another file counts once in
   `only in baseline` and once in `only now`.
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
   variables to it.
@@ -519,10 +519,11 @@ listing the places whose value the source does not show in full.
   reviewer discarded does not. `pass→fail` and `pass→pending`: those that passed in the baseline and now fail, or now
   did not run or gave no verdict; a `pass→pending` test may have been skipped because a test before it in a `serial`
   group, or a `setup` project it depends on, failed. `not on a screen or call now`: baseline tests that match a
-  current test which is on no screen or call now, such as an untagged test, one only under a story, or one whose
-  pairs a reviewer all discarded. When `not on a screen or call now` is large, those tests could not be compared
-  because nothing links them to a screen or call now; a browser test linked only by its trace, for one, is not
-  linked when it was skipped and left no trace. `only in baseline`: baseline tests no current test matches.
+  current test which is on no screen or call now, such as an untagged test, one only under a story, one whose tags
+  name only screens or calls the map does not have, or one whose pairs a reviewer all discarded. When
+  `not on a screen or call now` is large, those tests could not be compared because nothing links them to a screen
+  or call now; a browser test linked only by its trace, for one, is not linked when it was skipped and left no
+  trace. `only in baseline`: baseline tests no current test matches.
   `only now`: tests under a screen or call now that no baseline test matches; they are not regressions.
   `compared`, `not on a screen or call now` and `only in baseline` add up to the tests of the baseline.
 - `  no test was compared: no baseline test matches a test under a screen or call now` — follows when `compared` is 0,
@@ -532,8 +533,8 @@ listing the places whose value the source does not show in full.
   and call the test is on. `:<line>` is left out when the result gives no line (JUnit), and `(<project>)` when the
   test has no Playwright project.
 - `  only in baseline ← <file>: N tests, none of this file's tests are in the current results` — a test file of the
-  baseline with no test in the current results: it no longer loads, or the current run left it out. `<file>` is as
-  much of the end of its path as tells it apart.
+  baseline with no test in the current results: it no longer loads, or the current run left it out. `<file>` is its
+  path in the baseline results, from the folder holding all of their test files when the paths are absolute.
 - A `baselineTests` path that is missing, a result file that cannot be read, or an entry that gives no test stops
   `rebuild` with `baselineTests <path> could not be read: <why>`, before anything is written. Files of another format
   in a folder, and verdict logs with no verdict line, are skipped as in `tests`.
@@ -590,7 +591,7 @@ and is listed with the tags that point at nothing on the map.
 `tests.json` lists the tests per node and per story with depth, status (pass, fail, pending; skipped and todo
 count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
 nothing on the map, and the tests with no tag as `untagged`. An untagged Playwright test carries the projects it ran
-in as `projects`. `traced`
+in as `projects`, each with the worst status of the test's runs in it. `traced`
 lists each Playwright test that passed, with the trace of its passing run, as its report, its title, its file and
 line, and the screens it passed in order; an address no screen matches stays in that list as its path. A story test whose passing run left a trace
 carries the same order as `screens`.

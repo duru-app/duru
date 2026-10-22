@@ -5,7 +5,7 @@ import { fileSafe, recordName, writeNewRecord } from './marks.ts';
 import { differs } from './code-state.ts';
 import { compare, isPlainObject } from './config.ts';
 import { jsonFiles } from './json-files.ts';
-import { withoutTags } from './verdict.ts';
+import { STATUS_RANK, withProjectRun, withoutTags } from './verdict.ts';
 
 export const JUDGMENT_KINDS = ['discard', 'hand-over', 'undo'];
 
@@ -19,6 +19,9 @@ interface ResultTest extends TestRef {
   line?: number | null;
   level?: string;
   project?: string | null;
+  status?: string;
+  projects?: Record<string, string>;
+  worstStatus?: string;
   testFile?: string;
   format?: string;
   unmatched?: unknown;
@@ -158,6 +161,14 @@ export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgm
   const discarded: Record<string, Judged[]> = {};
   const awaitingTag: Record<string, Judged[]> = {};
   const found = new Set<string>();
+  const firstJudged = new Map<string, ResultTest>();
+  // 판단한 짝은 첫 실행 한 줄로 남으므로, 뒤 실행의 상태를 프로젝트가 있으면 projects 에, 없으면 가장 나쁜 것을 worstStatus 에 싣는다.
+  const fold = (first: ResultTest, t: ResultTest) => {
+    const runs = t.projects ? Object.entries(t.projects) : t.project != null && t.status ? [[t.project, t.status]] : [];
+    if (runs.length && (first.project != null || first.projects)) {
+      first.projects = runs.reduce((projects, [project, status]) => withProjectRun(projects, project, status), first.projects ?? withProjectRun(undefined, first.project!, first.status!));
+    } else if (t.status) first.worstStatus = [first.worstStatus ?? first.status!, t.status].reduce((w, s) => (STATUS_RANK[s] > STATUS_RANK[w] ? s : w));
+  };
   const codeChanged = (j: Judgment) => differs(j.codeHash, nodeHashes.get(j.node)) || differs(j.testFileHash, j.test.file === null ? undefined : tests.testFileHashes?.[j.test.file]);
   const judged = (t: ResultTest, ref: TestRef, judgment: Judgment): Judged => ({ ...t, ref, judgment, ...(codeChanged(judgment) && { codeChanged: true as const }) });
   const unjudged = (byNode: Record<string, ResultTest[]> | undefined) => {
@@ -168,10 +179,20 @@ export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgm
         const key = pairKey(ref, id);
         const judgment = latest.get(key);
         // 여러 Playwright 프로젝트에서 돈 테스트도 판단한 짝은 하나다.
-        if (judgment && found.has(key)) continue;
-        if (judgment?.kind === 'discard') (discarded[id] ??= []).push(judged(t, ref, judgment));
-        else if (judgment?.kind === 'hand-over') (awaitingTag[id] ??= []).push(judged(t, ref, judgment));
-        else (left[id] ??= []).push({ ...t, ref });
+        if (judgment && found.has(key)) {
+          fold(firstJudged.get(key)!, t);
+          continue;
+        }
+        const judgedList = judgment?.kind === 'discard' ? discarded : judgment?.kind === 'hand-over' ? awaitingTag : null;
+        if (judgedList) {
+          const row = judged(t, ref, judgment!);
+          firstJudged.set(key, row);
+          (judgedList[id] ??= []).push(row);
+        } else {
+          const row = { ...t, ref };
+          if (judgment) firstJudged.set(key, row);
+          (left[id] ??= []).push(row);
+        }
         found.add(key);
       }
     }
@@ -182,18 +203,22 @@ export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgm
   const handOvers = [...latest].filter(([, judgment]) => judgment.kind === 'hand-over');
   if (handOvers.length) for (const [id, list] of Object.entries(tests.nodes ?? {})) for (const t of list) found.add(pairKey(testRef(t), id));
   const inResults = new Map<string, ResultTest>();
+  const runsInResults = new Map<string, ResultTest>();
   if (handOvers.length) {
     for (const t of [...(tests.untagged ?? []), ...Object.values(tests.nodes ?? {}).flat(), ...Object.values(tests.stories ?? {}).flat()]) {
       const key = JSON.stringify(testRef(t));
       if (!inResults.has(key) || 'unmatched' in t) inResults.set(key, t);
+      if (!runsInResults.has(key)) runsInResults.set(key, { ...t, projects: t.projects ?? (t.project != null && t.status ? withProjectRun(undefined, t.project, t.status) : undefined) });
+      else fold(runsInResults.get(key)!, t);
     }
   }
   const detachedHandOvers: Record<string, { ref: TestRef; judgment: Judgment }[]> = {};
   for (const [key, judgment] of handOvers) {
     if (found.has(key)) continue;
     const t = inResults.get(JSON.stringify(judgment.test));
+    const { projects, worstStatus } = runsInResults.get(JSON.stringify(judgment.test)) ?? {};
     // trace 를 읽지 못한 실행으로는 테스트가 그 화면을 열었는지 알 수 없으므로, 포함한 짝을 떨어져 나간 것으로 보지 않는다.
-    if (t?.format === 'playwright' && !('unmatched' in t)) (awaitingTag[judgment.node] ??= []).push({ ...judged(t, judgment.test, judgment), unconfirmed: true });
+    if (t?.format === 'playwright' && !('unmatched' in t)) (awaitingTag[judgment.node] ??= []).push({ ...judged(t, judgment.test, judgment), ...(projects && { projects }), ...(worstStatus && { worstStatus }), unconfirmed: true });
     else (detachedHandOvers[judgment.node] ??= []).push({ ref: judgment.test, judgment });
   }
   for (const list of Object.values(detachedHandOvers)) list.sort((a, b) => compare(a.ref.file, b.ref.file) || compare(a.ref.title, b.ref.title) || compare(a.ref.source, b.ref.source));
