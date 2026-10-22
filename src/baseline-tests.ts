@@ -106,22 +106,21 @@ const byPlace = (a: Place, b: Place) => compare(a.file ?? '', b.file ?? '') || (
 
 function currentTests(current: CurrentTests, calls: Set<string>) {
   const runs = new Map<string, CurrentTest>();
-  const runOf = (t: any) => {
-    const project = t.project ?? null;
+  const runsOf = (t: any) => (t.project != null ? [t.project] : t.projects?.length ? t.projects : [null]).map((project: string | null) => {
     const id = JSON.stringify([t.source, t.file, t.line, t.title, project]);
     if (!runs.has(id)) runs.set(id, { title: t.title, project, status: t.status, place: { file: t.testFile ?? t.file ?? null, line: t.line ?? null, title: t.title, project }, rows: [], offNode: [] });
     return runs.get(id)!;
-  };
+  });
   for (const [field, via] of UNDER_NODE) {
     for (const [node, list] of Object.entries(current[field] ?? {})) {
       for (const t of list) {
         const listed = via !== 'trace' || LISTED_LEVELS.includes(t.level);
-        runOf(t).rows.push({ node, kind: calls.has(node) ? 'call' : 'screen', via, ...(t.level && { level: t.level }), status: t.status, listed, ref: t.ref ?? testRef(t), source: t.source, project: t.project ?? null });
+        for (const run of runsOf(t)) run.rows.push({ node, kind: calls.has(node) ? 'call' : 'screen', via, ...(t.level && { level: t.level }), status: t.status, listed, ref: t.ref ?? testRef(t), source: t.source, project: run.project });
       }
     }
   }
-  for (const field of OFF_NODE) for (const list of Object.values(current[field] ?? {})) for (const t of list) runOf(t).offNode.push(t.status);
-  for (const t of current.untagged ?? []) runOf(t).offNode.push(t.status);
+  const offNode = [...OFF_NODE.flatMap((field) => Object.values(current[field] ?? {}).flat()), ...(current.untagged ?? [])];
+  for (const t of offNode) for (const run of runsOf(t)) run.offNode.push(t.status);
   for (const test of runs.values()) test.status = worst(test.rows.length ? test.rows.map((r) => r.status) : test.offNode);
   return [...runs.values()];
 }

@@ -653,6 +653,18 @@ test('an untagged test that ran in two projects is listed once, with the worst s
   });
 });
 
+test('an untagged Playwright test carries the projects it ran in, sorted, and stays one entry; a test of another format carries none', () => {
+  const byTitle = (title: string) => links.untagged.find((t) => t.title === title)!;
+  assert.deepEqual(byTitle('loads without errors @smoke').projects, ['chromium', 'firefox']);
+  assert.equal('projects' in byTitle('DocumentTable › lists the documents it is given'), false);
+  const report = reportOf([{ title: 'a.spec.ts', specs: [{ title: 'opens a', file: 'a.spec.ts', line: 1, tests: [{ projectName: 'webkit', status: 'expected' }, { projectName: 'chromium', status: 'skipped' }, { projectName: 'firefox', status: 'expected' }] }] }]);
+  withResults({ 'e2e.json': report }, (own) => {
+    const result = linkTests(own, { screens: [] });
+    assert.equal(result.untaggedCount, 1);
+    assert.deepEqual(result.untagged.map((t) => [t.title, t.status, t.projects]), [['opens a', 'pending', ['chromium', 'firefox', 'webkit']]]);
+  });
+});
+
 test('the untagged list is ordered by the test file the page shows, not by the path of the machine that ran the tests', () => {
   const vitestFiles = JSON.stringify({
     testResults: [

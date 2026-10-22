@@ -113,6 +113,27 @@ test('the regression lines are ordered by test file, line, title and project, an
   ]);
 });
 
+test('a skipped Playwright test left only in the untagged list counts as not on a screen or call now, not as only in baseline, and compared, not on a screen or call now and only in baseline add up to the baseline tests', () => {
+  const base = was(
+    { title: 'opens b', project: 'chromium', status: 'pass' },
+    { title: 'opens b', project: 'firefox', status: 'pass' },
+    { title: 'opens a', project: 'chromium', status: 'pass' },
+    { title: 'gone', project: 'chromium', status: 'pass' },
+  );
+  assert.deepEqual(lines(base, {
+    nodes: { '/a#A': [{ title: 'opens a @screen:/a#A', project: 'chromium', status: 'pass' }] },
+    untagged: [{ title: 'opens b', projects: ['chromium', 'firefox'], status: 'pending' }],
+  }), [summary(1, 0, 0, 2, 1, 0)]);
+});
+
+test('a test that passed through a screen in one project and ran without a trace in another is compared by the run of the first, and the run of the other is not on a screen or call now', () => {
+  const base = was({ title: 'walks', project: 'chromium', status: 'pass' }, { title: 'walks', project: 'firefox', status: 'pass' });
+  assert.deepEqual(lines(base, {
+    passed: { '/b#B': [{ title: 'walks', project: 'chromium', status: 'pass', level: 'visit' }] },
+    untagged: [{ title: 'walks', projects: ['chromium', 'firefox'], status: 'fail' }],
+  }), [summary(1, 0, 0, 1, 0, 0)]);
+});
+
 function inFolder(files: Record<string, unknown>, fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-baseline-tests-'));
   try {
@@ -190,7 +211,7 @@ function keepRelease(copy: string) {
 }
 
 const TEST_LINES = [
-  'test results since releases/1.5.0 | compared 45 | pass→fail 1 pass→pending 1 | not on a screen or call now 12 | only in baseline 10 | only now 1',
+  'test results since releases/1.5.0 | compared 45 | pass→fail 1 pass→pending 1 | not on a screen or call now 14 | only in baseline 8 | only now 1',
   '  pass→fail ← components/DocumentTable.spec.js:6 DocumentTable › lists the documents it is given — screen /document/:tab#DocumentList, screen /home#Home',
   '  pass→pending ← home.spec.ts:20 opens the lab @screen:/lab#Lab (chromium) — screen /lab#Lab',
 ];
