@@ -445,7 +445,7 @@ test('a move a saga makes is a link of each screen that dispatches an action the
     ['/contracts', moved("push('/contracts')"), ['/contracts#Contracts'], loaded],
     ['/home', moved('ROUTE_PATH.HOME)'), ['/home#Home'], loaded],
     ['/notes/{*}', moved('/notes/'), [], loaded],
-    ['/home/tail', 'sagas/tail.ts:3', ['/home#Home'], loaded],
+    ['/home/tail', 'sagas/tail.ts:3', [], loaded],
   ]);
   assert.deepEqual(linksOf(map, '/signed#Signed'), [
     ['/quiet', moved("replace('/quiet')"), ['/quiet#Quiet'], ['ActionTypes.LOAD_SIGNED ← sagas/screens/Signed.tsx:9', 'ActionTypes.UPDATE_TERMS ← sagas/screens/Signed.tsx:11']],
@@ -467,7 +467,7 @@ test('a saga move whose address comes from the action or cannot be read gives no
     ['/contracts', moved("push('/contracts')"), ['/contracts#Contracts'], loaded],
     ['/home', moved('ROUTE_PATH.HOME)'), ['/home#Home'], loaded],
     ['/notes/{*}', moved('/notes/'), [], loaded],
-    ['/home/tail', 'sagas/tail.ts:3', ['/home#Home'], loaded],
+    ['/home/tail', 'sagas/tail.ts:3', [], loaded],
   ]);
   assert.deepEqual(linksOf(map, '/notices#Notices'), []);
 });

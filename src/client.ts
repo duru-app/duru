@@ -1961,9 +1961,7 @@ export async function extractClient(config: any) {
     const sagaLinks = [...movedBySaga].map(([ref, actions]) => {
       const file = rel(siteFile.get(ref));
       if (!('route' in ref)) return { ...ref, file, reaches: routedScreens.screens(ref.to), actions: byType(actions) };
-      const { tail, ...r } = ref;
-      const value = routeValues[r.route] as string;
-      return tail ? { ...r, to: value + tail, tail, file, actions: byType(actions) } : { ...r, to: value, file, actions: byType(actions) };
+      return { ...constantLink(ref), file, actions: byType(actions) };
     });
     sagaLinks.sort((a, b) => compare(a.file, b.file) || a.line - b.line);
     links.push(...sagaLinks);
