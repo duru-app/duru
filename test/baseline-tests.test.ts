@@ -8,6 +8,7 @@ import { baselineTestsLines, compareTests, readBaselineTests } from '../src/base
 import type { BaselineTests } from '../src/baseline-tests.ts';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment } from '../src/judgments.ts';
+import { BASELINE_TESTS, editJson, keepRelease } from './baseline-helpers.ts';
 import type { TestStatus } from '../src/verdict.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
@@ -326,36 +327,6 @@ function withCopy(fn: (copy: Copy) => void) {
 
 const readOut = (copy: string, name: string) => JSON.parse(fs.readFileSync(path.join(copy, 'out', name), 'utf8'));
 const withoutDate = ({ meta, ...rest }: { meta: object }) => rest;
-const BASELINE_TESTS = [
-  { format: 'playwright', path: 'releases/1.5.0/playwright', depth: 'ui' },
-  { format: 'junit', path: 'releases/1.5.0/junit', depth: 'api' },
-  { format: 'vitest', path: 'releases/1.5.0/vitest', depth: 'code' },
-  { format: 'verdict', path: 'releases/1.5.0/verdict', depth: 'api' },
-];
-
-function editJson(file: string, change: (json: any) => void) {
-  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-  change(json);
-  fs.writeFileSync(file, JSON.stringify(json));
-}
-
-// 기준은 지금 결과를 베껴 시험 둘을 통과로 바꾸고 하나를 지운 것이고, 지금 결과에서는 내보내기 보고서를 지운다.
-function keepRelease(copy: string) {
-  for (const folder of ['playwright', 'junit', 'vitest', 'verdict']) fs.cpSync(path.join(copy, 'results', folder), path.join(copy, 'releases/1.5.0', folder), { recursive: true });
-  const kept = (file: string) => path.join(copy, 'releases/1.5.0', file);
-  editJson(kept('vitest/client-unit.json'), (report) => {
-    for (const r of report.testResults) for (const a of r.assertionResults) if (a.title === 'lists the documents it is given') a.status = 'passed';
-  });
-  editJson(kept('playwright/e2e.json'), (report) => {
-    const lab = report.suites.flatMap((s: any) => s.specs).find((s: any) => s.title.startsWith('opens the lab'));
-    for (const t of lab.tests) t.status = 'expected';
-  });
-  editJson(kept('vitest/unit.json'), (report) => {
-    for (const r of report.testResults) r.assertionResults = r.assertionResults.filter((a: any) => a.title !== 'remembers the last user');
-  });
-  fs.rmSync(path.join(copy, 'results/playwright/export.json'));
-}
-
 const TEST_LINES = [
   'test results since releases/1.5.0 | compared 45 | pass→fail 1 pass→pending 1 | not on a screen or call now 14 | only in baseline 8 | only now 1',
   '  pass→fail ← components/DocumentTable.spec.js:6 DocumentTable › lists the documents it is given — screen /document/:tab#DocumentList, screen /home#Home',
