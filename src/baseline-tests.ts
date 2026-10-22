@@ -94,6 +94,8 @@ interface Place {
 
 interface CurrentTest {
   title: string;
+  tags: string[];
+  file: string | null;
   project: string | null;
   status: TestStatus;
   place: Place;
@@ -108,7 +110,7 @@ function currentTests(current: CurrentTests, calls: Set<string>) {
   const runs = new Map<string, CurrentTest>();
   const runsOf = (t: any) => (t.project != null ? [t.project] : t.projects?.length ? t.projects : [null]).map((project: string | null) => {
     const id = JSON.stringify([t.source, t.file, t.line, t.title, project]);
-    if (!runs.has(id)) runs.set(id, { title: t.title, project, status: t.status, place: { file: t.testFile ?? t.file ?? null, line: t.line ?? null, title: t.title, project }, rows: [], offNode: [] });
+    if (!runs.has(id)) runs.set(id, { title: t.title, tags: t.tags ?? [], file: t.file ?? null, project, status: t.status, place: { file: t.testFile ?? t.file ?? null, line: t.line ?? null, title: t.title, project }, rows: [], offNode: [] });
     return runs.get(id)!;
   });
   for (const [field, via] of UNDER_NODE) {
@@ -125,17 +127,49 @@ function currentTests(current: CurrentTests, calls: Set<string>) {
   return [...runs.values()];
 }
 
-const keyOf = (t: { title: string; project: string | null }) => JSON.stringify([withoutTags(t.title), t.project]);
+type Matched = { title: string; tags: string[]; file: string | null; project: string | null };
 
-function byKey<T extends { title: string; project: string | null }>(tests: T[]) {
+const segments = (file: string | null) => (file ?? '').split(/[\\/]+/).filter(Boolean);
+const tail = (file: string | null, length: number) => segments(file).slice(-length).join('/');
+
+function separatingLength(files: (string | null)[]) {
+  const distinct = [...new Set(files.map((f) => tail(f, Infinity)))];
+  if (distinct.length < 2) return 0;
+  let length = 1;
+  while (new Set(distinct.map((f) => tail(f, length))).size < distinct.length) length += 1;
+  return length;
+}
+
+const groupBy = <T>(list: T[], keyOf: (item: T) => string) => {
   const groups = new Map<string, T[]>();
-  for (const t of tests) groups.set(keyOf(t), [...(groups.get(keyOf(t)) ?? []), t]);
+  for (const item of list) groups.set(keyOf(item), [...(groups.get(keyOf(item)) ?? []), item]);
   return groups;
+};
+
+const tagSet = (t: Matched) => [...new Set(t.tags)].sort().join(' ');
+const overlaps = (tests: Matched[] = []) => tests.length > 1 && new Set(tests.map(tagSet)).size > 1;
+
+function matchKeys<B extends Matched, N extends Matched>(baseline: B[], current: N[]) {
+  const titleKey = (t: Matched) => JSON.stringify([withoutTags(t.title), t.project]);
+  const [before, now] = [groupBy<Matched>(baseline, titleKey), groupBy<Matched>(current, titleKey)];
+  const keys = new Map<Matched, string>();
+  for (const key of new Set([...before.keys(), ...now.keys()])) {
+    const sides = [before.get(key) ?? [], now.get(key) ?? []];
+    const length = Math.max(...sides.map((tests) => separatingLength(tests.map((t) => t.file))));
+    const tailOf = (t: Matched) => (length ? tail(t.file, length) : '');
+    const [tailedBefore, tailedNow] = sides.map((tests) => groupBy(tests, tailOf));
+    for (const tests of sides) {
+      for (const t of tests) {
+        const withTags = overlaps(tailedBefore.get(tailOf(t))) || overlaps(tailedNow.get(tailOf(t)));
+        keys.set(t, JSON.stringify([key, tailOf(t), withTags ? tagSet(t) : '']));
+      }
+    }
+  }
+  return { before: groupBy(baseline, (t) => keys.get(t)!), now: groupBy(current, (t) => keys.get(t)!) };
 }
 
 export function compareTests(baseline: BaselineTests, current: CurrentTests, map: { screens: string[]; calls: string[] }) {
-  const now = byKey(currentTests(current, new Set(map.calls)));
-  const before = byKey(baseline.tests);
+  const { before, now } = matchKeys(baseline.tests, currentTests(current, new Set(map.calls)));
   let compared = 0;
   let notUnderNode = 0;
   let onlyInBaseline = 0;

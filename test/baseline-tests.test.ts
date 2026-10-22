@@ -134,6 +134,72 @@ test('a test that passed through a screen in one project and ran without a trace
   }), [summary(1, 0, 0, 1, 0, 0)]);
 });
 
+test('tests of the same title in different files are told apart by the end of their paths, one folder deep or two', () => {
+  const base = was(
+    { title: 'renders', file: '/ci/app/src/a.test.js', status: 'pass' },
+    { title: 'renders', file: '/ci/app/src/b.test.js', status: 'pass' },
+    { title: 'replays', file: '/ci/app/src/entities/Replay/ReplayDSL.test.js', status: 'pass' },
+    { title: 'replays', file: '/ci/app/src/workers/Evaluation/__tests__/ReplayDSL.test.js', status: 'pass' },
+  );
+  assert.deepEqual(lines(base, { importers: { '/a#A': [
+    { title: 'renders', file: '/home/me/app/src/a.test.js', status: 'pass' },
+    { title: 'renders', file: '/home/me/app/src/b.test.js', status: 'fail' },
+    { title: 'replays', file: '/home/me/app/src/entities/Replay/ReplayDSL.test.js', status: 'pass' },
+    { title: 'replays', file: '/home/me/app/src/workers/Evaluation/__tests__/ReplayDSL.test.js', status: 'pending' },
+  ] } }), [
+    summary(4, 1, 1, 0, 0, 0),
+    '  pass→fail ← /home/me/app/src/b.test.js:1 renders — screen /a#A',
+    '  pass→pending ← /home/me/app/src/workers/Evaluation/__tests__/ReplayDSL.test.js:1 replays — screen /a#A',
+  ]);
+});
+
+test('verdict lines of the same name are told apart by their tags', () => {
+  const verdict = (line: number, screen: string, status: TestStatus) => ({ title: 'cleanup', file: 'checks.log', line, tags: [`screen:${screen}`], status });
+  const base = was(verdict(3, '/a#A', 'pass'), verdict(5, '/b#B', 'pass'));
+  assert.deepEqual(lines(base, { nodes: { '/a#A': [verdict(3, '/a#A', 'fail')], '/b#B': [verdict(7, '/b#B', 'pass')] } }), [
+    summary(2, 1, 0, 0, 0, 0),
+    '  pass→fail ← checks.log:3 cleanup — screen /a#A',
+  ]);
+});
+
+test('tests the same in title, project, path end and tags are one test with the worst status of their runs', () => {
+  const verdict = (line: number, status: TestStatus) => ({ title: 'cleanup', file: 'checks.log', line, tags: ['screen:/a#A'], status });
+  assert.deepEqual(lines(was(verdict(3, 'pass'), verdict(5, 'pass')), { nodes: { '/a#A': [verdict(3, 'pass'), verdict(8, 'pending')] } }), [
+    summary(1, 0, 1, 0, 0, 0),
+    '  pass→pending ← checks.log:3 cleanup — screen /a#A',
+  ]);
+});
+
+test('a Jest test whose absolute path differs only before the checkout is the same test', () => {
+  const base = was({ title: 'works', file: '/home/u1/repo/src/x/a.test.js', status: 'pass' }, { title: 'works', file: '/home/u1/repo/src/y/a.test.js', status: 'pass' });
+  assert.deepEqual(lines(base, { importers: { '/a#A': [
+    { title: 'works', file: '/builds/repo/src/x/a.test.js', status: 'pass' },
+    { title: 'works', file: '/builds/repo/src/y/a.test.js', status: 'fail' },
+  ] } }), [summary(2, 1, 0, 0, 0, 0), '  pass→fail ← /builds/repo/src/y/a.test.js:1 works — screen /a#A']);
+});
+
+test('a shared test run twice in two Vitest projects without a project name is one test with the worst status', () => {
+  const shared = { title: 'formats', file: '/ci/shared/format.test.js', line: 4 };
+  assert.deepEqual(lines(was({ ...shared, status: 'pass' }, { ...shared, status: 'pass' }), { importers: { '/a#A': [{ ...shared, status: 'pass' }, { ...shared, status: 'fail' }] } }), [
+    summary(1, 1, 0, 0, 0, 0),
+    '  pass→fail ← /ci/shared/format.test.js:4 formats — screen /a#A',
+  ]);
+});
+
+test('a title shared by two tests of one file and one test of another file is split by the path end first, with the length either side needs', () => {
+  const verdict = (file: string, line: number, status: TestStatus) => ({ title: 'cleanup', file, line, tags: ['screen:/a#A'], status });
+  const base = was(verdict('document-checks.log', 3, 'pass'), verdict('document-checks.log', 9, 'pass'), verdict('storage-checks.txt', 2, 'pass'));
+  assert.deepEqual(lines(base, { nodes: { '/a#A': [verdict('document-checks.log', 3, 'pass'), verdict('document-checks.log', 9, 'pass'), verdict('storage-checks.txt', 2, 'fail')] } }), [
+    summary(2, 1, 0, 0, 0, 0),
+    '  pass→fail ← storage-checks.txt:2 cleanup — screen /a#A',
+  ]);
+  const synced = (file: string, status: TestStatus) => ({ title: 'syncs', file, status });
+  assert.deepEqual(lines(was(synced('/ci/a/x.test.js', 'pass')), { importers: { '/a#A': [synced('/me/a/x.test.js', 'fail'), synced('/me/b/x.test.js', 'pass')] } }), [
+    summary(1, 1, 0, 0, 0, 1),
+    '  pass→fail ← /me/a/x.test.js:1 syncs — screen /a#A',
+  ]);
+});
+
 function inFolder(files: Record<string, unknown>, fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-baseline-tests-'));
   try {
