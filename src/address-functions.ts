@@ -1,5 +1,5 @@
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { ArrowFunctionExpression, FunctionDeclaration, FunctionExpression, Identifier, Node, StringLiteral } from '@babel/types';
+import type { ArrowFunctionExpression, ClassDeclaration, ClassMethod, FunctionDeclaration, FunctionExpression, Identifier, Node, StringLiteral } from '@babel/types';
 import { FOLLOWED } from './screen-links.ts';
 
 export const UNREADABLE_PIECE = '\0';
@@ -7,6 +7,7 @@ export const MOST_ADDRESSES = 8;
 const MOST_BRANCHES = 64;
 
 export type AddressFunction = NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration>;
+type Followable = AddressFunction | NodePath<ClassMethod>;
 // value 는 끝까지 읽은 값이고, parts 는 고정 문자열과 읽다 멈춘 지점을 순서대로 담는다.
 export type Leaf = { value: unknown } | { parts: (string | NodePath)[] };
 // whole 은 함수가 받은 인자를 그대로 돌려준 갈래의, 부른 곳에 적힌 그 인자다.
@@ -18,6 +19,7 @@ interface Reading {
   declaredValue: (scope: Scope, name: string) => NodePath | null;
   declaredFunction: (scope: Scope, name: string) => AddressFunction | null;
   namespaceFunction: (scope: Scope, chain: string[]) => AddressFunction | null;
+  declaredClass: (scope: Scope, name: string) => NodePath<ClassDeclaration> | null;
   passThrough: (name: string) => boolean;
 }
 
@@ -31,7 +33,7 @@ type Val =
   | { unknown: NodePath };
 type Out = { val: Val; made: boolean; whole?: NodePath };
 type Env = Map<Binding, Out>;
-interface At { env: Env | null; fn: AddressFunction | null; branching: boolean; depth: number }
+interface At { env: Env | null; fn: Followable | null; branching: boolean; depth: number }
 
 const OUTSIDE: At = { env: null, fn: null, branching: false, depth: 0 };
 const NOT_KNOWN = Symbol('not known');
@@ -118,7 +120,7 @@ function limited<T>(list: T[], merge: (list: T[]) => T[] = (x) => x) {
   return kept;
 }
 
-function touchesOwn(x: NodePath<any>, fn: AddressFunction): boolean {
+function touchesOwn(x: NodePath<any>, fn: Followable): boolean {
   const own = (p: NodePath<any>) => Boolean(p.scope.getBinding(p.node.name)?.path.isDescendant(fn));
   if (x.isIdentifier()) return own(x);
   let found = false;
@@ -132,9 +134,12 @@ function touchesOwn(x: NodePath<any>, fn: AddressFunction): boolean {
   return found;
 }
 
+// 읽지 못한 조각만으로 되어 있어 무슨 값인지 모르는 값
+const opaque = ({ val }: Out) => 'unknown' in val || ('pieces' in val && val.pieces.length > 0 && val.pieces.every((x) => 'stop' in x));
+
 const unwrapped = (p: NodePath<any>): NodePath<any> => (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isTypeCastExpression() || p.isParenthesizedExpression() ? unwrapped(p.get('expression') as NodePath<any>) : p);
 
-export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, passThrough }: Reading) {
+export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, declaredClass, passThrough }: Reading) {
   const reading = new Set<Node>();
 
   function leafOut(p: NodePath): Out {
@@ -196,10 +201,14 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     if (!fn || fn.node.async || fn.node.generator) return [leafOut(p)];
     const spread = args.findIndex((a) => a.isSpreadElement());
     const lists = limited(product((spread < 0 ? args : args.slice(0, spread)).map((a) => values(a, given))));
+    return followed(fn, p, () => lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((e) => returnedValues(fn, e, p, at.depth + 1))));
+  }
+
+  // 따라 읽은 함수나 getter 가 돌려준 갈래에, 그 안에서 만든 조각이라는 표시를 붙인다.
+  function followed(fn: Followable, p: NodePath<any>, read: () => Out[]): Out[] {
     reading.add(fn.node);
     try {
-      const outs = distinct(lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((e) => returnedValues(fn, e, p, at.depth + 1))));
-      return limited(outs).map((o) => {
+      return limited(distinct(read())).map((o) => {
         const whole = o.whole && { whole: o.whole };
         if (!('pieces' in o.val)) return { val: o.val, made: true, ...whole };
         const pieces = o.val.pieces.every((x) => 'empty' in x) ? [{ empty: p }] : o.val.pieces.map((x) => ('text' in x ? { ...x, made: true } : x));
@@ -211,6 +220,27 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     } finally {
       reading.delete(fn.node);
     }
+  }
+
+  // 매개변수에 클래스 이름 하나가 타입으로 적혀 있으면, 그 클래스 몸통에 직접 적힌 같은 이름의 getter
+  function getterOf(object: NodePath<any>, key: string): NodePath<ClassMethod> | null {
+    const binding = object.isIdentifier() ? object.scope.getBinding(object.node.name) : undefined;
+    const annotation = binding?.kind === 'param' && binding.path.isIdentifier() ? binding.path.node.typeAnnotation : null;
+    const type = annotation?.type === 'TSTypeAnnotation' ? annotation.typeAnnotation : null;
+    const found = type?.type === 'TSTypeReference' && type.typeName.type === 'Identifier' ? declaredClass(binding!.scope, type.typeName.name) : null;
+    const getter = found?.get('body.body').find((m) => m.isClassMethod({ kind: 'get', static: false, computed: false }) && keyOf(m.node.key) === key);
+    return (getter as NodePath<ClassMethod> | undefined) ?? null;
+  }
+
+  function memberValues(p: NodePath<any>, at: At): Out[] {
+    const key = (p.node.property as Identifier).name;
+    const object = p.get('object') as NodePath;
+    return values(object, at).flatMap((o) => {
+      const getter = opaque(o) ? getterOf(object, key) : null;
+      if (!getter) return [member(o, key, p)];
+      if (reading.has(getter.node) || at.depth >= FOLLOWED) return [unknownAt(p)];
+      return followed(getter, p, () => returnedValues(getter, new Map(), p, at.depth + 1));
+    });
   }
 
   function bound(fn: AddressFunction, given: Out[], spread: NodePath | null, depth: number): Env[] {
@@ -247,14 +277,14 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     });
   }
 
-  function returnedValues(fn: AddressFunction, env: Env, at: NodePath, depth: number): Out[] {
+  function returnedValues(fn: Followable, env: Env, at: NodePath, depth: number): Out[] {
     const body = fn.get('body') as NodePath<any>;
     if (!body.isBlockStatement()) return values(body, { env, fn, branching: true, depth });
     const { returned, open } = walk(body.get('body'), [env], fn, depth);
     return [...returned, ...open.map(() => unknownAt(at))];
   }
 
-  function walk(statements: NodePath<any>[], envs: Env[], fn: AddressFunction, depth: number): { returned: Out[]; open: Env[] } {
+  function walk(statements: NodePath<any>[], envs: Env[], fn: Followable, depth: number): { returned: Out[]; open: Env[] } {
     const returned: Out[] = [];
     const inner = (env: Env): At => ({ env, fn, branching: true, depth });
     for (const s of statements) {
@@ -364,10 +394,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       return choose(left, truth, p.node.operator === '||' ? (o) => [o] : right, p.node.operator === '||' ? right : (o) => [o]);
     }
     if (p.isIdentifier()) return identifier(p, at);
-    if ((p.isMemberExpression() || p.isOptionalMemberExpression()) && inEnv(p, at)) {
-      const key = (p.node.property as Identifier).name;
-      return values(p.get('object') as NodePath, at).map((o) => member(o, key, p));
-    }
+    if ((p.isMemberExpression() || p.isOptionalMemberExpression()) && inEnv(p, at)) return memberValues(p, at);
     if (p.isCallExpression()) return call(p, at);
     if (p.isObjectExpression()) return objectValues(p, at);
     return [leafOut(p)];

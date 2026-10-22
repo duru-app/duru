@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { ArrowFunctionExpression, CallExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
+import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
 import type { AddressFunction } from './address-functions.ts';
@@ -783,7 +783,7 @@ export async function extractClient(config: any) {
   }
 
   const passThrough = (name: string) => (config.passThroughCalls ?? []).includes(name);
-  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction, passThrough });
+  const linkReading = addressReader({ leaf: (p) => (lossless(p) ? { value: evaluate(p) } : { parts: [p] }), declaredValue, declaredFunction, namespaceFunction, declaredClass, passThrough });
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
   // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니다.
@@ -1170,6 +1170,7 @@ export async function extractClient(config: any) {
     declaredValue,
     declaredFunction,
     namespaceFunction,
+    declaredClass,
     passThrough,
   });
 
@@ -1466,10 +1467,17 @@ export async function extractClient(config: any) {
     return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
   }
 
-  function exportedFunction(file: string | null, name: string): AddressFunction | null {
+  // 내보낸 이름을 따라가 그 이름을 선언한 자리. default 면 export default 뒤에 적힌 것이다.
+  function exportedDeclaration(file: string | null, name: string): NodePath | null {
     const found = file ? follower.declaration(file, name) : null;
     const program = found && programOf(found.file);
-    const declared = !program ? null : found!.name === 'default' ? program.get('body').find((s) => s.isExportDefaultDeclaration())?.get('declaration') as NodePath | undefined : program.scope.getBinding(found!.name)?.path;
+    if (!program) return null;
+    if (found!.name !== 'default') return program.scope.getBinding(found!.name)?.path ?? null;
+    return (program.get('body').find((s) => s.isExportDefaultDeclaration())?.get('declaration') as NodePath | undefined) ?? null;
+  }
+
+  function exportedFunction(file: string | null, name: string): AddressFunction | null {
+    const declared = exportedDeclaration(file, name);
     if (declared?.isFunctionDeclaration()) return declared;
     const value = declared?.isVariableDeclarator() && declared.get('id').isIdentifier() && (declared.parent as VariableDeclaration).kind === 'const' ? declared.get('init') as NodePath : declared;
     return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
@@ -1479,6 +1487,14 @@ export async function extractClient(config: any) {
     const binding = scope.getBinding(chain[0]);
     const from = binding?.kind === 'module' ? importedName(binding) : null;
     return from?.name === '*' ? exportedFunction(from.file, chain[1]) : null;
+  }
+
+  function declaredClass(scope: Scope, name: string): NodePath<ClassDeclaration> | null {
+    const binding = scope.getBinding(name);
+    if (binding?.path.isClassDeclaration()) return binding.path;
+    const from = binding?.kind === 'module' ? importedName(binding) : null;
+    const declared = from && from.name !== '*' ? exportedDeclaration(from.file, from.name) : null;
+    return declared?.isClassDeclaration() ? declared : null;
   }
 
   const leadingPiece = (p: NodePath): NodePath => (p.isTemplateLiteral() && p.node.quasis[0].value.cooked === '' && p.node.expressions.length ? leadingPiece(p.get('expressions.0') as NodePath)

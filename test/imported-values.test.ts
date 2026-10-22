@@ -274,6 +274,38 @@ test('a route path whose function gives two different paths is {?}, and its rout
   ]);
 });
 
+test('a route path whose function reads a getter that returns a value duru cannot read stops at that value in the class\'s file', async () => {
+  const group = `export default class Group {
+  url = '';
+
+  get path() {
+    return this.url;
+  }
+}
+`;
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import { groupPath } from './paths/group';
+import Simple from './pages/Simple';
+
+export default function ImportedRoutes({ group }: { group: any }) {
+  return (
+    <Routes>
+      <Route path={\`\${groupPath(group)}/old\`} element={<Simple />} />
+    </Routes>
+  );
+}
+`;
+  const configFile = fixtureCopy({ 'models/Group.ts': group, 'paths/group.ts': "import Group from '../models/Group';\n\nexport const groupPath = (g: Group) => g.path;\n", 'ImportedRoutes.tsx': routes });
+  const map = await build(configFile);
+  assert.equal(pathsOf(map).Simple, '{?}/old');
+  const lineOf = (text: string, source = routes) => source.split('\n').findIndex((l) => l.includes(text)) + 1;
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('route path not read')), [
+    `  route path not read ← ImportedRoutes.tsx:${lineOf('groupPath(group)')}: stopped at this.url in models/Group.ts:${lineOf('this.url', group)}, only {?}/old`,
+  ]);
+});
+
 test('a route path whose function gives the empty text as its leading piece keeps the rest of the path, and names the call where it stopped', async () => {
   const paths = `import { settings } from 'app-settings';
 
