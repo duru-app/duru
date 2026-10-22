@@ -343,9 +343,10 @@ test('a middleware made with @redux-saga/core in one file and run in another, ef
 });
 
 test('without a saga run, or without redux-saga, no request or link of a saga comes to a screen, and the summary says when redux-saga is imported but nothing runs it', async () => {
-  const unrun = fixtureCopy({ ...SAGA_APP, 'sagas/store.ts': null });
+  const unrun = fixtureCopy({ ...MOVING_APP, 'sagas/store.ts': null }, HISTORY);
   const map = await build(unrun);
   assert.deepEqual(map.screens.flatMap((s) => s.apiCalls.filter((c) => c.actions)), []);
+  assert.deepEqual(map.screens.flatMap((s) => s.links.filter((l) => l.actions)), []);
   assert.deepEqual(map.sagas, { runs: [], watchers: 0 });
   const out = spawnSync(process.execPath, [CLI, 'extract', unrun], { encoding: 'utf8' });
   assert.equal(out.status, 0, out.stderr);
@@ -360,10 +361,11 @@ test('without a saga run, or without redux-saga, no request or link of a saga co
   assert.equal(plain.sagas, undefined);
 });
 
-const MOVES = `import { fork, takeEvery, takeLatest } from 'redux-saga/effects';
+const MOVES = `import { call, fork, takeEvery, takeLatest, takeLeading } from 'redux-saga/effects';
 import Option from '../_define/Option';
 import history from './history';
 import { goNotes } from './go';
+import { goTail } from './tail';
 import { ActionTypes } from './types';
 
 function* afterContracts(action: { payload: string; url: string }) {
@@ -372,11 +374,17 @@ function* afterContracts(action: { payload: string; url: string }) {
   history.push(\`/notes/\${action.payload}\`);
   history.push(action.url);
   history.push(urlOf(action.payload));
+  history.push(Option.ROUTE_PATH.NOWHERE);
   goNotes();
+  goTail();
 }
 
 function* afterSigned() {
   history.replace('/quiet');
+}
+
+function* onSigned() {
+  yield call(afterSigned);
 }
 
 function* unwatched() {
@@ -386,6 +394,7 @@ function* unwatched() {
 export function* moveSaga() {
   yield takeLatest(ActionTypes.LOAD_CONTRACTS, afterContracts);
   yield takeEvery([ActionTypes.LOAD_SIGNED, ActionTypes.UPDATE_TERMS], afterSigned);
+  yield takeLeading(ActionTypes.LOAD_SIGNED, onSigned);
   yield fork(unwatched);
 }
 
@@ -396,6 +405,7 @@ const MOVING_APP = {
   ...SAGA_APP,
   'sagas/history.ts': "import { createBrowserHistory } from 'history';\n\nexport default createBrowserHistory();\n",
   'sagas/go.ts': "import history from './history';\nexport const goNotes = () => history.push('/notes');\n",
+  'sagas/tail.ts': "import Option from '../_define/Option';\nimport history from './history';\nexport const goTail = () => history.push(Option.ROUTE_PATH.HOME + '/tail');\n",
   'sagas/moves.ts': MOVES,
   'sagas/root.ts': ROOT.replace("import * as handlers from './handlers';", "import * as handlers from './handlers';\nimport { moveSaga } from './moves';").replace('fork(afterNotices),', 'fork(afterNotices),\n    fork(moveSaga),'),
   'sagas/screens/Notes.tsx': `import { useDispatch } from 'react-redux';
@@ -419,20 +429,23 @@ export default function Notes() {
 };
 const HISTORY = { history: { import: './sagas/history', name: 'default' } };
 
+const lineOf = (text: string, part: string) => text.split('\n').findIndex((l) => l.includes(part)) + 1;
+const moved = (part: string) => `sagas/moves.ts:${lineOf(MOVES, part)}`;
 const linksOf = (map: ScreenMap, id: string) =>
   map.screens.find((s) => s.id === id)!.links.map((l) => [l.to, `${l.file}:${l.line}`, l.targets, l.actions?.map((a) => `${a.type} ← ${a.dispatchedAt.join(', ')}`)]);
 
-test('a move a saga makes is a link of each screen that dispatches an action the saga waits for, with the action types and the places the screen dispatches them', async () => {
+test('a move a saga makes is a link of each screen that dispatches an action the saga waits for, with the action types and the places the screen dispatches them, sorted by file and line, and listed once when two watchers of one type reach it', async () => {
   const map = await build(fixtureCopy(MOVING_APP, HISTORY));
   const loaded = ['ActionTypes.LOAD_CONTRACTS ← sagas/screens/Contracts.tsx:8'];
   assert.deepEqual(linksOf(map, '/contracts#Contracts'), [
     ['/notes', 'sagas/go.ts:2', ['/notes#Notes'], loaded],
-    ['/contracts', 'sagas/moves.ts:8', ['/contracts#Contracts'], loaded],
-    ['/home', 'sagas/moves.ts:9', ['/home#Home'], loaded],
-    ['/notes/{*}', 'sagas/moves.ts:10', ['/notes#Notes'], loaded],
+    ['/contracts', moved("push('/contracts')"), ['/contracts#Contracts'], loaded],
+    ['/home', moved('ROUTE_PATH.HOME)'), ['/home#Home'], loaded],
+    ['/notes/{*}', moved('/notes/'), ['/notes#Notes'], loaded],
+    ['/home/tail', 'sagas/tail.ts:3', ['/home#Home'], loaded],
   ]);
   assert.deepEqual(linksOf(map, '/signed#Signed'), [
-    ['/quiet', 'sagas/moves.ts:17', ['/quiet#Quiet'], ['ActionTypes.LOAD_SIGNED ← sagas/screens/Signed.tsx:9', 'ActionTypes.UPDATE_TERMS ← sagas/screens/Signed.tsx:11']],
+    ['/quiet', moved("replace('/quiet')"), ['/quiet#Quiet'], ['ActionTypes.LOAD_SIGNED ← sagas/screens/Signed.tsx:9', 'ActionTypes.UPDATE_TERMS ← sagas/screens/Signed.tsx:11']],
   ]);
   const entries = map.entries.map((e) => e.screen);
   for (const id of ['/contracts#Contracts', '/notes#Notes', '/quiet#Quiet']) assert.ok(!entries.includes(id), id);
@@ -441,15 +454,17 @@ test('a move a saga makes is a link of each screen that dispatches an action the
 
 test('a saga move whose address comes from the action or cannot be read gives no link and no {?}, nor does a move in a saga no watcher starts, and a move the screen\'s own code also reaches is listed once without actions', async () => {
   const map = await build(fixtureCopy(MOVING_APP, HISTORY));
-  const fromSagas = map.screens.flatMap((s) => s.links.filter((l) => l.file === 'sagas/moves.ts').map((l) => l.to));
-  assert.ok(!fromSagas.includes('{?}'));
-  assert.ok(!fromSagas.includes('/signed'));
+  const fromSagas = map.screens.flatMap((s) => s.links.filter((l) => l.file === 'sagas/moves.ts'));
+  assert.ok(!fromSagas.some((l) => l.to === '{?}'));
+  assert.ok(!fromSagas.some((l) => l.to === '/signed'));
+  assert.ok(!fromSagas.some((l) => l.route === 'NOWHERE'));
   const loaded = ['ActionTypes.LOAD_CONTRACTS ← sagas/screens/Notes.tsx:14'];
   assert.deepEqual(linksOf(map, '/notes#Notes'), [
     ['/notes', 'sagas/go.ts:2', ['/notes#Notes'], undefined],
-    ['/contracts', 'sagas/moves.ts:8', ['/contracts#Contracts'], loaded],
-    ['/home', 'sagas/moves.ts:9', ['/home#Home'], loaded],
-    ['/notes/{*}', 'sagas/moves.ts:10', ['/notes#Notes'], loaded],
+    ['/contracts', moved("push('/contracts')"), ['/contracts#Contracts'], loaded],
+    ['/home', moved('ROUTE_PATH.HOME)'), ['/home#Home'], loaded],
+    ['/notes/{*}', moved('/notes/'), ['/notes#Notes'], loaded],
+    ['/home/tail', 'sagas/tail.ts:3', ['/home#Home'], loaded],
   ]);
   assert.deepEqual(linksOf(map, '/notices#Notices'), []);
 });
@@ -457,10 +472,9 @@ test('a saga move whose address comes from the action or cannot be read gives no
 test('the summary counts the moves of sagas that are links of some screen', () => {
   const out = spawnSync(process.execPath, [CLI, 'extract', fixtureCopy(MOVING_APP, HISTORY)], { encoding: 'utf8' });
   assert.equal(out.status, 0, out.stderr);
-  assert.match(out.stdout, /^redux-saga runs from sagas\/store\.ts:6 \| watchers 11 \| requests of sagas on screens 7 \| links of sagas on screens 5$/m);
+  assert.match(out.stdout, /^redux-saga runs from sagas\/store\.ts:6 \| watchers 12 \| requests of sagas on screens 7 \| links of sagas on screens 6$/m);
 });
 
-const lineOf = (text: string, part: string) => text.split('\n').findIndex((l) => l.includes(part)) + 1;
 const RUN_AT_LOAD = (exports: string, imports = '') => `import createSagaMiddleware from 'redux-saga';
 import { createBrowserHistory } from 'history';
 ${imports}import { rootSaga } from './root';
