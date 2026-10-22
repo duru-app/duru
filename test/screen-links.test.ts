@@ -1598,3 +1598,88 @@ export default function Home({ team }) {
   const at = (part: string) => lineOf(home, part);
   assert.deepEqual(addressesAt(map, '/home#Home'), [['/team/{*}', at('selfPath(')], ['/team/none', at('selfPath(')], ['{?}', at('startLoop(')]]);
 });
+
+test('a class imported with import type is found for the getter of a parameter typed with it, also through a value re-export', async () => {
+  const doc = `export default class Doc {
+  slug = '';
+
+  get path() {
+    return \`/team/\${this.slug}\`;
+  }
+}
+`;
+  const paths = `import type Doc from './models/Doc';
+import type { Doc as Named } from './models';
+
+export const docPath = (doc: Doc) => doc.path;
+export const namedPath = (doc: Named) => doc.path;
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { docPath, namedPath } from './paths';
+
+export default function Home({ doc }) {
+  return (
+    <nav>
+      <Link to={docPath(doc)}>doc</Link>
+      <Link to={namedPath(doc)}>named</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/Doc.ts': doc, 'models/index.ts': "export { default as Doc } from './Doc';\n" }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/team/{*}', at('docPath('), [], ['/team/:team#Team']],
+    ['/team/{*}', at('namedPath('), [], ['/team/:team#Team']],
+  ]);
+});
+
+test('a class imported with import { type X } beside a value import is found for the getter', async () => {
+  const help = `export class Help {
+  get path() {
+    return '/help/x';
+  }
+}
+
+export const other = '/help';
+`;
+  const paths = `import { type Help, other } from './models/Help';
+
+export const helpPath = (help: Help) => help.path;
+export const otherPath = () => other;
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { helpPath } from './paths';
+
+export default function Home({ help }) {
+  return <Link to={helpPath(help)}>help</Link>;
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/Help.ts': help }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/help/x', lineOf(home, 'helpPath('), [], ['/help/:page?#Help']]]);
+});
+
+test('a class re-exported only as a type is not found, so the address stays {?}', async () => {
+  const model = (name: string, to: string) => `export class ${name} {\n  get path() {\n    return '${to}';\n  }\n}\n`;
+  const paths = `import type { Login, Start } from './models';
+
+export const startPath = (start: Start) => start.path;
+export const loginPath = (login: Login) => login.path;
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { loginPath, startPath } from './paths';
+
+export default function Home({ item }) {
+  return (
+    <nav>
+      <Link to={startPath(item)}>start</Link>
+      <Link to={loginPath(item)}>login</Link>
+    </nav>
+  );
+}
+`;
+  const models = "export type { Start } from './StartModel';\nexport { type Login } from './LoginModel';\n";
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/index.ts': models, 'models/StartModel.ts': model('Start', '/start'), 'models/LoginModel.ts': model('Login', '/login') }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['{?}', at('startPath(')], ['{?}', at('loginPath(')]]);
+});

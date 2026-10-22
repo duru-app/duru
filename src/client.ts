@@ -1489,10 +1489,31 @@ export async function extractClient(config: any) {
     return from?.name === '*' ? exportedFunction(from.file, chain[1]) : null;
   }
 
+  // 파일을 적힌 그대로 다시 읽어, 타입으로만 가져온 이름마다 가져온 파일과 그 파일에서의 이름
+  const typeImports = new Map<string, Map<string, { file: string | null; name: string }>>();
+  function typeImport(file: string, name: string) {
+    if (!typeImports.has(file)) {
+      const found = new Map<string, { file: string | null; name: string }>();
+      try {
+        for (const line of parseSource(file, { asWritten: true }).ast.program.body) {
+          if (line.type !== 'ImportDeclaration') continue;
+          for (const spec of line.specifiers) {
+            if (spec.type === 'ImportNamespaceSpecifier' || (line.importKind !== 'type' && (spec.type !== 'ImportSpecifier' || spec.importKind !== 'type'))) continue;
+            const imported = spec.type === 'ImportDefaultSpecifier' ? 'default' : spec.imported.type === 'Identifier' ? spec.imported.name : spec.imported.value;
+            found.set(spec.local.name, { file: imports.resolve(file, line.source.value), name: imported });
+          }
+        }
+      } catch {}
+      typeImports.set(file, found);
+    }
+    return typeImports.get(file)!.get(name) ?? null;
+  }
+
   function declaredClass(scope: Scope, name: string): NodePath<ClassDeclaration> | null {
     const binding = scope.getBinding(name);
     if (binding?.path.isClassDeclaration()) return binding.path;
-    const from = binding?.kind === 'module' ? importedName(binding) : null;
+    const file = binding ? null : programFile.get(scope.getProgramParent().block);
+    const from = binding?.kind === 'module' ? importedName(binding) : file ? typeImport(file, name) : null;
     const declared = from && from.name !== '*' ? exportedDeclaration(from.file, from.name) : null;
     return declared?.isClassDeclaration() ? declared : null;
   }
