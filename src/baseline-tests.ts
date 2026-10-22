@@ -17,9 +17,15 @@ export interface BaselineTest {
   result: string;
 }
 
+export interface BaselineResult {
+  result: string;
+  startedAt: string;
+}
+
 export interface BaselineTests {
   folder: string;
   label: string;
+  results: BaselineResult[];
   tests: BaselineTest[];
 }
 
@@ -36,8 +42,18 @@ function commonFolder(folders: string[]) {
   return (differs === -1 ? first : first.slice(0, differs)).join(path.sep) || path.sep;
 }
 
+function startedAt(format: string, file: string) {
+  if (format === 'playwright' || format === 'vitest') {
+    const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const at = format === 'playwright' ? report.stats?.startTime : report.startTime;
+    if ((typeof at === 'string' || typeof at === 'number') && !Number.isNaN(new Date(at).getTime())) return new Date(at).toISOString();
+  }
+  return fs.statSync(file).mtime.toISOString();
+}
+
 export function readBaselineTests(config: { configDir: string; baselineTests: Source[] }): BaselineTests {
   const tests: BaselineTest[] = [];
+  const results: BaselineResult[] = [];
   const folders: string[] = [];
   for (const source of config.baselineTests) {
     const fail = (reason: string) => new Error(`baselineTests ${fromConfig(config.configDir, source.path)} could not be read: ${reason}`);
@@ -45,14 +61,14 @@ export function readBaselineTests(config: { configDir: string; baselineTests: So
     folders.push(fs.statSync(source.path).isDirectory() ? source.path : path.dirname(source.path));
     for (const file of resultFiles(source.path, READERS[source.format].extensions)) {
       const result = fromConfig(config.configDir, file);
-      for (const t of READERS[source.format].read(file) ?? []) {
-        tests.push({ title: t.title, tags: t.tags, file: t.file ?? null, line: t.line ?? null, project: t.project ?? null, status: t.status, result });
-      }
+      const read = READERS[source.format].read(file) ?? [];
+      if (read.length) results.push({ result, startedAt: startedAt(source.format, file) });
+      for (const t of read) tests.push({ title: t.title, tags: t.tags, file: t.file ?? null, line: t.line ?? null, project: t.project ?? null, status: t.status, result });
     }
   }
   const folder = commonFolder(folders);
   const relative = path.relative(config.configDir, folder);
-  return { folder: relative.startsWith('..') || path.isAbsolute(relative) ? folder : relative.split(path.sep).join('/') || '.', label: path.basename(folder), tests };
+  return { folder: relative.startsWith('..') || path.isAbsolute(relative) ? folder : relative.split(path.sep).join('/') || '.', label: path.basename(folder), results, tests };
 }
 
 type Rows = Record<string, any[]> | undefined;
@@ -115,6 +131,7 @@ interface CurrentTest {
 }
 
 const worst = (statuses: TestStatus[]) => statuses.reduce((w, s) => (STATUS_RANK[s] > STATUS_RANK[w] ? s : w));
+const byRow = (a: TestRow, b: TestRow) => compare(a.kind === 'call', b.kind === 'call') || compare(a.node, b.node) || compare(a.source, b.source) || compare(a.project ?? '', b.project ?? '');
 const byPlace = (a: Place, b: Place) => compare(a.file ?? '', b.file ?? '') || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.project ?? '', b.project ?? '');
 
 function currentTests(current: CurrentTests, calls: Set<string>) {
@@ -213,16 +230,46 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
       const nowStatus = worst(match.map((t) => t.status));
       if (status !== 'pass' || nowStatus === 'pass') continue;
       const under = match.filter((t) => t.rows.length);
+      const results = new Set(tests.map((t) => t.result));
       regressions.push({
         change: nowStatus === 'fail' ? ('pass→fail' as const) : ('pass→pending' as const),
         test: under.map((t) => t.place).sort(byPlace)[0],
-        rows: under.flatMap((t) => t.rows),
+        baseline: baseline.results.filter((r) => results.has(r.result)),
+        rows: under.flatMap((t) => t.rows).sort(byRow),
       });
     }
   }
   const onlyNow = [...now].filter(([key, tests]) => !before.has(key) && tests.some((t) => t.rows.length)).length;
   regressions.sort((a, b) => byPlace(a.test, b.test));
-  return { folder: baseline.folder, label: baseline.label, compared, notUnderNode, onlyInBaseline, onlyNow, regressions, ...onlyInBaselineOf(gone, baseline.tests, nowFiles, onMap) };
+  return {
+    folder: baseline.folder,
+    label: baseline.label,
+    results: baseline.results,
+    compared,
+    notUnderNode,
+    onlyInBaseline,
+    onlyNow,
+    regressions,
+    byNode: countsByNode(regressions.map((r) => r.rows)),
+    ...onlyInBaselineOf(gone, baseline.tests, nowFiles, onMap),
+  };
+}
+
+type Counts = { fail: number; pending: number };
+
+function countsByNode(regressed: TestRow[][]) {
+  const byNode: Record<string, { listed: Counts; chipOnly: Counts }> = {};
+  for (const rows of regressed) {
+    for (const node of new Set(rows.map((r) => r.node))) {
+      const failing = rows.filter((r) => r.node === node && r.status !== 'pass');
+      const listed = failing.filter((r) => r.listed);
+      const counted = listed.length ? listed : failing;
+      if (!counted.length) continue;
+      const counts = (byNode[node] ??= { listed: { fail: 0, pending: 0 }, chipOnly: { fail: 0, pending: 0 } });
+      counts[listed.length ? 'listed' : 'chipOnly'][worst(counted.map((r) => r.status)) as keyof Counts] += 1;
+    }
+  }
+  return byNode;
 }
 
 // 두 쪽에서 저마다 그 파일을 다른 파일과 가르는 가장 짧은 꼬리를 구하고, 긴 쪽의 길이로 꼬리가 같으면 같은 파일이다.

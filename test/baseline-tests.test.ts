@@ -20,6 +20,7 @@ type Now = Partial<Record<'nodes' | 'importers' | 'passed' | 'awaitingTag' | 'di
 const was = (...runs: Run[]): BaselineTests => ({
   folder: 'releases/1.5.0',
   label: '1.5.0',
+  results: [{ result: 'releases/1.5.0/e2e.json', startedAt: '2026-09-30T00:00:00.000Z' }],
   tests: runs.map((r) => ({ tags: [], file: 'a.spec.ts', line: 1, project: null, result: 'releases/1.5.0/e2e.json', ...r })),
 });
 const ran = (r: Row) => ({ tags: [], file: 'a.spec.ts', line: 1, project: null, source: 'results/e2e.json', format: 'playwright', ...r });
@@ -237,6 +238,24 @@ test('a Jest test file whose absolute path differs only before the checkout is n
   ]);
 });
 
+test('a regression on a row that only passed through a screen or only sent a call shows on that row but is not counted for the screen list', () => {
+  const walks = { title: 'walks', status: 'fail' as const };
+  const comparison = compareTests(was({ title: 'walks', status: 'pass' }, { title: 'handed', line: 2, status: 'pass' }), now({
+    passed: { '/a#A': [{ ...walks, level: 'visit' }], 'GET:/api/x': [{ ...walks, level: 'call' }], '/b#B': [{ ...walks, level: 'interact' }] },
+    awaitingTag: { '/c#C': [{ title: 'handed', line: 2, status: 'pending', level: 'visit' }] },
+  }), MAP);
+  const none = { fail: 0, pending: 0 };
+  assert.deepEqual(comparison.byNode, {
+    '/a#A': { listed: none, chipOnly: { fail: 1, pending: 0 } },
+    'GET:/api/x': { listed: none, chipOnly: { fail: 1, pending: 0 } },
+    '/b#B': { listed: { fail: 1, pending: 0 }, chipOnly: none },
+    '/c#C': { listed: { fail: 0, pending: 1 }, chipOnly: none },
+  });
+  const walked = comparison.regressions.find((r) => r.test.title === 'walks')!;
+  assert.deepEqual(walked.rows.map((r) => [r.node, r.via, r.level, r.listed]), [['/a#A', 'trace', 'visit', false], ['/b#B', 'trace', 'interact', true], ['GET:/api/x', 'trace', 'call', false]]);
+  assert.deepEqual(walked.baseline, [{ result: 'releases/1.5.0/e2e.json', startedAt: '2026-09-30T00:00:00.000Z' }]);
+});
+
 function inFolder(files: Record<string, unknown>, fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-baseline-tests-'));
   try {
@@ -263,6 +282,29 @@ test('the baseline is named by the nearest folder holding every baselineTests pa
     assert.deepEqual(named(['vitest', 'releases/1.5.0/unit']), ['releases/1.5.0/unit', 'unit']);
     assert.deepEqual(named(['playwright', 'e2e.json']), ['.', 'project']);
     assert.deepEqual(named(['playwright', '../kept/1.5.0/e2e.json']), [path.join(dir, 'kept/1.5.0'), '1.5.0']);
+  });
+});
+
+test('baselineTests gives each result file its start time: Playwright stats.startTime, Vitest or Jest startTime, and the file\'s modified time for JUnit, verdict logs and a report that has none', () => {
+  const junit = '<testsuite name="S"><testcase classname="com.example.T" name="t"/></testsuite>';
+  inFolder({
+    'releases/1.5.0/e2e.json': { ...playwrightReport('t'), stats: { startTime: '2026-09-30T09:00:00.000+09:00' } },
+    'releases/1.5.0/export.json': playwrightReport('u'),
+    'releases/1.5.0/unit.json': { ...vitestReport('v'), startTime: 1767603600000 },
+    'releases/1.5.0/TEST-T.xml': junit,
+    'releases/1.5.0/checks.log': 'VERDICT w: UPHOLDS\n',
+  }, (dir) => {
+    const modified = new Date('2026-10-01T12:00:00Z');
+    for (const file of ['export.json', 'TEST-T.xml', 'checks.log']) fs.utimesSync(path.join(dir, 'releases/1.5.0', file), modified, modified);
+    const read = readBaselineTests({ configDir: dir, baselineTests: [['playwright', 'e2e.json'], ['playwright', 'export.json'], ['vitest', 'unit.json'], ['junit', 'TEST-T.xml'], ['verdict', 'checks.log']].map(([format, file]) => ({ format, path: path.join(dir, 'releases/1.5.0', file), depth: 'ui' })) });
+    const at = (file: string) => path.join('releases/1.5.0', file);
+    assert.deepEqual(read.results, [
+      { result: at('e2e.json'), startedAt: '2026-09-30T00:00:00.000Z' },
+      { result: at('export.json'), startedAt: '2026-10-01T12:00:00.000Z' },
+      { result: at('unit.json'), startedAt: '2026-01-05T09:00:00.000Z' },
+      { result: at('TEST-T.xml'), startedAt: '2026-10-01T12:00:00.000Z' },
+      { result: at('checks.log'), startedAt: '2026-10-01T12:00:00.000Z' },
+    ]);
   });
 });
 
