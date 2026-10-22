@@ -381,7 +381,8 @@ inside it.
 `NavLink`, `Redirect` and `Navigate` outside the route files, the addresses given to `push` and `replace` of a
 history react-router hands to the screen or of the one named in `history`, and the addresses given to the function
 `useNavigate()` returns. When a piece of an address is a call of a function declared in the source, duru reads the
-address that function returns. Each link has its address `to`, with `{*}` for a piece that comes from a value, the
+address that function returns. A call of a function declared in the source that moves to an address it is given, or
+with a history it is given, is a link at that call. Each link has its address `to`, with `{*}` for a piece that comes from a value, the
 file and line, the conditions guarding it, and `targets`, the IDs of the screens it goes to. A link whose address
 duru cannot read has `to` `{?}` and empty `targets`. In an app that uses redux-saga, a route constant or a move of the
 history named in `history` written in a saga is a link of each screen that dispatches an action the saga waits for,

@@ -1866,3 +1866,12 @@ ${steps}
     ['/start', at("both('/start')"), [], ['/start#Start']],
   ]);
 });
+
+test('the usage guide and the decision record say that a call of a function that moves to an address or with a history it is given is a link at the call', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
+  assert.match(read('README.md'), /A call of a function declared in the source that moves to an address it is given, or\s+with a history it is given, is a link at that call\./);
+  const decisions = read('docs/decisions.md');
+  assert.match(decisions, /\*\*A call of a function declared in the source that moves to an address it is given, or with a history it is given,\s+is a link at the call/);
+  assert.doesNotMatch(decisions, /A history a\s+function is given as an argument is not read/);
+  assert.doesNotMatch(decisions, /will need that inner reading exported/);
+});
