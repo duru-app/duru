@@ -3591,7 +3591,10 @@ Known limits:
   and a class re-exported only as a type (`export type { X } from`, `export { type X } from`); each stays a piece
   duru cannot read.
 - The getter of the type written on the parameter is read; a subclass passed at the call that overrides it is not
-  seen.
+  seen, so when the parent class's getter returns a whole address (`get path() { return '/home'; }`) the link goes
+  to that screen even where a subclass's getter returns another.
+- A getter whose body only throws, written in place of `abstract get`, gives no address, so the link is left out
+  of the map, as a link through an address function that only throws already is.
 - A model's member read at the link itself (`to={doc.path}`) is not read; only parameters of address functions are.
 - outline's `/doc/{*}` links (8 places, 148 lines) reach the shared document screen `/doc/:documentSlug#Shared` as
   well as the document screen, since a link is matched in each of two `Switch`es drawn side by side (#385).
