@@ -420,7 +420,7 @@ export function routerTargets(roots: RouteNode[]) {
     return nodes.filter((n) => n === first || (n.kind === 'route' && n.path === first.path && opens(n, address)));
   };
   const route = (address: string, hops: number): number[] => {
-    const drawn: { screen: number; whole: boolean; depth: number }[] = [];
+    const drawn: { screen: number; whole: boolean; fits: boolean; depth: number }[] = [];
     const redirects: string[] = [];
     const walking = new Set<RouteNode>();
     const walk = (nodes: RouteNode[], inSwitch: boolean, depth: number) => {
@@ -433,13 +433,21 @@ export function routerTargets(roots: RouteNode[]) {
           for (const { path: branchPath, chain } of rankedWinners(node.branches, address)) {
             const splat = /(^|\/)\*$/.test(branchPath);
             chain.forEach((r, i) => {
-              for (const screen of r.screens) drawn.push({ screen, whole: i === chain.length - 1 && !splat, depth: depth + 1 + i });
+              const leaf = i === chain.length - 1;
+              const own = r.screens.map((screen) => ({ screen, whole: leaf, fits: leaf && !splat, depth: depth + 1 + i }));
+              drawn.push(...own);
+              const inside = drawn.length;
               walk(r.children, false, depth + 2 + i);
+              // * 로 끝나는 라우트의 element 는 그 안에서 렌더링된 라우트가 주소 전체와 맞을 때만 링크 대상에서 빠진다.
+              if (splat && drawn.slice(inside).some((d) => d.fits)) for (const d of own) d.whole = false;
             });
             for (const c of chain.at(-1)!.children) if (c.kind === 'redirect') redirects.push(c.to);
           }
         } else {
-          for (const screen of node.screens) drawn.push({ screen, whole: fits(node.path!, address, true), depth });
+          for (const screen of node.screens) {
+            const whole = fits(node.path!, address, true);
+            drawn.push({ screen, whole, fits: whole, depth });
+          }
           walk(node.children, false, depth + 1);
         }
         walking.delete(node);

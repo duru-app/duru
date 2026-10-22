@@ -722,3 +722,74 @@ export default function Section() {
   const map = await build(writeApp({ 'Routes.js': routes, 'Section.js': section, 'Back.js': back, 'Start.js': start }, { routesFile: ['Routes.js', 'Section.js'] }));
   assert.deepEqual(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => l.targets), [[map.screens.find((s) => s.id.endsWith('#Team'))!.id]]);
 });
+
+test('the screen of an outer /* route stays a link\'s screen beside the screen of an inner * route, unless a screen drawn inside it fits the whole address', async () => {
+  const inner = '<Routes><Route path="profile" element={<Profile />} /><Route path="*" element={<NotFound />} /></Routes>';
+  const routes = (element: string) => `import { Route, Routes } from 'react-router-dom';
+import SettingsPage from './SettingsPage';
+import Profile from './Profile';
+import NotFound from './NotFound';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/settings/*" element={${element}} />
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const settingsFile = `import { Route, Routes } from 'react-router-dom';
+import Profile from './Profile';
+import NotFound from './NotFound';
+
+export default function SettingsPage() {
+  return (
+    ${inner}
+  );
+}
+`;
+  const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav><Link to="/settings/zzz">zzz</Link><Link to="/settings/profile">profile</Link></nav>;\n}\n`;
+  const pages = Object.fromEntries(['SettingsPage', 'Profile', 'NotFound'].map((n) => [`${n}.js`, page(n)]));
+  for (const [shape, files, keys] of [
+    ['in a route file', { 'Routes.js': routes('<SettingsPage />'), 'SettingsPage.js': settingsFile }, { routesFile: ['Routes.js', 'SettingsPage.js'] }],
+    ['in the element', { 'Routes.js': routes(`<SettingsPage>${inner}</SettingsPage>`) }, {}],
+  ] as const) {
+    const map = await build(writeApp({ ...pages, ...files, 'Start.js': start }, keys));
+    const id = (name: string) => map.screens.find((s) => s.id.endsWith(`#${name}`))!.id;
+    assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, l.targets])), {
+      '/settings/zzz': [id('SettingsPage'), id('NotFound')],
+      '/settings/profile': [id('Profile')],
+    }, shape);
+  }
+});
+
+test('Routes drawn side by side each give their screen, so a /* route\'s screen stays beside one of the other Routes that fits the whole address', async () => {
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import Docs from './Docs';
+import Doc from './Doc';
+import Start from './Start';
+
+export default function AppRoutes() {
+  return (
+    <>
+      <Routes>
+        <Route path="/docs/*" element={<Docs />} />
+        <Route path="/start" element={<Start />} />
+      </Routes>
+      <Routes>
+        <Route path="/docs/:id" element={<Doc />} />
+      </Routes>
+    </>
+  );
+}
+`;
+  const start = `import { Link } from 'react-router-dom';\n\nexport default function Start() {\n  return <nav><Link to="/docs/1">doc</Link><Link to="/docs">docs</Link></nav>;\n}\n`;
+  const pages = Object.fromEntries(['Docs', 'Doc'].map((n) => [`${n}.js`, page(n)]));
+  const map = await build(writeApp({ ...pages, 'Routes.js': routes, 'Start.js': start }));
+  assert.deepEqual(Object.fromEntries(map.screens.find((s) => s.id === '/start#Start')!.links.map((l) => [l.to, l.targets])), {
+    '/docs/1': ['/docs/*#Docs', '/docs/:id#Doc'],
+    '/docs': ['/docs/*#Docs'],
+  });
+});
