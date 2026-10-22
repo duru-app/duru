@@ -243,7 +243,8 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
   let onlyInBaseline = 0;
   const regressions = [];
   for (const [key, tests] of before) {
-    const status = worst(tests.map((t) => t.status));
+    const ran = tests.filter((t) => t.status !== 'pending');
+    const status = worst((ran.length ? ran : tests).map((t) => t.status));
     const match = now.get(key);
     if (!match) {
       onlyInBaseline += 1;

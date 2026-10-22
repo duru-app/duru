@@ -1505,7 +1505,9 @@ taken from the folder holding every absolute path of its side, since the checkou
 machine, and when that folder sits deeper on one side (its tests were all under `src/`, say), the folders at the end
 of it are put back in front of that side's paths as far as makes the most files the same on both sides. Tests that
 still share a key, such as verdict lines of one name in one log, get their sorted tags added, and those still alike are one test with the worst
-status of their runs (fail, pending, pass). Such a test is under a screen or call when one of its runs is, and its
+status of their runs (fail, pending, pass); in the baseline a pending run is left out when another run ran, since a
+run skipped there, such as one browser's run in a Playwright JUnit report that names no project, would otherwise
+hide another run's `pass→fail`. Such a test is under a screen or call when one of its runs is, and its
 regression line shows the first file and line among the runs that are. A baseline test file is gone from the
 current results when no current test has that file; a JUnit class name that is the test's own name, as jest-junit
 writes by default, names no file and is never gone. Alternatives compared:
