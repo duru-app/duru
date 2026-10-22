@@ -136,6 +136,7 @@ interface DrawnNode {
   entry: string | null;
   isRoute: boolean;
   isFragment: boolean;
+  redirectAsElement: boolean;
   children: DrawnNode[];
 }
 
@@ -1256,7 +1257,7 @@ export async function extractClient(config: any) {
           const value = p ? evaluate(p) : undefined;
           return typeof value === 'string' ? value : UNKNOWN;
         };
-        const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || (Boolean(exact) && evaluate(exact!) === true), from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, children: [] };
+        const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || (Boolean(exact) && evaluate(exact!) === true), from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, redirectAsElement: false, children: [] };
         const binding = p.scope.getBinding(tag);
         const reactAs = (b: Binding | undefined) => {
           const from = b && importedAs(b);
@@ -1268,7 +1269,8 @@ export async function extractClient(config: any) {
         else if (config.redirectElements.includes(tag)) {
           const from = attr('from');
           const to = attr('to');
-          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? linkAddress(to) : UNKNOWN });
+          const holder = p.parentPath.isJSXExpressionContainer() ? p.parentPath.parentPath : null;
+          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? linkAddress(to) : UNKNOWN, redirectAsElement: Boolean(holder?.isJSXAttribute() && holder.node.name.name === 'element') });
         } else if (config.routeElements.includes(tag)) {
           const at = attr('path');
           node.isRoute = true;
@@ -1674,7 +1676,8 @@ export async function extractClient(config: any) {
         const unwrapped = (nodes: DrawnNode[]): DrawnNode[] => nodes.flatMap((c) => (c.isFragment ? unwrapped(c.children) : [c]));
         const flatten = (routes: DrawnNode[], outerPath: string, chain: Branch['chain']) => {
           for (const r of unwrapped(routes).filter((c) => c.isRoute)) {
-            for (const node of convert({ ...r, children: unwrapped(r.children).filter((c) => !c.isRoute) }, file) as Branch['chain']) {
+            const drawnBy = unwrapped(r.children).filter((c) => !c.isRoute && (c.kind !== 'redirect' || c.redirectAsElement));
+            for (const node of convert({ ...r, children: drawnBy }, file) as Branch['chain']) {
               const own = node.path === null ? null : node.path.startsWith('/') ? node.path : `${outerPath}/${node.path}`.replace(/\/{2,}/g, '/');
               flatten(r.children, own ?? outerPath, [...chain, node]);
               if (own !== null) branches.push({ path: own, chain: [...chain, node] });

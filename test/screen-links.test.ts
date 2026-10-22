@@ -520,6 +520,37 @@ export default function Help() {
   assert.deepEqual(linksOf(map, '/help/:page?#Help'), []);
 });
 
+test('with React Router 6, a link goes on to a Navigate that is the element of the route it reaches, not to one the element shows only under a condition', async () => {
+  const routes = `import { Navigate, Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Login from './Login';
+import Start from './Start';
+
+export default function AppRoutes({ user }) {
+  return (
+    <Routes>
+      <Route path="/login" element={!user ? <Login /> : <Navigate to="/home" />} />
+      <Route path="/home" element={user ? <Home /> : <Navigate to="/login" replace />} />
+      <Route path="/old" element={<Navigate to="/home" replace />} />
+      <Route path="/start" element={<Start />} />
+    </Routes>
+  );
+}
+`;
+  const start = `import { Link } from 'react-router-dom';
+
+export default function Start() {
+  return <nav><Link to="/home">home</Link><Link to="/login">login</Link><Link to="/old">old</Link></nav>;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Start.js': start }));
+  assert.deepEqual(linksOf(map, '/start#Start').map(([to, , , targets]) => [to, targets]), [
+    ['/home', ['/home#Home']],
+    ['/login', ['/login#Login']],
+    ['/old', ['/home#Home']],
+  ]);
+});
+
 test('Routes picks the most specific path whatever the order, and a path fits only the whole address unless it ends in /*', async () => {
   const routes = `import { Route, Routes } from 'react-router-dom';
 import Docs from './Docs';
