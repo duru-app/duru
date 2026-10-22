@@ -10,6 +10,7 @@ import path from 'node:path';
 import { addJudgment } from '../src/judgments.ts';
 import { addMark, fileSafe, loadMarks, recordName } from '../src/marks.ts';
 import type { Mark } from '../src/marks.ts';
+import { BASELINE_TESTS, keepRelease } from './baseline-helpers.ts';
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
@@ -786,6 +787,74 @@ test('a comment saved on several targets comes out on stderr with where each of 
       await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       await within(closed, 'exit');
       assert.match(out.stdout, /# Comments with no target\n\n- comment[^\n]*Where do I start\?/);
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+const LAB_E2E = { node: '/lab#Lab', part: { kind: 'test', key: { source: 'results/playwright/e2e.json', file: 'home.spec.ts', title: 'opens the lab' } } };
+const RECENT_JUNIT = { node: '/home#Home', part: { kind: 'test', key: { source: 'results/junit/TEST-com.example.home.HomeServiceTest.xml', file: 'com.example.home.HomeServiceTest', title: 'Home service › lists recent documents' } } };
+const LAB_WHERE = { file: 'home.spec.ts', line: 20, source: 'results/playwright/e2e.json', status: 'pending', relation: 'tagged' };
+
+function withReleaseReview(fn: (configFile: string) => Promise<void>) {
+  return withReviewFixture(async (configFile) => {
+    keepRelease(path.dirname(configFile));
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), baselineTests: BASELINE_TESTS }));
+    execFileSync(process.execPath, [CLI, 'rebuild', configFile], { encoding: 'utf8' });
+    await fn(configFile);
+  });
+}
+
+test('a comment saved on a regressed test row carries passedIn with the baseline folder in its where, on standard error, on the event stream and in what duru wait prints, and a comment on a row that did not regress carries none', async () => {
+  await withReleaseReview(async (configFile) => {
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const events = readEvents(url);
+      await events.open;
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      const post = async (target: unknown, note: string) => (await (await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target, note }) })).json()) as Mark;
+      const regressed = await post(LAB_E2E, 'Why is this pending now?');
+      const kept = await post(RECENT_JUNIT, 'Still fine?');
+      await waitFor(() => records().length === 2, 'both comments on stderr');
+      assert.deepEqual(records()[0], { duru: 'comment', ...regressed, where: { ...LAB_WHERE, passedIn: 'releases/1.5.0' } });
+      assert.equal(records()[1].id, kept.id);
+      assert.ok(records()[1].where, 'the row that did not regress is located');
+      assert.equal('passedIn' in records()[1].where, false);
+      await waitFor(() => events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).length === 2, 'two events on the stream');
+      assert.deepEqual(events.got.text.split('\n\n').filter((e) => e.startsWith('data: ')).map((e) => JSON.parse(e.slice('data: '.length))), records());
+
+      const { code, stdout } = await within(startWait(configFile, `${url}/`).closed, 'wait to exit');
+      assert.equal(code, 0);
+      assert.deepEqual(stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l)), records());
+
+      assert.deepEqual(reply(configFile, regressed.id, 'The lab data loads late.', '--server', `${url}/`), { status: 0, stderr: '' });
+      await waitFor(() => records().length === 3, 'the reply on stderr');
+      assert.deepEqual(records()[2].where, { ...LAB_WHERE, passedIn: 'releases/1.5.0' });
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+test('a comment on several targets carries passedIn only in the where of a regressed test target', async () => {
+  await withReleaseReview(async (configFile) => {
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      const res = await fetch(`${url}/api/marks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targets: [{ node: '/lab#Lab' }, LAB_E2E, RECENT_JUNIT], note: 'Are these covered?' }) });
+      assert.equal(res.status, 201);
+      await waitFor(() => records().length === 1, 'the comment on stderr');
+      const [whole, lab, home] = records()[0].wheres;
+      assert.deepEqual([whole, lab], [null, { ...LAB_WHERE, passedIn: 'releases/1.5.0' }]);
+      assert.ok(home);
+      assert.equal('passedIn' in home, false);
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      await within(closed, 'exit');
     } finally {
       child.kill();
     }
