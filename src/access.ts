@@ -439,7 +439,11 @@ export function routerTargets(roots: RouteNode[]) {
               const inside = drawn.length;
               walk(r.children, false, depth + 2 + i);
               // * 로 끝나는 라우트의 element 는 그 안에서 렌더링된 라우트가 주소 전체와 맞을 때만 링크 대상에서 빠진다.
-              if (splat && drawn.slice(inside).some((d) => d.fits)) for (const d of own) d.whole = false;
+              if (leaf && splat) {
+                let fitInside = false;
+                for (let j = inside; j < drawn.length && !fitInside; j++) fitInside = drawn[j].fits;
+                if (fitInside) for (const d of own) d.whole = false;
+              }
             });
             for (const c of chain.at(-1)!.children) if (c.kind === 'redirect') redirects.push(c.to);
           }
