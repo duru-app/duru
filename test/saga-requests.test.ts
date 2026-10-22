@@ -22,6 +22,8 @@ function fixtureCopy(files: Record<string, string | null>, keys: Record<string, 
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   copies.push(copy);
   fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+  const routes = path.join(copy, 'client/src/Routes.tsx');
+  fs.writeFileSync(routes, fs.readFileSync(routes, 'utf8').replace(/^ *<Route path="\*".*\n/m, ''));
   for (const [rel, text] of Object.entries(files)) {
     if (text === null) continue;
     fs.mkdirSync(path.dirname(path.join(copy, 'client/src', rel)), { recursive: true });
@@ -441,7 +443,7 @@ test('a move a saga makes is a link of each screen that dispatches an action the
     ['/notes', 'sagas/go.ts:2', ['/notes#Notes'], loaded],
     ['/contracts', moved("push('/contracts')"), ['/contracts#Contracts'], loaded],
     ['/home', moved('ROUTE_PATH.HOME)'), ['/home#Home'], loaded],
-    ['/notes/{*}', moved('/notes/'), ['/notes#Notes'], loaded],
+    ['/notes/{*}', moved('/notes/'), [], loaded],
     ['/home/tail', 'sagas/tail.ts:3', ['/home#Home'], loaded],
   ]);
   assert.deepEqual(linksOf(map, '/signed#Signed'), [
@@ -463,7 +465,7 @@ test('a saga move whose address comes from the action or cannot be read gives no
     ['/notes', 'sagas/go.ts:2', ['/notes#Notes'], undefined],
     ['/contracts', moved("push('/contracts')"), ['/contracts#Contracts'], loaded],
     ['/home', moved('ROUTE_PATH.HOME)'), ['/home#Home'], loaded],
-    ['/notes/{*}', moved('/notes/'), ['/notes#Notes'], loaded],
+    ['/notes/{*}', moved('/notes/'), [], loaded],
     ['/home/tail', 'sagas/tail.ts:3', ['/home#Home'], loaded],
   ]);
   assert.deepEqual(linksOf(map, '/notices#Notices'), []);
