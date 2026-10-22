@@ -3307,13 +3307,23 @@ screens, each a `navigate` to the address an app helper returns (`resolveMetaDoc
 constants are already links of the helper's file; one readable link, `navigate('/')` of the sign-in screen, goes to
 the sign-in screen and the user home; entry screens stay 24, since every other move there is written with the route
 constant. into-sign 1.5.0 gives the same map as before.
+Driver's decision (2026-10-22) on a `<Routes>` drawn inside a route, whether in a route file under an outer route
+ending in `/*` or written as the route's `element`: a path not written from `/` is joined to the part of the address
+the outer `/*` route matched, so `<Route path="/app/*" element={<App />} />` around App's
+`<Route path="settings" … />` takes `/app/settings`, as v6 does; a path written from `/` matches the whole address,
+which keeps into-sign 2.0.0, whose route files write the whole path, as it was. A path written from `/` that does not
+start with the outer route's path, which v6 stops on as an error, also matches the whole address, so no link reaches
+it: the outer route has to fit first.
 Choices made without a driver's answer, each cheap to change: two routes with the same path in one `<Routes>` both
-win, as two routes with one path in a `<Switch>` do, although v6 itself takes the first; the `<Routes>` of each route
-file matches the whole address, as into-sign's top routes clear the outer route's matched part before drawing them,
-where v6 by itself matches a nested `<Routes>` against what the outer `/*` route leaves.
+win, as two routes with one path in a `<Switch>` do, although v6 itself takes the first; the screen of a route ending
+in `*` is a link's screen only when no screen of a route that fits the whole address is drawn with it, so a link to
+`/app/settings` goes to Settings and not also to App, as a `<Switch>` route without `exact` around an inner one gives
+the inner one.
 Known limits: an `index` route never fits, and a route without a path is drawn only around the routes it holds;
 a v6 route file the route files do not reach from one another is drawn beside the others, so into-sign's
 `navigate('/')` goes to the sign-in screen through the catch-all of the signed-out routes as well as to the user home.
+A route file drawn again inside a route file it holds is drawn there with its paths not joined to the outer ones,
+since joining them each time would never end.
 Alternatives compared:
 - Keeping the first fitting route as in a `<Switch>`: an app that writes `/docs/:id` before `/docs/new`, or `*`
   before the rest, would send the link to a screen v6 does not draw.

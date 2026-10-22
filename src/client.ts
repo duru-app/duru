@@ -1669,42 +1669,58 @@ export async function extractClient(config: any) {
       const held = [...routeFileSet].filter((f) => f !== own && reached.has(f));
       return held.filter((f) => !held.some((g) => g !== f && closure(g).has(f)));
     };
-    const holding = new Map<RouteNode & { kind: 'route' }, string[]>();
-    const convert = (n: DrawnNode, file: string): RouteNode[] => {
+    const holding = new Map<RouteNode & { kind: 'route' }, { files: string[]; base: string; around: string[] }>();
+    let around: string[] = [];
+    // base 는 바깥 /* 라우트에 매칭된 앞부분이다.
+    const convert = (n: DrawnNode, file: string, base = ''): RouteNode[] => {
       if (n.kind === 'routes') {
         const branches: Branch[] = [];
         const unwrapped = (nodes: DrawnNode[]): DrawnNode[] => nodes.flatMap((c) => (c.isFragment ? unwrapped(c.children) : [c]));
         const flatten = (routes: DrawnNode[], outerPath: string, chain: Branch['chain']) => {
           for (const r of unwrapped(routes).filter((c) => c.isRoute)) {
             const drawnBy = unwrapped(r.children).filter((c) => !c.isRoute && (c.kind !== 'redirect' || c.redirectAsElement));
-            for (const node of convert({ ...r, children: drawnBy }, file) as Branch['chain']) {
+            for (const node of convert({ ...r, children: drawnBy }, file, outerPath) as Branch['chain']) {
               const own = node.path === null ? null : node.path.startsWith('/') ? node.path : `${outerPath}/${node.path}`.replace(/\/{2,}/g, '/');
               flatten(r.children, own ?? outerPath, [...chain, node]);
               if (own !== null) branches.push({ path: own, chain: [...chain, node] });
             }
           }
         };
-        flatten(n.children, '', []);
+        flatten(n.children, base, []);
         return [{ kind: 'routes', branches }];
       }
-      if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file)) }];
+      if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file, base)) }];
       if (n.kind === 'redirect') return [{ kind: 'redirect', from: n.from, exact: n.exact, to: n.to }];
       const byPath = new Map<string | null, number[]>();
       for (const i of n.screens.map((s) => indexOf.get(s)!)) byPath.set(sourced[i].s.path, [...(byPath.get(sourced[i].s.path) ?? []), i]);
       if (!byPath.size) byPath.set(n.path, []);
       return [...byPath].map(([routePath, screens]) => {
         const entries = screens.length ? screens.flatMap((i) => sourced[i].s.componentFile ?? []) : n.entry ? [n.entry] : [];
-        const node = { kind: 'route' as const, path: routePath, exact: n.exact, screens, children: n.children.flatMap((c) => convert(c, file)) };
+        const full = routePath === null || routePath.startsWith('/') ? routePath : `${base}/${routePath}`.replace(/\/{2,}/g, '/');
+        const inner = full === null ? base : full.endsWith('/*') ? full.slice(0, -2) : '';
+        const node = { kind: 'route' as const, path: routePath, exact: n.exact, screens, children: n.children.flatMap((c) => convert(c, file, inner)) };
         const held = heldFiles(entries, file);
-        if (held.length) holding.set(node, held);
+        if (held.length) holding.set(node, { files: held, base: inner, around });
         return node;
       });
     };
-    const rootsOf = new Map(drawn.map((d) => [d.file, d.roots.flatMap((r) => convert(r, d.file))]));
+    const converted = (file: string, roots: DrawnNode[], base: string, outer: string[]) => {
+      around = [...outer, file];
+      return roots.flatMap((r) => convert(r, file, base));
+    };
+    const rootsOf = new Map(drawn.map((d) => [d.file, converted(d.file, d.roots, '', [])]));
+    const drawnRoots = new Map(drawn.map((d) => [d.file, d.roots]));
+    const based = new Map<string, RouteNode[]>();
+    const rootsUnder = (f: string, base: string, outer: string[]) => {
+      if (!base || outer.includes(f)) return rootsOf.get(f)!;
+      const key = `${f}\0${base}`;
+      if (!based.has(key)) based.set(key, converted(f, drawnRoots.get(f)!, base, outer));
+      return based.get(key)!;
+    };
     const held = new Set<string>();
-    for (const [node, files] of holding) {
+    for (const [node, { files, base, around: outer }] of holding) {
       for (const f of files) {
-        node.children.push(...rootsOf.get(f)!);
+        node.children.push(...rootsUnder(f, base, outer));
         held.add(f);
       }
     }

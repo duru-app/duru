@@ -430,9 +430,10 @@ export function routerTargets(roots: RouteNode[]) {
         if (node.kind === 'redirect') redirects.push(node.to);
         else if (node.kind === 'switch') walk(node.children, true, depth + 1);
         else if (node.kind === 'routes') {
-          for (const { chain } of rankedWinners(node.branches, address)) {
+          for (const { path: branchPath, chain } of rankedWinners(node.branches, address)) {
+            const splat = /(^|\/)\*$/.test(branchPath);
             chain.forEach((r, i) => {
-              for (const screen of r.screens) drawn.push({ screen, whole: i === chain.length - 1, depth: depth + 1 + i });
+              for (const screen of r.screens) drawn.push({ screen, whole: i === chain.length - 1 && !splat, depth: depth + 1 + i });
               walk(r.children, false, depth + 2 + i);
             });
             for (const c of chain.at(-1)!.children) if (c.kind === 'redirect') redirects.push(c.to);
