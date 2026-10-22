@@ -645,7 +645,7 @@ export default function AppRoutes({ auth }) {
   assert.deepEqual(map.entries.map((e) => e.screen), ['/home#Home', '/start#Start']);
 });
 
-test('a nested Routes joins a relative path to what the outer /* route matched, and matches a path written from / against the whole address', async () => {
+test('a nested Routes joins a relative path to the outer /* route\'s path, and matches a path written from / against the whole address', async () => {
   const routes = `import { Route, Routes } from 'react-router-dom';
 import App from './App';
 import Help from './Help';
