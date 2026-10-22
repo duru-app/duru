@@ -3421,9 +3421,12 @@ without `else`, `const` and `let` with the values of the parameters, `let` given
 are read the same way. An object with a `pathname` that the function returns is read by its `pathname`, as a
 link's `{ pathname }` is. A body with another statement (a loop, `switch`, `try`) is not read, and neither is one
 with a statement, other than an assignment to a name, that names a value of the function (`parts.push(tab)`,
-`tab && (url = …)`, `Object.assign(o, …)`, an assignment in a `forEach` callback, `n++`), since such a statement may
-change the value; the call is then a piece duru cannot read. A statement that names nothing of the function
-(`console.info('…')`) is passed over. A name at the link holding what such a call returns (`const base = searchPath()`) is read
+`tab && (url = …)`, `Object.assign(o, …)`, an assignment in a `forEach` callback, `n++`), one that assigns to
+something other than a name and names a value of the function there (`o.path = …`, `parts[1] = id`,
+`({ base } = opts)`), or one whose declaration, `return`, `if` condition, assigned value or arrow body changes a
+value of the function by assignment, `++`, `delete`, `Object.assign` or a method that changes a list, a `Map` or a
+`Set` (`const n = parts.push(tab)`), since such code may change the value; the call is then a piece duru cannot
+read. A statement that names nothing of the function (`console.info('…')`) is passed over. A name at the link holding what such a call returns (`const base = searchPath()`) is read
 through the call.
 The arguments of the call are put into the parameters: a parameter left out takes its default, an object pattern
 takes the property of the object given, and a rest parameter takes the arguments left. A value duru cannot read
@@ -3457,8 +3460,8 @@ outline's home route `${homePath()}/:tab?` is `/home/:tab?`. A relative path a f
 Router 6 joins it to the outer route's path. When two or more different paths are left, the path is `{?}` and the
 `route path not read` line names the call and the paths (`stopped at homePath(), which gives / and /home`), or says
 `more than 8 paths`. When such a path starts with the address the outer route matched (`${path}${tabPath(admin)}`),
-it is `{?}{?}`, so the outer route's path is filled in front and the rest stays `{?}`, as before this change; the
-paths that line names then start with `{?}` for the outer address.
+it is `{?}{?}`, so the outer route's path is filled in front and the rest stays `{?}`, as before this change, and
+each path that line names gets the outer route's path in front too.
 A call is followed 8 deep (`FOLLOWED` of `src/screen-links.ts`); the 9th call, and a call of a function duru is
 already reading, is a piece it cannot read. A name listed in `passThroughCalls` is read as its first argument
 before any body is looked for, as the config says. A function that returns its argument as it is gives that
@@ -3509,6 +3512,18 @@ Known limits:
 - The module's inner reading takes an expression and the values of the parameters, and `branches(p)` reads the
   place of a call with none; the coming reading of helpers that move to an address they are given, which has to read
   `history.push(url)` inside a body with the caller's arguments, will need that inner reading exported.
+- An `if` whose condition duru cannot decide doubles the ways through the body even when neither branch changes
+  anything (`if (a === 1) console.info('…')`), so seven of them pass the limit of 64: a link address is then one
+  `{?}` link, and a route path's line says `more than 8 paths`.
+- A `return;` with no value used as a guard (`if (!id) return;`) gives a `{?}` link beside the address the rest of
+  the body returns.
+- `||=`, `??=` and `&&=` on a name of the function make its value one duru cannot read, even when the value before
+  is read whole.
+- An object key or a member name spelled like a parameter or a name of the function counts as naming that value, so
+  `track({ tab: 'x' })` or `window.tab = 1` in a function with a parameter `tab` makes the call a piece duru cannot
+  read though nothing of the function changes.
+- The limit of 64 is checked after the combinations of argument values, and of the pieces of a template, are built,
+  so a call with many arguments of several values each builds all their combinations before it stops.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
