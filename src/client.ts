@@ -1214,10 +1214,10 @@ export async function extractClient(config: any) {
         if (config.redirectElements.includes(tag)) {
           const toValue = attr('to')?.get('value');
           const toExpr = toValue?.node ? (toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue) as NodePath : null;
-          const read = toExpr ? oneAddress(toExpr) : UNKNOWN;
-          // 링크로 읽지 못한 to 는 글자 값으로 다시 읽어, 상대 경로와 이름으로 import 한 상수 객체의 멤버를 남긴다.
-          const written = read === UNKNOWN && toExpr ? evaluate(toExpr) : undefined;
-          redirects.push({ to: typeof written === 'string' ? written : read, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
+          // 글자 값으로 끝까지 읽히는 to 는 그 값을 쓰고, 아니면 링크로 읽는다. 링크로도 읽지 못하면 글자 값을 남긴다.
+          const written = toExpr ? evaluate(toExpr) : undefined;
+          const read = typeof written === 'string' && !written.includes(UNKNOWN) ? written : toExpr ? oneAddress(toExpr) : UNKNOWN;
+          redirects.push({ to: read === UNKNOWN && typeof written === 'string' ? written : read, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
           return;
         }
         if (!config.routeElements.includes(tag)) return;
