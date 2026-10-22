@@ -1,10 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import path from 'node:path';
 import { chromium } from 'playwright-core';
 import type { Page, Route } from 'playwright-core';
+import { loadConfig } from '../src/config.ts';
 import { startReviewServer } from '../src/review.ts';
-import { withRebuiltFixture, signer, withServer, browserMissing, toList, withPage, SAVE_REFUSED, bulk, openDocumentTable, untilSet, judgedBy } from './review-helpers.ts';
+import { taskList } from '../src/tasks.ts';
+import { BASELINE_TESTS, keepRelease } from './baseline-helpers.ts';
+import { withRebuiltFixture, signer, withServer, browserMissing, toList, withPage, SAVE_REFUSED, bulk, openDocumentTable, untilSet, judgedBy, chooseScreen } from './review-helpers.ts';
 
 test('the end request asks the caller to get ready, is answered, and then tells the caller to finish, and an end request that is not JSON is refused', async () => {
   await withRebuiltFixture({}, async (config) => {
@@ -250,4 +256,34 @@ test('in a browser, a refused end in the flow view leaves the diagram as it was 
         assert.equal(await p.locator('#end-review').isDisabled(), false);
         assert.deepEqual(errors.splice(0), SAVE_REFUSED);
       })));
+});
+
+test('in a browser, a comment saved on a regressed test row and then 「리뷰 끝」 lists that screen in the task list the review ends with', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (_, copy) => {
+    keepRelease(copy);
+    const configFile = path.join(copy, 'config.json');
+    fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, 'utf8')), baselineTests: BASELINE_TESTS }));
+    execFileSync(process.execPath, [path.join(import.meta.dirname, '../src/cli.ts'), 'rebuild', configFile], { encoding: 'utf8' });
+    const config = loadConfig(configFile);
+    let list = '';
+    const server = await startReviewServer(config, { author: signer('reviewer'), onDone: () => { list = taskList(config); } });
+    try {
+      await withPage(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await chooseScreen(p, '/lab');
+        const row = p.locator('#center-body table .part-row', { hasText: /opens the lab home\.spec\.ts/ });
+        await row.hover();
+        await row.locator('.bubble').click();
+        await p.fill('#right-dock textarea', 'Why is this pending now?');
+        await p.click('#right-dock button.save');
+        await row.locator('.part-count', { hasText: '코멘트 1' }).waitFor();
+        await p.click('header button:has-text("리뷰 끝")');
+        await p.waitForSelector('#ended');
+      });
+      assert.match(list, /^## \/lab#Lab\n\n- marks: none, listed for comments on regressed tests$/m);
+      assert.match(list, /^ {2}- test "opens the lab" at home\.spec\.ts:20 — .*, passed in releases\/1\.5\.0$/m);
+    } finally {
+      server.close();
+    }
+  });
 });
