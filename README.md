@@ -384,8 +384,9 @@ a piece that comes from a value, the file and line, the conditions guarding it, 
 screens it goes to. A link whose address duru cannot read has `to` `{?}` and empty `targets`. In an app that uses
 redux-saga, a route constant or a move of the history named in `history` written in a saga is a link of each
 screen that dispatches an action the saga waits for, with the action types under `actions`, but only when duru
-reads its address: a move in a saga to an address taken from the action, or to one duru cannot read, is no link
-and no `{?}`. React Router 6 is not read.
+reads its address: a move in a saga to an address taken whole from the action (`action.url`), or to one duru
+cannot read, is no link and no `{?}`, while an address written from `/` with a piece from the action
+(`` `/notes/${action.payload}` ``) is a link with `{*}` for that piece. React Router 6 is not read.
 
 **Calls.** Each API call is a node under `calls` with an ID `<METHOD>:<path>`
 (`GET:/api/v1/document/{documentId}`), its server match, the API functions that make it, the screens that reach

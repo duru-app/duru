@@ -100,8 +100,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - In an app that uses redux-saga, a call or a link with `actions` is sent or made by a saga, written at the line it
   names in the saga, and comes to the screen because the screen dispatches one of those action types at the places
   under `dispatchedAt`. A test of that call or link for the screen does what the code at a `dispatchedAt` place
-  answers to. A move a saga makes to an address duru could not read, or to one carried in the action, is not on
-  the map at all, not even as `{?}`.
+  answers to. A move a saga makes to an address duru could not read, or to one carried whole in the action, is
+  not on the map at all, not even as `{?}`.
   When the summary says `redux-saga is imported, but no run of a createSagaMiddleware() result was found`, no
   saga request or link is on any screen: tell the user that the screens' requests and moves made through sagas
   are missing.

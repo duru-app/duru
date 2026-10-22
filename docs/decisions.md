@@ -3310,11 +3310,23 @@ watcher starts is tied to screens the way a saga's requests are: the screen disp
 that type among the sagas a `createSagaMiddleware()` run reaches start code that duru follows by names, and the
 links it reaches are the screen's, each with `actions` (the type and the screen's `dispatchedAt` places). The saga
 code is followed once per watcher for both requests and links. A link the screen's own code also reaches is listed
-once, as the screen's own, without `actions`. A move whose address comes from the action, a parameter or props is
-not a link anywhere, as decided in #392, and an address duru cannot read (`builderURL(…)`, a variable holding a
-built URL) gives no `{?}` line either, unlike the same move written in the screen's code (driver's decision,
-2026-10-22, in #364). No config key is added: sagas have no history of their own, so their moves are on the one the
-`history` key names.
+once, as the screen's own, without `actions`. A move whose whole address is taken from the action, a parameter or
+props (`history.push(action.url)`) is not a link anywhere, as decided in #392, while an address written from `/`
+with a piece from the action (`` `/notes/${action.payload}` ``) is a link with `{*}` for that piece, as in a
+screen's code; an address duru cannot read (`builderURL(…)`, a variable holding a built URL) gives no `{?}` line,
+unlike the same move written in the screen's code (driver's decision, 2026-10-22, in #364). No config key is added:
+sagas have no history of their own, so their moves are on the one the `history` key names.
+The code a watcher starts is followed without the saga handed to a `run`: when the store file runs the root saga as
+it loads (`sagaMiddleware.run(rootSaga)`, as redux-saga's README writes it) and a saga imports a value from that
+file (`import { history } from './store'`, or `import { RootState }` without `import type`), following the store
+file's top-level code led back to the run and so to every watcher and every saga a `fork` starts, putting every
+saga move on every screen that dispatches any watched type and dropping real entry screens. Main already gave saga
+requests this way (9 instead of 7 in the test app); the rule corrects both. Only the names written inside the run's
+argument are left out. Alternatives compared: not following a handler into the top-level code of the files it
+imports would change what handlers reach in every file, not only in the one that runs the sagas; not following a
+handler into the file that runs the sagas at all would drop a saga or function that file exports and a handler
+calls. Measured again with this rule, appsmith and into-sign 1.5.0 give the same maps as below, and appsmith's saga
+requests on screens stay 7, as on main.
 Measured against main (e26a640) on appsmith (8412e1e): 328 links become 344, 16 more on 11 screens, all to the
 application list: each editor screen gets 2 (`sagas/InitSagas.ts:438` through `INITIALIZE_EDITOR`,
 `sagas/QueryPaneSagas.ts:113` through `QUERY_PANE_CHANGE`), each app viewer screen 1 (`InitSagas.ts:438` through
