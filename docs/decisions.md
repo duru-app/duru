@@ -3456,9 +3456,10 @@ body itself puts in front of its address as a branch of `? :`, `||`, `&&` or `??
 (`let prefix = ''` changed by an `if`). In a route path, a function's result that ends in `/` followed by a piece
 that starts with `/` loses one of them, so `${homePath()}/:tab?` with `homePath()` giving `/` is `/:tab?`, as React
 Router joins route paths; in a link that branch is `{?}`, since the app builds `//` there (mattermost's
-`getRelativeTeamUrl` returns `/` when the team is missing). More than 8 different addresses at one place give one `{?}` link (`MOST_ADDRESSES` in
-`src/address-functions.ts`); where to show how many branches such a link had is not decided yet, and the summary
-prints nothing for it. On outline, mattermost, appsmith and into-sign no place gives more than 2 different addresses
+`getRelativeTeamUrl` returns `/` when the team is missing). When a place gives more than 8 different addresses
+(`MOST_ADDRESSES` in `src/address-functions.ts`), it is read as before this change, each call a piece duru cannot
+read, so a call alone is `{?}` and `/team/${team}/${tabSegment(kind)}` is `/team/{*}/{*}`; where to show how many
+branches such a place had is not decided yet, and the summary prints nothing for it. On outline, mattermost, appsmith and into-sign no place gives more than 2 different addresses
 before that cap; two places of mattermost (`getPostURL(…)` in `components/permalink_view/actions.ts`) stop at the
 limit of 64 below, and that function's body has a `switch`, which is not read either. Before turning branches into
 addresses the module merges branches with the same text and stops at 64.
@@ -3521,8 +3522,8 @@ Known limits:
   place of a call with none; the coming reading of helpers that move to an address they are given, which has to read
   `history.push(url)` inside a body with the caller's arguments, will need that inner reading exported.
 - An `if` whose condition duru cannot decide doubles the ways through the body even when neither branch changes
-  anything (`if (a === 1) console.info('…')`), so seven of them pass the limit of 64: a link address is then one
-  `{?}` link, and a route path's line says `more than 8 paths`.
+  anything (`if (a === 1) console.info('…')`), so seven of them pass the limit of 64: a link address is then read
+  with each call a piece duru cannot read, and a route path's line says `more than 8 paths`.
 - A `return;` with no value used as a guard (`if (!id) return;`) gives a `{?}` link beside the address the rest of
   the body returns.
 - `||=`, `??=` and `&&=` on a name of the function make its value one duru cannot read, even when the value before

@@ -1750,3 +1750,24 @@ export default function Home() {
   assert.equal(map.screens.find((s) => s.component === 'Help')!.path, '/settings/general');
   assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', lineOf(home, 'history.push('), [], []]]);
 });
+
+test('an address function call that gives more than 8 different addresses inside a longer address is one {*} piece of it, as are two calls whose addresses together pass 8', async () => {
+  const segments = (name: string, count: number) => `export function ${name}(kind) {\n${Array.from({ length: count - 1 }, (_, i) => `  if (kind === ${i}) return '${name}${i}';\n`).join('')}  return '${name}-last';\n}\n`;
+  const home = `import { Link } from 'react-router-dom';
+import { nine, three, other } from './segments';
+
+export default function Home({ team, kind, mode }) {
+  return (
+    <nav>
+      <Link to={\`/team/\${team}/\${nine(kind)}\`}>nine</Link>
+      <Link to={\`/team/\${team}/\${three(kind)}/\${other(mode)}\`}>three by three</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'segments.js': segments('nine', 9) + segments('three', 3) + segments('other', 3) }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/team/{*}/{*}', lineOf(home, 'nine(kind)'), [], ['/team/:team#Team']],
+    ['/team/{*}/{*}/{*}', lineOf(home, 'three(kind)'), [], ['/team/:team#Team']],
+  ]);
+});

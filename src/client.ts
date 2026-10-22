@@ -796,20 +796,25 @@ export async function extractClient(config: any) {
     mergesSlashes: false,
   });
 
+  const writtenAddress = (text: string) => {
+    const segments = pathSegments(text);
+    return segments ? `/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}` : UNKNOWN;
+  };
+
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
   // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니고, // 가 생기는 것은 {?} 다.
+  // 갈래가 너무 많으면 함수를 따라가지 않고, 호출마다 읽지 못한 조각으로 둔 주소 하나를 준다.
   function linkAddresses(p: NodePath) {
     const read = linkReading.branches(p);
-    if ('tooMany' in read) return [UNKNOWN];
+    if ('tooMany' in read) return [writtenAddress(tailText(p))];
     const found = new Set<string>();
     for (const { text, made, whole } of read.branches) {
       if (made && whole && !addresses(whole).length) continue;
-      const segments = pathSegments(text);
       if (made && text.split(/[?#]/)[0].includes('//')) found.add(UNKNOWN);
-      else if (segments) found.add(`/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}`);
+      else if (pathSegments(text)) found.add(writtenAddress(text));
       else if (!made || text.includes(UNREADABLE_PIECE)) found.add(UNKNOWN);
     }
-    return found.size > MOST_ADDRESSES ? [UNKNOWN] : [...found];
+    return found.size > MOST_ADDRESSES ? [writtenAddress(tailText(p))] : [...found];
   }
 
   const oneAddress = (p: NodePath) => {
