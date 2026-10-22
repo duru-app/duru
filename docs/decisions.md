@@ -3107,6 +3107,12 @@ shows above the buttons.
   `written`.
 - Taking out a screen the agent put in is left to 「순서 고치기」 after accepting.
 
+**A screen list row with a chip puts its test counts on the line under the chips.** Before, the chips and the counts
+(「테스트 8」, 「불러옴 1」) ran on together and broke wherever the left pane ended, so 「테스트 8」 and 「불러옴 1」 could
+land on different lines and the place of the counts moved from row to row. The driver chose the counts always on
+their own line once a row has any chip (2026-10-22, while checking 「코드 바뀜」 of #331), over leaving the run-on
+line, which takes the fewest lines. A row without a chip keeps its counts right under the name.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
