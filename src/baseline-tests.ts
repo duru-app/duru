@@ -150,40 +150,60 @@ interface CurrentTest {
   tags: string[];
   file: string | null;
   project: string | null;
-  status: TestStatus | null;
+  statuses: TestStatus[];
   place: Place;
   rows: TestRow[];
-  offNode: TestStatus[];
+  onNode: Map<string, TestStatus[]>;
+  offNode: Map<string, TestStatus[]>;
 }
 
 const worst = (statuses: TestStatus[]) => statuses.reduce((w, s) => (STATUS_RANK[s] > STATUS_RANK[w] ? s : w));
+const worstThatRan = (statuses: TestStatus[]) => worst(statuses.some((s) => s !== 'pending') ? statuses.filter((s) => s !== 'pending') : statuses);
+const withoutSkipped = (statuses: TestStatus[], skipped: number) => {
+  const pending = statuses.filter((s) => s === 'pending').length;
+  const kept = [...statuses.filter((s) => s !== 'pending'), ...Array<TestStatus>(Math.max(0, pending - skipped)).fill('pending')];
+  return kept.length ? kept : statuses;
+};
+const addUnder = (lists: Map<string, TestStatus[]>, key: string, statuses: TestStatus[]) => (lists.get(key) ?? lists.set(key, []).get(key)!).push(...statuses);
+const everyRun = (lists: Map<string, TestStatus[]>) => {
+  const most = new Map<TestStatus, number>();
+  for (const list of lists.values()) for (const s of new Set(list)) most.set(s, Math.max(most.get(s) ?? 0, list.filter((x) => x === s).length));
+  return [...most].flatMap(([s, n]) => Array<TestStatus>(n).fill(s));
+};
 const byRow = (a: TestRow, b: TestRow) => compare(a.kind === 'call', b.kind === 'call') || compare(a.node, b.node) || compare(a.source, b.source) || compare(a.project ?? '', b.project ?? '');
 const byPlace = (a: Place, b: Place) => compare(a.file ?? '', b.file ?? '') || (a.line ?? 0) - (b.line ?? 0) || compare(a.title, b.title) || compare(a.project ?? '', b.project ?? '');
 
 const statusIn = (t: any, project: string | null): TestStatus => (project !== null && t.projects?.[project]) || t.worstStatus || t.status;
+const statusesIn = (t: any, project: string | null): TestStatus[] => {
+  const status = statusIn(t, project);
+  return t.passedBesidePending?.includes(project !== null && t.projects?.[project] ? project : null) ? [status, 'pass'] : [status];
+};
 
 function currentTests(current: CurrentTests, onMap: Set<string>, calls: Set<string>, projectsOf: (title: string) => (string | null)[]) {
   const runs = new Map<string, CurrentTest>();
   const runsOf = (t: any) => (t.projects ? Object.keys(t.projects) : [t.project ?? null]).map((project: string | null) => {
     const id = JSON.stringify([t.source, t.file, t.line, t.title, project]);
-    if (!runs.has(id)) runs.set(id, { title: t.title, tags: t.tags ?? [], file: t.file ?? null, project, status: t.status, place: { file: t.testFile ?? t.file ?? null, line: t.line ?? null, title: t.title, project }, rows: [], offNode: [] });
+    if (!runs.has(id)) runs.set(id, { title: t.title, tags: t.tags ?? [], file: t.file ?? null, project, statuses: [], place: { file: t.testFile ?? t.file ?? null, line: t.line ?? null, title: t.title, project }, rows: [], onNode: new Map(), offNode: new Map() });
     return runs.get(id)!;
   });
   for (const [field, via] of UNDER_NODE) {
     for (const [node, list] of Object.entries(current[field] ?? {})) {
       for (const t of list) {
         if (!onMap.has(node)) {
-          for (const run of runsOf(t)) run.offNode.push(statusIn(t, run.project));
+          for (const run of runsOf(t)) addUnder(run.offNode, `${field} ${node}`, statusesIn(t, run.project));
           continue;
         }
         const listed = via !== 'trace' || LISTED_LEVELS.includes(t.level);
-        for (const run of runsOf(t)) run.rows.push({ node, kind: calls.has(node) ? 'call' : 'screen', via, ...(t.level && { level: t.level }), status: statusIn(t, run.project), listed, ref: t.ref ?? testRef(t), source: t.source, project: run.project });
+        for (const run of runsOf(t)) {
+          run.rows.push({ node, kind: calls.has(node) ? 'call' : 'screen', via, ...(t.level && { level: t.level }), status: statusIn(t, run.project), listed, ref: t.ref ?? testRef(t), source: t.source, project: run.project });
+          addUnder(run.onNode, `${field} ${node}`, statusesIn(t, run.project));
+        }
       }
     }
   }
-  const offNode = [...OFF_NODE.flatMap((field) => Object.values(current[field] ?? {}).flat()), ...(current.untagged ?? [])];
-  for (const t of offNode) for (const run of runsOf(t)) run.offNode.push(statusIn(t, run.project));
-  for (const test of runs.values()) test.status = test.rows.length ? worst(test.rows.map((r) => r.status)) : worst(test.offNode);
+  const offNode: [string, any[]][] = [...OFF_NODE.flatMap((field) => Object.entries(current[field] ?? {}).map(([node, list]): [string, any[]] => [`${field} ${node}`, list])), ['untagged', current.untagged ?? []]];
+  for (const [key, list] of offNode) for (const t of list) for (const run of runsOf(t)) addUnder(run.offNode, key, statusesIn(t, run.project));
+  for (const test of runs.values()) test.statuses = everyRun(test.onNode.size ? test.onNode : test.offNode);
   const listed = new Set([...runs.values()].map((r) => JSON.stringify([r.file, r.place.line, r.title, r.project])));
   const tagged = new Set([...runs.values()].filter((r) => r.rows.some((row) => row.via === 'tag')).map((r) => JSON.stringify([r.file, r.place.line, r.title])));
   const offMap = groupBy(current.unknownTags ?? [], (u) => JSON.stringify([u.test.file, u.test.line, u.test.title]));
@@ -193,7 +213,7 @@ function currentTests(current: CurrentTests, onMap: Set<string>, calls: Set<stri
     if (!tags.length || tagged.has(key)) continue;
     for (const project of projectsOf(title)) {
       if (listed.has(JSON.stringify([file, line, title, project]))) continue;
-      runs.set(JSON.stringify([null, file, line, title, project]), { title, tags, file, project, status: null, place: { file, line, title, project }, rows: [], offNode: [] });
+      runs.set(JSON.stringify([null, file, line, title, project]), { title, tags, file, project, statuses: [], place: { file, line, title, project }, rows: [], onNode: new Map(), offNode: new Map() });
     }
   }
   return [...runs.values()];
@@ -266,8 +286,8 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
   let onlyInBaseline = 0;
   const regressions = [];
   for (const [key, tests] of before) {
-    const ran = tests.filter((t) => t.status !== 'pending');
-    const status = worst((ran.length ? ran : tests).map((t) => t.status));
+    const statuses = tests.map((t) => t.status);
+    const status = worstThatRan(statuses);
     const match = now.get(key);
     if (!match) {
       onlyInBaseline += 1;
@@ -277,7 +297,7 @@ export function compareTests(baseline: BaselineTests, current: CurrentTests, map
     if (!match.some((t) => t.rows.length)) notUnderNode += 1;
     else {
       compared += 1;
-      const nowStatus = worst(match.flatMap((t) => t.status ?? []));
+      const nowStatus = worst(withoutSkipped(match.flatMap((t) => t.statuses), statuses.filter((s) => s === 'pending').length));
       if (status !== 'pass' || nowStatus === 'pass') continue;
       const under = match.filter((t) => t.rows.length);
       const results = new Set(tests.map((t) => t.result));
@@ -322,7 +342,6 @@ function countsByNode(regressed: TestRow[][]) {
   return byNode;
 }
 
-// jest-junit 은 기본으로 시험 이름을 classname 에 적어, 그런 이름은 시험 파일을 가리키지 않는다.
 const namesItself = (t: BaselineTest) => t.file !== null && (t.title === t.file || t.title.endsWith(` › ${t.file}`));
 
 function onlyInBaselineOf(gone: BaselineTest[][], keys: ReturnType<typeof fileKeys>, onMap: Set<string>) {

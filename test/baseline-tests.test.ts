@@ -9,6 +9,7 @@ import type { BaselineTests } from '../src/baseline-tests.ts';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment, applyJudgments } from '../src/judgments.ts';
 import { readJunit } from '../src/junit.ts';
+import { readPlaywright } from '../src/playwright.ts';
 import { BASELINE_TESTS, editJson, keepRelease } from './baseline-helpers.ts';
 import type { TestStatus } from '../src/verdict.ts';
 
@@ -195,6 +196,9 @@ test('a judged pair keeps the worst run of a test run twice without a project or
   const compared = (base: BaselineTests, judged: object) => baselineTestsLines(compareTests(base, judged, MAP));
   const twice = was({ ...signs, status: 'pass' }, { ...signs, status: 'pass' });
   assert.deepEqual(compared(twice, applyJudgments({ importers: { '/a#A': [run(null, 'pass'), run(null, 'fail')] } }, [judgment('hand-over')])), [summary(1, 1, 0, 0, 0, 0), '  pass→fail ← sign.spec.ts:5 signs — screen /a#A']);
+  const skippedOnce = applyJudgments({ importers: { '/a#A': [run(null, 'pending'), run(null, 'pass')] } }, [judgment('hand-over')]);
+  assert.deepEqual(compared(twice, skippedOnce), [summary(1, 0, 1, 0, 0, 0), '  pass→pending ← sign.spec.ts:5 signs — screen /a#A']);
+  assert.deepEqual(compared(was({ ...signs, status: 'pending' }, { ...signs, status: 'pass' }), skippedOnce), [summary(1, 0, 0, 0, 0, 0)]);
   const inProjects = was({ ...signs, project: 'chromium', status: 'pass' }, { ...signs, project: 'firefox', status: 'pass' });
   const regressed = [summary(2, 1, 0, 0, 0, 0), '  pass→fail ← sign.spec.ts:5 signs (chromium) — screen /a#A'];
   const repeated = { passed: { '/a#A': [run('chromium', 'pass'), run('chromium', 'fail'), run('firefox', 'pass'), run('firefox', 'pass')] } };
@@ -269,6 +273,54 @@ test('runs made one test in the baseline take the worst status of the runs that 
   ]);
   assert.deepEqual(lines(was(signs('pass'), signs('fail')), { nodes: { '/a#A': [signs('fail'), signs('fail')] } }), [summary(1, 0, 0, 0, 0, 0)]);
   assert.deepEqual(lines(was(signs('pending'), signs('pending')), { nodes: { '/a#A': [signs('fail')] } }), [summary(1, 0, 0, 0, 0, 0)]);
+});
+
+const junitReport = (...statuses: TestStatus[]) =>
+  `<testsuites>${statuses.map((s) => `<testsuite name="login.spec.ts"><testcase classname="login.spec.ts" name="login › signs in @screen:/a#A">${{ pass: '', pending: '<skipped/>', fail: '<failure/>' }[s]}</testcase></testsuite>`).join('')}</testsuites>`;
+const repeatedInChromium = (title: string, ...statuses: TestStatus[]) => ({
+  suites: [{ title: 'login.spec.ts', specs: [{ title, file: 'login.spec.ts', line: 3, tests: statuses.map((s) => ({ projectName: 'chromium', status: { pass: 'expected', pending: 'skipped', fail: 'unexpected' }[s] })) }] }],
+});
+
+type ReadRow = { title: string; file: string | null; line: number | null; project: string | null; tags: string[]; status: TestStatus; source: string; format: string };
+
+function comparedFromFiles(format: 'junit' | 'playwright', baseline: unknown, current: unknown, toCurrent: (rows: ReadRow[]) => object) {
+  const name = format === 'junit' ? 'junit.xml' : 'e2e.json';
+  let compared: string[] = [];
+  inFolder({ [`releases/1.5.0/${name}`]: baseline, [`results/${name}`]: current }, (dir) => {
+    const base = readBaselineTests({ configDir: dir, baselineTests: [{ format, path: path.join(dir, 'releases/1.5.0', name) }] });
+    const read: Omit<ReadRow, 'source' | 'format'>[] = (format === 'junit' ? readJunit : readPlaywright)(path.join(dir, 'results', name))!;
+    const rows = read.map((t) => ({ ...t, source: `results/${name}`, format }));
+    compared = baselineTestsLines(compareTests(base, toCurrent(rows), MAP));
+  });
+  return compared;
+}
+
+test('runs skipped now are left out only as far as the same test in the baseline had skipped runs, so a report gives no regression against itself and a run newly skipped since the baseline is pass→pending', () => {
+  const junit = (baseline: TestStatus[], current: TestStatus[]) => comparedFromFiles('junit', junitReport(...baseline), junitReport(...current), (rows) => ({ nodes: { '/a#A': rows } }));
+  const junitLine = (change: string) => `  ${change} ← login.spec.ts login.spec.ts › login › signs in @screen:/a#A — screen /a#A`;
+  assert.deepEqual(junit(['pending', 'pass'], ['pending', 'pass']), [summary(1, 0, 0, 0, 0, 0)]);
+  assert.deepEqual(junit(['pass', 'pass'], ['pass', 'pending']), [summary(1, 0, 1, 0, 0, 0), junitLine('pass→pending')]);
+  assert.deepEqual(junit(['pending', 'pass'], ['pending', 'pending']), [summary(1, 0, 1, 0, 0, 0), junitLine('pass→pending')]);
+  assert.deepEqual(junit(['pending', 'pass'], ['pending', 'fail']), [summary(1, 1, 0, 0, 0, 0), junitLine('pass→fail')]);
+  assert.deepEqual(junit(['pending', 'pass', 'pass'], ['pending', 'pending', 'pass']), [summary(1, 0, 1, 0, 0, 0), junitLine('pass→pending')]);
+  assert.deepEqual(junit(['pending', 'pass'], ['pass', 'pending', 'pending']), [summary(1, 0, 1, 0, 0, 0), junitLine('pass→pending')]);
+  assert.deepEqual(junit(['pending', 'pass', 'pass'], ['pass', 'pass', 'pending']), [summary(1, 0, 0, 0, 0, 0)]);
+  const onTwo = (baseline: TestStatus[], current: TestStatus[]) => comparedFromFiles('junit', junitReport(...baseline), junitReport(...current), (rows) => ({ nodes: { '/a#A': rows, '/b#B': rows } }));
+  assert.deepEqual(onTwo(['pending', 'pass'], ['pending', 'pass']), [summary(1, 0, 0, 0, 0, 0)]);
+  assert.deepEqual(onTwo(['pass', 'pass'], ['pass', 'pending']), [summary(1, 0, 1, 0, 0, 0), '  pass→pending ← login.spec.ts login.spec.ts › login › signs in @screen:/a#A — screen /a#A, screen /b#B']);
+  const title = 'signs in @screen:/a#A';
+  const repeated = (baseline: TestStatus[], current: TestStatus[]) => comparedFromFiles('playwright', repeatedInChromium(title, ...baseline), repeatedInChromium(title, ...current), (rows) => ({ nodes: { '/a#A': rows } }));
+  assert.deepEqual(repeated(['pass', 'pending'], ['pass', 'pending']), [summary(1, 0, 0, 0, 0, 0)]);
+  assert.deepEqual(repeated(['pass', 'pass'], ['pass', 'pending']), [summary(1, 0, 1, 0, 0, 0), '  pass→pending ← login.spec.ts:3 signs in @screen:/a#A (chromium) — screen /a#A']);
+});
+
+test('a test handed over to a screen that ran more than once in one project follows the same rule for its skipped runs', () => {
+  const title = 'signs in @story:sign';
+  const handOver = { id: '1', date: '2026-10-01T00:00:00Z', author: 'r', reason: '', kind: 'hand-over', node: '/a#A', test: { source: 'results/e2e.json', file: 'login.spec.ts', title: 'signs in' } };
+  const handedOver = (baseline: TestStatus[], current: TestStatus[]) => comparedFromFiles('playwright', repeatedInChromium(title, ...baseline), repeatedInChromium(title, ...current), (rows) => applyJudgments({ stories: { sign: rows }, nodes: {} }, [handOver]));
+  assert.deepEqual(handedOver(['pass', 'pending'], ['pass', 'pending']), [summary(1, 0, 0, 0, 0, 0)]);
+  assert.deepEqual(handedOver(['pass', 'pass'], ['pass', 'pending']), [summary(1, 0, 1, 0, 0, 0), '  pass→pending ← login.spec.ts:3 signs in @story:sign (chromium) — screen /a#A']);
+  assert.deepEqual(handedOver(['pass', 'pending'], ['pending', 'fail']), [summary(1, 1, 0, 0, 0, 0), '  pass→fail ← login.spec.ts:3 signs in @story:sign (chromium) — screen /a#A']);
 });
 
 test('regressions in one file are ordered by line, and a test merged from runs on several lines shows the first of them', () => {
