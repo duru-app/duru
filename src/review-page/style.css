@@ -153,6 +153,10 @@
   .guard { display: block; }
   .chip.kind-setting, .chip.kind-role, .chip.kind-mixed { color: var(--accent); margin-left: 4px; }
   .chip.change-new { color: var(--fine); }
+  .chip.call-regressed { border-style: dashed; }
+  .baseline-only { margin: 8px 0; }
+  .baseline-only summary, .baseline-only-files summary { cursor: pointer; }
+  :is(.baseline-only, .baseline-only-files) li { margin: 2px 0 2px 16px; }
   .chip.change-condition, .chip.change-server { color: var(--changed); }
   .chip.change-calls { color: var(--changed); border-style: dashed; }
   .chip.change-removed { color: var(--missing); }

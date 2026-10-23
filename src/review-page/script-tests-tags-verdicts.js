@@ -8,19 +8,19 @@ const bareTitle = (title) => title.split(' › ').map((part) => part.split(/\s+/
 const tagsOf = (t) => t.tags ?? t.title.split(/\s+/).filter(isTagWord).map((w) => w.slice(1));
 const titleWithTags = (t, hide = []) => [bareTitle(t.title), ...[...new Set(tagsOf(t))].filter((tag) => !hide.includes(tag)).map((tag) => h('span', { class: 'mono test-tag' }, tag))];
 
-function testItem(t, { depth = false, hide = [] } = {}) {
+function testItem(t, { depth = false, hide = [], chip = null } = {}) {
   return h('div', { class: 'test' },
     depth ? h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]) : null,
-    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', titleWithTags(t, depth ? [...hide, `depth:${t.depth}`] : hide), ' ',
+    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', chip, titleWithTags(t, depth ? [...hide, `depth:${t.depth}`] : hide), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
     t.detail && t.status !== 'pass' ? h('div', { class: 'detail' }, t.detail) : null);
 }
 
-function importerItem(t) {
+function importerItem(t, chip = null) {
   return h('div', { class: 'test' },
     h('span', { class: 'depth' }, DEPTH_LABELS[t.depth]),
-    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', titleWithTags(t, [`depth:${t.depth}`]), ' ',
+    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', chip, titleWithTags(t, [`depth:${t.depth}`]), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.testFile, t.line)),
     viaRow(t.via));
 }
@@ -389,19 +389,19 @@ const PASS_LEVEL_TITLE = { assert: '이 화면이 열려 있을 때 확인문을
 
 const UNCONFIRMED_TITLE = '이번 실행에서는 이 테스트의 trace 를 읽지 못해 이 짝을 다시 확인하지 못했습니다. 포함한 판단은 그대로입니다';
 
-function passedItem(t) {
+function passedItem(t, chip = null) {
   return h('div', { class: 'test' },
     t.unconfirmed
       ? h('span', { class: 'chip level-visit', title: UNCONFIRMED_TITLE }, '확인 못 함')
       : h('span', { class: `chip level-${t.level}`, title: PASS_LEVEL_TITLE[t.level] }, PASS_LEVEL[t.level]), ' ',
-    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', titleWithTags(t), ' ',
+    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', chip, titleWithTags(t), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
     h('div', { class: 'detail' }, '결과 파일 ', h('span', { class: 'mono' }, t.source)));
 }
 
 const byTrace = (t) => Boolean(t.level || t.unconfirmed);
-const pairTestItem = (t) => (byTrace(t) ? passedItem(t) : importerItem(t));
+const pairTestItem = (t, chip = null) => (byTrace(t) ? passedItem(t, chip) : importerItem(t, chip));
 const pairKeys = (node) => [passedOf, importersOf, discardedOf, awaitingTagOf, detachedOf].flatMap((of) => of(node)).map((t) => judgmentKey(t, node));
 
 // 화면의 짝과 고른 호출의 짝은 오류를 저마다 제 줄 아래에 보인다.
@@ -433,20 +433,20 @@ function untaggedPairs(node) {
   const awaiting = awaitingTagOf(node);
   const detached = detachedOf(node);
   const row = (t, ...rest) => h('div', { class: `pair-test ${byTrace(t) ? 'passer' : 'importer'}` }, ...rest, judgmentErrorOf(judgmentKey(t, node)));
-  const openRow = (t) => row(t, partRow(pairTestItem(t), node, t), judgmentForm(t, node));
+  const openRow = (via) => (t) => row(t, partRow(pairTestItem(t, regressionChip(node, via, t)), node, t), judgmentForm(t, node));
   const judgedRow = (item, t, label) => row(t, item, judgmentMeta(t.judgment, label, t.codeChanged), undoButton(t, node));
   return [
     passed.length ? h('div', { class: 'passed' },
       h('h2', {}, text.passed(passed.length)),
       h('p', { class: 'muted' }, text.passedNote),
-      passed.map(openRow)) : null,
+      passed.map(openRow('trace'))) : null,
     importers.length ? h('div', { class: 'importers' },
       h('h2', {}, `불러오는 테스트 ${importers.length}`),
       h('p', { class: 'muted' }, '이 화면에 딸린 소스 파일을 불러오는 단위 테스트입니다. 이 화면의 태그가 없어서 이 화면의 테스트로 세지 않습니다.'),
-      importers.map(openRow)) : null,
+      importers.map(openRow('import'))) : null,
     awaiting.length ? h('div', { class: 'awaiting-tag' },
       h('h2', {}, `태그 대기 ${awaiting.length}`),
-      awaiting.map((t) => judgedRow(pairTestItem(t), t, '메모'))) : null,
+      awaiting.map((t) => judgedRow(pairTestItem(t, regressionChip(node, 'hand-over', t)), t, '메모'))) : null,
     detached.length ? h('div', { class: 'detached' },
       h('h2', {}, `떨어져 나감 ${detached.length}`),
       h('p', { class: 'muted' }, text.detachedNote),
