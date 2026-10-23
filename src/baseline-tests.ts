@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { git } from './code-state.ts';
 import { compare } from './config.ts';
 import { testRef } from './judgments.ts';
 import type { TestRef } from './judgments.ts';
@@ -42,13 +43,28 @@ function commonFolder(folders: string[]) {
   return (differs === -1 ? first : first.slice(0, differs)).join(path.sep) || path.sep;
 }
 
-function startedAt(format: string, file: string) {
+function committedDates(folder: string) {
+  const dates = new Map<string, string>();
+  const log = git(folder, ['-c', 'core.quotePath=false', 'log', '--format=%x00%aI', '--name-only', '--relative', '--', '.']);
+  const changed = log ? git(folder, ['-c', 'core.quotePath=false', 'diff', '--name-only', '--relative', 'HEAD', '--', '.']) : null;
+  if (changed === null) return dates;
+  const edited = new Set(changed.split('\n'));
+  for (const commit of log!.split('\0').slice(1)) {
+    const [date, ...files] = commit.split('\n');
+    for (const file of files) if (file && !dates.has(file) && !edited.has(file)) dates.set(file, date);
+  }
+  return dates;
+}
+
+function startedAt(format: string, file: string, committed: () => Map<string, string>, folder: string) {
   if (format === 'playwright' || format === 'vitest') {
     const report = JSON.parse(fs.readFileSync(file, 'utf8'));
     const at = format === 'playwright' ? report.stats?.startTime : report.startTime;
     if ((typeof at === 'string' || typeof at === 'number') && !Number.isNaN(new Date(at).getTime())) return new Date(at).toISOString();
   }
-  return fs.statSync(file).mtime.toISOString();
+  const modified = fs.statSync(file).mtime;
+  const commit = committed().get(path.relative(folder, file).split(path.sep).join('/'));
+  return commit && Date.parse(commit) < modified.getTime() ? new Date(commit).toISOString() : modified.toISOString();
 }
 
 export function readBaselineTests(config: { configDir: string; baselineTests: Source[] }): BaselineTests {
@@ -58,7 +74,10 @@ export function readBaselineTests(config: { configDir: string; baselineTests: So
   for (const source of config.baselineTests) {
     const fail = (reason: string) => new Error(`baselineTests ${fromConfig(config.configDir, source.path)} could not be read: ${reason}`);
     if (!fs.existsSync(source.path)) throw fail('it does not exist');
-    folders.push(fs.statSync(source.path).isDirectory() ? source.path : path.dirname(source.path));
+    const folder = fs.statSync(source.path).isDirectory() ? source.path : path.dirname(source.path);
+    folders.push(folder);
+    let dates: Map<string, string> | undefined;
+    const committed = () => (dates ??= committedDates(folder));
     const before = tests.length;
     for (const file of resultFiles(source.path, READERS[source.format].extensions)) {
       const result = fromConfig(config.configDir, file);
@@ -68,7 +87,7 @@ export function readBaselineTests(config: { configDir: string; baselineTests: So
       } catch (err) {
         throw fail((err as Error).message);
       }
-      if (read.length) results.push({ result, startedAt: startedAt(source.format, file) });
+      if (read.length) results.push({ result, startedAt: startedAt(source.format, file, committed, folder) });
       for (const t of read) tests.push({ title: t.title, tags: t.tags, file: t.file ?? null, line: t.line ?? null, project: t.project ?? null, status: t.status, result });
     }
     if (tests.length === before) throw fail(`it holds no ${source.format} test result`);
@@ -363,4 +382,37 @@ export function baselineTestsLines(c: TestComparison) {
     if (whole) lines.push(`  only in baseline ← ${file}: ${tests.length} test${tests.length === 1 ? '' : 's'}, none of this file's tests are in the current results`);
   }
   return lines;
+}
+
+export const nodeIds = (map: { screens: { id: string }[]; calls: { id: string }[] }) => ({ screens: map.screens.map((s) => s.id), calls: map.calls.map((c) => c.id) });
+
+type PartTarget = { node?: string; part?: { kind: string; key: unknown } };
+
+const sameTest = (ref: TestRef, key: unknown) => {
+  const k = key as Partial<TestRef> | null;
+  return ref.source === k?.source && ref.file === k?.file && ref.title === k?.title;
+};
+
+type MarkRecord = { status?: string; date: string; target?: { node?: string; option?: unknown; depth?: string } };
+
+export function wholeFines(records: MarkRecord[]) {
+  const fines = new Map<string, string>();
+  for (const { status, date, target } of records) {
+    if (status !== 'fine' || target?.node === undefined || target.option !== undefined || target.depth !== undefined) continue;
+    const last = fines.get(target.node);
+    if (last === undefined || Date.parse(date) > Date.parse(last)) fines.set(target.node, date);
+  }
+  return fines;
+}
+
+const latestStart = (results: BaselineResult[]) => Math.max(...results.map((r) => Date.parse(r.startedAt)));
+
+export function passedInFolder(c: TestComparison, fines: Map<string, string>, target: PartTarget, date: string) {
+  const { node, part } = target;
+  if (part?.kind !== 'test' || node === undefined) return null;
+  const at = Date.parse(date);
+  const fine = fines.get(node);
+  if (fine !== undefined && at <= Date.parse(fine)) return null;
+  const regressed = c.regressions.some((r) => at > latestStart(r.baseline) && r.rows.some((row) => row.node === node && row.status !== 'pass' && sameTest(row.ref, part.key)));
+  return regressed ? c.folder : null;
 }

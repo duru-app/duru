@@ -8,7 +8,7 @@ import path from 'node:path';
 import { screenCases, settingConditionName } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
-import { compareTests, readBaselineTests } from './baseline-tests.ts';
+import { compareTests, nodeIds, passedInFolder, readBaselineTests, wholeFines } from './baseline-tests.ts';
 import type { BaselineTests, TestComparison } from './baseline-tests.ts';
 import { screenRoutes } from './address-match.ts';
 import { acceptCandidate, addCommentCandidate, candidatePlace, discardCandidate, pickCandidateLine, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
@@ -404,6 +404,12 @@ export async function startReviewServer(config: any, { port = 0, author = review
       return null;
     }
   };
+  const regressionContext = () => baselineTests && readOrNull(() => {
+    const map = readMap(mapFile);
+    const { traced, ...tests } = applyJudgments(readTests(config), loadJudgments(config.judgmentsDir).judgments, nodeHashes(map));
+    const marks = loadMarks(config.marksDir);
+    return { comparison: compareTests(baselineTests, tests, nodeIds(map)), fines: wholeFines(marks), marks };
+  });
   const codeHashOf = (node: unknown) => (typeof node === 'string' ? nodeHashes(readOrNull(() => readMap(mapFile)) ?? { screens: [] }).get(node) : undefined);
   const markHash = (input: any) => {
     const one = !isPlainObject(input) ? null : input.targets === undefined ? input.target : Array.isArray(input.targets) && input.targets.length === 1 ? input.targets[0] : null;
@@ -434,15 +440,21 @@ export async function startReviewServer(config: any, { port = 0, author = review
   };
   const orderWhere = (screens: string[]) => readOrNull(() => locateOrder(screens, readMap(mapFile)));
   const whereOf = (target: Target) => (target.part ? partWhere(target) : target.candidate !== undefined ? candidateWhere(target.candidate) : target.screens !== undefined ? orderWhere(target.screens) : undefined);
-  const lineOf = (mark: Mark): AnnouncedMark => {
-    if (mark.targets) return { duru: recordKind(mark), ...mark, wheres: mark.targets.map((t) => whereOf(t) ?? null) };
-    const where = whereOf(mark.target!);
+  const withPassedIn = (target: Target, where: Where | undefined, date: string | undefined, context: ReturnType<typeof regressionContext>) => {
+    const folder = context && where && date && passedInFolder(context.comparison, context.fines, target, date);
+    return folder ? { ...where, passedIn: folder } : where;
+  };
+  const lineOf = (mark: Mark, context = regressionContext()): AnnouncedMark => {
+    const commentDate = mark.replyTo === undefined ? mark.date : context?.marks.find((m) => m.id === mark.replyTo)?.date;
+    if (mark.targets) return { duru: recordKind(mark), ...mark, wheres: mark.targets.map((t) => withPassedIn(t, whereOf(t), commentDate, context) ?? null) };
+    const where = withPassedIn(mark.target!, whereOf(mark.target!), commentDate, context);
     return { duru: recordKind(mark), ...mark, ...(where !== undefined && { where }) };
   };
   const unanswered = () => {
     const marks = loadMarks(config.marksDir);
     const answered = new Set(marks.map((m) => m.replyTo));
-    return marks.filter((m) => recordKind(m) === 'comment' && !answered.has(m.id)).sort((a, b) => a.date.localeCompare(b.date));
+    const context = regressionContext();
+    return marks.filter((m) => recordKind(m) === 'comment' && !answered.has(m.id)).sort((a, b) => a.date.localeCompare(b.date)).map((m) => lineOf(m, context));
   };
   // 스토리 폴더의 변화는 이름을 붙인 이벤트로 보내, 이름 없는 코멘트 줄만 읽는 duru wait 에 섞이지 않게 한다.
   let storiesSent = storiesVersion(config.storiesDir);
@@ -492,7 +504,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
       }
       if (req.method === 'GET' && req.url === '/') return send(res, 200, 'text/html', PAGE_PARTS.map((part) => fs.readFileSync(path.join(PAGE_DIR, part), 'utf8')).join(''));
       if (req.method === 'GET' && (req.url === '/api/events' || req.url === '/api/events?unanswered')) {
-        const backlog = req.url.endsWith('?unanswered') ? unanswered().map(lineOf) : null;
+        const backlog = req.url.endsWith('?unanswered') ? unanswered() : null;
         res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'close' });
         if (streamsEnded) return res.end('event: end\ndata: review ended\n\n');
         res.flushHeaders();
