@@ -5,7 +5,7 @@ import type { Binding, NodePath, Scope } from '@babel/traverse';
 import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
-import type { AddressFunction } from './address-functions.ts';
+import type { AddressFunction, Read } from './address-functions.ts';
 import type { Branch, Constants, GuardInit, GuardSetting, RouteNode } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
@@ -18,7 +18,7 @@ import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
-import { addresses, madeFrom, screenLinkReader } from './screen-links.ts';
+import { addresses, FOLLOWED, madeFrom, screenLinkReader } from './screen-links.ts';
 import { importedAs, routerImport, screenRequestReader } from './screen-requests.ts';
 import type { UnresolvedReason } from './server.ts';
 import { typedMembers } from './typed-members.ts';
@@ -796,7 +796,36 @@ export async function extractClient(config: any) {
     declaredClass,
     passThrough,
     mergesSlashes: false,
+    moves: {
+      moveOf: (p) => screenLinks.moveOf(p),
+      linked: (p) => addresses(p).length > 0 && linkAddresses(p).length > 0,
+      linkedCall: (p) => addressesOf(linkReading.helperBranches(p) ?? { branches: [] }, () => UNKNOWN).length > 0,
+      isHistory: (p) => screenLinks.isHistory(p),
+      holdsRouteConstant: (p) => Boolean(routeChain) && holdsRouteConstant(p),
+    },
   });
+
+  const routeChainOf = (chain: string[] | null) => chain !== null && chain[0] === routeRoot && chain.length === routeRest.length + 1 && routeRest.every((k: string, i: number) => chain[i + 1] === k);
+  const isRouteConstant = (p: NodePath<any>) => (p.isMemberExpression() || p.isOptionalMemberExpression()) && routeChainOf(memberChain(p.node.object));
+
+  // 식 안이나, 식이 쓴 이름의 초기값을 따라간 곳에 라우트 상수가 있는가
+  function holdsRouteConstant(p: NodePath<any>, depth = 0): boolean {
+    if (depth > FOLLOWED) return false;
+    if (isRouteConstant(p)) return true;
+    const names: NodePath[] = p.isIdentifier() ? [p] : [];
+    let found = false;
+    p.traverse({
+      'MemberExpression|OptionalMemberExpression'(m: NodePath<any>) {
+        if (!isRouteConstant(m)) return;
+        found = true;
+        m.stop();
+      },
+      Identifier(i) {
+        if (i.isReferencedIdentifier()) names.push(i);
+      },
+    });
+    return found || names.some((i) => madeFrom(i).slice(1).some((x) => holdsRouteConstant(x, depth + 1)));
+  }
 
   const writtenAddress = (text: string) => {
     const segments = pathSegments(text);
@@ -804,11 +833,12 @@ export async function extractClient(config: any) {
   };
 
   // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
-  // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니고, // 가 생기는 것은 {?} 다.
   // 갈래가 너무 많으면 함수를 따라가지 않고, 호출마다 읽지 못한 조각으로 둔 주소 하나를 준다.
-  function linkAddresses(p: NodePath) {
-    const read = linkReading.branches(p);
-    if ('tooMany' in read) return [writtenAddress(tailText(p))];
+  const linkAddresses = (p: NodePath) => addressesOf(linkReading.branches(p), () => writtenAddress(tailText(p)));
+
+  // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니고, // 가 생기는 것은 {?} 다.
+  function addressesOf(read: Read, tooMany: () => string) {
+    if ('tooMany' in read) return [tooMany()];
     const found = new Set<string>();
     for (const { text, made, whole } of read.branches) {
       if (made && whole && !addresses(whole).length) continue;
@@ -816,7 +846,7 @@ export async function extractClient(config: any) {
       else if (pathSegments(text)) found.add(writtenAddress(text));
       else if (!made || text.includes(UNREADABLE_PIECE)) found.add(UNKNOWN);
     }
-    return found.size > MOST_ADDRESSES ? [writtenAddress(tailText(p))] : [...found];
+    return found.size > MOST_ADDRESSES ? [tooMany()] : [...found];
   }
 
   const oneAddress = (p: NodePath) => {
@@ -1117,6 +1147,11 @@ export async function extractClient(config: any) {
         for (const to of linkAddresses(at)) record('routerLinks', { to }, at);
       }
     };
+    const recordHelperLinks = (p: NodePath<CallExpression>) => {
+      if (screenLinks.moveOf(p) || (p.get('arguments') as NodePath[]).some((a) => madeFrom(a).some(holdsRouteRef))) return;
+      const read = linkReading.helperBranches(p);
+      for (const to of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', { to }, p);
+    };
     const inRouteFile = routeFileSet.has(file);
     traverse(ast, {
       JSXElement(p) {
@@ -1124,6 +1159,7 @@ export async function extractClient(config: any) {
       },
       CallExpression(p) {
         recordLinks(screenLinks.call(p));
+        recordHelperLinks(p);
         const callee = p.get('callee');
         const binding = !config.history && callee.isIdentifier() ? callee.scope.getBinding(callee.node.name) : undefined;
         const from = binding ? importedAs(binding) : null;

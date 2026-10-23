@@ -1,6 +1,7 @@
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { ArrowFunctionExpression, ClassDeclaration, ClassMethod, FunctionDeclaration, FunctionExpression, Identifier, Node, StringLiteral } from '@babel/types';
-import { FOLLOWED } from './screen-links.ts';
+import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, ClassMethod, FunctionDeclaration, FunctionExpression, Identifier, Node, StringLiteral } from '@babel/types';
+import { addresses, FOLLOWED } from './screen-links.ts';
+import type { Move } from './screen-links.ts';
 
 export const UNREADABLE_PIECE = '\0';
 export const MOST_ADDRESSES = 8;
@@ -23,6 +24,16 @@ interface Reading {
   declaredClass: (scope: Scope, name: string) => NodePath<ClassDeclaration> | null;
   passThrough: (name: string) => boolean;
   mergesSlashes: boolean;
+  moves?: Moves;
+}
+
+// linked 는 주소 자리 하나가, linkedCall 은 옮겨 주는 함수를 부른 자리 하나가 그 자리에 링크를 내는가다.
+interface Moves {
+  moveOf: (p: NodePath<CallExpression>) => Move | null;
+  linked: (p: NodePath) => boolean;
+  linkedCall: (p: NodePath<CallExpression>) => boolean;
+  isHistory: (p: NodePath) => boolean;
+  holdsRouteConstant: (p: NodePath) => boolean;
 }
 
 // empty 는 함수가 돌려준 빈 문자열이다. 주소 맨 앞에 오면 읽지 못한 조각으로 본다.
@@ -35,7 +46,11 @@ type Val =
   | { unknown: NodePath };
 type Out = { val: Val; made: boolean; whole?: NodePath };
 type Env = Map<Binding, Out>;
-interface At { env: Env | null; fn: Followable | null; branching: boolean; depth: number }
+// consts 이면 fn 안에서 const 로 선언한 이름을 그 초기값으로 읽는다.
+interface At { env: Env | null; fn: Followable | null; branching: boolean; depth: number; consts?: boolean }
+// history 는 함수가 매개변수로 받은 history 로 옮기는 자리의 그 매개변수다.
+type MovePlace = { at: NodePath<CallExpression>; addresses: NodePath[]; history: NodePath | null };
+type Places = { moves: MovePlace[]; calls: { at: NodePath<CallExpression>; fn: AddressFunction }[] };
 
 const OUTSIDE: At = { env: null, fn: null, branching: false, depth: 0 };
 const NOT_KNOWN = Symbol('not known');
@@ -182,14 +197,21 @@ function choosesText(p: NodePath): boolean {
   return parent.isVariableDeclarator() || parent.isReturnStatement() || parent.isArrowFunctionExpression();
 }
 
+const hasText = ({ val }: Out) => 'pieces' in val && val.pieces.some((x) => 'text' in x);
+// 부른 곳에 적힌 값 그대로인 것에는 그 식을 whole 로 단다.
+const wholeOr = (o: Out, p: NodePath): Out => (o.made || o.whole || hasText(o) ? o : { ...o, whole: p });
+
 // 읽지 못한 조각만으로 되어 있어 무슨 값인지 모르는 값
 const opaque = ({ val }: Out) => 'unknown' in val || ('pieces' in val && val.pieces.length > 0 && val.pieces.every((x) => 'stop' in x));
 
 const unwrapped = (p: NodePath<any>): NodePath<any> => (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isTypeCastExpression() || p.isParenthesizedExpression() ? unwrapped(p.get('expression') as NodePath<any>) : p);
 
-export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, declaredClass, passThrough, mergesSlashes }: Reading) {
+export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, declaredClass, passThrough, mergesSlashes, moves }: Reading) {
   const reading = new Set<Node>();
   const join = (parts: [Out, NodePath][]) => joined(parts, mergesSlashes);
+  const placesFound = new WeakMap<Node, Places>();
+  const helperFound = new WeakMap<Node, boolean>();
+  const callLinked = new WeakMap<Node, boolean>();
 
   function leafOut(p: NodePath): Out {
     const found = leaf(p);
@@ -207,7 +229,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   function identifier(p: NodePath<Identifier>, at: At): Out[] {
     const binding = p.scope.getBinding(p.node.name);
     if (binding && at.env?.has(binding)) return [at.env.get(binding)!];
-    if (binding && at.fn && binding.path.isDescendant(at.fn)) return [unknownAt(p)];
+    if (binding && at.fn && binding.path.isDescendant(at.fn)) return at.consts ? constValues(p, binding, at) : [unknownAt(p)];
     if (!binding && p.node.name === 'undefined') return [known(undefined)];
     const out = leafOut(p);
     if (plain(out) !== NOT_KNOWN || 'value' in out.val) return [out];
@@ -218,6 +240,18 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       return values(declared, { ...OUTSIDE, depth: at.depth });
     } finally {
       reading.delete(declared.node);
+    }
+  }
+
+  function constValues(p: NodePath<Identifier>, binding: Binding, at: At): Out[] {
+    const declarator = binding.path;
+    if (binding.kind !== 'const' || !declarator.isVariableDeclarator() || !declarator.node.init || reading.has(declarator.node)) return [unknownAt(p)];
+    reading.add(declarator.node);
+    try {
+      const inner = (env: Env): At => ({ ...at, env });
+      return values(declarator.get('init') as NodePath, at).flatMap((o) => bind(declarator.get('id'), o, [new Map(at.env)], inner).map((e) => e.get(binding) ?? unknownAt(p)));
+    } finally {
+      reading.delete(declarator.node);
     }
   }
 
@@ -413,7 +447,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   function values(p: NodePath<any>, at: At): Out[] {
     const outs = limited(valuesOf(unwrapped(p), at), distinct);
-    return at.env ? outs : outs.map((o) => (o.made || o.whole || 'pieces' in o.val && o.val.pieces.some((x) => 'text' in x) ? o : { ...o, whole: p }));
+    return at.env ? outs : outs.map((o) => wholeOr(o, p));
   }
 
   function valuesOf(p: NodePath<any>, at: At): Out[] {
@@ -524,5 +558,207 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     return { branches: [...found.values()] };
   }
 
-  return { branches };
+  // 함수 몸통에서 지금 규칙으로 링크가 나오지 않는 이동 자리와 그 주소 후보
+  // 몸통 어디든(돌려주는 함수와 콜백 안 포함) 지금 규칙으로 링크가 나오지 않는 이동 자리와, 소스에 선언한 함수를 부르는 자리
+  function placesOf(fn: AddressFunction): Places {
+    if (placesFound.has(fn.node)) return placesFound.get(fn.node)!;
+    const outer = [...reading];
+    reading.clear();
+    const found: Places = { moves: [], calls: [] };
+    try {
+      const visit = (c: NodePath<CallExpression>) => {
+        if (inAddress(c)) return;
+        const move = moves!.moveOf(c);
+        if (!move) {
+          const callee = c.get('callee') as NodePath<any>;
+          const given = (c.get('arguments') as NodePath<any>[]).some((a) => usesParam(a, fn));
+          const called = !given || (callee.isIdentifier() && passThrough(callee.node.name)) ? null : calledFunction(c, OUTSIDE);
+          if (called && !called.node.generator) found.calls.push({ at: c, fn: called });
+          return;
+        }
+        const history = move.recognized ? null : givenHistory(move.history, fn);
+        if (!move.recognized && !history) return;
+        const kept = addresses(move.address, true).filter((a) => !moves!.holdsRouteConstant(a) && (history || !moves!.linked(a)));
+        if (kept.length) found.moves.push({ at: c, addresses: kept, history });
+      };
+      const body = fn.get('body') as NodePath<any>;
+      if (body.isCallExpression()) visit(body);
+      body.traverse({ CallExpression: visit });
+    } finally {
+      for (const node of outer) reading.add(node);
+    }
+    placesFound.set(fn.node, found);
+    return found;
+  }
+
+  // 읽는 중에 같은 호출로 되돌아오면 링크가 있는 것으로 보고 따라가지 않는다.
+  function linkedWhereWritten(c: NodePath<CallExpression>): boolean {
+    if (callLinked.has(c.node)) return callLinked.get(c.node)!;
+    callLinked.set(c.node, true);
+    const outer = [...reading];
+    reading.clear();
+    try {
+      const linked = moves!.linkedCall(c);
+      callLinked.set(c.node, linked);
+      return linked;
+    } finally {
+      reading.clear();
+      for (const node of outer) reading.add(node);
+    }
+  }
+
+  // x 가 fn 의 매개변수를, 바로 또는 fn 안 const 의 초기값을 거쳐 쓰는가. followed 는 이미 따라간 const 와 그때의 깊이다.
+  function usesParam(x: NodePath<any>, fn: AddressFunction, depth = 0, followed = new Map<Node, number>()): boolean {
+    const names: NodePath<Identifier>[] = x.isIdentifier() ? [x] : [];
+    x.traverse({
+      Identifier(i) {
+        if (i.isReferencedIdentifier()) names.push(i);
+      },
+    });
+    return names.some((i) => {
+      const binding = i.scope.getBinding(i.node.name);
+      if (binding?.kind === 'param') return binding.scope.block === fn.node;
+      const init = binding?.kind === 'const' && binding.path.isVariableDeclarator() && binding.path.isDescendant(fn) ? binding.path.get('init') as NodePath<any> : null;
+      if (!init?.node || depth >= FOLLOWED || (followed.get(init.node) ?? Infinity) <= depth) return false;
+      followed.set(init.node, depth);
+      return usesParam(init, fn, depth + 1, followed);
+    });
+  }
+
+  // 이동 자리가 있거나, 그런 함수를 부르는 함수인가. 되돌아오거나 깊이에서 끊겨 정한 거짓은 담아 두지 않는다.
+  function helperState(fn: AddressFunction, trail: Set<Node>): { helper: boolean; cut: boolean } {
+    if (helperFound.has(fn.node)) return { helper: helperFound.get(fn.node)!, cut: false };
+    const { moves: found, calls } = placesOf(fn);
+    let helper = found.length > 0;
+    let cut = false;
+    if (!helper && trail.size >= FOLLOWED) cut = calls.length > 0;
+    else if (!helper) {
+      trail.add(fn.node);
+      for (const call of calls) {
+        const inner = trail.has(call.fn.node) ? { helper: false, cut: true } : helperState(call.fn, trail);
+        cut ||= inner.cut;
+        if ((helper = inner.helper)) break;
+      }
+      trail.delete(fn.node);
+    }
+    if (helper || !cut) helperFound.set(fn.node, helper);
+    return { helper, cut };
+  }
+
+  const isHelper = (fn: AddressFunction) => helperState(fn, new Set()).helper;
+
+  // fn 이나 fn 이 부르는 옮겨 주는 함수에, 받은 것이 아닌 history 로 옮기는 자리가 있는가
+  function movesItself(fn: AddressFunction, trail: Set<Node> = new Set()): boolean {
+    const { moves: found, calls } = placesOf(fn);
+    if (found.some((place) => !place.history)) return true;
+    if (trail.has(fn.node) || trail.size >= FOLLOWED) return false;
+    trail.add(fn.node);
+    try {
+      return calls.some((call) => isHelper(call.fn) && movesItself(call.fn, trail));
+    } finally {
+      trail.delete(fn.node);
+    }
+  }
+
+  function givenHistory(history: NodePath | null, fn: AddressFunction): NodePath | null {
+    const binding = history?.isIdentifier() ? history.scope.getBinding(history.node.name) : undefined;
+    return binding?.kind === 'param' && binding.scope.block === fn.node ? history : null;
+  }
+
+  // 몸통에서 다시 대입하는 매개변수는 부른 곳의 값으로 읽지 않는다. 값이 undefined · null 로 정해진 주소는 버린다.
+  function placeOuts(fn: AddressFunction, env: Env, depth: number): Out[] {
+    const at: At = { env: new Map([...env].map(([b, o]) => [b, b.constant ? o : unknownAt(b.path)])), fn, branching: true, depth, consts: true };
+    const outs: Out[] = [];
+    const { moves: places, calls } = placesOf(fn);
+    for (const call of calls) {
+      if (reached(call.at, fn, at) && isHelper(call.fn) && !linkedWhereWritten(call.at)) outs.push(...helperOuts(call.at, call.fn, at));
+    }
+    for (const place of places) {
+      if (!reached(place.at, fn, at)) continue;
+      if (place.history && !values(place.history, at).some((o) => o.whole && moves!.isHistory(o.whole))) continue;
+      for (const a of place.addresses) {
+        if (a.isDescendant(fn) && !reached(a, fn, at)) continue;
+        for (const o of values(a, at)) {
+          const located = address(wholeOr(o, a), a);
+          const value = located && plain(located);
+          if (located && value !== undefined && value !== null) outs.push(located);
+        }
+      }
+    }
+    return limited(outs, distinct);
+  }
+
+  // fn 안에서 p 를 둘러싼 if · ? : · && · || 가운데 값이 정해져 p 로 가지 않는 것이 있으면 거짓이다.
+  function reached(p: NodePath, fn: AddressFunction, at: At): boolean {
+    for (let child = p, up = p.parentPath; up && up.node !== fn.node; child = up, up = up.parentPath) {
+      let test: NodePath<any>;
+      let wanted: boolean;
+      if ((up.isIfStatement() || up.isConditionalExpression()) && (child.key === 'consequent' || child.key === 'alternate')) {
+        test = up.get('test') as NodePath<any>;
+        wanted = child.key === 'consequent';
+      } else if (up.isLogicalExpression() && up.node.operator !== '??' && child.key === 'right') {
+        test = up.get('left');
+        wanted = up.node.operator === '&&';
+      } else continue;
+      let truths: (boolean | undefined)[];
+      try {
+        truths = values(test, at).map(truth);
+      } catch (error) {
+        if (error instanceof TooMany) continue;
+        throw error;
+      }
+      if (!truths.includes(wanted) && !truths.includes(undefined)) return false;
+    }
+    return true;
+  }
+
+  function helperOuts(p: NodePath<CallExpression>, fn: AddressFunction, at: At): Out[] {
+    if (reading.has(fn.node) || at.depth >= FOLLOWED) return [];
+    const args = p.get('arguments') as NodePath<any>[];
+    const spread = args.findIndex((a) => a.isSpreadElement());
+    const given = { ...at, branching: true };
+    const lists = limited(product((spread < 0 ? args : args.slice(0, spread)).map((a) => values(a, given).map((o) => wholeOr(o, a)))));
+    reading.add(fn.node);
+    try {
+      const outs = lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1)));
+      return outs.some(withheldIn) ? [unknownAt(p)] : outs;
+    } finally {
+      reading.delete(fn.node);
+    }
+  }
+
+  // 받은 주소로 옮기는 함수를 부른 곳에서, 그 이동이 가는 주소를 부른 곳의 인자로 읽는다. 그런 함수가 아니면 null 이다.
+  // 갈래가 너무 많으면 {?} 를 주되, 받은 history 로만 옮기는 함수면 null 이다.
+  function helperBranches(p: NodePath<CallExpression>): Read | null {
+    if (!moves || inAddress(p)) return null;
+    const callee = p.get('callee') as NodePath<any>;
+    if (callee.isIdentifier() && passThrough(callee.node.name)) return null;
+    const fn = calledFunction(p, OUTSIDE);
+    if (!fn || fn.node.generator || !isHelper(fn)) return null;
+    let outs: Out[];
+    try {
+      outs = helperOuts(p, fn, OUTSIDE);
+    } catch (error) {
+      if (error instanceof TooMany) return movesItself(fn) ? { tooMany: true } : null;
+      throw error;
+    }
+    const found = new Map<string, Branch>();
+    for (const out of outs) {
+      const read = { ...branch(out, p), made: true };
+      const key = `${read.whole?.node.start}\0${read.text}`;
+      if (!found.has(key)) found.set(key, read);
+    }
+    return { branches: [...found.values()] };
+  }
+
+  // 이동의 주소 자리나 링크 요소의 to 안에 있는 호출
+  function inAddress(p: NodePath<any>): boolean {
+    for (let child = p, up = p.parentPath; up && !up.isFunction() && !up.isStatement(); child = up, up = up.parentPath) {
+      if (up.isCallExpression() && child.listKey === 'arguments' && child.key === 0 && moves!.moveOf(up)) return true;
+      if (up.isJSXAttribute() && up.node.name.name === 'to') return true;
+    }
+    return false;
+  }
+
+  return { branches, helperBranches };
 }

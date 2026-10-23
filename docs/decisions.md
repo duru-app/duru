@@ -3408,8 +3408,9 @@ Besides the route constant, duru reads the `to` of `Link`, `NavLink` and `Redire
 package (a `Redirect` in a route file stays a redirect, as before), and the address given to `push` or `replace` of
 a history: the one `useHistory()` returns, `props.history`, `this.props.history`, a history taken out of
 `this.props` or `props` (`const { history } = this.props`), the `history` a function component not wrapped in a
-call takes out of its first parameter (`function Help({ history })`), and the one the `history` key names. A history a
-function is given as an argument is not read, nor `goBack()` or `go()`. The address is read as the tail after a
+call takes out of its first parameter (`function Help({ history })`), and the one the `history` key names. A move
+with a history a function is given as an argument is a link where that function is called (see the entry on
+functions that move to what they are given, below); `goBack()` and `go()` are not read. The address is read as the tail after a
 route constant is: written pieces as they are, a value piece as `{*}`, the query and the part after `#` dropped,
 `{ pathname }` by its `pathname`, and each branch of `? :` as a link of its own carrying its condition. An address
 that starts with a value, or is not written from `/`, is `{?}`: it stays among the screen's links and goes to no
@@ -3450,10 +3451,12 @@ are innermost at the same depth the link goes to each; `createHashHistory` is re
 of a component: a function declaration whose name starts with a capital letter, a function or arrow given to a
 variable whose name starts with a capital letter, or the function that is the default export itself. A lowercase
 helper (`function leave({ history })`), a later parameter, a component wrapped in a call
-(`withRouter(({ history }) => …)`) and a parameter with a default (`({ history } = {})`) are not read, and a prop
+(`withRouter(({ history }) => …)`) and a parameter with a default (`({ history } = {})`) are not read where they move
+(a function given a history moves where it is called, see below), and a prop
 named `history` that is not the router's history is read as one (in mattermost this adds 5 links from the team
 creation and workspace preparation screens and changes no entry screen); an address a link or a move takes from a function parameter or from
-props (`items.map((item) => <Link to={item.href}>)`, `const go = (href) => history.push(href)`) gives no link, as
+props (`items.map((item) => <Link to={item.href}>)`, `const go = (href) => history.push(href)`) gives no link there
+(a call of such a function is a link where it is called, see below), as
 the value is written where it is handed in and a route constant there is already a link, so a written address
 handed in that way is missed (5 such places gave into-sign 1.5.0 30 `{?}` links on 26 screens). Keeping these as
 `{?}` instead was measured on 2026-10-22 and turned down by the driver in #392: it adds 1,996 `{?}` lines on 170 of
@@ -3485,7 +3488,8 @@ the screen of an address is the one React Router 6 ranks highest, not the first 
 duru reads the address given to the function `useNavigate()` returns, also through a name it is copied to
 (`const go = navigate`), and the `to` of a `Navigate` imported from a react-router package outside the route files;
 a `Navigate` in a route file stays a redirect. The address is read as for `Link`. A number (`navigate(-1)`) is a move
-back, not a link, and a `navigate` a function is given as an argument is not read, as with a history. An address not
+back, not a link, and a `navigate` a function is given as an argument is not read, unlike a history given to a
+function, which moves where the function is called. An address not
 written from `/` is relative to the current route in v6 and is `{?}`: it stays among the screen's links and goes to
 no screen.
 A `<Routes>` imported from a react-router package is kept in the route tree as its routes flattened the way v6 does:
@@ -3766,9 +3770,6 @@ Known limits:
 - The condition of a `? :` inside an argument is not added to the link. Counted before this change, 2 link places of
   outline had one (both in the `search` of `patchLocation`) and none of mattermost or appsmith; to add it, the place
   would pass the condition to `record()` as its own guards.
-- The module's inner reading takes an expression and the values of the parameters, and `branches(p)` reads the
-  place of a call with none; the coming reading of helpers that move to an address they are given, which has to read
-  `history.push(url)` inside a body with the caller's arguments, will need that inner reading exported.
 - An `if` whose condition duru cannot decide doubles the ways through the body even when neither branch changes
   anything (`if (a === 1) console.info('…')`), so seven of them pass the limit of 64: a link address is then read
   with each call a piece duru cannot read, and a route path's line says `more than 8 paths`.
@@ -3853,6 +3854,55 @@ Known limits:
 - outline's `/doc/{*}` links (8 places, 148 lines) reach the shared document screen `/doc/:documentSlug#Shared` as
   well as the document screen, since a link is matched in each of two `Switch`es drawn side by side (#385).
 - A class outside `srcRoot` is found only as far as functions are followed.
+
+**A call of a function declared in the source that moves to an address it is given, or with a history it is given,
+is a link at the call, read with the call's arguments.**
+A function declared in the source, found as an address function is (a function declaration, an arrow or function
+expression held by a `const`, one written inside a component, or one imported, but not a generator; `async` is
+read), moves to what it is given when its body, including a function it returns (a redux thunk) and its callbacks
+(`dispatch(logout()).then(() => getHistory().push(redirectTo))`), has a move that gives no link by the rules above:
+a `push` or `replace` of a history, or the function `useNavigate()` returns, whose address is a parameter or read
+from one (`push(url)`, `push(payload.path)`, `push({ pathname: path, search })`), or a `push` or `replace` of a
+history that is a parameter of the function (`function leave(history)`, `function leave({ history })`). It also does
+when its body calls such a function with something it is given. A call of such a function is a link at the call, with
+the file, the line and the conditions of the call, since the call is where a reader sees what leads to which screen
+and a condition inside the function tests its parameters, which mean something only at each call.
+The arguments are put into the parameters as for an address function, with its defaults, object patterns and rest
+parameters. A `const` in the body is read from its initial value with those values; a parameter given another value
+in the body is not read from the call. An `if`, `? :`, `&&` or `||` around a move that the arguments decide drops the
+move it does not lead to (`if (team) … else push(url)` called without `team` keeps only `push(url)`), and so does a
+`? :` in the address of a move (`push(edit ? doc.editUrl : doc.url)` called with `edit` false keeps only `doc.url`);
+one they cannot decide keeps the move, without its text. A `switch` and an earlier `return` are not read as conditions, so every
+move under them is kept. An address that is `undefined` or `null` (a property the call does not give) gives no link,
+nor does one that is an argument taken from props or a parameter as it is (`hrefPage(menu.href)`, as decided in
+#392), nor a move to a parameter of a function inside the helper (`urls.forEach((u) => history.push(u))`). A move
+with a history the function is given is a link only where the call hands it a value that is a history by the rules
+for a move (`leave(props.history)`, `leave({ history })` inside a component that takes `history` from its props), so
+the address of such a move is read from the call even when it is written as text.
+A value whose text duru knows but a link does not take whole (`TABS.GENERAL`) handed into the address a function
+builds makes the call `{?}`, as it makes a call of an address function in a link.
+A move that is already a link in the function's body (`` (id) => history.push(`/doc/${id}`) ``) keeps that link and
+adds none at the calls, and a move that stays on the screen gives none in either place; a call of another such
+function in the body that does not use what the function is given, or that is already a link where it is written
+(`` step(`/team/${id}`) ``), stays a link only there. So every link the map had keeps its file,
+line and conditions, and one move is never two links (chosen before the driver's answer, in #398; moving a body's
+link to each call would change the lines story verdicts were written against, and keeping both would show one move
+twice).
+Route constants keep their rule: a call whose argument holds a route constant, written there or through a name, is
+not followed, and a move in the body whose address holds one, through a name or an object of constants
+(`const route = META_TYPE_ROUTES[type]`), is dropped, as the constant is already a link where it is written. A
+function calling another is followed 8 deep (`FOLLOWED`), and a call of a function being read stops there.
+A call whose arguments give more than 64 ways is `{?}` when the function, or one it hands them to, moves with a
+history it does not take from the call; when every such move is with a history the function is given, the call gives
+no link, as duru cannot tell whether the call hands it a history, and a string `replace` or an array `push` on a
+parameter (`(label) => label.replace(/^Doc /, '')`) reads like such a move (into-sign 1.5.0 gave 3 `{?}` lines at a
+`createViewModel(…)` call that never moves before this was settled, in #398).
+Known limits: a function taken from props or a parameter (`this.props.actions.switchTeam(url)`, `props.go(url)`,
+`const { go } = props; go(url)`) is not read, since duru does not reach its declaration; neither is a helper held
+by `useCallback(…)`, a class method called as `this.go(url)`, nor a function given a `navigate` as an argument. A
+move inside a function the helper holds in a `const` and calls or hands on only under a condition
+(`const go = () => history.push(url); if (ask) showDialog({ onConfirm: go })`) is kept even at a call whose arguments
+rule the condition out, since the condition is read only around the move itself.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
