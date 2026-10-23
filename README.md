@@ -293,7 +293,7 @@ client with example results and a config to start from.
 - `baselineTests` — the test results of an earlier version of the same client (optional), written like `tests`,
   such as `[{ "format": "playwright", "path": "releases/1.5.0/e2e.json", "depth": "ui" }]`. `rebuild` then compares
   them with the current results and prints the tests that passed there and fail or are pending now (see **What
-  extract and rebuild print**). It works with or without `baselineMap`. An empty list compares nothing and prints no
+  extract and rebuild print**), and the review page marks them (see **Review page**). It works with or without `baselineMap`. An empty list compares nothing and prints no
   line about it. To keep the results of a release, run the whole suite on that version and copy its result files
   straight into that version's folder, such as `releases/1.5.0/`; copy JUnit XML and verdict logs with their modified
   time kept (`cp -p`), since that is the time duru takes for when they ran. Keeping the results of a run of only some
@@ -536,7 +536,8 @@ listing the places whose value the source does not show in full.
   baseline with no test in the current results: it no longer loads, or the current run left it out. `<file>` is its
   path in the baseline results, from the folder holding all of their test files when the paths are absolute.
 - A `baselineTests` path that is missing, a result file that cannot be read, or an entry that gives no test stops
-  `rebuild` with `baselineTests <path> could not be read: <why>`, before anything is written. Files of another format
+  `rebuild` with `baselineTests <path> could not be read: <why>`, before anything is written, and `review` with the
+  same line and exit code 1, before the page is served. Files of another format
   in a folder, and verdict logs with no verdict line, are skipped as in `tests`.
 - `case kind <kind>: rules pick N screens, N calls` — printed by `rebuild` for each kind in `caseKinds` with
   `picks`: how many screens and calls its rules pick on this map. With `baselineMap`, `| new since <file> N` follows:
@@ -1009,6 +1010,29 @@ baseline has, and how many screens changed their role or setting conditions and 
 A changed screen opens with a line saying what changed; its call table has a column 「<folder> 와 비교」 with 「생김」 or
 「서버 대조 바뀜 (before → after)」, and the calls it no longer sends are listed struck through with 「없어짐」. A
 `baselineMap` that cannot be read stops `review` before the page is served.
+
+**Regressions since a baseline's test results.** With `baselineTests` set, the 「비교 기준」 box in the header names the
+baseline by its last folder, such as 「1.5.0」 (the whole path on hover), and 「결과 N」, how many result files it has;
+hovering 「결과 N」 lists them with the time each run started. With `baselineMap` as well, the box shows both. A test
+row that passed in the baseline and fails or is pending now carries 「통과→실패」 or 「통과→보류」 when the row itself
+fails or is pending, under the tags of a screen or call and under 「불러오는 테스트」, 「지나간 테스트」,
+「호출한 테스트」 and 「태그 대기」 alike; hovering it names the baseline folder and the result file the test was
+compared with. In the screen list a screen carries 「회귀 N」, the regressed tests tagged on it, importing its source,
+waiting for its tag, or that pressed, typed or checked something on it by their trace. Hovering splits N into
+failing and pending and says how many regressions of tests that only passed through the screen were not counted:
+those show on their rows when the screen is opened, not in the list. A regressed test tagged only on calls puts a
+dashed 「호출 회귀 N」 on each screen that sends one of those calls, apart from 「회귀 N」, naming the calls on hover; a
+screen whose 「회귀 N」 already counts the test does not count it again. 「회귀만 N」 in the box 「<folder> 와 비교」
+keeps the screens with either; checked with 「바뀐 화면만」, only screens that are both stay, and the 「신규」 and
+「조건 바뀜」 marks show in the same list. Without `baselineMap` it is the box's only filter, and the box and the
+column below take the `baselineTests` folder's name. The call table has the column 「<folder> 와 비교」 with
+「회귀 N」 for a call whose tagged, importing or handed-over tests regressed; a test that only sent the call by its
+trace is not counted. A test only in the baseline whose tags name a screen or call on the map is listed, folded, under
+「기준에만 N」 in that screen or call, and below the screen list 「기준에만 N」 lists every test only in the baseline,
+folded by test file, with 「파일 없음」 on a file none of whose tests are in the current results. Those rows take no
+comment: to have a deleted test written again, mark the screen 「테스트 필요」. The counts are those of the
+`test results since` line `rebuild` prints for the same results; the page compares on each load with the pairs as
+judged then, and keeps nothing.
 
 **Code state.** The header follows the map's date with its commit (「커밋 <first 7 characters>」, 「커밋 모름」 when
 `srcRoot` is not in a git repository), 「+ 커밋 안 한 수정」 when files under `srcRoot` had changes not committed, and

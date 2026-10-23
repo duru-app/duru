@@ -269,3 +269,14 @@ test('in a browser, a tagged, importing, passing-through, call-sending or handed
     }));
   });
 });
+
+test('the README and the decision record say what the review page shows of the comparison with baselineTests and why the screen list counts what it counts', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  const readme = read('../README.md');
+  for (const words of ['「통과→실패」', '「통과→보류」', '「회귀 N」', '「호출 회귀 N」', '「회귀만 N」', '「기준에만 N」', '「파일 없음」', '「비교 기준」']) assert.ok(readme.includes(words), words);
+  assert.match(readme, /only passed through the screen/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*The screen list counts the regressions of the rows that act on or check the screen/);
+  assert.match(decisions, /\*\*A regressed test tagged only on calls shows on each screen that sends the call as 「호출 회귀 N」/);
+  assert.match(decisions, /- Counting the regressions of passed-through rows beside 「지나감 N」/);
+});
