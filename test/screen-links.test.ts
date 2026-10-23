@@ -3075,3 +3075,562 @@ test('the decision record says a parameter typed with a class is read through th
   const decisions = fs.readFileSync(path.join(import.meta.dirname, '..', 'docs/decisions.md'), 'utf8');
   assert.match(decisions, /\*\*A member an address function reads from a parameter typed with a class is read through that class's own\s+getter, and a class imported only as a type is found from the import as written\.\*\*/);
 });
+
+test('a styled(Link) or styled(NavLink) from react-router is a link where it is used, at the line of its to, while a styled Link of the same name from another package is not', async () => {
+  const ui = `import styled from 'styled-components';
+import { Link, NavLink } from 'react-router-dom';
+import { Link as AdsLink } from '@appsmith/ads';
+
+export const Item = styled(Link)\`
+  color: red;
+\`;
+export const Tab = styled(NavLink)({ color: 'blue' });
+export const Plain = styled(AdsLink)\`
+  color: green;
+\`;
+`;
+  const home = `import styled from 'styled-components';
+import { Link } from '@appsmith/ads';
+import { Item, Tab, Plain } from './ui';
+
+const Local = styled(Link)\`\`;
+
+export default function Home({ next }) {
+  return (
+    <nav>
+      <Item to="/login">login</Item>
+      <Tab
+        to="/start">start</Tab>
+      <Plain to="/help">help</Plain>
+      <Local to="/team/a">team</Local>
+      <Item to={next}>next</Item>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'ui.js': ui }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', lineOf(home, '<Item to="/login"'), [], ['/login#Login']],
+    ['/start', lineOf(home, 'to="/start"'), [], ['/start#Start']],
+  ]);
+});
+
+const linksWithFiles = (map: ScreenMap, id: string) => map.screens.find((s) => s.id === id)!.links.map((l) => [l.to, l.file, l.line, l.guards]);
+
+test('a component that hands the to it receives to Link or NavLink is a link where it is used, with that use\'s file, line and conditions, while the Link inside it stays no link', async () => {
+  const links = `import { Link, NavLink } from 'react-router-dom';
+
+export const PlainLink = ({ to, children }) => <Link to={to}>{children}</Link>;
+
+export function MenuLink(props) {
+  return (
+    <li>
+      <NavLink to={props.to} className="menu">{props.label}</NavLink>
+    </li>
+  );
+}
+`;
+  const home = `import { PlainLink, MenuLink } from './links';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      {flag.a && <PlainLink to="/login">login</PlainLink>}
+      <MenuLink label="start" to="/start" />
+      <MenuLink
+        label="team"
+        to={\`/team/\${flag.team}\`}
+      />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksWithFiles(map, '/home#Home'), [
+    ['/login', 'Home.js', at('<PlainLink to="/login"'), ['flag.a']],
+    ['/start', 'Home.js', at('<MenuLink label="start"'), []],
+    ['/team/{*}', 'Home.js', home.split('\n').findIndex((l) => l.trim() === '<MenuLink') + 1, []],
+  ]);
+});
+
+test('a component that moves to the to it receives with a history push or replace, also inside a callback, is a link where it is used, and one that does both gives one link', async () => {
+  const links = `import { useCallback } from 'react';
+import { NavLink, useHistory } from 'react-router-dom';
+
+export function FastLink({ to, replace, children }) {
+  const history = useHistory();
+  const go = useCallback(() => {
+    if (replace) {
+      history.replace(to);
+    } else {
+      history.push(to);
+    }
+  }, [to, replace]);
+  return <a onMouseDown={go}>{children}</a>;
+}
+
+export const BlockableLink = ({ blocked, to, ...rest }) => {
+  const history = useHistory();
+  const onClick = (e) => {
+    if (blocked) {
+      e.preventDefault();
+      defer(() => history.push(to));
+    }
+  };
+  return <NavLink {...rest} to={to} onClick={onClick} />;
+};
+`;
+  const home = `import { FastLink, BlockableLink } from './links';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      <FastLink to="/login">login</FastLink>
+      <FastLink to="/start" replace>start</FastLink>
+      <BlockableLink to="/help/faq" blocked={flag.blocked}>faq</BlockableLink>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('to="/login"'), [], ['/login#Login']],
+    ['/start', at('to="/start"'), [], ['/start#Start']],
+    ['/help/faq', at('to="/help/faq"'), [], ['/help/:page?#Help']],
+  ]);
+});
+
+test('a component that hands a received url, link, href or any other prop to the to of a link reads that attribute where it is used, and the parameter default where the attribute is missing', async () => {
+  const links = `import { Link } from 'react-router-dom';
+
+export const BackButton = ({ url = '/start', className }) => (
+  <div className={className}>
+    <Link to={url}>back</Link>
+  </div>
+);
+
+export function Option({ link, title }) {
+  return <Link to={link}>{title}</Link>;
+}
+
+export function Panel({ cancelLink }) {
+  return <div>{cancelLink ? <Link to={cancelLink}>cancel</Link> : null}</div>;
+}
+`;
+  const home = `import { BackButton, Option, Panel } from './links';
+
+export default function Home() {
+  return (
+    <nav>
+      <BackButton url="/login" />
+      <BackButton className="back" />
+      <Option link="/help" title="help" />
+      <Panel cancelLink="/team/a" />
+      <Panel />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('url="/login"'), [], ['/login#Login']],
+    ['/start', at('className="back"'), [], ['/start#Start']],
+    ['/help', at('link="/help"'), [], ['/help/:page?#Help']],
+    ['/team/a', at('cancelLink="/team/a"'), [], ['/team/:team#Team']],
+  ]);
+});
+
+test('a component wrapped in observer, React.memo, forwardRef or connect(…)(…), imported through a re-export, is read as the component it wraps', async () => {
+  const links = `import { observer } from 'mobx-react';
+import React, { forwardRef } from 'react';
+import { connect } from 'react-redux';
+import { Link } from 'react-router-dom';
+
+export const Watched = observer(function Watched({ to }) {
+  return <Link to={to}>watched</Link>;
+});
+
+const Plain = ({ to }) => <Link to={to}>plain</Link>;
+export const Memo = React.memo(Plain);
+
+export const Forwarded = forwardRef(({ href }, ref) => <Link ref={ref} to={href}>forwarded</Link>);
+
+function Connected({ to }) {
+  return <Link to={to}>connected</Link>;
+}
+
+export default connect((state) => ({ on: state.on }), {})(Connected);
+`;
+  const home = `import { Watched, Memo, Forwarded, Connected } from './nav';
+
+export default function Home() {
+  return (
+    <nav>
+      <Watched to="/login" />
+      <Memo to="/start" />
+      <Forwarded href="/help" />
+      <Connected to="/team/a" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({
+    'Home.js': home,
+    'nav/links.js': links,
+    'nav/index.js': "export { Watched, Memo, Forwarded } from './links';\nexport { default as Connected } from './links';\n",
+  }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('<Watched'), [], ['/login#Login']],
+    ['/start', at('<Memo'), [], ['/start#Start']],
+    ['/help', at('<Forwarded'), [], ['/help/:page?#Help']],
+    ['/team/a', at('<Connected'), [], ['/team/:team#Team']],
+  ]);
+});
+
+test('an element given as={Link} from react-router, or as={an app link component}, is a link with its to, and one given as a tag name is not', async () => {
+  const home = `import styled from 'styled-components';
+import { Link } from 'react-router-dom';
+import { PlainLink } from './links';
+
+const Button = styled.button\`\`;
+const Card = styled.div\`\`;
+
+export default function Home() {
+  return (
+    <nav>
+      <Button as={Link} to="/login">login</Button>
+      <Card as={PlainLink} to="/start">start</Card>
+      <Button as="a" to="/help">help</Button>
+      <Button to="/team/a">team</Button>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': "import { Link } from 'react-router-dom';\n\nexport const PlainLink = ({ to }) => <Link to={to}>plain</Link>;\n" }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('as={Link}'), [], ['/login#Login']],
+    ['/start', at('as={PlainLink}'), [], ['/start#Start']],
+  ]);
+});
+
+const NAV_LINK = `import { observer } from 'mobx-react';
+import { Link, useHistory } from 'react-router-dom';
+
+const NavLink = observer(function NavLink({ to, replace, ...rest }) {
+  const history = useHistory();
+  const toLocation = normalize(to);
+  const navigateTo = () => {
+    if (replace) history.replace(to);
+    else history.push(to);
+  };
+  return <Link {...rest} onMouseDown={navigateTo} to={toLocation} />;
+});
+
+export default NavLink;
+`;
+
+const SIDEBAR_LINK = `import styled from 'styled-components';
+import NavLink from './NavLink';
+
+export default function SidebarLink({ to, icon, label, href, ...rest }) {
+  if (!to) {
+    return <Link as={href ? 'a' : 'button'} href={href} {...rest}>{label}</Link>;
+  }
+  return (
+    <Link as={NavLink} to={to} exact={rest.exact !== false} {...rest}>
+      {icon}{label}
+    </Link>
+  );
+}
+
+const Link = styled.a\`\`;
+`;
+
+test('a component that renders another link component with the to it receives, directly or through as, is a link where the outer one is used and nowhere inside', async () => {
+  const home = `import SidebarLink from './nav/SidebarLink';
+import { DocumentRow } from './nav/DocumentRow';
+
+export default function Home() {
+  return (
+    <nav>
+      <SidebarLink to="/login" label="login" />
+      <DocumentRow to="/start" title="start" />
+      <SidebarLink href="/help" label="help" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({
+    'Home.js': home,
+    'nav/NavLink.js': NAV_LINK,
+    'nav/SidebarLink.js': SIDEBAR_LINK,
+    'nav/DocumentRow.js': "import SidebarLink from './SidebarLink';\n\nexport const DocumentRow = ({ to, title }) => <SidebarLink to={to} label={title} />;\n",
+  }));
+  assert.deepEqual(linksWithFiles(map, '/home#Home'), [
+    ['/login', 'Home.js', lineOf(home, 'to="/login"'), []],
+    ['/start', 'Home.js', lineOf(home, 'to="/start"'), []],
+    ['{?}', 'nav/NavLink.js', lineOf(NAV_LINK, 'to={toLocation}'), []],
+  ]);
+});
+
+test('a link component named by a member expression is found through a namespace import, an object property and a class static property', async () => {
+  const home = `import Menu from './menu/Menu';
+import * as Parts from './menu/parts';
+import { ItemLinkImpl } from './menu/items';
+
+const Items = { Login: ItemLinkImpl };
+
+export default function Home() {
+  return (
+    <nav>
+      <Menu.ItemLink to="/login" text="login" />
+      <Parts.MenuInternalLink to="/start">start</Parts.MenuInternalLink>
+      <Items.Login to="/help" text="help" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({
+    'Home.js': home,
+    'menu/items.js': "import { Link } from 'react-router-dom';\nimport menuItem from './menuItem';\n\nexport const ItemLinkImpl = ({ to, text }) => <Link to={to}>{text}</Link>;\n\nconst ItemLink = menuItem(ItemLinkImpl);\n\nexport default ItemLink;\n",
+    'menu/menuItem.js': 'export default function menuItem(Component) {\n  return (props) => <li><Component {...props} /></li>;\n}\n',
+    'menu/Menu.js': "import React from 'react';\nimport ItemLink from './items';\n\nexport default class Menu extends React.PureComponent {\n  static ItemLink = ItemLink;\n\n  render() {\n    return <ul>{this.props.children}</ul>;\n  }\n}\n",
+    'menu/parts.js': "import styled from 'styled-components';\nimport { Link } from 'react-router-dom';\n\nexport const MenuInternalLink = styled(Link)``;\n",
+  }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('<Menu.ItemLink'), [], ['/login#Login']],
+    ['/start', at('<Parts.MenuInternalLink'), [], ['/start#Start']],
+    ['/help', at('<Items.Login'), [], ['/help/:page?#Help']],
+  ]);
+});
+
+const PLAIN_LINK = "import { Link } from 'react-router-dom';\n\nexport const PlainLink = ({ to, children }) => <Link to={to}>{children}</Link>;\n";
+
+test('a link component whose own Link or move has a written address keeps that link in its body and adds none where it is used', async () => {
+  const links = `import { Link, useHistory } from 'react-router-dom';
+
+export function HelpLink({ to }) {
+  return <Link to="/help">help</Link>;
+}
+
+export function TeamLink({ id }) {
+  return <Link to={\`/team/\${id}\`}>team</Link>;
+}
+
+export function LoginButton({ label }) {
+  const history = useHistory();
+  return <a onClick={() => history.push('/login')}>{label}</a>;
+}
+`;
+  const home = `import { HelpLink, TeamLink, LoginButton } from './links';
+
+export default function Home() {
+  return (
+    <nav>
+      <HelpLink to="/start" />
+      <TeamLink id="a" />
+      <LoginButton label="login" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  assert.deepEqual(linksWithFiles(map, '/home#Home'), [
+    ['/help', 'links.js', lineOf(links, 'to="/help"'), []],
+    ['/team/{*}', 'links.js', lineOf(links, 'to={`/team/'), []],
+    ['/login', 'links.js', lineOf(links, "push('/login')"), []],
+  ]);
+});
+
+test('a link component used with a to taken from props or a parameter, or with a spread of its own props after which no to is written, gives no link there', async () => {
+  const home = `import { PlainLink } from './links';
+
+export default function Home(props) {
+  const { next } = props;
+  return (
+    <nav>
+      <PlainLink to={props.to}>a</PlainLink>
+      <PlainLink to={next}>b</PlainLink>
+      <PlainLink {...props} />
+      {props.items.map((item) => <PlainLink key={item.id} to={item.href} />)}
+      <PlainLink {...props} to="/login" />
+      <PlainLink to="/start" {...props} />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': PLAIN_LINK }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/login', lineOf(home, 'to="/login"'), [], ['/login#Login']]]);
+});
+
+test('a condition in a link component that the use decides keeps only the element it leads to, and one it cannot decide keeps the link', async () => {
+  const links = `import { Link } from 'react-router-dom';
+
+export function Item({ to, disabled }) {
+  return disabled ? <span>off</span> : <Link to={to}>on</Link>;
+}
+`;
+  const home = `import { Item } from './links';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      <Item to="/login" disabled />
+      <Item to="/start" disabled={false} />
+      <Item to="/help" disabled={flag.off} />
+      <Item to="/team/a" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/start', at('to="/start"')],
+    ['/help', at('to="/help"')],
+    ['/team/a', at('to="/team/a"')],
+  ]);
+});
+
+test('a link component whose to at the use holds a route constant, or whose own link holds one, gives only the route constant link where the constant is written', async () => {
+  const links = `import { Link } from 'react-router-dom';
+import Option from './Option';
+
+export const PlainLink = ({ to, children }) => <Link to={to}>{children}</Link>;
+
+export const TeamLink = ({ id }) => <Link to={\`\${Option.ROUTE_PATH.TEAM}/\${id}\`}>team</Link>;
+`;
+  const home = `import Option from './Option';
+import { PlainLink, TeamLink } from './links';
+
+const help = Option.ROUTE_PATH.HELP;
+
+export default function Home() {
+  return (
+    <nav>
+      <PlainLink to={Option.ROUTE_PATH.LOGIN}>a</PlainLink>
+      <PlainLink to={help}>b</PlainLink>
+      <TeamLink id="a" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp(
+    { 'Home.js': home, 'links.js': links, 'Option.js': "export default { ROUTE_PATH: { TEAM: '/team', HELP: '/help', LOGIN: '/login' } };\n" },
+    { routeConstant: 'Option.ROUTE_PATH', constants: { Option: 'Option.js' } },
+  ));
+  assert.deepEqual(linksWithFiles(map, '/home#Home').map(([to, file, line]) => [to, file, line]), [
+    ['/help', 'Home.js', lineOf(home, 'const help')],
+    ['/login', 'Home.js', lineOf(home, 'ROUTE_PATH.LOGIN')],
+    ['/team/{*}', 'links.js', lineOf(links, 'ROUTE_PATH.TEAM')],
+  ]);
+});
+
+test('a link component used in a file several screens share goes only to the screens whose code reaches the component holding the use', async () => {
+  const nav = `import { PlainLink } from './links';
+
+export function TeamButton() {
+  return <PlainLink to="/team/a">team</PlainLink>;
+}
+
+export function LoginButton() {
+  return <PlainLink to="/login">login</PlainLink>;
+}
+`;
+  const map = await build(writeApp({
+    'nav.js': nav,
+    'links.js': PLAIN_LINK,
+    'Home.js': "import { TeamButton } from './nav';\n\nexport default function Home() {\n  return <TeamButton />;\n}\n",
+    'Start.js': "import { LoginButton } from './nav';\n\nexport default function Start() {\n  return <LoginButton />;\n}\n",
+  }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/team/a', lineOf(nav, 'to="/team/a"'), [], ['/team/:team#Team']]]);
+  assert.deepEqual(linksOf(map, '/start#Start'), [['/login', lineOf(nav, 'to="/login"'), [], ['/login#Login']]]);
+});
+
+test('a story step and the links into a screen take links through link components', async () => {
+  const home = `import { PlainLink } from './links';
+
+export default function Home({ flags }) {
+  return <nav>{flags.team && <PlainLink to="/team/a">team</PlainLink>}</nav>;
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': PLAIN_LINK }));
+  const [story] = checkStories(map, [{ screens: ['/home#Home', '/team/:team#Team'] }]);
+  assert.deepEqual(story.links.map((l) => [l.verdict, l.ways.map((w) => [w.file, w.line, w.conditions.map((c) => c.guard)])]), [
+    ['conditioned', [['Home.js', 4, ['flags.team']]]],
+  ]);
+  assert.deepEqual(map.screens.find((s) => s.id === '/team/:team#Team')!.access.links.map((l) => [l.from, l.file, l.line]), [['/home#Home', 'Home.js', 4]]);
+});
+
+test('a link component that builds its address from a prop its parent may hand it with cloneElement keeps the {?} link where the address is written and gives none where it is used', async () => {
+  const links = `import React, { cloneElement } from 'react';
+import { Link, NavLink } from 'react-router-dom';
+
+export const Section = ({ name, parentLink = '', children = [] }) => {
+  const link = parentLink + '/' + name;
+  return (
+    <li>
+      <NavLink to={link}>{name}</NavLink>
+      <ul>{React.Children.map(children, (child) => React.cloneElement(child, { parentLink: link }))}</ul>
+    </li>
+  );
+};
+
+export function Category(props) {
+  const getLink = () => props.parentLink + '/' + props.name;
+  const link = getLink();
+  return (
+    <li>
+      <NavLink to={link}>{props.name}</NavLink>
+      {React.Children.map(props.children, (child) => cloneElement(child, { parentLink: link }))}
+    </li>
+  );
+}
+
+export function Tabs({ to, children }) {
+  return (
+    <div>
+      <Link to={to}>all</Link>
+      {React.Children.map(children, (child) => cloneElement(child, { active: true }))}
+    </div>
+  );
+}
+`;
+  const home = `import { Category, Section, Tabs } from './links';
+
+export default function Home() {
+  return (
+    <nav>
+      <Category name="team" parentLink="">
+        <Section name="a" />
+      </Category>
+      <Section name="login" />
+      <Section name="start" parentLink="" />
+      <Tabs to="/help">
+        <Section name="help" />
+      </Tabs>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  assert.deepEqual(linksWithFiles(map, '/home#Home'), [
+    ['/help', 'Home.js', lineOf(home, '<Tabs'), []],
+    ['{?}', 'links.js', lineOf(links, '<NavLink to={link}>{name}'), []],
+    ['{?}', 'links.js', lineOf(links, '<NavLink to={link}>{props.name}'), []],
+  ]);
+});
+
+test('the decision record says a component wrapping a react-router link is a link where it is used and why its declaration is found apart from component-file, and the usage guide says a link can sit where such a component is used', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
+  assert.match(read('README.md'), /or on the line where a component in the source that wraps a react-router link or a history move is used/);
+  const decisions = read('docs/decisions.md');
+  assert.match(decisions, /\*\*A component declared in the source that wraps a react-router link, or hands what it is given to one or to a history\s+move, is a link where it is used, read with the attributes written there\.\*\*/);
+  assert.match(decisions, /The issue\s+\(#399\) said to find it with component-file\. Compared:/);
+});

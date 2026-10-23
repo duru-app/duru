@@ -5,7 +5,7 @@ import type { Binding, NodePath, Scope } from '@babel/traverse';
 import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
-import type { AddressFunction, Read } from './address-functions.ts';
+import type { AddressFunction, LinkComponent, Read } from './address-functions.ts';
 import type { Branch, Constants, GuardInit, GuardSetting, RouteNode } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
@@ -18,7 +18,7 @@ import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
-import { addresses, FOLLOWED, madeFrom, screenLinkReader } from './screen-links.ts';
+import { addresses, FOLLOWED, LINK_ELEMENTS, madeFrom, screenLinkReader } from './screen-links.ts';
 import { importedAs, routerImport, screenRequestReader } from './screen-requests.ts';
 import type { UnresolvedReason } from './server.ts';
 import { typedMembers } from './typed-members.ts';
@@ -798,8 +798,10 @@ export async function extractClient(config: any) {
     mergesSlashes: false,
     moves: {
       moveOf: (p) => screenLinks.moveOf(p),
+      component: (p) => linkComponentOf(p),
       linked: (p) => addresses(p).length > 0 && linkAddresses(p).length > 0,
       linkedCall: (p) => addressesOf(linkReading.helperBranches(p) ?? { branches: [] }, () => UNKNOWN).length > 0,
+      linkedUse: (p) => addressesOf(linkReading.useBranches(p) ?? { branches: [] }, () => UNKNOWN).length > 0,
       isHistory: (p) => screenLinks.isHistory(p),
       holdsRouteConstant: (p) => Boolean(routeChain) && holdsRouteConstant(p),
     },
@@ -965,6 +967,10 @@ export async function extractClient(config: any) {
       const key = `${resolved}\0${from!.name}`;
       if (!historyImports.has(key)) historyImports.set(key, Boolean(resolved) && follower.origin(resolved, from!.name, (f) => f === historyFile)?.name === config.history.name);
       return historyImports.get(key)!;
+    },
+    routerElement(p) {
+      const found = linkComponentOf(p);
+      return found && 'router' in found ? found.router : null;
     },
   });
   const madeHistories = new Map<string, string>();
@@ -1152,10 +1158,17 @@ export async function extractClient(config: any) {
       const read = linkReading.helperBranches(p);
       for (const to of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', { to }, p);
     };
+    const recordUseLinks = (p: NodePath<JSXElement>) => {
+      const written = (p.get('openingElement.attributes') as NodePath<any>[]).map((a) => (a.isJSXSpreadAttribute() ? a.get('argument') : a.get('value')) as NodePath<any>);
+      if (written.some((v) => v.node && madeFrom(v.isJSXExpressionContainer() ? v.get('expression') : v).some(holdsRouteRef))) return;
+      const read = linkReading.useBranches(p);
+      for (const to of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', { to }, p);
+    };
     const inRouteFile = routeFileSet.has(file);
     traverse(ast, {
       JSXElement(p) {
         recordLinks(screenLinks.element(p, inRouteFile));
+        recordUseLinks(p);
       },
       CallExpression(p) {
         recordLinks(screenLinks.call(p));
@@ -1585,6 +1598,53 @@ export async function extractClient(config: any) {
     const from = binding?.kind === 'module' ? importedName(binding) : file ? typeImport(file, name) : null;
     const declared = from && from.name !== '*' ? exportedDeclaration(from.file, from.name) : null;
     return declared?.isClassDeclaration() ? declared : null;
+  }
+
+  const linkComponents = new WeakMap<Node, LinkComponent | null>();
+  function linkComponentOf(element: NodePath<JSXElement>): LinkComponent | null {
+    if (linkComponents.has(element.node)) return linkComponents.get(element.node)!;
+    const opening = element.get('openingElement');
+    const as = (opening.get('attributes') as NodePath<any>[]).find((a) => a.isJSXAttribute() && a.node.name.name === 'as');
+    const value = as?.get('value') as NodePath<any> | undefined;
+    const name = opening.get('name') as NodePath<any>;
+    const found = as ? (value?.isJSXExpressionContainer() ? componentAt(value.get('expression'), [], 0) : null)
+      : name.isJSXIdentifier() && /^[a-z]/.test(name.node.name) ? null : componentAt(name, [], 0);
+    linkComponents.set(element.node, found);
+    return found;
+  }
+
+  // 컴포넌트를 선언까지 따라간다. keys 는 그 앞까지 따라간 것에서 꺼낼 객체 속성 · 클래스 static 속성의 이름이다.
+  function componentAt(p: NodePath<any> | null | undefined, keys: string[], depth: number): LinkComponent | null {
+    if (!p?.node) return null;
+    if (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isParenthesizedExpression()) return componentAt(p.get('expression') as NodePath, keys, depth);
+    if (p.isIdentifier() || p.isJSXIdentifier()) return componentNamed(p.scope.getBinding(p.node.name), keys, depth);
+    if (p.isImportSpecifier() || p.isImportDefaultSpecifier() || p.isImportNamespaceSpecifier()) return componentNamed(p.scope.getBinding(p.node.local.name), keys, depth);
+    if ((p.isMemberExpression() && !p.node.computed) || p.isJSXMemberExpression()) return componentAt(p.get('object') as NodePath, [(p.node.property as Identifier).name, ...keys], depth);
+    if (p.isVariableDeclarator()) return p.get('id').isIdentifier() && (p.parent as VariableDeclaration).kind === 'const' ? componentAt(p.get('init') as NodePath, keys, depth) : null;
+    if (keys.length) {
+      const [key, ...rest] = keys;
+      const members = (p.isObjectExpression() ? p.get('properties') : p.isClassDeclaration() || p.isClassExpression() ? (p.get('body.body') as NodePath[]).filter((m) => m.isClassProperty({ static: true })) : []) as NodePath<any>[];
+      const member = members.findLast((m) => (m.isObjectProperty() || m.isClassProperty()) && !m.node.computed && keyName(m.node) === key);
+      return member ? componentAt(member.get('value') as NodePath, rest, depth) : null;
+    }
+    if (p.isFunctionDeclaration() || p.isArrowFunctionExpression() || p.isFunctionExpression()) return { fn: p };
+    if (p.isTaggedTemplateExpression()) return componentAt(p.get('tag'), [], depth);
+    if (!p.isCallExpression()) return null;
+    const callee = p.get('callee');
+    return componentAt(p.get('arguments.0') as NodePath, [], depth) ?? (callee.isCallExpression() ? componentAt(callee, [], depth) : null);
+  }
+
+  function componentNamed(binding: Binding | undefined, keys: string[], depth: number): LinkComponent | null {
+    if (!binding || binding.kind === 'param' || depth >= FOLLOWED) return null;
+    if (routerImport(binding)) {
+      const { name } = importedAs(binding)!;
+      const tag = name === '*' ? keys.length === 1 && keys[0] : !keys.length && name;
+      return tag && LINK_ELEMENTS.has(tag) ? { router: tag } : null;
+    }
+    if (binding.kind !== 'module') return componentAt(binding.path, keys, depth + 1);
+    const from = importedName(binding);
+    if (!from || (from.name === '*' && !keys.length)) return null;
+    return from.name === '*' ? componentAt(exportedDeclaration(from.file, keys[0]), keys.slice(1), depth + 1) : componentAt(exportedDeclaration(from.file, from.name), keys, depth + 1);
   }
 
   const leadingPiece = (p: NodePath): NodePath => (p.isTemplateLiteral() && p.node.quasis[0].value.cooked === '' && p.node.expressions.length ? leadingPiece(p.get('expressions.0') as NodePath)
