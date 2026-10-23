@@ -689,7 +689,8 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     const lists = limited(product((spread < 0 ? args : args.slice(0, spread)).map((a) => values(a, given).map((o) => wholeOr(o, a)))));
     reading.add(fn.node);
     try {
-      return lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1)));
+      const outs = lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1)));
+      return outs.some(withheldIn) ? [unknownAt(p)] : outs;
     } finally {
       reading.delete(fn.node);
     }

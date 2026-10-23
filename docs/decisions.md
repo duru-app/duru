@@ -3566,6 +3566,8 @@ nor does one that is an argument taken from props or a parameter as it is (`href
 with a history the function is given is a link only where the call hands it a value that is a history by the rules
 for a move (`leave(props.history)`, `leave({ history })` inside a component that takes `history` from its props), so
 the address of such a move is read from the call even when it is written as text.
+A value whose text duru knows but a link does not take whole (`TABS.GENERAL`) handed into the address a function
+builds makes the call `{?}`, as it makes a call of an address function in a link.
 A move that is already a link in the function's body (`` (id) => history.push(`/doc/${id}`) ``) keeps that link and
 adds none at the calls, and a move that stays on the screen gives none in either place; a call of another such
 function in the body that does not use what the function is given, or that is already a link where it is written

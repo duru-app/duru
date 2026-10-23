@@ -1940,6 +1940,51 @@ export default function Home() {
   ]);
 });
 
+test('a helper call that hands a member of a constant object into the address the helper builds is {?}, as an address function call with it is', async () => {
+  const routes = `import { Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+import Help from './Help';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/home" component={Home} exact />
+      <Route path="/settings/general" component={Help} exact />
+      <Route path="/settings/:tab" component={Team} />
+    </Switch>
+  );
+}
+`;
+  const home = `import { useHistory } from 'react-router-dom';
+import { openTab, openTabByPlus } from './nav';
+import { TABS } from './tabs';
+
+function openGeneral(history) {
+  openTab(history, TABS.GENERAL);
+}
+
+export default function Home() {
+  const history = useHistory();
+  return (
+    <nav>
+      <a onClick={() => openTab(history, TABS.GENERAL)}>a</a>
+      <a onClick={() => openTabByPlus(history, TABS.GENERAL)}>b</a>
+      <a onClick={() => openGeneral(history)}>c</a>
+    </nav>
+  );
+}
+`;
+  const nav = 'export function openTab(history, tab) {\n  history.push(`/settings/${tab}`);\n}\n\nexport function openTabByPlus(history, tab) {\n  history.push(\'/settings/\' + tab);\n}\n';
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home, 'nav.js': nav, 'tabs.js': `export const TABS = { GENERAL: 'general' };\n` }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['{?}', at('=> openTab(history'), [], []],
+    ['{?}', at('openTabByPlus('), [], []],
+    ['{?}', at('=> openGeneral(history)'), [], []],
+  ]);
+});
+
 test('the decision record says that a call of a function that moves to an address or with a history it is given is a link at the call', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
   const decisions = read('docs/decisions.md');
