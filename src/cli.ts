@@ -9,6 +9,7 @@ import { storeCandidates, storyCandidates } from './candidates.ts';
 import { casesWithoutTests, picksCalls, rulePicks } from './case-targets.ts';
 import { isPlainObject, loadConfig } from './config.ts';
 import type { CaseKind } from './config.ts';
+import { MOST_ADDRESSES } from './address-functions.ts';
 import { UNKNOWN } from './client.ts';
 import { buildMap, unreadSites } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
@@ -336,9 +337,10 @@ if (command === 'tasks') {
   for (const { spec, files } of map.unresolvedAliasImports ?? []) console.log(`  tsconfig import ${spec} matches an alias but no file, imported in ${files} file${files === 1 ? '' : 's'}`);
   for (const d of map.duplicateIds) console.log(`  duplicate screen ID ${d.id} ← ${d.places.map((p: { file: string; line: number }) => `${p.file}:${p.line}`).join(', ')}`);
   for (const s of map.screens.filter((s: any) => !s.componentFile)) console.log(`  component file not found for ${s.id} ← ${s.routeFile}:${s.line}${atTableItem(s)}`);
-  for (const { file, line, path: routePath, stoppedAt: at } of map.unreadRoutePaths ?? []) {
+  for (const { file, line, path: routePath, stoppedAt: at, paths, manyPaths } of map.unreadRoutePaths ?? []) {
     const elsewhere = at.file === file ? '' : ` in ${at.file}:${at.line}`;
-    console.log(`  route path not read ← ${file}:${line}: stopped at ${at.text}${elsewhere}${routePath === UNKNOWN ? '' : `, only ${routePath}`}`);
+    const gives = paths ? `, which gives ${paths.slice(0, -1).join(', ')} and ${paths.at(-1)}` : manyPaths ? `, which gives more than ${MOST_ADDRESSES} paths` : '';
+    console.log(`  route path not read ← ${file}:${line}: stopped at ${at.text}${elsewhere}${gives}${routePath === UNKNOWN ? '' : `, only ${routePath}`}`);
   }
   for (const { file, line, reason } of map.unreadRoutes ?? []) console.log(`  route not read ← ${file}:${line}: ${reason}`);
 

@@ -370,7 +370,7 @@ export type Branch = { path: string; chain: RouteElement[] };
 
 export type RouteNode =
   | { kind: 'switch'; children: RouteNode[] }
-  | { kind: 'routes'; branches: Branch[] }
+  | { kind: 'routes'; branches: Branch[]; indexes: string[] }
   | RouteElement
   | { kind: 'redirect'; from: string | null; exact: boolean; to: string };
 
@@ -393,6 +393,7 @@ function rankScore(routePath: string) {
 }
 
 export function routerTargets(roots: RouteNode[]) {
+  const endsInSplat = (routePath: string) => /(^|\/)\*$/.test(routePath);
   const patterns = new Map<string, RegExp[]>();
   const fits = (routePath: string, address: string, whole: boolean) => {
     if (routePath.includes(UNKNOWN)) return false;
@@ -410,6 +411,14 @@ export function routerTargets(roots: RouteNode[]) {
     const best = scored.reduce<(typeof scored)[number] | null>((a, x) => (!a || x.score > a.score ? x : a), null);
     return best ? scored.filter((x) => x.score === best.score && x.b.path === best.b.path).map((x) => x.b) : [];
   };
+  const mayName = (routePath: string, address: string) => {
+    const route = routePath.replace(/(.)\/$/, '$1').split('/');
+    const to = address.replace(/(.)\/$/, '$1').split('/');
+    return route.length === to.length && route.every((s, i) => s.toLowerCase() === to[i].toLowerCase() || s.startsWith(':') || to[i] === VARIABLE_SEGMENT);
+  };
+  // * 로 끝나는 라우트만 이긴 주소를 duru 가 맞춰 보지 못한 라우트가 그릴 수 있는지 본다: 경로를 읽지 못한 라우트, 주소의 {*} 자리에 그 글자가 올 수 있는 라우트.
+  const unsure = (node: RouteNode & { kind: 'routes' }, address: string) => node.branches.some((b) => b.path.includes(UNKNOWN))
+    || (address.includes(VARIABLE_SEGMENT) && node.branches.some((b) => explodedPaths(b.path).some((p) => !endsInSplat(p) && mayName(p, address))));
   const opens = (node: RouteNode, address: string) => (node.kind === 'switch' || node.kind === 'routes' ? true
     : node.kind === 'redirect' ? node.from === null || fits(node.from, address, node.exact)
       : node.path === null || fits(node.path, address, node.exact));
@@ -419,22 +428,31 @@ export function routerTargets(roots: RouteNode[]) {
     if (first?.kind !== 'route' || first.path === null) return first ? [first] : [];
     return nodes.filter((n) => n === first || (n.kind === 'route' && n.path === first.path && opens(n, address)));
   };
-  const route = (address: string, hops: number): number[] => {
-    const drawn: { screen: number; whole: boolean; fits: boolean; depth: number }[] = [];
-    const redirects: string[] = [];
+  type Routed = { screens: number[]; fitting: number[]; underRoutes: boolean; doubtful: boolean };
+  const route = (address: string, hops: number): Routed => {
+    let underRoutes = false;
+    let doubtful = false;
+    // catchAll 은 Routes 에서 바깥 라우트의 경로까지 이은 경로가 * 나 /* 인 라우트가 매칭되어 추가된 화면과 리다이렉트 주소에 붙는다.
+    const drawn: { screen: number; whole: boolean; fits: boolean; depth: number; catchAll?: boolean }[] = [];
+    const redirects: { to: string; catchAll?: boolean }[] = [];
     const walking = new Set<RouteNode>();
     const walk = (nodes: RouteNode[], inSwitch: boolean, depth: number) => {
       for (const node of inSwitch ? winners(nodes, address) : nodes.filter((n) => n.kind !== 'redirect' && opens(n, address))) {
         if (walking.has(node)) continue;
         walking.add(node);
-        if (node.kind === 'redirect') redirects.push(node.to);
+        if (node.kind === 'redirect') redirects.push({ to: node.to });
         else if (node.kind === 'switch') walk(node.children, true, depth + 1);
         else if (node.kind === 'routes') {
-          for (const { path: branchPath, chain } of rankedWinners(node.branches, address)) {
-            const splat = /(^|\/)\*$/.test(branchPath);
+          underRoutes = true;
+          const won = rankedWinners(node.branches, address);
+          // index 라우트는 duru 가 화면으로 읽지 않으므로, 주소를 그리는 index 라우트가 있으면 어느 라우트가 이겼든 duru 는 화면을 정하지 못한다.
+          if ((won.every((b) => endsInSplat(b.path)) && unsure(node, address)) || node.indexes.some((p) => fits(p || '/', address, true))) doubtful = true;
+          for (const { path: branchPath, chain } of won) {
+            const splat = endsInSplat(branchPath);
+            const catchAll = /^\/?\*$/.test(branchPath);
             chain.forEach((r, i) => {
               const leaf = i === chain.length - 1;
-              const own = r.screens.map((screen) => ({ screen, whole: leaf, fits: leaf && !splat, depth: depth + 1 + i }));
+              const own = r.screens.map((screen) => ({ screen, whole: leaf, fits: leaf && !splat, depth: depth + 1 + i, catchAll: leaf && catchAll }));
               drawn.push(...own);
               const inside = drawn.length;
               walk(r.children, false, depth + 2 + i);
@@ -445,7 +463,7 @@ export function routerTargets(roots: RouteNode[]) {
                 if (fitInside) for (const d of own) d.whole = false;
               }
             });
-            for (const c of chain.at(-1)!.children) if (c.kind === 'redirect') redirects.push(c.to);
+            for (const c of chain.at(-1)!.children) if (c.kind === 'redirect') redirects.push({ to: c.to, catchAll });
           }
         } else {
           for (const screen of node.screens) {
@@ -458,17 +476,36 @@ export function routerTargets(roots: RouteNode[]) {
       }
     };
     walk(roots, false, 0);
-    const whole = drawn.filter((d) => d.whole);
-    const deepest = Math.max(...drawn.map((d) => d.depth));
-    const picked = (whole.length ? whole : drawn.filter((d) => d.depth === deepest)).map((d) => d.screen);
-    const redirected = hops < REDIRECT_HOPS ? redirects.filter((to) => !unreadableTarget(to)).flatMap((to) => route(to, hops + 1)) : [];
-    return [...new Set([...picked, ...redirected])].sort((a, b) => a - b);
+    const pick = (ds: typeof drawn) => {
+      const whole = ds.filter((d) => d.whole);
+      const deepest = Math.max(...ds.map((d) => d.depth));
+      return (whole.length ? whole : ds.filter((d) => d.depth === deepest)).map((d) => d.screen);
+    };
+    const followed = hops < REDIRECT_HOPS ? redirects.filter((r) => !unreadableTarget(r.to)).map((r) => ({ ...r, routed: route(r.to, hops + 1) })) : [];
+    const redirected = followed.map((r) => r.routed);
+    const routeFits = drawn.some((d) => d.fits);
+    const fitting = [
+      ...pick(routeFits ? drawn.filter((d) => !d.catchAll) : drawn),
+      ...followed.filter((r) => !(routeFits && r.catchAll)).flatMap((r) => r.routed.fitting),
+    ];
+    return {
+      screens: [...new Set([...pick(drawn), ...redirected.flatMap((r) => r.screens)])].sort((a, b) => a - b),
+      fitting: [...new Set(fitting)].sort((a, b) => a - b),
+      underRoutes: underRoutes || redirected.some((r) => r.underRoutes),
+      doubtful: doubtful || redirected.some((r) => r.doubtful),
+    };
   };
-  const routed = new Map<string, number[]>();
-  return (to: string) => {
-    if (unreadableTarget(to) || !to.startsWith('/')) return [];
+  const routed = new Map<string, Routed>();
+  const routedTo = (to: string): Routed => {
+    if (unreadableTarget(to) || !to.startsWith('/')) return { screens: [], fitting: [], underRoutes: false, doubtful: false };
     if (!routed.has(to)) routed.set(to, route(to, 0));
     return routed.get(to)!;
+  };
+  return {
+    screens: (to: string) => routedTo(to).screens,
+    // 주소 전체와 맞는 라우트가 있으면, 다른 Routes 에서 매칭된 * 나 /* 라우트의 화면과 그 라우트가 리다이렉트하는 주소는 빼고 고른 화면이다.
+    fittingScreens: (to: string) => routedTo(to).fitting,
+    decidedByRoutes: (to: string) => routedTo(to).underRoutes && !routedTo(to).doubtful,
   };
 }
 

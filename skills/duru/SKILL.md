@@ -129,7 +129,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   bring: the screen's own source files, API calls, setting reads and links are missing.
 - A `route path not read ← <route file>:<line>: stopped at <piece>` line names a route whose path holds `{?}`,
   with the first piece duru could not read where it stopped; an `in <file>:<line>` after it appears only when duru
-  followed a name into another file and stopped there. An address a browser test passes through is not matched to
+  followed a name into another file and stopped there, and `, which gives <paths>` after it names the paths a
+  function the route calls gives when there is more than one. An address a browser test passes through is not matched to
   that screen, and when its ID holds `{?}` the ID changes once that part is read, so do not tag tests with such an
   ID; tell the user which routes these are and where each one stopped.
 - A `route not read ← <route file>:<line>: <reason>` line names a route that draws a screen missing from the map,
