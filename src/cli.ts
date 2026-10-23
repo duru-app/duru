@@ -4,6 +4,7 @@ import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { baselineLine, compareMaps, newUndecided, readBaseline } from './baseline.ts';
+import { baselineTestsLines, compareTests, nodeIds, readBaselineTests } from './baseline-tests.ts';
 import { storeCandidates, storyCandidates } from './candidates.ts';
 import { casesWithoutTests, picksCalls, rulePicks } from './case-targets.ts';
 import { isPlainObject, loadConfig } from './config.ts';
@@ -265,8 +266,10 @@ if (command === 'tasks') {
   console.error(`marks ${config.marksDir} | stories ${config.storiesDir} | author ${author.name} (${AUTHOR_SOURCES[author.source]})`);
 } else {
   let baseline = null;
+  let baselineTests = null;
   try {
     if (command === 'rebuild' && config.baselineMap) baseline = readBaseline(config.baselineMap);
+    if (command === 'rebuild' && config.baselineTests) baselineTests = readBaselineTests(config);
   } catch (err: any) {
     console.error(err.message);
     process.exit(1);
@@ -335,7 +338,14 @@ if (command === 'tasks') {
   for (const { file, line, reason } of map.unreadRoutes ?? []) console.log(`  route not read ← ${file}:${line}: ${reason}`);
 
   if (command === 'rebuild') {
+    const readTests = () => {
+      const links = linkTests(config, map);
+      const { judgments, notices: judgmentNotices } = loadJudgments(config.judgmentsDir);
+      return { links, judgmentNotices, judged: applyJudgments(links, judgments) };
+    };
     if (changes) console.log(baselineLine(config.baselineMap, changes));
+    const readEarly = baselineTests && readTests();
+    if (baselineTests && readEarly) for (const line of baselineTestsLines(compareTests(baselineTests, readEarly.judged, nodeIds(map)))) console.log(line);
     for (const [kind, caseKind] of Object.entries<CaseKind>(config.caseKinds)) {
       if (!caseKind.picks.length) continue;
       const rules = rulePicks(map, caseKind);
@@ -349,15 +359,13 @@ if (command === 'tasks') {
         if (!r.screens.length && !r.calls.length) console.log(`  caseKinds ${kind} picks[${i}] matches no ${picksCalls(r.pick) ? 'call' : 'screen'}: ${JSON.stringify(r.pick)}`);
       });
     }
-    const links = linkTests(config, map);
+    const { links, judgmentNotices, judged } = readEarly || readTests();
     console.log(`wrote ${write('tests.json', links)}`);
     const { list, notices, stale, unknownTags: unknownStories } = checkStoryFiles(map, config.storiesDir, path.join(config.outDir, 'map.json'), links);
     const unknownTags = [...links.unknownTags, ...unknownStories];
     const covered = map.screens.filter((s: any) => links.nodes[s.id]).length;
     console.log(`screens with tests ${covered}/${map.screens.length} | tags pointing outside the map ${unknownTags.length} | tests without a node or story tag ${links.untaggedCount}`);
     console.log(`calls with tests ${map.calls.filter((c: any) => links.nodes[c.id]).length}/${map.calls.length}`);
-    const { judgments, notices: judgmentNotices } = loadJudgments(config.judgmentsDir);
-    const judged = applyJudgments(links, judgments);
     const pairs = (byScreen: Record<string, unknown[]>) => Object.values(byScreen).reduce((n, tests) => n + tests.length, 0);
     console.log(`links from unit tests to screens by the files they import ${pairs(judged.importers)} | test files not read ${links.importNotices.length}`);
     console.log(`links from browser tests to screens they passed through and calls they sent ${pairs(judged.passed)} | traces not read ${links.traceNotices.length} | browser tests that ran without a trace ${links.untracedCount}`);

@@ -290,6 +290,17 @@ client with example results and a config to start from.
   the last release. `rebuild` and the review page then show what changed since it. Build it with the same duru as
   the current map: a map from another duru can differ for reasons in duru rather than in the client, and one from a
   duru that did not record the roles a route guard lets through is refused.
+- `baselineTests` — the test results of an earlier version of the same client (optional), written like `tests`,
+  such as `[{ "format": "playwright", "path": "releases/1.5.0/e2e.json", "depth": "ui" }]`. `rebuild` then compares
+  them with the current results and prints the tests that passed there and fail or are pending now (see **What
+  extract and rebuild print**). It works with or without `baselineMap`. An empty list compares nothing and prints no
+  line about it. To keep the results of a release, run the whole suite on that version and copy its result files
+  straight into that version's folder, such as `releases/1.5.0/`; copy JUnit XML and verdict logs with their modified
+  time kept (`cp -p`), since that is the time duru takes for when they ran. In a git checkout, where that time is
+  the checkout's, such a file unchanged since its last commit takes the author date of that commit when it is earlier. Keeping the results of a run of only some
+  of the tests leaves the rest out of the comparison: those under a screen or call now count as `only now`. Tests of the two results are matched by their title without
+  tags, their Playwright project and their test file, so a test renamed or moved to another file counts once in
+  `only in baseline` and once in `only now`.
 - `appUrl` — address of a running instance of the app; the review page links each screen without path
   variables to it.
 - `app` — what the review page needs to show the app itself, logged in, in a frame (optional; replaces the
@@ -504,6 +515,33 @@ listing the places whose value the source does not show in full.
   they did not or no longer send the ones they did, and the same for calls, with the calls whose server match
   differs. A `baselineMap` that is missing, unreadable or not such a map stops `rebuild` with a line naming the file,
   before anything is written.
+- `test results since <folder> | compared N | pass→fail N pass→pending N | not on a screen or call now N | only in baseline N | only now N` —
+  printed by `rebuild` when the config names `baselineTests`, after the `changes since` line when there is one.
+  `<folder>` is the nearest folder holding every `baselineTests` path, from the config's folder. Each count takes a
+  test once, however many screens and calls it is on. `compared`: the tests under a screen or call now that a
+  baseline test matches, whether a tag, an import, a trace or a reviewer's hand-over puts them there; a pair a
+  reviewer discarded does not. `pass→fail` and `pass→pending`: those that passed in the baseline and now fail, or now
+  did not run or gave no verdict; a `pass→pending` test may have been skipped because a test before it in a `serial`
+  group, or a `setup` project it depends on, failed. `not on a screen or call now`: baseline tests that match a
+  current test which is on no screen or call now, such as an untagged test, one only under a story, one whose tags
+  name only screens or calls the map does not have, or one whose pairs a reviewer all discarded. When
+  `not on a screen or call now` is large, those tests could not be compared because nothing links them to a screen
+  or call now; a browser test linked only by its trace, for one, is not linked when it was skipped and left no
+  trace. `only in baseline`: baseline tests no current test matches.
+  `only now`: tests under a screen or call now that no baseline test matches; they are not regressions.
+  `compared`, `not on a screen or call now` and `only in baseline` add up to the tests of the baseline.
+- `  no test was compared: no baseline test matches a test under a screen or call now` — follows when `compared` is 0,
+  so that no regression is not read as nothing broken.
+- `  pass→fail ← <test file>:<line> <title> (<project>) — screen <id>, call <id>, …` — one line for each test that
+  passed in the baseline and fails now, and `  pass→pending ← …` for each that is pending now, naming every screen
+  and call the test is on. `:<line>` is left out when the result gives no line (JUnit), and `(<project>)` when the
+  test has no Playwright project.
+- `  only in baseline ← <file>: N tests, none of this file's tests are in the current results` — a test file of the
+  baseline with no test in the current results: it no longer loads, or the current run left it out. `<file>` is its
+  path in the baseline results, from the folder holding all of their test files when the paths are absolute.
+- A `baselineTests` path that is missing, a result file that cannot be read, or an entry that gives no test stops
+  `rebuild` with `baselineTests <path> could not be read: <why>`, before anything is written. Files of another format
+  in a folder, and verdict logs with no verdict line, are skipped as in `tests`.
 - `case kind <kind>: rules pick N screens, N calls` — printed by `rebuild` for each kind in `caseKinds` with
   `picks`: how many screens and calls its rules pick on this map. With `baselineMap`, `| new since <file> N` follows:
   how many of them the same rules did not pick on the baseline map.
@@ -556,7 +594,8 @@ and is listed with the tags that point at nothing on the map.
 
 `tests.json` lists the tests per node and per story with depth, status (pass, fail, pending; skipped and todo
 count as pending) and `tags`, every tag read for the test, without the `@`. It also lists the tags that point at
-nothing on the map, and the tests with no tag as `untagged`. `traced`
+nothing on the map, and the tests with no tag as `untagged`. An untagged Playwright test carries the projects it ran
+in as `projects`, each with the worst status of the test's runs in it. `traced`
 lists each Playwright test that passed, with the trace of its passing run, as its report, its title, its file and
 line, and the screens it passed in order; an address no screen matches stays in that list as its path. A story test whose passing run left a trace
 carries the same order as `screens`.
@@ -1220,7 +1259,9 @@ JSON line:
 `"targets"` in place of `"target"` and `"wheres"`, one entry for each of its targets in the same order, each the
 `where` that target alone would carry below, or `null` for a target that carries none. A comment or reply whose target has a `part` also
 carries `"where"`: for a test, `{"file","line","source","status","relation"}` with `relation` one of `tagged`,
-`imported`, `passed` or `called`, and `detail` for a verdict line; for a condition or a link,
+`imported`, `passed` or `called`, `detail` for a verdict line, and `passedIn`, the `baselineTests` folder, when the
+test passed in that earlier release and fails or is pending now and the comment was left after that release's run, as
+in the task list; for a condition or a link,
 `{"places":[{"from","file","line",…}]}` with each source line it is read from, `from` being `route` or the screen a
 link starts on, and for a condition the `guard` as written, `via` when it sits in a function the link calls,
 `roleGuardsKey` when `roleGuards` gave its roles, or `inherited` for a link that passes on the condition of the screen
@@ -1334,6 +1375,20 @@ in the data setup and the checks, and the test attaches after a `rebuild`. Pairs
 Before `# Case kinds` and `# Tagging`, `# Code changed after a mark or a judgment` lists each mark, with its target
 and status, and each discarded or handed-over pair whose code changed after it was left, as the review page shows
 「코드 바뀜」; it is left out while there is none.
+
+**Comments on regressed tests.** With `baselineTests` in the config, it also lists each screen and API call with a
+test that passed in that earlier release and fails or is pending now, when a reviewer commented on that test's row
+after the release's run. Such an item starts with `- marks: none, listed for comments on regressed tests` when it
+has no open mark, and then has no `empty tests`; its cases with no tests stay under `# Case kinds`. Under
+`comments on tests` the line of that test has `, passed in <folder>` right after its result file, the `baselineTests` folder as the
+`test results since` line names it, the head of the list adds `N commented regressions`, and the intro says to fix
+the code or the test as the comment says rather than write a new test. With no open mark the list starts with that
+and does not say `No open marks.` An item listed this way leaves once those tests pass again after a `rebuild`, or
+once a reviewer marks the whole screen or call `fine`; a comment after that brings it back. A comment left before
+the baseline ran does not count, which is why JUnit XML and verdict logs are kept with their modified time. When
+`baselineTests` cannot be read, the line right under the head says
+`baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`,
+the rest of the list is as without it, and `tasks` does not stop.
 
 **Case kinds.** With `caseKinds` set, `# Case kinds` comes before `# Tagging`, with a `## <kind>` for each kind: its
 description, its values and rules, `undecided: N` with a line for each undecided candidate, and `cases with no

@@ -10,7 +10,7 @@ const MOST_BRANCHES = 64;
 export type AddressFunction = NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration>;
 type Followable = AddressFunction | NodePath<ClassMethod>;
 // value 는 끝까지 읽은 값이고, parts 는 고정 문자열과 읽다 멈춘 지점을 순서대로 담는다.
-// withheld 는 값을 알지만 이 읽기가 받지 않는 조각이라, 함수 호출을 거쳐 주소에 들어가면 그 호출을 읽지 못한 조각으로 둔다.
+// withheld 는 값을 알지만 이 읽기가 받지 않는 조각이다.
 export type Leaf = { value: unknown } | { parts: (string | NodePath)[]; withheld?: boolean };
 // whole 은 함수가 받은 인자를 그대로 돌려준 갈래의, 부른 곳에 적힌 그 인자다.
 export type Branch = { text: string; stops: NodePath[]; made: boolean; whole?: NodePath };
@@ -187,7 +187,7 @@ function changesOwn(x: NodePath<any>, fn: Followable): boolean {
   return found;
 }
 
-// 갈래로 고르거나 이름에 넣는 빈 문자열. 함수 몸통에서 이것이 주소 맨 앞에 오면 함수가 돌려준 빈 문자열처럼 읽지 못한 조각으로 본다.
+// 갈래로 고르거나 이름에 넣는 빈 문자열.
 function choosesText(p: NodePath): boolean {
   const { parentPath: parent, key } = p;
   if (!parent) return false;

@@ -13,7 +13,7 @@ export interface CodeState {
   duruCommit?: string;
 }
 
-function git(cwd: string, args: string[]) {
+export function git(cwd: string, args: string[]) {
   try {
     return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   } catch {
