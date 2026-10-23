@@ -3558,7 +3558,9 @@ When the value given at the call is read, it is used and the getter is not: an o
 (`teamPath({ path: '/login' })`) is what the function gets, and an argument left out gives `{?}` as before, since
 such a call fails when it runs.
 A member read with `?.` (`team?.path ?? '/start'`) also keeps the branch where the parameter is missing, so a
-`??` or `||` after it still gives its link, as it did when the member was a piece duru cannot read.
+`??` or `||` after it still gives its link, as it did when the member was a piece duru cannot read. The branch is
+kept whatever the parameter's type says, so with nothing after the read (`team?.path`, `` `${team?.path}/edit` ``)
+it is a `{?}` link beside the getter's address.
 The class is found when it is declared in the same file, imported as a value, or imported only as a type
 (`import type Document from`, `import { type Help, other } from`), through value re-exports between
 (`export { default as Doc } from`). duru removes type-only import lines and `type` specifiers from a TypeScript
@@ -3594,7 +3596,11 @@ Known limits:
   seen, so when the parent class's getter returns a whole address (`get path() { return '/home'; }`) the link goes
   to that screen even where a subclass's getter returns another.
 - A getter whose body only throws, written in place of `abstract get`, gives no address, so the link is left out
-  of the map, as a link through an address function that only throws already is.
+  of the map, as a link through an address function that only throws already is. Read with `?.`, only the branch
+  where the parameter is missing is left: the address after `??` or `||`, or `{?}`.
+- A `?.` read on a parameter that cannot be missing (`team: Team`) still keeps the missing branch, so it gives a `{?}`
+  link next to the getter's address; whether a parameter can be missing would be read from its type or default
+  value. Each such read in a template doubles the branches, so several of them reach the limit of 64 sooner.
 - A model's member read at the link itself (`to={doc.path}`) is not read; only parameters of address functions are.
 - outline's `/doc/{*}` links (8 places, 148 lines) reach the shared document screen `/doc/:documentSlug#Shared` as
   well as the document screen, since a link is matched in each of two `Switch`es drawn side by side (#385).
