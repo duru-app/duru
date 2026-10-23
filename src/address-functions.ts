@@ -2,6 +2,7 @@ import type { Binding, NodePath, Scope } from '@babel/traverse';
 import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, ClassMethod, FunctionDeclaration, FunctionExpression, Identifier, JSXElement, Node, StringLiteral } from '@babel/types';
 import { addresses, FOLLOWED, toOf } from './screen-links.ts';
 import type { Move } from './screen-links.ts';
+import type { Side } from './access.ts';
 
 export const UNREADABLE_PIECE = '\0';
 export const MOST_ADDRESSES = 8;
@@ -15,7 +16,8 @@ export type LinkComponent = { router: string } | { fn: AddressFunction };
 // withheld 는 값을 알지만 이 읽기가 받지 않는 조각이다.
 export type Leaf = { value: unknown } | { parts: (string | NodePath)[]; withheld?: boolean };
 // whole 은 함수가 받은 인자를 그대로 돌려준 갈래의, 부른 곳에 적힌 그 인자다.
-export type Branch = { text: string; stops: NodePath[]; made: boolean; whole?: NodePath };
+// sides 는 그 갈래가 생기는 배포마다 정해지는 설정 값이다.
+export type Branch = { text: string; stops: NodePath[]; made: boolean; whole?: NodePath; sides?: Side[] };
 export type Read = { branches: Branch[] } | { tooMany: true };
 
 interface Reading {
@@ -27,6 +29,7 @@ interface Reading {
   passThrough: (name: string) => boolean;
   mergesSlashes: boolean;
   moves?: Moves;
+  testSide?: (test: NodePath<any>, on: boolean) => Side | null;
 }
 
 // linked 는 주소 자리 하나가, linkedCall 은 옮겨 주는 함수를 부른 자리 하나가, linkedUse 는 링크 컴포넌트를 쓴 자리 하나가
@@ -49,7 +52,7 @@ type Val =
   | { props: Map<string, Out>; open: boolean; rest?: Out }
   | { items: Out[] }
   | { unknown: NodePath };
-type Out = { val: Val; made: boolean; whole?: NodePath };
+type Out = { val: Val; made: boolean; whole?: NodePath; sides?: Side[] };
 type Env = Map<Binding, Out>;
 // consts 이면 fn 안에서 const 로 선언한 이름을 그 초기값으로 읽는다.
 interface At { env: Env | null; fn: Followable | null; branching: boolean; depth: number; consts?: boolean }
@@ -99,7 +102,8 @@ function joined(parts: [Out, NodePath][], mergesSlashes: boolean): Out {
       if (piece.text.length > 1) pieces.push({ ...piece, text: piece.text.slice(1) });
     } else pieces.push(piece);
   }
-  return { val: { pieces }, made: parts.some(([out]) => out.made) };
+  const sides = parts.flatMap(([out]) => out.sides ?? []);
+  return { val: { pieces }, made: parts.some(([out]) => out.made), ...(sides.length && { sides }) };
 }
 
 function product<T>(lists: T[][]): T[][] {
@@ -136,7 +140,7 @@ function withheldIn({ val }: Out): boolean {
   return 'items' in val && val.items.some(withheldIn);
 }
 
-const keyOfOut = ({ val, made, whole }: Out) => ('pieces' in val ? `${made}\0${whole?.node.start}\0${val.pieces.map((x) => ('text' in x ? x.text : 'stop' in x ? UNREADABLE_PIECE : '\u0001')).join('')}` : null);
+const keyOfOut = ({ val, made, whole, sides }: Out) => ('pieces' in val ? `${made}\0${whole?.node.start}\0${sides?.map((x) => `${x.key}=${x.on}`).join() ?? ''}\0${val.pieces.map((x) => ('text' in x ? x.text : 'stop' in x ? UNREADABLE_PIECE : '\u0001')).join('')}` : null);
 
 function distinct(outs: Out[]) {
   const seen = new Set<string>();
@@ -217,8 +221,12 @@ const opaque = ({ val }: Out) => 'unknown' in val || ('pieces' in val && val.pie
 
 const unwrapped = (p: NodePath<any>): NodePath<any> => (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isTypeCastExpression() || p.isParenthesizedExpression() ? unwrapped(p.get('expression') as NodePath<any>) : p);
 
-export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, declaredClass, passThrough, mergesSlashes, moves }: Reading) {
+export function addressReader({ leaf, declaredValue, declaredFunction, namespaceFunction, declaredClass, passThrough, mergesSlashes, moves, testSide }: Reading) {
   const reading = new Set<Node>();
+  const sided = (outs: Out[], test: NodePath<any>, on: boolean) => {
+    const side = testSide?.(test, on);
+    return side ? outs.map((o) => ({ ...o, sides: [...(o.sides ?? []), side] })) : outs;
+  };
   const join = (parts: [Out, NodePath][]) => joined(parts, mergesSlashes);
   const placesFound = new WeakMap<Node, Places>();
   const helperFound = new WeakMap<Node, boolean>();
@@ -307,7 +315,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       const outs = distinct(read());
       if (outs.some(withheldIn)) return [unknownAt(p)];
       return limited(outs).map((o) => {
-        const whole = o.whole && { whole: o.whole };
+        const whole = { ...(o.whole && { whole: o.whole }), ...(o.sides && { sides: o.sides }) };
         if (!('pieces' in o.val)) return { val: o.val, made: true, ...whole };
         const pieces = o.val.pieces.every((x) => 'empty' in x) ? [{ empty: p }] : o.val.pieces.map((x) => ('text' in x ? { ...x, made: true } : x));
         return { val: { pieces }, made: true, ...whole };
@@ -411,7 +419,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
               continue;
             }
             const found = walk([branch as NodePath], [new Map(e)], fn, depth);
-            returned.push(...found.returned);
+            returned.push(...sided(found.returned, s.get('test'), taken));
             next.push(...found.open);
           }
         }
@@ -495,7 +503,10 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         return t === undefined ? unknownAt(p) : known(!t);
       });
     }
-    if (p.isConditionalExpression() && at.branching) return choose(values(p.get('test'), at), truth, () => values(p.get('consequent'), at), () => values(p.get('alternate'), at));
+    if (p.isConditionalExpression() && at.branching) {
+      const test = p.get('test');
+      return choose(values(test, at), truth, () => sided(values(p.get('consequent'), at), test, true), () => sided(values(p.get('alternate'), at), test, false));
+    }
     if (p.isLogicalExpression() && at.branching) {
       const right = () => values(p.get('right'), at);
       const left = values(p.get('left'), at);
@@ -579,6 +590,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       stops: pieces.flatMap((x) => ('stop' in x ? [x.stop] : [])),
       made: out.made,
       ...(out.whole && { whole: out.whole }),
+      ...(out.sides && { sides: out.sides }),
     };
   }
 

@@ -363,14 +363,16 @@ export function linkTargets(screens: { path: string }[]) {
   };
 }
 
-type RouteElement = { kind: 'route'; path: string | null; exact: boolean; screens: number[]; children: RouteNode[] };
+// 배포마다 정해지는 설정 값 key 가 on 일 때만 그려지는 노드에 붙는다.
+export type Side = { key: string; on: boolean };
+type RouteElement = { kind: 'route'; path: string | null; exact: boolean; screens: number[]; children: RouteNode[]; when?: Side };
 
 // path 는 바깥 라우트의 경로를 이어 붙인 전체 경로이고, chain 은 바깥 라우트부터 그 라우트까지다.
 export type Branch = { path: string; chain: RouteElement[] };
 
 export type RouteNode =
-  | { kind: 'switch'; children: RouteNode[] }
-  | { kind: 'routes'; branches: Branch[]; indexes: string[] }
+  | { kind: 'switch'; children: RouteNode[]; when?: Side }
+  | { kind: 'routes'; branches: Branch[]; indexes: string[]; when?: Side }
   | RouteElement
   | { kind: 'redirect'; from: string | null; exact: boolean; to: string };
 
@@ -501,10 +503,41 @@ export function routerTargets(roots: RouteNode[]) {
     if (!routed.has(to)) routed.set(to, route(to, 0));
     return routed.get(to)!;
   };
+  // 화면마다, 그 화면이 그려지는 모든 자리가 같은 쪽에 있는 설정 값과 그 쪽이다.
+  const seen = new Map<number, Map<string, boolean>[]>();
+  const collecting = new Set<RouteNode>();
+  const collect = (nodes: RouteNode[], sides: Map<string, boolean>) => {
+    for (const node of nodes) {
+      if (node.kind === 'redirect' || collecting.has(node)) continue;
+      collecting.add(node);
+      const here = node.when ? new Map(sides).set(node.when.key, node.when.on) : sides;
+      if (node.kind === 'switch') collect(node.children, here);
+      else if (node.kind === 'routes') {
+        for (const { chain } of node.branches) for (const r of chain) {
+          for (const screen of r.screens) seen.set(screen, [...(seen.get(screen) ?? []), here]);
+          collect(r.children, here);
+        }
+      } else {
+        for (const screen of node.screens) seen.set(screen, [...(seen.get(screen) ?? []), here]);
+        collect(node.children, here);
+      }
+      collecting.delete(node);
+    }
+  };
+  collect(roots, new Map());
+  const sideOf = new Map([...seen].map(([screen, [first, ...rest]]) => [screen, new Map([...first].filter(([key, on]) => rest.every((m) => m.get(key) === on)))]));
+  // from 이 그려지는 쪽과 반대쪽에만 그려지는 화면은 from 에서 닿지 않는다.
+  const sameSide = (from: number | undefined) => (to: number) => {
+    const own = from === undefined ? undefined : sideOf.get(from);
+    const other = sideOf.get(to);
+    return !own || !other || [...own].every(([key, on]) => other.get(key) !== !on);
+  };
   return {
-    screens: (to: string) => routedTo(to).screens,
+    // 화면 from 이 그려지는 쪽에서 sides 가 모두 생길 수 있는가.
+    drawnWith: (from: number, sides: Side[] = []) => sides.every(({ key, on }) => sideOf.get(from)?.get(key) !== !on),
+    screens: (to: string, from?: number) => routedTo(to).screens.filter(sameSide(from)),
     // 주소 전체와 맞는 라우트가 있으면, 다른 Routes 에서 매칭된 * 나 /* 라우트의 화면과 그 라우트가 리다이렉트하는 주소는 빼고 고른 화면이다.
-    fittingScreens: (to: string) => routedTo(to).fitting,
+    fittingScreens: (to: string, from?: number) => routedTo(to).fitting.filter(sameSide(from)),
     decidedByRoutes: (to: string) => routedTo(to).underRoutes && !routedTo(to).doubtful,
   };
 }

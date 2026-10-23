@@ -6,7 +6,7 @@ import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, Express
 import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
 import type { AddressFunction, LinkComponent, Read } from './address-functions.ts';
-import type { Branch, Constants, GuardInit, GuardSetting, RouteNode } from './access.ts';
+import type { Branch, Constants, GuardInit, GuardSetting, RouteNode, Side } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
 import { compare, ROUTES_FILE } from './config.ts';
@@ -71,7 +71,7 @@ type DispatchSite = { line: number; types: () => ActionType[] };
 type WatcherSite = { watches: Watch[] };
 type SettingRead = Site & { key: string };
 type RouteRef = Site & { route: string; tail?: string | null };
-type RouterLink = Site & { to: string };
+type RouterLink = Site & { to: string; sides?: Side[] };
 type FollowedSite = ApiCallSite | DispatchSite | WatcherSite | RouteRef | RouterLink;
 
 interface Facts {
@@ -140,6 +140,7 @@ interface DrawnNode {
   isRoute: boolean;
   isFragment: boolean;
   redirectAsElement: boolean;
+  when: Side | null;
   children: DrawnNode[];
 }
 
@@ -796,6 +797,7 @@ export async function extractClient(config: any) {
     declaredClass,
     passThrough,
     mergesSlashes: false,
+    testSide,
     moves: {
       moveOf: (p) => screenLinks.moveOf(p),
       component: (p) => linkComponentOf(p),
@@ -839,21 +841,27 @@ export async function extractClient(config: any) {
   const linkAddresses = (p: NodePath) => addressesOf(linkReading.branches(p), () => writtenAddress(tailText(p)));
 
   // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니고, // 가 생기는 것은 {?} 다.
-  function addressesOf(read: Read, tooMany: () => string) {
-    if ('tooMany' in read) return [tooMany()];
-    const found = new Set<string>();
-    for (const { text, made, whole } of read.branches) {
+  // sides 는 그 주소를 내는 갈래가 모두 같은 쪽에서만 생길 때 그 설정 값들이다.
+  function addressesOf(read: Read, tooMany: () => string): { to: string; sides?: Side[] }[] {
+    if ('tooMany' in read) return [{ to: tooMany() }];
+    const found = new Map<string, Side[] | null>();
+    const add = (to: string, sides: Side[] | null) => {
+      const before = found.get(to);
+      found.set(to, !found.has(to) ? sides : before && sides ? before.filter((a) => sides.some((b) => a.key === b.key && a.on === b.on)) : null);
+    };
+    for (const { text, made, whole, sides } of read.branches) {
       if (made && whole && !addresses(whole).length) continue;
-      if (made && text.split(/[?#]/)[0].includes('//')) found.add(UNKNOWN);
-      else if (pathSegments(text)) found.add(writtenAddress(text));
-      else if (!made || text.includes(UNREADABLE_PIECE)) found.add(UNKNOWN);
+      if (made && text.split(/[?#]/)[0].includes('//')) add(UNKNOWN, null);
+      else if (pathSegments(text)) add(writtenAddress(text), sides ?? null);
+      else if (!made || text.includes(UNREADABLE_PIECE)) add(UNKNOWN, null);
     }
-    return found.size > MOST_ADDRESSES ? [tooMany()] : [...found];
+    if (found.size > MOST_ADDRESSES) return [{ to: tooMany() }];
+    return [...found].map(([to, sides]) => (sides?.length ? { to, sides } : { to }));
   }
 
   const oneAddress = (p: NodePath) => {
     const [only, ...more] = linkAddresses(p);
-    return more.length || only === undefined ? UNKNOWN : only;
+    return more.length || only === undefined ? UNKNOWN : only.to;
   };
 
   // 라우트 상수 뒤에 이어 붙은 주소와, 상수부터 그 주소까지 이어 붙인 식. 꼬리는 마디마다 글자 그대로이거나 변수 하나이면 '/…',
@@ -1150,19 +1158,19 @@ export async function extractClient(config: any) {
       markLinkAddresses(addresses);
       for (const at of addresses) {
         if (madeFrom(at).some(holdsRouteRef)) continue;
-        for (const to of linkAddresses(at)) record('routerLinks', { to }, at);
+        for (const address of linkAddresses(at)) record('routerLinks', address, at);
       }
     };
     const recordHelperLinks = (p: NodePath<CallExpression>) => {
       if (screenLinks.moveOf(p) || (p.get('arguments') as NodePath[]).some((a) => madeFrom(a).some(holdsRouteRef))) return;
       const read = linkReading.helperBranches(p);
-      for (const to of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', { to }, p);
+      for (const address of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', address, p);
     };
     const recordUseLinks = (p: NodePath<JSXElement>) => {
       const written = (p.get('openingElement.attributes') as NodePath<any>[]).map((a) => (a.isJSXSpreadAttribute() ? a.get('argument') : a.get('value')) as NodePath<any>);
       if (written.some((v) => v.node && madeFrom(v.isJSXExpressionContainer() ? v.get('expression') : v).some(holdsRouteRef))) return;
       const read = linkReading.useBranches(p);
-      for (const to of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', { to }, p);
+      for (const address of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', address, p);
     };
     const inRouteFile = routeFileSet.has(file);
     traverse(ast, {
@@ -1375,6 +1383,22 @@ export async function extractClient(config: any) {
     return { screens, roots: drawnTree(ast, absFile, elementScreens) };
   }
 
+  function testSide(test: NodePath<any>, on: boolean): Side | null {
+    while (test.isUnaryExpression({ operator: '!' })) {
+      test = test.get('argument');
+      on = !on;
+    }
+    const chain = memberChain(test.node);
+    return chain && settingsRoots.has(chain[0]) ? { key: chain.join('.'), on } : null;
+  }
+
+  function drawnSide(p: NodePath<JSXElement>): Side | null {
+    const up = p.parentPath;
+    if (up.isConditionalExpression() && (p.key === 'consequent' || p.key === 'alternate')) return testSide(up.get('test'), p.key === 'consequent');
+    if (up.isLogicalExpression() && up.node.operator !== '??' && p.key === 'right') return testSide(up.get('left'), up.node.operator === '&&');
+    return null;
+  }
+
   function drawnTree(ast: ReturnType<typeof parseSource>['ast'], absFile: string, elementScreens: Map<Node, RouteScreen[]>) {
     const nodes = new Map<Node, DrawnNode>();
     const roots: DrawnNode[] = [];
@@ -1390,7 +1414,7 @@ export async function extractClient(config: any) {
         };
         const exact = attr('exact');
         const text = (p: NodePath | undefined | null) => (p ? readRoutePath(p).path : UNKNOWN);
-        const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || (Boolean(exact) && evaluate(exact!) === true), from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, redirectAsElement: false, children: [] };
+        const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || (Boolean(exact) && evaluate(exact!) === true), from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, redirectAsElement: false, when: drawnSide(p), children: [] };
         const binding = p.scope.getBinding(tag);
         const reactAs = (b: Binding | undefined) => {
           const from = b && importedAs(b);
@@ -1906,6 +1930,11 @@ export async function extractClient(config: any) {
     const holding = new Map<RouteNode & { kind: 'route' }, { files: string[]; base: string; around: string[] }>();
     let around: string[] = [];
     const convert = (n: DrawnNode, file: string, base = ''): RouteNode[] => {
+      const nodes = convertNode(n, file, base);
+      for (const node of nodes) if (n.when && node.kind !== 'redirect') node.when = n.when;
+      return nodes;
+    };
+    const convertNode = (n: DrawnNode, file: string, base: string): RouteNode[] => {
       if (n.kind === 'routes') {
         const branches: Branch[] = [];
         const unwrapped = (nodes: DrawnNode[]): DrawnNode[] => nodes.flatMap((c) => (c.isFragment ? unwrapped(c.children) : [c]));
@@ -1999,13 +2028,19 @@ export async function extractClient(config: any) {
   fillOuterAddresses(sourced);
   const routedScreens = routerTargets(routeTree(drawn, extracted, sourced));
   // 링크 주소 전체로 쓴 라우트 상수는 Routes 에서 그 주소에 맞는 화면이 나오면 문자열 주소처럼 잇되 다른 Routes 의 catch-all 은 빼고, 그 밖에는 라우트 경로에 맞춰 본다.
-  const constantLink = (site: RouteRef) => {
+  const constantLink = (site: RouteRef, from: number) => {
     const { tail, ...ref } = site;
     const value = routeValues[ref.route];
     if (typeof value !== 'string') return { ...ref, to: value ?? UNKNOWN };
     const to = tail ? value + tail : value;
     const routed = tail !== null && linkAddressRefs.has(site) && routedScreens.decidedByRoutes(to);
-    return { ...ref, to, ...(tail && { tail }), ...(routed && { reaches: routedScreens.fittingScreens(to) }) };
+    return { ...ref, to, ...(tail && { tail }), ...(routed && { reaches: routedScreens.fittingScreens(to, from) }) };
+  };
+  // 주소의 갈래가 from 이 그려지는 쪽에서 생기지 않으면 null 이다.
+  const screenLink = (site: RouteRef | RouterLink, from: number) => {
+    if ('route' in site) return constantLink(site, from);
+    const { sides, ...link } = site;
+    return routedScreens.drawnWith(from, sides) ? { ...link, reaches: routedScreens.screens(link.to, from) } : null;
   };
   // POST 가 아닌 페이지 이동의 주소가 앱의 라우트와 맞으면 서버가 아니라 앱의 다른 화면이 열린다. 고정 문자열 부분이 없는 라우트는 어떤 주소에나 맞으므로 견주지 않는다.
   const screenRoutes = sourced.map((x) => x.s).filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
@@ -2049,7 +2084,7 @@ export async function extractClient(config: any) {
 
   const members = typedMembers(config.tsconfig, [...new Set(sourced.flatMap((x) => x.files))], imports.resolve);
   const screenFollower = members ? nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf, members }) : follower;
-  const screens = sourced.map(({ s, entryFiles, isOtherScreen, files }) => {
+  const screens = sourced.map(({ s, entryFiles, isOtherScreen, files }, index) => {
     const inSources = new Set<string | null>(files);
     // 화면이 import 하지 않고 context 훅에서 받은 스토어를 거쳐서만 닿는 파일. 화면의 소스는 아니지만, 화면이 호출한 스토어 메서드를 추적할 때 들어간다.
     const received = new Set<string>();
@@ -2093,11 +2128,8 @@ export async function extractClient(config: any) {
       for (const ref of linkSites(facts)) {
         if (!reached.has(ref)) continue;
         ownLinks.add(ref);
-        if (!('route' in ref)) {
-          links.push({ ...ref, file: rel(f), reaches: routedScreens.screens(ref.to) });
-          continue;
-        }
-        links.push({ ...constantLink(ref), file: rel(f) });
+        const link = screenLink(ref, index);
+        if (link) links.push({ ...link, file: rel(f) });
       }
     }
     // 훅으로만 받은 스토어 파일의 dispatch 는 읽지 않는다.
@@ -2121,10 +2153,9 @@ export async function extractClient(config: any) {
     const byType = (actions: DispatchedActions) => actions.sort((a, b) => compare(a.type, b.type) || compare(a.dispatchedAt[0], b.dispatchedAt[0]));
     const sagaCalls = [...bySaga].map(([c, actions]) => ({ ...c, file: rel(siteFile.get(c)), actions: byType(actions) }));
     sagaCalls.sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.fn, b.fn));
-    const sagaLinks = [...movedBySaga].map(([ref, actions]) => {
-      const file = rel(siteFile.get(ref));
-      if (!('route' in ref)) return { ...ref, file, reaches: routedScreens.screens(ref.to), actions: byType(actions) };
-      return { ...constantLink(ref), file, actions: byType(actions) };
+    const sagaLinks = [...movedBySaga].flatMap(([ref, actions]) => {
+      const link = screenLink(ref, index);
+      return link ? [{ ...link, file: rel(siteFile.get(ref)), actions: byType(actions) }] : [];
     });
     sagaLinks.sort((a, b) => compare(a.file, b.file) || a.line - b.line);
     links.push(...sagaLinks);

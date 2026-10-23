@@ -3444,7 +3444,8 @@ wraps its layout, which in a `<Switch>` takes every address after the sign-in sc
 constant that is a link's whole address is walked like a written address, as the entry after the React Router 6 one
 says.
 Choices made without a driver's answer, each cheap to change: a route file holding several JSX trees (into-sign
-draws one `<Switch>` per signed-in state) has all of them drawn side by side, so `history.push('/')` there goes both
+draws one `<Switch>` per signed-in state) has all of them drawn side by side, unless a settings value picks between
+them (see the entry on settings values that pick a group of routes), so `history.push('/')` there goes both
 to the sign-in screen and, through the redirect of the signed-in `<Switch>`, to the user home; when several screens
 are innermost at the same depth the link goes to each; `createHashHistory` is reported beside
 `createBrowserHistory`; a history taken out of a function's own parameters is read only from the first parameter
@@ -3765,8 +3766,10 @@ Known limits:
 - outline's `patchLocation(history.location, { hash })` (10 places, 134 lines before this change) returns an
   object whose `pathname` is spread from its parameter, and the argument is `history.location`, a move that stays on
   the screen; telling that would need the argument rule above for one piece of an object, so it stays `{?}`.
-- outline's `homePath()` gives `/` or `/home` by `env.ROOT_SHARE_ID`, so its places get a `/` link beside `/home`,
-  and the router sends `/` to the shared and sign-in screens. Both links are kept as the rule above decides.
+- outline's `homePath()` gives `/` or `/home` by `env.ROOT_SHARE_ID`, so its places get a `/` link beside `/home`.
+  With `env` in `settingsRoots`, each branch is linked only from the screens drawn on its side of the value (see the
+  entry on settings values that pick a group of routes); without it both links are kept and `/` goes to the shared
+  and sign-in screens.
 - The condition of a `? :` inside an argument is not added to the link. Counted before this change, 2 link places of
   outline had one (both in the `search` of `patchLocation`) and none of mattermost or appsmith; to add it, the place
   would pass the condition to `record()` as its own guards.
@@ -3851,8 +3854,9 @@ Known limits:
   link next to the getter's address; whether a parameter can be missing would be read from its type or default
   value. Each such read in a template doubles the branches, so several of them reach the limit of 64 sooner.
 - A model's member read at the link itself (`to={doc.path}`) is not read; only parameters of address functions are.
-- outline's `/doc/{*}` links (8 places, 148 lines) reach the shared document screen `/doc/:documentSlug#Shared` as
-  well as the document screen, since a link is matched in each of two `Switch`es drawn side by side (#385).
+- Without `env` in `settingsRoots`, outline's `/doc/{*}` links (8 places, 148 lines) reach the shared document
+  screen `/doc/:documentSlug#Shared` as well as the document screen, since a link is matched in each of two
+  `Switch`es drawn side by side (#385).
 - A class outside `srcRoot` is found only as far as functions are followed.
 
 **A call of a function declared in the source that moves to an address it is given, or with a history it is given,
@@ -3964,6 +3968,40 @@ Known limits:
 - A higher-order component from the source (`menuItem(X)`) is read as `X`; what its body does to the props on the
   way is not seen.
 - Attributes whose values together give more than 64 ways make the use `{?}`.
+
+**A settings value that picks a group of routes in a route file draws that group on one side of the value only, and
+a link does not reach a screen drawn only on the other side of the screen it is on.**
+outline draws its shared-document `<Switch>` when `env.ROOT_SHARE_ID` is set and its signed-in `<Switch>` when it
+is not, a choice fixed for each deployment. When a route file draws an element on one side of `? :`, `&&` or `||`
+whose condition reads a value through `settingsRoots` as it is (`env.ROOT_SHARE_ID`, or with `!` before it), the
+screens in that element, and those of the route files drawn inside it, are drawn on that side. A link does not go
+to a screen drawn only on the side its own screen is not drawn on; a screen drawn at several places has a side for a
+value only when every place has the same one. A `? :` or `if` inside an address function that reads the same value
+gives its branch only on that side, so outline's `homePath()` gives no `/` on the screens drawn only where
+`env.ROOT_SHARE_ID` is not set, and no `/home` on those drawn only where it is. A comparison (`env.MODE === 'share'`), a value put in a
+variable first and a condition outside the route files are not read, and screens there are drawn on both sides.
+Without `settingsRoots`, nothing changes.
+Settings values and not every condition: the driver chose (2026-10-23, #414) to name the values fixed per deployment
+with the existing `settingsRoots`, which any app can use the same way; applied to every condition, the rule dropped
+106 right link lines of into-sign 1.5.0 when tried while planning. A link left with no screen stays on the map as an
+address with no screen, like any other.
+Measured against the base (87ed184), counting a link once per screen it is on: outline with `"settingsRoots":
+["env"]` loses 571 link-to-screen pairs and gains none (193 `/doc/{*}` to the shared document screen, 332 `/` to the
+shared and sign-in screens, 46 from the shared screens to signed-in ones); 169 link lines go, the `/` that
+`homePath()` gives on signed-in screens (159) and the `/home` it gives on the shared screens (10), and 18 lines of
+the shared screens are left with no screen; entry screens stay 21. outline without `env`, appsmith, into-sign 1.5.0
+and 2.0.0 (both with `settingsRoots`) and mattermost do not change.
+Known limits:
+- Only the element's own `? :`, `&&` or `||` is read: a test one level further out (`env.A && (ready ? <Switch> :
+  null)`), a route inside `<Routes>` or a fragment drawn on one side, and a redirect drawn on one side are drawn on
+  both sides.
+- The side is applied after the router picks its screens, so where a screen of the other side wins over this side's
+  screen (the first fitting route of a `<Switch>`, or a route fitting the whole address), the link reaches no screen.
+- A route constant link matched by the route paths (in a `<Switch>`) is matched without looking at sides.
+- In an address function only the `? :` and the returns inside an `if` take a side, not the code after
+  `if (env.A) return '/'`.
+- A variable or parameter named like a settings root, in a route file or an address function, is read as the
+  setting.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 
