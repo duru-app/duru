@@ -22,6 +22,7 @@ interface ResultTest extends TestRef {
   status?: string;
   projects?: Record<string, string>;
   worstStatus?: string;
+  passedBesidePending?: (string | null)[];
   testFile?: string;
   format?: string;
   unmatched?: unknown;
@@ -163,10 +164,20 @@ export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgm
   const found = new Set<string>();
   const firstJudged = new Map<string, ResultTest>();
   const fold = (first: ResultTest, t: ResultTest) => {
+    const passedBeside = (kept: string | undefined, status: string, project: string | null) => {
+      if ([kept, status].includes('pass') && [kept, status].includes('pending') && !first.passedBesidePending?.includes(project)) first.passedBesidePending = [...(first.passedBesidePending ?? []), project];
+    };
     const runs = t.projects ? Object.entries(t.projects) : t.project != null && t.status ? [[t.project, t.status]] : [];
     if (runs.length && (first.project != null || first.projects)) {
-      first.projects = runs.reduce((projects, [project, status]) => withProjectRun(projects, project, status), first.projects ?? withProjectRun(undefined, first.project!, first.status!));
-    } else if (t.status) first.worstStatus = [first.worstStatus ?? first.status!, t.status].reduce((w, s) => (STATUS_RANK[s] > STATUS_RANK[w] ? s : w));
+      first.projects = runs.reduce((projects, [project, status]) => {
+        passedBeside(projects[project], status, project);
+        return withProjectRun(projects, project, status);
+      }, first.projects ?? withProjectRun(undefined, first.project!, first.status!));
+    } else if (t.status) {
+      const kept = first.worstStatus ?? first.status!;
+      passedBeside(kept, t.status, null);
+      first.worstStatus = STATUS_RANK[t.status] > STATUS_RANK[kept] ? t.status : kept;
+    }
   };
   const codeChanged = (j: Judgment) => differs(j.codeHash, nodeHashes.get(j.node)) || differs(j.testFileHash, j.test.file === null ? undefined : tests.testFileHashes?.[j.test.file]);
   const judged = (t: ResultTest, ref: TestRef, judgment: Judgment): Judged => ({ ...t, ref, judgment, ...(codeChanged(judgment) && { codeChanged: true as const }) });
@@ -215,9 +226,9 @@ export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgm
   for (const [key, judgment] of handOvers) {
     if (found.has(key)) continue;
     const t = inResults.get(JSON.stringify(judgment.test));
-    const { projects, worstStatus } = runsInResults.get(JSON.stringify(judgment.test)) ?? {};
+    const { projects, worstStatus, passedBesidePending } = runsInResults.get(JSON.stringify(judgment.test)) ?? {};
     // trace 를 읽지 못한 실행으로는 테스트가 그 화면을 열었는지 알 수 없으므로, 포함한 짝을 떨어져 나간 것으로 보지 않는다.
-    if (t?.format === 'playwright' && !('unmatched' in t)) (awaitingTag[judgment.node] ??= []).push({ ...judged(t, judgment.test, judgment), ...(projects && { projects }), ...(worstStatus && { worstStatus }), unconfirmed: true });
+    if (t?.format === 'playwright' && !('unmatched' in t)) (awaitingTag[judgment.node] ??= []).push({ ...judged(t, judgment.test, judgment), ...(projects && { projects }), ...(worstStatus && { worstStatus }), ...(passedBesidePending && { passedBesidePending }), unconfirmed: true });
     else (detachedHandOvers[judgment.node] ??= []).push({ ref: judgment.test, judgment });
   }
   for (const list of Object.values(detachedHandOvers)) list.sort((a, b) => compare(a.ref.file, b.ref.file) || compare(a.ref.title, b.ref.title) || compare(a.ref.source, b.ref.source));

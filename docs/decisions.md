@@ -1495,8 +1495,9 @@ no `@screen:` or `@call:` tag. The current side is the judged list `rebuild` pri
 again, so that the counts match the page and a result file overwritten since (as into-sign's are) does not point the
 test rows and the regressions at different runs. A judged pair stays one row there however many Playwright projects
 the test ran in, as the page shows it, and carries the worst status of each project's runs in `projects`, or of
-its runs without a project in `worstStatus`, so that a reviewer's judgment, or one taken back, does not take the
-test's other runs out of the comparison.
+its runs without a project in `worstStatus`, and in `passedBesidePending` the projects (`null` for runs without one)
+where a pending run sat beside one that passed, so that a reviewer's judgment, or one taken back, does not take the
+test's other runs out of the comparison or change which of them the rule below leaves out.
 Tests are matched in steps. The rows of one test on the current side (one result file, test file, line, title and
 project) are first made one test; an untagged test is one test for each Playwright project it ran in, and in a
 project where the test has rows under a screen or call its status comes from those rows alone, so a run without a
@@ -1507,12 +1508,20 @@ side, since the checkout sits in another place on another machine, and when that
 tests were all under `src/`, say), the folders at the end of it are put back in front of that side's paths as far as
 makes the most files the same on both sides. Tests that still share a key, such as verdict lines of one name in one
 log, get their sorted screen and call tags added, and those still alike are one test with the worst status of their
-runs (fail, pending, pass); in the baseline a pending run is left out when another run ran, since a
-run skipped there, such as one browser's run in a Playwright JUnit report that names no project, would otherwise
-hide another run's `pass→fail`. Such a test is under a screen or call when one of its runs is, and its
-regression line shows the first file and line among the runs that are. A baseline test file is gone from the
-current results when no current test has that file; a JUnit class name that is the test's own name, as jest-junit
-writes by default, names no file and is never gone. Alternatives compared:
+runs (fail, pending, pass). In the baseline a pending run is left out when another run ran, since a run skipped
+there, such as one browser's run in a Playwright JUnit report that names no project, would otherwise hide another
+run's `pass→fail`. Now pending runs are left out only up to the number the matched baseline test had, so that such
+a report gives no regression against itself, while a browser or a repeat of `--repeat-each` skipped for the first
+time since the release still shows as `pass→pending`, even when the release already skipped another. A failing run
+is never left out, and a test whose runs are now all pending is `pass→pending`. A run listed under several screens
+or calls is counted once, or a test on two screens would give `pass→pending` against its own report. Leaving out a
+pending run now whenever another ran, as the baseline does, was tried first and dropped: it hid exactly that newly
+skipped run, so a test that stopped running in one browser since the release read as passing. Leaving them all out
+whenever the baseline test had a pending run beside one that ran was tried next and dropped for the same reason, once the release
+had already skipped one run of the test. Such a test is under a screen or call when one of its runs is, and its
+regression line shows the first file and line among the runs that are. A baseline test file is gone from the current
+results when no current test has that file; a JUnit class name that is the test's own name, as jest-junit writes by
+default, names no file and is never gone. Alternatives compared:
 - Only as much of the end of the paths as tells apart the different files of one title, decided in a comment on #404
   before building: two files of one name in different folders got the same end when each side had only one of them,
   so a test of a deleted file was matched with a new test of the same title in another file and gave a false
@@ -1539,6 +1548,13 @@ Limits:
   one name tagged with two screens after the release.
 - A Playwright test linked to a screen only by its trace is on no screen when it was skipped, so it counts in
   `not on a screen or call now` and not as `pass→pending`.
+- An untagged Playwright test that a reviewer handed over to a screen its trace did not reach, run more than once in
+  one project (`--repeat-each`, or several projects that all report the name `''`) and skipped in only some of those
+  runs, gives `pass→pending` even against the same result file, since `tests.json` keeps only the worst status of each
+  project. Fixing it would need `tests.json` to keep, for each project, whether a pending run sat beside one that ran.
+- A judged pair keeps for each project only whether a pending run sat beside one that passed, so it counts as one
+  pending run there however many were skipped, and gives no `pass→pending` when the release already skipped one of
+  its runs in that project and more of them are skipped now.
 - A test whose tags all name screens or calls the current map does not have is kept in `tests.json` only with those
   tags, without its Playwright projects, so it counts in `not on a screen or call now` for every project its baseline
   ran in, even one that no longer runs it.
