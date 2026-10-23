@@ -252,7 +252,14 @@ if (command === 'tasks') {
     console.error(JSON.stringify(line));
     if (line.duru === 'comment') toSession(line);
   };
-  const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end, onMark });
+  let baselineTests = null;
+  try {
+    if (config.baselineTests) baselineTests = readBaselineTests(config);
+  } catch (err: any) {
+    console.error(err.message);
+    process.exit(1);
+  }
+  const server = await startReviewServer(config, { port: portArg ?? DEFAULT_PORT, author, onDone: end, onMark, baselineTests });
   process.on('SIGINT', () => {
     try {
       end()?.();
