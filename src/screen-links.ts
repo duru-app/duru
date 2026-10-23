@@ -5,9 +5,10 @@ import { importedAs, routerImport } from './screen-requests.ts';
 
 interface Reading {
   configuredHistory: (binding: Binding) => boolean;
+  routerElement: (p: NodePath<JSXElement>) => string | null;
 }
 
-const LINK_ELEMENTS = new Set(['Link', 'NavLink', 'Redirect', 'Navigate']);
+export const LINK_ELEMENTS = new Set(['Link', 'NavLink', 'Redirect', 'Navigate']);
 const REDIRECTS = new Set(['Redirect', 'Navigate']);
 const MOVES = new Set(['push', 'replace']);
 export const FOLLOWED = 8;
@@ -120,7 +121,14 @@ export function addresses(p: NodePath<any>, keepHandedIn = false): NodePath[] {
 // history 는 useNavigate() 가 돌려준 함수로 옮길 때 null 이다.
 export type Move = { address: NodePath; history: NodePath | null; recognized: boolean };
 
-export function screenLinkReader({ configuredHistory }: Reading) {
+export function toOf(p: NodePath<JSXElement>): NodePath<any> | null {
+  const to = (p.get('openingElement.attributes') as NodePath<any>[]).find((a) => a.isJSXAttribute() && a.node.name.name === 'to') as NodePath<JSXAttribute> | undefined;
+  const value = to?.get('value') as NodePath<any> | undefined;
+  if (!value?.node) return null;
+  return value.isJSXExpressionContainer() ? value.get('expression') : value;
+}
+
+export function screenLinkReader({ configuredHistory, routerElement }: Reading) {
   function isHistory(p: NodePath<any>, depth = 0): boolean {
     if (named(p, 'history')) return isProps(p.get('object') as NodePath<any>);
     if (p.isCallExpression()) {
@@ -139,14 +147,9 @@ export function screenLinkReader({ configuredHistory }: Reading) {
   }
 
   function element(p: NodePath<JSXElement>, inRouteFile: boolean): NodePath[] {
-    const name = p.node.openingElement.name;
-    const binding = name.type === 'JSXIdentifier' ? p.scope.getBinding(name.name) : undefined;
-    const tag = binding && routerImport(binding) ? importedAs(binding)!.name : null;
-    if (!tag || !LINK_ELEMENTS.has(tag) || (REDIRECTS.has(tag) && inRouteFile)) return [];
-    const to = (p.get('openingElement.attributes') as NodePath<any>[]).find((a) => a.isJSXAttribute() && a.node.name.name === 'to') as NodePath<JSXAttribute> | undefined;
-    const value = to?.get('value') as NodePath<any> | undefined;
-    if (!value?.node) return [];
-    return addresses(value.isJSXExpressionContainer() ? value.get('expression') : value);
+    const tag = routerElement(p);
+    const to = tag && !(REDIRECTS.has(tag) && inRouteFile) ? toOf(p) : null;
+    return to ? addresses(to) : [];
   }
 
   function isNavigate(p: NodePath<any>, depth = 0): boolean {

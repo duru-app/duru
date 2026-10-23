@@ -3075,3 +3075,42 @@ test('the decision record says a parameter typed with a class is read through th
   const decisions = fs.readFileSync(path.join(import.meta.dirname, '..', 'docs/decisions.md'), 'utf8');
   assert.match(decisions, /\*\*A member an address function reads from a parameter typed with a class is read through that class's own\s+getter, and a class imported only as a type is found from the import as written\.\*\*/);
 });
+
+test('a styled(Link) or styled(NavLink) from react-router is a link where it is used, at the line of its to, while a styled Link of the same name from another package is not', async () => {
+  const ui = `import styled from 'styled-components';
+import { Link, NavLink } from 'react-router-dom';
+import { Link as AdsLink } from '@appsmith/ads';
+
+export const Item = styled(Link)\`
+  color: red;
+\`;
+export const Tab = styled(NavLink)({ color: 'blue' });
+export const Plain = styled(AdsLink)\`
+  color: green;
+\`;
+`;
+  const home = `import styled from 'styled-components';
+import { Link } from '@appsmith/ads';
+import { Item, Tab, Plain } from './ui';
+
+const Local = styled(Link)\`\`;
+
+export default function Home({ next }) {
+  return (
+    <nav>
+      <Item to="/login">login</Item>
+      <Tab
+        to="/start">start</Tab>
+      <Plain to="/help">help</Plain>
+      <Local to="/team/a">team</Local>
+      <Item to={next}>next</Item>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'ui.js': ui }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', lineOf(home, '<Item to="/login"'), [], ['/login#Login']],
+    ['/start', lineOf(home, 'to="/start"'), [], ['/start#Start']],
+  ]);
+});
