@@ -3114,3 +3114,131 @@ export default function Home({ next }) {
     ['/start', lineOf(home, 'to="/start"'), [], ['/start#Start']],
   ]);
 });
+
+const linksWithFiles = (map: ScreenMap, id: string) => map.screens.find((s) => s.id === id)!.links.map((l) => [l.to, l.file, l.line, l.guards]);
+
+test('a component that hands the to it receives to Link or NavLink is a link where it is used, with that use\'s file, line and conditions, while the Link inside it stays no link', async () => {
+  const links = `import { Link, NavLink } from 'react-router-dom';
+
+export const PlainLink = ({ to, children }) => <Link to={to}>{children}</Link>;
+
+export function MenuLink(props) {
+  return (
+    <li>
+      <NavLink to={props.to} className="menu">{props.label}</NavLink>
+    </li>
+  );
+}
+`;
+  const home = `import { PlainLink, MenuLink } from './links';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      {flag.a && <PlainLink to="/login">login</PlainLink>}
+      <MenuLink label="start" to="/start" />
+      <MenuLink
+        label="team"
+        to={\`/team/\${flag.team}\`}
+      />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksWithFiles(map, '/home#Home'), [
+    ['/login', 'Home.js', at('<PlainLink to="/login"'), ['flag.a']],
+    ['/start', 'Home.js', at('<MenuLink label="start"'), []],
+    ['/team/{*}', 'Home.js', home.split('\n').findIndex((l) => l.trim() === '<MenuLink') + 1, []],
+  ]);
+});
+
+test('a component that moves to the to it receives with a history push or replace, also inside a callback, is a link where it is used, and one that does both gives one link', async () => {
+  const links = `import { useCallback } from 'react';
+import { NavLink, useHistory } from 'react-router-dom';
+
+export function FastLink({ to, replace, children }) {
+  const history = useHistory();
+  const go = useCallback(() => {
+    if (replace) {
+      history.replace(to);
+    } else {
+      history.push(to);
+    }
+  }, [to, replace]);
+  return <a onMouseDown={go}>{children}</a>;
+}
+
+export const BlockableLink = ({ blocked, to, ...rest }) => {
+  const history = useHistory();
+  const onClick = (e) => {
+    if (blocked) {
+      e.preventDefault();
+      defer(() => history.push(to));
+    }
+  };
+  return <NavLink {...rest} to={to} onClick={onClick} />;
+};
+`;
+  const home = `import { FastLink, BlockableLink } from './links';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      <FastLink to="/login">login</FastLink>
+      <FastLink to="/start" replace>start</FastLink>
+      <BlockableLink to="/help/faq" blocked={flag.blocked}>faq</BlockableLink>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('to="/login"'), [], ['/login#Login']],
+    ['/start', at('to="/start"'), [], ['/start#Start']],
+    ['/help/faq', at('to="/help/faq"'), [], ['/help/:page?#Help']],
+  ]);
+});
+
+test('a component that hands a received url, link, href or any other prop to the to of a link reads that attribute where it is used, and the parameter default where the attribute is missing', async () => {
+  const links = `import { Link } from 'react-router-dom';
+
+export const BackButton = ({ url = '/start', className }) => (
+  <div className={className}>
+    <Link to={url}>back</Link>
+  </div>
+);
+
+export function Option({ link, title }) {
+  return <Link to={link}>{title}</Link>;
+}
+
+export function Panel({ cancelLink }) {
+  return <div>{cancelLink ? <Link to={cancelLink}>cancel</Link> : null}</div>;
+}
+`;
+  const home = `import { BackButton, Option, Panel } from './links';
+
+export default function Home() {
+  return (
+    <nav>
+      <BackButton url="/login" />
+      <BackButton className="back" />
+      <Option link="/help" title="help" />
+      <Panel cancelLink="/team/a" />
+      <Panel />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('url="/login"'), [], ['/login#Login']],
+    ['/start', at('className="back"'), [], ['/start#Start']],
+    ['/help', at('link="/help"'), [], ['/help/:page?#Help']],
+    ['/team/a', at('cancelLink="/team/a"'), [], ['/team/:team#Team']],
+  ]);
+});

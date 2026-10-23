@@ -798,8 +798,10 @@ export async function extractClient(config: any) {
     mergesSlashes: false,
     moves: {
       moveOf: (p) => screenLinks.moveOf(p),
+      component: (p) => linkComponentOf(p),
       linked: (p) => addresses(p).length > 0 && linkAddresses(p).length > 0,
       linkedCall: (p) => addressesOf(linkReading.helperBranches(p) ?? { branches: [] }, () => UNKNOWN).length > 0,
+      linkedUse: (p) => addressesOf(linkReading.useBranches(p) ?? { branches: [] }, () => UNKNOWN).length > 0,
       isHistory: (p) => screenLinks.isHistory(p),
       holdsRouteConstant: (p) => Boolean(routeChain) && holdsRouteConstant(p),
     },
@@ -1156,10 +1158,15 @@ export async function extractClient(config: any) {
       const read = linkReading.helperBranches(p);
       for (const to of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', { to }, p);
     };
+    const recordUseLinks = (p: NodePath<JSXElement>) => {
+      const read = linkReading.useBranches(p);
+      for (const to of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', { to }, p);
+    };
     const inRouteFile = routeFileSet.has(file);
     traverse(ast, {
       JSXElement(p) {
         recordLinks(screenLinks.element(p, inRouteFile));
+        recordUseLinks(p);
       },
       CallExpression(p) {
         recordLinks(screenLinks.call(p));

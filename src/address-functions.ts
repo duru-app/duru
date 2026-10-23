@@ -1,6 +1,6 @@
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, ClassMethod, FunctionDeclaration, FunctionExpression, Identifier, Node, StringLiteral } from '@babel/types';
-import { addresses, FOLLOWED } from './screen-links.ts';
+import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, ClassMethod, FunctionDeclaration, FunctionExpression, Identifier, JSXElement, Node, StringLiteral } from '@babel/types';
+import { addresses, FOLLOWED, toOf } from './screen-links.ts';
 import type { Move } from './screen-links.ts';
 
 export const UNREADABLE_PIECE = '\0';
@@ -29,11 +29,14 @@ interface Reading {
   moves?: Moves;
 }
 
-// linked 는 주소 자리 하나가, linkedCall 은 옮겨 주는 함수를 부른 자리 하나가 그 자리에 링크를 내는가다.
+// linked 는 주소 자리 하나가, linkedCall 은 옮겨 주는 함수를 부른 자리 하나가, linkedUse 는 링크 컴포넌트를 쓴 자리 하나가
+// 그 자리에 링크를 내는가다.
 interface Moves {
   moveOf: (p: NodePath<CallExpression>) => Move | null;
+  component: (p: NodePath<JSXElement>) => LinkComponent | null;
   linked: (p: NodePath) => boolean;
   linkedCall: (p: NodePath<CallExpression>) => boolean;
+  linkedUse: (p: NodePath<JSXElement>) => boolean;
   isHistory: (p: NodePath) => boolean;
   holdsRouteConstant: (p: NodePath) => boolean;
 }
@@ -43,7 +46,7 @@ type Piece = { text: string; made?: boolean } | { stop: NodePath; withheld?: boo
 type Val =
   | { pieces: Piece[] }
   | { value: unknown }
-  | { props: Map<string, Out>; open: boolean }
+  | { props: Map<string, Out>; open: boolean; rest?: Out }
   | { items: Out[] }
   | { unknown: NodePath };
 type Out = { val: Val; made: boolean; whole?: NodePath };
@@ -52,7 +55,13 @@ type Env = Map<Binding, Out>;
 interface At { env: Env | null; fn: Followable | null; branching: boolean; depth: number; consts?: boolean }
 // history 는 함수가 매개변수로 받은 history 로 옮기는 자리의 그 매개변수다.
 type MovePlace = { at: NodePath<CallExpression>; addresses: NodePath[]; history: NodePath | null };
-type Places = { moves: MovePlace[]; calls: { at: NodePath<CallExpression>; fn: AddressFunction }[] };
+// elements 는 react-router 링크 요소, uses 는 받은 것을 속성으로 넘기는 링크 컴포넌트의 요소다.
+type Places = {
+  moves: MovePlace[];
+  calls: { at: NodePath<CallExpression>; fn: AddressFunction }[];
+  elements: { at: NodePath<JSXElement>; addresses: NodePath[] }[];
+  uses: { at: NodePath<JSXElement>; fn: AddressFunction }[];
+};
 
 const OUTSIDE: At = { env: null, fn: null, branching: false, depth: 0 };
 const NOT_KNOWN = Symbol('not known');
@@ -112,7 +121,7 @@ function truth(out: Out): boolean | undefined {
 
 function member(out: Out, key: string, at: NodePath): Out {
   const { val } = out;
-  if ('props' in val) return val.props.get(key) ?? (val.open ? unknownAt(at) : known(undefined));
+  if ('props' in val) return val.props.get(key) ?? (val.open ? val.rest ?? unknownAt(at) : known(undefined));
   if (at.isOptionalMemberExpression() && 'value' in val && (val.value === undefined || val.value === null)) return known(undefined);
   if ('items' in val) return key === 'length' ? known(val.items.length) : unknownAt(at);
   if ('unknown' in val) return out;
@@ -213,7 +222,8 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   const join = (parts: [Out, NodePath][]) => joined(parts, mergesSlashes);
   const placesFound = new WeakMap<Node, Places>();
   const helperFound = new WeakMap<Node, boolean>();
-  const callLinked = new WeakMap<Node, boolean>();
+  const componentFound = new WeakMap<Node, boolean>();
+  const placeLinked = new WeakMap<Node, boolean>();
 
   function leafOut(p: NodePath): Out {
     const found = leaf(p);
@@ -352,9 +362,13 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       return envs.flatMap((e) => values(pattern.get('right'), inner(e)).flatMap((d) => bind(pattern.get('left'), d, [e], inner)));
     }
     if (pattern.isObjectPattern()) {
+      const named = new Set(pattern.node.properties.flatMap((x) => (x.type === 'ObjectProperty' && !x.computed ? [keyOf(x.key)] : [])));
       for (const prop of pattern.get('properties') as NodePath<any>[]) {
         if (prop.isObjectProperty() && !prop.node.computed) envs = bind(prop.get('value'), out ? member(out, keyOf(prop.node.key), prop) : unknownAt(prop), envs, inner);
-        else envs = bind((prop.isRestElement() ? prop.get('argument') : prop.get('value')) as NodePath<any>, unknownAt(prop), envs, inner);
+        else if (prop.isRestElement() && out && 'props' in out.val) {
+          const rest = { val: { ...out.val, props: new Map([...out.val.props].filter(([key]) => !named.has(key))) }, made: out.made };
+          envs = bind(prop.get('argument'), rest, envs, inner);
+        } else envs = bind((prop.isRestElement() ? prop.get('argument') : prop.get('value')) as NodePath<any>, unknownAt(prop), envs, inner);
       }
       return envs;
     }
@@ -498,23 +512,49 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   function objectValues(p: NodePath<any>, at: At): Out[] {
     const props = p.get('properties') as NodePath<any>[];
     const lists = props.map((prop): Out[] => (prop.isObjectProperty() ? values(prop.get('value'), at) : prop.isSpreadElement() ? values(prop.get('argument'), at) : [unknownAt(prop)]));
-    return product(lists).map((outs) => {
-      const found = new Map<string, Out>();
-      let open = false;
-      props.forEach((prop, i) => {
-        const out = outs[i];
-        if (prop.isObjectProperty() && !prop.node.computed) found.set(keyOf(prop.node.key), out);
-        else if (prop.isSpreadElement() && 'props' in out.val) {
-          if (out.val.open) found.clear();
-          for (const [key, value] of out.val.props) found.set(key, value);
-          open ||= out.val.open;
-        } else {
+    return product(lists).map((outs) => merged(props.map((prop, i) => [prop.isObjectProperty() && !prop.node.computed ? keyOf(prop.node.key) : null, outs[i]]), () => undefined));
+  }
+
+  // 적힌 차례대로 키를 넣은 객체. 키가 null 인 것은 펼친 값이고, 읽지 못한 펼친 값은 그 앞의 키를 모두 가리며 그 뒤에 적히지 않은
+  // 키는 restOf 가 준 값(없으면 읽지 못한 값)으로 읽힌다.
+  function merged(entries: [string | null, Out][], restOf: (spread: Out) => Out | undefined): Out {
+    const found = new Map<string, Out>();
+    let open = false;
+    let rest: Out | undefined;
+    for (const [key, out] of entries) {
+      if (key !== null) found.set(key, out);
+      else if ('props' in out.val) {
+        if (out.val.open) {
           found.clear();
-          open = true;
+          rest = out.val.rest;
         }
-      });
-      return { val: { props: found, open }, made: false };
+        for (const [k, value] of out.val.props) found.set(k, value);
+        open ||= out.val.open;
+      } else {
+        found.clear();
+        open = true;
+        rest = restOf(out);
+      }
+    }
+    return { val: { props: found, open, ...(rest && { rest }) }, made: false };
+  }
+
+  // 링크 컴포넌트를 쓴 요소의 속성을 그 컴포넌트가 받는 props 로 읽는다. 값 없이 적은 속성은 true 이고, 쓰는 곳에서 그대로 넘긴
+  // 값을 펼치면 그 뒤에 적히지 않은 키는 그 값을 그대로 넘긴 것으로 본다.
+  function attributeValues(e: NodePath<JSXElement>, at: At): Out[] {
+    const attributes = e.get('openingElement.attributes') as NodePath<any>[];
+    const lists = attributes.map((a): Out[] => {
+      const value = (a.isJSXSpreadAttribute() ? a.get('argument') : a.get('value')) as NodePath<any>;
+      if (!value.node) return [known(true)];
+      const x = unwrapped(value.isJSXExpressionContainer() ? value.get('expression') : value);
+      return x.isJSXEmptyExpression() ? [known(undefined)] : values(x, at).map((o) => wholeOr(o, x));
     });
+    const keys = attributes.map((a) => (a.isJSXSpreadAttribute() ? null : a.node.name.type === 'JSXIdentifier' ? a.node.name.name as string : ''));
+    const withChildren = (out: Out): Out => {
+      const { val } = out;
+      return e.node.children.length && 'props' in val && !val.props.has('children') ? { ...out, val: { ...val, props: new Map(val.props).set('children', unknownAt(e)) } } : out;
+    };
+    return product(lists).map((outs) => withChildren(merged(keys.map((key, i) => [key, outs[i]]), (spread) => spread.whole && { ...unknownAt(spread.whole), whole: spread.whole })));
   }
 
   function address(out: Out, at: NodePath): Out | null {
@@ -566,7 +606,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     if (placesFound.has(fn.node)) return placesFound.get(fn.node)!;
     const outer = [...reading];
     reading.clear();
-    const found: Places = { moves: [], calls: [] };
+    const found: Places = { moves: [], calls: [], elements: [], uses: [] };
     try {
       const visit = (c: NodePath<CallExpression>) => {
         if (inAddress(c)) return;
@@ -583,9 +623,21 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
         const kept = addresses(move.address, true).filter((a) => !moves!.holdsRouteConstant(a) && (history || !moves!.linked(a)));
         if (kept.length) found.moves.push({ at: c, addresses: kept, history });
       };
+      const visitElement = (e: NodePath<JSXElement>) => {
+        const component = moves!.component(e);
+        if (component && 'fn' in component) {
+          const attributes = e.get('openingElement.attributes') as NodePath<any>[];
+          if (!component.fn.node.generator && attributes.some((a) => usesParam(a, fn))) found.uses.push({ at: e, fn: component.fn });
+          return;
+        }
+        const to = component && toOf(e);
+        const kept = to ? addresses(to, true).filter((a) => !moves!.holdsRouteConstant(a) && !moves!.linked(a)) : [];
+        if (kept.length) found.elements.push({ at: e, addresses: kept });
+      };
       const body = fn.get('body') as NodePath<any>;
       if (body.isCallExpression()) visit(body);
-      body.traverse({ CallExpression: visit });
+      if (body.isJSXElement()) visitElement(body);
+      body.traverse({ CallExpression: visit, JSXElement: visitElement });
     } finally {
       for (const node of outer) reading.add(node);
     }
@@ -593,15 +645,15 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     return found;
   }
 
-  // 읽는 중에 같은 호출로 되돌아오면 링크가 있는 것으로 보고 따라가지 않는다.
-  function linkedWhereWritten(c: NodePath<CallExpression>): boolean {
-    if (callLinked.has(c.node)) return callLinked.get(c.node)!;
-    callLinked.set(c.node, true);
+  // 읽는 중에 같은 자리로 되돌아오면 링크가 있는 것으로 보고 따라가지 않는다.
+  function linkedWhereWritten<T extends Node>(c: NodePath<T>, linkedAt: (c: NodePath<T>) => boolean): boolean {
+    if (placeLinked.has(c.node)) return placeLinked.get(c.node)!;
+    placeLinked.set(c.node, true);
     const outer = [...reading];
     reading.clear();
     try {
-      const linked = moves!.linkedCall(c);
-      callLinked.set(c.node, linked);
+      const linked = linkedAt(c);
+      placeLinked.set(c.node, linked);
       return linked;
     } finally {
       reading.clear();
@@ -649,6 +701,27 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   const isHelper = (fn: AddressFunction) => helperState(fn, new Set()).helper;
 
+  function componentState(fn: AddressFunction, trail: Set<Node>): { link: boolean; cut: boolean } {
+    if (componentFound.has(fn.node)) return { link: componentFound.get(fn.node)!, cut: false };
+    const { moves: found, elements, calls, uses } = placesOf(fn);
+    let link = found.length > 0 || elements.length > 0 || calls.some((call) => isHelper(call.fn));
+    let cut = false;
+    if (!link && trail.size >= FOLLOWED) cut = uses.length > 0;
+    else if (!link) {
+      trail.add(fn.node);
+      for (const use of uses) {
+        const inner = trail.has(use.fn.node) ? { link: false, cut: true } : componentState(use.fn, trail);
+        cut ||= inner.cut;
+        if ((link = inner.link)) break;
+      }
+      trail.delete(fn.node);
+    }
+    if (link || !cut) componentFound.set(fn.node, link);
+    return { link, cut };
+  }
+
+  const isLinkComponent = (fn: AddressFunction) => componentState(fn, new Set()).link;
+
   // fn 이나 fn 이 부르는 옮겨 주는 함수에, 받은 것이 아닌 history 로 옮기는 자리가 있는가
   function movesItself(fn: AddressFunction, trail: Set<Node> = new Set()): boolean {
     const { moves: found, calls } = placesOf(fn);
@@ -668,16 +741,20 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   }
 
   // 몸통에서 다시 대입하는 매개변수는 부른 곳의 값으로 읽지 않는다. 값이 undefined · null 로 정해진 주소는 버린다.
-  function placeOuts(fn: AddressFunction, env: Env, depth: number): Out[] {
+  // asComponent 이면 fn 을 JSX 로 쓴 것이라, 몸통의 링크 요소와 링크 컴포넌트의 요소도 읽는다.
+  function placeOuts(fn: AddressFunction, env: Env, depth: number, asComponent = false): Out[] {
     const at: At = { env: new Map([...env].map(([b, o]) => [b, b.constant ? o : unknownAt(b.path)])), fn, branching: true, depth, consts: true };
     const outs: Out[] = [];
-    const { moves: places, calls } = placesOf(fn);
+    const { moves: places, calls, elements, uses } = placesOf(fn);
     for (const call of calls) {
-      if (reached(call.at, fn, at) && isHelper(call.fn) && !linkedWhereWritten(call.at)) outs.push(...helperOuts(call.at, call.fn, at));
+      if (reached(call.at, fn, at) && isHelper(call.fn) && !linkedWhereWritten(call.at, moves!.linkedCall)) outs.push(...helperOuts(call.at, call.fn, at));
     }
-    for (const place of places) {
+    for (const use of asComponent ? uses : []) {
+      if (reached(use.at, fn, at) && isLinkComponent(use.fn) && !linkedWhereWritten(use.at, moves!.linkedUse)) outs.push(...useOuts(use.at, use.fn, at));
+    }
+    for (const place of [...places, ...(asComponent ? elements : [])]) {
       if (!reached(place.at, fn, at)) continue;
-      if (place.history && !values(place.history, at).some((o) => o.whole && moves!.isHistory(o.whole))) continue;
+      if ('history' in place && place.history && !values(place.history, at).some((o) => o.whole && moves!.isHistory(o.whole))) continue;
       for (const a of place.addresses) {
         if (a.isDescendant(fn) && !reached(a, fn, at)) continue;
         for (const o of values(a, at)) {
@@ -729,6 +806,40 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     }
   }
 
+  function useOuts(e: NodePath<JSXElement>, fn: AddressFunction, at: At): Out[] {
+    if (reading.has(fn.node) || at.depth >= FOLLOWED) return [];
+    const lists = limited(attributeValues(e, { ...at, branching: true }));
+    reading.add(fn.node);
+    try {
+      const outs = lists.flatMap((props) => bound(fn, [props], null, at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1, true)));
+      return outs.some(withheldIn) ? [unknownAt(e)] : outs;
+    } finally {
+      reading.delete(fn.node);
+    }
+  }
+
+  function madeBranches(outs: Out[], p: NodePath): Read {
+    const found = new Map<string, Branch>();
+    for (const out of outs) {
+      const read = { ...branch(out, p), made: true };
+      const key = `${read.whole?.node.start}\0${read.text}`;
+      if (!found.has(key)) found.set(key, read);
+    }
+    return { branches: [...found.values()] };
+  }
+
+  // 링크 컴포넌트를 쓴 요소에서, 그 컴포넌트 안의 링크와 이동이 가는 주소를 요소의 속성으로 읽는다. 링크 컴포넌트가 아니면 null 이다.
+  function useBranches(e: NodePath<JSXElement>): Read | null {
+    const component = moves?.component(e);
+    if (!component || !('fn' in component) || component.fn.node.generator || !isLinkComponent(component.fn)) return null;
+    try {
+      return madeBranches(useOuts(e, component.fn, OUTSIDE), e);
+    } catch (error) {
+      if (error instanceof TooMany) return { tooMany: true };
+      throw error;
+    }
+  }
+
   // 받은 주소로 옮기는 함수를 부른 곳에서, 그 이동이 가는 주소를 부른 곳의 인자로 읽는다. 그런 함수가 아니면 null 이다.
   // 갈래가 너무 많으면 {?} 를 주되, 받은 history 로만 옮기는 함수면 null 이다.
   function helperBranches(p: NodePath<CallExpression>): Read | null {
@@ -744,13 +855,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       if (error instanceof TooMany) return movesItself(fn) ? { tooMany: true } : null;
       throw error;
     }
-    const found = new Map<string, Branch>();
-    for (const out of outs) {
-      const read = { ...branch(out, p), made: true };
-      const key = `${read.whole?.node.start}\0${read.text}`;
-      if (!found.has(key)) found.set(key, read);
-    }
-    return { branches: [...found.values()] };
+    return madeBranches(outs, p);
   }
 
   // 이동의 주소 자리나 링크 요소의 to 안에 있는 호출
@@ -762,5 +867,5 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     return false;
   }
 
-  return { branches, helperBranches };
+  return { branches, helperBranches, useBranches };
 }
