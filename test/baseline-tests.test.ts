@@ -4,13 +4,16 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { baselineTestsLines, compareTests, readBaselineTests } from '../src/baseline-tests.ts';
+import { baselineTestsLines, compareTests, passedInFolder, readBaselineTests, wholeFines } from '../src/baseline-tests.ts';
 import type { BaselineTests } from '../src/baseline-tests.ts';
 import { loadConfig } from '../src/config.ts';
 import { addJudgment, applyJudgments } from '../src/judgments.ts';
 import { readJunit } from '../src/junit.ts';
 import { readPlaywright } from '../src/playwright.ts';
+import { BASELINE_TESTS, editJson, keepRelease } from './baseline-helpers.ts';
 import type { TestStatus } from '../src/verdict.ts';
+
+for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete process.env[key];
 
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
@@ -592,6 +595,27 @@ test('baselineTests gives each result file its start time: Playwright stats.star
   });
 });
 
+test('a result file with no start time in it that a git checkout wrote takes the author date of its last commit, and one changed since that commit, or copied with its time kept before it, keeps its modified time', () => {
+  const junit = '<testsuite name="S"><testcase classname="com.example.T" name="t"/></testsuite>';
+  inFolder({
+    'releases/1.5.0/TEST-T.xml': junit,
+    'releases/1.5.0/checks.log': 'VERDICT w: UPHOLDS\n',
+    'releases/1.5.0/kept.log': 'VERDICT k: UPHOLDS\n',
+  }, (dir) => {
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, env: { ...process.env, GIT_AUTHOR_DATE: '2026-10-01T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-03T12:00:00Z' }, stdio: 'ignore' });
+    const kept = new Date('2026-09-28T12:00:00Z');
+    fs.utimesSync(path.join(dir, 'releases/1.5.0/kept.log'), kept, kept);
+    git('init', '-q');
+    git('add', '.');
+    git('commit', '-q', '--no-verify', '-m', 'keep 1.5.0');
+    const checkedOut = new Date('2026-10-22T12:00:00Z');
+    fs.appendFileSync(path.join(dir, 'releases/1.5.0/checks.log'), 'VERDICT x: UPHOLDS\n');
+    for (const file of ['TEST-T.xml', 'checks.log']) fs.utimesSync(path.join(dir, 'releases/1.5.0', file), checkedOut, checkedOut);
+    const read = readBaselineTests({ configDir: dir, baselineTests: [['junit', 'TEST-T.xml'], ['verdict', 'checks.log'], ['verdict', 'kept.log']].map(([format, file]) => ({ format, path: path.join(dir, 'releases/1.5.0', file), depth: 'api' })) });
+    assert.deepEqual(read.results.map((r) => r.startedAt), ['2026-10-01T12:00:00.000Z', '2026-10-22T12:00:00.000Z', '2026-09-28T12:00:00.000Z']);
+  });
+});
+
 type Copy = { copy: string; configFile: string; setConfig: (change: Record<string, unknown>) => void; rebuild: () => string };
 
 function withCopy(fn: (copy: Copy) => void) {
@@ -609,36 +633,6 @@ function withCopy(fn: (copy: Copy) => void) {
 
 const readOut = (copy: string, name: string) => JSON.parse(fs.readFileSync(path.join(copy, 'out', name), 'utf8'));
 const withoutDate = ({ meta, ...rest }: { meta: object }) => rest;
-const BASELINE_TESTS = [
-  { format: 'playwright', path: 'releases/1.5.0/playwright', depth: 'ui' },
-  { format: 'junit', path: 'releases/1.5.0/junit', depth: 'api' },
-  { format: 'vitest', path: 'releases/1.5.0/vitest', depth: 'code' },
-  { format: 'verdict', path: 'releases/1.5.0/verdict', depth: 'api' },
-];
-
-function editJson(file: string, change: (json: any) => void) {
-  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-  change(json);
-  fs.writeFileSync(file, JSON.stringify(json));
-}
-
-// 기준은 지금 결과를 베껴 시험 둘을 통과로 바꾸고 하나를 지운 것이고, 지금 결과에서는 내보내기 보고서를 지운다.
-function keepRelease(copy: string) {
-  for (const folder of ['playwright', 'junit', 'vitest', 'verdict']) fs.cpSync(path.join(copy, 'results', folder), path.join(copy, 'releases/1.5.0', folder), { recursive: true });
-  const kept = (file: string) => path.join(copy, 'releases/1.5.0', file);
-  editJson(kept('vitest/client-unit.json'), (report) => {
-    for (const r of report.testResults) for (const a of r.assertionResults) if (a.title === 'lists the documents it is given') a.status = 'passed';
-  });
-  editJson(kept('playwright/e2e.json'), (report) => {
-    const lab = report.suites.flatMap((s: any) => s.specs).find((s: any) => s.title.startsWith('opens the lab'));
-    for (const t of lab.tests) t.status = 'expected';
-  });
-  editJson(kept('vitest/unit.json'), (report) => {
-    for (const r of report.testResults) r.assertionResults = r.assertionResults.filter((a: any) => a.title !== 'remembers the last user');
-  });
-  fs.rmSync(path.join(copy, 'results/playwright/export.json'));
-}
-
 const TEST_LINES = [
   'test results since releases/1.5.0 | compared 45 | pass→fail 1 pass→pending 1 | not on a screen or call now 17 | only in baseline 5 | only now 1',
   '  pass→fail ← components/DocumentTable.spec.js:6 DocumentTable › lists the documents it is given — screen /document/:tab#DocumentList, screen /home#Home',
@@ -800,4 +794,90 @@ test('the README and the decision record say what baselineTests takes, what the 
   assert.match(decisions, /an absolute path, as Jest and Vitest write, is\s+taken from the folder holding every absolute path of its\s+side/);
   assert.match(decisions, /- Only as much of the end of the paths as tells apart the different files of one title, decided in a comment on #404/);
   assert.match(decisions, /- One end length for the whole group, as the PRD reads word for word:/);
+});
+
+test('the README says which screens and calls a comment on a regressed test lists and how they read, when they leave, the line for a baselineTests that could not be read, and passedIn in the where of a comment', () => {
+  const read = (rel: string) => fs.readFileSync(path.join(import.meta.dirname, rel), 'utf8');
+  const readme = read('../README.md').replace(/\n {2}(?=\S)/g, ' ').replace(/\n(?=\S)/g, ' ');
+  assert.match(readme, /With `baselineTests` in the config, it also lists each screen and API call with a test that passed in that earlier release and fails or is pending now, when a reviewer commented on that test's row after the release's run/);
+  assert.match(readme, /starts with `- marks: none, listed for comments on regressed tests` when it has no open mark, and then has no `empty tests`/);
+  assert.match(readme, /has `, passed in <folder>` right after its result file[\s\S]*`N commented regressions`[\s\S]*does not say `No open marks\.`/);
+  assert.match(readme, /leaves once those tests pass again after a `rebuild`, or once a reviewer marks the whole screen or call `fine`; a comment after that brings it back/);
+  assert.match(readme, /`baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`, the rest of the list is as without it, and `tasks` does not stop/);
+  assert.match(readme, /`detail` for a verdict line, and `passedIn`, the `baselineTests` folder,/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*A comment on a regressed test lists its screen or call in `duru tasks` until the test passes again or the whole\s+screen or call is marked `fine`, and the line of a comment on such a test carries `passedIn`\.\*\*/);
+});
+
+const onRow = (node: string, title: string, file = 'a.spec.ts', source = 'results/e2e.json') => ({ node, part: { kind: 'test', key: { source, file, title } } });
+const NO_FINE = new Map<string, string>();
+const AFTER = '2026-10-12T00:00:00.000Z';
+
+test('a comment on a test row that regressed under that screen gives the baseline folder, and one on a row of a test that did not regress, or on the same test under another screen it did not regress on, gives none', () => {
+  const base = was({ title: 'opens a', status: 'pass' }, { title: 'keeps a', line: 2, status: 'pass' });
+  const comparison = compareTests(base, now({ nodes: { '/a#A': [{ title: 'opens a @screen:/a#A', status: 'fail' }, { title: 'keeps a @screen:/a#A', line: 2, status: 'pass' }] } }), MAP);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'opens a'), AFTER), 'releases/1.5.0');
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'keeps a'), AFTER), null);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/b#B', 'opens a'), AFTER), null);
+  assert.equal(passedInFolder(comparison, NO_FINE, { node: '/a#A' }, AFTER), null);
+});
+
+test('a comment on a row of the same title in another test file, or read from another result file, than the regressed test gives none', () => {
+  const base = was({ title: 'loads', file: 'list.spec.ts', status: 'pass' }, { title: 'loads', file: 'detail.spec.ts', line: 2, status: 'pass' });
+  const comparison = compareTests(base, now({ nodes: { '/a#A': [{ title: 'loads @screen:/a#A', file: 'list.spec.ts', status: 'fail' }, { title: 'loads @screen:/a#A', file: 'detail.spec.ts', line: 2, status: 'pass' }] } }), MAP);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'loads', 'list.spec.ts'), AFTER), 'releases/1.5.0');
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'loads', 'detail.spec.ts'), AFTER), null);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'loads', 'list.spec.ts', 'results/other.json'), AFTER), null);
+});
+
+test('a comment left before the run of the baseline result file its regressed test came from gives none, one left after it gives the folder, and a test merged from two result files takes the later start', () => {
+  const base: BaselineTests = {
+    ...was(),
+    results: [{ result: 'releases/1.5.0/chromium.json', startedAt: '2026-09-30T00:00:00.000Z' }, { result: 'releases/1.5.0/firefox.json', startedAt: '2026-10-02T00:00:00.000Z' }],
+    tests: [
+      { title: 'opens a', tags: [], file: 'a.spec.ts', line: 1, project: null, status: 'pass', result: 'releases/1.5.0/chromium.json' },
+      { title: 'opens b', tags: [], file: 'a.spec.ts', line: 2, project: null, status: 'pass', result: 'releases/1.5.0/chromium.json' },
+      { title: 'opens b', tags: [], file: 'a.spec.ts', line: 2, project: null, status: 'pass', result: 'releases/1.5.0/firefox.json' },
+    ],
+  };
+  const comparison = compareTests(base, now({ nodes: { '/a#A': [{ title: 'opens a', status: 'fail' }, { title: 'opens b', line: 2, status: 'fail' }] } }), MAP);
+  const at = (title: string, date: string) => passedInFolder(comparison, NO_FINE, onRow('/a#A', title), date);
+  assert.equal(at('opens a', '2026-09-29T23:59:59.000Z'), null);
+  assert.equal(at('opens a', '2026-09-30T06:00:00.000Z'), 'releases/1.5.0');
+  assert.equal(at('opens b', '2026-10-01T00:00:00.000Z'), null);
+  assert.equal(at('opens b', '2026-10-02T06:00:00.000Z'), 'releases/1.5.0');
+});
+
+test('a comment on a name several verdict lines share gives the folder when one of those lines regressed, and none when the regressed test\'s own row passed', () => {
+  const verdict = { file: 'checks.log', source: 'results/checks.log', format: 'verdict' };
+  const shared = compareTests(
+    was({ title: 'sort by date @screen:/a#A', file: 'checks.log', status: 'pass' }, { title: 'sort by date @screen:/a#A @depth:ui', file: 'checks.log', line: 2, status: 'pass' }),
+    now({ nodes: { '/a#A': [{ ...verdict, title: 'sort by date @screen:/a#A', status: 'fail' }, { ...verdict, title: 'sort by date @screen:/a#A @depth:ui', line: 2, status: 'pass' }] } }),
+    MAP,
+  );
+  assert.equal(passedInFolder(shared, NO_FINE, onRow('/a#A', 'sort by date', 'checks.log', 'results/checks.log'), AFTER), 'releases/1.5.0');
+  const merged = compareTests(
+    was({ title: 'walks', status: 'pass' }),
+    now({ passed: { '/a#A': [{ title: 'walks', status: 'fail', level: 'interact' }], '/b#B': [{ title: 'walks', line: 2, status: 'pass', level: 'interact' }] } }),
+    MAP,
+  );
+  assert.equal(merged.regressions.length, 1);
+  assert.equal(passedInFolder(merged, NO_FINE, onRow('/a#A', 'walks'), AFTER), 'releases/1.5.0');
+  assert.equal(passedInFolder(merged, NO_FINE, onRow('/b#B', 'walks'), AFTER), null);
+});
+
+test('a fine on the whole screen after the comment stops it, a fine on one depth or one option does not, and a comment after the fine gives the folder again', () => {
+  const comparison = compareTests(was({ title: 'opens a', status: 'pass' }), now({ nodes: { '/a#A': [{ title: 'opens a', status: 'fail' }] } }), MAP);
+  const mark = (target: object, date: string, status = 'fine') => ({ id: date, target, status, note: '', author: 'a', date });
+  const fines = wholeFines([
+    mark({ node: '/a#A' }, '2026-10-05T00:00:00.000Z'),
+    mark({ node: '/a#A' }, '2026-10-10T00:00:00.000Z'),
+    mark({ node: '/a#A' }, '2026-10-07T00:00:00.000Z'),
+    mark({ node: '/b#B', depth: 'ui' }, '2026-10-10T00:00:00.000Z'),
+    mark({ node: '/b#B', option: { key: 'x', value: true } }, '2026-10-10T00:00:00.000Z'),
+    mark({ node: '/b#B' }, '2026-10-10T00:00:00.000Z', 'needs-more'),
+  ]);
+  assert.deepEqual([...fines], [['/a#A', '2026-10-10T00:00:00.000Z']]);
+  assert.equal(passedInFolder(comparison, fines, onRow('/a#A', 'opens a'), '2026-10-09T00:00:00.000Z'), null);
+  assert.equal(passedInFolder(comparison, fines, onRow('/a#A', 'opens a'), '2026-10-11T00:00:00.000Z'), 'releases/1.5.0');
 });

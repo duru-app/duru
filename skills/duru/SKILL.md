@@ -178,6 +178,13 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    When the config names `baselineMap`, the summary also prints a `changes since <file> | …` line
    counting what changed since that earlier map; it asks nothing of you. A run that stops with a line starting with
    `baselineMap` names a file that is missing, unreadable or built by an older duru: tell the user.
+   When the config names `baselineTests`, the summary also prints a `test results since <folder> | …` line, and
+   under it `pass→fail ←`, `pass→pending ←` and `only in baseline ←` lines or a `no test was compared` line,
+   comparing the tests with the results kept from that earlier release; they ask nothing of you. Do not change a
+   test to match the current result only because it regressed: it may be a broken app or an intended change, and
+   only a regression a reviewer commented on, which the task list then shows, is yours to fix. A run that stops
+   with a line starting with `baselineTests` names results that are missing, unreadable or hold no test: tell the
+   user.
 2. **Open the review page.** Run `duru review <config>` (add `--port <n>` if port 4400 is taken). It prints
    `review page http://127.0.0.1:<port>/` on standard error; give that address to the user and ask them to
    mark the screens and stories and press 「리뷰 끝」 when they are done.
@@ -232,7 +239,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
      find the test by its title in that result file, read why it failed from that result file, find the cause
      and fix the test or the app in the target project. For a test whose relation is `imported`, `passed` or
      `called`, answer whether the tag may be added, judging from what the test checks, and add it only when the
-     comment asks you to, as in a `# Tagging` item.
+     comment asks you to, as in a `# Tagging` item. When `where` also carries `passedIn`, a folder, the test passed
+     in the release whose results are kept there and fails or is pending now, and the reviewer commented on it after
+     that release ran: do not write a new test for it; fix the app or the test as the comment says, then reply.
    - `"kind": "condition"`: one role or setting under 「접근 조건」 of a screen. `key` is `role:<role>`, or for a
      setting its path with the state the condition asks (`setting:<path>=on`, `=off` or `=present`) or, for a
      list that must hold a value or a setting that must equal one, the value after a colon
@@ -315,7 +324,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `comments on links between steps` list each step and link with its screen files and the link's verdict; act
    on them as above. A comment on several targets shows under each of them that is listed, ending with
    `left on N targets:` and all of them; answer it once. Comments with no target come first, under
-   `# Comments with no target`.
+   `# Comments with no target`. A test line under `comments on tests` with `, passed in <folder>`
+   right after its result file is such a regressed test, and an item whose marks line reads
+   `marks: none, listed for comments on regressed tests` is listed only for comments on such tests and has no
+   `empty tests`: write no new test for them; fix the app or the test as each comment says, run the tests and
+   `duru rebuild`, and read the list again.
 3. **Write the tests.** In the target project, write tests for each screen, API call and story in the task list,
    following its marks and notes. The top of the list says how to tag a test so that it attaches to a screen or call
    (`@screen:<screen ID>`, `@call:<call ID>`, `@depth:<depth>`); every new test needs those tags. For Playwright,
@@ -382,6 +395,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    same file; on a `link need from step N` line, set it up before step N so the test can take that link. A need
    written `needs/<file> — the file is missing` or `— the file could not be read` points at a need
    file duru did not find or could not read; tell the user which one rather than guess what it holds.
+   A list with comments on regressed tests counts them in its head as `N commented regressions` and says in its
+   intro what to do with them; with no open mark it starts with that instead of `No open marks.`, so do not stop
+   there. A line right under the head,
+   `baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`,
+   means items that comments on regressed tests would list may be missing: tell the user, with the line.
    With `caseKinds` in the config the list has `# Case kinds`, a `## <kind>` for each kind, and the head of the list
    counts its undecided candidates and cases with no tests; with no open mark it then says the case kinds still have
    work instead of `No open marks.`, so do not stop there. Under `undecided`, each line names a screen or call nobody
@@ -459,7 +477,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    on the map, none of the addresses the test opened is, or the test opened no page at all; fix the last in the test,
    and tell the user which of the others it is.
    A screen, call or story stays in `duru tasks` until a reviewer marks it `fine`, so an unchanged list is expected;
-   offer the user another review round instead.
+   offer the user another review round instead. One listed only for comments on regressed tests also leaves once
+   those tests pass again after a `rebuild`.
 
 ## Writing the test of one story
 

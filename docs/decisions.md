@@ -1582,6 +1582,52 @@ points out removed and newly skipped tests, since totals alone can hide them; Al
 the last report into the results and Allure 3 names the history file in `historyPath`, pointing at files a person
 kept rather than a server, as `baselineTests` does.
 
+**A comment on a regressed test lists its screen or call in `duru tasks` until the test passes again or the whole
+screen or call is marked `fine`, and the line of a comment on such a test carries `passedIn`.**
+Driver's decisions 2 and 4 in the PRD #403, built in #406. A comment counts when it is not a reply, sits on a test
+row under that screen or call, one of the rows it names regressed, and it was left after the run of the baseline
+result file that test came from and after the last `fine` on the whole screen or call. Whether an item is listed is
+worked out from the marks and the comparison each time, never stored, so the marks keep their shape and an item
+leaves by itself once its test passes after a `rebuild`.
+- Only a `fine` on the whole screen or call ends it: a `fine` on one depth or one option says that cell is enough,
+  and is not to close a regression at another depth.
+- An item listed only this way has no `empty tests`, and with no open mark the intro's first block, which tells the
+  agent to write tests and says an item stays until `fine`, gives way to the regression sentence: the work is to fix
+  the app or the test as the comment says, and the item also leaves when the test passes.
+- `, passed in <folder>` comes right after the result file on the test's line, before the reason of a verdict line,
+  which can run over several lines and would carry the note far from the test it marks.
+- `passedIn` is carried during the review too, since without it an agent could change the test to match the current
+  result before the review ends.
+- `tasks` and the task list a review ends with do not stop on a baseline that cannot be read: the marked items can be
+  listed without it, and the line under the head shows what is missing.
+- The rule lives in `src/baseline-tests.ts` next to the comparison, because both `src/tasks.ts` and `src/review.ts`
+  use it and `src/tasks.ts` already imports `src/review.ts`. The baseline is read in `taskList` and in the review
+  server, not in `reviewData`, which `duru story` also calls and which is not to read the baseline.
+- A row whose own status is pass is not taken as regressed, as the screen list's counts do not take it, though the
+  test it is merged into regressed. A test merged from several baseline result files takes the latest start, so a
+  comment left between two of those runs does not count.
+- The review server reads the baseline once when it starts and compares on each line it sends, once for the whole
+  backlog `duru wait` asks for.
+- A result file with no start time in it that git checked out unchanged since its last commit takes that commit's
+  author date when it is earlier than its modified time: a clone or a new worktree sets the modified time to the
+  checkout, which would drop every comment left before it. The author date stays through a rebase, the committer date
+  does not; the JUnit `timestamp` was not taken, since it is mostly written without a time zone.
+Limits:
+- Until the review page stops on a baseline that cannot be read, such a review starts and its lines lack `passedIn`
+  without saying so; the task list it ends with prints the line under the head. A baseline folder changed during the
+  review is seen by the task list at its end, not by the lines sent before.
+- `passed in` is put only on rows of items that meet the rule, so that the head's count matches the rows that show it:
+  on a screen listed by a mark, a comment left before the baseline ran on a test that regressed since shows none.
+- A comment left within minutes after the baseline ran can fail to count when the reviewer's clock and the clock of
+  the machine that ran the baseline differ.
+- A comment on a regressed row a browser test only passed through lists that screen too, though the screen list does
+  not count such a row; the reviewer picked that row, and a `fine` takes it off.
+- A `tests.json` written before #404 has no `projects` on untagged rows, so a pair waiting for a tag that copies one
+  is compared with no project and misses its Playwright baseline test; running `rebuild` again fixes it.
+- A comment on one of several verdict lines, or Playwright projects, sharing a name lists the screen when another of
+  them under the same screen regressed. JUnit XML and verdict logs copied without their modified time do not count
+  comments left between the run and the copy, and in a git checkout those left between the run and the commit.
+
 **A comment can be about one part of a screen or call, kept as the screen or call target plus
 `part: { kind, key }`; the first kind is one test row, named by the result file, test file and title without tags.**
 Driver's decision in #226. The key is made only from what the map, the test results or the stories give, never from

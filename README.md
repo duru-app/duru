@@ -296,7 +296,8 @@ client with example results and a config to start from.
   extract and rebuild print**). It works with or without `baselineMap`. An empty list compares nothing and prints no
   line about it. To keep the results of a release, run the whole suite on that version and copy its result files
   straight into that version's folder, such as `releases/1.5.0/`; copy JUnit XML and verdict logs with their modified
-  time kept (`cp -p`), since that is the time duru takes for when they ran. Keeping the results of a run of only some
+  time kept (`cp -p`), since that is the time duru takes for when they ran. In a git checkout, where that time is
+  the checkout's, such a file unchanged since its last commit takes the author date of that commit when it is earlier. Keeping the results of a run of only some
   of the tests leaves the rest out of the comparison: those under a screen or call now count as `only now`. Tests of the two results are matched by their title without
   tags, their Playwright project and their test file, so a test renamed or moved to another file counts once in
   `only in baseline` and once in `only now`.
@@ -1257,7 +1258,9 @@ JSON line:
 `"targets"` in place of `"target"` and `"wheres"`, one entry for each of its targets in the same order, each the
 `where` that target alone would carry below, or `null` for a target that carries none. A comment or reply whose target has a `part` also
 carries `"where"`: for a test, `{"file","line","source","status","relation"}` with `relation` one of `tagged`,
-`imported`, `passed` or `called`, and `detail` for a verdict line; for a condition or a link,
+`imported`, `passed` or `called`, `detail` for a verdict line, and `passedIn`, the `baselineTests` folder, when the
+test passed in that earlier release and fails or is pending now and the comment was left after that release's run, as
+in the task list; for a condition or a link,
 `{"places":[{"from","file","line",…}]}` with each source line it is read from, `from` being `route` or the screen a
 link starts on, and for a condition the `guard` as written, `via` when it sits in a function the link calls,
 `roleGuardsKey` when `roleGuards` gave its roles, or `inherited` for a link that passes on the condition of the screen
@@ -1371,6 +1374,20 @@ in the data setup and the checks, and the test attaches after a `rebuild`. Pairs
 Before `# Case kinds` and `# Tagging`, `# Code changed after a mark or a judgment` lists each mark, with its target
 and status, and each discarded or handed-over pair whose code changed after it was left, as the review page shows
 「코드 바뀜」; it is left out while there is none.
+
+**Comments on regressed tests.** With `baselineTests` in the config, it also lists each screen and API call with a
+test that passed in that earlier release and fails or is pending now, when a reviewer commented on that test's row
+after the release's run. Such an item starts with `- marks: none, listed for comments on regressed tests` when it
+has no open mark, and then has no `empty tests`; its cases with no tests stay under `# Case kinds`. Under
+`comments on tests` the line of that test has `, passed in <folder>` right after its result file, the `baselineTests` folder as the
+`test results since` line names it, the head of the list adds `N commented regressions`, and the intro says to fix
+the code or the test as the comment says rather than write a new test. With no open mark the list starts with that
+and does not say `No open marks.` An item listed this way leaves once those tests pass again after a `rebuild`, or
+once a reviewer marks the whole screen or call `fine`; a comment after that brings it back. A comment left before
+the baseline ran does not count, which is why JUnit XML and verdict logs are kept with their modified time. When
+`baselineTests` cannot be read, the line right under the head says
+`baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`,
+the rest of the list is as without it, and `tasks` does not stop.
 
 **Case kinds.** With `caseKinds` set, `# Case kinds` comes before `# Tagging`, with a `## <kind>` for each kind: its
 description, its values and rules, `undecided: N` with a line for each undecided candidate, and `cases with no

@@ -47,6 +47,7 @@ export interface TestPlace {
   status: string;
   relation: string;
   detail?: string;
+  passedIn?: string;
 }
 
 export interface SourcePlace {
