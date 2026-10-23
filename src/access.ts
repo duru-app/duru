@@ -416,7 +416,7 @@ export function routerTargets(roots: RouteNode[]) {
     const to = address.replace(/(.)\/$/, '$1').split('/');
     return route.length === to.length && route.every((s, i) => s.toLowerCase() === to[i].toLowerCase() || s.startsWith(':') || to[i] === VARIABLE_SEGMENT);
   };
-  // catch-all 만 이겼어도 duru 가 맞춰 보지 못한 라우트가 그 주소를 그릴 수 있다: 경로를 읽지 못한 라우트, index 라우트, 주소의 {*} 자리에 그 글자가 올 수 있는 라우트.
+  // * 로 끝나는 라우트만 이긴 주소를 duru 가 맞춰 보지 못한 라우트가 그릴 수 있는지 본다: 경로를 읽지 못한 라우트, index 라우트, 주소의 {*} 자리에 그 글자가 올 수 있는 라우트.
   const unsure = (node: RouteNode & { kind: 'routes' }, address: string) => node.branches.some((b) => b.path.includes(UNKNOWN))
     || node.indexes.some((p) => fits(p || '/', address, true))
     || (address.includes(VARIABLE_SEGMENT) && node.branches.some((b) => explodedPaths(b.path).some((p) => !endsInSplat(p) && mayName(p, address))));
