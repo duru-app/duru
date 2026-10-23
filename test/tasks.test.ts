@@ -10,7 +10,7 @@ import type { ScreenMap } from '../src/map.ts';
 import { addMark, addReply, loadMarks } from '../src/marks.ts';
 import { reviewData } from '../src/review.ts';
 import { taggingLines } from '../src/tasks.ts';
-import { BASELINE_TESTS, keepRelease, regressMore } from './baseline-helpers.ts';
+import { BASELINE_TESTS, editJson, keepRelease, regressMore } from './baseline-helpers.ts';
 
 type Row = { title: string; source: string; format: string; depth: string; status: string };
 type NewJudgment = Parameters<typeof addJudgment>[1];
@@ -1742,6 +1742,21 @@ test('a comment on a regressed test lists its screen with marks none and the tes
       '- component: ',
     ].join('\n')));
     assert.doesNotMatch(lab, /empty tests/);
+  }, { marksDir: 'marks' });
+});
+
+test('a comment on a regressed test of an API call lists that call with marks none and the test line carrying passed in', () => {
+  withRelease(({ copy, cli, comment }) => {
+    editJson(path.join(copy, 'releases/1.5.0/playwright/e2e.json'), (report) => {
+      const rename = report.suites.flatMap((s: any) => s.specs).find((s: any) => s.title.startsWith('rename is refused by the server'));
+      for (const t of rename.tests) t.status = 'expected';
+    });
+    cli('rebuild');
+    comment(onTest('PUT:/api/v1/document/{documentId}/name', 'rename is refused by the server', 'document.spec.ts', 'results/playwright/e2e.json'), '2026-10-12T02:00:00Z');
+    const tasks = cli('tasks');
+    assert.equal(tasks.split('\n')[0], '# Test tasks — 0 screens, 1 call, 0 stories, 0 open marks, 1 commented regression');
+    const call = sectionOf(tasks, 'PUT:/api/v1/document/{documentId}/name');
+    assert.match(call, /^- marks: none, listed for comments on regressed tests\n- comments on tests:\n {2}- test "rename is refused by the server" at document\.spec\.ts:4 — [^\n]*, from results\/playwright\/e2e\.json, passed in releases\/1\.5\.0$/m);
   }, { marksDir: 'marks' });
 });
 

@@ -768,6 +768,14 @@ test('a comment on a test row that regressed under that screen gives the baselin
   assert.equal(passedInFolder(comparison, NO_FINE, { node: '/a#A' }, AFTER), null);
 });
 
+test('a comment on a row of the same title in another test file, or read from another result file, than the regressed test gives none', () => {
+  const base = was({ title: 'loads', file: 'list.spec.ts', status: 'pass' }, { title: 'loads', file: 'detail.spec.ts', line: 2, status: 'pass' });
+  const comparison = compareTests(base, now({ nodes: { '/a#A': [{ title: 'loads @screen:/a#A', file: 'list.spec.ts', status: 'fail' }, { title: 'loads @screen:/a#A', file: 'detail.spec.ts', line: 2, status: 'pass' }] } }), MAP);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'loads', 'list.spec.ts'), AFTER), 'releases/1.5.0');
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'loads', 'detail.spec.ts'), AFTER), null);
+  assert.equal(passedInFolder(comparison, NO_FINE, onRow('/a#A', 'loads', 'list.spec.ts', 'results/other.json'), AFTER), null);
+});
+
 test('a comment left before the run of the baseline result file its regressed test came from gives none, one left after it gives the folder, and a test merged from two result files takes the later start', () => {
   const base: BaselineTests = {
     ...was(),
@@ -808,8 +816,9 @@ test('a fine on the whole screen after the comment stops it, a fine on one depth
   const comparison = compareTests(was({ title: 'opens a', status: 'pass' }), now({ nodes: { '/a#A': [{ title: 'opens a', status: 'fail' }] } }), MAP);
   const mark = (target: object, date: string, status = 'fine') => ({ id: date, target, status, note: '', author: 'a', date });
   const fines = wholeFines([
-    mark({ node: '/a#A' }, '2026-10-10T00:00:00.000Z'),
     mark({ node: '/a#A' }, '2026-10-05T00:00:00.000Z'),
+    mark({ node: '/a#A' }, '2026-10-10T00:00:00.000Z'),
+    mark({ node: '/a#A' }, '2026-10-07T00:00:00.000Z'),
     mark({ node: '/b#B', depth: 'ui' }, '2026-10-10T00:00:00.000Z'),
     mark({ node: '/b#B', option: { key: 'x', value: true } }, '2026-10-10T00:00:00.000Z'),
     mark({ node: '/b#B' }, '2026-10-10T00:00:00.000Z', 'needs-more'),
