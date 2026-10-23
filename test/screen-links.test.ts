@@ -3626,3 +3626,11 @@ export default function Home() {
     ['{?}', 'links.js', lineOf(links, '<NavLink to={link}>{props.name}'), []],
   ]);
 });
+
+test('the decision record says a component wrapping a react-router link is a link where it is used and why its declaration is found apart from component-file, and the usage guide says a link can sit where such a component is used', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
+  assert.match(read('README.md'), /or on the line where a component in the source that wraps a react-router link or a history move is used/);
+  const decisions = read('docs/decisions.md');
+  assert.match(decisions, /\*\*A component declared in the source that wraps a react-router link, or hands what it is given to one or to a history\s+move, is a link where it is used, read with the attributes written there\.\*\*/);
+  assert.match(decisions, /The issue\s+\(#399\) said to find it with component-file\. Compared:/);
+});

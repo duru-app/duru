@@ -3904,6 +3904,67 @@ move inside a function the helper holds in a `const` and calls or hands on only 
 (`const go = () => history.push(url); if (ask) showDialog({ onConfirm: go })`) is kept even at a call whose arguments
 rule the condition out, since the condition is read only around the move itself.
 
+**A component declared in the source that wraps a react-router link, or hands what it is given to one or to a history
+move, is a link where it is used, read with the attributes written there.**
+The component an element draws is found by following the element's name, or what its `as` names
+(`<Button as={Link}>`, `<Link as={NavLink}>`), to its declaration: through imports and re-exports, through a call to
+its first argument (`observer(…)`, `React.memo(…)`, `forwardRef(…)`, `connect(…)(…)`), or to what the call is made
+on when that argument is not a component (`styled(X)({…})`), from `` styled(X)`…` `` to `X`, and from a member name
+(`<Menu.ItemLink>`) through a namespace import, an object property or a class's static property. When that ends at
+`Link`, `NavLink`, `Redirect` or `Navigate` imported from react-router, the element is read as that element: its
+`to`, at the line of the `to`, while a `Link` from another package (appsmith's `@appsmith/ads`) is not. When it
+ends at a function, the element is read as a call of that function with its attributes as the props object, as a
+call of a function that moves to what it is given is (see above): a link element in the body
+(`<NavLink to={to}>`), a history move (also inside `useCallback` and other callbacks), or another such component the
+body draws with what it was given, whose address gives no link where it is written. The element is then a link at
+its own line, with the file and the conditions of the use. The attribute read as the address is not picked by name:
+whatever prop reaches the `to` or the move is read under its own name (`url`, `link`, `href`, mattermost
+`SaveChangesPanel`'s `cancelLink`), and a prop the use leaves out takes the parameter's default
+(`({ url = '/' })`) or gives no link. A spread written at the use is read as an object (`{...rest}` from
+`({ to, ...rest })` keeps the attributes written at the outer use apart from `to`); a value the use hands in as it
+is, written or spread (`to={props.to}`, `{...props}` with no `to` after it), gives no link, as decided in #392.
+An `if`, `? :`, `&&` or `||` in the component that the attributes decide drops the element or move it does not lead
+to (`disabled ? <span/> : <Link to={to}/>` used with `disabled`), and route constants keep their rule: an element
+whose attributes hold one is not followed. A link or move in the body that already gives a link there, `{?}`
+included, keeps it and adds none at the uses, so one move is never two links. mattermost's `BackstageSection`,
+`BackstageCategory`, `AdminSidebarSection` and `AdminSidebarCategory` (11 uses) build their address from
+`parentLink`, which the parent hands each child with `cloneElement` rather than the use writing it; the address,
+put together from what they are given, is already a `{?}` link in their body, so their uses give none. This follows
+two rules already written: a property the call does not give makes no link, and keeping received values as `{?}`
+was turned down in #392 (driver's decision on 2026-10-23).
+The declaration is found by a function of its own in `src/client.ts`, on the syntax tree and bindings the link
+reader already uses, and `src/component-file.ts`, which finds a screen's component file, is not changed. The issue
+(#399) said to find it with component-file. Compared:
+- component-file returning the declaration: it parses files apart from the client, so its nodes are not the ones
+  the link reader's bindings and node-keyed sets know, and its four callers would take the client's parsed files.
+  To serve links it would also have to follow `` styled(X)`…` `` and class static properties, where it stops on
+  purpose; a screen written as `` export default styled(Page)`…` `` or reached through a class static would then get
+  another file, and with it other sources, attached calls and links on maps that exist (see the screen component
+  file rule above).
+- A function in `src/client.ts`: no screen's file can move, nothing new is parsed or cached, and it comes out by
+  removing one function. Its cost is a second copy of "a call goes to its first argument", which here ends at a
+  function node instead of a file. Chosen with the driver on 2026-10-23.
+Measured with a trial build of this branch against its base (e6ee4e1), counting a link once per screen it is on:
+- outline: link lines 1264 to 1776 at 52 places, 223 of them reaching a screen (22 places) and 289 `{?}` (30
+  places); entry screens 30 to 25 (archive, drafts and the three home tabs gain links in). Of the 11 uses of
+  `SidebarLink` with a `to`, the home, search, archive, drafts and trash ones reach their screens, the two shared
+  ones are `{?}` (`sharedModelPath` from `shared/`), and the four in `Settings`, `SidebarAction`, `CollectionRow` and
+  `DocumentRow`, which pass on what they are given, give none.
+- mattermost: 7712 to 8442 at 73 places, 103 reaching a screen (61 places) and 627 `{?}` (12 places); entry screens
+  103 to 94. `BlockableLink` gives 32 links that reach a screen and 5 `{?}` at its 40 uses; 4 of those `{?}` are
+  `trial_benefits_modal.tsx`'s `to={ConsolePages.…}`, on 146 screens each (584 lines), read as `<Link to>` with a
+  member of a constant object outside `constants` already is. `SaveChangesPanel` links its 5 uses with a written
+  `cancelLink`, and `BackButton` links `/` at the uses that leave out `url`.
+- appsmith: 353 to 370, all 17 `{?}` at 5 places; into-sign 1.5.0 572 to 576 and 2.0.0 368 to 371, all `{?}` at a
+  modal whose address comes from state spread into it. No entry screen changes in these.
+Known limits:
+- Not read: a class component (`this.props.to`), a function the body calls that returns a link element
+  (`renderLink(url)`), a prop given only by `defaultProps`, and a value the parent puts in with `cloneElement` or a
+  context instead of the use writing it.
+- A higher-order component from the source (`menuItem(X)`) is read as `X`; what its body does to the props on the
+  way is not seen.
+- Attributes whose values together give more than 64 ways make the use `{?}`.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
