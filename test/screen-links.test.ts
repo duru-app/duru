@@ -2464,6 +2464,59 @@ export default function Home() {
   ]);
 });
 
+test('a condition around a helper call that checks an argument as it is decides the branch of the helper that argument picks', async () => {
+  const home = `import { Link, useHistory } from 'react-router-dom';
+
+function switchTeam(history, url, team) {
+  if (team) {
+    selectTeam(team.id);
+  } else {
+    history.push(url);
+  }
+}
+
+const teamPath = (t) => (t ? \`/team/\${t}\` : '/login');
+
+export default function Home({ team, other, props }) {
+  const history = useHistory();
+  const go = () => {
+    if (team) switchTeam(history, '/start', team);
+  };
+  const back = () => {
+    if (!other) switchTeam(history, '/login', other);
+    else switchTeam(history, '/help', other);
+  };
+  return (
+    <nav>
+      <a onClick={go}>a</a>
+      <a onClick={back}>b</a>
+      <a onClick={() => props.team && switchTeam(history, '/home', props.team)}>c</a>
+      <a onClick={() => (team ? null : switchTeam(history, '/team/b', team))}>d</a>
+      <a onClick={() => switchTeam(history, '/team/a', team)}>e</a>
+      <a onClick={() => other || switchTeam(history, '/help/b', other)}>f</a>
+      <Link to={team ? teamPath(team) : '/start'}>g</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at("switchTeam(history, '/login'"), ['!other'], ['/login#Login']],
+    ['/team/b', at("switchTeam(history, '/team/b'"), ['!(team)'], ['/team/:team#Team']],
+    ['/team/a', at("switchTeam(history, '/team/a'"), [], ['/team/:team#Team']],
+    ['/help/b', at("switchTeam(history, '/help/b'"), [], ['/help/:page?#Help']],
+    ['/team/{*}', at('teamPath(team)'), ['team'], ['/team/:team#Team']],
+    ['/start', at('teamPath(team)'), ['!(team)'], ['/start#Start']],
+  ]);
+});
+
+test('the decision record says a condition around a call that checks an argument decides the branch it picks, and why an earlier return is not read', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*A condition around a call that checks an argument as it is tells the function which way that argument goes\.\*\*/);
+  assert.match(decisions, /Reading an earlier `return` as well would drop outline's `\/doc\/new`/);
+});
+
 test('a helper call that hands a member of a constant object into the address the helper builds is {?}, as an address function call with it is', async () => {
   const routes = `import { Route, Switch } from 'react-router-dom';
 import Home from './Home';

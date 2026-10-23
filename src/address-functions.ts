@@ -51,7 +51,7 @@ type Val =
   | { value: unknown }
   | { props: Map<string, Out>; open: boolean; rest?: Out }
   | { items: Out[] }
-  | { unknown: NodePath };
+  | { unknown: NodePath; truthy?: boolean };
 type Out = { val: Val; made: boolean; whole?: NodePath; sides?: Side[] };
 type Env = Map<Binding, Out>;
 // consts 이면 fn 안에서 const 로 선언한 이름을 그 초기값으로 읽는다.
@@ -118,6 +118,7 @@ function plain({ val }: Out): unknown {
 
 function truth(out: Out): boolean | undefined {
   const { val } = out;
+  if ('unknown' in val && val.truthy !== undefined) return val.truthy;
   if ('props' in val || 'items' in val || ('pieces' in val && val.pieces.some((x) => 'text' in x && x.text))) return true;
   const value = plain(out);
   return value === NOT_KNOWN ? undefined : Boolean(value);
@@ -128,10 +129,56 @@ function member(out: Out, key: string, at: NodePath): Out {
   if ('props' in val) return val.props.get(key) ?? (val.open ? val.rest ?? unknownAt(at) : known(undefined));
   if (at.isOptionalMemberExpression() && 'value' in val && (val.value === undefined || val.value === null)) return known(undefined);
   if ('items' in val) return key === 'length' ? known(val.items.length) : unknownAt(at);
-  if ('unknown' in val) return out;
+  if ('unknown' in val) return val.truthy === undefined ? out : { ...out, val: { unknown: val.unknown } };
   const value = plain(out);
   if (typeof value === 'string' && key === 'length') return known(value.length);
   return value !== null && typeof value === 'object' ? known((value as Record<string, unknown>)[key]) : unknownAt(at);
+}
+
+// 이름 하나나 그 이름에서 꺼낸 멤버 사슬(this.props.team)이면 그 값을 가리키는 키, 아니면 null 이다. 다시 대입하는 이름은 null 이다.
+function checkedKey(p: NodePath<any>): string | null {
+  if (p.isIdentifier()) {
+    const binding = p.scope.getBinding(p.node.name);
+    return binding?.constant ? `${binding.identifier.start}` : binding ? null : p.node.name;
+  }
+  if (p.isThisExpression()) return 'this';
+  if ((p.isMemberExpression() || p.isOptionalMemberExpression()) && !p.node.computed) {
+    const object = checkedKey(p.get('object') as NodePath<any>);
+    return object === null ? null : `${object}.${(p.node.property as Identifier).name}`;
+  }
+  return null;
+}
+
+function truthIn(test: NodePath<any>, wanted: boolean, key: string): boolean | undefined {
+  if (test.isUnaryExpression({ operator: '!' })) return truthIn(test.get('argument'), !wanted, key);
+  if (test.isLogicalExpression() && test.node.operator === (wanted ? '&&' : '||')) return truthIn(test.get('left'), wanted, key) ?? truthIn(test.get('right'), wanted, key);
+  return checkedKey(test) === key ? wanted : undefined;
+}
+
+// p 를 둘러싼 if · ? : · && · || 마다 그 조건과, p 로 가려면 그 조건이 참이어야 하는가다.
+function* enclosingTests(p: NodePath, stop: (up: NodePath) => boolean): Generator<{ test: NodePath<any>; wanted: boolean }> {
+  for (let child = p, up = p.parentPath; up && !stop(up); child = up, up = up.parentPath) {
+    if ((up.isIfStatement() || up.isConditionalExpression()) && (child.key === 'consequent' || child.key === 'alternate')) yield { test: up.get('test') as NodePath<any>, wanted: child.key === 'consequent' };
+    else if (up.isLogicalExpression() && up.node.operator !== '??' && child.key === 'right') yield { test: up.get('left'), wanted: up.node.operator === '&&' };
+  }
+}
+
+// 부르는 줄 call 을 감싼 if · ? : · && · || 가 인자 arg 를 그대로 확인했으면, 그 확인과 어긋나는 값을 버리고 모르는 값에는 참 · 거짓을 붙인다.
+// call 을 품은 함수 밖의 조건과, 앞에서 return 으로 거른 것은 보지 않는다.
+function checkedOuts(outs: Out[], arg: NodePath<any>, call: NodePath): Out[] {
+  const key = checkedKey(arg);
+  if (key === null) return outs;
+  for (const { test, wanted } of enclosingTests(call, (up) => up.isFunction() || up.isProgram())) {
+    const truthy = truthIn(test, wanted, key);
+    if (truthy === undefined) continue;
+    const kept = outs.filter((o) => truth(o) !== !truthy);
+    return (kept.length ? kept : outs).map((o) => {
+      const { val } = o;
+      const one = 'unknown' in val ? val.unknown : 'pieces' in val && val.pieces.length === 1 && 'stop' in val.pieces[0] && !val.pieces[0].withheld ? val.pieces[0].stop : null;
+      return one && truth(o) === undefined ? { ...o, val: { unknown: one, truthy } } : o;
+    });
+  }
+  return outs;
 }
 
 function withheldIn({ val }: Out): boolean {
@@ -304,7 +351,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     if (fn && (reading.has(fn.node) || at.depth >= FOLLOWED)) return [unknownAt(p)];
     if (!fn || fn.node.async || fn.node.generator) return [leafOut(p)];
     const spread = args.findIndex((a) => a.isSpreadElement());
-    const lists = limited(product((spread < 0 ? args : args.slice(0, spread)).map((a) => values(a, given))));
+    const lists = limited(product((spread < 0 ? args : args.slice(0, spread)).map((a) => checkedOuts(values(a, given), a, p))));
     return followed(fn, p, () => lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((e) => returnedValues(fn, e, p, at.depth + 1))));
   }
 
@@ -781,16 +828,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   // fn 안에서 p 를 둘러싼 if · ? : · && · || 가운데 값이 정해져 p 로 가지 않는 것이 있으면 거짓이다.
   function reached(p: NodePath, fn: AddressFunction, at: At): boolean {
-    for (let child = p, up = p.parentPath; up && up.node !== fn.node; child = up, up = up.parentPath) {
-      let test: NodePath<any>;
-      let wanted: boolean;
-      if ((up.isIfStatement() || up.isConditionalExpression()) && (child.key === 'consequent' || child.key === 'alternate')) {
-        test = up.get('test') as NodePath<any>;
-        wanted = child.key === 'consequent';
-      } else if (up.isLogicalExpression() && up.node.operator !== '??' && child.key === 'right') {
-        test = up.get('left');
-        wanted = up.node.operator === '&&';
-      } else continue;
+    for (const { test, wanted } of enclosingTests(p, (up) => up.node === fn.node)) {
       let truths: (boolean | undefined)[];
       try {
         truths = values(test, at).map(truth);
@@ -808,7 +846,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     const args = p.get('arguments') as NodePath<any>[];
     const spread = args.findIndex((a) => a.isSpreadElement());
     const given = { ...at, branching: true };
-    const lists = limited(product((spread < 0 ? args : args.slice(0, spread)).map((a) => values(a, given).map((o) => wholeOr(o, a)))));
+    const lists = limited(product((spread < 0 ? args : args.slice(0, spread)).map((a) => checkedOuts(values(a, given), a, p).map((o) => wholeOr(o, a)))));
     reading.add(fn.node);
     try {
       const outs = lists.flatMap((list) => bound(fn, list, spread < 0 ? null : args[spread], at.depth + 1).flatMap((env) => placeOuts(fn, env, at.depth + 1)));
