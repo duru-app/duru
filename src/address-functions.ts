@@ -616,6 +616,19 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
 
   const isHelper = (fn: AddressFunction) => helperState(fn, new Set()).helper;
 
+  // fn 이나 fn 이 부르는 옮겨 주는 함수에, 받은 것이 아닌 history 로 옮기는 자리가 있는가
+  function movesItself(fn: AddressFunction, trail: Set<Node> = new Set()): boolean {
+    const { moves: found, calls } = placesOf(fn);
+    if (found.some((place) => !place.history)) return true;
+    if (trail.has(fn.node) || trail.size >= FOLLOWED) return false;
+    trail.add(fn.node);
+    try {
+      return calls.some((call) => isHelper(call.fn) && movesItself(call.fn, trail));
+    } finally {
+      trail.delete(fn.node);
+    }
+  }
+
   function givenHistory(history: NodePath | null, fn: AddressFunction): NodePath | null {
     const binding = history?.isIdentifier() ? history.scope.getBinding(history.node.name) : undefined;
     return binding?.kind === 'param' && binding.scope.block === fn.node ? history : null;
@@ -682,6 +695,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   }
 
   // 받은 주소로 옮기는 함수를 부른 곳에서, 그 이동이 가는 주소를 부른 곳의 인자로 읽는다. 그런 함수가 아니면 null 이다.
+  // 갈래가 너무 많으면 {?} 를 주되, 받은 history 로만 옮기는 함수면 null 이다.
   function helperBranches(p: NodePath<CallExpression>): Read | null {
     if (!moves || inAddress(p)) return null;
     const callee = p.get('callee') as NodePath<any>;
@@ -692,7 +706,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     try {
       outs = helperOuts(p, fn, OUTSIDE);
     } catch (error) {
-      if (error instanceof TooMany) return { tooMany: true };
+      if (error instanceof TooMany) return movesItself(fn) ? { tooMany: true } : null;
       throw error;
     }
     const found = new Map<string, Branch>();

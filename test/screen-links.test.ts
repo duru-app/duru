@@ -1868,6 +1868,46 @@ ${steps}
   ]);
 });
 
+test('a helper call whose arguments pass the branch limit is {?} only when the helper moves with a history it does not take from the call, so a string replace or an array push on a parameter never gives a link', async () => {
+  const home = `import { useHistory } from 'react-router-dom';
+
+const strip = (label) => label.replace(/^Doc /, '');
+
+function titleOf(ctx) {
+  return strip(ctx.title);
+}
+
+function createModel({ type, title }) {
+  const ctx = { title, a: type === 1 ? 'a' : 'A', b: type === 2 ? 'b' : 'B', c: type === 3 ? 'c' : 'C', d: type === 4 ? 'd' : 'D', e: type === 5 ? 'e' : 'E', f: type === 6 ? 'f' : 'F', g: type === 7 ? 'g' : 'G' };
+  return { title: titleOf(ctx) };
+}
+
+const addRow = (rows, a, b, c, d, e, f, g) => {
+  rows.push([a, b, c, d, e, f, g]);
+};
+
+function open(history, url, a, b, c, d, e, f, g) {
+  history.push(url);
+}
+
+export default function Home({ type, doc, x }) {
+  const history = useHistory();
+  const leave = (url, a, b, c, d, e, f, g) => history.push(url);
+  const model = createModel({ type, title: doc.title });
+  const rows = [];
+  addRow(rows, x.a ? 'a' : 'A', x.b ? 'b' : 'B', x.c ? 'c' : 'C', x.d ? 'd' : 'D', x.e ? 'e' : 'E', x.f ? 'f' : 'F', x.g ? 'g' : 'G');
+  return (
+    <nav>
+      <a onClick={() => open(history, '/start', x.a ? 'a' : 'A', x.b ? 'b' : 'B', x.c ? 'c' : 'C', x.d ? 'd' : 'D', x.e ? 'e' : 'E', x.f ? 'f' : 'F', x.g ? 'g' : 'G')}>{model.title}</a>
+      <a onClick={() => leave('/login', x.a ? 'a' : 'A', x.b ? 'b' : 'B', x.c ? 'c' : 'C', x.d ? 'd' : 'D', x.e ? 'e' : 'E', x.f ? 'f' : 'F', x.g ? 'g' : 'G')}>{rows.length}</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', lineOf(home, "leave('/login'"), [], []]]);
+});
+
 test('the decision record says that a call of a function that moves to an address or with a history it is given is a link at the call', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
   const decisions = read('docs/decisions.md');
