@@ -636,9 +636,9 @@ export default function Home({ flag }) {
 });
 
 const OPTION = "export default { ROUTE_PATH: { HOME: '/home', LOGIN: '/login', HELP: '/help', TEAM: '/team' } };\n";
-const withRouteConstant = (files: Record<string, string>) => writeApp(
+const withRouteConstant = (files: Record<string, string>, keys: Record<string, unknown> = {}) => writeApp(
   { 'Option.js': OPTION, ...files },
-  { routeConstant: 'Option.ROUTE_PATH', constants: { Option: 'Option.js' } },
+  { routeConstant: 'Option.ROUTE_PATH', constants: { Option: 'Option.js' }, ...keys },
 );
 const targetsOf = (map: ScreenMap, id: string) => linksOf(map, id).map(([to, , , targets]) => [to, targets]);
 
@@ -722,6 +722,133 @@ export default function Home({ id, tab }) {
     ['/team', ['/team/:team#Team']],
     ['/team', ['/home#Home']],
   ]);
+});
+
+const PLACES = "export default { ROUTE_PATH: { HOME: '/home', ROOT: '/', DOCS: '/docs', ADMIN: '/admin', SETTINGS: '/settings', REPORT: '/report', TEAM: '/team' } };\n";
+const pages = (...names: string[]) => Object.fromEntries(names.map((n) => [`${n}.js`, page(n)]));
+const imported = (...names: string[]) => names.map((n) => `import ${n} from './${n}';`).join('\n');
+
+test('with React Router 6, a route constant followed by a variable segment where Routes holds literal routes the segment may name still goes where the bare route constant goes, with or without a catch-all', async () => {
+  const routes = (catchAll: string) => `import { Route, Routes } from 'react-router-dom';
+${imported('Home', 'Settings', 'Profile', 'Security', 'Daily', 'Weekly', 'NotFound')}
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/home" element={<Home />} />
+      <Route path="/settings" element={<Settings />}>
+        <Route path="profile" element={<Profile />} />
+        <Route path="security" element={<Security />} />
+      </Route>
+      <Route path="/report/daily" element={<Daily />} />
+      <Route path="/report/weekly" element={<Weekly />} />
+      ${catchAll}
+    </Routes>
+  );
+}
+`;
+  const home = `import { Link, useNavigate } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home({ tab, kind }) {
+  const navigate = useNavigate();
+  return (
+    <nav>
+      <Link to={\`\${Option.ROUTE_PATH.SETTINGS}/\${tab}\`}>tab</Link>
+      <button onClick={() => navigate(Option.ROUTE_PATH.REPORT + '/' + kind)}>report</button>
+    </nav>
+  );
+}
+`;
+  const files = { 'Option.js': PLACES, ...pages('Settings', 'Profile', 'Security', 'Daily', 'Weekly', 'NotFound'), 'Home.js': home };
+  for (const catchAll of ['<Route path="*" element={<NotFound />} />', '']) {
+    const map = await build(withRouteConstant({ ...files, 'Routes.js': routes(catchAll) }));
+    assert.deepEqual(targetsOf(map, '/home#Home'), [
+      ['/settings/{*}', ['/settings#Settings']],
+      ['/report/{*}', []],
+    ], catchAll);
+  }
+});
+
+test('with React Router 6, a route constant whose address an index route draws, which duru does not read, still goes where the bare route constant goes instead of to the catch-all', async () => {
+  const routes = `import { Route, Routes } from 'react-router-dom';
+${imported('Layout', 'Dashboard', 'Docs', 'AdminRoutes', 'NotFound')}
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<Dashboard />} />
+        <Route path="/docs" element={<Docs />} />
+      </Route>
+      <Route path="/admin/*" element={<AdminRoutes />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
+`;
+  const admin = `import { Route, Routes } from 'react-router-dom';
+${imported('AdminHome', 'Users', 'NoAdmin')}
+
+export default function AdminRoutes() {
+  return (
+    <Routes>
+      <Route index element={<AdminHome />} />
+      <Route path="users" element={<Users />} />
+      <Route path="*" element={<NoAdmin />} />
+    </Routes>
+  );
+}
+`;
+  const docs = `import { Link, useNavigate } from 'react-router-dom';
+import Option from './Option';
+
+export default function Docs() {
+  const navigate = useNavigate();
+  return (
+    <nav>
+      <Link to={Option.ROUTE_PATH.ROOT}>home</Link>
+      <button onClick={() => navigate(Option.ROUTE_PATH.ADMIN)}>admin</button>
+      <Link to={Option.ROUTE_PATH.ADMIN + '/users'}>users</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(withRouteConstant(
+    { 'Option.js': PLACES, ...pages('Layout', 'Dashboard', 'NotFound', 'AdminHome', 'Users', 'NoAdmin'), 'Routes.js': routes, 'AdminRoutes.js': admin, 'Docs.js': docs },
+    { routesFile: ['Routes.js', 'AdminRoutes.js'] },
+  ));
+  assert.deepEqual(targetsOf(map, '/docs#Docs'), [
+    ['/', []],
+    ['/admin', []],
+    ['/admin/users', ['users#Users']],
+  ]);
+});
+
+test('with React Router 6, a route constant whose route path duru cannot read still goes where the bare route constant goes instead of to the catch-all', async () => {
+  const routes = `import { Route, Routes } from 'react-router-dom';
+import { reportPath } from 'some-package';
+${imported('Home', 'Report', 'NotFound')}
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/home" element={<Home />} />
+      <Route path={reportPath()} element={<Report />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home() {
+  return <Link to={Option.ROUTE_PATH.REPORT}>report</Link>;
+}
+`;
+  const map = await build(withRouteConstant({ 'Option.js': PLACES, ...pages('Report', 'NotFound'), 'Routes.js': routes, 'Home.js': home }));
+  assert.deepEqual(targetsOf(map, '/home#Home'), [['/report', []]]);
 });
 
 test('the decision record says that under Routes a route constant written as a link\'s whole address goes to the screens React Router 6 draws, and that a Switch keeps the old matching', () => {

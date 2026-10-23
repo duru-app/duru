@@ -1772,18 +1772,21 @@ export async function extractClient(config: any) {
       if (n.kind === 'routes') {
         const branches: Branch[] = [];
         const unwrapped = (nodes: DrawnNode[]): DrawnNode[] => nodes.flatMap((c) => (c.isFragment ? unwrapped(c.children) : [c]));
+        const indexes: string[] = [];
         const flatten = (routes: DrawnNode[], outerPath: string, chain: Branch['chain']) => {
           for (const r of unwrapped(routes).filter((c) => c.isRoute)) {
             const drawnBy = unwrapped(r.children).filter((c) => !c.isRoute && (c.kind !== 'redirect' || c.redirectAsElement));
+            const leaf = drawnBy.length === unwrapped(r.children).length;
             for (const node of convert({ ...r, children: drawnBy }, file, outerPath) as Branch['chain']) {
               const own = node.path === null ? null : node.path.startsWith('/') ? node.path : `${outerPath}/${node.path}`.replace(/\/{2,}/g, '/');
               flatten(r.children, own ?? outerPath, [...chain, node]);
               if (own !== null) branches.push({ path: own, chain: [...chain, node] });
+              else if (leaf) indexes.push(outerPath);
             }
           }
         };
         flatten(n.children, base, []);
-        return [{ kind: 'routes', branches }];
+        return [{ kind: 'routes', branches, indexes }];
       }
       if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file, base)) }];
       if (n.kind === 'redirect') return [{ kind: 'redirect', from: n.from, exact: n.exact, to: n.to }];
@@ -1858,13 +1861,13 @@ export async function extractClient(config: any) {
   });
   fillOuterAddresses(sourced);
   const routedScreens = routerTargets(routeTree(drawn, extracted, sourced));
-  // 링크 주소 전체로 쓴 라우트 상수는 그 주소가 Routes 를 지나면 글자로 쓴 주소와 같은 화면으로 잇고, 그 밖에는 라우트 경로에 맞춰 본다.
+  // 링크 주소 전체로 쓴 라우트 상수는 Routes 가 그 주소의 화면을 정하면 글자로 쓴 주소와 같은 화면으로 잇고, 그 밖에는 라우트 경로에 맞춰 본다.
   const constantLink = (site: RouteRef) => {
     const { tail, ...ref } = site;
     const value = routeValues[ref.route];
     if (typeof value !== 'string') return { ...ref, to: value ?? UNKNOWN };
     const to = tail ? value + tail : value;
-    const routed = tail !== null && linkAddressRefs.has(site) && routedScreens.underRoutes(to);
+    const routed = tail !== null && linkAddressRefs.has(site) && routedScreens.decidedByRoutes(to);
     return { ...ref, to, ...(tail && { tail }), ...(routed && { reaches: routedScreens.screens(to) }) };
   };
   // POST 가 아닌 페이지 이동의 주소가 앱의 라우트와 맞으면 서버가 아니라 앱의 다른 화면이 열린다. 고정 문자열 부분이 없는 라우트는 어떤 주소에나 맞으므로 견주지 않는다.

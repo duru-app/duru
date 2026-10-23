@@ -370,7 +370,7 @@ export type Branch = { path: string; chain: RouteElement[] };
 
 export type RouteNode =
   | { kind: 'switch'; children: RouteNode[] }
-  | { kind: 'routes'; branches: Branch[] }
+  | { kind: 'routes'; branches: Branch[]; indexes: string[] }
   | RouteElement
   | { kind: 'redirect'; from: string | null; exact: boolean; to: string };
 
@@ -393,6 +393,7 @@ function rankScore(routePath: string) {
 }
 
 export function routerTargets(roots: RouteNode[]) {
+  const endsInSplat = (routePath: string) => /(^|\/)\*$/.test(routePath);
   const patterns = new Map<string, RegExp[]>();
   const fits = (routePath: string, address: string, whole: boolean) => {
     if (routePath.includes(UNKNOWN)) return false;
@@ -410,6 +411,15 @@ export function routerTargets(roots: RouteNode[]) {
     const best = scored.reduce<(typeof scored)[number] | null>((a, x) => (!a || x.score > a.score ? x : a), null);
     return best ? scored.filter((x) => x.score === best.score && x.b.path === best.b.path).map((x) => x.b) : [];
   };
+  const mayName = (routePath: string, address: string) => {
+    const route = routePath.replace(/(.)\/$/, '$1').split('/');
+    const to = address.replace(/(.)\/$/, '$1').split('/');
+    return route.length === to.length && route.every((s, i) => s.toLowerCase() === to[i].toLowerCase() || s.startsWith(':') || to[i] === VARIABLE_SEGMENT);
+  };
+  // catch-all 만 이겼어도 duru 가 맞춰 보지 못한 라우트가 그 주소를 그릴 수 있다: 경로를 읽지 못한 라우트, index 라우트, 주소의 {*} 자리에 그 글자가 올 수 있는 라우트.
+  const unsure = (node: RouteNode & { kind: 'routes' }, address: string) => node.branches.some((b) => b.path.includes(UNKNOWN))
+    || node.indexes.some((p) => fits(p || '/', address, true))
+    || (address.includes(VARIABLE_SEGMENT) && node.branches.some((b) => explodedPaths(b.path).some((p) => !endsInSplat(p) && mayName(p, address))));
   const opens = (node: RouteNode, address: string) => (node.kind === 'switch' || node.kind === 'routes' ? true
     : node.kind === 'redirect' ? node.from === null || fits(node.from, address, node.exact)
       : node.path === null || fits(node.path, address, node.exact));
@@ -419,8 +429,10 @@ export function routerTargets(roots: RouteNode[]) {
     if (first?.kind !== 'route' || first.path === null) return first ? [first] : [];
     return nodes.filter((n) => n === first || (n.kind === 'route' && n.path === first.path && opens(n, address)));
   };
-  const route = (address: string, hops: number): { screens: number[]; underRoutes: boolean } => {
+  type Routed = { screens: number[]; underRoutes: boolean; doubtful: boolean };
+  const route = (address: string, hops: number): Routed => {
     let underRoutes = false;
+    let doubtful = false;
     const drawn: { screen: number; whole: boolean; fits: boolean; depth: number }[] = [];
     const redirects: string[] = [];
     const walking = new Set<RouteNode>();
@@ -432,8 +444,10 @@ export function routerTargets(roots: RouteNode[]) {
         else if (node.kind === 'switch') walk(node.children, true, depth + 1);
         else if (node.kind === 'routes') {
           underRoutes = true;
-          for (const { path: branchPath, chain } of rankedWinners(node.branches, address)) {
-            const splat = /(^|\/)\*$/.test(branchPath);
+          const won = rankedWinners(node.branches, address);
+          if (won.every((b) => endsInSplat(b.path)) && unsure(node, address)) doubtful = true;
+          for (const { path: branchPath, chain } of won) {
+            const splat = endsInSplat(branchPath);
             chain.forEach((r, i) => {
               const leaf = i === chain.length - 1;
               const own = r.screens.map((screen) => ({ screen, whole: leaf, fits: leaf && !splat, depth: depth + 1 + i }));
@@ -467,15 +481,19 @@ export function routerTargets(roots: RouteNode[]) {
     return {
       screens: [...new Set([...picked, ...redirected.flatMap((r) => r.screens)])].sort((a, b) => a - b),
       underRoutes: underRoutes || redirected.some((r) => r.underRoutes),
+      doubtful: doubtful || redirected.some((r) => r.doubtful),
     };
   };
-  const routed = new Map<string, { screens: number[]; underRoutes: boolean }>();
-  const routedTo = (to: string) => {
-    if (unreadableTarget(to) || !to.startsWith('/')) return { screens: [], underRoutes: false };
+  const routed = new Map<string, Routed>();
+  const routedTo = (to: string): Routed => {
+    if (unreadableTarget(to) || !to.startsWith('/')) return { screens: [], underRoutes: false, doubtful: false };
     if (!routed.has(to)) routed.set(to, route(to, 0));
     return routed.get(to)!;
   };
-  return { screens: (to: string) => routedTo(to).screens, underRoutes: (to: string) => routedTo(to).underRoutes };
+  return {
+    screens: (to: string) => routedTo(to).screens,
+    decidedByRoutes: (to: string) => routedTo(to).underRoutes && !routedTo(to).doubtful,
+  };
 }
 
 const NO_SETTING_READ = 'not-found';
