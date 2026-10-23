@@ -1613,33 +1613,33 @@ export async function extractClient(config: any) {
 
   // 컴포넌트를 선언까지 따라간다. keys 는 그 앞까지 따라간 것에서 꺼낼 객체 속성 · 클래스 static 속성의 이름이다.
   function componentAt(p: NodePath<any> | null | undefined, keys: string[], depth: number): LinkComponent | null {
-    if (!p?.node || depth > FOLLOWED) return null;
+    if (!p?.node) return null;
     if (p.isTSAsExpression() || p.isTSSatisfiesExpression() || p.isTSNonNullExpression() || p.isParenthesizedExpression()) return componentAt(p.get('expression') as NodePath, keys, depth);
-    if (p.isIdentifier() || p.isJSXIdentifier()) return componentNamed(p.scope.getBinding(p.node.name), keys, depth + 1);
-    if (p.isImportSpecifier() || p.isImportDefaultSpecifier() || p.isImportNamespaceSpecifier()) return componentNamed(p.scope.getBinding(p.node.local.name), keys, depth + 1);
-    if ((p.isMemberExpression() && !p.node.computed) || p.isJSXMemberExpression()) return componentAt(p.get('object') as NodePath, [(p.node.property as Identifier).name, ...keys], depth + 1);
-    if (p.isVariableDeclarator()) return p.get('id').isIdentifier() && (p.parent as VariableDeclaration).kind === 'const' ? componentAt(p.get('init') as NodePath, keys, depth + 1) : null;
+    if (p.isIdentifier() || p.isJSXIdentifier()) return componentNamed(p.scope.getBinding(p.node.name), keys, depth);
+    if (p.isImportSpecifier() || p.isImportDefaultSpecifier() || p.isImportNamespaceSpecifier()) return componentNamed(p.scope.getBinding(p.node.local.name), keys, depth);
+    if ((p.isMemberExpression() && !p.node.computed) || p.isJSXMemberExpression()) return componentAt(p.get('object') as NodePath, [(p.node.property as Identifier).name, ...keys], depth);
+    if (p.isVariableDeclarator()) return p.get('id').isIdentifier() && (p.parent as VariableDeclaration).kind === 'const' ? componentAt(p.get('init') as NodePath, keys, depth) : null;
     if (keys.length) {
       const [key, ...rest] = keys;
       const members = (p.isObjectExpression() ? p.get('properties') : p.isClassDeclaration() || p.isClassExpression() ? (p.get('body.body') as NodePath[]).filter((m) => m.isClassProperty({ static: true })) : []) as NodePath<any>[];
       const member = members.findLast((m) => (m.isObjectProperty() || m.isClassProperty()) && !m.node.computed && keyName(m.node) === key);
-      return member ? componentAt(member.get('value') as NodePath, rest, depth + 1) : null;
+      return member ? componentAt(member.get('value') as NodePath, rest, depth) : null;
     }
     if (p.isFunctionDeclaration() || p.isArrowFunctionExpression() || p.isFunctionExpression()) return { fn: p };
-    if (p.isTaggedTemplateExpression()) return componentAt(p.get('tag'), [], depth + 1);
+    if (p.isTaggedTemplateExpression()) return componentAt(p.get('tag'), [], depth);
     if (!p.isCallExpression()) return null;
     const callee = p.get('callee');
-    return componentAt(p.get('arguments.0') as NodePath, [], depth + 1) ?? (callee.isCallExpression() ? componentAt(callee, [], depth + 1) : null);
+    return componentAt(p.get('arguments.0') as NodePath, [], depth) ?? (callee.isCallExpression() ? componentAt(callee, [], depth) : null);
   }
 
   function componentNamed(binding: Binding | undefined, keys: string[], depth: number): LinkComponent | null {
-    if (!binding || depth > FOLLOWED) return null;
+    if (!binding || binding.kind === 'param' || depth >= FOLLOWED) return null;
     if (routerImport(binding)) {
       const { name } = importedAs(binding)!;
       const tag = name === '*' ? keys.length === 1 && keys[0] : !keys.length && name;
       return tag && LINK_ELEMENTS.has(tag) ? { router: tag } : null;
     }
-    if (binding.kind !== 'module') return componentAt(binding.path, keys, depth);
+    if (binding.kind !== 'module') return componentAt(binding.path, keys, depth + 1);
     const from = importedName(binding);
     if (!from || (from.name === '*' && !keys.length)) return null;
     return from.name === '*' ? componentAt(exportedDeclaration(from.file, keys[0]), keys.slice(1), depth + 1) : componentAt(exportedDeclaration(from.file, from.name), keys, depth + 1);
