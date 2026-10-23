@@ -1293,6 +1293,74 @@ export default function ${name}() {
   }
 });
 
+test('a link does not reach a screen drawn only on the other side of a settings value the route file checks, also through a route file drawn inside one side', async () => {
+  const routes = `import { Route, Switch } from 'react-router-dom';
+import env from './env';
+import Home from './Home';
+import Team from './Team';
+import Help from './Help';
+import Login from './Login';
+import Shared from './Shared';
+import Inner from './Inner';
+
+export default function Routes() {
+  return (
+    <main>
+      {env.ROOT_SHARE ? (
+        <Switch>
+          <Route path="/" component={Shared} exact />
+          <Route path="/team/:team" component={Shared} />
+        </Switch>
+      ) : (
+        <Switch>
+          <Route path="/" component={Login} exact />
+          <Route path="/home" component={Home} />
+          <Route path="/team/:team" component={Team} />
+          <Inner />
+        </Switch>
+      )}
+      {!env.ROOT_SHARE && <Route path="/help" component={Help} />}
+    </main>
+  );
+}
+`;
+  const inner = `import { Route, Switch } from 'react-router-dom';
+import Start from './Start';
+
+export default function Inner() {
+  return (
+    <Switch>
+      <Route path="/start" component={Start} />
+    </Switch>
+  );
+}
+`;
+  const links = (name: string, ...to: string[]) => `import { Link } from 'react-router-dom';\nimport { homePath } from './paths';\n\nexport default function ${name}() {\n  return <nav>${to.map((t) => (t === 'home' ? '<Link to={homePath()}>a</Link>' : `<Link to="${t}">a</Link>`)).join('')}</nav>;\n}\n`;
+  const files = {
+    'Routes.js': routes,
+    'Inner.js': inner,
+    'env.js': 'export default {};\n',
+    'paths.js': "import env from './env';\n\nexport function homePath() {\n  return env.ROOT_SHARE ? '/' : '/home';\n}\n",
+    'Home.js': links('Home', '/', '/team/a'),
+    'Start.js': links('Start', '/team/b', 'home'),
+    'Shared.js': links('Shared', '/team/c', '/help', 'home'),
+  };
+  const targets = (map: ScreenMap, id: string) => Object.fromEntries(map.screens.find((s) => s.id === id)!.links.map((l) => [l.to, [...l.targets].sort()]));
+  const map = await build(writeApp(files, { routesFile: ['Routes.js', 'Inner.js'], settingsRoots: ['env'] }));
+  assert.deepEqual(targets(map, '/home#Home'), { '/': ['/#Login'], '/team/a': ['/team/:team#Team'] });
+  assert.deepEqual(targets(map, '/start#Start'), { '/team/b': ['/team/:team#Team'], '/home': ['/home#Home'] });
+  assert.deepEqual(targets(map, '/#Shared'), { '/team/c': ['/team/:team#Shared'], '/help': [], '/': ['/#Shared'] });
+  const unset = await build(writeApp(files, { routesFile: ['Routes.js', 'Inner.js'] }));
+  assert.deepEqual(targets(unset, '/home#Home'), { '/': ['/#Login', '/#Shared'], '/team/a': ['/team/:team#Shared', '/team/:team#Team'] });
+  assert.deepEqual(targets(unset, '/start#Start'), { '/team/b': ['/team/:team#Shared', '/team/:team#Team'], '/': ['/#Login', '/#Shared'], '/home': ['/home#Home'] });
+});
+
+test('the decision record says a settings value that picks a group of routes draws it on one side only, and why only settings values', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '..', 'docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*A settings value that picks a group of routes in a route file draws that group on one side of the value only, and\s+a link does not reach a screen drawn only on the other side of the screen it is on\.\*\*/);
+  assert.match(decisions, /Settings values and not every condition: the driver chose \(2026-10-23, #414\)/);
+});
+
 test('a catch-all * or /* route in a Routes drawn beside another is a link\'s screen beside the other Routes\' screen, but not beside a route of its own Routes that wins', async () => {
   for (const star of ['*', '/*']) {
     const users = `<Routes>
