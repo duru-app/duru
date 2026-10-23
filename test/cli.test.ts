@@ -840,6 +840,24 @@ test('a comment saved on a regressed test row carries passedIn with the baseline
   });
 });
 
+test('a reply sent during the review to a comment left on a regressed test row before the baseline ran carries no passedIn, as the comment does not', async () => {
+  await withReleaseReview(async (configFile) => {
+    const early = addMark(path.join(path.dirname(configFile), 'example-marks'), { target: LAB_E2E, note: 'Why does this fail?', author: 'a' }, new Date('2026-09-28T00:00:00Z'));
+    const { child, base, closed, out } = startReview(configFile);
+    try {
+      const url = await within(base, 'review page address on stderr');
+      const records = () => out.stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l));
+      assert.deepEqual(reply(configFile, early.id, 'It waited for the lab data.', '--server', `${url}/`), { status: 0, stderr: '' });
+      await waitFor(() => records().length === 1, 'the reply on stderr');
+      assert.deepEqual([records()[0].duru, records()[0].where], ['reply', LAB_WHERE]);
+      await fetch(`${url}/api/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      await within(closed, 'exit');
+    } finally {
+      child.kill();
+    }
+  });
+});
+
 test('a comment on several targets carries passedIn only in the where of a regressed test target', async () => {
   await withReleaseReview(async (configFile) => {
     const { child, base, closed, out } = startReview(configFile);

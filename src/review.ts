@@ -385,7 +385,8 @@ export async function startReviewServer(config: any, { port = 0, author = review
   const regressionContext = () => baselineTests && readOrNull(() => {
     const map = readMap(mapFile);
     const { traced, ...tests } = applyJudgments(readTests(config), loadJudgments(config.judgmentsDir).judgments, nodeHashes(map));
-    return { comparison: compareTests(baselineTests, tests, nodeIds(map)), fines: wholeFines(loadMarks(config.marksDir)) };
+    const marks = loadMarks(config.marksDir);
+    return { comparison: compareTests(baselineTests, tests, nodeIds(map)), fines: wholeFines(marks), marks };
   });
   const codeHashOf = (node: unknown) => (typeof node === 'string' ? nodeHashes(readOrNull(() => readMap(mapFile)) ?? { screens: [] }).get(node) : undefined);
   const markHash = (input: any) => {
@@ -417,13 +418,14 @@ export async function startReviewServer(config: any, { port = 0, author = review
   };
   const orderWhere = (screens: string[]) => readOrNull(() => locateOrder(screens, readMap(mapFile)));
   const whereOf = (target: Target) => (target.part ? partWhere(target) : target.candidate !== undefined ? candidateWhere(target.candidate) : target.screens !== undefined ? orderWhere(target.screens) : undefined);
-  const withPassedIn = (target: Target, where: Where | undefined, date: string, context: ReturnType<typeof regressionContext>) => {
-    const folder = context && where && passedInFolder(context.comparison, context.fines, target, date);
+  const withPassedIn = (target: Target, where: Where | undefined, date: string | undefined, context: ReturnType<typeof regressionContext>) => {
+    const folder = context && where && date && passedInFolder(context.comparison, context.fines, target, date);
     return folder ? { ...where, passedIn: folder } : where;
   };
   const lineOf = (mark: Mark, context = regressionContext()): AnnouncedMark => {
-    if (mark.targets) return { duru: recordKind(mark), ...mark, wheres: mark.targets.map((t) => withPassedIn(t, whereOf(t), mark.date, context) ?? null) };
-    const where = withPassedIn(mark.target!, whereOf(mark.target!), mark.date, context);
+    const commentDate = mark.replyTo === undefined ? mark.date : context?.marks.find((m) => m.id === mark.replyTo)?.date;
+    if (mark.targets) return { duru: recordKind(mark), ...mark, wheres: mark.targets.map((t) => withPassedIn(t, whereOf(t), commentDate, context) ?? null) };
+    const where = withPassedIn(mark.target!, whereOf(mark.target!), commentDate, context);
     return { duru: recordKind(mark), ...mark, ...(where !== undefined && { where }) };
   };
   const unanswered = () => {
