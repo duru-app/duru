@@ -1159,6 +1159,8 @@ export async function extractClient(config: any) {
       for (const to of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', { to }, p);
     };
     const recordUseLinks = (p: NodePath<JSXElement>) => {
+      const written = (p.get('openingElement.attributes') as NodePath<any>[]).map((a) => (a.isJSXSpreadAttribute() ? a.get('argument') : a.get('value')) as NodePath<any>);
+      if (written.some((v) => v.node && madeFrom(v.isJSXExpressionContainer() ? v.get('expression') : v).some(holdsRouteRef))) return;
       const read = linkReading.useBranches(p);
       for (const to of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', { to }, p);
     };

@@ -3409,3 +3409,125 @@ export default function Home() {
     ['/help', at('<Items.Login'), [], ['/help/:page?#Help']],
   ]);
 });
+
+const PLAIN_LINK = "import { Link } from 'react-router-dom';\n\nexport const PlainLink = ({ to, children }) => <Link to={to}>{children}</Link>;\n";
+
+test('a link component whose own Link or move has a written address keeps that link in its body and adds none where it is used', async () => {
+  const links = `import { Link, useHistory } from 'react-router-dom';
+
+export function HelpLink({ to }) {
+  return <Link to="/help">help</Link>;
+}
+
+export function TeamLink({ id }) {
+  return <Link to={\`/team/\${id}\`}>team</Link>;
+}
+
+export function LoginButton({ label }) {
+  const history = useHistory();
+  return <a onClick={() => history.push('/login')}>{label}</a>;
+}
+`;
+  const home = `import { HelpLink, TeamLink, LoginButton } from './links';
+
+export default function Home() {
+  return (
+    <nav>
+      <HelpLink to="/start" />
+      <TeamLink id="a" />
+      <LoginButton label="login" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  assert.deepEqual(linksWithFiles(map, '/home#Home'), [
+    ['/help', 'links.js', lineOf(links, 'to="/help"'), []],
+    ['/team/{*}', 'links.js', lineOf(links, 'to={`/team/'), []],
+    ['/login', 'links.js', lineOf(links, "push('/login')"), []],
+  ]);
+});
+
+test('a link component used with a to taken from props or a parameter, or with a spread of its own props after which no to is written, gives no link there', async () => {
+  const home = `import { PlainLink } from './links';
+
+export default function Home(props) {
+  const { next } = props;
+  return (
+    <nav>
+      <PlainLink to={props.to}>a</PlainLink>
+      <PlainLink to={next}>b</PlainLink>
+      <PlainLink {...props} />
+      {props.items.map((item) => <PlainLink key={item.id} to={item.href} />)}
+      <PlainLink {...props} to="/login" />
+      <PlainLink to="/start" {...props} />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': PLAIN_LINK }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/login', lineOf(home, 'to="/login"'), [], ['/login#Login']]]);
+});
+
+test('a condition in a link component that the use decides keeps only the element it leads to, and one it cannot decide keeps the link', async () => {
+  const links = `import { Link } from 'react-router-dom';
+
+export function Item({ to, disabled }) {
+  return disabled ? <span>off</span> : <Link to={to}>on</Link>;
+}
+`;
+  const home = `import { Item } from './links';
+
+export default function Home({ flag }) {
+  return (
+    <nav>
+      <Item to="/login" disabled />
+      <Item to="/start" disabled={false} />
+      <Item to="/help" disabled={flag.off} />
+      <Item to="/team/a" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, line]) => [to, line]), [
+    ['/start', at('to="/start"')],
+    ['/help', at('to="/help"')],
+    ['/team/a', at('to="/team/a"')],
+  ]);
+});
+
+test('a link component whose to at the use holds a route constant, or whose own link holds one, gives only the route constant link where the constant is written', async () => {
+  const links = `import { Link } from 'react-router-dom';
+import Option from './Option';
+
+export const PlainLink = ({ to, children }) => <Link to={to}>{children}</Link>;
+
+export const TeamLink = ({ id }) => <Link to={\`\${Option.ROUTE_PATH.TEAM}/\${id}\`}>team</Link>;
+`;
+  const home = `import Option from './Option';
+import { PlainLink, TeamLink } from './links';
+
+const help = Option.ROUTE_PATH.HELP;
+
+export default function Home() {
+  return (
+    <nav>
+      <PlainLink to={Option.ROUTE_PATH.LOGIN}>a</PlainLink>
+      <PlainLink to={help}>b</PlainLink>
+      <TeamLink id="a" />
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp(
+    { 'Home.js': home, 'links.js': links, 'Option.js': "export default { ROUTE_PATH: { TEAM: '/team', HELP: '/help', LOGIN: '/login' } };\n" },
+    { routeConstant: 'Option.ROUTE_PATH', constants: { Option: 'Option.js' } },
+  ));
+  assert.deepEqual(linksWithFiles(map, '/home#Home').map(([to, file, line]) => [to, file, line]), [
+    ['/help', 'Home.js', lineOf(home, 'const help')],
+    ['/login', 'Home.js', lineOf(home, 'ROUTE_PATH.LOGIN')],
+    ['/team/{*}', 'links.js', lineOf(links, 'ROUTE_PATH.TEAM')],
+  ]);
+});
