@@ -1464,6 +1464,124 @@ through is refused rather than read with what it has: an into-sign 1.5.0 map bui
 the current one showed 12 screens with changed conditions and 32 with changed calls, all from duru reading more and
 none from the client.
 
+**`baselineTests` names the result files kept from an earlier release in the shape of `tests`, and the tests that
+passed there and fail or are pending now are worked out from them and the judged `tests.json` each time, not stored.**
+Driver's decisions in #222, built in #404 under the PRD #403. The results of a past release are usually gone: a map
+can be built again from the source of that tag, but test results only come from running that version again, and
+into-sign's Playwright reports are written to the same place on every run, so those of 1.5.0 and 2.0.0 were
+overwritten on 2026-10-20. Result files in the standard formats are what any app's CI already writes, and they read
+the same whatever duru version reads them.
+Alternatives compared for taking them in:
+- Reading a `tests.json` next to the `baselineMap` map on its own: its shape can change with duru's version, and the
+  whole output folder of a `rebuild` would have to be kept at each release.
+- A `rebuild --baseline-tests` option: the review page and the task list compare with the same results, so the
+  option would have to be given to `review` and `tasks` too, while a config key is read by all of them, as
+  `baselineMap` is.
+A regression does not by itself put a screen or call on the task list: it may be a broken app or an intended change
+whose test needs fixing, and listing it without that judgment would let an agent change the test to match. Instead a
+reviewer's comment on a regressed test row is to list that screen or call; the task list takes this up after the
+comparison. Rejected: requiring a 「테스트 필요」 mark, whose list heading tells the agent to write tests, and a new mark
+for regressions, which adds a stored mark kind that is hard to take back. A comment left before the baseline run
+started is not to count, since it was about the test's older state, and `tasks` is to say that the baseline cannot be
+read rather than stop, since the marked screens can be listed without it. A baseline test only in the baseline takes
+no comment: that would need a new stored comment target, and writing a deleted test again is what a 「테스트 필요」 mark
+already asks for. Story verdicts are not compared, because they use
+traces and the baseline would need traces too; a story test that also carries a screen tag shows as a regression of
+that screen.
+Every test row under a screen or call now is compared, whether a tag, an import, a trace or a reviewer's hand-over
+puts it there, since the page shows all of them as that screen's tests and a handed-over pair is one a reviewer
+confirmed; a pair handed over to a screen or call the map no longer has puts the test on none; comparing only tagged tests would compare nothing on mattermost, appsmith and outline, whose sources hold
+no `@screen:` or `@call:` tag. The current side is the judged list `rebuild` prints from, not the result files read
+again, so that the counts match the page and a result file overwritten since (as into-sign's are) does not point the
+test rows and the regressions at different runs. A judged pair stays one row there however many Playwright projects
+the test ran in, as the page shows it, and carries the worst status of each project's runs in `projects`, or of
+its runs without a project in `worstStatus`, and in `passedBesidePending` the projects (`null` for runs without one)
+where a pending run sat beside one that passed, so that a reviewer's judgment, or one taken back, does not take the
+test's other runs out of the comparison or change which of them the rule below leaves out.
+Tests are matched in steps. The rows of one test on the current side (one result file, test file, line, title and
+project) are first made one test; an untagged test is one test for each Playwright project it ran in, and in a
+project where the test has rows under a screen or call its status comes from those rows alone, so a run without a
+trace in another project does not change it. Then the title without its `@` words (a describe title of `@` words
+alone dropped with its ` › `), the Playwright project and the test file are matched. The test file is the path the
+result gives; an absolute path, as Jest and Vitest write, is taken from the folder holding every absolute path of its
+side, since the checkout sits in another place on another machine, and when that folder sits deeper on one side (its
+tests were all under `src/`, say), the folders at the end of it are put back in front of that side's paths as far as
+makes the most files the same on both sides. Tests that still share a key, such as verdict lines of one name in one
+log, get their sorted screen and call tags added, and those still alike are one test with the worst status of their
+runs (fail, pending, pass). In the baseline a pending run is left out when another run ran, since a run skipped
+there, such as one browser's run in a Playwright JUnit report that names no project, would otherwise hide another
+run's `pass→fail`. Now pending runs are left out only up to the number the matched baseline test had, so that such
+a report gives no regression against itself, while a browser or a repeat of `--repeat-each` skipped for the first
+time since the release still shows as `pass→pending`, even when the release already skipped another. A failing run
+is never left out, and a test whose runs are now all pending is `pass→pending`. A run listed under several screens
+or calls is counted once, or a test on two screens would give `pass→pending` against its own report. Leaving out a
+pending run now whenever another ran, as the baseline does, was tried first and dropped: it hid exactly that newly
+skipped run, so a test that stopped running in one browser since the release read as passing. Leaving them all out
+whenever the baseline test had a pending run beside one that ran was tried next and dropped for the same reason, once the release
+had already skipped one run of the test. Such a test is under a screen or call when one of its runs is, and its
+regression line shows the first file and line among the runs that are. A baseline test file is gone from the current
+results when no current test has that file; a JUnit class name that is the test's own name, as jest-junit writes by
+default, names no file and is never gone. Alternatives compared:
+- Only as much of the end of the paths as tells apart the different files of one title, decided in a comment on #404
+  before building: two files of one name in different folders got the same end when each side had only one of them,
+  so a test of a deleted file was matched with a new test of the same title in another file and gave a false
+  `pass→fail`, and an end long enough for two deep files of one name reached past the checkout for a shallower file
+  of the same title, so its regression was missed when the two checkout folders had other names.
+- One end length for the whole group, as the PRD reads word for word: two tests of one title in one file never come
+  apart by any end, so the whole group would go without ends, and a test of another file would be merged with them;
+  its pass→fail would then be printed under the other file's name, or hidden by a failure already there.
+Untagged tests carry their Playwright projects in `tests.json` (`projects`) but stay one entry, since the page and the
+`tests without a node or story tag` count group them without a project; without the projects a Playwright test
+skipped this time, and so left without a trace, would count as deleted. Each project carries the worst status of the
+test's runs in it, since the entry's own status is the worst over all projects, and a pair handed over from such a
+test would otherwise show a failure in one project as a regression in another where the test passed.
+`not on a screen or call now` is counted so that tests silently lost from the comparison do not read as a full
+comparison, and `no test was compared` is printed so that no regression is not read as nothing broken. A baseline that cannot be read, or an entry that gives no test,
+stops `rebuild` before anything is written, since a missing baseline would read as no regression; the check is per
+entry, so a verdict folder holding a log with no verdict line (2 of into-sign's 14) still reads. Nothing is stored,
+as for `baselineMap`, so `map.json` and `tests.json` are the same with and without the key. How the screen list
+counts regressions is recorded with the review page.
+Limits:
+- A test renamed or moved to another file is not matched: it counts once in `only in baseline` and once in
+  `only now`. A test told apart only by its screen and call tags is not matched either once those tags change, nor are tests of one
+  title in one file that had the same tags in the baseline and have different ones now, such as two verdict lines of
+  one name tagged with two screens after the release.
+- A Playwright test linked to a screen only by its trace is on no screen when it was skipped, so it counts in
+  `not on a screen or call now` and not as `pass→pending`.
+- An untagged Playwright test that a reviewer handed over to a screen its trace did not reach, run more than once in
+  one project (`--repeat-each`, or several projects that all report the name `''`) and skipped in only some of those
+  runs, gives `pass→pending` even against the same result file, since `tests.json` keeps only the worst status of each
+  project. Fixing it would need `tests.json` to keep, for each project, whether a pending run sat beside one that ran.
+- A judged pair keeps for each project only whether a pending run sat beside one that passed, so it counts as one
+  pending run there however many were skipped, and gives no `pass→pending` when the release already skipped one of
+  its runs in that project and more of them are skipped now.
+- A test whose tags all name screens or calls the current map does not have is kept in `tests.json` only with those
+  tags, without its Playwright projects, so it counts in `not on a screen or call now` for every project its baseline
+  ran in, even one that no longer runs it.
+- A test file that breaks on import gives no test in a Vitest or Jest report, so its tests show as `only in baseline`
+  and the file as gone, not as `pass→fail`.
+- Verdict logs that write `PASS` and `FAIL`, as into-sign's do, read as pending and give no `pass→fail`.
+- A failed test in a `serial` group or a failed `setup` project makes the tests after it show as `pass→pending`.
+- A run of only some test files now prints one `only in baseline ←` line for each file it left out, which can be
+  hundreds in a large repository; kept as the baseline, it leaves the other tests out of the comparison, and those
+  under a screen or call now count as `only now`.
+- duru reads the trace of a Playwright test's last attempt only. With `trace: 'on-first-retry'` and two retries, a
+  test that fails every attempt has its trace on the middle one, so a test linked to a screen only by its trace is on
+  no screen and its `pass→fail` counts in `not on a screen or call now`.
+- A reviewer's judgment names a test by its result file, test file and title without tags, so two tests of one file
+  whose titles differ only by `@` words share one judged pair, and both are compared as the first of them.
+- A verdict log's `file` is its file name alone, so logs of one name in different folders are one file.
+- When the results of one side come from checkouts in different places, such as two reports written on two
+  machines, and the other side's do not, their absolute paths share no folder below the checkouts, so their tests
+  count as `only in baseline` and `only now`.
+- `"baselineTests": []` compares nothing and prints nothing, the same as leaving the key out.
+Reference cases: GitLab's unit test report in a merge request compares with the target branch's pipeline and shows
+newly failed tests apart from existing and resolved failures, keeping only the first of tests with the same name,
+where duru adds steps to tell them apart; publish-unit-test-result-action compares with an earlier commit and
+points out removed and newly skipped tests, since totals alone can hide them; Allure 2 copies the `history` folder of
+the last report into the results and Allure 3 names the history file in `historyPath`, pointing at files a person
+kept rather than a server, as `baselineTests` does.
+
 **A comment can be about one part of a screen or call, kept as the screen or call target plus
 `part: { kind, key }`; the first kind is one test row, named by the result file, test file and title without tags.**
 Driver's decision in #226. The key is made only from what the map, the test results or the stories give, never from
