@@ -1771,3 +1771,283 @@ export default function Home({ team, kind, mode }) {
     ['/team/{*}/{*}/{*}', lineOf(home, 'three(kind)'), [], ['/team/:team#Team']],
   ]);
 });
+
+test('an address function reads a member of a parameter typed with a class through that class\'s own getter, with this.member a value duru cannot read', async () => {
+  const team = `export default class Team {
+  name = '';
+  id = 0;
+
+  get path() {
+    return this.name ? \`/team/\${this.name}\` : '/team/none';
+  }
+
+  get settings() {
+    return \`/team/\${this.id}/settings\`;
+  }
+}
+`;
+  const paths = `import Team from './models/Team';
+
+class Local {
+  get path() {
+    return '/start';
+  }
+}
+
+class Box<T> {
+  value?: T;
+
+  get path() {
+    return '/help/box';
+  }
+}
+
+export const localPath = (local: Local) => local.path;
+export const teamPath = (team: Team) => team.path;
+export const settingsPath = (team?: Team) => team.settings;
+export const boxPath = (box: Box<string>) => box.path;
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { boxPath, localPath, settingsPath, teamPath } from './paths';
+
+export default function Home({ team, local, box }) {
+  return (
+    <nav>
+      <Link to={localPath(local)}>start</Link>
+      <Link to={teamPath(team)}>team</Link>
+      <Link to={settingsPath(team)}>settings</Link>
+      <Link to={boxPath(box)}>box</Link>
+      <Link to={teamPath({ path: '/login' })}>login</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/Team.ts': team }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/start', at('localPath('), [], ['/start#Start']],
+    ['/team/{*}', at('teamPath(team)'), [], ['/team/:team#Team']],
+    ['/team/none', at('teamPath(team)'), [], ['/team/:team#Team']],
+    ['/team/{*}/settings', at('settingsPath('), [], ['/team/:team#Team']],
+    ['/help/box', at('boxPath('), [], ['/help/:page?#Help']],
+    ['/login', at("path: '/login'"), [], ['/login#Login']],
+  ]);
+});
+
+test('a getter read with ?. keeps the branch where the parameter is missing, so a ?? or || fallback still gives its link', async () => {
+  const team = `export default class Team {
+  slug = '';
+
+  get path() {
+    return '/login';
+  }
+
+  get page() {
+    return \`/team/\${this.slug}\`;
+  }
+}
+`;
+  const paths = `import Team from './models/Team';
+
+export const orPath = (team?: Team) => team?.path || '/start';
+export function nullishPath(team: Team) {
+  return team?.path ?? '/start';
+}
+export const pagePath = (team?: Team) => team?.page ?? '/start';
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { nullishPath, orPath, pagePath } from './paths';
+
+export default function Home({ team }) {
+  return (
+    <nav>
+      <Link to={orPath(team)}>or</Link>
+      <Link to={nullishPath(team)}>nullish</Link>
+      <Link to={pagePath(team)}>page</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/Team.ts': team }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at('orPath('), [], ['/login#Login']],
+    ['/start', at('orPath('), [], ['/start#Start']],
+    ['/login', at('nullishPath('), [], ['/login#Login']],
+    ['/start', at('nullishPath('), [], ['/start#Start']],
+    ['/team/{*}', at('pagePath('), [], ['/team/:team#Team']],
+    ['/start', at('pagePath('), [], ['/start#Start']],
+  ]);
+});
+
+test('a getter the class inherits, a field that is not a getter, a parameter typed with a union or a type alias, and a call that leaves the argument out are not read, so the address stays {?}', async () => {
+  const paths = `import { Base } from './models/Base';
+
+class Child extends Base {}
+
+class Fielded {
+  path = '/start';
+}
+
+type Alias = Base;
+
+export const basePath = (base: Base) => base.path;
+export const childPath = (child: Child) => child.path;
+export const fieldPath = (fielded: Fielded) => fielded.path;
+export const unionPath = (base: Base | undefined) => base.path;
+export const aliasPath = (base: Alias) => base.path;
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { aliasPath, basePath, childPath, fieldPath, unionPath } from './paths';
+
+export default function Home({ item }) {
+  return (
+    <nav>
+      <Link to={basePath(item)}>base</Link>
+      <Link to={childPath(item)}>child</Link>
+      <Link to={fieldPath(item)}>field</Link>
+      <Link to={unionPath(item)}>union</Link>
+      <Link to={aliasPath(item)}>alias</Link>
+      <Link to={basePath()}>left out</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/Base.ts': "export class Base {\n  get path() {\n    return '/home';\n  }\n}\n" }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [
+    ['/home', at('basePath(item)')],
+    ['{?}', at('childPath(')],
+    ['{?}', at('fieldPath(')],
+    ['{?}', at('unionPath(')],
+    ['{?}', at('aliasPath(')],
+    ['{?}', at('basePath()')],
+  ]);
+});
+
+test('a getter that calls an address function with this is read through it, and one that comes back to a getter it is reading stops with {?}', async () => {
+  const team = `import { loopPath, namePath } from '../paths';
+
+export default class Team {
+  get self() {
+    return namePath(this);
+  }
+
+  get loop() {
+    return loopPath(this);
+  }
+}
+`;
+  const paths = `import Team from './models/Team';
+
+export const namePath = (team: Team) => (team.name ? \`/team/\${team.name}\` : '/team/none');
+export const selfPath = (team: Team) => team.self;
+export const loopPath = (team: Team) => team.loop;
+export const startLoop = (team: Team) => team.loop;
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { selfPath, startLoop } from './paths';
+
+export default function Home({ team }) {
+  return (
+    <nav>
+      <Link to={selfPath(team)}>self</Link>
+      <Link to={startLoop(team)}>loop</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/Team.ts': team }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['/team/{*}', at('selfPath(')], ['/team/none', at('selfPath(')], ['{?}', at('startLoop(')]]);
+});
+
+test('a class imported with import type is found for the getter of a parameter typed with it, also through a value re-export', async () => {
+  const doc = `export default class Doc {
+  slug = '';
+
+  get path() {
+    return \`/team/\${this.slug}\`;
+  }
+}
+`;
+  const paths = `import type Doc from './models/Doc';
+import type { Doc as Named } from './models';
+
+export const docPath = (doc: Doc) => doc.path;
+export const namedPath = (doc: Named) => doc.path;
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { docPath, namedPath } from './paths';
+
+export default function Home({ doc }) {
+  return (
+    <nav>
+      <Link to={docPath(doc)}>doc</Link>
+      <Link to={namedPath(doc)}>named</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/Doc.ts': doc, 'models/index.ts': "export { default as Doc } from './Doc';\n" }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/team/{*}', at('docPath('), [], ['/team/:team#Team']],
+    ['/team/{*}', at('namedPath('), [], ['/team/:team#Team']],
+  ]);
+});
+
+test('a class imported with import { type X } beside a value import is found for the getter', async () => {
+  const help = `export class Help {
+  get path() {
+    return '/help/x';
+  }
+}
+
+export const other = '/help';
+`;
+  const paths = `import { type Help, other } from './models/Help';
+
+export const helpPath = (help: Help) => help.path;
+export const otherPath = () => other;
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { helpPath } from './paths';
+
+export default function Home({ help }) {
+  return <Link to={helpPath(help)}>help</Link>;
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/Help.ts': help }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/help/x', lineOf(home, 'helpPath('), [], ['/help/:page?#Help']]]);
+});
+
+test('a class re-exported only as a type is not found, so the address stays {?}', async () => {
+  const model = (name: string, to: string) => `export class ${name} {\n  get path() {\n    return '${to}';\n  }\n}\n`;
+  const paths = `import type { Login, Start } from './models';
+
+export const startPath = (start: Start) => start.path;
+export const loginPath = (login: Login) => login.path;
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { loginPath, startPath } from './paths';
+
+export default function Home({ item }) {
+  return (
+    <nav>
+      <Link to={startPath(item)}>start</Link>
+      <Link to={loginPath(item)}>login</Link>
+    </nav>
+  );
+}
+`;
+  const models = "export type { Start } from './StartModel';\nexport { type Login } from './LoginModel';\n";
+  const map = await build(writeApp({ 'Home.js': home, 'paths.ts': paths, 'models/index.ts': models, 'models/StartModel.ts': model('Start', '/start'), 'models/LoginModel.ts': model('Login', '/login') }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [['{?}', at('startPath(')], ['{?}', at('loginPath(')]]);
+});
+
+test('the decision record says a parameter typed with a class is read through the class\'s own getter, and why a type import is looked up apart from following names', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '..', 'docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*A member an address function reads from a parameter typed with a class is read through that class's own\s+getter, and a class imported only as a type is found from the import as written\.\*\*/);
+});

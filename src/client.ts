@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { ArrowFunctionExpression, CallExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
+import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
 import type { AddressFunction } from './address-functions.ts';
@@ -792,6 +792,7 @@ export async function extractClient(config: any) {
     declaredValue,
     declaredFunction,
     namespaceFunction,
+    declaredClass,
     passThrough,
     mergesSlashes: false,
   });
@@ -1187,6 +1188,7 @@ export async function extractClient(config: any) {
     declaredValue,
     declaredFunction,
     namespaceFunction,
+    declaredClass,
     passThrough,
     mergesSlashes: true,
   });
@@ -1484,10 +1486,17 @@ export async function extractClient(config: any) {
     return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
   }
 
-  function exportedFunction(file: string | null, name: string): AddressFunction | null {
+  // 내보낸 이름을 따라가 그 이름을 선언한 자리. default 면 export default 뒤에 적힌 것이다.
+  function exportedDeclaration(file: string | null, name: string): NodePath | null {
     const found = file ? follower.declaration(file, name) : null;
     const program = found && programOf(found.file);
-    const declared = !program ? null : found!.name === 'default' ? program.get('body').find((s) => s.isExportDefaultDeclaration())?.get('declaration') as NodePath | undefined : program.scope.getBinding(found!.name)?.path;
+    if (!program) return null;
+    if (found!.name !== 'default') return program.scope.getBinding(found!.name)?.path ?? null;
+    return (program.get('body').find((s) => s.isExportDefaultDeclaration())?.get('declaration') as NodePath | undefined) ?? null;
+  }
+
+  function exportedFunction(file: string | null, name: string): AddressFunction | null {
+    const declared = exportedDeclaration(file, name);
     if (declared?.isFunctionDeclaration()) return declared;
     const value = declared?.isVariableDeclarator() && declared.get('id').isIdentifier() && (declared.parent as VariableDeclaration).kind === 'const' ? declared.get('init') as NodePath : declared;
     return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
@@ -1497,6 +1506,35 @@ export async function extractClient(config: any) {
     const binding = scope.getBinding(chain[0]);
     const from = binding?.kind === 'module' ? importedName(binding) : null;
     return from?.name === '*' ? exportedFunction(from.file, chain[1]) : null;
+  }
+
+  // 파일을 적힌 그대로 다시 읽어, 타입으로만 가져온 이름마다 가져온 파일과 그 파일에서의 이름
+  const typeImports = new Map<string, Map<string, { file: string | null; name: string }>>();
+  function typeImport(file: string, name: string) {
+    if (!typeImports.has(file)) {
+      const found = new Map<string, { file: string | null; name: string }>();
+      try {
+        for (const line of parseSource(file, { asWritten: true }).ast.program.body) {
+          if (line.type !== 'ImportDeclaration') continue;
+          for (const spec of line.specifiers) {
+            if (spec.type === 'ImportNamespaceSpecifier' || (line.importKind !== 'type' && (spec.type !== 'ImportSpecifier' || spec.importKind !== 'type'))) continue;
+            const imported = spec.type === 'ImportDefaultSpecifier' ? 'default' : spec.imported.type === 'Identifier' ? spec.imported.name : spec.imported.value;
+            found.set(spec.local.name, { file: imports.resolve(file, line.source.value), name: imported });
+          }
+        }
+      } catch {}
+      typeImports.set(file, found);
+    }
+    return typeImports.get(file)!.get(name) ?? null;
+  }
+
+  function declaredClass(scope: Scope, name: string): NodePath<ClassDeclaration> | null {
+    const binding = scope.getBinding(name);
+    if (binding?.path.isClassDeclaration()) return binding.path;
+    const file = binding ? null : programFile.get(scope.getProgramParent().block);
+    const from = binding?.kind === 'module' ? importedName(binding) : file ? typeImport(file, name) : null;
+    const declared = from && from.name !== '*' ? exportedDeclaration(from.file, from.name) : null;
+    return declared?.isClassDeclaration() ? declared : null;
   }
 
   const leadingPiece = (p: NodePath): NodePath => (p.isTemplateLiteral() && p.node.quasis[0].value.cooked === '' && p.node.expressions.length ? leadingPiece(p.get('expressions.0') as NodePath)
