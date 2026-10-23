@@ -2012,8 +2012,9 @@ export default function Home() {
   assert.equal(result.status, 0, result.stderr);
 });
 
-test('the decision record says that a call of a function that moves to an address or with a history it is given is a link at the call', () => {
+test('the decision record says that a call of a function that moves to an address or with a history it is given is a link at the call, and the usage guide says a link can sit on the line of such a call', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
+  assert.match(read('README.md'), /A link can also sit on the line of a call of a function in the source that moves the\s+history/);
   const decisions = read('docs/decisions.md');
   assert.match(decisions, /\*\*A call of a function declared in the source that moves to an address it is given, or with a history it is given,\s+is a link at the call/);
   assert.doesNotMatch(decisions, /A history a\s+function is given as an argument is not read/);

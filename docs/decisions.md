@@ -3586,7 +3586,10 @@ parameter (`(label) => label.replace(/^Doc /, '')`) reads like such a move (into
 `createViewModel(…)` call that never moves before this was settled, in #398).
 Known limits: a function taken from props or a parameter (`this.props.actions.switchTeam(url)`, `props.go(url)`,
 `const { go } = props; go(url)`) is not read, since duru does not reach its declaration; neither is a helper held
-by `useCallback(…)`, a class method called as `this.go(url)`, nor a function given a `navigate` as an argument.
+by `useCallback(…)`, a class method called as `this.go(url)`, nor a function given a `navigate` as an argument. A
+move inside a function the helper holds in a `const` and calls or hands on only under a condition
+(`const go = () => history.push(url); if (ask) showDialog({ onConfirm: go })`) is kept even at a call whose arguments
+rule the condition out, since the condition is read only around the move itself.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

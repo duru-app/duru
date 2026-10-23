@@ -380,7 +380,8 @@ inside it.
 **Links.** A screen's links come from the route constants written in its code, the `to` of react-router's `Link`,
 `NavLink`, `Redirect` and `Navigate` outside the route files, the addresses given to `push` and `replace` of a
 history react-router hands to the screen or of the one named in `history`, and the addresses given to the function
-`useNavigate()` returns. Each link has its address `to`, with `{*}` for a piece that comes from a value, the file
+`useNavigate()` returns. A link can also sit on the line of a call of a function in the source that moves the
+history, with the address that call leads to. Each link has its address `to`, with `{*}` for a piece that comes from a value, the file
 and line, the conditions guarding it, and `targets`, the IDs of the screens it goes to. A link whose address duru
 cannot read has `to` `{?}` and empty `targets`. In an app that uses redux-saga, a route constant or a move of the
 history named in `history` written in a saga is a link of each screen that dispatches an action the saga waits for,
