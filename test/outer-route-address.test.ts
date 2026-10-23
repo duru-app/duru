@@ -82,7 +82,9 @@ export default function Settings() {
   return <Route path={\`\${settingsPath()}/groups\`} component={Groups} />;
 }
 `,
-  'outer/paths.js': `export const settingsPath = () => '/settings';
+  'outer/paths.js': `import { generatePath } from 'react-router-dom';
+
+export const settingsPath = () => generatePath('/settings');
 `,
 };
 const PAGES = ['Confirm', 'Bots', 'AddCommand', 'OAuthToEmail', 'ClaimHome', 'MfaSetup', 'Groups'];
@@ -139,7 +141,7 @@ test('a route path that starts with the address the outer route matched gets the
     ]);
     assert.deepEqual(map.duplicateIds, []);
     const settingsLine = fs.readFileSync(path.join(src, 'outer/Settings.js'), 'utf8').split('\n').findIndex((l) => l.includes('<Route')) + 1;
-    assert.deepEqual(routeLines(configFile), [`  route path not read ← outer/Settings.js:${settingsLine}: stopped at settingsPath(), only {?}/groups`]);
+    assert.deepEqual(routeLines(configFile), [`  route path not read ← outer/Settings.js:${settingsLine}: stopped at generatePath('/settings') in outer/paths.js:3, only {?}/groups`]);
   });
 });
 
@@ -188,5 +190,22 @@ test('the variable that joins two outer paths takes a name the inner path does n
   await withOuterRoutes(async ({ configFile }) => {
     const map = await build(configFile);
     assert.ok(map.screens.some((s) => s.path === '/:team/:section2(integrations|emoji)/:section/edit'), JSON.stringify(map.screens.map((s) => s.path)));
+  }, OUTER_ROUTES, route);
+});
+
+test('a route path that starts with the outer route\'s address and goes on with a function giving several paths keeps the outer path in front and stays unread', async () => {
+  const route = '      <Route path={`${props.match.url}${tabPath(props.admin)}`} component={Bots} />\n';
+  await withOuterRoutes(async ({ configFile, src }) => {
+    const backstage = path.join(src, 'outer/Backstage.js');
+    fs.writeFileSync(backstage, `import { tabPath } from './paths';\n${fs.readFileSync(backstage, 'utf8')}`);
+    fs.appendFileSync(path.join(src, 'outer/paths.js'), `\nexport function tabPath(admin) {\n  if (admin) return '/admin/profile';\n  return '/profile';\n}\n`);
+    const map = await build(configFile);
+    assert.ok(map.screens.some((s) => s.path === '/:team/:section(integrations|emoji){?}'), JSON.stringify(map.screens.map((s) => s.path)));
+    assert.ok(!map.screens.some((s) => s.routeFile === 'outer/Backstage.js' && s.path === '/:team/:section(integrations|emoji)'));
+    assert.deepEqual(backstageEntries(map), [['/:team/:section(integrations|emoji){?}', 'tabPath(props.admin)']]);
+    const line = fs.readFileSync(backstage, 'utf8').split('\n').findIndex((l) => l.includes('tabPath(props.admin)')) + 1;
+    assert.deepEqual(routeLines(configFile).filter((l) => l.includes('outer/Backstage.js')), [
+      `  route path not read ← outer/Backstage.js:${line}: stopped at tabPath(props.admin), which gives /:team/:section(integrations|emoji)/admin/profile and /:team/:section(integrations|emoji)/profile, only /:team/:section(integrations|emoji){?}`,
+    ]);
   }, OUTER_ROUTES, route);
 });

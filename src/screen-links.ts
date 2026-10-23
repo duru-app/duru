@@ -10,7 +10,7 @@ interface Reading {
 const LINK_ELEMENTS = new Set(['Link', 'NavLink', 'Redirect', 'Navigate']);
 const REDIRECTS = new Set(['Redirect', 'Navigate']);
 const MOVES = new Set(['push', 'replace']);
-const FOLLOWED = 8;
+export const FOLLOWED = 8;
 
 const named = (p: NodePath<any>, name: string) => (p.isMemberExpression() || p.isOptionalMemberExpression()) && !p.node.computed && (p.node.property as Identifier).name === name;
 const isProps = (p: NodePath<any>) => (named(p, 'props') && (p.get('object') as NodePath<any>).isThisExpression()) || p.isIdentifier({ name: 'props' });
@@ -106,7 +106,7 @@ export function madeFrom(p: NodePath<any>, depth = 0): NodePath[] {
   return declared ? [p, ...madeFrom(declared.init, depth + 1)] : [p];
 }
 
-function addresses(p: NodePath<any>): NodePath[] {
+export function addresses(p: NodePath<any>): NodePath[] {
   if (p.isConditionalExpression()) return [...addresses(p.get('consequent')), ...addresses(p.get('alternate'))];
   if (p.isObjectExpression()) {
     const pathname = lastValue(p, 'pathname');

@@ -474,9 +474,11 @@ listing the places whose value the source does not show in full.
   the `push` and `replace` calls on it are not links on the map. Name it in `history` (`madeHistories`).
 - `route path not read ← <route file>:<line>: stopped at <piece>` — a route whose path duru could not read in full.
   `<piece>` is the first part of the path whose value it could not read, as written where duru stopped: in the
-  route file, or, followed by `in <file>:<line>`, in another file when duru followed a name into that file. `, only
-  <text>` follows when a part of the path was read, with `{?}` for the rest. The screen is on the map with that path
-  and an ID made from it; when the ID itself holds `{?}`, it changes once that part can be read (`unreadRoutePaths`).
+  route file, or, followed by `in <file>:<line>`, in another file when duru followed a name into that file. When the
+  path is a call of a function that gives two or more different paths, `<piece>` is that call and
+  `, which gives <paths>` follows: the paths, or `more than 8 paths`. `, only <text>` follows when a part of the
+  path was read, with `{?}` for the rest. The screen is on the map with that path and an ID made from it; when the
+  ID itself holds `{?}`, it changes once that part can be read (`unreadRoutePaths`).
 - `route not read ← <route file>:<line>: <reason>` — printed when duru sees a route that draws a screen it cannot
   read, with the reason. For an item of a table in `routeTables`, the reason starts with `table item <key> at
   <file>:<line>` and goes on with `has no <field>`, or with `: its <field> stopped at <piece>` when its value could

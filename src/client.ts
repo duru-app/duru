@@ -4,6 +4,8 @@ import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
 import type { ArrowFunctionExpression, CallExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
+import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
+import type { AddressFunction } from './address-functions.ts';
 import type { Branch, Constants, GuardInit, GuardSetting, RouteNode } from './access.ts';
 import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
@@ -16,7 +18,7 @@ import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
 import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
-import { madeFrom, screenLinkReader } from './screen-links.ts';
+import { addresses, madeFrom, screenLinkReader } from './screen-links.ts';
 import { importedAs, routerImport, screenRequestReader } from './screen-requests.ts';
 import type { UnresolvedReason } from './server.ts';
 import { typedMembers } from './typed-members.ts';
@@ -142,7 +144,7 @@ interface DrawnNode {
 }
 
 type StoppedAt = { text: string; file: string | null; line: number };
-type UnreadRoutePath = { file: string; line: number; path: string; stoppedAt: StoppedAt };
+type UnreadRoutePath = { file: string; line: number; path: string; stoppedAt: StoppedAt; paths?: string[]; manyPaths?: true };
 
 interface OuterFill {
   startsWithOuterAddress: boolean;
@@ -152,7 +154,6 @@ interface OuterFill {
 const traverse = _traverse.default ?? _traverse;
 export const UNKNOWN = '{?}';
 export const VARIABLE_SEGMENT = '{*}';
-const UNREADABLE_PIECE = '\0';
 const GUARD_TEXT_LIMIT = 160;
 const HISTORY_MAKERS = ['createBrowserHistory', 'createHashHistory'];
 
@@ -781,11 +782,45 @@ export async function extractClient(config: any) {
     return pathText === '/' ? [] : pathText.replace(/\/$/, '').slice(1).split('/');
   }
 
-  // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
-  function linkAddress(p: NodePath) {
-    const segments = pathSegments(tailText(p));
+  const passThrough = (name: string) => (config.passThroughCalls ?? []).includes(name);
+  const linkReading = addressReader({
+    leaf(p) {
+      if (lossless(p)) return { value: evaluate(p) };
+      const value = evaluate(p);
+      return { parts: [p], withheld: typeof value === 'number' || (typeof value === 'string' && !value.includes(UNKNOWN)) };
+    },
+    declaredValue,
+    declaredFunction,
+    namespaceFunction,
+    passThrough,
+    mergesSlashes: false,
+  });
+
+  const writtenAddress = (text: string) => {
+    const segments = pathSegments(text);
     return segments ? `/${segments.map((s) => (s.includes(UNREADABLE_PIECE) ? VARIABLE_SEGMENT : s)).join('/')}` : UNKNOWN;
+  };
+
+  // 링크 요소의 to 나 history 이동에 적은 주소. 동적 세그먼트는 {*} 로 두고, 값으로 시작하는 주소는 {?} 다.
+  // 주소 함수가 돌려준 갈래 가운데 끝까지 읽었는데 / 로 시작하지 않는 것은 링크가 아니고, // 가 생기는 것은 {?} 다.
+  // 갈래가 너무 많으면 함수를 따라가지 않고, 호출마다 읽지 못한 조각으로 둔 주소 하나를 준다.
+  function linkAddresses(p: NodePath) {
+    const read = linkReading.branches(p);
+    if ('tooMany' in read) return [writtenAddress(tailText(p))];
+    const found = new Set<string>();
+    for (const { text, made, whole } of read.branches) {
+      if (made && whole && !addresses(whole).length) continue;
+      if (made && text.split(/[?#]/)[0].includes('//')) found.add(UNKNOWN);
+      else if (pathSegments(text)) found.add(writtenAddress(text));
+      else if (!made || text.includes(UNREADABLE_PIECE)) found.add(UNKNOWN);
+    }
+    return found.size > MOST_ADDRESSES ? [writtenAddress(tailText(p))] : [...found];
   }
+
+  const oneAddress = (p: NodePath) => {
+    const [only, ...more] = linkAddresses(p);
+    return more.length || only === undefined ? UNKNOWN : only;
+  };
 
   // 라우트 상수 뒤에 '/' 로 이어 붙은 주소. 조각마다 글자 그대로이거나 변수 하나일 때만 돌려주고, 아니면 '' 을 돌려준다.
   function routeTail(p: NodePath) {
@@ -1064,7 +1099,7 @@ export async function extractClient(config: any) {
     const recordLinks = (addresses: NodePath[]) => {
       for (const at of addresses) {
         if (madeFrom(at).some(holdsRouteRef)) continue;
-        record('routerLinks', { to: linkAddress(at) }, at);
+        for (const to of linkAddresses(at)) record('routerLinks', { to }, at);
       }
     };
     const inRouteFile = routeFileSet.has(file);
@@ -1141,6 +1176,38 @@ export async function extractClient(config: any) {
     return unreadPiece(value, seen, filled) ?? p;
   }
 
+  const routeReading = addressReader({
+    leaf(p) {
+      const value = evaluate(p);
+      if (value === undefined || (typeof value !== 'string' && !lossless(p))) return { parts: [unreadPiece(p) ?? p] };
+      if (typeof value !== 'string' || !value.includes(UNKNOWN)) return { value };
+      const stop = unreadPiece(p) ?? p;
+      return { parts: value.split(UNKNOWN).flatMap((part, i) => (i ? [stop, part] : [part])) };
+    },
+    declaredValue,
+    declaredFunction,
+    namespaceFunction,
+    passThrough,
+    mergesSlashes: true,
+  });
+
+  // 주소 함수가 돌려준 갈래 가운데 쿼리를 붙이는 것과, 고정된 마디가 있는 갈래 옆에서 경로 변수만 남은 것은 경로가 아니다.
+  function readRoutePath(p: NodePath): { path: string; stops: NodePath[]; paths?: string[]; manyPaths?: true } {
+    const calledAt = piecesOf(p).find((x) => x.isCallExpression()) ?? p;
+    const lead = leadingPiece(p);
+    const unread = lead.node !== p.node && readsMatchedRoute(lead) ? UNKNOWN + UNKNOWN : UNKNOWN;
+    const found = routeReading.branches(p);
+    if ('tooMany' in found) return { path: unread, stops: [calledAt], manyPaths: true };
+    const segments = (b: { text: string }) => b.text.split('/').filter(Boolean);
+    const fixed = (b: { text: string }) => segments(b).some((x) => !x.startsWith(':') && !x.includes(UNREADABLE_PIECE) && x !== '*');
+    let read = found.branches.filter((b) => !b.made || !b.text.replace(/:\w+(\([^)]*\))?\?/g, '').includes('?'));
+    if (read.some(fixed)) read = read.filter((b) => !b.made || fixed(b) || !segments(b).length || !segments(b).every((x) => x.startsWith(':')));
+    const paths = [...new Set(read.map((b) => b.text.replaceAll(UNREADABLE_PIECE, UNKNOWN)))];
+    if (paths.length === 1) return { path: paths[0], stops: read[0].stops };
+    if (!paths.length) return { path: unread, stops: [p] };
+    return { path: unread, stops: [calledAt], ...(paths.length > MOST_ADDRESSES ? { manyPaths: true as const } : { paths }) };
+  }
+
   function stopOf(p: NodePath) {
     const file = programFile.get(p.scope.getProgramParent().block) ?? null;
     return { text: file ? sliceText(parse(file).src, p.node) : '?', file: rel(file), line: p.node.loc!.start.line };
@@ -1164,8 +1231,11 @@ export async function extractClient(config: any) {
         const attr = (name: string) => p.get('openingElement.attributes').find((a) => (a.node as JSXAttribute).name?.name === name) as NodePath<JSXAttribute> | undefined;
         if (config.redirectElements.includes(tag)) {
           const toValue = attr('to')?.get('value');
-          const to = toValue && evaluate(toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue);
-          redirects.push({ to: typeof to === 'string' ? to : UNKNOWN, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
+          const toExpr = toValue?.node ? (toValue.isJSXExpressionContainer() ? toValue.get('expression') : toValue) as NodePath : null;
+          // 글자 값으로 끝까지 읽히는 to 는 그 값을 쓰고, 아니면 링크로 읽는다. 링크로도 읽지 못하면 글자 값을 남긴다.
+          const written = toExpr ? evaluate(toExpr) : undefined;
+          const read = typeof written === 'string' && !written.includes(UNKNOWN) ? written : toExpr ? oneAddress(toExpr) : UNKNOWN;
+          redirects.push({ to: read === UNKNOWN && typeof written === 'string' ? written : read, file: routeFile, line: p.node.loc!.start.line, guards: guardsOf(p, src, note) });
           return;
         }
         if (!config.routeElements.includes(tag)) return;
@@ -1207,15 +1277,15 @@ export async function extractClient(config: any) {
           loopRoutes.push({ element: p.node, line, page, pathExpr, item, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
           return;
         }
-        const pathValue = evaluate(pathExpr);
-        const routePath = typeof pathValue === 'string' ? pathValue : UNKNOWN;
+        const { path: routePath, stops, ...gives } = readRoutePath(pathExpr);
         let unreadPath: OuterFill['unreadPath'] = null;
         const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
         if (routePath.includes(UNKNOWN)) {
-          const stoppedAt = stopOf(unreadPiece(pathExpr)!);
+          const stoppedAt = stopOf(stops[0] ?? pathExpr);
           if (drawnInFunctionOrChildren && madeInLoop(p)) return unread(`made for each item of a list, and its path stopped at ${stoppedAt.text}`);
-          const rest = outerAddress && unreadPiece(pathExpr, new Set(), [outerAddress.node]);
-          unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt }, restStoppedAt: rest ? stopOf(rest) : null };
+          const outerStops = outerAddress && new Set(readRoutePath(outerAddress).stops.map((x) => x.node));
+          const rest = outerStops && stops.find((x) => !outerStops.has(x.node));
+          unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt, ...gives }, restStoppedAt: rest ? stopOf(rest) : null };
           unreadRoutePaths.push(unreadPath.entry);
         }
         const screen: RouteScreen = {
@@ -1254,10 +1324,7 @@ export async function extractClient(config: any) {
           return value.node ? (value.isJSXExpressionContainer() ? value.get('expression') as NodePath : value) : null;
         };
         const exact = attr('exact');
-        const text = (p: NodePath | undefined | null) => {
-          const value = p ? evaluate(p) : undefined;
-          return typeof value === 'string' ? value : UNKNOWN;
-        };
+        const text = (p: NodePath | undefined | null) => (p ? readRoutePath(p).path : UNKNOWN);
         const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || (Boolean(exact) && evaluate(exact!) === true), from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, redirectAsElement: false, children: [] };
         const binding = p.scope.getBinding(tag);
         const reactAs = (b: Binding | undefined) => {
@@ -1271,7 +1338,7 @@ export async function extractClient(config: any) {
           const from = attr('from');
           const to = attr('to');
           const holder = p.parentPath.isJSXExpressionContainer() ? p.parentPath.parentPath : null;
-          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? linkAddress(to) : UNKNOWN, redirectAsElement: Boolean(holder?.isJSXAttribute() && holder.node.name.name === 'element') });
+          Object.assign(node, { kind: 'redirect', from: from === undefined ? null : text(from), to: to ? oneAddress(to) : UNKNOWN, redirectAsElement: Boolean(holder?.isJSXAttribute() && holder.node.name.name === 'element') });
         } else if (config.routeElements.includes(tag)) {
           const at = attr('path');
           node.isRoute = true;
@@ -1407,16 +1474,29 @@ export async function extractClient(config: any) {
     return Boolean(tag) && config.redirectElements.includes(tag);
   }
 
-  function declaredFunction(scope: Scope, name: string): NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration> | null {
+  function declaredFunction(scope: Scope, name: string): AddressFunction | null {
     const binding = scope.getBinding(name);
     if (binding?.path.isFunctionDeclaration()) return binding.path;
     const from = binding?.kind === 'module' ? importedName(binding) : null;
-    const found = from && from.name !== '*' && from.file ? follower.declaration(from.file, from.name) : null;
+    const exported = from && from.name !== '*' ? exportedFunction(from.file, from.name) : null;
+    if (exported) return exported;
+    const value = declaredValue(scope, name);
+    return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
+  }
+
+  function exportedFunction(file: string | null, name: string): AddressFunction | null {
+    const found = file ? follower.declaration(file, name) : null;
     const program = found && programOf(found.file);
     const declared = !program ? null : found!.name === 'default' ? program.get('body').find((s) => s.isExportDefaultDeclaration())?.get('declaration') as NodePath | undefined : program.scope.getBinding(found!.name)?.path;
     if (declared?.isFunctionDeclaration()) return declared;
-    const value = declaredValue(scope, name);
+    const value = declared?.isVariableDeclarator() && declared.get('id').isIdentifier() && (declared.parent as VariableDeclaration).kind === 'const' ? declared.get('init') as NodePath : declared;
     return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
+  }
+
+  function namespaceFunction(scope: Scope, chain: string[]) {
+    const binding = scope.getBinding(chain[0]);
+    const from = binding?.kind === 'module' ? importedName(binding) : null;
+    return from?.name === '*' ? exportedFunction(from.file, chain[1]) : null;
   }
 
   const leadingPiece = (p: NodePath): NodePath => (p.isTemplateLiteral() && p.node.quasis[0].value.cooked === '' && p.node.expressions.length ? leadingPiece(p.get('expressions.0') as NodePath)
@@ -1633,7 +1713,9 @@ export async function extractClient(config: any) {
       return around.filter((j) => !around.some((k) => sourced[k].s.routeFile !== sourced[j].s.routeFile && holds[j].has(routeFileOf(k))));
     };
     const filled = new Map<number, string>();
+    const outers = new Map<number, string>();
     const filling = new Set<number>();
+    const behind = (outer: string, rest: string) => outer.replace(/\/$/, '') + rest || '/';
     const addressOf = (i: number): string => {
       const { s, outerFill } = sourced[i];
       if (!outerFill.startsWithOuterAddress || filling.has(i)) return s.path;
@@ -1642,7 +1724,8 @@ export async function extractClient(config: any) {
         const rest = s.path.slice(UNKNOWN.length);
         const outer = joinedPaths([...new Set(outersOf(i).map(addressOf))], rest);
         filling.delete(i);
-        filled.set(i, outer === null ? s.path : outer.replace(/\/$/, '') + rest || '/');
+        if (outer !== null) outers.set(i, outer);
+        filled.set(i, outer === null ? s.path : behind(outer, rest));
       }
       return filled.get(i)!;
     };
@@ -1652,7 +1735,9 @@ export async function extractClient(config: any) {
       if (address === x.s.path) return;
       x.s.path = address;
       if (!unreadPath) return;
-      if (address.includes(UNKNOWN)) Object.assign(unreadPath.entry, { path: address, stoppedAt: unreadPath.restStoppedAt ?? unreadPath.entry.stoppedAt });
+      const outer = outers.get(i)!;
+      const paths = unreadPath.entry.paths?.map((p) => (p.startsWith(UNKNOWN) ? behind(outer, p.slice(UNKNOWN.length)) : p));
+      if (address.includes(UNKNOWN)) Object.assign(unreadPath.entry, { path: address, stoppedAt: unreadPath.restStoppedAt ?? unreadPath.entry.stoppedAt, ...(paths && { paths }) });
       else unreadRoutePaths.splice(unreadRoutePaths.indexOf(unreadPath.entry), 1);
     });
   }
