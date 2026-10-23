@@ -851,6 +851,21 @@ export default function Home() {
   assert.deepEqual(targetsOf(map, '/home#Home'), [['/report', []]]);
 });
 
+test('with React Router 6, a route constant kept in a let that is given another value later still goes to the routes that add parameters to it', async () => {
+  const home = `import { useNavigate } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home({ id }) {
+  const navigate = useNavigate();
+  let to = Option.ROUTE_PATH.TEAM;
+  to += '/' + id;
+  return <button onClick={() => navigate(to)}>team</button>;
+}
+`;
+  const map = await build(withRouteConstant({ 'Routes.js': V6_ROUTES, 'Home.js': home }));
+  assert.deepEqual(targetsOf(map, '/home#Home'), [['/team', ['/team/:team#Team']]]);
+});
+
 test('the decision record says that under Routes a route constant written as a link\'s whole address goes to the screens React Router 6 draws, and that a Switch keeps the old matching', () => {
   const decisions = fs.readFileSync(path.join(import.meta.dirname, '..', 'docs/decisions.md'), 'utf8');
   assert.match(decisions, /\*\*Under `<Routes>`, a route constant written as a link's whole address, with a tail duru reads to the end or none,\s+goes to the screens React Router 6 draws for it/);

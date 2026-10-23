@@ -1102,9 +1102,13 @@ export async function extractClient(config: any) {
 
     const routeRefAt = facts.routeRefs.map((r) => siteStart.get(r)!);
     const holdsRouteRef = (p: NodePath) => routeRefAt.some((start) => start >= p.node.start! && start < p.node.end!);
-    // 라우트 상수와 그 꼬리만으로 된 링크 주소에서 그 상수 참조를 표시한다.
+    // 라우트 상수와 그 꼬리만으로 된 링크 주소에서 그 상수 참조를 표시한다. 이름은 const 로 선언된 것만 따라간다.
     const markLinkAddresses = (addresses: NodePath[]) => {
-      for (const at of addresses) for (const p of madeFrom(at)) for (const ref of constantAt.get(p.node) ?? []) linkAddressRefs.add(ref);
+      for (const at of addresses) {
+        const parts = madeFrom(at);
+        const reassignable = parts.findIndex((p) => p.isIdentifier() && p.scope.getBinding(p.node.name)?.kind !== 'const');
+        for (const p of reassignable < 0 ? parts : parts.slice(0, reassignable)) for (const ref of constantAt.get(p.node) ?? []) linkAddressRefs.add(ref);
+      }
     };
     const recordLinks = (addresses: NodePath[]) => {
       markLinkAddresses(addresses);
