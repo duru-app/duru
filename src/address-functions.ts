@@ -578,8 +578,8 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     }
   }
 
-  // x 가 fn 의 매개변수를, 바로 또는 fn 안 const 의 초기값을 거쳐 쓰는가
-  function usesParam(x: NodePath<any>, fn: AddressFunction, depth = 0): boolean {
+  // x 가 fn 의 매개변수를, 바로 또는 fn 안 const 의 초기값을 거쳐 쓰는가. followed 는 이미 따라간 const 와 그때의 깊이다.
+  function usesParam(x: NodePath<any>, fn: AddressFunction, depth = 0, followed = new Map<Node, number>()): boolean {
     const names: NodePath<Identifier>[] = x.isIdentifier() ? [x] : [];
     x.traverse({
       Identifier(i) {
@@ -590,7 +590,9 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       const binding = i.scope.getBinding(i.node.name);
       if (binding?.kind === 'param') return binding.scope.block === fn.node;
       const init = binding?.kind === 'const' && binding.path.isVariableDeclarator() && binding.path.isDescendant(fn) ? binding.path.get('init') as NodePath<any> : null;
-      return Boolean(init?.node) && depth < FOLLOWED && usesParam(init!, fn, depth + 1);
+      if (!init?.node || depth >= FOLLOWED || (followed.get(init.node) ?? Infinity) <= depth) return false;
+      followed.set(init.node, depth);
+      return usesParam(init, fn, depth + 1, followed);
     });
   }
 

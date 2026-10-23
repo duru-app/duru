@@ -1985,6 +1985,33 @@ export default function Home() {
   ]);
 });
 
+test('a call of a hook whose consts refer to one another many times over is read within a minute', () => {
+  const consts = Array.from({ length: 24 }, (_, i) => {
+    const before = [i - 1, i - 2, i - 3].filter((j) => j >= 0).map((j) => `f${j}`);
+    return `  const f${i} = useCallback(() => {\n${before.map((f) => `    ${f}();\n`).join('')}    log(state);\n  }, [${[...before, 'state'].join(', ')}]);`;
+  });
+  const hook = `import { useCallback, useState } from 'react';
+import { log } from './log';
+
+export function useEditor() {
+  const [state] = useState(0);
+${consts.join('\n')}
+  return { f0, f23 };
+}
+`;
+  const home = `import { useEditor } from './hook';
+
+export default function Home() {
+  const { f0 } = useEditor();
+  return <a onClick={f0}>a</a>;
+}
+`;
+  const configFile = writeApp({ 'Home.js': home, 'hook.js': hook, 'log.js': 'export function log(x) {\n  console.info(x);\n}\n' });
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8', timeout: 60000 });
+  assert.equal(result.signal, null, 'extract did not finish within a minute');
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test('the decision record says that a call of a function that moves to an address or with a history it is given is a link at the call', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
   const decisions = read('docs/decisions.md');
