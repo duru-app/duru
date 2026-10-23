@@ -323,8 +323,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    `comments on links between steps` list each step and link with its screen files and the link's verdict; act
    on them as above. A comment on several targets shows under each of them that is listed, ending with
    `left on N targets:` and all of them; answer it once. Comments with no target come first, under
-   `# Comments with no target`. A test line under `comments on tests` that ends with
-   `, passed in <folder>` is such a regressed test, and an item whose marks line reads
+   `# Comments with no target`. A test line under `comments on tests` with `, passed in <folder>`
+   right after its result file is such a regressed test, and an item whose marks line reads
    `marks: none, listed for comments on regressed tests` is listed only for comments on such tests and has no
    `empty tests`: write no new test for them; fix the app or the test as each comment says, run the tests and
    `duru rebuild`, and read the list again.

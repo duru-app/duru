@@ -744,7 +744,7 @@ export function taskList(config: any) {
     `Source files are under \`${relative(config.srcRoot)}\`.`,
   ];
   if (passedIn.size) {
-    const regression = `A test under \`comments on tests\` that ends with \`, passed in ${comparison!.folder}\` passed in that earlier release and fails or is pending now, and a reviewer commented on it after that release's run. Do not write a new test for it: fix the code or the test as the comment says, then run the tests and \`duru rebuild\`, and read this list again. A screen or API call whose marks line reads \`none, listed for comments on regressed tests\` is here only for such comments, and leaves this list once those tests pass again or a reviewer marks the whole screen or call \`fine\`.`;
+    const regression = `A test under \`comments on tests\` whose line has \`, passed in ${comparison!.folder}\` right after its result file passed in that earlier release and fails or is pending now, and a reviewer commented on it after that release's run. Do not write a new test for it: fix the code or the test as the comment says, then run the tests and \`duru rebuild\`, and read this list again. A screen or API call whose marks line reads \`none, listed for comments on regressed tests\` is here only for such comments, and leaves this list once those tests pass again or a reviewer marks the whole screen or call \`fine\`.`;
     out[2] = open.length ? `${out[2]} ${regression}` : regression;
   }
   if (open.some((m) => laterComments(m).length)) out[2] += ' A `comment` line under a mark is a comment a reviewer left on the same target after that mark.';

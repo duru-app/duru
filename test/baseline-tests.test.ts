@@ -747,7 +747,7 @@ test('the README says which screens and calls a comment on a regressed test list
   const readme = read('../README.md').replace(/\n {2}(?=\S)/g, ' ').replace(/\n(?=\S)/g, ' ');
   assert.match(readme, /With `baselineTests` in the config, it also lists each screen and API call with a test that passed in that earlier release and fails or is pending now, when a reviewer commented on that test's row after the release's run/);
   assert.match(readme, /starts with `- marks: none, listed for comments on regressed tests` when it has no open mark, and then has no `empty tests`/);
-  assert.match(readme, /ends with `, passed in <folder>`[\s\S]*`N commented regressions`[\s\S]*does not say `No open marks\.`/);
+  assert.match(readme, /has `, passed in <folder>` right after its result file[\s\S]*`N commented regressions`[\s\S]*does not say `No open marks\.`/);
   assert.match(readme, /leaves once those tests pass again after a `rebuild`, or once a reviewer marks the whole screen or call `fine`; a comment after that brings it back/);
   assert.match(readme, /`baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`, the rest of the list is as without it, and `tasks` does not stop/);
   assert.match(readme, /`detail` for a verdict line, and `passedIn`, the `baselineTests` folder,/);

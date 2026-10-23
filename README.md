@@ -1377,7 +1377,7 @@ and status, and each discarded or handed-over pair whose code changed after it w
 test that passed in that earlier release and fails or is pending now, when a reviewer commented on that test's row
 after the release's run. Such an item starts with `- marks: none, listed for comments on regressed tests` when it
 has no open mark, and then has no `empty tests`; its cases with no tests stay under `# Case kinds`. Under
-`comments on tests` the line of that test ends with `, passed in <folder>`, the `baselineTests` folder as the
+`comments on tests` the line of that test has `, passed in <folder>` right after its result file, the `baselineTests` folder as the
 `test results since` line names it, the head of the list adds `N commented regressions`, and the intro says to fix
 the code or the test as the comment says rather than write a new test. With no open mark the list starts with that
 and does not say `No open marks.` An item listed this way leaves once those tests pass again after a `rebuild`, or

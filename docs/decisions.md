@@ -1578,6 +1578,8 @@ leaves by itself once its test passes after a `rebuild`.
 - An item listed only this way has no `empty tests`, and with no open mark the intro's first block, which tells the
   agent to write tests and says an item stays until `fine`, gives way to the regression sentence: the work is to fix
   the app or the test as the comment says, and the item also leaves when the test passes.
+- `, passed in <folder>` comes right after the result file on the test's line, before the reason of a verdict line,
+  which can run over several lines and would carry the note far from the test it marks.
 - `passedIn` is carried during the review too, since without it an agent could change the test to match the current
   result before the review ends.
 - `tasks` and the task list a review ends with do not stop on a baseline that cannot be read: the marked items can be
