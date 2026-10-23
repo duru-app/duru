@@ -3531,3 +3531,98 @@ export default function Home() {
     ['/team/{*}', 'links.js', lineOf(links, 'ROUTE_PATH.TEAM')],
   ]);
 });
+
+test('a link component used in a file several screens share goes only to the screens whose code reaches the component holding the use', async () => {
+  const nav = `import { PlainLink } from './links';
+
+export function TeamButton() {
+  return <PlainLink to="/team/a">team</PlainLink>;
+}
+
+export function LoginButton() {
+  return <PlainLink to="/login">login</PlainLink>;
+}
+`;
+  const map = await build(writeApp({
+    'nav.js': nav,
+    'links.js': PLAIN_LINK,
+    'Home.js': "import { TeamButton } from './nav';\n\nexport default function Home() {\n  return <TeamButton />;\n}\n",
+    'Start.js': "import { LoginButton } from './nav';\n\nexport default function Start() {\n  return <LoginButton />;\n}\n",
+  }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/team/a', lineOf(nav, 'to="/team/a"'), [], ['/team/:team#Team']]]);
+  assert.deepEqual(linksOf(map, '/start#Start'), [['/login', lineOf(nav, 'to="/login"'), [], ['/login#Login']]]);
+});
+
+test('a story step and the links into a screen take links through link components', async () => {
+  const home = `import { PlainLink } from './links';
+
+export default function Home({ flags }) {
+  return <nav>{flags.team && <PlainLink to="/team/a">team</PlainLink>}</nav>;
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': PLAIN_LINK }));
+  const [story] = checkStories(map, [{ screens: ['/home#Home', '/team/:team#Team'] }]);
+  assert.deepEqual(story.links.map((l) => [l.verdict, l.ways.map((w) => [w.file, w.line, w.conditions.map((c) => c.guard)])]), [
+    ['conditioned', [['Home.js', 4, ['flags.team']]]],
+  ]);
+  assert.deepEqual(map.screens.find((s) => s.id === '/team/:team#Team')!.access.links.map((l) => [l.from, l.file, l.line]), [['/home#Home', 'Home.js', 4]]);
+});
+
+test('a link component that builds its address from a prop its parent may hand it with cloneElement keeps the {?} link where the address is written and gives none where it is used', async () => {
+  const links = `import React, { cloneElement } from 'react';
+import { Link, NavLink } from 'react-router-dom';
+
+export const Section = ({ name, parentLink = '', children = [] }) => {
+  const link = parentLink + '/' + name;
+  return (
+    <li>
+      <NavLink to={link}>{name}</NavLink>
+      <ul>{React.Children.map(children, (child) => React.cloneElement(child, { parentLink: link }))}</ul>
+    </li>
+  );
+};
+
+export function Category(props) {
+  const getLink = () => props.parentLink + '/' + props.name;
+  const link = getLink();
+  return (
+    <li>
+      <NavLink to={link}>{props.name}</NavLink>
+      {React.Children.map(props.children, (child) => cloneElement(child, { parentLink: link }))}
+    </li>
+  );
+}
+
+export function Tabs({ to, children }) {
+  return (
+    <div>
+      <Link to={to}>all</Link>
+      {React.Children.map(children, (child) => cloneElement(child, { active: true }))}
+    </div>
+  );
+}
+`;
+  const home = `import { Category, Section, Tabs } from './links';
+
+export default function Home() {
+  return (
+    <nav>
+      <Category name="team" parentLink="">
+        <Section name="a" />
+      </Category>
+      <Section name="login" />
+      <Section name="start" parentLink="" />
+      <Tabs to="/help">
+        <Section name="help" />
+      </Tabs>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'links.js': links }));
+  assert.deepEqual(linksWithFiles(map, '/home#Home'), [
+    ['/help', 'Home.js', lineOf(home, '<Tabs'), []],
+    ['{?}', 'links.js', lineOf(links, '<NavLink to={link}>{name}'), []],
+    ['{?}', 'links.js', lineOf(links, '<NavLink to={link}>{props.name}'), []],
+  ]);
+});
