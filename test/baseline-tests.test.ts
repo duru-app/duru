@@ -541,6 +541,27 @@ test('baselineTests gives each result file its start time: Playwright stats.star
   });
 });
 
+test('a result file with no start time in it that a git checkout wrote takes the author date of its last commit, and one changed since that commit, or copied with its time kept before it, keeps its modified time', () => {
+  const junit = '<testsuite name="S"><testcase classname="com.example.T" name="t"/></testsuite>';
+  inFolder({
+    'releases/1.5.0/TEST-T.xml': junit,
+    'releases/1.5.0/checks.log': 'VERDICT w: UPHOLDS\n',
+    'releases/1.5.0/kept.log': 'VERDICT k: UPHOLDS\n',
+  }, (dir) => {
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, env: { ...process.env, GIT_AUTHOR_DATE: '2026-10-01T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-03T12:00:00Z' }, stdio: 'ignore' });
+    const kept = new Date('2026-09-28T12:00:00Z');
+    fs.utimesSync(path.join(dir, 'releases/1.5.0/kept.log'), kept, kept);
+    git('init', '-q');
+    git('add', '.');
+    git('commit', '-q', '--no-verify', '-m', 'keep 1.5.0');
+    const checkedOut = new Date('2026-10-22T12:00:00Z');
+    fs.appendFileSync(path.join(dir, 'releases/1.5.0/checks.log'), 'VERDICT x: UPHOLDS\n');
+    for (const file of ['TEST-T.xml', 'checks.log']) fs.utimesSync(path.join(dir, 'releases/1.5.0', file), checkedOut, checkedOut);
+    const read = readBaselineTests({ configDir: dir, baselineTests: [['junit', 'TEST-T.xml'], ['verdict', 'checks.log'], ['verdict', 'kept.log']].map(([format, file]) => ({ format, path: path.join(dir, 'releases/1.5.0', file), depth: 'api' })) });
+    assert.deepEqual(read.results.map((r) => r.startedAt), ['2026-10-01T12:00:00.000Z', '2026-10-22T12:00:00.000Z', '2026-09-28T12:00:00.000Z']);
+  });
+});
+
 type Copy = { copy: string; configFile: string; setConfig: (change: Record<string, unknown>) => void; rebuild: () => string };
 
 function withCopy(fn: (copy: Copy) => void) {

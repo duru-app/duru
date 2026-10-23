@@ -1590,6 +1590,10 @@ leaves by itself once its test passes after a `rebuild`.
   comment left between two of those runs does not count.
 - The review server reads the baseline once when it starts and compares on each line it sends, once for the whole
   backlog `duru wait` asks for.
+- A result file with no start time in it that git checked out unchanged since its last commit takes that commit's
+  author date when it is earlier than its modified time: a clone or a new worktree sets the modified time to the
+  checkout, which would drop every comment left before it. The author date stays through a rebase, the committer date
+  does not; the JUnit `timestamp` was not taken, since it is mostly written without a time zone.
 Limits:
 - Until the review page stops on a baseline that cannot be read, such a review starts and its lines lack `passedIn`
   without saying so; the task list it ends with prints the line under the head. A baseline folder changed during the
@@ -1604,7 +1608,7 @@ Limits:
   is compared with no project and misses its Playwright baseline test; running `rebuild` again fixes it.
 - A comment on one of several verdict lines, or Playwright projects, sharing a name lists the screen when another of
   them under the same screen regressed. JUnit XML and verdict logs copied without their modified time do not count
-  comments left between the run and the copy.
+  comments left between the run and the copy, and in a git checkout those left between the run and the commit.
 
 **A comment can be about one part of a screen or call, kept as the screen or call target plus
 `part: { kind, key }`; the first kind is one test row, named by the result file, test file and title without tags.**

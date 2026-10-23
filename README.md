@@ -296,7 +296,8 @@ client with example results and a config to start from.
   extract and rebuild print**). It works with or without `baselineMap`. An empty list compares nothing and prints no
   line about it. To keep the results of a release, run the whole suite on that version and copy its result files
   straight into that version's folder, such as `releases/1.5.0/`; copy JUnit XML and verdict logs with their modified
-  time kept (`cp -p`), since that is the time duru takes for when they ran. Keeping the results of a run of only some
+  time kept (`cp -p`), since that is the time duru takes for when they ran. In a git checkout, where that time is
+  the checkout's, such a file unchanged since its last commit takes the author date of that commit when it is earlier. Keeping the results of a run of only some
   of the tests leaves the rest out of the comparison: those under a screen or call now count as `only now`. Tests of the two results are matched by their title without
   tags, their Playwright project and their test file, so a test renamed or moved to another file counts once in
   `only in baseline` and once in `only now`.
