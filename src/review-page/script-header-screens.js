@@ -19,10 +19,14 @@ function renderHeader() {
       h('span', { class: 'state-tip', id: 'server-state-tip', role: 'note' }, SERVER_STATE_TIP),
     ] : null);
   const b = state.data.baseline;
+  const t = state.data.baselineTests;
   const pill = document.getElementById('baseline');
-  pill.hidden = !b;
+  pill.hidden = !b && !t;
   const baselineCode = b && codeState(b.code);
-  fill(pill, b ? [h('span', {}, '비교 기준'), ' ', h('strong', {}, b.label), ' ', h('code', {}, b.file), ...(baselineCode ? [' ', baselineCode] : [])] : []);
+  fill(pill, ...(b || t ? [h('span', {}, '비교 기준'), ' '] : []),
+    ...(b ? [h('strong', { title: b.file }, b.label), ...(baselineCode ? [' ', baselineCode] : [])] : []),
+    b && t ? ' · ' : null,
+    t ? baselineResults(t) : null);
   const author = document.getElementById('author');
   const guessed = state.data.authorSource === 'user';
   author.title = guessed ? '설정의 author 에도 git 의 user.name 에도 이름이 없어, 컴퓨터 사용자 이름으로 코멘트와 판단을 남깁니다' : '';
@@ -32,6 +36,13 @@ function renderHeader() {
 const listAbsentNote = (text) => (state.data.map.serverNotCompared ? [' ', h('span', { class: 'list-absent' }, text)] : null);
 
 const activeScreenFilters = () => SCREEN_FILTERS.filter((f) => !(f.needsServerList && state.data.map.serverNotCompared));
+
+function baselineResults(t) {
+  const title = [`${t.folder} 의 결과 파일 ${t.results.length}개와 견줍니다`, ...t.results.map((r) => `${r.result} (${fmtDate(r.startedAt)} 시작)`)].join('\n');
+  return h('span', { class: 'baseline-tests' }, h('strong', { title: t.folder }, t.label), ' ', h('span', { class: 'baseline-results', title, 'aria-label': title }, `결과 ${t.results.length}`));
+}
+
+const compareLabel = () => (state.data.baseline ?? state.data.baselineTests)?.label ?? null;
 
 const baselineIndexes = new WeakMap();
 function baselineIndex() {
@@ -75,17 +86,111 @@ function changeChips(id) {
   ];
 }
 
+const compareFilter = (key, title, text) => h('label', { title },
+  h('input', { type: 'checkbox', name: key, 'aria-label': title, checked: state.filters.has(key), onchange: (e) => {
+    if (e.target.checked) state.filters.add(key); else state.filters.delete(key);
+    renderLeftList();
+  } }), text);
+
 function baselineFilterBox() {
-  const b = state.data.baseline;
-  if (!b) return null;
-  const count = state.data.map.screens.filter((s) => screenChanged(s.id)).length;
+  const { baseline: b, baselineTests: t } = state.data;
+  if (!b && !t) return null;
+  const changed = b && state.data.map.screens.filter((s) => screenChanged(s.id)).length;
+  const regressed = t && state.data.map.screens.filter((s) => screenRegressed(s.id)).length;
   return h('div', { class: 'baseline-filter' },
-    h('div', { class: 'baseline-head' }, `${b.label} 와 비교`),
-    h('label', { title: '새로 생겼거나, 열리는 조건이 바뀌었거나, 부르는 호출이 생기거나 없어진 화면' },
-      h('input', { type: 'checkbox', name: 'changed', checked: state.filters.has('changed'), onchange: (e) => {
-        if (e.target.checked) state.filters.add('changed'); else state.filters.delete('changed');
-        renderLeftList();
-      } }), `바뀐 화면만 ${count}`));
+    h('div', { class: 'baseline-head' }, `${compareLabel()} 와 비교`),
+    b ? compareFilter('changed', '새로 생겼거나, 열리는 조건이 바뀌었거나, 부르는 호출이 생기거나 없어진 화면', `바뀐 화면만 ${changed}`) : null,
+    t ? compareFilter('regressed', `${t.folder} 에서 통과하고 지금 실패하거나 보류된 테스트가 있는 화면. 이 화면에서 누르거나 확인한 테스트와 태그 · 불러오기 · 태그 대기로 붙은 테스트, 이 화면이 보내는 호출에만 태그로 붙은 테스트를 셉니다. 지나가기만 한 테스트는 세지 않습니다`, `회귀만 ${regressed}`) : null);
+}
+
+const regressedCount = (counts) => (counts ? counts.fail + counts.pending : 0);
+const listedRegressions = (id) => state.data.baselineTests?.byNode[id]?.listed;
+const screenRegressed = (id) => regressedCount(listedRegressions(id)) > 0 || Boolean(state.data.baselineTests?.callRegressions[id]);
+
+function regressionChips(id) {
+  const t = state.data.baselineTests;
+  if (!t) return [];
+  const calls = t.callRegressions[id];
+  const callTip = calls && `이 화면이 보내는 호출 ${calls.calls.join(', ')} 에 태그로 붙은 테스트 가운데 ${t.folder} 에서 통과하고 지금 실패한 테스트 ${calls.fail} · 보류 ${calls.pending}. 화면의 「회귀」에 더하지 않았습니다`;
+  return [
+    ownRegressionChip(id),
+    calls ? h('span', { class: 'chip fail call-regressed', title: callTip, 'aria-label': callTip }, `호출 회귀 ${regressedCount(calls)}`) : null,
+  ];
+}
+
+function ownRegressionChip(id) {
+  const t = state.data.baselineTests;
+  const own = t?.byNode[id];
+  if (!regressedCount(own?.listed)) return null;
+  const leftOut = callOf(id)
+    ? `trace 로 이 호출을 보내기만 한 테스트의 회귀 ${regressedCount(own.chipOnly)}개는 세지 않았습니다`
+    : `이 화면을 지나가기만 한 테스트의 회귀 ${regressedCount(own.chipOnly)}개는 세지 않았습니다`;
+  const tip = `${t.folder} 에서 통과하고 지금 실패한 테스트 ${own.listed.fail} · 보류 ${own.listed.pending}. ${leftOut}`;
+  return h('span', { class: 'chip fail regressed', title: tip, 'aria-label': tip }, `회귀 ${regressedCount(own.listed)}`);
+}
+
+const regressionRows = new WeakMap();
+const rowKey = (node, via, ref) => JSON.stringify([node, via, ref.source, ref.file, ref.title]);
+function regressionsOfRow(node, via, t) {
+  const c = state.data.baselineTests;
+  if (!c || !t.ref) return [];
+  if (!regressionRows.has(c)) {
+    const rows = new Map();
+    for (const r of c.regressions) {
+      for (const row of r.rows) {
+        if (row.status === 'pass') continue;
+        const key = rowKey(row.node, row.via, row.ref);
+        rows.set(key, [...(rows.get(key) ?? []), { ...row, baseline: r.baseline }]);
+      }
+    }
+    regressionRows.set(c, rows);
+  }
+  const ranHere = (r) => (t.projects ? Object.hasOwn(t.projects, r.project) : t.project == null || r.project === t.project);
+  return (regressionRows.get(c).get(rowKey(node, via, t.ref)) ?? []).filter(ranHere);
+}
+
+function regressionChip(node, via, t) {
+  const found = regressionsOfRow(node, via, t);
+  if (!found.length) return null;
+  const status = found.some((r) => r.status === 'fail') ? 'fail' : 'pending';
+  const projects = [...new Set(found.map((r) => r.project).filter((p) => p != null))];
+  const results = [...new Set(found.flatMap((r) => r.baseline.map((b) => `${b.result} (${fmtDate(b.startedAt)} 시작)`)))];
+  const tip = `${state.data.baselineTests.folder} 에서 통과하고 지금 ${TEST_STATUS[status]}${projects.length ? ` (${projects.join(', ')})` : ''}\n견준 결과 파일: ${results.join(', ')}`;
+  return [h('span', { class: `chip ${status} regression`, title: tip, 'aria-label': tip }, `통과→${TEST_STATUS[status]}`), ' '];
+}
+
+function baselineOnlyItem(t) {
+  return h('li', { title: `${state.data.baselineTests.folder} 의 결과 파일 ${t.result}` },
+    h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', bareTitle(t.title), ' ',
+    h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
+    t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null);
+}
+
+function baselineOnlyHere(node) {
+  const tests = state.data.baselineTests?.onlyInBaselineByNode[node] ?? [];
+  if (!tests.length) return null;
+  const key = `node\n${node}`;
+  return h('details', { class: 'baseline-only', open: state.baselineOnlyOpen.has(key), ontoggle: rememberOpen(state.baselineOnlyOpen, key) },
+    h('summary', { title: `${state.data.baselineTests.folder} 의 결과에는 이 ${nodeWord(node)}의 태그를 단 테스트로 있었지만 지금 결과에는 없는 테스트` }, `기준에만 ${tests.length}`),
+    h('ul', { class: 'plain' }, tests.map(baselineOnlyItem)));
+}
+
+function baselineOnlyFiles() {
+  const t = state.data.baselineTests;
+  if (!t) return [];
+  const gone = '지금 결과에 이 파일의 테스트가 하나도 없습니다';
+  return [
+    h('h2', { class: 'baseline-only-head', title: `${t.folder} 의 결과에는 있었지만 지금 결과에는 없는 테스트를 시험 파일별로 모았습니다` }, `기준에만 ${t.onlyInBaseline}`),
+    t.onlyInBaselineFiles.length
+      ? h('div', { class: 'baseline-only-files' }, t.onlyInBaselineFiles.map((f) => {
+          const key = `file\n${f.file}`;
+          return h('details', { open: state.baselineOnlyOpen.has(key), ontoggle: rememberOpen(state.baselineOnlyOpen, key) },
+            h('summary', {}, h('span', { class: 'mono' }, f.file), ' ', h('span', { class: 'muted' }, String(f.tests.length)),
+              f.whole ? [' ', h('span', { class: 'chip file-gone', title: gone, 'aria-label': gone }, '파일 없음')] : null),
+            h('ul', { class: 'plain' }, f.tests.map(baselineOnlyItem)));
+        }))
+      : h('p', { class: 'muted' }, '없습니다.'),
+  ];
 }
 
 function removedScreens() {
@@ -118,10 +223,11 @@ function baselineBanner(s) {
 
 function callCompareCell(s, id) {
   const x = baselineIndex();
-  const server = x.server.get(id);
+  const server = x?.server.get(id);
   const chips = [
-    x.newCalls.has(id) || x.screenCalls.get(s.id)?.added.includes(id) ? h('span', { class: 'chip change-new' }, '생김') : null,
+    x && (x.newCalls.has(id) || x.screenCalls.get(s.id)?.added.includes(id)) ? h('span', { class: 'chip change-new' }, '생김') : null,
     server ? h('span', { class: 'chip change-server' }, `서버 대조 바뀜 (${SERVER_STATUS[server.before] ?? server.before} → ${SERVER_STATUS[server.after] ?? server.after})`) : null,
+    ownRegressionChip(id),
   ].filter(Boolean);
   return h('td', { class: 'compare' }, chips.length ? chips : h('span', { class: 'muted' }, '—'));
 }
@@ -130,7 +236,8 @@ function visibleScreens() {
   const q = state.query.trim().toLowerCase();
   const filters = activeScreenFilters();
   const changedOnly = state.data.baseline && state.filters.has('changed');
-  return state.data.map.screens.filter((s) => filters.every((f) => !state.filters.has(f.key) || f.keep(s)) && (!changedOnly || screenChanged(s.id)) && (!q || s.id.toLowerCase().includes(q)));
+  const regressedOnly = state.data.baselineTests && state.filters.has('regressed');
+  return state.data.map.screens.filter((s) => filters.every((f) => !state.filters.has(f.key) || f.keep(s)) && (!changedOnly || screenChanged(s.id)) && (!regressedOnly || screenRegressed(s.id)) && (!q || s.id.toLowerCase().includes(q)));
 }
 
 const screenFilterBoxes = () => [...activeScreenFilters().map((f) => h('label', { title: f.title }, h('input', { type: 'checkbox', name: f.key, checked: state.filters.has(f.key), onchange: (e) => {
@@ -174,7 +281,7 @@ function renderLeft() {
     while (search.nextSibling) search.nextSibling.remove();
     search.after(...screenFilterBoxes());
     while (list.nextSibling) list.nextSibling.remove();
-    list.after(...removedScreens(), ...detached);
+    list.after(...removedScreens(), ...baselineOnlyFiles(), ...detached);
     return renderLeftList();
   }
   fill(left,
@@ -185,6 +292,7 @@ function renderLeft() {
     ),
     h('ul', { class: 'screens', id: 'screen-list' }),
     removedScreens(),
+    baselineOnlyFiles(),
     detached,
   );
   renderLeftList();
@@ -235,6 +343,7 @@ function screenItem(s, { selected, onclick }) {
   const chips = [
     s.dead ? h('span', { class: 'chip dead', title: '서버에 없는 호출이 있습니다' }, '죽은 화면') : null,
     changeChips(s.id),
+    regressionChips(s.id),
     markChip(markOf({ node: s.id })),
     talkCount(attachedTalk({ node: s.id })),
   ].flat().filter(Boolean);

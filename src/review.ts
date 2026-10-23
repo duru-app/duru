@@ -9,10 +9,11 @@ import { screenCases, settingConditionName } from './access.ts';
 import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { compareTests, nodeIds, passedInFolder, readBaselineTests, wholeFines } from './baseline-tests.ts';
+import type { BaselineTests, TestComparison } from './baseline-tests.ts';
 import { screenRoutes } from './address-match.ts';
 import { acceptCandidate, addCommentCandidate, candidatePlace, discardCandidate, pickCandidateLine, saveVisitRecord, storyCandidates, unacceptStory, undiscardCandidate } from './candidates.ts';
 import { answerProposal, casesWithoutTests, caseTargets, commandCaseRule, exclusionOf, pickedKinds, ProposalChanged } from './case-targets.ts';
-import { isPlainObject } from './config.ts';
+import { compare, isPlainObject } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { nodeHashes, recordedState } from './code-state.ts';
 import { buildFlow } from './flow.ts';
@@ -235,10 +236,32 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   };
 }
 
-function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: ReturnType<typeof readBaseline> | null, version: ReturnType<typeof storiesVersion>) {
+// 화면 · 호출 태그 가운데 호출 태그만 단 시험의 회귀를, 그 호출을 보내는 화면마다 한 번 센다. 그 화면 자기 수에 이미 든 시험은 뺀다.
+export function callRegressions(c: TestComparison, calls: { id: string; screens: string[] }[]) {
+  const senders = new Map(calls.map((call) => [call.id, call.screens]));
+  const byScreen: Record<string, { fail: number; pending: number; calls: string[] }> = {};
+  for (const { rows } of c.regressions) {
+    const tagged = rows.filter((r) => r.via === 'tag');
+    if (!tagged.length || tagged.some((r) => r.kind !== 'call')) continue;
+    const counted = new Set(rows.filter((r) => r.kind === 'screen' && r.listed && r.status !== 'pass').map((r) => r.node));
+    const sent = new Map<string, typeof tagged>();
+    for (const r of tagged.filter((t) => t.status !== 'pass')) {
+      for (const screen of senders.get(r.node) ?? []) if (!counted.has(screen)) sent.set(screen, [...(sent.get(screen) ?? []), r]);
+    }
+    for (const [screen, failing] of sent) {
+      const entry = (byScreen[screen] ??= { fail: 0, pending: 0, calls: [] });
+      entry[failing.some((r) => r.status === 'fail') ? 'fail' : 'pending'] += 1;
+      entry.calls = [...new Set([...entry.calls, ...failing.map((r) => r.node)])].sort(compare);
+    }
+  }
+  return byScreen;
+}
+
+function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: ReturnType<typeof readBaseline> | null, baselineTests: BaselineTests | null, version: ReturnType<typeof storiesVersion>) {
   const fromConfig = baseline && path.relative(config.configDir, config.baselineMap);
   const changes = baseline && { file: fromConfig!.startsWith('..') ? config.baselineMap : fromConfig, label: baselineLabel(config.baselineMap), code: recordedState(baseline.meta), ...compareMaps(baseline, data.map) };
-  return { ...data, baseline: changes, storiesVersion: version };
+  const tests = baselineTests && compareTests(baselineTests, data.tests, { screens: data.map.screens.map((s) => s.id), calls: data.map.calls.map((c) => c.id) });
+  return { ...data, baseline: changes, baselineTests: tests && { ...tests, callRegressions: callRegressions(tests, data.map.calls) }, storiesVersion: version };
 }
 
 export type PageData = ReturnType<typeof pageData>;
@@ -346,7 +369,7 @@ type Where = ReturnType<typeof locatePart> | ReturnType<typeof locateStoryPart> 
 type Target = NonNullable<Mark['target']>;
 export type AnnouncedMark = Mark & { duru: string; where?: Where; wheres?: Where[] };
 
-export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {} }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark) => void } = {}) {
+export async function startReviewServer(config: any, { port = 0, author = reviewAuthor(config), onDone = () => {}, onMark = () => {}, baselineTests = config.baselineTests ? readBaselineTests(config) : null }: { port?: number; author?: ReviewAuthor; onDone?: () => (() => void) | void | null; onMark?: (line: AnnouncedMark) => void; baselineTests?: BaselineTests | null } = {}) {
   const mapFile = path.join(config.outDir, 'map.json');
   // 없거나 아직 쓰는 중인 맵은 페이지가 요청할 때 알리고, 예전 형식의 맵만 서버를 띄우기 전에 알린다.
   let onDisk: any = null;
@@ -381,7 +404,6 @@ export async function startReviewServer(config: any, { port = 0, author = review
       return null;
     }
   };
-  const baselineTests = config.baselineTests ? readOrNull(() => readBaselineTests(config)) : null;
   const regressionContext = () => baselineTests && readOrNull(() => {
     const map = readMap(mapFile);
     const { traced, ...tests } = applyJudgments(readTests(config), loadJudgments(config.judgmentsDir).judgments, nodeHashes(map));
@@ -495,7 +517,7 @@ export async function startReviewServer(config: any, { port = 0, author = review
         const fileSettings = app && config.app.settingsFile ? await app.fileSettings() : null;
         // 해시를 데이터보다 먼저 구해 두어야, 그 사이에 바뀐 스토리가 다른 해시의 이벤트로 와서 다시 읽힌다.
         const version = storiesVersion(config.storiesDir);
-        return send(res, 200, 'application/json', JSON.stringify(pageData(config, reviewData(config, author, app, fileSettings), baseline, version)));
+        return send(res, 200, 'application/json', JSON.stringify(pageData(config, reviewData(config, author, app, fileSettings), baseline, baselineTests, version)));
       }
       const url = new URL(req.url!, 'http://host');
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {

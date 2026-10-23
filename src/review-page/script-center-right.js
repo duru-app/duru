@@ -50,10 +50,11 @@ function renderCenter() {
         onclick: () => selectTarget(r.target),
       },
         h('td', { class: 'depth' }, r.label, talkCount(entriesAt(r.target), r.target)),
-        h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map((t) => partRow(testItem(t, { hide: [`screen:${s.id}`, `depth:${t.depth}`] }), s.id, t)) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
+        h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map((t) => partRow(testItem(t, { hide: [`screen:${s.id}`, `depth:${t.depth}`], chip: regressionChip(s.id, 'tag', t) }), s.id, t)) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
         h('td', { class: 'mark' }, markChip(markOf(r.target)) ?? h('span', { class: 'muted' }, '—')))))),
     strayJudgmentError(s),
     untaggedPairs(s.id),
+    baselineOnlyHere(s.id),
     callTable(s),
     callInfo(s),
     screenInfo(s),
@@ -159,7 +160,7 @@ function resultOptionRows(call, depths) {
       ? h('a', { href: '#', class: 'mono', title: '이 호출을 부르는 화면을 열고 이 호출을 고릅니다', onclick: (e) => { e.preventDefault(); openCall(l.from); } }, l.from)
       : h('span', { class: 'mono' }, l.from);
     const head = h('tr', { class: 'option result-head' },
-      h('td', { class: 'call', colspan: depths.length + 2 + (state.data.baseline ? 1 : 0) },
+      h('td', { class: 'call', colspan: depths.length + 2 + (compareLabel() ? 1 : 0) },
         h('div', {}, h('span', { class: 'result-title' }, '이 결과를 바꾸는 옵션'), ' ', fromId, from ? null : h('span', { class: 'chip l-off-map' }, '맵에 없는 호출')),
         h('div', { class: 'muted' }, l.note)));
     if (!from) return [head];
@@ -185,7 +186,7 @@ function pickCall(id) {
   [...names].find((b) => b.textContent === id)?.focus({ preventScroll: true });
 }
 
-const compareGap = () => (state.data.baseline ? h('td', { class: 'compare' }) : null);
+const compareGap = () => (compareLabel() ? h('td', { class: 'compare' }) : null);
 
 function removedCallRows(s, depths) {
   const calls = baselineIndex()?.screenCalls.get(s.id);
@@ -200,11 +201,11 @@ function callTable(s) {
   const depths = state.data.depths;
   const removed = removedCallRows(s, depths);
   if (!rows.length && !removed.length) return [h('h2', {}, 'API 호출'), h('p', { class: 'muted' }, '부르는 API 호출이 없습니다.')];
-  const baseline = state.data.baseline;
+  const compared = compareLabel();
   return [
     h('h2', {}, `API 호출 ${rows.length}`, listAbsentNote('서버 목록 없음')),
     h('table', { class: 'calls' },
-      h('thead', {}, h('tr', {}, h('th', {}, '호출'), h('th', {}, '전체'), depths.map((d) => h('th', {}, DEPTH_LABELS[d])), baseline ? h('th', {}, `${baseline.label} 와 비교`) : null)),
+      h('thead', {}, h('tr', {}, h('th', {}, '호출'), h('th', {}, '전체'), depths.map((d) => h('th', {}, DEPTH_LABELS[d])), compared ? h('th', {}, `${compared} 와 비교`) : null)),
       h('tbody', {}, rows.flatMap((r) => {
         if (!r.call) {
           return h('tr', {},
@@ -222,7 +223,7 @@ function callTable(s) {
             sent ? h('span', { class: 'sent-count', title: '이 호출의 태그 없이, 도는 동안 이 호출을 보낸 브라우저 테스트' }, `호출함 ${sent}`) : null),
           cell({ node: r.call.id }, tests),
           depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d))),
-          baseline ? callCompareCell(s, r.call.id) : null),
+          compared ? callCompareCell(s, r.call.id) : null),
           ...optionRows(s, r.call, depths),
           ...resultOptionRows(r.call, depths)];
       }), removed)),

@@ -1582,6 +1582,33 @@ points out removed and newly skipped tests, since totals alone can hide them; Al
 the last report into the results and Allure 3 names the history file in `historyPath`, pointing at files a person
 kept rather than a server, as `baselineTests` does.
 
+**The screen list counts the regressions of the rows that act on or check the screen; a regression of a row that only
+passed through it shows on that row alone.** Driver's decision on the mockups in #405 (2026-10-23). 「회귀 N」 in the
+screen list and the filter 「회귀만 N」 count a regressed test on a screen when it is tagged on the screen, imports its
+source, waits for its tag, or by its trace pressed, typed or checked something there (`interact`, `assert`). A trace
+row that only opened the screen (`visit`) or only sent a call (`call`) carries 「통과→실패」 or 「통과→보류」 when the
+screen is opened, and the hover text of 「회귀 N」 says how many such regressions it left out; the call table counts a
+call the same way. A flow test opens sign-in and the home screen on its way, so counting those rows would mark them
+whenever any flow test breaks and would not point at where to look: in into-sign 1.5.0, 59 traced tests pass through
+the user home, and of its 1020 trace rows 69 interact and 5 assert, while 74 visit and 872 send a call. A regression
+is shown where the test is on now, since the baseline has no source or traces of its version to link the test again,
+and where it is on now is where the reviewer opens it. Tests only in the baseline are folded by test file, since more
+than a hundred can be missing and whole files often are. The header shows how many result files the baseline has,
+listing them on hover, rather than every path, since a JUnit folder can hold dozens. Rejected:
+- Counting the regressions of passed-through rows beside 「지나감 N」, as 「· 회귀 N」: set side by side on the mockup, it
+  still puts a red count on sign-in and home for each broken flow test.
+
+**A regressed test tagged only on calls shows on each screen that sends the call as 「호출 회귀 N」, a dashed chip
+apart from the screen's 「회귀 N」.** Driver's decision on the mockups in #405 (2026-10-23). Such a test is counted once
+on each screen that sends one of its calls it now fails or is pending on, and not on a screen whose own 「회귀 N」
+already counts it; 「회귀만 N」 keeps a screen that has either. Kept apart, the list tells a screen's own tests breaking
+from an API it sends breaking, and shows which screen to open for a broken API test without opening every call table:
+in into-sign 1.5.0, 7 of the 121 tagged tests are tagged only on calls, and a call is sent from one screen as a rule
+and from 11 at most. Changes of the server match are not put on the screens that send the call, unlike this: such a
+change may be intended, while a regression is a test that passed and now breaks. Rejected:
+- Only a muted line 「회귀한 호출 N」 below the list: finding the screen means opening each screen's call table.
+- Adding them into the screen's 「회귀 N」: the number would mix the screen's own tests with API tests.
+
 **A comment on a regressed test lists its screen or call in `duru tasks` until the test passes again or the whole
 screen or call is marked `fine`, and the line of a comment on such a test carries `passedIn`.**
 Driver's decisions 2 and 4 in the PRD #403, built in #406. A comment counts when it is not a reply, sits on a test
@@ -1613,9 +1640,7 @@ leaves by itself once its test passes after a `rebuild`.
   checkout, which would drop every comment left before it. The author date stays through a rebase, the committer date
   does not; the JUnit `timestamp` was not taken, since it is mostly written without a time zone.
 Limits:
-- Until the review page stops on a baseline that cannot be read, such a review starts and its lines lack `passedIn`
-  without saying so; the task list it ends with prints the line under the head. A baseline folder changed during the
-  review is seen by the task list at its end, not by the lines sent before.
+- A baseline folder changed during the review is seen by the task list at its end, not by the lines sent before.
 - `passed in` is put only on rows of items that meet the rule, so that the head's count matches the rows that show it:
   on a screen listed by a mark, a comment left before the baseline ran on a test that regressed since shows none.
 - A comment left within minutes after the baseline ran can fail to count when the reviewer's clock and the clock of
