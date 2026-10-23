@@ -303,7 +303,6 @@ function countsByNode(regressed: TestRow[][]) {
   return byNode;
 }
 
-// jest-junit 은 기본으로 시험 이름을 classname 에 적어, 그런 이름은 시험 파일을 가리키지 않는다.
 const namesItself = (t: BaselineTest) => t.file !== null && (t.title === t.file || t.title.endsWith(` › ${t.file}`));
 
 function onlyInBaselineOf(gone: BaselineTest[][], keys: ReturnType<typeof fileKeys>, onMap: Set<string>) {

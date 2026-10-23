@@ -162,7 +162,6 @@ export function applyJudgments<T extends JudgedTests>(tests: T, judgments: Judgm
   const awaitingTag: Record<string, Judged[]> = {};
   const found = new Set<string>();
   const firstJudged = new Map<string, ResultTest>();
-  // 판단한 짝은 첫 실행 한 줄로 남으므로, 뒤 실행의 상태를 프로젝트가 있으면 projects 에, 없으면 가장 나쁜 것을 worstStatus 에 싣는다.
   const fold = (first: ResultTest, t: ResultTest) => {
     const runs = t.projects ? Object.entries(t.projects) : t.project != null && t.status ? [[t.project, t.status]] : [];
     if (runs.length && (first.project != null || first.projects)) {
