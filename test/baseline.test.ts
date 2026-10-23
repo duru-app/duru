@@ -331,7 +331,8 @@ test('in a browser, with baselineMap the page names the baseline, marks each cha
     });
     setConfig({ baselineMap: 'v1.0/map.json' });
     await onPage(configFile, async (p) => {
-      assert.ok((await p.textContent('header #baseline'))!.startsWith(`비교 기준 v1.0 ${path.join('v1.0', 'map.json')} 커밋 모름 · duru `));
+      assert.ok((await p.textContent('header #baseline'))!.startsWith('비교 기준 v1.0 커밋 모름 · duru '));
+      assert.equal(await p.getAttribute('header #baseline > strong', 'title'), path.join('v1.0', 'map.json'));
       assert.equal(await p.textContent('#left .baseline-filter'), 'v1.0 와 비교바뀐 화면만 5');
 
       const chips = (title: string) => p.locator(`#screen-list li[title="${title}"] .badges .chip:is(.change-new, .change-condition, .change-calls)`).allTextContents();

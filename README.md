@@ -1003,8 +1003,8 @@ when 「배율」 is 「칸에 맞춤」 (with the width at 「칸에 맞춤」,
 for the middle pane, the side panes give back the width they were dragged to. The widths last until the page is
 loaded again.
 
-**Changes since a baseline.** With `baselineMap` set, the header names the baseline by its folder and path
-(「비교 기준」). A screen in the list carries 「신규」 (one the baseline does not have), 「조건 바뀜」 (the conditions before and after on hover) or
+**Changes since a baseline.** With `baselineMap` set, the header names the baseline by its folder, with the map's path on
+hover (「비교 기준」). A screen in the list carries 「신규」 (one the baseline does not have), 「조건 바뀜」 (the conditions before and after on hover) or
 「호출 +N −N」, and 「바뀐 화면만」 in the box 「<folder> 와 비교」 keeps only those. Below the list come the screens only the
 baseline has, and how many screens changed their role or setting conditions and how many calls their server match.
 A changed screen opens with a line saying what changed; its call table has a column 「<folder> 와 비교」 with 「생김」 or

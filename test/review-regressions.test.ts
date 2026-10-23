@@ -169,7 +169,8 @@ test('in a browser, with baselineTests and baselineMap the screen list counts th
     await withServer(loadConfig(configFile), 'reviewer', (base) => withPage(base, async (p) => {
       await p.waitForSelector('#screen-list li');
       const header = (await p.textContent('header #baseline'))!;
-      assert.ok(header.startsWith(`비교 기준 1.5.0 ${path.join(RELEASE, 'map.json')} 커밋 `), header);
+      assert.ok(header.startsWith('비교 기준 1.5.0 커밋 '), header);
+      assert.equal(await p.getAttribute('header #baseline > strong', 'title'), path.join(RELEASE, 'map.json'));
       assert.equal(await p.textContent('header #baseline .baseline-tests'), '1.5.0 결과 11');
       assert.equal(await p.getAttribute('header #baseline .baseline-tests strong', 'title'), RELEASE);
       const results = (await tipOf(p, 'header #baseline .baseline-results'))!;

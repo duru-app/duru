@@ -24,7 +24,7 @@ function renderHeader() {
   pill.hidden = !b && !t;
   const baselineCode = b && codeState(b.code);
   fill(pill, ...(b || t ? [h('span', {}, '비교 기준'), ' '] : []),
-    ...(b ? [h('strong', {}, b.label), ' ', h('code', {}, b.file), ...(baselineCode ? [' ', baselineCode] : [])] : []),
+    ...(b ? [h('strong', { title: b.file }, b.label), ...(baselineCode ? [' ', baselineCode] : [])] : []),
     b && t ? ' · ' : null,
     t ? baselineResults(t) : null);
   const author = document.getElementById('author');
