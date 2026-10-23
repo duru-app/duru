@@ -154,6 +154,12 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - A link whose `to` is `{?}` goes to an address duru could not read, such as one held in a variable; it goes to no
   screen, and a story step from that screen with no other link to the next screen is not judged. Do not take it as
   a missing link.
+- When the app's links go through a link component from a package (a design system's `Link`) or through a function
+  that only returns an address for a menu or a command to move to later, those links are missing or `{?}`. Find
+  how the screens import it, add `"linkComponents": [{ "import": "<the import as the app writes it>", "name":
+  "<that export>" }]` or `"linkFunctions": [{ "import": "<the import>", "name": "<that export>", "address": "<the
+  place of the address among the values it is given, such as 0.to>" }]` to the config yourself, run `duru rebuild` again, and tell the user how the links changed. A `… is used
+  nowhere in the screen sources` line means the entry matched nothing.
 
 ## Sequence
 

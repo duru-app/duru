@@ -859,6 +859,12 @@ export async function extractClient(config: any) {
     return [...found].map(([to, sides]) => (sides?.length ? { to, sides } : { to }));
   }
 
+  const keptBranches = (read: Read, keep: (text: string) => boolean): Read => ('tooMany' in read ? read : { branches: read.branches.filter((b) => keep(b.text)) });
+  // linkComponents 의 컴포넌트는 바깥 사이트도 연다.
+  const outsideAddresses = (newTab: boolean) => (p: NodePath) => addressesOf(keptBranches(linkReading.branches(p), (text) => !/^https?:\/\//i.test(text)), () => writtenAddress(tailText(p)))
+    .filter(({ to }) => !newTab || (to !== UNKNOWN && !/\.\w+$/.test(to.split(/[?#]/)[0])));
+  const listedAddresses = (p: NodePath) => addressesOf(keptBranches(linkReading.branches(p), (text) => text !== ''), () => writtenAddress(tailText(p)));
+
   const oneAddress = (p: NodePath) => {
     const [only, ...more] = linkAddresses(p);
     return more.length || only === undefined ? UNKNOWN : only.to;
@@ -988,6 +994,65 @@ export async function extractClient(config: any) {
     if (!file || !file.startsWith(config.srcRoot + path.sep)) throw new Error(`history.import ${from} names no file under srcRoot ${config.srcRoot}`);
     if (!follower.declaration(file, name)) throw new Error(`history.name ${name} is not exported by ${path.relative(config.srcRoot, file)}`);
     return file;
+  }
+
+  // file 은 import 가 srcRoot 안의 파일일 때 그 파일이고, 아니면 import 에 적힌 글자 그대로 맞춘다.
+  type Listed = { key: 'linkComponents' | 'linkFunctions'; import: string; name: string; address?: string; file: string | null };
+  const listedEntries = (key: Listed['key']): Listed[] => ((config[key] ?? []) as Omit<Listed, 'key' | 'file'>[]).map((entry) => ({ ...entry, key, file: listedFile(key, entry) }));
+  function listedFile(key: Listed['key'], { import: from, name }: { import: string; name: string }) {
+    const file = imports.resolve(path.join(config.srcRoot, 'index.js'), from);
+    if (!file || !file.startsWith(config.srcRoot + path.sep)) {
+      if (from.startsWith('.')) throw new Error(`${key} import ${from} names no file under srcRoot ${config.srcRoot}`);
+      return null;
+    }
+    if (!follower.declaration(file, name)) throw new Error(`${key} ${from} ${name}: ${name} is not exported by ${path.relative(config.srcRoot, file)}`);
+    return file;
+  }
+  const listedComponents = listedEntries('linkComponents');
+  const listedFunctions = listedEntries('linkFunctions');
+  const usedListed = new Set<Listed>();
+  const listedImports = new Map<string, boolean>();
+  // keys 는 import 한 이름에서 꺼낸 속성의 이름이다(<ads.Link> 의 Link).
+  function listedAs(binding: Binding | undefined, keys: string[], entries: Listed[]): Listed | null {
+    const from = binding && entries.length ? importedAs(binding) : null;
+    const name = !from ? null : from.name === '*' ? (keys.length === 1 ? keys[0] : null) : keys.length ? null : from.name;
+    if (!name) return null;
+    const file = programFile.get(binding!.scope.getProgramParent().block);
+    const resolved = file ? imports.resolve(file, from!.spec) : null;
+    const found = entries.find((entry) => {
+      if (!entry.file) return from!.spec === entry.import && name === entry.name;
+      const key = `${resolved}\0${name}\0${entry.file}`;
+      if (!listedImports.has(key)) listedImports.set(key, Boolean(resolved) && follower.origin(resolved, name, (f) => f === entry.file)?.name === entry.name);
+      return listedImports.get(key)!;
+    }) ?? null;
+    if (found) usedListed.add(found);
+    return found;
+  }
+  function listedCall(p: NodePath<CallExpression>): Listed | null {
+    const callee = p.get('callee') as NodePath<any>;
+    if (callee.isIdentifier()) return listedAs(callee.scope.getBinding(callee.node.name), [], listedFunctions);
+    const object = callee.isMemberExpression() && !callee.node.computed ? callee.get('object') : null;
+    return object?.isIdentifier() ? listedAs(object.scope.getBinding(object.node.name), [(callee.node.property as Identifier).name], listedFunctions) : null;
+  }
+  function valuesAt(p: NodePath<CallExpression>, place: string): NodePath[] {
+    const [index, ...keys] = place.split('.');
+    let value = (p.get('arguments') as NodePath<any>[])[Number(index)] as NodePath<any> | undefined;
+    for (const key of keys) {
+      const prop = value?.isObjectExpression() ? (value.get('properties') as NodePath<any>[]).findLast((x) => (x.isObjectProperty() || x.isObjectMethod()) && !x.node.computed && keyName(x.node) === key) : undefined;
+      value = prop?.isObjectMethod() ? prop : (prop?.get('value') as NodePath<any> | undefined);
+    }
+    if (!value?.node || value.isSpreadElement()) return [];
+    if (!value.isFunction()) return [value];
+    const body = value.get('body') as NodePath<any>;
+    if (!body.isBlockStatement()) return [body];
+    const returned: NodePath[] = [];
+    body.traverse({
+      Function: (f) => f.skip(),
+      ReturnStatement: (r) => {
+        if (r.node.argument) returned.push(r.get('argument') as NodePath);
+      },
+    });
+    return returned;
   }
 
   function fileFacts(file: string): Facts {
@@ -1154,12 +1219,24 @@ export async function extractClient(config: any) {
         for (const p of reassignable < 0 ? parts : parts.slice(0, reassignable)) for (const ref of constantAt.get(p.node) ?? []) linkAddressRefs.add(ref);
       }
     };
-    const recordLinks = (addresses: NodePath[]) => {
+    const recordLinks = (addresses: NodePath[], read = linkAddresses) => {
       markLinkAddresses(addresses);
       for (const at of addresses) {
         if (madeFrom(at).some(holdsRouteRef)) continue;
-        for (const address of linkAddresses(at)) record('routerLinks', address, at);
+        for (const address of read(at)) record('routerLinks', address, at);
       }
+    };
+    const recordElementLinks = (p: NodePath<JSXElement>) => {
+      const component = linkComponentOf(p);
+      const target = (p.get('openingElement.attributes') as NodePath<any>[]).find((a) => a.isJSXAttribute() && a.node.name.name === 'target');
+      const value = target?.get('value') as NodePath<any> | undefined;
+      const newTab = Boolean(value?.node) && evaluate(value!.isJSXExpressionContainer() ? value!.get('expression') : value!) === '_blank';
+      recordLinks(screenLinks.element(p, inRouteFile), component && 'listed' in component ? outsideAddresses(newTab) : linkAddresses);
+    };
+    const recordListedCall = (p: NodePath<CallExpression>) => {
+      const listed = listedCall(p);
+      if (listed) recordLinks(valuesAt(p, listed.address!).flatMap((v) => addresses(v)), listedAddresses);
+      return Boolean(listed);
     };
     const recordHelperLinks = (p: NodePath<CallExpression>) => {
       if (screenLinks.moveOf(p) || (p.get('arguments') as NodePath[]).some((a) => madeFrom(a).some(holdsRouteRef))) return;
@@ -1175,12 +1252,12 @@ export async function extractClient(config: any) {
     const inRouteFile = routeFileSet.has(file);
     traverse(ast, {
       JSXElement(p) {
-        recordLinks(screenLinks.element(p, inRouteFile));
+        recordElementLinks(p);
         recordUseLinks(p);
       },
       CallExpression(p) {
         recordLinks(screenLinks.call(p));
-        recordHelperLinks(p);
+        if (!recordListedCall(p)) recordHelperLinks(p);
         const callee = p.get('callee');
         const binding = !config.history && callee.isIdentifier() ? callee.scope.getBinding(callee.node.name) : undefined;
         const from = binding ? importedAs(binding) : null;
@@ -1296,6 +1373,7 @@ export async function extractClient(config: any) {
     const table = routeTables.get(routeFile);
     const elementScreens = new Map<Node, RouteScreen[]>();
     const loopRoutes: LoopRoute[] = [];
+    const placed: { element: Node; screen: RouteScreen; grouped: boolean }[] = [];
     let loopAt = -1;
     traverse(ast, {
       JSXElement(p) {
@@ -1373,8 +1451,18 @@ export async function extractClient(config: any) {
         };
         screens.push(screen);
         elementScreens.set(p.node, [screen]);
+        placed.push({ element: p.node, screen, grouped: Boolean(p.findParent((up) => up.isJSXElement() && ['Switch', 'Routes'].includes(tagOf(up.node.openingElement.name) ?? ''))) });
       },
     });
+    // 모달로 한 번 더 그리려고 Switch · Routes 밖에 적은 라우트는, 경로와 컴포넌트가 같은 묶음 안의 라우트와 한 화면이다.
+    for (const { element, screen, grouped } of placed) {
+      const same = grouped || screen.path.includes(UNKNOWN) ? null : placed.find((o) => o.grouped && o.screen.path === screen.path && o.screen.component === screen.component && o.screen.componentFile === screen.componentFile);
+      if (!same) continue;
+      const at = screens.indexOf(screen);
+      screens.splice(at, 1);
+      if (loopAt > at) loopAt--;
+      elementScreens.set(element, [same.screen]);
+    }
     if (table) {
       const listed = tableScreens(table, loopRoutes, routeFile);
       elementScreens.set(loopRoutes[0].element, listed);
@@ -1660,6 +1748,7 @@ export async function extractClient(config: any) {
 
   function componentNamed(binding: Binding | undefined, keys: string[], depth: number): LinkComponent | null {
     if (!binding || binding.kind === 'param' || depth >= FOLLOWED) return null;
+    if (listedAs(binding, keys, listedComponents)) return { router: 'Link', listed: true };
     if (routerImport(binding)) {
       const { name } = importedAs(binding)!;
       const tag = name === '*' ? keys.length === 1 && keys[0] : !keys.length && name;
@@ -2163,5 +2252,5 @@ export async function extractClient(config: any) {
   });
 
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })) };
+  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })) };
 }

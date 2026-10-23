@@ -98,6 +98,19 @@ client with example results and a config to start from.
   `import` that names no file under `srcRoot` or a `name` that file does not export stops the run with an error
   naming the key. Without it, a file that makes a history with `createBrowserHistory` or `createHashHistory` gets a
   `history is not set` line (see "What extract and rebuild print").
+- `linkComponents` — link components whose source duru does not read, such as a design system package's `Link`
+  (optional): `[{ "import": "@appsmith/ads", "name": "Link" }]`. Where one is used, its `to` is a link, except an
+  address of another site or a file opened in a new tab.
+- `linkFunctions` — functions whose call stands for a link while the move happens elsewhere, such as a menu action
+  made from an address (optional): `[{ "import": "~/actions", "name": "createInternalLinkAction", "address": "0.to"
+  }]`. `address` is where the address is among the values the function is given, as the place of the value counted
+  from 0 followed by the keys inside it, as in `requestFunction`.
+- In both keys `import` is the module as the app imports it, and an `import` starting with `.` is a path from
+  `srcRoot`. When it resolves to a file under `srcRoot`, `name` is what that file exports, and a screen's import is
+  matched by following it to that file; otherwise `import` is matched as written. A key of another shape, an
+  `import` starting with `.` that names no file under `srcRoot`, or a file under `srcRoot` that does not export
+  `name`, stops the run with an error naming the key. An entry that no element or call in a screen's sources uses
+  gets a `… is used nowhere in the screen sources` line.
 - `tsconfig` — the tsconfig file that declares the app's import aliases (optional), such as
   `"client/tsconfig.json"`, relative to the config file like `srcRoot`. Name the file that holds `paths`, itself
   or through `extends`: in a project whose `tsconfig.json` only lists `references`, that is the referenced file,
@@ -393,7 +406,8 @@ inside it.
 history react-router hands to the screen or of the one named in `history`, and the addresses given to the function
 `useNavigate()` returns. A link can also sit on the line of a call of a function in the source that moves the
 history, or on the line where a component in the source that wraps a react-router link or a history move is used
-(`<SidebarLink to="/home">`), with the address that call or use leads to. Each link has its address `to`, with `{*}` for a piece that comes from a value, the file
+(`<SidebarLink to="/home">`), with the address that call or use leads to, or where a component or function named
+in `linkComponents` or `linkFunctions` is used. Each link has its address `to`, with `{*}` for a piece that comes from a value, the file
 and line, the conditions guarding it, and `targets`, the IDs of the screens it goes to. A link whose address duru
 cannot read has `to` `{?}` and empty `targets`. In an app that uses redux-saga, a route constant or a move of the
 history named in `history` written in a saga is a link of each screen that dispatches an action the saga waits for,
@@ -485,6 +499,9 @@ listing the places whose value the source does not show in full.
 - `history is not set; <file> calls createBrowserHistory, and moves through the history it makes are not read as
   links` — a file that makes a history (`createHashHistory` likewise) while the config has no `history` key, so
   the `push` and `replace` calls on it are not links on the map. Name it in `history` (`madeHistories`).
+- `linkComponents <import> <name> is used nowhere in the screen sources` — an entry of `linkComponents`
+  (`linkFunctions` likewise) that no element or call in a screen's sources uses, often a misspelt package or name
+  (`unusedLinkEntries`).
 - `route path not read ← <route file>:<line>: stopped at <piece>` — a route whose path duru could not read in full.
   `<piece>` is the first part of the path whose value it could not read, as written where duru stopped: in the
   route file, or, followed by `in <file>:<line>`, in another file when duru followed a name into that file. When the

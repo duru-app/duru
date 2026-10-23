@@ -11,7 +11,7 @@ const MOST_BRANCHES = 64;
 export type AddressFunction = NodePath<ArrowFunctionExpression | FunctionExpression | FunctionDeclaration>;
 type Followable = AddressFunction | NodePath<ClassMethod>;
 // JSX 요소가 그리는 것: router 는 react-router 의 링크 요소 이름, fn 은 소스에 선언한 함수 컴포넌트다.
-export type LinkComponent = { router: string } | { fn: AddressFunction };
+export type LinkComponent = { router: string; listed?: true } | { fn: AddressFunction };
 // value 는 끝까지 읽은 값이고, parts 는 고정 문자열과 읽다 멈춘 지점을 순서대로 담는다.
 // withheld 는 값을 알지만 이 읽기가 받지 않는 조각이다.
 export type Leaf = { value: unknown } | { parts: (string | NodePath)[]; withheld?: boolean };

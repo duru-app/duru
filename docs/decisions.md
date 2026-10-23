@@ -4003,6 +4003,55 @@ Known limits:
 - A variable or parameter named like a settings root, in a route file or an address function, is read as the
   setting.
 
+**A link component or a link function duru cannot follow in the source is named in the config, as
+`linkComponents` and `linkFunctions`.**
+Two kinds of link are out of reach of the source: a component whose body is outside `srcRoot` (appsmith's `Link`
+from `@appsmith/ads`, a workspace package whose body passes `to` to `styled(RouterLink)`), and a function that only
+returns an address for a menu action or a command, the move happening elsewhere (outline's
+`createInternalLinkAction` and `openRouteInSplit`, whose body moves to the current address). The driver chose
+(#395) to follow what the source shows and take only these two from the config; a config-only way for every link
+component was dropped, since outline's 16 components declared in the file that uses them (mostly `styled(Link)`)
+have no import to name.
+Key shape: like `history` and `requestFunction`, an entry names the import and the name the app imports.
+`linkComponents` always reads `to`: of the four apps, no package link component takes a screen address under
+another attribute (appsmith's `@appsmith/wds` `Link` takes an outside URL as `href` once), so the `attribute` key of
+the draft was left out. `linkFunctions` names the address place as `requestFunction`'s `url` does (`"0.to"`, `"1"`);
+a function written there (17 of outline's 56 `createInternalLinkAction` calls give `to: ({ getActiveModel }) => …`)
+gives the addresses it returns, read as an address function's branches, and a branch returning `""` gives no link.
+An import resolving to a file under `srcRoot` is matched by what that file exports, through re-exports, so a typo
+in `name` stops the run; any other import is matched as written, since duru cannot tell whether a package exists,
+and an entry no screen source uses is printed instead of stopping the run.
+New tab and outside addresses: a component named in `linkComponents` also opens other sites, so there an address
+starting with `http://` or `https://` is not a link, nor, with `target="_blank"` written at the use, an address
+duru cannot read or one whose last piece is a file name with an extension. The last is appsmith's `FooterLinks`
+(`/privacy-policy.html`, `/terms-and-conditions.html`, files of `app/client/public/`); matching them against the
+routes cannot tell them apart, since appsmith's route without a path fits every address. An app screen opened in a
+new tab stays a link when its address is read. The rule is kept to `linkComponents`: of the four apps only ads
+`Link` writes `to` with `_blank` (18 places) or an `http` address (1 place). Only the attributes written at the use
+are read, so ads `Link`'s `defaultProps` `target: "_blank"` is not seen and its 4 uses with an unread address and
+no `target` stay `{?}`.
+A screen drawn in a split view's second pane or as a modal is an ordinary link to the screen of its address (driver,
+#395): the map draws no panes or modals. A move to a modal route (`push({ pathname, state: { background } })`) is
+already a link by its `pathname`. The route written again outside the `<Switch>` to draw the modal was a second
+screen with the same ID; now a route outside every `<Switch>` and `<Routes>` of its route file whose path and
+component are those of a route inside one is the same screen, drawn at both places, when duru reads the path in
+full. The screen keeps the guards and wrappers of the route inside the group; those of the route outside are not
+on it, as the modal's own condition (`background &&`) should not be. Compared: merging every pair
+with the same path and component, and merging pairs in different groups, would both stop reporting the same screen
+named in two route files (a test of the report), and merging by path alone would give an ID that does not name the
+component drawn. None of the four apps has such a pair.
+Not chosen: following workspace packages outside `srcRoot` (appsmith ads, outline `shared/`), which widens what
+every name lookup resolves, request functions included; ads `Link` is named in the config instead and outline's 8
+`sharedModelPath` places stay `{?}`.
+Measured against the base (87ed184), counting a link once per screen it is on, with appsmith naming ads `Link` and
+outline naming `createInternalLinkAction` (`"0.to"`) and `openRouteInSplit` (`"1"`):
+- outline: link lines 1776 to 2856, 1014 to 1491 reaching a screen; entry screens 25 to 23, screens with a link from
+  another screen 21 to 23; `/drafts` gains links in from 16 lines to 38 and the document edit screen from 110 to
+  141. 46 of the 56 `createInternalLinkAction` calls give a link; among the other 10 are addresses read from a
+  model's member (`collection.path`, `item.path`) and a `to: ""`.
+- appsmith: 370 to 427 link lines, 80 to 101 reaching a screen; no entry screen changes. `FooterLinks` gives no link.
+- mattermost (8443) and into-sign 1.5.0 (576) do not change. No link line of the base is lost in any of them.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
