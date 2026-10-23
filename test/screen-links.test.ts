@@ -1908,6 +1908,38 @@ export default function Home({ type, doc, x }) {
   assert.deepEqual(linksOf(map, '/home#Home'), [['{?}', lineOf(home, "leave('/login'"), [], []]]);
 });
 
+test('a ? : in the address a helper moves to keeps only the branch the arguments of the call lead to', async () => {
+  const home = `import { useHistory } from 'react-router-dom';
+
+function afterSave(history, isNew, id) {
+  history.push(isNew ? '/start' : \`/team/\${id}\`);
+}
+
+export default function Home() {
+  const history = useHistory();
+  const open = (path, fallback) => history.push(path ? path : fallback);
+  const goDoc = (doc, edit) => history.push({ pathname: edit ? doc.editUrl : doc.url });
+  const leave = (to, back) => history.push(back ? '/home' : to);
+  return (
+    <nav>
+      <a onClick={() => open('/start', '/login')}>a</a>
+      <a onClick={() => goDoc({ url: '/help', editUrl: '/team/e' }, false)}>b</a>
+      <a onClick={() => leave('/start', true)}>c</a>
+      <a onClick={() => afterSave(history, false, 'a')}>d</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/home', at("back ? '/home'"), ['back'], ['/home#Home']],
+    ['/start', at("open('/start'"), [], ['/start#Start']],
+    ['/help', at('goDoc({'), [], ['/help/:page?#Help']],
+    ['/team/a', at('afterSave(history, false'), [], ['/team/:team#Team']],
+  ]);
+});
+
 test('the decision record says that a call of a function that moves to an address or with a history it is given is a link at the call', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
   const decisions = read('docs/decisions.md');

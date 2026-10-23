@@ -3557,8 +3557,9 @@ and a condition inside the function tests its parameters, which mean something o
 The arguments are put into the parameters as for an address function, with its defaults, object patterns and rest
 parameters. A `const` in the body is read from its initial value with those values; a parameter given another value
 in the body is not read from the call. An `if`, `? :`, `&&` or `||` around a move that the arguments decide drops the
-move it does not lead to (`if (team) … else push(url)` called without `team` keeps only `push(url)`); one they cannot
-decide keeps the move, without its text. A `switch` and an earlier `return` are not read as conditions, so every
+move it does not lead to (`if (team) … else push(url)` called without `team` keeps only `push(url)`), and so does a
+`? :` in the address of a move (`push(edit ? doc.editUrl : doc.url)` called with `edit` false keeps only `doc.url`);
+one they cannot decide keeps the move, without its text. A `switch` and an earlier `return` are not read as conditions, so every
 move under them is kept. An address that is `undefined` or `null` (a property the call does not give) gives no link,
 nor does one that is an argument taken from props or a parameter as it is (`hrefPage(menu.href)`, as decided in
 #392), nor a move to a parameter of a function inside the helper (`urls.forEach((u) => history.push(u))`). A move

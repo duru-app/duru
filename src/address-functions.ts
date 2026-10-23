@@ -646,6 +646,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
       if (!reached(place.at, fn, at)) continue;
       if (place.history && !values(place.history, at).some((o) => o.whole && moves!.isHistory(o.whole))) continue;
       for (const a of place.addresses) {
+        if (a.isDescendant(fn) && !reached(a, fn, at)) continue;
         for (const o of values(a, at)) {
           const located = address(wholeOr(o, a), a);
           const value = located && plain(located);
