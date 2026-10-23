@@ -70,7 +70,7 @@ type DispatchedActions = { type: string; dispatchedAt: string[] }[];
 type DispatchSite = { line: number; types: () => ActionType[] };
 type WatcherSite = { watches: Watch[] };
 type SettingRead = Site & { key: string };
-type RouteRef = Site & { route: string; tail?: string };
+type RouteRef = Site & { route: string; tail?: string | null };
 type RouterLink = Site & { to: string };
 type FollowedSite = ApiCallSite | DispatchSite | WatcherSite | RouteRef | RouterLink;
 
@@ -305,6 +305,7 @@ export async function extractClient(config: any) {
   };
   const siteStart = new WeakMap<FollowedSite, number>();
   const siteFile = new WeakMap<FollowedSite, string>();
+  const linkAddressRefs = new WeakSet<RouteRef>();
   const linkSites = (facts: Facts): (RouteRef | RouterLink)[] => [...facts.routeRefs, ...facts.routerLinks];
   const sitesOf = (file: string) => {
     const facts = fileFacts(file);
@@ -823,8 +824,9 @@ export async function extractClient(config: any) {
     return more.length || only === undefined ? UNKNOWN : only;
   };
 
-  // 라우트 상수 뒤에 '/' 로 이어 붙은 주소. 조각마다 글자 그대로이거나 변수 하나일 때만 돌려주고, 아니면 '' 을 돌려준다.
-  function routeTail(p: NodePath) {
+  // 라우트 상수 뒤에 이어 붙은 주소와, 상수부터 그 주소까지 이어 붙인 식. 꼬리는 마디마다 글자 그대로이거나 변수 하나이면 '/…',
+  // 붙은 것이 없거나 쿼리와 # 뿐이면 '', 그 밖에는 null 이다.
+  function routeTail(p: NodePath): { tail: string | null; whole: NodePath } {
     let tail = '';
     let whole = p;
     for (;;) {
@@ -836,8 +838,9 @@ export async function extractClient(config: any) {
       } else break;
       whole = parent;
     }
+    if (['', '/'].includes(tail.split(/[?#]/)[0])) return { tail: '', whole };
     const segments = pathSegments(tail)?.map((s) => (s === UNREADABLE_PIECE ? VARIABLE_SEGMENT : s));
-    return segments?.length && segments.every((s) => s && !s.includes(UNREADABLE_PIECE)) ? `/${segments.join('/')}` : '';
+    return { tail: segments?.every((s) => s && !s.includes(UNREADABLE_PIECE)) ? `/${segments.join('/')}` : null, whole };
   }
 
   // ---------- API 모듈: 내보낸 함수마다 호출하는 endpoint ----------
@@ -953,6 +956,7 @@ export async function extractClient(config: any) {
     const calledNamed = new Map<string, { file: string; exportName: string }>();
     const calledNamespaces = new Map<string, string>();
     const localFnRefs = new Map<string, { fnPath: NodePath; items: Site[] }>();
+    const constantAt = new Map<Node, RouteRef[]>();
     const relFile = path.relative(config.srcRoot, file);
     const note = guardNote(relFile, src);
 
@@ -967,6 +971,7 @@ export async function extractClient(config: any) {
         if (!localFnRefs.has(owner.name)) localFnRefs.set(owner.name, { fnPath: owner.fnPath, items: [] });
         localFnRefs.get(owner.name)!.items.push(item);
       }
+      return item;
     }
 
     const staticImports = new Set<string>();
@@ -1080,7 +1085,7 @@ export async function extractClient(config: any) {
           if (!p.node.computed) return;
           for (const r of listedRoutes(p)) {
             noteSettings(relFile, r.guard, r.settings);
-            record('routeRefs', { route: r.route }, p, [r.guard]);
+            constantAt.set(p.node, [...(constantAt.get(p.node) ?? []), record('routeRefs', { route: r.route }, p, [r.guard]) as RouteRef]);
           }
           return;
         }
@@ -1090,14 +1095,23 @@ export async function extractClient(config: any) {
         } else if (result) {
           record('settingReads', { key: [result[1], ...chain.slice(1)].join('.') }, p);
         } else if (chain[0] === routeRoot && chain.length === routeRest.length + 2 && routeRest.every((k: string, i: number) => chain[i + 1] === k)) {
-          record('routeRefs', { route: chain[chain.length - 1], tail: routeTail(p) }, p);
+          const { tail, whole } = routeTail(p);
+          constantAt.set(whole.node, [record('routeRefs', { route: chain[chain.length - 1], tail }, p) as RouteRef]);
         }
       },
     });
 
     const routeRefAt = facts.routeRefs.map((r) => siteStart.get(r)!);
     const holdsRouteRef = (p: NodePath) => routeRefAt.some((start) => start >= p.node.start! && start < p.node.end!);
+    const markLinkAddresses = (addresses: NodePath[]) => {
+      for (const at of addresses) {
+        const parts = madeFrom(at);
+        const reassignable = parts.findIndex((p) => p.isIdentifier() && p.scope.getBinding(p.node.name)?.kind !== 'const');
+        for (const p of reassignable < 0 ? parts : parts.slice(0, reassignable)) for (const ref of constantAt.get(p.node) ?? []) linkAddressRefs.add(ref);
+      }
+    };
     const recordLinks = (addresses: NodePath[]) => {
+      markLinkAddresses(addresses);
       for (const at of addresses) {
         if (madeFrom(at).some(holdsRouteRef)) continue;
         for (const to of linkAddresses(at)) record('routerLinks', { to }, at);
@@ -1799,18 +1813,21 @@ export async function extractClient(config: any) {
       if (n.kind === 'routes') {
         const branches: Branch[] = [];
         const unwrapped = (nodes: DrawnNode[]): DrawnNode[] => nodes.flatMap((c) => (c.isFragment ? unwrapped(c.children) : [c]));
+        const indexes: string[] = [];
         const flatten = (routes: DrawnNode[], outerPath: string, chain: Branch['chain']) => {
           for (const r of unwrapped(routes).filter((c) => c.isRoute)) {
             const drawnBy = unwrapped(r.children).filter((c) => !c.isRoute && (c.kind !== 'redirect' || c.redirectAsElement));
+            const leaf = drawnBy.length === unwrapped(r.children).length;
             for (const node of convert({ ...r, children: drawnBy }, file, outerPath) as Branch['chain']) {
               const own = node.path === null ? null : node.path.startsWith('/') ? node.path : `${outerPath}/${node.path}`.replace(/\/{2,}/g, '/');
               flatten(r.children, own ?? outerPath, [...chain, node]);
               if (own !== null) branches.push({ path: own, chain: [...chain, node] });
+              else if (leaf) indexes.push(outerPath);
             }
           }
         };
         flatten(n.children, base, []);
-        return [{ kind: 'routes', branches }];
+        return [{ kind: 'routes', branches, indexes }];
       }
       if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file, base)) }];
       if (n.kind === 'redirect') return [{ kind: 'redirect', from: n.from, exact: n.exact, to: n.to }];
@@ -1885,6 +1902,15 @@ export async function extractClient(config: any) {
   });
   fillOuterAddresses(sourced);
   const routedScreens = routerTargets(routeTree(drawn, extracted, sourced));
+  // 링크 주소 전체로 쓴 라우트 상수는 Routes 에서 그 주소에 맞는 화면이 나오면 문자열 주소처럼 잇되 다른 Routes 의 catch-all 은 빼고, 그 밖에는 라우트 경로에 맞춰 본다.
+  const constantLink = (site: RouteRef) => {
+    const { tail, ...ref } = site;
+    const value = routeValues[ref.route];
+    if (typeof value !== 'string') return { ...ref, to: value ?? UNKNOWN };
+    const to = tail ? value + tail : value;
+    const routed = tail !== null && linkAddressRefs.has(site) && routedScreens.decidedByRoutes(to);
+    return { ...ref, to, ...(tail && { tail }), ...(routed && { reaches: routedScreens.fittingScreens(to) }) };
+  };
   // POST 가 아닌 페이지 이동의 주소가 앱의 라우트와 맞으면 서버가 아니라 앱의 다른 화면이 열린다. 고정 문자열 부분이 없는 라우트는 어떤 주소에나 맞으므로 견주지 않는다.
   const screenRoutes = sourced.map((x) => x.s).filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
   const opensScreen = (url: string) => screenRoutes.some((route) => route.test(url.replaceAll(UNKNOWN, '\0').split(/[?#]/)[0]));
@@ -1972,12 +1998,10 @@ export async function extractClient(config: any) {
         if (!reached.has(ref)) continue;
         ownLinks.add(ref);
         if (!('route' in ref)) {
-          links.push({ ...ref, file: rel(f), reaches: routedScreens(ref.to) });
+          links.push({ ...ref, file: rel(f), reaches: routedScreens.screens(ref.to) });
           continue;
         }
-        const { tail, ...r } = ref;
-        const value = routeValues[r.route];
-        links.push(typeof value === 'string' && tail ? { ...r, to: value + tail, tail, file: rel(f) } : { ...r, to: value ?? UNKNOWN, file: rel(f) });
+        links.push({ ...constantLink(ref), file: rel(f) });
       }
     }
     // 훅으로만 받은 스토어 파일의 dispatch 는 읽지 않는다.
@@ -2003,10 +2027,8 @@ export async function extractClient(config: any) {
     sagaCalls.sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.fn, b.fn));
     const sagaLinks = [...movedBySaga].map(([ref, actions]) => {
       const file = rel(siteFile.get(ref));
-      if (!('route' in ref)) return { ...ref, file, reaches: routedScreens(ref.to), actions: byType(actions) };
-      const { tail, ...r } = ref;
-      const value = routeValues[r.route] as string;
-      return tail ? { ...r, to: value + tail, tail, file, actions: byType(actions) } : { ...r, to: value, file, actions: byType(actions) };
+      if (!('route' in ref)) return { ...ref, file, reaches: routedScreens.screens(ref.to), actions: byType(actions) };
+      return { ...constantLink(ref), file, actions: byType(actions) };
     });
     sagaLinks.sort((a, b) => compare(a.file, b.file) || a.line - b.line);
     links.push(...sagaLinks);
