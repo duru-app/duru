@@ -12,6 +12,8 @@ import { readJunit } from '../src/junit.ts';
 import { BASELINE_TESTS, editJson, keepRelease } from './baseline-helpers.ts';
 import type { TestStatus } from '../src/verdict.ts';
 
+for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete process.env[key];
+
 const FIXTURE = path.join(import.meta.dirname, 'fixtures/app');
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
 const MAP = { screens: ['/a#A', '/b#B', '/c#C'], calls: ['GET:/api/x', 'GET:/api/y'] };
