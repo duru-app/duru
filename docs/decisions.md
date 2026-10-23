@@ -3342,8 +3342,8 @@ Alternatives compared:
   path without `/*` would then take longer addresses, which v6 does not.
 
 **Under `<Routes>`, a route constant written as a link's whole address, with a tail duru reads to the end or none,
-goes to the screens React Router 6 draws for it, as the same address written as text does; elsewhere a route
-constant keeps its old matching.**
+goes to the screens React Router 6 draws for it, as the same address written as text does, except the catch-alls of
+`<Routes>` drawn beside the one whose route fits it; elsewhere a route constant keeps its old matching.**
 A route constant is walked through the route files like a written address when all four hold:
 - It is the whole address of a link or a move: the `to` of `Link`, `NavLink`, `Navigate` or `Redirect`, or the
   address given to a history's `push` or `replace` or to the function `useNavigate()` returns, with the tail written
@@ -3357,26 +3357,40 @@ A route constant is walked through the route files like a written address when a
 - Walking the address passes a `<Routes>`. An address that passes only `<Switch>` keeps the old matching, for the
   reason given in the links entry above.
 - Every `<Routes>` on the walk that picks only a route ending in `*`, or none, holds no route duru cannot match
-  against the address: a route whose path duru cannot read, an index route drawing the address, or a route with a
-  literal segment where the address has `{*}` (`${SETTINGS}/${tab}` beside `profile` and `security`). The app may
-  draw the address with that route, so the catch-all there is not taken as the answer.
+  against the address: a route whose path duru cannot read, or a route with a literal segment where the address has
+  `{*}` (`${SETTINGS}/${tab}` beside `profile` and `security`). The app may draw the address with that route, so the
+  catch-all there is not taken as the answer. No `<Routes>` on the walk holds an index route drawing the address,
+  whichever route wins there: React Router 6 draws the index route before the route of the same path, and duru does
+  not read an index route as a screen.
 A saga's move is judged the same way. A link walked this way, like a written address, does not go on to the bare
 route constant when it finds only the screen it sits in.
-Choices made without a driver's answer (2026-10-22, in #402), each cheap to change: the rule takes only a whole
-address as above, and the `*` route of a route file drawn beside the others now reaches route constant links too, as
-it already reaches written ones.
+Driver's decision (2026-10-23): when a route of one `<Routes>` fits the whole address, a link walked this way does not
+also go to a catch-all (`*` or `/*`) that wins in another `<Routes>` drawn beside it, in another route file or another
+tree of the same file, nor to the address that catch-all sends to. When no route fits the address, the link goes to
+every catch-all that takes it, as a written address does, so `${LOGIN}/x` goes where `/login/x` goes and not where
+`LOGIN` alone goes. A route ending in `*` after a path, such as `/docs/*`, is not a catch-all and stays beside the
+route that fits; the path is read joined to the routes around it, so `*` under `<Route path="/docs">` is `/docs/*` too,
+and so is the `*` of a route file drawn under `/docs/*`. A written address still goes to the catch-alls drawn beside,
+the known limit of the React Router 6 entry above.
+Choice made without a driver's answer (2026-10-22, in #402), cheap to change: the rule takes only a whole address as
+above.
 Measured while planning, on a prototype of this rule (2026-10-22, against the branch reading function bodies):
 into-sign 2.0.0 changes 53 of its 368 link lines (32 places), each keeping the screens it had and adding the sign-in
 screen and the user home through the catch-alls of route files drawn side by side, and keeps 24 entry screens;
 outline, mattermost and appsmith name no route constant in their config, and into-sign 1.5.0 uses only `<Switch>`, so
 their maps do not change. Measured again on into-sign 2.0.0 with the catch-all check of the fourth condition
-(2026-10-23): the same 53 lines and 24 entry screens.
+(2026-10-23): the same 53 lines and 24 entry screens. Those 53 lines gained 104 targets, the sign-in screen and the
+user home, which the app never draws for someone who can press the link, and across into-sign 2.0.0, outline,
+mattermost, appsmith and into-sign 1.5.0 no link reached a more correct screen, so the driver left the catch-alls drawn
+beside out of route constant links. With them left out (2026-10-23), the five maps have the same links as on the branch
+reading function bodies.
 Known limits: a `<Routes>` anywhere on the walk counts, so in an app mixing `<Switch>` and `<Routes>` an address
 passing a `<Routes>` that takes none of it is walked too; an address kept in a `const` of another file keeps the old
-matching; the catch-all of a route file drawn beside the others is added to route constant links, as written above,
-and so is the catch-all of another tree in the same route file, such as the `<Routes>` returned early for a signed-out
-user, which sends every route constant link to the sign-in screen too; a route constant whose own value holds a query
-or a `#` part is walked with it and fits only a catch-all.
+matching; an address no route fits goes to every catch-all drawn beside, the signed-out ones too, and so does one
+that only a route ending in `*` after a path (`/docs/*`) takes, as before the driver's decision; a route that fits
+the address but draws only a `<Navigate>` is not taken as fitting, so the link goes where the `<Navigate>` sends it
+and to the catch-alls drawn beside as well; a route constant whose own value holds a query or a `#` part is walked
+with it and fits only a catch-all.
 Alternatives compared:
 - Every route constant written in screen code: on into-sign 2.0.0, 199 link lines (25 places) lost the screens they
   had and kept only the sign-in screen and the user home, and five editing and publishing screens became entry

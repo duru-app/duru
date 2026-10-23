@@ -1102,7 +1102,6 @@ export async function extractClient(config: any) {
 
     const routeRefAt = facts.routeRefs.map((r) => siteStart.get(r)!);
     const holdsRouteRef = (p: NodePath) => routeRefAt.some((start) => start >= p.node.start! && start < p.node.end!);
-    // 라우트 상수와 그 꼬리만으로 된 링크 주소에서 그 상수 참조를 표시한다. 이름은 const 로 선언된 것만 따라간다.
     const markLinkAddresses = (addresses: NodePath[]) => {
       for (const at of addresses) {
         const parts = madeFrom(at);
@@ -1865,14 +1864,14 @@ export async function extractClient(config: any) {
   });
   fillOuterAddresses(sourced);
   const routedScreens = routerTargets(routeTree(drawn, extracted, sourced));
-  // 링크 주소 전체로 쓴 라우트 상수는 Routes 가 그 주소의 화면을 정하면 글자로 쓴 주소와 같은 화면으로 잇고, 그 밖에는 라우트 경로에 맞춰 본다.
+  // 링크 주소 전체로 쓴 라우트 상수는 Routes 에서 그 주소에 맞는 화면이 나오면 문자열 주소처럼 잇되 다른 Routes 의 catch-all 은 빼고, 그 밖에는 라우트 경로에 맞춰 본다.
   const constantLink = (site: RouteRef) => {
     const { tail, ...ref } = site;
     const value = routeValues[ref.route];
     if (typeof value !== 'string') return { ...ref, to: value ?? UNKNOWN };
     const to = tail ? value + tail : value;
     const routed = tail !== null && linkAddressRefs.has(site) && routedScreens.decidedByRoutes(to);
-    return { ...ref, to, ...(tail && { tail }), ...(routed && { reaches: routedScreens.screens(to) }) };
+    return { ...ref, to, ...(tail && { tail }), ...(routed && { reaches: routedScreens.fittingScreens(to) }) };
   };
   // POST 가 아닌 페이지 이동의 주소가 앱의 라우트와 맞으면 서버가 아니라 앱의 다른 화면이 열린다. 고정 문자열 부분이 없는 라우트는 어떤 주소에나 맞으므로 견주지 않는다.
   const screenRoutes = sourced.map((x) => x.s).filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
