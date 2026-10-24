@@ -268,7 +268,7 @@ test('in a browser, with nothing picked the right column lists the failing scree
   });
 });
 
-test('in a browser, the flow bar counts the drawn screens on one button per status, and a pressed button and the search box fade the screens they leave out without moving any', { skip: browserMissing }, async () => {
+test('in a browser, the flow bar counts the drawn screens on one button per status, a pressed button and the search box fade the screens they leave out without moving any, and Enter in the search steps through the screens it found', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
@@ -298,11 +298,51 @@ test('in a browser, the flow bar counts the drawn screens on one button per stat
         await filterButton(p, 'none').click();
         assert.deepEqual(SCREEN_ORDER.filter((id) => !['/admin/group#AdminGroup', '/admin/audit#AdminAudit', '/admin/report#AdminReport'].includes(id)).sort(), await boxesWith(p, 'off'), 'the search and the button both apply');
         assert.equal(await search.evaluate((e) => e === document.activeElement), false);
+        const searchCount = p.locator('.flowbar .flow-search-count');
+        assert.equal(await searchCount.textContent(), '찾은 화면 3');
+        const found = await p.$$eval('#flow .box.screen:not(.off)', (els: HTMLElement[]) => els.map((e) => e.dataset.key!));
         await search.focus();
         await p.keyboard.press('Enter');
         assert.deepEqual(await pickedBoxes(p), ['/admin/group#AdminGroup'], 'Enter picks the first screen still shown');
+        assert.equal(found[0], '/admin/group#AdminGroup');
         assert.equal(await search.inputValue(), 'admin/', 'the search stays as typed across the redraw');
+        assert.equal(await searchCount.textContent(), '1 / 3');
+        await search.evaluate((e) => e.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true })));
+        assert.deepEqual(await pickedBoxes(p), ['/admin/group#AdminGroup'], 'an Enter the input method used to finish a syllable picks nothing');
+        for (const [key, at] of [[found[1], '2 / 3'], [found[2], '3 / 3'], [found[0], '1 / 3']]) {
+          await p.keyboard.press('Enter');
+          assert.deepEqual(await pickedBoxes(p), [key], 'Enter again picks the next screen still shown, and after the last the first');
+          assert.equal(await searchCount.textContent(), at);
+        }
+        await p.keyboard.press('Shift+Enter');
+        assert.deepEqual(await pickedBoxes(p), [found[2]], 'Shift+Enter picks the one before');
+        assert.equal(await searchCount.textContent(), '3 / 3');
+        await p.keyboard.press('Shift+Enter');
+        assert.deepEqual(await pickedBoxes(p), [found[1]]);
+        assert.equal(await searchCount.textContent(), '2 / 3');
+        await flowButton(p, '선택 해제').click();
+        assert.equal(await searchCount.textContent(), '찾은 화면 3');
+        await search.focus();
+        await p.keyboard.press('Enter');
+        assert.deepEqual(await pickedBoxes(p), [found[0]], 'after the pick in the middle is let go, Enter starts from the first again');
+        await p.keyboard.press('Enter');
+        assert.deepEqual(await pickedBoxes(p), [found[1]]);
+        assert.equal(await searchCount.textContent(), '2 / 3');
+        await flowButton(p, '선택 해제').click();
+        await search.focus();
+        await p.keyboard.press('Shift+Enter');
+        assert.deepEqual(await pickedBoxes(p), [found[2]], 'and Shift+Enter from the last');
+        assert.equal(await searchCount.textContent(), '3 / 3');
+        await search.fill('admin/g');
+        await p.keyboard.press('Enter');
+        assert.deepEqual(await pickedBoxes(p), ['/admin/group#AdminGroup'], 'after the search changes, Enter starts from the first screen it found when the picked one is not among them');
+        assert.equal(await searchCount.textContent(), '1 / 1');
+        await search.fill('nothing-like-this');
+        assert.equal(await searchCount.textContent(), '찾은 화면 없음');
+        await p.keyboard.press('Enter');
+        assert.deepEqual(await pickedBoxes(p), ['/admin/group#AdminGroup'], 'Enter with nothing found keeps the picked screen');
         await search.fill('');
+        assert.equal(await searchCount.isVisible(), false, 'the count shows only while searching');
         await filterButton(p, 'none').click();
         await flowButton(p, '선택 해제').click();
         assert.deepEqual(await p.$$eval('#flow .box.screen', (els: HTMLElement[]) => els.map((e) => [e.dataset.key, e.style.left, e.style.top])), before, 'fading and picking leave every screen where it was');
@@ -838,6 +878,32 @@ test('in a browser, flow boxes stand in columns by how many links they are from 
         assert.ok(byId['/signin#SignIn'].width < byId['/help#Help'].width, 'the entry column is narrower than the column holding the long route');
         assert.deepEqual(overlapping(boxes), []);
       }, { view: 'flow', setup: changeData(withLongRoute) }),
+    ),
+  );
+});
+
+test('in a browser, Enter in the flow search goes through the branching drawing before the gathered entry screens below it, and Shift+Enter with nothing picked starts from the last', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        const component = await p.evaluate(() => state.data.flow.roots[0].component as string);
+        const search = p.locator('.flowbar input.flow-search');
+        await search.fill(component);
+        const keys = await p.$$eval('#flow .box.screen:not(.off)', (els: HTMLElement[]) => els.map((e) => e.dataset.key!));
+        assert.equal(keys[0], '/extra/0#Extra0', 'the gathered box comes first among the boxes');
+        const belowHead = () => p.$eval('#flow .box.screen.picked', (e) => e.getBoundingClientRect().top >= document.querySelector('#flow .group-head')!.getBoundingClientRect().top);
+        await search.focus();
+        await p.keyboard.press('Shift+Enter');
+        assert.deepEqual(await pickedBoxes(p), ['/extra/0#Extra0'], 'Shift+Enter with nothing picked takes the last screen found, the gathered one at the bottom');
+        assert.equal(await p.textContent('.flowbar .flow-search-count'), `${keys.length} / ${keys.length}`);
+        const below = [];
+        for (const _ of keys) {
+          await p.keyboard.press('Enter');
+          below.push(await belowHead());
+        }
+        assert.deepEqual(below, [...Array(keys.length - 1).fill(false), true], 'Enter goes through the branching drawing first and reaches the gathered screen last');
+      }, { view: 'flow', setup: changeData((data) => { data.flow.roots.unshift(...leafEntries(data, 1)); }) }),
     ),
   );
 });

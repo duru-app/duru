@@ -45,6 +45,7 @@ function applyFlowEmphasis() {
     line.classList.toggle('on', on);
     line.classList.toggle('dim', related !== null && !on);
   }
+  syncFlowSearchCount();
 }
 
 function gapLists(screens, pick) {

@@ -104,27 +104,50 @@ function setFlowFilter(key) {
   applyFlowEmphasis();
 }
 
+// 딸린 화면이 없어 아래에 모아 그린 진입 화면은 상자 순서로는 갈래 그림 사이에 섞여 있으므로, 캔버스마다 갈래 그림 쪽을 앞에 둔다.
+function flowSearchPlace() {
+  const found = [...document.querySelectorAll('#flow .canvas')].flatMap((canvas) => {
+    const boxes = /** @type {HTMLElement[]} */ ([...canvas.querySelectorAll('.box.screen:not(.off)')]);
+    return [...boxes.filter((b) => !b.classList.contains('grouped')), ...boxes.filter((b) => b.classList.contains('grouped'))];
+  }).map((b) => b.dataset.key);
+  return { found, at: flowPickShown() ? found.indexOf(state.selected) : -1 };
+}
+
 // 검색 입력창을 새로 만들면 조합 중이던 한글이 끊기고 포커스도 사라지므로 한 번 만든 입력창을 다시 붙인다.
 let flowSearchInput = null;
+let flowSearchCount = null;
 function flowSearch() {
   flowSearchInput ??= h('input', {
     type: 'search',
     class: 'flow-search',
     placeholder: '화면 찾기',
     'aria-label': '그림에서 화면 찾기',
+    title: 'Enter 를 누르면 찾은 다음 화면을, Shift+Enter 를 누르면 앞 화면을 고릅니다',
     oninput: (e) => {
       state.flowQuery = e.target.value;
       applyFlowEmphasis();
     },
     onkeydown: (e) => {
-      if (e.key !== 'Enter' || e.isComposing || !state.flowQuery.trim()) return;
-      const first = /** @type {HTMLElement} */ (document.querySelector('#flow .box.screen:not(.off)'));
-      if (first) pickScreen(first.dataset.key);
+      if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229 || !state.flowQuery.trim()) return;
+      const { found, at } = flowSearchPlace();
+      if (!found.length) return;
+      const step = e.shiftKey ? -1 : 1;
+      const from = at < 0 ? (e.shiftKey ? 0 : -1) : at;
+      pickScreen(found[(from + step + found.length) % found.length]);
     },
   });
+  flowSearchCount ??= h('span', { class: 'flow-search-count', 'aria-live': 'polite', hidden: true });
   if (flowSearchInput.value !== state.flowQuery) flowSearchInput.value = state.flowQuery;
-  flowSearchInput.title = 'Enter 를 누르면 찾은 첫 화면을 고릅니다';
-  return flowSearchInput;
+  return [flowSearchInput, flowSearchCount];
+}
+
+function syncFlowSearchCount() {
+  if (!flowSearchCount) return;
+  const searching = state.view === 'flow' && state.flowQuery.trim() !== '';
+  const { found, at } = searching ? flowSearchPlace() : { found: [], at: -1 };
+  const text = !found.length ? '찾은 화면 없음' : at < 0 ? `찾은 화면 ${found.length}` : `${at + 1} / ${found.length}`;
+  flowSearchCount.hidden = !searching;
+  if (flowSearchCount.textContent !== text) flowSearchCount.textContent = text;
 }
 
 const zoomLevel = (z) => Math.floor(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100 + 1e-6) / 100;
