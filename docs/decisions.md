@@ -3908,6 +3908,19 @@ move inside a function the helper holds in a `const` and calls or hands on only 
 (`const go = () => history.push(url); if (ask) showDialog({ onConfirm: go })`) is kept even at a call whose arguments
 rule the condition out, since the condition is read only around the move itself.
 
+**A condition around a call that checks an argument as it is tells the function which way that argument goes.**
+When a call of a function the source declares is written under an `if`, `? :`, `&&` or `||` whose test is one of
+its arguments as it is, or that argument with `!` (`if (team) switchTeam(url, team)`, `props.team && go(props.team)`),
+the function is read with that argument true or false: a value of it the test rules out is dropped, and a value duru
+cannot read counts as true or false in the function's own conditions, though a property taken out of it does not.
+Only conditions inside the function that holds the call are read, and an earlier `return` is not, as in the function
+itself. On mattermost this removes the 146 lines of `components/inline_entity_link/actions.ts:45`, where
+`switchTeam` only selects the team it is given and the call is under `if (team)`; outline, appsmith and into-sign
+1.5.0 and 2.0.0 keep every line (#414). Reading an earlier `return` as well would drop outline's `/doc/new` at
+`components/AuthenticatedLayout.tsx:72` (16 lines), but the `/doc/new` screen would then show as an entry no link
+reaches, which the investigation of that call found wrong; reading only the conditions around the call was chosen as the one easier to
+undo, without the driver's answer (#414).
+
 **A component declared in the source that wraps a react-router link, or hands what it is given to one or to a history
 move, is a link where it is used, read with the attributes written there.**
 The component an element draws is found by following the element's name, or what its `as` names
