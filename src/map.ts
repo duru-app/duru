@@ -31,6 +31,8 @@ interface MapConfig extends AccessConfig {
   callLinks?: CallLink[];
   moves?: { from: string; to: string; reason: string }[];
   settingsFunctions: unknown[];
+  linkComponents?: unknown[];
+  linkFunctions?: unknown[];
   app?: { apiPaths: string[] } | null;
   tsconfig?: string | null;
   aliases?: AliasRule[] | null;
@@ -117,6 +119,7 @@ export type ScreenMap = {
   serverNotCompared?: true;
   entries: Access['entries'];
   unknownEntryPaths: string[];
+  unusedLinkEntries?: string[];
   unknownRoleGuards?: string[];
   settingsDefaults: Client['settingsDefaults'];
   settingsDefaultsIncomplete: Client['settingsDefaultsIncomplete'];
@@ -259,7 +262,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, madeHistories } = await extractClient(config);
+  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -338,6 +341,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(server.length === 0 && { serverNotCompared: true }),
     entries,
     unknownEntryPaths,
+    ...(unusedListed && { unusedLinkEntries: unusedListed }),
     ...(Object.keys(config.roleGuards ?? {}).length > 0 && { unknownRoleGuards }),
     ...configuredMoves(mapped, config.moves ?? []),
     settingsDefaults,

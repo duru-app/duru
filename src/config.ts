@@ -337,10 +337,22 @@ export function loadConfig(configPath: string) {
       + 'or, when the API code calls get, post, put, patch and delete of a request object with the address first, { "import", "name", "object": true }, '
       + `such as { "import": "axios", "name": "default", "object": true }, not ${JSON.stringify(requestFunction)}`);
   }
+  const isImported = (v: any, keys: string[]) => isPlainObject(v) && Object.keys(v).every((k) => keys.includes(k)) && isText(v.import) && isText(v.name) && (v.name === 'default' || IDENTIFIER.test(v.name));
   const history = raw.history ?? null;
-  if (history !== null && !(isPlainObject(history) && Object.keys(history).every((k) => ['import', 'name'].includes(k)) && isText(history.import) && isText(history.name) && (history.name === 'default' || IDENTIFIER.test(history.name)))) {
+  if (history !== null && !isImported(history, ['import', 'name'])) {
     throw new Error('history must be { "import", "name" }: the import path and name the app imports the history it made by, '
       + `as a function returning it or the history itself, such as { "import": "utils/browser_history", "name": "getHistory" }, not ${JSON.stringify(raw.history)}`);
+  }
+  const linkComponents = raw.linkComponents ?? [];
+  if (!Array.isArray(linkComponents) || !linkComponents.every((c) => isImported(c, ['import', 'name']))) {
+    throw new Error('linkComponents must be a list of { "import", "name" }: the import path and name the app imports a link component by whose source duru does not read, '
+      + `such as [{ "import": "@appsmith/ads", "name": "Link" }], not ${JSON.stringify(raw.linkComponents)}`);
+  }
+  const linkFunctions = raw.linkFunctions ?? [];
+  if (!Array.isArray(linkFunctions) || !linkFunctions.every((f) => isImported(f, ['import', 'name', 'address']) && isArgumentPlace(f.address))) {
+    throw new Error('linkFunctions must be a list of { "import", "name", "address" }: the import path and name the app imports a function by whose call is a link, '
+      + 'and where the address is among the values it is given, as the place of the value counted from 0 followed by the keys inside it, '
+      + `such as [{ "import": "~/actions", "name": "createInternalLinkAction", "address": "0.to" }], not ${JSON.stringify(raw.linkFunctions)}`);
   }
   if (raw.tsconfig !== undefined && !isText(raw.tsconfig)) {
     throw new Error(`tsconfig must be the path of the tsconfig file that declares the import aliases, such as "client/tsconfig.json", not ${JSON.stringify(raw.tsconfig)}`);
@@ -388,6 +400,8 @@ export function loadConfig(configPath: string) {
     calledApiModules,
     requestFunction,
     history,
+    linkComponents,
+    linkFunctions,
     bodyArgKeys,
     bodyOptions,
     bodyTypeExclusions,

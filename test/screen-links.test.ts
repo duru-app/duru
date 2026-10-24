@@ -361,6 +361,158 @@ test('without the history key, the summary names each file that calls createBrow
   assert.doesNotMatch(extract(madeApp({ history: { import: './utils/browser_history', name: 'getHistory' } })), /history is not set/);
 });
 
+const LISTED_HOME = `import { Link } from '@acme/ui';
+import * as ui from '@acme/ui';
+import { Link as Plain } from '@other/ui';
+
+export default function Home() {
+  const url = makeUrl();
+  return (
+    <nav>
+      <Link to="/login">login</Link>
+      <ui.Link to="/help">help</ui.Link>
+      <Link to="https://docs.example.com/start">docs</Link>
+      <Link to={url} target="_blank">new tab, not read</Link>
+      <Link to="/team/a" target="_blank">new tab, a screen</Link>
+      <Link to="/privacy-policy.html" target="_blank">new tab, a file</Link>
+      <Link to={url}>unread, same tab</Link>
+      <Plain to="/start">not listed</Plain>
+    </nav>
+  );
+}
+`;
+
+const LISTED_TEAM = `import { Link } from 'react-router-dom';
+import { Link as Own } from './ui';
+
+export default function Team() {
+  return <nav><Link to="https://docs.example.com/team">docs</Link><Own to="/start">start</Own></nav>;
+}
+`;
+
+const listedApp = (keys: Record<string, unknown> = {}) => writeApp({
+  'Home.js': LISTED_HOME,
+  'Team.js': LISTED_TEAM,
+  'ui/index.js': "export { default as Link } from './Link';\n",
+  'ui/Link.js': 'export default function Link({ to, children }) {\n  return <a href={to}>{children}</a>;\n}\n',
+}, keys);
+
+test('a link component named in linkComponents is a link where its to is written, matched by its import, and leaves out outside addresses, unread addresses and files opened in a new tab', async () => {
+  const map = await build(listedApp({ linkComponents: [{ import: '@acme/ui', name: 'Link' }, { import: './ui', name: 'Link' }] }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', lineOf(LISTED_HOME, '"/login"'), [], ['/login#Login']],
+    ['/help', lineOf(LISTED_HOME, '"/help"'), [], ['/help/:page?#Help']],
+    ['/team/a', lineOf(LISTED_HOME, '"/team/a"'), [], ['/team/:team#Team']],
+    ['{?}', lineOf(LISTED_HOME, 'unread, same tab'), [], []],
+  ]);
+  assert.deepEqual(linksOf(map, '/team/:team#Team'), [
+    ['{?}', lineOf(LISTED_TEAM, 'docs.example.com'), [], []],
+    ['/start', lineOf(LISTED_TEAM, '"/start"'), [], ['/start#Start']],
+  ]);
+  const unset = await build(listedApp());
+  assert.deepEqual(linksOf(unset, '/home#Home'), []);
+  assert.deepEqual(linksOf(unset, '/team/:team#Team'), [['{?}', lineOf(LISTED_TEAM, 'docs.example.com'), [], []]]);
+});
+
+const LISTING_HOME = `import { createInternalLinkAction } from './actions';
+import { openRouteInSplit } from 'split-view';
+
+export default function Home({ flag }) {
+  const actions = [
+    createInternalLinkAction({ name: 'help', to: '/help' }),
+    createInternalLinkAction({ name: 'team', to: ({ group }) => (group ? '/team/a' : '') }),
+    createInternalLinkAction({
+      name: 'either',
+      to: () => {
+        if (flag.on) return '/login';
+        return '/start';
+      },
+    }),
+  ];
+  return <button onClick={(event) => openRouteInSplit(event, '/home')}>{actions.length}</button>;
+}
+`;
+
+const listingApp = (keys: Record<string, unknown> = {}) => writeApp({
+  'Home.js': LISTING_HOME,
+  'actions/index.js': "export { createInternalLinkAction } from './links';\n",
+  'actions/links.js': 'export function createInternalLinkAction({ name, to }) {\n  return { name, to };\n}\n',
+}, keys);
+
+test('a call of a function named in linkFunctions is a link to the address at its address place, reading each branch a function there returns and no link for an empty one', async () => {
+  const map = await build(listingApp({ linkFunctions: [
+    { import: './actions', name: 'createInternalLinkAction', address: '0.to' },
+    { import: 'split-view', name: 'openRouteInSplit', address: '1' },
+  ] }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/help', lineOf(LISTING_HOME, "to: '/help'"), [], ['/help/:page?#Help']],
+    ['/team/a', lineOf(LISTING_HOME, "'/team/a'"), ['group'], ['/team/:team#Team']],
+    ['/login', lineOf(LISTING_HOME, "return '/login'"), ['flag.on'], ['/login#Login']],
+    ['/start', lineOf(LISTING_HOME, "return '/start'"), [], ['/start#Start']],
+    ['/home', lineOf(LISTING_HOME, "openRouteInSplit(event, '/home')"), [], ['/home#Home']],
+  ]);
+  assert.deepEqual(linksOf(await build(listingApp()), '/home#Home'), []);
+});
+
+test('linkComponents and linkFunctions of the wrong shape, or naming a source file that does not export the name, stop the run naming the key, and an entry used nowhere is named in the summary', async () => {
+  assert.throws(() => loadConfig(listedApp({ linkComponents: [{ import: '@acme/ui' }] })), /^Error: linkComponents must be a list of \{ "import", "name" \}/);
+  assert.throws(() => loadConfig(listedApp({ linkComponents: { import: '@acme/ui', name: 'Link' } })), /^Error: linkComponents must be a list of \{ "import", "name" \}/);
+  assert.throws(() => loadConfig(listedApp({ linkComponents: [{ import: '@acme/ui', name: 'Link', attribute: 'href' }] })), /^Error: linkComponents must be a list/);
+  assert.throws(() => loadConfig(listingApp({ linkFunctions: [{ import: './actions', name: 'createInternalLinkAction' }] })), /^Error: linkFunctions must be a list of \{ "import", "name", "address" \}/);
+  assert.throws(() => loadConfig(listingApp({ linkFunctions: [{ import: './actions', name: 'createInternalLinkAction', address: 'to' }] })), /^Error: linkFunctions must be a list/);
+  await assert.rejects(build(listedApp({ linkComponents: [{ import: './nowhere', name: 'Link' }] })), /^Error: linkComponents import \.\/nowhere names no file under srcRoot /);
+  await assert.rejects(build(listingApp({ linkFunctions: [{ import: './actions', name: 'createLink', address: '0' }] })), /^Error: linkFunctions \.\/actions createLink: createLink is not exported by actions\/index\.js$/);
+  const result = spawnSync(process.execPath, [CLI, 'extract', listedApp({ linkComponents: [{ import: '@acme/ui', name: 'Link' }, { import: '@acme/ads', name: 'Link' }] })], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^ {2}linkComponents @acme\/ads Link is used nowhere in the screen sources$/m);
+  assert.doesNotMatch(result.stdout, /@acme\/ui Link is used nowhere/);
+});
+
+test('a move to a modal route is a link to its screen, and the route written again outside the Switch to draw the modal is the same screen', async () => {
+  const routes = `import { Route, Switch, useLocation } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+
+export default function Routes() {
+  const location = useLocation();
+  const background = location.state && location.state.background;
+  return (
+    <div>
+      <Switch location={background || location}>
+        <Route path="/home" component={Home} />
+        <Route path="/team/:team" component={Team} />
+      </Switch>
+      {background && <Route path="/team/:team" component={Team} />}
+    </div>
+  );
+}
+`;
+  const home = `import { useHistory, useLocation } from 'react-router-dom';
+
+export default function Home() {
+  const history = useHistory();
+  const location = useLocation();
+  return <button onClick={() => history.push({ pathname: '/team/a', state: { background: location } })}>open</button>;
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home }));
+  assert.deepEqual(map.screens.map((s) => [s.id, s.line]), [['/home#Home', lineOf(routes, '"/home"')], ['/team/:team#Team', lineOf(routes, '<Route path="/team/:team"')]]);
+  assert.deepEqual(map.duplicateIds, []);
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/team/a', lineOf(home, "'/team/a'"), [], ['/team/:team#Team']]]);
+});
+
+test('the usage guide names linkComponents and linkFunctions with their summary line, the agent guide says when to add them, and the decision record says why they are config and how a modal route is one screen', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
+  const readme = read('README.md');
+  assert.match(readme, /^- `linkComponents` — link components whose source duru does not read/m);
+  assert.match(readme, /^- `linkFunctions` — functions whose call stands for a link while the move happens elsewhere/m);
+  assert.match(readme, /^- `linkComponents <import> <name> is used nowhere in the screen sources`/m);
+  assert.match(read('skills/duru/SKILL.md'), /add `"linkComponents": \[\{ "import": "<the import as the app writes it>"/);
+  const decisions = read('docs/decisions.md');
+  assert.match(decisions, /\*\*A link component or a link function duru cannot follow in the source is named in the config, as\s+`linkComponents` and `linkFunctions`\.\*\*/);
+  assert.match(decisions, /now a route outside every `<Switch>` and `<Routes>` of its route file whose path and\s+component are those of a route inside one is the same screen/);
+});
+
 test('an address built from a constant another file exports, even through a re-export, reaches its screen', async () => {
   const home = `import { Link } from 'react-router-dom';
 import { HELP, TEAM } from './routes';
