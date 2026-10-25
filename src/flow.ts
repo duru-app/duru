@@ -84,11 +84,20 @@ export interface FlowSummary {
   importedOnly: number;
 }
 
+export interface FlowGroup {
+  name: string;
+  screens: string[];
+}
+
 export interface Flow {
   roots: FlowScreenNode[];
   unreached: FlowScreenNode[];
+  groups: FlowGroup[];
   summary: FlowSummary;
 }
+
+const GROUP_FROM = 100;
+const GROUP_MAX = 20;
 
 const countOf = (tests: FlowTests['nodes'][string] | undefined): FlowCounts => {
   const c: FlowCounts = { pass: 0, fail: 0, pending: 0 };
@@ -181,8 +190,37 @@ export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
   const roots = plant((map.entries ?? []).map((e) => e.screen));
   const unreached: FlowScreenNode[] = [];
   for (const s of map.screens) if (!placed.has(s.id)) unreached.push(...plant([s.id]));
-  return { roots, unreached, summary: summarize([...roots, ...unreached]) };
+  const groups = map.screens.length > GROUP_FROM ? addressGroups(roots.filter((r) => !r.children.length)) : [];
+  return { roots, unreached, groups, summary: summarize([...roots, ...unreached]) };
 }
+
+export function addressGroups(screens: Pick<FlowScreenNode, 'id' | 'label'>[]): FlowGroup[] {
+  const parts = new Map(screens.map((s) => [s.id, s.label.split('/').filter(Boolean)]));
+  const groups: string[][] = [];
+  const split = (ids: string[], depth: number) => {
+    const buckets = new Map<string, string[]>();
+    for (const id of ids) {
+      const key = parts.get(id)!.slice(0, depth).join('/');
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key)!.push(id);
+    }
+    for (const bucket of buckets.values()) {
+      if (bucket.length > GROUP_MAX && bucket.some((id) => parts.get(id)!.length > depth)) split(bucket, depth + 1);
+      else if (bucket.length > 1) groups.push(bucket);
+    }
+  };
+  split(screens.map((s) => s.id), 1);
+  const order = new Map(screens.map((s, i) => [s.id, i]));
+  return groups
+    .sort((a, b) => order.get(a[0])! - order.get(b[0])!)
+    .map((ids) => ({ name: `/${shared(ids.map((id) => parts.get(id)!)).join('/')}`, screens: ids }));
+}
+
+const shared = (lists: string[][]) => lists[0].slice(0, lists.reduce((n, l) => {
+  let k = 0;
+  while (k < n && l[k] === lists[0][k]) k += 1;
+  return k;
+}, lists[0].length));
 
 // 「불러옴」과 「지나감」은 태그로 확정한 연결이 아니므로 테스트 있는 화면과 실패한 화면을 셀 때 넣지 않는다.
 function summarize(trees: FlowScreenNode[]): FlowSummary {

@@ -30,7 +30,7 @@ export type Mark = { key: string; target: unknown; current: { status: string; no
 export type AppData = { url: string; signedOutUrl: string; roles: { role: string; account: string; error: string | null; url: string }[]; settings: { overrides: object[] } };
 export type PageData = {
   map: { screens: MapScreen[]; calls: { id: string; server?: object }[] };
-  flow: { roots: FlowNode[]; unreached: FlowNode[] };
+  flow: { roots: FlowNode[]; unreached: FlowNode[]; groups: { name: string; screens: string[] }[] };
   tests: {
     importers: Record<string, { title: string }[]>;
     discarded: Record<string, { title: string; judgment: { reason: string } }[]>;

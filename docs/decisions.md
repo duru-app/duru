@@ -1092,6 +1092,29 @@ How it is built, and what each choice was weighed against:
   were their only callers, and a picked screen's paths take the place of a branch shown alone. A screen has no
   buttons of its own, so the question of words or icons on them is closed; the zoom buttons are symbols with a
   name for screen readers.
+  On a map of more than 100 screens folding came back for the gathered entry screens, in the next decision.
+
+**On a map of more than 100 screens, the gathered entry screens are grouped by the start of their address and each
+group is drawn as one folded box with its name, its number of screens and its screens by status.**
+On the mattermost map (181 screens, 2026-10-24) the flow first showed 7 of 181 boxes, and 「맞춤」 went down to 30%
+with 3.6px text and still showed only 83. 94 screens were entry screens, 81 of them gathered with nothing under them,
+68 of those in the admin console. The driver chose from a draft drawn beside the current screen (2026-10-25):
+- The start of the address, split again by the next part while a group has more than 20 screens: the 68 admin
+  console screens part into groups of 14 or fewer (`/admin_console/environment` 14, `/admin_console/site_config`
+  14), and the 81 gathered screens become 13 groups and 7 screens.
+- The route file: the admin console's 62 screens stay one group, so opening it gives the same grid back.
+- The component folder: the same with 60 screens.
+For the folded box: its name and number of screens only, those and its screens by status, or the names of three of
+its screens. By status was chosen, so a group holding a failing screen or one with no tagged test is found without
+opening it.
+- A group has two screens or more; a screen alone in its part stays a screen.
+- The server decides the groups with the flow data and the page only draws them. The 100 and the 20 are one
+  constant each: at 57 screens 「맞춤」 still read at 91%, and from 114 screens the text went below 8px.
+- An opened group takes a whole row of the grid and moves the rows below it down, as the draft's 「가」 did. The
+  screens of folded groups count for the cell width and the number of cells in a row, and the folded box of an opened
+  group for the cell width, so opening or folding a group moves no other cell sideways; the cost is a folded grid
+  whose row is wider than the boxes drawn in it.
+- Which groups are open lasts until the page is reloaded, as the zoom level does.
 
 **The zoom control floats at the bottom-left corner of the drawing, and its percent is a field a level can be typed
 into.**
