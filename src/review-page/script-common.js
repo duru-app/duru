@@ -207,7 +207,8 @@ function setSelected(id, target = { node: id }) {
 
 function select(id, target) {
   setSelected(id, target);
-  render();
+  if (flowPickShown()) showPicked(id);
+  else render();
 }
 
 function selectStory(id) {

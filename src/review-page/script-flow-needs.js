@@ -13,6 +13,13 @@ const screensIn = (roots) => roots.flatMap((n) => [n, ...screensIn(n.children)])
 
 const flowScreens = () => screensIn([...state.data.flow.roots, ...state.data.flow.unreached]);
 
+function ancestorsOf(screens, id) {
+  const parentOf = new Map(screens.flatMap((n) => n.children.map((c) => [c.id, n.id])));
+  const out = [];
+  for (let up = parentOf.get(id); up !== undefined; up = parentOf.get(up)) out.push(up);
+  return out;
+}
+
 const NO_TESTS = '테스트 없음';
 const statusOf = (c) => (c.fail ? 's-fail' : c.pending ? 's-pending' : c.pass ? 's-pass' : 's-none');
 const STATUS_WORD = { 's-pass': TEST_STATUS.pass, 's-fail': TEST_STATUS.fail, 's-pending': TEST_STATUS.pending, 's-none': NO_TESTS };

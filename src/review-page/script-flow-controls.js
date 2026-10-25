@@ -104,12 +104,16 @@ function setFlowFilter(key) {
   applyFlowEmphasis();
 }
 
-// 딸린 화면이 없어 아래에 모아 그린 진입 화면은 상자 순서로는 갈래 그림 사이에 섞여 있으므로, 캔버스마다 갈래 그림 쪽을 앞에 둔다.
+// 순서는 아무것도 펴지 않은 그림에서 정한다. 그리드에서 펼친 진입 화면도 그리드 안의 원래 위치에 남아, 선택하면서 펼쳐도 순서가 바뀌지 않는다.
 function flowSearchPlace() {
-  const found = [...document.querySelectorAll('#flow .canvas')].flatMap((canvas) => {
-    const boxes = /** @type {HTMLElement[]} */ ([...canvas.querySelectorAll('.box.screen[data-kept]')]);
-    return [...boxes.filter((b) => !b.classList.contains('grouped')), ...boxes.filter((b) => b.classList.contains('grouped'))];
-  }).map((b) => b.dataset.key);
+  const { roots, unreached, groups, folding } = state.data.flow;
+  const byId = new Map(flowScreens().map((n) => [n.id, n]));
+  const none = new Set();
+  const { shown } = foldGroups(folding ? foldBranches(roots, none).shown : roots, groups, none);
+  const below = (r) => (r.kind === 'group' ? r.screens : [r]).flatMap((n) => screensIn([byId.get(n.id)]));
+  const order = [...shown.filter((r) => r.children.length), ...shown.filter((r) => !r.children.length)].flatMap(below).concat(screensIn(unreached));
+  const keep = flowKept();
+  const found = order.filter(keep).map((n) => n.id);
   return { found, at: flowPickShown() ? found.indexOf(state.selected) : -1 };
 }
 
