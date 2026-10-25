@@ -93,6 +93,7 @@ export interface Flow {
   roots: FlowScreenNode[];
   unreached: FlowScreenNode[];
   groups: FlowGroup[];
+  folding: boolean;
   summary: FlowSummary;
 }
 
@@ -190,8 +191,9 @@ export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
   const roots = plant((map.entries ?? []).map((e) => e.screen));
   const unreached: FlowScreenNode[] = [];
   for (const s of map.screens) if (!placed.has(s.id)) unreached.push(...plant([s.id]));
-  const groups = map.screens.length > GROUP_FROM ? addressGroups(roots.filter((r) => !r.children.length)) : [];
-  return { roots, unreached, groups, summary: summarize([...roots, ...unreached]) };
+  const folding = map.screens.length > GROUP_FROM;
+  const groups = folding ? addressGroups(roots.filter((r) => !r.children.length)) : [];
+  return { roots, unreached, groups, folding, summary: summarize([...roots, ...unreached]) };
 }
 
 export function addressGroups(screens: Pick<FlowScreenNode, 'id' | 'label'>[]): FlowGroup[] {
