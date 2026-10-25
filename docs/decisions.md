@@ -3691,7 +3691,7 @@ takes the property of the object given, and a rest parameter takes the arguments
 one is `{?}`, as in a link written in the screen's code. A condition is decided only when every value in it is read
 whole: written values, arguments given as written values, an argument left out, a property read with `?.` on an
 argument left out or given as `null`, the number of rest arguments, comparisons and `!`. A key written before a
-spread duru cannot read (`{ edit: false, ...props }`) is not known, since the spread may give it. A list or an object is taken as a value only when the source shows all of it, in route paths
+spread duru cannot read (`{ edit: false, ...props }`) is not known, since the spread may give it. A property read with a string key in brackets (`row['type']`, `row['a.b']`) is read as the dotted read, with the key kept whole. A list or an object is taken as a value only when the source shows all of it, in route paths
 as in links, so `['', 'projects', id].join('/')` with `id` a parameter is a piece duru cannot read and not
 `/projects/`. A value with a piece duru cannot read decides nothing, since the client's reading of a
 template puts `{?}` text in place of that piece, which is not empty and would pass as true. Otherwise each branch is
@@ -3945,6 +3945,26 @@ unchecked `null`: the helper drops it, the move gives `{?}`. The address's own `
 `{target && <Redirect to={target} />}` redirects to `target` when the check leaves it one address. A redirect still
 reads exactly one target, so when two addresses are left, as with `to={target ? target : '/home'}`, it gives no
 redirect, as before.
+
+**A property read with a string key in brackets is read as the dotted read, in an address function and in the condition around its call.**
+`row['type']` gives what `row.type` gives, and the key is kept whole: `row['a.b']` is the key `'a.b'` of the object
+given, as a caller writes it in `{ ...data, 'a.b': 'X' }`, and not `row.a.b`. A key written as a number in an object
+(`{ 0: 'X' }`, `{ 1: code }`) is the same key as `row['0']` and `{ '1': code }`, since JavaScript turns every key into
+text. A condition around a call reads such a test the same way, so `row['team'] && go(row['team'])` and
+`row.team && go(row['team'])` decide the branch as `row.team && go(row.team)` does, and a test of `row['a.b']` says
+nothing about `row.a.b`. An object, list or text the function holds in a local name is read with a written key too
+(`table['1']`, `parts['length']`). On into-sign 2.0.0 the address function called at `ViewContent.jsx:158` reads
+`row['metaDocument.type']` from an argument that writes that key after a spread. On the rebuilt map the 6 lines there
+fall to the 2 of the branch the key picks, `/detail/document` and `/detail/document-basic`; the 4 dropped,
+`/detail/document-link/{*}`, `/detail/document-batch/{*}`, `/detail/document-flexible/{*}` and `{?}`, are all wrong,
+since the key is written as `BASIC`. No other line of the five maps changes, and none is added: into-sign 2.0.0 goes
+from 371 lines to 367, and outline, appsmith, into-sign 1.5.0 and mattermost keep the same lines (#415). Two other
+shapes were compared. Joining the keys of a checked argument with `.`, as dotted reads were joined before, would make
+a test of `row['a.b']` decide a call given `row.a.b`, so each key is now quoted. Leaving the condition around a call
+to dotted reads only gives the same five maps, since reading bracketed tests there moves no line on them, but it would
+keep two rules for one read, so it was not taken.
+Known limits: a key written as a template (`` row[`a`] ``), a number (`row[0]`) or a name (`row[key]`) is still a
+value duru cannot read, and so is an object key written in brackets (`{ ['a.b']: v }`).
 
 **A component declared in the source that wraps a react-router link, or hands what it is given to one or to a history
 move, is a link where it is used, read with the attributes written there.**

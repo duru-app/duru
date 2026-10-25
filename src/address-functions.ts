@@ -1,5 +1,5 @@
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, ClassMethod, FunctionDeclaration, FunctionExpression, Identifier, JSXElement, Node, StringLiteral } from '@babel/types';
+import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, ClassMethod, FunctionDeclaration, FunctionExpression, Identifier, JSXElement, MemberExpression, Node, NumericLiteral, OptionalMemberExpression, StringLiteral } from '@babel/types';
 import { addresses, FOLLOWED, toOf } from './screen-links.ts';
 import type { Move } from './screen-links.ts';
 import type { Side } from './access.ts';
@@ -85,7 +85,8 @@ class TooMany extends Error {}
 const textOut = (text: string): Out => ({ val: { pieces: text ? [{ text }] : [] }, made: false });
 const known = (value: unknown): Out => (typeof value === 'string' ? textOut(value) : { val: { value }, made: false });
 const unknownAt = (at: NodePath): Out => ({ val: { unknown: at }, made: false });
-const keyOf = (key: Node) => (key as Identifier).name ?? (key as StringLiteral).value;
+const keyOf = (key: Node) => String((key as Identifier).name ?? (key as StringLiteral | NumericLiteral).value);
+const memberName = ({ computed, property }: MemberExpression | OptionalMemberExpression) => (property.type === 'Identifier' && !computed ? property.name : property.type === 'StringLiteral' && computed ? property.value : null);
 
 function piecesOf({ val }: Out, at: NodePath): Piece[] {
   if ('pieces' in val) return val.pieces;
@@ -135,16 +136,17 @@ function member(out: Out, key: string, at: NodePath): Out {
   return value !== null && typeof value === 'object' ? known((value as Record<string, unknown>)[key]) : unknownAt(at);
 }
 
-// 이름 하나나 그 이름에서 꺼낸 멤버 사슬(this.props.team)이면 그 값을 가리키는 키, 아니면 null 이다. 다시 대입하는 이름은 null 이다.
+// 같은 값을 읽는 식이면 같은 키를 돌려주고, 키로 삼을 수 없는 식이면 null 을 돌려준다.
 function checkedKey(p: NodePath<any>): string | null {
   if (p.isIdentifier()) {
     const binding = p.scope.getBinding(p.node.name);
     return binding?.constant ? `${binding.identifier.start}` : binding ? null : p.node.name;
   }
   if (p.isThisExpression()) return 'this';
-  if ((p.isMemberExpression() || p.isOptionalMemberExpression()) && !p.node.computed) {
-    const object = checkedKey(p.get('object') as NodePath<any>);
-    return object === null ? null : `${object}.${(p.node.property as Identifier).name}`;
+  if (p.isMemberExpression() || p.isOptionalMemberExpression()) {
+    const name = memberName(p.node);
+    const object = name === null ? null : checkedKey(p.get('object') as NodePath<any>);
+    return object === null ? null : `${object}[${JSON.stringify(name)}]`;
   }
   return null;
 }
@@ -228,8 +230,9 @@ function changesOwn(x: NodePath<any>, fn: Followable): boolean {
     if (p.isUpdateExpression() || p.isUnaryExpression({ operator: 'delete' })) return touchesOwn(p.get('argument') as NodePath<any>, fn);
     if (!p.isCallExpression() && !p.isOptionalCallExpression()) return false;
     const callee = p.get('callee') as NodePath<any>;
-    if ((!callee.isMemberExpression() && !callee.isOptionalMemberExpression()) || callee.node.computed) return false;
-    const name = (callee.node.property as Identifier).name;
+    if (!callee.isMemberExpression() && !callee.isOptionalMemberExpression()) return false;
+    const name = memberName(callee.node);
+    if (name === null) return false;
     const object = callee.get('object') as NodePath<any>;
     if (object.isIdentifier({ name: 'Object' }) && name === 'assign') {
       const [target] = p.get('arguments') as NodePath<any>[];
@@ -288,7 +291,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   }
 
   const inEnv = (p: NodePath<any>, at: At): boolean => {
-    if (p.isMemberExpression() || p.isOptionalMemberExpression()) return !p.node.computed && inEnv(p.get('object') as NodePath<any>, at);
+    if (p.isMemberExpression() || p.isOptionalMemberExpression()) return memberName(p.node) !== null && inEnv(p.get('object') as NodePath<any>, at);
     const binding = p.isIdentifier() ? p.scope.getBinding(p.node.name) : undefined;
     return Boolean(binding && at.env?.has(binding));
   };
@@ -386,7 +389,7 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
   }
 
   function memberValues(p: NodePath<any>, at: At): Out[] {
-    const key = (p.node.property as Identifier).name;
+    const key = memberName(p.node)!;
     const object = p.get('object') as NodePath;
     return values(object, at).flatMap((o) => {
       const getter = opaque(o) ? getterOf(object, key) : null;

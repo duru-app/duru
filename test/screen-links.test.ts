@@ -2663,6 +2663,40 @@ export default function Home({ team, other, props }) {
   ]);
 });
 
+test('a condition around a helper call that checks an argument read with a string key in brackets decides the branch, as the dotted read does', async () => {
+  const home = `import { useHistory } from 'react-router-dom';
+
+function switchTeam(history, url, team) {
+  if (team) {
+    selectTeam(team.id);
+  } else {
+    history.push(url);
+  }
+}
+
+export default function Home({ row, k }) {
+  const history = useHistory();
+  return (
+    <nav>
+      <a onClick={() => row['team'] && switchTeam(history, '/start', row['team'])}>a</a>
+      <a onClick={() => (row.team ? null : switchTeam(history, '/login', row['team']))}>b</a>
+      <a onClick={() => row['a.b'] && switchTeam(history, '/help', row.a.b)}>c</a>
+      <a onClick={() => row[k] && switchTeam(history, '/team/a', row[k])}>d</a>
+      <a onClick={() => row.team && switchTeam(history, '/start', row['team'])}>e</a>
+      <a onClick={() => row['team'] && switchTeam(history, '/home', row.team)}>f</a>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/login', at("switchTeam(history, '/login'"), ['!(row.team)'], ['/login#Login']],
+    ['/help', at("switchTeam(history, '/help'"), ["row['a.b']"], ['/help/:page?#Help']],
+    ['/team/a', at("switchTeam(history, '/team/a'"), ['row[k]'], ['/team/:team#Team']],
+  ]);
+});
+
 test('the decision record says a condition around a call that checks an argument decides the branch it picks, and why an earlier return is not read', () => {
   const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
   assert.match(decisions, /\*\*A condition around a call that checks an argument as it is tells the function which way that argument goes\.\*\*/);
@@ -3107,6 +3141,135 @@ export default function Home({ member, next, ...props }) {
     ['/team/{*}', at('memberUrl(')],
     ['/start', at('...props, edit: false')],
   ]);
+});
+
+test('a property read with a string key in brackets is read as the dotted read, and a key with a dot in it stays one key', async () => {
+  const paths = `export function detail(row = {}) {
+  const type = row['meta.type'];
+  if (type === 'LINK') return '/team/' + row.id;
+  if (type === 'BASIC') return '/help/' + row['doc.id'];
+  return null;
+}
+
+export function dotted(row) {
+  return row.a.b === 'X' ? '/login' : '/start';
+}
+
+export function bracketed(row) {
+  return row['a']['b'] === 'X' ? '/login' : '/start';
+}
+
+export function whole(row) {
+  return row['a.b'] === 'X' ? '/login' : '/start';
+}
+
+export function byKey(row, key) {
+  return row[key] === 'X' ? '/login' : '/start';
+}
+
+export function byTemplate(row) {
+  return row[\`a\`] === 'X' ? '/login' : '/start';
+}
+
+export function byNumber(row) {
+  return row[0] === 'X' ? '/login' : '/start';
+}
+
+export function numbered(row) {
+  return row['0'] === 'X' ? '/login' : '/start';
+}
+
+export function destructured({ 1: code }) {
+  return code === 'X' ? '/login' : '/start';
+}
+
+export function heldObject() {
+  const table = { 1: '/login', 2: '/start' };
+  return table['1'];
+}
+
+export function heldList() {
+  const parts = ['a', 'b'];
+  return parts['length'] === 2 ? '/login' : '/start';
+}
+
+export function heldText() {
+  const text = 'ab';
+  return text['length'] === 2 ? '/login' : '/start';
+}
+
+export function changedList() {
+  const parts = ['a', 'b'];
+  const n = parts['push']('c');
+  return parts['length'] === 2 ? '/login' : '/start';
+}
+
+export function optional(row) {
+  return row?.['a'] === 'X' ? '/login' : '/start';
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+import { detail, dotted, bracketed, whole, byKey, byTemplate, byNumber, numbered, destructured, heldObject, heldList, heldText, changedList, optional } from './paths';
+
+export default function Home({ data, k }) {
+  return (
+    <nav>
+      <Link to={detail({ ...data, 'meta.type': 'BASIC', 'doc.id': 'd1' })}>a</Link>
+      <Link to={detail({ 'meta.type': 'BASIC', ...data })}>b</Link>
+      <Link to={detail({ 'meta.type': 'LINK', id: 'n1' })}>c</Link>
+      <Link to={dotted({ a: { b: 'X' } })}>d</Link>
+      <Link to={bracketed({ a: { b: 'X' } })}>e</Link>
+      <Link to={whole({ a: { b: 'X' } })}>f</Link>
+      <Link to={whole({ 'a.b': 'X' })}>g</Link>
+      <Link to={byKey({ a: 'X' }, k)}>h</Link>
+      <Link to={byTemplate({ a: 'X' })}>i</Link>
+      <Link to={whole({ ['a.b']: 'X' })}>j</Link>
+      <Link to={byNumber(['X'])}>k</Link>
+      <Link to={numbered({ 0: 'X' })}>l</Link>
+      <Link to={destructured({ '1': 'X' })}>p</Link>
+      <Link to={heldObject()}>m</Link>
+      <Link to={heldList()}>n</Link>
+      <Link to={heldText()}>o</Link>
+      <Link to={changedList()}>q</Link>
+      <Link to={optional({ a: 'X' })}>r</Link>
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(addressesAt(map, '/home#Home'), [
+    ['/help/d1', at('...data, ')],
+    ['/team/{*}', at("BASIC', ...data")],
+    ['/help/{*}', at("BASIC', ...data")],
+    ['{?}', at("BASIC', ...data")],
+    ['/team/n1', at("'LINK', id")],
+    ['/login', at('dotted(')],
+    ['/login', at('bracketed(')],
+    ['/start', at("whole({ a:")],
+    ['/login', at("whole({ 'a.b'")],
+    ['/login', at('byKey(')],
+    ['/start', at('byKey(')],
+    ['/login', at('byTemplate(')],
+    ['/start', at('byTemplate(')],
+    ['/login', at("whole({ ['a.b']")],
+    ['/start', at("whole({ ['a.b']")],
+    ['/login', at('byNumber(')],
+    ['/start', at('byNumber(')],
+    ['/login', at('numbered(')],
+    ['/login', at('destructured(')],
+    ['/login', at('heldObject(')],
+    ['/login', at('heldList(')],
+    ['/login', at('heldText(')],
+    ['{?}', at('changedList(')],
+    ['/login', at('optional(')],
+  ]);
+});
+
+test('the decision record says a property read with a string key in brackets is read as the dotted read, with the key kept whole', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*A property read with a string key in brackets is read as the dotted read, in an address function and in the condition around its call\.\*\*/);
+  assert.match(decisions, /`row\['a\.b'\]` is the key `'a\.b'` of the object\s+given/);
 });
 
 test('a / an address function returns followed by a piece written from / gives {?} for that branch of a link, since the app would build //', async () => {
