@@ -40,6 +40,35 @@ function screenPill(n, pick = () => pickScreen(n.id)) {
     talkCount(attachedTalk({ node: n.id })));
 }
 
+// 상태별 수는 흐름 막대의 상태 단추와 같은 색 네모로 쓰고, 0 인 상태는 쓰지 않는다.
+function groupPill(g) {
+  const tally = KEY_STATUS.map(([status, word]) => ({ status, word, count: g.screens.filter((n) => statusOf(n.counts) === status).length })).filter((t) => t.count);
+  return h('button', {
+    type: 'button',
+    class: 'box group',
+    'data-group': g.name,
+    'aria-expanded': 'false',
+    'aria-label': `${g.name} 묶음 펴기`,
+    title: [`${g.name} · 화면 ${g.screens.length}`, tally.map((t) => `${t.word} ${t.count}`).join(' · '), '누르면 이 묶음을 펴서 그 안의 화면을 그립니다'].join('\n'),
+    onclick: () => setFlowGroup(g.name, true),
+  },
+    h('span', { class: 'group-line' }, h('span', { class: 'fold', 'aria-hidden': 'true' }, '▸'), h('span', { class: 'path' }, pathText(g.name)), h('span', { class: 'tag size' }, String(g.screens.length))),
+    h('span', { class: 'group-line tally' }, tally.map((t) => h('span', { class: 'tally-item' }, h('span', { class: `sq ${t.status}`, 'aria-hidden': 'true' }), String(t.count)))));
+}
+
+function openGroupHead(frame) {
+  return h('button', {
+    type: 'button',
+    class: 'group-open',
+    'data-group': frame.name,
+    'aria-expanded': 'true',
+    'aria-label': `${frame.name} 묶음 접기`,
+    title: `${frame.name}\n누르면 이 묶음을 다시 접습니다`,
+    style: `left:${frame.x}px;top:${frame.y}px;max-width:${frame.width}px;height:${GROUP_HEAD_H}px`,
+    onclick: () => setFlowGroup(frame.name, false),
+  }, h('span', { class: 'path' }, frame.name), h('span', { class: 'tag size' }, String(frame.count)), h('span', { class: 'fold', 'aria-hidden': 'true' }, '−'));
+}
+
 const PATH_TAG = { conditioned: LINK_VERDICT.conditioned, configured: LINK_VERDICT.configured, broken: LINK_VERDICT.broken, unknown: LINK_VERDICT.unknown, 'off-map': '맵에 없는 화면' };
 const hopTitle = (l, i) => [`단계 ${i + 1} → ${i + 2}`, PATH_TAG[l.verdict] ?? LINK_VERDICT[l.verdict], LINK_VERDICT_TITLE[l.verdict]].filter(Boolean).join(' · ');
 const gapChipTitle = (i, on) => `${hopTitle({ verdict: 'broken' }, i)}\n${gapTitle(on)}`;

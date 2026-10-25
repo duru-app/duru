@@ -1032,3 +1032,134 @@ test('in a browser, the flow layout is worked out from the trees and the box siz
     ),
   );
 });
+
+const GROUPED = Array.from({ length: 5 }, (_, i) => `/extra/${i}#Extra${i}`);
+const withGroup = (data: PageData) => {
+  const extras = leafEntries(data, 8);
+  const statuses = ['fail', 'pass', 'pass', null, 'pending'] as const;
+  statuses.forEach((status, i) => { extras[i].counts = { pass: 0, fail: 0, pending: 0, ...(status && { [status]: 1 }) }; });
+  data.flow.roots.push(...extras);
+  data.flow.groups = [{ name: '/extra', screens: GROUPED }];
+};
+const gridBoxes = async (p: Page) => (await flowBoxes(p)).filter((b) => b.grouped);
+const rectOf = (p: Page, selector: string) => p.$eval(selector, (e) => e.getBoundingClientRect().toJSON() as DOMRect);
+
+test('in a browser, gathered entry screens the server put in one group stand as one folded box in the place of the first of them, with the group\'s name, its number of screens and its screens by status, and a map with no groups draws no such box', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box');
+        assert.deepEqual(await p.evaluate(() => state.data.flow.groups), []);
+        assert.equal(await p.locator('#flow :is(.box.group, .group-open)').count(), 0);
+      }, { view: 'flow' }),
+    ),
+  );
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.group');
+        const group = p.locator('#flow .box.group');
+        assert.equal(await group.count(), 1);
+        assert.equal(await group.locator('.group-line').first().textContent(), '▸/extra5');
+        assert.deepEqual(await group.locator('.tally-item').evaluateAll((els) => els.map((e) => [e.querySelector('.sq')!.classList[1], e.textContent])),
+          [['s-pass', '2'], ['s-fail', '1'], ['s-pending', '1'], ['s-none', '1']]);
+        assert.equal(await group.getAttribute('aria-expanded'), 'false');
+        assert.equal(await group.getAttribute('aria-label'), '/extra 묶음 펴기');
+        assert.deepEqual((await group.getAttribute('title'))!.split('\n'), ['/extra · 화면 5', '통과 2 · 실패 1 · 보류 1 · 테스트 없음 1', '누르면 이 묶음을 펴서 그 안의 화면을 그립니다']);
+        assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 8', 'the heading still counts the screens, folded or not');
+        for (const id of GROUPED) assert.equal(await p.locator(`#flow .box.screen[data-key="${id}"]`).count(), 0, `${id} is folded away`);
+        const grid = await gridBoxes(p);
+        assert.deepEqual(grid.map((b) => b.id), ['/extra · 화면 5', '/extra/5#Extra5', '/extra/6#Extra6', '/extra/7#Extra7']);
+        assert.equal(grid[0].left, Math.min(...grid.map((b) => b.left)));
+        assert.equal(grid[0].top, Math.min(...grid.map((b) => b.top)));
+        assert.deepEqual(await layoutErrors(p), []);
+        assert.deepEqual(await textOutside(p), []);
+        assert.deepEqual(overlapping(await flowBoxes(p)), []);
+      }, { view: 'flow', setup: changeData(withGroup) }),
+    ),
+  );
+});
+
+test('in a browser, pressing a folded group opens it in its place across a whole row of the grid with the screens below moved down, pressing its name folds it again, by mouse or by keyboard, and it stays as it was across redraws', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.group');
+        const perRow = await p.evaluate(() => drawnGrid!.per);
+        await p.click('#flow .box.group');
+        assert.equal(await p.evaluate(() => drawnGrid!.per), perRow, 'opening the group keeps the number of cells in a row, as the folded screens count for the width of a cell');
+        const head = p.locator('#flow .group-open');
+        assert.equal(await head.getAttribute('aria-expanded'), 'true');
+        assert.equal(await head.getAttribute('aria-label'), '/extra 묶음 접기');
+        assert.equal(await head.textContent(), '/extra5−');
+        assert.equal(await p.evaluate(() => document.activeElement!.matches('#flow .group-open')), true, 'the focus moves to the button that folds the group again');
+        assert.equal(await p.locator('#flow .box.group').count(), 0);
+        const check = async () => {
+          const grid = await gridBoxes(p);
+          const frame = await rectOf(p, '#flow .group-frame');
+          const inside = grid.filter((b) => GROUPED.includes(b.id));
+          assert.deepEqual(inside.map((b) => b.id), GROUPED);
+          assert.ok(inside.every((b) => b.left >= frame.left && b.right <= frame.right && b.top >= frame.top && b.bottom <= frame.bottom), 'the screens of the group stand in its frame');
+          assert.ok(frame.right >= Math.max(...grid.map((b) => b.right)) - 1 && frame.left <= Math.min(...grid.map((b) => b.left)) + 1, 'the frame takes the whole row');
+          assert.ok(grid.filter((b) => !GROUPED.includes(b.id)).every((b) => b.top >= frame.bottom), 'the other gathered screens move below it');
+          assert.deepEqual(await layoutErrors(p), []);
+          assert.deepEqual(overlapping(await flowBoxes(p)), []);
+        };
+        await check();
+        await p.evaluate(() => renderFlow());
+        await check();
+        await p.setViewportSize({ width: 900, height: 900 });
+        await p.waitForFunction(() => drawnGrid!.per < 5 && document.querySelector('#flow .group-open') !== null);
+        await check();
+        await (await screenBox(p, '/extra/2#Extra2')).click();
+        await check();
+        await p.focus('#flow .group-open');
+        await p.keyboard.press('Enter');
+        assert.equal(await p.locator('#flow .group-open').count(), 0);
+        assert.equal(await p.evaluate(() => document.activeElement!.matches('#flow .box.group')), true, 'the focus moves back to the folded box');
+        await p.keyboard.press(' ');
+        assert.equal(await p.locator('#flow .group-open').count(), 1, 'Space opens it as well');
+        await p.click('#flow .group-open');
+        assert.equal(await p.locator('#flow .box.group[aria-expanded="false"]').count(), 1);
+      }, { view: 'flow', setup: changeData(withGroup) }),
+    ),
+  );
+});
+
+test('in a browser, a grid has the same cells, as many per row and as wide, with its group folded as opened, even when the folded box is wider than its screens, and the opened group\'s name stays inside its row', { skip: browserMissing }, async () => {
+  const name = '/extra/a/rather/long/group/name';
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.group');
+        const folded = await p.evaluate(() => drawnGrid);
+        const natural = (selector: string) => p.$$eval(selector, (els: HTMLElement[]) => Math.max(...els.map((e) => {
+          const copy = e.cloneNode(true) as HTMLElement;
+          copy.classList.add('measuring');
+          copy.style.width = '';
+          e.parentElement!.append(copy);
+          const width = copy.getBoundingClientRect().width;
+          copy.remove();
+          return width;
+        })));
+        const groupWidth = await natural('#flow .box.group');
+        await p.click('#flow .box.group');
+        assert.equal(await p.locator('#flow .box.screen.grouped').count(), 3);
+        assert.ok(groupWidth > await natural('#flow .box.screen.grouped'), 'the folded box is wider than every screen of the grid, its own included');
+        assert.deepEqual(await p.evaluate(() => drawnGrid), folded);
+        assert.equal(folded!.per, 3, 'one cell per screen while the grid fits in a row');
+        assert.equal(await p.textContent('#flow .group-open .tag.size'), '2');
+        await p.setViewportSize({ width: 560, height: 900 });
+        await p.waitForFunction(() => drawnGrid!.per === 1);
+        const frame = await rectOf(p, '#flow .group-frame');
+        const head = await rectOf(p, '#flow .group-open');
+        assert.ok(head.right <= frame.right + 1, `the name stops at the row's end (${head.right} > ${frame.right})`);
+      }, { view: 'flow', setup: changeData((data) => {
+        const extras = leafEntries(data, 3);
+        extras.forEach((n, i) => { n.label = `/e${i}`; n.calls = []; n.counts = { pass: i, fail: 1 - Math.min(i, 1), pending: 0 }; });
+        data.flow.roots.push(...extras);
+        data.flow.groups = [{ name, screens: extras.slice(0, 2).map((n) => n.id) }];
+      }) }),
+    ),
+  );
+});

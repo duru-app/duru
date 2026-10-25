@@ -13,6 +13,15 @@ function pickScreen(id) {
   openPicked(id);
 }
 
+// 다시 그리면 누른 단추가 사라지므로, 같은 묶음의 펴고 접는 단추로 초점을 옮긴다.
+function setFlowGroup(name, open) {
+  if (open) state.openFlowGroups.add(name);
+  else state.openFlowGroups.delete(name);
+  renderFlow({ bar: false });
+  const at = `[data-group="${CSS.escape(name)}"]`;
+  /** @type {HTMLElement | null} */ (document.querySelector(`#flow ${open ? `.group-open${at}` : `.box.group${at}`}`))?.focus({ preventScroll: true });
+}
+
 function unpickScreen() {
   state.flowPicked = false;
   render();
@@ -31,16 +40,22 @@ function showBox(key) {
 
 // 상자는 페이지에 붙은 뒤에야 잴 수 있으므로, 상자를 붙인 쪽이 measureWidths → fit → measureHeights → place 순서로 불러 위치를 정한다.
 // 확대·축소는 배치를 마친 그림을 통째로 키우거나 줄이고, 그림을 감싼 칸이 바뀐 크기만큼 자리를 차지한다.
-function canvas(roots, { group = false, story = null } = {}) {
+function canvas(trees, { group = false, story = null } = {}) {
+  const { shown: roots, opened, unseen } = group ? foldGroups(trees, state.data.flow.groups, state.openFlowGroups) : { shown: trees, opened: new Map(), unseen: [] };
   const boxes = flowBoxes(roots);
-  const els = new Map(boxes.map((b) => [b.key, screenPill(b.node)]));
+  const els = new Map(boxes.map((b) => [b.key, b.node.kind === 'group' ? groupPill(b.node) : screenPill(b.node)]));
   for (const [key, box] of els) {
     box.classList.add('measuring');
     box.dataset.key = key;
   }
   const path = story && storyMarks(story, boxes, els);
-  const view = { group, marks: path?.marks };
-  const el = h('div', { class: ['canvas', story && 'story'].filter(Boolean).join(' ') }, [...els.values()], path?.marks.map((m) => m.el));
+  const view = { group, marks: path?.marks, opened, unseen };
+  const ghosts = unseen.map((n) => {
+    const ghost = n.kind === 'group' ? groupPill(n) : screenPill(n);
+    ghost.classList.add('measuring');
+    return ghost;
+  });
+  const el = h('div', { class: ['canvas', story && 'story'].filter(Boolean).join(' ') }, [...els.values()], path?.marks.map((m) => m.el), ghosts);
   const holder = h('div', { class: 'zoom-box' }, el);
   const sizes = {};
   let cols;
@@ -48,6 +63,7 @@ function canvas(roots, { group = false, story = null } = {}) {
     el: holder,
     measureWidths() {
       for (const [key, box] of els) sizes[key] = { width: Math.ceil(box.getBoundingClientRect().width) };
+      unseen.forEach((n, i) => { sizes[n.id] = { width: Math.ceil(ghosts[i].getBoundingClientRect().width) }; });
       for (const m of path?.marks ?? []) {
         const r = m.el.getBoundingClientRect();
         Object.assign(m, { width: Math.ceil(r.width), height: Math.ceil(r.height) });
@@ -55,6 +71,7 @@ function canvas(roots, { group = false, story = null } = {}) {
     },
     fit(width) {
       cols = flowColumns(roots, sizes, { ...view, width });
+      for (const ghost of ghosts) ghost.remove();
       for (const [key, box] of els) {
         box.classList.remove('measuring');
         box.classList.toggle('grouped', cols.grouped.has(key));
@@ -77,6 +94,10 @@ function canvas(roots, { group = false, story = null } = {}) {
         lines.append(svg('path', { d, class: cls, 'data-from': e.from, 'data-to': e.to }));
       }
       el.prepend(lines);
+      for (const frame of out.opened) {
+        el.prepend(h('div', { class: 'group-frame', 'aria-hidden': 'true', style: `left:${frame.x}px;top:${frame.y}px;width:${frame.width}px;height:${frame.height}px` }));
+        el.append(openGroupHead(frame));
+      }
       out.marks?.forEach(({ x, y }, i) => Object.assign(path.marks[i].el.style, { left: `${x}px`, top: `${y}px`, visibility: '' }));
       if (out.group) {
         const { x, y, height, count } = out.group;
@@ -85,7 +106,7 @@ function canvas(roots, { group = false, story = null } = {}) {
       const z = state.zoom;
       Object.assign(el.style, { width: `${out.width}px`, height: `${out.height}px`, transform: z === 1 ? '' : `scale(${z})` });
       Object.assign(holder.style, { width: `${out.width * z}px`, height: `${out.height * z}px` });
-      return out.group && { count: out.group.count, cellW: cols.cellW, per: cols.per };
+      return out.group && { count: cols.cells, cellW: cols.cellW, per: cols.per };
     },
   };
 }

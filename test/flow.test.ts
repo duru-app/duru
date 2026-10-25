@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
-import { buildFlow } from '../src/flow.ts';
+import { addressGroups, buildFlow } from '../src/flow.ts';
 import type { FlowAccess, FlowMap, FlowMapScreen, FlowScreenNode, FlowTests } from '../src/flow.ts';
 import { buildMap } from '../src/map.ts';
 import { linkTests } from '../src/test-links.ts';
@@ -140,4 +141,65 @@ test('a link with no guard between the two screens of a move draws the link, and
   assert.deepEqual(childOf([guard]), [[], ['로그인 뒤']]);
   const elsewhere = { screens: [screen('a'), screen('b', [{ from: 'a', guards: [guard] }])], entries: [{ screen: 'a' }, { screen: 'b' }], moves: [{ from: 'a', to: 'b', reason: '로그인 뒤' }] };
   assert.deepEqual(buildFlow(elsewhere, { nodes: {} }).roots[0].jumps, [{ to: 'b', label: 'b', guards: [], moved: ['로그인 뒤'] }]);
+});
+
+const pathsOf = (...paths: string[]) => paths.map((p, i) => ({ id: `${p}#S${i}`, label: p }));
+const groupsOf = (...paths: string[]) => addressGroups(pathsOf(...paths)).map((g) => [g.name, g.screens.map((id) => id.split('#')[0])]);
+const many = (prefix: string, count: number) => Array.from({ length: count }, (_, i) => `${prefix}/${i}`);
+
+test('gathered entry screens are grouped by the first part of their address, and a screen alone in its part stays a screen', () => {
+  assert.deepEqual(groupsOf('/claim/a', '/admin/x', '/claim/b', '/login', '/admin/y', '/admin'), [
+    ['/claim', ['/claim/a', '/claim/b']],
+    ['/admin', ['/admin/x', '/admin/y', '/admin']],
+  ]);
+});
+
+test('a group of more than twenty screens is split again by the next part of the address, and only that group', () => {
+  const env = many('/admin_console/environment', 14);
+  const site = many('/admin_console/site_config', 7);
+  assert.deepEqual(groupsOf(...env, ...site, '/admin_console/about', ...many('/claim', 20)), [
+    ['/admin_console/environment', env],
+    ['/admin_console/site_config', site],
+    ['/claim', many('/claim', 20)],
+  ]);
+  const deep = [...many('/a/b/c', 12), ...many('/a/b/d', 10)];
+  assert.deepEqual(groupsOf(...deep), [['/a/b/c', many('/a/b/c', 12)], ['/a/b/d', many('/a/b/d', 10)]], 'a part every screen shares does not split the group, so it goes on to the next one');
+});
+
+test('a group is named by the address part all its screens share, and a path variable or an unread part counts as one part', () => {
+  assert.deepEqual(groupsOf('/admin/env/a', '/admin/env/b'), [['/admin/env', ['/admin/env/a', '/admin/env/b']]]);
+  const team = '/:team([a-z0-9\\-_]+)';
+  assert.deepEqual(groupsOf(`${team}/channels`, `${team}/messages`, '/{?}/a', '/{?}/b'), [
+    [team, [`${team}/channels`, `${team}/messages`]],
+    ['/{?}', ['/{?}/a', '/{?}/b']],
+  ]);
+});
+
+test('screens that share one whole address and cannot be split further stay one group however many they are', () => {
+  const same = Array.from({ length: 22 }, () => '/admin_console/about/license');
+  assert.deepEqual(groupsOf(...same), [['/admin_console/about/license', same]]);
+});
+
+test('the flow groups the entry screens with nothing under them only on a map of more than a hundred screens', () => {
+  const screen = (id: string, path: string, links: FlowAccess['links'] = []): FlowMapScreen => ({ id, path, component: id, apiCalls: [], access: { restricted: false, kinds: [], links } });
+  const mapOf = (count: number): FlowMap => {
+    const admin = Array.from({ length: count - 3 }, (_, i) => screen(`admin-${i}`, `/admin/${i % 5}/${i}`));
+    const screens = [screen('home', '/admin/home'), screen('home-sub', '/admin/home/sub', [{ from: 'home', guards: [] }]), screen('login', '/login'), ...admin];
+    return { screens, entries: screens.filter((s) => s.id !== 'home-sub').map((s) => ({ screen: s.id })) };
+  };
+  assert.deepEqual(buildFlow(mapOf(100), { nodes: {} }).groups, []);
+  const groups = buildFlow(mapOf(101), { nodes: {} }).groups;
+  assert.deepEqual(groups.map((g) => [g.name, g.screens.length]), [['/admin/0', 20], ['/admin/1', 20], ['/admin/2', 20], ['/admin/3', 19], ['/admin/4', 19]]);
+  assert.deepEqual(groups[0].screens.slice(0, 2), ['admin-0', 'admin-5']);
+});
+
+test('README tells how a big map folds its gathered entry screens, and docs/decisions.md says what the grouping was weighed against', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  const readme = read('../README.md');
+  assert.match(readme, /On a map of more than 100 screens, the gathered\s+screens that share the start of their address are folded into one box per group/);
+  assert.match(readme, /pressing the group's name above the row folds it again/);
+  const decisions = read('../docs/decisions.md');
+  assert.match(decisions, /\*\*On a map of more than 100 screens, the gathered entry screens are grouped by the start of their address/);
+  assert.match(decisions, /- The route file: the admin console's 62 screens stay one group/);
+  assert.match(decisions, /On a map of more than 100 screens folding came back for the gathered entry screens/);
 });
