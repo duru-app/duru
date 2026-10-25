@@ -4,13 +4,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright-core';
 import { addMark, addReply, loadMarks } from '../src/marks.ts';
-import { withRebuiltFixture, withServer, browserMissing, withPage, screenBox, boxCount, lineSteps, pathMarks, pillMarks, pathEdges, untilSet, placeOf, postJson, CANDIDATES, storiesTab, holdRequests, WALK, WALK_ON_MAP, withPathStories, textOutside, storyStack, rightPane, BAD_REQUEST, rebuild } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, browserMissing, withPage, screenBox, boxCount, lineSteps, pathMarks, pillMarks, pathEdges, untilSet, placeOf, postJson, CANDIDATES, storiesTab, holdRequests, WALK, WALK_ON_MAP, withPathStories, textOutside, storyStack, rightPane, BAD_REQUEST, rebuild, changeData } from './review-helpers.ts';
 import type { Story, PageData } from './review-helpers.ts';
 
 declare const state: any;
 declare function canvas(roots: object[], options: object): { el: HTMLElement; measureWidths(): void; fit(width: number): void; measureHeights(): void; place(): void };
 declare function flowInnerWidth(flow: HTMLElement): number;
 declare function load(): Promise<void>;
+declare function reloadLive(): Promise<void>;
 declare function render(): void;
 
 const HELP_PATH = ['/signin#SignIn', '/home#Home', '/help#Help'];
@@ -715,6 +716,92 @@ test('in a browser, a screen pressed in the list and a box pressed in the diagra
         assert.deepEqual(await lineSteps(p), HELP_PATH.map((id, i) => [String(i + 1), id]));
         assert.deepEqual(errors, []);
       }),
+    ),
+  );
+});
+
+const foldText = (p: Page, id: string) => p.locator(`#flow .box.screen[data-key="${id}"] .fold-branch`).textContent();
+
+test('in a browser, a new story whose steps sit in folded branches opens them so its path runs through every step box: a screen added from the list opens what hides it, and coming back to the new story opens them again', { skip: browserMissing }, async () => {
+  const result = '/lab/result#LabResult';
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await startNewStory(p);
+        await p.waitForSelector('#flow .fold-branch');
+        assert.equal(await foldText(p, '/signin#SignIn'), '+10');
+        await pickScreen(p, '/signin');
+        await untilJudged(p, 0);
+        await pickScreen(p, '/home');
+        await untilJudged(p, 1);
+        await pickScreen(p, '/lab');
+        await untilJudged(p, 2);
+        await pickScreen(p, '/lab/result');
+        await untilJudged(p, 3);
+        assert.deepEqual([await foldText(p, '/signin#SignIn'), await foldText(p, '/home#Home')], ['−', '−'], 'adding a hidden screen opens the branches above it');
+        assert.deepEqual((await pillMarks(p, 'story-badge')).map(([key, n]) => [key, n]).sort(), [['/home#Home', '2'], ['/lab#Lab', '3'], [result, '4'], ['/signin#SignIn', '1']], 'every step has its box');
+        assert.equal((await pathEdges(p)).length, 3, 'the path runs between every two steps');
+
+        await p.locator('#flow .box.screen[data-key="/signin#SignIn"] .fold-branch').click();
+        assert.equal(await foldText(p, '/signin#SignIn'), '+10', 'a branch can still be folded by hand while writing');
+        await p.click('#view-flow');
+        await p.click('.flowbar button.new-story');
+        await p.waitForSelector('#flow .story-badge');
+        assert.equal(await foldText(p, '/signin#SignIn'), '−', 'coming back to the new story opens the steps again');
+        assert.equal((await pillMarks(p, 'story-badge')).length, 4);
+      }, { setup: changeData((data) => { data.flow.folding = true; }) }),
+    ),
+  );
+});
+
+test('in a browser, while a new story is written a folded group opens when it is pressed and a screen in it pressed in the drawing becomes the next step, a screen in a closed group added from the list opens its group, and a group closed by hand opens again on coming back to the new story or when the map read again puts a step in a group it was not in, but not when the same map is read again', { skip: browserMissing }, async () => {
+  const [help, report] = ['/help#Help', '/admin/report#AdminReport'];
+  const moveOut = (data: PageData) => {
+    const taken: PageData['flow']['roots'] = [];
+    const cut = (nodes: PageData['flow']['roots']): PageData['flow']['roots'] => nodes.flatMap((n) => {
+      if ([help, report].includes(n.id)) {
+        taken.push(n);
+        return [];
+      }
+      return [{ ...n, children: cut(n.children) }];
+    });
+    data.flow.roots = [...cut(data.flow.roots), ...taken];
+  };
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await startNewStory(p);
+        await p.click('#flow .box.group[data-group="/g-a"]');
+        await pressBox(p, help);
+        await untilJudged(p, 0);
+        assert.deepEqual(await composeSteps(p), ['/help']);
+        await pickScreen(p, '/admin/report');
+        await untilJudged(p, 1);
+        assert.equal(await p.locator('#flow .group-open[data-group="/g-b"]').count(), 1, 'the group of the screen added from the list opens');
+        assert.deepEqual((await pillMarks(p, 'story-badge')).map(([key, n]) => [key, n]).sort(), [[report, '2'], [help, '1']]);
+        await p.click('#flow .group-open[data-group="/g-b"]');
+        assert.equal(await p.locator('#flow .group-open[data-group="/g-b"]').count(), 0);
+        await p.click('#view-flow');
+        await p.click('.flowbar button.new-story');
+        await p.waitForSelector('#flow .story-badge');
+        assert.equal(await p.locator('#flow .group-open[data-group="/g-b"]').count(), 1, 'coming back to the new story opens the group of a step again');
+        await p.click('#flow .group-open[data-group="/g-b"]');
+        assert.equal(await p.locator('#flow .group-open[data-group="/g-b"]').count(), 0);
+        await p.evaluate(() => reloadLive());
+        assert.equal(await p.locator('#flow .box.group[data-group="/g-b"]').count(), 1, 'reading the same map again leaves the group closed');
+        await p.route('**/api/data', async (route) => {
+          const res = await route.fetch();
+          const data: PageData = await res.json();
+          moveOut(data);
+          data.flow.groups = [{ name: '/g-a', screens: [help] }, { name: '/g-c', screens: [report] }];
+          await route.fulfill({ response: res, json: data });
+        });
+        await p.evaluate(() => reloadLive());
+        await p.waitForSelector('#flow .group-open[data-group="/g-c"]');
+      }, { setup: changeData((data) => {
+        moveOut(data);
+        data.flow.groups = [{ name: '/g-a', screens: [help] }, { name: '/g-b', screens: [report] }];
+      }) }),
     ),
   );
 });

@@ -13,6 +13,9 @@ function syncHeaderLocks() {
   /** @type {HTMLButtonElement} */ (document.getElementById('end-review')).disabled = state.bulkBusy || state.ending;
 }
 
+/** @type {{ data: PageData, steps: string, folds: { branches: Set<string>, groups: Set<string> } } | null} */
+let composeWholeShown = null;
+
 function render() {
   if (state.ended || state.failed) return;
   pickables = [];
@@ -24,6 +27,19 @@ function render() {
   if (flowPickShown() && !flowScreens().some((n) => n.id === state.selected)) state.flowPicked = false;
   const picked = flowPickShown();
   const diagram = composeDiagram();
+  const whole = diagram && state.compose.diagram === 'whole';
+  if (!whole) composeWholeShown = null;
+  else {
+    const ids = composeScreens(state.compose);
+    const steps = ids.join('\n');
+    const seen = composeWholeShown;
+    if (seen?.data !== state.data || seen.steps !== steps) {
+      const folds = foldsHolding(ids);
+      for (const id of folds.branches) if (!seen?.folds.branches.has(id)) state.openFlowBranches.add(id);
+      for (const name of folds.groups) if (!seen?.folds.groups.has(name)) state.openFlowGroups.add(name);
+      composeWholeShown = { data: state.data, steps, folds };
+    }
+  }
   const main = document.querySelector('main');
   main.classList.toggle('flow', flow);
   main.classList.toggle('picked', picked);

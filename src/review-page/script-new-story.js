@@ -97,6 +97,7 @@ function addComposeScreen(id, fromBox = false) {
     c.refused = '같은 화면을 이어서 넣을 수 없습니다.';
     return renderCompose();
   }
+  revealScreen(id);
   const box = fromBox ? document.querySelector(`#flow .box.screen[data-key="${CSS.escape(id)}"]`)?.getBoundingClientRect() : null;
   changeCompose((d) => {
     d.steps.splice(at, 0, newStep(id));
