@@ -16,6 +16,7 @@ declare const GROUP_HEAD_TIP: string;
 declare const FOLDED_HEAD_TIP: string;
 declare function screensIn(roots: { id: string; children: object[] }[]): { id: string; children: object[] }[];
 declare function setZoom(z: number): void;
+declare function select(id: string): void;
 declare function openNeeds(screen: { access: object }): { lines: { kind: string; text: string }[]; tips: string[]; bare: unknown };
 declare function flowColumns(roots: object[], sizes: object, view?: FlowView): FlowColumns;
 declare function layoutFlow(roots: object[], sizes: object, view?: FlowView, cols?: FlowColumns): { boxes: FlowBox[]; edges: FlowEdge[]; group: { x: number; y: number; height: number; count: number } | null; width: number; height: number; marks?: { x: number; y: number }[] };
@@ -1331,6 +1332,127 @@ test('in a browser, a folded group fades by the screens in it: a status button o
   );
 });
 
+const shownIn = (p: Page, id: string) => p.$eval(`#flow .box.screen[data-key="${id}"]`, (e) => {
+  const r = e.getBoundingClientRect();
+  const v = document.getElementById('flow')!.getBoundingClientRect();
+  return r.top >= v.top && r.bottom <= v.bottom && r.left >= v.left && r.right <= v.right;
+});
+
+test('in a browser, a screen folded under folded branches opens them all and is picked and scrolled to when it is picked from the list of screens to fix, by Enter in the search, by its id in the address or by coming back to the drawing with it picked, and the search counts and steps through it in the place of the folded box', { skip: browserMissing }, async () => {
+  const result = '/lab/result#LabResult';
+  const opened = async (p: Page) => [await foldButton(p, '/signin#SignIn').textContent(), await foldButton(p, '/home#Home').textContent()];
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .fold-branch');
+        await p.evaluate(() => setZoom(1.5));
+        await p.$eval('#flow', (e) => { e.scrollTop = e.scrollHeight; e.scrollLeft = e.scrollWidth; });
+        await p.locator('#gaps .gap-list li', { hasText: '/lab/result' }).click();
+        assert.deepEqual(await pickedBoxes(p), [result]);
+        assert.deepEqual(await opened(p), ['−', '−'], 'both branches above it open');
+        assert.equal(await shownIn(p, result), true, 'the drawing moves to the box');
+
+        await p.keyboard.press('Escape');
+        await foldButton(p, '/signin#SignIn').click();
+        const search = p.locator('.flowbar input.flow-search');
+        await search.fill('lab');
+        assert.equal(await p.textContent('.flowbar .flow-search-count'), '찾은 화면 2', 'the screens the folded box hides are counted');
+        await search.press('Enter');
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab'], 'Enter takes the first screen in the folded box, opening it');
+        assert.equal(await p.textContent('.flowbar .flow-search-count'), '1 / 2');
+        await search.press('Enter');
+        assert.deepEqual(await pickedBoxes(p), [result]);
+        await search.press('Enter');
+        assert.deepEqual(await pickedBoxes(p), ['/lab#Lab'], 'and after the last the first again');
+
+        await foldButton(p, '/signin#SignIn').click();
+        const back = () => p.evaluate(() => new Promise((done) => {
+          addEventListener('popstate', () => setTimeout(done), { once: true });
+          history.back();
+        }));
+        await p.evaluate(() => history.pushState(null, '', location.hash));
+        await back();
+        assert.equal(await foldButton(p, '/signin#SignIn').textContent(), '+10', 'going back to the same picked screen leaves what was folded by hand');
+        await p.evaluate((id) => select(id), result);
+        assert.deepEqual(await pickedBoxes(p), [result], 'any other way of picking a screen in the drawing opens it too');
+        await p.keyboard.press('Escape');
+        await foldButton(p, '/signin#SignIn').click();
+        await back();
+        assert.deepEqual(await pickedBoxes(p), [result], 'going back to the screen after letting it go opens it again');
+        await foldButton(p, '/signin#SignIn').click();
+        await p.click('#view-list');
+        await p.click('#view-flow');
+        assert.deepEqual(await pickedBoxes(p), [result], 'coming back to the drawing from the list opens the picked screen');
+
+        await p.goto('about:blank');
+        await p.goto(`${base}/#flow?screen=${result}`);
+        await p.waitForSelector('#flow .box.screen.picked');
+        assert.deepEqual(await pickedBoxes(p), [result], 'the screen in the address is picked');
+        assert.deepEqual(await opened(p), ['−', '−']);
+      }, { view: 'flow', setup: folding() }),
+    ),
+  );
+});
+
+test('in a browser, Enter in the search keeps its order while it opens folded entry screens, which keep their place in the grid', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .fold-branch');
+        const search = p.locator('.flowbar input.flow-search');
+        await search.fill('twin');
+        const picks = [];
+        for (let i = 0; i < 4; i += 1) {
+          await search.press('Enter');
+          picks.push(...await pickedBoxes(p));
+        }
+        assert.deepEqual(picks, ['/extra/0#Extra0', '/lab/result#LabResult', '/extra/1#Extra1', '/extra/0#Extra0'], 'the entry screen opened above the grid is still stepped through in its place in the grid');
+      }, { view: 'flow', setup: folding((data) => {
+        walkFlow(data.flow.roots).find((n) => n.id === '/lab/result#LabResult')!.component = 'Twin';
+        const [first, last] = leafEntries(data, 2).map((n) => ({ ...n, component: 'Twin' }));
+        data.flow.roots.unshift(first);
+        data.flow.roots.push(last);
+      }) }),
+    ),
+  );
+});
+
+test('in a browser, a screen in a folded group opens the group and is picked when it is picked from the list of screens to fix or by its id in the address, and Enter in the search steps through the group\'s screens in the place of its box', { skip: browserMissing }, async () => {
+  const isOpen = (p: Page, name: string) => p.locator(`#flow .group-open[data-group="${name}"]`).count();
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.group');
+        await p.locator('#gaps .gap-list li', { hasText: '/extra/0' }).click();
+        assert.deepEqual(await pickedBoxes(p), [GROUPED[0]]);
+        assert.deepEqual([await isOpen(p, '/extra-b'), await isOpen(p, '/extra-a')], [1, 0], 'only the group holding it opens');
+
+        await p.keyboard.press('Escape');
+        await p.locator('#flow .group-open[data-group="/extra-b"]').click();
+        const search = p.locator('.flowbar input.flow-search');
+        await search.fill('/extra/');
+        assert.equal(await p.textContent('.flowbar .flow-search-count'), '찾은 화면 8', 'the screens in folded groups are counted');
+        const picks = [];
+        for (let i = 0; i < 8; i += 1) {
+          await search.press('Enter');
+          picks.push(...await pickedBoxes(p));
+        }
+        assert.deepEqual(picks, [0, 2, 4, 1, 3, 5, 6, 7].map((i) => `/extra/${i}#Extra${i}`), 'each group\'s screens come in its place, in the group\'s order');
+        assert.deepEqual([await isOpen(p, '/extra-b'), await isOpen(p, '/extra-a')], [1, 1]);
+
+        await p.goto('about:blank');
+        await p.goto(`${base}/#flow?screen=${GROUPED[3]}`);
+        await p.waitForSelector('#flow .box.screen.picked');
+        assert.deepEqual(await pickedBoxes(p), [GROUPED[3]]);
+        assert.equal(await isOpen(p, '/extra-a'), 1);
+      }, { view: 'flow', setup: changeData((data) => {
+        data.flow.roots.push(...leafEntries(data, 8));
+        data.flow.groups = [{ name: '/extra-b', screens: [GROUPED[0], GROUPED[2], GROUPED[4]] }, { name: '/extra-a', screens: [GROUPED[1], GROUPED[3]] }];
+      }) }),
+    ),
+  );
+});
+
 test('in a browser, a folded screen fades by itself and the screens it hides, and an opened one by itself only, for the status buttons, the search and a picked screen', { skip: browserMissing }, async () => {
   const signin = '#flow .box.screen[data-key="/signin#SignIn"]';
   const home = '#flow .box.screen[data-key="/home#Home"]';
@@ -1345,9 +1467,7 @@ test('in a browser, a folded screen fades by itself and the screens it hides, an
         const search = p.locator('.flowbar input.flow-search');
         await search.fill('lab/result');
         assert.equal(await faded(p, signin), '');
-        assert.equal(await p.textContent('.flowbar .flow-search-count'), '찾은 화면 없음', 'the folded box is not a screen the search found');
-        await search.press('Enter');
-        assert.deepEqual(await pickedBoxes(p), []);
+        assert.equal(await p.textContent('.flowbar .flow-search-count'), '찾은 화면 1', 'the search counts the screen the folded box hides');
         await search.fill('no such screen');
         assert.equal(await faded(p, signin), 'off');
         await search.fill('lab/result');

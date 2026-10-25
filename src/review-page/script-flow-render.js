@@ -15,41 +15,48 @@ function renderFlowBar(screens) {
   if (searching) flowSearchInput.focus();
 }
 
+function flowKept() {
+  const inFlow = state.view === 'flow';
+  const filter = FLOW_FILTERS.find((f) => f.key === (inFlow ? state.flowFilter : 'all'));
+  const q = inFlow ? state.flowQuery.trim().toLowerCase() : '';
+  return (n) => filter.keep(n) && (!q || `${n.label}\n${n.component}\n${n.id}`.toLowerCase().includes(q));
+}
+
+// 접힌 노드 안에 들어 있는 화면도 그 노드에 속한다.
+function boxScreens(byId) {
+  const grouped = new Map(state.data.flow.groups.map((g) => [g.name, g.screens.map((id) => byId.get(id)).filter(Boolean)]));
+  return (/** @type {HTMLElement} */ box) => {
+    if (box.classList.contains('group')) return grouped.get(box.dataset.group) ?? [];
+    const n = byId.get(box.dataset.key);
+    return box.classList.contains('folded') ? screensIn([n]) : [n];
+  };
+}
+
 function applyFlowEmphasis() {
   const flow = document.getElementById('flow');
   const screens = flowScreens();
   const byId = new Map(screens.map((n) => [n.id, n]));
-  const inFlow = state.view === 'flow';
   const picked = flowPickShown() ? byId.get(state.selected) ?? null : null;
   let related = null;
   let jumps = new Set();
   if (picked) {
-    const parentOf = new Map(screens.flatMap((n) => n.children.map((c) => [c.id, n.id])));
-    related = new Set(screensIn([picked]).map((n) => n.id));
-    for (let id = parentOf.get(picked.id); id !== undefined; id = parentOf.get(id)) related.add(id);
+    related = new Set([...screensIn([picked]).map((n) => n.id), ...ancestorsOf(screens, picked.id)]);
     jumps = new Set(picked.jumps.map((j) => j.to).filter((id) => !related.has(id)));
   }
-  const filter = FLOW_FILTERS.find((f) => f.key === (inFlow ? state.flowFilter : 'all'));
-  const q = inFlow ? state.flowQuery.trim().toLowerCase() : '';
-  const found = (n) => !q || `${n.label}\n${n.component}\n${n.id}`.toLowerCase().includes(q);
-  const kept = (list) => list.some((n) => filter.keep(n) && found(n));
-  const mark = (box, inside, keep = kept(inside)) => {
-    box.classList.toggle('dim', related !== null && !inside.some((n) => related.has(n.id) || jumps.has(n.id)));
-    box.classList.toggle('jump', inside.some((n) => jumps.has(n.id)));
-    box.classList.toggle('off', !keep);
+  const keep = flowKept();
+  const inside = boxScreens(byId);
+  const mark = (box, list) => {
+    box.classList.toggle('dim', related !== null && !list.some((n) => related.has(n.id) || jumps.has(n.id)));
+    box.classList.toggle('jump', list.some((n) => jumps.has(n.id)));
+    box.classList.toggle('off', !list.some(keep));
   };
   for (const box of /** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll('.box.screen'))) {
     const n = byId.get(box.dataset.key);
     box.classList.toggle('picked', n === picked);
     box.setAttribute('aria-pressed', String(n === picked));
-    const own = kept([n]);
-    const folded = box.classList.contains('folded');
-    mark(box, folded ? screensIn([n]) : [n], folded ? undefined : own);
-    // 찾기의 차례와 찾은 수는 상자 자신의 화면이 맞는 것만 센다.
-    box.toggleAttribute('data-kept', own);
+    mark(box, inside(box));
   }
-  const grouped = new Map(state.data.flow.groups.map((g) => [g.name, g.screens.map((id) => byId.get(id)).filter(Boolean)]));
-  for (const box of /** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll('.box.group'))) mark(box, grouped.get(box.dataset.group) ?? []);
+  for (const box of /** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll('.box.group'))) mark(box, inside(box));
   for (const line of /** @type {NodeListOf<SVGPathElement>} */ (flow.querySelectorAll('.canvas svg path[data-from]'))) {
     const on = related !== null && related.has(line.dataset.from) && related.has(line.dataset.to);
     line.classList.toggle('on', on);
