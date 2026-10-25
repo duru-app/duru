@@ -1114,7 +1114,16 @@ opening it.
   screens of folded groups count for the cell width and the number of cells in a row, and the folded box of an opened
   group for the cell width, so opening or folding a group moves no other cell sideways; the cost is a folded grid
   whose row is wider than the boxes drawn in it.
-- Which groups are open lasts until the page is reloaded, as the zoom level does.
+- An entry screen with screens under it is drawn folded among the gathered entry screens, with 「+N」 and its hidden
+  screens by status, and opening it draws its tree above them, where a screen folds only with more than six screens
+  under it. On the mattermost map (181 screens) folding only inside the trees left 「맞춤」 at 30%, folding the entry
+  screens with more than three under them gave 62%, the folded entry screens in one column 61%, and mixed into the
+  gathered ones 77%, the only one above 75%. Tools that show a big tree or a test report (SpaceTree, Allure,
+  Testsigma Arcus, Octopus.do) open on the top level and put a count or the statuses on a folded node, and
+  SpaceTree's users rejected shrinking the whole tree until it fit. The cost is that an opened entry screen moves
+  from the gathered ones to the trees, so the page scrolls to it and keeps the focus on its button. The page works
+  out which screens fold from the tree it draws; the server only says whether the map is big enough.
+- Which groups and branches are open lasts until the page is reloaded, as the zoom level does.
 
 **The zoom control floats at the bottom-left corner of the drawing, and its percent is a field a level can be typed
 into.**

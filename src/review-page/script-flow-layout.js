@@ -10,6 +10,18 @@ function flowBoxes(roots) {
 
 const groupKey = (name) => `group:${name}`;
 
+const FOLD_OVER = 6;
+function foldBranches(roots, open) {
+  const foldable = new Map();
+  const cut = (n, root) => {
+    const below = screensIn(n.children);
+    const folds = below.length > (root ? 0 : FOLD_OVER);
+    if (folds) foldable.set(n.id, below);
+    return { ...n, children: folds && !open.has(n.id) ? [] : n.children.map((c) => cut(c, false)) };
+  };
+  return { shown: roots.map((r) => cut(r, true)), foldable };
+}
+
 // unseen 은 그리지 않고 재기만 하는 상자로, 접힌 묶음의 화면과 펴진 묶음의 묶음 상자다. 화면은 칸 폭과 한 줄의 칸 수에,
 // 묶음 상자는 칸 폭에만 넣어, 묶음을 펴고 접어도 칸이 그대로 서게 한다.
 function foldGroups(roots, groups, open) {
