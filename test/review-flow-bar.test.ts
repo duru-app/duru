@@ -368,7 +368,7 @@ test('in a browser, the explanation behind the info icon shows each tag a screen
         assert.deepEqual(await legend.locator('li').evaluateAll((items) => items.map((li) => [...li.children].map((c) => c.textContent))), [
           ['/주소API 8', '이 화면에서 부르는 API 호출의 수. 화면을 누르면 오른쪽에 호출마다 테스트가 보입니다'],
           ['/주소역할/주소설정', '특정 역할이나 설정에서만 열리는 화면. 무엇이 필요한지는 마우스를 올리면 보입니다'],
-          ['/주소', '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크나 설정에 적은 이동이 닿는 화면'],
+          ['/주소', '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크나 설정에 적은 이동이 닿는 화면, 또는 그런 화면을 품은 접힌 상자'],
           ['불러옴 N · 지나감 N', '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 연 브라우저 테스트. 마우스를 올리면 보입니다상태 색과 테스트 수에는 넣지 않음'],
         ]);
         const look = (sel: string) => p.$eval(sel, (e) => { const c = getComputedStyle(e); return [c.borderTopStyle, c.borderTopColor, c.color, c.fontSize].join(' '); });
