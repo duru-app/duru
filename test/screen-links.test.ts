@@ -2669,6 +2669,197 @@ test('the decision record says a condition around a call that checks an argument
   assert.match(decisions, /Reading an earlier `return` as well would drop outline's `\/doc\/new`/);
 });
 
+test('a condition around a move or a link that checks its own address as it is drops the null an address function returns and keeps a value it cannot read, but an earlier return, a != null check or no check keeps the {?}', async () => {
+  const paths = `export function detailOf(row) {
+  if (row.type === 'a') return \`/team/\${row.id}\`;
+  if (row.type === 'b') return '/help/b';
+  return null;
+}
+
+export function guardOf(row) {
+  if (!row.id) return;
+  return \`/team/\${row.id}\`;
+}
+
+export function urlOf(row) {
+  if (row.type === 'a') return \`/team/\${row.id}\`;
+  if (row.type === 'b') return row.url;
+  return null;
+}
+`;
+  const home = `import { Link, useHistory, useNavigate } from 'react-router-dom';
+import { detailOf, guardOf, urlOf } from './paths';
+
+export default function Home({ row }) {
+  const history = useHistory();
+  const navigate = useNavigate();
+  const ifCheck = () => {
+    const p1 = detailOf(row);
+    if (p1) history.push(p1);
+  };
+  const andCheck = () => {
+    const p2 = detailOf(row);
+    p2 && history.push(p2);
+  };
+  const ternCheck = () => {
+    const p3 = detailOf(row);
+    return p3 ? history.push(p3) : null;
+  };
+  const elseCheck = () => {
+    const p4 = detailOf(row);
+    if (!p4) history.push('/start');
+    else history.push(p4);
+  };
+  const orCheck = () => {
+    const p5 = detailOf(row);
+    return !p5 || history.push(p5);
+  };
+  const guardChecked = () => {
+    const p6 = guardOf(row);
+    if (p6) history.push(p6);
+  };
+  const unreadChecked = () => {
+    const p9 = urlOf(row);
+    if (p9) history.push(p9);
+  };
+  const navCheck = () => {
+    const p10 = detailOf(row);
+    if (p10) navigate(p10);
+  };
+  const ownTern = () => {
+    const p11 = detailOf(row);
+    history.push(p11 ? p11 : '/start');
+  };
+  const earlyReturn = () => {
+    const p7 = detailOf(row);
+    if (!p7) return;
+    history.push(p7);
+  };
+  const unchecked = () => history.push(detailOf(row));
+  const p8 = detailOf(row);
+  const notNull = () => {
+    if (p8 != null) history.push(p8);
+  };
+  return (
+    <nav>
+      <a onClick={ifCheck}>a</a>
+      <a onClick={andCheck}>b</a>
+      <a onClick={ternCheck}>c</a>
+      <a onClick={elseCheck}>d</a>
+      <a onClick={orCheck}>e</a>
+      <a onClick={guardChecked}>f</a>
+      <a onClick={unreadChecked}>k</a>
+      <a onClick={navCheck}>l</a>
+      <a onClick={ownTern}>m</a>
+      <a onClick={earlyReturn}>g</a>
+      <a onClick={unchecked}>h</a>
+      <a onClick={notNull}>i</a>
+      {p8 && <Link to={p8}>j</Link>}
+      {p8 && <a onClick={() => history.push(p8)}>n</a>}
+    </nav>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Home.js': home, 'paths.js': paths }));
+  const at = (part: string) => lineOf(home, part);
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/team/{*}', at('if (p1)'), ['p1'], ['/team/:team#Team']],
+    ['/help/b', at('if (p1)'), ['p1'], ['/help/:page?#Help']],
+    ['/team/{*}', at('p2 &&'), ['p2'], ['/team/:team#Team']],
+    ['/help/b', at('p2 &&'), ['p2'], ['/help/:page?#Help']],
+    ['/team/{*}', at('p3 ?'), ['p3'], ['/team/:team#Team']],
+    ['/help/b', at('p3 ?'), ['p3'], ['/help/:page?#Help']],
+    ['/start', at("history.push('/start')"), ['!p4'], ['/start#Start']],
+    ['/team/{*}', at('history.push(p4)'), ['!(!p4)'], ['/team/:team#Team']],
+    ['/help/b', at('history.push(p4)'), ['!(!p4)'], ['/help/:page?#Help']],
+    ['/team/{*}', at('!p5 ||'), [], ['/team/:team#Team']],
+    ['/help/b', at('!p5 ||'), [], ['/help/:page?#Help']],
+    ['/team/{*}', at('if (p6)'), ['p6'], ['/team/:team#Team']],
+    ['/team/{*}', at('if (p9)'), ['p9'], ['/team/:team#Team']],
+    ['{?}', at('if (p9)'), ['p9'], []],
+    ['/team/{*}', at('if (p10)'), ['p10'], ['/team/:team#Team']],
+    ['/help/b', at('if (p10)'), ['p10'], ['/help/:page?#Help']],
+    ['/team/{*}', at('p11 ? p11'), ['p11'], ['/team/:team#Team']],
+    ['/help/b', at('p11 ? p11'), ['p11'], ['/help/:page?#Help']],
+    ['/start', at('p11 ? p11'), ['!(p11)'], ['/start#Start']],
+    ['/team/{*}', at('history.push(p7)'), [], ['/team/:team#Team']],
+    ['/help/b', at('history.push(p7)'), [], ['/help/:page?#Help']],
+    ['{?}', at('history.push(p7)'), [], []],
+    ['/team/{*}', at('const unchecked'), [], ['/team/:team#Team']],
+    ['/help/b', at('const unchecked'), [], ['/help/:page?#Help']],
+    ['{?}', at('const unchecked'), [], []],
+    ['/team/{*}', at('p8 != null'), ['p8 != null'], ['/team/:team#Team']],
+    ['/help/b', at('p8 != null'), ['p8 != null'], ['/help/:page?#Help']],
+    ['{?}', at('p8 != null'), ['p8 != null'], []],
+    ['/team/{*}', at('<Link to={p8}>'), ['p8'], ['/team/:team#Team']],
+    ['/help/b', at('<Link to={p8}>'), ['p8'], ['/help/:page?#Help']],
+    ['/team/{*}', at('history.push(p8)}'), ['p8'], ['/team/:team#Team']],
+    ['/help/b', at('history.push(p8)}'), ['p8'], ['/help/:page?#Help']],
+    ['{?}', at('history.push(p8)}'), ['p8'], []],
+  ]);
+});
+
+test('a condition around a route that checks its own path does not drop the null an address function returns, so the route path stays {?}', async () => {
+  const paths = `export function pathOf(on) {
+  if (on) return '/extra';
+  return null;
+}
+`;
+  const routes = `import { Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Start from './Start';
+import { pathOf } from './paths';
+
+export default function Routes({ on }) {
+  const extra = pathOf(on);
+  return (
+    <Switch>
+      <Route path="/home" component={Home} exact />
+      {extra && <Route path={extra} component={Start} />}
+    </Switch>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'paths.js': paths }));
+  assert.deepEqual(map.screens.map((s) => [s.id, s.path]), [['/home#Home', '/home'], ['{?}#Start', '{?}']]);
+});
+
+test('a redirect in the routes file under a condition that checks its own target is a move, so the null an address function returns gives no redirect', async () => {
+  const paths = `export function targetOf(on) {
+  if (on) return '/start';
+  return null;
+}
+`;
+  const routes = `import { Redirect, Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Start from './Start';
+import { targetOf } from './paths';
+
+export default function Routes({ on }) {
+  const target = targetOf(on);
+  return (
+    <Switch>
+      <Route path="/home" component={Home} exact />
+      <Route path="/start" component={Start} />
+      {target && <Redirect from="/old" to={target} />}
+    </Switch>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'paths.js': paths }));
+  const reasons = map.entries.find((e) => e.screen === '/start#Start')!.reasons.filter((r) => r.kind === 'redirect');
+  assert.deepEqual(reasons, [{ kind: 'redirect', file: 'Routes.js', line: lineOf(routes, '<Redirect') }]);
+});
+
+test('the decision record says a condition around a move that checks its own address drops the null branch, at the same reach as a checked argument', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*A condition around a move or a link that checks its own address as it is drops the branches it rules out\.\*\*/);
+  assert.match(decisions, /unless an `if`, `\? :`, `&&` or `\|\|` around the move or link tests that address itself/);
+  assert.match(decisions, /an earlier `if \(!p\) return;` does not count/);
+  assert.match(decisions, /A route's `path` under such a condition is read as before/);
+  assert.match(decisions, /A `<Redirect to>` in the routes file is a move/);
+});
+
 test('a helper call that hands a member of a constant object into the address the helper builds is {?}, as an address function call with it is', async () => {
   const routes = `import { Route, Switch } from 'react-router-dom';
 import Home from './Home';

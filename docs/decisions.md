@@ -3777,7 +3777,8 @@ Known limits:
   anything (`if (a === 1) console.info('…')`), so seven of them pass the limit of 64: a link address is then read
   with each call a piece duru cannot read, and a route path's line says `more than 8 paths`.
 - A `return;` with no value used as a guard (`if (!id) return;`) gives a `{?}` link beside the address the rest of
-  the body returns.
+  the body returns, unless an `if`, `? :`, `&&` or `||` around the move or link tests that address itself
+  (`if (p) navigate(p)`, `{p && <Link to={p}>}`); an earlier `if (!p) return;` does not count.
 - `||=`, `??=` and `&&=` on a name of the function make its value one duru cannot read, even when the value before
   is read whole.
 - An object key or a member name spelled like a parameter or a name of the function counts as naming that value, so
@@ -3920,6 +3921,30 @@ itself. On mattermost this removes the 146 lines of `components/inline_entity_li
 `components/AuthenticatedLayout.tsx:72` (16 lines), but the `/doc/new` screen would then show as an entry no link
 reaches, which the investigation of that call found wrong; reading only the conditions around the call was chosen as the one easier to
 undo, without the driver's answer (#414).
+
+**A condition around a move or a link that checks its own address as it is drops the branches it rules out.**
+When the address of a move or a link is a name or a member chain that an `if`, `? :`, `&&` or `||` around it tests
+as it is, or with `!` (`const p = detailOf(row); if (p) navigate(p)`, `{p && <Link to={p}>}`), a value of it the
+test rules out gives no link, so the `null` or `return;` of an address function no longer gives a `{?}` there; a
+value duru cannot read keeps its line, as its truth is not known. The reach is that of a checked argument above:
+only conditions inside the function that holds the move, no earlier `return`, and no other test than the value
+itself, so `if (!p) return; navigate(p)`, `if (p != null) navigate(p)` and an unchecked `navigate(detailOf(row))`
+still give the `{?}`. A route's `path` under such a condition is read as before, so
+`{extra && <Route path={extra} />}`, with `extra` from an address function that can return `null`, stays a `{?}`
+screen: dropping the branch there would change the screen's id, and the choice was made for moves and links
+only. On into-sign 2.0.0 this removes the `{?}` at the three calls of
+`resolveMetaDocumentDetailNavigation` (`InfoPublishDocument.jsx:104`, `InfoPublishDocumentSearch.jsx:174`,
+`Admin/Pages/MetaDocument/ViewBody/index.jsx:69`), each under `if (detailPath)`. Compared were also reading an earlier
+`return` (in the five apps it sits only over values duru cannot read, so it gains nothing and would split the rule
+from the one for arguments), reading `!= null` and `typeof` tests (no such site in the five apps), and dropping
+`null` at every direct move as a helper does (that changes what an unchecked `null` means, and the one other site
+it would touch, into-sign 2.0.0 `ViewContent.jsx:158`, is the bracket-key problem of #415); the narrowest one, the
+same shapes a checked argument reads, was chosen (#416). A direct move and a helper therefore still differ on an
+unchecked `null`: the helper drops it, the move gives `{?}`. The address's own `? :` is such a condition too, so
+`history.push(p ? p : '/start')` gives no `{?}`. A `<Redirect to>` in the routes file is a move as well:
+`{target && <Redirect to={target} />}` redirects to `target` when the check leaves it one address. A redirect still
+reads exactly one target, so when two addresses are left, as with `to={target ? target : '/home'}`, it gives no
+redirect, as before.
 
 **A component declared in the source that wraps a react-router link, or hands what it is given to one or to a history
 move, is a link where it is used, read with the attributes written there.**

@@ -163,12 +163,12 @@ function* enclosingTests(p: NodePath, stop: (up: NodePath) => boolean): Generato
   }
 }
 
-// 부르는 줄 call 을 감싼 if · ? : · && · || 가 인자 arg 를 그대로 확인했으면, 그 확인과 어긋나는 값을 버리고 모르는 값에는 참 · 거짓을 붙인다.
-// call 을 품은 함수 밖의 조건과, 앞에서 return 으로 거른 것은 보지 않는다.
-function checkedOuts(outs: Out[], arg: NodePath<any>, call: NodePath): Out[] {
+// from 을 감싼 if · ? : · && · || 가 arg 를 그대로 검사하면, 그 검사에서 걸러지는 값은 버리고 알 수 없는 값은 검사 결과대로 참이나 거짓으로 둔다.
+// from 을 품은 함수 밖의 조건과, 앞에서 return 으로 거른 것은 보지 않는다.
+function checkedOuts(outs: Out[], arg: NodePath<any>, from: NodePath): Out[] {
   const key = checkedKey(arg);
   if (key === null) return outs;
-  for (const { test, wanted } of enclosingTests(call, (up) => up.isFunction() || up.isProgram())) {
+  for (const { test, wanted } of enclosingTests(from, (up) => up.isFunction() || up.isProgram())) {
     const truthy = truthIn(test, wanted, key);
     if (truthy === undefined) continue;
     const kept = outs.filter((o) => truth(o) !== !truthy);
@@ -641,10 +641,11 @@ export function addressReader({ leaf, declaredValue, declaredFunction, namespace
     };
   }
 
+  // 감싼 조건으로 값을 거르는 것은 이동이나 링크의 주소를 읽을 때뿐이고, 라우트 경로는 거르지 않는다.
   function branches(p: NodePath): Read {
     let outs: Out[];
     try {
-      outs = values(p, OUTSIDE);
+      outs = moves ? checkedOuts(values(p, OUTSIDE), p, p) : values(p, OUTSIDE);
     } catch (error) {
       if (error instanceof TooMany) return { tooMany: true };
       throw error;
