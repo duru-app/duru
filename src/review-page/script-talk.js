@@ -129,8 +129,7 @@ function reachTalk(target, recordId, pressed) {
   state.side = 'screens';
   if (state.view === 'flow' && flowScreens().some((n) => n.id === screen)) {
     state.flowPicked = true;
-    select(screen, { node: target.node });
-    return showBox(screen);
+    return select(screen, { node: target.node });
   }
   state.view = 'list';
   select(screen, { node: target.node });

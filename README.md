@@ -874,7 +874,11 @@ branches, and shows the list view's middle and right panes for it beside the dra
 on an empty spot of the drawing lets it go. A folded group, or a folded screen, is not faded by the buttons and the
 search while one of the screens folded in it (or the folded screen itself) is kept, and not dimmed while one of them
 lies on the picked screen's paths or links; when a link reaches a screen folded in it, it is marked as the screens the
-links reach are. The search counts and steps through only the boxes whose own screen it found. The zoom control at
+links reach are. The search counts the screens folded in groups and branches too, and Enter reaches them in the place
+of their folded box; an entry screen opened from the gathered screens keeps its place among them for Enter, so the
+order does not change as Enter opens boxes. However a screen is picked in the drawing (the right column's list, Enter in
+the search, its id in the address as `#flow?screen=<id>`, a link in the middle pane), the group and every branch it is
+folded in open first, then it is picked and scrolled to. The zoom control at
 the bottom-left corner of the drawing fits, shrinks or grows it; a percent typed into it takes effect on Enter or on
 clicking elsewhere, a level below 30% or above 150% becomes the nearer end, and Escape or anything not a number puts
 the level back.
