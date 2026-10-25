@@ -17,7 +17,7 @@ function screenPill(n, fold = null) {
   return h('div', {
     role: 'button',
     tabindex: '0',
-    class: `box screen ${status}`,
+    class: `box screen ${status}${hidden ? ' folded' : ''}`,
     title: [
       n.id,
       `${STATUS_WORD[status]}${n.imported ? ` · 불러옴 ${n.imported}` : ''}${n.passed ? ` · 지나감 ${n.passed}` : ''}`,

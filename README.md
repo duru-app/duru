@@ -871,9 +871,13 @@ component. Enter in the search box picks the next screen it found, in drawing or
 last, Shift+Enter the one before, and the count beside it reads 「찾은 화면 40」 or, with one of them picked, 「3 / 40」. With nothing picked, the right column lists the failing screens and then the ones without a tagged
 test. Pressing a screen keeps strong only the paths through it, marks the screens its links and moves reach in other
 branches, and shows the list view's middle and right panes for it beside the drawing; 「선택 해제」, Escape or a click
-on an empty spot of the drawing lets it go. The zoom control at the bottom-left corner of the drawing fits, shrinks
-or grows it; a percent typed into it takes effect on Enter or on clicking elsewhere, a level below 30% or above 150%
-becomes the nearer end, and Escape or anything not a number puts the level back.
+on an empty spot of the drawing lets it go. A folded group, or a folded screen, is not faded by the buttons and the
+search while one of the screens folded in it (or the folded screen itself) is kept, and not dimmed while one of them
+lies on the picked screen's paths or links; when a link reaches a screen folded in it, it is marked as the screens the
+links reach are. The search counts and steps through only the boxes whose own screen it found. The zoom control at
+the bottom-left corner of the drawing fits, shrinks or grows it; a percent typed into it takes effect on Enter or on
+clicking elsewhere, a level below 30% or above 150% becomes the nearer end, and Escape or anything not a number puts
+the level back.
 
 **Story tab.** The third tab at the top, 「스토리」, shows one story at a time. The left column lists the stories, the
 candidates and the need files. In the middle, the chosen story's steps are drawn left to right on one line that stays

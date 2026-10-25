@@ -76,7 +76,7 @@ function flowLegendItems() {
     h('li', {}, h('span', { class: 'sample' }, legendPill('', h('span', { class: 'tag api' }, 'API 8'))), h('span', {}, '이 화면에서 부르는 API 호출의 수. 화면을 누르면 오른쪽에 호출마다 테스트가 보입니다')),
     h('li', {}, h('span', { class: 'sample' }, legendPill('', h('span', { class: 'tag need' }, KIND_LABEL.role)), legendPill('', h('span', { class: 'tag need' }, KIND_LABEL.setting))),
       h('span', {}, '특정 역할이나 설정에서만 열리는 화면. 무엇이 필요한지는 마우스를 올리면 보입니다')),
-    h('li', {}, h('span', { class: 'sample' }, legendPill(' jump')), h('span', {}, '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크나 설정에 적은 이동이 닿는 화면')),
+    h('li', {}, h('span', { class: 'sample' }, legendPill(' jump')), h('span', {}, '고른 화면에서 다른 가지에 이미 그린 화면으로 가는 링크나 설정에 적은 이동이 닿는 화면, 또는 그런 화면을 품은 접힌 상자')),
     h('li', {}, h('span', { class: 'sample' }, '불러옴 N · 지나감 N'), h('span', {}, '태그 없이 이 화면을 불러오는 단위 테스트와, 도는 동안 이 화면을 연 브라우저 테스트. 마우스를 올리면 보입니다', h('small', {}, '상태 색과 테스트 수에는 넣지 않음'))),
   ];
 }
@@ -107,7 +107,7 @@ function setFlowFilter(key) {
 // 딸린 화면이 없어 아래에 모아 그린 진입 화면은 상자 순서로는 갈래 그림 사이에 섞여 있으므로, 캔버스마다 갈래 그림 쪽을 앞에 둔다.
 function flowSearchPlace() {
   const found = [...document.querySelectorAll('#flow .canvas')].flatMap((canvas) => {
-    const boxes = /** @type {HTMLElement[]} */ ([...canvas.querySelectorAll('.box.screen:not(.off)')]);
+    const boxes = /** @type {HTMLElement[]} */ ([...canvas.querySelectorAll('.box.screen[data-kept]')]);
     return [...boxes.filter((b) => !b.classList.contains('grouped')), ...boxes.filter((b) => b.classList.contains('grouped'))];
   }).map((b) => b.dataset.key);
   return { found, at: flowPickShown() ? found.indexOf(state.selected) : -1 };
