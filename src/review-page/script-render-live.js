@@ -1,8 +1,10 @@
 function setView(view) {
   if (!state.data || state.failed) return;
-  if (view !== state.view) Object.assign(state, { error: null, caseError: null, judgmentError: null });
+  const entering = view !== state.view;
+  if (entering) Object.assign(state, { error: null, caseError: null, judgmentError: null });
   state.view = view;
-  render();
+  if (entering && flowPickShown()) showPicked(state.selected);
+  else render();
 }
 
 // 데이터를 읽지 못한 페이지에서도 리뷰를 끝낼 수 있어야 하므로, 위쪽 단추의 잠금은 읽어 온 데이터 없이 맞춘다.
@@ -107,7 +109,9 @@ function applyPlace() {
   if (head === 'flow' && !p.has('story') && !(p.has('new') && !oldMap())) {
     const screen = p.get('screen');
     go = () => {
+      const shown = flowPickShown() && state.selected === screen;
       state.flowPicked = screen !== null && flowScreens().some((n) => n.id === screen);
+      const moved = state.flowPicked && !shown;
       if (state.flowPicked) {
         applyTalk(p);
         if (state.side !== 'screens') state.caseError = null;
@@ -115,7 +119,8 @@ function applyPlace() {
         if (screen !== state.selected) setSelected(screen);
       }
       state.view = 'flow';
-      render();
+      if (moved) showPicked(screen);
+      else render();
     };
   } else if (head === 'story' || head === 'stories' || head === 'flow') {
     if (state.view !== 'story') state.caseError = null;

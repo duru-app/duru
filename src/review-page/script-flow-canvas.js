@@ -3,8 +3,13 @@ function openPicked(id) {
   const again = state.flowPicked && state.target?.node === id;
   state.flowPicked = true;
   state.side = 'screens';
-  if (again) render();
+  if (again) showPicked(id);
   else select(id);
+}
+
+function showPicked(id) {
+  revealScreen(id);
+  render();
   showBox(id);
 }
 
@@ -28,6 +33,15 @@ function setFlowBranch(id, open) {
   renderFlow({ bar: false });
   showBox(id);
   /** @type {HTMLElement | null} */ (document.querySelector(`#flow .box.screen[data-key="${CSS.escape(id)}"] .fold-branch`))?.focus({ preventScroll: true });
+}
+
+function revealScreen(id) {
+  const { roots, unreached, groups, folding } = state.data.flow;
+  const screens = flowScreens();
+  const { foldable } = folding ? foldBranches([...roots, ...unreached], new Set(screens.map((n) => n.id))) : { foldable: new Map() };
+  for (const up of ancestorsOf(screens, id)) if (foldable.has(up)) state.openFlowBranches.add(up);
+  const g = groups.find((x) => x.screens.includes(id));
+  if (g) state.openFlowGroups.add(g.name);
 }
 
 function unpickScreen() {
