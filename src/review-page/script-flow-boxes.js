@@ -6,11 +6,14 @@ const needTag = (n) => (!n.restricted ? null : n.kinds.length ? n.kinds.map((k) 
 const PICK_TIP = '누르면 이 화면에 이어진 길만 진하게 남기고 이 화면을 엽니다';
 const COMPOSE_TIP = '누르면 새 스토리의 단계로 넣습니다';
 
-function screenPill(n, pick = () => pickScreen(n.id)) {
+// fold 는 밑을 접을 수 있는 화면의 { below: 밑에 달린 화면들, open } 이다.
+function screenPill(n, fold = null) {
+  const pick = () => pickScreen(n.id);
   const status = statusOf(n.counts);
   const guardLabel = n.guards.length ? guardText(n.guards) : null;
   const needs = openNeeds({ access: { ...n.access, kinds: n.kinds, restricted: n.restricted } });
   const need = needTag(n);
+  const hidden = fold && !fold.open ? tallyOf(fold.below) : null;
   return h('div', {
     role: 'button',
     tabindex: '0',
@@ -22,6 +25,7 @@ function screenPill(n, pick = () => pickScreen(n.id)) {
       n.moved ? `${LINK_VERDICT.configured}: ${n.moved.join(', ')}` : '',
       ...needs.tips,
       needs.bare ?? '',
+      hidden ? `접힌 밑의 화면 ${fold.below.length}: ${tallyWords(hidden)}` : '',
       composeDiagram() ? COMPOSE_TIP : PICK_TIP,
     ].filter(Boolean).join('\n'),
     'aria-pressed': 'false',
@@ -37,23 +41,48 @@ function screenPill(n, pick = () => pickScreen(n.id)) {
     n.calls.length ? h('span', { class: 'tag api' }, `API ${n.calls.length}`) : null,
     need ? h('span', { class: 'tag need' }, need) : null,
     n.dead ? h('span', { class: 'tag dead' }, '죽은 화면') : null,
-    talkCount(attachedTalk({ node: n.id })));
+    talkCount(attachedTalk({ node: n.id })),
+    hidden ? h('span', { class: 'tally' }, tallyItems(hidden)) : null,
+    fold ? foldButton(n.id, fold) : null);
+}
+
+// 상자를 누르면 화면을 고르므로, 단추의 누름과 키는 상자까지 올라가지 않게 한다.
+function foldButton(id, { below, open }) {
+  const label = `밑의 화면 ${below.length}개 ${open ? '접기' : '펴기'}`;
+  return h('button', {
+    type: 'button',
+    class: 'fold-branch',
+    'aria-expanded': String(open),
+    'aria-label': label,
+    title: label,
+    onclick: (e) => {
+      e.stopPropagation();
+      setFlowBranch(id, !open);
+    },
+    onkeydown: (e) => {
+      if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+    },
+  }, open ? '−' : `+${below.length}`);
 }
 
 // 상태별 수는 흐름 막대의 상태 단추와 같은 색 네모로 쓰고, 0 인 상태는 쓰지 않는다.
+const tallyOf = (screens) => KEY_STATUS.map(([status, word]) => ({ status, word, count: screens.filter((n) => statusOf(n.counts) === status).length })).filter((t) => t.count);
+const tallyItems = (tally) => tally.map((t) => h('span', { class: 'tally-item' }, h('span', { class: `sq ${t.status}`, 'aria-hidden': 'true' }), String(t.count)));
+const tallyWords = (tally) => tally.map((t) => `${t.word} ${t.count}`).join(' · ');
+
 function groupPill(g) {
-  const tally = KEY_STATUS.map(([status, word]) => ({ status, word, count: g.screens.filter((n) => statusOf(n.counts) === status).length })).filter((t) => t.count);
+  const tally = tallyOf(g.screens);
   return h('button', {
     type: 'button',
     class: 'box group',
     'data-group': g.name,
     'aria-expanded': 'false',
     'aria-label': `${g.name} 묶음 펴기`,
-    title: [`${g.name} · 화면 ${g.screens.length}`, tally.map((t) => `${t.word} ${t.count}`).join(' · '), '누르면 이 묶음을 펴서 그 안의 화면을 그립니다'].join('\n'),
+    title: [`${g.name} · 화면 ${g.screens.length}`, tallyWords(tally), '누르면 이 묶음을 펴서 그 안의 화면을 그립니다'].join('\n'),
     onclick: () => setFlowGroup(g.name, true),
   },
     h('span', { class: 'group-line' }, h('span', { class: 'fold', 'aria-hidden': 'true' }, '▸'), h('span', { class: 'path' }, pathText(g.name)), h('span', { class: 'tag size' }, String(g.screens.length))),
-    h('span', { class: 'group-line tally' }, tally.map((t) => h('span', { class: 'tally-item' }, h('span', { class: `sq ${t.status}`, 'aria-hidden': 'true' }), String(t.count)))));
+    h('span', { class: 'group-line tally' }, tallyItems(tally)));
 }
 
 function openGroupHead(frame) {

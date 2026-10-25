@@ -180,26 +180,32 @@ test('screens that share one whole address and cannot be split further stay one 
   assert.deepEqual(groupsOf(...same), [['/admin_console/about/license', same]]);
 });
 
-test('the flow groups the entry screens with nothing under them only on a map of more than a hundred screens', () => {
+test('the flow groups the entry screens with nothing under them, and tells the page to fold, only on a map of more than a hundred screens', () => {
   const screen = (id: string, path: string, links: FlowAccess['links'] = []): FlowMapScreen => ({ id, path, component: id, apiCalls: [], access: { restricted: false, kinds: [], links } });
   const mapOf = (count: number): FlowMap => {
     const admin = Array.from({ length: count - 3 }, (_, i) => screen(`admin-${i}`, `/admin/${i % 5}/${i}`));
     const screens = [screen('home', '/admin/home'), screen('home-sub', '/admin/home/sub', [{ from: 'home', guards: [] }]), screen('login', '/login'), ...admin];
     return { screens, entries: screens.filter((s) => s.id !== 'home-sub').map((s) => ({ screen: s.id })) };
   };
-  assert.deepEqual(buildFlow(mapOf(100), { nodes: {} }).groups, []);
-  const groups = buildFlow(mapOf(101), { nodes: {} }).groups;
+  const small = buildFlow(mapOf(100), { nodes: {} });
+  assert.deepEqual([small.groups, small.folding], [[], false]);
+  const big = buildFlow(mapOf(101), { nodes: {} });
+  assert.equal(big.folding, true, 'the page folds the branches of a big map too');
+  const { groups } = big;
   assert.deepEqual(groups.map((g) => [g.name, g.screens.length]), [['/admin/0', 20], ['/admin/1', 20], ['/admin/2', 20], ['/admin/3', 19], ['/admin/4', 19]]);
   assert.deepEqual(groups[0].screens.slice(0, 2), ['admin-0', 'admin-5']);
 });
 
-test('README tells how a big map folds its gathered entry screens, and docs/decisions.md says what the grouping was weighed against', () => {
+test('README tells how a big map folds its gathered entry screens and its branches, and docs/decisions.md says what the grouping was weighed against', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
   const readme = read('../README.md');
   assert.match(readme, /On a map of more than 100 screens, the gathered\s+screens that share the start of their address are folded into one box per group/);
   assert.match(readme, /pressing the group's name above the row folds it again/);
+  assert.match(readme, /every entry\s+screen with screens under it is drawn folded among the gathered screens, with 「\+N」 at its right end/);
+  assert.match(readme, /where a\s+screen with more than six screens under it is folded the same way/);
   const decisions = read('../docs/decisions.md');
   assert.match(decisions, /\*\*On a map of more than 100 screens, the gathered entry screens are grouped by the start of their address/);
   assert.match(decisions, /- The route file: the admin console's 62 screens stay one group/);
   assert.match(decisions, /On a map of more than 100 screens folding came back for the gathered entry screens/);
+  assert.match(decisions, /- An entry screen with screens under it is drawn folded among the gathered entry screens, with 「\+N」 and its hidden\s+screens by status/);
 });

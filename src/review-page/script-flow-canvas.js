@@ -22,6 +22,14 @@ function setFlowGroup(name, open) {
   /** @type {HTMLElement | null} */ (document.querySelector(`#flow ${open ? `.group-open${at}` : `.box.group${at}`}`))?.focus({ preventScroll: true });
 }
 
+function setFlowBranch(id, open) {
+  if (open) state.openFlowBranches.add(id);
+  else state.openFlowBranches.delete(id);
+  renderFlow({ bar: false });
+  showBox(id);
+  /** @type {HTMLElement | null} */ (document.querySelector(`#flow .box.screen[data-key="${CSS.escape(id)}"] .fold-branch`))?.focus({ preventScroll: true });
+}
+
 function unpickScreen() {
   state.flowPicked = false;
   render();
@@ -41,9 +49,14 @@ function showBox(key) {
 // 상자는 페이지에 붙은 뒤에야 잴 수 있으므로, 상자를 붙인 쪽이 measureWidths → fit → measureHeights → place 순서로 불러 위치를 정한다.
 // 확대·축소는 배치를 마친 그림을 통째로 키우거나 줄이고, 그림을 감싼 칸이 바뀐 크기만큼 자리를 차지한다.
 function canvas(trees, { group = false, story = null } = {}) {
-  const { shown: roots, opened, unseen } = group ? foldGroups(trees, state.data.flow.groups, state.openFlowGroups) : { shown: trees, opened: new Map(), unseen: [] };
+  const { shown: cut, foldable } = state.data.flow.folding ? foldBranches(trees, state.openFlowBranches) : { shown: trees, foldable: new Map() };
+  const { shown: roots, opened, unseen: hidden } = group ? foldGroups(cut, state.data.flow.groups, state.openFlowGroups) : { shown: cut, opened: new Map(), unseen: [] };
+  const fold = (id) => (foldable.has(id) ? { below: foldable.get(id), open: state.openFlowBranches.has(id) } : null);
+  // 펴서 그리드를 떠난 진입 화면도 접힌 모습으로 재어, 펴고 접어도 그리드의 칸 폭과 칸 수가 그대로 서게 한다.
+  const left = group ? cut.filter((r) => foldable.has(r.id) && state.openFlowBranches.has(r.id)) : [];
+  const unseen = [...hidden, ...left.map((r) => ({ ...r, id: `folded:${r.id}`, children: [], fold: { ...fold(r.id), open: false } }))];
   const boxes = flowBoxes(roots);
-  const els = new Map(boxes.map((b) => [b.key, b.node.kind === 'group' ? groupPill(b.node) : screenPill(b.node)]));
+  const els = new Map(boxes.map((b) => [b.key, b.node.kind === 'group' ? groupPill(b.node) : screenPill(b.node, fold(b.key))]));
   for (const [key, box] of els) {
     box.classList.add('measuring');
     box.dataset.key = key;
@@ -51,7 +64,7 @@ function canvas(trees, { group = false, story = null } = {}) {
   const path = story && storyMarks(story, boxes, els);
   const view = { group, marks: path?.marks, opened, unseen };
   const ghosts = unseen.map((n) => {
-    const ghost = n.kind === 'group' ? groupPill(n) : screenPill(n);
+    const ghost = n.kind === 'group' ? groupPill(n) : screenPill(n, n.fold ?? null);
     ghost.classList.add('measuring');
     return ghost;
   });
@@ -101,7 +114,7 @@ function canvas(trees, { group = false, story = null } = {}) {
       out.marks?.forEach(({ x, y }, i) => Object.assign(path.marks[i].el.style, { left: `${x}px`, top: `${y}px`, visibility: '' }));
       if (out.group) {
         const { x, y, height, count } = out.group;
-        el.append(h('h2', { class: 'group-head', style: `left:${x}px;top:${y}px;height:${height}px`, title: GROUP_HEAD_TIP }, `딸린 화면이 없는 진입 화면 ${count}`));
+        el.append(h('h2', { class: 'group-head', style: `left:${x}px;top:${y}px;height:${height}px`, title: foldable.size ? FOLDED_HEAD_TIP : GROUP_HEAD_TIP }, `${foldable.size ? '진입 화면' : '딸린 화면이 없는 진입 화면'} ${count}`));
       }
       const z = state.zoom;
       Object.assign(el.style, { width: `${out.width}px`, height: `${out.height}px`, transform: z === 1 ? '' : `scale(${z})` });
