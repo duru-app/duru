@@ -483,10 +483,13 @@
   .box.jump { border-style: dashed; border-color: var(--accent); }
   .box.dim { opacity: .3; }
   .box.off { opacity: .12; }
+  .box .fold-branch { flex: none; min-width: 22px; padding: 0 4px; border: 1px solid var(--accent); border-radius: 3px; background: var(--panel); color: var(--accent); font: inherit; font-size: 10px; font-weight: 600; line-height: 14px; cursor: pointer; }
+  .box .fold-branch:hover { background: var(--selected); }
   .box.group { flex-direction: column; align-items: stretch; gap: 2px; box-shadow: 3px 3px 0 -1px var(--panel), 3px 3px 0 0 var(--line); }
   .box.group .group-line { display: flex; align-items: center; gap: 6px; }
   .box.group .tally { gap: 10px; color: var(--muted); }
-  .box.group .tally-item { display: inline-flex; align-items: center; gap: 3px; }
+  .box.screen .tally { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+  .box .tally-item { display: inline-flex; align-items: center; gap: 3px; }
   #flow .canvas .group-frame { position: absolute; border-radius: 6px; background: var(--bg); box-shadow: 0 0 0 6px var(--bg), 0 0 0 7px var(--line); }
   #flow .canvas .group-open { position: absolute; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 6px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
   #flow .canvas .group-open:hover { color: var(--accent); }

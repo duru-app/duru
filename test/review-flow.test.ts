@@ -12,6 +12,9 @@ declare const state: any;
 declare const GAP: number;
 declare let drawnGrid: { count: number; cellW: number; per: number } | null;
 declare function renderFlow(): void;
+declare const GROUP_HEAD_TIP: string;
+declare const FOLDED_HEAD_TIP: string;
+declare function screensIn(roots: { id: string; children: object[] }[]): { id: string; children: object[] }[];
 declare function setZoom(z: number): void;
 declare function openNeeds(screen: { access: object }): { lines: { kind: string; text: string }[]; tips: string[]; bare: unknown };
 declare function flowColumns(roots: object[], sizes: object, view?: FlowView): FlowColumns;
@@ -1162,4 +1165,140 @@ test('in a browser, a grid has the same cells, as many per row and as wide, with
       }) }),
     ),
   );
+});
+
+const folding = (edit: (data: PageData) => void = () => {}) => changeData((data) => {
+  data.flow.folding = true;
+  edit(data);
+});
+const foldButton = (p: Page, id: string) => p.locator(`#flow .box.screen[data-key="${id}"] .fold-branch`);
+const drawn = (p: Page) => p.$$eval('#flow .box.screen', (els: HTMLElement[]) => els.map((e) => e.dataset.key!).sort());
+
+const tally = (p: Page, id: string) => p.$$eval(`#flow .box.screen[data-key="${id}"] .tally-item`, (els: HTMLElement[]) => els.map((e) => `${e.querySelector('.sq')!.classList[1]} ${e.textContent}`));
+
+test('in a browser, on a big map an entry screen with screens under it is drawn folded in the grid of entry screens with 「+N」 and the screens it hides by status, opening it draws it above the grid with its tree, where a screen folds only with more than six screens under it, and a small map folds nothing', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        assert.equal(await p.evaluate(() => state.data.flow.folding), false);
+        assert.equal(await p.locator('#flow .fold-branch').count(), 0);
+        assert.equal(await p.locator('#flow .tally').count(), 0);
+      }, { view: 'flow' }),
+    ),
+  );
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .group-head');
+        assert.equal(await p.textContent('#flow .group-head'), '딸린 화면이 없는 진입 화면 3', 'a big map with nothing to fold keeps the heading');
+        assert.equal(await p.getAttribute('#flow .group-head', 'title'), await p.evaluate(() => GROUP_HEAD_TIP));
+      }, { view: 'flow', setup: folding((data) => { data.flow.roots = leafEntries(data, 3); }) }),
+    ),
+  );
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .fold-branch');
+        assert.deepEqual(await drawn(p), ['/signin#SignIn']);
+        const button = foldButton(p, '/signin#SignIn');
+        assert.equal(await button.textContent(), '+10');
+        assert.equal(await button.getAttribute('aria-expanded'), 'false');
+        assert.equal(await button.getAttribute('aria-label'), '밑의 화면 10개 펴기');
+        assert.deepEqual(await tally(p, '/signin#SignIn'), ['s-fail 5', 's-pending 1', 's-none 4']);
+        assert.ok((await tipLines(p.locator('#flow .box.screen[data-key="/signin#SignIn"]'))).includes('접힌 밑의 화면 10: 실패 5 · 보류 1 · 테스트 없음 4'));
+        assert.equal(await p.locator('#flow .box.screen.grouped[data-key="/signin#SignIn"]').count(), 1, 'it stands in the grid');
+        assert.equal(await p.textContent('#flow .group-head'), '진입 화면 1');
+        assert.equal(await p.getAttribute('#flow .group-head', 'title'), await p.evaluate(() => FOLDED_HEAD_TIP));
+        await button.click();
+        assert.deepEqual(await drawn(p), ['/help#Help', '/home#Home', '/signin#SignIn']);
+        assert.equal(await p.locator('#flow .box.screen.grouped').count(), 0, 'it left the grid for the trees');
+        assert.equal(await p.locator('#flow .group-head').count(), 0);
+        assert.equal(await p.locator('#flow .box.screen[data-key="/signin#SignIn"] .tally').count(), 0, 'an open screen hides nothing');
+        assert.equal(await foldButton(p, '/home#Home').textContent(), '+8');
+        assert.equal(await foldButton(p, '/help#Help').count(), 0);
+        assert.deepEqual(await layoutErrors(p), []);
+      }, { view: 'flow', setup: folding() }),
+    ),
+  );
+  const under = (count: number) => folding((data) => {
+    const home = walkFlow(data.flow.roots).find((n) => n.id === '/home#Home')!;
+    let drop = 8 - count;
+    home.children = home.children.filter((c) => c.children.length || drop-- <= 0);
+  });
+  for (const [count, folds] of [[7, true], [6, false]] as const) {
+    await withRebuiltFixture({}, (config) =>
+      withServer(config, 'reviewer', (base) =>
+        withPage(base, async (p) => {
+          await foldButton(p, '/signin#SignIn').click();
+          await p.waitForSelector('#flow .box.screen[data-key="/home#Home"]');
+          assert.equal(await p.evaluate(() => screensIn(screensIn(state.data.flow.roots).find((n) => n.id === '/home#Home')!.children as { id: string; children: object[] }[]).length), count);
+          assert.equal(await foldButton(p, '/home#Home').count(), folds ? 1 : 0, `${count} screens under it`);
+        }, { view: 'flow', setup: under(count) }),
+      ),
+    );
+  }
+});
+
+test('in a browser, opening an entry screen low in a long grid scrolls to it above the grid, keeps the focus on its button, and leaves the grid\'s cells, as many per row and as wide, and its count as they were', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.setViewportSize({ width: 1000, height: 500 });
+        await p.waitForSelector('#flow .fold-branch');
+        const folded = await p.evaluate(() => drawnGrid);
+        assert.equal(await p.textContent('#flow .group-head'), '진입 화면 41');
+        const last = foldButton(p, '/signin#SignIn');
+        await last.scrollIntoViewIfNeeded();
+        await last.click();
+        await p.waitForSelector('#flow .box.screen[data-key="/home#Home"]');
+        const flow = await rectOf(p, '#flow');
+        const box = await rectOf(p, '#flow .box.screen[data-key="/signin#SignIn"]');
+        assert.ok(box.top >= flow.top && box.bottom <= flow.bottom, `the opened screen is in view (${box.top}..${box.bottom} in ${flow.top}..${flow.bottom})`);
+        assert.equal(await p.evaluate(() => document.activeElement!.matches('#flow .box.screen[data-key="/signin#SignIn"] .fold-branch')), true);
+        assert.deepEqual(await p.evaluate(() => drawnGrid), folded);
+        assert.equal(await p.textContent('#flow .group-head'), '진입 화면 41');
+      }, { view: 'flow', setup: folding((data) => {
+        const extras = leafEntries(data, 40);
+        extras.forEach((n, i) => { n.label = `/e${i}`; n.calls = []; });
+        const [signin] = data.flow.roots;
+        data.flow.roots = [...extras, signin];
+      }) }),
+    ),
+  );
+});
+
+test('in a browser, 「+N」 opens the screens under a folded screen and 「−」 folds them again, by mouse or by keyboard, without picking the screen, which pressing its box still does, and it stays across redraws, also in the trees no entry screen reaches', { skip: browserMissing }, async () => {
+  const check = async (p: Page) => {
+    await p.waitForSelector('#flow .fold-branch');
+    await foldButton(p, '/signin#SignIn').click();
+    await foldButton(p, '/home#Home').click();
+    assert.equal(await foldButton(p, '/home#Home').textContent(), '−');
+    assert.equal(await foldButton(p, '/home#Home').getAttribute('aria-label'), '밑의 화면 8개 접기');
+    assert.equal(await p.evaluate(() => document.activeElement!.matches('#flow .box.screen[data-key="/home#Home"] .fold-branch')), true);
+    assert.equal((await drawn(p)).length, 11);
+    assert.deepEqual(await pickedBoxes(p), [], 'opening does not pick the screen');
+    assert.deepEqual(await layoutErrors(p), []);
+    assert.deepEqual(overlapping(await flowBoxes(p)), []);
+    await p.evaluate(() => renderFlow());
+    assert.equal((await drawn(p)).length, 11);
+    await (await screenBox(p, '/home#Home')).click();
+    assert.deepEqual(await pickedBoxes(p), ['/home#Home']);
+    assert.equal((await drawn(p)).length, 11, 'picking redraws and the branch stays open');
+    await foldButton(p, '/home#Home').focus();
+    await p.keyboard.press('Enter');
+    assert.deepEqual(await drawn(p), ['/help#Help', '/home#Home', '/signin#SignIn']);
+    assert.equal(await p.evaluate(() => (document.activeElement as HTMLElement).textContent), '+8', 'the focus stays on the button');
+    assert.deepEqual(await pickedBoxes(p), ['/home#Home'], 'the key does not reach the box');
+    await p.keyboard.press(' ');
+    assert.equal((await drawn(p)).length, 11);
+  };
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, check, { view: 'flow', setup: folding() })));
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, check, { view: 'flow', setup: folding((data) => {
+        data.flow = { ...data.flow, unreached: data.flow.roots, roots: [] };
+      }) })));
 });
