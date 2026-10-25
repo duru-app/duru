@@ -908,7 +908,10 @@ shows 「에이전트와 대화」 on the screen order chosen so far, and its fo
 /home」, which follows each step added or taken out (see **Comments on a screen order**); before the first step the form
 is greyed out, with a line saying the order chosen becomes its tag.
 Pressing a screen in the list or a box in the drawing adds that screen as the next step, and the drawing scrolls to
-keep the box pressed in place where it can.
+keep the box pressed in place where it can. A screen added from the list opens the group and the branches it is folded
+in, and each time the new-story screen shows the whole flow again (opening it, or 「전체 그림에서 보기」) the groups and
+branches holding any step open, so the path runs through every step box. A branch or group closed by hand while
+writing stays closed until then, unless a step comes to sit in it anew, as when the map read again has moved a step.
 Each chosen box carries its step number. Two neighbouring steps are joined in the style of their verdict: on the link
 itself when the second box hangs under the first, otherwise by a mark in each of the two boxes with the other step's
 number. Pressing a step shows 「이전 단계 추가」 above it, 「다음 단계 추가」 below it and 「제외」 on it, as in 「순서

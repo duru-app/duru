@@ -35,13 +35,25 @@ function setFlowBranch(id, open) {
   /** @type {HTMLElement | null} */ (document.querySelector(`#flow .box.screen[data-key="${CSS.escape(id)}"] .fold-branch`))?.focus({ preventScroll: true });
 }
 
-function revealScreen(id) {
+function foldsHolding(ids) {
+  const branches = new Set();
+  const named = new Set();
+  if (!ids.length) return { branches, groups: named };
   const { roots, unreached, groups, folding } = state.data.flow;
   const screens = flowScreens();
   const { foldable } = folding ? foldBranches([...roots, ...unreached], new Set(screens.map((n) => n.id))) : { foldable: new Map() };
-  for (const up of ancestorsOf(screens, id)) if (foldable.has(up)) state.openFlowBranches.add(up);
-  const g = groups.find((x) => x.screens.includes(id));
-  if (g) state.openFlowGroups.add(g.name);
+  for (const id of ids) {
+    for (const up of ancestorsOf(screens, id)) if (foldable.has(up)) branches.add(up);
+    const g = groups.find((x) => x.screens.includes(id));
+    if (g) named.add(g.name);
+  }
+  return { branches, groups: named };
+}
+
+function revealScreen(...ids) {
+  const { branches, groups } = foldsHolding(ids);
+  for (const id of branches) state.openFlowBranches.add(id);
+  for (const name of groups) state.openFlowGroups.add(name);
 }
 
 function unpickScreen() {
