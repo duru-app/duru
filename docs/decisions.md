@@ -2918,8 +2918,12 @@ Known limits: the conditions written in an item (`isHidden`, `isDisabled`) are n
 set of sources and are named `SchemaAdminSettings`, so the review does not tell their settings apart. An item whose
 first component only wraps a section (`LicensedSectionContainer`, two items) is named after it, and its ID changes when
 the order inside the item changes. Thirteen addresses are shared by two items, the page for a licensed server and its
-feature-discovery page, and a test opened at such an address goes to the first matching screen. No link into an item
-screen is read, so each is an entry screen. On mattermost the run with the table no longer fits Node's default heap
+feature-discovery page, and a test opened at such an address goes to the first matching screen. A link to such an
+address reaches both screens, so a link on a screen that already needs the license also reaches the feature-discovery
+page, which that server never shows: on mattermost d6d0598, 9 of the 14 links that reach both pages are of this kind.
+Reading an item's `isHidden` would drop 5 of them; the other 4 are decided by an earlier `return`, a hook in the
+component or two setting conditions joined by `||`, and no feature-discovery page would lose all its incoming links,
+so the lines are kept (#417). On mattermost the run with the table no longer fits Node's default heap
 (2240 MB on the machine measured): main already peaks close to it while TypeScript reads the types, and following the
 items' components into about a hundred files keeps some 60 MB more, so `extract` stops with `JavaScript heap out of
 memory`; with `NODE_OPTIONS=--max-old-space-size=4096` it ends in 47 s. When the outer address cannot be filled, each item gives its own `route
