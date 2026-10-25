@@ -854,7 +854,12 @@ link under a setting or role condition, and a green dotted line is a move writte
 hovering the screen it leads to. The flow follows a move as it follows a link: a screen not yet drawn goes under the
 screen the move leaves, and one already drawn in another branch stays where it is. Entry screens with no screen
 drawn under them are gathered below the rest under
-「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. The bar above counts the drawn screens by status on buttons
+「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. On a map of more than 100 screens, the gathered
+screens that share the start of their address are folded into one box per group (a group of more than 20 is split
+again by the next part of the address): the box shows the shared start, the number of screens and, with the squares
+of the status buttons, how many pass, fail, are pending or have no tagged test. Pressing the box opens the group in
+its place across a whole row; pressing the group's name above the row folds it again. A group stays open or folded
+across redraws until the page is reloaded. The bar above counts the drawn screens by status on buttons
 (「테스트 없음 4」, 「실패 5」 …); pressing one fades the other screens, and the search box does the same by route or
 component. Enter in the search box picks the next screen it found, in drawing order and back to the first after the
 last, Shift+Enter the one before, and the count beside it reads 「찾은 화면 40」 or, with one of them picked, 「3 / 40」. With nothing picked, the right column lists the failing screens and then the ones without a tagged
