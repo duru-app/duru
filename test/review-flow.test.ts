@@ -1302,3 +1302,76 @@ test('in a browser, 「+N」 opens the screens under a folded screen and 「−�
         data.flow = { ...data.flow, unreached: data.flow.roots, roots: [] };
       }) })));
 });
+
+const faded = (p: Page, selector: string) => p.$eval(selector, (e) => ['off', 'dim'].filter((c) => e.classList.contains(c)).join(' '));
+
+test('in a browser, a folded group fades by the screens in it: a status button or the search keeps it while one of its screens is kept and fades it when none is, and a picked screen whose link reaches one of its screens leaves it undimmed', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const a = '#flow .box.group[data-group="/extra-a"]';
+        const b = '#flow .box.group[data-group="/extra-b"]';
+        await p.waitForSelector(a);
+        await filterButton(p, 'fail').click();
+        assert.deepEqual([await faded(p, a), await faded(p, b)], ['', 'off'], 'only the first group holds a failing screen');
+        await filterButton(p, 'all').click();
+        const search = p.locator('.flowbar input.flow-search');
+        await search.fill('/extra/4');
+        assert.deepEqual([await faded(p, a), await faded(p, b)], ['off', '']);
+        await search.fill('');
+        await (await screenBox(p, '/lab#Lab')).click();
+        assert.deepEqual([await faded(p, a), await faded(p, b)], ['', 'dim'], 'a link of the picked screen reaches a screen of the first group');
+        assert.equal(await p.$eval(a, (e) => e.classList.contains('jump')), true);
+      }, { view: 'flow', setup: changeData((data) => {
+        withGroup(data);
+        data.flow.groups = [{ name: '/extra-a', screens: GROUPED.slice(0, 3) }, { name: '/extra-b', screens: GROUPED.slice(3) }];
+        walkFlow(data.flow.roots).find((n) => n.id === '/lab#Lab')!.jumps.push({ to: GROUPED[1], label: '/extra/1', guards: [] });
+      }) }),
+    ),
+  );
+});
+
+test('in a browser, a folded screen fades by itself and the screens it hides, and an opened one by itself only, for the status buttons, the search and a picked screen', { skip: browserMissing }, async () => {
+  const signin = '#flow .box.screen[data-key="/signin#SignIn"]';
+  const home = '#flow .box.screen[data-key="/home#Home"]';
+  const help = '#flow .box.screen[data-key="/help#Help"]';
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .fold-branch');
+        await filterButton(p, 'fail').click();
+        assert.equal(await faded(p, signin), '', 'it passes, but screens it hides fail');
+        await filterButton(p, 'all').click();
+        const search = p.locator('.flowbar input.flow-search');
+        await search.fill('lab/result');
+        assert.equal(await faded(p, signin), '');
+        assert.equal(await p.textContent('.flowbar .flow-search-count'), '찾은 화면 없음', 'the folded box is not a screen the search found');
+        await search.press('Enter');
+        assert.deepEqual(await pickedBoxes(p), []);
+        await search.fill('no such screen');
+        assert.equal(await faded(p, signin), 'off');
+        await search.fill('lab/result');
+        await foldButton(p, '/signin#SignIn').click();
+        assert.deepEqual([await faded(p, signin), await faded(p, home), await faded(p, help)], ['off', '', 'off'], 'the opened screen and /help hold no match, folded /home does');
+        await search.fill('');
+        await (await screenBox(p, '/help#Help')).click();
+        assert.equal(await faded(p, home), '', 'a link of /help reaches a screen /home hides');
+        assert.equal(await p.$eval(home, (e) => e.classList.contains('jump')), true);
+        assert.equal(await p.$eval(signin, (e) => e.classList.contains('jump')), false, 'an opened screen on the path is not marked');
+      }, { view: 'flow', setup: folding((data) => {
+        walkFlow(data.flow.roots).find((n) => n.id === '/help#Help')!.jumps.push({ to: '/lab/result#LabResult', label: '/lab/result', guards: [] });
+      }) }),
+    ),
+  );
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await foldButton(p, '/signin#SignIn').click();
+        await (await screenBox(p, '/help#Help')).click();
+        assert.equal(await faded(p, home), 'dim', 'nothing /home hides is on the path of /help');
+      }, { view: 'flow', setup: folding((data) => {
+        walkFlow(data.flow.roots).find((n) => n.id === '/help#Help')!.jumps = [];
+      }) }),
+    ),
+  );
+});

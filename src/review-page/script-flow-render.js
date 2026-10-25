@@ -32,14 +32,24 @@ function applyFlowEmphasis() {
   const filter = FLOW_FILTERS.find((f) => f.key === (inFlow ? state.flowFilter : 'all'));
   const q = inFlow ? state.flowQuery.trim().toLowerCase() : '';
   const found = (n) => !q || `${n.label}\n${n.component}\n${n.id}`.toLowerCase().includes(q);
+  const kept = (list) => list.some((n) => filter.keep(n) && found(n));
+  const mark = (box, inside, keep = kept(inside)) => {
+    box.classList.toggle('dim', related !== null && !inside.some((n) => related.has(n.id) || jumps.has(n.id)));
+    box.classList.toggle('jump', inside.some((n) => jumps.has(n.id)));
+    box.classList.toggle('off', !keep);
+  };
   for (const box of /** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll('.box.screen'))) {
     const n = byId.get(box.dataset.key);
     box.classList.toggle('picked', n === picked);
     box.setAttribute('aria-pressed', String(n === picked));
-    box.classList.toggle('dim', related !== null && !related.has(n.id) && !jumps.has(n.id));
-    box.classList.toggle('jump', jumps.has(n.id));
-    box.classList.toggle('off', !filter.keep(n) || !found(n));
+    const own = kept([n]);
+    const folded = box.classList.contains('folded');
+    mark(box, folded ? screensIn([n]) : [n], folded ? undefined : own);
+    // 찾기의 차례와 찾은 수는 상자 자신의 화면이 맞는 것만 센다.
+    box.toggleAttribute('data-kept', own);
   }
+  const grouped = new Map(state.data.flow.groups.map((g) => [g.name, g.screens.map((id) => byId.get(id)).filter(Boolean)]));
+  for (const box of /** @type {NodeListOf<HTMLElement>} */ (flow.querySelectorAll('.box.group'))) mark(box, grouped.get(box.dataset.group) ?? []);
   for (const line of /** @type {NodeListOf<SVGPathElement>} */ (flow.querySelectorAll('.canvas svg path[data-from]'))) {
     const on = related !== null && related.has(line.dataset.from) && related.has(line.dataset.to);
     line.classList.toggle('on', on);
