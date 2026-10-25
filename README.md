@@ -856,7 +856,8 @@ screen the move leaves, and one already drawn in another branch stays where it i
 drawn under them are gathered below the rest under
 「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. The bar above counts the drawn screens by status on buttons
 (「테스트 없음 4」, 「실패 5」 …); pressing one fades the other screens, and the search box does the same by route or
-component. With nothing picked, the right column lists the failing screens and then the ones without a tagged
+component. Enter in the search box picks the next screen it found, in drawing order and back to the first after the
+last, Shift+Enter the one before, and the count beside it reads 「찾은 화면 40」 or, with one of them picked, 「3 / 40」. With nothing picked, the right column lists the failing screens and then the ones without a tagged
 test. Pressing a screen keeps strong only the paths through it, marks the screens its links and moves reach in other
 branches, and shows the list view's middle and right panes for it beside the drawing; 「선택 해제」, Escape or a click
 on an empty spot of the drawing lets it go. The zoom control at the bottom-left corner of the drawing fits, shrinks
