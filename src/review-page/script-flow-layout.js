@@ -8,10 +8,43 @@ function flowBoxes(roots) {
   return out;
 }
 
+const groupKey = (name) => `group:${name}`;
+
+// unseen 은 그리지 않고 재기만 하는 상자로, 접힌 묶음의 화면과 펴진 묶음의 묶음 상자다. 화면은 칸 폭과 한 줄의 칸 수에,
+// 묶음 상자는 칸 폭에만 넣어, 묶음을 펴고 접어도 칸이 그대로 서게 한다.
+function foldGroups(roots, groups, open) {
+  const byId = new Map(roots.map((r) => [r.id, r]));
+  const groupOf = new Map(groups.flatMap((g) => g.screens.map((id) => [id, g])));
+  const shown = [];
+  const opened = new Map();
+  const unseen = [];
+  const seen = new Set();
+  for (const r of roots) {
+    const g = r.children.length ? undefined : groupOf.get(r.id);
+    if (!g) shown.push(r);
+    else if (!seen.has(g.name)) {
+      seen.add(g.name);
+      const screens = g.screens.map((id) => byId.get(id)).filter(Boolean);
+      const pill = { kind: 'group', id: groupKey(g.name), name: g.name, screens, children: [], guards: [] };
+      if (!open.has(g.name)) {
+        shown.push(pill);
+        unseen.push(...screens);
+      } else {
+        unseen.push(pill);
+        for (const screen of screens) {
+          shown.push(screen);
+          opened.set(screen.id, g.name);
+        }
+      }
+    }
+  }
+  return { shown, opened, unseen };
+}
+
 // 높이는 이 결과로 폭이 정해진 뒤에 재므로 sizes[key].height 는 아직 없어도 된다.
 const cellsPerRow = (count, cellW, width) => Math.max(1, Math.min(count, Math.floor((width + CELL_GAP) / (cellW + CELL_GAP))));
 
-function flowColumns(roots, sizes, { group = false, width = 0, marks = [] } = {}) {
+function flowColumns(roots, sizes, { group = false, width = 0, marks = [], unseen = [] } = {}) {
   const gathered = group ? roots.filter((r) => !r.children.length) : [];
   const trees = group ? roots.filter((r) => r.children.length) : roots;
   const depths = new Map();
@@ -29,14 +62,15 @@ function flowColumns(roots, sizes, { group = false, width = 0, marks = [] } = {}
   }
   const xs = colWidths.map(() => entryW[0] ?? 0);
   for (let d = 1; d < colWidths.length; d += 1) xs[d] = xs[d - 1] + colWidths[d - 1] + Math.max(COL_GAP, LANE_CURVE + entryW[d]);
-  const cellW = Math.max(0, ...gathered.map((r) => sizes[r.id].width));
+  const cellW = Math.max(0, ...[...gathered, ...unseen].map((r) => sizes[r.id].width));
+  const cells = [...gathered, ...unseen].filter((r) => r.kind !== 'group').length;
   const sized = {};
   for (const [key, d] of depths) sized[key] = colWidths[d];
   for (const r of gathered) sized[r.id] = cellW;
   return {
     widths: sized,
     grouped: new Set(gathered.map((r) => r.id)),
-    trees, depths, xs, grid: gathered, cellW, per: cellsPerRow(gathered.length, cellW, width), entryW,
+    trees, depths, xs, grid: gathered, cellW, cells, per: cellsPerRow(cells, cellW, width), entryW,
     span: colWidths.length ? xs[colWidths.length - 1] + colWidths[colWidths.length - 1] : 0,
   };
 }
@@ -85,21 +119,52 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
   let height = cursor;
   let span = cols.span;
   let heading = null;
+  const frames = [];
   if (cols.grid.length) {
     const { grid, cellW, per } = cols;
+    const opened = view.opened ?? new Map();
+    const rowW = per * cellW + (per - 1) * CELL_GAP;
     const top = cols.trees.length ? cursor + GROUP_SPACE : 0;
     let rowY = top + GROUP_HEAD_H;
-    for (let i = 0; i < grid.length; i += per) {
-      let rowBottom = rowY;
-      grid.slice(i, i + per).forEach((screen, j) => {
-        placed.push({ key: screen.id, node: screen, parent: null, x: j * (cellW + CELL_GAP), y: rowY, width: cellW, height: sizes[screen.id].height, grouped: true });
-        rowBottom = Math.max(rowBottom, rowY + sizes[screen.id].height);
-      });
-      rowY = rowBottom + GAP;
+    let rowBottom = rowY;
+    let j = 0;
+    /** @type {{ name: string, x: number, y: number, width: number, height: number, count: number } | null} */
+    let frame = null;
+    const endRow = () => {
+      if (j) rowY = rowBottom + GAP;
+      rowBottom = rowY;
+      j = 0;
+    };
+    const open = (name) => {
+      endRow();
+      rowY += OPEN_PAD;
+      frame = { name, x: 0, y: rowY, width: rowW, height: 0, count: 0 };
+      frames.push(frame);
+      rowY += GROUP_HEAD_H;
+      rowBottom = rowY;
+    };
+    const shut = () => {
+      endRow();
+      frame.height = rowY - GAP - frame.y;
+      rowY += OPEN_PAD;
+      rowBottom = rowY;
+      frame = null;
+    };
+    for (const node of grid) {
+      const name = opened.get(node.id) ?? null;
+      if (frame && frame.name !== name) shut();
+      if (name && !frame) open(name);
+      if (j === per) endRow();
+      placed.push({ key: node.id, node, parent: null, x: j * (cellW + CELL_GAP), y: rowY, width: cellW, height: sizes[node.id].height, grouped: true });
+      rowBottom = Math.max(rowBottom, rowY + sizes[node.id].height);
+      if (frame) frame.count += 1;
+      j += 1;
     }
+    if (frame) shut();
+    endRow();
     height = rowY;
-    span = Math.max(span, per * cellW + (per - 1) * CELL_GAP);
-    heading = { x: 0, y: top, height: GROUP_HEAD_H, count: grid.length };
+    span = Math.max(span, rowW);
+    heading = { x: 0, y: top, height: GROUP_HEAD_H, count: cols.cells };
   }
   const byKey = new Map(placed.map((b) => [b.key, b]));
   const edges = placed.filter((b) => b.parent !== null).map((b) => {
@@ -115,6 +180,7 @@ function layoutFlow(roots, sizes, view = {}, cols = flowColumns(roots, sizes, vi
     boxes: placed.map((b) => ({ key: b.key, x: b.x, y: b.y, width: b.width, height: b.height, grouped: b.grouped })),
     edges,
     group: heading,
+    opened: frames,
     width: span,
     height,
     ...(marks && { marks: spots }),
