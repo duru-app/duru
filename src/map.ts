@@ -135,6 +135,10 @@ const TAG_FORBIDDEN = /[\s,()&|!]+/g;
 
 type UnreadSite = { fn: string; file: string | null; line: number; url: string | null; reason: UnresolvedReason };
 
+// 다른 호스트로 가는 주소는 일부만 읽었어도 읽은 것으로 센다.
+export const readsAnAddress = (screens: MapScreen[]) =>
+  screens.some((s) => s.apiCalls.some((c) => (c.endpoints ?? []).some((e) => e.server.status !== 'unresolved' || e.server.reason === 'other-host')));
+
 export function unreadSites(screens: MapScreen[], direct: boolean): UnreadSite[] {
   const unread = new Map<string, UnreadSite>();
   for (const s of screens) {
