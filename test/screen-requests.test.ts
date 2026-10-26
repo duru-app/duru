@@ -131,6 +131,38 @@ test('a request a screen source sends with fetch or axios to an address written 
   assert.deepEqual(served.unreadRequests!.map((r) => r.line), [20, 24, 25]);
 });
 
+const SPACED_INBOX = `import axios from 'axios';
+import { useEffect } from 'react';
+import Page from '../_define/Page';
+
+export default function Inbox({ version }: { version: string }) {
+  useEffect(() => {
+    fetch(\` /api/mail/unread \`);
+    fetch(\`
+      https://cms.example.com/api/notes?version=\${version}&sort=asc
+    \`);
+    axios.post(\`
+      /api/folders
+    \`);
+    fetch(\`\${Page.ORIGIN}/api/mail/seen\`);
+  }, []);
+  return null;
+}
+`;
+
+test('an address a screen source writes with spaces and line breaks around it is read as the browser sends it, without them, whether it is on the server or on another host, and one built on the current page of a constants file is on the server', async () => {
+  const constants = { Option: '_define/Option.ts', Settings: 'store/index.ts', Page: '_define/Page.ts' };
+  const map = await build(fixtureCopy({ 'screens/Inbox.tsx': SPACED_INBOX, '_define/Page.ts': 'export default { ORIGIN: window.location.origin };\n' }, { constants }, ['unread GET /api/mail/unread', 'folders POST /api/folders']));
+  assert.deepEqual(sent(map, INBOX), [
+    ['fetch', 'GET /api/mail/unread', true],
+    ['fetch', 'GET https://cms.example.com/api/notes?version={?}&sort=asc', true],
+    ['axios.post', 'POST /api/folders', true],
+    ['fetch', 'GET /api/mail/seen', true],
+  ]);
+  assert.deepEqual(callsOf(map, INBOX), ['GET:/api/mail/seen', 'GET:/api/mail/unread', 'POST:/api/folders']);
+  assert.deepEqual(map.unreadRequests!.map((r) => [r.line, r.reason]), [[8, 'other-host']]);
+});
+
 const MAIL_HOOKS = `import axios from 'axios';
 
 export function useUnread() {

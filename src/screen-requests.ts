@@ -1,7 +1,7 @@
 import type { Binding, NodePath } from '@babel/traverse';
 import type { AssignmentExpression, CallExpression, ImportDeclaration, JSXAttribute, JSXOpeningElement, ObjectExpression, StringLiteral } from '@babel/types';
 import { keyName, memberChain, UNKNOWN } from './client.ts';
-import { placeUnknown, sentAddress, staysInBrowser, VERBS, WITH_DATA, withBase } from './sent-address.ts';
+import { cleanAddress, OTHER_SITE, pathOnSite, placeUnknown, sentAddress, staysInBrowser, VERBS, WITH_DATA, withBase } from './sent-address.ts';
 import type { UnresolvedReason } from './server.ts';
 
 export interface ScreenRequest {
@@ -32,7 +32,6 @@ interface Reading {
 type Base = string | null | undefined;
 
 const PAGE_OBJECTS = new Set(['window', 'globalThis', 'self']);
-const OTHER_SITE = /^(?:[a-z][a-z\d+.-]*:)?\/\//i;
 const FROM_ROOT = /^\/(?!\/)/;
 const ROUTER_PACKAGES = new Set(['react-router', 'react-router-dom', '@remix-run/react']);
 // URL 로 읽거나 ? · # 에서 자를 때 {?} 의 물음표가 걸리지 않게 잠시 바꿔 두는 문자열
@@ -70,7 +69,6 @@ export function importedAs(binding: Binding) {
 export const routerImport = (binding: Binding | undefined) => Boolean(binding && ROUTER_PACKAGES.has(importedAs(binding)?.spec ?? ''));
 
 export function screenRequestReader({ requestFunction, evaluate, objectLiteral, isRequestFunction, server }: Reading) {
-  const serverHost = server && new URL(server).host;
   const tagName = (name: JSXOpeningElement['name']): string => (name.type === 'JSXIdentifier' ? name.name : name.type === 'JSXMemberExpression' ? `${tagName(name.object)}.${name.property.name}` : `${name.namespace.name}:${name.name.name}`);
   const text = (v: unknown) => (typeof v === 'string' ? v : null);
 
@@ -162,8 +160,9 @@ export function screenRequestReader({ requestFunction, evaluate, objectLiteral, 
 
   function navigation(fn: string, address: NodePath<any> | undefined, method: string | null = 'GET'): ScreenRequest | null {
     if (!address?.node) return null;
-    const raw = evaluate(address);
-    const value = typeof raw === 'string' ? pathOnServer(raw) : raw;
+    const given = evaluate(address);
+    const raw = typeof given === 'string' ? cleanAddress(given) : given;
+    const value = typeof raw === 'string' ? pathOnSite(raw, server, UNKNOWN) : raw;
     const hides = hidesText(address);
     const url = hides ? null : navigatedAddress(value);
     if (url !== null) return { fn, method, url, navigation: true };
@@ -175,21 +174,11 @@ export function screenRequestReader({ requestFunction, evaluate, objectLiteral, 
     return { fn, method, url: value, navigation: true, unresolved: reason };
   }
 
-  function pathOnServer(url: string) {
-    if (!OTHER_SITE.test(url)) return url;
-    try {
-      const u = new URL(masked(url.startsWith('//') ? `http:${url}` : url));
-      return u.host === serverHost ? unmasked(u.pathname + u.search) : null;
-    } catch {
-      return null;
-    }
-  }
-
   function sent(fn: string, method: string | null, address: NodePath<any> | undefined, base: Base = undefined): ScreenRequest {
     const whole = withBase(address?.node ? text(evaluate(address)) : null, base);
     const hides = hidesText(address);
     if (whole === null) return { fn, method, url: null, unresolved: hides ? 'imported-piece' : 'not-written' };
-    const url = pathOnServer(whole);
+    const url = pathOnSite(whole, server, UNKNOWN);
     if (url === null) return { fn, method, url: whole, unresolved: !masked(whole).replace(OTHER_SITE, '').split(/[/?#]/)[0].includes(MASK) ? 'other-host' : hides ? 'imported-piece' : 'unknown-piece' };
     const reason = hides ? 'imported-piece' : placeUnknown(masked(url), [MASK]) ? unknownReason(url) : null;
     return { fn, method, url, ...(reason && { unresolved: reason }) };
