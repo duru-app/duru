@@ -258,9 +258,18 @@ test('in a browser, a review started without tests.json draws every screen of th
         await p.waitForSelector('#screen-list li');
         assert.equal(await p.locator('#screen-list li').count(), 11);
         assert.equal(await p.locator('#failed').isHidden(), true);
-        assert.match((await p.textContent('#meta'))!, / · 테스트 연결 없음$/);
-        const unlinked = p.locator('#meta span', { hasText: '테스트 연결 없음' });
-        for (const attribute of ['title', 'aria-label']) assert.equal(await unlinked.getAttribute(attribute), 'tests.json 이 없습니다. duru rebuild 를 실행하면 테스트 결과가 이어집니다');
+        assert.match(await p.innerText('#meta'), / · 테스트 연결 없음$/);
+        const unlinked = p.locator('#meta button.state', { hasText: '테스트 연결 없음' });
+        const tip = p.locator('#tests-state-tip');
+        assert.deepEqual([await unlinked.getAttribute('type'), await unlinked.getAttribute('aria-describedby')], ['button', 'tests-state-tip']);
+        assert.deepEqual([await tip.getAttribute('role'), await tip.textContent()], ['note', 'tests.json 이 없습니다. duru rebuild 를 실행하면 테스트 결과가 이어집니다']);
+        assert.equal(await tip.isVisible(), false);
+        await unlinked.focus();
+        assert.equal(await tip.isVisible(), true, 'shown on keyboard focus');
+        await p.evaluate(() => (document.activeElement as HTMLElement).blur());
+        assert.equal(await tip.isVisible(), false);
+        await unlinked.hover();
+        assert.equal(await tip.isVisible(), true, 'shown on hover');
       }, { view: 'flow' }),
     );
   });
