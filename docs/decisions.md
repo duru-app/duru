@@ -546,6 +546,10 @@ for a member administrator or for an administrator of the chosen department, so 
 replace what duru reads for a guard with the same text, wherever it is, rather than being merged with it: a
 written role and a read one never match as text, so mixing the two on one screen would leave it no roles; when
 that happens, the screen lists the guards missing from `roleGuards` as unreadable.
+The `role guard … not read` line of `extract` names only guards whose roles duru could not read. A second line for
+guards whose roles it read beside one `roleGuards` gives was tried and dropped: the screen sees only that its roles
+came out empty, not why, so on a screen emptied by the screen its link comes from, or by two written guards, that
+line named a guard whose roles were fine.
 A key that guards no route or link with a role is listed like an unknown `bodyOptions` call.
 Measured on main 8a62577 against the branch: with the four guards written, the 2.0.0 map gives roles for all 12
 screens and leaves no guard unread, and nothing else on the map changes; without `roleGuards`, the 1.5.0 and

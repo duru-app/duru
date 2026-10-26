@@ -583,6 +583,12 @@ function settle<T>(targets: number[], values: T[], compute: (i: number) => T) {
   }
 }
 
+function guardCounts(perScreen: string[][]) {
+  const counts = new Map<string, number>();
+  for (const guards of perScreen) for (const g of new Set(guards)) counts.set(g, (counts.get(g) ?? 0) + 1);
+  return [...counts.keys()].sort().map((guard) => ({ guard, screens: counts.get(guard)! }));
+}
+
 export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[], config: AccessConfig, guardInits: GuardInits, constants: Constants, guardSettings: GuardSettings) {
   const kindsOf = guardKinds(config, guardInits);
   const readRoles = roleReader(config, guardInits, constants);
@@ -598,7 +604,8 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
   // 핸들러에서 물려받은 조건은 그 핸들러를 쓰는 곳이 모두 조건 아래 있을 때만 센다.
   const held = (own: Described[], uses: Described[][]) => (own.length || (uses.length && uses.every((u) => u.length)) ? [...own, ...uses.flat()] : []);
 
-  const route = screens.map((s) => blocking(s.routeGuards, s.routeFile));
+  const described = screens.map((s) => describe(s.routeGuards, s.routeFile));
+  const route = described.map(blocks);
   const incoming: AccessLink[][] = screens.map(() => []);
   const outgoing: AccessLink[][] = screens.map(() => []);
   const targetsOf = linkTargets(screens);
@@ -705,10 +712,11 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
     return both.size ? [...both].sort() : null;
   };
   settle(indices.filter((i) => restricted[i] && kinds[i].has('role')), values, valuesOf);
+  const screenRoleGuards = indices.map((i) =>
+    restricted[i] && kinds[i].has('role') ? roleGuards([...route[i], ...(onlyBlockedLinks(i) ? incoming[i].flatMap((l) => l.guards) : [])]) : null);
   const roleAccess = (i: number) => {
-    if (!restricted[i] || !kinds[i].has('role')) return {};
-    const guards = [...route[i], ...(onlyBlockedLinks(i) ? incoming[i].flatMap((l) => l.guards) : [])];
-    const roleOnes = roleGuards(guards);
+    const roleOnes = screenRoleGuards[i];
+    if (!roleOnes) return {};
     const mixed = values[i] === null && roleOnes.every((g) => g.roles) && roleOnes.some((g) => Object.hasOwn(configured, g.guard));
     const unreadable = roleOnes.filter((g) => !g.roles || (mixed && !Object.hasOwn(configured, g.guard))).map((g) => g.guard);
     return { roleValues: values[i], unreadableRoleGuards: [...new Set(unreadable)].sort() };
@@ -752,7 +760,9 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
   const guarding = [...route.flat(), ...linkConditions.flat(2)];
   const usedRoleGuards = new Set(roleGuards(guarding).map((g) => g.guard));
   const unknownRoleGuards = Object.keys(configured).filter((g) => !usedRoleGuards.has(g)).sort();
-  return { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions, linkScreens };
+  const openRouteGuards = guardCounts(described.map((guards) => guards.filter((g) => !g.kinds.length).map((g) => g.guard)));
+  const unreadRoleGuards = guardCounts(screenRoleGuards.map((roleOnes) => (roleOnes ?? []).filter((g) => !g.roles).map((g) => g.guard)));
+  return { access, entries, unknownEntryPaths, unknownRoleGuards, openRouteGuards, unreadRoleGuards, linkConditions, linkScreens };
 }
 
 const caseName = (need: SettingNeed) => `${need.path.join('.')}${need.need === 'includes' || need.need === 'equals' ? `:${need.value}` : ''}`;

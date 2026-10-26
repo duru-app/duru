@@ -324,6 +324,10 @@ if (command === 'tasks') {
   console.log(`dead calls reachable from screens: ${map.deadCalls.length}`);
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s: any) => s.dead).length}`);
   console.log(`entry screens ${map.entries.length} | screens opening only under a setting or role ${map.screens.filter((s: any) => s.access.restricted).length}`);
+  for (const { guard, screens } of map.openRouteGuards ?? []) {
+    console.log(`  route guard ${guard} on ${plural(screens, 'screen')} is neither a setting nor a role, so it closes no screen; when it reads a setting or a role, name that in settingsRoots or roleIdentifiers`);
+  }
+  for (const { guard, screens } of map.unreadRoleGuards ?? []) console.log(`  role guard ${guard} on ${plural(screens, 'screen')}: the roles it lets in are not read; give them in roleGuards`);
   for (const p of map.unknownEntryPaths) console.log(`  entryPaths ${p} matches no route`);
   for (const entry of map.unusedLinkEntries ?? []) console.log(`  ${entry} is used nowhere in the screen sources`);
   for (const { file, call } of map.madeHistories ?? []) console.log(`  history is not set; ${file} calls ${call}, and moves through the history it makes are not read as links`);
