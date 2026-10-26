@@ -81,7 +81,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `requestFunction` is left out: check whether it sends through something `requestFunction` should name. Tell the
   user which methods are missing; do not write tests or fixes for them as if their endpoints were gone. Most come
   from the fake values, for example a method that checks a value it is given or picks its address by it. A `{?}` in
-  a call's address is a piece that came from a fake value, a path variable.
+  a call's address is a piece that came from a fake value, a path variable. In an app that sends its requests
+  through react-query, a hook a listed file exports (`useListChannels` from a generator) has the requests of the
+  function it gives react-query, and the screens that call the hook have them; no config key turns this on.
 - A request a screen sends from its own source, by `fetch`, axios or the function or object `requestFunction`
   names, is among that screen's `apiCalls` with `"direct": true` and how it is sent (`fetch`, `axios.post`,
   `<form action>`) where an API function's name would be. A form that posts is there too, and another move of the

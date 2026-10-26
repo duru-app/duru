@@ -8,6 +8,8 @@ declare global {
   var __duruRecorder: unknown;
   var __duruRequestObject: unknown;
   var __duruFunction: unknown;
+  var __duruArgument: (queryKey?: unknown) => unknown;
+  var __duruWait: (sent: unknown) => void;
 }
 
 export interface WorkerData {
@@ -28,6 +30,7 @@ export interface SentRequest {
 interface SentRecord {
   list: SentRequest[];
   flooded: boolean;
+  waits: Promise<unknown>[];
 }
 
 export interface AttemptError {
@@ -101,7 +104,7 @@ const text = (v: unknown) => {
   }
 };
 
-const current = new AsyncLocalStorage<object>();
+const current = new AsyncLocalStorage<{ argument: () => unknown }>();
 const sent = new Map<object | undefined, SentRecord>();
 // 가짜 값만큼 도는 반복이 요청을 쏟아내면 그 시도를 버린다.
 const REQUEST_LIMIT = 20;
@@ -261,9 +264,20 @@ const leaves = (leaf: unknown) => {
 // 마지막 시도에서는 이름이 id 이거나 Id · ID 로 끝나는 키만 문자열이고, 다른 키를 읽으면 몇 단계를 내려가도 이 값이 다시 나온다. URL 경로 값과 함께 받은 body 에 `in` 을 쓰거나 배열 메서드를 호출하는 메서드도 그래야 요청까지 간다.
 const ARGUMENT_SHAPES: (() => unknown)[] = [() => fake, () => leaves(mark), () => leaves(markNumber), () => idsAsText];
 
+globalThis.__duruArgument = (queryKey) => {
+  const given: any = current.getStore()?.argument() ?? fake;
+  if (queryKey == null) return given;
+  const context = new Proxy({ queryKey }, { get: (t, k) => (k === 'queryKey' ? queryKey : given?.[k]), has: () => true });
+  duruValues.add(context);
+  return context;
+};
+globalThis.__duruWait = (value) => {
+  sent.get(current.getStore())?.waits.push(Promise.resolve(value));
+};
+
 async function attempt(self: unknown, fn: Callable, argument: () => unknown): Promise<Attempt> {
-  const record: SentRecord = { list: [], flooded: false };
-  const token = {};
+  const record: SentRecord = { list: [], flooded: false, waits: [] };
+  const token = { argument };
   sent.set(token, record);
   let error: AttemptError | null = null;
   let timer: NodeJS.Timeout | undefined;
@@ -273,7 +287,7 @@ async function attempt(self: unknown, fn: Callable, argument: () => unknown): Pr
     const late = new Promise<{ late?: boolean }>((resolve) => {
       timer = setTimeout(() => resolve({ late: true }), timeoutMs);
     });
-    const ended: { late?: boolean } = await Promise.race([Promise.resolve(result).then(() => ({})), late]);
+    const ended: { late?: boolean } = await Promise.race([Promise.resolve(result).then(() => Promise.all(record.waits)).then(() => ({})), late]);
     if (ended.late) error = { message: `did not finish within ${timeoutMs} ms`, stack: '', late: true };
   } catch (e) {
     error = describe(e);
