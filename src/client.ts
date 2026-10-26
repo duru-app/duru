@@ -1440,30 +1440,40 @@ export async function extractClient(config: any) {
           loopRoutes.push({ element: p.node, line, page, drawnKeys: drawnItemKeys(page, p.scope, p.findParent(loopCallback)), pathExpr, item, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
           return;
         }
-        const { path: routePath, stops, ...gives } = readRoutePath(pathExpr);
-        let unreadPath: OuterFill['unreadPath'] = null;
-        const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
-        if (routePath.includes(UNKNOWN)) {
-          const stoppedAt = stopOf(stops[0] ?? pathExpr);
-          if (drawnInFunctionOrChildren && madeInLoop(p)) return unread(`made for each item of a list, and its path stopped at ${stoppedAt.text}`);
-          const outerStops = outerAddress && new Set(readRoutePath(outerAddress).stops.map((x) => x.node));
-          const rest = outerStops && stops.find((x) => !outerStops.has(x.node));
-          unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt, ...gives }, restStoppedAt: rest ? stopOf(rest) : null };
-          unreadRoutePaths.push(unreadPath.entry);
+        const routeGuards = guardsOf(p, src, note);
+        const wrapperFiles = [...page.files, ...wrappersOf(p, absFile)];
+        const grouped = Boolean(p.findParent((up) => up.isJSXElement() && ['Switch', 'Routes'].includes(tagOf(up.node.openingElement.name) ?? '')));
+        const made: RouteScreen[] = [];
+        for (const onePath of listedPaths(pathExpr) ?? [pathExpr]) {
+          const { path: routePath, stops, ...gives } = readRoutePath(onePath);
+          let unreadPath: OuterFill['unreadPath'] = null;
+          const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(onePath) : null;
+          if (routePath.includes(UNKNOWN)) {
+            const stoppedAt = stopOf(stops[0] ?? onePath);
+            if (drawnInFunctionOrChildren && madeInLoop(p)) {
+              unread(`made for each item of a list, and its path stopped at ${stoppedAt.text}`);
+              continue;
+            }
+            const outerStops = outerAddress && new Set(readRoutePath(outerAddress).stops.map((x) => x.node));
+            const rest = outerStops && stops.find((x) => !outerStops.has(x.node));
+            unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt, ...gives }, restStoppedAt: rest ? stopOf(rest) : null };
+            unreadRoutePaths.push(unreadPath.entry);
+          }
+          const screen: RouteScreen = {
+            path: routePath,
+            component: page.component,
+            componentFile: page.componentFile,
+            wrapperFiles: [...wrapperFiles],
+            routeFile,
+            routeGuards: [...routeGuards],
+            line,
+            outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
+          };
+          screens.push(screen);
+          made.push(screen);
+          placed.push({ element: p.node, screen, grouped });
         }
-        const screen: RouteScreen = {
-          path: routePath,
-          component: page.component,
-          componentFile: page.componentFile,
-          wrapperFiles: [...page.files, ...wrappersOf(p, absFile)],
-          routeFile,
-          routeGuards: guardsOf(p, src, note),
-          line,
-          outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
-        };
-        screens.push(screen);
-        elementScreens.set(p.node, [screen]);
-        placed.push({ element: p.node, screen, grouped: Boolean(p.findParent((up) => up.isJSXElement() && ['Switch', 'Routes'].includes(tagOf(up.node.openingElement.name) ?? ''))) });
+        elementScreens.set(p.node, made);
       },
     });
     // 모달로 한 번 더 그리려고 Switch · Routes 밖에 적은 라우트는, 경로와 컴포넌트가 같은 묶음 안의 라우트와 한 화면이다.
@@ -1473,7 +1483,7 @@ export async function extractClient(config: any) {
       const at = screens.indexOf(screen);
       screens.splice(at, 1);
       if (loopAt > at) loopAt--;
-      elementScreens.set(element, [same.screen]);
+      elementScreens.set(element, elementScreens.get(element)!.map((s) => (s === screen ? same.screen : s)));
     }
     if (table) {
       const listed = tableScreens(table, loopRoutes, unreadLoopRoutes, routeFile);
@@ -1566,12 +1576,14 @@ export async function extractClient(config: any) {
         unreadRoutes.push({ file: routeFile, line, reason: `${place} has no ${item.field}` });
         return [];
       }
-      const value = evaluate(field);
-      if (!readWhole(value)) {
-        const at = stopOf(unreadPiece(field) ?? field);
+      const values = (listedPaths(field) ?? [field]).flatMap((onePath) => {
+        const value = evaluate(onePath);
+        if (readWhole(value)) return [String(value)];
+        const at = stopOf(unreadPiece(onePath) ?? onePath);
         unreadRoutes.push({ file: routeFile, line, reason: `${place}: its ${item.field} stopped at ${at.text}${at.file === itemFile ? '' : ` in ${at.file}:${at.line}`}` });
         return [];
-      }
+      });
+      if (!values.length) return [];
       const drawn = drawnKeys && keyedValue(itemObject, drawnKeys);
       if (drawnKeys && !drawn) {
         unreadRoutes.push({ file: routeFile, line, reason: `${place} has no ${drawnKeys.join('.')}` });
@@ -1584,26 +1596,28 @@ export async function extractClient(config: any) {
         return [];
       }
       if (components.length && components.every((c) => c.redirects)) return [];
-      const routePath = pathText(pathExpr, item.node, String(value));
-      const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
-      let unreadPath: OuterFill['unreadPath'] = null;
-      if (routePath.includes(UNKNOWN)) {
-        const rest = outerAddress && unreadPiece(pathExpr, new Set(), [outerAddress.node, item.node]);
-        unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt: stopOf(unreadPiece(pathExpr, new Set(), [item.node])!) }, restStoppedAt: rest ? stopOf(rest) : null };
-        unreadRoutePaths.push(unreadPath.entry);
-      }
       const shown = components[0] ?? page;
-      return [{
-        path: routePath,
-        component: shown.component,
-        componentFile: shown.componentFile,
-        wrapperFiles: [...new Set([page.componentFile, ...page.files, ...components.map((c) => c.componentFile), ...wrappers].filter(Boolean) as string[])],
-        routeFile,
-        routeGuards: guards,
-        line,
-        tableItem: { key, file: itemFile, line: itemLine },
-        outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
-      }];
+      return values.map((value): RouteScreen => {
+        const routePath = pathText(pathExpr, item.node, value);
+        const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
+        let unreadPath: OuterFill['unreadPath'] = null;
+        if (routePath.includes(UNKNOWN)) {
+          const rest = outerAddress && unreadPiece(pathExpr, new Set(), [outerAddress.node, item.node]);
+          unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt: stopOf(unreadPiece(pathExpr, new Set(), [item.node])!) }, restStoppedAt: rest ? stopOf(rest) : null };
+          unreadRoutePaths.push(unreadPath.entry);
+        }
+        return {
+          path: routePath,
+          component: shown.component,
+          componentFile: shown.componentFile,
+          wrapperFiles: [...new Set([page.componentFile, ...page.files, ...components.map((c) => c.componentFile), ...wrappers].filter(Boolean) as string[])],
+          routeFile,
+          routeGuards: guards,
+          line,
+          tableItem: { key, file: itemFile, line: itemLine },
+          outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
+        };
+      });
     });
   }
 
@@ -1633,6 +1647,18 @@ export async function extractClient(config: any) {
       if (!e.isSpreadElement()) return [{ value: e.node ? e as NodePath : null, line, file: fileOf(list) }];
       const spread = literalAt(e.get('argument'));
       return spread?.isArrayExpression() && !seen.has(spread.node) ? elementsOf(spread, new Set(seen).add(spread.node)) : [{ value: null, line, file: fileOf(list) }];
+    });
+  }
+
+  // 주소 목록이 아니면 null 을 돌려준다. 값을 알 수 없는 `...` spread 는 주소 하나로 친다.
+  function listedPaths(p: NodePath, seen = new Set<Node>()): NodePath[] | null {
+    const list = literalAt(p);
+    if (!list?.isArrayExpression() || seen.has(list.node)) return null;
+    const inside = new Set(seen).add(list.node);
+    return list.get('elements').flatMap((e) => {
+      if (!e.node) return [];
+      if (!e.isSpreadElement()) return [e as NodePath];
+      return listedPaths(e.get('argument'), inside) ?? [e.get('argument')];
     });
   }
 
