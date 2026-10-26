@@ -669,7 +669,7 @@ test('with baselineTests and no baselineMap, rebuild prints the same test lines'
     const out = rebuild();
     assert.doesNotMatch(out, /^changes since /m);
     assert.deepEqual(testLines(out), TEST_LINES);
-    assert.match(out, /^entry screens [^\n]*\ntest results since /m);
+    assert.match(out, /^entry screens [^\n]*\n(?: {2}[^\n]*\n)*test results since /m);
   });
 });
 
