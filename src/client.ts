@@ -390,6 +390,7 @@ export async function extractClient(config: any) {
     }
     return imported;
   }
+  const movedTo = new WeakSet<RouteRef | RouterLink>();
   const linkSites = (facts: Facts): (RouteRef | RouterLink)[] => [...facts.routeRefs, ...facts.routerLinks];
   const sitesOf = (file: string) => {
     const facts = fileFacts(file);
@@ -1431,19 +1432,19 @@ export async function extractClient(config: any) {
 
     const routeRefAt = facts.routeRefs.map((r) => siteStart.get(r)!);
     const holdsRouteRef = (p: NodePath) => routeRefAt.some((start) => start >= p.node.start! && start < p.node.end!);
-    const markLinkAddresses = (addresses: NodePath[]) => {
-      for (const at of addresses) {
-        const parts = madeFrom(at);
-        const reassignable = parts.findIndex((p) => p.isIdentifier() && p.scope.getBinding(p.node.name)?.kind !== 'const');
-        for (const p of reassignable < 0 ? parts : parts.slice(0, reassignable)) for (const ref of constantAt.get(p.node) ?? []) linkAddressRefs.add(ref);
-      }
-    };
+    const addressRefs = (addresses: NodePath[]) => addresses.flatMap((at) => {
+      const parts = madeFrom(at);
+      const reassignable = parts.findIndex((p) => p.isIdentifier() && p.scope.getBinding(p.node.name)?.kind !== 'const');
+      return (reassignable < 0 ? parts : parts.slice(0, reassignable)).flatMap((p) => constantAt.get(p.node) ?? []);
+    });
     const recordLinks = (addresses: NodePath[], read = linkAddresses) => {
-      markLinkAddresses(addresses);
+      for (const ref of addressRefs(addresses)) linkAddressRefs.add(ref);
+      const recorded: RouterLink[] = [];
       for (const at of addresses) {
         if (madeFrom(at).some(holdsRouteRef)) continue;
-        for (const address of read(at)) record('routerLinks', address, at);
+        for (const address of read(at)) recorded.push(record('routerLinks', address, at) as RouterLink);
       }
+      return recorded;
     };
     const recordElementLinks = (p: NodePath<JSXElement>) => {
       const component = linkComponentOf(p);
@@ -1475,7 +1476,9 @@ export async function extractClient(config: any) {
         recordUseLinks(p);
       },
       CallExpression(p) {
-        recordLinks(screenLinks.call(p));
+        const move = screenLinks.moveOf(p);
+        const moved = recordLinks(screenLinks.call(p));
+        if (move) for (const site of [...moved, ...addressRefs(addresses(move.address))]) movedTo.add(site);
         if (!recordListedCall(p)) recordHelperLinks(p);
         const callee = p.get('callee');
         const binding = !config.history && callee.isIdentifier() ? callee.scope.getBinding(callee.node.name) : undefined;
@@ -2579,6 +2582,7 @@ export async function extractClient(config: any) {
   };
 
   const members = typedMembers(config.tsconfig, [...new Set(sourced.flatMap((x) => x.files))], imports.resolve);
+  const heldRouteFiles = new Set(sourced.flatMap((x) => x.files).filter((f) => routeFileSet.has(f)));
   const screenFollower = members ? nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf, members }) : follower;
   const screens = sourced.map(({ s, entryFiles, isOtherScreen, files }, index) => {
     const inSources = new Set<string | null>(files);
@@ -2627,6 +2631,14 @@ export async function extractClient(config: any) {
         const link = screenLink(ref, index);
         if (link) links.push({ ...link, file: rel(f) });
       }
+    }
+    // 라우트 파일 본문에서 옮기는 것은 그 파일이 그리는 화면 어디서나 일어난다.
+    const drawnBy = path.join(config.srcRoot, s.routeFile);
+    for (const site of heldRouteFiles.has(drawnBy) ? [] : linkSites(fileFacts(drawnBy))) {
+      if (!movedTo.has(site) || ownLinks.has(site)) continue;
+      ownLinks.add(site);
+      const link = screenLink(site, index);
+      if (link) links.push({ ...link, file: rel(drawnBy) });
     }
     // 훅으로만 받은 스토어 파일의 dispatch 는 읽지 않는다.
     for (const f of received) takeCalls(f, fileFacts(f));
