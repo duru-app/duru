@@ -245,6 +245,36 @@ test('in a browser, a click on an empty spot of the flow drawing lets the picked
   );
 });
 
+test('in a browser, a review started without tests.json draws every screen of the map in the flow and the list, none of them with a test', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    fs.rmSync(path.join(config.outDir, 'tests.json'));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        assert.equal(await p.locator('#flow .box.screen').count(), 11);
+        assert.equal(await p.textContent('.flowbar .flowsummary'), '테스트 있는 화면 0/11');
+        assert.deepEqual(await p.locator('.flowbar .flow-filters button').allTextContents(), ['전체 11', '테스트 없음 11', '태그 없는 테스트만 0', '실패 0', '보류 0', '통과 0']);
+        await p.click('#view-list');
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.locator('#screen-list li').count(), 11);
+        assert.equal(await p.locator('#failed').isHidden(), true);
+        assert.match(await p.innerText('#meta'), / · 테스트 연결 없음$/);
+        const unlinked = p.locator('#meta button.state', { hasText: '테스트 연결 없음' });
+        const tip = p.locator('#tests-state-tip');
+        assert.deepEqual([await unlinked.getAttribute('type'), await unlinked.getAttribute('aria-describedby')], ['button', 'tests-state-tip']);
+        assert.deepEqual([await tip.getAttribute('role'), await tip.textContent()], ['note', 'tests.json 이 없습니다. duru rebuild 를 실행하면 테스트 결과가 이어집니다']);
+        assert.equal(await tip.isVisible(), false);
+        await unlinked.focus();
+        assert.equal(await tip.isVisible(), true, 'shown on keyboard focus');
+        await p.evaluate(() => (document.activeElement as HTMLElement).blur());
+        assert.equal(await tip.isVisible(), false);
+        await unlinked.hover();
+        assert.equal(await tip.isVisible(), true, 'shown on hover');
+      }, { view: 'flow' }),
+    );
+  });
+});
+
 test('in a browser, with nothing picked the right column lists the failing screens and then the ones without a tagged test, in the order of the drawing, and pressing one picks it', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
     const testsFile = path.join(config.outDir, 'tests.json');

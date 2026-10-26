@@ -6,9 +6,10 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
-import { loadJudgments } from '../src/judgments.ts';
+import { addJudgment, loadJudgments } from '../src/judgments.ts';
 import { loadMarks } from '../src/marks.ts';
 import { PAGE_PARTS, reviewAuthor } from '../src/review.ts';
+import { taskList } from '../src/tasks.ts';
 import { FIXTURE, CLI, CASE_KINDS, withRebuiltFixture, withServer, postMark, postJudgment, initGitRepoNamed } from './review-helpers.ts';
 import type { Config, PageData } from './review-helpers.ts';
 
@@ -250,6 +251,37 @@ test('the page reports a missing map instead of serving empty data', async () =>
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('without tests.json the data has the whole map and no tests, judgments and test baseline are left out, and the task list is written; a tests.json that cannot be read is still reported', async () => {
+  const { tests: sources } = JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8'));
+  await withRebuiltFixture({ baselineTests: sources }, async (config) => {
+    addJudgment(config.judgmentsDir, { test: { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' }, node: '/help#Help', kind: 'hand-over', reason: '', author: 'reviewer' });
+    const testsFile = path.join(config.outDir, 'tests.json');
+    fs.rmSync(testsFile);
+    await withServer(config, 'reviewer', async (base) => {
+      const res = await fetch(`${base}/api/data`);
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.map.screens.length, 11);
+      assert.equal(data.tests.meta.generatedAt, null);
+      assert.deepEqual([data.tests.nodes, data.tests.untagged, data.flow.summary.tested], [{}, [], 0]);
+      assert.deepEqual([data.tests.detachedHandOvers, data.baselineTests], [{}, null]);
+      assert.equal(taskList(config).split('\n')[1], 'no tests.json in out; screens and calls a reviewer sent by commenting on a regressed test are not listed');
+
+      fs.writeFileSync(testsFile, '{');
+      const broken = await fetch(`${base}/api/data`);
+      assert.equal(broken.status, 500);
+    });
+  });
+});
+
+test('without tests.json the task list still reads baselineTests, and a path that cannot be read is reported in place of the no tests.json line', async () => {
+  await withRebuiltFixture({}, (config) => {
+    fs.rmSync(path.join(config.outDir, 'tests.json'));
+    const head = taskList({ ...config, baselineTests: [{ format: 'playwright', path: path.join(config.configDir, 'releases/missing.json'), depth: 'ui' }] }).split('\n')[1];
+    assert.equal(head, 'baselineTests releases/missing.json could not be read: it does not exist; screens and calls a reviewer sent by commenting on a regressed test are not listed');
+  });
 });
 
 test('requests another site could send through the browser are refused', async () => {

@@ -15,7 +15,7 @@ import type { CaseKind } from './config.ts';
 import { GENERAL, orderKey, recordKind } from './marks.ts';
 import type { MarkEntry } from './marks.ts';
 import { findNeed, needPath } from './needs.ts';
-import { reviewData } from './review.ts';
+import { reviewData, testsLinked } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { settingChange } from './setting-changes.ts';
 import type { MapDefaults, SettingsFileValues } from './setting-changes.ts';
@@ -705,12 +705,18 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
 export function taskList(config: any) {
   const { map, tests, marks, appLinks, stories, needs, caseTargets } = reviewData(config, null);
   const open = marks.attached.filter((m) => m.current?.status === 'needs-more');
+  const relative = (p: string) => path.relative(config.configDir, p).split(path.sep).join('/');
   let comparison: TestComparison | null = null;
+  const notListed = 'screens and calls a reviewer sent by commenting on a regressed test are not listed';
   let unread = '';
-  try {
-    if (config.baselineTests) comparison = compareTests(readBaselineTests(config), tests, nodeIds(map));
-  } catch (err) {
-    unread = `\n${(err as Error).message}; screens and calls a reviewer sent by commenting on a regressed test are not listed`;
+  if (config.baselineTests) {
+    try {
+      const baseline = readBaselineTests(config);
+      if (testsLinked(tests)) comparison = compareTests(baseline, tests, nodeIds(map));
+      else unread = `\nno tests.json in ${relative(config.outDir) || '.'}; ${notListed}`;
+    } catch (err) {
+      unread = `\n${(err as Error).message}; ${notListed}`;
+    }
   }
   const passedIn = new Map<MarkEntry, string>();
   const fines = wholeFines(marks.attached.flatMap((m) => m.history));
@@ -725,7 +731,6 @@ export function taskList(config: any) {
   const calls = map.calls.filter(listed);
   const storyMarks = open.filter((m) => m.target.story !== undefined);
   const restricted = new Set<string>(map.screens.filter((s: any) => s.access.restricted).map((s: any) => s.id));
-  const relative = (p: string) => path.relative(config.configDir, p).split(path.sep).join('/');
   const formats = [...new Set<string>(config.tests.map((t: any) => t.format))];
   const resultLines = resultOptionLines(map, tests.nodes);
   const hasKinds = Object.keys(config.caseKinds).length > 0;

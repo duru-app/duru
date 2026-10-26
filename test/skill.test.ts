@@ -189,5 +189,6 @@ test('the agent skill says how to read the rebuild regression lines, not to fit 
   assert.match(flat, /with `, passed in <folder>` right after its result file is such a regressed test, and an item whose marks line reads `marks: none, listed for comments on regressed tests`[^:]*: write no new test for them; fix the app or the test as each comment says, run the tests and `duru rebuild`, and read the list again/);
   assert.match(flat, /`N commented regressions`[^;]*; with no open mark it starts with that instead of `No open marks\.`, so do not stop there/);
   assert.match(flat, /`baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`, means [^:]*: tell the user/);
+  assert.match(flat, /The same line reading `no tests\.json in <folder>; …` means the same, and that `duru rebuild` has not been run yet/);
   assert.match(flat, /One listed only for comments on regressed tests also leaves once those tests pass again after a `rebuild`/);
 });
