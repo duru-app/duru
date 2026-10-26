@@ -45,7 +45,7 @@ test('rebuild writes map.json and tests.json to the configured output folder and
     assert.match(stdout, /^links from unit tests to screens by the files they import 5 \| test files not read 2$/m);
     assert.match(stdout, /^calls with tests 3\/10$/m);
     assert.doesNotMatch(stdout, /bodyOptions/);
-    assert.doesNotMatch(stdout, /roleGuards/);
+    assert.doesNotMatch(stdout, /^ {2}roleGuards /m);
     assert.doesNotMatch(stdout, /^case kind /m);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
@@ -390,6 +390,40 @@ test('rebuild warns about each guard in roleGuards that guards no route or link 
     const stdout = execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
     assert.match(stdout, /^ {2}roleGuards menuPolicy\.canAccessTrash matches no role guard$/m);
     assert.doesNotMatch(stdout, /roleGuards isAdmin/);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('extract names each route guard that is neither a setting nor a role, with the screens it is on', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const { roleIdentifiers, ...config } = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    fs.writeFileSync(configFile, JSON.stringify(config));
+    const stdout = execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+    const hint = 'is neither a setting nor a role, so it closes no screen; when it reads a setting or a role, name that in settingsRoots or roleIdentifiers';
+    assert.match(stdout, new RegExp(`^ {2}route guard isAdmin on 1 screen ${hint}$`, 'm'));
+    assert.match(stdout, new RegExp(`^ {2}route guard isAdminRole\\(memberRole\\) on 1 screen ${hint}$`, 'm'));
+    assert.doesNotMatch(stdout, /route guard globalSettings/);
+    assert.doesNotMatch(stdout, /role guard/);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test('extract names each role guard whose roles are not read until roleGuards gives them', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    const unread = /^ {2}role guard isAdmin on 1 screen: the roles it lets in are not read; give them in roleGuards$/m;
+    assert.match(execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' }), unread);
+    fs.writeFileSync(configFile, JSON.stringify({ ...config, roleGuards: { isAdmin: ['ADMIN'] } }));
+    const stdout = execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+    assert.doesNotMatch(stdout, /role guard|route guard/);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }
