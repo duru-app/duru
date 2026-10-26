@@ -4490,6 +4490,63 @@ export default function Routes() {
   }
 });
 
+test('a link reaches a route made for a route table item only at the addresses its item exact allows, and when that exact is not read, at the addresses under it too', async () => {
+  const table = `import Alerts from './Alerts';
+import ChannelEdit from './ChannelEdit';
+import Services from './Services';
+import Settings from './Settings';
+import Reports from './Reports';
+
+const routes = [
+  { path: '/alerts', component: Alerts, exact: true },
+  { path: '/alerts/channels/edit/:channelId', component: ChannelEdit, exact: true },
+  { path: '/services', component: Services, exact: true },
+  { path: '/settings', component: Settings, exact: false },
+  { ...props.base, path: '/reports', component: Reports, exact: true },
+];
+
+export default routes;
+`;
+  const routesFile = `import { Route, Switch } from 'react-router-dom';
+import routes from './routes';
+import Home from './Home';
+import NotFound from './NotFound';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/" component={Home} exact />
+      {routes.map(({ path, component, exact }) => (
+        <Route key={path} exact={exact} path={path} component={component} />
+      ))}
+      <Route path="*" component={NotFound} />
+    </Switch>
+  );
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+
+export default function Home({ id }) {
+  return (
+    <nav>
+      <Link to={\`/alerts/channels/edit/\${id}\`}>channel</Link>
+      <Link to="/services/x">service</Link>
+      <Link to="/settings/billing">billing</Link>
+      <Link to="/reports/weekly">weekly</Link>
+    </nav>
+  );
+}
+`;
+  const pages = Object.fromEntries(['ChannelEdit', 'Services', 'Reports', 'NotFound'].map((n) => [`${n}.js`, page(n)]));
+  const map = await build(underApp('', { ...pages, 'Home.js': home, 'Routes.js': routesFile, 'routes.js': table }, { routeTables: [{ route: 'Routes.js', table: { file: 'routes.js', const: 'routes' }, items: '*' }] }));
+  assert.deepEqual(targetsOf(map, '/#Home'), [
+    ['/alerts/channels/edit/{*}', ['/alerts/channels/edit/:channelId#ChannelEdit']],
+    ['/services/x', ['*#NotFound']],
+    ['/settings/billing', ['/settings#Settings']],
+    ['/reports/weekly', ['/reports#Reports']],
+  ]);
+});
+
 test('a route whose exact is not read gives no line, nor does a route under Routes, whose /* route the links already reach, and an address under two such routes in a Switch goes with the first', async () => {
   const unread = underApp('      <Route path="/settings" exact={props.exact} component={Settings} />');
   assert.equal((await build(unread)).addressesUnderRoutes, undefined);
