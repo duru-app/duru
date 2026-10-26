@@ -13,7 +13,9 @@
 
 ## Running the tests
 
-- CI runs the whole suite (`npm test`) on every pull request except one that changes only `CLAUDE.md`.
+- CI runs the whole suite (`npm test`) once, in the merge queue, for every pull request except one that changes only
+  `CLAUDE.md`. The check on the pull request itself passes without running it, so a pull request is tested only
+  after `gh pr merge <n> --merge` puts it in the queue.
 - Locally, run the two type checks and only the tests the change touches, by file and name:
   `npx tsc --noEmit && npx tsc --noEmit -p tsconfig.browser-tests.json`, then
   `node --test --test-name-pattern="<part of the test name>" test/<file>.test.ts`. `node --test` alone does not
