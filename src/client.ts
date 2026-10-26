@@ -758,23 +758,105 @@ export async function extractClient(config: any) {
 
   const rootIdentifier = (p: NodePath): NodePath => (p.isMemberExpression() || p.isOptionalMemberExpression() ? rootIdentifier(p.get('object') as NodePath) : p);
 
-  function listedRoutes(p: NodePath<MemberExpression | OptionalMemberExpression>) {
-    if (!routeChain || memberChain(p.node.object)?.join('.') !== config.routeConstant) return [];
-    const key = p.get('property');
-    const binding = (key.isIdentifier() && key.scope.getBinding(key.node.name)) as Binding | undefined;
-    if (binding?.kind !== 'param' || binding.path.listKey !== 'params' || binding.path.key !== 0) return [];
+  const LIST_CALLBACKS = ['forEach', 'map'];
+  type KeyEntry = { value: string; chain: string[] | null; guards: string[]; through: Node[] };
+  type KeyWalk = { onPath: Set<Binding>; hops: number; guardsAt: (at: NodePath) => string[] };
+
+  function entered<T>(binding: Binding, walk: KeyWalk, read: () => T[]): T[] {
+    if (walk.onPath.has(binding)) return [];
+    walk.onPath.add(binding);
+    try {
+      return read();
+    } finally {
+      walk.onPath.delete(binding);
+    }
+  }
+
+  const memberName = (p: NodePath) => ((p.isMemberExpression() || p.isOptionalMemberExpression()) && !p.node.computed ? (p.node.property as Identifier).name : null);
+
+  function passedAt(binding: Binding, walk: KeyWalk, read: (arg: NodePath, walk: KeyWalk) => KeyEntry[]): KeyEntry[] {
+    const param = binding.path;
+    if (param.listKey !== 'params' || !param.isIdentifier() || walk.hops >= FOLLOWED) return [];
+    const index = param.key as number;
+    const fn = param.parentPath!;
+    const declarator = fn.parentPath!;
+    const id = fn.isFunctionDeclaration() ? fn.node.id : declarator.isVariableDeclarator() && declarator.node.init === fn.node ? declarator.node.id : null;
+    const named = id?.type === 'Identifier' ? fn.parentPath!.scope.getBinding(id.name) : undefined;
+    if (!named?.constant) return [];
+    const inner = { ...walk, hops: walk.hops + 1 };
+    return entered(binding, walk, () => named.referencePaths.flatMap((ref) => {
+      const call = ref.parentPath!;
+      if (!(call.isCallExpression() || call.isOptionalCallExpression()) || ref.key !== 'callee') return [];
+      const args = call.get('arguments') as NodePath[];
+      if (args.slice(0, index + 1).some((a) => a.isSpreadElement()) || !args[index]) return [];
+      const guards = walk.guardsAt(call);
+      return read(args[index], inner).map((e) => ({ ...e, guards: [...guards, ...e.guards], through: [fn.node, ...e.through] }));
+    }));
+  }
+
+  function keyEntries(key: NodePath, walk: KeyWalk): KeyEntry[] {
+    if (key.isStringLiteral()) return [{ value: key.node.value, chain: null, guards: [], through: [] }];
+    if (!key.isIdentifier()) return [];
+    const binding = key.scope.getBinding(key.node.name);
+    if (binding?.kind === 'const') {
+      const init = constInit(key, key.node.name, new Set());
+      return init ? entered(binding, walk, () => keyEntries(init as NodePath, walk)) : [];
+    }
+    if (binding?.kind !== 'param') return [];
     const fn = binding.path.parentPath!;
     const call = fn.parentPath!;
-    if (!(call.isCallExpression() || call.isOptionalCallExpression()) || fn.listKey !== 'arguments' || fn.key !== 0) return [];
-    const callee = call.get('callee') as NodePath;
-    if (!(callee.isMemberExpression() || callee.isOptionalMemberExpression()) || callee.node.computed) return [];
-    if (!['forEach', 'map'].includes((callee.node.property as Identifier).name)) return [];
-    const chain = settingsPath(callee.get('object') as NodePath);
-    const list = chain?.slice(1).reduce((v: any, k) => v?.[k], settingsDefaults[chain[0]]);
-    if (!Array.isArray(list)) return [];
-    return [...new Set(list)]
-      .filter((entry) => typeof entry === 'string' && Object.hasOwn(routeValues, entry))
-      .map((entry) => ({ route: entry, guard: `${chain!.join('.')} includes '${entry}'`, settings: needs.includes(chain!, entry) }));
+    if (binding.path.listKey === 'params' && binding.path.key === 0 && fn.listKey === 'arguments' && fn.key === 0 && (call.isCallExpression() || call.isOptionalCallExpression())) {
+      const callee = call.get('callee') as NodePath;
+      if (LIST_CALLBACKS.includes(memberName(callee) ?? '')) return listEntries(callee.get('object') as NodePath, walk);
+    }
+    return passedAt(binding, walk, keyEntries);
+  }
+
+  function listEntries(list: NodePath, walk: KeyWalk): KeyEntry[] {
+    const chain = settingsPath(list);
+    const listed = chain?.slice(1).reduce((v: any, k) => v?.[k], settingsDefaults[chain[0]]);
+    if (Array.isArray(listed)) return listed.filter((v) => typeof v === 'string').map((value) => ({ value, chain, guards: [], through: [] }));
+    if (list.isArrayExpression()) {
+      const { elements } = list.node;
+      return elements.every((e) => e?.type === 'StringLiteral') ? elements.map((e) => ({ value: (e as StringLiteral).value, chain: null, guards: [], through: [] })) : [];
+    }
+    if (list.isLogicalExpression() && ['||', '??'].includes(list.node.operator)) return [...listEntries(list.get('left'), walk), ...listEntries(list.get('right'), walk)];
+    if (list.isCallExpression() || list.isOptionalCallExpression()) {
+      const callee = list.get('callee') as NodePath;
+      return memberName(callee) === 'filter' ? listEntries(callee.get('object') as NodePath, walk) : [];
+    }
+    if (!list.isIdentifier()) return [];
+    const binding = list.scope.getBinding(list.node.name);
+    if (binding?.kind === 'const') {
+      const init = constInit(list, list.node.name, new Set());
+      return init ? entered(binding, walk, () => listEntries(init as NodePath, walk)) : [];
+    }
+    return binding?.kind === 'param' ? passedAt(binding, walk, listEntries) : [];
+  }
+
+  function listedRoutes(p: NodePath<MemberExpression | OptionalMemberExpression>, guardsAt: (at: NodePath) => string[]) {
+    if (!routeChain || memberChain(p.node.object)?.join('.') !== config.routeConstant) return [];
+    const key = p.get('property') as NodePath;
+    const binding = key.isIdentifier() ? key.scope.getBinding(key.node.name) : undefined;
+    if (binding?.kind !== 'param' || binding.path.listKey !== 'params') return [];
+    const owner = p.getFunctionParent()?.node;
+    const byRoute = new Map<string, { chain: string[] | null; guards: string[]; ownerCalls: boolean }>();
+    for (const { value, chain, guards, through } of keyEntries(key, { onPath: new Set(), hops: 0, guardsAt })) {
+      if (!Object.hasOwn(routeValues, value)) continue;
+      const ownerCalls = Boolean(owner && through.includes(owner));
+      const before = byRoute.get(value);
+      if (!before) byRoute.set(value, { chain, guards: [...new Set(guards)], ownerCalls });
+      else {
+        if (before.chain?.join('.') !== chain?.join('.')) before.chain = null;
+        before.guards = before.guards.filter((g) => guards.includes(g));
+        before.ownerCalls &&= ownerCalls;
+      }
+    }
+    const own = new Set(guardsAt(p));
+    return [...byRoute].map(([route, { chain, guards, ownerCalls }]) => {
+      const setting = chain ? { guard: `${chain.join('.')} includes '${route}'`, settings: needs.includes(chain, route) } : null;
+      return { route, guards: [...(setting ? [setting.guard] : []), ...guards.filter((g) => !own.has(g))], setting, ownerCalls };
+    });
   }
 
   function tailText(p: NodePath<any>): string {
@@ -1081,14 +1163,14 @@ export async function extractClient(config: any) {
     const relFile = path.relative(config.srcRoot, file);
     const note = guardNote(relFile, src);
 
-    function record(kind: 'apiCalls' | 'settingReads' | 'routeRefs' | 'routerLinks', entry: object, nodePath: NodePath, ownGuards: string[] = []) {
+    function record(kind: 'apiCalls' | 'settingReads' | 'routeRefs' | 'routerLinks', entry: object, nodePath: NodePath, ownGuards: string[] = [], inherits = true) {
       const guards = [...ownGuards, ...guardsOf(nodePath, src, note)];
       const owner = enclosingFunctionName(nodePath);
       const item = { ...entry, line: nodePath.node.loc!.start.line, guards };
       siteStart.set(item as ApiCallSite, nodePath.node.start!);
       if (kind !== 'settingReads') siteFile.set(item as ApiCallSite, file);
       (facts[kind] as Site[]).push(item);
-      if (owner) {
+      if (owner && inherits) {
         if (!localFnRefs.has(owner.name)) localFnRefs.set(owner.name, { fnPath: owner.fnPath, items: [] });
         localFnRefs.get(owner.name)!.items.push(item);
       }
@@ -1204,9 +1286,9 @@ export async function extractClient(config: any) {
         const chain = memberChain(p.node);
         if (!chain) {
           if (!p.node.computed) return;
-          for (const r of listedRoutes(p)) {
-            noteSettings(relFile, r.guard, r.settings);
-            constantAt.set(p.node, [...(constantAt.get(p.node) ?? []), record('routeRefs', { route: r.route }, p, [r.guard]) as RouteRef]);
+          for (const r of listedRoutes(p, (at) => guardsOf(at, src, note))) {
+            if (r.setting) noteSettings(relFile, r.setting.guard, r.setting.settings);
+            constantAt.set(p.node, [...(constantAt.get(p.node) ?? []), record('routeRefs', { route: r.route }, p, r.guards, !r.ownerCalls) as RouteRef]);
           }
           return;
         }
