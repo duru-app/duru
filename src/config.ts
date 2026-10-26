@@ -202,7 +202,7 @@ function routeTablesOf(value: unknown, srcRoot: string, routeFiles: (string | nu
   if (value === undefined) return [];
   if (!Array.isArray(value) || !value.every(isTable)) {
     throw new Error('routeTables must be a list of { "route", "table": { "file", "const" }, "items" }: a file in routesFile with a route made for each item of a table, '
-      + 'the file and top-level const holding that table, and the keys leading to its items with "*" for every key at that place, as paths from srcRoot, '
+      + 'the file and top-level const holding that table as an object or a list, and the keys or places leading to its items with "*" for every key or place there, as paths from srcRoot, '
       + `such as [{ "route": "components/admin_console/admin_console.tsx", "table": { "file": "components/admin_console/admin_definition.tsx", "const": "AdminDefinition" }, "items": "*.subsections.*" }], not ${JSON.stringify(value)}`);
   }
   const tables = value.map((t) => ({ route: inSrc(t.route), table: { file: inSrc(t.table.file), const: t.table.const }, items: t.items }));

@@ -286,6 +286,233 @@ test('two items that make the same screen ID are reported at their lines in the 
   }, { edits });
 });
 
+test('a loop function that takes the item apart reads the path from the name bound to the item\'s field, also under another name, and gives the same item screens', async () => {
+  const expected = (map: ScreenMap) => tableScreens(map).map((s) => [s.id, s.path, s.componentFile, s.line, s.tableItem]);
+  const plain = await withTableCopy(async ({ configFile }) => expected(await build(configFile)));
+  for (const [param, url] of [['{ url, schema }', 'url'], ['{ url: address, schema }', 'address']]) {
+    const route = LOOP_ROUTE.replaceAll('item.url', url).replace('item.schema', 'schema');
+    await withTableCopy(async ({ configFile, cli }) => {
+      assert.deepEqual(expected(await build(configFile)), plain);
+      assert.deepEqual(routeLines(cli('extract')), []);
+    }, { edits: [[CONSOLE, `(item) => (\n        ${LOOP_ROUTE}`, `(${param}) => (\n        ${route}`]] });
+  }
+});
+
+test('a loop function whose path name has a default, sits deeper in the item or comes from its rest reads no field, and the table entry stops the run', async () => {
+  for (const [param, url] of [["{ url = 'x', schema }", 'url'], ['{ meta: { url }, schema }', 'url'], ['{ schema, ...rest }', 'rest.url']]) {
+    const route = LOOP_ROUTE.replaceAll('item.url', url).replace('item.schema', 'schema');
+    await withTableCopy(({ configFile }) => {
+      assert.match(failure(configFile), /routeTables\[0\]: admin\/AdminConsole\.js has no route made for each item of a list whose path reads a field of the item/);
+    }, { edits: [[CONSOLE, `(item) => (\n        ${LOOP_ROUTE}`, `(${param}) => (\n        ${route}`]] });
+  }
+});
+
+const LIST_TABLE = `import License from './License';
+import Users from './Users';
+import UserDetail from './UserDetail';
+import { ID_PATTERN } from './patterns';
+
+const makeItem = (url) => ({ url, component: Users });
+const licenseRoute = { url: 'about/license', component: License };
+const detailRoutes = [
+  { url: \`users/:user_id(\${ID_PATTERN})\`, component: UserDetail },
+];
+
+export const adminRoutes = [
+  licenseRoute,
+  { url: 'users', component: Users },
+  ...detailRoutes,
+];
+
+export const withCall = [...adminRoutes, makeItem('made')];
+`;
+
+const listConsole = (loop: string) => `import { Route, Switch } from 'react-router-dom';
+import { adminRoutes } from './definition';
+
+export default function AdminConsole(props) {
+  return (
+    <Switch>
+      {adminRoutes.map(${loop})}
+    </Switch>
+  );
+}
+`;
+
+const ITEM_ROUTE = '(route) => <Route key={route.url} path={`${props.match.url}/${route.url}`} component={route.component} />';
+const LIST_ENTRY = { ...ROUTE_TABLE, table: { file: TABLE, const: 'adminRoutes' }, items: '*' };
+
+async function withListTable<T>(loop: string, fn: (copy: Copy) => T | Promise<T>, entry: Record<string, unknown> | null = {}, table = LIST_TABLE) {
+  return withTableCopy(async (copy) => {
+    fs.writeFileSync(path.join(copy.src, TABLE), table);
+    fs.writeFileSync(path.join(copy.src, CONSOLE), listConsole(loop));
+    return fn(copy);
+  }, { configPatch: { routeTables: entry ? [{ ...LIST_ENTRY, ...entry }] : [] } });
+}
+
+const listItems = (src: string) => [
+  ['/admin_console/about/license#License', 'admin/License.js', { key: '0', file: TABLE, line: lineIn(src, TABLE, '  licenseRoute,') }],
+  ['/admin_console/users#Users', 'admin/Users.js', { key: '1', file: TABLE, line: lineIn(src, TABLE, "  { url: 'users'") }],
+  ['/admin_console/users/:user_id#UserDetail', 'admin/UserDetail.js', { key: '2', file: TABLE, line: lineIn(src, TABLE, '  { url: `users/:user_id') }],
+];
+const itemScreens = (map: ScreenMap) => tableScreens(map).map((s) => [s.id, s.componentFile, s.tableItem]);
+
+test('a table that is a top-level list gives a screen for each object in it, named by its place in the list, and a number in items picks one place', async () => {
+  await withListTable(ITEM_ROUTE, async ({ configFile, src, cli }) => {
+    assert.deepEqual(itemScreens(await build(configFile)), listItems(src));
+    assert.deepEqual(routeLines(cli('extract')), []);
+  });
+  await withListTable(ITEM_ROUTE, async ({ configFile, src }) => {
+    assert.deepEqual(itemScreens(await build(configFile)), [listItems(src)[1]]);
+  }, { items: '1' });
+});
+
+test('a list nested in an object table is walked by the same items path', async () => {
+  const edits: [string, string, string][] = [
+    [TABLE, '    subsections: {\n      list: {', '    subsections: [\n      {'],
+    [TABLE, '      detail: {', '      {'],
+    [TABLE, '      site: {', '      {'],
+    [TABLE, '      plain: {', '      {'],
+    [TABLE, '      },\n    },\n  },\n};', '      },\n    ],\n  },\n};'],
+  ];
+  await withTableCopy(async ({ configFile }) => {
+    assert.deepEqual(tableScreens(await build(configFile)).map((s) => [s.id, s.tableItem!.key]), [
+      ['/admin_console/about/license#License', 'about.subsections.license'],
+      ['/admin_console/users#Users', 'users.subsections.0'],
+      ['/admin_console/users/:user_id#UserDetail', 'users.subsections.1'],
+      ['/admin_console/users/site#BrandImage', 'users.subsections.2'],
+      ['/admin_console/users/plain#SchemaSettings', 'users.subsections.3'],
+    ]);
+  }, { edits });
+});
+
+test('an entry of a list table that is not an object written in the source gives no screen and a route not read line naming its place', async () => {
+  await withListTable(ITEM_ROUTE, async ({ configFile, src, cli }) => {
+    assert.deepEqual(itemScreens(await build(configFile)), listItems(src));
+    const route = `${CONSOLE}:${lineIn(src, CONSOLE, '<Route key={route.url}')}`;
+    assert.deepEqual(routeLines(cli('extract')), [
+      `  route not read ← ${route}: table item 3 at ${TABLE}:${lineIn(src, TABLE, 'export const withCall')} is not an object written in the source`,
+    ]);
+  }, { table: { file: TABLE, const: 'withCall' } });
+});
+
+test('an item spread in from a list in another file is placed at its own file and line, and a list spread twice gives its items twice', async () => {
+  const detail = 'admin/detail.js';
+  const table = LIST_TABLE
+    .replace("import UserDetail from './UserDetail';\nimport { ID_PATTERN } from './patterns';\n", "import { detailRoutes } from './detail';\n")
+    .replace(/const detailRoutes = \[\n.*\n\];\n/, '')
+    .replace('export const withCall', 'export const twice = [...detailRoutes, ...adminRoutes];\n\nexport const withCall');
+  const detailSource = "import UserDetail from './UserDetail';\nimport { ID_PATTERN } from './patterns';\n\nexport const detailRoutes = [\n  { url: `users/:user_id(${ID_PATTERN})`, component: UserDetail },\n];\n";
+  for (const entry of [{}, { table: { file: TABLE, const: 'twice' } }]) {
+    await withListTable(ITEM_ROUTE, async ({ configFile, src, cli }) => {
+      fs.writeFileSync(path.join(src, detail), detailSource);
+      const atDetail = { file: detail, line: lineIn(src, detail, '  { url: `users/:user_id') };
+      const keys = tableScreens(await build(configFile)).map((s) => s.tableItem);
+      if (!Object.keys(entry).length) {
+        assert.deepEqual(keys, [
+          { key: '0', file: TABLE, line: lineIn(src, TABLE, '  licenseRoute,') },
+          { key: '1', file: TABLE, line: lineIn(src, TABLE, "  { url: 'users'") },
+          { key: '2', ...atDetail },
+        ]);
+        assert.deepEqual(routeLines(cli('extract')), []);
+      } else {
+        assert.deepEqual(keys.map((k) => k!.key), ['0', '1', '2', '3']);
+        assert.ok(!routeLines(cli('extract')).some((l) => l.includes('is not an object')));
+      }
+    }, entry, table);
+  }
+});
+
+test('a list of plain values inside an object table gives no item and no line', async () => {
+  await withTableCopy(async ({ configFile, cli }) => {
+    assert.ok(!tableScreens(await build(configFile)).some((s) => s.tableItem!.key.startsWith('tabs.')));
+    assert.ok(!routeLines(cli('extract')).some((l) => l.includes('tabs.subsections')));
+  }, { edits: [[TABLE, '  users: {\n', "  tabs: {\n    sectionTitle: 'Tabs',\n    subsections: ['about', 'users'],\n  },\n  users: {\n"]] });
+});
+
+test('in loops nested in loops, a route that draws a field of the outer item does not look for that field in the inner item', async () => {
+  const table = `import License from './License';
+import Users from './Users';
+
+export const adminRoutes = [{ layout: Users, pages: [{ url: 'about/license', component: License }] }];
+`;
+  const loop = '(section) => section.pages.map((page) => <Route key={page.url} path={`${props.match.url}/${page.url}`} component={section.layout} />)';
+  await withListTable(loop, async ({ configFile, cli }) => {
+    assert.deepEqual(tableScreens(await build(configFile)).map((s) => [s.path, s.tableItem!.key]), [['/admin_console/about/license', '0.pages.0']]);
+    assert.deepEqual(routeLines(cli('extract')), []);
+  }, { items: '*.pages.*' }, table);
+});
+
+test('a loop route that draws the item\'s own component, by component, element, render or children, through a parameter taken apart or read as route.component, gives a screen for each table item', async () => {
+  const urlPath = '`${props.match.url}/${url}`';
+  const memberPath = '`${props.match.url}/${route.url}`';
+  const loops = [
+    `({ url, component }) => <Route key={url} path={${urlPath}} component={component} />`,
+    `({ url: address, component: Page }) => <Route key={address} path={\`\${props.match.url}/\${address}\`} element={<Page />} />`,
+    `({ url, component: Component }) => <Route key={url} path={${urlPath}} render={(routeProps) => <Component {...routeProps} />} />`,
+    `(route) => <Route key={route.url} path={${memberPath}} render={(routeProps) => <route.component {...routeProps} />} />`,
+    `({ url, component: Component }) => <Route key={url} path={${urlPath}}><Component /></Route>`,
+    `(route) => <Route key={route.url} path={${memberPath}}><route.component /></Route>`,
+  ];
+  for (const loop of loops) {
+    await withListTable(loop, async ({ configFile, src, cli }) => {
+      assert.deepEqual(itemScreens(await build(configFile)), listItems(src), loop);
+      assert.deepEqual(routeLines(cli('extract')), [], loop);
+    });
+  }
+});
+
+test('a loop route that draws the item\'s own component takes it from the field it draws, and an item without that field gives a route not read line instead of a screen', async () => {
+  const table = LIST_TABLE.replaceAll('component:', 'page:').replace('  ...detailRoutes,\n];', "  ...detailRoutes,\n  { url: 'old', redirect: 'users', component: Users },\n];");
+  const urlPath = '`${props.match.url}/${url}`';
+  const loops = [
+    '(route) => <Route key={route.url} path={`${props.match.url}/${route.url}`} element={<route.page />} />',
+    `({ url, page: Page }) => <Route key={url} path={${urlPath}} element={<Page />} />`,
+    `({ url, page }) => <Route key={url} path={${urlPath}} component={page} />`,
+    `({ url, page: Component }) => <Route key={url} path={${urlPath}} render={(routeProps) => <Component {...routeProps} />} />`,
+    `({ url, page: Component }) => <Route key={url} path={${urlPath}}><Component /></Route>`,
+  ];
+  for (const loop of loops) {
+    await withListTable(loop, async ({ configFile, src, cli }) => {
+      assert.deepEqual(itemScreens(await build(configFile)), listItems(src), loop);
+      assert.deepEqual(routeLines(cli('extract')), [
+        `  route not read ← ${CONSOLE}:${lineIn(src, CONSOLE, '<Route key=')}: table item 3 at ${TABLE}:${lineIn(src, TABLE, "{ url: 'old'")} has no page`,
+      ], loop);
+    }, {}, table);
+  }
+});
+
+test('without a table entry, a loop route that draws the item\'s own component in render or as its child gives no screen and prints no line', async () => {
+  const urlPath = '`${props.match.url}/${url}`';
+  const memberPath = '`${props.match.url}/${route.url}`';
+  const loops = [
+    `({ url, component: Component }) => <Route key={url} path={${urlPath}} render={(routeProps) => <Component {...routeProps} />} />`,
+    `(route) => <Route key={route.url} path={${memberPath}} render={(routeProps) => <route.component {...routeProps} />} />`,
+    `({ url, component: Component }) => <Route key={url} path={${urlPath}}><Component /></Route>`,
+    `(route) => <Route key={route.url} path={${memberPath}}><route.component /></Route>`,
+  ];
+  for (const loop of loops) {
+    await withListTable(loop, async ({ configFile, cli }) => {
+      assert.deepEqual(itemScreens(await build(configFile)), [], loop);
+      assert.deepEqual(routeLines(cli('extract')), [], loop);
+    }, null);
+  }
+});
+
+test('a loop route whose path reads the item but whose screen is not read stops the run with the entry and that route, not with a path it did read', async () => {
+  const urlPath = '`${props.match.url}/${url}`';
+  const loops = [
+    `({ url }) => <Route key={url} path={${urlPath}} render={(routeProps) => <routeProps.page />} />`,
+    `({ url, ...rest }) => <Route key={url} path={${urlPath}} {...rest} />`,
+  ];
+  for (const loop of loops) {
+    await withListTable(loop, ({ configFile, src }) => {
+      const line = lineIn(src, CONSOLE, '<Route key={url}');
+      assert.match(failure(configFile), new RegExp(`routeTables\\[0\\]: the route at admin/AdminConsole\\.js:${line} is made for each item of a list and its path reads the item's url, but the screen it draws is not read`), loop);
+    });
+  }
+});
+
 test('routeTables must be a list of entries naming a listed route file, a table and the path to its items', () => {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
@@ -312,7 +539,7 @@ test('routeTables must be a list of entries naming a listed route file, a table 
 
 test('a table entry that finds no table, no item or no route made for each item, or two such routes, stops the run with the entry and what it found', async () => {
   await withTableCopy(({ configFile }) => {
-    assert.match(failure(configFile), /routeTables\[0\]: admin\/definition\.js has no top-level const Missing holding an object/);
+    assert.match(failure(configFile), /routeTables\[0\]: admin\/definition\.js has no top-level const Missing holding an object or a list/);
   }, { configPatch: { routeTables: [{ ...ROUTE_TABLE, table: { file: TABLE, const: 'Missing' } }] } });
   await withTableCopy(({ configFile }) => {
     assert.match(failure(configFile), /routeTables\[0\]: items "\*\.pages\.\*" finds no item with a url in AdminDefinition, which the route at admin\/AdminConsole\.js:\d+ reads/);
@@ -333,5 +560,9 @@ test('the usage guide, the agent skill and the decision record describe routeTab
   assert.match(read('../README.md'), /`routeTables` — route files that make one route for each item of a table[\s\S]*The items give screens/);
   assert.match(read('../README.md'), /For a screen made from a table item, `, table item <key> at <file>:<line>` follows\./);
   assert.match(read('../skills/duru/SKILL.md'), /add a\s+`routeTables` entry to the config yourself as you add the other config items[\s\S]*tell the user which screens appeared/);
+  assert.match(read('../README.md'), /`routeTables`[\s\S]*an\s+object or a list[\s\S]*In a\s+list the key is the item's place, counted from 0/);
+  assert.match(read('../README.md'), /or with `is not an object written in the\s+source` for a list item/);
+  assert.match(read('../skills/duru/SKILL.md'), /`routes\.map\(\(\{ path, component \}\) => …\)`[\s\S]*`"items": "\*"` for a list of routes/);
+  assert.match(read('../docs/decisions.md'), /\*\*A route table may be a list, a route made for each item may take the item apart in its loop function, and a listed\nroute file with no route element is named in the summary\.\*\*/);
   assert.match(read('../docs/decisions.md'), /\*\*A route made for each item of a table gives screens for its items when the config names the table in `routeTables`,\nand a table file of its own is in no screen's sources\.\*\*/);
 });

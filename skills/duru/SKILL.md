@@ -64,8 +64,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `redirectElements` in the config, default `Redirect` and `Navigate`; a config that lists them uses only the
   names listed. A route file that another screen draws, whose paths start with the address that screen's route
   matched (`${match.url}/…`, `useRouteMatch().path`), gets that screen's path in front; a nested route written with
-  a relative path shows on the map with that relative path. A route made for each item of a table, in a route file
-  the config's `routeTables` names, gives screens for its items; the conditions written in an item (such as
+  a relative path shows on the map with that relative path. A route made for each item of a table, an object or a
+  list, in a route file the config's `routeTables` names, gives screens for its items; the conditions written in an item (such as
   `isHidden`) are not read, so such a screen shows none of them.
 - API code whose methods find their address in a table, or get a prefix when the request is sent, is read through
   `calledApiModules` and `requestFunction`: duru calls each method with fake values and records the request it hands
@@ -153,15 +153,23 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - A `route not read ← <route file>:<line>: <reason>` line names a route that draws a screen missing from the map,
   with where it is written and why duru could not read it. There is no ID for that screen, so no test can be tagged
   with it; tell the user which routes these are and why each one was not read. A line whose reason starts with `made for
-  each item of a list` stands for one screen per item, built from a list. When that list comes from a table written
-  in the source and the route's path reads one field of the list item once, as `item.url` does in
-  `${props.match.url}/${item.url}`, find the file and top-level const that hold it and the keys from that const to each item, add a
-  `routeTables` entry to the config yourself as you add the other config items, such as
+  each item of a list` stands for one screen per item, built from a list. So does a `route path not read` line that
+  stopped at a field of the item of a `.map(…)`, with its `{?}` screen. When that list comes from a table written
+  in the source, an object or a list held in a top-level const, and the route's path reads one field of the list
+  item once, as `item.url` does in `${props.match.url}/${item.url}` or `path` does in
+  `routes.map(({ path, component }) => …)`, find the file and top-level const that hold it and the keys from that
+  const to each item, add a `routeTables` entry to the config yourself as you add the other config items, such as
   `{ "route": "<the route file>", "table": { "file": "<table file>", "const": "<const>" }, "items": "*.subsections.*" }`
-  with `*` for every key at that place, run `duru rebuild` again, and tell the user which screens appeared. A line
-  whose reason starts with `table item <key> at <file>:<line>` names an item of such a table that gives no screen,
-  because it has no value for the field the route reads or that value could not be read; tell the user which items
-  these are.
+  with `*` for every key at that place (`"items": "*"` for a list of routes), run `duru rebuild` again, and tell the
+  user which screens appeared. A line whose reason starts with `table item <key> at <file>:<line>` names an item of
+  such a table that gives no screen, because it has no value for the field the route reads, that value could not be
+  read, or it is not an object written in the source; a list item's key is its place in the list. Tell the user
+  which items these are.
+- A `routesFile <file> has no <element> element, so it gives no screens` line names a file listed in `routesFile`
+  that draws no route, often one that only keeps the list of routes another file draws. Find the file that draws
+  those routes (the one that imports the list and makes a route for each item), put it in `routesFile` yourself, and
+  when it draws them from a list kept in the named file, add a `routeTables` entry for it as above; run `duru
+  rebuild` again and tell the user which screens appeared.
 - A `history is not set; <file> calls createBrowserHistory, …` line names the file where the app makes its own
   history, whose `push` and `replace` calls are then not links on the map, so screens reached only that way show as
   entry screens. Find what that file exports for the rest of the app to move with, either the history or a
