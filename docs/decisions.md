@@ -171,6 +171,33 @@ The limits: calls from other files are not read, so the whole 2.0.0 side menu (k
 with different keys from several places gives every key on every screen that reaches its line, not the one each
 screen passes; and the `.filter` test is not a condition, so a link shows the most any role can see.
 
+**A route constant written as the computed key of an object (`[ROUTES.HOME]: …`) is not a link when the object is
+only read by key: a const read nowhere but as `table[key]`, in its file and in every file that imports it.**
+Such a key names the route a value belongs to, as in a table of what to preload or which menu to light up on each
+route; the screen does not go there. The value beside it is still read, and a key in a destructuring is a lookup too.
+Any other use of the object, or of the const holding it, keeps its keys as links as before: walked with
+`Object.keys`, `Object.entries` or `for…in`, handed to a function, wrapped in a call, exported under another name.
+For an exported const, every file that imports the const with `import` must read it only as `table[key]`, by name
+or as `namespace.table[key]`; a file that only exports other names from its file again does not stop the keys from
+being dropped, and a file that exports the const again, exports all of its file with `export *`, imports its file
+with `import()` or uses the namespace in any other way keeps the keys as links.
+Only the files the extract has read by the time the table's keys are first weighed are looked at, so a file read
+later is not seen, and `require` is not counted as an import.
+Alternatives compared:
+- Keeping the key as a link, as before: every screen reaching such a table gets one link per row, to routes it
+  never moves to.
+- Dropping the whole table: a value that is a route constant, such as a parent route to go back to, is a move.
+- Skipping every computed key: a menu written as an object keyed by route and drawn from its keys would lose all its
+  links, with no `{?}` left in their place.
+- Skipping every computed key unless its object is walked by a known shape: each shape missed (a walk in another
+  file, through a helper, inside `useMemo`) would lose links main gives.
+Reason: a key is how code finds an entry, and only the value is what the entry gives.
+Measured on the seven baseline configs: into-sign 2.0.0 loses the 130 link rows of its preload table at
+`lazyChunkUtils.ts:100-104`, and the template editing screen, now reached only by links under a role, opens only
+under that role; SigNoz loses 188 rows from `SideNav/config.ts`, a table of the query parameters kept on each route,
+and from `SaveView/constants.ts:15-18`, and four screens only those rows reached become entry screens (3 → 7). The
+maps of appsmith, into-sign 1.5.0, mattermost and outline are unchanged.
+
 **TypeScript files a `constants` module runs are turned into JavaScript by Node's transform mode, and the line of
 a failure is put back on the file as written through the source map that comes with it.**
 Alternatives compared:
