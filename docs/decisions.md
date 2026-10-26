@@ -1040,8 +1040,9 @@ not read. `XMLHttpRequest`, `sendBeacon`, other request libraries and a `fetch` 
 neither read nor listed. The address is as the source writes it: a base address the request object gets in its
 own file is not in front (`/documents.list` on outline, where the server has `/api/documents.list`). An address
 on another host is a call only when the host is `app.server`, and is listed as not read otherwise: taking the
-host off every such address, as the API files' requests have it, made a request to another service a dead call
-on its screen, so an app that writes its own server's host into its requests needs `app.server` to see them. A
+host off every such address made a request to another service a dead call on its screen, so an app that writes
+its own server's host into its requests needs `app.server` to see them. The API files' requests later took the
+same rule. A
 value joined to a word of a path (`/api/users${query}`, `/api/v${n}/users`) leaves the address not read, since
 the word with the value after it matched whatever path of that length the server list had first. An API function written in
 the same file as the request object it sends through is behind the request function and left out. An options
@@ -4246,6 +4247,36 @@ would otherwise have kept the line from showing. So a screen that calls an outsi
 as an analytics or a sign-in host, keeps the line from showing in an app whose own client duru does not know. A map
 with no screens prints no such line, since the cause there is the routes. Measured on main c4b1f99 against the
 branch: mattermost and SigNoz print the line; into-sign 1.5.0 and 2.0.0, outline and appsmith do not.
+
+**An address API code sends to a host other than the page or `app.server` keeps its host and is not read, as in a
+screen source, and the spaces and line breaks a browser drops around an address are dropped before it is judged.**
+Asked for in #448 (2026-10-26). On SigNoz the recorded API code took the host off
+`https://api.github.com/repos/signoz/signoz/releases/latest`, which became the call
+`GET:/repos/signoz/signoz/releases/latest`, shaped like a call of the app's own server. A template literal that starts
+with a line break kept a whole address relative, so `/` went in front of it and the spaces in the call ID became `_`
+(`GET:/_https://cms.signoz.cloud/…`). The requests `calledApiModules` records and the addresses of `apiModules` now
+follow the rule the requests of screen sources had: an address on another host stays whole, its server match is
+`unresolved` with `other-host`, and it is in no call. The page duru stands in while it runs API code and reads constants
+has the origin `http://localhost`, so an address built on the current page keeps its path, in API code
+(`new URL(path, window.location.origin)` on into-sign 2.0.0) and in a screen source that puts a constant holding
+`window.location.origin` in front of a request, which was `other-host` before; so does one on the host of
+`app.server`. The spaces and control characters dropped are those a browser drops when it reads an address: around it,
+and tabs and line breaks inside it.
+Alternatives compared:
+- A call for each address on another host, with the host in its ID (`GET:https://api.github.com/…`) and a server match
+  of its own that is never dead: a test could be tied to such a call, but everything that reads a server match (the
+  summary, the review page, the tasks, the flow) would need the new kind, and the requests of screen sources had
+  already been kept out of the calls.
+- Keeping the host off as before: the call reads as one of the app's server, and against a server list it is a dead
+  call of every screen that reaches it.
+Known limits: an address the source writes as `http://localhost/…`, with no port, is taken for the page's own. An app
+whose API code writes its own server's host and whose config has no `app.server` now has those requests not read. A
+host with a piece of unknown value in it, or a port that is one, counts as another host in API code, where a screen
+source gives `unknown-piece`.
+Measured on main 9b09963 against the branch: on SigNoz with the API code run (`calledApiModules` and axios as
+`requestFunction`) the two calls above leave the map (348 calls to 346) and the summary counts them as `unresolved`;
+into-sign 1.5.0 and 2.0.0, mattermost, outline, appsmith and SigNoz without its API code have the same map, and the nine
+download addresses into-sign 2.0.0 builds on the current page keep their calls.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

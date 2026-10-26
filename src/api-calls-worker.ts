@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import inspector from 'node:inspector';
 import { parentPort, workerData } from 'node:worker_threads';
-import { placeUnknown, sentAddress, staysInBrowser, VERBS, WITH_DATA, withBase } from './sent-address.ts';
+import { cleanAddress, PAGE_ORIGIN, placeUnknown, sentAddress, staysInBrowser, VERBS, WITH_DATA, withBase } from './sent-address.ts';
 
 declare global {
   var __duruNothing: () => void;
@@ -131,12 +131,13 @@ standIns.add(recordedFetch);
 
 const FAKES = [mark, String(markNumber)];
 function navigate(address: unknown) {
-  const url = text(address);
+  const given = text(address);
+  const url = given === null ? null : cleanAddress(given);
   if (url && !staysInBrowser(url) && !placeUnknown(url, FAKES)) keep('GET', sentAddress(url));
 }
 // 현재 페이지 URL 은 알 수 없어 가짜 값으로 둔다.
 const location = Object.defineProperty(
-  { protocol: 'http:', host: 'localhost', origin: 'http://localhost', pathname: mark, search: mark, hash: mark, toString: () => mark, assign: navigate, replace: navigate },
+  { protocol: new URL(PAGE_ORIGIN).protocol, host: new URL(PAGE_ORIGIN).host, origin: PAGE_ORIGIN, pathname: mark, search: mark, hash: mark, toString: () => mark, assign: navigate, replace: navigate },
   'href',
   { get: () => mark, set: navigate, enumerable: true },
 );

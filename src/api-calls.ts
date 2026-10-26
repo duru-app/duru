@@ -9,7 +9,7 @@ import { moduleCopier } from './constants.ts';
 import { parseSource } from './parse.ts';
 import { outsideSource } from './resolve.ts';
 import type { ImportResolver } from './resolve.ts';
-import { SCHEME } from './sent-address.ts';
+import { cleanAddress, pathOnSite } from './sent-address.ts';
 
 type NameNode = { name?: string; value?: string };
 type Failure = { message: string; stack: string };
@@ -92,18 +92,10 @@ function classesIn(file: string) {
   return found;
 }
 
-function requestOf({ method, url }: { method: string | null; url: string | null }) {
+function requestOf({ method, url }: { method: string | null; url: string | null }, server: string | null) {
   const verb = method?.toUpperCase();
-  let address = url;
-  if (address !== null && SCHEME.test(address)) {
-    try {
-      const u = new URL(address);
-      address = u.pathname + u.search;
-    } catch {
-      // URL 로 읽히지 않으면 받은 그대로 둔다.
-    }
-  }
-  return { method: verb && /^[A-Z]+$/.test(verb) ? verb : null, url: address === null ? null : unmarked(address) };
+  const address = url === null ? null : cleanAddress(url);
+  return { method: verb && /^[A-Z]+$/.test(verb) ? verb : null, url: address === null ? null : unmarked(pathOnSite(address, server) ?? address) };
 }
 
 function runWorker(workerData: WorkerData, onMessage: (m: ReportedMessage) => void) {
@@ -169,6 +161,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
     },
   });
   const rel = (f: string) => path.relative(config.srcRoot, f);
+  const server: string | null = config.app?.server ?? null;
   const failedModules: { file: string; error: string }[] = [];
   const modules: { file: string; url: string }[] = [];
   try {
@@ -256,7 +249,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       if (c.member !== null && hiddenOf(`${c.file}\n${c.exportName}`).has(c.member)) continue;
       const line = place?.line ?? null;
       const seen = new Set<string>();
-      const endpoints: ApiEndpoint[] = c.requests.map(requestOf).filter((r) => {
+      const endpoints: ApiEndpoint[] = c.requests.map((r) => requestOf(r, server)).filter((r) => {
         const k = `${r.method} ${r.url}`;
         if (seen.has(k)) return false;
         seen.add(k);
@@ -268,7 +261,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
         endpoints,
         ...(c.error && { error: unmarked(firstLine(copier.rename(c.error.message))) }),
       };
-      const sentBody = new Set(c.requests.filter((r) => r.body).map(requestOf).map((r) => `${r.method} ${r.url}`));
+      const sentBody = new Set(c.requests.filter((r) => r.body).map((r) => requestOf(r, server)).map((r) => `${r.method} ${r.url}`));
       const withBody = endpoints.filter((e) => e.method !== 'GET' && sentBody.has(`${e.method} ${e.url}`));
       if (line && withBody.length) bodyMethods.push({ key, file: place!.file, line, shownFile: rel(place!.file), endpoints: withBody });
     }
