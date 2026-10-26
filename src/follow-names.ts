@@ -443,7 +443,9 @@ export function nameFollower<Site>({ parse, resolve, sitesOf, members = null }: 
 
   // starts 의 name 이 null 이면 파일 전체에서, span 이 있으면 그 [시작, 끝) 안의 코드에서 시작한다.
   // cut(file, pos) 가 참인 위치에 적힌 이름은 추적하지 않는다.
-  function reach(starts: ({ file: string; name: string | null } | { file: string; span: Span })[], canEnter: CanEnter, { missed, loaded = () => true, cut }: { missed?: Set<string>; loaded?: (file: string) => boolean; cut?: (file: string, pos: number) => boolean } = {}) {
+  function reach<S = Site>(starts: ({ file: string; name: string | null } | { file: string; span: Span })[], canEnter: CanEnter, opts: { missed?: Set<string>; loaded?: (file: string) => boolean; cut?: (file: string, pos: number) => boolean; sitesOf?: (file: string) => { start: number; site: S }[] } = {}) {
+    const { missed, loaded = () => true, cut } = opts;
+    const sitesIn = (opts.sitesOf ?? sitesOf) as (file: string) => { start: number; site: S }[];
     const seen = new Set<string>();
     const whole = new Set<string | null>();
     const visited = new Map<string, Set<number>>();
@@ -544,13 +546,13 @@ export function nameFollower<Site>({ parse, resolve, sitesOf, members = null }: 
         else stack.push({ whole: item.file });
       }
     }
-    const sites = new Set<Site>();
+    const sites = new Set<S>();
     for (const [file, regions] of visited) {
       const a = analysis(file)!;
       const runs = loaded(file);
       const always = new Set(runs ? a.moduleLevel : []);
       const inSpan = (start: number) => (spans.get(file) ?? []).some(([from, to]) => start >= from && start < to);
-      for (const { start, site } of sitesOf(file)) {
+      for (const { start, site } of sitesIn(file)) {
         const at = a.regionAt(start);
         if (whole.has(file) || (at === null && runs) || always.has(at!) || regions.has(at!) || inSpan(start)) sites.add(site);
       }
@@ -602,5 +604,5 @@ export function nameFollower<Site>({ parse, resolve, sitesOf, members = null }: 
     return first && found.every((o) => o.file === first.file && o.name === first.name) ? first : null;
   }
 
-  return { reach, origin, declaration };
+  return { reach, origin, declaration, readable: (file: string | null) => !!file && readable(file) !== null };
 }

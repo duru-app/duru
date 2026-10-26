@@ -57,10 +57,8 @@ const effectOf = (callee: NodePath) => {
 
 const initOf = (binding: Binding | undefined) => (binding?.path.isVariableDeclarator() ? (binding.path.get('init') as NodePath) : null);
 
-// 미들웨어를 만든 파일과 run 하는 파일이 다를 수 있어 `.run(` 이 있는 파일도 포함한다.
-export function sagaFiles(srcRoot: string) {
+export function sourceFiles(srcRoot: string) {
   const found: string[] = [];
-  let named = false;
   const walk = (dir: string) => {
     let entries: fs.Dirent[];
     try {
@@ -72,15 +70,22 @@ export function sagaFiles(srcRoot: string) {
       if (e.name.startsWith('.') || e.name === 'node_modules') continue;
       const full = path.join(dir, e.name);
       if (e.isDirectory()) walk(full);
-      else if (e.isFile() && SCRIPT.test(e.name) && !e.name.endsWith('.d.ts') && !TEST_FILE.test(path.relative(srcRoot, full))) {
-        const text = fs.readFileSync(full, 'utf8');
-        named ||= text.includes('redux-saga');
-        if (text.includes('redux-saga') || text.includes('.run(')) found.push(full);
-      }
+      else if (e.isFile() && SCRIPT.test(e.name) && !e.name.endsWith('.d.ts') && !TEST_FILE.test(path.relative(srcRoot, full))) found.push(full);
     }
   };
   walk(srcRoot);
-  return named ? found.sort() : [];
+  return found.sort();
+}
+
+// 미들웨어를 만든 파일과 run 하는 파일이 다를 수 있어 `.run(` 이 있는 파일도 포함한다.
+export function sagaFiles(sources: string[]) {
+  let named = false;
+  const found = sources.filter((file) => {
+    const text = fs.readFileSync(file, 'utf8');
+    named ||= text.includes('redux-saga');
+    return text.includes('redux-saga') || text.includes('.run(');
+  });
+  return named ? found : [];
 }
 
 export function sagaReader({ parse, resolve, declaration }: Reading) {
