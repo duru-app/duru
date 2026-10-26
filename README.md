@@ -471,6 +471,11 @@ listing the places whose value the source does not show in full.
   with its `reason`). A `not-written` line inside a function of the app that its other requests go through means
   the address comes from the callers: name that function in `requestFunction`. An `other-host` line has the
   address in full after `only`: when that host is the app's server, give it in `app.server`.
+- `no request address was read from the screen sources; name the function or object the app sends its requests through in requestFunction and the API files that call it in calledApiModules, or files of functions that build the addresses in apiModules`
+  — printed when there are screens, none of their requests has an address duru read (one on another host counts as
+  read), and the config has none of `apiModules`, `calledApiModules` and `requestFunction`. The app may send its
+  requests through its own function or object, such as a client class, which duru does not know; name it as
+  described under those keys.
 - `redux-saga runs from <file>:<line> | watchers N | requests of sagas on screens N | links of sagas on screens N` —
   where the app runs its sagas, how many pairs of an action type and the saga code waiting for it those runs
   reach, and how many requests and links written in sagas come to a screen through an action it dispatches
