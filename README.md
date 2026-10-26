@@ -438,7 +438,7 @@ it, and the on/off `options` of its request body. The server match is one of:
     another file whose value duru could not read in the file that declares it
   - `unknown-piece` — a piece whose value is not known stands in front of the address or inside its text, such as
     a base address that could not be read, or the current page a relative address hangs on
-  - `other-host` — the address is on a host other than `app.server`, or on any host when `app.server` is not given
+  - `other-host` — the address is on a host other than that of the current page and of `app.server`
   - `no-path` — the address has no path
 - `unchecked` — there is no server endpoint list (`serverNotCompared: true` on the map). Call IDs then use the
   client's URL with `{0}`, `{1}` for path variables, and may change once a server list is added.
