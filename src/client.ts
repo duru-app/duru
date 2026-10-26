@@ -1638,19 +1638,22 @@ export async function extractClient(config: any) {
     });
   }
 
+  // 마지막에 적힌 field 뒤에 읽지 못한 펼치기나 계산된 키가 있으면 값을 모른다.
   function itemExactValue(item: NodePath<ObjectExpression>, field: string) {
-    if (unreadKeys(item)) return null;
-    const written = propertyValue(item, field);
-    const value = written ? evaluate(written) : false;
+    const keys = keysInOrder(item);
+    const at = keys.findLastIndex((prop) => prop !== null && keyName(prop.node) === field);
+    if (keys.slice(at + 1).includes(null)) return null;
+    const value = at < 0 ? false : evaluate(keys[at]!.get('value'));
     return typeof value === 'boolean' ? value : null;
   }
 
-  function unreadKeys(object: NodePath<ObjectExpression>, seen = new Set<Node>()): boolean {
-    return object.get('properties').some((prop) => {
-      if (prop.isObjectProperty()) return prop.node.computed;
-      if (!prop.isSpreadElement()) return false;
+  function keysInOrder(object: NodePath<ObjectExpression>, seen = new Set<Node>()): (NodePath<ObjectProperty> | null)[] {
+    return object.get('properties').flatMap((prop) => {
+      if (prop.isObjectProperty()) return [prop.node.computed ? null : prop];
+      if (!prop.isSpreadElement()) return [];
       const spread = objectAt(prop.get('argument'));
-      return !spread || (!seen.has(spread.node) && unreadKeys(spread, seen.add(spread.node)));
+      if (!spread) return [null];
+      return seen.has(spread.node) ? [] : keysInOrder(spread, seen.add(spread.node));
     });
   }
 
@@ -2214,17 +2217,18 @@ export async function extractClient(config: any) {
       }
       if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file, base)) }];
       if (n.kind === 'redirect') return [{ kind: 'redirect', from: n.from, exact: n.exact, to: n.to }];
-      const byPath = new Map<string, { routePath: string | null; screens: number[] }>();
+      const byPath = new Map<string, { routePath: string | null; itemValue: boolean | null | undefined; screens: number[] }>();
       for (const i of n.screens.map((s) => indexOf.get(s)!)) {
-        const key = JSON.stringify([sourced[i].s.path, itemExact.get(extracted[i])]);
-        byPath.set(key, { routePath: sourced[i].s.path, screens: [...(byPath.get(key)?.screens ?? []), i] });
+        const itemValue = itemExact.get(extracted[i]);
+        const key = JSON.stringify([sourced[i].s.path, itemValue]);
+        if (!byPath.has(key)) byPath.set(key, { routePath: sourced[i].s.path, itemValue, screens: [] });
+        byPath.get(key)!.screens.push(i);
       }
-      if (!byPath.size) byPath.set('', { routePath: n.path, screens: [] });
-      return [...byPath.values()].map(({ routePath, screens }) => {
+      if (!byPath.size) byPath.set('', { routePath: n.path, itemValue: undefined, screens: [] });
+      return [...byPath.values()].map(({ routePath, itemValue, screens }) => {
         const entries = screens.length ? screens.flatMap((i) => sourced[i].s.componentFile ?? []) : n.entry ? [n.entry] : [];
         const full = routePath === null || routePath.startsWith('/') ? routePath : `${base}/${routePath}`.replace(/\/{2,}/g, '/');
         const inner = full === null ? base : full.endsWith('/*') ? full.slice(0, -2) : '';
-        const itemValue = screens.length ? itemExact.get(extracted[screens[0]]) : undefined;
         const fromItem = typeof itemValue === 'boolean';
         const node = { kind: 'route' as const, path: routePath, exact: fromItem ? itemValue : n.exact, exactUnread: fromItem ? false : n.exactUnread, screens, children: n.children.flatMap((c) => convert(c, file, inner)) };
         const held = heldFiles(entries, file);
