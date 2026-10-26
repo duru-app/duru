@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { extractClient, UNKNOWN } from './client.ts';
 import { clientPath, loadServerEndpoints, matchEndpoint } from './server.ts';
-import { linkTargets, screenAccess } from './access.ts';
+import { addressesUnderRoutes, linkTargets, screenAccess } from './access.ts';
 import { compare } from './config.ts';
 import { removeExcludedFields } from './body-type-exclusions.ts';
 import { codeHasher, codeState } from './code-state.ts';
@@ -128,6 +128,7 @@ export type ScreenMap = {
   settingsCallNotices?: Client['settingsCallNotices'];
   unresolvedAliasImports?: Client['unresolvedAliasImports'];
   madeHistories?: Client['madeHistories'];
+  addressesUnderRoutes?: ReturnType<typeof addressesUnderRoutes>;
   emptyRouteFiles?: Client['emptyRouteFiles'];
 } & ReturnType<typeof configuredCallLinks> & ReturnType<typeof configuredMoves>;
 
@@ -269,7 +270,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles } = await extractClient(config);
+  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -302,6 +303,8 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     s.access = access[i];
     s.links = s.links.map(({ reaches, ...l }: { reaches?: number[] }, j: number) => ({ ...l, targets: [...new Set(linkScreens[i][j].map((k) => mapped[k].id))], conditions: linkConditions[i][j] }));
   });
+
+  const underRoutes = addressesUnderRoutes(mapped, takingAddressesUnder);
 
   const placesById = new Map<string, { file: string; line: number }[]>();
   for (const s of mapped) placesById.set(s.id, [...(placesById.get(s.id) ?? []), s.tableItem ? { file: s.tableItem.file, line: s.tableItem.line } : { file: s.routeFile, line: s.line }]);
@@ -358,6 +361,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(config.settingsFunctions.length > 0 && { settingsCallNotices }),
     ...(config.tsconfig && { unresolvedAliasImports }),
     ...(madeHistories.length > 0 && { madeHistories }),
+    ...(underRoutes.length > 0 && { addressesUnderRoutes: underRoutes }),
     ...(emptyRouteFiles.length > 0 && { emptyRouteFiles }),
   };
 }

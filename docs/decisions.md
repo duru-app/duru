@@ -4312,6 +4312,29 @@ Measured on main 9b09963 against the branch: on SigNoz with the API code run (`c
 into-sign 1.5.0 and 2.0.0, mattermost, outline, appsmith and SigNoz without its API code have the same map, and the nine
 download addresses into-sign 2.0.0 builds on the current page keep their calls.
 
+**Links to addresses under a route that also takes the addresses under it, reaching no screen, are named in one
+line, and the page under that route is not read for the screens it picks by the address.**
+Driver's decision in #449 (2026-10-26). SigNoz draws its settings at one route, `/settings` with `exact: false`, and
+`SettingsPage` hands a list of tabs, each an address with a component, to `RouteTab`, which shows the tab whose
+address matches the browser's. No route element draws a tab, so the map has one `/settings#SettingsPage` holding
+the code of all 14 tabs, and the links to the 12 addresses under it reached no screen without a word. The tab list is
+built in a function that adds tabs by role, feature flag and plan, and passed through a hook into `RouteTab`.
+Compared:
+- Finding such a component in the source by itself: it judges from the source text which component picks a page by
+  the address, and every rule for that has cases that break it.
+- Naming the component in the config and reading its tabs: it gives the 12 addresses screens, but needs a new config
+  key and reading a list that a function builds by adding to it, for one measured app. A separate issue takes this up.
+- A line only: no screen and no new key, and the line names the route and the addresses, so a reader knows why tests
+  at those addresses have no screen of their own.
+A route takes the addresses under it when it is not `exact`; for a route made from a table item whose `exact` reads a
+field of the item, the item's value decides, and an `exact` not read gives no line. Under `Routes` a link to an address
+under a `/*` route already reaches that route's screen, so no line is needed there. Only addresses read in full count,
+and an address under two such routes goes with the one that draws it: the inner one, or in one `Switch` the first. A link to an address that a redirect sends
+elsewhere is counted too, as the map gives it no screen either.
+Measured on main 9b09963 against the branch: SigNoz (with its `routeTables` entry) prints one line for
+`/settings#SettingsPage` with 12 addresses; the maps and the output of into-sign 1.5.0 and 2.0.0, mattermost,
+outline and appsmith are the same apart from `generatedAt`.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

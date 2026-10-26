@@ -4373,3 +4373,160 @@ test('the decision record says a component wrapping a react-router link is a lin
   assert.match(decisions, /\*\*A component declared in the source that wraps a react-router link, or hands what it is given to one or to a history\s+move, is a link where it is used, read with the attributes written there\.\*\*/);
   assert.match(decisions, /The issue\s+\(#399\) said to find it with component-file\. Compared:/);
 });
+
+const UNDER_OPTION = `export default { ROUTE_PATH: {
+  HOME: '/home', ALERTS: '/alerts', NEW_ALERT: '/alerts/new', SETTINGS: '/settings', BILLING: '/settings/billing',
+  MEMBERS: '/settings/members', ROLES: '/settings/roles', ROLE: '/settings/roles/:roleId', ELSEWHERE: '/elsewhere',
+} };
+`;
+const UNDER_HOME = `import { Link } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home({ id }) {
+  return (
+    <nav>
+      <Link to={Option.ROUTE_PATH.SETTINGS}>settings</Link>
+      <Link to={Option.ROUTE_PATH.BILLING}>billing</Link>
+      <Link to={Option.ROUTE_PATH.MEMBERS}>members</Link>
+      <Link to={Option.ROUTE_PATH.ROLES}>roles</Link>
+      <Link to={Option.ROUTE_PATH.ROLE}>role</Link>
+      <Link to={Option.ROUTE_PATH.NEW_ALERT}>new alert</Link>
+      <Link to={\`\${Option.ROUTE_PATH.SETTINGS}/\${id}\`}>one</Link>
+      <Link to={Option.ROUTE_PATH.ELSEWHERE}>elsewhere</Link>
+    </nav>
+  );
+}
+`;
+const underRoutes = (routes: string) => `import { Route, Switch } from 'react-router-dom';
+import Home from './Home';
+import Settings from './Settings';
+import Billing from './Billing';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/home" component={Home} exact />
+${routes}
+    </Switch>
+  );
+}
+`;
+const underApp = (routes: string, files: Record<string, string> = {}, keys: Record<string, unknown> = {}) => withRouteConstant(
+  { 'Option.js': UNDER_OPTION, 'Home.js': UNDER_HOME, 'Settings.js': page('Settings'), 'Billing.js': page('Billing'), 'Alerts.js': page('Alerts'), 'Routes.js': underRoutes(routes), ...files },
+  keys,
+);
+const extractOut = (configFile: string) => {
+  const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout;
+};
+const underLines = (stdout: string) => stdout.split('\n').filter((l) => l.includes('reach no screen'));
+
+test('links to addresses under a route that also takes the addresses under it, reaching no screen, are named in one line with the route, the count and a few of them', async () => {
+  const routes = '      <Route path="/settings" component={Settings} />';
+  const configFile = underApp(routes);
+  const map = await build(configFile);
+  const line = lineOf(underRoutes(routes), '<Route path="/settings"');
+  assert.deepEqual(map.addressesUnderRoutes, [
+    { screen: '/settings#Settings', path: '/settings', file: 'Routes.js', line, addresses: ['/settings/billing', '/settings/members', '/settings/roles', '/settings/roles/:roleId'] },
+  ]);
+  assert.deepEqual(underLines(extractOut(configFile)), [
+    `  4 addresses under /settings reach no screen (/settings/billing, /settings/members, /settings/roles, …); the route at Routes.js:${line} that draws /settings#Settings also takes the addresses under it, so the page may pick what it shows by the address`,
+  ]);
+});
+
+test('no line is printed for a route that takes only its own address, or when the addresses under it are routes themselves, and only those that reach no screen are counted', async () => {
+  const exact = underApp('      <Route path="/settings" component={Settings} exact />');
+  assert.equal((await build(exact)).addressesUnderRoutes, undefined);
+  assert.deepEqual(underLines(extractOut(exact)), []);
+  const own = ['/settings/billing', '/settings/members', '/settings/roles', '/settings/roles/:roleId'].map((p) => `      <Route path="${p}" component={Billing} exact />`);
+  const routed = underApp([...own, '      <Route path="/settings" component={Settings} />'].join('\n'));
+  assert.equal((await build(routed)).addressesUnderRoutes, undefined);
+  assert.deepEqual(underLines(extractOut(routed)), []);
+  const partly = underApp([own[0], '      <Route path="/settings" component={Settings} />'].join('\n'));
+  assert.deepEqual((await build(partly)).addressesUnderRoutes?.map((r) => r.addresses), [['/settings/members', '/settings/roles', '/settings/roles/:roleId']]);
+  assert.match(underLines(extractOut(partly))[0], /^ {2}3 addresses under \/settings reach no screen \(\/settings\/members, \/settings\/roles, \/settings\/roles\/:roleId\); /);
+});
+
+test('a route made for each item of a route table takes the addresses under it when its item says exact is false, and not when the item says true', async () => {
+  const table = `import Home from './Home';
+import Settings from './Settings';
+import Alerts from './Alerts';
+import Option from './Option';
+
+const routes = [
+  { path: Option.ROUTE_PATH.HOME, component: Home, exact: true },
+  { path: Option.ROUTE_PATH.ALERTS, component: Alerts, exact: true },
+  { path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false },
+];
+
+export default routes;
+`;
+  const routesFile = `import { Route, Switch } from 'react-router-dom';
+import routes from './routes';
+
+export default function Routes() {
+  return (
+    <Switch>
+      {routes.map(({ path, component, exact }) => (
+        <Route key={path} exact={exact} path={path} component={component} />
+      ))}
+    </Switch>
+  );
+}
+`;
+  const configFile = underApp('', { 'Routes.js': routesFile, 'routes.js': table }, { routeTables: [{ route: 'Routes.js', table: { file: 'routes.js', const: 'routes' }, items: '*' }] });
+  const line = lineOf(routesFile, '<Route key={path}');
+  assert.deepEqual((await build(configFile)).addressesUnderRoutes, [
+    { screen: '/settings#Settings', path: '/settings', file: 'Routes.js', line, tableItem: { key: '2', file: 'routes.js', line: lineOf(table, 'SETTINGS') }, addresses: ['/settings/billing', '/settings/members', '/settings/roles', '/settings/roles/:roleId'] },
+  ]);
+  assert.match(underLines(extractOut(configFile))[0], new RegExp(`; the route at Routes\\.js:${line} \\(table item 2 at routes\\.js:${lineOf(table, 'SETTINGS')}\\) that draws /settings#Settings also takes`));
+  const tableKeys = { routeTables: [{ route: 'Routes.js', table: { file: 'routes.js', const: 'routes' }, items: '*' }] };
+  const defaulted = underApp('', { 'Routes.js': routesFile.replace('({ path, component, exact })', '({ path, component, exact = true })'), 'routes.js': table.replace(', exact: false }', ' }') }, tableKeys);
+  assert.equal((await build(defaulted)).addressesUnderRoutes, undefined);
+  for (const unread of ['{ exact: false, ...props.base, path: Option.ROUTE_PATH.SETTINGS, component: Settings }', '{ [props.key]: true, path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }']) {
+    const item = table.replace('{ path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }', unread);
+    assert.equal((await build(underApp('', { 'Routes.js': routesFile, 'routes.js': item }, tableKeys))).addressesUnderRoutes, undefined, unread);
+  }
+});
+
+test('a route whose exact is not read gives no line, nor does a route under Routes, whose /* route the links already reach, and an address under two such routes in a Switch goes with the first', async () => {
+  const unread = underApp('      <Route path="/settings" exact={props.exact} component={Settings} />');
+  assert.equal((await build(unread)).addressesUnderRoutes, undefined);
+  const v6 = (settings: string) => `import { Route, Routes } from 'react-router-dom';
+import Home from './Home';
+import Settings from './Settings';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/home" element={<Home />} />
+      <Route path="${settings}" element={<Settings />} />
+    </Routes>
+  );
+}
+`;
+  const splat = await build(underApp('', { 'Routes.js': v6('/settings/*') }));
+  assert.equal(splat.addressesUnderRoutes, undefined);
+  assert.deepEqual(splat.screens.find((s) => s.id === '/home#Home')!.links.find((l) => l.to === '/settings/billing')!.targets, ['/settings/*#Settings']);
+  assert.equal((await build(underApp('', { 'Routes.js': v6('/settings') }))).addressesUnderRoutes, undefined);
+  const home = `import { Link } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home() {
+  return <Link to={Option.ROUTE_PATH.ROLE_EDIT}>edit</Link>;
+}
+`;
+  const option = UNDER_OPTION.replace('ELSEWHERE:', "ROLE_EDIT: '/settings/roles/:roleId/edit', ELSEWHERE:");
+  const both = ['      <Route path="/settings/:organizationIdentifier" component={Billing} />', '      <Route path="/settings/roles/:roleId" component={Billing} />'];
+  for (const [order, screen] of [[both, '/settings/:organizationIdentifier#Billing'], [[...both].reverse(), '/settings/roles/:roleId#Billing']] as const) {
+    const app = underApp([...order, '      <Route path="/settings" component={Settings} />'].join('\n'), { 'Home.js': home, 'Option.js': option });
+    assert.deepEqual((await build(app)).addressesUnderRoutes?.map((r) => [r.screen, r.addresses]), [[screen, ['/settings/roles/:roleId/edit']]]);
+  }
+});
+
+test('the usage guide names the line for addresses under a route that reach no screen, and the decision record says why it is a line and not reading', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
+  assert.match(read('README.md'), /`N addresses under <path> reach no screen \(<addresses>\); the route at <file>:<line> that draws <screen ID> also\s+takes the addresses under it, so the page may pick what it shows by the address`/);
+  assert.match(read('docs/decisions.md'), /\*\*Links to addresses under a route that also takes the addresses under it, reaching no screen, are named in one\s+line, and the page under that route is not read for the screens it picks by the address\.\*\*/);
+});

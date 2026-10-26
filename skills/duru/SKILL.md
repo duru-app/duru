@@ -176,6 +176,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   function returning it (`getHistory`), add `"history": { "import": "<the import as the app writes it>", "name":
   "<that export>" }` to the config yourself, run `duru rebuild` again, and tell the user how the count of entry
   screens changed.
+- A `N addresses under <path> reach no screen (…)` line names a page that opens at addresses under its own and may
+  show something different at each, while the map has one screen for all of them. There is no config key for it;
+  tell the user which page and addresses these are, and that tests for them can only be tagged with that one screen.
 - A link whose `to` is `{?}` goes to an address duru could not read, such as one held in a variable; it goes to no
   screen, and a story step from that screen with no other link to the next screen is not judged. Do not take it as
   a missing link.
