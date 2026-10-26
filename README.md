@@ -1518,8 +1518,8 @@ the file.
 it has the agent rebuild the map, launch `review` and hand the address to the user, write the tests in the
 target project from the task list it receives when the review ends (for a story, one test tagged
 `@story:<story ID>` that goes through its screens), starting from the item's empty test for its runner with
-the title tags kept, and rebuild again to confirm they attach.
-duru itself never calls a model. Install it by copying or symlinking the folder into the project's
+the title tags kept, and rebuild again to confirm they attach. While the review runs, the agent keeps `duru wait`
+going and answers each comment the reviewer leaves, with `reply` or with a story candidate (`candidate`). Install it by copying or symlinking the folder into the project's
 `.claude/skills` folder, or into `~/.claude/skills` for every project:
 
 ```bash

@@ -7,7 +7,8 @@ description: Run a duru review of a web client's screens and write the tests the
 
 duru computes the screens of a web client, attaches test results to them, and serves a local page where a
 person marks the screens and the stories (a named order of screens a user goes through) that need more tests.
-duru never calls a model: the reviewer decides what is missing, and you write the tests.
+The reviewer decides what is missing and talks to you through comments on that page; you answer them and write the
+tests.
 
 A screen's own tests are the tests that carry its tag. duru also finds *importing* tests: a
 test linked to a screen only by the source files it imports, shown on the review page under 「불러오는 테스트」. They
