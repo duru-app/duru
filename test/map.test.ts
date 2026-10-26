@@ -1226,6 +1226,50 @@ test('a route table read with a written key or a constant key in the brackets ma
   assert.deepEqual(sideMenuLinks(await asSideMenu(body)), []);
 });
 
+test('a route constant written as a computed key of an object read only by its keys, or of a destructuring, makes no link, and the value beside it does', async () => {
+  const body = [
+    '  const parent = { [Option.ROUTE_PATH.ADMIN_REPORT]: Option.ROUTE_PATH.LAB, [Option.ROUTE_PATH.ADMIN_AUDIT]() {} };',
+    '  const { [Option.ROUTE_PATH.ADMIN_AUDIT]: t } = x;',
+    "  items.push({ title: 'a', href: parent[x] }, t);",
+  ].join('\n');
+  assert.deepEqual(sideMenuLinks(await asSideMenu(body)), [['/lab', 'components/SideMenu.js', 6, []]]);
+});
+
+test('a route constant written as a computed key of an object used other than by its keys is a link', async () => {
+  const uses = [
+    'Object.entries(nav).forEach(([to, title]) => items.push({ title, href: to }));',
+    'for (const to in nav) items.push({ title: to, href: to });',
+    'const walk = (m) => Object.keys(m).forEach((to) => items.push({ title: to, href: to }));\n  walk(nav);',
+  ];
+  for (const use of uses) {
+    const body = `  const nav = { [Option.ROUTE_PATH.ADMIN_REPORT]: 'Report' };\n  ${use}`;
+    assert.deepEqual(sideMenuLinks(await asSideMenu(body)), [['/admin/report', 'components/SideMenu.js', 6, []]], use);
+  }
+  const wrapped = "  const nav = Object.freeze({ [Option.ROUTE_PATH.LAB]: 1 });\n  items.push({ title: 'a', href: nav[x] });";
+  assert.deepEqual(sideMenuLinks(await asSideMenu(wrapped)), [['/lab', 'components/SideMenu.js', 6, []]]);
+});
+
+test('a route-keyed object exported to another file is a link unless every file importing it reads it only by its keys', async () => {
+  const routes = async (use: string, importLines = "import { NAV } from './formatDate';") =>
+    sideMenuLinks(
+      await asSideMenu(`  ${use}`, (rewrite) => {
+        rewrite(SIDE_MENU_FILE, (src) => src.replace("import Option from '_define/Option';\n", `import Option from '_define/Option';\n${importLines}\n`));
+        rewrite('client/src/components/formatDate.js', (src) => `import Option from '_define/Option';\n\n${src}\nexport const NAV = { [Option.ROUTE_PATH.ADMIN_REPORT]: 'Report' };\n`);
+      }),
+    ).map(([to]) => to);
+  const namespace = "import * as menus from './formatDate';";
+  assert.deepEqual(await routes("items.push({ title: NAV[x], href: '/home' });"), []);
+  assert.deepEqual(await routes("items.push({ title: menus.NAV[x] ?? menus.NAV?.[x], href: '/home' });", namespace), []);
+  assert.deepEqual(await routes("items.push({ title: NAV[x], href: '/home' });", "import { NAV } from './formatDate';\nexport { formatDate } from './formatDate';"), []);
+  assert.deepEqual(await routes('Object.keys(NAV).forEach((to) => items.push({ title: to, href: to }));'), ['/admin/report']);
+  assert.deepEqual(await routes('items.push(...Object.keys(menus.NAV).map((to) => ({ title: to, href: to })));', namespace), ['/admin/report']);
+  assert.deepEqual(await routes('Object.values(menus).forEach((m) => items.push(...Object.keys(m).map((to) => ({ title: to, href: to }))));', namespace), ['/admin/report']);
+  assert.deepEqual(await routes("items.push({ title: NAV[x], href: '/home' });", "import { NAV } from './formatDate';\nexport * as more from './formatDate';"), ['/admin/report']);
+  assert.deepEqual(await routes("items.push({ title: NAV[x], href: '/home' });", "import { NAV } from './formatDate';\nexport * from './formatDate';"), ['/admin/report']);
+  assert.deepEqual(await routes("items.push({ title: NAV[x], href: '/home' }); import('./formatDate');"), ['/admin/report']);
+  assert.deepEqual(await routes("import('./formatDate').then((m) => items.push(...Object.keys(m.NAV)));", ''), ['/admin/report']);
+});
+
 test('a settingsDefaults entry must name a settings root and a const holding an object in its file', async () => {
   await assert.rejects(
     buildEditedCopy([['config.json', '"settingsDefaults": {\n    "globalSettings"', '"settingsDefaults": {\n    "appSettings"']]),
