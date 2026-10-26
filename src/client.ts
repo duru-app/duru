@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { ArrayExpression, ArrowFunctionExpression, CallExpression, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
+import type { ArrayExpression, ArrowFunctionExpression, CallExpression, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, ExportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
 import type { AddressFunction, LinkComponent, Read } from './address-functions.ts';
@@ -278,6 +278,23 @@ function reExported(p: NodePath) {
   return binding.scope.block.type === 'Program' && binding.referencePaths.every((r) => r.isExportNamedDeclaration() || exportsOnly(r));
 }
 
+const lookedUp = (ref: NodePath) => {
+  const up = ref.parentPath!;
+  return (up.isMemberExpression() || up.isOptionalMemberExpression()) && up.node.object === ref.node && up.node.computed;
+};
+
+// 키로 값을 찾기만 하는 표: 그렇다고 알 수 없으면 null, 내보낸 표는 가져다 쓰는 파일까지 볼 이름
+function lookupTable(obj: NodePath): { exported: string | null } | null {
+  if (obj.isObjectPattern()) return { exported: null };
+  const declarator = obj.parentPath!;
+  if (!declarator.isVariableDeclarator() || obj.key !== 'init' || declarator.node.id.type !== 'Identifier' || (declarator.parent as VariableDeclaration).kind !== 'const') return null;
+  const name = declarator.node.id.name;
+  const refs = declarator.scope.getBinding(name)!.referencePaths;
+  const exportedAs = refs.filter((r) => r.isExportNamedDeclaration() || r.parentPath!.isExportSpecifier());
+  if (!refs.every((r) => lookedUp(r) || exportedAs.includes(r)) || exportedAs.some((r) => !r.isExportNamedDeclaration() && ((r.parent as ExportSpecifier).exported as Identifier).name !== name)) return null;
+  return { exported: exportedAs.length ? name : null };
+}
+
 function enclosingFunctionName(nodePath: NodePath) {
   const fn = nodePath.getFunctionParent();
   if (!fn) return null;
@@ -326,6 +343,41 @@ export async function extractClient(config: any) {
   const siteStart = new WeakMap<FollowedSite, number>();
   const siteFile = new WeakMap<FollowedSite, string>();
   const linkAddressRefs = new WeakSet<RouteRef>();
+  const exportedKeys = new WeakMap<RouteRef, { file: string; name: string }>();
+  const importedLater = new Map<string, Set<string>>();
+  const lookedUpIn = new Map<string, boolean>();
+  const lookedUpElsewhere = ({ file, name }: { file: string; name: string }) => {
+    const key = JSON.stringify([file, name]);
+    if (!lookedUpIn.has(key)) lookedUpIn.set(key, [...factCache].every(([from, facts]) => from === file || !facts.imports.includes(file) || (!importedLater.get(from)?.has(file) && importsLookUp(from, file, name))));
+    return lookedUpIn.get(key)!;
+  };
+  function importsLookUp(from: string, file: string, name: string) {
+    const program = programOf(from);
+    if (!program) return false;
+    let imported = false;
+    for (const statement of program.get('body')) {
+      if (!(statement.isImportDeclaration() || statement.isExportNamedDeclaration() || statement.isExportAllDeclaration())) continue;
+      const source = statement.node.source;
+      if (!source || imports.resolve(from, source.value) !== file) continue;
+      imported = true;
+      if (statement.isExportAllDeclaration()) return false;
+      if (statement.isExportNamedDeclaration()) {
+        if (statement.node.specifiers.some((x) => x.type === 'ExportNamespaceSpecifier' || keyName({ key: (x as ExportSpecifier).local }) === name)) return false;
+        continue;
+      }
+      for (const x of (statement as NodePath<ImportDeclaration>).get('specifiers')) {
+        const refs = x.scope.getBinding(x.node.local.name)!.referencePaths;
+        if (x.isImportNamespaceSpecifier()) {
+          for (const ref of refs) {
+            const up = ref.parentPath!;
+            if (!(up.isMemberExpression() || up.isOptionalMemberExpression()) || up.node.object !== ref.node || up.node.computed) return false;
+            if (keyName({ key: up.node.property }) === name && !lookedUp(up)) return false;
+          }
+        } else if (x.isImportSpecifier() && keyName({ key: x.node.imported }) === name && !refs.every(lookedUp)) return false;
+      }
+    }
+    return imported;
+  }
   const linkSites = (facts: Facts): (RouteRef | RouterLink)[] => [...facts.routeRefs, ...facts.routerLinks];
   const sitesOf = (file: string) => {
     const facts = fileFacts(file);
@@ -1235,6 +1287,7 @@ export async function extractClient(config: any) {
     function addImport(spec: string, dynamic = false) {
       const resolved = imports.resolve(file, spec);
       if (resolved) facts.imports.push(resolved);
+      if (resolved && dynamic) importedLater.set(file, new Set([...(importedLater.get(file) ?? []), resolved]));
       if (resolved && !dynamic) staticImports.add(resolved);
       return resolved;
     }
@@ -1354,7 +1407,12 @@ export async function extractClient(config: any) {
           record('settingReads', { key: [result[1], ...chain.slice(1)].join('.') }, p);
         } else if (chain[0] === routeRoot && chain.length === routeRest.length + 2 && routeRest.every((k: string, i: number) => chain[i + 1] === k)) {
           const { tail, whole } = routeTail(p);
-          constantAt.set(whole.node, [record('routeRefs', { route: chain[chain.length - 1], tail }, p) as RouteRef]);
+          const member = whole.parentPath!;
+          const table = whole.key === 'key' && (member.isObjectProperty() || member.isObjectMethod()) && member.node.computed ? lookupTable(member.parentPath!) : null;
+          if (table && table.exported === null) return;
+          const ref = record('routeRefs', { route: chain[chain.length - 1], tail }, p) as RouteRef;
+          if (table?.exported) exportedKeys.set(ref, { file, name: table.exported });
+          constantAt.set(whole.node, [ref]);
         }
       },
     });
@@ -2527,7 +2585,7 @@ export async function extractClient(config: any) {
       }
       for (const r of facts.settingReads) settingReads.push({ ...r, file: rel(f) });
       for (const ref of linkSites(facts)) {
-        if (!reached.has(ref)) continue;
+        if (!reached.has(ref) || (exportedKeys.has(ref as RouteRef) && lookedUpElsewhere(exportedKeys.get(ref as RouteRef)!))) continue;
         ownLinks.add(ref);
         const link = screenLink(ref, index);
         if (link) links.push({ ...link, file: rel(f) });
