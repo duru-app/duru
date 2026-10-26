@@ -3039,9 +3039,10 @@ reads a field of the item`, and listing `routes.ts` itself in `routesFile` gave 
   redirect. A file holding only a redirect, or only routes without a path, gets no line: it draws routes, they just
   give no screens.
 - A route whose `exact` reads a field of the item, as `exact={exact}` does, takes each item's value, both for the screen
-  a link reaches and for the line about addresses under a route. When duru cannot read the value (the item spreads an
-  object or has a computed key), or items at one path write different values, the route is taken as not exact, as a
-  route with an `exact` duru cannot read is. On SigNoz a link to `/alerts/channels/edit/{*}` reaches
+  a link reaches and for the line about addresses under a route. Items at one path that write different values give a
+  route for each value, so an address under that path reaches only the items that are not exact. When duru cannot read
+  the value (the item spreads an object or has a computed key), the route is taken as not exact, as a route with an
+  `exact` duru cannot read is. On SigNoz a link to `/alerts/channels/edit/{*}` reaches
   `/alerts/channels/edit/:channelId#ChannelsEdit` and one to `/services/{*}` reaches
   `/services/:servicename#ServiceMetricsPage`, not the screens of the `exact: true` items `/alerts` and `/services`.
 Measured on SigNoz (`frontend/src`, `routesFile: ["AppRoutes/index.tsx"]` and the entry `"items": "*"`): 63 screens, 61
@@ -3068,6 +3069,9 @@ Known limits:
   for a route that is not there.
 - When a route file has one loop route that is read, another loop route in it whose path reads the item but whose
   screen is not read gives no line; only a file with no read loop route stops the run for it.
+- An item that spreads an object or has a computed key before the `exact` it writes, as
+  `{ ...base, path: '/reports', exact: true }` does, still has its `exact` taken as not read, though the written value is
+  the one React Router sees. A link under that path then reaches the item's screen.
 
 **A route path written as a list gives a screen for each path in it.**
 Decided in #444 (2026-10-26). React Router 5 takes a list in `path`, `<Route path={[A, B]}>`, and draws the same

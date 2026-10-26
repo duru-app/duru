@@ -1666,10 +1666,7 @@ export async function extractClient(config: any) {
         else if (node.kind === 'routes') {
           for (const { chain } of node.branches) chain.forEach((r, i) => walk(r.children, depth + i + 1));
         } else if (node.kind === 'route') {
-          for (const i of node.screens) {
-            const exact = itemExact.has(extracted[i]) ? itemExact.get(extracted[i]) : node.exactUnread ? null : node.exact;
-            if (exact === false && !found.has(i)) found.set(i, { path: paths[i], depth });
-          }
+          if (!node.exactUnread && !node.exact) for (const i of node.screens) if (!found.has(i)) found.set(i, { path: paths[i], depth });
           walk(node.children, depth + 1);
         }
       }
@@ -2217,15 +2214,18 @@ export async function extractClient(config: any) {
       }
       if (n.kind === 'switch') return [{ kind: 'switch', children: n.children.flatMap((c) => convert(c, file, base)) }];
       if (n.kind === 'redirect') return [{ kind: 'redirect', from: n.from, exact: n.exact, to: n.to }];
-      const byPath = new Map<string | null, number[]>();
-      for (const i of n.screens.map((s) => indexOf.get(s)!)) byPath.set(sourced[i].s.path, [...(byPath.get(sourced[i].s.path) ?? []), i]);
-      if (!byPath.size) byPath.set(n.path, []);
-      return [...byPath].map(([routePath, screens]) => {
+      const byPath = new Map<string, { routePath: string | null; screens: number[] }>();
+      for (const i of n.screens.map((s) => indexOf.get(s)!)) {
+        const key = JSON.stringify([sourced[i].s.path, itemExact.get(extracted[i])]);
+        byPath.set(key, { routePath: sourced[i].s.path, screens: [...(byPath.get(key)?.screens ?? []), i] });
+      }
+      if (!byPath.size) byPath.set('', { routePath: n.path, screens: [] });
+      return [...byPath.values()].map(({ routePath, screens }) => {
         const entries = screens.length ? screens.flatMap((i) => sourced[i].s.componentFile ?? []) : n.entry ? [n.entry] : [];
         const full = routePath === null || routePath.startsWith('/') ? routePath : `${base}/${routePath}`.replace(/\/{2,}/g, '/');
         const inner = full === null ? base : full.endsWith('/*') ? full.slice(0, -2) : '';
-        const [itemValue, ...others] = new Set(screens.map((i) => itemExact.get(extracted[i])));
-        const fromItem = typeof itemValue === 'boolean' && !others.length;
+        const itemValue = screens.length ? itemExact.get(extracted[screens[0]]) : undefined;
+        const fromItem = typeof itemValue === 'boolean';
         const node = { kind: 'route' as const, path: routePath, exact: fromItem ? itemValue : n.exact, exactUnread: fromItem ? false : n.exactUnread, screens, children: n.children.flatMap((c) => convert(c, file, inner)) };
         const held = heldFiles(entries, file);
         if (held.length) holding.set(node, { files: held, base: inner, around });

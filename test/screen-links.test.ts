@@ -4490,19 +4490,25 @@ export default function Routes() {
   }
 });
 
-test('a link reaches a route made for a route table item only at the addresses its item exact allows, and when that exact is not read, at the addresses under it too', async () => {
+test('a link reaches a route made for a route table item only at the addresses its item exact allows, a route per exact value when items at one path differ, and when that exact is not read, at the addresses under it too', async () => {
   const table = `import Alerts from './Alerts';
 import ChannelEdit from './ChannelEdit';
 import Services from './Services';
 import Settings from './Settings';
 import Reports from './Reports';
+import Teams from './Teams';
+import PlanList from './PlanList';
+import PlanLayout from './PlanLayout';
 
 const routes = [
   { path: '/alerts', component: Alerts, exact: true },
   { path: '/alerts/channels/edit/:channelId', component: ChannelEdit, exact: true },
   { path: '/services', component: Services, exact: true },
   { path: '/settings', component: Settings, exact: false },
-  { ...props.base, path: '/reports', component: Reports, exact: true },
+  { path: '/reports', component: Reports, exact: true, ...props.overrides },
+  { [props.key]: 1, path: '/teams', component: Teams, exact: true },
+  { path: '/plans', component: PlanList, exact: true },
+  { path: '/plans', component: PlanLayout, exact: false },
 ];
 
 export default routes;
@@ -4533,17 +4539,21 @@ export default function Home({ id }) {
       <Link to="/services/x">service</Link>
       <Link to="/settings/billing">billing</Link>
       <Link to="/reports/weekly">weekly</Link>
+      <Link to="/teams/x">team</Link>
+      <Link to="/plans/x">plan</Link>
     </nav>
   );
 }
 `;
-  const pages = Object.fromEntries(['ChannelEdit', 'Services', 'Reports', 'NotFound'].map((n) => [`${n}.js`, page(n)]));
+  const pages = Object.fromEntries(['ChannelEdit', 'Services', 'Reports', 'Teams', 'PlanList', 'PlanLayout', 'NotFound'].map((n) => [`${n}.js`, page(n)]));
   const map = await build(underApp('', { ...pages, 'Home.js': home, 'Routes.js': routesFile, 'routes.js': table }, { routeTables: [{ route: 'Routes.js', table: { file: 'routes.js', const: 'routes' }, items: '*' }] }));
   assert.deepEqual(targetsOf(map, '/#Home'), [
     ['/alerts/channels/edit/{*}', ['/alerts/channels/edit/:channelId#ChannelEdit']],
     ['/services/x', ['*#NotFound']],
     ['/settings/billing', ['/settings#Settings']],
     ['/reports/weekly', ['/reports#Reports']],
+    ['/teams/x', ['/teams#Teams']],
+    ['/plans/x', ['/plans#PlanLayout']],
   ]);
 });
 
