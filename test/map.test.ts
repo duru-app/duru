@@ -1293,6 +1293,73 @@ test('a component wrapping routes in the routes file is part of every screen it 
   for (const id of ['/signin#SignIn', '/help#Help', '/admin/report#AdminReport']) assert.deepEqual(menuLinks(map, id), [], id);
 });
 
+const framed = (attrs: string, declared = ''): [string, string, string][] => [
+  ['client/src/Routes.js', "import Layout from './components/Layout';\n", `import Layout from './components/Layout';\n\nconst Frame = ({ layout, children }) => layout(children);\n${declared}`],
+  ['client/src/Routes.js', '        <Layout session={session} globalSettings={globalSettings}>\n', `        <Frame${attrs}>\n`],
+  ['client/src/Routes.js', '        </Layout>\n', '        </Frame>\n'],
+];
+const assertLayoutMenu = (map: ScreenMap, label: string) => {
+  for (const id of wrapped) {
+    assert.deepEqual(menuLinks(map, id), ['/admin/report'], `${label} ${id}`);
+    assert.ok(screen(map, id).settingReads.some((r) => r.file === 'components/SideMenu.js'), `${label} ${id}`);
+  }
+  for (const id of ['/signin#SignIn', '/help#Help', '/admin/report#AdminReport']) assert.deepEqual(menuLinks(map, id), [], `${label} ${id}`);
+};
+
+test('a layout handed to a component around routes as a const function is part of every screen inside, and a constant in the menu file that the menu does not use gives no link', async () => {
+  const map = await buildEditedCopy([
+    ...framed(' layout={appLayout}', 'const appLayout = (children) => <Layout>{children}</Layout>;\n'),
+    ['client/src/components/SideMenu.js', "import Option from '_define/Option';\n", "import Option from '_define/Option';\n\nexport const UNUSED_TARGET = Option.ROUTE_PATH.LAB;\n"],
+  ]);
+  assertLayoutMenu(map, 'const');
+});
+
+test('a layout written inline in the prop or as a function declaration is part of every screen inside', async () => {
+  assertLayoutMenu(await buildEditedCopy(framed(' layout={(children) => <Layout>{children}</Layout>}')), 'inline');
+  assertLayoutMenu(await buildEditedCopy(framed(' layout={appLayout}', 'function appLayout(children) {\n  return <Layout>{children}</Layout>;\n}\n')), 'declaration');
+});
+
+const assertNoLayout = async (cases: [string, string?][]) => {
+  const withoutMeta = (map: ScreenMap) => ({ ...map, meta: null });
+  const plain = new Map<string, ReturnType<typeof withoutMeta>>();
+  for (const [attrs, declared = ''] of cases) {
+    if (!plain.has(declared)) plain.set(declared, withoutMeta(await buildEditedCopy(framed('', declared))));
+    const map = await buildEditedCopy(framed(attrs, declared));
+    assert.deepEqual(withoutMeta(map), plain.get(declared), attrs);
+    for (const id of wrapped) assert.deepEqual(menuLinks(map, id), [], `${attrs} ${id}`);
+  }
+};
+
+test('a component drawn in an element prop, beside what a function prop draws, by a function that takes nothing, or imported and handed by name, is not part of the screens inside', async () => {
+  await assertNoLayout([[' aside={<Layout />} layout={(c) => c}'], [' layout={(c) => <><Layout />{c}</>}'], [' renderEmpty={() => <Layout />}'], [' layout={Layout}']]);
+});
+
+test('a component a function prop hands its parameter to in an attribute, a spread or a member read is not part of the screens inside, also when the function is a component declared in the route file and handed by name', async () => {
+  await assertNoLayout([
+    [' fallback={(error) => <Layout error={error} />}'],
+    [' fallbackRender={(props) => <Layout {...props} />}'],
+    [' fallback={(errorData) => <Layout><pre>{errorData.componentStack}</pre></Layout>}'],
+    [' layout={AppLayout}', 'function AppLayout(props) {\n  return <Layout>{props.children}</Layout>;\n}\n'],
+    [' FallbackComponent={Fallback}', 'const Fallback = (props) => <Layout {...props} />;\n'],
+  ]);
+});
+
+test('a component a function prop draws beside the routes written inside that function is not part of their screens', async () => {
+  const inside = (drawn: string): [string, string, string][] => [
+    ['client/src/Routes.js', '        <Layout session={session} globalSettings={globalSettings}>\n', `        <Frame render={(page) => <>${drawn}\n`],
+    ['client/src/Routes.js', '        </Layout>\n', '        </>} />\n'],
+  ];
+  const map = await buildEditedCopy(inside('<Layout>{page}</Layout>'));
+  assert.deepEqual({ ...map, meta: null }, { ...(await buildEditedCopy(inside('{page}'))), meta: null });
+  for (const id of wrapped) assert.deepEqual(menuLinks(map, id), [], id);
+});
+
+test('the usage guide says a layout handed over as a function is read, and the decision record names the choice', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  assert.ok(read('../README.md').includes('`<AppPageProviders layout={(children) => <AppLayout>{children}</AppLayout>}>`'));
+  assert.ok(read('../docs/decisions.md').includes('**A function handed as a prop to a component around routes is read as a layout'));
+});
+
 test('a route wrapped by two components gets both, and a wrapping component that is also a screen keeps its own links', async () => {
   const map = await buildEditedCopy([
     ['client/src/Routes.js', '          <Switch>\n', '          <Lab>\n          <Switch>\n'],

@@ -420,7 +420,9 @@ react-query query that sends it. A call or link a saga makes for the screen name
 under `actions` each action type that leads to it, with the places the screen dispatches that type
 (`dispatchedAt`).
 A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
-inside it.
+inside it, also when the route file hands it to a component around the routes as a function that draws what it
+is given inside the layout (`<AppPageProviders layout={(children) => <AppLayout>{children}</AppLayout>}>`, or the
+name of such a function declared in the route file).
 
 **Links.** A screen's links come from the route constants written in its code, the `to` of react-router's `Link`,
 `NavLink`, `Redirect` and `Navigate` outside the route files, the addresses given to `push` and `replace` of a

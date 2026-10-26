@@ -198,6 +198,44 @@ under that role; SigNoz loses 188 rows from `SideNav/config.ts`, a table of the 
 and from `SaveView/constants.ts:15-18`, and four screens only those rows reached become entry screens (3 → 7). The
 maps of appsmith, into-sign 1.5.0, mattermost and outline are unchanged.
 
+**A function handed as a prop to a component around routes is read as a layout: the JSX elements around each place
+where it draws its first parameter as a child wrap those routes, as if they were written around them.**
+SigNoz writes `const appLayout = (children) => <AppLayout>{children}</AppLayout>` (`AppRoutes/index.tsx:48-50`)
+and passes it as `<AppPageProviders layout={appLayout}>` (`:434`); the receiver only calls it,
+`layout(<PreferenceContextProvider>{children}</PreferenceContextProvider>)` (`app/AppPageProviders.tsx:37`). Before,
+no screen held `container/AppLayout/index.tsx` or the side menu. Read: a function written in the prop, a const in
+the route file holding one, and a function declaration there; a component declared there is read the same way, but
+its first parameter is its props, which it spreads or draws as `props.children`, so it gives nothing. A function the
+route itself sits in is the one being climbed out of and is skipped. Not read: a component or function imported
+and handed by name (`layout={AppLayout}`), an element prop (`aside={<Layout />}`), a destructured or later
+parameter, a parameter handed on in an attribute, a spread or a member read
+(`fallback={(error) => <ErrorPage error={error} />}`, as an error boundary's fallback or a confirm dialog is
+written), a parameter drawn inside an expression (`{ready && children}`, `{children ?? null}`), and an element drawn beside the parameter rather than around it, as a sibling of a `Switch` is not a
+wrapper either.
+Alternatives compared:
+- Reading every attribute value of a route's ancestors, or starting the reach at the attribute in the route file:
+  it pulls in the Cmd-K overlays, the `Suspense` and `ErrorBoundary` fallbacks and outline's `Scene` props, and it
+  would put the route file into every screen's sources.
+- Following the receiver's call of its parameter back to the value passed in: it needs parameters bound across
+  functions inside `follow-names.ts`.
+- Also following a name imported from another file to the function there: no baseline app hands a layout that way,
+  and a component there takes its props first, so the same rule would find nothing in it.
+- Taking the layout's whole import closure: the issue measured about 2,244 links from constants such as the time
+  picker's route list and the menu highlight table.
+Reason: starting the same climb a route already makes from each place the function draws what it is given is one
+rule rather than two, and the layout file is then read exactly as a layout written around the routes is.
+Measured on the seven baseline configs against the computed-key fix: all 65 SigNoz screens now hold
+`container/AppLayout/index.tsx` and `container/SideNav/SideNav.tsx` (0 before); link rows 4,464 → 16,244, none
+removed, and links to another screen 1,583 → 3,841 pairs. The added rows come from `DateTimeSelectionV2/constants.ts`
+(4,384, lists only compared with the current route), `SideNav.tsx` (2,860) and `menuItems.tsx` (1,560), the AI
+assistant files (2,022) and `AppLayout/index.tsx` (195). Entry screens go 7 → 4; the three now reached
+(usage explorer, status, an AI assistant conversation) are reached only through a list compared with the route or a
+`matchPath` pattern. The API calls go 172 → 325. The API config of SigNoz moves the same way (link rows 4,422 → 16,244, API calls 9,179 → 15,444). The maps
+of appsmith, into-sign 1.5.0 and 2.0.0, mattermost and outline are unchanged.
+The limits: until comparisons stop counting as links, a large part of the growth is route constants a layout only
+compares with; a value in a table keyed by route (`menuItems.tsx:599-612`) still counts; and every SigNoz screen's
+code now includes the layout's, so a side menu edit marks all 65 as changed.
+
 **TypeScript files a `constants` module runs are turned into JavaScript by Node's transform mode, and the line of
 a failure is put back on the file as written through the source map that comes with it.**
 Alternatives compared:
