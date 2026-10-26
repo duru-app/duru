@@ -1879,21 +1879,32 @@ Alternatives compared:
 - A second window for candidates: the look, Ctrl+Enter, Escape and the error after a failed save would have to be
   kept the same in two places by hand.
 
-**CI runs on pull requests only, not again on main after a merge.**
+**CI tests each pull request once, in the merge queue, and not again on main after a merge.**
 Since CI was added (#183, 2026-10-09), every change has reached main through a pull request whose branch was first
 moved onto the tip of main, and its CI run tested that exact content. The run that `push` to main started after each
 merge tested the same content a second time. The cost: a commit pushed to main directly is not tested. main's branch
 protection now requires the two `test` checks and a branch that is up to date with main, so a pull request is merged
-only after a run on the content it brings. The npm cache that every pull request shares is saved only by
-runs on main, so after `package-lock.json` changes, or once GitHub deletes that cache after seven days unread, each
-pull request's first run downloads the packages again.
+only after a run on the content it brings. The npm cache every run reads was saved by a run on main (on 2026-10-26
+the only cache listed dates from 2026-10-08); since main no longer runs CI, after `package-lock.json` changes, or
+once GitHub deletes that cache after seven days unread, the runs download the packages again (inferred, not
+measured).
 A pull request that changes only `CLAUDE.md` does not run the tests: no test reads that file, and the run would test
 the code main already holds. `README.md`, `skills/duru/SKILL.md` and `docs/decisions.md` are read by tests and stay in.
 Since main came to require the two `test` checks before a merge, such a pull request still runs the job, which finds
 that only `CLAUDE.md` changed against main and passes without installing or testing anything. Leaving the workflow
 out for that file, as before, left the required checks missing and the pull request blocked (#378).
+Since main merges through a merge queue (2026-10-22), the tests run only there: the queue merges each pull request
+onto the tip of main and tests that content, so the run on the pull request tested the same changes a second time,
+about sixteen minutes each on PR #447. The job still runs on the pull request, because main's branch protection
+requires the two `test` checks and the queue takes a pull request only once they have passed on it: PR #447, set to
+merge while its checks were still running, stayed out of the queue until then. On the pull request the job passes
+without installing or testing anything and says so in a notice. The cost: a pull request is tested only after `gh pr merge <n> --merge` puts it in the queue, and
+one that fails there leaves the queue and has to be fixed and queued again.
 Alternatives compared:
-- Keeping both runs: main is tested whatever reaches it, at the cost of a second run of about ten minutes per merge.
+- Also running on main after each merge: main is tested whatever reaches it, at the cost of a second run of about
+  ten minutes per merge (2026-10-09).
+- Testing on the pull request as well as in the queue: a failure shows before the pull request is
+  queued, at the cost of a second full run per pull request.
 
 **A story candidate is kept as a file in `candidates/` in `storiesDir` from the first `rebuild` that finds it, and
 every candidate is keyed by its screen order.**
