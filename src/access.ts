@@ -319,6 +319,34 @@ function fittingPattern(parts: PathPart[], whole = true) {
   return new RegExp(whole ? `^${source}/?$` : `^${source.replace(/\/$/, '')}(?:/(?=$))?(?=/|$)`, 'i');
 }
 
+type UnderRoute = { screen: string; path: string; file: string; line: number; tableItem?: { key: string; file: string; line: number }; addresses: string[] };
+
+// 자기 주소 밑의 주소도 그리는 라우트마다, 그 밑에서 어느 링크로도 화면에 닿지 않는 주소. 다 읽은 주소만 센다.
+// 그런 라우트가 여럿 맞으면 그 주소를 그리는 라우트에 둔다: 더 안쪽 라우트, 같은 깊이에서는 먼저 적힌 라우트다.
+export function addressesUnderRoutes(
+  screens: { id: string; routeFile: string; line: number; tableItem?: { key: string; file: string; line: number }; links: { to: string | null; targets: string[] }[] }[],
+  takers: { screen: number; path: string; depth: number }[],
+): UnderRoute[] {
+  const bare = (to: string) => to.split(/[?#]/)[0].replace(/(.)\/$/, '$1');
+  const links = screens.flatMap((s) => s.links).filter((l): l is { to: string; targets: string[] } => !unreadableTarget(l.to) && !l.to!.includes(VARIABLE_SEGMENT));
+  const reached = new Set(links.filter((l) => l.targets.length).map((l) => bare(l.to)));
+  const unreached = [...new Set(links.filter((l) => !l.targets.length).map((l) => bare(l.to)))].filter((to) => !reached.has(to)).sort();
+  const routes = takers.flatMap(({ screen, path, depth }) => {
+    const parts = pathParts(path.replace(/(.)\/$/, '$1'));
+    if (!parts.some((part) => typeof part === 'string' && /[^/]/.test(part))) return [];
+    return [{ screen, depth, under: fittingPattern(parts, false), whole: fittingPattern(parts, true), path, addresses: [] as string[] }];
+  });
+  for (const to of unreached) {
+    const holding = routes.filter((r) => r.under.test(to) && !r.whole.test(to));
+    const drawing = holding.reduce<(typeof routes)[number] | null>((a, r) => (!a || r.depth > a.depth ? r : a), null);
+    drawing?.addresses.push(to);
+  }
+  return routes.filter((r) => r.addresses.length).map(({ screen, path, addresses }) => {
+    const { id, routeFile, line, tableItem } = screens[screen];
+    return { screen: id, path, file: routeFile, line, ...(tableItem && { tableItem }), addresses };
+  });
+}
+
 export function linkTargets(screens: { path: string }[]) {
   const indices = screens.map((_, i) => i);
   const routes = screens.map((s) => {
@@ -365,7 +393,7 @@ export function linkTargets(screens: { path: string }[]) {
 
 // 배포마다 정해지는 설정 값 key 가 on 일 때만 그려지는 노드에 붙는다.
 export type Side = { key: string; on: boolean };
-type RouteElement = { kind: 'route'; path: string | null; exact: boolean; screens: number[]; children: RouteNode[]; when?: Side };
+type RouteElement = { kind: 'route'; path: string | null; exact: boolean; exactUnread?: boolean; screens: number[]; children: RouteNode[]; when?: Side };
 
 // path 는 바깥 라우트의 경로를 이어 붙인 전체 경로이고, chain 은 바깥 라우트부터 그 라우트까지다.
 export type Branch = { path: string; chain: RouteElement[] };

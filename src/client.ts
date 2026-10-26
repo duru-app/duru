@@ -127,6 +127,7 @@ interface LoopRoute {
   drawnKeys: string[] | null;
   pathExpr: NodePath;
   item: { node: Node; field: string };
+  exactField: string | null;
   guards: string[];
   wrappers: string[];
 }
@@ -135,6 +136,7 @@ interface DrawnNode {
   kind: RouteNode['kind'];
   path: string | null;
   exact: boolean;
+  exactUnread?: boolean;
   from: string | null;
   to: string;
   screens: RouteScreen[];
@@ -289,6 +291,8 @@ export async function extractClient(config: any) {
   const constantFiles = new Set([...constantFileOf].filter(([name]) => !settingsOnly.has(name)).map(([, file]) => file));
   const settingsRoots = new Set<string>(config.settingsRoots);
   const routeTables = new Map<string, RouteTable & { at: string }>((config.routeTables as RouteTable[]).map((t, i) => [t.route, { ...t, at: `routeTables[${i}]` }]));
+  // 라우트가 exact 를 표 항목에서 읽는 화면마다 그 항목의 exact. 읽지 못했으면 null 이다.
+  const itemExact = new Map<RouteScreen, boolean | null>();
   const tableFiles = new Set((config.routeTables as RouteTable[]).map((t) => path.join(config.srcRoot, t.table.file)));
   // 라우트 파일에 적은 표는 그 라우트 파일을 그리는 화면의 소스에 남는다.
   for (const f of config.routeFiles as string[]) tableFiles.delete(path.join(config.srcRoot, f));
@@ -1443,7 +1447,9 @@ export async function extractClient(config: any) {
         if (!page) return missed();
         if (item) {
           if (loopAt < 0) loopAt = screens.length;
-          loopRoutes.push({ element: p.node, line, page, drawnKeys: drawnItemKeys(page, p.scope, p.findParent(loopCallback)), pathExpr, item, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
+          const exactValue = attr('exact')?.get('value');
+          const exactField = exactValue?.isJSXExpressionContainer() ? loopItem(p, exactValue.get('expression') as NodePath)?.field ?? null : null;
+          loopRoutes.push({ element: p.node, line, page, drawnKeys: drawnItemKeys(page, p.scope, p.findParent(loopCallback)), pathExpr, item, exactField, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
           return;
         }
         const routeGuards = guardsOf(p, src, note);
@@ -1530,8 +1536,9 @@ export async function extractClient(config: any) {
           return value.node ? (value.isJSXExpressionContainer() ? value.get('expression') as NodePath : value) : null;
         };
         const exact = attr('exact');
+        const exactValue = exact ? evaluate(exact) : undefined;
         const text = (p: NodePath | undefined | null) => (p ? readRoutePath(p).path : UNKNOWN);
-        const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || (Boolean(exact) && evaluate(exact!) === true), from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, redirectAsElement: false, when: drawnSide(p), children: [] };
+        const node: DrawnNode = { kind: 'route', path: null, exact: exact === null || exactValue === true, exactUnread: Boolean(exact) && typeof exactValue !== 'boolean', from: null, to: UNKNOWN, screens: elementScreens.get(p.node) ?? [], entry: null, isRoute: false, isFragment: false, redirectAsElement: false, when: drawnSide(p), children: [] };
         const binding = p.scope.getBinding(tag);
         const reactAs = (b: Binding | undefined) => {
           const from = b && importedAs(b);
@@ -1567,7 +1574,7 @@ export async function extractClient(config: any) {
     }
     if (!routes.length) throw new Error(`${table.at}: ${routeFile} has no route made for each item of a list whose path reads a field of the item`);
     if (routes.length > 1) throw new Error(`${table.at}: ${routeFile} has ${routes.length} routes made for each item of a list, at ${routes.map((r) => `${routeFile}:${r.line}`).join(' and ')}; a route file takes one table`);
-    const [{ line, page, drawnKeys, pathExpr, item, guards, wrappers }] = routes;
+    const [{ line, page, drawnKeys, pathExpr, item, exactField, guards, wrappers }] = routes;
     const { file, const: name } = table.table;
     const literal = topLevelLiteral(file, name);
     if (!literal) throw new Error(`${table.at}: ${file} has no top-level const ${name} holding an object or a list`);
@@ -1604,6 +1611,7 @@ export async function extractClient(config: any) {
       }
       if (components.length && components.every((c) => c.redirects)) return [];
       const shown = components[0] ?? page;
+      const exact = exactField ? itemExactValue(itemObject, exactField) : null;
       return values.map((value): RouteScreen => {
         const routePath = pathText(pathExpr, item.node, value);
         const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
@@ -1613,7 +1621,7 @@ export async function extractClient(config: any) {
           unreadPath = { entry: { file: routeFile, line, path: routePath, stoppedAt: stopOf(unreadPiece(pathExpr, new Set(), [item.node])!) }, restStoppedAt: rest ? stopOf(rest) : null };
           unreadRoutePaths.push(unreadPath.entry);
         }
-        return {
+        const screen: RouteScreen = {
           path: routePath,
           component: shown.component,
           componentFile: shown.componentFile,
@@ -1624,8 +1632,50 @@ export async function extractClient(config: any) {
           tableItem: { key, file: itemFile, line: itemLine },
           outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
         };
+        if (exactField) itemExact.set(screen, exact);
+        return screen;
       });
     });
+  }
+
+  function itemExactValue(item: NodePath<ObjectExpression>, field: string) {
+    if (unreadKeys(item)) return null;
+    const written = propertyValue(item, field);
+    const value = written ? evaluate(written) : false;
+    return typeof value === 'boolean' ? value : null;
+  }
+
+  function unreadKeys(object: NodePath<ObjectExpression>, seen = new Set<Node>()): boolean {
+    return object.get('properties').some((prop) => {
+      if (prop.isObjectProperty()) return prop.node.computed;
+      if (!prop.isSpreadElement()) return false;
+      const spread = objectAt(prop.get('argument'));
+      return !spread || (!seen.has(spread.node) && unreadKeys(spread, seen.add(spread.node)));
+    });
+  }
+
+  // exact 가 아닌 라우트의 화면과 경로를 적힌 차례로 준다. depth 는 감싼 라우트 수다.
+  function screensTakingAddressesUnder(roots: RouteNode[], paths: string[]) {
+    const found = new Map<number, { path: string; depth: number }>();
+    const seen = new Set<RouteNode>();
+    const walk = (nodes: RouteNode[], depth: number) => {
+      for (const node of nodes) {
+        if (seen.has(node)) continue;
+        seen.add(node);
+        if (node.kind === 'switch') walk(node.children, depth);
+        else if (node.kind === 'routes') {
+          for (const { chain } of node.branches) chain.forEach((r, i) => walk(r.children, depth + i + 1));
+        } else if (node.kind === 'route') {
+          for (const i of node.screens) {
+            const exact = itemExact.has(extracted[i]) ? itemExact.get(extracted[i]) : node.exactUnread ? null : node.exact;
+            if (exact === false && !found.has(i)) found.set(i, { path: paths[i], depth });
+          }
+          walk(node.children, depth + 1);
+        }
+      }
+    };
+    walk(roots, 0);
+    return [...found].map(([screen, taker]) => ({ screen, ...taker }));
   }
 
   const pathText = (p: NodePath, filled: Node, value: string): string => (p.node === filled ? value
@@ -2174,7 +2224,7 @@ export async function extractClient(config: any) {
         const entries = screens.length ? screens.flatMap((i) => sourced[i].s.componentFile ?? []) : n.entry ? [n.entry] : [];
         const full = routePath === null || routePath.startsWith('/') ? routePath : `${base}/${routePath}`.replace(/\/{2,}/g, '/');
         const inner = full === null ? base : full.endsWith('/*') ? full.slice(0, -2) : '';
-        const node = { kind: 'route' as const, path: routePath, exact: n.exact, screens, children: n.children.flatMap((c) => convert(c, file, inner)) };
+        const node = { kind: 'route' as const, path: routePath, exact: n.exact, exactUnread: n.exactUnread, screens, children: n.children.flatMap((c) => convert(c, file, inner)) };
         const held = heldFiles(entries, file);
         if (held.length) holding.set(node, { files: held, base: inner, around });
         return node;
@@ -2238,7 +2288,8 @@ export async function extractClient(config: any) {
     return { s, outerFill, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))] };
   });
   fillOuterAddresses(sourced);
-  const routedScreens = routerTargets(routeTree(drawn, extracted, sourced));
+  const routeRoots = routeTree(drawn, extracted, sourced);
+  const routedScreens = routerTargets(routeRoots);
   // 링크 주소 전체로 쓴 라우트 상수는 Routes 에서 그 주소에 맞는 화면이 나오면 문자열 주소처럼 잇되 다른 Routes 의 catch-all 은 빼고, 그 밖에는 라우트 경로에 맞춰 본다.
   const constantLink = (site: RouteRef, from: number) => {
     const { tail, ...ref } = site;
@@ -2375,5 +2426,5 @@ export async function extractClient(config: any) {
   });
 
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles };
+  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)) };
 }
