@@ -131,6 +131,39 @@ export default function Help(props) {
   assert.deepEqual(linksOf(map, '/help/:page?#Help'), [['/team/{*}', 6, [], ['/team/:team#Team']], ['/start', 6, [], ['/start#Start']]]);
 });
 
+test('a move through the history of the props a class update method takes first becomes a link, and one through the same name in another method or a function does not', async () => {
+  const team = `import { Component } from 'react';
+
+function away(prevProps) {
+  prevProps.history.push('/start');
+}
+
+export default class Team extends Component {
+  componentDidUpdate(prevProps) {
+    if (prevProps.team !== this.props.team) prevProps.history.push('/home');
+  }
+
+  UNSAFE_componentWillReceiveProps(nextProps) {
+    const { history } = nextProps;
+    history.replace('/login');
+  }
+
+  leave(prevProps) {
+    prevProps.history.push('/help');
+  }
+
+  render() {
+    return <div onClick={() => away(this.props)} onBlur={() => this.leave(this.props)} />;
+  }
+}
+`;
+  const map = await build(writeApp({ 'Team.js': team }));
+  assert.deepEqual(linksOf(map, '/team/:team#Team'), [
+    ['/home', lineOf(team, "push('/home')"), ['prevProps.team !== this.props.team'], ['/home#Home']],
+    ['/login', lineOf(team, "replace('/login')"), [], ['/login#Login']],
+  ]);
+});
+
 test('a move through the history a function component takes out of its first parameter becomes a link, the move in a lowercase function that takes it out of its parameter is a link where that function is called, and one taken out of a later parameter or a function wrapped in a call is not read', async () => {
   const help = `function leave({ history }) {
   history.push('/login');

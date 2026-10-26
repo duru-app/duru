@@ -14,7 +14,16 @@ const MOVES = new Set(['push', 'replace']);
 export const FOLLOWED = 8;
 
 const named = (p: NodePath<any>, name: string) => (p.isMemberExpression() || p.isOptionalMemberExpression()) && !p.node.computed && (p.node.property as Identifier).name === name;
-const isProps = (p: NodePath<any>) => (named(p, 'props') && (p.get('object') as NodePath<any>).isThisExpression()) || p.isIdentifier({ name: 'props' });
+const UPDATE_METHODS = new Set(['componentDidUpdate', 'shouldComponentUpdate', 'getSnapshotBeforeUpdate', 'componentWillReceiveProps', 'componentWillUpdate', 'UNSAFE_componentWillReceiveProps', 'UNSAFE_componentWillUpdate']);
+
+function propsOfUpdate(p: NodePath<any>) {
+  const binding = p.isIdentifier() ? p.scope.getBinding(p.node.name) : undefined;
+  if (binding?.kind !== 'param' || binding.path.listKey !== 'params' || binding.path.key !== 0) return false;
+  const method = binding.path.parentPath!;
+  return method.isClassMethod() && !method.node.computed && method.node.key.type === 'Identifier' && UPDATE_METHODS.has(method.node.key.name);
+}
+
+const isProps = (p: NodePath<any>) => (named(p, 'props') && (p.get('object') as NodePath<any>).isThisExpression()) || p.isIdentifier({ name: 'props' }) || propsOfUpdate(p);
 
 function lastValue(object: NodePath<any>, key: string) {
   const prop = (object.get('properties') as NodePath<any>[]).findLast((x) => x.isObjectProperty() && !x.node.computed && keyName(x.node) === key);
