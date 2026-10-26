@@ -367,10 +367,11 @@ test('a table that is a top-level list gives a screen for each object in it, nam
   }, { items: '1' });
 });
 
-test('an item whose path is a list gives a screen for each path in it under the item\'s place, and a path in it that is not read gives a route not read line naming that path', async () => {
+test('an item whose path is a list gives a screen for each path in it under the item\'s place, and a path in it that is not read, or an empty list, gives a route not read line naming it', async () => {
   const table = LIST_TABLE
     .replace("import { ID_PATTERN } from './patterns';", "import { ID_PATTERN } from './patterns';\nimport { OUTSIDE } from 'paths-package';\n\nconst PEOPLE = ['people'];")
-    .replace("{ url: 'users', component: Users }", "{ url: ['users', ...PEOPLE, OUTSIDE], component: Users }");
+    .replace("{ url: 'users', component: Users }", "{ url: ['users', ...PEOPLE, 'people', OUTSIDE], component: Users }")
+    .replace('  ...detailRoutes,\n];', '  ...detailRoutes,\n  { url: [], component: Users },\n];');
   await withListTable(ITEM_ROUTE, async ({ configFile, src, cli }) => {
     const usersItem = { key: '1', file: TABLE, line: lineIn(src, TABLE, "  { url: ['users'") };
     assert.deepEqual(itemScreens(await build(configFile)), [
@@ -380,7 +381,10 @@ test('an item whose path is a list gives a screen for each path in it under the 
       ['/admin_console/users/:user_id#UserDetail', 'admin/UserDetail.js', { key: '2', file: TABLE, line: lineIn(src, TABLE, '  { url: `users/:user_id') }],
     ]);
     const route = `${CONSOLE}:${lineIn(src, CONSOLE, '<Route key={route.url}')}`;
-    assert.deepEqual(routeLines(cli('extract')), [`  route not read ← ${route}: table item 1 at ${TABLE}:${usersItem.line}: its url stopped at OUTSIDE`]);
+    assert.deepEqual(routeLines(cli('extract')), [
+      `  route not read ← ${route}: table item 1 at ${TABLE}:${usersItem.line}: its url stopped at OUTSIDE`,
+      `  route not read ← ${route}: table item 3 at ${TABLE}:${lineIn(src, TABLE, '  { url: [],')}: its url stopped at []`,
+    ]);
   }, {}, table);
 });
 

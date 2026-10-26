@@ -534,9 +534,10 @@ ${routes}
 }
 `;
 
-test('a route whose path is a list gives a screen for each path in it, with the IDs and link targets of the same paths written as routes of their own, and a path in it that is not read gives its own {?} screen and line', async () => {
-  const listed = listRoutes(`      <Route path={['/team/:team/edit', ...CREW, '/team/:team']} component={Team} exact />
-      <Route path={[...OPEN, MISSING]} component={Start} />`);
+test('a route whose path is a list gives a screen for each path in it, with the IDs and link targets of the same paths written as routes of their own, and a path in it that is not read gives its own {?} screen and line, as an empty list does', async () => {
+  const listed = listRoutes(`      <Route path={['/team/:team/edit', ...CREW, '/team/:team', '/crew/:team']} component={Team} exact />
+      <Route path={[...OPEN, MISSING]} component={Start} />
+      <Route path={[]} component={Home} />`);
   const separate = listRoutes(['/team/:team/edit', '/crew/:team', '/crew/:team/edit', '/team/:team'].map((p) => `      <Route path="${p}" component={Team} exact />`).concat('      <Route path="/open" component={Start} />').join('\n'));
   const listedApp = writeApp({ 'Routes.js': listed, 'Home.js': LIST_HOME });
   const [map, alone] = [await build(listedApp), await build(writeApp({ 'Routes.js': separate, 'Home.js': LIST_HOME }))];
@@ -550,6 +551,7 @@ test('a route whose path is a list gives a screen for each path in it, with the 
     ['/team/:team#Team', teamLine],
     ['/open#Start', startLine],
     ['{?}#Start', startLine],
+    ['{?}#Home', lineOf(listed, 'path={[]}')],
   ]);
   assert.deepEqual(map.screens.filter((s) => !s.id.startsWith('{?}')).map((s) => s.id), alone.screens.map((s) => s.id));
   assert.deepEqual(linksOf(map, '/home#Home').map(([to, , , targets]) => [to, targets]), [
@@ -561,7 +563,10 @@ test('a route whose path is a list gives a screen for each path in it, with the 
   assert.deepEqual(linksOf(map, '/home#Home'), linksOf(alone, '/home#Home'));
   const result = spawnSync(process.execPath, [CLI, 'extract', listedApp], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('route path not read')), [`  route path not read ← Routes.js:${startLine}: stopped at MISSING`]);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('route path not read')), [
+    `  route path not read ← Routes.js:${startLine}: stopped at MISSING`,
+    `  route path not read ← Routes.js:${lineOf(listed, 'path={[]}')}: stopped at []`,
+  ]);
 });
 
 test('a route whose path is a list, written again outside the Switch to draw a modal, is the same screen for each path the Switch also draws, and a path only the modal route has stays its screen', async () => {
