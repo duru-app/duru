@@ -4335,6 +4335,34 @@ Measured on main 9b09963 against the branch: SigNoz (with its `routeTables` entr
 `/settings#SettingsPage` with 12 addresses; the maps and the output of into-sign 1.5.0 and 2.0.0, mattermost,
 outline and appsmith are the same apart from `generatedAt`.
 
+**A react-query hook that a `calledApiModules` file exports makes the requests of the function it gives
+react-query, with no config key: `react-query` and `@tanstack/react-query` get a stand-in of their own.**
+Driver's decision in #458 (2026-10-26). SigNoz sends its requests through hooks an OpenAPI generator (orval) writes
+into its API folder, such as `useListChannels` around `listChannels`. duru ran those files with every outside
+package as a value that does nothing, so `useQuery` and `useMutation` never called the function they were given, the
+hooks had no address, and 122 of the 207 calls that reached no screen were requests the screens send through such
+hooks. The stand-in calls the query function of `useQuery`, `useInfiniteQuery` and their suspense forms, each query
+function of `useQueries` and the mutation function of `useMutation` once, with the fake value the API function is
+being tried with, and waits for what it returns together with the API function, so a query function that stops on a
+fake value gives the `api method` line as an API function does. It looks for the function in the order react-query
+reads its arguments: after a key in first place, as react-query 3 takes it, or in the options object, which
+`queryOptions` and the like hand back as given. A hook still returns a value that does nothing. A query and a
+mutation look the same on the map, as a request sent on a click and one sent when a screen opens already do. A
+`constantStubs` entry for either package is used in place of the stand-in. The query client stays a value that
+does nothing, so a function that invalidates queries through it (`invalidate…`) calls no request function and stays
+without an address; so does one that fetches or prefetches a query through it, which none of the measured apps has.
+Compared:
+- A config example in README only: whoever attaches duru to such an app for the first time misses the 122 calls
+  without a word.
+- Reading the generated files as screen source: the links and setting reads in them would attach to screens too.
+- Joining a hook to a request function by name (`useX` to `x`): it fits only the names orval gives.
+Measured on main 208af8b against the branch: on SigNoz with its API code run (`calledApiModules`, axios as
+`requestFunction`, its `routeTables` entry), the calls that reach no screen go from 207 to 85 and the pairs of a
+screen and a call it reaches from 1,523 to 2,206 (447 of the 683 more are `GET`). No request on a screen and no call
+ID is gone or changed; the 266 hooks gain the requests of the functions they call, and those calls list the hooks
+among their API functions. The maps and the output of into-sign 1.5.0 and 2.0.0, mattermost, outline, appsmith and
+SigNoz without its API code are the same apart from `meta`.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
