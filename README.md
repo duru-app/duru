@@ -81,13 +81,23 @@ client with example results and a config to start from.
   }]
   ```
 
-  `route` is a file listed in `routesFile`, `table` the file and the top-level `const` that hold the table, and
-  `items` the keys from that const to each item, with `*` for every key at that place. The items give screens
-  whose sources hold the components each item names, with the path of the screen that draws the route file in
-  front. The conditions written in an item are not read. Without the
-  entry, such a route gives a `route not read` line whose reason starts with `made for each item of a list`. An entry of another shape, one naming a file not in `routesFile`, or a route file
-  named twice stops the run with an error, as does an entry whose route file has no such route or more than one,
-  whose table const is not there, or none of whose items has the field the route reads.
+  `route` is a file listed in `routesFile`, `table` the file and the top-level `const` that hold the table, an
+  object or a list, and `items` the keys from that const to each item, with `*` for every key at that place. In a
+  list the key is the item's place, counted from 0, so `*` takes every item and `3` the fourth. SigNoz keeps its
+  routes in a list:
+
+  ```json
+  "routeTables": [{ "route": "AppRoutes/index.tsx", "table": { "file": "AppRoutes/routes.ts", "const": "routes" }, "items": "*" }]
+  ```
+
+  The items give screens whose sources hold the components each item names, with the path of the screen that draws
+  the route file in front. The conditions written in an item are not read. Without the entry, such a route gives no
+  screen for each item; the lines that can point to it are a `route not read` line whose reason starts with `made
+  for each item of a list` and a `route path not read` line that stopped at a field of the item, with its `{?}`
+  screen. An entry of another shape, one naming a file not in `routesFile`, or a route file named twice stops the run
+  with an error, as does an entry whose route file has no such route or more than one, whose route reads a field of
+  the item but whose screen duru cannot read, whose table const is not there, or none of whose items has the field
+  the route reads.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
@@ -392,7 +402,7 @@ usable as a test tag. The pattern a path variable carries is left out of the ID,
 gives `/document/:tab#DocumentList`; the screen's path keeps it. It lists its route file and line, its component
 file, its `sourceFiles`, the API calls it reaches, the settings it reads, and its links to other screens with the
 conditions guarding them. A screen made from an item of a table in `routeTables` also has `tableItem`: the item's
-keys joined with `.`, the table file and the item's line. The settings come from every file in `sourceFiles`. The
+keys joined with `.`, a list item's key being its place in the list, and the file and line where the item is written. The settings come from every file in `sourceFiles`. The
 API calls and links are only those the screen's code reaches, so a file in `sourceFiles` can hold calls and links
 the screen does not list, and a call sent by a method of a store the screen gets from a React context hook can be
 written in a file outside them; each call and link names the file and line where it is written. A call or link a
@@ -507,6 +517,10 @@ listing the places whose value the source does not show in full.
 - `linkComponents <import> <name> is used nowhere in the screen sources` — an entry of `linkComponents`
   (`linkFunctions` likewise) that no element or call in a screen's sources uses, often a misspelt package or name
   (`unusedLinkEntries`).
+- `routesFile <file> has no <element> element, so it gives no screens` — a file listed in `routesFile` that holds
+  none of the `routeElements` (joined with `or`) and no redirect, such as a file that only keeps the list of routes
+  another file draws. List the file that draws the routes, and when it draws them from a list kept in this file,
+  name this file in `routeTables` (`emptyRouteFiles`).
 - `route path not read ← <route file>:<line>: stopped at <piece>` — a route whose path duru could not read in full.
   `<piece>` is the first part of the path whose value it could not read, as written where duru stopped: in the
   route file, or, followed by `in <file>:<line>`, in another file when duru followed a name into that file. When the
@@ -516,8 +530,9 @@ listing the places whose value the source does not show in full.
   ID itself holds `{?}`, it changes once that part can be read (`unreadRoutePaths`).
 - `route not read ← <route file>:<line>: <reason>` — printed when duru sees a route that draws a screen it cannot
   read, with the reason. For an item of a table in `routeTables`, the reason starts with `table item <key> at
-  <file>:<line>` and goes on with `has no <field>`, or with `: its <field> stopped at <piece>` when its value could
-  not be read in full, `<piece>` written as for `route path not read`.
+  <file>:<line>` and goes on with `has no <field>`, with `: its <field> stopped at <piece>` when its value could
+  not be read in full, `<piece>` written as for `route path not read`, or with `is not an object written in the
+  source` for a list item that is not written as an object.
   That screen is missing from the map and has no ID, so no test can be tagged with it; look at the route at that
   line to see which screen it draws (`unreadRoutes`).
 - `route guard <guard> on N screens is neither a setting nor a role, so it closes no screen; when it reads a setting or a role, name that in settingsRoots or roleIdentifiers`
