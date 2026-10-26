@@ -62,6 +62,43 @@ const FAKE_MARK = '__duru_fake__';
 // 1보다 작은 수라, 이 값만큼 도는 반복은 많아야 한 번 돈다.
 const FAKE_NUMBER = 0.7310595213;
 
+// react-query 의 훅은 받은 질의 함수나 변경 함수를 한 번 불러, 그 함수가 보내는 요청이 훅을 부른 API 함수의 요청이 된다.
+// 첫 인자가 키이면 v3 처럼 그다음 자리를 보고, 아니면 첫 인자를 옵션 객체로 본다.
+const REACT_QUERY = `const run = (fn, key) => {
+  if (typeof fn !== 'function') return;
+  let sent;
+  try {
+    sent = fn(globalThis.__duruArgument(typeof key === 'string' ? [key] : key));
+  } catch (e) {
+    sent = Promise.reject(e);
+  }
+  globalThis.__duruWait(sent);
+};
+const isKey = (value) => typeof value === 'string' || Array.isArray(value);
+const fnAfterKey = (value, name) => (typeof value === 'function' ? value : value?.[name]);
+export const useQuery = (first, second) => {
+  const [fn, key] = isKey(first) ? [fnAfterKey(second, 'queryFn'), first] : [first?.queryFn, first?.queryKey];
+  run(fn, key);
+  return globalThis.__duruNothing;
+};
+export const useInfiniteQuery = useQuery;
+export const useSuspenseQuery = useQuery;
+export const useSuspenseInfiniteQuery = useQuery;
+export const useMutation = (first, second) => {
+  run(isKey(first) ? fnAfterKey(second, 'mutationFn') : fnAfterKey(first, 'mutationFn'));
+  return globalThis.__duruNothing;
+};
+export const useQueries = (options) => {
+  const queries = Array.isArray(options) ? options : options?.queries;
+  if (Array.isArray(queries)) for (const query of queries) run(query?.queryFn, query?.queryKey);
+  return globalThis.__duruNothing;
+};
+export const useSuspenseQueries = useQueries;
+export const queryOptions = (options) => options;
+export const infiniteQueryOptions = queryOptions;
+export const mutationOptions = queryOptions;`;
+const PACKAGE_STAND_INS = { 'react-query': REACT_QUERY, '@tanstack/react-query': REACT_QUERY };
+
 const firstLine = (text: string) => text.split('\n')[0];
 const unmarked = (text: string) => text.replaceAll(FAKE_MARK, UNKNOWN).replaceAll(String(FAKE_NUMBER), UNKNOWN);
 
@@ -151,7 +188,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
   const target = requestFunctionFile(config, resolve);
   let recorded = false;
   const recorder = `const record = globalThis.${object ? '__duruRequestObject' : '__duruRecorder'};\nexport { record as ${name === 'default' ? 'default' : JSON.stringify(name)} };`;
-  const copier = moduleCopier(config, resolve, {
+  const copier = moduleCopier({ ...config, constantStubs: { ...PACKAGE_STAND_INS, ...config.constantStubs } }, resolve, {
     label: 'calledApiModules',
     fillMissing: true,
     replacement: (spec, resolved) => {

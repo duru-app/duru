@@ -163,9 +163,16 @@ client with example results and a config to start from.
   Requests the listed files send with the global `fetch` are recorded too, so API code that sends only through
   `fetch` lists its files in `calledApiModules` and leaves `requestFunction` out. So are the requests a method sends
   by moving the browser (a link it makes and clicks, `window.open`, an address given to `location`), each as a
-  `GET`. Outside packages that `constantStubs` does not give are filled with values that do nothing. A call stopped
-  after one second counts as failed. Two listed files exporting different objects under one name, or a name
-  `apiModules` already has, get the file path in front of the name. On into-sign 2.0.0:
+  `GET`. Outside packages that `constantStubs` does not give are filled with values that do nothing, except
+  `react-query` and `@tanstack/react-query`: their `useQuery`, `useInfiniteQuery`, `useQueries` and `useMutation`,
+  with the suspense forms of the first three, call the query or mutation function they are given once with fake
+  values, and their `queryOptions`, `infiniteQueryOptions` and `mutationOptions` give back what they are given. So
+  a hook a listed file exports, such as one an OpenAPI generator writes around a request function, makes the
+  requests of that function, and a screen that calls the hook gets them. A `constantStubs` entry for either package
+  is used in place of this.
+  An API function that a screen's own source gives to react-query is a call of that screen, as one it calls
+  directly is. A call stopped after one second counts as failed. Two listed files exporting different objects under
+  one name, or a name `apiModules` already has, get the file path in front of the name. On into-sign 2.0.0:
 
   ```json
   "calledApiModules": ["domains/user/api/index.ts", "domains/document/api/index.ts", "domains/signing/api/index.ts"],

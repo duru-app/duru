@@ -710,3 +710,146 @@ test('an address an API function sends to another host than the page or app.serv
   });
   for (const map of [alone, served]) assert.deepEqual(map.calls.map((c) => c.id).filter((id) => /:\/\/|example\.org|\/_/.test(id)), []);
 });
+
+const CHANNEL_FETCHER = `export const request = ({ url, method, data }: { url: string; method: string; data?: unknown; signal?: unknown }) => fetch(url, { method, body: data === undefined ? undefined : JSON.stringify(data) });\n`;
+
+const channelsApi = (from: string, hooks: string, names = '') => `import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient, useSuspenseQuery${names} } from '${from}';
+import type { QueryClient } from '${from}';
+import { request } from './fetcher';
+
+export const listChannels = (signal?: unknown) => request({ url: '/api/channels', method: 'GET', signal });
+export const listChannelPage = (page: unknown) => request({ url: \`/api/channels?page=\${page}\`, method: 'GET' });
+export const getChannel = (id: string) => request({ url: \`/api/channels/\${id}\`, method: 'GET' });
+export const createChannel = (data: object) => request({ url: '/api/channels', method: 'POST', data });
+export const listUsers = () => request({ url: '/api/users', method: 'GET' });
+export const exportChannel = (format: string) => {
+  if (!['csv', 'json'].includes(format)) throw new Error(\`Unknown export format: \${format}\`);
+  return request({ url: \`/api/channels/export.\${format}\`, method: 'GET' });
+};
+export const getListChannelsQueryKey = () => ['/api/channels'];
+export const invalidateListChannels = async (queryClient: QueryClient) => {
+  await queryClient.invalidateQueries({ queryKey: getListChannelsQueryKey() });
+  return queryClient;
+};
+${hooks}`;
+
+const OBJECT_NAMES = ', infiniteQueryOptions, mutationOptions, queryOptions, useSuspenseInfiniteQuery, useSuspenseQueries';
+const OBJECT_HOOKS = `
+export function useListChannels(options?: { query?: object }, queryClient?: QueryClient) {
+  const queryKey = getListChannelsQueryKey();
+  const query = useQuery({ queryKey, queryFn: ({ signal }: { signal?: unknown }) => listChannels(signal), ...options?.query }, queryClient) as { queryKey?: unknown };
+  query.queryKey = queryKey;
+  return query;
+}
+export const useGetChannel = (id: string) => useQuery(queryOptions({ queryKey: ['/api/channels', id], queryFn: () => getChannel(id) }));
+export const useChannelSuspense = (id: string) => useSuspenseQuery({ queryKey: ['/api/channels', id], queryFn: () => getChannel(id) });
+export const useChannelPages = () => useInfiniteQuery(infiniteQueryOptions({ queryKey: ['/api/channels', 'pages'], queryFn: ({ pageParam }: { pageParam: unknown }) => listChannelPage(pageParam), initialPageParam: 0, getNextPageParam: () => null }));
+export const useCreateChannel = (queryClient?: QueryClient) => {
+  const client = useQueryClient();
+  return useMutation(mutationOptions({ mutationFn: (props: { data: object }) => createChannel(props.data), onSuccess: () => invalidateListChannels(client) }), queryClient);
+};
+export const useChannelsAndUsers = () => useQueries({ queries: [{ queryKey: ['/api/channels'], queryFn: () => listChannels() }, { queryKey: ['/api/users'], queryFn: () => listUsers() }] });
+export const useExportChannel = (format: string) => useQuery({ queryKey: ['/api/channels/export', format], queryFn: async () => exportChannel(format) });
+export const useChannelPagesSuspense = () => useSuspenseInfiniteQuery({ queryKey: ['/api/channels', 'pages'], queryFn: ({ pageParam }: { pageParam: unknown }) => listChannelPage(pageParam), initialPageParam: 0, getNextPageParam: () => null });
+export const useChannelsAndUsersSuspense = () => useSuspenseQueries({ queries: [{ queryKey: ['/api/channels'], queryFn: () => listChannels() }, { queryKey: ['/api/users'], queryFn: () => listUsers() }] });
+`;
+
+const POSITIONAL_HOOKS = `
+export function useListChannels(options?: object) {
+  const queryKey = getListChannelsQueryKey();
+  const query = useQuery(queryKey, ({ signal }: { signal?: unknown }) => listChannels(signal), options) as { queryKey?: unknown };
+  query.queryKey = queryKey;
+  return query;
+}
+export const useGetChannel = (id: string) => useQuery(['/api/channels', id], () => getChannel(id));
+export const useChannelSuspense = (id: string) => useQuery(['/api/channels', id], () => getChannel(id), { suspense: true });
+export const useChannelPages = () => useInfiniteQuery(['/api/channels', 'pages'], ({ pageParam }: { pageParam: unknown }) => listChannelPage(pageParam));
+export const useCreateChannel = () => {
+  const client = useQueryClient();
+  return useMutation(['channels', 'create'], (props: { data: object }) => createChannel(props.data), { onSuccess: () => invalidateListChannels(client) });
+};
+export const useChannelsAndUsers = () => useQueries([{ queryKey: ['/api/channels'], queryFn: () => listChannels() }, { queryKey: ['/api/users'], queryFn: () => listUsers() }]);
+export const useExportChannel = (format: string) => useQuery(['/api/channels/export', format], async () => exportChannel(format));
+`;
+
+const channelsCopy = (from: string, hooks: string, names: string, keys: Record<string, unknown> = {}) => fixtureCopy(
+  { calledApiModules: ['contracts/api/channels.ts'], ...keys },
+  { 'contracts/api/fetcher.ts': CHANNEL_FETCHER, 'contracts/api/channels.ts': channelsApi(from, hooks, names) },
+);
+const channelRequests = (map: ScreenMap) => Object.fromEntries(Object.entries(map.apiFunctions).filter(([name]) => !name.startsWith('ajax')).map(([name, f]) => [name, f.endpoints.map((e) => `${e.method} ${e.url}`)]));
+const CHANNEL_REQUESTS = {
+  listChannels: ['GET /api/channels'],
+  listChannelPage: ['GET /api/channels?page={?}'],
+  getChannel: ['GET /api/channels/{?}'],
+  createChannel: ['POST /api/channels'],
+  listUsers: ['GET /api/users'],
+  exportChannel: [],
+  getListChannelsQueryKey: [],
+  invalidateListChannels: [],
+  useListChannels: ['GET /api/channels'],
+  useGetChannel: ['GET /api/channels/{?}'],
+  useChannelSuspense: ['GET /api/channels/{?}'],
+  useChannelPages: ['GET /api/channels?page={?}'],
+  useCreateChannel: ['POST /api/channels'],
+  useChannelsAndUsers: ['GET /api/channels', 'GET /api/users'],
+  useExportChannel: [],
+};
+
+test('a react-query hook an API file calls gives the requests of the query, mutation or queries functions it is given, called with the fake values API functions get, the same for react-query 3 with arguments in place and for @tanstack/react-query with an options object, made by queryOptions, infiniteQueryOptions or mutationOptions or not, and for the suspense forms of the hooks, while a function that only invalidates queries gives none', async () => {
+  const [object, positional] = await Promise.all([build(channelsCopy('@tanstack/react-query', OBJECT_HOOKS, OBJECT_NAMES)), build(channelsCopy('react-query', POSITIONAL_HOOKS, ''))]);
+  assert.deepEqual(channelRequests(object), { ...CHANNEL_REQUESTS, useChannelPagesSuspense: ['GET /api/channels?page={?}'], useChannelsAndUsersSuspense: ['GET /api/channels', 'GET /api/users'] });
+  assert.deepEqual(channelRequests(positional), CHANNEL_REQUESTS);
+  const callsOf = (map: ScreenMap) => map.calls.filter((c) => /\/api\/(channels|users)/.test(c.id)).map((c) => [c.id, c.apiFunctions]);
+  assert.deepEqual(callsOf(object), [
+    ['GET:/api/channels', ['listChannels', 'useChannelsAndUsers', 'useChannelsAndUsersSuspense', 'useListChannels']],
+    ['GET:/api/channels/{?}', ['getChannel', 'useChannelSuspense', 'useGetChannel']],
+    ['GET:/api/channels?page={?}', ['listChannelPage', 'useChannelPages', 'useChannelPagesSuspense']],
+    ['GET:/api/users', ['listUsers', 'useChannelsAndUsers', 'useChannelsAndUsersSuspense']],
+    ['POST:/api/channels', ['createChannel', 'useCreateChannel']],
+  ]);
+  assert.deepEqual(callsOf(positional), [
+    ['GET:/api/channels', ['listChannels', 'useChannelsAndUsers', 'useListChannels']],
+    ['GET:/api/channels/{?}', ['getChannel', 'useChannelSuspense', 'useGetChannel']],
+    ['GET:/api/channels?page={?}', ['listChannelPage', 'useChannelPages']],
+    ['GET:/api/users', ['listUsers', 'useChannelsAndUsers']],
+    ['POST:/api/channels', ['createChannel', 'useCreateChannel']],
+  ]);
+});
+
+const KEY_HOOKS = (positional: boolean) => `
+const byKey = ({ queryKey }: { queryKey: unknown[] }) => { const [, id] = queryKey; return getChannel(id as string); };
+const byKeyObject = ({ queryKey }: { queryKey: unknown[] }) => { const [, { id }] = queryKey as [string, { id: string }]; return getChannel(id); };
+export const useChannelByKey = (id: string) => ${positional ? `useQuery(['/api/channels', id], byKey)` : `useQuery({ queryKey: ['/api/channels', id], queryFn: byKey })`};
+export const useChannelByKeyObject = (id: string) => ${positional ? `useQuery(['/api/channels', { id }], byKeyObject)` : `useQuery({ queryKey: ['/api/channels', { id }], queryFn: byKeyObject })`};
+export const useChannelsByKey = (id: string) => useQueries(${positional ? '' : '{ queries: '}[{ queryKey: ['/api/channels', id], queryFn: byKey }]${positional ? '' : ' }'});
+const byUrl = ({ queryKey: [url] }: { queryKey: unknown[] }) => request({ url: url as string, method: 'GET' });
+export const useChannelsByUrl = () => ${positional ? `useQuery('/api/channels', byUrl)` : `useQuery({ queryKey: ['/api/channels'], queryFn: byUrl })`};
+const fetchWith = (init?: object) => fetch('/api/channels', init);
+export const useChannelsWithInit = () => ${positional ? `useQuery(['/api/channels'], fetchWith)` : `useQuery({ queryKey: ['/api/channels'], queryFn: fetchWith })`};
+`;
+
+test('a query function gets the key the hook was given, an array for a react-query 3 text key, so variables read back out of it reach the address, and the rest of what it gets still counts as no options when passed on to fetch', async () => {
+  const [object, positional] = await Promise.all([build(channelsCopy('@tanstack/react-query', KEY_HOOKS(false), '')), build(channelsCopy('react-query', KEY_HOOKS(true), ''))]);
+  for (const map of [object, positional]) {
+    const requests = channelRequests(map);
+    assert.deepEqual(
+      [requests.useChannelByKey, requests.useChannelByKeyObject, requests.useChannelsByKey, requests.useChannelsByUrl, requests.useChannelsWithInit],
+      [['GET /api/channels/{?}'], ['GET /api/channels/{?}'], ['GET /api/channels/{?}'], ['GET /api/channels'], ['GET /api/channels']],
+    );
+  }
+});
+
+test('a stand-in for react-query in constantStubs is used in place of the one duru gives', async () => {
+  const map = await build(channelsCopy('@tanstack/react-query', OBJECT_HOOKS, OBJECT_NAMES, { constantStubs: { '@tanstack/react-query': 'export const useQuery = () => ({});' } }));
+  const requests = channelRequests(map);
+  assert.deepEqual([requests.listChannels, requests.useListChannels, requests.useCreateChannel, requests.useChannelsAndUsers], [['GET /api/channels'], [], [], []]);
+});
+
+test('extract prints the api method line for a hook whose query function stops on the fake value it is given', () => {
+  const result = spawnSync(process.execPath, [CLI, 'extract', channelsCopy('@tanstack/react-query', OBJECT_HOOKS, OBJECT_NAMES)], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('api method')), [
+    '  api method exportChannel ← contracts/api/channels.ts:10: Unknown export format: {?}',
+    '  api method useExportChannel ← contracts/api/channels.ts:34: Unknown export format: {?}',
+  ]);
+});

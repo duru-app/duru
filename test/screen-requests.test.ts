@@ -518,3 +518,49 @@ test('a screen whose sources send no request of their own has the same calls wit
     assert.ok(skill.includes(text), `SKILL lacks ${text}`);
   }
 });
+
+const CHANNEL_FETCHER = `export const request = ({ url, method }: { url: string; method: string }) => fetch(url, { method });\n`;
+const channelsApi = (from: string, hooks: string) => `import { useMutation, useQueries, useQuery, useQueryClient } from '${from}';
+import type { QueryClient } from '${from}';
+import { request } from './fetcher';
+
+export const listChannels = () => request({ url: '/api/channels', method: 'GET' });
+export const createChannel = (data: object) => request({ url: '/api/channels', method: 'POST' });
+export const listUsers = () => request({ url: '/api/users', method: 'GET' });
+export const invalidateListChannels = (queryClient: QueryClient) => queryClient.invalidateQueries({ queryKey: ['/api/channels'] });
+${hooks}`;
+const OBJECT_HOOKS = `export const useListChannels = () => useQuery({ queryKey: ['/api/channels'], queryFn: () => listChannels() });
+export const useCreateChannel = () => useMutation({ mutationFn: (data: object) => createChannel(data), onSuccess: () => invalidateListChannels(useQueryClient()) });
+export const useChannelsAndUsers = () => useQueries({ queries: [{ queryKey: ['/api/channels'], queryFn: listChannels }, { queryKey: ['/api/users'], queryFn: listUsers }] });
+`;
+const POSITIONAL_HOOKS = `export const useListChannels = () => useQuery(['/api/channels'], () => listChannels());
+export const useCreateChannel = () => useMutation((data: object) => createChannel(data));
+export const useChannelsAndUsers = () => useQueries([{ queryKey: ['/api/channels'], queryFn: listChannels }, { queryKey: ['/api/users'], queryFn: listUsers }]);
+`;
+const CHANNEL_INBOX = (from: string) => `import { useQueryClient } from '${from}';
+import { invalidateListChannels, useChannelsAndUsers, useCreateChannel, useListChannels } from '../api/channels';
+
+export default function Inbox() {
+  const channels = useListChannels();
+  const both = useChannelsAndUsers();
+  const { mutate } = useCreateChannel();
+  const queryClient = useQueryClient();
+  return <button onClick={() => [mutate({}), invalidateListChannels(queryClient)]}>{String(channels.data ?? both.length)}</button>;
+}
+`;
+
+test('a screen calling a query hook, a mutation hook or a hook running several queries from an API file gets the requests of the functions the hook gives react-query, with react-query 3 as with @tanstack/react-query, and calling a function that only invalidates queries gives it no request', async () => {
+  const channelsApp = (from: string, hooks: string) => build(fixtureCopy(
+    { 'api/fetcher.ts': CHANNEL_FETCHER, 'api/channels.ts': channelsApi(from, hooks), 'screens/Inbox.tsx': CHANNEL_INBOX(from) },
+    { calledApiModules: ['api/channels.ts'] },
+  ));
+  for (const map of await Promise.all([channelsApp('@tanstack/react-query', OBJECT_HOOKS), channelsApp('react-query', POSITIONAL_HOOKS)])) {
+    assert.deepEqual(sent(map, INBOX), [
+      ['useListChannels', 'GET /api/channels', false],
+      ['useChannelsAndUsers', 'GET /api/channels', 'GET /api/users', false],
+      ['useCreateChannel', 'POST /api/channels', false],
+      ['invalidateListChannels', false],
+    ]);
+    assert.deepEqual(callsOf(map, INBOX), ['GET:/api/channels', 'GET:/api/users', 'POST:/api/channels']);
+  }
+});
