@@ -564,3 +564,146 @@ test('a screen calling a query hook, a mutation hook or a hook running several q
     assert.deepEqual(callsOf(map, INBOX), ['GET:/api/channels', 'GET:/api/users', 'POST:/api/channels']);
   }
 });
+
+const guardsAt = (map: ScreenMap, id: string) => map.screens.find((s) => s.id === id)!.apiCalls.map((c) => [c.line, c.fn, c.guards]);
+const USERS_HOOK = `export const getUsersKey = () => ['/api/users'];
+export const useListUsers = (options?: { query?: { enabled?: boolean } }) => useQuery({ queryKey: getUsersKey(), queryFn: () => listUsers(), ...options?.query });
+`;
+const POSITIONAL_USERS_HOOK = `export const getUsersKey = () => ['/api/users'];
+export const useListUsers = (options?: { query?: { enabled?: boolean } }) => useQuery(getUsersKey(), () => listUsers(), options?.query);
+`;
+
+test('the enabled a screen gives a hook from an API file under query is a condition of the requests the hook leads to, before the conditions around the call, and a call without it keeps its conditions, with react-query 3 as with @tanstack/react-query', async () => {
+  const usersApp = (from: string, hooks: string) => build(fixtureCopy(
+    {
+      'api/fetcher.ts': CHANNEL_FETCHER,
+      'api/channels.ts': channelsApi(from, hooks),
+      'screens/Inbox.tsx': `import { useListUsers } from '../api/channels';
+
+export default function Inbox({ user, isAdmin }: { user: { role: string }; isAdmin: boolean }) {
+  useListUsers({ query: { enabled: user.role === 'ADMIN' } });
+  useListUsers();
+  if (isAdmin) {
+    useListUsers({ query: { enabled: !!user, retry: false } });
+  }
+  return <main />;
+}
+`,
+    },
+    { calledApiModules: ['api/channels.ts'] },
+  ));
+  for (const map of await Promise.all([usersApp('@tanstack/react-query', USERS_HOOK), usersApp('react-query', POSITIONAL_USERS_HOOK)])) {
+    assert.deepEqual(guardsAt(map, INBOX), [
+      [4, 'useListUsers', ["user.role === 'ADMIN'"]],
+      [5, 'useListUsers', []],
+      [7, 'useListUsers', ['!!user', 'isAdmin']],
+    ]);
+    assert.deepEqual(sent(map, INBOX)[0], ['useListUsers', 'GET /api/users', false]);
+  }
+});
+
+test('a function of an API namespace called with its name in brackets stays a call of the screen with no condition', async () => {
+  const map = await build(fixtureCopy({
+    'screens/Inbox.tsx': `import * as AjaxNs from '../_ajax/AjaxFunc';
+export default function Inbox({ isEdit }: { isEdit: boolean }) {
+  return <button onClick={() => AjaxNs[isEdit ? 'ajaxReportSchedule' : 'ajaxReportArchive']({ query: { enabled: isEdit } })}>x</button>;
+}
+`,
+  }));
+  assert.deepEqual(guardsAt(map, INBOX).map(([line, , guards]) => [line, guards]), [[3, []]]);
+});
+
+const QUERYING_INBOX = `import { useMemo } from 'react';
+import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQueries as useQueriesV3, useQuery as useQueryV3 } from 'react-query';
+import { createChannel, getUsersKey, listChannels, listUsers } from '../api/channels';
+
+export default function Inbox({ id, open, isAdmin, rest }: { id: string; open: boolean; isAdmin: boolean; rest: object }) {
+  useQuery({ queryKey: getUsersKey(), queryFn: () => listUsers(), enabled: !!id });
+  useQuery({ queryKey: ['c'], queryFn: listChannels, enabled: open });
+  useQueryV3(['c', getUsersKey()], () => listChannels(), { enabled: open && !!id });
+  useQuery({ queryKey: ['c'], queryFn: listChannels, enabled: true });
+  useQuery({ queryKey: ['c'], queryFn: listChannels, enabled: false });
+  useQuery({ queryKey: ['c'], queryFn: () => listChannels(), enabled: !!id, ...rest });
+  useQuery({ queryKey: ['u'], queryFn: () => listUsers(), onSuccess: () => createChannel({}), enabled: open });
+  useQueries({ queries: [{ queryKey: ['u'], queryFn: listUsers, enabled: isAdmin }, { queryKey: ['c'], queryFn: listChannels }] });
+  useQueriesV3([{ queryKey: ['u'], queryFn: () => listUsers(), enabled: open }, { queryKey: ['c'], queryFn: () => listChannels() }]);
+  const built = useMemo(() => [{ queryKey: ['c'], queryFn: () => listChannels(), enabled: !!id && open }], [id, open]);
+  useQueries({ queries: built });
+  if (isAdmin) {
+    useQuery({ queryKey: ['u'], queryFn: () => listUsers(), enabled: !!id });
+  }
+  return <main />;
+}
+`;
+
+test('the enabled a screen gives react-query is a condition of the API calls in the query function and the callbacks of that query, last written even before a spread, each query of useQueries with its own, not of the call building its key, and enabled: true is no condition', async () => {
+  const map = await build(fixtureCopy(
+    { 'api/fetcher.ts': CHANNEL_FETCHER, 'api/channels.ts': channelsApi('@tanstack/react-query', USERS_HOOK), 'screens/Inbox.tsx': QUERYING_INBOX },
+    { calledApiModules: ['api/channels.ts'] },
+  ));
+  assert.deepEqual(guardsAt(map, INBOX), [
+    [7, 'getUsersKey', []],
+    [7, 'listUsers', ['!!id']],
+    [8, 'listChannels', ['open']],
+    [9, 'getUsersKey', []],
+    [9, 'listChannels', ['open && !!id']],
+    [10, 'listChannels', []],
+    [11, 'listChannels', ['false']],
+    [12, 'listChannels', ['!!id']],
+    [13, 'listUsers', ['open']],
+    [13, 'createChannel', ['open']],
+    [14, 'listUsers', ['isAdmin']],
+    [14, 'listChannels', []],
+    [15, 'listUsers', ['open']],
+    [15, 'listChannels', []],
+    [16, 'listChannels', ['!!id && open']],
+    [19, 'listUsers', ['!!id', 'isAdmin']],
+  ]);
+});
+
+const loadingOutbox = (enabled: string) => `import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import Option from '../_define/Option';
+import { listUsers } from '../api/channels';
+
+export default function Outbox({ memberRole }: { memberRole: string }) {
+  const navigate = useNavigate();
+  const load = () => {
+    navigate(Option.ROUTE_PATH.ARCHIVE);
+    return listUsers();
+  };
+  useQuery({ queryKey: ['u'], queryFn: load, ${enabled}onSuccess: () => navigate(Option.ROUTE_PATH.INBOX) });
+  return <main />;
+}
+`;
+
+test('an enabled reaches a request in a local function the query is given, while the links beside it, the access of the screen and what extract prints stay as without the enabled, and the usage guide, the agent skill and the decisions say so', async () => {
+  const outboxApp = (enabled: string) => fixtureCopy(
+    { 'api/fetcher.ts': CHANNEL_FETCHER, 'api/channels.ts': channelsApi('@tanstack/react-query', USERS_HOOK), 'screens/Outbox.tsx': loadingOutbox(enabled) },
+    { calledApiModules: ['api/channels.ts'] },
+  );
+  const [gated, plain] = [outboxApp("enabled: memberRole === 'ADMIN', "), outboxApp('')];
+  const [gatedMap, plainMap] = await Promise.all([build(gated), build(plain)]);
+  const outbox = (map: ScreenMap) => map.screens.find((s) => s.id === OUTBOX)!;
+  assert.deepEqual(outbox(gatedMap).apiCalls.map((c) => [c.fn, c.guards, c.inheritedGuards?.map((h) => [h.via, h.guards])]), [['listUsers', [], [['load', ["memberRole === 'ADMIN'"]]]]]);
+  assert.deepEqual(outbox(plainMap).apiCalls.map((c) => [c.fn, c.guards, c.inheritedGuards?.map((h) => [h.via, h.guards])]), [['listUsers', [], [['load', []]]]]);
+  const { apiCalls: _gatedCalls, codeHash: _gatedHash, ...gatedRest } = outbox(gatedMap);
+  const { apiCalls: _plainCalls, codeHash: _plainHash, ...plainRest } = outbox(plainMap);
+  assert.deepEqual(gatedRest, plainRest);
+  assert.equal(gatedRest.links.length, 2);
+  const printed = (configFile: string) => {
+    const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.replaceAll(path.dirname(configFile), '<app>');
+  };
+  assert.equal(printed(gated), printed(plain));
+
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8').replace(/\s+/g, ' ');
+  for (const [file, text] of [
+    ['README.md', "The `enabled` the screen gives that query, or gives a listed file's hook under `query` (`useListUsers({ query: { enabled } })`), is a condition of the requests the query sends"],
+    ['README.md', 'each API call also lists the conditions it is sent under'],
+    ['skills/duru/SKILL.md', "A request's `guards` include the `enabled` given to the react-query query that sends it"],
+    ['docs/decisions.md', '**The `enabled` a screen gives a react-query query is a condition of the requests that query sends, written where the `if`, `&&` and `? :` conditions around a request are written; screen access is still decided by routes and links only.**'],
+  ]) assert.ok(read(file).includes(text), `${file} lacks ${text}`);
+});
