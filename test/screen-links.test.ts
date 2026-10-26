@@ -4484,10 +4484,98 @@ export default function Routes() {
   const tableKeys = { routeTables: [{ route: 'Routes.js', table: { file: 'routes.js', const: 'routes' }, items: '*' }] };
   const defaulted = underApp('', { 'Routes.js': routesFile.replace('({ path, component, exact })', '({ path, component, exact = true })'), 'routes.js': table.replace(', exact: false }', ' }') }, tableKeys);
   assert.equal((await build(defaulted)).addressesUnderRoutes, undefined);
-  for (const unread of ['{ exact: false, ...props.base, path: Option.ROUTE_PATH.SETTINGS, component: Settings }', '{ [props.key]: true, path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }']) {
-    const item = table.replace('{ path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }', unread);
+  const settingsItem = '{ path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }';
+  for (const unread of ['{ exact: false, ...props.base, path: Option.ROUTE_PATH.SETTINGS, component: Settings }', '{ path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false, [props.key]: true }']) {
+    const item = table.replace(settingsItem, unread);
     assert.equal((await build(underApp('', { 'Routes.js': routesFile, 'routes.js': item }, tableKeys))).addressesUnderRoutes, undefined, unread);
   }
+  const spreadable = table.replace('const routes = [', 'const open = { exact: false };\nconst shut = { exact: true };\n\nconst routes = [');
+  for (const read of [
+    '{ ...props.base, path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }',
+    '{ [props.key]: true, path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }',
+    '{ path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: true, ...open }',
+  ]) {
+    const item = spreadable.replace(settingsItem, read);
+    assert.deepEqual((await build(underApp('', { 'Routes.js': routesFile, 'routes.js': item }, tableKeys))).addressesUnderRoutes?.map((r) => r.screen), ['/settings#Settings'], read);
+  }
+  const shutItem = spreadable.replace(settingsItem, '{ path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false, ...shut }');
+  assert.equal((await build(underApp('', { 'Routes.js': routesFile, 'routes.js': shutItem }, tableKeys))).addressesUnderRoutes, undefined);
+  const split = table.replace("import Settings from './Settings';", "import Settings from './Settings';\nimport SettingsHome from './SettingsHome';").replace(settingsItem, `{ path: Option.ROUTE_PATH.SETTINGS, component: SettingsHome, exact: true },\n  ${settingsItem}`);
+  const splitMap = await build(underApp('', { 'Routes.js': routesFile, 'routes.js': split, 'SettingsHome.js': page('SettingsHome') }, tableKeys));
+  assert.deepEqual(splitMap.addressesUnderRoutes?.map((r) => [r.screen, r.addresses]), [['/settings#Settings', ['/settings/billing', '/settings/members', '/settings/roles', '/settings/roles/:roleId']]]);
+});
+
+test('a link reaches a route made for a route table item only at the addresses its item exact allows, a route per exact value when items at one path differ, and when that exact is not read, at the addresses under it too', async () => {
+  const table = `import Alerts from './Alerts';
+import ChannelEdit from './ChannelEdit';
+import Services from './Services';
+import Settings from './Settings';
+import Reports from './Reports';
+import Teams from './Teams';
+import Archive from './Archive';
+import PlanList from './PlanList';
+import PlanLayout from './PlanLayout';
+
+const routes = [
+  { path: '/alerts', component: Alerts, exact: true },
+  { path: '/alerts/channels/edit/:channelId', component: ChannelEdit, exact: true },
+  { path: '/services', component: Services, exact: true },
+  { path: '/settings', component: Settings, exact: false },
+  { path: '/reports', component: Reports, exact: true, ...props.overrides },
+  { [props.key]: 1, path: '/teams', component: Teams, exact: true },
+  { ...props.base, path: '/archive', component: Archive, exact: true },
+  { path: '/plans', component: PlanList, exact: true },
+  { path: '/plans', component: PlanLayout, exact: false },
+];
+
+export default routes;
+`;
+  const routesFile = `import { Route, Switch } from 'react-router-dom';
+import routes from './routes';
+import Home from './Home';
+import NotFound from './NotFound';
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/" component={Home} exact />
+      {routes.map(({ path, component, exact }) => (
+        <Route key={path} exact={exact} path={path} component={component} />
+      ))}
+      <Route path="*" component={NotFound} />
+    </Switch>
+  );
+}
+`;
+  const home = `import { Link } from 'react-router-dom';
+
+export default function Home({ id }) {
+  return (
+    <nav>
+      <Link to={\`/alerts/channels/edit/\${id}\`}>channel</Link>
+      <Link to="/services/x">service</Link>
+      <Link to="/settings/billing">billing</Link>
+      <Link to="/reports/weekly">weekly</Link>
+      <Link to="/teams/x">team</Link>
+      <Link to="/archive/x">archive</Link>
+      <Link to="/plans">plans</Link>
+      <Link to="/plans/x">plan</Link>
+    </nav>
+  );
+}
+`;
+  const pages = Object.fromEntries(['ChannelEdit', 'Services', 'Reports', 'Teams', 'Archive', 'PlanList', 'PlanLayout', 'NotFound'].map((n) => [`${n}.js`, page(n)]));
+  const map = await build(underApp('', { ...pages, 'Home.js': home, 'Routes.js': routesFile, 'routes.js': table }, { routeTables: [{ route: 'Routes.js', table: { file: 'routes.js', const: 'routes' }, items: '*' }] }));
+  assert.deepEqual(targetsOf(map, '/#Home'), [
+    ['/alerts/channels/edit/{*}', ['/alerts/channels/edit/:channelId#ChannelEdit']],
+    ['/services/x', ['*#NotFound']],
+    ['/settings/billing', ['/settings#Settings']],
+    ['/reports/weekly', ['/reports#Reports']],
+    ['/teams/x', ['*#NotFound']],
+    ['/archive/x', ['*#NotFound']],
+    ['/plans', ['/plans#PlanList', '/plans#PlanLayout']],
+    ['/plans/x', ['/plans#PlanLayout']],
+  ]);
 });
 
 test('a route whose exact is not read gives no line, nor does a route under Routes, whose /* route the links already reach, and an address under two such routes in a Switch goes with the first', async () => {

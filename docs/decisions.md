@@ -3038,6 +3038,14 @@ reads a field of the item`, and listing `routes.ts` itself in `routesFile` gave 
 - The `routesFile <file> has no <element> element` line is printed for a listed file with no route element and no
   redirect. A file holding only a redirect, or only routes without a path, gets no line: it draws routes, they just
   give no screens.
+- A route whose `exact` reads a field of the item, as `exact={exact}` does, takes each item's value, both for the screen
+  a link reaches and for the line about addresses under a route. Items at one path that write different values give a
+  route for each value, so an address under that path reaches only the items that are not exact. The last `exact`
+  written in the item, through the objects it spreads, is its value, as in the running app; a spread duru cannot read
+  or a computed key after it, or anywhere in an item that writes none, leaves the value unread, and the route is then
+  taken as not exact, as a route with an `exact` duru cannot read is. On SigNoz a link to `/alerts/channels/edit/{*}` reaches
+  `/alerts/channels/edit/:channelId#ChannelsEdit` and one to `/services/{*}` reaches
+  `/services/:servicename#ServiceMetricsPage`, not the screens of the `exact: true` items `/alerts` and `/services`.
 Measured on SigNoz (`frontend/src`, `routesFile: ["AppRoutes/index.tsx"]` and the entry `"items": "*"`): 63 screens, 61
 from table items plus `/#Home` and `*#NotFound`, no `{?}` ID, every screen with a component file, no duplicate ID, and
 one line, `route not read ← AppRoutes/index.tsx:438: table item 57 at AppRoutes/routes.ts:460: its path stopped at
@@ -3062,8 +3070,11 @@ Known limits:
   for a route that is not there.
 - When a route file has one loop route that is read, another loop route in it whose path reads the item but whose
   screen is not read gives no line; only a file with no read loop route stops the run for it.
-- Per-item `exact` is not read: `exact={exact}` reads as unknown and the route is taken as not exact, as `item.exact`
-  already was. How that changes which screen a SigNoz link reaches was not measured.
+- A getter or method named `exact` (`get exact() { … }`) is not read, and an `exact` written before it stays the value.
+  An item that spreads the same object twice reads it only the first time, and a computed key written as a string
+  (`['exact']: true`) is taken as unread. No measured app writes any of these.
+- Only `exact` is unread when a spread duru cannot read follows it. The item's `path` and `component` are read as written
+  even when such a spread comes after them and may replace them in the running app.
 
 **A route path written as a list gives a screen for each path in it.**
 Decided in #444 (2026-10-26). React Router 5 takes a list in `path`, `<Route path={[A, B]}>`, and draws the same
