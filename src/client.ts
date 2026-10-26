@@ -74,6 +74,7 @@ type SettingRead = Site & { key: string };
 type RouteRef = Site & { route: string; tail?: string | null };
 type RouterLink = Site & { to: string; sides?: Side[] };
 type FollowedSite = ApiCallSite | DispatchSite | WatcherSite | RouteRef | RouterLink;
+type SiteKind = 'apiCalls' | 'settingReads' | 'routeRefs' | 'routerLinks';
 
 interface Facts {
   imports: string[];
@@ -230,12 +231,18 @@ function constInits(exprPath: NodePath, src: string, valueOf: (p: NodePath) => u
   return result;
 }
 
-function guardsOf(nodePath: NodePath, src: string, note: Note) {
+const QUERY_PACKAGES = new Set(['react-query', '@tanstack/react-query']);
+const QUERY_HOOKS = new Set(['useQuery', 'useInfiniteQuery', 'useSuspenseQuery', 'useSuspenseInfiniteQuery', 'useQueries', 'useSuspenseQueries']);
+
+type QueryEnabled = (parent: NodePath, child: NodePath, site: NodePath) => NodePath | null;
+
+function guardsOf(nodePath: NodePath, src: string, note: Note, queryEnabled?: QueryEnabled) {
   const guards: string[] = [];
   const add = (text: string, exprPath: NodePath, negated: boolean, source: string) => {
     guards.push(text);
     note(text, exprPath, negated, source);
   };
+  const enabledSeen = new Set<Node>();
   let child = nodePath;
   let parent = nodePath.parentPath;
   while (parent) {
@@ -247,6 +254,12 @@ function guardsOf(nodePath: NodePath, src: string, note: Note) {
       const s = src.slice(p.test.start!, p.test.end!);
       const negated = child.key !== 'consequent';
       add(negated ? `!(${t})` : t, parent.get('test') as NodePath, negated, negated ? `!(${s})` : s);
+    } else if (queryEnabled) {
+      const enabled = queryEnabled(parent, child, nodePath);
+      if (enabled && !enabledSeen.has(enabled.node)) {
+        enabledSeen.add(enabled.node);
+        guards.push(sliceText(src, enabled.node));
+      }
     }
     child = parent;
     parent = parent.parentPath;
@@ -719,6 +732,47 @@ export async function extractClient(config: any) {
     return found.sort((a, b) => a.start - b.start);
   }
 
+  // 뒤에 펼친 값이 있어도 마지막으로 적힌 값을 읽는다.
+  function lastValue(options: NodePath<any> | null, key: string) {
+    const obj = options?.node ? objectLiteral(options) : null;
+    const prop = obj?.get('properties').findLast((p) => propertyKey(p) === key);
+    return prop ? (prop.get('value') as NodePath) : null;
+  }
+
+  function enabledIn(options: NodePath<any> | null) {
+    const value = lastValue(options, 'enabled');
+    return value && !value.isBooleanLiteral({ value: true }) ? value : null;
+  }
+
+  // 질의 키를 만드는 자리: v3 처럼 키를 먼저 주는 첫 인자나 옵션의 queryKey
+  function inQueryKey(call: NodePath<CallExpression>, arg: NodePath, site: NodePath) {
+    if (arg.key === 0 && call.node.arguments.length > 1 && !arg.isObjectExpression()) return true;
+    return site !== arg && site.findParent((a) => a === arg || (a.isObjectProperty() && propertyKey(a) === 'queryKey')) !== arg;
+  }
+
+  const queryEnabled: QueryEnabled = (parent, child, site) => {
+    if (parent.isObjectExpression() && (child.isObjectProperty() || child.isObjectMethod()) && !child.node.computed && keyName(child.node) === 'queryFn') return enabledIn(parent);
+    if (!parent.isCallExpression() || child.listKey !== 'arguments') return null;
+    const callee = parent.get('callee');
+    const binding = callee.isIdentifier() ? callee.scope.getBinding(callee.node.name) : undefined;
+    const hook = binding && importedAs(binding);
+    if (!hook || !QUERY_PACKAGES.has(hook.spec) || !QUERY_HOOKS.has(hook.name) || inQueryKey(parent, child, site)) return null;
+    if (hook.name.endsWith('Queries')) {
+      const query = site.findParent((a) => a === parent || (a.isObjectExpression() && a.parentPath!.isArrayExpression()));
+      return query !== parent ? enabledIn(query) : null;
+    }
+    for (const arg of parent.get('arguments')) {
+      const enabled = enabledIn(arg);
+      if (enabled) return enabled;
+    }
+    return null;
+  };
+
+  function hookEnabled(callPath: NodePath<CallExpression>, fn: string | undefined) {
+    if (!fn || !/^use[A-Z0-9]/.test(fn.split(/[#.]/).at(-1)!)) return [];
+    return callPath.get('arguments').map((arg) => enabledIn(lastValue(arg, 'query'))).filter((v) => v !== null);
+  }
+
   function bodyOptions(callPath: NodePath<CallExpression>) {
     const options: BodyOption[] = [];
     for (const arg of callPath.get('arguments')) {
@@ -1158,13 +1212,13 @@ export async function extractClient(config: any) {
     const apiNamespaces = new Set<string>();
     const calledNamed = new Map<string, { file: string; exportName: string }>();
     const calledNamespaces = new Map<string, string>();
-    const localFnRefs = new Map<string, { fnPath: NodePath; items: Site[] }>();
+    const localFnRefs = new Map<string, { fnPath: NodePath; items: { kind: SiteKind; site: Site }[] }>();
     const constantAt = new Map<Node, RouteRef[]>();
     const relFile = path.relative(config.srcRoot, file);
     const note = guardNote(relFile, src);
 
-    function record(kind: 'apiCalls' | 'settingReads' | 'routeRefs' | 'routerLinks', entry: object, nodePath: NodePath, ownGuards: string[] = [], inherits = true) {
-      const guards = [...ownGuards, ...guardsOf(nodePath, src, note)];
+    function record(kind: SiteKind, entry: object, nodePath: NodePath, ownGuards: string[] = [], inherits = true) {
+      const guards = [...ownGuards, ...guardsOf(nodePath, src, note, kind === 'apiCalls' ? queryEnabled : undefined)];
       const owner = enclosingFunctionName(nodePath);
       const item = { ...entry, line: nodePath.node.loc!.start.line, guards };
       siteStart.set(item as ApiCallSite, nodePath.node.start!);
@@ -1172,7 +1226,7 @@ export async function extractClient(config: any) {
       (facts[kind] as Site[]).push(item);
       if (owner && inherits) {
         if (!localFnRefs.has(owner.name)) localFnRefs.set(owner.name, { fnPath: owner.fnPath, items: [] });
-        localFnRefs.get(owner.name)!.items.push(item);
+        localFnRefs.get(owner.name)!.items.push({ kind, site: item });
       }
       return item;
     }
@@ -1250,13 +1304,14 @@ export async function extractClient(config: any) {
           facts.watchers.push(site);
         }
         const callee = p.node.callee;
+        const recordCall = (fn: string | undefined) => record('apiCalls', { fn, options: bodyOptions(p) }, p, hookEnabled(p, fn).map((v) => sliceText(src, v.node)));
         if (callee.type === 'Identifier' && apiNamed.has(callee.name)) {
-          record('apiCalls', { fn: apiNamed.get(callee.name), options: bodyOptions(p) }, p);
+          recordCall(apiNamed.get(callee.name)!);
         } else if (callee.type === 'MemberExpression' && callee.object.type === 'Identifier' && apiNamespaces.has(callee.object.name)) {
-          record('apiCalls', { fn: (callee.property as Identifier).name, options: bodyOptions(p) }, p);
+          recordCall((callee.property as Identifier).name);
         } else {
           const fn = calledFunction(p.get('callee'));
-          if (fn) record('apiCalls', { fn, options: bodyOptions(p) }, p);
+          if (fn) recordCall(fn);
           else recordRequest(screenRequests.call(p, file), p);
         }
       },
@@ -1366,9 +1421,11 @@ export async function extractClient(config: any) {
         if (!target || !p.isReferencedIdentifier()) return;
         if (p.findParent((a) => a === target.fnPath)) return;
         const outer = guardsOf(p, src, note);
-        for (const item of target.items) {
-          item.inheritedGuards ??= [];
-          item.inheritedGuards.push({ via: p.node.name, line: p.node.loc!.start.line, guards: outer });
+        let requestOuter: string[] | undefined;
+        for (const { kind, site } of target.items) {
+          const guards = kind === 'apiCalls' ? (requestOuter ??= guardsOf(p, src, note, queryEnabled)) : outer;
+          site.inheritedGuards ??= [];
+          site.inheritedGuards.push({ via: p.node.name, line: p.node.loc!.start.line, guards });
         }
       },
     });

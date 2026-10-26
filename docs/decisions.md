@@ -4417,6 +4417,42 @@ ID is gone or changed; the 266 hooks gain the requests of the functions they cal
 among their API functions. The maps and the output of into-sign 1.5.0 and 2.0.0, mattermost, outline, appsmith and
 SigNoz without its API code are the same apart from `meta`.
 
+**The `enabled` a screen gives a react-query query is a condition of the requests that query sends, written
+where the `if`, `&&` and `? :` conditions around a request are written; screen access is still decided by routes and
+links only.**
+Driver's decision in #458 (2026-10-26). Once the hooks SigNoz's generator writes had their requests, `GET /api/v2/users`, which
+`AppRoutes/Private.tsx:68` sends through `useListUsers({ query: { enabled: … && user.role === 'ADMIN' } })` only for
+an admin, showed on all 65 screens with no condition, as if every user sent it. Two places are read on the screen
+source. A call of a hook from an API file whose name starts with `use` and a capital or a digit, React's rule for a
+hook name, gives the `enabled` under `query` of its options, the shape orval writes. A request the screen's own
+source makes inside what it gives react-query gets the `enabled` of that query: of the options object holding its
+`queryFn`, wherever that object is built, or of the `useQuery`, `useInfiniteQuery`, `useQueries` or suspense form
+imported from `react-query` or `@tanstack/react-query` whose arguments hold it, which covers react-query 3's
+`useQuery(key, fn, { enabled })` and the `onSuccess` and `select` callbacks. Each query of `useQueries` has its own.
+A call that builds the query key runs whatever `enabled` says, so it gets none. The last `enabled` written is read
+even when a spread follows it: the spread could only put back a value a caller passes into a wrapper, and leaving
+the condition out would show the request as always sent, where `bodyOptions` leaves a body key out because a wrong
+key would make a test send the wrong body. `enabled: true` is no condition; `enabled: false` is kept as written. The
+text is put into the request's `guards` without being noted as a guard of a route or a link, so it cannot change the
+role or the setting a screen is judged by, and a link inside the same local function as such a request keeps the
+conditions it had.
+Compared:
+- A trial run of each API-file hook that records where it hands `enabled` to react-query: it fits any generator,
+  but it runs every hook a second time for the same 61 SigNoz hook calls the screen source gives.
+- An `enabled` key in any argument of an API call: request bodies carry `enabled` too; SigNoz's DTOs do.
+- Reading `enabled` for every kind of site: a link in an `onSuccess` would change the access of its screen.
+- Leaving `enabled` out when a spread written after it may replace it, as `bodyOptions` does: 5 into-sign 2.0.0
+  requests (`webhook.queries.ts:27`, `enabled: !!workspaceId, ...options`) would show as always sent.
+Known limits: a wrapper hook of the app that is given `enabled` by its caller (into-sign 2.0.0
+`session/SessionLoad.tsx:49`) shows only the text inside the wrapper, such as `(options.enabled ?? true)`, or none;
+`refetch`, invalidating a query and `fetchQuery` send a request whatever `enabled` says, so the condition says when the
+query fetches by itself.
+Measured on main 4863227 against the branch: on SigNoz with its API code run, 96 request sites gain a condition, on
+599 pairs of a screen and a request, and `GET /api/v2/users` from `Private.tsx:68` has
+`!isEmpty(orgData) && user.role === 'ADMIN'`; on into-sign 2.0.0, 24 sites on 70 pairs. Nothing else in the seven
+maps or in what extract prints changes: SigNoz without its API code, into-sign 1.5.0, mattermost, outline and
+appsmith are the same apart from `meta`.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
