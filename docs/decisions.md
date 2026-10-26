@@ -3046,6 +3046,7 @@ lines; SigNoz without the entry is the same as on main too.
 Known limits:
 - An item with a list of paths (SigNoz's item 57, `path: [ROUTES.AI_ASSISTANT_BASE, ROUTES.AI_ASSISTANT]`) gives no
   screen; duru reads no list-valued path, on a plain `<Route>` either (outline `scenes/Collection/index.tsx:220`).
+  Read since #444, in the entry below.
 - Routes the app adds at run time are not read: SigNoz's `SUPPORT_ROUTE` and `LIST_LICENSES` are separate consts that
   `setRoutes` adds to `useState(defaultRoutes)`, so they are not in the table. With item 57 that leaves SigNoz 4 screens
   short of the 67 the running app draws.
@@ -3062,6 +3063,39 @@ Known limits:
   screen is not read gives no line; only a file with no read loop route stops the run for it.
 - Per-item `exact` is not read: `exact={exact}` reads as unknown and the route is taken as not exact, as `item.exact`
   already was. How that changes which screen a SigNoz link reaches was not measured.
+
+**A route path written as a list gives a screen for each path in it.**
+Decided in #444 (2026-10-26). React Router 5 takes a list in `path`, `<Route path={[A, B]}>`, and draws the same
+component at any address one of them fits; SigNoz's route table writes the same shape as an item's field. On main the
+JSX route gave one `{?}` screen and the table item gave none.
+- Each path in the list is a screen with the ID it would have as a route written on its own, at the same route line, so
+  links reach it as they reach that route.
+- A path in the list that duru cannot read is handled as a path written alone: on a JSX route it is a `{?}` screen with a
+  `route path not read` line naming that path, and in a route table it gives a `route not read` line naming that path
+  and no screen, as an item's unread path does. The other paths of the list still give their screens.
+- A list a name holds, a const in this file or imported, is read like a list written in place, and a list spread into
+  it (`[...BASE_PATHS, '/x']`) is followed, since the running app gets the same list. A spread duru cannot follow counts
+  as one unread path, so its line names it.
+- An empty place in the list (`[a, , b]`) gives no screen and no line: it holds no path to make a screen of. A path
+  duru reads that the list holds twice gives one screen, as the running app draws one. A list with no path in it,
+  `[]` or only empty places, is one path not read, a `{?}` screen with a `route path not read` line on a JSX route and
+  a `route not read` line in a table, so the route does not vanish without a line.
+- A route written again outside the `<Switch>` to draw a modal is the same screen as the route inside for each path the
+  two share; a path only the outer route has stays a screen of its own.
+Measured against main 22a5f2c: outline goes from 41 to 42 screens, `{?}#Overview` becoming `{?}/overview#Overview` and
+`{?}/overview/edit#Overview` with one line each (`stopped at this.url in models/Collection.ts:232`), since the
+collection's own address is still not read. SigNoz with its route table goes from 63 to 65 screens,
+`/ai-assistant#AIAssistantPage` and `/ai-assistant/:conversationId#AIAssistantPage`, and its one `route not read` line
+is gone. The maps of into-sign 1.5.0, into-sign 2.0.0, mattermost and appsmith are the same apart from `generatedAt`
+and `duruCommit`.
+Known limits:
+- React Router 5.3.4's `matchPath` starts over at an empty place in the list, so the paths before it never fit; duru
+  still gives them screens. No measured app writes one.
+- A list reached through a field, `path={ROUTES.AI}` with `const ROUTES = { AI: ['/ai', '/ai/:id'] }`, is not read as
+  a list and stays one `{?}` screen; `null`, `undefined` or a nested list in the list is read as a path not read; a loop
+  route whose own path is a list (`path={[`/a/${r.url}`, `/b/${r.url}`]}`) is not split; and a list under React Router
+  6's `<Routes>`, which takes no list, is split as under a `<Switch>`; a path not read that the list holds twice gives
+  two `{?}` screens or two lines, and `'/a'` beside `'/a/'` gives two screens. No measured app writes any of these.
 
 **`duru story` writes under each input a Playwright line that finds the box with every word written for it, each
 matched exactly, joined by `.and()` in the order placeholder, label, test ID, with `.nth(N - 1)` for `nth`, and marks
