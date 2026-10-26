@@ -1143,6 +1143,89 @@ test('without settingsDefaults a route picked by a computed key makes no link', 
   assert.deepEqual(map.entries.find((e) => e.screen === '/admin/report#AdminReport')!.reasons, [{ kind: 'no-incoming-link' }]);
 });
 
+const SIDE_MENU_LOOP = '      MENUS.ADMIN?.LIST?.forEach((menu) => {\n        items.push({ title: menu, href: Option.ROUTE_PATH[menu] });\n      });';
+
+test('a menu looping over a filtered constant of the settings list links the same way as over the list itself', async () => {
+  const filtered = `      const adminMenus = (MENUS.ADMIN?.LIST || []).filter((menu) => menu !== 'NONE');\n${SIDE_MENU_LOOP.replace('MENUS.ADMIN?.LIST?.forEach', 'adminMenus.forEach')}`;
+  const unfiltered = screen(await buildFixture(), '/admin/report#AdminReport').access.links;
+  const map = await buildEditedCopy([['client/src/components/SideMenu.js', SIDE_MENU_LOOP, filtered]]);
+  assert.deepEqual(screen(map, '/admin/report#AdminReport').access.links, unfiltered.map((l) => ({ ...l, line: l.line + 1 })));
+});
+
+const sideMenu = (body: string, imports = '') => [
+  "import { Link } from 'react-router-dom';",
+  "import Option from '_define/Option';",
+  imports,
+  'export default function SideMenu({ a, b, x, picked, rest }) {',
+  '  const items = [];',
+  body,
+  '  return <nav>{items.map((item) => <Link key={item.title} to={item.href}>{item.title}</Link>)}</nav>;',
+  '}',
+  '',
+].join('\n');
+const SIDE_MENU_FILE = 'client/src/components/SideMenu.js';
+const sideMenuLinks = (map: ScreenMap) => screen(map, '/home#Home').links.filter((l) => ['components/SideMenu.js', 'components/formatDate.js'].includes(l.file ?? '')).map((l) => [l.to, l.file, l.line, l.guards]);
+const asSideMenu = async (body: string, extra: (rewrite: Rewrite) => void = () => {}) =>
+  buildCopy((rewrite) => {
+    rewrite(SIDE_MENU_FILE, () => sideMenu(body));
+    extra(rewrite);
+  });
+
+const GROUPED = [
+  '  function item(key) {',
+  '    return { title: key, href: Option.ROUTE_PATH[key] };',
+  '  }',
+  '  function group(title, keys) {',
+  '    return keys.map((k) => item(k));',
+  '  }',
+  '  if (a) {',
+  "    if (b) items.push(...group('B', ['ADMIN_REPORT']));",
+  "    items.push(...group('A', ['ADMIN_REPORT']));",
+  '  }',
+].join('\n');
+
+test('a route-table key passed to a function of the same file links once per route, under the conditions every call shares', async () => {
+  const expected = [['/admin/report', 'components/SideMenu.js', 7, ['a']]];
+  assert.deepEqual(sideMenuLinks(await asSideMenu(GROUPED)), expected);
+  const unreadable = "  items.push(...group('C', picked), ...group('D', [x, 'ADMIN_AUDIT']), ...group(...rest, ['ADMIN_AUDIT']));";
+  assert.deepEqual(sideMenuLinks(await asSideMenu(`${GROUPED}\n${unreadable}`)), expected);
+});
+
+test('a helper called with a different key under each condition gives each route only the conditions of the calls that pass its key', async () => {
+  const body = [
+    '  const menuItem = (key) => ({ title: key, href: Option.ROUTE_PATH[key] });',
+    "  items.push(menuItem('HOME'));",
+    "  if (globalSettings.SYSTEM.LAB_ENABLED) items.push(menuItem('ADMIN_REPORT'));",
+    "  if (session['member.role'] === 'ADMIN') items.push(menuItem('LAB'));",
+  ].join('\n');
+  const map = await asSideMenu(body, (rewrite) => rewrite(SIDE_MENU_FILE, (src) => src.replace('{ a, b, x, picked, rest }', '{ session, globalSettings }')));
+  const conditions = (to: string) => screen(map, '/home#Home').links.find((l) => l.file === 'components/SideMenu.js' && l.to === to)!.conditions.map((c) => [c.guard, c.via ?? null]);
+  assert.deepEqual(conditions('/admin/report'), [['globalSettings.SYSTEM.LAB_ENABLED', null]]);
+  assert.deepEqual(conditions('/lab'), [["session['member.role'] === 'ADMIN'", null]]);
+  assert.deepEqual(screen(map, '/admin/report#AdminReport').access.kinds, ['setting']);
+});
+
+test('a function calling itself with its own key ends with the links of its other calls, and a call from another file gives no link', async () => {
+  const body = [
+    '  function add(k, again) {',
+    '    if (again) add(k, false);',
+    '    items.push({ title: k, href: Option.ROUTE_PATH[k] });',
+    '  }',
+    "  add('ADMIN_REPORT', true);",
+    "  items.push(menuLink('ADMIN_AUDIT'));",
+  ].join('\n');
+  const map = await asSideMenu(body, (rewrite) => {
+    rewrite(SIDE_MENU_FILE, (src) => src.replace("import Option from '_define/Option';\n", "import Option from '_define/Option';\nimport { menuLink } from './formatDate';\n"));
+    rewrite('client/src/components/formatDate.js', (src) => `import Option from '_define/Option';\n\n${src}\nexport function menuLink(k) {\n  return { title: k, href: Option.ROUTE_PATH[k] };\n}\n`);
+  });
+  assert.deepEqual(sideMenuLinks(map), [['/admin/report', 'components/SideMenu.js', 9, []]]);
+});
+
+test('a route table read with a written key or a constant key in the brackets makes no link', async () => {
+  const body = "  const k = 'ADMIN_REPORT';\n  items.push({ title: 'a', href: Option.ROUTE_PATH['ADMIN_AUDIT'] }, { title: 'b', href: Option.ROUTE_PATH[k] });";
+  assert.deepEqual(sideMenuLinks(await asSideMenu(body)), []);
+});
+
 test('a settingsDefaults entry must name a settings root and a const holding an object in its file', async () => {
   await assert.rejects(
     buildEditedCopy([['config.json', '"settingsDefaults": {\n    "globalSettings"', '"settingsDefaults": {\n    "appSettings"']]),

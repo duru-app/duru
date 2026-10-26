@@ -1092,3 +1092,37 @@ test('the agent skill names the route shapes duru reads, and the usage guide and
   assert.match(read('../skills/duru/SKILL.md'), /`component=\{Home\}`[\s\S]*`element=\{<Home \/>\}`[\s\S]*`element=\{wrap\(<Home \/>\)\}`[\s\S]*`element=\{<Wrapper Page=\{Signer\} \/>\}`[\s\S]*`element=\{<Navigate to=… \/>\}`/);
   for (const doc of [read('../README.md'), read('../skills/duru/SKILL.md')]) assert.match(doc, /`redirectElements`[\s\S]*default `Redirect` and\s+`Navigate`/);
 });
+
+const menuAdmin = (table: string) => [
+  "import { Link } from 'react-router-dom';",
+  "import Option from '../_define/Option';",
+  '',
+  'function menuItem(menuKey: string, translate: (text: string) => string) {',
+  `  return { title: translate(menuKey), href: ${table} };`,
+  '}',
+  '',
+  'function menuSection(title: string, keys: readonly string[], translate: (text: string) => string) {',
+  '  return keys.filter((k) => k !== title).map((key) => menuItem(key, translate));',
+  '}',
+  '',
+  'export default function Admin({ shown, extra }: { shown: boolean; extra: string }) {',
+  '  const t = (text: string) => text;',
+  "  const items = [...menuSection('ADMIN', ['LAB', 'REPORT', 'NOT_A_ROUTE'] as const, t), menuItem(extra, t)];",
+  "  if (shown) items.push(...menuSection('MORE', ['ARCHIVE'], t));",
+  '  return <nav>{items.map((item) => <Link key={item.title} to={item.href}>{item.title}</Link>)}</nav>;',
+  '}',
+  '',
+].join('\n');
+
+for (const table of ['(Option.ROUTE_PATH as Readonly<Record<string, string>>)[menuKey]', '(Option.ROUTE_PATH satisfies Record<string, string>)[menuKey]', 'Option.ROUTE_PATH![menuKey]']) {
+  test(`a route-table key passed through two function parameters to ${table} links to each route in the literal lists passed in, under the conditions around each call`, async () => {
+    const original = 'export default function Admin() {\n  return <h1>Admin</h1>;\n}\n';
+    await inCopy([['client/src/screens/Admin.tsx', original, menuAdmin(table)]], async (copy) => {
+      const map = await buildFixture(copy);
+      assert.deepEqual(
+        screen(map, '/admin#Admin').links.filter((l) => l.file === 'screens/Admin.tsx').map((l) => [l.to, l.line, l.guards]),
+        [['/lab', 5, []], ['/report', 5, []], ['/archive', 5, ['shown']]],
+      );
+    });
+  });
+}
