@@ -531,6 +531,13 @@ listing the places whose value the source does not show in full.
   each item of a table, ` (table item <key> at <file>:<line>)` follows its place. The first three addresses are
   shown and the map lists them all (`addressesUnderRoutes`). The page that route draws opens at each of
   them, but the map has no screen for each, so no test can be tagged with one.
+- `N calls reach no screen: N unused by app code (<call IDs>, …), N other (<call IDs>, …)` — calls of API functions that
+  no screen sends; the map lists them all (`callsOnNoScreen`). `unused by app code`: no source outside `apiModules`,
+  `calledApiModules` and the files they re-export API functions from uses the API functions that make the call, either
+  directly or through other API functions. This is usually generated API code the app does not use, and needs nothing.
+  `other`: some app source uses them, yet no screen's sources send the call. Look at these: the use may be code that
+  runs for the whole app, a page no route draws, a branch the fake values do not take, or a use duru does not read as a
+  call. The first three of each part are shown, and a part with none is left out.
 - `linkComponents <import> <name> is used nowhere in the screen sources` — an entry of `linkComponents`
   (`linkFunctions` likewise) that no element or call in a screen's sources uses, often a misspelt package or name
   (`unusedLinkEntries`).

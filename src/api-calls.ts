@@ -278,6 +278,8 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       return hidden.get(owner)!;
     };
     const functions: Record<string, ApiFunction> = {};
+    const exportsOf = new Map<string, { file: string; exportName: string }[]>();
+    const exported = (key: string, file: string, exportName: string) => exportsOf.set(key, [...(exportsOf.get(key) ?? []), { file, exportName }]);
     const bodyMethods: (BodyMethod & { endpoints: ApiEndpoint[] })[] = [];
     for (const c of called) {
       const key = c.member === null ? keyOf.get(`${c.file}\n${c.exportName}`)! : `${keyOf.get(`${c.file}\n${c.exportName}`)}.${c.member}`;
@@ -298,9 +300,15 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
         endpoints,
         ...(c.error && { error: unmarked(firstLine(copier.rename(c.error.message))) }),
       };
+      exported(key, c.file, c.exportName);
       const sentBody = new Set(c.requests.filter((r) => r.body).map((r) => requestOf(r, server)).map((r) => `${r.method} ${r.url}`));
       const withBody = endpoints.filter((e) => e.method !== 'GET' && sentBody.has(`${e.method} ${e.url}`));
       if (line && withBody.length) bodyMethods.push({ key, file: place!.file, line, shownFile: rel(place!.file), endpoints: withBody });
+    }
+    for (const [alias, first] of same) {
+      const owner = keyOf.get(first);
+      const [file, exportName] = alias.split('\n');
+      if (owner) for (const key of Object.keys(functions)) if (key === owner || key.startsWith(`${owner}.`)) exported(key, file, exportName);
     }
     const bodyTypeNotices: BodyTypeNotice[] = [];
     if (config.tsconfig && body && config.bodyArgKeys.length && bodyMethods.length) {
@@ -317,7 +325,7 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
       outside.get(spec)!.importedBy.add(rel(from));
     }
     const outsideStandIns = [...outside.values()].map((s) => ({ ...s, importedBy: [...s.importedBy].sort() }));
-    return { functions, keyOf: (file: string, exportName: string) => keyOf.get(`${file}\n${exportName}`) ?? prefixOf(file, exportName), failedModules, bodyTypeNotices, outsideStandIns, silentModules };
+    return { functions, exportsOf, keyOf: (file: string, exportName: string) => keyOf.get(`${file}\n${exportName}`) ?? prefixOf(file, exportName), failedModules, bodyTypeNotices, outsideStandIns, silentModules };
   } finally {
     copier.cleanup();
   }

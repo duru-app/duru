@@ -284,6 +284,7 @@ test('without the new keys, the screens of the example have the same links, sett
   assert.deepEqual(screen(plain, '/contracts#Contracts').apiCalls, []);
   assert.deepEqual(Object.keys(plain.apiFunctions), ['ajaxReportArchive', 'ajaxReportSchedule']);
   assert.equal('unrunApiModules' in plain, false);
+  assert.equal('callsOnNoScreen' in plain, false);
 });
 
 test('a listed file that fails to run is reported with the place of the error, and the methods of the other files still give their requests', async () => {
@@ -852,4 +853,158 @@ test('extract prints the api method line for a hook whose query function stops o
     '  api method exportChannel ← contracts/api/channels.ts:10: Unknown export format: {?}',
     '  api method useExportChannel ← contracts/api/channels.ts:34: Unknown export format: {?}',
   ]);
+});
+
+const LONE_GET = "import { executeRequest } from './request';\n\nconst get = (url: string) => executeRequest({ endpoint: { method: 'GET', path: '' }, url });\n";
+const OFF_SCREEN = {
+  'contracts/api/lone.ts': `${LONE_GET}
+export const loneUnused = () => get('/lone/unused');
+export const loneElsewhere = () => get('/lone/elsewhere');
+export const loneTested = () => get('/lone/tested');
+export const loneApi = { typed: () => get('/lone/typed') };
+export class LoneService {
+  static picked() {
+    return get('/lone/picked');
+  }
+}
+export const loneReexported = () => get('/lone/reexported');
+`,
+  'contracts/api/keys.ts': `${LONE_GET}
+export const fetchKeys = () => get('/lone/keys');
+export const fetchValues = () => get('/lone/values');
+`,
+  'contracts/api/suggest.ts': `import { executeRequest } from './request';
+import { fetchKeys, fetchValues } from './keys';
+
+export const suggestKeys = (q: string) => (q === 'keys' ? fetchKeys() : executeRequest({ endpoint: { method: 'GET', path: '' }, url: '/lone/suggest/keys' }));
+export const suggestValues = (q: string) => (q === 'values' ? fetchValues() : executeRequest({ endpoint: { method: 'GET', path: '' }, url: '/lone/suggest/values' }));
+`,
+  'contracts/api/publish.api.ts': `${LONE_GET}
+export const publishApi = { create: () => get('/lone/publish/create'), remove: () => get('/lone/publish/remove') };
+`,
+  'contracts/api/documents.ts': `import { publishApi } from './publish.api';
+
+const documents = (publish: typeof publishApi) => ({ publish: (id: string) => (id === 'now' ? publish.create() : null) });
+export const documentApi = documents(publishApi);
+`,
+  'contracts/api/generated.ts': `import { useQuery } from '@tanstack/react-query';
+${LONE_GET}
+export const listThings = () => get('/lone/things');
+export const useListThings = () => useQuery({ queryKey: ['things'], queryFn: () => listThings() });
+export const getThing = () => get('/lone/thing');
+export const getThingQueryOptions = () => ({ queryKey: ['thing'], queryFn: () => getThing() });
+`,
+  'contracts/Orphan.ts': `import { loneElsewhere } from './api/lone';
+import { suggestKeys } from './api/suggest';
+import { documentApi } from './api/documents';
+import { getThingQueryOptions } from './api/generated';
+
+export const orphan = (q: string) => [loneElsewhere(), suggestKeys(q), documentApi.publish(q), getThingQueryOptions()];
+`,
+  'contracts/lone.test.ts': "import { loneTested } from './api/lone';\n\nloneTested();\n",
+  'contracts/lone.spec.ts': "import { loneTested } from './api/lone';\n\nloneTested();\n",
+  'contracts/loneTypes.ts': "import { loneApi, LoneService } from './api/lone';\n\nexport type Typed = typeof loneApi.typed;\nexport type Picked = Pick<typeof LoneService, 'picked'>;\n",
+  'contracts/loneBarrel.ts': "export { loneReexported } from './api/lone';\nexport * from './api/lone';\n",
+  'contracts/Broken.ts': 'export const broken = (;\n',
+  'contracts/UsesBroken.ts': "import { broken } from './Broken';\n\nexport const usesBroken = () => broken;\n",
+};
+const OFF_SCREEN_MODULES = ['lone', 'keys', 'suggest', 'publish.api', 'documents', 'generated'].map((f) => `contracts/api/${f}.ts`);
+let offScreenRun: { status: number | null; stdout: string; stderr: string; map: ScreenMap } | undefined;
+const offScreen = () => {
+  if (!offScreenRun) {
+    const configFile = fixtureCopy({ ...CALLED, calledApiModules: [...OFF_SCREEN_MODULES, ...CALLED.calledApiModules] }, OFF_SCREEN);
+    const { status, stdout, stderr } = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+    offScreenRun = { status, stdout, stderr, map: JSON.parse(fs.readFileSync(path.join(path.dirname(configFile), 'out/map.json'), 'utf8')) };
+  }
+  return offScreenRun;
+};
+const lonely = (ids: string[]) => ids.filter((id) => id.startsWith('GET:/lone/'));
+
+test('a call no screen sends is unused by app code when no source outside the API files reaches its API function, and other when a file no route draws imports and calls it', () => {
+  const { map } = offScreen();
+  assert.ok(map.callsOnNoScreen!.unused.includes('GET:/lone/unused'));
+  assert.ok(map.callsOnNoScreen!.other.includes('GET:/lone/elsewhere'));
+});
+
+test('an API function another API function calls only in a branch the fake value does not take is other when app code reaches the caller, and unused when nothing does', () => {
+  const { map } = offScreen();
+  assert.deepEqual(map.apiFunctions.suggestKeys.endpoints.map((e) => e.url), ['/lone/suggest/keys']);
+  assert.ok(map.callsOnNoScreen!.other.includes('GET:/lone/keys'));
+  assert.ok(map.callsOnNoScreen!.unused.includes('GET:/lone/values'));
+});
+
+test('the methods of an API object an API file hands whole to a function at load time are other when app code reaches what that file exports', () => {
+  const { map } = offScreen();
+  assert.ok(map.callsOnNoScreen!.other.includes('GET:/lone/publish/create'));
+  assert.ok(map.callsOnNoScreen!.other.includes('GET:/lone/publish/remove'));
+});
+
+test('a generated hook naming its request function in the same API file does not make that function used, while a query options function the app calls does', () => {
+  const { map } = offScreen();
+  assert.deepEqual(map.apiFunctions.useListThings.endpoints.map((e) => e.url), ['/lone/things']);
+  assert.ok(map.callsOnNoScreen!.unused.includes('GET:/lone/things'));
+  assert.ok(map.callsOnNoScreen!.other.includes('GET:/lone/thing'));
+});
+
+test('an API function used only in test files, in types or in re-exports is unused by app code, and the line lists both parts with the first three of each', () => {
+  const { status, stderr, stdout, map } = offScreen();
+  assert.equal(status, 0, stderr);
+  assert.deepEqual(lonely(map.callsOnNoScreen!.unused), ['GET:/lone/picked', 'GET:/lone/reexported', 'GET:/lone/suggest/values', 'GET:/lone/tested', 'GET:/lone/things', 'GET:/lone/typed', 'GET:/lone/unused', 'GET:/lone/values']);
+  assert.deepEqual(lonely(map.callsOnNoScreen!.other), ['GET:/lone/elsewhere', 'GET:/lone/keys', 'GET:/lone/publish/create', 'GET:/lone/publish/remove', 'GET:/lone/suggest/keys', 'GET:/lone/thing']);
+  const { unused, other } = map.callsOnNoScreen!;
+  assert.deepEqual(stdout.split('\n').filter((l) => /calls? reach(es)? no screen/.test(l)), [
+    `  ${unused.length + other.length} calls reach no screen: ${unused.length} unused by app code (${unused.slice(0, 3).join(', ')}, …), ${other.length} other (${other.slice(0, 3).join(', ')}, …)`,
+  ]);
+});
+
+test('a source file that does not parse, on its own or imported by a file no route draws, does not stop extract', () => {
+  const { status, stderr, stdout } = offScreen();
+  assert.equal(status, 0, stderr);
+  assert.match(stdout, /^ {2}\d+ calls reach no screen: /m);
+});
+
+const AJAX_MORE = "const request = async (info: unknown) => info;\n\nexport const ajaxRestore = async () => request({ URL: '/api/v1/trash/restore', METHOD: 'POST' });\nexport const ajaxPurge = async () => request({ URL: '/api/v1/trash/purge', METHOD: 'POST' });\nexport const ajaxPublish = async () => request({ URL: '/api/v1/publish', METHOD: 'POST' });\nexport const ajaxLone = async () => request({ URL: '/api/v1/lone', METHOD: 'POST' });\n";
+const TRASH_ACTIONS = "import * as Ajax from '../_ajax/More';\nimport { ajaxRestore, ajaxPurge } from '../_ajax/More';\n\nexport const trashAction = (restore: boolean) => (restore ? ajaxRestore : ajaxPurge);\nexport const handlers = { publish: Ajax.ajaxPublish };\n";
+
+test('an apiModules function picked by a condition or handed over as an object value through a namespace import is other, a part with no call is left out, and one call reads as one', () => {
+  const extract = (files: Record<string, string>) => spawnSync(process.execPath, [CLI, 'extract', fixtureCopy({ apiModules: ['_ajax/AjaxFunc.ts', '_ajax/More.ts'] }, files)], { encoding: 'utf8' });
+  const lines = (stdout: string) => stdout.split('\n').filter((l) => /calls? reach(es)? no screen/.test(l));
+  const picked = extract({ '_ajax/More.ts': AJAX_MORE, 'pages/TrashActions.ts': TRASH_ACTIONS });
+  assert.equal(picked.status, 0, picked.stderr);
+  assert.deepEqual(lines(picked.stdout), ['  4 calls reach no screen: 1 unused by app code (POST:/api/v1/lone), 3 other (POST:/api/v1/publish, POST:/api/v1/trash/purge, POST:/api/v1/trash/restore)']);
+  const lone = extract({ '_ajax/More.ts': "const request = async (info: unknown) => info;\n\nexport const ajaxLone = async () => request({ URL: '/api/v1/lone', METHOD: 'POST' });\n" });
+  assert.deepEqual(lines(lone.stdout), ['  1 call reaches no screen: 1 unused by app code (POST:/api/v1/lone)']);
+  const other = extract({ '_ajax/More.ts': AJAX_MORE.replace(/^export const ajaxLone.*\n/m, ''), 'pages/TrashActions.ts': TRASH_ACTIONS });
+  assert.deepEqual(lines(other.stdout), ['  3 calls reach no screen: 3 other (POST:/api/v1/publish, POST:/api/v1/trash/purge, POST:/api/v1/trash/restore)']);
+});
+
+test('a source file nothing imports that declares the same name twice is left out of the walk instead of stopping extract', () => {
+  const run = spawnSync(process.execPath, [CLI, 'extract', fixtureCopy({ apiModules: ['_ajax/AjaxFunc.ts', '_ajax/More.ts'] }, { '_ajax/More.ts': "const request = async (info: unknown) => info;\n\nexport const ajaxLone = async () => request({ URL: '/api/v1/lone', METHOD: 'POST' });\n", 'pages/Collides.ts': 'export const a = 1;\nexport const a = 2;\n' })], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(run.stdout.split('\n').filter((l) => /calls? reach(es)? no screen/.test(l)), ['  1 call reaches no screen: 1 unused by app code (POST:/api/v1/lone)']);
+});
+
+test('an API function declared in a file the listed barrel re-exports from is unused when nothing calls it, and other when app code does', () => {
+  const get = "import { executeRequest } from './request';\n\nconst get = (url: string) => executeRequest({ endpoint: { method: 'GET', path: '' }, url });\n";
+  const configFile = fixtureCopy({ ...CALLED, calledApiModules: ['contracts/api/people.ts', ...CALLED.calledApiModules] }, {
+    'contracts/api/people.ts': "export * from './peopleUsers';\nexport { getPersonOrder } from './peopleOrders';\n",
+    'contracts/api/peopleUsers.ts': `${get}export const getPersonUnused = () => get('/people/unused');\nexport const getPersonUsed = () => get('/people/used');\n`,
+    'contracts/api/peopleOrders.ts': `${get}export const getPersonOrder = () => get('/people/order');\n`,
+    'contracts/PeopleUses.ts': "import { getPersonUsed } from './api/people';\n\nexport const peopleUse = () => getPersonUsed();\n",
+  });
+  const { status, stderr } = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+  assert.equal(status, 0, stderr);
+  const { callsOnNoScreen } = JSON.parse(fs.readFileSync(path.join(path.dirname(configFile), 'out/map.json'), 'utf8')) as ScreenMap;
+  const people = (ids: string[]) => ids.filter((id) => id.startsWith('GET:/people/'));
+  assert.deepEqual(people(callsOnNoScreen!.unused), ['GET:/people/order', 'GET:/people/unused']);
+  assert.deepEqual(people(callsOnNoScreen!.other), ['GET:/people/used']);
+});
+
+test('the usage guide names the line for calls that reach no screen with both of its parts, the agent guide says which part to look at, and the decision record names the splits it was compared with', () => {
+  const readme = fs.readFileSync(path.join(import.meta.dirname, '../README.md'), 'utf8');
+  const skill = fs.readFileSync(path.join(import.meta.dirname, '../skills/duru/SKILL.md'), 'utf8');
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*Calls that reach no screen are named in one line, split by whether any app source reaches their API functions\.\*\*[^]*?Compared:\n- The places the source calls an API function: [^]*?\n- References from app code one level deep[^]*?\n- Sorting the calls by what extract read of them/);
+  assert.match(readme, /^- `N calls reach no screen: N unused by app code \(<call IDs>, …\), N other \(<call IDs>, …\)` — [^]*?\(`callsOnNoScreen`\)[^]*?`unused by app code`: [^]*?`other`: /m);
+  assert.match(skill, /A `N calls reach no screen: …` line [^]*?The `other` ones are where a screen may be missing a request/);
 });
