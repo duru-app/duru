@@ -128,6 +128,49 @@ Reason: a dotted path covers every value a module holds once it has run, and a m
 writes covers every other shape (a function never called at load, one that needs arguments, several calls
 combined) with no key per shape and without touching the client's source.
 
+**A parameter used as the key of the route table is followed back to the values written for it in the same
+file: the list a `forEach` or `map` callback runs over, or the argument at its place in every call of its
+function.**
+Since #466 (first step, 2026-10-26) a key such as `menuKey` in `(Option.ROUTE_PATH as …)[menuKey]` is read this
+way, where before only the first parameter of a `forEach` or `map` callback over a settings list was.
+- A function is followed when it is a function declaration or a const holding a function, never reassigned, and
+  only through calls that name it; the conditions around each call are carried onto the link. At most 8 calls
+  deep (`FOLLOWED`), and a function already on the way is not entered again.
+- Lists read: a settings list with defaults, as before; an array of written strings only; `x.filter(…)`, read as
+  `x`; both sides of `||` and `??`; and consts.
+- When several ways bring the same route to one line, the line gives one link with the conditions all of them
+  share, and the settings-list condition only when every way came from the same list.
+- A way that cannot be followed adds nothing: a destructured or default parameter, a spread at or before the
+  argument, a function passed as a value (`.map(buildItem)`), an array holding anything but written strings, a
+  call from another file.
+- The key in the brackets must still be a parameter: `ROUTE_PATH['X']` or a const key there makes no link.
+Casts need no rule of their own: `parseSource` takes `as`, `satisfies`, `!` and `<T>` off TypeScript before
+anything reads the tree.
+Alternatives compared:
+- Taking casts off on the table side with the address functions' `unwrapped`: repeats what the parser has done.
+- Going forward with `addressReader`, which binds parameters from a starting call: it answers what one call
+  gives, while this question starts at the parameter and asks which values reach it.
+- One link per way: several links to one target on one line, unlike every other link reader.
+- Dropping the conditions around the calls: the into-sign 2.0.0 menu link would come out with none, while the
+  comparison at `menuUtils.ts:205` carries `menuZone === 'bottom' && includeSystemSettings && …`.
+- Giving no route unless every call can be read: 2.0.0 would give nothing while the call at `menuUtils.ts:164`,
+  whose list comes from another file, is not read.
+- `{?}` for a key that cannot be followed: such a line gives no link today, and `{?}` on every menu helper whose
+  callers are out of reach would be new noise.
+Reason: the values reaching a parameter are written at its calls, so reading them backward from the table needs
+no new reader; keeping only the shared conditions follows what `addressesOf` does for sides, so a link never
+looks more guarded than every way to it is.
+Measured against main f2ef14f: into-sign 2.0.0 link rows 377 → 399, the 22 added all at `menuUtils.ts:56` to the
+system settings screen, on the same 22 screens and under the same condition as `menuUtils.ts:205`; into-sign 1.5.0
+577 → 623, the 46 added at `BaseView/index.js:274` to the trash and system settings screens on 23 screens. Those two
+screens are now reached under a setting as well as a role and are no longer entry screens for want of a link in
+(13 → 11 entry screens); the links leaving them carry the setting kind. The maps of appsmith, mattermost, outline
+and both SigNoz configs are unchanged.
+The limits: calls from other files are not read, so the whole 2.0.0 side menu (keys passed from
+`_Base/Page/index.jsx` through `menuPolicyUtils.ts` and picked by `[categoryKey]`) is not read yet; a helper called
+with different keys from several places gives every key on every screen that reaches its line, not the one each
+screen passes; and the `.filter` test is not a condition, so a link shows the most any role can see.
+
 **TypeScript files a `constants` module runs are turned into JavaScript by Node's transform mode, and the line of
 a failure is put back on the file as written through the source map that comes with it.**
 Alternatives compared:
