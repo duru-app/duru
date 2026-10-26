@@ -431,7 +431,7 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    there. A line right under the head,
    `baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`,
    means items that comments on regressed tests would list may be missing: tell the user, with the line. The same line
-   reading `no tests.json in <outDir>; …` means the same, and that `duru rebuild` has not been run yet.
+   reading `no tests.json in <folder>; …` means the same, and that `duru rebuild` has not been run yet.
    With `caseKinds` in the config the list has `# Case kinds`, a `## <kind>` for each kind, and the head of the list
    counts its undecided candidates and cases with no tests; with no open mark it then says the case kinds still have
    work instead of `No open marks.`, so do not stop there. Under `undecided`, each line names a screen or call nobody
