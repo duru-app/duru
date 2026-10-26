@@ -3065,9 +3065,10 @@ JSX route gave one `{?}` screen and the table item gave none.
 - A list a name holds, a const in this file or imported, is read like a list written in place, and a list spread into
   it (`[...BASE_PATHS, '/x']`) is followed, since the running app gets the same list. A spread duru cannot follow counts
   as one unread path, so its line names it.
-- An empty place in the list (`[a, , b]`) gives no screen and no line: it holds no path to make a screen of. A path the
-  list holds twice gives one screen, as the running app draws one. An empty list is read as on main, a path not read,
-  so the route does not vanish without a line.
+- An empty place in the list (`[a, , b]`) gives no screen and no line: it holds no path to make a screen of. A path
+  duru reads that the list holds twice gives one screen, as the running app draws one. A list with no path in it,
+  `[]` or only empty places, is one path not read, a `{?}` screen with a `route path not read` line on a JSX route and
+  a `route not read` line in a table, so the route does not vanish without a line.
 - A route written again outside the `<Switch>` to draw a modal is the same screen as the route inside for each path the
   two share; a path only the outer route has stays a screen of its own.
 Measured against main 22a5f2c: outline goes from 41 to 42 screens, `{?}#Overview` becoming `{?}/overview#Overview` and
@@ -3082,7 +3083,8 @@ Known limits:
 - A list reached through a field, `path={ROUTES.AI}` with `const ROUTES = { AI: ['/ai', '/ai/:id'] }`, is not read as
   a list and stays one `{?}` screen; `null`, `undefined` or a nested list in the list is read as a path not read; a loop
   route whose own path is a list (`path={[`/a/${r.url}`, `/b/${r.url}`]}`) is not split; and a list under React Router
-  6's `<Routes>`, which takes no list, is split as under a `<Switch>`. No measured app writes any of these.
+  6's `<Routes>`, which takes no list, is split as under a `<Switch>`; a path not read that the list holds twice gives
+  two `{?}` screens or two lines, and `'/a'` beside `'/a/'` gives two screens. No measured app writes any of these.
 
 **`duru story` writes under each input a Playwright line that finds the box with every word written for it, each
 matched exactly, joined by `.and()` in the order placeholder, label, test ID, with `.nth(N - 1)` for `nth`, and marks
