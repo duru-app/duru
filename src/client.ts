@@ -2224,7 +2224,9 @@ export async function extractClient(config: any) {
         const entries = screens.length ? screens.flatMap((i) => sourced[i].s.componentFile ?? []) : n.entry ? [n.entry] : [];
         const full = routePath === null || routePath.startsWith('/') ? routePath : `${base}/${routePath}`.replace(/\/{2,}/g, '/');
         const inner = full === null ? base : full.endsWith('/*') ? full.slice(0, -2) : '';
-        const node = { kind: 'route' as const, path: routePath, exact: n.exact, exactUnread: n.exactUnread, screens, children: n.children.flatMap((c) => convert(c, file, inner)) };
+        const [itemValue, ...others] = new Set(screens.map((i) => itemExact.get(extracted[i])));
+        const fromItem = typeof itemValue === 'boolean' && !others.length;
+        const node = { kind: 'route' as const, path: routePath, exact: fromItem ? itemValue : n.exact, exactUnread: fromItem ? false : n.exactUnread, screens, children: n.children.flatMap((c) => convert(c, file, inner)) };
         const held = heldFiles(entries, file);
         if (held.length) holding.set(node, { files: held, base: inner, around });
         return node;
