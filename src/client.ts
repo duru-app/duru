@@ -57,6 +57,13 @@ interface InheritedGuard {
   via: string;
   line: number;
   guards: string[];
+  file?: string;
+}
+
+// under 는 컴포넌트를 렌더링한 위치에 걸린 조건이다. 조건 없이 렌더링했으면 null 이다.
+interface FrameFile {
+  file: string;
+  under: Required<InheritedGuard> | null;
 }
 
 interface Site {
@@ -106,6 +113,7 @@ interface RouteScreen {
   component: string;
   componentFile: string | null | undefined;
   wrapperFiles: string[];
+  frameFiles: FrameFile[];
   routeFile: string;
   routeGuards: string[];
   line: number;
@@ -131,6 +139,7 @@ interface LoopRoute {
   exactField: string | null;
   guards: string[];
   wrappers: string[];
+  frame: FrameFile[];
 }
 
 interface DrawnNode {
@@ -147,6 +156,7 @@ interface DrawnNode {
   redirectAsElement: boolean;
   when: Side | null;
   children: DrawnNode[];
+  frame?: () => FrameFile[];
 }
 
 type StoppedAt = { text: string; file: string | null; line: number };
@@ -236,7 +246,7 @@ const QUERY_HOOKS = new Set(['useQuery', 'useInfiniteQuery', 'useSuspenseQuery',
 
 type QueryEnabled = (parent: NodePath, child: NodePath, site: NodePath) => NodePath | null;
 
-function guardsOf(nodePath: NodePath, src: string, note: Note, queryEnabled?: QueryEnabled) {
+function guardsOf(nodePath: NodePath, src: string, note: Note, queryEnabled?: QueryEnabled, until?: Node) {
   const guards: string[] = [];
   const add = (text: string, exprPath: NodePath, negated: boolean, source: string) => {
     guards.push(text);
@@ -245,7 +255,7 @@ function guardsOf(nodePath: NodePath, src: string, note: Note, queryEnabled?: Qu
   const enabledSeen = new Set<Node>();
   let child = nodePath;
   let parent = nodePath.parentPath;
-  while (parent) {
+  while (parent && parent.node !== until) {
     const p = parent.node;
     if (p.type === 'LogicalExpression' && p.operator === '&&' && child.key === 'right') {
       add(sliceText(src, p.left), parent.get('left') as NodePath, false, src.slice(p.left.start!, p.left.end!));
@@ -348,8 +358,12 @@ export async function extractClient(config: any) {
 
   const factCache = new Map<string, Facts>();
   const parsed = new Map<string, ReturnType<typeof parseSource>>();
+  const programFile = new WeakMap<Node, string>();
   const parse = (file: string) => {
-    if (!parsed.has(file)) parsed.set(file, parseSource(file));
+    if (!parsed.has(file)) {
+      parsed.set(file, parseSource(file));
+      programFile.set(parsed.get(file)!.ast.program, file);
+    }
     return parsed.get(file)!;
   };
   const siteStart = new WeakMap<FollowedSite, number>();
@@ -397,7 +411,6 @@ export async function extractClient(config: any) {
     return [...facts.apiCalls, ...facts.dispatches, ...facts.watchers, ...linkSites(facts)].map((site) => ({ start: siteStart.get(site)!, site }));
   };
   const follower = nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf });
-  const programFile = new WeakMap<Node, string>();
   const importedFile = new WeakMap<Node, string | null>();
   const programs = new Map<string, NodePath<Program> | null>();
   const programOf = (file: string) => {
@@ -1613,12 +1626,12 @@ export async function extractClient(config: any) {
   }
 
   // 다른 화면의 컴포넌트 파일을 동적 import 로만 참조하면 미리 불러 두는 것이라 따라가지 않는다.
-  function closureOf(entryFile: string, isOtherScreen: (f: string) => boolean) {
+  function closureOf(entryFile: string, isOtherScreen: (f: string) => boolean, cut?: Set<string>) {
     const seen = new Set<string>();
     const stack = [entryFile];
     while (stack.length) {
       const f = stack.pop()!;
-      if (seen.has(f) || apiModuleFiles.has(f) || calledFiles.has(f) || constantFiles.has(f) || (f !== entryFile && tableFiles.has(f))) continue;
+      if (seen.has(f) || apiModuleFiles.has(f) || calledFiles.has(f) || constantFiles.has(f) || (f !== entryFile && tableFiles.has(f)) || cut?.has(f)) continue;
       if (!/\.(jsx?|tsx?)$/.test(f)) continue;
       seen.add(f);
       const { imports, dynamicOnly } = fileFacts(f);
@@ -1702,6 +1715,7 @@ export async function extractClient(config: any) {
     const loopRoutes: LoopRoute[] = [];
     const unreadLoopRoutes: { line: number; field: string }[] = [];
     const placed: { element: Node; screen: RouteScreen; grouped: boolean }[] = [];
+    const frames = frameReader(absFile, routeFile, src, note);
     let loopAt = -1;
     let hasRoutes = false;
     traverse(ast, {
@@ -1764,11 +1778,12 @@ export async function extractClient(config: any) {
           if (loopAt < 0) loopAt = screens.length;
           const exactValue = attr('exact')?.get('value');
           const exactField = exactValue?.isJSXExpressionContainer() ? loopItem(p, exactValue.get('expression') as NodePath)?.field ?? null : null;
-          loopRoutes.push({ element: p.node, line, page, drawnKeys: drawnItemKeys(page, p.scope, p.findParent(loopCallback)), pathExpr, item, exactField, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
+          loopRoutes.push({ element: p.node, line, page, drawnKeys: drawnItemKeys(page, p.scope, p.findParent(loopCallback)), pathExpr, item, exactField, guards: guardsOf(p, src, note), ...frames.of(p) });
           return;
         }
         const routeGuards = guardsOf(p, src, note);
-        const wrapperFiles = [...page.files, ...wrappersOf(p, absFile)];
+        const { wrappers, frame } = frames.of(p);
+        const wrapperFiles = [...page.files, ...wrappers];
         const grouped = Boolean(p.findParent((up) => up.isJSXElement() && ['Switch', 'Routes'].includes(tagOf(up.node.openingElement.name) ?? '')));
         const made: RouteScreen[] = [];
         for (const onePath of pathsIn(pathExpr)) {
@@ -1792,6 +1807,7 @@ export async function extractClient(config: any) {
             component: page.component,
             componentFile: page.componentFile,
             wrapperFiles: [...wrapperFiles],
+            frameFiles: frame,
             routeFile,
             routeGuards: [...routeGuards],
             line,
@@ -1818,7 +1834,7 @@ export async function extractClient(config: any) {
       elementScreens.set(loopRoutes[0].element, listed);
       screens.splice(loopAt < 0 ? screens.length : loopAt, 0, ...listed);
     }
-    return { screens, roots: drawnTree(ast, absFile, elementScreens), hasRoutes };
+    return { screens, roots: drawnTree(ast, absFile, elementScreens, frames), hasRoutes };
   }
 
   function testSide(test: NodePath<any>, on: boolean): Side | null {
@@ -1837,7 +1853,7 @@ export async function extractClient(config: any) {
     return null;
   }
 
-  function drawnTree(ast: ReturnType<typeof parseSource>['ast'], absFile: string, elementScreens: Map<Node, RouteScreen[]>) {
+  function drawnTree(ast: ReturnType<typeof parseSource>['ast'], absFile: string, elementScreens: Map<Node, RouteScreen[]>, frames: ReturnType<typeof frameReader>) {
     const nodes = new Map<Node, DrawnNode>();
     const roots: DrawnNode[] = [];
     traverse(ast, {
@@ -1860,8 +1876,8 @@ export async function extractClient(config: any) {
           return from?.spec === 'react' ? from.name : null;
         };
         node.isFragment = tag === 'Fragment' ? reactAs(binding) === 'Fragment' : tag === 'React.Fragment' && ['default', '*'].includes(reactAs(p.scope.getBinding('React')) ?? '');
-        if (tag === 'Switch') node.kind = 'switch';
-        else if (routerImport(binding) && importedAs(binding!)!.name === 'Routes') node.kind = 'routes';
+        const group = groupKind(p);
+        if (group) node.kind = group;
         else if (config.redirectElements.includes(tag)) {
           const from = attr('from');
           const to = attr('to');
@@ -1873,6 +1889,14 @@ export async function extractClient(config: any) {
           node.path = node.screens.length ? node.screens[0].path : at === undefined ? null : text(at);
         } else if (!/^[a-z]/.test(tag.split('.').pop()!) || (tag.includes('.') && !fromPackage(p.scope, tag, absFile))) {
           node.entry = resolveTag(p.scope, tag, absFile) ?? null;
+          let frame: FrameFile[] | undefined;
+          node.frame = () => {
+            if (!frame) {
+              const { wrappers, frame: beside } = frames.of(p);
+              frame = [...wrappers.map((file) => ({ file, under: null })), ...beside];
+            }
+            return frame;
+          };
         }
         nodes.set(p.node, node);
         const parent = p.findParent((a) => a.isJSXElement() && nodes.has(a.node));
@@ -1889,7 +1913,7 @@ export async function extractClient(config: any) {
     }
     if (!routes.length) throw new Error(`${table.at}: ${routeFile} has no route made for each item of a list whose path reads a field of the item`);
     if (routes.length > 1) throw new Error(`${table.at}: ${routeFile} has ${routes.length} routes made for each item of a list, at ${routes.map((r) => `${routeFile}:${r.line}`).join(' and ')}; a route file takes one table`);
-    const [{ line, page, drawnKeys, pathExpr, item, exactField, guards, wrappers }] = routes;
+    const [{ line, page, drawnKeys, pathExpr, item, exactField, guards, wrappers, frame }] = routes;
     const { file, const: name } = table.table;
     const literal = topLevelLiteral(file, name);
     if (!literal) throw new Error(`${table.at}: ${file} has no top-level const ${name} holding an object or a list`);
@@ -1941,6 +1965,7 @@ export async function extractClient(config: any) {
           component: shown.component,
           componentFile: shown.componentFile,
           wrapperFiles: [...new Set([page.componentFile, ...page.files, ...components.map((c) => c.componentFile), ...wrappers].filter(Boolean) as string[])],
+          frameFiles: frame,
           routeFile,
           routeGuards: guards,
           line,
@@ -2279,12 +2304,12 @@ export async function extractClient(config: any) {
     return !binding?.path.isVariableDeclarator() || !binding.path.get('id').isIdentifier() || isRouteMatch(binding.path.get('init') as NodePath);
   }
 
-  function holdsRoutes(route: NodePath<JSXElement>) {
+  function holdsRoutes(route: NodePath<JSXElement>, redirects = false) {
     let found = false;
     route.traverse({
       JSXElement(e) {
         const tag = tagOf(e.node.openingElement.name);
-        if (tag && config.routeElements.includes(tag)) {
+        if (tag && (config.routeElements.includes(tag) || (redirects && config.redirectElements.includes(tag)))) {
           found = true;
           e.stop();
         }
@@ -2349,22 +2374,153 @@ export async function extractClient(config: any) {
     return field && !rest.length ? [field] : null;
   }
 
-  function wrappersOf(from: NodePath, routesFile: string, stop: Node | null = null, seenFns = new Set<Node>()): string[] {
-    const files: string[] = [];
-    for (let a = from.parentPath; a && a.node !== stop; a = a.parentPath) {
-      if (!a.isJSXElement()) continue;
-      const tag = tagOf(a.node.openingElement.name);
-      const file = tag && resolveTag(a.scope, tag, routesFile);
-      if (file) files.push(file);
-      for (const fn of layoutFunctions(a)) {
-        if (seenFns.has(fn.node) || from.isDescendant(fn)) continue;
-        seenFns.add(fn.node);
-        const param = fn.get('params')[0];
-        if (!param?.isIdentifier()) continue;
-        for (const drawn of fn.scope.getBinding(param.node.name)?.referencePaths ?? []) if (drawnAsChild(drawn)) files.push(...wrappersOf(drawn, routesFile, fn.node, seenFns));
-      }
+  function packageImport(binding: Binding) {
+    const spec = importedAs(binding)?.spec;
+    if (!spec || spec.startsWith('.')) return false;
+    const file = programFile.get(binding.scope.getProgramParent().block);
+    return file !== undefined && imports.resolve(file, spec) === null;
+  }
+
+  function groupKind(p: NodePath<JSXElement>): 'switch' | 'routes' | null {
+    const tag = tagOf(p.node.openingElement.name);
+    const binding = tag ? p.scope.getBinding(tag) : undefined;
+    if (tag === 'Switch') return !binding || routerImport(binding) || !packageImport(binding) || holdsRoutes(p, true) ? 'switch' : null;
+    return routerImport(binding) && importedAs(binding!)!.name === 'Routes' ? 'routes' : null;
+  }
+
+  const drawsRoute = (e: NodePath<JSXElement>, redirects: boolean) => {
+    const tag = tagOf(e.node.openingElement.name);
+    return Boolean(tag) && (config.routeElements.includes(tag!) || (redirects && config.redirectElements.includes(tag!)) || groupKind(e) !== null);
+  };
+  const routeVisitor = (redirects: boolean, found: () => void) => ({
+    JSXElement(e: NodePath<JSXElement>) {
+      if (!drawsRoute(e, redirects)) return;
+      found();
+      e.stop();
+    },
+  });
+  function holdsRouteElement(p: NodePath, redirects: boolean) {
+    if (p.isJSXElement() && drawsRoute(p, redirects)) return true;
+    let found = false;
+    p.traverse(routeVisitor(redirects, () => (found = true)));
+    return found;
+  }
+  const routesDrawnIn = new Map<string, boolean>();
+  const drawsOwnRoutes = (file: string) => {
+    if (!routesDrawnIn.has(file)) {
+      let found = false;
+      if (/\.(jsx?|tsx?)$/.test(file)) traverse(parse(file).ast, routeVisitor(false, () => (found = true)));
+      routesDrawnIn.set(file, found);
     }
-    return files;
+    return routesDrawnIn.get(file)!;
+  };
+  const framesPickingByAddress = new Map<string, { component: string; file: string; line: number; componentFile: string }>();
+
+  // 함수 안에서 렌더링한 라우트는, 같은 파일에서 그 함수를 JSX 로 렌더링하거나 JSX 안에서 호출하는 곳에서도 상위로 거슬러 올라가 본다.
+  function frameReader(absFile: string, routeFile: string, src: string, note: Note) {
+    const besideAt = new Map<Node, Map<Node, FrameFile[]>>();
+    const drawnFrom = new Map<Node, FrameFile[] | null>();
+    const besideIn = (child: NodePath, at: NodePath): FrameFile[] => {
+      const found: FrameFile[] = [];
+      const take = (e: NodePath<JSXElement>) => {
+        const tag = tagOf(e.node.openingElement.name);
+        const file = tag && resolveTag(e.scope, tag, absFile);
+        if (!file || routeFileSet.has(file)) return;
+        const line = e.node.loc!.start.line;
+        if (drawsOwnRoutes(file)) {
+          framesPickingByAddress.set(`${routeFile}:${line}`, { component: tag!, file: routeFile, line, componentFile: file });
+          return;
+        }
+        const guards = guardsOf(e, src, note, undefined, at.node);
+        found.push({ file, under: guards.length ? { via: tag!, line, file: routeFile, guards } : null });
+      };
+      if (child.isJSXElement()) take(child);
+      child.traverse({
+        JSXAttribute(x) {
+          x.skip();
+        },
+        JSXElement: take,
+      });
+      return found;
+    };
+    const localRoutes = (binding: Binding | undefined) => {
+      const declared = binding?.path.isVariableDeclarator() ? (binding.path.get('init') as NodePath) : binding?.path;
+      return Boolean(declared?.node) && (declared!.isFunction() || declared!.isClass()) && holdsRouteElement(declared!, true);
+    };
+    const drawsRouteFile = (e: NodePath<JSXElement>) => {
+      const tag = tagOf(e.node.openingElement.name);
+      const file = tag && resolveTag(e.scope, tag, absFile);
+      if (!file || !routeFileSet.has(file)) return false;
+      return file !== absFile || localRoutes(e.scope.getBinding(tag!.split('.')[0]));
+    };
+    const holdsRoutes = (c: NodePath) => {
+      if (holdsRouteElement(c, true) || (c.isJSXElement() && drawsRouteFile(c))) return true;
+      let found = false;
+      const stop = (x: NodePath) => {
+        found = true;
+        x.stop();
+      };
+      c.traverse({
+        JSXElement(e) {
+          if (drawsRouteFile(e)) stop(e);
+        },
+        CallExpression(call) {
+          const callee = call.get('callee');
+          if (callee.isIdentifier() && localRoutes(callee.scope.getBinding(callee.node.name))) stop(call);
+        },
+      });
+      return found;
+    };
+    const besideOf = (at: NodePath, on: NodePath) => {
+      if (!besideAt.has(at.node)) besideAt.set(at.node, new Map());
+      const known = besideAt.get(at.node)!;
+      if (!known.has(on.node)) known.set(on.node, (at.get('children') as NodePath[]).flatMap((c) => (c.node === on.node || holdsRoutes(c) ? [] : besideIn(c, at))));
+      return known.get(on.node)!;
+    };
+    const drawnAt = (fn: NodePath): NodePath[] => {
+      const id = fn.isFunctionDeclaration() ? fn.node.id : fn.parentPath?.isVariableDeclarator() && fn.key === 'init' ? fn.parentPath.node.id : null;
+      if (id?.type !== 'Identifier') return [];
+      return (fn.parentPath!.scope.getBinding(id.name)?.referencePaths ?? []).flatMap((r) => {
+        const up = r.parentPath!;
+        if (up.isJSXOpeningElement() && r.key === 'name') return [up.parentPath!];
+        return up.isCallExpression() && r.key === 'callee' && up.parentPath?.isJSXExpressionContainer() ? [up] : [];
+      });
+    };
+    const climb = (from: NodePath, stop: Node | null = null, seenFns = new Set<Node>()) => {
+      const wrappers: string[] = [];
+      const frame: FrameFile[] = [];
+      for (let on = from, a = from.parentPath; a && a.node !== stop; on = a, a = a.parentPath) {
+        const tag = a.isJSXElement() && tagOf(a.node.openingElement.name);
+        const file = tag && resolveTag(a.scope, tag, absFile);
+        if (file) wrappers.push(file);
+        if ((a.isJSXElement() || a.isJSXFragment()) && on.listKey === 'children' && !(a.isJSXElement() && groupKind(a))) frame.push(...besideOf(a, on));
+        if (a.isFunction()) frame.push(...drawnFromCalls(a));
+        for (const fn of a.isJSXElement() ? layoutFunctions(a) : []) {
+          if (seenFns.has(fn.node) || from.isDescendant(fn)) continue;
+          seenFns.add(fn.node);
+          const param = fn.get('params')[0];
+          if (!param?.isIdentifier()) continue;
+          for (const drawn of fn.scope.getBinding(param.node.name)?.referencePaths ?? []) {
+            if (!drawnAsChild(drawn)) continue;
+            const inside = climb(drawn, fn.node, seenFns);
+            wrappers.push(...inside.wrappers);
+            frame.push(...inside.frame);
+          }
+        }
+      }
+      return { wrappers, frame };
+    };
+    const drawnFromCalls = (fn: NodePath) => {
+      if (!drawnFrom.has(fn.node)) {
+        drawnFrom.set(fn.node, null);
+        drawnFrom.set(fn.node, drawnAt(fn).flatMap((at) => {
+          const { wrappers, frame } = climb(at);
+          return [...wrappers.filter((f) => !routeFileSet.has(f)).map((file) => ({ file, under: null })), ...frame];
+        }));
+      }
+      return drawnFrom.get(fn.node) ?? [];
+    };
+    return { of: climb };
   }
 
   const drawnAsChild = (ref: NodePath) => ref.parentPath!.isJSXExpressionContainer() && (ref.parentPath!.parentPath!.isJSXElement() || ref.parentPath!.parentPath!.isJSXFragment());
@@ -2553,6 +2709,7 @@ export async function extractClient(config: any) {
       return held.filter((f) => !held.some((g) => g !== f && closure(g).has(f)));
     };
     const holding = new Map<RouteNode & { kind: 'route' }, { files: string[]; base: string; around: string[] }>();
+    const holders = new Map<string, { frame: FrameFile[]; from: string }[]>();
     let around: string[] = [];
     const convert = (n: DrawnNode, file: string, base = ''): RouteNode[] => {
       const nodes = convertNode(n, file, base);
@@ -2597,6 +2754,8 @@ export async function extractClient(config: any) {
         const node = { kind: 'route' as const, path: routePath, exact: fromItem ? itemValue : n.exact, exactUnread: fromItem ? false : n.exactUnread, screens, children: n.children.flatMap((c) => convert(c, file, inner)) };
         const held = heldFiles(entries, file);
         if (held.length) holding.set(node, { files: held, base: inner, around });
+        const frame = screens.length ? screens.flatMap((i) => [...extracted[i].wrapperFiles.map((f) => ({ file: f, under: null })), ...extracted[i].frameFiles]) : n.frame?.() ?? [];
+        for (const f of held) holders.set(f, [...(holders.get(f) ?? []), { frame, from: file }]);
         return node;
       });
     };
@@ -2621,7 +2780,13 @@ export async function extractClient(config: any) {
       }
     }
     const roots = drawn.filter((d) => !held.has(d.file)).flatMap((d) => rootsOf.get(d.file)!);
-    return roots.length ? roots : rootsOf.get(drawn[0].file)!;
+    const framesOf = (f: string, outer: Set<string> = new Set()): FrameFile[] => {
+      if (outer.has(f)) return [];
+      const around = new Set([...outer, f]);
+      const found = (holders.get(f) ?? []).flatMap(({ frame, from }) => [...frame, ...framesOf(from, around)]);
+      return found.filter((e) => e.file !== f && !routeFileSet.has(e.file) && !closure(e.file).has(f));
+    };
+    return { roots: roots.length ? roots : rootsOf.get(drawn[0].file)!, framesOf };
   }
 
   function joinedPaths(paths: string[], rest: string) {
@@ -2657,13 +2822,40 @@ export async function extractClient(config: any) {
   const extracted = drawn.flatMap((d) => d.screens);
   const emptyRouteFiles = (config.routeFiles as string[]).filter((_, i) => !drawn[i].hasRoutes);
   const screenFiles = new Set(extracted.map((s) => s.componentFile).filter(Boolean));
-  const sourced = extracted.map(({ wrapperFiles, outerFill, ...s }) => {
+  const sourced = extracted.map(({ wrapperFiles, frameFiles, outerFill, ...s }) => {
     const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
     const isOtherScreen = (f: string) => screenFiles.has(f) && !entryFiles.includes(f);
-    return { s, outerFill, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))] };
+    return { s, outerFill, frameFiles, entryFiles, isOtherScreen, files: [...new Set(entryFiles.flatMap((f) => closureOf(f, isOtherScreen)))], drawnUnder: [] as { file: string; unders: Required<InheritedGuard>[] }[], drawnFiles: new Map<string, Required<InheritedGuard>[]>() };
   });
   fillOuterAddresses(sourced);
-  const routeRoots = routeTree(drawn, extracted, sourced);
+  const { roots: routeRoots, framesOf } = routeTree(drawn, extracted, sourced);
+  // 레이아웃 컴포넌트는 경로를 채우고 라우트 트리를 만든 뒤에 붙인다.
+  const inheritedFrames = new Map<string, FrameFile[]>();
+  for (const x of sourced) {
+    const routeFile = path.join(config.srcRoot, x.s.routeFile);
+    if (!inheritedFrames.has(routeFile)) inheritedFrames.set(routeFile, framesOf(routeFile));
+    const frame = [...x.frameFiles, ...inheritedFrames.get(routeFile)!].filter((e) => !x.entryFiles.includes(e.file));
+    if (!frame.length) continue;
+    const open = [...new Set(frame.filter((e) => !e.under).map((e) => e.file))];
+    const guarded = new Map<string, Required<InheritedGuard>[]>();
+    for (const { file, under } of frame) {
+      if (!under || open.includes(file)) continue;
+      const known = guarded.get(file) ?? [];
+      if (!known.some((g) => g.file === under.file && g.line === under.line)) guarded.set(file, [...known, under]);
+    }
+    x.entryFiles.push(...open);
+    const frameClosure = (f: string) => closureOf(f, x.isOtherScreen, routeFileSet);
+    const openFiles = new Set([...x.files, ...open.flatMap(frameClosure)]);
+    x.files = [...openFiles];
+    for (const [file, unders] of guarded) {
+      x.drawnUnder.push({ file, unders });
+      for (const f of frameClosure(file)) {
+        if (openFiles.has(f)) continue;
+        if (!x.drawnFiles.has(f)) x.files.push(f);
+        x.drawnFiles.set(f, [...(x.drawnFiles.get(f) ?? []), ...unders]);
+      }
+    }
+  }
   const routedScreens = routerTargets(routeRoots);
   // 링크 주소 전체로 쓴 라우트 상수는 Routes 에서 그 주소에 맞는 화면이 나오면 문자열 주소처럼 잇되 다른 Routes 의 catch-all 은 빼고, 그 밖에는 라우트 경로에 맞춰 본다.
   const constantLink = (site: RouteRef, from: number) => {
@@ -2684,7 +2876,7 @@ export async function extractClient(config: any) {
   const screenRoutes = sourced.map((x) => x.s).filter((s) => !s.path.includes(UNKNOWN) && pathParts(s.path).some((part) => typeof part === 'string' && /[^/]/.test(part))).map((s) => routePattern(s.path));
   const opensScreen = (url: string) => screenRoutes.some((route) => route.test(url.replaceAll(UNKNOWN, '\0').split(/[?#]/)[0]));
   const isApiCall = (site: FollowedSite): site is ApiCallSite => 'fn' in site;
-  const sends = (c: ApiCallSite, outsideRequestFunction: Set<FollowedSite>) => !c.request || (outsideRequestFunction.has(c) && !(c.navigation && c.request.method !== 'POST' && opensScreen(c.request.url!)));
+  const sends = (c: ApiCallSite, outsideRequestFunction: { has: (site: FollowedSite) => boolean }) => !c.request || (outsideRequestFunction.has(c) && !(c.navigation && c.request.method !== 'POST' && opensScreen(c.request.url!)));
 
   // saga 는 화면이 import 하지 않는 파일에 있어도 돈다. API · 상수 파일은 화면에서와 같이 그 안으로 들어가지 않는다.
   const sagaScope = (f: string | null) => !apiModuleFiles.has(f!) && !calledFiles.has(f!) && !constantFiles.has(f!);
@@ -2724,7 +2916,7 @@ export async function extractClient(config: any) {
   const members = typedMembers(config.tsconfig, [...new Set(sourced.flatMap((x) => x.files))], imports.resolve);
   const heldRouteFiles = new Set(sourced.flatMap((x) => x.files).filter((f) => routeFileSet.has(f)));
   const screenFollower = members ? nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf, members }) : follower;
-  const screens = sourced.map(({ s, entryFiles, isOtherScreen, files }, index) => {
+  const screens = sourced.map(({ s, entryFiles, isOtherScreen, files, drawnUnder, drawnFiles }, index) => {
     const inSources = new Set<string | null>(files);
     // 화면이 import 하지 않고 context 훅에서 받은 스토어를 거쳐서만 닿는 파일. 화면의 소스는 아니지만, 화면이 호출한 스토어 메서드를 추적할 때 들어간다.
     const received = new Set<string>();
@@ -2741,6 +2933,16 @@ export async function extractClient(config: any) {
     }
     // 요청 함수의 파일을 거쳐야만 이어지는 요청은 그 함수가 받은 주소로 보내는 것이라, 화면 코드에서 나가는 요청이 아니다.
     const outsideRequestFunction = canEnter(requestFile) ? screenFollower.reach(starts, (f) => canEnter(f) && f !== requestFile, { loaded }) : reached;
+    const onlyDrawn = new Map<FollowedSite, Required<InheritedGuard>[]>();
+    const outsideDrawn = new Set<FollowedSite>();
+    for (const { file, unders } of drawnUnder) {
+      const from = [{ file, name: null }];
+      for (const site of screenFollower.reach(from, canEnter, { loaded })) if (!reached.has(site)) onlyDrawn.set(site, [...(onlyDrawn.get(site) ?? []), ...unders]);
+      if (canEnter(requestFile)) for (const site of screenFollower.reach(from, (f) => canEnter(f) && f !== requestFile, { loaded })) outsideDrawn.add(site);
+    }
+    const seen = (site: FollowedSite) => reached.has(site) || onlyDrawn.has(site);
+    const outside = canEnter(requestFile) ? { has: (site: FollowedSite) => outsideRequestFunction.has(site) || outsideDrawn.has(site) } : { has: seen };
+    const drawnWith = <T extends { inheritedGuards?: InheritedGuard[] }>(item: T, unders: Required<InheritedGuard>[] | undefined): T => (unders ? { ...item, inheritedGuards: [...(item.inheritedGuards ?? []), ...unders] } : item);
     const apiCalls: (ApiCallSite & { file: string | null })[] = [];
     const own = new Set<ApiCallSite>();
     const dispatched = new Map<string, { type: ActionType; at: Set<string> }>();
@@ -2749,27 +2951,27 @@ export async function extractClient(config: any) {
     const ownLinks = new Set<FollowedSite>();
     const takeCalls = (f: string, facts: Facts) => {
       for (const c of facts.apiCalls) {
-        if (!reached.has(c) || !sends(c, outsideRequestFunction)) continue;
+        if (!seen(c) || !sends(c, outside)) continue;
         own.add(c);
-        apiCalls.push({ ...c, file: rel(f) });
+        apiCalls.push(drawnWith({ ...c, file: rel(f) }, onlyDrawn.get(c)));
       }
     };
     for (const f of files) {
       const facts = fileFacts(f);
       takeCalls(f, facts);
       for (const d of watchesOf.size ? facts.dispatches : []) {
-        if (!reached.has(d)) continue;
+        if (!seen(d)) continue;
         for (const type of d.types()) {
           if (!dispatched.has(type.key)) dispatched.set(type.key, { type, at: new Set() });
           dispatched.get(type.key)!.at.add(`${rel(f)}:${d.line}`);
         }
       }
-      for (const r of facts.settingReads) settingReads.push({ ...r, file: rel(f) });
+      for (const r of facts.settingReads) settingReads.push(drawnWith({ ...r, file: rel(f) }, drawnFiles.get(f)));
       for (const ref of linkSites(facts)) {
-        if (!reached.has(ref) || (exportedKeys.has(ref as RouteRef) && lookedUpElsewhere(exportedKeys.get(ref as RouteRef)!))) continue;
+        if (!seen(ref) || (exportedKeys.has(ref as RouteRef) && lookedUpElsewhere(exportedKeys.get(ref as RouteRef)!))) continue;
         ownLinks.add(ref);
         const link = screenLink(ref, index);
-        if (link) links.push({ ...link, file: rel(f) });
+        if (link) links.push(drawnWith({ ...link, file: rel(f) }, onlyDrawn.get(ref)));
       }
     }
     // 라우트 파일 본문에서 옮기는 것은 그 파일이 그리는 화면 어디서나 일어난다.
@@ -2833,5 +3035,5 @@ export async function extractClient(config: any) {
   }
 
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)) };
+  return { screens, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)), framesPickingByAddress: [...framesPickingByAddress.values()].map((f) => ({ ...f, componentFile: rel(f.componentFile)! })).sort((a, b) => compare(a.file, b.file) || a.line - b.line) };
 }

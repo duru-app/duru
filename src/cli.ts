@@ -355,6 +355,9 @@ if (command === 'tasks') {
   for (const n of map.settingsCallNotices ?? []) console.log(`  settingsFunctions ${n.file ? `${n.file}:${n.line} ` : ''}${n.reason}`);
   for (const { spec, files } of map.unresolvedAliasImports ?? []) console.log(`  tsconfig import ${spec} matches an alias but no file, imported in ${files} file${files === 1 ? '' : 's'}`);
   for (const file of map.emptyRouteFiles ?? []) console.log(`  routesFile ${file} has no ${config.routeElements.join(' or ')} element, so it gives no screens`);
+  for (const { component, file, line, componentFile } of map.framesPickingByAddress ?? []) {
+    console.log(`  ${component} at ${file}:${line} is drawn beside routes but draws its own routes in ${componentFile}, so it picks what it shows by the address; its links, requests and settings reads are given to no screen beside it`);
+  }
   for (const d of map.duplicateIds) console.log(`  duplicate screen ID ${d.id} ← ${d.places.map((p: { file: string; line: number }) => `${p.file}:${p.line}`).join(', ')}`);
   for (const s of map.screens.filter((s: any) => !s.componentFile)) console.log(`  component file not found for ${s.id} ← ${s.routeFile}:${s.line}${atTableItem(s)}`);
   for (const { file, line, path: routePath, stoppedAt: at, paths, manyPaths } of map.unreadRoutePaths ?? []) {
