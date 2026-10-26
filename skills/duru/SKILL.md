@@ -98,6 +98,13 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   a base address it could not read. `no-path` — the address is only the top of the site. `other-host` — the whole
   address after `only` is on a host duru does not take for the app's server; when that host is the app's server,
   ask the user to give it in `app.server`. None of these is a call missing on the server: do not treat it as dead.
+  A `no request address was read from the screen sources; …` line means no request on any screen has an address
+  duru read, other than on another host, and the config names no API code. Look in the sources for the function,
+  object or client class the screens send their requests through and the files that hold the API code, and tell the
+  user what you found. Once the user agrees, name what the requests are sent through in `requestFunction`, which is
+  enough alone when the screens call it directly; list API files the screens call in `calledApiModules`, with
+  `requestFunction` unless those files send with `fetch`; or list files of functions that build the addresses in
+  `apiModules`. Then run `duru rebuild` again.
 - In an app that uses redux-saga, a call or a link with `actions` is sent or made by a saga, written at the line it
   names in the saga, and comes to the screen because the screen dispatches one of those action types at the places
   under `dispatchedAt`. A test of that call or link for the screen does what the code at a `dispatchedAt` place

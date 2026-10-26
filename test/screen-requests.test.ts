@@ -190,6 +190,29 @@ test('a request whose address the source does not spell stays on the screen as a
   assert.match(result.stdout, /^screens 10 \| api functions 2 \| endpoints match 0 method-mismatch 0 none 0 unresolved 0 unchecked 2$/m);
 });
 
+test('extract names the keys for API code when no request address was read and the config names no API code', () => {
+  const hint = 'no request address was read from the screen sources; name the function or object the app sends its requests through in requestFunction and the API files that call it in calledApiModules, or files of functions that build the addresses in apiModules';
+  const linesOf = (configFile: string) => {
+    const result = spawnSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.split('\n');
+  };
+  const unread = { 'screens/urls.ts': `export const buildUrl = (kind: string) => '/api/' + kind;\n`, 'screens/Inbox.tsx': UNREAD_INBOX };
+  assert.ok(linesOf(fixtureCopy(unread, { apiModules: [] })).includes(hint));
+  const outbox = (address: string) => ({ ...unread, 'screens/Outbox.tsx': `export default function Outbox({ box }: { box: string }) {\n  return <button onClick={() => fetch(${address})} />;\n}\n` });
+  assert.ok(!linesOf(fixtureCopy(outbox("'/api/mail/sent'"), { apiModules: [] })).includes(hint));
+  assert.ok(!linesOf(fixtureCopy(outbox("'https://mail.example.com/api/sent'"), { apiModules: [] })).includes(hint));
+  const partly = linesOf(fixtureCopy(outbox('`https://mail.example.com/${box}`'), { apiModules: [] }));
+  assert.ok(partly.includes('  request fetch ← screens/Outbox.tsx:2: address not read (other-host), only https://mail.example.com/{?}'));
+  assert.ok(!partly.includes(hint));
+  assert.ok(!linesOf(fixtureCopy({ 'NoRoutes.tsx': 'export default function NoRoutes() {\n  return null;\n}\n' }, { apiModules: [], routesFile: 'NoRoutes.tsx' })).includes(hint));
+
+  const apiCode = { ...unread, 'lib/http.ts': `export const http = { get: (url: string) => url };\n`, 'lib/unused.ts': `export const ping = () => fetch('/api/ping');\n` };
+  for (const keys of [{ apiModules: ['lib/unused.ts'] }, { apiModules: [], calledApiModules: ['lib/unused.ts'] }, { apiModules: [], requestFunction: { import: './lib/http', name: 'http', object: true } }]) {
+    assert.ok(!linesOf(fixtureCopy(apiCode, keys)).includes(hint), JSON.stringify(keys));
+  }
+});
+
 const MAIL_API = `const request = async (info: unknown) => info;
 
 export const ajaxOpen = async (url: string) => request({ METHOD: 'GET', URL: url });

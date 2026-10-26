@@ -4157,6 +4157,19 @@ outline naming `createInternalLinkAction` (`"0.to"`) and `openRouteInSplit` (`"1
 - appsmith: 370 to 427 link lines, 80 to 101 reaching a screen; no entry screen changes. `FooterLinks` gives no link.
 - mattermost (8443) and into-sign 1.5.0 (576) do not change. No link line of the base is lost in any of them.
 
+**When no request address is read and the config names no API code, `extract` names the keys to fill, not a guess.**
+On mattermost the screens send through `Client4`, a client object from a package outside the downloaded source:
+181 screens, 8 requests written in screen sources and none of their addresses read, and the summary said nothing
+about what to do. The line now names `requestFunction`, `calledApiModules` and `apiModules`. Compared: naming the
+object the screens call most as a likely `requestFunction`; that guess is wrong in an app whose most called object is
+a store or a hook, and a person who knows the app finds the client from the key names alone. An address on another
+host counts as read, even when a piece of it was not, since its line already says to give the host in `app.server`;
+other addresses of which only a part was read do not, since on mattermost two such addresses (`{?}/latest_version`)
+would otherwise have kept the line from showing. So a screen that calls an outside service by its full address, such
+as an analytics or a sign-in host, keeps the line from showing in an app whose own client duru does not know. A map
+with no screens prints no such line, since the cause there is the routes. Measured on main c4b1f99 against the
+branch: mattermost and SigNoz print the line; into-sign 1.5.0 and 2.0.0, outline and appsmith do not.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None
