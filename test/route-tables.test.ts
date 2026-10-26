@@ -180,6 +180,19 @@ test('an item screen holds the code of the page the route draws and of every com
   });
 });
 
+test('item screens inside a layout handed to a component around the loop as a function each get the layout\'s menu links', async () => {
+  const edits: [string, string, string][] = [
+    [CONSOLE, "import SchemaSettings from './SchemaSettings';\n", "import SchemaSettings from './SchemaSettings';\nimport Layout from '../components/Layout';\n\nconst Frame = ({ layout, children }) => layout(children);\nconst appLayout = (children) => <Layout>{children}</Layout>;\n"],
+    [CONSOLE, '    <Switch>\n', '    <Frame layout={appLayout}>\n    <Switch>\n'],
+    [CONSOLE, '    </Switch>\n', '    </Switch>\n    </Frame>\n'],
+  ];
+  await withTableCopy(async ({ configFile }) => {
+    const items = tableScreens(await build(configFile)).filter((s) => s.tableItem);
+    assert.equal(items.length, 5);
+    for (const s of items) assert.deepEqual(s.links.filter((l) => l.file === 'components/SideMenu.js').map((l) => l.to), ['/admin/report'], s.id);
+  }, { edits });
+});
+
 test('an item\'s address and components are read through names declared in the table file and imported from other files', async () => {
   const edits: [string, string, string][] = [
     [TABLE, "import { ID_PATTERN } from './patterns';", "import { ID_PATTERN } from './patterns';\nconst LICENSE_URL = 'about/license';\nconst licenseSchema = { id: 'License', component: License };"],
