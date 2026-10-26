@@ -243,8 +243,9 @@ route itself sits in is the one being climbed out of and is skipped. Not read: a
 and handed by name (`layout={AppLayout}`), an element prop (`aside={<Layout />}`), a destructured or later
 parameter, a parameter handed on in an attribute, a spread or a member read
 (`fallback={(error) => <ErrorPage error={error} />}`, as an error boundary's fallback or a confirm dialog is
-written), a parameter drawn inside an expression (`{ready && children}`, `{children ?? null}`), and an element drawn beside the parameter rather than around it, as a sibling of a `Switch` is not a
-wrapper either.
+written), and a parameter drawn inside an expression (`{ready && children}`, `{children ?? null}`). An element
+drawn beside the parameter rather than around it was left out here, as a sibling of a `Switch` was then; since #467
+it is part of the frame of the screens inside, as a component beside routes is.
 Alternatives compared:
 - Reading every attribute value of a route's ancestors, or starting the reach at the attribute in the route file:
   it pulls in the Cmd-K overlays, the `Suspense` and `ErrorBoundary` fallbacks and outline's `Scene` props, and it
@@ -4635,6 +4636,74 @@ reached through its query options function, and the aggregate attributes call of
 barrel re-exports and nothing draws. into-sign 1.5.0 prints 14 = 6 + 8 and into-sign 2.0.0 6 = 0 + 6; appsmith, outline,
 mattermost and SigNoz without its API code print no line. Apart from the line and `callsOnNoScreen`, the seven maps and
 what extract prints are the same.
+
+**A screen gets the frame it is drawn in: every component drawn around its route or beside it outside the `Switch`
+or `Routes`, in its own route file and around each route of an outer route file that draws that file, but never the
+component that draws the route file.**
+Chosen for #467 (2026-10-27). The issue asked for the menu links of an outer layout on the screens of the route files
+drawn inside it: outline's `AuthenticatedLayout` reached none of the screens of `scenes/Collection`, `scenes/Home` and
+`routes/settings.tsx`, and mattermost's `TeamSidebar`, `AdminSidebar` and `BackstageSidebar` sit beside an inner
+`Switch`. No rule tells a menu from the rest of a layout without guessing by its name, so the whole frame is given:
+the components drawn around a route, as before, and now the components drawn beside it in a JSX element or fragment
+that is not a `Switch` or `Routes`. Only children are read, not props: `Suspense`'s `fallback` and SigNoz's overlays
+given as props would change SigNoz on 21 screens and into-sign 2.0.0 with 13 files that only show while loading. A
+child that holds routes, a redirect, a `Switch` or `Routes`, or draws them through a component or function of the same
+file, belongs to other screens and gives nothing. Routes returned by a function of the route file also get what is
+drawn around and beside the places the same file draws that function as an element or calls it inside JSX (appsmith
+`<Routes />` in `ce/AppRouter.tsx`, mattermost `renderRoutes()` in `admin_console.tsx`); an export or a call such as
+`observer(Routes)` is not such a place, and no import is followed. A layout handed as a function to a component around
+routes is climbed the same way from each place it draws what it is given, so what it draws beside that place is part
+of the frame too.
+A route file drawn by a route or an element of another route file gets the frame of that holder: the holder's
+wrappers and what is drawn beside it, with what the holder's own file inherits, leaving out the route file itself,
+every other route file and every file that reaches the route file through its imports, so the component that draws
+it and the code leading to it stay out. A route file under several holders gets all of their frames. The frames are
+added after outer addresses are filled in and the route tree is built, and the files reached from them stop at route
+files, so screen paths, the route tree and what each route file holds stay as they were.
+A condition written between a component beside routes and the element it shares with them
+(`{isMobileView && <MobileChannelHeader/>}`) guards the links, requests and settings reads reached only through that
+component, as an `inheritedGuards` entry naming the component, the line and the `file` it is drawn in; the conditions
+of a link are read in that file.
+A component beside routes that draws its own routes, such as appsmith's `AppHeader`, picks what it shows by the
+address. It is given to no screen and extract prints one line naming where it is drawn (`framesPickingByAddress`).
+A `Switch` imported from a package other than a router that draws no route or redirect element inside, such as a toggle from
+`antd`, `@mui/material` or `@headlessui/react` with or without a label inside, is not a group of routes, so a header
+drawing such a toggle is still given to the screens beside it. A `Switch` taken from a file of the app that
+re-exports the router's, taken with `require`, written with no import, or drawn around route or redirect elements, as `wouter`'s
+is, stays a group of routes.
+Compared:
+- Counting a `Switch` as routes only when it is imported from a router package or has no import: a router `Switch`
+  re-exported by a file of the app would stop being a group of routes, and a link under it would go to every screen
+  whose path matches instead of the first one.
+- Menus only, named in a new config key such as `menuComponents`: counts close to the issue's estimates, but every
+  app needs the key before its inner screens get anything, and the rest of a frame (banners, modal hosts) stays
+  missing.
+- The frames common to all holders of a route file instead of all of them: drops code that is there under one holder.
+- Giving `AppHeader` whole: +43 pairs of screens on appsmith, about 25 of them wrong (such as `/user/login` to
+  `/settings` through `ProfileDropdown.tsx:108`), since its `Switch` shows a different header for each address.
+Known limits: a frame component that hides itself inside, by returning nothing under a condition
+(`team_sidebar.tsx:204-207` when there is one team) or by a style (`AuthenticatedLayout.tsx:94-102` hides the app
+sidebar on settings screens), gives its links with no condition, on outer screens as before and now on inner ones;
+components given as props, and route elements of the app such as `HFRoute` or `SentryRoute` read as wrappers, are not
+read as frames; a link reached only through a frame component drawn under a condition and also through a handler used
+without one inside its file shows no condition, as the handler rule asks every use to be guarded; a saga started from
+such a component gives its requests without the condition; a condition around the routes, or around a component
+drawn around them, guards those routes too, so it is their route condition on the screens of that file and the
+screens of a route file drawn inside get the frame without it. A toggle `Switch` taken from a file of the app, defined
+in the file or taken with `require` still counts as a group of routes, as every `Switch` did before, and a `Switch`
+of a router duru does not list whose routes are not written inside it (`<Switch>{adminRoutes}</Switch>` with `wouter`)
+is read as a toggle. Any function prop
+that draws its first parameter as a child is read as a layout, so an error boundary's `fallback` written that way
+gives what it draws beside the parameter, and a condition around all that a layout function returns
+(`layout={(c) => ready ? <><Nav />{c}</> : c}`) does not guard what it draws beside the parameter.
+Measured on main c958c72 against the branch: outline gains 1,094 link entries on 33 inner screens and 183 pairs of
+screens (386 to 569), mattermost 4,058 entries and 1,004 pairs (1,855 to 2,859), 1,344 of the entries on the 112
+admin screens, and 12 items with a draw-site condition (`center_channel.tsx:86`); appsmith gains no link and prints
+the `AppHeader` line. Requests grow with the frames: 17 on outline, 383 on mattermost (`PerformanceReporterController`
+beside the outer `Switch` of `root.tsx` sends one on all 181 screens), 53 on appsmith. Screen paths are unchanged in
+every app; access changes on 16 outline and 23 mattermost screens, and mattermost has one entry screen fewer
+(`/:team/integrations#Integrations` now has a link in). The maps of into-sign 1.5.0 and 2.0.0, SigNoz and SigNoz with
+its API code are the same apart from `meta`.
 
 ## Why this is worth building — prior art (checked 2026-09-29)
 

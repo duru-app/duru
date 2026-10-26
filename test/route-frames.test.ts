@@ -459,3 +459,10 @@ export default function Routes() {
   assert.deepEqual(givenBy(map, '/login#Login', 'Menu.js'), []);
   assert.deepEqual(map.screens.map((s) => s.id), ['/login#Login', ...INNER]);
 });
+
+test('the usage guide and the agent skill name the line for a component beside routes that draws its own routes, and the decision record names the choice', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
+  assert.ok(read('../README.md').includes('`<component> at <file>:<line> is drawn beside routes but draws its own routes in <component file>'));
+  assert.ok(read('../skills/duru/SKILL.md').includes('`<component> at <file>:<line> is drawn beside routes but draws its own routes in <file>'));
+  assert.match(read('../docs/decisions.md'), /Chosen for #467/);
+});
