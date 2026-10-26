@@ -171,8 +171,10 @@ client with example results and a config to start from.
   requests of that function, and a screen that calls the hook gets them. A `constantStubs` entry for either package
   is used in place of this.
   An API function that a screen's own source gives to react-query is a call of that screen, as one it calls
-  directly is. A call stopped after one second counts as failed. Two listed files exporting different objects under
-  one name, or a name `apiModules` already has, get the file path in front of the name. On into-sign 2.0.0:
+  directly is. The `enabled` the screen gives that query, or gives a listed file's hook under `query`
+  (`useListUsers({ query: { enabled } })`), is a condition of the requests the query sends, as it is written. A call
+  stopped after one second counts as failed. Two listed files exporting different objects under one name, or a name
+  `apiModules` already has, get the file path in front of the name. On into-sign 2.0.0:
 
   ```json
   "calledApiModules": ["domains/user/api/index.ts", "domains/document/api/index.ts", "domains/signing/api/index.ts"],
@@ -412,9 +414,11 @@ conditions guarding them. A screen made from an item of a table in `routeTables`
 keys joined with `.`, a list item's key being its place in the list, and the file and line where the item is written. The settings come from every file in `sourceFiles`. The
 API calls and links are only those the screen's code reaches, so a file in `sourceFiles` can hold calls and links
 the screen does not list, and a call sent by a method of a store the screen gets from a React context hook can be
-written in a file outside them; each call and link names the file and line where it is written. A call or link a
-saga makes for the screen names the line in the saga and lists under `actions` each action type that leads to it,
-with the places the screen dispatches that type (`dispatchedAt`).
+written in a file outside them; each call and link names the file and line where it is written, and each API call
+also lists the conditions it is sent under: the `if`, `? :` and `&&` around it and the `enabled` given to the
+react-query query that sends it. A call or link a saga makes for the screen names the line in the saga and lists
+under `actions` each action type that leads to it, with the places the screen dispatches that type
+(`dispatchedAt`).
 A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
 inside it.
 
