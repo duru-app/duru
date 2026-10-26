@@ -6,7 +6,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
-import { loadJudgments } from '../src/judgments.ts';
+import { addJudgment, loadJudgments } from '../src/judgments.ts';
 import { loadMarks } from '../src/marks.ts';
 import { PAGE_PARTS, reviewAuthor } from '../src/review.ts';
 import { taskList } from '../src/tasks.ts';
@@ -253,8 +253,10 @@ test('the page reports a missing map instead of serving empty data', async () =>
   }
 });
 
-test('without tests.json the data has the whole map and no tests, and the task list is written; a tests.json that cannot be read is still reported', async () => {
-  await withRebuiltFixture({}, async (config) => {
+test('without tests.json the data has the whole map and no tests, judgments and test baseline are left out, and the task list is written; a tests.json that cannot be read is still reported', async () => {
+  const { tests: sources } = JSON.parse(fs.readFileSync(path.join(FIXTURE, 'config.json'), 'utf8'));
+  await withRebuiltFixture({ baselineTests: sources }, async (config) => {
+    addJudgment(config.judgmentsDir, { test: { source: 'results/vitest/client-unit.json', file: 'components/Help.spec.js', title: 'renders the help text' }, node: '/help#Help', kind: 'hand-over', reason: '', author: 'reviewer' });
     const testsFile = path.join(config.outDir, 'tests.json');
     fs.rmSync(testsFile);
     await withServer(config, 'reviewer', async (base) => {
@@ -264,6 +266,7 @@ test('without tests.json the data has the whole map and no tests, and the task l
       assert.equal(data.map.screens.length, 11);
       assert.equal(data.tests.meta.generatedAt, null);
       assert.deepEqual([data.tests.nodes, data.tests.untagged, data.flow.summary.tested], [{}, [], 0]);
+      assert.deepEqual([data.tests.detachedHandOvers, data.baselineTests], [{}, null]);
       assert.match(taskList(config), /\S/);
 
       fs.writeFileSync(testsFile, '{');

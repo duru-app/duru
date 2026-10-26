@@ -15,7 +15,7 @@ import type { CaseKind } from './config.ts';
 import { GENERAL, orderKey, recordKind } from './marks.ts';
 import type { MarkEntry } from './marks.ts';
 import { findNeed, needPath } from './needs.ts';
-import { reviewData } from './review.ts';
+import { reviewData, testsLinked } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { settingChange } from './setting-changes.ts';
 import type { MapDefaults, SettingsFileValues } from './setting-changes.ts';
@@ -708,7 +708,7 @@ export function taskList(config: any) {
   let comparison: TestComparison | null = null;
   let unread = '';
   try {
-    if (config.baselineTests) comparison = compareTests(readBaselineTests(config), tests, nodeIds(map));
+    if (config.baselineTests && testsLinked(tests)) comparison = compareTests(readBaselineTests(config), tests, nodeIds(map));
   } catch (err) {
     unread = `\n${(err as Error).message}; screens and calls a reviewer sent by commenting on a regressed test are not listed`;
   }
