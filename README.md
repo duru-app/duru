@@ -872,8 +872,8 @@ built before links carried their conditions must be rebuilt first. A wrong call 
 
 `review` serves a local page that reads `map.json` and `tests.json` from `outDir` and writes only marks, judgments,
 story files and the visits recorded on it. With only `map.json` there, as after `extract`, the page shows the map with
-no test results and without the judgments and the `baselineTests` comparison, which need them; `rebuild` writes
-`tests.json`. The page keeps the place being looked at in its address, so the back
+no test results, so without judgments of tests and without the `baselineTests` comparison, and the task list it prints
+at the end says so; `rebuild` writes `tests.json`. The page keeps the place being looked at in its address, so the back
 button, a reload and a copied address work.
 
 **Flow.** The page opens on the flow: one line per screen, in columns by how many links or moves they are from an
@@ -1482,7 +1482,8 @@ once a reviewer marks the whole screen or call `fine`; a comment after that brin
 the baseline ran does not count, which is why JUnit XML and verdict logs are kept with their modified time. When
 `baselineTests` cannot be read, the line right under the head says
 `baselineTests <path> could not be read: <why>; screens and calls a reviewer sent by commenting on a regressed test are not listed`,
-the rest of the list is as without it, and `tasks` does not stop.
+the rest of the list is as without it, and `tasks` does not stop. When `outDir` has no `tests.json` yet, the line reads
+`no tests.json in <outDir>; screens and calls a reviewer sent by commenting on a regressed test are not listed`.
 
 **Case kinds.** With `caseKinds` set, `# Case kinds` comes before `# Tagging`, with a `## <kind>` for each kind: its
 description, its values and rules, `undecided: N` with a line for each undecided candidate, and `cases with no

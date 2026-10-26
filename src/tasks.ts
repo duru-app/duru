@@ -706,11 +706,13 @@ export function taskList(config: any) {
   const { map, tests, marks, appLinks, stories, needs, caseTargets } = reviewData(config, null);
   const open = marks.attached.filter((m) => m.current?.status === 'needs-more');
   let comparison: TestComparison | null = null;
+  const notListed = 'screens and calls a reviewer sent by commenting on a regressed test are not listed';
   let unread = '';
+  if (config.baselineTests && !testsLinked(tests)) unread = `\nno tests.json in ${path.relative(config.configDir, config.outDir) || '.'}; ${notListed}`;
   try {
     if (config.baselineTests && testsLinked(tests)) comparison = compareTests(readBaselineTests(config), tests, nodeIds(map));
   } catch (err) {
-    unread = `\n${(err as Error).message}; screens and calls a reviewer sent by commenting on a regressed test are not listed`;
+    unread = `\n${(err as Error).message}; ${notListed}`;
   }
   const passedIn = new Map<MarkEntry, string>();
   const fines = wholeFines(marks.attached.flatMap((m) => m.history));
