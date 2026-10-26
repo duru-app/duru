@@ -28,7 +28,7 @@ import { asIsPath, opensAsIs, preparePathValues, unknownPathValues } from './pat
 import { settingChange } from './setting-changes.ts';
 import { addStory, editStory, FileChanged, writeStoryFields, writeStorySteps } from './stories.ts';
 import { checkScreens, checkStoryFiles } from './story-paths.ts';
-import { DEPTHS } from './test-links.ts';
+import { DEPTHS, linkTests } from './test-links.ts';
 
 const PAGE_DIR = path.join(import.meta.dirname, 'review-page');
 export const PAGE_PARTS = [
@@ -128,12 +128,14 @@ function readMap(mapFile: string): ScreenMap {
   return map;
 }
 
-const noTests = () => ({ meta: { generatedAt: null }, nodes: {}, stories: {}, importers: {}, importNotices: [], passed: {}, traceNotices: [], traced: [], untracedCount: 0, unknownTags: [], untagged: [], untaggedCount: 0, missingSources: [], testFileHashes: {} });
+const noTests = (): Omit<ReturnType<typeof linkTests>, 'meta'> & { meta: { generatedAt: null } } => ({ meta: { generatedAt: null }, nodes: {}, stories: {}, importers: {}, importNotices: [], passed: {}, traceNotices: [], traced: [], untracedCount: 0, unknownTags: [], untagged: [], untaggedCount: 0, missingSources: [], testFileHashes: {} });
 
 const readTests = (config: any) => {
   const file = path.join(config.outDir, 'tests.json');
   return fs.existsSync(file) ? readJson(file) : noTests();
 };
+
+export const testsLinked = (tests: { meta: { generatedAt: string | null } }) => tests.meta.generatedAt !== null;
 
 export function readCaseTargets(config: any) {
   const map = readMap(path.join(config.outDir, 'map.json'));
@@ -182,7 +184,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const read = readMap(mapFile);
   const map = { ...read, screens: [...new Map(read.screens.map((s) => [s.id, s])).values()] };
   const linked = readTests(config);
-  const { traced, ...tests } = applyJudgments(linked, loadJudgments(config.judgmentsDir).judgments, nodeHashes(map));
+  const { traced, ...tests } = applyJudgments(linked, testsLinked(linked) ? loadJudgments(config.judgmentsDir).judgments : [], nodeHashes(map));
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, { ...tests, traced });
   const caseKinds: Record<string, CaseKind> = config.caseKinds;
@@ -264,7 +266,7 @@ export function callRegressions(c: TestComparison, calls: { id: string; screens:
 function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: ReturnType<typeof readBaseline> | null, baselineTests: BaselineTests | null, version: ReturnType<typeof storiesVersion>) {
   const fromConfig = baseline && path.relative(config.configDir, config.baselineMap);
   const changes = baseline && { file: fromConfig!.startsWith('..') ? config.baselineMap : fromConfig, label: baselineLabel(config.baselineMap), code: recordedState(baseline.meta), ...compareMaps(baseline, data.map) };
-  const tests = baselineTests && compareTests(baselineTests, data.tests, { screens: data.map.screens.map((s) => s.id), calls: data.map.calls.map((c) => c.id) });
+  const tests = baselineTests && testsLinked(data.tests) ? compareTests(baselineTests, data.tests, { screens: data.map.screens.map((s) => s.id), calls: data.map.calls.map((c) => c.id) }) : null;
   return { ...data, baseline: changes, baselineTests: tests && { ...tests, callRegressions: callRegressions(tests, data.map.calls) }, storiesVersion: version };
 }
 
@@ -410,7 +412,9 @@ export async function startReviewServer(config: any, { port = 0, author = review
   };
   const regressionContext = () => baselineTests && readOrNull(() => {
     const map = readMap(mapFile);
-    const { traced, ...tests } = applyJudgments(readTests(config), loadJudgments(config.judgmentsDir).judgments, nodeHashes(map));
+    const linked = readTests(config);
+    if (!testsLinked(linked)) return null;
+    const { traced, ...tests } = applyJudgments(linked, loadJudgments(config.judgmentsDir).judgments, nodeHashes(map));
     const marks = loadMarks(config.marksDir);
     return { comparison: compareTests(baselineTests, tests, nodeIds(map)), fines: wholeFines(marks), marks };
   });
