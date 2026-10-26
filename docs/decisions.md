@@ -2982,6 +2982,72 @@ Alternatives compared:
   component, address, sidebar entry and condition, which fits a screen per item; appsmith's editor table picks panes
   inside one screen and would fit sub-addresses, but duru does not read it.
 
+**A route table may be a list, a route made for each item may take the item apart in its loop function, and a listed
+route file with no route element is named in the summary.**
+Decided in #441 (2026-10-26), whose scope the driver left to the work. SigNoz keeps its routes in a top-level list (`AppRoutes/routes.ts`,
+`const routes = [{ path, component, exact, key }, …]`, 62 items) and draws them with
+`routes.map(({ path, component, exact }) => <Route path={path} component={component} />)`. On main that gave 3 screens
+with `{?}#component`; a `routeTables` entry stopped the run with `has no route made for each item of a list whose path
+reads a field of the item`, and listing `routes.ts` itself in `routesFile` gave `screens 0` with no line naming it.
+- The path is read through a name the loop function's first parameter takes apart, `({ path })` or `({ path: p })`,
+  as it is through `item.path`. A name with a default (`({ path = '/x' })`), one taken from a nested pattern, a read
+  through the rest (`rest.path`) or a computed key reads no field: a default would silently stand in for the items
+  that lack the field.
+- A route that draws the item's own component, `render={(p) => <Component {...p} />}` or `<Route path={path}><Component
+  /></Route>` with `Component` taken apart from the item or read as `route.component`, gives a screen per item as
+  `component={component}` does, but only for a route file named in `routeTables`: without the entry such a component is
+  a parameter like any other and the route gives nothing, as on main. Such a route, and one written
+  `component={component}` or `element={<route.element />}`, takes each item's screen from the field it draws, at any
+  name (`element`, `Component`, `page`), and an item without that field gives a `route not read` line (`has no
+  element`) instead of a screen named after the parameter with no component file: CoreUI's admin template keeps
+  `{ path: '/', name: 'Home' }` beside `{ path: '/dashboard', element: Dashboard }` and draws only the items holding
+  an `element`. The field counts only when it comes from the loop whose item the path reads: in a loop inside a loop,
+  a route drawing `section.layout` of the outer item while its path reads `page.url` does not look for `layout` in
+  each page. Any `component:` deeper in the item is read for such a route, and for a route that draws a fixed screen,
+  as mattermost's `SchemaAdminSettings` does. A route whose path reads a field of the item but
+  whose screen duru cannot read stops the run with that route's line, instead of the message saying no route reads a
+  field, which was false there.
+- In a list table `items` counts places from 0, and an item's key is its place (`57`, `users.subsections.2`). No
+  field name is shared across apps (SigNoz has `key:`, mattermost's items have none), and the key is only shown, in
+  the summary, the task list and `tableItem`, so a key that changes when items are reordered breaks nothing stored.
+  A spread of another list in the table is followed, as spreads in object tables are, and places count through the
+  combined list; a spread duru cannot follow takes one place, so the places after it no longer match the running
+  app's. An item spread in from a list in another file is placed at that file and line, in the line and in
+  `tableItem`. An element at the last place of `items` that is not an object written in the source gives a `route not
+  read` line (`is not an object written in the source`) when that list holds at least one object, so a missing screen
+  is not silent; a list of plain values, such as `['about', 'users']` beside the sections of an object table, gives
+  nothing, and in an object table a value that is not an object is passed over without a line, since `*` there
+  passes over keys like `sectionTitle`.
+- `settingsDefaults` still takes only an object; that rule belongs to another feature.
+- The `routesFile <file> has no <element> element` line is printed for a listed file with no route element and no
+  redirect. A file holding only a redirect, or only routes without a path, gets no line: it draws routes, they just
+  give no screens.
+Measured on SigNoz (`frontend/src`, `routesFile: ["AppRoutes/index.tsx"]` and the entry `"items": "*"`): 63 screens, 61
+from table items plus `/#Home` and `*#NotFound`, no `{?}` ID, every screen with a component file, no duplicate ID, and
+one line, `route not read ← AppRoutes/index.tsx:438: table item 57 at AppRoutes/routes.ts:460: its path stopped at
+[ROUTES.AI_ASSISTANT_BASE, ROUTES.AI_ASSISTANT]`. The maps of into-sign 1.5.0, into-sign 2.0.0 (both configs),
+mattermost, outline and appsmith are the same as on main c4b1f99 apart from `generatedAt`, and so are their printed
+lines; SigNoz without the entry is the same as on main too.
+Known limits:
+- An item with a list of paths (SigNoz's item 57, `path: [ROUTES.AI_ASSISTANT_BASE, ROUTES.AI_ASSISTANT]`) gives no
+  screen; duru reads no list-valued path, on a plain `<Route>` either (outline `scenes/Collection/index.tsx:220`).
+- Routes the app adds at run time are not read: SigNoz's `SUPPORT_ROUTE` and `LIST_LICENSES` are separate consts that
+  `setRoutes` adds to `useState(defaultRoutes)`, so they are not in the table. With item 57 that leaves SigNoz 4 screens
+  short of the 67 the running app draws.
+- A route that spreads the item (`<Route {...route} />`, `({ path, ...rest }) => <Route path={path} {...rest} />`) keeps
+  the lines it gave on main. With a table entry the run stops: at the route's line for the second, and for the first,
+  whose path is in the spread, with the message that no route reads a field of the item.
+- A table wrapped in `as const` or `satisfies` is not read; no measured app writes one.
+- An item whose drawn field is not a name, such as `component: lazy(() => import('./Home'))` or
+  `component: require('./Users').default` written in the item, gives a `route not read` line (`its component stopped
+  at …`) and no screen, since a screen ID needs the component's name.
+- A hole in a list (`[a, , b]`) takes a place, as it does in the running app, and gives an `is not an object` line
+  for a route that is not there.
+- When a route file has one loop route that is read, another loop route in it whose path reads the item but whose
+  screen is not read gives no line; only a file with no read loop route stops the run for it.
+- Per-item `exact` is not read: `exact={exact}` reads as unknown and the route is taken as not exact, as `item.exact`
+  already was. How that changes which screen a SigNoz link reaches was not measured.
+
 **`duru story` writes under each input a Playwright line that finds the box with every word written for it, each
 matched exactly, joined by `.and()` in the order placeholder, label, test ID, with `.nth(N - 1)` for `nth`, and marks
 the line as not tried on the screen.**

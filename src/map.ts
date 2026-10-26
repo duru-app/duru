@@ -126,6 +126,7 @@ export type ScreenMap = {
   settingsCallNotices?: Client['settingsCallNotices'];
   unresolvedAliasImports?: Client['unresolvedAliasImports'];
   madeHistories?: Client['madeHistories'];
+  emptyRouteFiles?: Client['emptyRouteFiles'];
 } & ReturnType<typeof configuredCallLinks> & ReturnType<typeof configuredMoves>;
 
 // JUnit 태그에 쓸 수 없는 문자. 이 문자만 없으면 Playwright · Vitest 제목에서도 그대로 태그로 쓸 수 있다.
@@ -262,7 +263,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories } = await extractClient(config);
+  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -349,5 +350,6 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(config.settingsFunctions.length > 0 && { settingsCallNotices }),
     ...(config.tsconfig && { unresolvedAliasImports }),
     ...(madeHistories.length > 0 && { madeHistories }),
+    ...(emptyRouteFiles.length > 0 && { emptyRouteFiles }),
   };
 }

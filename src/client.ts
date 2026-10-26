@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { ArrowFunctionExpression, CallExpression, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
+import type { ArrayExpression, ArrowFunctionExpression, CallExpression, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
 import type { AddressFunction, LinkComponent, Read } from './address-functions.ts';
@@ -123,6 +123,7 @@ interface LoopRoute {
   element: Node;
   line: number;
   page: Page;
+  drawnKeys: string[] | null;
   pathExpr: NodePath;
   item: { node: Node; field: string };
   guards: string[];
@@ -528,16 +529,17 @@ export async function extractClient(config: any) {
     return found;
   }
 
-  // srcRoot 아래 파일 맨 위의 `const <name> = { … }`. 그런 선언이 없거나 값이 객체 리터럴이 아니면 null 이다.
-  function topLevelObject(file: string, name: string): NodePath<ObjectExpression> | null {
+  // srcRoot 아래 파일 맨 위의 `const <name> = { … }` 나 `[ … ]` 의 값. 그런 선언이 없거나 값이 그 둘이 아니면 null 이다.
+  function topLevelLiteral(file: string, name: string): NodePath<ObjectExpression | ArrayExpression> | null {
     const absFile = path.join(config.srcRoot, file);
     const { ast } = parseSource(absFile);
     programFile.set(ast.program, absFile);
-    let init: NodePath<ObjectExpression> | null = null;
+    let init: NodePath<ObjectExpression | ArrayExpression> | null = null;
     traverse(ast, {
       VariableDeclarator(p) {
         if ((p.parent as VariableDeclaration).kind !== 'const' || !p.scope.path.isProgram() || !p.get('id').isIdentifier({ name })) return;
-        if (p.get('init').isObjectExpression()) init = p.get('init') as NodePath<ObjectExpression>;
+        const value = p.get('init');
+        if (value.isObjectExpression() || value.isArrayExpression()) init = value;
         p.stop();
       },
     });
@@ -560,8 +562,8 @@ export async function extractClient(config: any) {
         incomplete[root] = [];
         continue;
       }
-      const init = topLevelObject(file, name);
-      if (!init) throw new Error(`settingsDefaults.${root}: ${file} has no top-level const ${name} holding an object`);
+      const init = topLevelLiteral(file, name);
+      if (!init?.isObjectExpression()) throw new Error(`settingsDefaults.${root}: ${file} has no top-level const ${name} holding an object`);
       values[root] = evaluate(init);
       incomplete[root] = incompleteDefaults(init);
     }
@@ -1373,12 +1375,15 @@ export async function extractClient(config: any) {
     const table = routeTables.get(routeFile);
     const elementScreens = new Map<Node, RouteScreen[]>();
     const loopRoutes: LoopRoute[] = [];
+    const unreadLoopRoutes: { line: number; field: string }[] = [];
     const placed: { element: Node; screen: RouteScreen; grouped: boolean }[] = [];
     let loopAt = -1;
+    let hasRoutes = false;
     traverse(ast, {
       JSXElement(p) {
         const tag = tagOf(p.node.openingElement.name);
         if (!tag) return;
+        if (config.routeElements.includes(tag) || config.redirectElements.includes(tag)) hasRoutes = true;
         const attr = (name: string) => p.get('openingElement.attributes').find((a) => (a.node as JSXAttribute).name?.name === name) as NodePath<JSXAttribute> | undefined;
         if (config.redirectElements.includes(tag)) {
           const toValue = attr('to')?.get('value');
@@ -1397,7 +1402,7 @@ export async function extractClient(config: any) {
         const elementAttr = attr('element');
         const renderAttr = attr('render');
         const spread = p.get('openingElement.attributes').find((a) => a.isJSXSpreadAttribute());
-        const drawnBy = () => (renderAttr ? renderPage(renderAttr, absFile) : childrenPage(p, absFile));
+        const drawnBy = (takesItem = false) => (renderAttr ? renderPage(renderAttr, absFile, takesItem) : childrenPage(p, absFile, takesItem));
         if (!pathAttr) {
           if (spread) return unread(`the path may be in ${sliceText(src, spread.node)}`);
           if (holdsRoutes(p)) return;
@@ -1406,26 +1411,33 @@ export async function extractClient(config: any) {
           if (drawn && drawn !== REDIRECT) unread('no path');
           return;
         }
+        const pathWritten = pathAttr.get('value');
+        const pathExpr = (pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten) as NodePath;
+        const item = table ? loopItem(p, pathExpr) : null;
+        const missed = () => void (item && unreadLoopRoutes.push({ line, field: item.field }));
         let page: Page | null;
         let drawnInFunctionOrChildren = false;
         if (compAttr) page = componentAttrPage(compAttr, absFile);
         else if (elementAttr) page = elementPage(elementAttr, absFile);
         else {
           if (holdsRoutes(p) || definesRouteElement(p)) return;
-          const drawn = drawnBy();
+          const drawn = drawnBy(Boolean(item));
           if (drawn === REDIRECT) return;
-          if (typeof drawn === 'string') return unread(drawn);
-          if (!drawn) return spread ? unread(`the screen may be in ${sliceText(src, spread.node)}`) : undefined;
+          if (typeof drawn === 'string') {
+            missed();
+            return unread(drawn);
+          }
+          if (!drawn) {
+            missed();
+            return spread ? unread(`the screen may be in ${sliceText(src, spread.node)}`) : undefined;
+          }
           page = drawn;
           drawnInFunctionOrChildren = true;
         }
-        if (!page) return;
-        const pathWritten = pathAttr.get('value');
-        const pathExpr = (pathWritten.isJSXExpressionContainer() ? pathWritten.get('expression') : pathWritten) as NodePath;
-        const item = table ? loopItem(p, pathExpr) : null;
+        if (!page) return missed();
         if (item) {
           if (loopAt < 0) loopAt = screens.length;
-          loopRoutes.push({ element: p.node, line, page, pathExpr, item, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
+          loopRoutes.push({ element: p.node, line, page, drawnKeys: drawnItemKeys(page, p.scope, p.findParent(loopCallback)), pathExpr, item, guards: guardsOf(p, src, note), wrappers: wrappersOf(p, absFile) });
           return;
         }
         const { path: routePath, stops, ...gives } = readRoutePath(pathExpr);
@@ -1464,11 +1476,11 @@ export async function extractClient(config: any) {
       elementScreens.set(element, [same.screen]);
     }
     if (table) {
-      const listed = tableScreens(table, loopRoutes, routeFile);
+      const listed = tableScreens(table, loopRoutes, unreadLoopRoutes, routeFile);
       elementScreens.set(loopRoutes[0].element, listed);
       screens.splice(loopAt < 0 ? screens.length : loopAt, 0, ...listed);
     }
-    return { screens, roots: drawnTree(ast, absFile, elementScreens) };
+    return { screens, roots: drawnTree(ast, absFile, elementScreens), hasRoutes };
   }
 
   function testSide(test: NodePath<any>, on: boolean): Side | null {
@@ -1531,17 +1543,25 @@ export async function extractClient(config: any) {
     return roots;
   }
 
-  function tableScreens(table: RouteTable & { at: string }, routes: LoopRoute[], routeFile: string): RouteScreen[] {
+  function tableScreens(table: RouteTable & { at: string }, routes: LoopRoute[], unreadLoops: { line: number; field: string }[], routeFile: string): RouteScreen[] {
+    if (!routes.length && unreadLoops.length) {
+      const [{ line, field }] = unreadLoops;
+      throw new Error(`${table.at}: the route at ${routeFile}:${line} is made for each item of a list and its path reads the item's ${field}, but the screen it draws is not read`);
+    }
     if (!routes.length) throw new Error(`${table.at}: ${routeFile} has no route made for each item of a list whose path reads a field of the item`);
     if (routes.length > 1) throw new Error(`${table.at}: ${routeFile} has ${routes.length} routes made for each item of a list, at ${routes.map((r) => `${routeFile}:${r.line}`).join(' and ')}; a route file takes one table`);
-    const [{ line, page, pathExpr, item, guards, wrappers }] = routes;
+    const [{ line, page, drawnKeys, pathExpr, item, guards, wrappers }] = routes;
     const { file, const: name } = table.table;
-    const object = topLevelObject(file, name);
-    if (!object) throw new Error(`${table.at}: ${file} has no top-level const ${name} holding an object`);
-    const items = tableItems(object, table.items.split('.')).map((it) => ({ ...it, field: propertyValue(it.object, item.field) }));
+    const literal = topLevelLiteral(file, name);
+    if (!literal) throw new Error(`${table.at}: ${file} has no top-level const ${name} holding an object or a list`);
+    const items = tableItems(literal, table.items.split('.')).map((it) => ({ ...it, field: it.object && propertyValue(it.object, item.field) }));
     if (!items.some((it) => it.field)) throw new Error(`${table.at}: items "${table.items}" finds no item with a ${item.field} in ${name}, which the route at ${routeFile}:${line} reads`);
-    return items.flatMap(({ key, line: itemLine, object: itemObject, field }): RouteScreen[] => {
-      const place = `table item ${key} at ${file}:${itemLine}`;
+    return items.flatMap(({ key, line: itemLine, file: itemFile, object: itemObject, field }): RouteScreen[] => {
+      const place = `table item ${key} at ${itemFile}:${itemLine}`;
+      if (!itemObject) {
+        unreadRoutes.push({ file: routeFile, line, reason: `${place} is not an object written in the source` });
+        return [];
+      }
       if (!field) {
         unreadRoutes.push({ file: routeFile, line, reason: `${place} has no ${item.field}` });
         return [];
@@ -1549,10 +1569,20 @@ export async function extractClient(config: any) {
       const value = evaluate(field);
       if (!readWhole(value)) {
         const at = stopOf(unreadPiece(field) ?? field);
-        unreadRoutes.push({ file: routeFile, line, reason: `${place}: its ${item.field} stopped at ${at.text}${at.file === file ? '' : ` in ${at.file}:${at.line}`}` });
+        unreadRoutes.push({ file: routeFile, line, reason: `${place}: its ${item.field} stopped at ${at.text}${at.file === itemFile ? '' : ` in ${at.file}:${at.line}`}` });
         return [];
       }
-      const components = itemComponents(itemObject);
+      const drawn = drawnKeys && keyedValue(itemObject, drawnKeys);
+      if (drawnKeys && !drawn) {
+        unreadRoutes.push({ file: routeFile, line, reason: `${place} has no ${drawnKeys.join('.')}` });
+        return [];
+      }
+      const components = itemComponents(drawn ? [drawn] : componentValues(itemObject, new Set()));
+      if (drawn && !components.length) {
+        const at = stopOf(drawn);
+        unreadRoutes.push({ file: routeFile, line, reason: `${place}: its ${drawnKeys!.join('.')} stopped at ${at.text}${at.file === itemFile ? '' : ` in ${at.file}:${at.line}`}` });
+        return [];
+      }
       if (components.length && components.every((c) => c.redirects)) return [];
       const routePath = pathText(pathExpr, item.node, String(value));
       const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(pathExpr) : null;
@@ -1571,7 +1601,7 @@ export async function extractClient(config: any) {
         routeFile,
         routeGuards: guards,
         line,
-        tableItem: { key, file, line: itemLine },
+        tableItem: { key, file: itemFile, line: itemLine },
         outerFill: { startsWithOuterAddress: Boolean(outerAddress) && readsMatchedRoute(outerAddress!), unreadPath },
       }];
     });
@@ -1583,13 +1613,30 @@ export async function extractClient(config: any) {
         : textOf(evaluate(p)));
 
   // 이름은 같은 파일의 const 나 import 한 값으로 따라간다.
-  function objectAt(p: NodePath, seen = new Set<Node>()): NodePath<ObjectExpression> | null {
-    if (p.isObjectExpression()) return p;
+  function literalAt(p: NodePath, seen = new Set<Node>()): NodePath<ObjectExpression | ArrayExpression> | null {
+    if (p.isObjectExpression() || p.isArrayExpression()) return p;
     if (!p.isIdentifier() || seen.has(p.node)) return null;
     seen.add(p.node);
     const declared = declaredValue(p.scope, p.node.name);
-    return declared ? objectAt(declared, seen) : null;
+    return declared ? literalAt(declared, seen) : null;
   }
+
+  const objectAt = (p: NodePath) => {
+    const found = literalAt(p);
+    return found?.isObjectExpression() ? found : null;
+  };
+
+  // 따라가지 못한 스프레드와 빈 항목은 값이 없는 항목 하나로 센다.
+  function elementsOf(list: NodePath<ArrayExpression>, seen = new Set<Node>([list.node])): { value: NodePath | null; line: number; file: string }[] {
+    return list.get('elements').flatMap((e) => {
+      const line = (e.node ?? list.node).loc!.start.line;
+      if (!e.isSpreadElement()) return [{ value: e.node ? e as NodePath : null, line, file: fileOf(list) }];
+      const spread = literalAt(e.get('argument'));
+      return spread?.isArrayExpression() && !seen.has(spread.node) ? elementsOf(spread, new Set(seen).add(spread.node)) : [{ value: null, line, file: fileOf(list) }];
+    });
+  }
+
+  const fileOf = (p: NodePath) => path.relative(config.srcRoot, programFile.get(p.scope.getProgramParent().block)!);
 
   function propertiesOf(object: NodePath<ObjectExpression>, seen = new Set<Node>()): NodePath<ObjectProperty>[] {
     return object.get('properties').flatMap((prop) => {
@@ -1603,14 +1650,25 @@ export async function extractClient(config: any) {
 
   const propertyValue = (object: NodePath<ObjectExpression>, key: string) => propertiesOf(object).findLast((prop) => keyName(prop.node) === key)?.get('value') as NodePath | undefined;
 
-  function tableItems(object: NodePath<ObjectExpression>, segments: string[], keys: string[] = [], line = object.node.loc!.start.line): { key: string; line: number; object: NodePath<ObjectExpression> }[] {
-    if (!segments.length) return [{ key: keys.join('.'), line, object }];
+  const keyedValue = (object: NodePath<ObjectExpression>, keys: string[]) => keys.reduce<NodePath | undefined>((at, key) => {
+    const inner = at && objectAt(at);
+    return inner ? propertyValue(inner, key) : undefined;
+  }, object);
+
+  function tableItems(table: NodePath<ObjectExpression | ArrayExpression>, segments: string[], keys: string[] = []): { key: string; line: number; file: string; object: NodePath<ObjectExpression> | null }[] {
     const [first, ...rest] = segments;
-    return propertiesOf(object).flatMap((prop) => {
-      const name = keyName(prop.node);
-      const inner = (first === '*' || first === name) && objectAt(prop.get('value'));
-      return inner ? tableItems(inner, rest, [...keys, name], prop.node.loc!.start.line) : [];
+    const entries = (table.isObjectExpression()
+      ? propertiesOf(table).map((prop) => ({ name: keyName(prop.node), value: prop.get('value') as NodePath | null, line: prop.node.loc!.start.line, file: fileOf(prop) }))
+      : elementsOf(table as NodePath<ArrayExpression>).map((e, i) => ({ name: String(i), ...e }))).filter(({ name }) => first === '*' || first === name);
+    if (rest.length) return entries.flatMap(({ name, value }) => {
+      const inner = value && literalAt(value);
+      return inner ? tableItems(inner, rest, [...keys, name]) : [];
     });
+    const leaves = entries.map(({ name, value, line, file }) => {
+      const inner = value && literalAt(value);
+      return { key: [...keys, name].join('.'), line, file, object: inner?.isObjectExpression() ? inner : null };
+    });
+    return table.isArrayExpression() && leaves.some((l) => l.object) ? leaves : leaves.filter((l) => l.object);
   }
 
   function componentValues(p: NodePath, seen: Set<Node>): NodePath[] {
@@ -1629,10 +1687,9 @@ export async function extractClient(config: any) {
     return [];
   }
 
-  // 항목 안 어느 깊이에 있든 `component:` 에 적은 컴포넌트를 적힌 차례대로 모은다.
-  function itemComponents(object: NodePath<ObjectExpression>) {
+  function itemComponents(values: NodePath[]) {
     const found = new Map<string, Omit<Page, 'files'> & { redirects: boolean }>();
-    for (const written of componentValues(object, new Set())) {
+    for (const written of values) {
       const expr = unwrapCalls(written)!;
       const component = expr.node && memberChain(expr.node)?.join('.');
       const fromFile = component && programFile.get(expr.scope.getProgramParent().block);
@@ -1820,15 +1877,42 @@ export async function extractClient(config: any) {
   const piecesOf = (p: NodePath): NodePath[] => (p.isTemplateLiteral() ? (p.get('expressions') as NodePath[]).flatMap(piecesOf)
     : p.isBinaryExpression({ operator: '+' }) ? [...piecesOf(p.get('left')), ...piecesOf(p.get('right'))] : [p]);
 
-  // 목록을 도는 함수가 받는 항목에서 꺼낸 칸 하나(`item.url`)를 경로에 한 번 쓰는 라우트의 그 칸.
+  // 기본값을 주었거나 중첩 패턴으로 받은 이름은 넣지 않는다.
+  function itemFields(param: NodePath) {
+    const fields = new Map<string, string>();
+    if (!param.isObjectPattern()) return fields;
+    for (const prop of param.node.properties) {
+      if (prop.type === 'ObjectProperty' && !prop.computed && prop.value.type === 'Identifier') fields.set(prop.value.name, keyName(prop));
+    }
+    return fields;
+  }
+
+  // 배열을 순회하는 함수가 받는 항목에서 꺼낸 프로퍼티 하나(`item.url`, 또는 `({ url })` 로 구조 분해한 `url`)를 경로에 한 번 쓰는 라우트의 그 프로퍼티.
   function loopItem(route: NodePath, pathExpr: NodePath) {
     const fn = route.findParent(loopCallback);
     const param = fn && (fn.get('params') as NodePath[])[0];
+    if (param?.isObjectPattern()) {
+      const fields = itemFields(param);
+      const reads = piecesOf(pathExpr).filter((x): x is NodePath<Identifier> => x.isIdentifier() && fields.has(x.node.name) && x.scope.getBinding(x.node.name)?.path.node === param.node);
+      return reads.length === 1 ? { node: reads[0].node, field: fields.get(reads[0].node.name)! } : null;
+    }
     if (!param?.isIdentifier()) return null;
     const { name } = param.node;
     const binding = fn!.scope.getBinding(name);
     const reads = piecesOf(pathExpr).filter((x): x is NodePath<MemberExpression> => x.isMemberExpression() && !x.node.computed && x.get('object').isIdentifier({ name }) && x.scope.getBinding(name) === binding);
     return reads.length === 1 ? { node: reads[0].node, field: (reads[0].node.property as Identifier).name } : null;
+  }
+
+  // 라우트가 렌더링하는 컴포넌트가 배열을 순회하는 함수가 받은 항목의 프로퍼티(`route.component`, 또는 `({ component: Page })` 로 구조 분해한 `Page`)이면, 항목에서 그 프로퍼티까지 가는 키 경로를 돌려준다.
+  function drawnItemKeys(page: Page, scope: Scope, loop: NodePath | null = null): string[] | null {
+    if (!page.component) return null;
+    const [root, ...rest] = page.component.split('.');
+    const binding = scope.getBinding(root);
+    const fn = binding?.kind === 'param' ? binding.scope.path : null;
+    if (!fn || !loopCallback(fn) || (loop && loop.node !== fn.node) || (fn.node as ArrowFunctionExpression).params[0] !== binding!.path.node) return null;
+    if (binding!.path.isIdentifier()) return rest.length ? rest : null;
+    const field = itemFields(binding!.path).get(root);
+    return field && !rest.length ? [field] : null;
   }
 
   function wrappersOf(routePath: NodePath, routesFile: string) {
@@ -1882,23 +1966,23 @@ export async function extractClient(config: any) {
     return unwrapCalls(returned ?? undefined);
   }
 
-  function renderPage(renderAttr: NodePath<JSXAttribute>, routesFile: string): Page | typeof REDIRECT | string | null {
+  function renderPage(renderAttr: NodePath<JSXAttribute>, routesFile: string, takesItem: boolean): Page | typeof REDIRECT | string | null {
     const value = renderAttr.get('value');
     const fn = value.isJSXExpressionContainer() ? (value.get('expression') as NodePath) : null;
     if (!fn?.isArrowFunctionExpression() && !fn?.isFunctionExpression()) return 'render is not a function written in the route';
     const element = onlyReturned(fn);
     if (element?.isJSXElement() && holdsValue(element)) return null;
     const page = element?.isJSXElement() ? pageOf(element, routesFile) : null;
-    if (isPage(page) && !isAppScreen(page, renderAttr.scope)) return null;
+    if (isPage(page) && !isAppScreen(page, renderAttr.scope) && !(takesItem && drawnItemKeys(page, renderAttr.scope))) return null;
     return page ?? 'render does not return one component';
   }
 
-  function childrenPage(route: NodePath<JSXElement>, routesFile: string): Page | typeof REDIRECT | string | null {
+  function childrenPage(route: NodePath<JSXElement>, routesFile: string, takesItem: boolean): Page | typeof REDIRECT | string | null {
     if (holdsValue(route)) return null;
     const read = route.get('children').flatMap(elementsIn).map((e) => pageOf(e, routesFile));
     if (!read.length) return null;
     const pages = read.filter(isPage);
-    const screens = pages.filter((c) => isAppScreen(c, route.scope));
+    const screens = pages.filter((c) => isAppScreen(c, route.scope) || (takesItem && drawnItemKeys(c, route.scope)));
     if (screens.length) return withFiles(pickPage(screens), pages.flatMap((c) => c.files));
     if (pages.length) return null;
     return read.every((c) => c === REDIRECT) ? REDIRECT : "the route's children hold no component";
@@ -2108,6 +2192,7 @@ export async function extractClient(config: any) {
   if (!config.routeFiles.length) throw new Error(`the config has no routesFile, which takes ${ROUTES_FILE}`);
   const drawn = (config.routeFiles as string[]).map((f) => ({ file: path.join(config.srcRoot, f), ...extractScreens(f) }));
   const extracted = drawn.flatMap((d) => d.screens);
+  const emptyRouteFiles = (config.routeFiles as string[]).filter((_, i) => !drawn[i].hasRoutes);
   const screenFiles = new Set(extracted.map((s) => s.componentFile).filter(Boolean));
   const sourced = extracted.map(({ wrapperFiles, outerFill, ...s }) => {
     const entryFiles = [s.componentFile, ...wrapperFiles].filter(Boolean) as string[];
@@ -2252,5 +2337,5 @@ export async function extractClient(config: any) {
   });
 
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })) };
+  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles };
 }

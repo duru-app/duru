@@ -401,10 +401,29 @@ test('a map that turns old or unreadable while the review server runs is reporte
   });
 });
 
+test('a listed route file with no route or redirect element gives a line naming it, and one holding only a redirect gives none', async () => {
+  await withCopy(async ({ configFile, setConfig, src }) => {
+    const plain = execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+    assert.ok(!plain.includes('has no Route element'), plain);
+    assert.equal((await mapOf(configFile)).emptyRouteFiles, undefined);
+    fs.writeFileSync(path.join(src, 'table.js'), "import Help from './components/Help';\n\nexport const routes = [{ path: '/a', component: Help }];\n");
+    fs.writeFileSync(path.join(src, 'redirect.js'), "import { Redirect } from 'react-router-dom';\n\nexport default function Moved() {\n  return <Redirect to=\"/help\" />;\n}\n");
+    setConfig({ routesFile: ['Routes.js', 'table.js', 'redirect.js'] });
+    const stdout = execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
+    assert.ok(stdout.includes('\n  routesFile table.js has no Route element, so it gives no screens\n'), stdout);
+    assert.ok(!stdout.includes('routesFile redirect.js'), stdout);
+    assert.deepEqual((await mapOf(configFile)).emptyRouteFiles, ['table.js']);
+    setConfig({ routeElements: ['Route', 'PrivateRoute'] });
+    assert.ok(execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' }).includes('\n  routesFile table.js has no Route or PrivateRoute element, so it gives no screens\n'));
+  });
+});
+
 test('the usage guide, the agent skill and the decision record say that route files are listed in the config', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8');
   assert.match(read('../README.md'), /`routesFile` is one route file as text[\s\S]*or a list of them/);
   assert.match(read('../skills/duru/SKILL.md'), /`routesFile` in the config is one route file or a list of them[\s\S]*`route at <file>:<line>`/);
+  assert.match(read('../README.md'), /`routesFile <file> has no <element> element, so it gives no screens`[\s\S]*`emptyRouteFiles`/);
+  assert.match(read('../skills/duru/SKILL.md'), /`routesFile <file> has no <element> element, so it gives no screens`/);
   assert.match(read('../docs/decisions.md'), /\*\*Route files are listed in the config\.\*\*[\s\S]*Alternative compared: give one root route file and follow its imports/);
 });
 
