@@ -438,6 +438,31 @@ test('an entry screen needs only what its route guards ask, whatever the links i
   assert.deepEqual(bySetting['/y'].settings!.map((x) => x.from), ['route']);
 });
 
+test('a route guard of no kind and a role guard with unread roles are each counted once per screen they are on', () => {
+  const config = { entryPaths: [], roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
+  const rows: Row[] = [
+    ['/start', [], [['/a', []], ['/b', []], ['/c', []]]],
+    ['/a', ['isOpen', 'isOpen', MENU_X], []],
+    ['/b', ['isOpen', 'canManage(memberRole)'], []],
+    ['/c', [IS_ADMIN], []],
+  ];
+  const full = rows.map(([path, routeGuards, links]) => ({ id: path, path, routeFile: 'Routes.js', routeGuards, links: links.map(([to, guards], line) => ({ to, guards, file: `${path}.js`, line })) }));
+  const { openRouteGuards, unreadRoleGuards } = screenAccess(full, [], config, new Map(), {}, new Map());
+  assert.deepEqual(openRouteGuards, [{ guard: 'isOpen', screens: 2 }]);
+  assert.deepEqual(unreadRoleGuards, [{ guard: 'canManage(memberRole)', screens: 1 }]);
+});
+
+test('a role guard whose roles were read is not counted as unread beside a guard roleGuards gives', () => {
+  const config = { entryPaths: [], roleIdentifiers: ['memberRole'], settingsRoots: [], roleGuards: { 'isOwner(memberRole)': ['member:OWNER'] } };
+  const full = [
+    { id: '/start', path: '/start', routeFile: 'Routes.js', routeGuards: [], links: [{ to: '/x', guards: [], file: 'start.js', line: 1 }] },
+    { id: '/x', path: '/x', routeFile: 'Routes.js', routeGuards: [IS_ADMIN, 'isOwner(memberRole)'], links: [] },
+  ];
+  const { access, unreadRoleGuards } = screenAccess(full, [], config, new Map(), {}, new Map());
+  assert.equal(access[1].roleValues, null);
+  assert.deepEqual(unreadRoleGuards, []);
+});
+
 const MENU_Y = 'globalSettings.MENU.Y';
 const settingAccess = (screens: Row[]) => {
   const config = { entryPaths: [], roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };

@@ -123,6 +123,15 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   the screen.
   A call whose file is a store class the screen gets from a React context hook (`useStores()`) can sit outside
   `sourceFiles`: the screen calls the store method that sends it, so it is the screen's to test like any other.
+- A `route guard <guard> on N screens is neither a setting nor a role, …` line names a condition around routes
+  that the map does not count as closing a screen. Read what it checks where the route is written: when it decides
+  who may open the screen, by a setting or the user's role, add what it reads to `settingsRoots` or
+  `roleIdentifiers` and run `duru rebuild` again; when it checks the address or the data shown, leave it. Tell the
+  user which guards you added and which you left.
+- A `role guard <guard> on N screens: the roles it lets in are not read; …` line names a role guard whose roles duru
+  could not read where it is written. Read the guard where it is written, tell the user which guards these are and
+  the roles you think pass each, and write them in `roleGuards` once the user agrees, with every other role guard
+  of those screens as that key asks.
 - A `component file not found` line in the `extract` summary names a screen whose component file duru could
   not find and the route it is written at, followed by `table item <key> at <file>:<line>` for a screen made from a
   table item, where its components are written. The map then holds only what the components wrapping that route

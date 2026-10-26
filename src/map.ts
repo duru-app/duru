@@ -121,6 +121,8 @@ export type ScreenMap = {
   unknownEntryPaths: string[];
   unusedLinkEntries?: string[];
   unknownRoleGuards?: string[];
+  openRouteGuards?: Access['openRouteGuards'];
+  unreadRoleGuards?: Access['unreadRoleGuards'];
   settingsDefaults: Client['settingsDefaults'];
   settingsDefaultsIncomplete: Client['settingsDefaultsIncomplete'];
   settingsCallNotices?: Client['settingsCallNotices'];
@@ -290,7 +292,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     }),
   }));
   const unreadRequests = unreadSites(mapped, true);
-  const { access, entries, unknownEntryPaths, unknownRoleGuards, linkConditions, linkScreens } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
+  const { access, entries, unknownEntryPaths, unknownRoleGuards, openRouteGuards, unreadRoleGuards, linkConditions, linkScreens } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
   mapped.forEach((s, i) => {
     s.access = access[i];
     s.links = s.links.map(({ reaches, ...l }: { reaches?: number[] }, j: number) => ({ ...l, targets: [...new Set(linkScreens[i][j].map((k) => mapped[k].id))], conditions: linkConditions[i][j] }));
@@ -343,6 +345,8 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     unknownEntryPaths,
     ...(unusedListed && { unusedLinkEntries: unusedListed }),
     ...(Object.keys(config.roleGuards ?? {}).length > 0 && { unknownRoleGuards }),
+    ...(openRouteGuards.length && { openRouteGuards }),
+    ...(unreadRoleGuards.length && { unreadRoleGuards }),
     ...configuredMoves(mapped, config.moves ?? []),
     settingsDefaults,
     settingsDefaultsIncomplete,

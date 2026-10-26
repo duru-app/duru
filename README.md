@@ -515,6 +515,13 @@ listing the places whose value the source does not show in full.
   not be read in full, `<piece>` written as for `route path not read`.
   That screen is missing from the map and has no ID, so no test can be tagged with it; look at the route at that
   line to see which screen it draws (`unreadRoutes`).
+- `route guard <guard> on N screens is neither a setting nor a role, so it closes no screen; when it reads a setting or a role, name that in settingsRoots or roleIdentifiers`
+  — a condition around routes that neither `settingsRoots` nor `roleIdentifiers` matches, with the number of screens
+  it is on. The map leaves those screens open unless another condition closes them. A condition that does not decide
+  who may open a screen, such as one on the address or on the data shown, needs nothing (`openRouteGuards`).
+- `role guard <guard> on N screens: the roles it lets in are not read; give them in roleGuards` — a role guard
+  whose roles duru could not read where it is written, with the number of screens it is on. Give its roles in
+  `roleGuards`, as that key asks, with the other role guards of those screens (`unreadRoleGuards`).
 - `settingsFunctions <file>:<line> <what>` — about calls in the files the route files lead to by import: a call
   that duru does not read as settings; a default the function is given that differs from the `settingsDefaults`
   value (the map keeps that value), or that differs from another call's or cannot be compared with it (the map
