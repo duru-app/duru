@@ -3062,10 +3062,12 @@ JSX route gave one `{?}` screen and the table item gave none.
 - A path in the list that duru cannot read is handled as a path written alone: on a JSX route it is a `{?}` screen with a
   `route path not read` line naming that path, and in a route table it gives a `route not read` line naming that path
   and no screen, as an item's unread path does. The other paths of the list still give their screens.
-- A list held in a const, in this file or imported, is read like a list written in place, and a list spread into it
-  (`[...BASE_PATHS, '/x']`) is followed, since the running app gets the same list. A spread duru cannot follow counts
+- A list a name holds, a const in this file or imported, is read like a list written in place, and a list spread into
+  it (`[...BASE_PATHS, '/x']`) is followed, since the running app gets the same list. A spread duru cannot follow counts
   as one unread path, so its line names it.
-- An empty place in the list (`[a, , b]`) gives no screen and no line: it holds no path to make a screen of.
+- An empty place in the list (`[a, , b]`) gives no screen and no line: it holds no path to make a screen of. A path the
+  list holds twice gives one screen, as the running app draws one. An empty list is read as on main, a path not read,
+  so the route does not vanish without a line.
 - A route written again outside the `<Switch>` to draw a modal is the same screen as the route inside for each path the
   two share; a path only the outer route has stays a screen of its own.
 Measured against main 22a5f2c: outline goes from 41 to 42 screens, `{?}#Overview` becoming `{?}/overview#Overview` and
@@ -3077,6 +3079,10 @@ and `duruCommit`.
 Known limits:
 - React Router 5.3.4's `matchPath` starts over at an empty place in the list, so the paths before it never fit; duru
   still gives them screens. No measured app writes one.
+- A list reached through a field, `path={ROUTES.AI}` with `const ROUTES = { AI: ['/ai', '/ai/:id'] }`, is not read as
+  a list and stays one `{?}` screen; `null`, `undefined` or a nested list in the list is read as a path not read; a loop
+  route whose own path is a list (`path={[`/a/${r.url}`, `/b/${r.url}`]}`) is not split; and a list under React Router
+  6's `<Routes>`, which takes no list, is split as under a `<Switch>`. No measured app writes any of these.
 
 **`duru story` writes under each input a Playwright line that finds the box with every word written for it, each
 matched exactly, joined by `.and()` in the order placeholder, label, test ID, with `.nth(N - 1)` for `nth`, and marks

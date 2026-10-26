@@ -1444,8 +1444,9 @@ export async function extractClient(config: any) {
         const wrapperFiles = [...page.files, ...wrappersOf(p, absFile)];
         const grouped = Boolean(p.findParent((up) => up.isJSXElement() && ['Switch', 'Routes'].includes(tagOf(up.node.openingElement.name) ?? '')));
         const made: RouteScreen[] = [];
-        for (const onePath of listedPaths(pathExpr) ?? [pathExpr]) {
+        for (const onePath of pathsIn(pathExpr)) {
           const { path: routePath, stops, ...gives } = readRoutePath(onePath);
+          if (!routePath.includes(UNKNOWN) && made.some((m) => m.path === routePath)) continue;
           let unreadPath: OuterFill['unreadPath'] = null;
           const outerAddress = routePath.startsWith(UNKNOWN) ? leadingPiece(onePath) : null;
           if (routePath.includes(UNKNOWN)) {
@@ -1576,13 +1577,13 @@ export async function extractClient(config: any) {
         unreadRoutes.push({ file: routeFile, line, reason: `${place} has no ${item.field}` });
         return [];
       }
-      const values = (listedPaths(field) ?? [field]).flatMap((onePath) => {
+      const values = [...new Set(pathsIn(field).flatMap((onePath) => {
         const value = evaluate(onePath);
         if (readWhole(value)) return [String(value)];
         const at = stopOf(unreadPiece(onePath) ?? onePath);
         unreadRoutes.push({ file: routeFile, line, reason: `${place}: its ${item.field} stopped at ${at.text}${at.file === itemFile ? '' : ` in ${at.file}:${at.line}`}` });
         return [];
-      });
+      }))];
       if (!values.length) return [];
       const drawn = drawnKeys && keyedValue(itemObject, drawnKeys);
       if (drawnKeys && !drawn) {
@@ -1661,6 +1662,11 @@ export async function extractClient(config: any) {
       return listedPaths(e.get('argument'), inside) ?? [e.get('argument')];
     });
   }
+
+  const pathsIn = (p: NodePath) => {
+    const listed = listedPaths(p);
+    return listed?.length ? listed : [p];
+  };
 
   const fileOf = (p: NodePath) => path.relative(config.srcRoot, programFile.get(p.scope.getProgramParent().block)!);
 
