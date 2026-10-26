@@ -11,7 +11,7 @@ import { isPlainObject, loadConfig } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { MOST_ADDRESSES } from './address-functions.ts';
 import { UNKNOWN } from './client.ts';
-import { buildMap, unreadSites } from './map.ts';
+import { buildMap, readsAnAddress, unreadSites } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
 import { addReply } from './marks.ts';
 import { checkNeeds } from './needs.ts';
@@ -306,6 +306,10 @@ if (command === 'tasks') {
   const direct = new Map<string, any>(map.screens.flatMap((s: any) => s.apiCalls.filter((c: any) => c.direct).map((c: any) => [`${c.file}\n${c.line}\n${c.fn}\n${c.endpoints[0].method} ${c.endpoints[0].url}`, c])));
   if (direct.size) console.log(`requests and navigations written in screen sources ${direct.size} | address not read ${map.unreadRequests?.length ?? 0}`);
   for (const r of map.unreadRequests ?? []) console.log(`  request ${r.fn} ← ${r.file}:${r.line}: ${unreadText(r)}`);
+  const noApiCode = !config.requestFunction && !config.calledApiModules.length && !config.apiModules.length;
+  if (noApiCode && map.screens.length && !readsAnAddress(map.screens)) {
+    console.log('no request address was read from the screen sources; name the function or object the app sends its requests through in requestFunction and the API files that call it in calledApiModules, or files of functions that build the addresses in apiModules');
+  }
   if (map.sagas && !map.sagas.runs.length) console.log('redux-saga is imported, but no run of a createSagaMiddleware() result was found, so no request or link of a saga is put on a screen');
   else if (map.sagas) {
     const bySaga = new Set(map.screens.flatMap((s: any) => s.apiCalls.filter((c: any) => c.actions).map((c: any) => `${c.file}\n${c.line}\n${c.fn}`)));
