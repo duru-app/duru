@@ -1126,3 +1126,58 @@ for (const table of ['(Option.ROUTE_PATH as Readonly<Record<string, string>>)[me
     });
   });
 }
+
+const MENU_SETTINGS: Edit = [
+  'client/src/store/settings.ts',
+  '    REPORT_ENABLED: true,\n',
+  "    REPORT_ENABLED: true,\n    MAIN_MENU: { ADMIN: { LIST: ['LAB', 'REPORT'] }, MORE: { LIST: ['ARCHIVE'] } },\n",
+];
+const settingsMenu = (table: string) => [
+  "import Option from '../_define/Option';",
+  '',
+  'type MenuSettings = { MAIN_MENU?: Readonly<Record<string, { LIST?: readonly string[] }>> };',
+  'export type MenuOptions = { settings: unknown; cat: string };',
+  '',
+  'function menuItem(menuKey: string) {',
+  `  return { title: menuKey, href: ${table} };`,
+  '}',
+  '',
+  'function menuSection(keys: readonly string[]) {',
+  '  return keys.map((key) => menuItem(key));',
+  '}',
+  '',
+  'function categoryKeys(cat: string, settings: unknown) {',
+  '  return (settings as MenuSettings).MAIN_MENU?.[cat]?.LIST ?? [];',
+  '}',
+  '',
+  'export function menuFor({ settings, cat }: MenuOptions) {',
+  '  return menuSection(categoryKeys(cat, settings));',
+  '}',
+  '',
+].join('\n');
+const SETTINGS_ADMIN = [
+  "import { Link } from 'react-router-dom';",
+  "import type { Settings } from '../store/settings';",
+  "import { menuFor } from './menu';",
+  '',
+  'export default function Admin({ globalSettings }: { globalSettings: Settings }) {',
+  "  const items = menuFor({ settings: globalSettings.SYSTEM, cat: 'ADMIN' });",
+  '  return <nav>{items.map((item) => <Link key={item.title} to={item.href}>{item.title}</Link>)}</nav>;',
+  '}',
+  '',
+].join('\n');
+
+for (const table of ['(Option.ROUTE_PATH as Readonly<Record<string, string>>)[menuKey]', '(Option.ROUTE_PATH satisfies Record<string, string>)[menuKey]', 'Option.ROUTE_PATH![menuKey]']) {
+  test(`settings-list keys passed through a destructured parameter in another file and two more parameters to ${table} link to each route of the category picked`, async () => {
+    const original = 'export default function Admin() {\n  return <h1>Admin</h1>;\n}\n';
+    await inCopy([['client/src/screens/Admin.tsx', original, SETTINGS_ADMIN], MENU_SETTINGS], async (copy) => {
+      fs.writeFileSync(path.join(copy, 'client/src/screens/menu.ts'), settingsMenu(table));
+      const map = await buildFixture(copy);
+      const includes = (key: string) => `globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes '${key}'`;
+      assert.deepEqual(
+        screen(map, '/admin#Admin').links.filter((l) => l.file === 'screens/menu.ts').map((l) => [l.to, l.line, l.guards]),
+        [['/lab', 7, [includes('LAB')]], ['/report', 7, [includes('REPORT')]]],
+      );
+    });
+  });
+}
