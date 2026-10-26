@@ -25,6 +25,7 @@ const SETTING_REASON = {
 const settingReasonText = (/** @type {string | undefined} */ reason) => (reason && Object.hasOwn(SETTING_REASON, reason) ? SETTING_REASON[/** @type {keyof typeof SETTING_REASON} */ (reason)] : reason);
 const GROUP_HEAD_TIP = '밑으로 이어 그린 화면이 없는 진입 화면입니다. 다른 화면으로 가는 링크가 없거나, 링크가 닿는 화면이 모두 다른 진입 화면이나 그 밑에 이미 그려져 있습니다.';
 const FOLDED_HEAD_TIP = '밑의 화면을 접어 둔 진입 화면, 밑으로 이어 그린 화면이 없는 진입 화면과 그 묶음입니다. 수에는 접힌 묶음 안의 화면과, 「+N」을 눌러 위로 옮겨 밑의 화면과 함께 그린 진입 화면도 들어갑니다.';
+const NO_TESTS_TIP = 'tests.json 이 없습니다. duru rebuild 를 실행하면 테스트 결과가 이어집니다';
 const SERVER_STATE_TIP = '서버 API 목록(serverEndpoints)이 없거나 비어 있어 API 호출을 서버와 견주지 않았습니다. 목록을 채우고 duru rebuild 를 다시 하면 견줍니다.';
 const KIND_LABEL = { setting: '설정', role: '역할' };
 const MIXED_KINDS = '링크마다 다름';
