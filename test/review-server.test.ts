@@ -276,6 +276,14 @@ test('without tests.json the data has the whole map and no tests, judgments and 
   });
 });
 
+test('without tests.json the task list still reads baselineTests, and a path that cannot be read is reported in place of the no tests.json line', async () => {
+  await withRebuiltFixture({}, (config) => {
+    fs.rmSync(path.join(config.outDir, 'tests.json'));
+    const head = taskList({ ...config, baselineTests: [{ format: 'playwright', path: path.join(config.configDir, 'releases/missing.json'), depth: 'ui' }] }).split('\n')[1];
+    assert.equal(head, 'baselineTests releases/missing.json could not be read: it does not exist; screens and calls a reviewer sent by commenting on a regressed test are not listed');
+  });
+});
+
 test('requests another site could send through the browser are refused', async () => {
   await withRebuiltFixture({}, (config) =>
     withServer(config, 'reviewer', async (base) => {

@@ -15,7 +15,11 @@ function renderHeader() {
   fill(document.getElementById('meta'),
     `화면 ${screens} · 테스트 있는 화면 ${tested} · 맵 ${fmtDate(map.meta.generatedAt)}`,
     mapCode ? [' (', mapCode, ')'] : null,
-    linkedAt ? ` · 테스트 연결 ${fmtDate(linkedAt)}` : [' · ', h('span', { title: NO_TESTS_TIP, 'aria-label': NO_TESTS_TIP }, '테스트 연결 없음')],
+    linkedAt ? ` · 테스트 연결 ${fmtDate(linkedAt)}` : [
+      ' · ',
+      h('button', { type: 'button', class: 'state plain', 'aria-describedby': 'tests-state-tip', onmouseenter: placeStateTip, onfocus: placeStateTip }, '테스트 연결 없음'),
+      h('span', { class: 'state-tip', id: 'tests-state-tip', role: 'note' }, NO_TESTS_TIP),
+    ],
     map.serverNotCompared ? [
       h('button', { type: 'button', class: 'chip state', 'aria-describedby': 'server-state-tip', onmouseenter: placeStateTip, onfocus: placeStateTip }, '서버 대조 안 함'),
       h('span', { class: 'state-tip', id: 'server-state-tip', role: 'note' }, SERVER_STATE_TIP),
