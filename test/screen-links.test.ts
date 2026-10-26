@@ -501,6 +501,118 @@ export default function Home() {
   assert.deepEqual(linksOf(map, '/home#Home'), [['/team/a', lineOf(home, "'/team/a'"), [], ['/team/:team#Team']]]);
 });
 
+const LIST_HOME = `import { Link } from 'react-router-dom';
+
+export default function Home() {
+  return (
+    <nav>
+      <Link to="/team/a/edit">edit</Link>
+      <Link to="/crew/a">crew</Link>
+      <Link to="/team/a">team</Link>
+      <Link to="/open">open</Link>
+    </nav>
+  );
+}
+`;
+
+const listRoutes = (routes: string) => `import { Route, Switch } from 'react-router-dom';
+import { MISSING } from 'paths-package';
+import Home from './Home';
+import Team from './Team';
+import Start from './Start';
+
+const CREW = ['/crew/:team', '/crew/:team/edit'];
+const OPEN = ['/open'];
+
+export default function Routes() {
+  return (
+    <Switch>
+      <Route path="/home" component={Home} />
+${routes}
+    </Switch>
+  );
+}
+`;
+
+test('a route whose path is a list gives a screen for each path in it, with the IDs and link targets of the same paths written as routes of their own, and a path in it that is not read gives its own {?} screen and line, as an empty list does', async () => {
+  const listed = listRoutes(`      <Route path={['/team/:team/edit', ...CREW, '/team/:team', '/crew/:team']} component={Team} exact />
+      <Route path={[...OPEN, MISSING]} component={Start} />
+      <Route path={[]} component={Home} />`);
+  const separate = listRoutes(['/team/:team/edit', '/crew/:team', '/crew/:team/edit', '/team/:team'].map((p) => `      <Route path="${p}" component={Team} exact />`).concat('      <Route path="/open" component={Start} />').join('\n'));
+  const listedApp = writeApp({ 'Routes.js': listed, 'Home.js': LIST_HOME });
+  const [map, alone] = [await build(listedApp), await build(writeApp({ 'Routes.js': separate, 'Home.js': LIST_HOME }))];
+  const teamLine = lineOf(listed, '...CREW');
+  const startLine = lineOf(listed, '...OPEN');
+  assert.deepEqual(map.screens.map((s) => [s.id, s.line]), [
+    ['/home#Home', lineOf(listed, '"/home"')],
+    ['/team/:team/edit#Team', teamLine],
+    ['/crew/:team#Team', teamLine],
+    ['/crew/:team/edit#Team', teamLine],
+    ['/team/:team#Team', teamLine],
+    ['/open#Start', startLine],
+    ['{?}#Start', startLine],
+    ['{?}#Home', lineOf(listed, 'path={[]}')],
+  ]);
+  assert.deepEqual(map.screens.filter((s) => !s.id.startsWith('{?}')).map((s) => s.id), alone.screens.map((s) => s.id));
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, , , targets]) => [to, targets]), [
+    ['/team/a/edit', ['/team/:team/edit#Team']],
+    ['/crew/a', ['/crew/:team#Team']],
+    ['/team/a', ['/team/:team#Team']],
+    ['/open', ['/open#Start']],
+  ]);
+  assert.deepEqual(linksOf(map, '/home#Home'), linksOf(alone, '/home#Home'));
+  const result = spawnSync(process.execPath, [CLI, 'extract', listedApp], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.split('\n').filter((l) => l.includes('route path not read')), [
+    `  route path not read ← Routes.js:${startLine}: stopped at MISSING`,
+    `  route path not read ← Routes.js:${lineOf(listed, 'path={[]}')}: stopped at []`,
+  ]);
+});
+
+test('a route whose path is a list, written again outside the Switch to draw a modal, is the same screen for each path the Switch also draws, and a path only the modal route has stays its screen', async () => {
+  const routes = `import { Route, Switch, useLocation } from 'react-router-dom';
+import Home from './Home';
+import Team from './Team';
+
+export default function Routes() {
+  const location = useLocation();
+  const background = location.state && location.state.background;
+  return (
+    <div>
+      <Switch location={background || location}>
+        <Route path="/home" component={Home} />
+        <Route path={['/team/:team', '/crew/:team']} component={Team} />
+      </Switch>
+      {background && <Route path={['/team/:team', '/crew/:team', '/solo']} component={Team} />}
+    </div>
+  );
+}
+`;
+  const home = `import { useHistory, useLocation } from 'react-router-dom';
+
+export default function Home() {
+  const history = useHistory();
+  const location = useLocation();
+  return (
+    <div>
+      <button onClick={() => history.push({ pathname: '/team/a', state: { background: location } })}>team</button>
+      <button onClick={() => history.push({ pathname: '/crew/a', state: { background: location } })}>crew</button>
+      <button onClick={() => history.push({ pathname: '/solo', state: { background: location } })}>solo</button>
+    </div>
+  );
+}
+`;
+  const map = await build(writeApp({ 'Routes.js': routes, 'Home.js': home }));
+  const teamLine = lineOf(routes, "<Route path={['/team/:team'");
+  assert.deepEqual(map.screens.map((s) => [s.id, s.line]), [['/home#Home', lineOf(routes, '"/home"')], ['/team/:team#Team', teamLine], ['/crew/:team#Team', teamLine], ['/solo#Team', lineOf(routes, "'/solo'")]]);
+  assert.deepEqual(map.duplicateIds, []);
+  assert.deepEqual(linksOf(map, '/home#Home').map(([to, , , targets]) => [to, targets]), [['/team/a', ['/team/:team#Team']], ['/crew/a', ['/crew/:team#Team']], ['/solo', ['/solo#Team']]]);
+});
+
+test('the decision record says a route path written as a list gives a screen for each path in it', () => {
+  assert.match(fs.readFileSync(path.join(import.meta.dirname, '..', 'docs/decisions.md'), 'utf8'), /\*\*A route path written as a list gives a screen for each path in it\.\*\*/);
+});
+
 test('the usage guide names linkComponents and linkFunctions with their summary line, the agent guide says when to add them, and the decision record says why they are config and how a modal route is one screen', () => {
   const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
   const readme = read('README.md');
