@@ -4489,10 +4489,17 @@ export default function Routes() {
     const item = table.replace(settingsItem, unread);
     assert.equal((await build(underApp('', { 'Routes.js': routesFile, 'routes.js': item }, tableKeys))).addressesUnderRoutes, undefined, unread);
   }
-  for (const read of ['{ ...props.base, path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }', '{ [props.key]: true, path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }']) {
-    const item = table.replace(settingsItem, read);
+  const spreadable = table.replace('const routes = [', 'const open = { exact: false };\nconst shut = { exact: true };\n\nconst routes = [');
+  for (const read of [
+    '{ ...props.base, path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }',
+    '{ [props.key]: true, path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false }',
+    '{ path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: true, ...open }',
+  ]) {
+    const item = spreadable.replace(settingsItem, read);
     assert.deepEqual((await build(underApp('', { 'Routes.js': routesFile, 'routes.js': item }, tableKeys))).addressesUnderRoutes?.map((r) => r.screen), ['/settings#Settings'], read);
   }
+  const shutItem = spreadable.replace(settingsItem, '{ path: Option.ROUTE_PATH.SETTINGS, component: Settings, exact: false, ...shut }');
+  assert.equal((await build(underApp('', { 'Routes.js': routesFile, 'routes.js': shutItem }, tableKeys))).addressesUnderRoutes, undefined);
   const split = table.replace("import Settings from './Settings';", "import Settings from './Settings';\nimport SettingsHome from './SettingsHome';").replace(settingsItem, `{ path: Option.ROUTE_PATH.SETTINGS, component: SettingsHome, exact: true },\n  ${settingsItem}`);
   const splitMap = await build(underApp('', { 'Routes.js': routesFile, 'routes.js': split, 'SettingsHome.js': page('SettingsHome') }, tableKeys));
   assert.deepEqual(splitMap.addressesUnderRoutes?.map((r) => [r.screen, r.addresses]), [['/settings#Settings', ['/settings/billing', '/settings/members', '/settings/roles', '/settings/roles/:roleId']]]);

@@ -1647,16 +1647,6 @@ export async function extractClient(config: any) {
     return typeof value === 'boolean' ? value : null;
   }
 
-  function keysInOrder(object: NodePath<ObjectExpression>, seen = new Set<Node>()): (NodePath<ObjectProperty> | null)[] {
-    return object.get('properties').flatMap((prop) => {
-      if (prop.isObjectProperty()) return [prop.node.computed ? null : prop];
-      if (!prop.isSpreadElement()) return [];
-      const spread = objectAt(prop.get('argument'));
-      if (!spread) return [null];
-      return seen.has(spread.node) ? [] : keysInOrder(spread, seen.add(spread.node));
-    });
-  }
-
   // exact 가 아닌 라우트의 화면과 경로를 적힌 차례로 준다. depth 는 감싼 라우트 수다.
   function screensTakingAddressesUnder(roots: RouteNode[], paths: string[]) {
     const found = new Map<number, { path: string; depth: number }>();
@@ -1726,15 +1716,18 @@ export async function extractClient(config: any) {
 
   const fileOf = (p: NodePath) => path.relative(config.srcRoot, programFile.get(p.scope.getProgramParent().block)!);
 
-  function propertiesOf(object: NodePath<ObjectExpression>, seen = new Set<Node>()): NodePath<ObjectProperty>[] {
+  // 읽지 못한 펼치기와 계산된 키는 null 로 그 자리에 둔다.
+  function keysInOrder(object: NodePath<ObjectExpression>, seen = new Set<Node>()): (NodePath<ObjectProperty> | null)[] {
     return object.get('properties').flatMap((prop) => {
-      if (prop.isSpreadElement()) {
-        const spread = objectAt(prop.get('argument'));
-        return spread && !seen.has(spread.node) ? propertiesOf(spread, seen.add(spread.node)) : [];
-      }
-      return prop.isObjectProperty() && !prop.node.computed ? [prop] : [];
+      if (prop.isObjectProperty()) return [prop.node.computed ? null : prop];
+      if (!prop.isSpreadElement()) return [];
+      const spread = objectAt(prop.get('argument'));
+      if (!spread) return [null];
+      return seen.has(spread.node) ? [] : keysInOrder(spread, seen.add(spread.node));
     });
   }
+
+  const propertiesOf = (object: NodePath<ObjectExpression>) => keysInOrder(object).filter((prop) => prop !== null);
 
   const propertyValue = (object: NodePath<ObjectExpression>, key: string) => propertiesOf(object).findLast((prop) => keyName(prop.node) === key)?.get('value') as NodePath | undefined;
 
