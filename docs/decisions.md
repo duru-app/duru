@@ -44,6 +44,13 @@ separate marks folder (one file per reviewer mark, keyed by node or cell ID: sta
 rewrites the first and never touches the second. Node IDs come from route and component names, not DOM
 hashes, so they survive regeneration.
 
+**An agent may do any step, but people can run the whole loop without one.**
+A coding agent already answers the reviewer's comments while a review runs, posts story candidates and marks case
+kinds, and it may do more, such as drafting a story's expected results from the product's documents. What it gives
+lands where a person would write it by hand, on the review page or through a command, and what it decides waits for
+a person to accept, as its story candidates and its 「대상 아님」 marks do. A step the loop cannot get past without an
+agent is not added. Driver's decision (2026-10-26).
+
 **The review surface is replaceable.**
 Everything hard runs in the repository on the PC (extraction, the client/server join, test runs). The
 review page only renders `map.json` and writes marks. A local page is the default; a claude.ai
