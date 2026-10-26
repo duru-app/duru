@@ -267,7 +267,7 @@ test('without tests.json the data has the whole map and no tests, judgments and 
       assert.equal(data.tests.meta.generatedAt, null);
       assert.deepEqual([data.tests.nodes, data.tests.untagged, data.flow.summary.tested], [{}, [], 0]);
       assert.deepEqual([data.tests.detachedHandOvers, data.baselineTests], [{}, null]);
-      assert.match(taskList(config), /\S/);
+      assert.equal(taskList(config).split('\n')[1], 'no tests.json in out; screens and calls a reviewer sent by commenting on a regressed test are not listed');
 
       fs.writeFileSync(testsFile, '{');
       const broken = await fetch(`${base}/api/data`);
