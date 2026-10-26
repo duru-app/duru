@@ -335,6 +335,10 @@ if (command === 'tasks') {
   for (const p of map.unknownEntryPaths) console.log(`  entryPaths ${p} matches no route`);
   for (const entry of map.unusedLinkEntries ?? []) console.log(`  ${entry} is used nowhere in the screen sources`);
   for (const { file, call } of map.madeHistories ?? []) console.log(`  history is not set; ${file} calls ${call}, and moves through the history it makes are not read as links`);
+  for (const { screen, path: under, file, line, tableItem, addresses } of map.addressesUnderRoutes ?? []) {
+    const shown = `${addresses.slice(0, 3).join(', ')}${addresses.length > 3 ? ', …' : ''}`;
+    console.log(`  ${addresses.length === 1 ? '1 address' : `${addresses.length} addresses`} under ${under} ${addresses.length === 1 ? 'reaches' : 'reach'} no screen (${shown}); the route at ${file}:${line}${tableItem ? ` (table item ${tableItem.key} at ${tableItem.file}:${tableItem.line})` : ''} that draws ${screen} also takes the addresses under it, so the page may pick what it shows by the address`);
+  }
   for (const p of map.unknownMovePaths) console.log(`  moves ${p} matches no route`);
   for (const id of map.unknownBodyOptionCalls) console.log(`  bodyOptions ${id} matches no call`);
   for (const { call, field } of map.unknownBodyTypeExclusions ?? []) {

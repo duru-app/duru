@@ -514,6 +514,12 @@ listing the places whose value the source does not show in full.
 - `history is not set; <file> calls createBrowserHistory, and moves through the history it makes are not read as
   links` — a file that makes a history (`createHashHistory` likewise) while the config has no `history` key, so
   the `push` and `replace` calls on it are not links on the map. Name it in `history` (`madeHistories`).
+- `N addresses under <path> reach no screen (<addresses>); the route at <file>:<line> that draws <screen ID> also
+  takes the addresses under it, so the page may pick what it shows by the address` — links go to addresses under a
+  route that draws the addresses under its own too, and none of these links reaches a screen. For a route made for
+  each item of a table, ` (table item <key> at <file>:<line>)` follows its place. The first three addresses are
+  shown and the map lists them all (`addressesUnderRoutes`). The page that route draws opens at each of
+  them, but the map has no screen for each, so no test can be tagged with one.
 - `linkComponents <import> <name> is used nowhere in the screen sources` — an entry of `linkComponents`
   (`linkFunctions` likewise) that no element or call in a screen's sources uses, often a misspelt package or name
   (`unusedLinkEntries`).
