@@ -3934,6 +3934,55 @@ a watcher registered under a condition gives its links without that condition; a
 saga counts as a link even where it is not a move, as in a screen; the review page shows a saga link with its saga
 file and line but not its `actions`, as for saga requests, and a screen's `codeHash` does not cover saga files.
 
+**A move written in the body of a route file that no screen's code holds is a link of every screen that route
+file draws.**
+A route file's component runs while any screen it draws is shown, so a move it makes while rendering or in an
+effect (SigNoz `AppRoutes/index.tsx:407` `history.replace(ROUTES.SOMETHING_WENT_WRONG)` when loading the user fails,
+into-sign 2.0.0 `routes/MainApplication.tsx:72,81` `navigate(Option.ROUTE_PATH.USER_HOME, { replace: true })`)
+leaves any of those screens. No screen's sources held these files, so the moves were on no screen. Now each screen
+whose route file no screen's sources hold gets the links written as a move's address in that file, with the
+conditions around the move and the route file as their `file`. A move here is what a screen's code already reads as
+one (`push` and `replace` of a history react-router hands over or the `history` key names, the function
+`useNavigate()` returns) and any `push` or `replace` call whose address holds a route constant, since a route
+constant in a screen's code is a link wherever it is written; a route constant the body only compares with the
+address (`matchesPathPrefix(location.pathname, Option.ROUTE_PATH.SYSTEM_SETTINGS)` at `MainApplication.tsx:76`) or
+writes as a route path is not, and neither is a `Link` the route file draws beside its routes. The first parameter
+of a class component's update methods (`componentDidUpdate(prevProps)` and the like) now counts as props, so
+mattermost `components/root/root.tsx:185,187` `prevProps.history.push(…)` is read, and so is the same move in a
+screen's code.
+Measured against main (df0f71c), no link is gone anywhere. SigNoz, with and without its API code: 65 more links,
+`AppRoutes/index.tsx:407` to `/something-went-wrong` on each of its 65 screens, with the conditions
+`userFetchError && pathname !== ROUTES.SOMETHING_WENT_WRONG` and `isLoggedInState`, and no `history` key added to its
+config. into-sign 2.0.0: 44 more, `:72` and `:81` to `/user-home` on each of the 22 screens `MainApplication.tsx`
+draws, with no condition because each sits after an early `return`. mattermost: 80 more, `:178` to `/landing`,
+`:185` to `/signup_user_complete` and `:187` to `/terms_of_service` (both through `prevProps`) and `:241` to
+`/signup_user_complete` on each of the 20 screens `root.tsx` draws, and `/landing#LinkingLandingPage` is no longer
+an entry screen (94 to 93). The maps and the output of appsmith, outline and into-sign 1.5.0 are the same apart
+from `meta`.
+Alternatives compared:
+- Taking the moves of route files some screen's sources hold too, measured by dropping that one filter from this
+  change: 9 more outline links, `scenes/Collection/index.tsx:95` `history.replace(canonicalUrl, …)` in an effect
+  to an address that cannot be read (`{?}`) on each of the 9 screens it draws, and 2 more appsmith links
+  (`WorkspaceSettingsTabs/index.tsx:90` to `/applications`). An earlier prototype on main f2ef14f also gave 24 more
+  mattermost links (`login.tsx`, `team_controller.tsx`, `create_team.tsx`, `mfa_controller.tsx`, `signup.tsx`),
+  some of them from submit handlers only the holding screen shows; mattermost was not run again. Left out for the
+  driver to decide.
+- Reading the route file's body as the code of every screen, following its imports and the components it draws
+  beside the routes: outline about 50 more links, mattermost about 420, into-sign 1.5.0 about 440 more links and 198
+  more calls, in the investigation's prototype.
+- Only the moves a screen's code reads as moves: SigNoz imports its history from `lib/history` and its config names
+  no `history`, so its 407 move would need a config key.
+- Adding the route file to the screens' `sourceFiles`: every edit of a route table would mark the judgments of every
+  screen it draws as made on changed code.
+- into-sign 1.5.0 `App.js:157` `window.location.replace(Option.ROUTE_PATH.ROOT)` is left out: `App.js` sits above the
+  route file and runs this in its start-up loader before the routes are drawn, so no screen is shown when it moves.
+Known limits: a condition written as an early `return` before the move is not kept (into-sign 2.0.0 :72 and :81 and
+mattermost :178 show none); the whole route file is read, not only the component that draws the routes; a route
+file that any screen's sources hold gives none of its screens its moves; the moves of an outer route file do not
+reach the screens of a route file drawn inside it, and a move in a hook the body calls is not followed;
+`location.assign` and `location.href =` are not moves, while any `replace` call with a route constant in its address
+is one, even a string's; a screen's `codeHash` does not cover its route file.
+
 **A link address or route path that calls a function declared in the source is read through the function's body,
 with a link for each branch duru cannot decide, and `{?}` only for a value it cannot read.**
 When a piece of a link address (the `to` of a link element, an address given to `push`, `replace` or `navigate`), a

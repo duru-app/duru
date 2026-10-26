@@ -435,7 +435,8 @@ and line, the conditions guarding it, and `targets`, the IDs of the screens it g
 cannot read has `to` `{?}` and empty `targets`. In an app that uses redux-saga, a route constant or a move of the
 history named in `history` written in a saga is a link of each screen that dispatches an action the saga waits for,
 with the action types under `actions`; a move in a saga whose address duru cannot read is not on the map, not even
-as `{?}`.
+as `{?}`. A link whose file is the screen's route file is made by code in that file while the screen is shown, such as
+going to an error screen when loading fails.
 
 **Calls.** Each API call is a node under `calls` with an ID `<METHOD>:<path>`
 (`GET:/api/v1/document/{documentId}`), its server match, the API functions that make it, the screens that reach
