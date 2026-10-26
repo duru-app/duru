@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { OTHER_SITE } from './sent-address.ts';
 
 export interface ServerEndpoint {
   label: string;
@@ -58,6 +59,7 @@ function closestPath(entries: ServerEndpoint[], segs: string[]) {
 
 export function matchEndpoint(server: ServerEndpoint[], method: string | null | undefined, url: unknown, apiPathPrefix: string): EndpointMatch {
   if (typeof url !== 'string') return { status: 'unresolved', reason: 'not-written' };
+  if (OTHER_SITE.test(url)) return { status: 'unresolved', reason: 'other-host' };
   const segs = toSegments(clientPath(url, apiPathPrefix));
   if (segs.length === 0) return { status: 'unresolved', reason: 'no-path' };
   if (segs[0] === '*') return { status: 'unresolved', reason: segs.every((s) => s === '*') ? 'not-written' : 'unknown-piece' };

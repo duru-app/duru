@@ -617,7 +617,7 @@ test('a base address given with one request goes in front of that request\'s add
     'perRequestApi.called': ['DELETE /api/x'],
     'perRequestApi.calledWithUrl': ['PATCH /api/x'],
     'perRequestApi.over': ['GET /req/x'],
-    'perRequestApi.absolute': ['GET /x'],
+    'perRequestApi.absolute': ['GET https://h/x'],
     'perRequestApi.nullBase': ['GET /x'],
     'perRequestApi.falseBase': ['GET /x'],
     'perRequestApi.zeroBase': ['GET /x'],
@@ -642,4 +642,71 @@ test('a request object setting is refused when it also gives the places of the m
   refused({ import: 'axios', name: 'default', object: true, body: '1' });
   refused({ import: 'axios', name: 'default', object: 'yes' });
   refused({ import: 'axios', name: 'default' });
+});
+
+const APP = {
+  files: 'build',
+  server: 'http://localhost:8080',
+  apiPaths: ['/internal/'],
+  login: { path: '/auth/login', body: { id: '{id}', password: '{password}' }, token: 'token', storage: { key: 'auth', value: '{token}' } },
+  account: { id: 'duru', passwordEnv: 'DURU_PASSWORD' },
+};
+
+const HOSTS_API = [
+  "import axios from 'axios';",
+  'export const hostApi = {',
+  "  outside: () => axios.get('https://api.example.org/repos/acme/releases/latest'),",
+  "  noScheme: () => axios.get('//cdn.example.org/internal/v2/rates'),",
+  '  spacedOutside: (version: string) => axios.get(`',
+  '      https://cms.example.org/api/changelogs?version=${version}&sort=asc',
+  '    `),',
+  '  spaced: () => axios.get(`',
+  '      /internal/v2/rates',
+  '    `),',
+  "  server: () => axios.get('http://localhost:8080/internal/v2/rates'),",
+  '  page: (id: string) => {',
+  "    const link = document.createElement('a');",
+  '    link.href = new URL(`/internal/v2/billing/invoices/${id}`, window.location.origin).toString();',
+  '    link.click();',
+  '  },',
+  "  mailed: () => { const link = document.createElement('a'); link.href = ' \\n  mailto:team@example.org'; link.click(); },",
+  '};',
+  '',
+].join('\n');
+const HOSTS_AJAX = [
+  'const request = async (info: unknown) => ({ info });',
+  "export const ajaxOutside = async () => request({ METHOD: 'GET', URL: 'https://api.example.org/notes' });",
+  "export const ajaxServer = async () => request({ METHOD: 'GET', URL: 'http://localhost:8080/internal/v2/rates' });",
+  "export const ajaxSpaced = async () => request({ METHOD: 'GET', URL: '  /internal/v2/rates\\n' });",
+  '',
+].join('\n');
+
+test('an address an API function sends to another host than the page or app.server keeps the host and is not read, so no call is made of it, while one on the page or on app.server is the path, and spaces and line breaks around an address are dropped as the browser drops them', async () => {
+  const files = { 'invoices/api/hosts.ts': HOSTS_API, '_ajax/Hosts.ts': HOSTS_AJAX };
+  const keys = { calledApiModules: ['invoices/api/hosts.ts'], apiModules: ['_ajax/AjaxFunc.ts', '_ajax/Hosts.ts'], requestFunction: { import: 'axios', name: 'default', object: true }, serverEndpoints: 'invoice-server-endpoints.txt' };
+  const read = (map: ScreenMap) => Object.fromEntries(['hostApi.outside', 'hostApi.noScheme', 'hostApi.spacedOutside', 'hostApi.spaced', 'hostApi.server', 'hostApi.page', 'hostApi.mailed', 'ajaxOutside', 'ajaxServer', 'ajaxSpaced']
+    .map((name) => [name, map.apiFunctions[name].endpoints.map((e) => [`${e.method} ${e.url}`, e.server.status === 'unresolved' ? e.server.reason : e.callId])]));
+  const outside = {
+    'hostApi.outside': [['GET https://api.example.org/repos/acme/releases/latest', 'other-host']],
+    'hostApi.noScheme': [['GET //cdn.example.org/internal/v2/rates', 'other-host']],
+    'hostApi.spacedOutside': [['GET https://cms.example.org/api/changelogs?version={?}&sort=asc', 'other-host']],
+    'hostApi.spaced': [['GET /internal/v2/rates', 'GET:/internal/v2/rates']],
+    'hostApi.page': [['GET /internal/v2/billing/invoices/{?}', 'GET:/internal/v2/billing/invoices/{invoiceId}']],
+    'hostApi.mailed': [],
+    ajaxOutside: [['GET https://api.example.org/notes', 'other-host']],
+    ajaxSpaced: [['GET /internal/v2/rates', 'GET:/internal/v2/rates']],
+  };
+  const alone = await build(fixtureCopy(keys, files));
+  assert.deepEqual(read(alone), {
+    ...outside,
+    'hostApi.server': [['GET http://localhost:8080/internal/v2/rates', 'other-host']],
+    ajaxServer: [['GET http://localhost:8080/internal/v2/rates', 'other-host']],
+  });
+  const served = await build(fixtureCopy({ ...keys, app: APP }, files));
+  assert.deepEqual(read(served), {
+    ...outside,
+    'hostApi.server': [['GET /internal/v2/rates', 'GET:/internal/v2/rates']],
+    ajaxServer: [['GET /internal/v2/rates', 'GET:/internal/v2/rates']],
+  });
+  for (const map of [alone, served]) assert.deepEqual(map.calls.map((c) => c.id).filter((id) => /:\/\/|example\.org|\/_/.test(id)), []);
 });

@@ -11,6 +11,7 @@ import { parse } from '@babel/parser';
 import { firstDecorator, importsModule, isTypeOnlyLine, parseSource } from './parse.ts';
 import { importResolver } from './resolve.ts';
 import type { AliasRule, ImportResolver } from './resolve.ts';
+import { PAGE_ORIGIN } from './sent-address.ts';
 
 interface ConstantsConfig {
   constantStubs?: Record<string, string>;
@@ -358,7 +359,7 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
 export async function loadConstants(config: ConstantsConfig, resolve: ImportResolver['resolve'] = importResolver(config).resolve) {
   const copier = moduleCopier(config, resolve);
   const browserGlobals = globalThis as { window?: unknown; document?: unknown };
-  browserGlobals.window ??= { location: { protocol: 'http:', host: 'localhost', origin: 'http://localhost' } };
+  browserGlobals.window ??= { location: { protocol: new URL(PAGE_ORIGIN).protocol, host: new URL(PAGE_ORIGIN).host, origin: PAGE_ORIGIN } };
   browserGlobals.document ??= { getElementById: () => null };
 
   const loaded: Record<string, unknown> = {};

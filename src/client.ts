@@ -20,6 +20,7 @@ import { sagaFiles, sagaReader } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
 import { addresses, FOLLOWED, LINK_ELEMENTS, madeFrom, screenLinkReader } from './screen-links.ts';
 import { importedAs, routerImport, screenRequestReader } from './screen-requests.ts';
+import { cleanAddress, pathOnSite } from './sent-address.ts';
 import type { UnresolvedReason } from './server.ts';
 import { typedMembers } from './typed-members.ts';
 import { settingNeeds } from './setting-needs.ts';
@@ -894,6 +895,11 @@ export async function extractClient(config: any) {
   // ---------- API 모듈: 내보낸 함수마다 호출하는 endpoint ----------
 
   function extractApiModule(file: string) {
+    const sentUrl = (url: unknown) => {
+      if (typeof url !== 'string') return (url ?? null) as string | null;
+      const clean = cleanAddress(url);
+      return pathOnSite(clean, config.app?.server ?? null, UNKNOWN) ?? clean;
+    };
     const { ast } = parseSource(file);
     programFile.set(ast.program, file);
     const fns: Record<string, ModuleFunction> = {};
@@ -910,13 +916,13 @@ export async function extractClient(config: any) {
               const keys = obj.node.properties.map((p) => (p as { key?: NameNode }).key?.name ?? (p as { key?: NameNode }).key?.value);
               if (!keys.includes('URL')) return;
               const value = evaluate(obj);
-              endpoints.push({ method: value?.METHOD ?? null, url: value?.URL ?? null, line: obj.node.loc!.start.line });
+              endpoints.push({ method: value?.METHOD ?? null, url: sentUrl(value?.URL), line: obj.node.loc!.start.line });
             },
             MemberExpression(m) {
               if (m.parentPath.isMemberExpression({ object: m.node })) return;
               const value = lookupConstant(constants, memberChain(m.node));
               if (value && typeof value === 'object' && 'URL' in value) {
-                endpoints.push({ method: value.METHOD ?? null, url: value.URL, line: m.node.loc!.start.line });
+                endpoints.push({ method: value.METHOD ?? null, url: sentUrl(value.URL), line: m.node.loc!.start.line });
               }
             },
             CallExpression(c) {
