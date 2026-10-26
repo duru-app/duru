@@ -9,6 +9,7 @@ import { loadConfig } from '../src/config.ts';
 import { loadJudgments } from '../src/judgments.ts';
 import { loadMarks } from '../src/marks.ts';
 import { PAGE_PARTS, reviewAuthor } from '../src/review.ts';
+import { taskList } from '../src/tasks.ts';
 import { FIXTURE, CLI, CASE_KINDS, withRebuiltFixture, withServer, postMark, postJudgment, initGitRepoNamed } from './review-helpers.ts';
 import type { Config, PageData } from './review-helpers.ts';
 
@@ -250,6 +251,26 @@ test('the page reports a missing map instead of serving empty data', async () =>
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('without tests.json the data has the whole map and no tests, and the task list is written; a tests.json that cannot be read is still reported', async () => {
+  await withRebuiltFixture({}, async (config) => {
+    const testsFile = path.join(config.outDir, 'tests.json');
+    fs.rmSync(testsFile);
+    await withServer(config, 'reviewer', async (base) => {
+      const res = await fetch(`${base}/api/data`);
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.map.screens.length, 11);
+      assert.equal(data.tests.meta.generatedAt, null);
+      assert.deepEqual([data.tests.nodes, data.tests.untagged, data.flow.summary.tested], [{}, [], 0]);
+      assert.match(taskList(config), /\S/);
+
+      fs.writeFileSync(testsFile, '{');
+      const broken = await fetch(`${base}/api/data`);
+      assert.equal(broken.status, 500);
+    });
+  });
 });
 
 test('requests another site could send through the browser are refused', async () => {

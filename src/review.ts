@@ -128,7 +128,12 @@ function readMap(mapFile: string): ScreenMap {
   return map;
 }
 
-const readTests = (config: any) => readJson(path.join(config.outDir, 'tests.json'));
+const noTests = () => ({ meta: { generatedAt: null }, nodes: {}, stories: {}, importers: {}, importNotices: [], passed: {}, traceNotices: [], traced: [], untracedCount: 0, unknownTags: [], untagged: [], untaggedCount: 0, missingSources: [], testFileHashes: {} });
+
+const readTests = (config: any) => {
+  const file = path.join(config.outDir, 'tests.json');
+  return fs.existsSync(file) ? readJson(file) : noTests();
+};
 
 export function readCaseTargets(config: any) {
   const map = readMap(path.join(config.outDir, 'map.json'));
@@ -161,8 +166,7 @@ export function writeCaseAnswer(config: any, input: unknown, author: string) {
 
 export function writeCommentCandidate(config: any, input: unknown) {
   const mapFile = path.join(config.outDir, 'map.json');
-  const traced = fs.existsSync(path.join(config.outDir, 'tests.json')) ? readTests(config).traced : [];
-  return addCommentCandidate(config, readMap(mapFile), mapFile, traced, isPlainObject(input) ? input as Record<string, unknown> : {});
+  return addCommentCandidate(config, readMap(mapFile), mapFile, readTests(config).traced, isPlainObject(input) ? input as Record<string, unknown> : {});
 }
 
 function caseDecision(input: unknown): CaseDecision {

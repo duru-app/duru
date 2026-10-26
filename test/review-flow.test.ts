@@ -245,6 +245,24 @@ test('in a browser, a click on an empty spot of the flow drawing lets the picked
   );
 });
 
+test('in a browser, a review started without tests.json draws every screen of the map in the flow and the list, none of them with a test', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, async (config) => {
+    fs.rmSync(path.join(config.outDir, 'tests.json'));
+    await withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#flow .box.screen');
+        assert.equal(await p.locator('#flow .box.screen').count(), 11);
+        assert.equal(await p.textContent('.flowbar .flowsummary'), '테스트 있는 화면 0/11');
+        assert.deepEqual(await p.locator('.flowbar .flow-filters button').allTextContents(), ['전체 11', '테스트 없음 11', '태그 없는 테스트만 0', '실패 0', '보류 0', '통과 0']);
+        await p.click('#view-list');
+        await p.waitForSelector('#screen-list li');
+        assert.equal(await p.locator('#screen-list li').count(), 11);
+        assert.equal(await p.locator('#failed').isHidden(), true);
+      }, { view: 'flow' }),
+    );
+  });
+});
+
 test('in a browser, with nothing picked the right column lists the failing screens and then the ones without a tagged test, in the order of the drawing, and pressing one picks it', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, async (config) => {
     const testsFile = path.join(config.outDir, 'tests.json');
