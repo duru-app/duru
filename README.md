@@ -419,10 +419,16 @@ also lists the conditions it is sent under: the `if`, `? :` and `&&` around it a
 react-query query that sends it. A call or link a saga makes for the screen names the line in the saga and lists
 under `actions` each action type that leads to it, with the places the screen dispatches that type
 (`dispatchedAt`).
-A layout with a side menu around a group of routes gives its calls, settings reads and links to every screen
-inside it, also when the route file hands it to a component around the routes as a function that draws what it
-is given inside the layout (`<AppPageProviders layout={(children) => <AppLayout>{children}</AppLayout>}>`, or the
-name of such a function declared in the route file).
+A component drawn around a group of routes, or beside it outside its `Switch` or `Routes`, gives its calls,
+settings reads and links to every screen of that group, and to the screens of each route file drawn inside the group
+too, though not the component that draws that route file. The same holds when the route file hands a component
+around the routes a function that draws what it is given inside the layout
+(`<AppPageProviders layout={(children) => <AppLayout>{children}</AppLayout>}>`, or the name of such a function
+declared in the route file). A condition written between a component beside the
+routes and the element it shares with them guards what it gives: it is listed under `inheritedGuards` with the
+component as `via`, and the line and `file` of the place it is drawn. A condition around the routes, or around a
+component drawn around them, is the condition of those routes (`routeGuards`) on the screens of that file and is not
+carried to the screens of a route file drawn inside them.
 
 **Links.** A screen's links come from the route constants written in its code, the `to` of react-router's `Link`,
 `NavLink`, `Redirect` and `Navigate` outside the route files, the addresses given to `push` and `replace` of a
@@ -523,6 +529,11 @@ listing the places whose value the source does not show in full.
 - `bodyTypeExclusions <call ID> <field> stays an option, given by <where>` — a field the config names that is
   still an option of that call, with where it comes from: `the source`, `bodyOptions`, or both joined by `and`. The
   entry can come out of the config (`keptBodyTypeExclusions`).
+- `<component> at <file>:<line> is drawn beside routes but draws its own routes in <component file>, so it picks
+  what it shows by the address; its links, requests and settings reads are given to no screen beside it` — a
+  component drawn beside a group of routes that draws routes of its own, such as a header that shows a different bar
+  for each address. What it shows on each screen is not read, so none of it is on the screens drawn beside it
+  (`framesPickingByAddress`).
 - `component file not found for <id> ← <route file>:<line>` — the screen holds only what the components
   wrapping its route bring. For a screen made from a table item, `, table item <key> at <file>:<line>` follows.
 - `history is not set; <file> calls createBrowserHistory, and moves through the history it makes are not read as

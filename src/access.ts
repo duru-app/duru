@@ -42,7 +42,7 @@ interface ScreenLink {
   file: string;
   line: number;
   guards: string[];
-  inheritedGuards?: { guards: string[]; via: string }[];
+  inheritedGuards?: { guards: string[]; via: string; file?: string }[];
 }
 
 interface AccessScreen {
@@ -642,7 +642,7 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
   screens.forEach((s, from) => {
     for (const l of s.links) {
       const own = describe(l.guards, l.file);
-      const uses = (l.inheritedGuards ?? []).map((h) => describe(h.guards, l.file, h.via));
+      const uses = (l.inheritedGuards ?? []).map((h) => describe(h.guards, h.file ?? l.file, h.via));
       linkConditions[from].push(held(own, uses));
       const guards = held(blocks(own), uses.map(blocks));
       const targets = l.reaches ?? targetsOf(l.to, l.tail, from);
