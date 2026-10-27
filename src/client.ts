@@ -2005,8 +2005,9 @@ export async function extractClient(config: any) {
     return (program.get('body').find((s) => s.isExportDefaultDeclaration())?.get('declaration') as NodePath | undefined) ?? null;
   }
 
-  function exportedFunction(file: string | null, name: string): AddressFunction | null {
-    const declared = exportedDeclaration(file, name);
+  const exportedFunction = (file: string | null, name: string) => functionAt(exportedDeclaration(file, name));
+
+  function functionAt(declared: NodePath | null | undefined): AddressFunction | null {
     if (declared?.isFunctionDeclaration()) return declared;
     const value = declared?.isVariableDeclarator() && declared.get('id').isIdentifier() && (declared.parent as VariableDeclaration).kind === 'const' ? declared.get('init') as NodePath : declared;
     return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
@@ -2193,15 +2194,33 @@ export async function extractClient(config: any) {
     return field && !rest.length ? [field] : null;
   }
 
-  function wrappersOf(routePath: NodePath, routesFile: string) {
+  function wrappersOf(from: NodePath, routesFile: string, stop: Node | null = null, seenFns = new Set<Node>()): string[] {
     const files: string[] = [];
-    for (let a = routePath.parentPath; a; a = a.parentPath) {
-      const tag = a.isJSXElement() && tagOf(a.node.openingElement.name);
-      if (!tag) continue;
-      const file = resolveTag(a.scope, tag, routesFile);
+    for (let a = from.parentPath; a && a.node !== stop; a = a.parentPath) {
+      if (!a.isJSXElement()) continue;
+      const tag = tagOf(a.node.openingElement.name);
+      const file = tag && resolveTag(a.scope, tag, routesFile);
       if (file) files.push(file);
+      for (const fn of layoutFunctions(a)) {
+        if (seenFns.has(fn.node) || from.isDescendant(fn)) continue;
+        seenFns.add(fn.node);
+        const param = fn.get('params')[0];
+        if (!param?.isIdentifier()) continue;
+        for (const drawn of fn.scope.getBinding(param.node.name)?.referencePaths ?? []) if (drawnAsChild(drawn)) files.push(...wrappersOf(drawn, routesFile, fn.node, seenFns));
+      }
     }
     return files;
+  }
+
+  const drawnAsChild = (ref: NodePath) => ref.parentPath!.isJSXExpressionContainer() && (ref.parentPath!.parentPath!.isJSXElement() || ref.parentPath!.parentPath!.isJSXFragment());
+
+  function layoutFunctions(element: NodePath<JSXElement>) {
+    return element.get('openingElement.attributes').flatMap((attr) => {
+      const value = attr.isJSXAttribute() ? attr.get('value') : null;
+      const written = value?.isJSXExpressionContainer() ? (value.get('expression') as NodePath) : null;
+      const fn = functionAt(written?.isIdentifier() ? written.scope.getBinding(written.node.name)?.path : written);
+      return fn ? [fn] : [];
+    });
   }
 
   const tagOf = (name: JSXIdentifier | JSXMemberExpression | JSXNamespacedName): string | null => (name.type === 'JSXIdentifier' ? name.name
