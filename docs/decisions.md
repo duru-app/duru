@@ -128,21 +128,40 @@ Reason: a dotted path covers every value a module holds once it has run, and a m
 writes covers every other shape (a function never called at load, one that needs arguments, several calls
 combined) with no key per shape and without touching the client's source.
 
-**A parameter used as the key of the route table is followed back to the values written for it in the same
-file: the list a `forEach` or `map` callback runs over, or the argument at its place in every call of its
-function.**
-Since #466 (first step, 2026-10-26) a key such as `menuKey` in `(Option.ROUTE_PATH as …)[menuKey]` is read this
-way, where before only the first parameter of a `forEach` or `map` callback over a settings list was.
+**A parameter used as the key of the route table is followed back to the values written for it: the list a
+`forEach` or `map` callback runs over, the argument at its place in every call of its function in this file or
+another, and what a function of the same file returns.**
+Since #466 (first step 2026-10-26, second step 2026-10-27) a key such as `menuKey` in
+`(Option.ROUTE_PATH as …)[menuKey]` is read this way, where before only the first parameter of a `forEach` or
+`map` callback over a settings list was.
 - A function is followed when it is a function declaration or a const holding a function, never reassigned, and
   only through calls that name it; the conditions around each call are carried onto the link. At most 8 calls
   deep (`FOLLOWED`), and a function already on the way is not entered again.
-- Lists read: a settings list with defaults, as before; an array of written strings only; `x.filter(…)`, read as
-  `x`; both sides of `||` and `??`; and consts.
+- Calls in other files: a named import that resolves to the function, in the script files under `srcRoot`
+  outside `__tests__`, `__mocks__`, `*.test.*` and `*.spec.*`; only files whose text holds a name the function
+  is exported under are parsed. A default export and a namespace call (`m.menus(…)`) are not followed, and the
+  conditions written in the other file are not carried.
+- A destructured parameter (`{ settings }`) is read from the property passed at each call, the last one written
+  first: in `{ ...args, zone }` it is `args`' own `settings`; a spread that cannot be read or a computed key after
+  it ends the way.
+- A list that is the call of a function of the same file is read from each value it returns, with that function's
+  parameters taken from this call and the conditions around each `return` carried.
+- Lists read: a settings list with defaults, as before; an array of written strings and spreads of lists that
+  can be read; `x.filter(…)`, read as `x`; both sides of `||` and `??`; consts; and a `let` written only by `=`,
+  each assignment with the conditions around it (a spread of the `let` itself adds nothing).
+- A settings read may start at a parameter and hold a key in brackets: `settings?.MAIN_MENU?.[categoryKey]?.LIST`
+  reads one list for each value `categoryKey` takes, with that value's conditions. A root whose name finds a
+  default is read by name, as before; a root whose name finds none is followed as a parameter or a const, so a
+  parameter named `settings` holding `settings.SYSTEM` is read through its calls.
 - When several ways bring the same route to one line, the line gives one link with the conditions all of them
-  share, and the settings-list condition only when every way came from the same list.
-- A way that cannot be followed adds nothing: a destructured or default parameter, a spread at or before the
-  argument, a function passed as a value (`.map(buildItem)`), an array holding anything but written strings, a
-  call from another file.
+  share, and the settings-list condition only when every way came from the same list. A route the menu also
+  adds by a direct call under its own condition therefore loses that condition when the category way reaches it
+  too: the 22 system settings links at `menuUtils.ts:56` in into-sign 2.0.0 no longer carry the
+  `menuZone === 'bottom' && …` of `menuUtils.ts:200-206`, because the highest admin in admin view reaches the same
+  screen through the `SYSTEM_MANAGE` category with no such condition.
+- A way that cannot be followed adds nothing: a default parameter, a spread at or before the argument, a function
+  passed as a value (`.map(buildItem)`), a spread that cannot be read, an array holding anything but written
+  strings and spreads. `[...picked, 'X']` with `picked` unread still gives `X`.
 - The key in the brackets must still be a parameter: `ROUTE_PATH['X']` or a const key there makes no link.
 Casts need no rule of their own: `parseSource` takes `as`, `satisfies`, `!` and `<T>` off TypeScript before
 anything reads the tree.
@@ -151,25 +170,39 @@ Alternatives compared:
 - Going forward with `addressReader`, which binds parameters from a starting call: it answers what one call
   gives, while this question starts at the parameter and asks which values reach it.
 - One link per way: several links to one target on one line, unlike every other link reader.
-- Dropping the conditions around the calls: the into-sign 2.0.0 menu link would come out with none, while the
-  comparison at `menuUtils.ts:205` carries `menuZone === 'bottom' && includeSystemSettings && …`.
-- Giving no route unless every call can be read: 2.0.0 would give nothing while the call at `menuUtils.ts:164`,
-  whose list comes from another file, is not read.
+- Dropping the conditions around the calls: a helper called with a different key under each condition would give
+  every key with none, as `menuItem('ADMIN_REPORT')` under `globalSettings.SYSTEM.LAB_ENABLED` in the tests. The
+  into-sign 2.0.0 map is the same either way: of the calls on the way to `menuUtils.ts:56` only the one at
+  `menuUtils.ts:207` sits under a condition, lost where the category way meets it, and that menu's other
+  conditions come from around its `return`s.
+- Giving no route unless every call can be read: a menu with one unread call would give nothing.
 - `{?}` for a key that cannot be followed: such a line gives no link today, and `{?}` on every menu helper whose
   callers are out of reach would be new noise.
-Reason: the values reaching a parameter are written at its calls, so reading them backward from the table needs
-no new reader; keeping only the shared conditions follows what `addressesOf` does for sides, so a link never
-looks more guarded than every way to it is.
-Measured against main f2ef14f: into-sign 2.0.0 link rows 377 → 399, the 22 added all at `menuUtils.ts:56` to the
-system settings screen, on the same 22 screens and under the same condition as `menuUtils.ts:205`; into-sign 1.5.0
-577 → 623, the 46 added at `BaseView/index.js:274` to the trash and system settings screens on 23 screens. Those two
-screens are now reached under a setting as well as a role and are no longer entry screens for want of a link in
-(13 → 11 entry screens); the links leaving them carry the setting kind. The maps of appsmith, mattermost, outline
-and both SigNoz configs are unchanged.
-The limits: calls from other files are not read, so the whole 2.0.0 side menu (keys passed from
-`_Base/Page/index.jsx` through `menuPolicyUtils.ts` and picked by `[categoryKey]`) is not read yet; a helper called
-with different keys from several places gives every key on every screen that reaches its line, not the one each
-screen passes; and the `.filter` test is not a condition, so a link shows the most any role can see.
+- Callers only from the files some screen's sources hold: the screens' sources are known only after every file's
+  links are read, so each lookup would wait for them and be read again; it differs only for a caller no screen
+  reaches.
+- Every child of the defaults object for a key in brackets: the same nine categories in 2.0.0, but it guesses past
+  code it did not read and carries no condition of the category.
+- Carrying the conditions written in another file: each would need that file's notes on helpers and settings
+  beside the link's file; on the baseline apps the calls across files sit under no condition.
+- Never reading a called parameter by its name: it could change settings reads that are right today.
+Reason: the values reaching a parameter are written at its calls and returns, so reading them backward from the
+table needs no new reader; keeping only the shared conditions follows what `addressesOf` does for sides, so a link
+never looks more guarded than every way to it is.
+Measured, first step against main f2ef14f: into-sign 2.0.0 gained 22 link rows at `menuUtils.ts:56` to the system
+settings screen and into-sign 1.5.0 46 at `BaseView/index.js:274`. Second step against main 31edfc8: into-sign 2.0.0
+link rows 386 → 848, all changes at `menuUtils.ts:56`, where the 22 screens that reach `buildItem` each gain the 21
+other keys of `settings.SYSTEM.MAIN_MENU` (397 new pairs of screens, 249 → 646) and keep the system settings row
+without its condition; the user home and navigation keys carry `zone === 'top'`, the admin keys `!userView`, the
+trash `isWorkspaceHighestAdminRole(role)` and `!userView`, and the user work, document and department keys only
+their settings-list condition. Entry screens 24 → 12, the twelve menu screens that were entries for want of a link
+in. Requests and setting reads are unchanged, and the maps of into-sign 1.5.0, appsmith, mattermost, outline and
+both SigNoz configs are the same.
+The limits: lists returned by functions of other files, `push` and `splice` on a list, default and namespace
+imports, and calls from files outside `srcRoot` are not read; a call from a file no screen reaches still adds its
+keys; a helper called with different keys from several places gives every key on every screen that reaches its
+line, not the one each screen passes; an early `return` is not a condition, so keys returned after it show fewer
+conditions than hold; and the `.filter` test is not a condition, so a link shows the most any role can see.
 
 **A route constant written as the computed key of an object (`[ROUTES.HOME]: …`) is not a link when the object is
 only read by key: a const read nowhere but as `table[key]`, in its file and in every file that imports it.**

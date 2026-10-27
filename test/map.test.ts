@@ -70,7 +70,11 @@ async function buildCopy(edit: (rewrite: Rewrite) => void) {
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
   try {
     fs.cpSync(FIXTURE, copy, { recursive: true });
-    const rewrite: Rewrite = (rel, fn) => fs.writeFileSync(path.join(copy, rel), fn(fs.readFileSync(path.join(copy, rel), 'utf8')));
+    const rewrite: Rewrite = (rel, fn) => {
+      const file = path.join(copy, rel);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, fn(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''));
+    };
     edit(rewrite);
     return await buildFixture(copy);
   } finally {
@@ -1191,6 +1195,12 @@ test('a route-table key passed to a function of the same file links once per rou
   assert.deepEqual(sideMenuLinks(await asSideMenu(`${GROUPED}\n${unreadable}`)), expected);
 });
 
+test('an array of keys holding a spread that cannot be read still gives its written keys, and one holding a name gives none', async () => {
+  const loop = (keys: string) => `  ${keys}.forEach((k) => items.push({ title: k, href: Option.ROUTE_PATH[k] }));`;
+  assert.deepEqual(sideMenuLinks(await asSideMenu(loop("[...picked, 'ADMIN_REPORT']"))), [['/admin/report', 'components/SideMenu.js', 6, []]]);
+  assert.deepEqual(sideMenuLinks(await asSideMenu(loop("[x, 'ADMIN_REPORT']"))), []);
+});
+
 test('a helper called with a different key under each condition gives each route only the conditions of the calls that pass its key', async () => {
   const body = [
     '  const menuItem = (key) => ({ title: key, href: Option.ROUTE_PATH[key] });',
@@ -1205,20 +1215,131 @@ test('a helper called with a different key under each condition gives each route
   assert.deepEqual(screen(map, '/admin/report#AdminReport').access.kinds, ['setting']);
 });
 
-test('a function calling itself with its own key ends with the links of its other calls, and a call from another file gives no link', async () => {
+test('a function calling itself with its own key ends with the links of its other calls, and a call from another file gives its key without the conditions written in that file', async () => {
   const body = [
     '  function add(k, again) {',
     '    if (again) add(k, false);',
     '    items.push({ title: k, href: Option.ROUTE_PATH[k] });',
     '  }',
     "  add('ADMIN_REPORT', true);",
-    "  items.push(menuLink('ADMIN_AUDIT'));",
+    "  if (a) items.push(menuLink('ADMIN_AUDIT'));",
   ].join('\n');
   const map = await asSideMenu(body, (rewrite) => {
     rewrite(SIDE_MENU_FILE, (src) => src.replace("import Option from '_define/Option';\n", "import Option from '_define/Option';\nimport { menuLink } from './formatDate';\n"));
     rewrite('client/src/components/formatDate.js', (src) => `import Option from '_define/Option';\n\n${src}\nexport function menuLink(k) {\n  return { title: k, href: Option.ROUTE_PATH[k] };\n}\n`);
   });
-  assert.deepEqual(sideMenuLinks(map), [['/admin/report', 'components/SideMenu.js', 9, []]]);
+  assert.deepEqual(sideMenuLinks(map), [['/admin/report', 'components/SideMenu.js', 9, []], ['/admin/audit', 'components/formatDate.js', 8, []]]);
+});
+
+const MENU_DEFAULTS: [string, string] = [
+  "      ADMIN: { LIST: ['ADMIN_REPORT', 'ADMIN_ARCHIVE'] },",
+  "      TOP: { LIST: ['ADMIN_REPORT'] },\n      BASE: { LIST: ['ADMIN_MEMBER'] },\n      ADMIN: { LIST: ['ADMIN_AUDIT'] },\n      DEPT: { LIST: ['ADMIN_GROUP'] },\n      UNUSED: { LIST: ['HELP'] },",
+];
+const MENU_UTILS = [
+  "import Option from '_define/Option';",
+  '',
+  "const TOP = ['TOP'];",
+  "const ADMIN = ['ADMIN'];",
+  "const ALL_ADMIN = [...ADMIN, 'DEPT'];",
+  '',
+  'function cats(zone, admin) {',
+  "  if (zone === 'top') return TOP;",
+  '  if (admin) return ALL_ADMIN;',
+  "  let c = ['BASE'];",
+  "  if (zone === 'x') c = [...c, 'DEPT'];",
+  '  return c;',
+  '}',
+  '',
+  'function keysOf(cat, s) {',
+  '  return s?.MAIN_MENU?.[cat]?.LIST ?? [];',
+  '}',
+  '',
+  'function item(key) {',
+  '  return { title: key, href: Option.ROUTE_PATH[key] };',
+  '}',
+  '',
+  'function build(list, s) {',
+  '  const out = [];',
+  '  list.forEach((cat) => {',
+  '    const keys = keysOf(cat, s);',
+  '    out.push(...keys.filter((k) => k).map((k) => item(k)));',
+  '  });',
+  '  return out;',
+  '}',
+  '',
+  'export function menus({ settings, zone, admin }) {',
+  '  return build(cats(zone, admin), settings);',
+  '}',
+  '',
+].join('\n');
+const POLICY = "import { menus } from './menuUtils';\n\nexport function policyMenus({ settings, zone }) {\n  return menus({ settings, zone, admin: true });\n}\n";
+const MENU_LINKS = [
+  ['/admin/report', 20, ["globalSettings.SYSTEM.MAIN_MENU.TOP.LIST includes 'ADMIN_REPORT'", "zone === 'top'"]],
+  ['/admin/audit', 20, ["globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_AUDIT'", 'admin']],
+  ['/admin/group', 20, ["globalSettings.SYSTEM.MAIN_MENU.DEPT.LIST includes 'ADMIN_GROUP'"]],
+  ['/admin/member', 20, ["globalSettings.SYSTEM.MAIN_MENU.BASE.LIST includes 'ADMIN_MEMBER'"]],
+];
+const menuUtilsLinks = (map: ScreenMap) => screen(map, '/home#Home').links.filter((l) => l.file === 'components/menuUtils.js').map((l) => [l.to, l.line, l.guards]);
+const asMenu = (body: string, imports: string, policy = POLICY, utils = MENU_UTILS) =>
+  asSideMenu(body, (rewrite) => {
+    rewrite(SIDE_MENU_FILE, (src) => src.replace("import Option from '_define/Option';\n", `import Option from '_define/Option';\n${imports}\n`));
+    rewrite('client/src/store/settings.js', (src) => src.replace(...MENU_DEFAULTS));
+    rewrite('client/src/components/menuUtils.js', () => utils);
+    rewrite('client/src/components/policy.js', () => policy);
+  });
+const POLICY_IMPORT = "import { policyMenus } from './policy';";
+const menuCall = (args: string) => `  const args = { settings: globalSettings.SYSTEM };\n  items.push(...policyMenus(${args}));`;
+
+test('a menu built in another file from the settings object a screen passes links each key of each category the menu function picks, under the conditions around its return', async () => {
+  assert.deepEqual(menuUtilsLinks(await asMenu(menuCall("{ ...args, zone: 'top' }"), POLICY_IMPORT)), MENU_LINKS);
+  assert.deepEqual(menuUtilsLinks(await asMenu(menuCall("{ [x]: 1, ...args }"), POLICY_IMPORT)), MENU_LINKS);
+});
+
+test('a menu key the menu function also adds by a direct call under its own condition loses that condition and the settings condition, as no other way shares them', async () => {
+  const direct = MENU_UTILS.replace('  return build(cats(zone, admin), settings);', "  const out = build(cats(zone, admin), settings);\n  if (zone === 'bottom') out.push(item('ADMIN_AUDIT'));\n  return out;");
+  const map = await asMenu(menuCall('{ ...args }'), POLICY_IMPORT, POLICY, direct);
+  assert.deepEqual(menuUtilsLinks(map).find(([to]) => to === '/admin/audit'), ['/admin/audit', 20, []]);
+});
+
+test('a menu settings object that cannot be followed to its caller gives no menu link', async () => {
+  const unread: [string, string, string?][] = [
+    [menuCall("{ ...args, ...rest, zone: 'top' }"), POLICY_IMPORT],
+    [menuCall('{ ...args }'), POLICY_IMPORT, POLICY.replace('{ settings, zone }', '{ settings = {}, zone }')],
+    [menuCall('{ ...args }').replace('policyMenus(', 'policy.policyMenus('), "import * as policy from './policy';"],
+  ];
+  for (const [body, imports, policy] of unread) assert.deepEqual(menuUtilsLinks(await asMenu(body, imports, policy)), []);
+});
+
+test('a settings parameter named like the settings root is followed through its calls when its name finds no default', async () => {
+  const body = (arg: string) => [
+    '  function keysOf(globalSettings) {',
+    '    return globalSettings.MAIN_MENU.ADMIN.LIST;',
+    '  }',
+    `  keysOf(${arg}).forEach((k) => items.push({ title: k, href: Option.ROUTE_PATH[k] }));`,
+  ].join('\n');
+  const read = async (arg: string) => sideMenuLinks(await asSideMenu(body(arg), (rewrite) => rewrite('client/src/store/settings.js', (src) => src.replace(...MENU_DEFAULTS))));
+  assert.deepEqual(await read('globalSettings.SYSTEM'), [['/admin/audit', 'components/SideMenu.js', 9, ["globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_AUDIT'"]]]);
+  assert.deepEqual(await read('picked.s'), []);
+});
+
+test('a let list widened by a conditional spread of itself links the added key under that condition and the first keys under none', async () => {
+  const body = [
+    "  const BASE = ['ADMIN_REPORT'];",
+    '  let keys = [...BASE];',
+    "  if (b) keys = [...keys, 'LAB'];",
+    '  keys.forEach((k) => items.push({ title: k, href: Option.ROUTE_PATH[k] }));',
+  ].join('\n');
+  assert.deepEqual(sideMenuLinks(await asSideMenu(body)), [['/admin/report', 'components/SideMenu.js', 9, []], ['/lab', 'components/SideMenu.js', 9, ['b']]]);
+});
+
+test('a helper called in its own file and from another file keeps the conditions of its own file, and a call from a test file adds no key', async () => {
+  const helper = "\nexport function links(keys) {\n  return keys.map((k) => Option.ROUTE_PATH[k]);\n}\n\nexport const shown = (ok) => ok && links(['ADMIN_REPORT']);\n";
+  const map = await asSideMenu("  if (a) items.push(...links(['ADMIN_AUDIT']));", (rewrite) => {
+    rewrite(SIDE_MENU_FILE, (src) => src.replace("import Option from '_define/Option';\n", "import Option from '_define/Option';\nimport { links } from './formatDate';\n"));
+    rewrite('client/src/components/formatDate.js', (src) => `import Option from '_define/Option';\n\n${src}${helper}`);
+    rewrite('client/src/components/__tests__/links.test.js', () => "import { links } from '../formatDate';\n\nlinks(['HELP']);\n");
+  });
+  assert.deepEqual(sideMenuLinks(map), [['/admin/report', 'components/formatDate.js', 8, ['ok']], ['/admin/audit', 'components/formatDate.js', 8, []]]);
 });
 
 test('a route table read with a written key or a constant key in the brackets makes no link', async () => {
