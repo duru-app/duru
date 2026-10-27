@@ -131,6 +131,7 @@ export type ScreenMap = {
   addressesUnderRoutes?: ReturnType<typeof addressesUnderRoutes>;
   callsOnNoScreen?: { unused: string[]; other: string[] };
   emptyRouteFiles?: Client['emptyRouteFiles'];
+  framesPickingByAddress?: Client['framesPickingByAddress'];
 } & ReturnType<typeof configuredCallLinks> & ReturnType<typeof configuredMoves>;
 
 // JUnit 태그에 쓸 수 없는 문자. 이 문자만 없으면 Playwright · Vitest 제목에서도 그대로 태그로 쓸 수 있다.
@@ -271,7 +272,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder } = await extractClient(config);
+  const { screens, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder, framesPickingByAddress } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -370,5 +371,6 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(underRoutes.length > 0 && { addressesUnderRoutes: underRoutes }),
     ...(noScreen.length > 0 && { callsOnNoScreen }),
     ...(emptyRouteFiles.length > 0 && { emptyRouteFiles }),
+    ...(framesPickingByAddress.length > 0 && { framesPickingByAddress }),
   };
 }

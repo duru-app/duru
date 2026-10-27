@@ -137,6 +137,14 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   `sourceFiles`: the screen calls the store method that sends it, so it is the screen's to test like any other.
   A link whose `file` is the screen's `routeFile` and not among its `sourceFiles` is a move the route file makes
   while any of the screens it draws is shown, so a test of it can start from any of those screens.
+  A call or link can also come from a file the screen's code never imports: a menu, header or banner drawn around
+  or beside the screen's route, in its own route file or in a route file outside it. Its file and line point into
+  that component, and an `inheritedGuards` entry with a `file` names the place it is drawn and the condition it is
+  drawn under; test it from the screen like the screen's own.
+- A `<component> at <file>:<line> is drawn beside routes but draws its own routes in <file>, …` line names a
+  component, often a header, that shows something different for each address. None of its links or calls are on
+  the screens beside it; tell the user which component it is, and that its links on each screen are missing from the
+  map.
 - A `route guard <guard> on N screens is neither a setting nor a role, …` line names a condition around routes
   that the map does not count as closing a screen. Read what it checks where the route is written: when it decides
   who may open the screen, by a setting or the user's role, add what it reads to `settingsRoots` or

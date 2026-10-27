@@ -1451,8 +1451,12 @@ const assertNoLayout = async (cases: [string, string?][]) => {
   }
 };
 
-test('a component drawn in an element prop, beside what a function prop draws, by a function that takes nothing, or imported and handed by name, is not part of the screens inside', async () => {
-  await assertNoLayout([[' aside={<Layout />} layout={(c) => c}'], [' layout={(c) => <><Layout />{c}</>}'], [' renderEmpty={() => <Layout />}'], [' layout={Layout}']]);
+test('a component drawn in an element prop, by a function that takes nothing, or imported and handed by name, is not part of the screens inside', async () => {
+  await assertNoLayout([[' aside={<Layout />} layout={(c) => c}'], [' renderEmpty={() => <Layout />}'], [' layout={Layout}']]);
+});
+
+test('a component a function prop draws beside what it is given is part of every screen inside, as a component beside a Switch is', async () => {
+  assertLayoutMenu(await buildEditedCopy(framed(' layout={(c) => <><Layout />{c}</>}')), 'beside');
 });
 
 test('a component a function prop hands its parameter to in an attribute, a spread or a member read is not part of the screens inside, also when the function is a component declared in the route file and handed by name', async () => {
@@ -1465,14 +1469,12 @@ test('a component a function prop hands its parameter to in an attribute, a spre
   ]);
 });
 
-test('a component a function prop draws beside the routes written inside that function is not part of their screens', async () => {
+test('a component a function prop draws beside the routes written inside that function is part of their screens', async () => {
   const inside = (drawn: string): [string, string, string][] => [
     ['client/src/Routes.js', '        <Layout session={session} globalSettings={globalSettings}>\n', `        <Frame render={(page) => <>${drawn}\n`],
     ['client/src/Routes.js', '        </Layout>\n', '        </>} />\n'],
   ];
-  const map = await buildEditedCopy(inside('<Layout>{page}</Layout>'));
-  assert.deepEqual({ ...map, meta: null }, { ...(await buildEditedCopy(inside('{page}'))), meta: null });
-  for (const id of wrapped) assert.deepEqual(menuLinks(map, id), [], id);
+  assertLayoutMenu(await buildEditedCopy(inside('<Layout>{page}</Layout>')), 'inside');
 });
 
 test('the usage guide says a layout handed over as a function is read, and the decision record names the choice', () => {
