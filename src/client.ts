@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath, Scope } from '@babel/traverse';
-import type { ArrayExpression, ArrowFunctionExpression, CallExpression, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, ExportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
+import type { ArrayExpression, ArrowFunctionExpression, CallExpression, ClassDeclaration, Expression, FunctionDeclaration, FunctionExpression, Identifier, ImportDeclaration, ImportDefaultSpecifier, ImportNamespaceSpecifier, ImportSpecifier, ExportSpecifier, JSXAttribute, JSXElement, JSXIdentifier, JSXMemberExpression, JSXNamespacedName, MemberExpression, Node, ObjectExpression, ObjectProperty, OptionalCallExpression, OptionalMemberExpression, Program, StringLiteral, TemplateLiteral, VariableDeclaration, VariableDeclarator } from '@babel/types';
 import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
 import type { AddressFunction, LinkComponent, Read } from './address-functions.ts';
@@ -878,8 +878,10 @@ export async function extractClient(config: any) {
   const rootIdentifier = (p: NodePath): NodePath => (p.isMemberExpression() || p.isOptionalMemberExpression() ? rootIdentifier(p.get('object') as NodePath) : p);
 
   const LIST_CALLBACKS = ['forEach', 'map'];
-  type KeyEntry = { value: string; chain: string[] | null; guards: string[]; through: Node[] };
-  type KeyWalk = { onPath: Set<Binding>; hops: number; guardsAt: (at: NodePath) => string[] };
+  type Way = { guards: string[]; through: Node[] };
+  type KeyEntry = Way & { value: string; chain: string[] | null };
+  type ChainWay = Way & { chain: string[] };
+  type KeyWalk = { onPath: Set<Binding>; hops: number; guardsAt: (at: NodePath) => string[]; frames: Map<Node, { call: NodePath; outer: KeyWalk }> };
 
   function entered<T>(binding: Binding, walk: KeyWalk, read: () => T[]): T[] {
     if (walk.onPath.has(binding)) return [];
@@ -892,24 +894,51 @@ export async function extractClient(config: any) {
   }
 
   const memberName = (p: NodePath) => ((p.isMemberExpression() || p.isOptionalMemberExpression()) && !p.node.computed ? (p.node.property as Identifier).name : null);
+  const isCallee = (ref: NodePath) => (ref.parentPath!.isCallExpression() || ref.parentPath!.isOptionalCallExpression()) && ref.key === 'callee';
+  const settingsDefault = (chain: string[]) => chain.slice(1).reduce((v: any, k) => v?.[k], settingsDefaults[chain[0]]);
 
-  function passedAt(binding: Binding, walk: KeyWalk, read: (arg: NodePath, walk: KeyWalk) => KeyEntry[]): KeyEntry[] {
-    const param = binding.path;
-    if (param.listKey !== 'params' || !param.isIdentifier() || walk.hops >= FOLLOWED) return [];
-    const index = param.key as number;
-    const fn = param.parentPath!;
+  function functionName(fn: NodePath): Binding | undefined {
     const declarator = fn.parentPath!;
     const id = fn.isFunctionDeclaration() ? fn.node.id : declarator.isVariableDeclarator() && declarator.node.init === fn.node ? declarator.node.id : null;
-    const named = id?.type === 'Identifier' ? fn.parentPath!.scope.getBinding(id.name) : undefined;
+    return id?.type === 'Identifier' ? declarator.scope.getBinding(id.name) : undefined;
+  }
+
+  function argumentFor(binding: Binding, call: NodePath): NodePath | null {
+    const param = binding.path;
+    const index = param.key as number;
+    const args = call.get('arguments') as NodePath[];
+    if (args.slice(0, index + 1).some((a) => a.isSpreadElement()) || !args[index]) return null;
+    if (param.isIdentifier()) return args[index];
+    if (!param.isObjectPattern()) return null;
+    const prop = param.get('properties').find((p) => p.isObjectProperty() && !p.node.computed && p.node.value === binding.identifier);
+    const passed = prop && objectAt(args[index]);
+    if (!passed) return null;
+    const key = keyName(prop.node as ObjectProperty);
+    const written = keysInOrder(passed).findLast((p) => p === null || keyName(p.node) === key);
+    return written ? (written.get('value') as NodePath) : null;
+  }
+
+  // 돌려준 값을 읽으러 들어간 함수의 매개변수: 들어간 함수가 아니면 undefined, 그 호출에서 읽지 못하면 null
+  function framedArgument(binding: Binding, walk: KeyWalk) {
+    const frame = binding.path.listKey === 'params' ? walk.frames.get(binding.path.parentPath!.node) : undefined;
+    if (!frame) return undefined;
+    const arg = argumentFor(binding, frame.call);
+    return arg ? { arg, walk: frame.outer } : null;
+  }
+
+  function passedAt<T extends Way>(binding: Binding, walk: KeyWalk, read: (arg: NodePath, walk: KeyWalk) => T[]): T[] {
+    const param = binding.path;
+    if (param.listKey !== 'params' || walk.hops >= FOLLOWED) return [];
+    const fn = param.parentPath!;
+    const named = functionName(fn);
     if (!named?.constant) return [];
     const inner = { ...walk, hops: walk.hops + 1 };
-    return entered(binding, walk, () => named.referencePaths.flatMap((ref) => {
-      const call = ref.parentPath!;
-      if (!(call.isCallExpression() || call.isOptionalCallExpression()) || ref.key !== 'callee') return [];
-      const args = call.get('arguments') as NodePath[];
-      if (args.slice(0, index + 1).some((a) => a.isSpreadElement()) || !args[index]) return [];
+    const calls = [...named.referencePaths.filter(isCallee), ...importingCalls(fn, named)].map((ref) => ref.parentPath!);
+    return entered(binding, walk, () => calls.flatMap((call) => {
+      const arg = argumentFor(binding, call);
+      if (!arg) return [];
       const guards = walk.guardsAt(call);
-      return read(args[index], inner).map((e) => ({ ...e, guards: [...guards, ...e.guards], through: [fn.node, ...e.through] }));
+      return read(arg, inner).map((e) => ({ ...e, guards: [...guards, ...e.guards], through: [fn.node, ...e.through] }));
     }));
   }
 
@@ -922,6 +951,8 @@ export async function extractClient(config: any) {
       return init ? entered(binding, walk, () => keyEntries(init as NodePath, walk)) : [];
     }
     if (binding?.kind !== 'param') return [];
+    const framed = framedArgument(binding, walk);
+    if (framed !== undefined) return framed ? keyEntries(framed.arg, framed.walk) : [];
     const fn = binding.path.parentPath!;
     const call = fn.parentPath!;
     if (binding.path.listKey === 'params' && binding.path.key === 0 && fn.listKey === 'arguments' && fn.key === 0 && (call.isCallExpression() || call.isOptionalCallExpression())) {
@@ -931,18 +962,55 @@ export async function extractClient(config: any) {
     return passedAt(binding, walk, keyEntries);
   }
 
+  function settingsChains(expr: NodePath, walk: KeyWalk, rest: ChainWay[]): ChainWay[] {
+    if (expr.isMemberExpression() || expr.isOptionalMemberExpression()) {
+      const property = expr.get('property') as NodePath;
+      const segments: ChainWay[] = !expr.node.computed && property.isIdentifier() ? [{ chain: [property.node.name], guards: [], through: [] }]
+        : property.isStringLiteral() ? [{ chain: [property.node.value], guards: [], through: [] }]
+          : expr.node.computed ? keyEntries(property, walk).map(({ value, guards, through }) => ({ chain: [value], guards, through })) : [];
+      const longer = segments.flatMap((s) => rest.map((r) => ({ chain: [...s.chain, ...r.chain], guards: [...s.guards, ...r.guards], through: [...s.through, ...r.through] })));
+      return longer.length ? settingsChains(expr.get('object') as NodePath, walk, longer) : [];
+    }
+    if (!expr.isIdentifier()) return [];
+    const prefix = Object.hasOwn(settingsDefaults, expr.node.name) ? [expr.node.name] : settingsResult(expr);
+    const found: ChainWay[] = [];
+    const unread: ChainWay[] = [];
+    for (const r of rest) {
+      const chain = prefix ? [...prefix, ...r.chain] : null;
+      if (chain && settingsDefault(chain) !== undefined) found.push({ ...r, chain });
+      else unread.push(r);
+    }
+    if (!unread.length) return found;
+    const binding = expr.scope.getBinding(expr.node.name);
+    if (binding?.kind === 'const') {
+      const init = constInit(expr, expr.node.name, new Set());
+      return [...found, ...(init ? entered(binding, walk, () => settingsChains(init as NodePath, walk, unread)) : [])];
+    }
+    if (binding?.kind !== 'param') return found;
+    const framed = framedArgument(binding, walk);
+    if (framed !== undefined) return [...found, ...(framed ? settingsChains(framed.arg, framed.walk, unread) : [])];
+    return [...found, ...passedAt(binding, walk, (arg, inner) => settingsChains(arg, inner, unread))];
+  }
+
   function listEntries(list: NodePath, walk: KeyWalk): KeyEntry[] {
     const chain = settingsPath(list);
-    const listed = chain?.slice(1).reduce((v: any, k) => v?.[k], settingsDefaults[chain[0]]);
+    const listed = chain && settingsDefault(chain);
     if (Array.isArray(listed)) return listed.filter((v) => typeof v === 'string').map((value) => ({ value, chain, guards: [], through: [] }));
+    if (list.isMemberExpression() || list.isOptionalMemberExpression()) {
+      return settingsChains(list, walk, [{ chain: [], guards: [], through: [] }]).flatMap(({ chain, guards, through }) => {
+        const values = settingsDefault(chain);
+        return Array.isArray(values) ? values.filter((v) => typeof v === 'string').map((value) => ({ value, chain, guards, through })) : [];
+      });
+    }
     if (list.isArrayExpression()) {
-      const { elements } = list.node;
-      return elements.every((e) => e?.type === 'StringLiteral') ? elements.map((e) => ({ value: (e as StringLiteral).value, chain: null, guards: [], through: [] })) : [];
+      const elements = list.get('elements');
+      if (!elements.every((e) => e.isStringLiteral() || e.isSpreadElement())) return [];
+      return elements.flatMap((e) => (e.isSpreadElement() ? listEntries(e.get('argument'), walk) : [{ value: (e.node as StringLiteral).value, chain: null, guards: [], through: [] }]));
     }
     if (list.isLogicalExpression() && ['||', '??'].includes(list.node.operator)) return [...listEntries(list.get('left'), walk), ...listEntries(list.get('right'), walk)];
     if (list.isCallExpression() || list.isOptionalCallExpression()) {
       const callee = list.get('callee') as NodePath;
-      return memberName(callee) === 'filter' ? listEntries(callee.get('object') as NodePath, walk) : [];
+      return memberName(callee) === 'filter' ? listEntries(callee.get('object') as NodePath, walk) : returnedEntries(list, walk);
     }
     if (!list.isIdentifier()) return [];
     const binding = list.scope.getBinding(list.node.name);
@@ -950,7 +1018,39 @@ export async function extractClient(config: any) {
       const init = constInit(list, list.node.name, new Set());
       return init ? entered(binding, walk, () => listEntries(init as NodePath, walk)) : [];
     }
-    return binding?.kind === 'param' ? passedAt(binding, walk, listEntries) : [];
+    if (binding?.kind === 'let') return assignedEntries(binding, walk);
+    if (binding?.kind !== 'param') return [];
+    const framed = framedArgument(binding, walk);
+    if (framed !== undefined) return framed ? listEntries(framed.arg, framed.walk) : [];
+    return passedAt(binding, walk, listEntries);
+  }
+
+  function assignedEntries(binding: Binding, walk: KeyWalk): KeyEntry[] {
+    const declarator = binding.path;
+    const writes = binding.constantViolations;
+    if (!declarator.isVariableDeclarator() || !declarator.get('id').isIdentifier() || !writes.every((w) => w.isAssignmentExpression({ operator: '=' }) && w.get('left').isIdentifier())) return [];
+    const init = declarator.get('init') as NodePath;
+    return entered(binding, walk, () => [
+      ...(init.node ? listEntries(init, walk) : []),
+      ...writes.flatMap((w) => {
+        const guards = walk.guardsAt(w);
+        return listEntries(w.get('right') as NodePath, walk).map((e) => ({ ...e, guards: [...guards, ...e.guards] }));
+      }),
+    ]);
+  }
+
+  function returnedEntries(call: NodePath<CallExpression | OptionalCallExpression>, walk: KeyWalk): KeyEntry[] {
+    const callee = call.get('callee') as NodePath;
+    const binding = callee.isIdentifier() ? callee.scope.getBinding(callee.node.name) : undefined;
+    if (!binding?.constant || walk.hops >= FOLLOWED) return [];
+    const init = binding.kind === 'const' && binding.path.isVariableDeclarator() ? (binding.path.get('init') as NodePath) : null;
+    const fn = binding.path.isFunctionDeclaration() ? binding.path : init?.isArrowFunctionExpression() || init?.isFunctionExpression() ? init : null;
+    if (!fn) return [];
+    const inner = { ...walk, hops: walk.hops + 1, frames: new Map(walk.frames).set(fn.node, { call, outer: walk }) };
+    return entered(binding, walk, () => returnedValues(fn).flatMap((value) => {
+      const guards = walk.guardsAt(value);
+      return listEntries(value, inner).map((e) => ({ ...e, guards: [...guards, ...e.guards], through: [fn.node, ...e.through] }));
+    }));
   }
 
   function listedRoutes(p: NodePath<MemberExpression | OptionalMemberExpression>, guardsAt: (at: NodePath) => string[]) {
@@ -960,7 +1060,7 @@ export async function extractClient(config: any) {
     if (binding?.kind !== 'param' || binding.path.listKey !== 'params') return [];
     const owner = p.getFunctionParent()?.node;
     const byRoute = new Map<string, { chain: string[] | null; guards: string[]; ownerCalls: boolean }>();
-    for (const { value, chain, guards, through } of keyEntries(key, { onPath: new Set(), hops: 0, guardsAt })) {
+    for (const { value, chain, guards, through } of keyEntries(key, { onPath: new Set(), hops: 0, guardsAt, frames: new Map() })) {
       if (!Object.hasOwn(routeValues, value)) continue;
       const ownerCalls = Boolean(owner && through.includes(owner));
       const before = byRoute.get(value);
@@ -1255,8 +1355,11 @@ export async function extractClient(config: any) {
       value = prop?.isObjectMethod() ? prop : (prop?.get('value') as NodePath<any> | undefined);
     }
     if (!value?.node || value.isSpreadElement()) return [];
-    if (!value.isFunction()) return [value];
-    const body = value.get('body') as NodePath<any>;
+    return value.isFunction() ? returnedValues(value) : [value];
+  }
+
+  function returnedValues(fn: NodePath<any>): NodePath[] {
+    const body = fn.get('body') as NodePath<any>;
     if (!body.isBlockStatement()) return [body];
     const returned: NodePath[] = [];
     body.traverse({
@@ -1407,7 +1510,7 @@ export async function extractClient(config: any) {
         const chain = memberChain(p.node);
         if (!chain) {
           if (!p.node.computed) return;
-          for (const r of listedRoutes(p, (at) => guardsOf(at, src, note))) {
+          for (const r of listedRoutes(p, (at) => (programFile.get(at.scope.getProgramParent().block) === file ? guardsOf(at, src, note) : []))) {
             if (r.setting) noteSettings(relFile, r.setting.guard, r.setting.settings);
             constantAt.set(p.node, [...(constantAt.get(p.node) ?? []), record('routeRefs', { route: r.route }, p, r.guards, !r.ownerCalls) as RouteRef]);
           }
@@ -2026,6 +2129,43 @@ export async function extractClient(config: any) {
     if (declared?.isFunctionDeclaration()) return declared;
     const value = declared?.isVariableDeclarator() && declared.get('id').isIdentifier() && (declared.parent as VariableDeclaration).kind === 'const' ? declared.get('init') as NodePath : declared;
     return value?.isArrowFunctionExpression() || value?.isFunctionExpression() ? value : null;
+  }
+
+  let scripts: string[] | null = null;
+  const importingCache = new WeakMap<Node, NodePath[]>();
+  function importingCalls(fn: NodePath, named: Binding): NodePath[] {
+    if (importingCache.has(fn.node)) return importingCache.get(fn.node)!;
+    const calls: NodePath[] = [];
+    const own = named.scope.path.isProgram() ? programFile.get(named.scope.block) : undefined;
+    const names = own ? exportedNames(named) : [];
+    for (const file of names.length ? (scripts ??= sourceFiles(config.srcRoot)) : []) {
+      if (file === own) continue;
+      const text = fs.readFileSync(file, 'utf8');
+      if (!names.some((name) => text.includes(name))) continue;
+      const program = programOf(file);
+      for (const line of program?.get('body') ?? []) {
+        if (!line.isImportDeclaration()) continue;
+        for (const spec of line.get('specifiers')) {
+          if (!spec.isImportSpecifier() || spec.node.importKind === 'type' || !names.includes(keyName({ key: spec.node.imported }))) continue;
+          const binding = program!.scope.getBinding(spec.node.local.name);
+          const from = binding && importedName(binding);
+          if (from && exportedFunction(from.file, from.name)?.node === fn.node) calls.push(...binding!.referencePaths.filter(isCallee).sort((a, b) => a.node.start! - b.node.start!));
+        }
+      }
+    }
+    importingCache.set(fn.node, calls);
+    return calls;
+  }
+
+  function exportedNames(named: Binding): string[] {
+    const local = named.identifier.name;
+    const declaration = named.path.isFunctionDeclaration() ? named.path : named.path.parentPath;
+    const names = declaration?.parentPath?.isExportNamedDeclaration() ? [local] : [];
+    for (const line of (named.scope.path as NodePath<Program>).get('body')) {
+      if (!line.isExportNamedDeclaration() || line.node.source) continue;
+      for (const spec of line.node.specifiers) if (spec.type === 'ExportSpecifier' && spec.local.name === local) names.push(keyName({ key: spec.exported }));
+    }
+    return names.filter((name) => name !== 'default');
   }
 
   function namespaceFunction(scope: Scope, chain: string[]) {
