@@ -4518,6 +4518,42 @@ Measured on main 4863227 against the branch: on SigNoz with its API code run, 96
 maps or in what extract prints changes: SigNoz without its API code, into-sign 1.5.0, mattermost, outline and
 appsmith are the same apart from `meta`.
 
+**Calls that reach no screen are named in one line, split by whether any app source reaches their API functions.**
+Asked for in #462 (2026-10-26), after #458 left it out. Once the hooks SigNoz's generator writes had their requests,
+85 of its calls still reached no screen without a word, and nothing told whether duru had missed a screen's request
+or the app does not use that generated function. A call no screen sends is `unused by app code` when a walk of the names
+from every source under `srcRoot`, apart from `apiModules`, `calledApiModules`, the files they re-export an API function
+from and test files, reaches none of its API functions. The walk is the one a screen's sources get and goes on into the
+API files, so a function that another API function calls counts as used when the app uses that caller: a namespace or
+computed use reaches the whole file, code that runs when a file loads is followed, and types and re-exports reach
+nothing. A function counts as reached when the walk visits the declaration that exports it; for a method that is the
+object or class it belongs to, so all its methods count. Every other such call is `other`. A function whose declaration
+is not found counts as used, so a mistake the walk can tell puts a call in `other`, not in `unused by app code`. A
+source file duru cannot read, one that does not parse or declares the same name twice, is left out of the walk, as a
+start and when an import leads to it, instead of stopping extract.
+Compared:
+- The places the source calls an API function: 5 wrong labels in into-sign 1.5.0, where functions are handed over as
+  values or picked by a condition, and 1 in SigNoz.
+- References from app code one level deep, not followed through other API functions: 2 wrong in SigNoz, the
+  ai_observability field calls that `getFieldKeySuggestions` makes in a branch the fake value does not take, and 4 in
+  into-sign 2.0.0, the `createFromDraft` calls that `documentPublishApi` takes in when its file loads.
+- Sorting the calls by what extract read of them: the last group mixes code the app does not use with uses duru did not
+  read (the license route added at runtime, a query options function and 3 into-sign 1.5.0 uses), so it cannot say
+  that app code does not call them, which is the split asked for.
+Known limits: a use the walk cannot follow puts a used function in `unused by app code`: `require()` of an API file,
+`import()` with a path not written out, a use outside `srcRoot` (a workspace package or a `sourcePackages` folder) and a
+use inside a file duru cannot read. The other methods of an API object whose one method the app uses, and all that an
+API file names when it loads, are `other`, as are calls only Storybook stories, fixtures or a component nothing draws
+make.
+Measured on main 31edfc8 against the branch: SigNoz with its API code run prints `85 calls reach no screen: 77 unused
+by app code (…), 8 other (…)` (207 calls reached no screen on main f2ef14f, before the react-query stand-in). Its 8 are
+the two ai_observability field calls, `GET /api/v1/features`, `GET /api/v2/users/me` and `GET /api/v4/licenses/active`
+of the provider around the whole app, `POST /api/v4/licenses` of the route added at runtime, the rule history timeline
+reached through its query options function, and the aggregate attributes call of `AggregatorFilter`, which only a
+barrel re-exports and nothing draws. into-sign 1.5.0 prints 14 = 6 + 8 and into-sign 2.0.0 6 = 0 + 6; appsmith, outline,
+mattermost and SigNoz without its API code print no line. Apart from the line and `callsOnNoScreen`, the seven maps and
+what extract prints are the same.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

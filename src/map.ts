@@ -129,6 +129,7 @@ export type ScreenMap = {
   unresolvedAliasImports?: Client['unresolvedAliasImports'];
   madeHistories?: Client['madeHistories'];
   addressesUnderRoutes?: ReturnType<typeof addressesUnderRoutes>;
+  callsOnNoScreen?: { unused: string[]; other: string[] };
   emptyRouteFiles?: Client['emptyRouteFiles'];
 } & ReturnType<typeof configuredCallLinks> & ReturnType<typeof configuredMoves>;
 
@@ -270,7 +271,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, apiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder } = await extractClient(config);
+  const { screens, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -324,6 +325,11 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   const bodyTypeExclusions = config.bodyTypeExclusions ?? {};
   const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
 
+  const unreferenced = new Set(unreferencedApiFunctions);
+  const noScreen = calls.filter((c) => !c.screens.length);
+  const unusedCall = (c: MapCall) => c.apiFunctions.length > 0 && c.apiFunctions.every((name) => unreferenced.has(name));
+  const callsOnNoScreen = { unused: noScreen.filter(unusedCall).map((c) => c.id), other: noScreen.filter((c) => !unusedCall(c)).map((c) => c.id) };
+
   const hash = codeHasher(config.srcRoot);
   for (const s of mapped) s.codeHash = hash(s.sourceFiles ?? []);
   const requestFiles = new Map<string, (string | null)[]>(calls.map((c) => [c.id, c.apiFunctions.map((name: string) => apiFunctions[name]?.file ?? null)]));
@@ -362,6 +368,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
     ...(config.tsconfig && { unresolvedAliasImports }),
     ...(madeHistories.length > 0 && { madeHistories }),
     ...(underRoutes.length > 0 && { addressesUnderRoutes: underRoutes }),
+    ...(noScreen.length > 0 && { callsOnNoScreen }),
     ...(emptyRouteFiles.length > 0 && { emptyRouteFiles }),
   };
 }
