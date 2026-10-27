@@ -131,6 +131,39 @@ export default function Help(props) {
   assert.deepEqual(linksOf(map, '/help/:page?#Help'), [['/team/{*}', 6, [], ['/team/:team#Team']], ['/start', 6, [], ['/start#Start']]]);
 });
 
+test('a move through the history of the props a class update method takes first becomes a link, and one through the same name in another method or a function does not', async () => {
+  const team = `import { Component } from 'react';
+
+function away(prevProps) {
+  prevProps.history.push('/start');
+}
+
+export default class Team extends Component {
+  componentDidUpdate(prevProps) {
+    if (prevProps.team !== this.props.team) prevProps.history.push('/home');
+  }
+
+  UNSAFE_componentWillReceiveProps(nextProps) {
+    const { history } = nextProps;
+    history.replace('/login');
+  }
+
+  leave(prevProps) {
+    prevProps.history.push('/help');
+  }
+
+  render() {
+    return <div onClick={() => away(this.props)} onBlur={() => this.leave(this.props)} />;
+  }
+}
+`;
+  const map = await build(writeApp({ 'Team.js': team }));
+  assert.deepEqual(linksOf(map, '/team/:team#Team'), [
+    ['/home', lineOf(team, "push('/home')"), ['prevProps.team !== this.props.team'], ['/home#Home']],
+    ['/login', lineOf(team, "replace('/login')"), [], ['/login#Login']],
+  ]);
+});
+
 test('a move through the history a function component takes out of its first parameter becomes a link, the move in a lowercase function that takes it out of its parameter is a link where that function is called, and one taken out of a later parameter or a function wrapped in a call is not read', async () => {
   const help = `function leave({ history }) {
   history.push('/login');
@@ -934,6 +967,128 @@ export default function Home({ a, b }) {
     ['/help/{*}/{*}', ['/help/:page?#Help']],
     ['/login/x', ['/home#Home']],
   ]);
+});
+
+test('a move written in the body of a route file no screen holds is a link of every screen that route file draws, keeping its conditions, while its router links, moves inside a hook it calls and moves that stay on the screen add nothing', async () => {
+  const routes = `import { useEffect } from 'react';
+import { Link, Route, Switch, useHistory, useLocation } from 'react-router-dom';
+import Home from './Home';
+import Start from './Start';
+import Claim from './Claim';
+import useLeave from './useLeave';
+
+export default function Routes({ failed, signedOut }) {
+  const history = useHistory();
+  const location = useLocation();
+  useLeave();
+  useEffect(() => {
+    if (failed) history.replace('/start');
+  }, [failed]);
+  if (signedOut) history.push('/home');
+  history.replace({ search: '?a=1' });
+  history.push(\`\${location.pathname}?x\`);
+  return (
+    <>
+      <Link to="/claim">claim</Link>
+      <Switch>
+        <Route path="/start" component={Start} exact />
+        <Route path="/home" component={Home} exact />
+        <Route path="/claim" component={Claim} />
+      </Switch>
+    </>
+  );
+}
+`;
+  const claim = CLAIM.replace("import { Route, Switch, useRouteMatch } from 'react-router-dom';", "import { useEffect } from 'react';\nimport { Route, Switch, useHistory, useRouteMatch } from 'react-router-dom';")
+    .replace('  const { path } = useRouteMatch();', "  const { path } = useRouteMatch();\n  const history = useHistory();\n  useEffect(() => history.push('/start'));");
+  const leave = "import { useHistory } from 'react-router-dom';\n\nexport default function useLeave() {\n  useHistory().push('/claim');\n}\n";
+  const pages = Object.fromEntries(['ClaimEmail', 'ClaimHome'].map((n) => [`${n}.js`, page(n)]));
+  const map = await build(writeApp({ ...pages, 'Routes.js': routes, 'Claim.js': claim, 'useLeave.js': leave }, { routesFile: ['Routes.js', 'Claim.js'] }));
+  const moves = [
+    ['/start', lineOf(routes, "replace('/start')"), ['failed'], ['/start#Start']],
+    ['/home', lineOf(routes, "push('/home')"), ['signedOut'], ['/home#Home']],
+  ];
+  const fromRoutes = (id: string) => map.screens.find((s) => s.id === id)!.links.filter((l) => l.file === 'Routes.js').map((l) => [l.to, l.line, l.guards, l.targets]);
+  for (const id of ['/start#Start', '/home#Home']) assert.deepEqual(linksOf(map, id), moves);
+  assert.deepEqual(linksOf(map, '/claim#Claim'), [['/start', lineOf(claim, "push('/start')"), [], ['/start#Start']], ...moves]);
+  assert.deepEqual(fromRoutes('/claim#Claim'), moves);
+  assert.deepEqual(linksOf(map, '/claim/email#ClaimEmail'), []);
+  assert.deepEqual(linksOf(map, '/claim#ClaimHome'), []);
+});
+
+test('in a route file no screen holds, a route constant written as the address of a move is a link of every screen it draws, through a history the config does not name too, while one compared with the address or written as a route path is not', async () => {
+  const routes = `import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import Option from './Option';
+import history from './history';
+import matches from './matches';
+import Home from './Home';
+import Login from './Login';
+import Help from './Help';
+import Team from './Team';
+
+export default function AppRoutes({ broken, lost }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  if (location.pathname === Option.ROUTE_PATH.LOGIN) return null;
+  if (matches(location.pathname, Option.ROUTE_PATH.HELP)) navigate(Option.ROUTE_PATH.HOME, { replace: true });
+  if (broken) history.replace(Option.ROUTE_PATH.TEAM);
+  if (lost) history.replace('/help');
+  return (
+    <Routes>
+      <Route path={Option.ROUTE_PATH.LOGIN} element={<Login />} />
+      <Route path={Option.ROUTE_PATH.HELP} element={<Help />} />
+      <Route path={Option.ROUTE_PATH.HOME} element={<Home />} />
+      <Route path={Option.ROUTE_PATH.TEAM} element={<Team />} />
+    </Routes>
+  );
+}
+`;
+  const map = await build(withRouteConstant({
+    'Routes.js': routes,
+    'history.js': "import { createBrowserHistory } from 'history';\n\nexport default createBrowserHistory();\n",
+    'matches.js': 'export default (pathname, route) => pathname.startsWith(route);\n',
+  }));
+  const moves = [
+    ['/home', lineOf(routes, 'navigate(Option'), ['matches(location.pathname, Option.ROUTE_PATH.HELP)'], ['/home#Home']],
+    ['/team', lineOf(routes, 'history.replace(Option'), ['broken'], ['/team#Team']],
+  ];
+  for (const id of ['/login#Login', '/help#Help', '/home#Home', '/team#Team']) assert.deepEqual(linksOf(map, id), moves);
+});
+
+test('in a class route file, a move through the props its update method takes first is a link of every screen it draws', async () => {
+  const routes = `import { Component } from 'react';
+import { Route, Switch, withRouter } from 'react-router-dom';
+import Home from './Home';
+import Start from './Start';
+
+class Root extends Component {
+  componentDidUpdate(prevProps) {
+    if (this.props.noAccounts) prevProps.history.push('/start');
+  }
+
+  render() {
+    return (
+      <Switch>
+        <Route path="/home" component={Home} exact />
+        <Route path="/start" component={Start} exact />
+      </Switch>
+    );
+  }
+}
+
+export default withRouter(Root);
+`;
+  const map = await build(writeApp({ 'Routes.js': routes }));
+  const move = ['/start', lineOf(routes, "push('/start')"), ['this.props.noAccounts'], ['/start#Start']];
+  assert.deepEqual(linksOf(map, '/home#Home'), [move]);
+  assert.deepEqual(linksOf(map, '/start#Start'), [move]);
+});
+
+test('the usage guide and the agent guide say what a link in a screen\'s route file is, and the decision record says why a move in a route file body is a link of every screen it draws', () => {
+  const read = (file: string) => fs.readFileSync(path.join(import.meta.dirname, '..', file), 'utf8');
+  assert.match(read('README.md'), /A link whose file is the screen's route file is made by code in that file while the screen is shown/);
+  assert.match(read('skills/duru/SKILL.md'), /A link whose `file` is the screen's `routeFile` and not among its `sourceFiles` is a move the route file makes/);
+  assert.match(read('docs/decisions.md'), /\*\*A move written in the body of a route file that no screen's code holds is a link of every screen that route\s+file draws\.\*\*/);
 });
 
 test('with React Router 6, a route constant written as a link\'s address through a const of the same file goes to the screen Routes draws', async () => {

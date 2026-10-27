@@ -135,6 +135,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   the screen.
   A call whose file is a store class the screen gets from a React context hook (`useStores()`) can sit outside
   `sourceFiles`: the screen calls the store method that sends it, so it is the screen's to test like any other.
+  A link whose `file` is the screen's `routeFile` and not among its `sourceFiles` is a move the route file makes
+  while any of the screens it draws is shown, so a test of it can start from any of those screens.
 - A `route guard <guard> on N screens is neither a setting nor a role, …` line names a condition around routes
   that the map does not count as closing a screen. Read what it checks where the route is written: when it decides
   who may open the screen, by a setting or the user's role, add what it reads to `settingsRoots` or
