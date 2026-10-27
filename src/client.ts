@@ -16,7 +16,7 @@ import type { Origin } from './follow-names.ts';
 import { parseSource } from './parse.ts';
 import { pathParts, routePattern } from './path-values.ts';
 import { importResolver } from './resolve.ts';
-import { sagaFiles, sagaReader } from './saga-requests.ts';
+import { sagaFiles, sagaReader, sourceFiles } from './saga-requests.ts';
 import type { ActionType, Handler, Watch } from './saga-requests.ts';
 import { addresses, FOLLOWED, LINK_ELEMENTS, madeFrom, screenLinkReader } from './screen-links.ts';
 import { importedAs, routerImport, screenRequestReader } from './screen-requests.ts';
@@ -302,6 +302,18 @@ function enclosingFunctionName(nodePath: NodePath) {
     return { name: fn.parentPath.node.id.name, fnPath: fn };
   }
   if (fn.isFunctionDeclaration() && fn.node.id) return { name: fn.node.id.name, fnPath: fn };
+  return null;
+}
+
+function declaredAt(program: Program, name: string): number | null {
+  for (const stmt of program.body) {
+    if (name === 'default' && stmt.type === 'ExportDefaultDeclaration') return stmt.start!;
+    const decl = stmt.type === 'ExportNamedDeclaration' ? stmt.declaration : stmt;
+    if (decl?.type === 'VariableDeclaration') {
+      const found = decl.declarations.find((d) => d.id.type === 'Identifier' && d.id.name === name);
+      if (found) return found.id.start!;
+    } else if (decl && 'id' in decl && decl.id?.type === 'Identifier' && decl.id.name === name) return decl.id.start!;
+  }
   return null;
 }
 
@@ -2485,7 +2497,12 @@ export async function extractClient(config: any) {
   // ---------- 화면마다 모으기 ----------
 
   const apiFunctions: Record<string, any> = {};
-  for (const f of apiModuleFiles) Object.assign(apiFunctions, extractApiModule(f));
+  const moduleExports = new Map<string, { file: string; exportName: string }[]>();
+  for (const f of apiModuleFiles) {
+    const fns = extractApiModule(f);
+    Object.assign(apiFunctions, fns);
+    for (const name of Object.keys(fns)) moduleExports.set(name, [{ file: f, exportName: name }]);
+  }
   if (calledFiles.size) called = await recordApiCalls(config, imports.resolve, new Set(Object.keys(apiFunctions)));
   Object.assign(apiFunctions, called?.functions);
 
@@ -2528,7 +2545,8 @@ export async function extractClient(config: any) {
 
   // saga 는 화면이 import 하지 않는 파일에 있어도 돈다. API · 상수 파일은 화면에서와 같이 그 안으로 들어가지 않는다.
   const sagaScope = (f: string | null) => !apiModuleFiles.has(f!) && !calledFiles.has(f!) && !constantFiles.has(f!);
-  const sagaSources = sagaFiles(config.srcRoot);
+  const sources = sourceFiles(config.srcRoot);
+  const sagaSources = sagaFiles(sources);
   const runs = sagaSources.flatMap((file) => {
     try {
       return sagas.runs(file);
@@ -2640,6 +2658,28 @@ export async function extractClient(config: any) {
     return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls: [...apiCalls, ...sagaCalls], settingReads, links };
   });
 
+  // 화면이 보내지 않는 API 함수 가운데, API 파일 밖의 앱 소스에서 곧바로도 다른 API 함수를 거쳐서도 닿지 않는 것
+  const onScreens = new Set(screens.flatMap((s) => s.apiCalls.map((c) => c.fn)));
+  const off = Object.keys(apiFunctions).filter((k) => !onScreens.has(k));
+  const unreferencedApiFunctions: string[] = [];
+  if (off.length) {
+    const exportsOf = new Map([...moduleExports, ...(called?.exportsOf ?? [])]);
+    const declarations = new Map<string, { start: number; site: string }[]>();
+    const declared = new Set<string>();
+    for (const key of off) {
+      for (const { file, exportName } of exportsOf.get(key) ?? []) {
+        const d = follower.declaration(file, exportName);
+        const start = d && follower.readable(d.file) ? declaredAt(parse(d.file).ast.program, d.name) : null;
+        if (start === null) continue;
+        declared.add(key);
+        declarations.set(d!.file, [...(declarations.get(d!.file) ?? []), { start, site: key }]);
+      }
+    }
+    const starts = sources.filter((f) => !apiModuleFiles.has(f) && !calledFiles.has(f) && !declarations.has(f) && follower.readable(f)).map((file) => ({ file, span: [0, Number.MAX_SAFE_INTEGER] as [number, number] }));
+    const reached = follower.reach(starts, follower.readable, { sitesOf: (f) => declarations.get(f) ?? [] });
+    unreferencedApiFunctions.push(...off.filter((k) => declared.has(k) && !reached.has(k)));
+  }
+
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, apiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)) };
+  return { screens, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)) };
 }

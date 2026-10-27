@@ -183,6 +183,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
 - A `N addresses under <path> reach no screen (…)` line names a page that opens at addresses under its own and may
   show something different at each, while the map has one screen for all of them. There is no config key for it;
   tell the user which page and addresses these are, and that tests for them can only be tagged with that one screen.
+- A `N calls reach no screen: …` line counts calls that no screen sends. The `unused by app code` ones need nothing.
+  The `other` ones are where a screen may be missing a request: check them against the code that uses their API
+  functions, and tell the user which of them a screen should send.
 - A link whose `to` is `{?}` goes to an address duru could not read, such as one held in a variable; it goes to no
   screen, and a story step from that screen with no other link to the next screen is not judged. Do not take it as
   a missing link.

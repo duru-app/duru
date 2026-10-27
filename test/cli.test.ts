@@ -389,6 +389,7 @@ test('rebuild warns about each guard in roleGuards that guards no route or link 
     fs.writeFileSync(configFile, JSON.stringify({ ...config, roleGuards: { isAdmin: ['ADMIN'], 'menuPolicy.canAccessTrash': ['ADMIN'] } }));
     const stdout = execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
     assert.match(stdout, /^ {2}roleGuards menuPolicy\.canAccessTrash matches no role guard$/m);
+    assert.doesNotMatch(stdout, /calls? reach(es)? no screen/);
     assert.doesNotMatch(stdout, /roleGuards isAdmin/);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
@@ -407,6 +408,7 @@ test('extract names each route guard that is neither a setting nor a role, with 
     assert.match(stdout, new RegExp(`^ {2}route guard isAdmin on 1 screen ${hint}$`, 'm'));
     assert.match(stdout, new RegExp(`^ {2}route guard isAdminRole\\(memberRole\\) on 1 screen ${hint}$`, 'm'));
     assert.doesNotMatch(stdout, /route guard globalSettings/);
+    assert.doesNotMatch(stdout, /calls? reach(es)? no screen/);
     assert.doesNotMatch(stdout, /role guard/);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
@@ -424,6 +426,7 @@ test('extract names each role guard whose roles are not read until roleGuards gi
     fs.writeFileSync(configFile, JSON.stringify({ ...config, roleGuards: { isAdmin: ['ADMIN'] } }));
     const stdout = execFileSync(process.execPath, [CLI, 'extract', configFile], { encoding: 'utf8' });
     assert.doesNotMatch(stdout, /role guard|route guard/);
+    assert.doesNotMatch(stdout, /calls? reach(es)? no screen/);
   } finally {
     fs.rmSync(copy, { recursive: true, force: true });
   }

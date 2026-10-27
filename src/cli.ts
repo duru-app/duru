@@ -327,6 +327,12 @@ if (command === 'tasks') {
   for (const [name, fn] of Object.entries<any>(map.apiFunctions)) if (fn.error && !fn.endpoints.length) console.log(`  api method ${name} ← ${fn.file ?? '?'}${fn.line ? `:${fn.line}` : ''}: ${fn.error}`);
   console.log(`dead calls reachable from screens: ${map.deadCalls.length}`);
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s: any) => s.dead).length}`);
+  if (map.callsOnNoScreen) {
+    const { unused, other } = map.callsOnNoScreen;
+    const total = unused.length + other.length;
+    const part = (ids: string[], label: string) => (ids.length ? [`${ids.length} ${label} (${ids.slice(0, 3).join(', ')}${ids.length > 3 ? ', …' : ''})`] : []);
+    console.log(`  ${total === 1 ? '1 call reaches' : `${total} calls reach`} no screen: ${[...part(unused, 'unused by app code'), ...part(other, 'other')].join(', ')}`);
+  }
   console.log(`entry screens ${map.entries.length} | screens opening only under a setting or role ${map.screens.filter((s: any) => s.access.restricted).length}`);
   for (const { guard, screens } of map.openRouteGuards ?? []) {
     console.log(`  route guard ${guard} on ${plural(screens, 'screen')} is neither a setting nor a role, so it closes no screen; when it reads a setting or a role, name that in settingsRoots or roleIdentifiers`);
