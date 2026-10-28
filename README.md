@@ -1196,12 +1196,11 @@ its screen or call or of its test file differs. The mark or judgment stays as it
 reviewer's call. A mark or judgment saved without a hash shows as it always did.
 
 **What a test did.** A Playwright test's row under a screen or a call has 「단계」. It opens, under the row, the
-test's steps in the order they ran: 「열기」 for an address it opened, 「누르기」, 「넣기」 with the box and the value, and
-「확인」, each with its screen, and 「실패」 on an action that ended in an error. A box the trace names by CSS or role
-shows 「찾은 상자를 읽지 못함」. Between the steps come the requests the test sent, with their status or 「응답 없음」;
-pages, scripts, styles, pictures and fonts the browser loaded are left out, and a request that matches a call opens
-that call. A test that ran in several projects has a chip for each. A test without a trace, with a trace that could
-not be read, or that was skipped says so instead.
+test's steps in the order they ran, each with its screen: 「열기」 for an address it opened, 「누르기」, 「넣기」 with the
+box and the value, or 「찾은 상자를 읽지 못함」 in place of a box duru could not name, and 「확인」, with 「실패」 on an
+action that ended in an error. Between the steps come the requests the test sent, with their status or 「응답 없음」; a
+request that matches a call opens that call. A test that ran in several projects has a chip for each. A test without
+a trace, with a trace that could not be read, or that was skipped says so instead.
 
 **Untagged tests.** An untagged test linked to a screen by its imports or its trace has 「제외」, to discard the
 pair with a reason asked for in a window, and 「포함」, to hand it over so a coding agent adds the tag. A handed-over
