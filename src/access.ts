@@ -1,4 +1,5 @@
 import { lookupConstant, memberChain, UNKNOWN, VARIABLE_SEGMENT } from './client.ts';
+import type { TableItem } from './client.ts';
 import { parseRoleEntry } from './config.ts';
 import { parseFragment, plainText } from './parse.ts';
 import { pathParts, type PathPart } from './path-values.ts';
@@ -43,6 +44,7 @@ interface ScreenLink {
   line: number;
   guards: string[];
   inheritedGuards?: { guards: string[]; via: string; file?: string }[];
+  tableItem?: TableItem;
 }
 
 interface AccessScreen {
@@ -75,6 +77,7 @@ interface AccessLink {
   file: string;
   line: number;
   guards: Described[];
+  tableItem?: TableItem;
 }
 
 interface UnreadableGuard {
@@ -649,7 +652,7 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
       linkScreens[from].push(targets);
       for (const to of targets) {
         if (to === from) continue;
-        const link = { from, to, file: l.file, line: l.line, guards };
+        const link = { from, to, file: l.file, line: l.line, guards, ...(l.tableItem && { tableItem: l.tableItem }) };
         incoming[to].push(link);
         outgoing[from].push(link);
       }
@@ -776,7 +779,7 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
   const shownKinds = indices.map((i) => (restricted[i] ? [...kinds[i]].sort() : []));
   const access = screens.map((_, i) => {
     const ways = incoming[i]
-      .map((l) => ({ link: l, row: { from: screens[l.from].id, file: l.file, line: l.line, guards: l.guards, fromKinds: shownKinds[l.from] } }))
+      .map((l) => ({ link: l, row: { from: screens[l.from].id, file: l.file, line: l.line, guards: l.guards, fromKinds: shownKinds[l.from], ...(l.tableItem && { tableItem: l.tableItem }) } }))
       .sort((a, b) => byPlace(a.row, b.row));
     const links = ways.map((w) => w.row);
     const settings = shownKinds[i].includes('setting')

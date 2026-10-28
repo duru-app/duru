@@ -897,6 +897,40 @@ test('in a browser, the screen info lists the links a screen\'s own code gives o
   );
 });
 
+test('in a browser, 「들어오는 링크」 lists the other links into a screen on top and folds the links a route table menu gives for the screen\'s item under 「공통」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const data = await (await route.fetch()).json() as ServedData;
+          const report = data.map.screens.find((x) => x.id === '/admin/report#AdminReport')!;
+          for (const l of report.access.links) if (l.from.startsWith('/document/')) Object.assign(l, { tableItem: { key: 'report', file: 'menu.js', line: 3 } });
+          await route.fulfill({ json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        assert.match((await p.textContent('#center .screen-info > summary .counts'))!, /^들어오는 링크 1 · /);
+        await openScreenInfo(p);
+        const access = p.locator('#center .access');
+        assert.equal(await access.locator('h2').first().textContent(), '들어오는 링크 1');
+        const menu = access.locator('details.common-incoming');
+        assert.deepEqual(await access.locator('code.from').evaluateAll((els) => els.filter((e) => !e.closest('details.common-incoming')).map((e) => e.textContent)), ['/home#Home']);
+        assert.equal(await menu.getAttribute('open'), null);
+        assert.equal(await menu.locator('summary').first().innerText(), '공통 2');
+        assert.equal(await menu.locator(':scope > summary').getAttribute('title'), '메뉴가 거는 링크');
+        assert.equal(await menu.locator(':scope > summary').getAttribute('aria-label'), '메뉴가 거는 링크 2');
+        assert.deepEqual(await menu.locator('code.from').allTextContents(), ['/document/:id#DocumentDetail', '/document/:tab#DocumentList']);
+        await menu.locator(':scope > summary').click();
+        await p.click('#screen-list li:has-text("/admin/audit")');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        assert.equal(await menu.getAttribute('open'), '', 'the section stays open after moving to another screen and back');
+      }),
+    ),
+  );
+});
+
 const ME = 'GET:/api/v1/me';
 const EXPORT = 'POST:/api/v1/report/export';
 const APP_START_ONLY: [string, string, string][] = [

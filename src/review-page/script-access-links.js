@@ -332,15 +332,20 @@ const movedChip = () => h('span', { class: 'chip l-configured', title: LINK_VERD
 const movesOf = (side, id) => (state.data.map.moves ?? []).filter((m) => m[side] === id);
 const moveItem = (end, m) => h('li', { class: 'move' }, end, ' ', movedChip(), ' ', h('span', { class: 'muted' }, m.reason));
 
+const MENU_LINKS_TITLE = '메뉴가 거는 링크';
+const ownIncoming = (s) => s.access.links.filter((l) => !l.tableItem);
+
 function accessDetails(s) {
-  const { links } = s.access;
+  const links = ownIncoming(s);
+  const menu = s.access.links.filter((l) => l.tableItem);
   const moves = movesOf('to', s.id);
   const inScreen = inScreenGuards(s);
   return h('div', { class: 'access' },
     h('h2', {}, `들어오는 링크 ${links.length + moves.length}`),
     links.length ? linkGroups(links).map(linkGroup) : null,
     moves.length ? h('ul', { class: 'plain moves' }, moves.map((m) => moveItem(h('code', { class: 'from' }, m.from), m))) : null,
-    links.length + moves.length ? null : h('p', { class: 'muted' }, '없음'),
+    links.length + moves.length ? null : h('p', { class: 'muted' }, menu.length ? '메뉴 말고 들어오는 링크가 없습니다.' : '없음'),
+    menu.length ? commonSection('common-incoming', MENU_LINKS_TITLE, menu.length, 'commonIncomingOpen', h('div', {}, linkGroups(menu).map(linkGroup))) : null,
     inScreen.length ? h('div', { class: 'in-screen' },
       h('h2', {}, '화면 안 조건 — 화면을 여는 것은 막지 않습니다'),
       inScreen.map((g) => h('div', { class: 'guard' }, guardCode(g, 'in-screen')))) : null);

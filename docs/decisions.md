@@ -3258,10 +3258,23 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
   off the link rows. It is on 506 of 622 link rows in into-sign 1.5.0, 594 of 762 in 2.0.0, 5,550 of 12,435 in
   mattermost, 1,762 of 2,892 in outline, 13,968 of 16,309 in SigNoz (`SideNav`, `TopNav`, `Private`) and none in
   appsmith. With `menus`, 11,200 of mattermost's 11,300 menu links and 864 of outline's 900 have it.
-- The flow view is left as it is. It draws one tree from the links into each screen, which carry no `layout`, and marks
-  as jumps the screens a picked screen links to elsewhere in the tree. With mattermost's menu, one admin screen
-  (`…/edit_policy/:policy_id`) holds 99 of the other admin screens as its children, and picking any of 112 screens marks
-  50 or more jumps (median 111). Without `menus` 73 admin screens are entry screens and no screen marks more than 40.
+- The links into a screen keep the `tableItem` of a menu's link. 「들어오는 링크」 folds those under 「공통 N」
+  (「메뉴가 거는 링크」) below the screen's other links into it. The incoming fold takes only the menu's item links, not every
+  link drawn by a layout, so its title names the menu alone.
+- The flow view leaves out the links that carry `tableItem`: they are neither tree edges nor jumps, and a screen only
+  such links come into is drawn at the top as an entry screen is. Before this, mattermost's menu made one admin screen
+  (`…/edit_policy/:policy_id`) the parent of 99 other admin screens, and picking any of 112 screens marked 50 or more
+  jumps (median 111). With the rule, mattermost's flow with `menus` equals the flow of #461's branch (728cf04) without
+  them: the same 92 roots in the same order, 6 trees no entry screen reaches, the same parent for each of the 181
+  screens and the same 2,776 jumps. The flows of appsmith, both into-sign maps and both SigNoz maps are unchanged.
+  outline's differ only where its screens do: the `{?}` screen gives way to the 18 settings screens, 15 of them drawn at
+  the top, `/settings/applications` among the trees no entry screen reaches, `/settings/templates/:id` under
+  `/settings/templates`. Among the jumps, three settings scenes (`/settings/groups/:id/members`,
+  `/settings/applications/:id`, `/settings/templates/:id`) are gone from the 30 or 31 screens that held them through the
+  hook file, and `/settings/authentication` and `/settings/templates` are new on 31 and 32 screens.
+  Leaving out every link with `layout` was compared and rejected: layout links are most of an app's navigation where
+  the menu is in a layout, 506 of into-sign 1.5.0's 622 links, so its flow would lose most of its tree. The menu's item
+  links differ from those: one element gives every screen holding it a link to every item screen.
 Measured against main 5519f30, with `menus` added to the mattermost entry and the outline entry
 `{ "route": "routes/settings.tsx", "table": { "file": "hooks/useSettingsConfig.ts", "const": "items" }, "items": "*",
 "menus": ["components/Sidebar/Settings.tsx"] }`:

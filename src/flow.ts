@@ -14,7 +14,7 @@ export interface FlowGuard {
 export interface FlowAccess {
   restricted: boolean;
   kinds: string[];
-  links: { from: string; guards: FlowGuard[] }[];
+  links: { from: string; guards: FlowGuard[]; tableItem?: unknown }[];
   roleValues?: string[] | null;
   unreadableRoleGuards?: string[];
   settings?: SettingSource[];
@@ -116,8 +116,12 @@ export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
     if (!edges.has(to)) edges.set(to, { links: [], moves: [] });
     return edges.get(to)!;
   };
+  // 라우트 테이블 메뉴가 항목마다 거는 링크는 트리에도 jumps 에도 넣지 않고, 그 링크로만 들어오는 화면은 진입 화면처럼 맨 위에 둔다.
+  const menuOnly: string[] = [];
   for (const target of map.screens) {
-    for (const l of target.access.links) edgeTo(l.from, target.id).links.push(l.guards);
+    const links = target.access.links.filter((l) => !l.tableItem);
+    if (!links.length && target.access.links.length) menuOnly.push(target.id);
+    for (const l of links) edgeTo(l.from, target.id).links.push(l.guards);
   }
   for (const m of map.moves ?? []) edgeTo(m.from, m.to).moves.push(m.reason);
   // 링크마다 조건 목록 하나. 어느 한 링크의 조건만 맞아도 들어가므로 목록끼리는 「또는」이다.
@@ -188,7 +192,8 @@ export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
     return grow(roots);
   };
 
-  const roots = plant((map.entries ?? []).map((e) => e.screen));
+  const entries = new Set([...(map.entries ?? []).map((e) => e.screen), ...menuOnly]);
+  const roots = plant(map.screens.map((s) => s.id).filter((id) => entries.has(id)));
   const unreached: FlowScreenNode[] = [];
   for (const s of map.screens) if (!placed.has(s.id)) unreached.push(...plant([s.id]));
   const folding = map.screens.length > GROUP_FROM;

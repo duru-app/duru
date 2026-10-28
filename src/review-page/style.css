@@ -304,9 +304,9 @@
   :is(.screen-info, .call-info) > summary .counts { font-size: 12px; }
   :is(.screen-info, .call-info) > summary + * { margin-top: 10px; }
   :is(.screen-info, .call-info) .chip { white-space: normal; }
-  :is(.common-calls, .common-links) { margin-top: 12px; }
-  :is(.common-calls, .common-links) > summary { cursor: pointer; font-weight: 600; }
-  :is(.common-calls, .common-links) > summary + * { margin-top: 8px; }
+  :is(.common-calls, .common-links, .common-incoming) { margin-top: 12px; }
+  :is(.common-calls, .common-links, .common-incoming) > summary { cursor: pointer; font-weight: 600; }
+  :is(.common-calls, .common-links, .common-incoming) > summary + * { margin-top: 8px; }
   .call-info .target-id .mono { margin-right: 4px; }
   .talk .history li { font-size: 13px; }
   .talk .history > li { margin-bottom: 12px; }

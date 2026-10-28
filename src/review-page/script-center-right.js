@@ -75,7 +75,7 @@ function callInfo(s) {
 function screenInfo(s) {
   return h('details', { class: 'screen-info', open: state.screenInfoOpen, ontoggle: (e) => { state.screenInfoOpen = e.currentTarget.open; } },
     h('summary', {}, h('span', { class: 'title' }, '화면 정보'), ' ',
-      h('span', { class: 'counts muted' }, `들어오는 링크 ${s.access.links.length + movesOf('to', s.id).length} · 나가는 링크 ${ownLinks(s).length + movesOf('from', s.id).length} · 읽는 설정값 ${s.settingReads.length}`)),
+      h('span', { class: 'counts muted' }, `들어오는 링크 ${ownIncoming(s).length + movesOf('to', s.id).length} · 나가는 링크 ${ownLinks(s).length + movesOf('from', s.id).length} · 읽는 설정값 ${s.settingReads.length}`)),
     openSummary(s),
     caseSection(s),
     screenDetails(s));
@@ -231,7 +231,7 @@ function callTableBody(s, rows, depths, extra = []) {
 
 const COMMON_TITLE = '앱 시작과 레이아웃이 보내는 요청';
 
-/** @param {'commonCallsOpen' | 'commonLinksOpen'} openKey */
+/** @param {'commonCallsOpen' | 'commonLinksOpen' | 'commonIncomingOpen'} openKey */
 function commonSection(className, title, count, openKey, body) {
   return h('details', { class: className, open: state[openKey], ontoggle: (e) => { state[openKey] = e.currentTarget.open; } },
     h('summary', { title, 'aria-label': `${title} ${count}` }, `공통 ${count}`),

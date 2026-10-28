@@ -952,7 +952,9 @@ entry screen, with a square for the status of its tagged tests, the number of it
 it opens only under a role or a setting; hovering shows what it needs and its untagged tests. A dashed line is a
 link under a setting or role condition, and a green dotted line is a move written in `moves`, whose reason shows on
 hovering the screen it leads to. The flow follows a move as it follows a link: a screen not yet drawn goes under the
-screen the move leaves, and one already drawn in another branch stays where it is. Entry screens with no screen
+screen the move leaves, and one already drawn in another branch stays where it is. The links a menu named in
+`routeTables` gives for each table item are left out of the flow, so a screen only they lead to is drawn at the top as
+an entry screen is. Entry screens with no screen
 drawn under them are gathered below the rest under
 「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. On a map of more than 100 screens, the gathered
 screens that share the start of their address are folded into one box per group (a group of more than 20 is split
@@ -1066,12 +1068,13 @@ around or beside its route (`layout`) and those of `appWide` are folded below it
 columns, and stay open or folded on other screens until toggled. Choosing such a call shows, after where this screen
 calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
 name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
-screen, links out of it from its own code and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
+screen other than a menu's, links out of it from its own code and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
 the screen, then shows the tests of each role and setting case by depth under 「관점별 테스트」, the links into it
 with their guards, the conditions inside the screen, where its route and component are, the links out of it and the
 settings it reads. The links into it and out of it also list the moves written in `moves` as 「설정에 적은 이동」 with their
 reason. The links out of it that have `layout`, such as those of a menu drawn around the route, are folded below the
-others under 「공통 N」 and stay open or folded on other screens until toggled. Once opened 「화면 정보」 stays open on
+others under 「공통 N」, and so are the links into it that a menu named in `routeTables` gives for its table item; each
+stays open or folded on other screens until toggled. Once opened 「화면 정보」 stays open on
 other screens until it is closed. Choosing a call, by its name or a count in
 the table or from a link elsewhere, opens its details under the call table and scrolls the middle pane to them: where
 its option was found, the server match, its tests, untagged tests linked to it, where this screen calls it and the
