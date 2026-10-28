@@ -140,6 +140,19 @@
                   ]
                 }
               ]
+            },
+            {
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "expectedStatus": "passed",
+              "status": "expected",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": []
+                }
+              ]
             }
           ],
           "file": "steps.spec.ts",

@@ -757,7 +757,7 @@ test('tests that passed through a screen leave the tests of the screens, the unt
 
 test('a trace that cannot be read is noticed with its file and the reason, and a browser test that ran without a trace is only counted', () => {
   assert.deepEqual(tracedLinks.traceNotices, [
-    { file: 'results/playwright-traced/test-results/no-snapshots-presses-the-button-without-snapshots-chromium/trace.zip', test: { title: 'presses the button without snapshots', file: 'no-snapshots.spec.ts', line: 5 }, reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' },
+    { file: 'results/playwright-traced/test-results/no-snapshots-presses-the-button-without-snapshots-chromium/trace.zip', test: { title: 'presses the button without snapshots', file: 'no-snapshots.spec.ts', line: 5, source: 'results/playwright-traced/visits.json', project: 'chromium' }, reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' },
   ]);
   const untraced = (l: Links) => l.untracedCount;
   assert.equal(untraced(tracedLinks) - untraced(links), 1);
@@ -845,4 +845,10 @@ test('a test without a trace, with a trace that cannot be read or that was skipp
     assert.equal(stepsOf(`${title} @screen:/home#Home`)[0].steps, undefined, title);
   }
   assert.deepEqual(stepLinks.traceNotices.map((n) => n.test.title), ['opens home without snapshots @screen:/home#Home']);
+});
+
+test('a trace that cannot be read is noticed for its own run, named by its result file and project', () => {
+  const runs = stepsOf('opens home without snapshots @screen:/home#Home');
+  assert.deepEqual(runs.map((t) => t.project), ['chromium', 'firefox']);
+  assert.deepEqual(stepLinks.traceNotices.map((n) => n.test), [{ title: 'opens home without snapshots @screen:/home#Home', file: 'steps.spec.ts', line: 19, source: runs[0].source, project: 'chromium' }]);
 });

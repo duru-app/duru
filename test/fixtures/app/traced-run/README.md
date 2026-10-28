@@ -16,4 +16,5 @@ the same calls and put the zip there.
 `../results/playwright-steps/report.json` is written by hand, not by Playwright. Its tests point at copies of traces
 from this folder and of `../traces/inputs.zip`, put under `test-results/` with the folder names the report gives, and
 are tagged with the home screen so the review page lists them there. One test runs in two projects with different
-traces, one runs without a trace, one has a trace recorded without snapshots and one is skipped.
+traces, one runs without a trace, one has a trace recorded without snapshots in one project and runs without a trace in
+another, and one is skipped.

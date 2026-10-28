@@ -8,7 +8,7 @@ const stepsRuns = (t) => (t.steps ? state.data.testSteps?.[t.steps] : undefined)
 
 function noStepsText(t) {
   if (t.status === 'pending') return '이 테스트는 건너뛰어 돌지 않았으므로 한 일이 없습니다.';
-  const notice = (state.data.tests.traceNotices ?? []).find((n) => n.test.title === t.title && n.test.file === t.file && n.test.line === t.line);
+  const notice = traceNoticeOf(t);
   if (notice) return `이 테스트의 trace 파일을 읽지 못해 한 일을 알 수 없습니다. ${notice.reason}.`;
   if (t.unmatched !== undefined || t.level) return '이 tests.json 에는 테스트가 한 일이 적혀 있지 않습니다. duru rebuild 를 다시 실행하세요.';
   return '이 테스트는 trace 파일 없이 돌아 한 일을 알 수 없습니다. Playwright 의 trace 옵션을 켜고 다시 돌리면 보입니다.';

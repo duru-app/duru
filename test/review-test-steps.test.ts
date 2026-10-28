@@ -119,15 +119,16 @@ test('in a browser, the steps of a test that only sent a call can be opened from
   });
 });
 
-test('in a browser, a browser test without a trace, with a trace that could not be read or that was skipped says why it has no steps, and a test of another kind has no 「단계」', { skip: browserMissing }, async () => {
+test('in a browser, a browser test without a trace, with a trace that could not be read or that was skipped says why it has no steps, each run for itself, and a test of another kind has no 「단계」', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
-    const why = async (title: string) => {
-      const row = testLine(p, title);
+    const why = async (title: string, run = 0) => {
+      const row = testLine(p, title).nth(run);
       await row.locator('.steps-toggle').click();
       return foldOf(row).textContent();
     };
     assert.equal(await why('opens home without a trace'), '이 테스트는 trace 파일 없이 돌아 한 일을 알 수 없습니다. Playwright 의 trace 옵션을 켜고 다시 돌리면 보입니다.');
     assert.equal(await why('opens home without snapshots'), '이 테스트의 trace 파일을 읽지 못해 한 일을 알 수 없습니다. trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다.');
+    assert.equal(await why('opens home without snapshots', 1), '이 테스트는 trace 파일 없이 돌아 한 일을 알 수 없습니다. Playwright 의 trace 옵션을 켜고 다시 돌리면 보입니다.');
     assert.equal(await why('skips home'), '이 테스트는 건너뛰어 돌지 않았으므로 한 일이 없습니다.');
     const others = p.locator('#center .part-row', { has: p.locator('.test .depth, .test', { hasNotText: '.spec.' }) });
     assert.ok(await others.count() > 0);

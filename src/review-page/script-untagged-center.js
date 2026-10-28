@@ -47,7 +47,7 @@ function pairItem({ id, entry, label, cls, noteLabel }) {
 function noScreensText(t) {
   if (t.format === 'playwright') {
     if (t.unmatched) return '이 테스트는 도는 동안 맵에 있는 화면을 열지도, 맵에 있는 호출을 보내지도 않았습니다.';
-    const notice = (state.data.tests.traceNotices ?? []).find((n) => n.test.title === t.title && n.test.file === t.file && n.test.line === t.line);
+    const notice = traceNoticeOf(t);
     if (notice) return `이 테스트의 trace 파일을 읽지 못해, 어느 화면을 열고 어느 호출을 보냈는지 알 수 없습니다. ${notice.reason}.`;
     if (t.status === 'pending') return '이 테스트는 건너뛰어 돌지 않았으므로, 어느 화면을 열고 어느 호출을 보내는지 알 수 없습니다.';
     return '이 테스트는 trace 파일 없이 돌아, 어느 화면을 열고 어느 호출을 보냈는지 알 수 없습니다. Playwright 의 trace 옵션을 켜고 다시 돌리면 보입니다.';

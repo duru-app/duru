@@ -149,7 +149,7 @@ export function linkTests(config: any, map: any) {
         const steps = stepsKey ? { steps: stepsKey } : {};
         if (trace) {
           const traced = { title: t.title, tags: t.tags, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status, ...steps };
-          if (trace.reason) traceNotices.push({ file: shownPath(t.trace), test: { title: t.title, file: t.file, line: t.line }, reason: trace.reason });
+          if (trace.reason) traceNotices.push({ file: shownPath(t.trace), test: { title: t.title, file: t.file, line: t.line, source: resultPath, project: t.project }, reason: trace.reason });
           else if (passedOrder) screenOrders.push({ report: resultPath.split(path.sep).join('/'), title: t.title, file: t.file, line: t.line, screens: passedOrder, ...(trace.inputs!.some((i) => i.length) && { inputs: trace.inputs! }), ...(trace.skipped! > 0 && { skipped: trace.skipped! }) });
           for (const [id, level] of trace.screens ?? []) {
             if (t.tags.includes(`screen:${id}`)) continue;
