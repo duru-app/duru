@@ -814,3 +814,44 @@ test('in a browser, the output depth row comes after the other depths and takes 
     ),
   );
 });
+
+const LAYOUT_REQUESTS: [string, string, string][] = [
+  ['client/src/components/Layout.js', "import SideMenu from './SideMenu';", "import { useEffect } from 'react';\nimport { ajaxDocumentList, ajaxMemberList } from '../_ajax/AjaxFunc';\nimport SideMenu from './SideMenu';"],
+  ['client/src/components/Layout.js', '  return (', '  useEffect(() => {\n    ajaxDocumentList();\n    ajaxMemberList({ page: 1 });\n  }, []);\n  return ('],
+  ['client/src/Routes.js', "import Layout from './components/Layout';", "import Layout from './components/Layout';\nimport { ajaxLabExperiment } from './_ajax/AjaxFunc';\n\nexport function AppStart({ children }) {\n  ajaxLabExperiment();\n  return children;\n}"],
+];
+const commonRows = (p: Page) => p.locator('#center details.common-calls table.calls button.call-name').allTextContents();
+const ownRows = (p: Page) => p.locator('#center-body > table.calls button.call-name').allTextContents();
+
+test('in a browser, a screen lists the calls its own code sends on top and folds the calls of the layout around it and of the app start under 「공통」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ appWideComponents: [{ import: './Routes', name: 'AppStart' }] }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:tab")');
+        const common = p.locator('#center details.common-calls');
+        assert.equal(await common.getAttribute('open'), null);
+        assert.equal(await common.locator('summary').innerText(), '공통 3');
+        assert.equal(await common.locator('summary').getAttribute('title'), '앱 시작과 레이아웃이 보내는 요청');
+        assert.equal(await common.locator('summary').getAttribute('aria-label'), '앱 시작과 레이아웃이 보내는 요청 3');
+        assert.deepEqual(await ownRows(p), ['POST:/api/v1/archive/document']);
+        await common.locator('summary').click();
+        assert.deepEqual(await commonRows(p), ['GET:/api/v1/document/list', 'GET:/api/v1/member/list', 'GET:/api/v1/lab/experiment']);
+
+        await p.click('#screen-list li:has-text("/home")');
+        assert.equal(await common.getAttribute('open'), '');
+        assert.deepEqual(await ownRows(p), ['GET:/api/v1/document/list', 'POST:/api/v1/archive/document']);
+        assert.deepEqual(await commonRows(p), ['GET:/api/v1/member/list', 'GET:/api/v1/lab/experiment']);
+
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await p.locator('#center-body > h2:text-is("API 호출") + p').innerText(), '이 화면만 부르는 API 호출이 없습니다.');
+        assert.deepEqual(await commonRows(p), ['GET:/api/v1/lab/experiment']);
+        await common.locator('button.call-name').click();
+        const routesLine = fs.readFileSync(path.join(config.srcRoot, 'Routes.js'), 'utf8').split('\n').findIndex((l) => l.includes('ajaxLabExperiment();')) + 1;
+        const info = p.locator('#center .call-info');
+        assert.deepEqual(await info.locator('h2').allTextContents().then((hs) => hs.filter((t) => t.includes('부르는 곳'))), ['이 화면에서 부르는 곳', '앱 시작 때 부르는 곳']);
+        assert.equal(await info.locator('h2:text-is("앱 시작 때 부르는 곳") + ul li').innerText(), `ajaxLabExperiment Routes.js:${routesLine}`);
+      }),
+    ),
+  LAYOUT_REQUESTS);
+});

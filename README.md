@@ -108,6 +108,13 @@ client with example results and a config to start from.
   `import` that names no file under `srcRoot` or a `name` that file does not export stops the run with an error
   naming the key. Without it, a file that makes a history with `createBrowserHistory` or `createHashHistory` gets a
   `history is not set` line (see "What extract and rebuild print").
+- `appWideComponents` — components drawn around all the routes, such as a provider in the app's entry file or the
+  component of the routes file itself (optional): `[{ "import": "providers/App/App", "name": "AppProvider" }]`.
+  `import` and `name` are read as in `history`, with `default` for a default export, and a key of another shape, an
+  `import` that names no file under `srcRoot` or a `name` that file does not export stops the run with an error
+  naming the key. The requests each one's code reaches are sent once for the whole app, and go under `appWide` on the
+  map, not on a screen; duru does not go into the screens, route files, and components around or beside routes it
+  draws (see "The map").
 - `linkComponents` — link components whose source duru does not read, such as a design system package's `Link`
   (optional): `[{ "import": "@appsmith/ads", "name": "Link" }]`. Where one is used, its `to` is a link, except an
   address of another site or a file opened in a new tab.
@@ -429,6 +436,12 @@ routes and the element it shares with them guards what it gives: it is listed un
 component as `via`, and the line and `file` of the place it is drawn. A condition around the routes, or around a
 component drawn around them, is the condition of those routes (`routeGuards`) on the screens of that file and is not
 carried to the screens of a route file drawn inside them.
+A call a screen gets only through such a component, and not through the screen's own component, has
+`"layout": true`; it stays among the screen's calls.
+
+**Whole app.** With `appWideComponents` set, the map has `appWide`: the `components`, each with the `file` its `import`
+names, their `sourceFiles`, and the `apiCalls` their code reaches, written as a screen's are. Those calls are under `calls`
+with the screens that send them too, often none.
 
 **Links.** A screen's links come from the route constants written in its code, the `to` of react-router's `Link`,
 `NavLink`, `Redirect` and `Navigate` outside the route files, the addresses given to `push` and `replace` of a
@@ -545,13 +558,16 @@ listing the places whose value the source does not show in full.
   each item of a table, ` (table item <key> at <file>:<line>)` follows its place. The first three addresses are
   shown and the map lists them all (`addressesUnderRoutes`). The page that route draws opens at each of
   them, but the map has no screen for each, so no test can be tagged with one.
+- `requests sent for the whole app N | from <name> (<file>), …` — the number of calls the components named in
+  `appWideComponents` send, and those components (`appWide`).
 - `N calls reach no screen: N unused by app code (<call IDs>, …), N other (<call IDs>, …)` — calls of API functions that
-  no screen sends; the map lists them all (`callsOnNoScreen`). `unused by app code`: no source outside `apiModules`,
-  `calledApiModules` and the files they re-export API functions from uses the API functions that make the call, either
-  directly or through other API functions. This is usually generated API code the app does not use, and needs nothing.
-  `other`: some app source uses them, yet no screen's sources send the call. Look at these: the use may be code that
-  runs for the whole app, a page no route draws, a branch the fake values do not take, or a use duru does not read as a
-  call. The first three of each part are shown, and a part with none is left out.
+  no screen and no component in `appWideComponents` sends; the map lists them all (`callsOnNoScreen`).
+  `unused by app code`: no source outside `apiModules`, `calledApiModules` and the files they re-export API functions
+  from uses the API functions that make the call, either directly or through other API functions. This is usually
+  generated API code the app does not use, and needs nothing. `other`: some app source uses them, yet no screen's sources send the call.
+  Look at these: the use may be code that runs for the whole app (name its component in `appWideComponents`), a page
+  no route draws, a branch the fake values do not take, or a use duru does not read as a call. The first three of each
+  part are shown, and a part with none is left out.
 - `linkComponents <import> <name> is used nowhere in the screen sources` — an entry of `linkComponents`
   (`linkFunctions` likewise) that no element or call in a screen's sources uses, often a misspelt package or name
   (`unusedLinkEntries`).
@@ -1028,7 +1044,10 @@ corner makes it taller or shorter, and the app
 gets the height shown divided by the percent. The width and percent picked stay, in both views, until the page is
 reloaded. Below come the
 screen's tests by depth and its API calls, with
-a row per option value. A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
+a row per option value. The table holds the calls the screen's own code sends; the calls it gets only from a component
+around or beside its route (`layout`) and those of `appWide` are folded below it under 「공통 N」, with the same
+columns, and stay open or folded on other screens until toggled. Choosing such a call shows, after where this screen
+calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
 name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
 screen, links out of it and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
 the screen, then shows the tests of each role and setting case by depth under 「관점별 테스트」, the links into it

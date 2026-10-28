@@ -89,10 +89,9 @@ function verdictChip(server) {
   return h('span', { class: `chip v-${server.status}`, title: server.candidates ? `서버에는 ${server.candidates.join(' / ')}` : null }, serverText(server));
 }
 
-function callRows(s) {
+function callRows(apiCalls, seen = new Set()) {
   const rows = [];
-  const seen = new Set();
-  for (const c of s.apiCalls) {
+  for (const c of apiCalls) {
     const site = `${c.fn} · ${c.file}:${c.line}`;
     if (!c.endpoints) {
       rows.push({ site, problem: 'API 함수를 찾지 못함' });
@@ -196,37 +195,59 @@ function removedCallRows(s, depths) {
     h('td', { class: 'compare' }, h('span', { class: 'chip change-removed' }, '없어짐'))));
 }
 
+function screenCallRows(s) {
+  const seen = new Set();
+  const own = callRows(s.apiCalls.filter((c) => !c.layout), seen);
+  const common = callRows([...s.apiCalls.filter((c) => c.layout), ...(state.data.map.appWide?.apiCalls ?? [])], seen);
+  return { own, common };
+}
+
+function callTableBody(s, rows, depths, extra = []) {
+  const compared = compareLabel();
+  return h('table', { class: 'calls' },
+    h('thead', {}, h('tr', {}, h('th', {}, '호출'), h('th', {}, '전체'), depths.map((d) => h('th', {}, DEPTH_LABELS[d])), compared ? h('th', {}, `${compared} 와 비교`) : null)),
+    h('tbody', {}, rows.flatMap((r) => {
+      if (!r.call) {
+        return h('tr', {},
+          h('td', { class: 'call' }, h('div', { class: 'mono' }, r.problem), r.server ? verdictChip(r.server) : null,
+            r.server?.status === 'unresolved' ? h('span', { class: 'unresolved-reason' }, UNRESOLVED_REASON[r.server.reason]) : null,
+            h('div', { class: 'muted mono' }, r.site)),
+          h('td', { class: 'muted', colspan: depths.length + 1 }, '호출 노드가 없어 테스트를 붙이거나 코멘트를 남길 수 없습니다'),
+          compareGap());
+      }
+      const tests = testsOf(r.call.id);
+      const sent = passedOf(r.call.id).length;
+      return [h('tr', {},
+        h('td', { class: 'call pick', onclick: () => pickCall(r.call.id) },
+          h('div', { class: 'mono' }, h('button', { type: 'button', class: 'call-name', title: '이 호출을 고르고 호출 정보를 엽니다' }, r.call.id)), verdictChip(r.call.server),
+          sent ? h('span', { class: 'sent-count', title: '이 호출의 태그 없이, 도는 동안 이 호출을 보낸 브라우저 테스트' }, `호출함 ${sent}`) : null),
+        cell({ node: r.call.id }, tests),
+        depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d))),
+        compared ? callCompareCell(s, r.call.id) : null),
+        ...optionRows(s, r.call, depths),
+        ...resultOptionRows(r.call, depths)];
+    }), extra));
+}
+
+const COMMON_TITLE = '앱 시작과 레이아웃이 보내는 요청';
+
+function commonCalls(s, rows, depths) {
+  if (!rows.length) return null;
+  return h('details', { class: 'common-calls', open: state.commonCallsOpen, ontoggle: (e) => { state.commonCallsOpen = e.currentTarget.open; } },
+    h('summary', { title: COMMON_TITLE, 'aria-label': `${COMMON_TITLE} ${rows.length}` }, `공통 ${rows.length}`),
+    callTableBody(s, rows, depths));
+}
+
 function callTable(s) {
-  const rows = callRows(s);
+  const { own, common } = screenCallRows(s);
   const depths = state.data.depths;
   const removed = removedCallRows(s, depths);
-  if (!rows.length && !removed.length) return [h('h2', {}, 'API 호출'), h('p', { class: 'muted' }, '부르는 API 호출이 없습니다.')];
-  const compared = compareLabel();
+  const shared = commonCalls(s, common, depths);
+  if (!own.length && !removed.length) return [h('h2', {}, 'API 호출'), h('p', { class: 'muted' }, shared ? '이 화면만 부르는 API 호출이 없습니다.' : '부르는 API 호출이 없습니다.'), shared];
   return [
-    h('h2', {}, `API 호출 ${rows.length}`, listAbsentNote('서버 목록 없음')),
-    h('table', { class: 'calls' },
-      h('thead', {}, h('tr', {}, h('th', {}, '호출'), h('th', {}, '전체'), depths.map((d) => h('th', {}, DEPTH_LABELS[d])), compared ? h('th', {}, `${compared} 와 비교`) : null)),
-      h('tbody', {}, rows.flatMap((r) => {
-        if (!r.call) {
-          return h('tr', {},
-            h('td', { class: 'call' }, h('div', { class: 'mono' }, r.problem), r.server ? verdictChip(r.server) : null,
-              r.server?.status === 'unresolved' ? h('span', { class: 'unresolved-reason' }, UNRESOLVED_REASON[r.server.reason]) : null,
-              h('div', { class: 'muted mono' }, r.site)),
-            h('td', { class: 'muted', colspan: depths.length + 1 }, '호출 노드가 없어 테스트를 붙이거나 코멘트를 남길 수 없습니다'),
-            compareGap());
-        }
-        const tests = testsOf(r.call.id);
-        const sent = passedOf(r.call.id).length;
-        return [h('tr', {},
-          h('td', { class: 'call pick', onclick: () => pickCall(r.call.id) },
-            h('div', { class: 'mono' }, h('button', { type: 'button', class: 'call-name', title: '이 호출을 고르고 호출 정보를 엽니다' }, r.call.id)), verdictChip(r.call.server),
-            sent ? h('span', { class: 'sent-count', title: '이 호출의 태그 없이, 도는 동안 이 호출을 보낸 브라우저 테스트' }, `호출함 ${sent}`) : null),
-          cell({ node: r.call.id }, tests),
-          depths.map((d) => cell({ node: r.call.id, depth: d }, tests.filter((t) => t.depth === d))),
-          compared ? callCompareCell(s, r.call.id) : null),
-          ...optionRows(s, r.call, depths),
-          ...resultOptionRows(r.call, depths)];
-      }), removed)),
+    h('h2', {}, `API 호출 ${own.length}`, listAbsentNote('서버 목록 없음')),
+    callTableBody(s, own, depths, removed),
+    shared,
   ];
 }
 

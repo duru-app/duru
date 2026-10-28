@@ -300,7 +300,7 @@ if (command === 'tasks') {
   const count = (st: string) => allEndpoints.filter((e) => e.server.status === st).length;
   console.log(`screens ${map.screens.length} | api functions ${Object.keys(map.apiFunctions).length} | endpoints match ${count('match')} method-mismatch ${count('method-mismatch')} none ${count('none')} unresolved ${count('unresolved')}${map.serverNotCompared ? ` unchecked ${count('unchecked')}` : ''}`);
   if (map.serverNotCompared) console.log(`  ${SERVER_NOT_COMPARED}`);
-  for (const r of unreadSites(map.screens, false)) console.log(`  api call ${r.fn} ← ${r.file}:${r.line}: ${unreadText(r)}`);
+  for (const r of unreadSites([...map.screens, ...(map.appWide ? [map.appWide] : [])], false)) console.log(`  api call ${r.fn} ← ${r.file}:${r.line}: ${unreadText(r)}`);
   for (const m of map.unrunApiModules ?? []) console.log(`  calledApiModules ${m.file} did not run: ${m.error}`);
   for (const f of map.silentApiModules ?? []) console.log(`  calledApiModules ${f} recorded no request; without requestFunction only requests sent with fetch or by moving the browser are recorded`);
   const direct = new Map<string, any>(map.screens.flatMap((s: any) => s.apiCalls.filter((c: any) => c.direct).map((c: any) => [`${c.file}\n${c.line}\n${c.fn}\n${c.endpoints[0].method} ${c.endpoints[0].url}`, c])));
@@ -327,6 +327,10 @@ if (command === 'tasks') {
   for (const [name, fn] of Object.entries<any>(map.apiFunctions)) if (fn.error && !fn.endpoints.length) console.log(`  api method ${name} ← ${fn.file ?? '?'}${fn.line ? `:${fn.line}` : ''}: ${fn.error}`);
   console.log(`dead calls reachable from screens: ${map.deadCalls.length}`);
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s: any) => s.dead).length}`);
+  if (map.appWide) {
+    const sent = new Set(map.appWide.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean));
+    console.log(`requests sent for the whole app ${sent.size} | from ${map.appWide.components.map((c) => `${c.name} (${c.file})`).join(', ')}`);
+  }
   if (map.callsOnNoScreen) {
     const { unused, other } = map.callsOnNoScreen;
     const total = unused.length + other.length;

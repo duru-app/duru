@@ -59,9 +59,11 @@ interface ApiFunctions {
   [name: string]: ApiFunction;
 }
 
+type MapApiCall = Omit<ClientScreen['apiCalls'][number], 'request' | 'navigation'> & { direct?: true; endpoints: Endpoint[] | null };
+
 export type MapScreen = Omit<ClientScreen, 'apiCalls' | 'links'> & {
   id: string;
-  apiCalls: (Omit<ClientScreen['apiCalls'][number], 'request' | 'navigation'> & { direct?: true; endpoints: Endpoint[] | null })[];
+  apiCalls: MapApiCall[];
   links: (Omit<ClientScreen['links'][number], 'reaches'> & { targets: string[]; conditions: Access['linkConditions'][number][number] })[];
   access: Access['access'][number];
   dead: boolean;
@@ -100,6 +102,7 @@ export interface MapCall {
 export type ScreenMap = {
   meta: { generatedAt: string; srcRoot: string; clientRef: string | null; serverRef: string | null } & Partial<CodeState>;
   screens: MapScreen[];
+  appWide?: Omit<NonNullable<Client['appWide']>, 'apiCalls'> & { apiCalls: MapApiCall[] };
   apiFunctions: ApiFunctions;
   unrunApiModules?: NonNullable<Client['unrunApiModules']>;
   outsideStandIns?: Client['outsideStandIns'];
@@ -140,10 +143,10 @@ const TAG_FORBIDDEN = /[\s,()&|!]+/g;
 type UnreadSite = { fn: string; file: string | null; line: number; url: string | null; reason: UnresolvedReason };
 
 // 다른 호스트로 가는 주소는 일부만 읽었어도 읽은 것으로 센다.
-export const readsAnAddress = (screens: MapScreen[]) =>
+export const readsAnAddress = (screens: { apiCalls: MapApiCall[] }[]) =>
   screens.some((s) => s.apiCalls.some((c) => (c.endpoints ?? []).some((e) => e.server.status !== 'unresolved' || e.server.reason === 'other-host')));
 
-export function unreadSites(screens: MapScreen[], direct: boolean): UnreadSite[] {
+export function unreadSites(screens: { apiCalls: MapApiCall[] }[], direct: boolean): UnreadSite[] {
   const unread = new Map<string, UnreadSite>();
   for (const s of screens) {
     for (const c of s.apiCalls) {
@@ -201,7 +204,7 @@ function configuredCallLinks(calls: { id: string }[], callLinks: CallLink[]) {
 const bySite = (a: OptionSite, b: OptionSite) => compare(a.screen, b.screen) || compare(a.file, b.file) || a.line - b.line;
 const OPTION_SOURCES = ['source', 'type', 'config'];
 
-function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: string, bodyOptions: Record<string, string[]>, bodyTypeExclusions: Record<string, string[]>) {
+function buildCalls(apiFunctions: ApiFunctions, screens: any[], appWideCalls: MapApiCall[], apiPathPrefix: string, bodyOptions: Record<string, string[]>, bodyTypeExclusions: Record<string, string[]>) {
   const calls = new Map<string, any>();
   const typeFields = new Map<string, Set<string>>();
   const nodeOf = (e: Endpoint) => {
@@ -223,7 +226,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
       for (const key of e.bodyOptions ?? []) typeFields.get(node.id)!.add(key);
     }
   }
-  for (const s of screens) for (const c of s.apiCalls) if (c.direct) c.endpoints.forEach(nodeOf);
+  for (const c of [...screens.flatMap((s) => s.apiCalls), ...appWideCalls]) if (c.direct) c.endpoints!.forEach(nodeOf);
   const optionOf = (node: any, key: string): CallOption => {
     if (!node.options.has(key)) node.options.set(key, { sources: new Set(), sites: new Map() });
     return node.options.get(key);
@@ -272,7 +275,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], apiPathPrefix: s
 }
 
 export async function buildMap(config: MapConfig): Promise<ScreenMap> {
-  const { screens, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder, framesPickingByAddress } = await extractClient(config);
+  const { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules, outsideStandIns, silentApiModules, bodyTypeNotices, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports, unusedListed, madeHistories, emptyRouteFiles, takingAddressesUnder, framesPickingByAddress } = await extractClient(config);
   const server = config.serverEndpoints.flatMap(loadServerEndpoints);
   const apiPathPrefix = config.apiPathPrefix ?? '/';
 
@@ -287,19 +290,17 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   // 서버 목록은 apiPathPrefix 를 뗀 경로라, 그 접두사 없이 적힌 주소가 목록과 맞는 것은 같은 경로가 아니다.
   const listed = (e: { url: string | null; server: EndpointMatch }) => ['match', 'method-mismatch'].includes(e.server.status) && e.url!.startsWith(apiPathPrefix);
   const goesToServer = (e: { url: string | null; server: EndpointMatch }) => listed(e) || (config.app?.apiPaths ?? []).some((prefix) => e.url!.startsWith(prefix));
-  const mapped: any[] = screens.map((s) => ({
-    id: screenId(s.path, s.component),
-    ...s,
-    apiCalls: s.apiCalls.flatMap(({ request, navigation, ...c }) => {
-      if (!request) return [{ ...c, endpoints: apiFunctions[c.fn]?.endpoints ?? null }];
-      const { unresolved, ...sent } = request;
-      const e = { ...sent, line: c.line, server: unresolved ? { status: 'unresolved' as const, reason: unresolved } : matchEndpoint(server, sent.method, sent.url, apiPathPrefix), callId: null as string | null };
-      if (navigation && sent.method !== 'POST' && !goesToServer(e)) return [];
-      e.callId = callOf(e, apiPathPrefix)?.id ?? null;
-      return [{ ...c, direct: true, endpoints: [e] }];
-    }),
-  }));
-  const unreadRequests = unreadSites(mapped, true);
+  const withEndpoints = (apiCalls: ClientScreen['apiCalls']): MapApiCall[] => apiCalls.flatMap(({ request, navigation, ...c }) => {
+    if (!request) return [{ ...c, endpoints: apiFunctions[c.fn]?.endpoints ?? null }];
+    const { unresolved, ...sent } = request;
+    const e = { ...sent, line: c.line, server: unresolved ? { status: 'unresolved' as const, reason: unresolved } : matchEndpoint(server, sent.method, sent.url, apiPathPrefix), callId: null as string | null };
+    if (navigation && sent.method !== 'POST' && !goesToServer(e)) return [];
+    e.callId = callOf(e, apiPathPrefix)?.id ?? null;
+    return [{ ...c, direct: true as const, endpoints: [e] }];
+  });
+  const mapped: any[] = screens.map((s) => ({ id: screenId(s.path, s.component), ...s, apiCalls: withEndpoints(s.apiCalls) }));
+  const appWideMapped = appWide && { ...appWide, apiCalls: withEndpoints(appWide.apiCalls) };
+  const unreadRequests = unreadSites([...mapped, ...(appWideMapped ? [appWideMapped] : [])], true);
   const { access, entries, unknownEntryPaths, unknownRoleGuards, openRouteGuards, unreadRoleGuards, linkConditions, linkScreens } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
   mapped.forEach((s, i) => {
     s.access = access[i];
@@ -324,22 +325,24 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   }
 
   const bodyTypeExclusions = config.bodyTypeExclusions ?? {};
-  const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
+  const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, appWideMapped?.apiCalls ?? [], apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
 
   const unreferenced = new Set(unreferencedApiFunctions);
-  const noScreen = calls.filter((c) => !c.screens.length);
+  const sentForApp = new Set((appWideMapped?.apiCalls ?? []).flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)));
+  const noScreen = calls.filter((c) => !c.screens.length && !sentForApp.has(c.id));
   const unusedCall = (c: MapCall) => c.apiFunctions.length > 0 && c.apiFunctions.every((name) => unreferenced.has(name));
   const callsOnNoScreen = { unused: noScreen.filter(unusedCall).map((c) => c.id), other: noScreen.filter((c) => !unusedCall(c)).map((c) => c.id) };
 
   const hash = codeHasher(config.srcRoot);
   for (const s of mapped) s.codeHash = hash(s.sourceFiles ?? []);
   const requestFiles = new Map<string, (string | null)[]>(calls.map((c) => [c.id, c.apiFunctions.map((name: string) => apiFunctions[name]?.file ?? null)]));
-  for (const s of mapped) for (const c of s.apiCalls) if (c.direct) for (const e of c.endpoints) if (e.callId) requestFiles.get(e.callId)?.push(c.file);
+  for (const c of [...mapped.flatMap((s) => s.apiCalls), ...(appWideMapped?.apiCalls ?? [])]) if (c.direct) for (const e of c.endpoints) if (e.callId) requestFiles.get(e.callId)?.push(c.file);
   for (const c of calls) c.codeHash = hash(requestFiles.get(c.id)!);
 
   return {
     meta: { generatedAt: new Date().toISOString(), srcRoot: config.srcRoot, clientRef: config.clientRef ?? null, serverRef: config.serverRef ?? null, ...codeState(config.srcRoot, [...(config.outDir ? [config.outDir, ...['map.json', 'tests.json'].map((name) => path.join(config.outDir!, name))] : []), config.marksDir, config.judgmentsDir, config.storiesDir].filter((p): p is string => typeof p === 'string')) },
     screens: mapped,
+    ...(appWideMapped && { appWide: appWideMapped }),
     apiFunctions,
     ...(unrunApiModules && { unrunApiModules }),
     ...(outsideStandIns.length && { outsideStandIns }),
