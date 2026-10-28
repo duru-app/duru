@@ -416,6 +416,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    its title names that role, since the tag does not; `@setting:<path>=true` meets that setting condition and
    checks the screen opens, `=false` breaks it and checks the screen stays shut. A tag that is not one of the
    screen's cases does not attach and `rebuild` prints it as `unknown`.
+   Under the screen's `- access:` line, and under the first screen of a story, each link into the screen is a
+   `link from <screen> at <file>:<line>` line with its guard. The links a menu named in `routeTables` gives for the
+   screen's table item are one `menu link at <file>:<line> from N screens` line instead: that one element draws them
+   on the N screens that hold the menu, so a test can reach the screen through the menu from any of them.
    A screen or call can also list under `cases` a kind of case a reviewer, or a rule in the config's `caseKinds`
    `picks`, picked for it, written `@case:<kind>`
    followed by what to test; a test of it carries that tag next to `@screen:` or `@call:` and checks what the

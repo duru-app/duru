@@ -665,7 +665,7 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
     if (blocking(r.guards, r.file).length) continue;
     for (const i of targetsOf(r.to)) reasons[i].push({ kind: 'redirect', file: r.file, line: r.line });
   }
-  for (const i of indices) if (incoming[i].length === 0) reasons[i].push({ kind: 'no-incoming-link' });
+  for (const i of indices) if (incoming[i].every((l) => l.tableItem)) reasons[i].push({ kind: 'no-incoming-link' });
   const unknownEntryPaths: string[] = [];
   for (const p of config.entryPaths) {
     const found = targetsOf(p);

@@ -207,13 +207,21 @@ const kindsText = (kinds: string[]) => kinds.map((k) => KIND_NAMES[k]).join(' an
 
 const needsText = (kinds: string[]) => (kinds.length ? `needs ${kindsText(kinds)}` : `${MIXED_KINDS}, see each link below`);
 
+const guardsText = (l: any) => (l.guards.length ? `guard ${l.guards.map(guardText).join('; ')}` : 'no guard');
+
 function linkInLines(links: any[], restricted: Set<string>) {
-  return links.map((l: any) => {
+  const lines = links.filter((l: any) => !l.tableItem).map((l: any) => {
     const from = `  - link from ${l.from} at ${l.file}:${l.line}`;
-    const guards = l.guards.length ? `guard ${l.guards.map(guardText).join('; ')}` : 'no guard';
     const fromNeeds = l.fromKinds.length ? ` — ${l.from} itself needs ${kindsText(l.fromKinds)}` : restricted.has(l.from) ? ` — ${l.from} itself ${MIXED_KINDS}` : '';
-    return `${from}, ${guards}${fromNeeds}`;
+    return `${from}, ${guardsText(l)}${fromNeeds}`;
   });
+  const menus = new Map<string, any[]>();
+  for (const l of links.filter((x: any) => x.tableItem)) menus.set(`${l.file}:${l.line}`, [...(menus.get(`${l.file}:${l.line}`) ?? []), l]);
+  for (const [at, rows] of menus) {
+    const guards = [...new Set(rows.map(guardsText))];
+    lines.push(`  - menu link at ${at} from ${rows.length} screens, ${guards.length === 1 ? guards[0] : 'guards differ by screen'}`);
+  }
+  return lines;
 }
 
 function accessLines(access: any, restricted: Set<string>) {

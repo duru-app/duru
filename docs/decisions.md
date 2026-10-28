@@ -3241,6 +3241,9 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
 - The element is drawn in a `map`, `flatMap` or `forEach` and takes the field in an attribute other than `key`. The
   address it writes around the field is not read. Without `menus` nothing changes. A menu file that is not there, has
   no such element or has two stops the run with the entry, as the other `routeTables` errors do.
+- When such elements hold one another, as an `<li>` marking the open entry (`className={pathname === item.url ? 'active'
+  : ''}`, `data-testid={item.url}`) holds the `<NavLink to={item.url}>`, the innermost is the menu element. Only two that
+  do not hold each other stop the run.
 - The table const is the top-level one of its name, or, when there is none, the only const of that name inside a
   function that holds an object or a list (outline's `items` inside `useComputed` in `useSettingsConfig`). A const of
   that name holding something else, as a `for (const items of lists)` variable does, is passed over. Two that hold an
@@ -3261,15 +3264,18 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
 - The links into a screen keep the `tableItem` of a menu's link. 「들어오는 링크」 folds those under 「공통 N」
   (「메뉴가 거는 링크」) below the screen's other links into it. The incoming fold takes only the menu's item links, not every
   link drawn by a layout, so its title names the menu alone.
-- The flow view leaves out the links that carry `tableItem`: they are neither tree edges nor jumps, and a screen only
-  such links come into is drawn at the top as an entry screen is. Before this, mattermost's menu made one admin screen
-  (`…/edit_policy/:policy_id`) the parent of 99 other admin screens, and picking any of 112 screens marked 50 or more
-  jumps (median 111). With the rule, mattermost's flow with `menus` equals the flow of #461's branch (728cf04) without
-  them: the same 92 roots in the same order, 6 trees no entry screen reaches, the same parent for each of the 181
-  screens and the same 2,776 jumps. The flows of appsmith, both into-sign maps and both SigNoz maps are unchanged.
-  outline's differ only where its screens do: the `{?}` screen gives way to the 18 settings screens, 15 of them drawn at
-  the top, `/settings/applications` among the trees no entry screen reaches, `/settings/templates/:id` under
-  `/settings/templates`. Among the jumps, three settings scenes (`/settings/groups/:id/members`,
+- A screen whose only links in carry `tableItem` is still an entry screen: the map does not count those links when it
+  decides `entries`, and the flow view leaves them out, as neither tree edges nor jumps. The task list writes them as
+  one `menu link at <file>:<line> from N screens` line for each menu element, in place of a line for each screen that
+  holds the menu (11,200 lines in mattermost, 882 in outline, if every screen were listed; 100 and 18 lines grouped).
+  Before this, mattermost's menu made one admin screen (`…/edit_policy/:policy_id`) the parent of 99 other admin
+  screens, picking any of 112 screens marked 50 or more jumps (median 111), and `entries` fell from 92 to 25. With the
+  rule, mattermost with `menus` has the same `entries`, with their reasons, as #461's branch (728cf04) without them,
+  prints the same lines apart from the path it wrote, and draws the same flow: 92 roots in the same order, 6 trees no
+  entry screen reaches, the same parent for each of the 181 screens and the same 2,776 jumps. The flows of appsmith,
+  both into-sign maps and both SigNoz maps are unchanged. outline's differ only where its screens do: the `{?}` screen
+  gives way to the 18 settings screens, 15 of them entry screens, `/settings/applications` among the trees no entry
+  screen reaches, `/settings/templates/:id` under `/settings/templates`. Among the jumps, three settings scenes (`/settings/groups/:id/members`,
   `/settings/applications/:id`, `/settings/templates/:id`) are gone from the 30 or 31 screens that held them through the
   hook file, and `/settings/authentication` and `/settings/templates` are new on 31 and 32 screens.
   Leaving out every link with `layout` was compared and rejected: layout links are most of an app's navigation where
@@ -3280,7 +3286,8 @@ Measured against main 5519f30, with `menus` added to the mattermost entry and th
 "menus": ["components/Sidebar/Settings.tsx"] }`:
 - mattermost: each of the 113 screens holding the sidebar gets 100 links at `admin_sidebar.tsx:186`, under
   `!isSectionHidden` (11,300 rows). Link rows go from 12,435 to 23,735, pairs of a screen and another screen it links
-  to from 2,859 to 13,669, none lost, and entry screens from 92 to 25. map.json grows from 20.9 MB to 31.8 MB; extract
+  to from 2,859 to 13,669, none lost; entry screens stay 92 (see the entry screen rule above). map.json grows from
+  20.9 MB to 31.8 MB; extract
   took 95 s on main and 71 to 96 s on the branch on a loaded machine.
 - outline: `{?}#config.component` becomes 18 settings screens (59 screens in all), and the 50 screens holding the
   settings sidebar get 18 links each at `Settings.tsx:57` (900 rows). The Embeds item gives a `route not read` line:
@@ -3309,6 +3316,13 @@ Known limits:
   settings scenes it imports.
 - A menu file named in two table entries whose routes read the same field gives each entry both menus' elements, so
   the run stops with two elements found. No measured app names one file twice.
+- A route constant written in the menu element (`to={ROUTES.SETTINGS + '/' + item.path}`) is read as a link of its own
+  without `tableItem`, so it is drawn in the flow.
+- When no item screen of the table has a path read to the end, the menu element gives no link and nothing says so.
+- An item field written as a call of a function that gives more than one path makes no screen.
+- The menu side and the route side take the loop's item from different shapes: the route side does not read the item
+  as the second name of a first parameter taken apart as a list (`([key, item])`), and it takes the first parameter of
+  `reduce` as the item, which the menu side does not.
 Alternatives compared:
 - duru finding the menu by itself, when a loop's list comes from the same hook or prop as the route's: outline would
   match (`useSettingsConfig()` on both sides), but mattermost's two lists come through `connect()` in two `index.ts`

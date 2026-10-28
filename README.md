@@ -82,9 +82,7 @@ client with example results and a config to start from.
   ```
 
   `route` is a file listed in `routesFile`, `table` the file and the `const` that hold the table, an
-  object or a list, and `items` the keys from that const to each item, with `*` for every key at that place. The
-  const can also sit inside a function, as outline keeps its settings in a hook
-  (`{ "file": "hooks/useSettingsConfig.ts", "const": "items" }`). In a
+  object or a list, and `items` the keys from that const to each item, with `*` for every key at that place. In a
   list the key is the item's place, counted from 0, so `*` takes every item and `3` the fourth. SigNoz keeps its
   routes in a list:
 
@@ -108,12 +106,9 @@ client with example results and a config to start from.
   "menus": ["components/admin_console/admin_sidebar/admin_sidebar.tsx"]
   ```
 
-  In each file duru looks for the one element drawn for each item of a list that takes the field the route path
-  reads (`name={item.url}`, `to={item.path}`). That element gives every screen that holds the file one link for each
-  item screen, to that screen: its `to` is the screen's path and it has the screen's `tableItem`. An item whose path
-  has a variable (`users/:user_id`) gets no menu link, because a menu entry cannot fill it in, and the conditions
-  written in an item are not read here either. A menu file that is not there, that has no such element or that has
-  more than one stops the run with an error.
+  Each file gives every screen that holds it links to the item screens, each with its `to` set to the screen's path
+  and the screen's `tableItem`. A menu file that is not there, or in which duru does not find the one element drawn
+  for each item, stops the run with an error.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
@@ -497,7 +492,8 @@ it, and the on/off `options` of its request body. The server match is one of:
 `kinds` (`setting`, `role`), the blocking route guards, the links into it, `roleValues` (the role values that
 can open it, or `null` when they cannot be read) and the setting values it needs. A restricted screen with empty
 `kinds` is one whose links ask for different kinds. Entry screens are listed under `entries` with their reasons:
-the target of a redirect in the route files, a screen no link leads to, or `entryPaths`. A screen is open when an
+the target of a redirect in the route files, a screen no link leads to other than a menu's link for a table item, or
+`entryPaths`. A screen is open when an
 entry screen reaches it without a setting or role guard on the way.
 
 **Settings defaults.** The evaluated `settingsDefaults` are on the map, with `settingsDefaultsIncomplete`
@@ -953,8 +949,7 @@ it opens only under a role or a setting; hovering shows what it needs and its un
 link under a setting or role condition, and a green dotted line is a move written in `moves`, whose reason shows on
 hovering the screen it leads to. The flow follows a move as it follows a link: a screen not yet drawn goes under the
 screen the move leaves, and one already drawn in another branch stays where it is. The links a menu named in
-`routeTables` gives for each table item are left out of the flow, so a screen only they lead to is drawn at the top as
-an entry screen is. Entry screens with no screen
+`routeTables` gives for each table item are left out of the flow. Entry screens with no screen
 drawn under them are gathered below the rest under
 「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. On a map of more than 100 screens, the gathered
 screens that share the start of their address are folded into one box per group (a group of more than 20 is split

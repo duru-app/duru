@@ -1615,14 +1615,22 @@ export async function extractClient(config: any) {
     };
     const inRouteFile = routeFileSet.has(file);
     const menusHere = menuTables.get(file) ?? [];
-    const recordMenuElement = (p: NodePath<JSXElement>) => {
-      const fields = menusHere.length ? itemFieldsRead(p) : [];
-      const tables = menusHere.filter((t) => {
+    const menuTablesOf = (p: NodePath<JSXElement>) => {
+      const fields = itemFieldsRead(p);
+      return menusHere.filter((t) => {
         if (!tableRoutes.has(t)) throw new Error(`${t}: ${relFile} was read before the route file of its table`);
         return fields.includes(tableRoutes.get(t)!.field);
       });
-      for (const table of tables) record('routerLinks', { to: UNKNOWN, menu: table }, p);
-      return tables.length > 0;
+    };
+    // 항목의 field 를 읽는 요소가 겹쳐 있으면 가장 안쪽 요소가 메뉴 요소다.
+    const recordMenuElement = (p: NodePath<JSXElement>) => {
+      const tables = menusHere.length ? menuTablesOf(p) : [];
+      if (!tables.length) return false;
+      const inner = new Set<string>();
+      p.traverse({ JSXElement(q) { for (const t of menuTablesOf(q)) inner.add(t); } });
+      const own = tables.filter((t) => !inner.has(t));
+      for (const table of own) record('routerLinks', { to: UNKNOWN, menu: table }, p);
+      return own.length > 0;
     };
     traverse(ast, {
       JSXElement(p) {

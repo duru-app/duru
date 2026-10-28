@@ -698,6 +698,29 @@ test('a menu link element whose address reads the item field gives the item link
   }, { edits });
 });
 
+test('when an element made for an item that reads the item\'s field holds another that reads it too, the innermost is the menu element', async () => {
+  const edits: [string, string, string][] = [
+    [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';"],
+    [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", 'sections.push(\n        <li key={item.url} data-testid={item.url} className={item.url === active ? \'active\' : \'\'}>\n          <NavLink to={`/old/${item.url}`}>{item.title}</NavLink>\n        </li>,\n      );'],
+    [SIDEBAR, 'export default function AdminSidebar({ definition }) {', 'export default function AdminSidebar({ definition, active }) {'],
+  ];
+  await withMenuCopy(async ({ configFile, src }) => {
+    const map = await build(configFile);
+    const line = lineIn(src, SIDEBAR, '<NavLink');
+    assert.notEqual(line, lineIn(src, SIDEBAR, '<li'));
+    assert.deepEqual(menuRows(screen(map, '/admin_console/users#Users')).map((l) => [l.to, l.line]), [
+      ['/admin_console/about/license', line], ['/admin_console/users', line], ['/admin_console/users/site', line], ['/admin_console/users/plain', line],
+    ]);
+  }, { edits });
+});
+
+test('the links a menu gives for the items do not count as links into a screen when the map decides its entry screens', async () => {
+  const entriesOf = (configPatch: Record<string, unknown>) => withMenuCopy(async ({ configFile }) => (await build(configFile)).entries.map((e) => e.screen), { configPatch });
+  const plain = await entriesOf({ routeTables: [ROUTE_TABLE] });
+  assert.ok(plain.includes('/admin_console/users/site#BrandImage'), JSON.stringify(plain));
+  assert.deepEqual(await entriesOf({ routeTables: [MENU_TABLE] }), plain);
+});
+
 test('a menu loop function that takes the item apart gives the same item links through the name bound to the field', async () => {
   const edits: [string, string, string][] = [
     [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';"],

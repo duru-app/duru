@@ -345,7 +345,7 @@ function accessDetails(s) {
     links.length ? linkGroups(links).map(linkGroup) : null,
     moves.length ? h('ul', { class: 'plain moves' }, moves.map((m) => moveItem(h('code', { class: 'from' }, m.from), m))) : null,
     links.length + moves.length ? null : h('p', { class: 'muted' }, menu.length ? '메뉴 말고 들어오는 링크가 없습니다.' : '없음'),
-    menu.length ? commonSection('common-incoming', MENU_LINKS_TITLE, menu.length, 'commonIncomingOpen', h('div', {}, linkGroups(menu).map(linkGroup))) : null,
+    menu.length ? commonSection('common-incoming', MENU_LINKS_TITLE, menu.length, 'commonIncomingOpen', h('div', {}, linkGroups(menu).map((g) => linkGroup({ ...g, key: `menu\n${g.key}` })))) : null,
     inScreen.length ? h('div', { class: 'in-screen' },
       h('h2', {}, '화면 안 조건 — 화면을 여는 것은 막지 않습니다'),
       inScreen.map((g) => h('div', { class: 'guard' }, guardCode(g, 'in-screen')))) : null);

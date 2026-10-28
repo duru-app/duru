@@ -14,7 +14,7 @@ declare function render(): void;
 declare function hasUnsavedMark(): boolean;
 declare function opensOnPage(id: string): boolean;
 declare function optionsOf(s: unknown, callId: string): { key: string }[];
-declare const state: { target: unknown; draft: unknown; selected: string | null; data: { map: { screens: { id: string }[] } } };
+declare const state: { target: unknown; draft: unknown; selected: string | null; openGroups: Set<string>; data: { map: { screens: { id: string }[] } } };
 
 test('in a browser, a screen that opens only under a role or a setting shows its tests for each case under what it needs', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -923,6 +923,11 @@ test('in a browser, 「들어오는 링크」 lists the other links into a scree
         assert.equal(await menu.locator(':scope > summary').getAttribute('aria-label'), '메뉴가 거는 링크 2');
         assert.deepEqual(await menu.locator('code.from').allTextContents(), ['/document/:id#DocumentDetail', '/document/:tab#DocumentList']);
         await menu.locator(':scope > summary').click();
+        await menu.locator('details.link-group > summary').click();
+        await p.waitForFunction(() => state.openGroups.size === 1);
+        await p.evaluate(() => render());
+        assert.equal(await menu.locator('details.link-group').getAttribute('open'), '');
+        assert.equal(await access.locator(':scope > details.link-group').getAttribute('open'), null, 'the group of the same guards among the other links stays folded');
         await p.click('#screen-list li:has-text("/admin/audit")');
         await p.click('#screen-list li:has-text("/admin/report")');
         assert.equal(await menu.getAttribute('open'), '', 'the section stays open after moving to another screen and back');
