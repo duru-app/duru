@@ -1078,6 +1078,27 @@ export default function Home({ item }) {
   assert.deepEqual(linksOf(map, '/home#Home'), [['/login', lineOf(home, '<Link to'), [], ['/login#Login']]]);
 });
 
+test('a route constant whose path variable a replace call fills with a value goes to the screen of that route, while a replace that does not name a path variable as text gives no route constant link', async () => {
+  const home = `import { Link, useHistory } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home({ team, page }) {
+  const history = useHistory();
+  const open = () => history.push(Option.ROUTE_PATH.TEAM.replace(':team', team));
+  return (
+    <nav>
+      <button onClick={open}>team</button>
+      <Link to={Option.ROUTE_PATH.HELP.replace(/:page/, page)}>help</Link>
+    </nav>
+  );
+}
+`;
+  const option = "export default { ROUTE_PATH: { HOME: '/home', LOGIN: '/login', HELP: '/help/:page', TEAM: '/team/:team' } };\n";
+  const map = await build(withRouteConstant({ 'Home.js': home, 'Option.js': option }));
+  assert.deepEqual(linksOf(map, '/home#Home').filter(([, line]) => line === lineOf(home, "replace(':team'")), [['/team/:team', lineOf(home, "replace(':team'"), [], ['/team/:team#Team']]]);
+  assert.ok(!map.screens.find((s) => s.id === '/home#Home')!.links.some((l) => 'route' in l && l.route === 'HELP'));
+});
+
 test('in a class route file, a move through the props its update method takes first is a link of every screen it draws', async () => {
   const routes = `import { Component } from 'react';
 import { Route, Switch, withRouter } from 'react-router-dom';

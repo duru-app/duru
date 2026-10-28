@@ -1233,6 +1233,14 @@ export async function extractClient(config: any) {
     return matching(at);
   }
 
+  // ROUTES.X.replace(':id', id) 처럼 경로 변수 하나를 값으로 채우는 호출
+  function fillsPathVariable(p: NodePath<any>) {
+    const call = p.parentPath!;
+    if (!call.isCallExpression() || call.node.callee !== p.node) return false;
+    const first = call.node.arguments[0];
+    return first?.type === 'StringLiteral' && first.value.startsWith(':');
+  }
+
   // ---------- API 모듈: 내보낸 함수마다 호출하는 endpoint ----------
 
   function extractApiModule(file: string) {
@@ -1566,6 +1574,10 @@ export async function extractClient(config: any) {
           const ref = record('routeRefs', { route: chain[chain.length - 1], tail }, p) as RouteRef;
           if (table?.exported) exportedKeys.set(ref, { file, name: table.exported });
           constantAt.set(whole.node, [ref]);
+        } else if (chain.at(-1) === 'replace' && routeChainOf(chain.slice(0, -2)) && fillsPathVariable(p)) {
+          const call = p.parentPath! as NodePath;
+          if (comparedOnly(call)) return;
+          constantAt.set(call.node, [record('routeRefs', { route: chain.at(-2)!, tail: '' }, p) as RouteRef]);
         }
       },
     });
