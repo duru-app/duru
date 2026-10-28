@@ -14,7 +14,9 @@ declare function render(): void;
 declare function hasUnsavedMark(): boolean;
 declare function opensOnPage(id: string): boolean;
 declare function optionsOf(s: unknown, callId: string): { key: string }[];
-declare const state: { target: unknown; draft: unknown; selected: string | null; data: { map: { screens: { id: string }[] } } };
+declare function wayGuards(r: { from: string; to: string; ways: { file: string; line: number }[] }): unknown[][];
+declare function screenOf(id: string): { access: { menuLinks: { from: string; file: string; line: number; guards: unknown[] }[] } };
+declare const state: { target: unknown; draft: unknown; selected: string | null; openGroups: Set<string>; data: { map: { screens: { id: string }[] } } };
 
 test('in a browser, a screen that opens only under a role or a setting shows its tests for each case under what it needs', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -91,7 +93,7 @@ test('in a browser, the right pane of a screen holds only the conversation above
         assert.ok(await p.locator('#center-body table.calls ~ .screen-info').count());
         assert.equal(await info.evaluate((e: HTMLDetailsElement) => e.open), false);
         const s = (await (await fetch(`${base}/api/data`)).json() as PageData).map.screens.find((x) => x.id === '/document/:id#DocumentDetail')!;
-        assert.equal(await info.locator(':scope > summary').innerText(), `화면 정보 들어오는 링크 ${s.access.links.length} · 나가는 링크 ${s.links!.length} · 읽는 설정값 ${s.settingReads!.length}`);
+        assert.equal(await info.locator(':scope > summary').innerText(), `화면 정보 들어오는 링크 ${s.access.links.length} · 나가는 링크 ${(s.links as { layout?: true }[]).filter((l) => !l.layout).length} · 읽는 설정값 ${s.settingReads!.length}`);
         await info.locator(':scope > summary').click();
         const headings = await info.locator('h2').allTextContents();
         assert.deepEqual(headings.map((t) => t.replace(/ \d+$/, '')), ['접근 조건', '들어오는 링크', '소스 위치', '나가는 링크', '읽는 설정값']);
@@ -858,6 +860,137 @@ test('in a browser, a screen lists the calls its own code sends on top and folds
       }),
     ),
   LAYOUT_REQUESTS);
+});
+
+const commonLinks = (p: Page) => p.locator('#center details.common-links');
+const linkPlaces = (list: Locator) => list.locator('li').evaluateAll((items) => items.map((li) => `${li.querySelector(':scope > code')!.textContent} ${li.querySelector(':scope > .mono')!.textContent}`));
+const ownLinkPlaces = (p: Page) => linkPlaces(p.locator('#center .screen-info h2', { hasText: '나가는 링크' }).locator('xpath=following-sibling::*[1]'));
+
+test('in a browser, the screen info lists the links a screen\'s own code gives on top and folds the links of the layout and its menu around it under 「공통」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const menuLine = fs.readFileSync(path.join(config.srcRoot, 'components/SideMenu.js'), 'utf8').split('\n').findIndex((l) => l.includes('href: Option.ROUTE_PATH[menu]')) + 1;
+        const menuLink = `/admin/report components/SideMenu.js:${menuLine}`;
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:id")');
+        assert.match((await p.textContent('#center .screen-info > summary .counts'))!, / · 나가는 링크 1 · /);
+        await openScreenInfo(p);
+        assert.equal(await p.textContent('#center .screen-info h2:has-text("나가는 링크")'), '나가는 링크 1');
+        assert.deepEqual(await ownLinkPlaces(p), ['/help components/DocumentDetail.js:20']);
+        const summary = commonLinks(p).locator('summary');
+        assert.equal(await commonLinks(p).getAttribute('open'), null);
+        assert.equal(await summary.innerText(), '공통 1');
+        assert.equal(await summary.getAttribute('title'), '레이아웃과 메뉴가 거는 링크');
+        assert.equal(await summary.getAttribute('aria-label'), '레이아웃과 메뉴가 거는 링크 1');
+        await summary.click();
+        assert.deepEqual(await linkPlaces(commonLinks(p)), [menuLink]);
+
+        await p.click('#screen-list li:has-text("/document/:tab")');
+        assert.equal(await commonLinks(p).getAttribute('open'), '', 'the section stays open on the next screen');
+        assert.deepEqual(await ownLinkPlaces(p), ['/document/{*} components/DocumentTable.js:13']);
+        assert.deepEqual(await linkPlaces(commonLinks(p)), [menuLink]);
+
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await commonLinks(p).count(), 0);
+        assert.equal(await p.locator('#center .screen-info h2:has-text("나가는 링크") + p').innerText(), '없음');
+      }),
+    ),
+  );
+});
+
+test('in a browser, 「들어오는 링크」 lists the other links into a screen on top and folds the links a route table menu gives for the screen\'s item under 「공통」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const data = await (await route.fetch()).json() as ServedData;
+          const report = data.map.screens.find((x) => x.id === '/admin/report#AdminReport')!;
+          report.access.menuLinks = report.access.links.filter((l) => l.from.startsWith('/document/')).map((l) => ({ ...l, tableItem: { key: 'report', file: 'menu.js', line: 3 } }));
+          report.access.links = report.access.links.filter((l) => !l.from.startsWith('/document/'));
+          await route.fulfill({ json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        assert.match((await p.textContent('#center .screen-info > summary .counts'))!, /^들어오는 링크 1 · /);
+        await openScreenInfo(p);
+        const access = p.locator('#center .access');
+        assert.equal(await access.locator('h2').first().textContent(), '들어오는 링크 1');
+        const menu = access.locator('details.common-incoming');
+        assert.deepEqual(await access.locator('code.from').evaluateAll((els) => els.filter((e) => !e.closest('details.common-incoming')).map((e) => e.textContent)), ['/home#Home']);
+        assert.equal(await menu.getAttribute('open'), null);
+        assert.equal(await menu.locator('summary').first().innerText(), '공통 2');
+        assert.equal(await menu.locator(':scope > summary').getAttribute('title'), '메뉴가 거는 링크');
+        assert.equal(await menu.locator(':scope > summary').getAttribute('aria-label'), '메뉴가 거는 링크 2');
+        assert.deepEqual(await menu.locator('code.from').allTextContents(), ['/document/:id#DocumentDetail', '/document/:tab#DocumentList']);
+        await menu.locator(':scope > summary').click();
+        await menu.locator('details.link-group > summary').click();
+        await p.waitForFunction(() => state.openGroups.size === 1);
+        await p.evaluate(() => render());
+        assert.equal(await menu.locator('details.link-group').getAttribute('open'), '');
+        assert.equal(await access.locator(':scope > details.link-group').getAttribute('open'), null, 'the group of the same guards among the other links stays folded');
+        await p.click('#screen-list li:has-text("/admin/audit")');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        assert.equal(await menu.getAttribute('open'), '', 'the section stays open after moving to another screen and back');
+      }),
+    ),
+  );
+});
+
+test('in a browser, a story step that goes through a menu link asks the guards of that menu link', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const data = await (await route.fetch()).json() as ServedData;
+          const report = data.map.screens.find((x) => x.id === '/admin/report#AdminReport')!;
+          report.access.menuLinks = report.access.links.filter((l) => l.from === '/home#Home').map((l) => ({ ...l, tableItem: { key: 'report', file: 'menu.js', line: 3 } }));
+          report.access.links = report.access.links.filter((l) => l.from !== '/home#Home');
+          await route.fulfill({ json: data });
+        });
+        await p.reload();
+        await p.waitForFunction(() => Boolean(state.data && screenOf('/admin/report#AdminReport')?.access.menuLinks));
+        const got = await p.evaluate(() => {
+          const row = screenOf('/admin/report#AdminReport').access.menuLinks[0];
+          return { guards: row.guards, way: wayGuards({ from: row.from, to: '/admin/report#AdminReport', ways: [{ file: row.file, line: row.line }] })[0] };
+        });
+        assert.ok(got.guards.length > 0);
+        assert.deepEqual(got.way, got.guards);
+      }),
+    ),
+  );
+});
+
+test('in a browser, a screen that is an entry screen because only menu links come into it says so beside 「들어오는 링크」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const data = await (await route.fetch()).json() as ServedData;
+          const report = data.map.screens.find((x) => x.id === '/admin/report#AdminReport')!;
+          report.access.menuLinks = report.access.links.map((l) => ({ ...l, tableItem: { key: 'report', file: 'menu.js', line: 3 } }));
+          report.access.links = [];
+          data.map.entries.push({ screen: report.id, reasons: [{ kind: 'menu-links-only' }] });
+          await route.fulfill({ json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        await openScreenInfo(p);
+        const access = p.locator('#center .access');
+        assert.equal(await access.locator('h2').first().textContent(), '들어오는 링크 0');
+        const chip = access.locator('.menu-only');
+        assert.equal(await chip.textContent(), '메뉴로만');
+        assert.equal(await chip.getAttribute('title'), '메뉴가 항목마다 거는 링크로만 들어오는 화면이라 진입 화면으로 봅니다');
+        assert.equal(await access.locator('p.muted').count(), 0);
+        await p.click('#screen-list li:has-text("/admin/audit")');
+        await p.locator('#center .access .menu-only').waitFor({ state: 'detached' });
+      }),
+    ),
+  );
 });
 
 const ME = 'GET:/api/v1/me';

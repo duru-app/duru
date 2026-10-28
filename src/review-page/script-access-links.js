@@ -332,33 +332,45 @@ const movedChip = () => h('span', { class: 'chip l-configured', title: LINK_VERD
 const movesOf = (side, id) => (state.data.map.moves ?? []).filter((m) => m[side] === id);
 const moveItem = (end, m) => h('li', { class: 'move' }, end, ' ', movedChip(), ' ', h('span', { class: 'muted' }, m.reason));
 
+const MENU_LINKS_TITLE = '메뉴가 거는 링크';
+const MENU_ONLY_TITLE = '메뉴가 항목마다 거는 링크로만 들어오는 화면이라 진입 화면으로 봅니다';
+const menuOnlyEntry = (s) => state.data.map.entries.some((e) => e.screen === s.id && e.reasons.some((r) => r.kind === 'menu-links-only'));
+
 function accessDetails(s) {
-  const { links } = s.access;
+  const links = s.access.links;
+  const menu = s.access.menuLinks ?? [];
   const moves = movesOf('to', s.id);
   const inScreen = inScreenGuards(s);
   return h('div', { class: 'access' },
     h('h2', {}, `들어오는 링크 ${links.length + moves.length}`),
+    menuOnlyEntry(s) ? h('span', { class: 'chip menu-only', title: MENU_ONLY_TITLE, 'aria-label': MENU_ONLY_TITLE }, '메뉴로만') : null,
     links.length ? linkGroups(links).map(linkGroup) : null,
     moves.length ? h('ul', { class: 'plain moves' }, moves.map((m) => moveItem(h('code', { class: 'from' }, m.from), m))) : null,
-    links.length + moves.length ? null : h('p', { class: 'muted' }, '없음'),
+    links.length + moves.length + menu.length ? null : h('p', { class: 'muted' }, '없음'),
+    menu.length ? commonSection('common-incoming', MENU_LINKS_TITLE, menu.length, 'commonIncomingOpen', h('div', {}, linkGroups(menu).map((g) => linkGroup({ ...g, key: `menu\n${g.key}` })))) : null,
     inScreen.length ? h('div', { class: 'in-screen' },
       h('h2', {}, '화면 안 조건 — 화면을 여는 것은 막지 않습니다'),
       inScreen.map((g) => h('div', { class: 'guard' }, guardCode(g, 'in-screen')))) : null);
 }
 
+const COMMON_LINKS_TITLE = '레이아웃과 메뉴가 거는 링크';
+const ownLinks = (s) => s.links.filter((l) => !l.layout);
+const linkLine = (l) => h('li', {}, h('code', {}, l.to), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`), h('div', {}, guardList(l)));
+
 function screenDetails(s) {
   const moves = movesOf('from', s.id);
+  const own = ownLinks(s);
+  const common = s.links.filter((l) => l.layout);
   return [
     accessDetails(s),
     h('h2', {}, '소스 위치'),
     h('ul', { class: 'plain' },
       h('li', {}, '라우트 ', h('code', {}, `${s.routeFile}:${s.line}`)),
       h('li', {}, '컴포넌트 ', s.componentFile ? h('code', {}, s.componentFile) : h('span', { class: 'muted' }, '찾지 못함'))),
-    h('h2', {}, `나가는 링크 ${s.links.length + moves.length}`),
-    s.links.length + moves.length ? h('ul', { class: 'plain' },
-      s.links.map((l) => h('li', {},
-        h('code', {}, l.to), ' ', h('span', { class: 'muted mono' }, `${l.file}:${l.line}`), h('div', {}, guardList(l)))),
-      moves.map((m) => moveItem(h('code', {}, m.to), m))) : h('p', { class: 'muted' }, '없음'),
+    h('h2', {}, `나가는 링크 ${own.length + moves.length}`),
+    own.length + moves.length ? h('ul', { class: 'plain' }, own.map(linkLine), moves.map((m) => moveItem(h('code', {}, m.to), m)))
+      : h('p', { class: 'muted' }, common.length ? '이 화면만 거는 링크가 없습니다.' : '없음'),
+    common.length ? commonSection('common-links', COMMON_LINKS_TITLE, common.length, 'commonLinksOpen', h('ul', { class: 'plain' }, common.map(linkLine))) : null,
     h('h2', {}, `읽는 설정값 ${s.settingReads.length}`),
     s.settingReads.length ? h('ul', { class: 'plain' }, s.settingReads.map((r) => h('li', {},
       h('code', {}, r.key), ' ', h('span', { class: 'muted mono' }, `${r.file}:${r.line}`)))) : h('p', { class: 'muted' }, '없음'),

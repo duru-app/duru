@@ -140,8 +140,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   A call or link can also come from a file the screen's code never imports: a menu, header or banner drawn around
   or beside the screen's route, in its own route file or in a route file outside it. Its file and line point into
   that component, and an `inheritedGuards` entry with a `file` names the place it is drawn and the condition it is
-  drawn under; test it from the screen like the screen's own. Such a call has `"layout": true` when the screen's own
-  component does not reach it; one test of it from any screen it is on covers the component that sends it. The task
+  drawn under; test it from the screen like the screen's own. Such a call or link has `"layout": true` when the
+  screen's own component does not reach it; one test of it from any screen it is on covers the component that sends
+  or draws it. The links a menu named in `routeTables` gives each item screen are such links on the screens the menu
+  is drawn around. The task
   list puts such calls of a screen after its own, under `calls of the layout around the screen`; a screen that
   sends none itself has `calls of its own: none` above them, which does not mean there is nothing to test there.
 - A call under `appWide` is sent by a component named in `appWideComponents` once for the whole app, as it starts,
@@ -175,9 +177,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   with it; tell the user which routes these are and why each one was not read. A line whose reason starts with `made for
   each item of a list` stands for one screen per item, built from a list. So does a `route path not read` line that
   stopped at a field of the item of a `.map(…)`, with its `{?}` screen. When that list comes from a table written
-  in the source, an object or a list held in a top-level const, and the route's path reads one field of the list
-  item once, as `item.url` does in `${props.match.url}/${item.url}` or `path` does in
-  `routes.map(({ path, component }) => …)`, find the file and top-level const that hold it and the keys from that
+  in the source, an object or a list held in a top-level const or in the only const of that name inside a function,
+  and the route's path reads one field of the list item once, as `item.url` does in `${props.match.url}/${item.url}` or `path` does in
+  `routes.map(({ path, component }) => …)`, find the file and const that hold it and the keys from that
   const to each item, add a `routeTables` entry to the config yourself as you add the other config items, such as
   `{ "route": "<the route file>", "table": { "file": "<table file>", "const": "<const>" }, "items": "*.subsections.*" }`
   with `*` for every key at that place (`"items": "*"` for a list of routes), run `duru rebuild` again, and tell the
@@ -185,6 +187,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   such a table that gives no screen, because it has no value for the field the route reads, that value could not be
   read, or it is not an object written in the source; a list item's key is its place in the list. Tell the user
   which items these are.
+- When the app also draws a menu from the same table, a file that loops over the same items and gives each entry the
+  field the route path reads (`name={item.url}`, `to={item.path}`), add that file to the entry's `"menus"` list, run
+  `duru rebuild` again, and tell the user how many links each screen holding the menu gained; those links have
+  `tableItem` and go to the item screens whose path has no variable.
 - A `routesFile <file> has no <element> element, so it gives no screens` line names a file listed in `routesFile`
   that draws no route, often one that only keeps the list of routes another file draws. Find the file that draws
   those routes (the one that imports the list and makes a route for each item), put it in `routesFile` yourself, and
@@ -410,6 +416,12 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
    its title names that role, since the tag does not; `@setting:<path>=true` meets that setting condition and
    checks the screen opens, `=false` breaks it and checks the screen stays shut. A tag that is not one of the
    screen's cases does not attach and `rebuild` prints it as `unknown`.
+   Under the screen's `- access:` line, and under the first screen of a story, each link into the screen is a
+   `link from <screen> at <file>:<line>` line with its guard. The links a menu named in `routeTables` gives for the
+   screen's table item are one `menu link at <file>:<line> from N screens` line instead: that one element draws them
+   on the N screens that hold the menu. The line gives the guard around the element, or `guards differ by screen`,
+   and after `—` what every screen holding the menu needs, or `the screens holding it need different things`. Only a
+   line with `no guard` and nothing after it means a test can reach the screen through the menu from any of them.
    A screen or call can also list under `cases` a kind of case a reviewer, or a rule in the config's `caseKinds`
    `picks`, picked for it, written `@case:<kind>`
    followed by what to test; a test of it carries that tag next to `@screen:` or `@call:` and checks what the

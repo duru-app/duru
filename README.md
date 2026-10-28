@@ -81,7 +81,7 @@ client with example results and a config to start from.
   }]
   ```
 
-  `route` is a file listed in `routesFile`, `table` the file and the top-level `const` that hold the table, an
+  `route` is a file listed in `routesFile`, `table` the file and the `const` that hold the table, an
   object or a list, and `items` the keys from that const to each item, with `*` for every key at that place. In a
   list the key is the item's place, counted from 0, so `*` takes every item and `3` the fourth. SigNoz keeps its
   routes in a list:
@@ -98,6 +98,17 @@ client with example results and a config to start from.
   with an error, as does an entry whose route file has no such route or more than one, whose route reads a field of
   the item but whose screen duru cannot read, whose table const is not there, or none of whose items has the field
   the route reads.
+
+  `menus` (optional) lists the files that draw a menu with one entry for each item of the table, such as
+  mattermost's admin sidebar:
+
+  ```json
+  "menus": ["components/admin_console/admin_sidebar/admin_sidebar.tsx"]
+  ```
+
+  Each file gives every screen that holds it links to the item screens, each with its `to` set to the screen's path
+  and the screen's `tableItem`. A menu file that is not there, or in which duru does not find the one element drawn
+  for each item, stops the run with an error.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
@@ -436,8 +447,8 @@ routes and the element it shares with them guards what it gives: it is listed un
 component as `via`, and the line and `file` of the place it is drawn. A condition around the routes, or around a
 component drawn around them, is the condition of those routes (`routeGuards`) on the screens of that file and is not
 carried to the screens of a route file drawn inside them.
-A call a screen gets only through such a component, and not through the screen's own component, has
-`"layout": true`; it stays among the screen's calls.
+A call or link a screen gets only through such a component, and not through the screen's own component, has
+`"layout": true`; it stays among the screen's calls or links.
 
 **Whole app.** With `appWideComponents` set, the map has `appWide`: the `components`, each with the `file` its `import`
 names, their `sourceFiles`, and the `apiCalls` their code reaches, written as a screen's are. Those calls are under `calls`
@@ -451,7 +462,8 @@ history, or on the line where a component in the source that wraps a react-route
 (`<SidebarLink to="/home">`), with the address that call or use leads to, or where a component or function named
 in `linkComponents` or `linkFunctions` is used. Each link has its address `to`, with `{*}` for a piece that comes from a value, the file
 and line, the conditions guarding it, and `targets`, the IDs of the screens it goes to. A link whose address duru
-cannot read has `to` `{?}` and empty `targets`. In an app that uses redux-saga, a route constant or a move of the
+cannot read has `to` `{?}` and empty `targets`. A link a menu named in `routeTables` draws for a table item also has
+that item's `tableItem`. In an app that uses redux-saga, a route constant or a move of the
 history named in `history` written in a saga is a link of each screen that dispatches an action the saga waits for,
 with the action types under `actions`; a move in a saga whose address duru cannot read is not on the map, not even
 as `{?}`. A link whose file is the screen's route file is made by code in that file while the screen is shown, such as
@@ -477,11 +489,14 @@ it, and the on/off `options` of its request body. The server match is one of:
   client's URL with `{0}`, `{1}` for path variables, and may change once a server list is added.
 
 **Access.** Each screen's `access` says whether it opens only under a setting or a role: `restricted`, the
-`kinds` (`setting`, `role`), the blocking route guards, the links into it, `roleValues` (the role values that
+`kinds` (`setting`, `role`), the blocking route guards, the links into it (`links`, and under `menuLinks` the links a
+menu named in `routeTables` gives for its table item), `roleValues` (the role values that
 can open it, or `null` when they cannot be read) and the setting values it needs. A restricted screen with empty
 `kinds` is one whose links ask for different kinds. Entry screens are listed under `entries` with their reasons:
-the target of a redirect in the route files, a screen no link leads to, or `entryPaths`. A screen is open when an
-entry screen reaches it without a setting or role guard on the way.
+`redirect`, the target of a redirect in the route files; `no-incoming-link`, a screen no link leads to;
+`menu-links-only`, a screen only the links a menu named in `routeTables` gives for its table item lead to; and
+`config`, a path in `entryPaths`. A screen is open when an entry screen reaches it without a setting or role guard on
+the way; the links a menu gives for table items are not counted for that.
 
 **Settings defaults.** The evaluated `settingsDefaults` are on the map, with `settingsDefaultsIncomplete`
 listing the places whose value the source does not show in full.
@@ -936,7 +951,8 @@ entry screen, with a square for the status of its tagged tests, the number of it
 it opens only under a role or a setting; hovering shows what it needs and its untagged tests. A dashed line is a
 link under a setting or role condition, and a green dotted line is a move written in `moves`, whose reason shows on
 hovering the screen it leads to. The flow follows a move as it follows a link: a screen not yet drawn goes under the
-screen the move leaves, and one already drawn in another branch stays where it is. Entry screens with no screen
+screen the move leaves, and one already drawn in another branch stays where it is. The links a menu named in
+`routeTables` gives for each table item are left out of the flow. Entry screens with no screen
 drawn under them are gathered below the rest under
 「딸린 화면이 없는 진입 화면 N」, whose hover says why they are there. On a map of more than 100 screens, the gathered
 screens that share the start of their address are folded into one box per group (a group of more than 20 is split
@@ -1050,11 +1066,15 @@ around or beside its route (`layout`) and those of `appWide` are folded below it
 columns, and stay open or folded on other screens until toggled. Choosing such a call shows, after where this screen
 calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
 name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
-screen, links out of it and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
+screen other than a menu's, links out of it from its own code and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
 the screen, then shows the tests of each role and setting case by depth under 「관점별 테스트」, the links into it
 with their guards, the conditions inside the screen, where its route and component are, the links out of it and the
 settings it reads. The links into it and out of it also list the moves written in `moves` as 「설정에 적은 이동」 with their
-reason. Once opened it stays open on other screens until it is closed. Choosing a call, by its name or a count in
+reason. The links out of it that have `layout`, such as those of a menu drawn around the route, are folded below the
+others under 「공통 N」, and so are the links into it that a menu named in `routeTables` gives for its table item; each
+stays open or folded on other screens until toggled. An entry screen that only such menu links lead to shows
+「메뉴로만」 beside 「들어오는 링크」. Once opened 「화면 정보」 stays open on
+other screens until it is closed. Choosing a call, by its name or a count in
 the table or from a link elsewhere, opens its details under the call table and scrolls the middle pane to them: where
 its option was found, the server match, its tests, untagged tests linked to it, where this screen calls it and the
 screens that use it.

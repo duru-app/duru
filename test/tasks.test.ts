@@ -313,6 +313,55 @@ test('a marked story whose first screen opens only under a setting or a role lis
   }, { storiesDir: 'example-stories' });
 });
 
+test('the links into a first screen that a route table menu gives for its item are one line for each menu element, with the number of screens it is drawn on', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const mapFile = path.join(loadConfig(configFile).outDir, 'map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    const report = map.screens.find((s: { id: string }) => s.id === '/admin/report#AdminReport');
+    const menu = report.access.links.filter((l: { from: string }) => l.from.startsWith('/document/'));
+    report.access.links = report.access.links.filter((l: { from: string }) => !l.from.startsWith('/document/'));
+    report.access.menuLinks = menu.map((l: object) => ({ ...l, tableItem: { key: 'report', file: 'menu.js', line: 3 } }));
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+    addMark(loadConfig(configFile).marksDir, { target: { story: 'read-reports' }, status: 'missing', note: 'No test.', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
+    const story = cli('tasks').split('\n## read-reports\n')[1].split('\n## ')[0].split('\n');
+    const guards = "guard `globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'` (setting); `['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1` (role); `MENUS.ADMIN` (setting)";
+    const at = story.indexOf('  - /admin/report#AdminReport, the first screen, needs a role and a setting; roles that open it: ADMIN, OWNER');
+    assert.deepEqual(story.slice(at + 1, at + 3), [
+      `    - link from /home#Home at components/SideMenu.js:11, ${guards}`,
+      `    - menu link at components/SideMenu.js:11 from 2 screens, ${guards}`,
+    ]);
+  }, { storiesDir: 'example-stories' });
+});
+
+test('a menu line counts the screens and not the links, says when the guards or what the screens holding the menu need differ, and each menu element has its own line', () => {
+  withFixtureCopy(({ configFile, cli }) => {
+    cli('rebuild');
+    const mapFile = path.join(loadConfig(configFile).outDir, 'map.json');
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    const report = map.screens.find((s: { id: string }) => s.id === '/admin/report#AdminReport');
+    const tableItem = { key: 'report', file: 'menu.js', line: 3 };
+    const [byId, byTab, home] = ['/document/:id#DocumentDetail', '/document/:tab#DocumentList', '/home#Home'].map((id) => ({ ...report.access.links.find((l: { from: string }) => l.from === id), tableItem }));
+    Object.assign(byId, { fromKinds: ['setting'] });
+    Object.assign(byTab, { guards: [] });
+    Object.assign(home, { line: 20, fromKinds: ['role'] });
+    report.access.links = [];
+    report.access.menuLinks = [byId, byTab, { ...byId, guards: [] }, home, { ...home, line: 30, guards: [], fromKinds: [] }, { ...byTab, line: 40 }];
+    Object.assign(map.screens.find((s: { id: string }) => s.id === '/document/:tab#DocumentList').access, { restricted: true, kinds: [] });
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+    addMark(loadConfig(configFile).marksDir, { target: { story: 'read-reports' }, status: 'missing', note: 'No test.', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
+    const story = cli('tasks').split('\n## read-reports\n')[1].split('\n## ')[0].split('\n');
+    const guards = "guard `globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'` (setting); `['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1` (role); `MENUS.ADMIN` (setting)";
+    const at = story.indexOf('  - /admin/report#AdminReport, the first screen, needs a role and a setting; roles that open it: ADMIN, OWNER');
+    assert.deepEqual(story.slice(at + 1, at + 5), [
+      '    - menu link at components/SideMenu.js:11 from 2 screens, guards differ by screen — the screens holding it need different things',
+      `    - menu link at components/SideMenu.js:20 from 1 screen, ${guards} — every screen holding it needs a role`,
+      '    - menu link at components/SideMenu.js:30 from 1 screen, no guard',
+      '    - menu link at components/SideMenu.js:40 from 1 screen, no guard — every screen holding it is restricted, by kinds that differ by link',
+    ]);
+  }, { storiesDir: 'example-stories' });
+});
+
 test('a marked story step that a move in the config joins reads as that move with its reason, and the story is reachable', () => {
   withFixtureCopy(({ copy, configFile, cli }) => {
     fs.writeFileSync(path.join(copy, 'example-stories/signin-lab.json'), JSON.stringify({ name: '로그인해서 실험 결과를 본다', screens: ['/signin#SignIn', '/lab/result#LabResult'], author: 'a', date: '2026-10-03' }));
@@ -1337,7 +1386,7 @@ test('a screen whose links ask for different kinds, and a link from it, say it d
     const help = section('/help#Help');
     assert.match(help, /^- access: differs by link, see each link below$/m);
     assert.match(help, /^ {2}- link from \/home#Home at components\/Home\.js:\d+, guard `memberRole === 'ADMIN'` \(role\)$/m);
-    assert.match(section('/lab/result#LabResult'), /^ {2}- link from \/help#Help at components\/Help\.js:5, no guard — \/help#Help itself differs by link$/m);
+    assert.match(section('/lab/result#LabResult'), /^ {2}- link from \/help#Help at components\/Help\.js:5, no guard — \/help#Help itself is restricted, by kinds that differ by link$/m);
   });
 });
 

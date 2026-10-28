@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { screenAccess } from '../src/access.ts';
+import { screenAccess, screenCases } from '../src/access.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import type { MapScreen, ScreenMap } from '../src/map.ts';
@@ -478,6 +478,26 @@ const settingAccess = (screens: Row[]) => {
   return Object.fromEntries(full.map((s, i) => [s.id, access[i]]));
 };
 const needPaths = (sources: { from: string; needs: { path: string[] }[] }[]) => sources.map((x) => [x.from, x.needs.map((n) => n.path.join('.'))]);
+
+test('a menu link for a table item is kept apart from the links into a screen, so the screen has the restriction, settings and cases it has without the menu', () => {
+  const config = { entryPaths: [], roleIdentifiers: ['memberRole'], settingsRoots: ['globalSettings'] };
+  const tableItem = { key: 'x', file: 'table.js', line: 3 };
+  const screensWith = (menu: boolean) => [
+    { id: '/start', path: '/start', routeFile: 'Routes.js', routeGuards: [], links: [{ to: '/x', guards: [MENU_X], file: 'start.js', line: 1 }, { to: '/menu', guards: [], file: 'start.js', line: 2 }] },
+    { id: '/menu', path: '/menu', routeFile: 'Routes.js', routeGuards: [], links: menu ? [{ to: '/x', guards: [], file: 'Menu.js', line: 7, tableItem }] : [] },
+    { id: '/x', path: '/x', routeFile: 'Routes.js', routeGuards: [], links: [] },
+  ];
+  const guards = new Map([[MENU_X, { settings: [setting('MENU.X', 'on')] }]]);
+  const guardSettings = new Map(['Routes.js', 'start.js', 'Menu.js'].map((f) => [f, guards]));
+  const xOf = (menu: boolean) => screenAccess(screensWith(menu), [], config, new Map(), {}, guardSettings).access[2];
+  const plain = xOf(false);
+  const withMenu = xOf(true);
+  assert.deepEqual(screenCases(plain).map((c) => c.tag), ['setting:MENU.X=true', 'setting:MENU.X=false']);
+  assert.deepEqual(screenCases(withMenu), screenCases(plain));
+  const { menuLinks, ...rest } = withMenu;
+  assert.deepEqual(rest, plain);
+  assert.deepEqual(menuLinks, [{ from: '/menu', file: 'Menu.js', line: 7, guards: [], fromKinds: [], tableItem }]);
+});
 
 test('a link with no setting guard of its own carries the settings its restricted origin needs, along a chain and around a loop, and a guarded link keeps its own', () => {
   const chain = settingAccess([

@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
+import { buildFlow } from '../src/flow.ts';
+import type { FlowScreenNode } from '../src/flow.ts';
 import { buildMap } from '../src/map.ts';
 import type { ScreenMap } from '../src/map.ts';
 import { addMark } from '../src/marks.ts';
@@ -205,6 +207,20 @@ test('an item\'s address and components are read through names declared in the t
   }, { edits });
 });
 
+test('an item\'s address written as a call of a function in the source is read as a route path written that way is', async () => {
+  const edits: [string, string, string][] = [
+    [TABLE, "import { ID_PATTERN } from './patterns';", "import { ID_PATTERN } from './patterns';\nconst adminPath = (...parts) => parts.join('/');"],
+    [TABLE, "url: 'about/license',", "url: adminPath('about', 'license'),"],
+    [TABLE, "url: 'users/plain',", 'url: adminPath(window.section),'],
+  ];
+  await withTableCopy(async ({ configFile, src }) => {
+    const map = await build(configFile);
+    assert.equal(screen(map, '/admin_console/about/license#License').componentFile, 'admin/License.js');
+    assert.ok(!map.screens.some((s) => s.tableItem?.key === 'users.subsections.plain'));
+    assert.deepEqual(map.unreadRoutes, [{ file: CONSOLE, line: lineIn(src, CONSOLE, '<Route key={item.url}'), reason: `table item users.subsections.plain at ${TABLE}:${itemLine(src, 'plain')}: its url stopped at adminPath(window.section)` }]);
+  }, { edits });
+});
+
 test('a table written in the route file itself gives the same item screens, and the route file keeps its own code and imports in its screen\'s sources, also when the outer route imports it through an index file', async () => {
   const expected = (map: ScreenMap) => tableScreens(map).map((s) => [s.id, s.componentFile]);
   const plain = await withTableCopy(async ({ configFile }) => expected(await build(configFile)));
@@ -256,7 +272,7 @@ test('an item whose address is not read, or that has none while others do, gives
   const edits: [string, string, string][] = [
     [TABLE, '      plain: {', "      computed: {\n        url: pathOf('users'),\n        schema: { id: 'Computed', component: Users },\n      },\n      nameless: {\n        schema: { id: 'Nameless', component: Users },\n      },\n      elsewhere: {\n        url: OTHER_URL,\n        schema: { id: 'Elsewhere', component: Users },\n      },\n      plain: {"],
     [TABLE, "import License from './License';", "import License from './License';\nimport { pathOf, OTHER_URL } from './patterns';"],
-    ['admin/patterns.js', "export const ID_PATTERN = '[a-z0-9]{26}';", "export const ID_PATTERN = '[a-z0-9]{26}';\nexport const pathOf = (name) => `${name}/computed`;\nexport const OTHER_URL = pathOf('other');"],
+    ['admin/patterns.js', "export const ID_PATTERN = '[a-z0-9]{26}';", "export const ID_PATTERN = '[a-z0-9]{26}';\nexport const pathOf = (name) => `${window.base}/${name}`;\nexport const OTHER_URL = pathOf('other');"],
   ];
   await withTableCopy(async ({ configFile, src, cli }) => {
     const map = await build(configFile);
@@ -558,7 +574,7 @@ test('routeTables must be a list of entries naming a listed route file, a table 
       return () => loadConfig(configFile);
     };
     const entry = { route: 'Routes.js', table: { file: 'store/settings.js', const: 'defaults' }, items: '*' };
-    assert.throws(load({ ...entry }), /^Error: routeTables must be a list of \{ "route", "table": \{ "file", "const" \}, "items" \}/);
+    assert.throws(load({ ...entry }), /^Error: routeTables must be a list of \{ "route", "table": \{ "file", "const" \}, "items" \} with an optional "menus"/);
     assert.throws(load([{ ...entry, table: 'store/settings.js' }]), /^Error: routeTables must be a list of/);
     assert.throws(load([{ ...entry, items: 'a..b' }]), /^Error: routeTables must be a list of/);
     assert.throws(load([{ ...entry, extra: 1 }]), /^Error: routeTables must be a list of/);
@@ -587,6 +603,303 @@ test('a table entry that finds no table, no item or no route made for each item,
     const other = lineIn(src, CONSOLE, '<Route key={item.url}', first);
     assert.match(failure(configFile), new RegExp(`routeTables\\[0\\]: admin/AdminConsole\\.js has 2 routes made for each item of a list, at admin/AdminConsole\\.js:${first} and admin/AdminConsole\\.js:${other}; a route file takes one table`));
   }, { edits: [[CONSOLE, LOOP_ROUTE, second]] });
+});
+
+const SIDEBAR = 'admin/AdminSidebar.js';
+const SIDEBAR_SOURCES: Record<string, string> = {
+  [SIDEBAR]: `import SidebarSection from './SidebarSection';
+
+export default function AdminSidebar({ definition }) {
+  const sections = [];
+  Object.entries(definition).forEach(([key, section]) => {
+    Object.entries(section.subsections).forEach(([subKey, item]) => {
+      sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);
+    });
+  });
+  return <ul>{sections}</ul>;
+}
+`,
+  'admin/SidebarSection.js': `import { NavLink } from 'react-router-dom';
+
+export default function SidebarSection({ name, title, parentLink = '' }) {
+  const link = parentLink + '/' + name;
+  return <li><NavLink to={link}>{title}</NavLink></li>;
+}
+`,
+};
+const SIDEBAR_EDITS: [string, string, string][] = [
+  [CONSOLE, "import SchemaSettings from './SchemaSettings';\n", "import SchemaSettings from './SchemaSettings';\nimport AdminSidebar from './AdminSidebar';\n"],
+  [CONSOLE, '    <Switch>\n', '    <>\n    <AdminSidebar definition={AdminDefinition} />\n    <Switch>\n'],
+  [CONSOLE, '    </Switch>\n', '    </Switch>\n    </>\n'],
+];
+const MENU_TABLE = { ...ROUTE_TABLE, menus: [SIDEBAR] };
+
+async function withMenuCopy<T>(fn: (copy: Copy) => T | Promise<T>, { configPatch = { routeTables: [MENU_TABLE] }, edits = [] }: { configPatch?: Record<string, unknown>; edits?: [string, string, string][] } = {}): Promise<T> {
+  return withTableCopy(async (copy) => {
+    for (const [file, text] of Object.entries(SIDEBAR_SOURCES)) fs.writeFileSync(path.join(copy.src, file), text);
+    for (const [file, from, to] of edits) {
+      const text = fs.readFileSync(path.join(copy.src, file), 'utf8');
+      assert.ok(text.includes(from), `${file} has no ${from}`);
+      fs.writeFileSync(path.join(copy.src, file), text.split(from).join(to));
+    }
+    return fn(copy);
+  }, { configPatch, edits: SIDEBAR_EDITS });
+}
+
+const menuRows = (s: ScreenMap['screens'][number]) => s.links.filter((l) => l.file === SIDEBAR);
+
+test('a menu file named in a table entry gives every screen holding it one link for each table item, to the screen made from that item, at the element that reads the field the route path reads', async () => {
+  await withMenuCopy(async ({ configFile, src, cli }) => {
+    const map = await build(configFile);
+    const line = lineIn(src, SIDEBAR, '<SidebarSection');
+    const item = (key: string, sub: string) => ({ key, file: TABLE, line: itemLine(src, sub) });
+    const holding = map.screens.filter((s) => s.sourceFiles.includes(SIDEBAR));
+    assert.deepEqual(holding.map((s) => s.id), ['/admin_console#AdminConsole', ...tableScreens(map).filter((s) => s.tableItem).map((s) => s.id)]);
+    for (const s of holding) {
+      assert.deepEqual(menuRows(s).map((l) => [l.to, l.line, l.tableItem, l.targets]), [
+        ['/admin_console/about/license', line, item('about.subsections.license', 'license'), ['/admin_console/about/license#License']],
+        ['/admin_console/users', line, item('users.subsections.list', 'list'), ['/admin_console/users#Users']],
+        ['/admin_console/users/site', line, item('users.subsections.site', 'site'), ['/admin_console/users/site#BrandImage']],
+        ['/admin_console/users/plain', line, item('users.subsections.plain', 'plain'), ['/admin_console/users/plain#SchemaSettings']],
+      ], s.id);
+    }
+    assert.deepEqual(routeLines(cli('extract')), []);
+  });
+});
+
+test('the menu links are marked as the layout\'s on the item screens, which the route file holding the menu draws, and not on the screen whose own component draws the menu', async () => {
+  await withMenuCopy(async ({ configFile }) => {
+    const map = await build(configFile);
+    const layoutOf = (id: string) => [...new Set(menuRows(screen(map, id)).map((l) => l.layout ?? false))];
+    assert.deepEqual(layoutOf('/admin_console/users#Users'), [true]);
+    assert.deepEqual(layoutOf('/admin_console/about/license#License'), [true]);
+    assert.deepEqual(layoutOf('/admin_console#AdminConsole'), [false]);
+  });
+});
+
+test('without menus in the table entry the menu element gives no link for each item', async () => {
+  await withMenuCopy(async ({ configFile }) => {
+    const map = await build(configFile);
+    assert.ok(map.screens.some((s) => s.sourceFiles.includes(SIDEBAR)));
+    assert.ok(!map.screens.some((s) => s.links.some((l) => l.tableItem)));
+  }, { configPatch: { routeTables: [ROUTE_TABLE] } });
+});
+
+test('a menu link element whose address reads the item field gives the item links in place of the link it would give, and the address written around the field is not read', async () => {
+  const edits: [string, string, string][] = [
+    [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';"],
+    [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", 'sections.push(<NavLink key={item.url} to={`/old/${item.url}`}>{item.title}</NavLink>);'],
+  ];
+  await withMenuCopy(async ({ configFile, src }) => {
+    const map = await build(configFile);
+    const line = lineIn(src, SIDEBAR, '<NavLink');
+    const rows = menuRows(screen(map, '/admin_console/users#Users'));
+    assert.deepEqual(rows.map((l) => [l.to, l.line]), [
+      ['/admin_console/about/license', line], ['/admin_console/users', line], ['/admin_console/users/site', line], ['/admin_console/users/plain', line],
+    ]);
+  }, { edits });
+});
+
+test('when an element made for an item that reads the item\'s field holds another that reads it too, the innermost is the menu element', async () => {
+  const edits: [string, string, string][] = [
+    [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';"],
+    [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", 'sections.push(\n        <li key={item.url} data-testid={item.url} className={item.url === active ? \'active\' : \'\'}>\n          <NavLink to={`/old/${item.url}`}>{item.title}</NavLink>\n        </li>,\n      );'],
+    [SIDEBAR, 'export default function AdminSidebar({ definition }) {', 'export default function AdminSidebar({ definition, active }) {'],
+  ];
+  await withMenuCopy(async ({ configFile, src }) => {
+    const map = await build(configFile);
+    const line = lineIn(src, SIDEBAR, '<NavLink');
+    assert.notEqual(line, lineIn(src, SIDEBAR, '<li'));
+    assert.deepEqual(menuRows(screen(map, '/admin_console/users#Users')).map((l) => [l.to, l.line]), [
+      ['/admin_console/about/license', line], ['/admin_console/users', line], ['/admin_console/users/site', line], ['/admin_console/users/plain', line],
+    ]);
+  }, { edits });
+});
+
+test('an element drawn by a loop inside the item\'s loop does not count against the item\'s own elements, so the item\'s link and not a submenu link is the menu element', async () => {
+  const edits: [string, string, string][] = [
+    [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';"],
+    [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", 'sections.push(\n        <li key={item.url} data-testid={item.url}>\n          <NavLink to={`/old/${item.url}`}>{item.title}</NavLink>\n          {item.children && <ul>{item.children.map((c) => <NavLink key={c.url} to={c.url}>{c.title}</NavLink>)}</ul>}\n        </li>,\n      );'],
+  ];
+  await withMenuCopy(async ({ configFile, src }) => {
+    const map = await build(configFile);
+    const line = lineIn(src, SIDEBAR, '<NavLink to={`/old/');
+    assert.deepEqual(menuRows(screen(map, '/admin_console/users#Users')).filter((l) => l.tableItem).map((l) => [l.to, l.line, l.guards]), [
+      ['/admin_console/about/license', line, []], ['/admin_console/users', line, []], ['/admin_console/users/site', line, []], ['/admin_console/users/plain', line, []],
+    ]);
+  }, { edits });
+});
+
+test('a menu element drawn by a function inside the item\'s loop, as a render function of a message or a permission check, is found as the item\'s element', async () => {
+  for (const drawn of [
+    '<FormattedMessage key={item.url} id={item.title}>{(t) => <NavLink to={item.url}>{t}</NavLink>}</FormattedMessage>',
+    '<Can key={item.url} do="see">{() => <NavLink to={item.url}>{item.title}</NavLink>}</Can>',
+  ]) {
+    const edits: [string, string, string][] = [
+      [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';\nimport { FormattedMessage } from 'react-intl';\nimport { Can } from '@casl/react';"],
+      [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", `sections.push(\n        ${drawn},\n      );`],
+    ];
+    await withMenuCopy(async ({ configFile, src }) => {
+      const line = lineIn(src, SIDEBAR, '<NavLink');
+      assert.deepEqual(menuRows(screen(await build(configFile), '/admin_console/users#Users')).filter((l) => l.tableItem).map((l) => [l.to, l.line]), [
+        ['/admin_console/about/license', line], ['/admin_console/users', line], ['/admin_console/users/site', line], ['/admin_console/users/plain', line],
+      ], drawn);
+    }, { edits });
+  }
+});
+
+test('an element drawn by a function given in an attribute, as a dropdown overlay or a render prop, is not the menu element', async () => {
+  for (const drawn of [
+    '<Dropdown key={item.url} overlay={() => <Menu><Link to={item.url}>{item.title}</Link></Menu>}>\n          <NavLink to={item.url}>{item.title}</NavLink>\n        </Dropdown>',
+    '<NavLink key={item.url} to={item.url}\n          render={() => <Icon name={item.url} />} />',
+  ]) {
+    const edits: [string, string, string][] = [
+      [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { Link, NavLink } from 'react-router-dom';\nimport { Dropdown, Menu, Icon } from 'antd';"],
+      [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", `sections.push(\n        ${drawn},\n      );`],
+    ];
+    await withMenuCopy(async ({ configFile, src }) => {
+      const line = lineIn(src, SIDEBAR, '<NavLink');
+      assert.deepEqual(menuRows(screen(await build(configFile), '/admin_console/users#Users')).filter((l) => l.tableItem).map((l) => [l.to, l.line]), [
+        ['/admin_console/about/license', line], ['/admin_console/users', line], ['/admin_console/users/site', line], ['/admin_console/users/plain', line],
+      ], drawn);
+    }, { edits });
+  }
+});
+
+test('an element drawn by a function given in an attribute is the menu element when nothing else in the loop reads the field, as a list item drawing its link through component', async () => {
+  const edits: [string, string, string][] = [
+    [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';\nimport { ListItem } from '@mui/material';"],
+    [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", 'sections.push(\n        <ListItem key={item.url}\n          component={(props) => <NavLink {...props} to={item.url} />}>{item.title}</ListItem>,\n      );'],
+  ];
+  await withMenuCopy(async ({ configFile, src }) => {
+    const line = lineIn(src, SIDEBAR, '<NavLink');
+    assert.notEqual(line, lineIn(src, SIDEBAR, '<ListItem'));
+    assert.deepEqual(menuRows(screen(await build(configFile), '/admin_console/users#Users')).filter((l) => l.tableItem).map((l) => [l.to, l.line]), [
+      ['/admin_console/about/license', line], ['/admin_console/users', line], ['/admin_console/users/site', line], ['/admin_console/users/plain', line],
+    ]);
+  }, { edits });
+});
+
+test('the links a menu gives for the items do not count as links into a screen when the map decides its entry screens', async () => {
+  const entriesOf = (configPatch: Record<string, unknown>) => withMenuCopy(async ({ configFile }) => (await build(configFile)).entries.map((e) => e.screen), { configPatch });
+  const plain = await entriesOf({ routeTables: [ROUTE_TABLE] });
+  assert.ok(plain.includes('/admin_console/users/site#BrandImage'), JSON.stringify(plain));
+  assert.deepEqual(await entriesOf({ routeTables: [MENU_TABLE] }), plain);
+});
+
+test('the flow drawn from a map with a menu is the flow drawn without it, so the menu links are neither tree branches nor jumps', async () => {
+  const flowOf = (configPatch: Record<string, unknown>) => withMenuCopy(async ({ configFile }) => {
+    const map = await build(configFile);
+    const walk = (n: FlowScreenNode): unknown => [n.id, n.jumps.map((j) => j.to), n.children.map(walk)];
+    const flow = buildFlow(map as never, { nodes: {} });
+    return { menuRows: map.screens.reduce((sum, s) => sum + (s.access.menuLinks?.length ?? 0), 0), roots: flow.roots.map(walk), unreached: flow.unreached.map(walk) };
+  }, { configPatch });
+  const { menuRows: plainRows, ...plain } = await flowOf({ routeTables: [ROUTE_TABLE] });
+  const { menuRows, ...withMenu } = await flowOf({ routeTables: [MENU_TABLE] });
+  assert.equal(plainRows, 0);
+  assert.ok(menuRows > 0);
+  assert.deepEqual(withMenu, plain);
+});
+
+test('a screen only menu links for its item come into is an entry screen for that reason, and which screens are restricted does not change with the menu', async () => {
+  const mapWith = (configPatch: Record<string, unknown>) => withMenuCopy(async ({ configFile }) => build(configFile), { configPatch });
+  const plain = await mapWith({ routeTables: [ROUTE_TABLE] });
+  const menus = await mapWith({ routeTables: [MENU_TABLE] });
+  const reasonsOf = (map: ScreenMap, id: string) => map.entries.find((e) => e.screen === id)?.reasons;
+  assert.deepEqual(reasonsOf(plain, '/admin_console/users/site#BrandImage'), [{ kind: 'no-incoming-link' }]);
+  assert.deepEqual(reasonsOf(menus, '/admin_console/users/site#BrandImage'), [{ kind: 'menu-links-only' }]);
+  assert.deepEqual(reasonsOf(menus, '/admin_console#AdminConsole'), reasonsOf(plain, '/admin_console#AdminConsole'));
+  const access = (map: ScreenMap) => map.screens.map((s) => [s.id, s.access.restricted, s.access.kinds]);
+  assert.deepEqual(access(menus), access(plain));
+});
+
+test('a menu loop function that takes the item apart gives the same item links through the name bound to the field', async () => {
+  const edits: [string, string, string][] = [
+    [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';"],
+    [SIDEBAR, `  const sections = [];
+  Object.entries(definition).forEach(([key, section]) => {
+    Object.entries(section.subsections).forEach(([subKey, item]) => {
+      sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);
+    });
+  });
+  return <ul>{sections}</ul>;`, `  const items = Object.values(definition).flatMap((section) => Object.values(section.subsections));
+  return <ul>{items.map(({ url: address, title }) => <NavLink key={address} to={'/admin_console/' + address}>{title}</NavLink>)}</ul>;`],
+  ];
+  await withMenuCopy(async ({ configFile }) => {
+    assert.deepEqual(menuRows(screen(await build(configFile), '/admin_console/users#Users')).map((l) => l.to), ['/admin_console/about/license', '/admin_console/users', '/admin_console/users/site', '/admin_console/users/plain']);
+  }, { edits });
+});
+
+test('the menu link is kept under the conditions written around its element in the menu file', async () => {
+  const edits: [string, string, string][] = [
+    [SIDEBAR, 'export default function AdminSidebar({ definition }) {', 'export default function AdminSidebar({ definition, isAdmin }) {'],
+    [SIDEBAR, '      sections.push(', '      if (isAdmin) sections.push('],
+  ];
+  await withMenuCopy(async ({ configFile }) => {
+    const rows = menuRows(screen(await build(configFile), '/admin_console/users#Users'));
+    assert.equal(rows.length, 4);
+    for (const l of rows) assert.deepEqual(l.guards, ['isAdmin']);
+  }, { edits });
+});
+
+test('a table declared as the only const of its name inside a function of the table file gives the same item screens and menu links', async () => {
+  const edits: [string, string, string][] = [
+    [TABLE, 'const AdminDefinition = {', 'function names(lists) {\n  for (const AdminDefinition of lists) console.log(AdminDefinition);\n}\n\nexport function useAdminDefinition() {\n  const AdminDefinition = {'],
+    [TABLE, 'export default AdminDefinition;', '  return AdminDefinition;\n}\n\nexport default useAdminDefinition;'],
+  ];
+  await withMenuCopy(async ({ configFile, src }) => {
+    const map = await build(configFile);
+    assert.deepEqual(tableScreens(map).filter((s) => s.tableItem).map((s) => s.id), [
+      '/admin_console/about/license#License', '/admin_console/users#Users', '/admin_console/users/:user_id#UserDetail', '/admin_console/users/site#BrandImage', '/admin_console/users/plain#SchemaSettings',
+    ]);
+    assert.deepEqual(screen(map, '/admin_console/users#Users').tableItem, { key: 'users.subsections.list', file: TABLE, line: lineIn(src, TABLE, 'list: {') });
+    assert.equal(menuRows(screen(map, '/admin_console/users#Users')).length, 4);
+  }, { edits });
+  const twice: [string, string, string][] = [
+    [TABLE, 'const AdminDefinition = {', 'function other() {\n  const AdminDefinition = {};\n  return AdminDefinition;\n}\n\nexport function useAdminDefinition() {\n  const AdminDefinition = {'],
+    [TABLE, 'export default AdminDefinition;', '  return AdminDefinition;\n}\n\nexport default useAdminDefinition;'],
+  ];
+  await withMenuCopy(({ configFile }) => {
+    assert.match(failure(configFile), /routeTables\[0\]: admin\/definition\.js has no top-level const AdminDefinition holding an object or a list, and 2 consts of that name inside functions/);
+  }, { edits: twice });
+});
+
+test('a menu file that is missing, has no element reading the field the route path reads from an item of a list, or has two, stops the run with the entry', async () => {
+  await withMenuCopy(({ configFile }) => {
+    assert.match(failure(configFile), /routeTables\[0\]\.menus\[0\]: admin\/Missing\.js is not a file/);
+  }, { configPatch: { routeTables: [{ ...ROUTE_TABLE, menus: ['admin/Missing.js'] }] } });
+  await withMenuCopy(({ configFile }) => {
+    assert.match(failure(configFile), /routeTables\[0\]\.menus\[0\]: admin\/AdminSidebar\.js has no element made for each item of a list that reads the item's url, the field the route at admin\/AdminConsole\.js:\d+ reads/);
+  }, { edits: [[SIDEBAR, 'name={item.url}', 'name={item.title}']] });
+  const reduced: [string, string, string][] = [[SIDEBAR, `    Object.entries(section.subsections).forEach(([subKey, item]) => {
+      sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);
+    });`, '    sections.push(...Object.values(section.subsections).reduce((url, item) => [<SidebarSection key={item.title} name={url.url} />], []));']];
+  await withMenuCopy(({ configFile }) => {
+    assert.match(failure(configFile), /routeTables\[0\]\.menus\[0\]: admin\/AdminSidebar\.js has no element made for each item of a list that reads the item's url/);
+  }, { edits: reduced });
+  await withMenuCopy(({ configFile, src }) => {
+    const first = lineIn(src, SIDEBAR, '<SidebarSection');
+    const other = lineIn(src, SIDEBAR, '<SidebarSection', first);
+    assert.match(failure(configFile), new RegExp(`routeTables\\[0\\]\\.menus\\[0\\]: admin/AdminSidebar\\.js has 2 elements made for each item of a list that read the item's url, at admin/AdminSidebar\\.js:${first} and admin/AdminSidebar\\.js:${other}`));
+  }, { edits: [[SIDEBAR, '      sections.push(', '      sections.push(<SidebarSection key={subKey} name={item.url} />);\n      sections.push(']] });
+});
+
+test('menus in a table entry must be a list of files', () => {
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-test-'));
+  try {
+    fs.cpSync(FIXTURE, copy, { recursive: true, filter: (src) => !src.startsWith(path.join(FIXTURE, 'out')) });
+    const configFile = path.join(copy, 'config.json');
+    const base = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    const load = (menus: unknown) => {
+      fs.writeFileSync(configFile, JSON.stringify({ ...base, routeTables: [{ route: 'Routes.js', table: { file: 'store/settings.js', const: 'defaults' }, items: '*', menus }] }));
+      return () => loadConfig(configFile);
+    };
+    assert.throws(load('components/SideMenu.js'), /^Error: routeTables must be a list of \{ "route", "table": \{ "file", "const" \}, "items" \} with an optional "menus"/);
+    assert.throws(load([1]), /^Error: routeTables must be a list of/);
+    assert.deepEqual(load(['./components/SideMenu.js'])().routeTables[0].menus, ['components/SideMenu.js']);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
 });
 
 test('the usage guide, the agent skill and the decision record describe routeTables', () => {

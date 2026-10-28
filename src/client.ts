@@ -80,6 +80,8 @@ type WatcherSite = { watches: Watch[] };
 type SettingRead = Site & { key: string };
 type RouteRef = Site & { route: string; tail?: string | null };
 type RouterLink = Site & { to: string; sides?: Side[] };
+// 테이블 항목마다 메뉴 링크를 렌더링하는 요소. 반복문의 항목에서 라우트 경로와 같은 field 를 가져다 쓴다.
+type MenuElement = RouterLink & { menu: string };
 type FollowedSite = ApiCallSite | DispatchSite | WatcherSite | RouteRef | RouterLink;
 type SiteKind = 'apiCalls' | 'settingReads' | 'routeRefs' | 'routerLinks';
 
@@ -127,6 +129,7 @@ interface RouteTable {
   route: string;
   table: { file: string; const: string };
   items: string;
+  menus?: string[];
 }
 
 interface LoopRoute {
@@ -346,6 +349,11 @@ export async function extractClient(config: any) {
   // 라우트가 exact 를 표 항목에서 읽는 화면마다 그 항목의 exact. 읽지 못했으면 null 이다.
   const itemExact = new Map<RouteScreen, boolean | null>();
   const tableFiles = new Set((config.routeTables as RouteTable[]).map((t) => path.join(config.srcRoot, t.table.file)));
+  const menuTables = new Map<string, string[]>();
+  for (const t of routeTables.values()) {
+    for (const f of (t.menus ?? []).map((m) => path.join(config.srcRoot, m))) menuTables.set(f, [...(menuTables.get(f) ?? []), t.at]);
+  }
+  const tableRoutes = new Map<string, { field: string; routeFile: string; line: number }>();
   // 라우트 파일에 적은 표는 그 라우트 파일을 그리는 화면의 소스에 남는다.
   for (const f of config.routeFiles as string[]) tableFiles.delete(path.join(config.srcRoot, f));
   const [routeRoot, ...routeRest] = routeChain ?? [];
@@ -640,6 +648,26 @@ export async function extractClient(config: any) {
       },
     });
     return init;
+  }
+
+  function tableLiteral(table: { at: string }, file: string, name: string): NodePath<ObjectExpression | ArrayExpression> {
+    const absFile = path.join(config.srcRoot, file);
+    const { ast } = parseSource(absFile);
+    programFile.set(ast.program, absFile);
+    const top: NodePath[] = [];
+    const inner: NodePath[] = [];
+    traverse(ast, {
+      VariableDeclarator(p) {
+        if ((p.parent as VariableDeclaration).kind !== 'const' || !p.get('id').isIdentifier({ name })) return;
+        const init = p.get('init') as NodePath;
+        if (p.scope.path.isProgram()) top.push(init);
+        else if (init.isObjectExpression() || init.isArrayExpression()) inner.push(init);
+      },
+    });
+    const [found] = top.length ? top : inner.length === 1 ? inner : [];
+    if (found?.isObjectExpression() || found?.isArrayExpression()) return found;
+    const more = !top.length && inner.length > 1 ? `, and ${inner.length} consts of that name inside functions` : '';
+    throw new Error(`${table.at}: ${file} has no top-level const ${name} holding an object or a list${more}`);
   }
 
   function loadSettingsDefaults() {
@@ -1626,8 +1654,41 @@ export async function extractClient(config: any) {
       for (const address of read ? addressesOf(read, () => UNKNOWN) : []) record('routerLinks', address, p);
     };
     const inRouteFile = routeFileSet.has(file);
+    const menusHere = menuTables.get(file) ?? [];
+    const menuTablesOf = (p: NodePath<JSXElement>) => {
+      const fields = itemFieldsRead(p);
+      return menusHere.filter((t) => {
+        if (!tableRoutes.has(t)) throw new Error(`${t}: ${relFile} was read before the route file of its table`);
+        return fields.includes(tableRoutes.get(t)!.field);
+      });
+    };
+    const readers = (holder: NodePath, loop: Node, table: string) => {
+      const found: NodePath[] = [];
+      holder.traverse({ JSXElement(q) { if (q.findParent(loopCallback)?.node === loop && menuTablesOf(q).includes(table)) found.push(q); } });
+      return found;
+    };
+    const outerLoopReads = (loop: NodePath, table: string) => {
+      for (let outer = loop.parentPath?.findParent(loopCallback); outer; outer = outer.parentPath?.findParent(loopCallback)) if (readers(outer, outer.node, table).length) return true;
+      return false;
+    };
+    const inAttributeFunction = (q: NodePath, loop: NodePath) => q.findParent((a) => a === loop || (a.isFunction() && Boolean(a.parentPath?.isJSXExpressionContainer() && a.parentPath.parentPath?.isJSXAttribute()))) !== loop;
+    // 같은 반복 함수 안에서 항목의 field 를 읽는 요소가 겹쳐 있으면 가장 안쪽 요소가 메뉴 요소다. 바깥 반복의 항목도 그 field 를 읽으면 안쪽 반복의 요소는 메뉴 요소가 아니다.
+    const recordMenuElement = (p: NodePath<JSXElement>) => {
+      const tables = menusHere.length ? menuTablesOf(p) : [];
+      if (!tables.length) return false;
+      const loop = p.findParent(loopCallback)!;
+      const own = tables.filter((t) => {
+        const all = readers(loop, loop.node, t);
+        const outside = all.filter((q) => !inAttributeFunction(q, loop));
+        const counted = outside.length ? outside : all;
+        return counted.some((q) => q.node === p.node) && !counted.some((q) => q.node !== p.node && q.isDescendant(p)) && !outerLoopReads(loop, t);
+      });
+      for (const table of own) record('routerLinks', { to: UNKNOWN, menu: table }, p);
+      return own.length > 0;
+    };
     traverse(ast, {
       JSXElement(p) {
+        if (recordMenuElement(p)) return;
         recordElementLinks(p);
         recordUseLinks(p);
       },
@@ -1954,9 +2015,9 @@ export async function extractClient(config: any) {
     if (!routes.length) throw new Error(`${table.at}: ${routeFile} has no route made for each item of a list whose path reads a field of the item`);
     if (routes.length > 1) throw new Error(`${table.at}: ${routeFile} has ${routes.length} routes made for each item of a list, at ${routes.map((r) => `${routeFile}:${r.line}`).join(' and ')}; a route file takes one table`);
     const [{ line, page, drawnKeys, pathExpr, item, exactField, guards, wrappers, frame }] = routes;
+    tableRoutes.set(table.at, { field: item.field, routeFile, line });
     const { file, const: name } = table.table;
-    const literal = topLevelLiteral(file, name);
-    if (!literal) throw new Error(`${table.at}: ${file} has no top-level const ${name} holding an object or a list`);
+    const literal = tableLiteral(table, file, name);
     const items = tableItems(literal, table.items.split('.')).map((it) => ({ ...it, field: it.object && propertyValue(it.object, item.field) }));
     if (!items.some((it) => it.field)) throw new Error(`${table.at}: items "${table.items}" finds no item with a ${item.field} in ${name}, which the route at ${routeFile}:${line} reads`);
     return items.flatMap(({ key, line: itemLine, file: itemFile, object: itemObject, field }): RouteScreen[] => {
@@ -1972,6 +2033,8 @@ export async function extractClient(config: any) {
       const values = [...new Set(pathsIn(field).flatMap((onePath) => {
         const value = evaluate(onePath);
         if (readWhole(value)) return [String(value)];
+        const called = readRoutePath(onePath).path;
+        if (!called.includes(UNKNOWN)) return [called];
         const at = stopOf(unreadPiece(onePath) ?? onePath);
         unreadRoutes.push({ file: routeFile, line, reason: `${place}: its ${item.field} stopped at ${at.text}${at.file === itemFile ? '' : ` in ${at.file}:${at.line}`}` });
         return [];
@@ -2384,6 +2447,35 @@ export async function extractClient(config: any) {
       if (prop.type === 'ObjectProperty' && !prop.computed && prop.value.type === 'Identifier') fields.set(prop.value.name, keyName(prop));
     }
     return fields;
+  }
+
+  // `map`, `flatMap`, `forEach` 에 넘긴 함수가 받는 항목에서, key 를 뺀 요소 속성에 값으로 넣는 field.
+  // 요소를 감싼 가장 가까운 반복 함수의 항목만 센다. 사이에 반복이 아닌 함수가 있어도 된다.
+  // 항목은 첫 매개변수이거나, 첫 매개변수를 `([key, item])` 처럼 배열로 풀어 받은 둘째 이름이다.
+  // 첫 매개변수를 `({ url })` 로 풀어 받았다면 그 키가 field 다.
+  function itemFieldsRead(p: NodePath<JSXElement>): string[] {
+    const fields = new Set<string>();
+    const loop = p.findParent(loopCallback);
+    for (const a of p.get('openingElement.attributes') as NodePath<any>[]) {
+      if (!a.isJSXAttribute() || a.node.name.name === 'key' || !a.get('value').isJSXExpressionContainer()) continue;
+      for (const x of piecesOf(a.get('value').get('expression') as NodePath)) {
+        const field = loop && loopItemField(x, loop.node);
+        if (field) fields.add(field);
+      }
+    }
+    return [...fields];
+  }
+
+  function loopItemField(x: NodePath, loop: Node): string | null {
+    const read = x.isMemberExpression() && !x.node.computed && x.get('object').isIdentifier() ? x.get('object') as NodePath<Identifier> : x.isIdentifier() ? x : null;
+    const binding = read && x.scope.getBinding(read.node.name);
+    const fn = binding?.kind === 'param' && binding.scope.path.node === loop ? binding.scope.path : null;
+    const method = fn && loopCallback(fn) ? (((fn.parent as CallExpression).callee as MemberExpression).property as Identifier).name : null;
+    if (!fn || !method || method === 'reduce') return null;
+    const first = (fn.get('params') as NodePath[])[0];
+    if (read === x) return first.isObjectPattern() && first.node.properties.some((prop) => prop.type === 'ObjectProperty' && prop.value === binding!.identifier) ? itemFields(first).get(read.node.name) ?? null : null;
+    const isItem = first.node === binding!.identifier || (first.isArrayPattern() && first.node.elements[1] === binding!.identifier);
+    return isItem ? ((x.node as MemberExpression).property as Identifier).name : null;
   }
 
   // 배열을 순회하는 함수가 받는 항목에서 꺼낸 프로퍼티 하나(`item.url`, 또는 `({ url })` 로 구조 분해한 `url`)를 경로에 한 번 쓰는 라우트의 그 프로퍼티.
@@ -2901,6 +2993,33 @@ export async function extractClient(config: any) {
   const appWideClosure = (f: string) => closureOf(f, (g) => screenFiles.has(g), besideApp);
   const appWideFiles = [...new Set(appWideEntries.flatMap(({ file }) => closureOf(file, (g) => screenFiles.has(g), new Set([...besideApp].filter((g) => g !== file)))))];
   const routedScreens = routerTargets(routeRoots);
+  const itemLinks = menuLinks();
+
+  function menuLinks() {
+    const byTable = new Map<string, { to: string; tableItem: TableItem; screen: number }[]>();
+    const active = new Set<MenuElement>();
+    for (const table of routeTables.values()) {
+      const route = tableRoutes.get(table.at);
+      if (!route || !table.menus?.length) continue;
+      byTable.set(table.at, sourced.flatMap((x, i) => (x.s.tableItem && x.s.routeFile === table.route && !x.s.path.includes(UNKNOWN) && pathParts(x.s.path).every((part) => typeof part === 'string')
+        ? [{ to: x.s.path, tableItem: x.s.tableItem, screen: i }] : [])));
+      table.menus.forEach((menu, j) => {
+        const at = `${table.at}.menus[${j}]`;
+        const file = path.join(config.srcRoot, menu);
+        if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) throw new Error(`${at}: ${menu} is not a file`);
+        const found = fileFacts(file).routerLinks.filter((l): l is MenuElement => (l as MenuElement).menu === table.at);
+        const reads = `made for each item of a list that read${found.length > 1 ? '' : 's'} the item's ${route.field}`;
+        if (!found.length) throw new Error(`${at}: ${menu} has no element ${reads}, the field the route at ${route.routeFile}:${route.line} reads`);
+        if (found.length > 1) throw new Error(`${at}: ${menu} has ${found.length} elements ${reads}, at ${found.map((l) => `${menu}:${l.line}`).join(' and ')}`);
+        active.add(found[0]);
+      });
+    }
+    return (element: MenuElement) => {
+      if (!active.has(element)) return [];
+      const { menu, sides, to, ...site } = element;
+      return byTable.get(menu)!.map(({ to: itemTo, tableItem, screen }) => ({ ...site, to: itemTo, tableItem, reaches: [screen] }));
+    };
+  }
   // 링크 주소 전체로 쓴 라우트 상수는 Routes 에서 그 주소에 맞는 화면이 나오면 문자열 주소처럼 잇되 다른 Routes 의 catch-all 은 빼고, 그 밖에는 라우트 경로에 맞춰 본다.
   const constantLink = (site: RouteRef, from: number) => {
     const { tail, ...ref } = site;
@@ -2993,7 +3112,7 @@ export async function extractClient(config: any) {
     const own = new Set<ApiCallSite>();
     const dispatched = new Map<string, { type: ActionType; at: Set<string> }>();
     const settingReads: (SettingRead & { file: string | null })[] = [];
-    const links: (Site & { route?: string; to: unknown; tail?: string; reaches?: number[]; file: string | null; actions?: DispatchedActions })[] = [];
+    const links: (Site & { route?: string; to: unknown; tail?: string; reaches?: number[]; tableItem?: TableItem; file: string | null; layout?: true; actions?: DispatchedActions })[] = [];
     const ownLinks = new Set<FollowedSite>();
     const takeCalls = (f: string, facts: Facts) => {
       for (const c of facts.apiCalls) {
@@ -3015,9 +3134,13 @@ export async function extractClient(config: any) {
       for (const r of facts.settingReads) settingReads.push(drawnWith({ ...r, file: rel(f) }, drawnFiles.get(f)));
       for (const ref of linkSites(facts)) {
         if (!seen(ref) || (exportedKeys.has(ref as RouteRef) && lookedUpElsewhere(exportedKeys.get(ref as RouteRef)!))) continue;
+        if ('menu' in ref) {
+          for (const link of itemLinks(ref as MenuElement)) links.push(drawnWith({ ...link, file: rel(f), ...layout(ref) }, onlyDrawn.get(ref)));
+          continue;
+        }
         ownLinks.add(ref);
         const link = screenLink(ref, index);
-        if (link) links.push(drawnWith({ ...link, file: rel(f) }, onlyDrawn.get(ref)));
+        if (link) links.push(drawnWith({ ...link, file: rel(f), ...layout(ref) }, onlyDrawn.get(ref)));
       }
     }
     // 라우트 파일 본문에서 옮기는 것은 그 파일이 그리는 화면 어디서나 일어난다.
