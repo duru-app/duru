@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
+import { addMark } from '../src/marks.ts';
 import type { ScreenMap } from '../src/map.ts';
 
 const CLI = path.join(import.meta.dirname, '../src/cli.ts');
@@ -161,6 +162,36 @@ test('a request of a screen reached only through a component drawn around or bes
   assert.deepEqual(sentFrom(screen(map, '/login#Login').apiCalls), ['Login.js GET /api/login']);
 });
 
+test('the extract summary counts the requests written in appWide sources with those of the screens, so its unread lines sit under that count', () => {
+  const { status, stdout } = extract(writeApp({ 'hooks/useFlags.js': "export const useFlags = () => fetch(window.flagsUrl);\n" }));
+  assert.equal(status, 0);
+  const lines = stdout.split('\n');
+  const at = lines.indexOf('requests and navigations written in screen sources 8 | address not read 1');
+  assert.ok(at >= 0, stdout);
+  assert.match(lines[at + 1], /^ {2}request fetch ← hooks\/useFlags\.js:1: /);
+});
+
+test('the task list and the candidate lines say a call of appWide is sent as the app starts, and list the layout calls of a screen apart from its own', () => {
+  const configFile = writeApp({}, { appWideComponents: COMPONENTS, caseKinds: { ended: '끝난 문서' } });
+  assert.equal(extract(configFile).status, 0);
+  const config = loadConfig(configFile);
+  for (const node of ['GET:/api/me', '/team#Team']) addMark(config.marksDir, { target: { node }, status: 'needs-more', note: 'test it', author: 'reviewer' });
+  const run = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args, configFile], { encoding: 'utf8' });
+  const atStart = 'as the app starts by AppProvider (AppProvider.js), default (Routes.js)';
+  assert.ok(run('undecided').stdout.split('\n').includes(`  GET:/api/me — call, sent ${atStart}`));
+  const tasks = run('tasks').stdout.split('\n');
+  assert.ok(tasks.includes(`- sent ${atStart}`), tasks.join('\n'));
+  const team = tasks.slice(tasks.indexOf('## /team#Team'));
+  assert.deepEqual(team.slice(team.indexOf('- calls:'), team.indexOf('- calls:') + 6), [
+    '- calls:',
+    '  - GET:/api/team — no tests',
+    '- calls of the layout around the screen, which one test from any screen it is on covers:',
+    '  - GET:/api/shell — no tests',
+    '  - GET:/api/menu — no tests',
+    '  - GET:/api/notices — no tests',
+  ]);
+});
+
 test('appWideComponents must name components the app exports', () => {
   const failing = (keys: Record<string, unknown>) => {
     const { status, stderr } = extract(writeApp({}, keys));
@@ -169,8 +200,8 @@ test('appWideComponents must name components the app exports', () => {
   };
   assert.match(failing({ appWideComponents: { import: './AppProvider', name: 'AppProvider' } }), /appWideComponents must be a list of \{ "import", "name" \}/);
   assert.match(failing({ appWideComponents: [{ import: './AppProvider' }] }), /appWideComponents must be a list of \{ "import", "name" \}/);
-  assert.match(failing({ appWideComponents: [{ import: './Nowhere', name: 'AppProvider' }] }), /appWideComponents import \.\/Nowhere names no file under srcRoot/);
-  assert.match(failing({ appWideComponents: [{ import: './AppProvider', name: 'Missing' }] }), /appWideComponents name Missing is not exported by AppProvider\.js/);
+  assert.match(failing({ appWideComponents: [{ import: './Nowhere', name: 'AppProvider' }] }), /appWideComponents\[0\]\.import \.\/Nowhere names no file under srcRoot/);
+  assert.match(failing({ appWideComponents: [{ import: './AppProvider', name: 'Missing' }] }), /appWideComponents\[0\]\.name Missing is not exported by AppProvider\.js/);
 });
 
 test('the usage guide names the config key, the map field, the marker, the line and the folded 「공통」 calls, the agent skill says when to set the key, and the decision record names what was compared', () => {

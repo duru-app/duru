@@ -506,8 +506,8 @@ listing the places whose value the source does not show in full.
   methods may have stopped on the fake values (`silentApiModules`). When no listed file sends one, the run stops
   with an error that also gives the cause for each listed file that did not run.
 - `requests and navigations written in screen sources N | address not read N` — the requests and the moves of
-  the browser read from the sources of the screens and of the sagas that send for them, and how many of them gave
-  no address. Printed when there is one.
+  the browser read from the sources of the screens, of the sagas that send for them and of `appWide`, and how many
+  of them gave no address. Printed when there is one.
 - `request <how> ← <file>:<line>: address not read (<reason>)` — a request in a screen source whose address could
   not be worked out, with the `reason` of its `unresolved` server match; `, only <text>` follows when a part of
   it was read. The request stays on the screen without an address and is in no call (`unreadRequests`, each
@@ -1547,9 +1547,10 @@ the rest of the list is as without it, and `tasks` does not stop. When `outDir` 
 description, its values and rules, `undecided: N` with a line for each undecided candidate, and `cases with no
 tests: N`. A candidate is any screen or call for a kind without rules, and otherwise one on the side its rules pick
 (screens or calls); it is undecided while no rule picks it and its current mark of that kind is none, or a
-`not-needed` with no note. A candidate line is `<ID> — call, sent from <screens>` or `<ID> — screen, component
-<file>, route at <file>:<line>`, requests other than `GET` first (a request whose method was not read among them),
-then the other calls, then the screens, each group by ID. A candidate whose current mark a person left ends with
+`not-needed` with no note. A candidate line is `<ID> — call, sent from <screens>`, with
+`sent as the app starts by <name> (<file>), …` for a call of `appWide`, or
+`<ID> — screen, component <file>, route at <file>:<line>`, requests other than `GET` first (a request whose method
+was not read among them), then the other calls, then the screens, each group by ID. A candidate whose current mark a person left ends with
 `— <author> marked it not-needed without a note on <date>, so only a person can decide it` (`took it out of a rule
 that no longer picks it` for a mark whose rule no longer picks it, `took back the agent's not-needed` for one a
 reviewer reverted): `case` does not change that mark. While an agent's `not-needed` waits for a reviewer on any

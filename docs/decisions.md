@@ -4732,7 +4732,10 @@ Known limits: a component that is not exported, such as outline's and appsmith's
 cannot be named; the start requests show on screens the app's shell skips by a check in code; a request body
 option found only in an `appWide` site is not among the call's options; a dead call only `appWide` sends is not
 among `deadCalls`; a request that a screen's code reaches through a shared module that loads for every screen, such
-as SigNoz's token refresh in `api/index.ts`, is the screen's own.
+as SigNoz's token refresh in `api/index.ts`, is the screen's own; an `App` in a routes file can reach the screen and
+layout components written in that same file, and their requests then count as the whole app's; the actions an
+`appWide` component dispatches are not followed into the sagas, and a request a saga sends for a screen is never
+`layout`; a screen with a layout gets a second walk of the names from its component file, not merged with the first.
 Measured on main 5519f30 against the branch, the components named for each app as the comparison configs give them:
 SigNoz with its API code (`AppProvider` and the `App` of `AppRoutes/index.tsx`) sends 23 calls for the whole app, and
 `GET /api/v1/features`, `GET /api/v2/users/me` and `GET /api/v4/licenses/active` leave the line of calls that reach no

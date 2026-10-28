@@ -108,6 +108,12 @@ function methodMark(call) {
   return h('span', { class: `method${known ? ` m-${call.method.toLowerCase()}` : ''}`, title: known ? null : '메서드를 읽지 못한 요청입니다' }, known ? call.method : '?');
 }
 
+function sentWhere(call) {
+  const atStart = sentAtAppStart(call.id);
+  if (!call.screens.length) return atStart ? '앱 시작 때 보냄' : '보내는 화면 없음';
+  return `보내는 화면 ${call.screens.map(screenLabel).join(' · ')}${atStart ? ' · 앱 시작 때도 보냄' : ''}`;
+}
+
 function caseNodeName(id) {
   const call = callOf(id);
   const opens = opensOnPage(id);
@@ -122,7 +128,7 @@ function caseNodeName(id) {
     },
   } : { class: 'node-name mono' }, call ? call.path ?? id : screenLabel(id));
   const where = call
-    ? `보내는 화면 ${call.screens.length ? call.screens.map(screenLabel).join(' · ') : '없음'}`
+    ? sentWhere(call)
     : `컴포넌트 ${screenOf(id)?.component ?? ''}`;
   return h('span', { class: 'case-node' }, h('span', { class: 'case-node-head' }, call ? methodMark(call) : null, name), h('span', { class: 'muted where' }, where));
 }

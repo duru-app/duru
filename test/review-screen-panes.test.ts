@@ -7,10 +7,13 @@ import { addMark, addReply, loadMarks } from '../src/marks.ts';
 import { taskList } from '../src/tasks.ts';
 import { withRebuiltFixture, withServer, postMark, browserMissing, toList, withPage, openScreenInfo, waitCallInfoInView, openDocumentScreenInShortViewport, insideRightPane, withLabLinks, screenBox, needTag, closeCallInfo } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
+import type { PageData as ServedData } from '../src/review.ts';
 
 declare function load(): Promise<void>;
 declare function render(): void;
 declare function hasUnsavedMark(): boolean;
+declare function opensOnPage(id: string): boolean;
+declare const state: { target: unknown; draft: unknown; selected: string | null };
 
 test('in a browser, a screen that opens only under a role or a setting shows its tests for each case under what it needs', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -854,4 +857,45 @@ test('in a browser, a screen lists the calls its own code sends on top and folds
       }),
     ),
   LAYOUT_REQUESTS);
+});
+
+const ME = 'GET:/api/v1/me';
+const APP_START_ONLY: [string, string, string][] = [
+  ...LAYOUT_REQUESTS,
+  ['client/src/_ajax/AjaxFunc.js', 'export const ajaxLabExperiment', "export const ajaxMe = async () => Ajax.request({ info: { METHOD: 'GET', URL: '/api/v1/me' } });\n\nexport const ajaxLabExperiment"],
+  ['client/src/Routes.js', "import { ajaxLabExperiment } from './_ajax/AjaxFunc';", "import { ajaxLabExperiment, ajaxMe } from './_ajax/AjaxFunc';"],
+  ['client/src/Routes.js', '  ajaxLabExperiment();\n', '  ajaxLabExperiment();\n  ajaxMe();\n'],
+];
+
+test('in a browser, a call only the app start sends opens on the screen in view: it stays chosen with its draft when the page reloads, and the case list says it is sent at app start and opens it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ appWideComponents: [{ import: './Routes', name: 'AppStart' }], caseKinds: { ended: '끝난 문서' } }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await p.locator('#center details.common-calls summary').click();
+        await p.click(`#center details.common-calls button.call-name:text-is("${ME}")`);
+        assert.equal(await p.textContent('#center .call-info summary .mono'), ME);
+        assert.deepEqual((await (await fetch(`${base}/api/data`)).json() as ServedData).map.screens.find((x) => x.id === '/help#Help')!.callOptions[ME], []);
+        await p.fill('#right-dock textarea', '앱을 켤 때 한 번만 부른다');
+        const kept = () => p.evaluate(() => JSON.stringify([state.target, state.draft]));
+        const before = await kept();
+        assert.match(before, /앱을 켤 때 한 번만 부른다/);
+        await p.evaluate(() => load());
+        assert.equal(await kept(), before);
+        assert.equal(await p.textContent('#center .call-info summary .mono'), ME);
+        assert.equal(await p.inputValue('#right-dock textarea'), '앱을 켤 때 한 번만 부른다');
+        assert.equal(await p.evaluate((id) => opensOnPage(id), ME), true);
+
+        await p.fill('#right-dock textarea', '');
+        await p.evaluate(() => { location.hash = '#cases?kind=ended'; });
+        assert.equal(await p.textContent(`#center li.case-row[data-node="${ME}"] .where`), '앱 시작 때 보냄');
+        assert.equal(await p.textContent('#center li.case-row[data-node="GET:/api/v1/lab/experiment"] .where'), '보내는 화면 /lab · 앱 시작 때도 보냄');
+        await p.click(`#center li.case-row[data-node="${ME}"] button.node-name`);
+        await p.waitForFunction(() => location.hash.startsWith('#screens'));
+        assert.equal(await p.textContent('#center .call-info summary .mono'), ME);
+        assert.equal(await p.evaluate(() => state.selected), '/help#Help');
+      }),
+    ),
+  APP_START_ONLY);
 });

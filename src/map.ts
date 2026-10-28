@@ -146,6 +146,10 @@ type UnreadSite = { fn: string; file: string | null; line: number; url: string |
 export const readsAnAddress = (screens: { apiCalls: MapApiCall[] }[]) =>
   screens.some((s) => s.apiCalls.some((c) => (c.endpoints ?? []).some((e) => e.server.status !== 'unresolved' || e.server.reason === 'other-host')));
 
+export const sendingParts = (map: Pick<ScreenMap, 'screens' | 'appWide'>) => [...map.screens, ...(map.appWide ? [map.appWide] : [])];
+
+export const sentAtAppStart = (appWide: { apiCalls: MapApiCall[] } | null | undefined) => new Set((appWide?.apiCalls ?? []).flatMap((c) => (c.endpoints ?? []).flatMap((e) => (e.callId ? [e.callId] : []))));
+
 export function unreadSites(screens: { apiCalls: MapApiCall[] }[], direct: boolean): UnreadSite[] {
   const unread = new Map<string, UnreadSite>();
   for (const s of screens) {
@@ -328,7 +332,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, appWideMapped?.apiCalls ?? [], apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
 
   const unreferenced = new Set(unreferencedApiFunctions);
-  const sentForApp = new Set((appWideMapped?.apiCalls ?? []).flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)));
+  const sentForApp = sentAtAppStart(appWideMapped);
   const noScreen = calls.filter((c) => !c.screens.length && !sentForApp.has(c.id));
   const unusedCall = (c: MapCall) => c.apiFunctions.length > 0 && c.apiFunctions.every((name) => unreferenced.has(name));
   const callsOnNoScreen = { unused: noScreen.filter(unusedCall).map((c) => c.id), other: noScreen.filter((c) => !unusedCall(c)).map((c) => c.id) };

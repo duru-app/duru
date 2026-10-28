@@ -139,6 +139,12 @@ const nodeWord = (id) => (callOf(id) ? '호출' : '화면');
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];
 const hasOption = (tests, key, value) => tests.filter((t) => t.options?.some((o) => o.key === key && o.value === value));
 const optionsOf = (s, callId) => s.callOptions[callId] ?? [];
+const sentAtAppStart = (id) => callIdsOf(state.data.map.appWide ?? { apiCalls: [] }).includes(id);
+function callScreen(id) {
+  if (!sentAtAppStart(id)) return callOf(id)?.screens[0];
+  const { screens } = state.data.map;
+  return screens.some((s) => s.id === state.selected) ? state.selected : screens[0]?.id;
+}
 
 let loadsStarted = 0;
 let loadApplied = 0;
@@ -158,7 +164,7 @@ async function load() {
   state.selected = screen?.id ?? null;
   const t = state.target;
   const targetKept = t && screen && (t.node === screen.id
-    || (callIdsOf(screen).includes(t.node) && (!t.option || optionsOf(screen, t.node).some((o) => o.key === t.option.key))));
+    || ((callIdsOf(screen).includes(t.node) || sentAtAppStart(t.node)) && (!t.option || optionsOf(screen, t.node).some((o) => o.key === t.option.key))));
   if (!targetKept) {
     state.target = screen ? { node: screen.id } : null;
     state.draft = null;
@@ -296,7 +302,7 @@ function openScreen(id) {
 function openCall(id) {
   if (state.bulkBusy) return;
   state.side = 'screens';
-  select(callOf(id).screens[0], { node: id });
+  select(callScreen(id), { node: id });
   revealCallInfo();
 }
 

@@ -12,6 +12,7 @@ import type { CaseTarget, KindTargets } from './case-targets.ts';
 import type { TableItem } from './client.ts';
 import { compare } from './config.ts';
 import type { CaseKind } from './config.ts';
+import { sentAtAppStart } from './map.ts';
 import { GENERAL, orderKey, recordKind } from './marks.ts';
 import type { MarkEntry } from './marks.ts';
 import { findNeed, needPath } from './needs.ts';
@@ -286,27 +287,27 @@ function resultOptionLines(map: any, tests: Record<string, TestRow[]>) {
 
 function callLines(screen: any, tests: Record<string, TestRow[]>, resultLines: ReturnType<typeof resultOptionLines>) {
   const seen = new Set<string>();
-  const lines: string[] = [];
-  for (const call of screen.apiCalls) {
-    if (!call.endpoints) {
-      lines.push(`  - ${call.fn} at ${call.file}:${call.line} — not found among the API functions`);
-      continue;
-    }
-    for (const e of call.endpoints) {
-      if (!e.callId) {
-        lines.push(`  - ${call.fn} at ${call.file}:${call.line} — address not resolved`);
-        continue;
-      }
-      if (seen.has(e.callId)) continue;
+  const linesOf = (calls: any[]) => calls.flatMap((call) => {
+    if (!call.endpoints) return [`  - ${call.fn} at ${call.file}:${call.line} — not found among the API functions`];
+    return call.endpoints.flatMap((e: any) => {
+      if (!e.callId) return [`  - ${call.fn} at ${call.file}:${call.line} — address not resolved`];
+      if (seen.has(e.callId)) return [];
       seen.add(e.callId);
       const server = e.server.status === 'none' ? 'not on the server, ' : '';
       const options = screen.callOptions[e.callId].map((o: any) => o.key);
-      lines.push(`  - ${e.callId} — ${server}${testSummary(tests[e.callId])}${options.length ? ` — options: ${options.join(', ')}` : ''}`);
-      if (options.length) lines.push(...optionLines(options, tests[e.callId] ?? []));
-      lines.push(...resultLines(e.callId, '    '));
-    }
-  }
-  return lines.length ? ['- calls:', ...lines] : ['- calls: none'];
+      return [
+        `  - ${e.callId} — ${server}${testSummary(tests[e.callId])}${options.length ? ` — options: ${options.join(', ')}` : ''}`,
+        ...(options.length ? optionLines(options, tests[e.callId] ?? []) : []),
+        ...resultLines(e.callId, '    '),
+      ];
+    });
+  });
+  const own = linesOf(screen.apiCalls.filter((c: any) => !c.layout));
+  const layout = linesOf(screen.apiCalls.filter((c: any) => c.layout));
+  return [
+    ...(own.length ? ['- calls:', ...own] : ['- calls: none']),
+    ...(layout.length ? ['- calls of the layout around the screen, which one test from any screen it is on covers:', ...layout] : []),
+  ];
 }
 
 function testLine(t: TestRow) {
@@ -604,8 +605,21 @@ const NO_TESTS_INTRO = ' Under `cases with no tests`, each screen or call a rule
 const NEW_ONLY_INTRO = ' When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config> <kind> --new` for that kind instead: it lists only the undecided candidates that the map named by `baselineMap` does not have, and exits with 0 once none of them is left, even while older ones are. Do not use `--new` for a kind added to `caseKinds` after that map was built: its candidates on that map count as older, so `--new` ends at once.';
 const UNDER_REVIEW_INTRO = ' Under `under review`, each candidate carries a `not-needed` an agent wrote with `duru case`, which waits for a reviewer to accept or revert it on the review page; until then the candidate counts as it did before, a target of a rule stays a target, and it is not undecided. Do not write it again.';
 
-const nodeText = (node: any, isCall: boolean) => (isCall
-  ? `call, sent from ${node.screens.length ? node.screens.join(', ') : 'no screen'}`
+function sentText(call: any, map: any) {
+  const atStart = sentAtAppStart(map.appWide).has(call.id) ? `sent as the app starts by ${map.appWide.components.map((c: any) => `${c.name} (${c.file})`).join(', ')}` : null;
+  return { fromScreens: call.screens.length ? call.screens.join(', ') : null, atStart };
+}
+
+const sentFrom = ({ fromScreens, atStart }: ReturnType<typeof sentText>) => [fromScreens && `sent from ${fromScreens}`, atStart].filter(Boolean).join(' and ') || 'sent from no screen';
+
+function calledFromLine(call: any, map: any) {
+  const { fromScreens, atStart } = sentText(call, map);
+  if (!fromScreens && atStart) return `- ${atStart}`;
+  return `- called from: ${fromScreens ?? 'no screen'}${atStart ? `; ${atStart}` : ''}`;
+}
+
+const nodeText = (node: any, isCall: boolean, map: any) => (isCall
+  ? `call, ${sentFrom(sentText(node, map))}`
   : `screen, component ${node.componentFile ?? 'file not found'}, route at ${node.routeFile}:${node.line}`);
 
 function pickedByText(kind: string, target: CaseTarget) {
@@ -629,7 +643,7 @@ function undecidedText(map: any, attached: MarkEntry[], kind: string) {
     const entry = byPerson.get(id);
     const mark = entry?.current;
     const what = mark?.of !== undefined && !acceptsProposal(mark, entry!.history) ? 'took back the agent\'s not-needed' : mark?.rule ? 'took it out of a rule that no longer picks it' : 'marked it not-needed without a note';
-    return `${id} — ${nodeText(node, isCall)}${mark ? ` — ${within(mark.author, '    ')} ${what} on ${mark.date.slice(0, 10)}, so only a person can decide it` : ''}`;
+    return `${id} — ${nodeText(node, isCall, map)}${mark ? ` — ${within(mark.author, '    ')} ${what} on ${mark.date.slice(0, 10)}, so only a person can decide it` : ''}`;
   };
 }
 
@@ -640,7 +654,7 @@ function reviewText(map: any, targets: KindTargets) {
   return (id: string) => {
     const { node, isCall } = nodeOf(id);
     const { author, date, note } = targets.nodes[id].review!;
-    return `${id} — ${nodeText(node, isCall)} — ${within(author, '    ')}, ${date.slice(0, 10)} — ${quotedNote(note, '    ') ?? 'no note'}`;
+    return `${id} — ${nodeText(node, isCall, map)} — ${within(author, '    ')}, ${date.slice(0, 10)} — ${quotedNote(note, '    ') ?? 'no note'}`;
   };
 }
 
@@ -691,7 +705,7 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
         '',
         `### ${c.node}`,
         '',
-        `- ${nodeText(node, isCall)}`,
+        `- ${nodeText(node, isCall, map)}`,
         `- picked by: ${pickedByText(kind, c.target)}`,
         `- no tests: ${c.tags.map((tag) => `\`@${tag}\``).join(', ')}`,
         ...emptyTestLines(formats, c.tags.map((tag) => [`${isCall ? 'call' : 'screen'}:${c.node}`, tag])),
@@ -813,7 +827,7 @@ export function taskList(config: any) {
       marks.length ? '- marks:' : REGRESSION_ONLY,
       ...marks.flatMap((m) => entryLines(m, cellText(m.target, 'whole call'))),
       ...partLines(partsOf(c.id), 'call', PART_SECTIONS, passedIn),
-      `- called from: ${c.screens.length ? c.screens.join(', ') : 'no screen'}`,
+      calledFromLine(c, map),
       `- server: ${serverText(c.server)}`,
       ...resultLines(c.id, ''),
       ...caseLines(`call:${c.id}`, c.cases, tests.nodes[c.id], config.caseKinds),

@@ -141,10 +141,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   or beside the screen's route, in its own route file or in a route file outside it. Its file and line point into
   that component, and an `inheritedGuards` entry with a `file` names the place it is drawn and the condition it is
   drawn under; test it from the screen like the screen's own. Such a call has `"layout": true` when the screen's own
-  component does not reach it; one test of it from any screen it is on covers the component that sends it.
+  component does not reach it; one test of it from any screen it is on covers the component that sends it. The task
+  list puts such calls of a screen after its own, under `calls of the layout around the screen`.
 - A call under `appWide` is sent by a component named in `appWideComponents` once for the whole app, as it starts,
   not by any screen. Test it once, from whichever screen the app opens first, and do not write it into each screen's
-  tests.
+  tests. The task list and the candidate lines say `sent as the app starts by <name> (<file>)` for it.
 - A `<component> at <file>:<line> is drawn beside routes but draws its own routes in <file>, …` line names a
   component, often a header, that shows something different for each address. None of its links or calls are on
   the screens beside it; tell the user which component it is, and that its links on each screen are missing from the

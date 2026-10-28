@@ -107,9 +107,9 @@ function appLink(appUrl: string | null | undefined, routePath: string, given: an
   return appUrl.replace(/\/+$/, '') + asIsPath(routePath, given);
 }
 
-function screenCallOptions(screen: MapScreen, callsById: Map<string, MapCall>) {
+function screenCallOptions(apiCalls: MapScreen['apiCalls'], callsById: Map<string, MapCall>) {
   const sent = new Map<string, Set<string>>();
-  for (const c of screen.apiCalls) {
+  for (const c of apiCalls) {
     for (const e of c.endpoints ?? []) {
       if (!e.callId) continue;
       if (!sent.has(e.callId)) sent.set(e.callId, new Set());
@@ -196,7 +196,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const settingsFile = config.app?.settingsFile ? { root: config.app.settingsFile.root, merged: config.app.settingsFile.merged, file: fileSettings?.file ?? null } : null;
   const screens = map.screens.map((s) => ({
     ...s,
-    callOptions: screenCallOptions(s, callsById),
+    callOptions: screenCallOptions([...s.apiCalls, ...(map.appWide?.apiCalls ?? [])], callsById),
     cases: [...screenCases(s.access), ...pickedCases(s.id)],
     access: {
       ...s.access,

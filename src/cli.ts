@@ -11,7 +11,7 @@ import { isPlainObject, loadConfig } from './config.ts';
 import type { CaseKind } from './config.ts';
 import { MOST_ADDRESSES } from './address-functions.ts';
 import { UNKNOWN } from './client.ts';
-import { buildMap, readsAnAddress, unreadSites } from './map.ts';
+import { buildMap, readsAnAddress, sendingParts, sentAtAppStart, unreadSites } from './map.ts';
 import { applyJudgments, judgmentFile, loadJudgments } from './judgments.ts';
 import { addReply } from './marks.ts';
 import { checkNeeds } from './needs.ts';
@@ -300,14 +300,14 @@ if (command === 'tasks') {
   const count = (st: string) => allEndpoints.filter((e) => e.server.status === st).length;
   console.log(`screens ${map.screens.length} | api functions ${Object.keys(map.apiFunctions).length} | endpoints match ${count('match')} method-mismatch ${count('method-mismatch')} none ${count('none')} unresolved ${count('unresolved')}${map.serverNotCompared ? ` unchecked ${count('unchecked')}` : ''}`);
   if (map.serverNotCompared) console.log(`  ${SERVER_NOT_COMPARED}`);
-  for (const r of unreadSites([...map.screens, ...(map.appWide ? [map.appWide] : [])], false)) console.log(`  api call ${r.fn} ← ${r.file}:${r.line}: ${unreadText(r)}`);
+  for (const r of unreadSites(sendingParts(map), false)) console.log(`  api call ${r.fn} ← ${r.file}:${r.line}: ${unreadText(r)}`);
   for (const m of map.unrunApiModules ?? []) console.log(`  calledApiModules ${m.file} did not run: ${m.error}`);
   for (const f of map.silentApiModules ?? []) console.log(`  calledApiModules ${f} recorded no request; without requestFunction only requests sent with fetch or by moving the browser are recorded`);
-  const direct = new Map<string, any>(map.screens.flatMap((s: any) => s.apiCalls.filter((c: any) => c.direct).map((c: any) => [`${c.file}\n${c.line}\n${c.fn}\n${c.endpoints[0].method} ${c.endpoints[0].url}`, c])));
+  const direct = new Map<string, any>(sendingParts(map).flatMap((s: any) => s.apiCalls.filter((c: any) => c.direct).map((c: any) => [`${c.file}\n${c.line}\n${c.fn}\n${c.endpoints[0].method} ${c.endpoints[0].url}`, c])));
   if (direct.size) console.log(`requests and navigations written in screen sources ${direct.size} | address not read ${map.unreadRequests?.length ?? 0}`);
   for (const r of map.unreadRequests ?? []) console.log(`  request ${r.fn} ← ${r.file}:${r.line}: ${unreadText(r)}`);
   const noApiCode = !config.requestFunction && !config.calledApiModules.length && !config.apiModules.length;
-  if (noApiCode && map.screens.length && !readsAnAddress(map.screens)) {
+  if (noApiCode && map.screens.length && !readsAnAddress(sendingParts(map))) {
     console.log('no request address was read from the screen sources; name the function or object the app sends its requests through in requestFunction and the API files that call it in calledApiModules, or files of functions that build the addresses in apiModules');
   }
   if (map.sagas && !map.sagas.runs.length) console.log('redux-saga is imported, but no run of a createSagaMiddleware() result was found, so no request or link of a saga is put on a screen');
@@ -328,8 +328,7 @@ if (command === 'tasks') {
   console.log(`dead calls reachable from screens: ${map.deadCalls.length}`);
   console.log(`calls ${map.calls.length} | dead screens ${map.screens.filter((s: any) => s.dead).length}`);
   if (map.appWide) {
-    const sent = new Set(map.appWide.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean));
-    console.log(`requests sent for the whole app ${sent.size} | from ${map.appWide.components.map((c) => `${c.name} (${c.file})`).join(', ')}`);
+    console.log(`requests sent for the whole app ${sentAtAppStart(map.appWide).size} | from ${map.appWide.components.map((c) => `${c.name} (${c.file})`).join(', ')}`);
   }
   if (map.callsOnNoScreen) {
     const { unused, other } = map.callsOnNoScreen;
