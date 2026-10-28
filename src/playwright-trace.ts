@@ -126,23 +126,25 @@ function documentOf(url: string) {
   }
 }
 
-function loadsPage({ request, response }: any, pages: Set<string | null>) {
+type Shown = { addresses: Set<string>; pages: Set<string | null> };
+
+function loadsPage({ request, response }: any, shown: Shown) {
   if (request.method !== 'GET') return false;
   const dest = request.headers?.find((h: any) => h.name.toLowerCase() === 'sec-fetch-dest')?.value;
-  const shown = pages.has(documentOf(request.url));
-  const redirectOrPage = (response?.status >= 300 && response.status < 400) || PAGE_TYPE.test(response?.content?.mimeType ?? '');
-  if (dest !== undefined) return dest === 'document' && (shown || redirectOrPage);
-  return shown && (!(response?.status > 0) || redirectOrPage);
+  if (dest !== undefined && dest !== 'document') return false;
+  const answeredAsPage = !(response?.status > 0) || (response.status >= 300 && response.status < 400) || PAGE_TYPE.test(response.content?.mimeType ?? '');
+  if (dest !== undefined) return answeredAsPage || shown.addresses.has(withoutHash(request.url));
+  return answeredAsPage && shown.pages.has(documentOf(request.url));
 }
 
-function sentRequest({ snapshot }: any, pages: Set<string | null>) {
+function sentRequest({ snapshot }: any, shown: Shown) {
   const { _apiRequest, request, response } = snapshot;
   const status = response?.status;
   if (_apiRequest || request.method !== 'GET') return true;
   const requested = pathOf(request.url) ?? '';
   if (DEV_SERVER_FILE.test(requested) || requested === '/favicon.ico') return false;
   if (status >= 400) return true;
-  if (STATIC_FILE.test(requested) || loadsPage(snapshot, pages)) return false;
+  if (STATIC_FILE.test(requested) || loadsPage(snapshot, shown)) return false;
   if (!(status > 0)) return true;
   return !NOT_SENT_BY_THE_TEST.test(response.content?.mimeType ?? '');
 }
@@ -204,23 +206,17 @@ export function readTrace(file: string): TraceResult {
   }
 
   const resources = network.filter((e) => e.type === 'resource-snapshot').sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime);
-  const pages = new Set([...snapshots.values()].map((snapshot) => documentOf(snapshot.frameUrl)));
+  const frameUrls = [...snapshots.values()].map((snapshot) => snapshot.frameUrl);
+  const shown: Shown = { addresses: new Set(frameUrls.map(withoutHash)), pages: new Set(frameUrls.map(documentOf)) };
   const pageRequestAt = (url: string, from: number, to: number) => {
     const page = documentOf(url);
     return resources.find(({ snapshot }) =>
-      snapshot._monotonicTime >= from && snapshot._monotonicTime <= to && documentOf(snapshot.request.url) === page && loadsPage(snapshot, pages))?.snapshot._monotonicTime;
+      snapshot._monotonicTime >= from && snapshot._monotonicTime <= to && documentOf(snapshot.request.url) === page && loadsPage(snapshot, shown))?.snapshot._monotonicTime;
   };
   const ends = new Map(events.filter((e) => e.type === 'after').map((e) => [e.callId, e]));
   const timeline: TimelineEntry[] = [];
   const walked: WalkEntry[] = [];
-  const lastSeen = new Map<string, { url: string; at: number; from: number }>();
-  const openedAt = (page: string, url: string, at: number, from: number) => {
-    const last = lastSeen.get(page);
-    if (last && withoutHash(last.url) === withoutHash(url)) return at;
-    const asked = pageRequestAt(url, last?.from ?? from, at);
-    return asked === undefined ? at : Math.max(asked, last?.at ?? asked);
-  };
-  const sightings: { at: number; action: any; url: string; navigated: boolean }[] = [];
+  const sightings: { at: number; page: string; from: number; url: string; navigated: boolean }[] = [];
   for (const action of actions) {
     const end = ends.get(action.callId);
     const endTime = end?.endTime ?? action.startTime;
@@ -230,7 +226,7 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      sightings.push({ at, action, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
+      sightings.push({ at, page: action.pageId, from: action.startTime, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
     }
     const kind = kindOf(action.method);
     if (kind === 'assert') timeline.push({ at: endTime, page: action.pageId, kind });
@@ -243,9 +239,16 @@ export function readTrace(file: string): TraceResult {
       walked.push({ at: kind === 'assert' ? endTime : input?.timestamp ?? action.startTime, page: action.pageId, step: walkStepOf(action, walkKind, Boolean(end?.error)) });
     }
   }
-  for (const { at, action, url, navigated } of sightings.sort((a, b) => a.at - b.at)) {
-    walked.push({ at: navigated ? action.startTime : openedAt(action.pageId, url, at, action.startTime), page: action.pageId, url });
-    lastSeen.set(action.pageId, { url, at, from: action.startTime });
+  const lastSeen = new Map<string, { url: string; at: number; from: number }>();
+  const openedAt = (page: string, url: string, at: number, from: number) => {
+    const last = lastSeen.get(page);
+    if (last && withoutHash(last.url) === withoutHash(url)) return at;
+    const asked = pageRequestAt(url, last?.from ?? from, at);
+    return asked === undefined ? at : Math.max(asked, last?.at ?? asked);
+  };
+  for (const { at, page, from, url, navigated } of sightings.sort((a, b) => a.at - b.at)) {
+    walked.push({ at: navigated ? from : openedAt(page, url, at, from), page, url });
+    lastSeen.set(page, { url, at, from });
   }
   timeline.sort((a, b) => a.at - b.at || Number(Boolean(a.kind)) - Number(Boolean(b.kind)));
   const current = new Map();
@@ -261,7 +264,7 @@ export function readTrace(file: string): TraceResult {
     }
   }
   const requests = resources.map((e) => ({ method: e.snapshot.request.method, url: e.snapshot.request.url }));
-  for (const e of resources.filter((r) => sentRequest(r, pages))) {
+  for (const e of resources.filter((r) => sentRequest(r, shown))) {
     const status = e.snapshot.response?.status;
     walked.push({ at: e.snapshot._monotonicTime, request: { kind: 'request', method: e.snapshot.request.method, url: e.snapshot.request.url, status: typeof status === 'number' && status > 0 ? status : null } });
   }
