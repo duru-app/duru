@@ -177,6 +177,14 @@ export function readTrace(file: string): TraceResult {
     return { reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' };
   }
 
+  const resources = network.filter((e) => e.type === 'resource-snapshot').sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime);
+  const pageRequestAt = (url: string, from: number, to: number) => resources.find(({ snapshot: { request, _monotonicTime: at } }) =>
+    request.method === 'GET' && at >= from && at <= to && pathOf(request.url) === pathOf(url))?.snapshot._monotonicTime;
+  const openedAt = (action: any, url: string, endTime: number) => {
+    if (NAVIGATIONS.has(action.method)) return action.startTime;
+    if (url === snapshots.get(`before@${action.callId}`)?.frameUrl) return endTime;
+    return pageRequestAt(url, action.startTime, endTime) ?? endTime;
+  };
   const ends = new Map(events.filter((e) => e.type === 'after').map((e) => [e.callId, e]));
   const timeline: TimelineEntry[] = [];
   const walked: WalkEntry[] = [];
@@ -189,7 +197,7 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      walked.push({ at: name === 'after' && NAVIGATIONS.has(action.method) ? action.startTime : at, page: action.pageId, url: snapshot.frameUrl });
+      walked.push({ at: name === 'after' ? openedAt(action, snapshot.frameUrl, endTime) : at, page: action.pageId, url: snapshot.frameUrl });
     }
     const kind = kindOf(action.method);
     if (kind === 'assert') timeline.push({ at: endTime, page: action.pageId, kind });
@@ -215,7 +223,6 @@ export function readTrace(file: string): TraceResult {
       steps.push({ url: url!, kind: 'visit' });
     }
   }
-  const resources = network.filter((e) => e.type === 'resource-snapshot').sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime);
   const requests = resources.map((e) => ({ method: e.snapshot.request.method, url: e.snapshot.request.url }));
   for (const e of resources.filter(sentRequest)) {
     const status = e.snapshot.response?.status;

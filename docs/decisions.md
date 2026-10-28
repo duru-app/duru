@@ -2746,7 +2746,9 @@ carry times on one clock: in the member list test the `goto` starts at 2374.7, t
 by time. A step is 「열기」 when the address changes, 「넣기」 for `fill`, `type`, `selectOption`, `check`, `uncheck` and
 `setInputFiles`, 「확인」 for `expect`, and 「누르기」 for the other actions, hovering and the mouse and keyboard
 included. The new address of a `goto`, `reload`, `goBack` or `goForward` is placed when the action starts, so the
-requests the page sends while it opens come after 「열기」. A write keeps its box when it was found by label,
+requests the page sends while it opens come after 「열기」. When another action changes the address, it is placed at the
+GET the action sent for the new address's path, query and `#` aside, and at the action's end when there is none: in
+the test that follows a link, the click runs from 9873.4 to 10020.9 and asks for the new page at 9986.8. A write keeps its box when it was found by label,
 placeholder or test ID, for a check as well as a fill, and is shown as 「찾은 상자를 읽지 못함」 with its selector
 otherwise; an empty fill keeps its box and shows 「빈 값」. An action that ended in an error stays, marked 「실패」. The
 steps and candidates read from the same traces stay as they were: there such actions are left out and other writes are
@@ -2776,7 +2778,9 @@ Alternatives compared:
 Known limits: a GET answered below 400 with a type not on that list (a page served as `text/plain`, a font as
 `application/octet-stream`) shows, and so does a static file that failed with 400 or more; an action with no address
 open (a blank page) shows 「앱 밖」 instead of a screen; what an `expect` checked is not shown; an action the trace has
-no end for, as when the test ran out of time during it, is not marked 「실패」.
+no end for, as when the test ran out of time during it, is not marked 「실패」; when an action changes the address
+without loading a page, as a router in the page does, a request the new screen sends before the action ends comes
+before 「열기」.
 
 **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
 without a value on such a kind fills no value.**

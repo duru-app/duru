@@ -366,3 +366,45 @@ test('a box found by label is read for a check as well as for a fill', () =>
       { kind: 'write', method: 'check', box: { label: '동의' }, checked: true, url: 'http://x/home' },
     ]);
   }));
+
+function clickTrace(resources: { url: string; at: number; type: string }[], after = 'http://x/next') {
+  return inTempDir((dir) => {
+    const file = path.join(dir, 'trace.zip');
+    const line = (e: object) => `${JSON.stringify(e)}\n`;
+    const page = 'page@1';
+    const snapshot = (name: string, url: string, at: number) => line({ type: 'frame-snapshot', snapshot: { snapshotName: name, isMainFrame: true, frameUrl: url, timestamp: at } });
+    fs.writeFileSync(file, storedZip({
+      '0-trace.trace': [
+        line({ type: 'context-options', version: 8 }),
+        line({ type: 'before', callId: 'call@1', pageId: page, method: 'goto', startTime: 1, params: { url: 'http://x/home' } }),
+        line({ type: 'after', callId: 'call@1', endTime: 2 }),
+        snapshot('after@call@1', 'http://x/home', 2),
+        line({ type: 'before', callId: 'call@2', pageId: page, method: 'click', startTime: 10, params: { selector: '#next' } }),
+        snapshot('before@call@2', 'http://x/home', 10),
+        line({ type: 'after', callId: 'call@2', endTime: 20 }),
+        snapshot('after@call@2', after, 21),
+      ].join(''),
+      '0-trace.network': resources.map(({ url, at, type }) => line({
+        type: 'resource-snapshot',
+        snapshot: { _monotonicTime: at, request: { method: 'GET', url: `http://x${url}` }, response: { status: 200, content: { mimeType: type } } },
+      })).join(''),
+    }));
+    return walkLines(file);
+  });
+}
+
+test('a press that loads a new page opens it when the page is asked for, so the calls the new page sends come after 「열기」', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/api/before', at: 11, type: 'application/json' },
+    { url: '/next?from=home', at: 12, type: 'text/html' },
+    { url: '/api/next', at: 15, type: 'application/json' },
+    { url: '/api/later', at: 25, type: 'application/json' },
+  ], 'http://x/next#top'), ['open /home', 'press /home', 'GET /api/before 200', 'open /next#top', 'GET /api/next 200', 'GET /api/later 200']);
+});
+
+test('a press that changes the address without loading a page opens it when the press ends', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/api/next', at: 15, type: 'application/json' },
+    { url: '/api/later', at: 25, type: 'application/json' },
+  ]), ['open /home', 'press /home', 'GET /api/next 200', 'open /next', 'GET /api/later 200']);
+});
