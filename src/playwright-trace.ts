@@ -129,8 +129,8 @@ function documentOf(url: string) {
 function loadsPage({ request, response }: any, pages: Set<string | null>) {
   if (request.method !== 'GET') return false;
   const dest = request.headers?.find((h: any) => h.name.toLowerCase() === 'sec-fetch-dest')?.value;
-  if (dest !== undefined) return dest === 'document';
-  return pages.has(documentOf(request.url)) && (!(response?.status > 0) || (response.status >= 300 && response.status < 400) || PAGE_TYPE.test(response.content?.mimeType ?? ''));
+  if (dest !== undefined ? dest !== 'document' : !pages.has(documentOf(request.url))) return false;
+  return !(response?.status > 0) || (response.status >= 300 && response.status < 400) || PAGE_TYPE.test(response.content?.mimeType ?? '');
 }
 
 function sentRequest({ snapshot }: any, pages: Set<string | null>) {
@@ -216,7 +216,7 @@ export function readTrace(file: string): TraceResult {
     const last = lastSeen.get(page);
     if (last && withoutHash(last.url) === withoutHash(url)) return at;
     const asked = pageRequestAt(url, last?.from ?? from, at);
-    return asked === undefined ? at : Math.max(asked, last?.at ?? asked);
+    return asked === undefined ? at : Math.min(Math.max(asked, last?.at ?? asked), at);
   };
   for (const action of actions) {
     const end = ends.get(action.callId);

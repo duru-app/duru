@@ -487,6 +487,30 @@ test('a page load the browser marks as a document is not a call the test sent, a
   ], 'http://x/login'), ['open /home', 'press /home', 'open /login', 'GET /api/me 200']);
 });
 
+test('a link the browser opens as a document that answers with a file, not a page, is a call the test sent', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/api/report/export', at: 12, type: 'text/csv', dest: 'document' },
+  ], 'http://x/home'), ['open /home', 'press /home', 'GET /api/report/export 200']);
+});
+
+test('a press that runs alongside one still showing the old address opens the new page no later than it was seen', () => {
+  const page = 'page@1';
+  assert.deepEqual(inTempDir((dir) => walkLines(traceZip(dir, [
+    { type: 'before', callId: 'call@1', pageId: page, method: 'goto', startTime: 1, params: { url: 'http://x/home' } },
+    { type: 'after', callId: 'call@1', endTime: 2 },
+    frameSnapshot('after@call@1', 'http://x/home', 2),
+    { type: 'before', callId: 'call@2', pageId: page, method: 'click', startTime: 10, params: { selector: '#next' } },
+    frameSnapshot('before@call@2', 'http://x/home', 10),
+    { type: 'before', callId: 'call@3', pageId: page, method: 'click', startTime: 40, params: { selector: '#menu' } },
+    frameSnapshot('before@call@3', 'http://x/next', 40),
+    { type: 'after', callId: 'call@3', endTime: 41 },
+    { type: 'after', callId: 'call@2', endTime: 50 },
+    frameSnapshot('after@call@2', 'http://x/home', 50),
+  ], [
+    { url: '/next', at: 35, type: 'text/html' },
+  ])).slice(0, 4)), ['open /home', 'press /home', 'open /next', 'press /next']);
+});
+
 test('a request the browser marks as not a document stays and does not open the page, even on the page path answered 304', () => {
   assert.deepEqual(clickTrace([
     { url: '/next', at: 12, status: 304, type: '', dest: 'empty' },
