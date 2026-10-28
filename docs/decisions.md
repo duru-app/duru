@@ -2747,9 +2747,14 @@ by time. A step is 「열기」 when the address changes, 「넣기」 for `fill
 `setInputFiles`, 「확인」 for `expect`, and 「누르기」 for the other actions, hovering and the mouse and keyboard
 included. The new address of a `goto`, `reload`, `goBack` or `goForward` is placed when the action starts, so the
 requests the page sends while it opens come after 「열기」. When another action changes the address, or the address is
-new when the next action starts, 「열기」 is placed at the page load for the new address since the address was last seen:
-a GET of the same origin and path, query aside, answered with a page, a redirect or nothing yet, and at the time the
-new address was seen when there is none. In the test that follows a link, the click runs from 9873.4 to 10020.9 and
+new when the next action starts, 「열기」 is placed at the page load for the new address made since the action that last
+showed the old address started, but not before that old address was last seen, since the new page cannot have sent
+anything while the old one still showed; when there is no page load, it is placed at the time the new address was
+seen. A click does not wait for the page it asks for, so the page can be asked for before the click's last snapshot,
+which still shows the old address. A page load is a GET of the same origin and path, query aside, that the browser
+marked as a document (`Sec-Fetch-Dest: document`); when the request carries no such header, as on plain http to
+another host than localhost, it is a GET of a page the test had open answered with a page, a redirect or nothing
+yet. In the test that follows a link, the click runs from 9873.4 to 10020.9 and
 asks for the new page at 9986.8; a login that waits for its POST and then sets `location` loads the new page after
 the click has ended. An address that changes only after `#` loads no page. A write keeps its box when it was found by label,
 placeholder or test ID, for a check as well as a fill, and is shown as 「찾은 상자를 읽지 못함」 with its selector
@@ -2763,8 +2768,8 @@ dev server's own files (`@vite`, `@id`, `@fs` and `@react-refresh` paths, webpac
 `/sockjs-node`, `/__webpack_hmr`, `/_next/webpack-hmr`) and of `/favicon.ico`, which the browser asks for by itself,
 is left out; any other GET whose status is 400 or more stays; a GET whose path ends in a static file's extension
 (scripts and their sources such as `.ts`, `.tsx`, `.vue` and `.svelte`, styles, pictures, fonts, `.wasm`, video and
-`.map`) is left out whatever else it got, a 304 or no response included; a GET answered 304 for a page the test had
-open is left out; another GET is left out when its response is a page, script, style, picture or font. In the traces of duru's own tests that leaves out 89 of
+`.map`) is left out whatever else it got, a 304 or no response included; a page load, as above, is left out; another
+GET is left out when its response is a page, script, style, picture or font. In the traces of duru's own tests that leaves out 89 of
 103 requests, what the app needs to show rather than what the test sent. A request the test sent through Playwright's
 `request` stays whatever its type. A request that matches a call on the map opens that call.
 The walk is kept once per run in `walks`, under the result file, test file, line and title, then the project, and each
@@ -2787,7 +2792,9 @@ Alternatives compared:
 Known limits: a GET answered below 400 with a type not on that list (a page served as `text/plain`, a font as
 `application/octet-stream`) shows, and so does a static file that failed with 400 or more, as an app's missing script
 does; an API call whose path ends in a static file's extension is left out when it did not fail; a dev server under
-another name than those above shows its own requests; a `tests.json` written before the steps were kept has no result
+another name than those above shows its own requests, and an app's own path with an `@vite`, `@id`, `@fs` or
+`@react-refresh` part is left out even when it failed; without `Sec-Fetch-Dest`, a fetch on the path of a page the
+test had open answered 304 or not at all is taken for a page load; a `tests.json` written before the steps were kept has no result
 file or project on its trace notices, so such a notice is matched on the test's file, line and title and is shown on
 every run of that test; an action with no address
 open (a blank page) shows 「앱 밖」 instead of a screen; what an `expect` checked is not shown; an action the trace has

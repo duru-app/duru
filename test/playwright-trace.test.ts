@@ -261,16 +261,16 @@ test('the walk leaves out the page, scripts, styles, pictures and fonts the brow
   assert.deepEqual(walkLines(traceOf('opens home and then help')!), ['open /home', 'open /help']);
 });
 
-type Sent = { method?: string; url: string; at?: number; status?: number; type: string; api?: true };
+type Sent = { method?: string; url: string; at?: number; status?: number; type: string; api?: true; dest?: string };
 
 function traceZip(dir: string, events: object[], resources: Sent[]) {
   const file = path.join(dir, 'trace.zip');
   const line = (e: object) => `${JSON.stringify(e)}\n`;
   fs.writeFileSync(file, storedZip({
     '0-trace.trace': [{ type: 'context-options', version: 8 }, ...events].map(line).join(''),
-    '0-trace.network': resources.map(({ method = 'GET', url, at, status = 200, type, api }, i) => line({
+    '0-trace.network': resources.map(({ method = 'GET', url, at, status = 200, type, api, dest }, i) => line({
       type: 'resource-snapshot',
-      snapshot: { _monotonicTime: at ?? i + 1, ...(api && { _apiRequest: true }), request: { method, url: url.startsWith('http') ? url : `http://x${url}` }, response: { status, content: { mimeType: type } } },
+      snapshot: { _monotonicTime: at ?? i + 1, ...(api && { _apiRequest: true }), request: { method, url: url.startsWith('http') ? url : `http://x${url}`, headers: dest ? [{ name: 'Sec-Fetch-Dest', value: dest }] : [] }, response: { status, content: { mimeType: type } } },
     })).join(''),
   }));
   return file;
@@ -309,6 +309,9 @@ test('a GET of a static file that got no failing status, a dev server file and t
     { url: '/@react-refresh', status: 200, type: 'text/javascript' },
     { url: '/main.abc.hot-update.json', status: 200, type: 'application/json' },
     { url: '/sockjs-node/info?t=1', status: 200, type: 'application/json' },
+    { url: '/__webpack_hmr', status: 200, type: 'text/event-stream' },
+    { url: '/_next/webpack-hmr?page=/', status: -1, type: 'x-unknown' },
+    { url: '/main.def.hot-update.json', status: 404, type: 'text/html' },
     { url: '/api/v1/list', status: -1, type: 'x-unknown' },
     { url: '/api/v1/data.json', status: -1, type: 'x-unknown' },
     { url: '/api/v1/cached', status: 304, type: '' },
@@ -443,6 +446,60 @@ test('a page the test opened again and got back as 304 is not a call the test se
   assert.deepEqual(clickTrace([
     { url: '/home', at: 12, status: 304, type: '' },
   ], 'http://x/home'), ['open /home', 'press /home']);
+});
+
+test('a page asked for during a press that ends before the address changes opens once the old address was last seen, so the calls the new page sends come after 「열기」', () => {
+  const page = 'page@1';
+  assert.deepEqual(inTempDir((dir) => walkLines(traceZip(dir, [
+    { type: 'before', callId: 'call@1', pageId: page, method: 'goto', startTime: 1, params: { url: 'http://x/home' } },
+    { type: 'after', callId: 'call@1', endTime: 2 },
+    frameSnapshot('after@call@1', 'http://x/home', 2),
+    { type: 'before', callId: 'call@2', pageId: page, method: 'click', startTime: 10, params: { selector: '#next' } },
+    frameSnapshot('before@call@2', 'http://x/home', 10),
+    { type: 'after', callId: 'call@2', endTime: 20 },
+    frameSnapshot('after@call@2', 'http://x/home', 20),
+    { type: 'before', callId: 'call@3', pageId: page, method: 'click', startTime: 30, params: { selector: '#menu' } },
+    frameSnapshot('before@call@3', 'http://x/next', 30),
+    { type: 'after', callId: 'call@3', endTime: 31 },
+  ], [
+    { url: '/next', at: 15, type: 'text/html' },
+    { url: '/api/old', at: 16, type: 'application/json' },
+    { url: '/api/next', at: 22, type: 'application/json' },
+  ]))), ['open /home', 'press /home', 'GET /api/old 200', 'open /next', 'GET /api/next 200', 'press /next']);
+});
+
+test('a page whose first snapshot comes after a press opens at the page request made during the press', () => {
+  assert.deepEqual(inTempDir((dir) => walkLines(traceZip(dir, [
+    { type: 'before', callId: 'call@1', pageId: 'page@2', method: 'click', startTime: 10, params: { selector: '#next' } },
+    { type: 'after', callId: 'call@1', endTime: 20 },
+    frameSnapshot('after@call@1', 'http://x/next', 20),
+  ], [
+    { url: '/next', at: 12, type: 'text/html' },
+    { url: '/api/next', at: 15, type: 'application/json' },
+  ]))), ['press -', 'open /next', 'GET /api/next 200']);
+});
+
+test('a page load the browser marks as a document is not a call the test sent, a redirect included', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/next', at: 12, status: 302, type: '', dest: 'document' },
+    { url: '/login', at: 13, type: 'text/html', dest: 'document' },
+    { url: '/api/me', at: 14, type: 'application/json', dest: 'empty' },
+  ], 'http://x/login'), ['open /home', 'press /home', 'open /login', 'GET /api/me 200']);
+});
+
+test('a request the browser marks as not a document stays and does not open the page, even on the page path answered 304', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/next', at: 12, status: 304, type: '', dest: 'empty' },
+    { url: '/api/next', at: 15, type: 'application/json', dest: 'empty' },
+  ]), ['open /home', 'press /home', 'GET /next 304', 'GET /api/next 200', 'open /next']);
+});
+
+test('without the browser\'s mark, a GET of a page the test had open that got no response or a redirect is a page load, not a call', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/next', at: 12, status: -1, type: 'x-unknown' },
+    { url: '/next', at: 13, type: 'text/html' },
+    { url: '/api/next', at: 14, type: 'application/json' },
+  ]), ['open /home', 'press /home', 'open /next', 'GET /api/next 200']);
 });
 
 test('a press is not opened at a request for the same path on another origin', () => {
