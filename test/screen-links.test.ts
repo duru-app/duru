@@ -1090,9 +1090,13 @@ import Option from './Option';
 export default function Home({ team, page }) {
   const history = useHistory();
   const open = () => history.push(Option.ROUTE_PATH.TEAM.replace(':team', team));
+  const edit = () => history.push(\`\${Option.ROUTE_PATH.TEAM.replace(':team', team)}/edit\`);
+  const inTeam = window.location.pathname.startsWith(\`\${Option.ROUTE_PATH.TEAM.replace(':team', team)}/\`);
   return (
     <nav>
       <button onClick={open}>team</button>
+      <button onClick={edit}>{String(inTeam)}</button>
+      <Link to={Option.ROUTE_PATH.TEAM?.replace(':team', team)}>maybe</Link>
       <Link to={Option.ROUTE_PATH.HELP.replace(/:page/, page)}>help</Link>
     </nav>
   );
@@ -1100,7 +1104,10 @@ export default function Home({ team, page }) {
 `;
   const option = "export default { ROUTE_PATH: { HOME: '/home', LOGIN: '/login', HELP: '/help/:page', TEAM: '/team/:team' } };\n";
   const map = await build(withRouteConstant({ 'Home.js': home, 'Option.js': option }));
-  assert.deepEqual(linksOf(map, '/home#Home').filter(([, line]) => line === lineOf(home, "replace(':team'")), [['/team/:team', lineOf(home, "replace(':team'"), [], ['/team/:team#Team']]]);
+  assert.deepEqual(linksOf(map, '/home#Home').filter(([, , , targets]) => (targets as string[]).length), [
+    ['/team/:team', lineOf(home, "push(Option.ROUTE_PATH.TEAM.replace"), [], ['/team/:team#Team']],
+    ['/team/:team', lineOf(home, 'TEAM?.replace'), [], ['/team/:team#Team']],
+  ]);
   assert.ok(!map.screens.find((s) => s.id === '/home#Home')!.links.some((l) => 'route' in l && l.route === 'HELP'));
 });
 

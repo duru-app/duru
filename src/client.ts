@@ -1211,9 +1211,7 @@ export async function extractClient(config: any) {
   }
 
   // 주소와 견주기만 하는 자리: ==, switch 의 case, matchPath · useRouteMatch · useMatch 의 인자나 그 path, startsWith 같은 문자열 검사의 인자
-  function comparedOnly(p: NodePath): boolean {
-    let at = p;
-    while (at.parentPath!.isTSAsExpression() || at.parentPath!.isTSNonNullExpression() || at.parentPath!.isTSSatisfiesExpression()) at = at.parentPath!;
+  function comparedOnly(at: NodePath): boolean {
     const up = at.parentPath!;
     if (up.isBinaryExpression() && ['===', '!==', '==', '!='].includes(up.node.operator)) return true;
     if (up.isSwitchCase() && at.key === 'test') return true;
@@ -1236,7 +1234,7 @@ export async function extractClient(config: any) {
   // ROUTES.X.replace(':id', id) 처럼 경로 변수 하나를 값으로 채우는 호출
   function fillsPathVariable(p: NodePath<any>) {
     const call = p.parentPath!;
-    if (!call.isCallExpression() || call.node.callee !== p.node) return false;
+    if (!(call.isCallExpression() || call.isOptionalCallExpression()) || call.node.callee !== p.node) return false;
     const first = call.node.arguments[0];
     return first?.type === 'StringLiteral' && first.value.startsWith(':');
   }
@@ -1576,7 +1574,7 @@ export async function extractClient(config: any) {
           constantAt.set(whole.node, [ref]);
         } else if (chain.at(-1) === 'replace' && routeChainOf(chain.slice(0, -2)) && fillsPathVariable(p)) {
           const call = p.parentPath! as NodePath;
-          if (comparedOnly(call)) return;
+          if (routeTail(call).whole !== call || comparedOnly(call)) return;
           constantAt.set(call.node, [record('routeRefs', { route: chain.at(-2)!, tail: '' }, p) as RouteRef]);
         }
       },

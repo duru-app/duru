@@ -689,7 +689,7 @@ them, which leaves SigNoz with moves that do not exist. Narrowing route constant
 measured as not needed: of the links that would go, only those a later side menu or error screen reading gives
 back had a move behind them.
 Measured on the seven baseline configs against main 5519f30: on SigNoz, and on its API config alike, link rows go
-16,309 → 12,579 (4,201 gone, 471 added) and pairs of screens joined by a link 3,841 → 3,577, none added. The 264
+16,309 → 12,579 (4,197 gone, 467 added) and pairs of screens joined by a link 3,841 → 3,577, none added. The 264
 pairs that go lead to the public dashboard (64), the AI assistant start screen (64), sign-up (63), the panel editor
 (44) and new alert (28) screens, and came only from comparisons in `AppRoutes/Private.tsx`,
 `container/TopNav/index.tsx`, `container/BottomStrip/AskNoz/AskNoz.tsx` and `container/AIAssistant/getAutoContexts.ts`.
@@ -701,8 +701,12 @@ outline and appsmith are identical apart from the time they were written.
 The limits: a list of route constants compared with the address through a function, such as `routesToSkip` in
 `DateTimeSelectionV2/constants.ts` read by `routesToSkip.some((route) => matchPath(…))`, still links every screen
 to each route in it (4,355 rows on SigNoz); a comparison through a function of the app (`matches(pathname,
-ROUTES.X)`) is still a link outside route files; a `replace` whose first argument is not text starting with `:`
-stays `{?}`.
+ROUTES.X)`) is still a link outside route files, and so is one through a list handed to the matcher
+(`matchPath(pathname, { path: [ROUTES.A, ROUTES.B] })`, `useRouteMatch([ROUTES.A])`), through a namespace or a
+renamed import of it (`RR.matchPath`), or of a route read by key (`pathname === ROUTE_BY_KEY[key]`); the matchers
+are known by their name, so an app's own function named `useMatch` that moves is taken as a comparison; a route
+constant compared with a value that is then the address of a move (`case ROUTES.X: history.push(key)`) is no link;
+a `replace` whose first argument is not text starting with `:`, or whose result a tail is added to, stays `{?}`.
 
 **The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
 the name.**
