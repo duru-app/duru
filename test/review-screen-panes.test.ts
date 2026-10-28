@@ -14,6 +14,8 @@ declare function render(): void;
 declare function hasUnsavedMark(): boolean;
 declare function opensOnPage(id: string): boolean;
 declare function optionsOf(s: unknown, callId: string): { key: string }[];
+declare function wayGuards(r: { from: string; to: string; ways: { file: string; line: number }[] }): unknown[][];
+declare function screenOf(id: string): { access: { menuLinks: { from: string; file: string; line: number; guards: unknown[] }[] } };
 declare const state: { target: unknown; draft: unknown; selected: string | null; openGroups: Set<string>; data: { map: { screens: { id: string }[] } } };
 
 test('in a browser, a screen that opens only under a role or a setting shows its tests for each case under what it needs', { skip: browserMissing }, async () => {
@@ -932,6 +934,30 @@ test('in a browser, 「들어오는 링크」 lists the other links into a scree
         await p.click('#screen-list li:has-text("/admin/audit")');
         await p.click('#screen-list li:has-text("/admin/report")');
         assert.equal(await menu.getAttribute('open'), '', 'the section stays open after moving to another screen and back');
+      }),
+    ),
+  );
+});
+
+test('in a browser, a story step that goes through a menu link asks the guards of that menu link', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const data = await (await route.fetch()).json() as ServedData;
+          const report = data.map.screens.find((x) => x.id === '/admin/report#AdminReport')!;
+          report.access.menuLinks = report.access.links.filter((l) => l.from === '/home#Home').map((l) => ({ ...l, tableItem: { key: 'report', file: 'menu.js', line: 3 } }));
+          report.access.links = report.access.links.filter((l) => l.from !== '/home#Home');
+          await route.fulfill({ json: data });
+        });
+        await p.reload();
+        await p.waitForFunction(() => Boolean(screenOf('/admin/report#AdminReport')?.access.menuLinks));
+        const got = await p.evaluate(() => {
+          const row = screenOf('/admin/report#AdminReport').access.menuLinks[0];
+          return { guards: row.guards, way: wayGuards({ from: row.from, to: '/admin/report#AdminReport', ways: [{ file: row.file, line: row.line }] })[0] };
+        });
+        assert.ok(got.guards.length > 0);
+        assert.deepEqual(got.way, got.guards);
       }),
     ),
   );

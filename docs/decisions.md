@@ -3307,7 +3307,9 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
   their `tableItem`; `access.links` stays what it is without `menus`, so what reads it (the cases, where a condition
   is written, the baseline, the flow) needs no filter. Keeping them in `access.links` was tried first: the cases
   compared the settings of the links into a screen with the number of rows and lost every setting case of a screen
-  that one menu link also came into. 「들어오는 링크」 folds the menu's links under 「공통 N」
+  that one menu link also came into. What looks for one link rather than judging access reads `menuLinks` too: the
+  guards of a story step that goes through a menu link, a comment left on a menu link row, and the places a condition
+  is written. 「들어오는 링크」 folds the menu's links under 「공통 N」
   (「메뉴가 거는 링크」) below the screen's other links into it. The incoming fold takes only the menu's item links, not every
   link drawn by a layout, so its title names the menu alone.
 - A screen whose only links in are a menu's item links is still an entry screen, with the reason `menu-links-only` in place
