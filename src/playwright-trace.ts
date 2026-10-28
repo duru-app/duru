@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
+import { pathOf } from './address-match.ts';
 import type { BOX_WORDS, StepInput } from './stories.ts';
 
 type StepKind = 'visit' | 'assert' | 'interact';
@@ -67,6 +68,7 @@ const BOX_LOCATORS: { word: (typeof BOX_WORDS)[number]; selector: RegExp; locato
 const VALUE_WRITES = new Set(['type', 'selectOption', 'check', 'uncheck', 'setInputFiles']);
 const NAVIGATIONS = new Set(['goto', 'reload', 'goBack', 'goForward']);
 const NOT_SENT_BY_THE_TEST = /^(text\/html|application\/xhtml\+xml|text\/css|image\/|font\/|application\/(x-)?font|application\/vnd\.ms-fontobject|(text|application)\/(x-)?(javascript|ecmascript)|application\/wasm)/i;
+const STATIC_FILE = /\.(m?js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|otf|map)$/i;
 const NOT_THE_APP = /^(about|data|blob|chrome|chrome-error):/;
 const END_OF_DIRECTORY = 0x06054b50;
 const DIRECTORY_ENTRY = 0x02014b50;
@@ -114,7 +116,12 @@ function walkStepOf(action: any, kind: WalkKind, failed: boolean): Omit<WalkStep
   return { kind, method, ...written, ...(selector && { selector }), ...(failed && { failed: true as const }) };
 }
 
-const sentRequest = (e: any) => e.snapshot._apiRequest || !NOT_SENT_BY_THE_TEST.test(e.snapshot.response?.content?.mimeType ?? '');
+function sentRequest({ snapshot: { _apiRequest, request, response } }: any) {
+  const status = response?.status;
+  if (_apiRequest || request.method !== 'GET' || status >= 400) return true;
+  if (!(status > 0)) return !STATIC_FILE.test(pathOf(request.url) ?? '');
+  return !NOT_SENT_BY_THE_TEST.test(response.content?.mimeType ?? '');
+}
 
 export function fillCode({ box, value }: StepInput) {
   const [first, ...rest] = BOX_LOCATORS.filter(({ word }) => box[word] !== undefined).map(({ word, locator }) => `page.${locator(box[word]!)}`);

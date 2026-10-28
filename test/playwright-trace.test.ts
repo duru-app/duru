@@ -256,12 +256,49 @@ test('the walk puts the requests a test sent between its steps, with the respons
   ]);
 });
 
-test('the walk leaves out the page, scripts, styles, pictures and fonts the browser loaded, and keeps a request that got no response', () => {
-  const sent = walkOf(traceOf('opens the app from a file')!).filter((line) => line.kind === 'request');
-  assert.ok(sent.length > 0);
-  assert.ok(sent.every((line) => line.kind === 'request' && line.status === null));
+test('the walk leaves out the page, scripts, styles, pictures and fonts the browser loaded', () => {
   assert.equal(requests('opens home and then help').length, 6);
   assert.deepEqual(walkLines(traceOf('opens home and then help')!), ['open /home', 'open /help']);
+});
+
+function sentLines(resources: { method?: string; url: string; status: number; type: string; api?: true }[]) {
+  return inTempDir((dir) => {
+    const file = path.join(dir, 'trace.zip');
+    const line = (e: object) => `${JSON.stringify(e)}\n`;
+    fs.writeFileSync(file, storedZip({
+      '0-trace.trace': line({ type: 'context-options', version: 8 }),
+      '0-trace.network': resources.map(({ method = 'GET', url, status, type, api }, i) => line({
+        type: 'resource-snapshot',
+        snapshot: { _monotonicTime: i + 1, ...(api && { _apiRequest: true }), request: { method, url: `http://x${url}` }, response: { status, content: { mimeType: type } } },
+      })).join(''),
+    }));
+    return walkLines(file);
+  });
+}
+
+test('a request that is not a GET, or whose status is 400 or more, stays in the walk whatever type its response has', () => {
+  assert.deepEqual(sentLines([
+    { url: '/home', status: 200, type: 'text/html' },
+    { method: 'POST', url: '/login', status: 200, type: 'text/html; charset=utf-8' },
+    { url: '/nowhere', status: 404, type: 'text/html' },
+    { url: '/report', status: 500, type: 'text/html;charset=UTF-8' },
+    { url: '/app.js', status: 200, type: 'text/javascript' },
+    { url: '/old.js', status: 404, type: 'text/javascript' },
+    { url: '/page', status: 200, type: 'text/html', api: true },
+  ]), ['POST /login 200', 'GET /nowhere 404', 'GET /report 500', 'GET /old.js 404', 'GET /page 200']);
+});
+
+test('a request that got no response is left out when its path ends in a static file\'s extension, and stays otherwise', () => {
+  assert.deepEqual(sentLines([
+    { url: '/settings.js', status: -1, type: 'x-unknown' },
+    { url: '/fonts/a.woff2?v=3', status: -1, type: 'x-unknown' },
+    { url: '/logo.PNG', status: -1, type: 'x-unknown' },
+    { url: '/api/v1/list', status: -1, type: 'x-unknown' },
+    { url: '/api/v1/data.json', status: -1, type: 'x-unknown' },
+    { method: 'POST', url: '/upload.png', status: -1, type: 'x-unknown' },
+  ]), ['GET /api/v1/list no response', 'GET /api/v1/data.json no response', 'POST /upload.png no response']);
+  assert.deepEqual(walkOf(traceOf('opens the app from a file')!).filter((line) => line.kind === 'request'), []);
+  assert.deepEqual(walkLines(traceOf('uses the mouse right after the address changes')!).filter((line) => line.startsWith('POST')), ['POST /api/v1/press no response']);
 });
 
 test('a request sent without a page is in the walk with its status', () => {

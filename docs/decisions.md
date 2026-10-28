@@ -2751,11 +2751,14 @@ placeholder or test ID, for a check as well as a fill, and is shown as 「찾은
 otherwise; an empty fill keeps its box and shows 「빈 값」. An action that ended in an error stays, marked 「실패」. The
 steps and candidates read from the same traces stay as they were: there such actions are left out and other writes are
 skipped.
-Requests keep their response status, or 「응답 없음」 for the -1 a request that got no response records. The browser's
-loads of pages, scripts, styles, pictures and fonts are left out by the type of their response: in the traces of
-duru's own tests they are 79 of 93 requests, and they are what the app needs to show, not what the test sent. A
-request the test sent through Playwright's `request` stays whatever its type. A request that matches a call on the map
-opens that call.
+Requests keep their response status, or 「응답 없음」 for the -1 a request that got no response records. A trace's
+request carries no resource type, only its response's content type, so the browser's loads of pages, scripts, styles,
+pictures and fonts are told apart this way: a request that is not a GET, or whose status is 400 or more, stays
+whatever its response; a GET that got no response is left out when its path ends in `.js`, `.mjs`, `.css`, `.png`,
+`.jpg`, `.jpeg`, `.gif`, `.svg`, `.webp`, `.ico`, `.woff`, `.woff2`, `.ttf`, `.otf` or `.map`; another GET is left out
+when its response is a page, script, style, picture or font. In the traces of duru's own tests that leaves out 81 of
+93 requests, what the app needs to show rather than what the test sent. A request the test sent through Playwright's
+`request` stays whatever its type. A request that matches a call on the map opens that call.
 The walk is kept once per run in `walks`, under the result file, test file, line and title, then the project, and each
 test entry carries that key as `steps`, since a test is copied into `tests.json` for every screen it is tagged with
 and every screen it passed. The review server sends `walks` to the page as `testSteps`.
@@ -2766,9 +2769,14 @@ Alternatives compared:
 - Keeping only requests that match a call on the map: a request the map does not know, often the one a reviewer wants
   to see, would vanish.
 - Keeping every request: the test's own requests would be lost among the page loads.
-Known limits: a request type that is not on the list of left-out types (a page served as `text/plain`, a font as
-`application/octet-stream`) shows; an action with no address open (a blank page) shows 「앱 밖」 instead of a screen;
-what an `expect` checked is not shown.
+- Leaving out every request answered with a page, script, style, picture or font, whatever its method and status: a
+  login form posted and answered with a page, an Express 404 page and a Spring 500 page would vanish, though they are
+  what the test sent; a script that got no response has no type to judge by and showed, as the two scripts of the app
+  opened from a file did.
+Known limits: a GET answered below 400 with a type not on that list (a page served as `text/plain`, a font as
+`application/octet-stream`) shows, and so does a static file that failed with 400 or more; an action with no address
+open (a blank page) shows 「앱 밖」 instead of a screen; what an `expect` checked is not shown; an action the trace has
+no end for, as when the test ran out of time during it, is not marked 「실패」.
 
 **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
 without a value on such a kind fills no value.**
