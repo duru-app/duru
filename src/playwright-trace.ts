@@ -129,8 +129,10 @@ function documentOf(url: string) {
 function loadsPage({ request, response }: any, pages: Set<string | null>) {
   if (request.method !== 'GET') return false;
   const dest = request.headers?.find((h: any) => h.name.toLowerCase() === 'sec-fetch-dest')?.value;
-  if (dest !== undefined ? dest !== 'document' : !pages.has(documentOf(request.url))) return false;
-  return !(response?.status > 0) || (response.status >= 300 && response.status < 400) || PAGE_TYPE.test(response.content?.mimeType ?? '');
+  const shown = pages.has(documentOf(request.url));
+  const redirectOrPage = (response?.status >= 300 && response.status < 400) || PAGE_TYPE.test(response?.content?.mimeType ?? '');
+  if (dest !== undefined) return dest === 'document' && (shown || redirectOrPage);
+  return shown && (!(response?.status > 0) || redirectOrPage);
 }
 
 function sentRequest({ snapshot }: any, pages: Set<string | null>) {
@@ -216,8 +218,9 @@ export function readTrace(file: string): TraceResult {
     const last = lastSeen.get(page);
     if (last && withoutHash(last.url) === withoutHash(url)) return at;
     const asked = pageRequestAt(url, last?.from ?? from, at);
-    return asked === undefined ? at : Math.min(Math.max(asked, last?.at ?? asked), at);
+    return asked === undefined ? at : Math.max(asked, last?.at ?? asked);
   };
+  const sightings: { at: number; action: any; url: string; navigated: boolean }[] = [];
   for (const action of actions) {
     const end = ends.get(action.callId);
     const endTime = end?.endTime ?? action.startTime;
@@ -227,9 +230,7 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      const opened = name === 'after' && NAVIGATIONS.has(action.method) ? action.startTime : openedAt(action.pageId, snapshot.frameUrl, at, action.startTime);
-      walked.push({ at: opened, page: action.pageId, url: snapshot.frameUrl });
-      lastSeen.set(action.pageId, { url: snapshot.frameUrl, at, from: action.startTime });
+      sightings.push({ at, action, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
     }
     const kind = kindOf(action.method);
     if (kind === 'assert') timeline.push({ at: endTime, page: action.pageId, kind });
@@ -241,6 +242,10 @@ export function readTrace(file: string): TraceResult {
       const walkKind = kind === 'assert' ? 'assert' : action.method === 'fill' || VALUE_WRITES.has(action.method) ? 'write' : 'press';
       walked.push({ at: kind === 'assert' ? endTime : input?.timestamp ?? action.startTime, page: action.pageId, step: walkStepOf(action, walkKind, Boolean(end?.error)) });
     }
+  }
+  for (const { at, action, url, navigated } of sightings.sort((a, b) => a.at - b.at)) {
+    walked.push({ at: navigated ? action.startTime : openedAt(action.pageId, url, at, action.startTime), page: action.pageId, url });
+    lastSeen.set(action.pageId, { url, at, from: action.startTime });
   }
   timeline.sort((a, b) => a.at - b.at || Number(Boolean(a.kind)) - Number(Boolean(b.kind)));
   const current = new Map();

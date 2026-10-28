@@ -2750,12 +2750,13 @@ requests the page sends while it opens come after 「열기」. When another act
 new when the next action starts, 「열기」 is placed at the page load for the new address made since the action that last
 showed the old address started, but not before that old address was last seen, since the new page cannot have sent
 anything while the old one still showed; when there is no page load, it is placed at the time the new address was
-seen, and never after the new address was seen. A click does not wait for the page it asks for, so the page can be
-asked for before the click's last snapshot, which still shows the old address. A page load is a GET of the same
-origin and path, query aside, answered with a page, a redirect or nothing yet, that the browser marked as a document
-(`Sec-Fetch-Dest: document`), or, when the request carries no such header, as on plain http to another host than
-localhost, that asked for a page the test had open. A link to a file, such as a CSV export, is a document too, but
-its answer is not a page, so it stays a request. In the test that follows a link, the click runs from 9873.4 to 10020.9 and
+seen. The snapshots are read in the order they were taken, since actions can overlap. A click does not wait for
+the page it asks for, so the page can be asked for before the click's last snapshot, which still shows the old
+address. A page load is a GET of the same origin and path, query aside, that the browser marked as a document
+(`Sec-Fetch-Dest: document`) and that the test then had open or that was answered with a page or a redirect; when
+the request carries no such header, as on plain http to another host than localhost, it is a GET of a page the test
+had open answered with a page, a redirect or nothing yet. A link to a file, such as a CSV export, is a document too,
+but the test never has it open and its answer is not a page, so it stays a request. In the test that follows a link, the click runs from 9873.4 to 10020.9 and
 asks for the new page at 9986.8; a login that waits for its POST and then sets `location` loads the new page after
 the click has ended. An address that changes only after `#` loads no page. A write keeps its box when it was found by label,
 placeholder or test ID, for a check as well as a fill, and is shown as 「찾은 상자를 읽지 못함」 with its selector
@@ -2797,7 +2798,7 @@ another name than those above shows its own requests, and an app's own path with
 `@react-refresh` part is left out even when it failed; a move to an API address answered with a redirect, such as
 setting `location` to a logout address, is taken for a page load; without `Sec-Fetch-Dest`, a fetch on the path of a
 page the test had open answered with a redirect, a 304 or not at all is taken for a page load, and the address a page
-load was redirected from shows as a request, since the test never had it open; a `tests.json` written before the steps were kept has no result
+load was redirected from shows as a request unless its answer was a page, since the test never had it open; a `tests.json` written before the steps were kept has no result
 file or project on its trace notices, so such a notice is matched on the test's file, line and title and is shown on
 every run of that test; an action with no address
 open (a blank page) shows 「앱 밖」 instead of a screen; what an `expect` checked is not shown; an action the trace has

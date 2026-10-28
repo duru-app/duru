@@ -490,10 +490,20 @@ test('a page load the browser marks as a document is not a call the test sent, a
 test('a link the browser opens as a document that answers with a file, not a page, is a call the test sent', () => {
   assert.deepEqual(clickTrace([
     { url: '/api/report/export', at: 12, type: 'text/csv', dest: 'document' },
-  ], 'http://x/home'), ['open /home', 'press /home', 'GET /api/report/export 200']);
+    { url: '/api/report/export?all', at: 13, status: -1, type: 'x-unknown', dest: 'document' },
+  ], 'http://x/home'), ['open /home', 'press /home', 'GET /api/report/export 200', 'GET /api/report/export?all no response']);
 });
 
-test('a press that runs alongside one still showing the old address opens the new page no later than it was seen', () => {
+test('a document the page then shows is a page load whatever it answered, and an error page stays a call after 「열기」', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/next', at: 12, type: 'application/json', dest: 'document' },
+  ]), ['open /home', 'press /home', 'open /next']);
+  assert.deepEqual(clickTrace([
+    { url: '/next', at: 12, status: 500, type: 'text/plain', dest: 'document' },
+  ]), ['open /home', 'press /home', 'open /next', 'GET /next 500']);
+});
+
+test('a press that runs alongside another opens the new page at its request, judged by the snapshots in time order', () => {
   const page = 'page@1';
   assert.deepEqual(inTempDir((dir) => walkLines(traceZip(dir, [
     { type: 'before', callId: 'call@1', pageId: page, method: 'goto', startTime: 1, params: { url: 'http://x/home' } },
@@ -505,10 +515,12 @@ test('a press that runs alongside one still showing the old address opens the ne
     frameSnapshot('before@call@3', 'http://x/next', 40),
     { type: 'after', callId: 'call@3', endTime: 41 },
     { type: 'after', callId: 'call@2', endTime: 50 },
-    frameSnapshot('after@call@2', 'http://x/home', 50),
+    frameSnapshot('after@call@2', 'http://x/third', 50),
   ], [
     { url: '/next', at: 35, type: 'text/html' },
-  ])).slice(0, 4)), ['open /home', 'press /home', 'open /next', 'press /next']);
+    { url: '/api/next', at: 37, type: 'application/json' },
+    { url: '/third', at: 45, type: 'text/html' },
+  ]))), ['open /home', 'press /home', 'open /next', 'GET /api/next 200', 'press /next', 'open /third']);
 });
 
 test('a request the browser marks as not a document stays and does not open the page, even on the page path answered 304', () => {
