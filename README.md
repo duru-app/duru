@@ -454,7 +454,7 @@ A call or link a screen gets only through such a component, and not through the 
 names, their `sourceFiles`, and the `apiCalls` their code reaches, written as a screen's are. Those calls are under `calls`
 with the screens that send them too, often none.
 
-**Links.** A screen's links come from the route constants written in its code, the `to` of react-router's `Link`,
+**Links.** A screen's links come from the route constants its code uses as an address, the `to` of react-router's `Link`,
 `NavLink`, `Redirect` and `Navigate` outside the route files, the addresses given to `push` and `replace` of a
 history react-router hands to the screen or of the one named in `history`, and the addresses given to the function
 `useNavigate()` returns. A link can also sit on the line of a call of a function in the source that moves the
