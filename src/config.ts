@@ -192,20 +192,22 @@ function routeFilesOf(value: unknown, srcRoot: string) {
   return files;
 }
 
-const ROUTE_TABLE_KEYS = ['route', 'table', 'items'];
+const ROUTE_TABLE_KEYS = ['route', 'table', 'items', 'menus'];
 const ITEMS_PATH = /^(\*|[\w$-]+)(\.(\*|[\w$-]+))*$/;
 
 function routeTablesOf(value: unknown, srcRoot: string, routeFiles: (string | null)[]) {
   const inSrc = (f: string) => path.relative(srcRoot, path.join(srcRoot, f));
   const isTable = (t: any) => isPlainObject(t) && Object.keys(t).every((k) => ROUTE_TABLE_KEYS.includes(k)) && isText(t.route) && isText(t.items) && ITEMS_PATH.test(t.items)
-    && isPlainObject(t.table) && Object.keys(t.table).length === 2 && isText(t.table.file) && isText(t.table.const) && IDENTIFIER.test(t.table.const);
+    && isPlainObject(t.table) && Object.keys(t.table).length === 2 && isText(t.table.file) && isText(t.table.const) && IDENTIFIER.test(t.table.const)
+    && (t.menus === undefined || (Array.isArray(t.menus) && t.menus.every(isText)));
   if (value === undefined) return [];
   if (!Array.isArray(value) || !value.every(isTable)) {
-    throw new Error('routeTables must be a list of { "route", "table": { "file", "const" }, "items" }: a file in routesFile with a route made for each item of a table, '
-      + 'the file and top-level const holding that table as an object or a list, and the keys or places leading to its items with "*" for every key or place there, as paths from srcRoot, '
+    throw new Error('routeTables must be a list of { "route", "table": { "file", "const" }, "items", "menus" }: a file in routesFile with a route made for each item of a table, '
+      + 'the file and const holding that table as an object or a list, the keys or places leading to its items with "*" for every key or place there, '
+      + 'and optionally the files that draw a menu link for each item, as paths from srcRoot, '
       + `such as [{ "route": "components/admin_console/admin_console.tsx", "table": { "file": "components/admin_console/admin_definition.tsx", "const": "AdminDefinition" }, "items": "*.subsections.*" }], not ${JSON.stringify(value)}`);
   }
-  const tables = value.map((t) => ({ route: inSrc(t.route), table: { file: inSrc(t.table.file), const: t.table.const }, items: t.items }));
+  const tables = value.map((t) => ({ route: inSrc(t.route), table: { file: inSrc(t.table.file), const: t.table.const }, items: t.items, ...(t.menus && { menus: t.menus.map(inSrc) }) }));
   tables.forEach(({ route }, i) => {
     if (!routeFiles.includes(route)) throw new Error(`routeTables[${i}].route ${JSON.stringify(route)} is not listed in routesFile`);
     const first = tables.findIndex((t) => t.route === route);

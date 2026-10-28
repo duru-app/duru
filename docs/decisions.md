@@ -3126,8 +3126,8 @@ items' components into about a hundred files keeps some 60 MB more, so `extract`
 memory`; with `NODE_OPTIONS=--max-old-space-size=4096` it ends in 47 s. When the outer address cannot be filled, each item gives its own `route
 path not read` line at the same route line. A table written in a route file, or in a screen's own component file, stays
 with all it imports in the sources of every screen that holds that file. outline builds its settings table inside a hook from lazy component
-constants (`Profile.Component`), with no top-level const, and appsmith passes its route tables by spread
-(`{...route}`); neither is read.
+constants (`Profile.Component`), with no top-level const; it is read since #468, in the entry on menus below. appsmith
+passes its route tables by spread (`{...route}`), which is not read.
 Alternatives compared:
 - Writing the component fields in the config (`schema.component`, `schema.settings[].component`), as planned on
   2026-10-19: on mattermost it misses seven components of five items without a word (membership and permission
@@ -3217,6 +3217,68 @@ Known limits:
   (`['exact']: true`) is taken as unread. No measured app writes any of these.
 - Only `exact` is unread when a spread duru cannot read follows it. The item's `path` and `component` are read as written
   even when such a spread comes after them and may replace them in the running app.
+
+**A menu drawn from a route table gives each screen holding it one link to each item screen when the table entry
+names the menu file in `menus`, and a table may be the only const of its name inside a function.**
+Driver's decisions in #468 (2026-10-27 and 2026-10-28). mattermost's admin sidebar and outline's settings sidebar draw
+one entry for each item of the same table their route makes screens from: `admin_sidebar.tsx:186` gives
+`<AdminSidebarSection name={item.url}>` for each item of `AdminDefinition`, and `AdminSidebarSection` joins it to the
+`parentLink` that `React.cloneElement` hands it (`/admin_console`); outline's `Sidebar/Settings.tsx:57` gives
+`<SidebarLink to={item.path}>` for each item `useSettingsConfig()` returns. On main the admin entries were one `{?}`
+link at `admin_sidebar_section.tsx:62` on each of the 113 screens holding the sidebar, and the settings entries were
+not on the map at all, since the settings route itself was one `{?}#config.component` screen.
+- The config names the menu file in the table entry (`"menus": ["<file>"]`). In that file duru takes the one element
+  made in a loop function whose attribute other than `key` reads the field of the loop's item that the route path
+  reads, and that element gives one link for each item screen. The link goes to that item's screen and its `to` is
+  that screen's path: the item says which screen it is, and the address around the field (mattermost's
+  `cloneElement` prefix) need not be read. Two items at one address (13 such pairs in mattermost) each link only to
+  their own screen. The link has the item's `tableItem`, so the reviewer sees which item it stands for.
+- The element is not also read as a link of its own; a link inside the component it draws is read as before, so
+  mattermost keeps its `{?}` at `admin_sidebar_section.tsx:62`, which the plugin entries (`admin_sidebar.tsx:250`) draw
+  too.
+- An item whose path has a variable (12 in mattermost, `user_management/user/:user_id` and the like) gets no menu link:
+  a menu entry cannot fill the variable from the item.
+- Without `menus` nothing changes. A menu file that is not there, has no such element or has two stops the run with
+  the entry, as the other `routeTables` errors do.
+- The table const is the top-level one of its name, or, when there is none, the only const of that name inside a
+  function (outline's `items` inside `useComputed` in `useSettingsConfig`). Two such consts stop the run with their
+  number. An item's field is read as a route path is, so a call of a function in the source
+  (`settingsPath("preferences")`) gives its address, as it does in a `<Route path>`.
+- Folding these links into the review page's 「공통」 section, as #461 does for layout requests, comes after #461: these
+  menus are drawn by layouts, and the page will use the `layout` mark #461 puts on what a screen gets only through
+  its layout.
+Measured against main 5519f30, with `menus` added to the mattermost entry and the outline entry
+`{ "route": "routes/settings.tsx", "table": { "file": "hooks/useSettingsConfig.ts", "const": "items" }, "items": "*",
+"menus": ["components/Sidebar/Settings.tsx"] }`:
+- mattermost: each of the 113 screens holding the sidebar gets 100 links at `admin_sidebar.tsx:186`, under
+  `!isSectionHidden` (11,300 rows). Link rows go from 12,435 to 23,735, pairs of a screen and another screen it links
+  to from 2,859 to 13,669, none lost, and entry screens from 92 to 25. map.json grows from 20.9 MB to 31.8 MB; extract
+  took 95 s on main and 71 to 96 s on the branch on a loaded machine.
+- outline: `{?}#config.component` becomes 18 settings screens (59 screens in all), and the 50 screens holding the
+  settings sidebar get 18 links each at `Settings.tsx:57` (900 rows). The Embeds item gives a `route not read` line:
+  its path `integrationSettingsPath("embeds")` is imported from `@shared`, outside `srcRoot`. With the hook file now a
+  table file, the authenticated screens no longer hold the 54 settings scene files the sidebar pulled in (`/home`
+  goes from 603 to 501 source files), so the links those scenes wrote (`TemplatesTable.tsx:130`,
+  `GroupsTable.tsx:73` and three more) stay only on the settings screen that draws each scene: 109 pairs go, and
+  1,119 come.
+- appsmith, into-sign 1.5.0 and 2.0.0, and SigNoz with and without its API code are the same apart from `meta`.
+Known limits:
+- The conditions written in an item and a menu passing over an item by one of its fields are not read: mattermost
+  skips items with no `title` (`if (!item.title) return;`), and 9 of the 100 linked items have none
+  (`billing.subsections.company_info_edit`, `compliance.subsections.custom_policy_form` and others); `isHidden` is not
+  read either, as for the item screens.
+- outline draws the settings sidebar only under `isSettings` inside `AuthenticatedLayout`, a condition in the
+  layout's own body, which #479 does not read; so the 28 screens outside `/settings` get the 18 menu links too, as
+  they already got `Settings.tsx:40`.
+- outline's plugin settings, spliced into the list at run time, are not items.
+- An element reading the field through a name the loop function makes (`const url = item.url`) or through a nested
+  pattern (`([key, { url }])`) is not found.
+Alternatives compared:
+- duru finding the menu by itself, when a loop's list comes from the same hook or prop as the route's: outline would
+  match (`useSettingsConfig()` on both sides), but mattermost's two lists come through `connect()` in two `index.ts`
+  files, and fields named `url` and `path` are read by many unrelated loops, so a wrong match would give a screen a
+  hundred false links.
+- Writing the element's file and line in the config: it goes stale whenever the file changes.
 
 **A route path written as a list gives a screen for each path in it.**
 Decided in #444 (2026-10-26). React Router 5 takes a list in `path`, `<Route path={[A, B]}>`, and draws the same

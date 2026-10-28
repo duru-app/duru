@@ -81,8 +81,11 @@ client with example results and a config to start from.
   }]
   ```
 
-  `route` is a file listed in `routesFile`, `table` the file and the top-level `const` that hold the table, an
-  object or a list, and `items` the keys from that const to each item, with `*` for every key at that place. In a
+  `route` is a file listed in `routesFile`, `table` the file and the `const` that hold the table, an
+  object or a list, and `items` the keys from that const to each item, with `*` for every key at that place. The
+  const is the top-level one of that name, or, when the file has none, the only const of that name inside a
+  function, as outline keeps its settings in a hook (`{ "file": "hooks/useSettingsConfig.ts", "const": "items" }`).
+  An item's field is read as a route path is, so `settingsPath("preferences")` gives `/settings/preferences`. In a
   list the key is the item's place, counted from 0, so `*` takes every item and `3` the fourth. SigNoz keeps its
   routes in a list:
 
@@ -98,6 +101,24 @@ client with example results and a config to start from.
   with an error, as does an entry whose route file has no such route or more than one, whose route reads a field of
   the item but whose screen duru cannot read, whose table const is not there, or none of whose items has the field
   the route reads.
+
+  `menus` (optional) lists the files that draw a menu with one entry for each item of the table, such as
+  mattermost's admin sidebar:
+
+  ```json
+  "menus": ["components/admin_console/admin_sidebar/admin_sidebar.tsx"]
+  ```
+
+  In each file duru looks for the one element made in a `map`, `flatMap`, `forEach` or `reduce` over a list whose
+  attribute other than `key` reads the item's field that the route path reads (`name={item.url}`, `to={item.path}`).
+  The item is the loop function's first parameter, the second name of a first parameter taken apart as a list
+  (`([key, item])`), or a name the first parameter takes apart (`({ url })`). That element gives every screen that holds the file
+  one link for each item screen, to that screen: its `to` is the screen's path and it has the screen's `tableItem`.
+  The address the element writes around the field is not read, because the item names the screen it goes to. An item
+  whose path has a variable (`users/:user_id`) gets no menu link, because the menu cannot fill it in. The conditions
+  written in an item are not read here either, nor is a menu passing over an item by one of its fields
+  (`if (!item.title) return;`), so the menu links to all those item screens. A menu file
+  that is not there, that has no such element or that has more than one stops the run with an error.
 - `redirectElements` — the elements that redirect in the route files (default `Redirect` and
   `Navigate`; a config that lists them uses exactly the names listed).
 - `entryPaths` — route paths of further screens users start from when the code does not show them.
@@ -438,7 +459,8 @@ history, or on the line where a component in the source that wraps a react-route
 (`<SidebarLink to="/home">`), with the address that call or use leads to, or where a component or function named
 in `linkComponents` or `linkFunctions` is used. Each link has its address `to`, with `{*}` for a piece that comes from a value, the file
 and line, the conditions guarding it, and `targets`, the IDs of the screens it goes to. A link whose address duru
-cannot read has `to` `{?}` and empty `targets`. In an app that uses redux-saga, a route constant or a move of the
+cannot read has `to` `{?}` and empty `targets`. A link a menu named in `routeTables` draws for a table item also has
+that item's `tableItem`. In an app that uses redux-saga, a route constant or a move of the
 history named in `history` written in a saga is a link of each screen that dispatches an action the saga waits for,
 with the action types under `actions`; a move in a saga whose address duru cannot read is not on the map, not even
 as `{?}`. A link whose file is the screen's route file is made by code in that file while the screen is shown, such as

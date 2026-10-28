@@ -169,9 +169,9 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   with it; tell the user which routes these are and why each one was not read. A line whose reason starts with `made for
   each item of a list` stands for one screen per item, built from a list. So does a `route path not read` line that
   stopped at a field of the item of a `.map(…)`, with its `{?}` screen. When that list comes from a table written
-  in the source, an object or a list held in a top-level const, and the route's path reads one field of the list
-  item once, as `item.url` does in `${props.match.url}/${item.url}` or `path` does in
-  `routes.map(({ path, component }) => …)`, find the file and top-level const that hold it and the keys from that
+  in the source, an object or a list held in a top-level const or in the only const of that name inside a function,
+  and the route's path reads one field of the list item once, as `item.url` does in `${props.match.url}/${item.url}` or `path` does in
+  `routes.map(({ path, component }) => …)`, find the file and const that hold it and the keys from that
   const to each item, add a `routeTables` entry to the config yourself as you add the other config items, such as
   `{ "route": "<the route file>", "table": { "file": "<table file>", "const": "<const>" }, "items": "*.subsections.*" }`
   with `*` for every key at that place (`"items": "*"` for a list of routes), run `duru rebuild` again, and tell the
@@ -179,6 +179,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   such a table that gives no screen, because it has no value for the field the route reads, that value could not be
   read, or it is not an object written in the source; a list item's key is its place in the list. Tell the user
   which items these are.
+- When the app also draws a menu from the same table, a file that loops over the same items and gives each entry the
+  field the route path reads (`name={item.url}`, `to={item.path}`), add that file to the entry's `"menus"` list, run
+  `duru rebuild` again, and tell the user how many links each screen holding the menu gained; those links have
+  `tableItem` and go to the item screens whose path has no variable.
 - A `routesFile <file> has no <element> element, so it gives no screens` line names a file listed in `routesFile`
   that draws no route, often one that only keeps the list of routes another file draws. Find the file that draws
   those routes (the one that imports the list and makes a route for each item), put it in `routesFile` yourself, and
