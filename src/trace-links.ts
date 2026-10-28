@@ -1,6 +1,11 @@
 import { callFinder, pathOf, screenFinder } from './address-match.ts';
 import { readTrace } from './playwright-trace.ts';
+import type { WalkRequest, WalkStep } from './playwright-trace.ts';
 import type { StepInput } from './stories.ts';
+
+export type WalkedStep = Omit<WalkStep, 'url'> & { path?: string; screen?: string };
+export type WalkedRequest = WalkRequest & { call?: string };
+export type WalkedLine = WalkedStep | WalkedRequest;
 
 export const PASS_LEVELS = ['visit', 'interact', 'assert'];
 
@@ -10,7 +15,7 @@ export function traceLinker(map: any) {
   return (traceFile: string) => {
     const trace = readTrace(traceFile);
     if ('reason' in trace) return { reason: trace.reason };
-    const { steps, requests } = trace;
+    const { steps, requests, walk } = trace;
     screenAt ??= screenFinder(map);
     callAt ??= callFinder(map);
     const screens = new Map<string, string>();
@@ -31,6 +36,17 @@ export function traceLinker(map: any) {
       else if (PASS_LEVELS.indexOf(kind) > PASS_LEVELS.indexOf(screens.get(id)!)) screens.set(id, kind);
     }
     const calls = new Set(requests.map(({ method, url }) => callAt!(method, url)).filter(Boolean) as string[]);
-    return { screens, calls, unmatched: [...unmatched], order, inputs, skipped };
+    const walked = walk.map((line): WalkedLine => {
+      if (line.kind === 'request') {
+        const call = callAt!(line.method, line.url);
+        return { ...line, ...(call && { call }) };
+      }
+      const { url, ...step } = line;
+      if (url === undefined) return step;
+      const screen = screenAt!(url);
+      const path = pathOf(url);
+      return { ...step, ...(path !== null && { path }), ...(screen && { screen }) };
+    });
+    return { screens, calls, unmatched: [...unmatched], order, inputs, skipped, walk: walked };
   };
 }

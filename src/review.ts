@@ -29,6 +29,7 @@ import { settingChange } from './setting-changes.ts';
 import { addStory, editStory, FileChanged, writeStoryFields, writeStorySteps } from './stories.ts';
 import { checkScreens, checkStoryFiles } from './story-paths.ts';
 import { DEPTHS, linkTests } from './test-links.ts';
+import type { WalkedLine } from './trace-links.ts';
 
 const PAGE_DIR = path.join(import.meta.dirname, 'review-page');
 export const PAGE_PARTS = [
@@ -132,7 +133,10 @@ function readMap(mapFile: string): ScreenMap {
   return map;
 }
 
-const noTests = (): Omit<ReturnType<typeof linkTests>, 'meta'> & { meta: { generatedAt: null } } => ({ meta: { generatedAt: null }, nodes: {}, stories: {}, importers: {}, importNotices: [], passed: {}, traceNotices: [], traced: [], untracedCount: 0, unknownTags: [], untagged: [], untaggedCount: 0, missingSources: [], testFileHashes: {} });
+// 열쇠는 결과 파일 · 테스트 파일 · 줄 · 제목이고, 그 안은 Playwright 프로젝트 이름(없으면 빈 문자열)으로 나뉜다.
+type TestSteps = Record<string, Record<string, WalkedLine[]>>;
+
+const noTests = (): Omit<ReturnType<typeof linkTests>, 'meta'> & { meta: { generatedAt: null } } => ({ meta: { generatedAt: null }, nodes: {}, stories: {}, importers: {}, importNotices: [], passed: {}, traceNotices: [], traced: [], walks: {}, untracedCount: 0, unknownTags: [], untagged: [], untaggedCount: 0, missingSources: [], testFileHashes: {} });
 
 const readTests = (config: any) => {
   const file = path.join(config.outDir, 'tests.json');
@@ -188,7 +192,8 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const read = readMap(mapFile);
   const map = { ...read, screens: [...new Map(read.screens.map((s) => [s.id, s])).values()] };
   const linked = readTests(config);
-  const { traced, ...tests } = applyJudgments(linked, testsLinked(linked) ? loadJudgments(config.judgmentsDir).judgments : [], nodeHashes(map));
+  const { traced, walks, ...tests } = applyJudgments(linked, testsLinked(linked) ? loadJudgments(config.judgmentsDir).judgments : [], nodeHashes(map));
+  const testSteps: TestSteps = walks ?? {};
   const callsById = new Map(map.calls.map((c) => [c.id, c]));
   const { ids: storyIds, ...stories } = checkStoryFiles(map, config.storiesDir, mapFile, { ...tests, traced });
   const caseKinds: Record<string, CaseKind> = config.caseKinds;
@@ -214,6 +219,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   return {
     map: reviewMap,
     tests,
+    testSteps,
     marks,
     caseKinds,
     caseTargets: targets,

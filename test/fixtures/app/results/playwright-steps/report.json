@@ -1,0 +1,177 @@
+{
+  "config": {
+    "projects": []
+  },
+  "suites": [
+    {
+      "title": "steps.spec.ts",
+      "file": "steps.spec.ts",
+      "line": 0,
+      "column": 0,
+      "specs": [
+        {
+          "title": "fills the boxes on home @screen:/home#Home",
+          "ok": true,
+          "tags": [
+            "screen:/home#Home"
+          ],
+          "tests": [
+            {
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "expectedStatus": "passed",
+              "status": "expected",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/steps-fills-the-boxes-on-home-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "expectedStatus": "passed",
+              "status": "expected",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/steps-fills-the-boxes-on-home-firefox/trace.zip"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "steps.spec.ts",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "lists the documents on home @screen:/home#Home",
+          "ok": true,
+          "tags": [
+            "screen:/home#Home"
+          ],
+          "tests": [
+            {
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "expectedStatus": "passed",
+              "status": "expected",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/steps-lists-the-documents-on-home-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "steps.spec.ts",
+          "line": 10,
+          "column": 1
+        },
+        {
+          "title": "opens home without a trace @screen:/home#Home",
+          "ok": true,
+          "tags": [
+            "screen:/home#Home"
+          ],
+          "tests": [
+            {
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "expectedStatus": "passed",
+              "status": "expected",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": []
+                }
+              ]
+            }
+          ],
+          "file": "steps.spec.ts",
+          "line": 15,
+          "column": 1
+        },
+        {
+          "title": "opens home without snapshots @screen:/home#Home",
+          "ok": true,
+          "tags": [
+            "screen:/home#Home"
+          ],
+          "tests": [
+            {
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "expectedStatus": "passed",
+              "status": "expected",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/steps-opens-home-without-snapshots-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "steps.spec.ts",
+          "line": 19,
+          "column": 1
+        },
+        {
+          "title": "skips home @screen:/home#Home",
+          "ok": true,
+          "tags": [
+            "screen:/home#Home"
+          ],
+          "tests": [
+            {
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "expectedStatus": "passed",
+              "status": "skipped",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "skipped",
+                  "attachments": []
+                }
+              ]
+            }
+          ],
+          "file": "steps.spec.ts",
+          "line": 23,
+          "column": 1
+        }
+      ]
+    }
+  ]
+}

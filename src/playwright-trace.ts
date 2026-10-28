@@ -16,7 +16,30 @@ export interface TraceRequest {
   url: string;
 }
 
-export type TraceResult = { reason: string } | { steps: TraceStep[]; requests: TraceRequest[] };
+export type WalkKind = 'open' | 'press' | 'write' | 'assert';
+
+export interface WalkStep {
+  kind: WalkKind;
+  url?: string;
+  method?: string;
+  box?: StepInput['box'];
+  value?: string;
+  checked?: boolean;
+  unread?: 'box';
+  selector?: string;
+  failed?: true;
+}
+
+export interface WalkRequest {
+  kind: 'request';
+  method: string;
+  url: string;
+  status: number | null;
+}
+
+export type WalkLine = WalkStep | WalkRequest;
+
+export type TraceResult = { reason: string } | { steps: TraceStep[]; requests: TraceRequest[]; walk: WalkLine[] };
 
 interface TimelineEntry {
   at: number;
@@ -25,6 +48,8 @@ interface TimelineEntry {
   kind?: 'assert' | 'interact';
   fill?: StepInput | 'skipped';
 }
+
+type WalkEntry = { at: number; page?: string; url?: string; step?: Omit<WalkStep, 'url'>; request?: WalkRequest };
 
 const KNOWN_VERSIONS = [8];
 const ASSERTIONS = new Set(['expect', 'expectScreenshot']);
@@ -40,26 +65,56 @@ const BOX_LOCATORS: { word: (typeof BOX_WORDS)[number]; selector: RegExp; locato
   { word: 'testId', selector: new RegExp(`^internal:testid=\\[data-testid=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`), locator: (text) => `getByTestId(${JSON.stringify(text)})` },
 ];
 const VALUE_WRITES = new Set(['type', 'selectOption', 'check', 'uncheck', 'setInputFiles']);
+const NAVIGATIONS = new Set(['goto', 'reload', 'goBack', 'goForward']);
+const NOT_SENT_BY_THE_TEST = /^(text\/html|application\/xhtml\+xml|text\/css|image\/|font\/|application\/(x-)?font|application\/vnd\.ms-fontobject|(text|application)\/(x-)?(javascript|ecmascript)|application\/wasm)/i;
 const NOT_THE_APP = /^(about|data|blob|chrome|chrome-error):/;
 const END_OF_DIRECTORY = 0x06054b50;
 const DIRECTORY_ENTRY = 0x02014b50;
 
-function fillOf(params: any): StepInput | 'skipped' {
-  const value = params?.value;
-  if (typeof value !== 'string' || !value.trim() || typeof params.selector !== 'string') return 'skipped';
-  for (const { word, selector } of BOX_LOCATORS) {
-    const found = params.selector.match(selector);
+function boxOf(selector: unknown): StepInput['box'] | null {
+  if (typeof selector !== 'string') return null;
+  for (const { word, selector: pattern } of BOX_LOCATORS) {
+    const found = selector.match(pattern);
     if (!found) continue;
     try {
       const text = JSON.parse(found[1]);
-      if (!text.trim()) return 'skipped';
-      return { box: { [word]: text, ...(found[2] !== undefined && { nth: Number(found[2]) + 1 }) }, value };
+      return text.trim() ? { [word]: text, ...(found[2] !== undefined && { nth: Number(found[2]) + 1 }) } : null;
     } catch {
-      return 'skipped';
+      return null;
     }
   }
-  return 'skipped';
+  return null;
 }
+
+function fillOf(params: any): StepInput | 'skipped' {
+  const value = params?.value;
+  if (typeof value !== 'string' || !value.trim()) return 'skipped';
+  const box = boxOf(params.selector);
+  return box ? { box, value } : 'skipped';
+}
+
+const optionText = (o: any) => o?.valueOrLabel ?? o?.label ?? o?.value ?? (typeof o?.index === 'number' ? `${o.index + 1} 번째` : null);
+
+function writtenOf(method: string, params: any): Pick<WalkStep, 'value' | 'checked'> {
+  if (method === 'fill' && typeof params?.value === 'string') return { value: params.value };
+  if (method === 'type' && typeof params?.text === 'string') return { value: params.text };
+  if (method === 'check' || method === 'uncheck') return { checked: method === 'check' };
+  const named = method === 'selectOption' ? params?.options?.map(optionText) : method === 'setInputFiles' ? [...(params?.payloads ?? []).map((f: any) => f?.name), ...(params?.localPaths ?? []).map((f: string) => f.split(/[\\/]/).at(-1))] : null;
+  const texts = (named ?? []).filter((t: unknown) => typeof t === 'string');
+  return texts.length ? { value: texts.join(', ') } : {};
+}
+
+function walkStepOf(action: any, kind: WalkKind, failed: boolean): Omit<WalkStep, 'url'> {
+  const { method, params } = action;
+  const selector = typeof params?.selector === 'string' ? params.selector : undefined;
+  const written = kind === 'write' ? (() => {
+    const box = boxOf(selector);
+    return box ? { box, ...writtenOf(method, params) } : { unread: 'box' as const, ...writtenOf(method, params) };
+  })() : {};
+  return { kind, method, ...written, ...(selector && { selector }), ...(failed && { failed: true as const }) };
+}
+
+const sentRequest = (e: any) => e.snapshot._apiRequest || !NOT_SENT_BY_THE_TEST.test(e.snapshot.response?.content?.mimeType ?? '');
 
 export function fillCode({ box, value }: StepInput) {
   const [first, ...rest] = BOX_LOCATORS.filter(({ word }) => box[word] !== undefined).map(({ word, locator }) => `page.${locator(box[word]!)}`);
@@ -119,6 +174,7 @@ export function readTrace(file: string): TraceResult {
 
   const ends = new Map(events.filter((e) => e.type === 'after').map((e) => [e.callId, e]));
   const timeline: TimelineEntry[] = [];
+  const walked: WalkEntry[] = [];
   for (const action of actions) {
     const end = ends.get(action.callId);
     const endTime = end?.endTime ?? action.startTime;
@@ -126,13 +182,20 @@ export function readTrace(file: string): TraceResult {
     const seen = [['before', action.startTime], ['input', input?.timestamp], ['after', endTime]];
     for (const [name, at] of seen) {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
-      if (snapshot) timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
+      if (!snapshot) continue;
+      timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
+      // 주소를 옮기는 동작의 새 주소는 그 동작이 시작할 때로 놓아, 화면을 열며 보낸 요청이 열기 뒤에 온다.
+      walked.push({ at: name === 'after' && NAVIGATIONS.has(action.method) ? action.startTime : at, page: action.pageId, url: snapshot.frameUrl });
     }
     const kind = kindOf(action.method);
     if (kind === 'assert') timeline.push({ at: endTime, page: action.pageId, kind });
     else if (kind && !end?.error) {
       const fill = action.method === 'fill' ? fillOf(action.params) : VALUE_WRITES.has(action.method) ? 'skipped' as const : undefined;
       timeline.push({ at: input?.timestamp ?? action.startTime, page: action.pageId, kind, ...(fill && { fill }) });
+    }
+    if (kind) {
+      const walkKind = kind === 'assert' ? 'assert' : action.method === 'fill' || VALUE_WRITES.has(action.method) ? 'write' : 'press';
+      walked.push({ at: kind === 'assert' ? endTime : input?.timestamp ?? action.startTime, page: action.pageId, step: walkStepOf(action, walkKind, Boolean(end?.error)) });
     }
   }
   timeline.sort((a, b) => a.at - b.at || Number(Boolean(a.kind)) - Number(Boolean(b.kind)));
@@ -148,9 +211,27 @@ export function readTrace(file: string): TraceResult {
       steps.push({ url: url!, kind: 'visit' });
     }
   }
-  const requests = network
-    .filter((e) => e.type === 'resource-snapshot')
-    .sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime)
-    .map((e) => ({ method: e.snapshot.request.method, url: e.snapshot.request.url }));
-  return { steps, requests };
+  const resources = network.filter((e) => e.type === 'resource-snapshot').sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime);
+  const requests = resources.map((e) => ({ method: e.snapshot.request.method, url: e.snapshot.request.url }));
+  for (const e of resources.filter(sentRequest)) {
+    const status = e.snapshot.response?.status;
+    walked.push({ at: e.snapshot._monotonicTime, request: { kind: 'request', method: e.snapshot.request.method, url: e.snapshot.request.url, status: typeof status === 'number' && status > 0 ? status : null } });
+  }
+  return { steps, requests, walk: walkOf(walked) };
+}
+
+function walkOf(walked: WalkEntry[]) {
+  walked.sort((a, b) => a.at - b.at || Number(Boolean(a.step || a.request)) - Number(Boolean(b.step || b.request)));
+  const current = new Map<string, string>();
+  const walk: WalkLine[] = [];
+  for (const { page, url, step, request } of walked) {
+    if (request) walk.push(request);
+    else if (step) walk.push({ ...step, ...(current.has(page!) && { url: current.get(page!) }) });
+    else if (NOT_THE_APP.test(url!)) current.delete(page!);
+    else if (current.get(page!) !== url) {
+      current.set(page!, url!);
+      walk.push({ kind: 'open', url: url! });
+    }
+  }
+  return walk;
 }

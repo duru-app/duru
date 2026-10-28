@@ -710,7 +710,7 @@ test('an address with a value in it or a query after it is linked to the screen 
 
 test('a passed test carries its place, its result file, its project, its depth and its status', () => {
   const [t] = tracedLinks.passed['/document/:id#DocumentDetail'];
-  assert.deepEqual(t, { title: 'checks the path of a document', tags: [], file: 'visits.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/visits.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'assert' });
+  assert.deepEqual(t, { title: 'checks the path of a document', tags: [], file: 'visits.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/visits.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'assert', steps: JSON.stringify(['results/playwright-traced/visits.json', 'visits.spec.ts', t.line, 'checks the path of a document']) });
   assert.equal(typeof t.line, 'number');
 });
 
@@ -776,7 +776,7 @@ test('a browser test is linked to each call it sent a request for, whatever valu
   assert.deepEqual(passedAt('GET:/api/v1/lab/experiment'), ['call asks for the experiment without opening a page']);
   assert.equal(passedAt('GET:/api/v1/member/list')[0], 'call turns the pages of the member list');
   const [t] = tracedLinks.passed['GET:/api/v1/document/{documentId}'];
-  assert.deepEqual(t, { title: 'reads a document from the server', tags: [], file: 'calls.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/calls.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'call' });
+  assert.deepEqual(t, { title: 'reads a document from the server', tags: [], file: 'calls.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/calls.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'call', steps: JSON.stringify(['results/playwright-traced/calls.json', 'calls.spec.ts', t.line, 'reads a document from the server']) });
 });
 
 test('a request with another method than the call, or for a path no call has, links the test to no call', () => {
@@ -814,3 +814,35 @@ test('the tests that passed through the screens come out in the same order every
   assert.deepEqual(Object.keys(again.passed), Object.keys(tracedLinks.passed));
 });
 
+
+const STEPS_CONFIG = { ...config, tests: [{ format: 'playwright', path: path.join(config.configDir, 'results/playwright-steps'), depth: 'ui' }] };
+const stepLinks = linkTests(STEPS_CONFIG, await buildMap(config));
+const stepsOf = (title: string) => stepLinks.nodes['/home#Home'].filter((t) => t.title === title);
+
+test('a traced test keeps its walk once, under the projects it ran in, and each of its entries points at it', () => {
+  const runs = stepsOf('fills the boxes on home @screen:/home#Home');
+  assert.deepEqual(runs.map((t) => t.project), ['chromium', 'firefox']);
+  assert.equal(runs[0].steps, runs[1].steps);
+  const walk = stepLinks.walks[runs[0].steps!];
+  assert.deepEqual(Object.keys(walk), ['chromium', 'firefox']);
+  assert.deepEqual(walk.firefox.map((line) => line.kind), ['open', 'assert']);
+  assert.deepEqual(walk.chromium[0], { kind: 'open', path: '/home', screen: '/home#Home' });
+  assert.deepEqual(walk.chromium.at(-1), { kind: 'write', method: 'fill', box: { placeholder: '제목' }, value: '제목 값', selector: 'internal:attr=[placeholder="제목"i]', path: '/document/draft', screen: '/document/:tab#DocumentList' });
+  assert.equal(Object.keys(stepLinks.walks).length, 2);
+});
+
+test('a request in the walk carries the ID of the call on the map it matches', () => {
+  const [run] = stepsOf('lists the documents on home @screen:/home#Home');
+  assert.deepEqual(stepLinks.walks[run.steps!].chromium.filter((line) => line.kind === 'request'), [
+    { kind: 'request', method: 'GET', url: 'http://127.0.0.1:4598/api/v1/document/list', status: 404, call: 'GET:/api/v1/document/list' },
+    { kind: 'request', method: 'GET', url: 'http://127.0.0.1:4598/api/v1/member/list', status: 404, call: 'GET:/api/v1/member/list' },
+  ]);
+  assert.ok(stepLinks.passed['GET:/api/v1/document/list'].every((t) => t.steps === run.steps));
+});
+
+test('a test without a trace, with a trace that cannot be read or that was skipped has no walk', () => {
+  for (const title of ['opens home without a trace', 'opens home without snapshots', 'skips home']) {
+    assert.equal(stepsOf(`${title} @screen:/home#Home`)[0].steps, undefined, title);
+  }
+  assert.deepEqual(stepLinks.traceNotices.map((n) => n.test.title), ['opens home without snapshots @screen:/home#Home']);
+});

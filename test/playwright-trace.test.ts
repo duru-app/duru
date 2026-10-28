@@ -110,7 +110,8 @@ test('an interaction that ended in an error is not counted, even when its input 
 });
 
 test('a test that opened no page has no steps but keeps its requests', () => {
-  assert.deepEqual(readTrace(traceOf('calls the server without opening a page')!), { steps: [], requests: [{ method: 'POST', url: 'http://127.0.0.1:4598/api/v1/press' }] });
+  const { steps, requests } = readTrace(traceOf('calls the server without opening a page')!) as Traced;
+  assert.deepEqual({ steps, requests }, { steps: [], requests: [{ method: 'POST', url: 'http://127.0.0.1:4598/api/v1/press' }] });
 });
 
 test('an app opened from a file counts like one opened from a server', () => {
@@ -242,3 +243,88 @@ test('a key press and a click carry no input and are not marked skipped', () => 
 test('an input is put on the address that was open when it was filled', () => {
   assert.deepEqual(inputSteps().at(-1), ['/document/draft', { box: { placeholder: '제목' }, value: '제목 값' }]);
 });
+
+const CALLS = path.join(RESULTS, 'test-results');
+const walkOf = (file: string) => (readTrace(file) as Traced).walk.map((line) => (line.kind === 'request' ? { ...line, url: address(line.url) } : { ...line, ...(line.url && { url: address(line.url) }) }));
+const walkLines = (file: string) => walkOf(file).map((line) => (line.kind === 'request' ? `${line.method} ${line.url} ${line.status ?? 'no response'}` : `${line.kind} ${line.url ?? '-'}${line.failed ? ' failed' : ''}`));
+
+test('the walk puts the requests a test sent between its steps, with the response status', () => {
+  assert.deepEqual(walkLines(path.join(CALLS, 'calls-turns-the-pages-of-the-member-list-chromium/trace.zip')), [
+    'open /home',
+    'GET /api/v1/member/list?page=2 404',
+    'GET /api/v1/member/list?page=3 404',
+  ]);
+});
+
+test('the walk leaves out the page, scripts, styles, pictures and fonts the browser loaded, and keeps a request that got no response', () => {
+  const sent = walkOf(traceOf('opens the app from a file')!).filter((line) => line.kind === 'request');
+  assert.ok(sent.length > 0);
+  assert.ok(sent.every((line) => line.kind === 'request' && line.status === null));
+  assert.equal(requests('opens home and then help').length, 6);
+  assert.deepEqual(walkLines(traceOf('opens home and then help')!), ['open /home', 'open /help']);
+});
+
+test('a request sent without a page is in the walk with its status', () => {
+  assert.deepEqual(walkLines(traceOf('calls the server without opening a page')!), ['POST /api/v1/press 200']);
+});
+
+test('the walk keeps an action that ended in an error as failed, while the steps leave it out', () => {
+  const title = 'gives up on a button that is covered';
+  assert.deepEqual(walkLines(traceOf(title)!), ['open /home', 'press /home failed']);
+  assert.deepEqual(steps(title), ['visit /home']);
+});
+
+test('the walk tells pressing from writing, and puts every write in its place with the box or a mark that the box was not read', () => {
+  const walk = walkOf(INPUTS).filter((line) => line.kind !== 'request');
+  assert.deepEqual(walk.map((line) => [line.kind, 'method' in line ? line.method : null]), [
+    ['open', null],
+    ...[...Array(7)].map(() => ['write', 'fill']),
+    ['press', 'press'],
+    ['write', 'fill'], ['write', 'type'], ['write', 'selectOption'], ['write', 'check'], ['write', 'uncheck'], ['write', 'check'], ['write', 'setInputFiles'], ['write', 'fill'],
+    ['press', 'click'],
+    ['open', null],
+    ['write', 'fill'],
+  ]);
+  const writes = walk.filter((line) => line.kind === 'write').map((line) => 'box' in line && line.box ? { box: line.box, value: line.value, checked: line.checked } : { unread: (line as { unread?: string }).unread, value: (line as { value?: string }).value, selector: (line as { selector?: string }).selector });
+  assert.deepEqual(writes, [
+    { box: { label: '메모', nth: 1 }, value: '첫 메모', checked: undefined },
+    { box: { label: '메모', nth: 2 }, value: '둘째 메모', checked: undefined },
+    { box: { placeholder: '이름' }, value: 'Kim', checked: undefined },
+    { box: { testId: 'amount' }, value: '3', checked: undefined },
+    { unread: 'box', value: 'css 값', selector: '#css' },
+    { unread: 'box', value: 'role 값', selector: 'internal:role=textbox[name="코드"i]' },
+    { box: { label: '따옴표 "큰"' }, value: 'q', checked: undefined },
+    { box: { placeholder: '이름' }, value: '', checked: undefined },
+    { box: { placeholder: '이름' }, value: 'abc', checked: undefined },
+    { unread: 'box', value: '나', selector: '#sel' },
+    { unread: 'box', value: undefined, selector: '#chk' },
+    { unread: 'box', value: undefined, selector: '#chk' },
+    { unread: 'box', value: undefined, selector: '#chk' },
+    { unread: 'box', value: undefined, selector: '#file' },
+    { unread: 'box', value: 'x', selector: 'internal:attr=[placeholder=" "s]' },
+    { box: { placeholder: '제목' }, value: '제목 값', checked: undefined },
+  ]);
+  assert.deepEqual(walk.filter((line) => 'checked' in line).map((line) => (line as { checked: boolean }).checked), [true, false, true]);
+  assert.equal(walk.at(-1)!.url, '/document/draft');
+});
+
+test('a box found by label is read for a check as well as for a fill', () =>
+  inTempDir((dir) => {
+    const file = path.join(dir, 'trace.zip');
+    const line = (e: object) => `${JSON.stringify(e)}\n`;
+    const page = 'page@1';
+    fs.writeFileSync(file, storedZip({
+      '0-trace.trace': [
+        line({ type: 'context-options', version: 8 }),
+        line({ type: 'before', callId: 'call@1', pageId: page, method: 'goto', startTime: 1, params: { url: 'http://x/home' } }),
+        line({ type: 'after', callId: 'call@1', endTime: 2 }),
+        line({ type: 'frame-snapshot', snapshot: { snapshotName: 'after@call@1', isMainFrame: true, frameUrl: 'http://x/home', timestamp: 2 } }),
+        line({ type: 'before', callId: 'call@2', pageId: page, method: 'check', startTime: 3, params: { selector: 'internal:label="동의"i' } }),
+        line({ type: 'after', callId: 'call@2', endTime: 4 }),
+      ].join(''),
+    }));
+    assert.deepEqual((readTrace(file) as Traced).walk, [
+      { kind: 'open', url: 'http://x/home' },
+      { kind: 'write', method: 'check', box: { label: '동의' }, checked: true, selector: 'internal:label="동의"i', url: 'http://x/home' },
+    ]);
+  }));

@@ -8,6 +8,7 @@ import { importLinker } from './import-links.ts';
 import { readJunit } from './junit.ts';
 import { readPlaywright } from './playwright.ts';
 import { traceLinker } from './trace-links.ts';
+import type { WalkedLine } from './trace-links.ts';
 import { STATUS_RANK, readVerdicts, withProjectRun } from './verdict.ts';
 import type { TestStatus } from './verdict.ts';
 import { readVitest } from './vitest.ts';
@@ -88,6 +89,7 @@ export function linkTests(config: any, map: any) {
   const passed: Record<string, any[]> = {};
   const traceNotices = [];
   const screenOrders: TracedTest[] = [];
+  const walks: Record<string, Record<string, WalkedLine[]>> = {};
   let untracedCount = 0;
   const shownPath = (file: string) => (path.relative(config.configDir, file).startsWith('..') ? file : path.relative(config.configDir, file));
   const reportUnknown = (tag: string, t: any, testKey: string) => {
@@ -142,8 +144,11 @@ export function linkTests(config: any, map: any) {
         }
         const trace = t.trace ? linkByTrace(t.trace) : null;
         const passedOrder = trace && !trace.reason && t.status === 'pass' && t.traceRunPassed ? trace.order! : null;
+        const stepsKey = trace?.walk && JSON.stringify([resultPath.split(path.sep).join('/'), t.file, t.line, t.title]);
+        if (stepsKey) (walks[stepsKey] ??= {})[t.project ?? ''] = trace!.walk!;
+        const steps = stepsKey ? { steps: stepsKey } : {};
         if (trace) {
-          const traced = { title: t.title, tags: t.tags, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status };
+          const traced = { title: t.title, tags: t.tags, file: t.file, line: t.line, project: t.project, source: resultPath, format: source.format, depth, status: t.status, ...steps };
           if (trace.reason) traceNotices.push({ file: shownPath(t.trace), test: { title: t.title, file: t.file, line: t.line }, reason: trace.reason });
           else if (passedOrder) screenOrders.push({ report: resultPath.split(path.sep).join('/'), title: t.title, file: t.file, line: t.line, screens: passedOrder, ...(trace.inputs!.some((i) => i.length) && { inputs: trace.inputs! }), ...(trace.skipped! > 0 && { skipped: trace.skipped! }) });
           for (const [id, level] of trace.screens ?? []) {
@@ -167,7 +172,7 @@ export function linkTests(config: any, map: any) {
           continue;
         }
         const test = { title: t.title, tags: t.tags, file: t.file, line: t.line, project: t.project };
-        const entry = { ...test, source: resultPath, format: source.format, depth, status: t.status, ...(link?.file && { testFile: link.file }), ...(t.detail && { detail: t.detail }), ...(trace?.unmatched && { unmatched: trace.unmatched }) };
+        const entry = { ...test, source: resultPath, format: source.format, depth, status: t.status, ...(link?.file && { testFile: link.file }), ...(t.detail && { detail: t.detail }), ...(trace?.unmatched && { unmatched: trace.unmatched }), ...steps };
         for (const tag of nodeTags) {
           if (!known.has(tag)) {
             reportUnknown(tag, t, testKey);
@@ -187,5 +192,5 @@ export function linkTests(config: any, map: any) {
   const hash = codeHasher(config.srcRoot);
   const testFiles = new Set<string>([...Object.values(nodes), ...Object.values(stories), ...Object.values(importers), [...untagged.values()]].flat().map((t) => t.testFile).filter(Boolean));
   const testFileHashes = Object.fromEntries([...testFiles].map((f) => f.replaceAll('\\', '/')).sort().map((f) => [f, hash([f])]));
-  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, passed, traceNotices, traced: screenOrders, untracedCount, unknownTags, untagged: [...untagged.values()].sort(byTest), untaggedCount: untagged.size, missingSources, testFileHashes };
+  return { meta: { generatedAt: new Date().toISOString() }, nodes, stories, importers, importNotices, passed, traceNotices, traced: screenOrders, walks, untracedCount, unknownTags, untagged: [...untagged.values()].sort(byTest), untaggedCount: untagged.size, missingSources, testFileHashes };
 }
