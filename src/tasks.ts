@@ -605,24 +605,22 @@ const NO_TESTS_INTRO = ' Under `cases with no tests`, each screen or call a rule
 const NEW_ONLY_INTRO = ' When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config> <kind> --new` for that kind instead: it lists only the undecided candidates that the map named by `baselineMap` does not have, and exits with 0 once none of them is left, even while older ones are. Do not use `--new` for a kind added to `caseKinds` after that map was built: its candidates on that map count as older, so `--new` ends at once.';
 const UNDER_REVIEW_INTRO = ' Under `under review`, each candidate carries a `not-needed` an agent wrote with `duru case`, which waits for a reviewer to accept or revert it on the review page; until then the candidate counts as it did before, a target of a rule stays a target, and it is not undecided. Do not write it again.';
 
-const appStarts = new WeakMap<object, { ids: Set<string>; text: string }>();
+type AppStart = { ids: Set<string>; text: string };
 
-function sentText(call: any, map: any) {
-  if (!appStarts.has(map)) appStarts.set(map, { ids: sentAtAppStart(map.appWide), text: `sent as the app starts by ${(map.appWide?.components ?? []).map((c: any) => `${c.name} (${c.file})`).join(', ')}` });
-  const start = appStarts.get(map)!;
-  return { fromScreens: call.screens.length ? call.screens.join(', ') : null, atStart: start.ids.has(call.id) ? start.text : null };
-}
+const appStartOf = (map: any): AppStart => ({ ids: sentAtAppStart(map.appWide), text: `sent as the app starts by ${(map.appWide?.components ?? []).map((c: any) => `${c.name} (${c.file})`).join(', ')}` });
+
+const sentText = (call: any, start: AppStart) => ({ fromScreens: call.screens.length ? call.screens.join(', ') : null, atStart: start.ids.has(call.id) ? start.text : null });
 
 const sentFrom = ({ fromScreens, atStart }: ReturnType<typeof sentText>) => [fromScreens && `sent from ${fromScreens}`, atStart].filter(Boolean).join(' and ') || 'sent from no screen';
 
-function calledFromLine(call: any, map: any) {
-  const { fromScreens, atStart } = sentText(call, map);
+function calledFromLine(call: any, start: AppStart) {
+  const { fromScreens, atStart } = sentText(call, start);
   if (!fromScreens && atStart) return `- ${atStart}`;
   return `- called from: ${fromScreens ?? 'no screen'}${atStart ? `; ${atStart}` : ''}`;
 }
 
-const nodeText = (node: any, isCall: boolean, map: any) => (isCall
-  ? `call, ${sentFrom(sentText(node, map))}`
+const nodeText = (node: any, isCall: boolean, start: AppStart) => (isCall
+  ? `call, ${sentFrom(sentText(node, start))}`
   : `screen, component ${node.componentFile ?? 'file not found'}, route at ${node.routeFile}:${node.line}`);
 
 function pickedByText(kind: string, target: CaseTarget) {
@@ -640,13 +638,14 @@ function nodesById(map: any) {
 
 function undecidedText(map: any, attached: MarkEntry[], kind: string) {
   const nodeOf = nodesById(map);
+  const start = appStartOf(map);
   const byPerson = new Map(attached.filter((e) => e.target.case === kind && e.current && e.current.via === undefined).map((e) => [e.target.node!, e]));
   return (id: string) => {
     const { node, isCall } = nodeOf(id);
     const entry = byPerson.get(id);
     const mark = entry?.current;
     const what = mark?.of !== undefined && !acceptsProposal(mark, entry!.history) ? 'took back the agent\'s not-needed' : mark?.rule ? 'took it out of a rule that no longer picks it' : 'marked it not-needed without a note';
-    return `${id} — ${nodeText(node, isCall, map)}${mark ? ` — ${within(mark.author, '    ')} ${what} on ${mark.date.slice(0, 10)}, so only a person can decide it` : ''}`;
+    return `${id} — ${nodeText(node, isCall, start)}${mark ? ` — ${within(mark.author, '    ')} ${what} on ${mark.date.slice(0, 10)}, so only a person can decide it` : ''}`;
   };
 }
 
@@ -654,10 +653,11 @@ const underReview = (n: number) => (n ? `, ${n} under review` : '');
 
 function reviewText(map: any, targets: KindTargets) {
   const nodeOf = nodesById(map);
+  const start = appStartOf(map);
   return (id: string) => {
     const { node, isCall } = nodeOf(id);
     const { author, date, note } = targets.nodes[id].review!;
-    return `${id} — ${nodeText(node, isCall, map)} — ${within(author, '    ')}, ${date.slice(0, 10)} — ${quotedNote(note, '    ') ?? 'no note'}`;
+    return `${id} — ${nodeText(node, isCall, start)} — ${within(author, '    ')}, ${date.slice(0, 10)} — ${quotedNote(note, '    ') ?? 'no note'}`;
   };
 }
 
@@ -675,6 +675,7 @@ export function undecidedLines(map: any, caseKinds: Record<string, CaseKind>, ta
 
 function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: Record<string, KindTargets>, attached: MarkEntry[], tests: Record<string, TestRow[]>, listed: Set<string>, formats: string[], hasBaseline: boolean) {
   const nodeOf = nodesById(map);
+  const start = appStartOf(map);
   const lines = ['', '# Case kinds', '', CASE_KINDS_INTRO + (hasBaseline ? NEW_ONLY_INTRO : '') + NO_TESTS_INTRO];
   let undecided = 0;
   let untested = 0;
@@ -708,7 +709,7 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
         '',
         `### ${c.node}`,
         '',
-        `- ${nodeText(node, isCall, map)}`,
+        `- ${nodeText(node, isCall, start)}`,
         `- picked by: ${pickedByText(kind, c.target)}`,
         `- no tests: ${c.tags.map((tag) => `\`@${tag}\``).join(', ')}`,
         ...emptyTestLines(formats, c.tags.map((tag) => [`${isCall ? 'call' : 'screen'}:${c.node}`, tag])),
@@ -721,6 +722,7 @@ function caseKindLines(map: any, caseKinds: Record<string, CaseKind>, targets: R
 
 export function taskList(config: any) {
   const { map, tests, marks, appLinks, stories, needs, caseTargets } = reviewData(config, null);
+  const appStart = appStartOf(map);
   const open = marks.attached.filter((m) => m.current?.status === 'needs-more');
   const relative = (p: string) => path.relative(config.configDir, p).split(path.sep).join('/');
   let comparison: TestComparison | null = null;
@@ -830,7 +832,7 @@ export function taskList(config: any) {
       marks.length ? '- marks:' : REGRESSION_ONLY,
       ...marks.flatMap((m) => entryLines(m, cellText(m.target, 'whole call'))),
       ...partLines(partsOf(c.id), 'call', PART_SECTIONS, passedIn),
-      calledFromLine(c, map),
+      calledFromLine(c, appStart),
       `- server: ${serverText(c.server)}`,
       ...resultLines(c.id, ''),
       ...caseLines(`call:${c.id}`, c.cases, tests.nodes[c.id], config.caseKinds),

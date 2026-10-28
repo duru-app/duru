@@ -139,7 +139,8 @@ const nodeWord = (id) => (callOf(id) ? '호출' : '화면');
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];
 const hasOption = (tests, key, value) => tests.filter((t) => t.options?.some((o) => o.key === key && o.value === value));
 const optionsOf = (s, callId) => s.callOptions[callId] ?? state.data.map.appWide?.callOptions[callId] ?? [];
-const sentAtAppStart = (id) => Boolean(state.data.map.appWide?.callOptions[id]);
+let appStartIds = new Set();
+const sentAtAppStart = (id) => appStartIds.has(id);
 function callScreen(id) {
   const call = callOf(id);
   if (!call || call.screens.length || !sentAtAppStart(id)) return call?.screens[0];
@@ -159,6 +160,7 @@ async function load() {
   if (order < loadApplied) return;
   loadApplied = order;
   state.data = data;
+  appStartIds = new Set(data.map.appWide ? callIdsOf(data.map.appWide) : []);
   const { screens } = state.data.map;
   if (!screens.some((s) => s.id === state.selected)) state.flowPicked = false;
   const screen = screens.find((s) => s.id === state.selected) ?? screens[0];

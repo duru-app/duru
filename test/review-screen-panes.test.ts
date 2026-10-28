@@ -884,10 +884,10 @@ test('in a browser, a call only the app start sends opens on the screen in view:
         assert.deepEqual(served.map.appWide!.callOptions[ME], []);
         assert.deepEqual(served.map.appWide!.callOptions[EXPORT].map((o) => o.key), ['withAttachments']);
         assert.equal(served.map.screens.find((x) => x.id === '/help#Help')!.callOptions[EXPORT], undefined);
-        assert.deepEqual(served.map.screens.find((x) => x.id === '/home#Home')!.callOptions[EXPORT], [], 'the layout of /home sends it without the option');
+        assert.deepEqual(served.map.screens.find((x) => x.id === '/home#Home')!.callOptions[EXPORT].map((o) => o.key), ['withAttachments'], 'the app start sends it with the option while /home is open');
         const optionKeys = (screen: string) => p.evaluate(([at, id]) => optionsOf(state.data.map.screens.find((x) => x.id === at), id).map((o) => o.key), [screen, EXPORT]);
         assert.deepEqual(await optionKeys('/help#Help'), ['withAttachments']);
-        assert.deepEqual(await optionKeys('/home#Home'), []);
+        assert.deepEqual(await optionKeys('/home#Home'), ['withAttachments']);
         await p.fill('#right-dock textarea', '앱을 켤 때 한 번만 부른다');
         const kept = () => p.evaluate(() => JSON.stringify([state.target, state.draft]));
         const before = await kept();
@@ -910,6 +910,20 @@ test('in a browser, a call only the app start sends opens on the screen in view:
         await p.click('#center li.case-row[data-node="GET:/api/v1/lab/experiment"] button.node-name');
         await p.waitForFunction(() => location.hash.startsWith('#screens'));
         assert.equal(await p.evaluate(() => state.selected), '/lab#Lab', 'a call a screen sends itself opens on that screen');
+
+        await p.click('#screen-list li:has-text("/home")');
+        await p.locator('#center details.common-calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').nth(1).click();
+        const optionTarget = await p.evaluate(() => JSON.stringify(state.target));
+        assert.match(optionTarget, /"option":\{"key":"withAttachments","value":true\}/);
+        await p.evaluate(() => load());
+        assert.equal(await p.evaluate(() => JSON.stringify(state.target)), optionTarget);
+
+        addMark(config.marksDir, { target: { node: '/home#Home' }, status: 'needs-more', note: 'test it', author: 'reviewer' });
+        const tasks = taskList(config).split('\n');
+        const homeAt = tasks.indexOf('## /home#Home');
+        const home = tasks.slice(homeAt, tasks.findIndex((l, i) => i > homeAt && l.startsWith('#'))).filter((l) => l.startsWith(`  - ${EXPORT} — `));
+        assert.equal(home.length, 1);
+        assert.match(home[0], / — options: withAttachments$/);
       }),
     ),
   APP_START_ONLY);

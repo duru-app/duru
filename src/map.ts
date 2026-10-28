@@ -208,7 +208,7 @@ function configuredCallLinks(calls: { id: string }[], callLinks: CallLink[]) {
 const bySite = (a: OptionSite, b: OptionSite) => compare(a.screen, b.screen) || compare(a.file, b.file) || a.line - b.line;
 const OPTION_SOURCES = ['source', 'type', 'config'];
 
-function buildCalls(apiFunctions: ApiFunctions, screens: any[], appWideCalls: MapApiCall[], apiPathPrefix: string, bodyOptions: Record<string, string[]>, bodyTypeExclusions: Record<string, string[]>) {
+function buildCalls(apiFunctions: ApiFunctions, screens: any[], appWide: { apiCalls: MapApiCall[] } | null | undefined, apiPathPrefix: string, bodyOptions: Record<string, string[]>, bodyTypeExclusions: Record<string, string[]>) {
   const calls = new Map<string, any>();
   const typeFields = new Map<string, Set<string>>();
   const nodeOf = (e: Endpoint) => {
@@ -230,7 +230,7 @@ function buildCalls(apiFunctions: ApiFunctions, screens: any[], appWideCalls: Ma
       for (const key of e.bodyOptions ?? []) typeFields.get(node.id)!.add(key);
     }
   }
-  for (const c of [...screens.flatMap((s) => s.apiCalls), ...appWideCalls]) if (c.direct) c.endpoints!.forEach(nodeOf);
+  for (const c of sendingParts({ screens, appWide }).flatMap((s) => s.apiCalls)) if (c.direct) c.endpoints!.forEach(nodeOf);
   const optionOf = (node: any, key: string): CallOption => {
     if (!node.options.has(key)) node.options.set(key, { sources: new Set(), sites: new Map() });
     return node.options.get(key);
@@ -329,7 +329,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   }
 
   const bodyTypeExclusions = config.bodyTypeExclusions ?? {};
-  const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, appWideMapped?.apiCalls ?? [], apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
+  const { calls, unknownBodyOptionCalls, leftOutBodyTypeFields, keptBodyTypeExclusions, unknownBodyTypeExclusions } = buildCalls(apiFunctions, mapped, appWideMapped, apiPathPrefix, config.bodyOptions ?? {}, bodyTypeExclusions);
 
   const unreferenced = new Set(unreferencedApiFunctions);
   const sentForApp = sentAtAppStart(appWideMapped);
