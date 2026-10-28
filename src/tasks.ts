@@ -214,8 +214,8 @@ const holderNeeds = (l: any, restricted: Set<string>) => (l.fromKinds.length ? `
 function linkInLines({ links, menuLinks = [] }: { links: any[]; menuLinks?: any[] }, restricted: Set<string>) {
   const lines = links.map((l: any) => {
     const from = `  - link from ${l.from} at ${l.file}:${l.line}`;
-    const fromNeeds = l.fromKinds.length ? ` — ${l.from} itself needs ${kindsText(l.fromKinds)}` : restricted.has(l.from) ? ` — ${l.from} itself ${MIXED_KINDS}` : '';
-    return `${from}, ${guardsText(l)}${fromNeeds}`;
+    const needs = holderNeeds(l, restricted);
+    return `${from}, ${guardsText(l)}${needs && ` — ${l.from} itself ${needs}`}`;
   });
   const menus = new Map<string, any[]>();
   for (const l of menuLinks) menus.set(`${l.file}:${l.line}`, [...(menus.get(`${l.file}:${l.line}`) ?? []), l]);

@@ -785,11 +785,11 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
   const shownKinds = indices.map((i) => (restricted[i] ? [...kinds[i]].sort() : []));
   const access = screens.map((_, i) => {
     const rowsOf = (links: AccessLink[]) => links
-      .map((l) => ({ link: l, row: { from: screens[l.from].id, file: l.file, line: l.line, guards: l.guards, fromKinds: shownKinds[l.from], ...(l.tableItem && { tableItem: l.tableItem }) } }))
+      .map((l) => ({ link: l, row: { from: screens[l.from].id, file: l.file, line: l.line, guards: l.guards, fromKinds: shownKinds[l.from] } }))
       .sort((a, b) => byPlace(a.row, b.row));
     const ways = rowsOf(incoming[i]);
     const links = ways.map((w) => w.row);
-    const menuLinks = rowsOf(menuIncoming[i]).map((w) => w.row);
+    const menuLinks = rowsOf(menuIncoming[i]).map((w) => ({ ...w.row, tableItem: w.link.tableItem! }));
     const settings = shownKinds[i].includes('setting')
       ? { settings: settingSources(route[i], onlyBlockedLinks(i) ? ways.map((w) => ({ ...w.row, settings: linkSettings(w.link) ?? settingParts(w.link.guards) })) : []) }
       : {};

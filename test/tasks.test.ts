@@ -1386,7 +1386,7 @@ test('a screen whose links ask for different kinds, and a link from it, say it d
     const help = section('/help#Help');
     assert.match(help, /^- access: differs by link, see each link below$/m);
     assert.match(help, /^ {2}- link from \/home#Home at components\/Home\.js:\d+, guard `memberRole === 'ADMIN'` \(role\)$/m);
-    assert.match(section('/lab/result#LabResult'), /^ {2}- link from \/help#Help at components\/Help\.js:5, no guard — \/help#Help itself differs by link$/m);
+    assert.match(section('/lab/result#LabResult'), /^ {2}- link from \/help#Help at components\/Help\.js:5, no guard — \/help#Help itself is restricted, by kinds that differ by link$/m);
   });
 });
 

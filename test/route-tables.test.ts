@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.ts';
+import { buildFlow } from '../src/flow.ts';
+import type { FlowScreenNode } from '../src/flow.ts';
 import { buildMap } from '../src/map.ts';
 import type { ScreenMap } from '../src/map.ts';
 import { addMark } from '../src/marks.ts';
@@ -769,6 +771,20 @@ test('the links a menu gives for the items do not count as links into a screen w
   const plain = await entriesOf({ routeTables: [ROUTE_TABLE] });
   assert.ok(plain.includes('/admin_console/users/site#BrandImage'), JSON.stringify(plain));
   assert.deepEqual(await entriesOf({ routeTables: [MENU_TABLE] }), plain);
+});
+
+test('the flow drawn from a map with a menu is the flow drawn without it, so the menu links are neither tree branches nor jumps', async () => {
+  const flowOf = (configPatch: Record<string, unknown>) => withMenuCopy(async ({ configFile }) => {
+    const map = await build(configFile);
+    const walk = (n: FlowScreenNode): unknown => [n.id, n.jumps.map((j) => j.to), n.children.map(walk)];
+    const flow = buildFlow(map as never, { nodes: {} });
+    return { menuRows: map.screens.reduce((sum, s) => sum + (s.access.menuLinks?.length ?? 0), 0), roots: flow.roots.map(walk), unreached: flow.unreached.map(walk) };
+  }, { configPatch });
+  const { menuRows: plainRows, ...plain } = await flowOf({ routeTables: [ROUTE_TABLE] });
+  const { menuRows, ...withMenu } = await flowOf({ routeTables: [MENU_TABLE] });
+  assert.equal(plainRows, 0);
+  assert.ok(menuRows > 0);
+  assert.deepEqual(withMenu, plain);
 });
 
 test('a screen only menu links for its item come into is an entry screen for that reason, and which screens are restricted does not change with the menu', async () => {
