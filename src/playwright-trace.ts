@@ -68,8 +68,9 @@ const BOX_LOCATORS: { word: (typeof BOX_WORDS)[number]; selector: RegExp; locato
 const VALUE_WRITES = new Set(['type', 'selectOption', 'check', 'uncheck', 'setInputFiles']);
 const NAVIGATIONS = new Set(['goto', 'reload', 'goBack', 'goForward']);
 const NOT_SENT_BY_THE_TEST = /^(text\/html|application\/xhtml\+xml|text\/css|image\/|font\/|application\/(x-)?font|application\/vnd\.ms-fontobject|(text|application)\/(x-)?(javascript|ecmascript)|application\/wasm)/i;
-const STATIC_FILE = /\.([mc]?js|jsx|tsx?|vue|svelte|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|otf|map)$/i;
-const DEV_SERVER_FILE = /^\/@(vite|id|fs|react-refresh)(\/|$)/;
+const STATIC_FILE = /\.([mc]?js|jsx|tsx?|vue|svelte|css|scss|sass|less|png|jpe?g|gif|svg|webp|avif|bmp|ico|woff2?|ttf|otf|eot|wasm|mp4|webm|map)$/i;
+const DEV_SERVER_FILE = /(^|\/)@(vite|id|fs|react-refresh)(\/|$)|\.hot-update\.json$|^\/(sockjs-node|__webpack_hmr|_next\/webpack-hmr)(\/|$)/;
+const PAGE_TYPE = /^(text\/html|application\/xhtml\+xml)/i;
 const NOT_THE_APP = /^(about|data|blob|chrome|chrome-error):/;
 const END_OF_DIRECTORY = 0x06054b50;
 const DIRECTORY_ENTRY = 0x02014b50;
@@ -125,14 +126,19 @@ function documentOf(url: string) {
   }
 }
 
-function sentRequest({ snapshot: { _apiRequest, request, response } }: any) {
+function sentRequest({ snapshot: { _apiRequest, request, response } }: any, pages: Set<string | null>) {
   const status = response?.status;
   if (_apiRequest || request.method !== 'GET') return true;
   const requested = pathOf(request.url) ?? '';
-  if (STATIC_FILE.test(requested) || DEV_SERVER_FILE.test(requested)) return false;
-  if (status >= 400 || !(status > 0)) return true;
+  if (DEV_SERVER_FILE.test(requested) || requested === '/favicon.ico') return false;
+  if (status >= 400) return true;
+  if (STATIC_FILE.test(requested)) return false;
+  if (!(status > 0)) return true;
+  if (status === 304 && pages.has(documentOf(request.url))) return false;
   return !NOT_SENT_BY_THE_TEST.test(response.content?.mimeType ?? '');
 }
+
+const loadsPage = (response: any) => !(response?.status > 0) || (response.status >= 300 && response.status < 400) || PAGE_TYPE.test(response.content?.mimeType ?? '');
 
 export function fillCode({ box, value }: StepInput) {
   const [first, ...rest] = BOX_LOCATORS.filter(({ word }) => box[word] !== undefined).map(({ word, locator }) => `page.${locator(box[word]!)}`);
@@ -191,19 +197,16 @@ export function readTrace(file: string): TraceResult {
   }
 
   const resources = network.filter((e) => e.type === 'resource-snapshot').sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime);
-  const pageRequestAt = (url: string, from: number, to: number) => resources.find(({ snapshot: { request, _monotonicTime: at } }) =>
-    request.method === 'GET' && at >= from && at <= to && documentOf(request.url) === documentOf(url))?.snapshot._monotonicTime;
-  const openedAt = (action: any, url: string, endTime: number) => {
-    if (NAVIGATIONS.has(action.method)) return action.startTime;
-    const before = snapshots.get(`before@${action.callId}`)?.frameUrl;
-    if (before !== undefined && withoutHash(url) === withoutHash(before)) return endTime;
-    return pageRequestAt(url, action.startTime, endTime) ?? endTime;
+  const pageRequestAt = (url: string, from: number, to: number) => {
+    const page = documentOf(url);
+    return resources.find(({ snapshot: { request, response, _monotonicTime: at } }) =>
+      request.method === 'GET' && at >= from && at <= to && documentOf(request.url) === page && loadsPage(response))?.snapshot._monotonicTime;
   };
   const ends = new Map(events.filter((e) => e.type === 'after').map((e) => [e.callId, e]));
   const timeline: TimelineEntry[] = [];
   const walked: WalkEntry[] = [];
   const lastSeen = new Map<string, { url: string; at: number }>();
-  const arrivedAt = (page: string, url: string, at: number) => {
+  const openedAt = (page: string, url: string, at: number) => {
     const last = lastSeen.get(page);
     if (!last || withoutHash(last.url) === withoutHash(url)) return at;
     return pageRequestAt(url, last.at, at) ?? at;
@@ -217,7 +220,7 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      const opened = name === 'after' ? openedAt(action, snapshot.frameUrl, endTime) : arrivedAt(action.pageId, snapshot.frameUrl, at);
+      const opened = name === 'after' && NAVIGATIONS.has(action.method) ? action.startTime : openedAt(action.pageId, snapshot.frameUrl, at);
       walked.push({ at: opened, page: action.pageId, url: snapshot.frameUrl });
       lastSeen.set(action.pageId, { url: snapshot.frameUrl, at });
     }
@@ -246,7 +249,8 @@ export function readTrace(file: string): TraceResult {
     }
   }
   const requests = resources.map((e) => ({ method: e.snapshot.request.method, url: e.snapshot.request.url }));
-  for (const e of resources.filter(sentRequest)) {
+  const pages = new Set([...snapshots.values()].map((snapshot) => documentOf(snapshot.frameUrl)));
+  for (const e of resources.filter((r) => sentRequest(r, pages))) {
     const status = e.snapshot.response?.status;
     walked.push({ at: e.snapshot._monotonicTime, request: { kind: 'request', method: e.snapshot.request.method, url: e.snapshot.request.url, status: typeof status === 'number' && status > 0 ? status : null } });
   }

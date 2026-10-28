@@ -261,20 +261,24 @@ test('the walk leaves out the page, scripts, styles, pictures and fonts the brow
   assert.deepEqual(walkLines(traceOf('opens home and then help')!), ['open /home', 'open /help']);
 });
 
-function sentLines(resources: { method?: string; url: string; status: number; type: string; api?: true }[]) {
-  return inTempDir((dir) => {
-    const file = path.join(dir, 'trace.zip');
-    const line = (e: object) => `${JSON.stringify(e)}\n`;
-    fs.writeFileSync(file, storedZip({
-      '0-trace.trace': line({ type: 'context-options', version: 8 }),
-      '0-trace.network': resources.map(({ method = 'GET', url, status, type, api }, i) => line({
-        type: 'resource-snapshot',
-        snapshot: { _monotonicTime: i + 1, ...(api && { _apiRequest: true }), request: { method, url: `http://x${url}` }, response: { status, content: { mimeType: type } } },
-      })).join(''),
-    }));
-    return walkLines(file);
-  });
+type Sent = { method?: string; url: string; at?: number; status?: number; type: string; api?: true };
+
+function traceZip(dir: string, events: object[], resources: Sent[]) {
+  const file = path.join(dir, 'trace.zip');
+  const line = (e: object) => `${JSON.stringify(e)}\n`;
+  fs.writeFileSync(file, storedZip({
+    '0-trace.trace': [{ type: 'context-options', version: 8 }, ...events].map(line).join(''),
+    '0-trace.network': resources.map(({ method = 'GET', url, at, status = 200, type, api }, i) => line({
+      type: 'resource-snapshot',
+      snapshot: { _monotonicTime: at ?? i + 1, ...(api && { _apiRequest: true }), request: { method, url: url.startsWith('http') ? url : `http://x${url}` }, response: { status, content: { mimeType: type } } },
+    })).join(''),
+  }));
+  return file;
 }
+
+const frameSnapshot = (name: string, url: string, at: number) => ({ type: 'frame-snapshot', snapshot: { snapshotName: name, isMainFrame: true, frameUrl: url, timestamp: at } });
+
+const sentLines = (resources: Sent[]) => inTempDir((dir) => walkLines(traceZip(dir, [], resources)));
 
 test('a request that is not a GET, or whose status is 400 or more, stays in the walk whatever type its response has', () => {
   assert.deepEqual(sentLines([
@@ -283,22 +287,28 @@ test('a request that is not a GET, or whose status is 400 or more, stays in the 
     { url: '/nowhere', status: 404, type: 'text/html' },
     { url: '/report', status: 500, type: 'text/html;charset=UTF-8' },
     { url: '/app.js', status: 200, type: 'text/javascript' },
+    { url: '/old.js', status: 404, type: 'text/javascript' },
+    { url: '/api/v1/documents/7/preview.png', status: 500, type: 'application/json' },
     { url: '/page', status: 200, type: 'text/html', api: true },
-  ]), ['POST /login 200', 'GET /nowhere 404', 'GET /report 500', 'GET /page 200']);
+  ]), ['POST /login 200', 'GET /nowhere 404', 'GET /report 500', 'GET /old.js 404', 'GET /api/v1/documents/7/preview.png 500', 'GET /page 200']);
 });
 
-test('a GET whose path ends in a static file\'s extension or is a dev server file is left out whatever its status and type, and other requests stay', () => {
+test('a GET of a static file that got no failing status, a dev server file and the favicon are left out, and other requests stay', () => {
   assert.deepEqual(sentLines([
     { url: '/settings.js', status: -1, type: 'x-unknown' },
     { url: '/fonts/a.woff2?v=3', status: -1, type: 'x-unknown' },
+    { url: '/fonts/icons.eot', status: -1, type: 'x-unknown' },
     { url: '/logo.PNG', status: -1, type: 'x-unknown' },
     { url: '/favicon.ico', status: 404, type: 'text/html' },
-    { url: '/old.js', status: 404, type: 'text/javascript' },
     { url: '/theme.css', status: 304, type: '' },
     { url: '/src/main.tsx', status: -1, type: 'x-unknown' },
+    { url: '/src/styles/main.scss', status: -1, type: 'x-unknown' },
     { url: '/src/App.vue?t=1', status: 200, type: 'application/javascript' },
     { url: '/@vite/client', status: -1, type: 'x-unknown' },
+    { url: '/admin/@vite/client', status: -1, type: 'x-unknown' },
     { url: '/@react-refresh', status: 200, type: 'text/javascript' },
+    { url: '/main.abc.hot-update.json', status: 200, type: 'application/json' },
+    { url: '/sockjs-node/info?t=1', status: 200, type: 'application/json' },
     { url: '/api/v1/list', status: -1, type: 'x-unknown' },
     { url: '/api/v1/data.json', status: -1, type: 'x-unknown' },
     { url: '/api/v1/cached', status: 304, type: '' },
@@ -374,30 +384,17 @@ test('a box found by label is read for a check as well as for a fill', () =>
     ]);
   }));
 
-function clickTrace(resources: { url: string; at: number; type: string }[], after = 'http://x/next', before = 'http://x/home') {
-  return inTempDir((dir) => {
-    const file = path.join(dir, 'trace.zip');
-    const line = (e: object) => `${JSON.stringify(e)}\n`;
-    const page = 'page@1';
-    const snapshot = (name: string, url: string, at: number) => line({ type: 'frame-snapshot', snapshot: { snapshotName: name, isMainFrame: true, frameUrl: url, timestamp: at } });
-    fs.writeFileSync(file, storedZip({
-      '0-trace.trace': [
-        line({ type: 'context-options', version: 8 }),
-        line({ type: 'before', callId: 'call@1', pageId: page, method: 'goto', startTime: 1, params: { url: before } }),
-        line({ type: 'after', callId: 'call@1', endTime: 2 }),
-        snapshot('after@call@1', before, 2),
-        line({ type: 'before', callId: 'call@2', pageId: page, method: 'click', startTime: 10, params: { selector: '#next' } }),
-        snapshot('before@call@2', before, 10),
-        line({ type: 'after', callId: 'call@2', endTime: 20 }),
-        snapshot('after@call@2', after, 21),
-      ].join(''),
-      '0-trace.network': resources.map(({ url, at, type }) => line({
-        type: 'resource-snapshot',
-        snapshot: { _monotonicTime: at, request: { method: 'GET', url: url.startsWith('http') ? url : `http://x${url}` }, response: { status: 200, content: { mimeType: type } } },
-      })).join(''),
-    }));
-    return walkLines(file);
-  });
+function clickTrace(resources: Sent[], after = 'http://x/next', before = 'http://x/home') {
+  const page = 'page@1';
+  return inTempDir((dir) => walkLines(traceZip(dir, [
+    { type: 'before', callId: 'call@1', pageId: page, method: 'goto', startTime: 1, params: { url: before } },
+    { type: 'after', callId: 'call@1', endTime: 2 },
+    frameSnapshot('after@call@1', before, 2),
+    { type: 'before', callId: 'call@2', pageId: page, method: 'click', startTime: 10, params: { selector: '#next' } },
+    frameSnapshot('before@call@2', before, 10),
+    { type: 'after', callId: 'call@2', endTime: 20 },
+    frameSnapshot('after@call@2', after, 21),
+  ], resources)));
 }
 
 test('a press that loads a new page opens it when the page is asked for, so the calls the new page sends come after 「열기」', () => {
@@ -417,37 +414,35 @@ test('a press that changes the address without loading a page opens it when the 
 });
 
 test('a page the app moves to after a press has ended opens when that page is asked for, so the calls it sends come after 「열기」', () => {
-  inTempDir((dir) => {
-    const file = path.join(dir, 'trace.zip');
-    const line = (e: object) => `${JSON.stringify(e)}\n`;
-    const page = 'page@1';
-    const snapshot = (name: string, url: string, at: number) => line({ type: 'frame-snapshot', snapshot: { snapshotName: name, isMainFrame: true, frameUrl: url, timestamp: at } });
-    const sent = (method: string, url: string, at: number, type: string) => line({
-      type: 'resource-snapshot',
-      snapshot: { _monotonicTime: at, request: { method, url: `http://x${url}` }, response: { status: 200, content: { mimeType: type } } },
-    });
-    fs.writeFileSync(file, storedZip({
-      '0-trace.trace': [
-        line({ type: 'context-options', version: 8 }),
-        line({ type: 'before', callId: 'call@1', pageId: page, method: 'goto', startTime: 1, params: { url: 'http://x/login' } }),
-        line({ type: 'after', callId: 'call@1', endTime: 2 }),
-        snapshot('after@call@1', 'http://x/login', 2),
-        line({ type: 'before', callId: 'call@2', pageId: page, method: 'click', startTime: 10, params: { selector: '#login' } }),
-        snapshot('before@call@2', 'http://x/login', 10),
-        line({ type: 'after', callId: 'call@2', endTime: 20 }),
-        snapshot('after@call@2', 'http://x/login', 20),
-        line({ type: 'before', callId: 'call@3', pageId: page, method: 'click', startTime: 30, params: { selector: '#menu' } }),
-        snapshot('before@call@3', 'http://x/home', 30),
-        line({ type: 'after', callId: 'call@3', endTime: 31 }),
-      ].join(''),
-      '0-trace.network': [
-        sent('POST', '/api/login', 21, 'application/json'),
-        sent('GET', '/home', 22, 'text/html'),
-        sent('GET', '/api/me', 23, 'application/json'),
-      ].join(''),
-    }));
-    assert.deepEqual(walkLines(file), ['open /login', 'press /login', 'POST /api/login 200', 'open /home', 'GET /api/me 200', 'press /home']);
-  });
+  const page = 'page@1';
+  assert.deepEqual(inTempDir((dir) => walkLines(traceZip(dir, [
+    { type: 'before', callId: 'call@1', pageId: page, method: 'goto', startTime: 1, params: { url: 'http://x/login' } },
+    { type: 'after', callId: 'call@1', endTime: 2 },
+    frameSnapshot('after@call@1', 'http://x/login', 2),
+    { type: 'before', callId: 'call@2', pageId: page, method: 'click', startTime: 10, params: { selector: '#login' } },
+    frameSnapshot('before@call@2', 'http://x/login', 10),
+    { type: 'after', callId: 'call@2', endTime: 20 },
+    frameSnapshot('after@call@2', 'http://x/login', 20),
+    { type: 'before', callId: 'call@3', pageId: page, method: 'click', startTime: 30, params: { selector: '#menu' } },
+    frameSnapshot('before@call@3', 'http://x/home', 30),
+    { type: 'after', callId: 'call@3', endTime: 31 },
+  ], [
+    { method: 'POST', url: '/api/login', at: 21, type: 'application/json' },
+    { url: '/home', at: 22, type: 'text/html' },
+    { url: '/api/me', at: 23, type: 'application/json' },
+  ]))), ['open /login', 'press /login', 'POST /api/login 200', 'open /home', 'GET /api/me 200', 'press /home']);
+});
+
+test('a press that moves the address without loading a page is not opened at a call to the new path that did not answer with a page', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/next?_rsc=1', at: 12, type: 'text/x-component' },
+  ]), ['open /home', 'press /home', 'GET /next?_rsc=1 200', 'open /next']);
+});
+
+test('a page the test opened again and got back as 304 is not a call the test sent', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/home', at: 12, status: 304, type: '' },
+  ], 'http://x/home'), ['open /home', 'press /home']);
 });
 
 test('a press is not opened at a request for the same path on another origin', () => {

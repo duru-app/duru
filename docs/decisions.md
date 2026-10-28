@@ -2746,20 +2746,26 @@ carry times on one clock: in the member list test the `goto` starts at 2374.7, t
 by time. A step is 「열기」 when the address changes, 「넣기」 for `fill`, `type`, `selectOption`, `check`, `uncheck` and
 `setInputFiles`, 「확인」 for `expect`, and 「누르기」 for the other actions, hovering and the mouse and keyboard
 included. The new address of a `goto`, `reload`, `goBack` or `goForward` is placed when the action starts, so the
-requests the page sends while it opens come after 「열기」. When another action changes the address, it is placed at the
-GET the action sent for the new address's path, query and `#` aside, and at the action's end when there is none: in
-the test that follows a link, the click runs from 9873.4 to 10020.9 and asks for the new page at 9986.8. A write keeps its box when it was found by label,
+requests the page sends while it opens come after 「열기」. When another action changes the address, or the address is
+new when the next action starts, 「열기」 is placed at the page load for the new address since the address was last seen:
+a GET of the same origin and path, query aside, answered with a page, a redirect or nothing yet, and at the time the
+new address was seen when there is none. In the test that follows a link, the click runs from 9873.4 to 10020.9 and
+asks for the new page at 9986.8; a login that waits for its POST and then sets `location` loads the new page after
+the click has ended. An address that changes only after `#` loads no page. A write keeps its box when it was found by label,
 placeholder or test ID, for a check as well as a fill, and is shown as 「찾은 상자를 읽지 못함」 with its selector
 otherwise; an empty fill keeps its box and shows 「빈 값」. An action that ended in an error stays, marked 「실패」. The
 steps and candidates read from the same traces stay as they were: there such actions are left out and other writes are
 skipped.
 Requests keep their response status, or 「응답 없음」 for the -1 a request that got no response records. A trace's
 request carries no resource type, only its response's content type, so the browser's loads of pages, scripts, styles,
-pictures and fonts are told apart this way: a request that is not a GET, or whose status is 400 or more, stays
-whatever its response; a GET that got no response is left out when its path ends in `.js`, `.mjs`, `.css`, `.png`,
-`.jpg`, `.jpeg`, `.gif`, `.svg`, `.webp`, `.ico`, `.woff`, `.woff2`, `.ttf`, `.otf` or `.map`; another GET is left out
-when its response is a page, script, style, picture or font. In the traces of duru's own tests that leaves out 81 of
-93 requests, what the app needs to show rather than what the test sent. A request the test sent through Playwright's
+pictures and fonts are told apart this way: a request that is not a GET stays whatever its response; a GET of the
+dev server's own files (`@vite`, `@id`, `@fs` and `@react-refresh` paths, webpack's `.hot-update.json`,
+`/sockjs-node`, `/__webpack_hmr`, `/_next/webpack-hmr`) and of `/favicon.ico`, which the browser asks for by itself,
+is left out; any other GET whose status is 400 or more stays; a GET whose path ends in a static file's extension
+(scripts and their sources such as `.ts`, `.tsx`, `.vue` and `.svelte`, styles, pictures, fonts, `.wasm`, video and
+`.map`) is left out whatever else it got, a 304 or no response included; a GET answered 304 for a page the test had
+open is left out; another GET is left out when its response is a page, script, style, picture or font. In the traces of duru's own tests that leaves out 89 of
+103 requests, what the app needs to show rather than what the test sent. A request the test sent through Playwright's
 `request` stays whatever its type. A request that matches a call on the map opens that call.
 The walk is kept once per run in `walks`, under the result file, test file, line and title, then the project, and each
 test entry carries that key as `steps`, since a test is copied into `tests.json` for every screen it is tagged with
@@ -2775,8 +2781,15 @@ Alternatives compared:
   login form posted and answered with a page, an Express 404 page and a Spring 500 page would vanish, though they are
   what the test sent; a script that got no response has no type to judge by and showed, as the two scripts of the app
   opened from a file did.
+- Leaving out a GET whose path ends in a static file's extension whatever its status: Firefox's `/favicon.ico` 404 on
+  every page would go, but so would an API call such as `/api/v1/documents/7/preview.png` that failed with 500, often
+  the request that made the test fail. Only the favicon, which the app does not ask for, is left out by name.
 Known limits: a GET answered below 400 with a type not on that list (a page served as `text/plain`, a font as
-`application/octet-stream`) shows, and so does a static file that failed with 400 or more; an action with no address
+`application/octet-stream`) shows, and so does a static file that failed with 400 or more, as an app's missing script
+does; an API call whose path ends in a static file's extension is left out when it did not fail; a dev server under
+another name than those above shows its own requests; a `tests.json` written before the steps were kept has no result
+file or project on its trace notices, so such a notice is matched on the test's file, line and title and is shown on
+every run of that test; an action with no address
 open (a blank page) shows 「앱 밖」 instead of a screen; what an `expect` checked is not shown; an action the trace has
 no end for, as when the test ran out of time during it, is not marked 「실패」; when an action changes the address
 without loading a page, as a router in the page does, a request the new screen sends before the action ends comes
