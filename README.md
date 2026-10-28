@@ -492,9 +492,10 @@ it, and the on/off `options` of its request body. The server match is one of:
 `kinds` (`setting`, `role`), the blocking route guards, the links into it, `roleValues` (the role values that
 can open it, or `null` when they cannot be read) and the setting values it needs. A restricted screen with empty
 `kinds` is one whose links ask for different kinds. Entry screens are listed under `entries` with their reasons:
-the target of a redirect in the route files, a screen no link leads to other than a menu's link for a table item, or
-`entryPaths`. A screen is open when an
-entry screen reaches it without a setting or role guard on the way.
+`redirect`, the target of a redirect in the route files; `no-incoming-link`, a screen no link leads to;
+`menu-links-only`, a screen only the links a menu named in `routeTables` gives for its table item lead to; and
+`config`, a path in `entryPaths`. A screen is open when an entry screen reaches it without a setting or role guard on
+the way; the links a menu gives for table items are not counted for that.
 
 **Settings defaults.** The evaluated `settingsDefaults` are on the map, with `settingsDefaultsIncomplete`
 listing the places whose value the source does not show in full.
@@ -1069,7 +1070,8 @@ with their guards, the conditions inside the screen, where its route and compone
 settings it reads. The links into it and out of it also list the moves written in `moves` as 「설정에 적은 이동」 with their
 reason. The links out of it that have `layout`, such as those of a menu drawn around the route, are folded below the
 others under 「공통 N」, and so are the links into it that a menu named in `routeTables` gives for its table item; each
-stays open or folded on other screens until toggled. Once opened 「화면 정보」 stays open on
+stays open or folded on other screens until toggled. An entry screen that only such menu links lead to shows
+「메뉴로만」 beside 「들어오는 링크」. Once opened 「화면 정보」 stays open on
 other screens until it is closed. Choosing a call, by its name or a count in
 the table or from a link elsewhere, opens its details under the call table and scrolls the middle pane to them: where
 its option was found, the server match, its tests, untagged tests linked to it, where this screen calls it and the

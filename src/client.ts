@@ -1622,13 +1622,21 @@ export async function extractClient(config: any) {
         return fields.includes(tableRoutes.get(t)!.field);
       });
     };
-    // 항목의 field 를 읽는 요소가 겹쳐 있으면 가장 안쪽 요소가 메뉴 요소다.
+    const readsIn = (holder: NodePath, loop: Node, table: string) => {
+      let found = false;
+      holder.traverse({ JSXElement(q) { if (!found && q.getFunctionParent()?.node === loop && menuTablesOf(q).includes(table)) found = true; } });
+      return found;
+    };
+    const outerLoopReads = (loop: NodePath, table: string) => {
+      for (let outer = loop.parentPath?.findParent(loopCallback); outer; outer = outer.parentPath?.findParent(loopCallback)) if (readsIn(outer, outer.node, table)) return true;
+      return false;
+    };
+    // 같은 반복 함수 안에서 항목의 field 를 읽는 요소가 겹쳐 있으면 가장 안쪽 요소가 메뉴 요소다. 바깥 반복의 항목도 그 field 를 읽으면 안쪽 반복의 요소는 메뉴 요소가 아니다.
     const recordMenuElement = (p: NodePath<JSXElement>) => {
       const tables = menusHere.length ? menuTablesOf(p) : [];
       if (!tables.length) return false;
-      const inner = new Set<string>();
-      p.traverse({ JSXElement(q) { for (const t of menuTablesOf(q)) inner.add(t); } });
-      const own = tables.filter((t) => !inner.has(t));
+      const loop = p.getFunctionParent()!;
+      const own = tables.filter((t) => !readsIn(p, loop.node, t) && !outerLoopReads(loop, t));
       for (const table of own) record('routerLinks', { to: UNKNOWN, menu: table }, p);
       return own.length > 0;
     };
@@ -2396,24 +2404,26 @@ export async function extractClient(config: any) {
   }
 
   // `map`, `flatMap`, `forEach` 에 넘긴 함수가 받는 항목에서, key 를 뺀 요소 속성에 값으로 넣는 field.
+  // 요소를 바로 감싼 함수가 그 반복 함수일 때만 센다.
   // 항목은 첫 매개변수이거나, 첫 매개변수를 `([key, item])` 처럼 배열로 풀어 받은 둘째 이름이다.
   // 첫 매개변수를 `({ url })` 로 풀어 받았다면 그 키가 field 다.
   function itemFieldsRead(p: NodePath<JSXElement>): string[] {
     const fields = new Set<string>();
+    const loop = p.getFunctionParent();
     for (const a of p.get('openingElement.attributes') as NodePath<any>[]) {
       if (!a.isJSXAttribute() || a.node.name.name === 'key' || !a.get('value').isJSXExpressionContainer()) continue;
       for (const x of piecesOf(a.get('value').get('expression') as NodePath)) {
-        const field = loopItemField(x);
+        const field = loop && loopItemField(x, loop.node);
         if (field) fields.add(field);
       }
     }
     return [...fields];
   }
 
-  function loopItemField(x: NodePath): string | null {
+  function loopItemField(x: NodePath, loop: Node): string | null {
     const read = x.isMemberExpression() && !x.node.computed && x.get('object').isIdentifier() ? x.get('object') as NodePath<Identifier> : x.isIdentifier() ? x : null;
     const binding = read && x.scope.getBinding(read.node.name);
-    const fn = binding?.kind === 'param' ? binding.scope.path : null;
+    const fn = binding?.kind === 'param' && binding.scope.path.node === loop ? binding.scope.path : null;
     const method = fn && loopCallback(fn) ? (((fn.parent as CallExpression).callee as MemberExpression).property as Identifier).name : null;
     if (!fn || !method || method === 'reduce') return null;
     const first = (fn.get('params') as NodePath[])[0];

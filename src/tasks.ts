@@ -209,17 +209,22 @@ const needsText = (kinds: string[]) => (kinds.length ? `needs ${kindsText(kinds)
 
 const guardsText = (l: any) => (l.guards.length ? `guard ${l.guards.map(guardText).join('; ')}` : 'no guard');
 
+const fromNeedsText = (l: any, restricted: Set<string>) => (l.fromKinds.length ? `needs ${kindsText(l.fromKinds)}` : restricted.has(l.from) ? MIXED_KINDS : '');
+
 function linkInLines(links: any[], restricted: Set<string>) {
   const lines = links.filter((l: any) => !l.tableItem).map((l: any) => {
     const from = `  - link from ${l.from} at ${l.file}:${l.line}`;
-    const fromNeeds = l.fromKinds.length ? ` — ${l.from} itself needs ${kindsText(l.fromKinds)}` : restricted.has(l.from) ? ` — ${l.from} itself ${MIXED_KINDS}` : '';
-    return `${from}, ${guardsText(l)}${fromNeeds}`;
+    const fromNeeds = fromNeedsText(l, restricted);
+    return `${from}, ${guardsText(l)}${fromNeeds && ` — ${l.from} itself ${fromNeeds}`}`;
   });
   const menus = new Map<string, any[]>();
   for (const l of links.filter((x: any) => x.tableItem)) menus.set(`${l.file}:${l.line}`, [...(menus.get(`${l.file}:${l.line}`) ?? []), l]);
   for (const [at, rows] of menus) {
+    const screens = new Set(rows.map((l) => l.from)).size;
     const guards = [...new Set(rows.map(guardsText))];
-    lines.push(`  - menu link at ${at} from ${rows.length} screens, ${guards.length === 1 ? guards[0] : 'guards differ by screen'}`);
+    const fromNeeds = [...new Set(rows.map((l) => fromNeedsText(l, restricted)))];
+    const holders = fromNeeds.length > 1 ? ' — the screens holding it need different things' : fromNeeds[0] && ` — every screen holding it ${fromNeeds[0]}`;
+    lines.push(`  - menu link at ${at} from ${screens} screen${screens === 1 ? '' : 's'}, ${guards.length === 1 ? guards[0] : 'guards differ by screen'}${holders}`);
   }
   return lines;
 }

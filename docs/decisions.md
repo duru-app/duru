@@ -3241,9 +3241,12 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
 - The element is drawn in a `map`, `flatMap` or `forEach` and takes the field in an attribute other than `key`. The
   address it writes around the field is not read. Without `menus` nothing changes. A menu file that is not there, has
   no such element or has two stops the run with the entry, as the other `routeTables` errors do.
-- When such elements hold one another, as an `<li>` marking the open entry (`className={pathname === item.url ? 'active'
-  : ''}`, `data-testid={item.url}`) holds the `<NavLink to={item.url}>`, the innermost is the menu element. Only two that
-  do not hold each other stop the run.
+- An element counts only when the loop function is the nearest function around it. When such elements hold one
+  another, as an `<li>` marking the open entry (`className={pathname === item.url ? 'active' : ''}`,
+  `data-testid={item.url}`) holds the `<NavLink to={item.url}>`, the innermost is the menu element. Only two in the
+  same loop function that do not hold each other stop the run. An element in a loop inside the item's loop, as a
+  submenu's `item.children.map((c) => <NavLink to={c.url} />)`, is passed over when the outer loop has such an
+  element too, so the item's own link stays the menu element.
 - The table const is the top-level one of its name, or, when there is none, the only const of that name inside a
   function that holds an object or a list (outline's `items` inside `useComputed` in `useSettingsConfig`). A const of
   that name holding something else, as a `for (const items of lists)` variable does, is passed over. Two that hold an
@@ -3264,13 +3267,19 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
 - The links into a screen keep the `tableItem` of a menu's link. 「들어오는 링크」 folds those under 「공통 N」
   (「메뉴가 거는 링크」) below the screen's other links into it. The incoming fold takes only the menu's item links, not every
   link drawn by a layout, so its title names the menu alone.
-- A screen whose only links in carry `tableItem` is still an entry screen: the map does not count those links when it
-  decides `entries`, and the flow view leaves them out, as neither tree edges nor jumps. The task list writes them as
-  one `menu link at <file>:<line> from N screens` line for each menu element, in place of a line for each screen that
-  holds the menu (11,200 lines in mattermost, 882 in outline, if every screen were listed; 100 and 18 lines grouped).
+- A screen whose only links in carry `tableItem` is still an entry screen, with the reason `menu-links-only` in place
+  of `no-incoming-link`, so the reason does not deny the menu links listed beside it; the review page marks such a
+  screen 「메뉴로만」 beside 「들어오는 링크」. The map does not count those links when it decides `entries` or which
+  screens are restricted, so `restricted`, `kinds`, roles and settings are what they are without `menus`. The flow view
+  leaves them out, as neither tree edges nor jumps. The task list writes them as one
+  `menu link at <file>:<line> from N screens` line for each menu element, N counting the screens and not the rows, in
+  place of a line for each screen that holds the menu (11,200 lines in mattermost, 882 in outline, if every screen were
+  listed; 100 and 18 lines grouped). The line carries the guard around the element, or `guards differ by screen`, and
+  what every screen holding the menu needs, or `the screens holding it need different things`.
   Before this, mattermost's menu made one admin screen (`…/edit_policy/:policy_id`) the parent of 99 other admin
   screens, picking any of 112 screens marked 50 or more jumps (median 111), and `entries` fell from 92 to 25. With the
-  rule, mattermost with `menus` has the same `entries`, with their reasons, as #461's branch (728cf04) without them,
+  rule, mattermost with `menus` has the same `entries` as #461's branch (728cf04) without them, 92 screens whose
+  reasons differ only where `menu-links-only` stands for `no-incoming-link`,
   prints the same lines apart from the path it wrote, and draws the same flow: 92 roots in the same order, 6 trees no
   entry screen reaches, the same parent for each of the 181 screens and the same 2,776 jumps. The flows of appsmith,
   both into-sign maps and both SigNoz maps are unchanged. outline's differ only where its screens do: the `{?}` screen
@@ -3320,6 +3329,11 @@ Known limits:
   without `tableItem`, so it is drawn in the flow.
 - When no item screen of the table has a path read to the end, the menu element gives no link and nothing says so.
 - An item field written as a call of a function that gives more than one path makes no screen.
+- A child of the link element that reads the same field, as an icon given `name={item.url}`, is the innermost and
+  becomes the menu element in place of the link.
+- The guards on a menu's item links are not used when the map decides which screens are restricted: a screen reached
+  only through a menu shown to admins is not restricted by that menu's condition.
+- A map.json written before this entry has `entries` decided with the menu links counted; `rebuild` writes it again.
 - The menu side and the route side take the loop's item from different shapes: the route side does not read the item
   as the second name of a first parameter taken apart as a list (`([key, item])`), and it takes the first parameter of
   `reduce` as the item, which the menu side does not.

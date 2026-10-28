@@ -714,11 +714,37 @@ test('when an element made for an item that reads the item\'s field holds anothe
   }, { edits });
 });
 
+test('an element drawn by a loop inside the item\'s loop does not count against the item\'s own elements, so the item\'s link and not a submenu link is the menu element', async () => {
+  const edits: [string, string, string][] = [
+    [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';"],
+    [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", 'sections.push(\n        <li key={item.url} data-testid={item.url}>\n          <NavLink to={`/old/${item.url}`}>{item.title}</NavLink>\n          {item.children && <ul>{item.children.map((c) => <NavLink key={c.url} to={c.url}>{c.title}</NavLink>)}</ul>}\n        </li>,\n      );'],
+  ];
+  await withMenuCopy(async ({ configFile, src }) => {
+    const map = await build(configFile);
+    const line = lineIn(src, SIDEBAR, '<NavLink to={`/old/');
+    assert.deepEqual(menuRows(screen(map, '/admin_console/users#Users')).filter((l) => l.tableItem).map((l) => [l.to, l.line, l.guards]), [
+      ['/admin_console/about/license', line, []], ['/admin_console/users', line, []], ['/admin_console/users/site', line, []], ['/admin_console/users/plain', line, []],
+    ]);
+  }, { edits });
+});
+
 test('the links a menu gives for the items do not count as links into a screen when the map decides its entry screens', async () => {
   const entriesOf = (configPatch: Record<string, unknown>) => withMenuCopy(async ({ configFile }) => (await build(configFile)).entries.map((e) => e.screen), { configPatch });
   const plain = await entriesOf({ routeTables: [ROUTE_TABLE] });
   assert.ok(plain.includes('/admin_console/users/site#BrandImage'), JSON.stringify(plain));
   assert.deepEqual(await entriesOf({ routeTables: [MENU_TABLE] }), plain);
+});
+
+test('a screen only menu links for its item come into is an entry screen for that reason, and which screens are restricted does not change with the menu', async () => {
+  const mapWith = (configPatch: Record<string, unknown>) => withMenuCopy(async ({ configFile }) => build(configFile), { configPatch });
+  const plain = await mapWith({ routeTables: [ROUTE_TABLE] });
+  const menus = await mapWith({ routeTables: [MENU_TABLE] });
+  const reasonsOf = (map: ScreenMap, id: string) => map.entries.find((e) => e.screen === id)?.reasons;
+  assert.deepEqual(reasonsOf(plain, '/admin_console/users/site#BrandImage'), [{ kind: 'no-incoming-link' }]);
+  assert.deepEqual(reasonsOf(menus, '/admin_console/users/site#BrandImage'), [{ kind: 'menu-links-only' }]);
+  assert.deepEqual(reasonsOf(menus, '/admin_console#AdminConsole'), reasonsOf(plain, '/admin_console#AdminConsole'));
+  const access = (map: ScreenMap) => map.screens.map((s) => [s.id, s.access.restricted, s.access.kinds]);
+  assert.deepEqual(access(menus), access(plain));
 });
 
 test('a menu loop function that takes the item apart gives the same item links through the name bound to the field', async () => {

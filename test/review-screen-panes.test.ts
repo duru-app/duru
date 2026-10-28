@@ -936,6 +936,35 @@ test('in a browser, 「들어오는 링크」 lists the other links into a scree
   );
 });
 
+test('in a browser, a screen that is an entry screen because only menu links come into it says so beside 「들어오는 링크」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.route('**/api/data', async (route) => {
+          const data = await (await route.fetch()).json() as ServedData;
+          const report = data.map.screens.find((x) => x.id === '/admin/report#AdminReport')!;
+          for (const l of report.access.links) Object.assign(l, { tableItem: { key: 'report', file: 'menu.js', line: 3 } });
+          data.map.entries.push({ screen: report.id, reasons: [{ kind: 'menu-links-only' }] });
+          await route.fulfill({ json: data });
+        });
+        await p.reload();
+        await toList(p);
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/admin/report")');
+        await openScreenInfo(p);
+        const access = p.locator('#center .access');
+        assert.equal(await access.locator('h2').first().textContent(), '들어오는 링크 0');
+        const chip = access.locator('.menu-only');
+        assert.equal(await chip.textContent(), '메뉴로만');
+        assert.equal(await chip.getAttribute('title'), '메뉴가 항목마다 거는 링크로만 들어오는 화면이라 진입 화면으로 봅니다');
+        assert.equal(await access.locator('p.muted').count(), 0);
+        await p.click('#screen-list li:has-text("/admin/audit")');
+        await p.locator('#center .access .menu-only').waitFor({ state: 'detached' });
+      }),
+    ),
+  );
+});
+
 const ME = 'GET:/api/v1/me';
 const EXPORT = 'POST:/api/v1/report/export';
 const APP_START_ONLY: [string, string, string][] = [

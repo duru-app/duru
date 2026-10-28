@@ -164,12 +164,14 @@ function waysNeeds(ways) {
   return { ...common, bare: exact ? null : MIXED_KINDS };
 }
 
+const judgedLinks = (access) => access.links.filter((l) => !l.tableItem);
+
 // 맵은 링크마다의 설정 요구를 들어오는 링크와 같은 순서로 적되, 설정 요구가 없는 링크는 건너뛴다.
 // 링크 자신에 설정 조건이 없으면 그 요구는 링크를 건 화면에서 물려받은 것이다.
 function inheritedSources(access) {
   const sources = (access.settings ?? []).filter((x) => x.from !== 'route');
   let next = 0;
-  return access.links.map((row) => {
+  return judgedLinks(access).map((row) => {
     const source = sources[next];
     const own = row.guards.some((g) => g.kinds.includes('setting'));
     if (!source || source.from !== row.from || source.file !== row.file || source.line !== row.line || !(own || source.inherited)) return null;
@@ -182,10 +184,11 @@ function inheritedSources(access) {
 function startNeeds(r) {
   const { id, access } = screenOf(r.screen);
   const route = wayNeeds(access.route);
-  const blocked = !state.data.map.entries.some((e) => e.screen === id) && access.links.length > 0
-    && access.links.every((l) => l.guards.length || isRestricted(l.from));
+  const judged = judgedLinks(access);
+  const blocked = !state.data.map.entries.some((e) => e.screen === id) && judged.length > 0
+    && judged.every((l) => l.guards.length || isRestricted(l.from));
   const inherited = inheritedSources(access);
-  const ways = blocked ? access.links.map((row, i) => {
+  const ways = blocked ? judged.map((row, i) => {
     const way = wayNeeds(row.guards);
     return inherited[i] ? { ...way, settings: inherited[i].needs, unsettled: inherited[i].unreadable.map(unreadText) } : way;
   }) : [];

@@ -333,7 +333,9 @@ const movesOf = (side, id) => (state.data.map.moves ?? []).filter((m) => m[side]
 const moveItem = (end, m) => h('li', { class: 'move' }, end, ' ', movedChip(), ' ', h('span', { class: 'muted' }, m.reason));
 
 const MENU_LINKS_TITLE = '메뉴가 거는 링크';
+const MENU_ONLY_TITLE = '메뉴가 항목마다 거는 링크로만 들어오는 화면이라 진입 화면으로 봅니다';
 const ownIncoming = (s) => s.access.links.filter((l) => !l.tableItem);
+const menuOnlyEntry = (s) => state.data.map.entries.some((e) => e.screen === s.id && e.reasons.some((r) => r.kind === 'menu-links-only'));
 
 function accessDetails(s) {
   const links = ownIncoming(s);
@@ -342,9 +344,10 @@ function accessDetails(s) {
   const inScreen = inScreenGuards(s);
   return h('div', { class: 'access' },
     h('h2', {}, `들어오는 링크 ${links.length + moves.length}`),
+    menuOnlyEntry(s) ? h('span', { class: 'chip menu-only', title: MENU_ONLY_TITLE, 'aria-label': MENU_ONLY_TITLE }, '메뉴로만') : null,
     links.length ? linkGroups(links).map(linkGroup) : null,
     moves.length ? h('ul', { class: 'plain moves' }, moves.map((m) => moveItem(h('code', { class: 'from' }, m.from), m))) : null,
-    links.length + moves.length ? null : h('p', { class: 'muted' }, menu.length ? '메뉴 말고 들어오는 링크가 없습니다.' : '없음'),
+    links.length + moves.length + menu.length ? null : h('p', { class: 'muted' }, '없음'),
     menu.length ? commonSection('common-incoming', MENU_LINKS_TITLE, menu.length, 'commonIncomingOpen', h('div', {}, linkGroups(menu).map((g) => linkGroup({ ...g, key: `menu\n${g.key}` })))) : null,
     inScreen.length ? h('div', { class: 'in-screen' },
       h('h2', {}, '화면 안 조건 — 화면을 여는 것은 막지 않습니다'),
