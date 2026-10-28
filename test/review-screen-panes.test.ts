@@ -951,7 +951,7 @@ test('in a browser, a story step that goes through a menu link asks the guards o
           await route.fulfill({ json: data });
         });
         await p.reload();
-        await p.waitForFunction(() => Boolean(screenOf('/admin/report#AdminReport')?.access.menuLinks));
+        await p.waitForFunction(() => Boolean(state.data && screenOf('/admin/report#AdminReport')?.access.menuLinks));
         const got = await p.evaluate(() => {
           const row = screenOf('/admin/report#AdminReport').access.menuLinks[0];
           return { guards: row.guards, way: wayGuards({ from: row.from, to: '/admin/report#AdminReport', ways: [{ file: row.file, line: row.line }] })[0] };
