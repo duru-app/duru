@@ -1078,6 +1078,11 @@ export default function Home({ item }) {
   assert.deepEqual(linksOf(map, '/home#Home'), [['/login', lineOf(home, '<Link to'), [], ['/login#Login']]]);
 });
 
+test('the decision record says that a route constant a screen only compares with the address gives no link, with the alternatives compared', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*A route constant a screen only compares with the address gives no link\.\*\*[\s\S]*Alternatives compared \(driver's decision, 2026-10-26, in issue #469\)/);
+});
+
 test('a route constant whose path variable a replace call fills with a value goes to the screen of that route, while a replace that does not name a path variable as text gives no route constant link', async () => {
   const home = `import { Link, useHistory } from 'react-router-dom';
 import Option from './Option';

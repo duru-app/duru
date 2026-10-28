@@ -266,8 +266,8 @@ assistant files (2,022) and `AppLayout/index.tsx` (195). Entry screens go 7 → 
 (usage explorer, status, an AI assistant conversation) are reached only through a list compared with the route or a
 `matchPath` pattern. The API calls go 172 → 325. The API config of SigNoz moves the same way (link rows 4,422 → 16,244, API calls 9,179 → 15,444). The maps
 of appsmith, into-sign 1.5.0 and 2.0.0, mattermost and outline are unchanged.
-The limits: until comparisons stop counting as links, a large part of the growth is route constants a layout only
-compares with; a value in a table keyed by route (`menuItems.tsx:599-612`) still counts; and every SigNoz screen's
+The limits: until comparisons stop counting as links (they stop with #469, apart from lists compared through a
+function), a large part of the growth is route constants a layout only compares with; a value in a table keyed by route (`menuItems.tsx:599-612`) still counts; and every SigNoz screen's
 code now includes the layout's, so a side menu edit marks all 65 as changed.
 
 **TypeScript files a `constants` module runs are turned into JavaScript by Node's transform mode, and the line of
@@ -672,7 +672,37 @@ is added: 69 rows of `utils/route/navigationUtils.ts`, and 3 of `utils/domain/me
 pairs of screens joined by a link, 244 remain; the three that go lead from the basic, link and flexible publish
 screens to `/system-settings/:type?#SystemSetting`. The conditions of the remaining pairs, the entry screens and
 each screen's kinds and role values are unchanged, and in the flow every screen keeps its place; only those three
-jumps go (227 → 224).
+jumps go (227 → 224). Since #469 the comparison at `menuUtils.ts:205` gives no link on any screen (see the next
+decision); the system settings screen keeps the links into it from the side menu at `menuUtils.ts:56`.
+
+**A route constant a screen only compares with the address gives no link.**
+A route constant written as one side of `===`, `!==`, `==` or `!=`, as a `case` of a `switch`, as an argument of
+`matchPath`, `useRouteMatch` or `useMatch` or as the `path` of the object handed to them, or as the argument of a
+`startsWith`, `endsWith`, `includes` or `indexOf` call tells which screen is open and moves nowhere, so it is no
+longer a link; the same constant written as a link's address or a move still is. A route constant whose path
+variable a `replace` call fills with a value (`ROUTES.AI_ASSISTANT.replace(':conversationId', id)`) is now a link to
+that route, where it was `{?}`: without it every link into SigNoz's AI assistant conversation screen would have
+gone, because the only one duru read came from a `matchPath` in the assistant panel.
+Alternatives compared (driver's decision, 2026-10-26, in issue #469): taking the comparison links out before the
+side menus were read, which would have cost into-sign 2.0.0 the links into its system settings screen, and keeping
+them, which leaves SigNoz with moves that do not exist. Narrowing route constants to the places of a move was
+measured as not needed: of the links that would go, only those a later side menu or error screen reading gives
+back had a move behind them.
+Measured on the seven baseline configs against main 5519f30: on SigNoz, and on its API config alike, link rows go
+16,309 → 12,579 (4,201 gone, 471 added) and pairs of screens joined by a link 3,841 → 3,577, none added. The 264
+pairs that go lead to the public dashboard (64), the AI assistant start screen (64), sign-up (63), the panel editor
+(44) and new alert (28) screens, and came only from comparisons in `AppRoutes/Private.tsx`,
+`container/TopNav/index.tsx`, `container/BottomStrip/AskNoz/AskNoz.tsx` and `container/AIAssistant/getAutoContexts.ts`.
+No source file of those screens uses the constant otherwise, apart from the panel editor's `generatePath` in
+`newPanelRoute.ts:76`, which both maps give to the same 14 screens and not to those 44. The added rows are the
+`replace` moves of the AI assistant, its actions and the roles settings, each in place of a `{?}` at the same move.
+into-sign 2.0.0 loses the 22 rows of `menuUtils.ts:205` and no pair. The maps of into-sign 1.5.0, mattermost,
+outline and appsmith are identical apart from the time they were written.
+The limits: a list of route constants compared with the address through a function, such as `routesToSkip` in
+`DateTimeSelectionV2/constants.ts` read by `routesToSkip.some((route) => matchPath(…))`, still links every screen
+to each route in it (4,355 rows on SigNoz); a comparison through a function of the app (`matches(pathname,
+ROUTES.X)`) is still a link outside route files; a `replace` whose first argument is not text starting with `:`
+stays `{?}`.
 
 **The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
 the name.**
