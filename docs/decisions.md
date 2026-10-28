@@ -3282,9 +3282,11 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
 - An element belongs to the nearest loop function around it, also when a function that is not a loop stands between
   them, as a render function does in `<FormattedMessage>{(t) => <NavLink to={item.url}>{t}</NavLink>}</FormattedMessage>`
   or `<Can>{() => <NavLink to={item.url} />}</Can>`; it counts only when it reads that loop's item. An element inside a
-  function given as an attribute value is not counted, as a dropdown's `overlay={() => <Menu>…</Menu>}` or
-  `render={() => <Icon name={item.url} />}` on the link: such a function draws something beside the entry, and
-  counting it stopped the run with two elements or made the icon the menu element. When such elements
+  function given as an attribute value is counted only when no other element in the loop reads the field: a
+  dropdown's `overlay={() => <Menu>…</Menu>}` or `render={() => <Icon name={item.url} />}` on the link draws something
+  beside the entry, and counting it stopped the run with two elements or made the icon the menu element, while a list
+  item that draws its link through `component={(props) => <NavLink {...props} to={item.url} />}` and reads only `key`
+  itself has its link there and nowhere else. When such elements
   hold one another, as an `<li>` marking the open entry (`className={pathname === item.url ? 'active' : ''}`,
   `data-testid={item.url}`) holds the `<NavLink to={item.url}>`, the innermost is the menu element. Only two in the
   same loop function that do not hold each other stop the run. An element in a loop inside the item's loop, as a
@@ -3386,8 +3388,8 @@ Known limits:
 - Each element in a menu file that reads the item's field walks its own elements and the outer loops again to find
   the innermost one. On mattermost, extract took 42 and 43 s without `menus` and 43 and 47 s with them, the map
   written then being half again as large, so this is left as it is.
-- A menu whose link is drawn only inside a function given as an attribute value
-  (`<Route render={() => <NavLink to={item.url} />} />`) is not found, and the run stops with no element found.
+- When the element holding such a function reads the field too, as `<Route path={item.url} render={() => <NavLink
+  to={item.url} />} />`, that element is the menu element and the link inside the function is not.
 - In a grouped menu (`sections.map((section) => <div data-testid={section.url}>{section.items.map((item) =>
   <NavLink to={item.url} />)}</div>)`) whose outer loop reads a field of the same name, the outer element is taken as
   the menu element.

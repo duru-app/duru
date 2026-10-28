@@ -1662,21 +1662,27 @@ export async function extractClient(config: any) {
         return fields.includes(tableRoutes.get(t)!.field);
       });
     };
-    const readsIn = (holder: NodePath, loop: Node, table: string) => {
-      let found = false;
-      holder.traverse({ JSXElement(q) { if (!found && q.findParent(loopCallback)?.node === loop && menuTablesOf(q).includes(table)) found = true; } });
+    const readers = (holder: NodePath, loop: Node, table: string) => {
+      const found: NodePath[] = [];
+      holder.traverse({ JSXElement(q) { if (q.findParent(loopCallback)?.node === loop && menuTablesOf(q).includes(table)) found.push(q); } });
       return found;
     };
     const outerLoopReads = (loop: NodePath, table: string) => {
-      for (let outer = loop.parentPath?.findParent(loopCallback); outer; outer = outer.parentPath?.findParent(loopCallback)) if (readsIn(outer, outer.node, table)) return true;
+      for (let outer = loop.parentPath?.findParent(loopCallback); outer; outer = outer.parentPath?.findParent(loopCallback)) if (readers(outer, outer.node, table).length) return true;
       return false;
     };
+    const inAttributeFunction = (q: NodePath, loop: NodePath) => q.findParent((a) => a === loop || (a.isFunction() && Boolean(a.parentPath?.isJSXExpressionContainer() && a.parentPath.parentPath?.isJSXAttribute()))) !== loop;
     // 같은 반복 함수 안에서 항목의 field 를 읽는 요소가 겹쳐 있으면 가장 안쪽 요소가 메뉴 요소다. 바깥 반복의 항목도 그 field 를 읽으면 안쪽 반복의 요소는 메뉴 요소가 아니다.
     const recordMenuElement = (p: NodePath<JSXElement>) => {
       const tables = menusHere.length ? menuTablesOf(p) : [];
       if (!tables.length) return false;
       const loop = p.findParent(loopCallback)!;
-      const own = tables.filter((t) => !readsIn(p, loop.node, t) && !outerLoopReads(loop, t));
+      const own = tables.filter((t) => {
+        const all = readers(loop, loop.node, t);
+        const outside = all.filter((q) => !inAttributeFunction(q, loop));
+        const counted = outside.length ? outside : all;
+        return counted.some((q) => q.node === p.node) && !counted.some((q) => q.node !== p.node && q.isDescendant(p)) && !outerLoopReads(loop, t);
+      });
       for (const table of own) record('routerLinks', { to: UNKNOWN, menu: table }, p);
       return own.length > 0;
     };
@@ -2444,14 +2450,12 @@ export async function extractClient(config: any) {
   }
 
   // `map`, `flatMap`, `forEach` 에 넘긴 함수가 받는 항목에서, key 를 뺀 요소 속성에 값으로 넣는 field.
-  // 요소를 감싼 가장 가까운 반복 함수의 항목만 센다. 사이에 자식으로 넘긴 함수가 있어도 되지만,
-  // 요소 속성 값으로 넘긴 함수(overlay, render 등) 안의 요소는 세지 않는다.
+  // 요소를 감싼 가장 가까운 반복 함수의 항목만 센다. 사이에 반복이 아닌 함수가 있어도 된다.
   // 항목은 첫 매개변수이거나, 첫 매개변수를 `([key, item])` 처럼 배열로 풀어 받은 둘째 이름이다.
   // 첫 매개변수를 `({ url })` 로 풀어 받았다면 그 키가 field 다.
   function itemFieldsRead(p: NodePath<JSXElement>): string[] {
     const fields = new Set<string>();
     const loop = p.findParent(loopCallback);
-    if (loop && p.findParent((a) => a === loop || (a.isFunction() && Boolean(a.parentPath?.isJSXExpressionContainer() && a.parentPath.parentPath?.isJSXAttribute()))) !== loop) return [];
     for (const a of p.get('openingElement.attributes') as NodePath<any>[]) {
       if (!a.isJSXAttribute() || a.node.name.name === 'key' || !a.get('value').isJSXExpressionContainer()) continue;
       for (const x of piecesOf(a.get('value').get('expression') as NodePath)) {

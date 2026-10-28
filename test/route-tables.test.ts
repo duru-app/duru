@@ -766,6 +766,20 @@ test('an element drawn by a function given in an attribute, as a dropdown overla
   }
 });
 
+test('an element drawn by a function given in an attribute is the menu element when nothing else in the loop reads the field, as a list item drawing its link through component', async () => {
+  const edits: [string, string, string][] = [
+    [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';\nimport { ListItem } from '@mui/material';"],
+    [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", 'sections.push(\n        <ListItem key={item.url}\n          component={(props) => <NavLink {...props} to={item.url} />}>{item.title}</ListItem>,\n      );'],
+  ];
+  await withMenuCopy(async ({ configFile, src }) => {
+    const line = lineIn(src, SIDEBAR, '<NavLink');
+    assert.notEqual(line, lineIn(src, SIDEBAR, '<ListItem'));
+    assert.deepEqual(menuRows(screen(await build(configFile), '/admin_console/users#Users')).filter((l) => l.tableItem).map((l) => [l.to, l.line]), [
+      ['/admin_console/about/license', line], ['/admin_console/users', line], ['/admin_console/users/site', line], ['/admin_console/users/plain', line],
+    ]);
+  }, { edits });
+});
+
 test('the links a menu gives for the items do not count as links into a screen when the map decides its entry screens', async () => {
   const entriesOf = (configPatch: Record<string, unknown>) => withMenuCopy(async ({ configFile }) => (await build(configFile)).entries.map((e) => e.screen), { configPatch });
   const plain = await entriesOf({ routeTables: [ROUTE_TABLE] });
