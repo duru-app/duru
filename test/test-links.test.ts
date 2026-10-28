@@ -827,7 +827,7 @@ test('a traced test keeps its walk once, under the projects it ran in, and each 
   assert.deepEqual(Object.keys(walk), ['chromium', 'firefox']);
   assert.deepEqual(walk.firefox.map((line) => line.kind), ['open', 'assert']);
   assert.deepEqual(walk.chromium[0], { kind: 'open', path: '/home', screen: '/home#Home' });
-  assert.deepEqual(walk.chromium.at(-1), { kind: 'write', method: 'fill', box: { placeholder: '제목' }, value: '제목 값', selector: 'internal:attr=[placeholder="제목"i]', path: '/document/draft', screen: '/document/:tab#DocumentList' });
+  assert.deepEqual(walk.chromium.at(-1), { kind: 'write', method: 'fill', box: { placeholder: '제목' }, value: '제목 값', path: '/document/draft', screen: '/document/:tab#DocumentList' });
   assert.equal(Object.keys(stepLinks.walks).length, 2);
 });
 

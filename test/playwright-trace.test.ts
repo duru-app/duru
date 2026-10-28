@@ -311,7 +311,7 @@ test('the walk keeps an action that ended in an error as failed, while the steps
   assert.deepEqual(steps(title), ['visit /home']);
 });
 
-test('the walk tells pressing from writing, and puts every write in its place with the box or a mark that the box was not read', () => {
+test('the walk tells pressing from writing, and puts every write in its place with the box, or with a mark that the box was not read and its selector', () => {
   const walk = walkOf(INPUTS).filter((line) => line.kind !== 'request');
   assert.deepEqual(walk.map((line) => [line.kind, 'method' in line ? line.method : null]), [
     ['open', null],
@@ -342,6 +342,7 @@ test('the walk tells pressing from writing, and puts every write in its place wi
     { box: { placeholder: '제목' }, value: '제목 값', checked: undefined },
   ]);
   assert.deepEqual(walk.filter((line) => 'checked' in line).map((line) => (line as { checked: boolean }).checked), [true, false, true]);
+  assert.deepEqual(walk.filter((line) => 'selector' in line && !('unread' in line)), []);
   assert.equal(walk.at(-1)!.url, '/document/draft');
 });
 
@@ -362,6 +363,6 @@ test('a box found by label is read for a check as well as for a fill', () =>
     }));
     assert.deepEqual((readTrace(file) as Traced).walk, [
       { kind: 'open', url: 'http://x/home' },
-      { kind: 'write', method: 'check', box: { label: '동의' }, checked: true, selector: 'internal:label="동의"i', url: 'http://x/home' },
+      { kind: 'write', method: 'check', box: { label: '동의' }, checked: true, url: 'http://x/home' },
     ]);
   }));

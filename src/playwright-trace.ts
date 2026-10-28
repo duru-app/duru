@@ -109,11 +109,9 @@ function writtenOf(method: string, params: any): Pick<WalkStep, 'value' | 'check
 function walkStepOf(action: any, kind: WalkKind, failed: boolean): Omit<WalkStep, 'url'> {
   const { method, params } = action;
   const selector = typeof params?.selector === 'string' ? params.selector : undefined;
-  const written = kind === 'write' ? (() => {
-    const box = boxOf(selector);
-    return box ? { box, ...writtenOf(method, params) } : { unread: 'box' as const, ...writtenOf(method, params) };
-  })() : {};
-  return { kind, method, ...written, ...(selector && { selector }), ...(failed && { failed: true as const }) };
+  const box = kind === 'write' ? boxOf(selector) : null;
+  const written = kind !== 'write' ? {} : box ? { box } : { unread: 'box' as const, ...(selector && { selector }) };
+  return { kind, method, ...written, ...(kind === 'write' && writtenOf(method, params)), ...(failed && { failed: true as const }) };
 }
 
 function sentRequest({ snapshot: { _apiRequest, request, response } }: any) {
