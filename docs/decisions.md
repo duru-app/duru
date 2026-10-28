@@ -3298,10 +3298,9 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
   this on the issue (2026-10-27). A menu's links get the mark that way, not for being a menu's: on the screen whose
   own component draws the menu (mattermost's `/admin_console`) they stay its own. A screen whose component is not found
   gets no mark, as for requests (outline's `/d/:documentSlug` and `{?}/recent`, 18 menu links each).
-  Against #461's branch (728cf04) with the baseline configs, each of the seven maps is the same once `layout` is taken
-  off the link rows. It is on 506 of 622 link rows in into-sign 1.5.0, 594 of 762 in 2.0.0, 5,550 of 12,435 in
-  mattermost, 1,762 of 2,892 in outline, 13,968 of 16,309 in SigNoz (`SideNav`, `TopNav`, `Private`) and none in
-  appsmith. With `menus`, 11,200 of mattermost's 11,300 menu links and 864 of outline's 900 have it.
+  Against main (a13342e) with the baseline configs, each of the seven maps is the same once `layout` is taken off the
+  link rows. It is on 506 of 622 link rows in into-sign 1.5.0, 572 of 740 in 2.0.0, 5,550 of 12,435 in mattermost,
+  1,762 of 2,892 in outline, 10,790 of 12,579 in SigNoz (`SideNav`, `TopNav`, `Private`) and none in appsmith. With `menus`, 11,200 of mattermost's 11,300 menu links and 864 of outline's 900 have it.
 - The links into a screen keep the `tableItem` of a menu's link. 「들어오는 링크」 folds those under 「공통 N」
   (「메뉴가 거는 링크」) below the screen's other links into it. The incoming fold takes only the menu's item links, not every
   link drawn by a layout, so its title names the menu alone.
@@ -3316,9 +3315,9 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
   what every screen holding the menu needs, or `the screens holding it need different things`.
   Before this, mattermost's menu made one admin screen (`…/edit_policy/:policy_id`) the parent of 99 other admin
   screens, picking any of 112 screens marked 50 or more jumps (median 111), and `entries` fell from 92 to 25. With the
-  rule, mattermost with `menus` has the same `entries` as #461's branch (728cf04) without them, 92 screens whose
-  reasons differ only where `menu-links-only` stands for `no-incoming-link`,
-  prints the same lines apart from the path it wrote, and draws the same flow: 92 roots in the same order, 6 trees no
+  rule, mattermost with `menus` has the same 92 `entries` as main (a13342e) without them, 67 of them with
+  `menu-links-only` in place of `no-incoming-link` and the rest with the same reasons, prints the same lines apart
+  from the path it wrote, and draws the same flow: 92 roots in the same order, 6 trees no
   entry screen reaches, the same parent for each of the 181 screens and the same 2,776 jumps. The flows of appsmith,
   both into-sign maps and both SigNoz maps are unchanged. outline's differ only where its screens do: the `{?}` screen
   gives way to the 18 settings screens, 15 of them entry screens, `/settings/applications` among the trees no entry
