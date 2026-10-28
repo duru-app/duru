@@ -119,7 +119,8 @@ function wayNeeds(guards) {
 
 // 같은 줄에서 같은 화면으로 가는 링크가 여럿이면 맵에 적힌 순서대로 짝짓는다.
 function wayGuards(r) {
-  const rows = screenOf(r.to).access.links.filter((l) => l.from === r.from);
+  const { links, menuLinks = [] } = screenOf(r.to).access;
+  const rows = [...links, ...menuLinks].filter((l) => l.from === r.from);
   const taken = new Map();
   return r.ways.map((w) => {
     const place = `${w.file}:${w.line}`;

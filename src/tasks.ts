@@ -207,18 +207,31 @@ const kindsText = (kinds: string[]) => kinds.map((k) => KIND_NAMES[k]).join(' an
 
 const needsText = (kinds: string[]) => (kinds.length ? `needs ${kindsText(kinds)}` : `${MIXED_KINDS}, see each link below`);
 
-function linkInLines(links: any[], restricted: Set<string>) {
-  return links.map((l: any) => {
+const guardsText = (l: any) => (l.guards.length ? `guard ${l.guards.map(guardText).join('; ')}` : 'no guard');
+
+const holderNeeds = (l: any, restricted: Set<string>) => (l.fromKinds.length ? `needs ${kindsText(l.fromKinds)}` : restricted.has(l.from) ? 'is restricted, by kinds that differ by link' : '');
+
+function linkInLines({ links, menuLinks = [] }: { links: any[]; menuLinks?: any[] }, restricted: Set<string>) {
+  const lines = links.map((l: any) => {
     const from = `  - link from ${l.from} at ${l.file}:${l.line}`;
-    const guards = l.guards.length ? `guard ${l.guards.map(guardText).join('; ')}` : 'no guard';
-    const fromNeeds = l.fromKinds.length ? ` — ${l.from} itself needs ${kindsText(l.fromKinds)}` : restricted.has(l.from) ? ` — ${l.from} itself ${MIXED_KINDS}` : '';
-    return `${from}, ${guards}${fromNeeds}`;
+    const needs = holderNeeds(l, restricted);
+    return `${from}, ${guardsText(l)}${needs && ` — ${l.from} itself ${needs}`}`;
   });
+  const menus = new Map<string, any[]>();
+  for (const l of menuLinks) menus.set(`${l.file}:${l.line}`, [...(menus.get(`${l.file}:${l.line}`) ?? []), l]);
+  for (const [at, rows] of menus) {
+    const screens = new Set(rows.map((l) => l.from)).size;
+    const guards = [...new Set(rows.map(guardsText))];
+    const needs = [...new Set(rows.map((l) => holderNeeds(l, restricted)))];
+    const holders = needs.length > 1 ? ' — the screens holding it need different things' : needs[0] && ` — every screen holding it ${needs[0]}`;
+    lines.push(`  - menu link at ${at} from ${screens} screen${screens === 1 ? '' : 's'}, ${guards.length === 1 ? guards[0] : 'guards differ by screen'}${holders}`);
+  }
+  return lines;
 }
 
 function accessLines(access: any, restricted: Set<string>) {
   if (!access.restricted) return ['- access: opens without a setting or role'];
-  return [`- access: ${needsText(access.kinds)}`, ...access.route.map((g: any) => `  - route guard ${guardText(g)}`), ...linkInLines(access.links, restricted)];
+  return [`- access: ${needsText(access.kinds)}`, ...access.route.map((g: any) => `  - route guard ${guardText(g)}`), ...linkInLines(access, restricted)];
 }
 
 const byDepth = <T extends { depth: string }>(tests: T[]) => [...tests].sort((a, b) => DEPTHS.indexOf(a.depth) - DEPTHS.indexOf(b.depth));
@@ -511,7 +524,7 @@ function preconditionLines(r: any, { screensById, restricted }: MapInfo, c?: Con
   if (r.kind === 'start') {
     const roles = r.roleValues ? `; roles that open it: ${r.roleValues.join(', ')}` : r.roleValues === null ? '; the roles that open it could not be read' : '';
     const accounts = c && r.roleValues && hasAccounts(c) ? [`    - accounts: ${accountsText(r.roleValues, c.accounts)}`] : [];
-    return [`  - ${r.screen}, the first screen, ${needsText(r.kinds)}${roles}`, ...accounts, ...linkInLines(screensById.get(r.screen).access.links, restricted).map((l) => `  ${l}`)];
+    return [`  - ${r.screen}, the first screen, ${needsText(r.kinds)}${roles}`, ...accounts, ...linkInLines(screensById.get(r.screen).access, restricted).map((l) => `  ${l}`)];
   }
   if (r.kind === 'route') {
     const shownRoles = start?.screen === r.screen ? start.roleValues ?? [] : [];

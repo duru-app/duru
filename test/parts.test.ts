@@ -106,6 +106,17 @@ const SCREENS = [
   },
 ];
 
+const MENU_SCREEN = {
+  id: '/admin/menu#AdminMenu', routeFile: 'Routes.js', line: 20,
+  access: {
+    restricted: true, kinds: ['role'], roleValues: ['ADMIN'],
+    route: [{ guard: 'isAdminRole(memberRole)', kinds: ['role'], roles: ['ADMIN'] }],
+    links: [],
+    menuLinks: [{ from: '/home#Home', file: 'components/Menu.js', line: 9, guards: [{ guard: "memberRole === 'ADMIN'", kinds: ['role'], roles: ['ADMIN'] }], fromKinds: [], tableItem: { key: 'menu', file: 'table.js', line: 2 } }],
+  },
+};
+SCREENS.push(MENU_SCREEN as never);
+
 const slot = (node: string, kind: string, key: unknown, roleGuards: Record<string, string[]> = {}) => locatePart({ node, part: { kind, key } as never }, { tests: {}, screens: SCREENS, roleGuards }) as { places: { line: number }[] } | null;
 
 test('a role condition is found at the route line of the screen and at each link that asks it, with the function a guard sits in and the roleGuards key that gave its roles', () => {
@@ -160,6 +171,18 @@ test('an incoming link is named by its start screen and the roles and settings r
   assert.deepEqual(linkKey(SCREENS[4].access.links[0]), { from: '/lab#Lab', guards: [] });
   assert.equal(slot('/lab#Lab', 'link', { from: '/home#Home', conditions: ['setting:LAB=on'] }), null);
   assert.equal(slot('/lab#Lab', 'link', { from: '/signin#SignIn', guards: [] }), null);
+});
+
+test('a menu link into a screen keeps its own slot, and a condition a menu link asks is found at that link too', () => {
+  assert.deepEqual(slot('/admin/menu#AdminMenu', 'link', { from: '/home#Home', conditions: ['role:ADMIN'] }), {
+    places: [{ from: '/home#Home', file: 'components/Menu.js', line: 9 }],
+  });
+  assert.deepEqual(slot('/admin/menu#AdminMenu', 'condition', 'role:ADMIN'), {
+    places: [
+      { from: 'route', file: 'Routes.js', line: 20, guard: 'isAdminRole(memberRole)' },
+      { from: '/home#Home', file: 'components/Menu.js', line: 9, guard: "memberRole === 'ADMIN'" },
+    ],
+  });
 });
 
 test('a screen order is located with the files of each screen and the verdict between each two neighbours, and not at all on a map whose links carry no conditions', () => {

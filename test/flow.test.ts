@@ -121,6 +121,19 @@ test('a move in the config places a screen no link reached yet under the screen 
   assert.equal(built.roots[0].children[0].jumps[0].moved, undefined);
 });
 
+test('a link a route table menu gives for an item is neither a tree edge nor a jump', () => {
+  const screen = (id: string, links: FlowAccess['links'] = [], menuLinks: object[] = []): FlowMapScreen => {
+    const access = { restricted: false, kinds: [], links, menuLinks };
+    return { id, path: id, component: id, apiCalls: [], access };
+  };
+  const menu = (from: string) => ({ from, guards: [], tableItem: { key: from, file: 'table.js', line: 1 } });
+  const tiny = { screens: [screen('home'), screen('a', [{ from: 'home', guards: [] }], [menu('home'), menu('b')]), screen('b', [], [menu('home'), menu('a')])], entries: [{ screen: 'home' }, { screen: 'b' }] };
+  const built = buildFlow(tiny, { nodes: {} });
+  assert.deepEqual(built.roots.flatMap((r) => outline(r)), ['home', '  a', 'b']);
+  assert.deepEqual(built.unreached, []);
+  assert.deepEqual([...built.roots, ...built.roots[0].children].map((n) => [n.id, n.jumps]), [['home', []], ['b', []], ['a', []]]);
+});
+
 test('a move to a screen already placed in another branch leaves it there and is kept as a jump marked as a move, and entry screens stay entry screens', () => {
   const screen = (id: string): FlowMapScreen => ({ id, path: `/${id}`, component: id, apiCalls: [], access: { restricted: false, kinds: [], links: [] } });
   const tiny = { screens: [screen('signin'), screen('home')], entries: [{ screen: 'signin' }, { screen: 'home' }], moves: [{ from: 'signin', to: 'home', reason: '로그인 뒤' }, { from: 'signin', to: 'home', reason: '새로 고침 뒤' }] };

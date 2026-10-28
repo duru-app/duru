@@ -31,7 +31,7 @@ export interface PartScreen {
   line?: number;
   componentFile?: string | null;
   tableItem?: TableItem;
-  access?: { restricted?: boolean; roleValues?: string[] | null; route?: Described[]; links?: LinkRow[]; settings?: SettingSource[] };
+  access?: { restricted?: boolean; roleValues?: string[] | null; route?: Described[]; links?: LinkRow[]; menuLinks?: LinkRow[]; settings?: SettingSource[] };
 }
 
 export interface PartContext {
@@ -118,6 +118,7 @@ function locateCondition(screen: PartScreen, key: unknown, screens: PartScreen[]
       places.push({ from: l.from, file: l.file, line: l.line, inherited: true });
     }
   }
+  for (const l of access.menuLinks ?? []) places.push(...l.guards.filter(asks).map((g) => at(l.from, l.file, l.line, g)));
   for (const s of access.settings ?? []) {
     if (s.inherited && s.needs.some((n) => settingConditionName(n) === key)) places.push({ from: s.from, file: s.file!, line: s.line!, inherited: true });
   }
@@ -126,7 +127,7 @@ function locateCondition(screen: PartScreen, key: unknown, screens: PartScreen[]
 
 function locateLink(screen: PartScreen, key: unknown): SourcePlaces | null {
   const wanted = JSON.stringify(key);
-  const rows = (screen.access?.links ?? []).filter((l) => JSON.stringify(linkKey(l)) === wanted);
+  const rows = [...(screen.access?.links ?? []), ...(screen.access?.menuLinks ?? [])].filter((l) => JSON.stringify(linkKey(l)) === wanted);
   return rows.length ? { places: rows.map((l) => ({ from: l.from, file: l.file, line: l.line })) } : null;
 }
 
