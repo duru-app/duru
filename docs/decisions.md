@@ -2737,6 +2737,39 @@ Alternatives compared:
   screen order is offered once.
 - Reading CSS or role locators by guessing the visible words: wrong guesses would write a box the page cannot find.
 
+**`rebuild` writes what each traced test did, its steps and the requests it sent in the order they happened, into
+`tests.json` once per run, and the page shows it under a test's row on a screen or a call.**
+Asked for in #481 (2026-10-28): a reviewer asks which values a test tried and how far it went, not how many tests a
+screen has. A trace's actions (`before` and `after` lines) and its requests (`resource-snapshot` lines in `.network`)
+carry times on one clock: in the member list test the `goto` starts at 2374.7, the page's request at 2379.9 and the
+`fetch` an `evaluate` sends at 2418.5, inside that `evaluate` (2411.7 to 2421.2). So the steps and requests are merged
+by time. A step is 「열기」 when the address changes, 「넣기」 for `fill`, `type`, `selectOption`, `check`, `uncheck` and
+`setInputFiles`, 「확인」 for `expect`, and 「누르기」 for the other actions, hovering and the mouse and keyboard
+included. The new address of a `goto`, `reload`, `goBack` or `goForward` is placed when the action starts, so the
+requests the page sends while it opens come after 「열기」. A write keeps its box when it was found by label,
+placeholder or test ID, for a check as well as a fill, and is shown as 「찾은 상자를 읽지 못함」 with its selector
+otherwise; an empty fill keeps its box and shows 「빈 값」. An action that ended in an error stays, marked 「실패」. The
+steps and candidates read from the same traces stay as they were: there such actions are left out and other writes are
+skipped.
+Requests keep their response status, or 「응답 없음」 for the -1 a request that got no response records. The browser's
+loads of pages, scripts, styles, pictures and fonts are left out by the type of their response: in the traces of
+duru's own tests they are 79 of 93 requests, and they are what the app needs to show, not what the test sent. A
+request the test sent through Playwright's `request` stays whatever its type. A request that matches a call on the map
+opens that call.
+The walk is kept once per run in `walks`, under the result file, test file, line and title, then the project, and each
+test entry carries that key as `steps`, since a test is copied into `tests.json` for every screen it is tagged with
+and every screen it passed. The review server sends `walks` to the page as `testSteps`.
+Alternatives compared:
+- Reading the trace when a reviewer opens a test, through a new request to the review server: the page's data stays
+  smaller, but the page needs a loading and a failed state, `tests.json` would have to keep each trace's path, and a
+  trace moved or deleted after `rebuild` would show nothing, while the links and candidates read from it still show.
+- Keeping only requests that match a call on the map: a request the map does not know, often the one a reviewer wants
+  to see, would vanish.
+- Keeping every request: the test's own requests would be lost among the page loads.
+Known limits: a request type that is not on the list of left-out types (a page served as `text/plain`, a font as
+`application/octet-stream`) shows; an action with no address open (a blank page) shows 「앱 밖」 instead of a screen;
+what an `expect` checked is not shown.
+
 **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
 without a value on such a kind fills no value.**
 Asked for in #311 (2026-10-19), the first part of #310. Some kinds are covered only once each of a few values has a
