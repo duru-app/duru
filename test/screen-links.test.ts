@@ -1083,7 +1083,7 @@ test('the decision record says that a route constant a screen only compares with
   assert.match(decisions, /\*\*A route constant a screen only compares with the address gives no link\.\*\*[\s\S]*Alternatives compared \(driver's decision, 2026-10-26, in issue #469\)/);
 });
 
-test('a route constant whose path variable a replace call fills with a value is read as the route constant itself, tail, comparison and lookup table key alike, while a replace that does not name a path variable as text or is followed by another replace gives no route constant link', async () => {
+test('a route constant whose path variable a replace call fills with a value is read as the route constant itself, tail, comparison and lookup table key alike, while a replace that does not name a path variable as text or is followed by another replace gives no route constant link, while a replace on the address built around it does', async () => {
   const home = `import { Link, useHistory } from 'react-router-dom';
 import Option from './Option';
 
@@ -1092,6 +1092,8 @@ export default function Home({ team, page, tab }) {
   const open = () => history.push(Option.ROUTE_PATH.TEAM.replace(':team', team));
   const query = () => history.push(Option.ROUTE_PATH.TEAM.replace(':team', team) + '?tab=1');
   const edit = () => history.push(\`\${Option.ROUTE_PATH.TEAM.replace(':team', team)}/edit\`);
+  const chained = () => history.push(Option.ROUTE_PATH.TEAM.replace(':team', team).replace(':tab', tab));
+  const second = () => history.push(\`\${Option.ROUTE_PATH.TEAM.replace(':team', team)}/:tab\`.replace(':tab', tab));
   const inTeam = window.location.pathname.startsWith(\`\${Option.ROUTE_PATH.TEAM.replace(':team', team)}/\`);
   const onTab = window.location.pathname === Option.ROUTE_PATH.TEAM.replace(':team', team).replace(':tab', tab);
   const titles = { [Option.ROUTE_PATH.TEAM.replace(':team', team)]: 'Team' };
@@ -1099,6 +1101,8 @@ export default function Home({ team, page, tab }) {
     <nav>
       <button onClick={open}>team</button>
       <button onClick={query}>query</button>
+      <button onClick={chained}>chained</button>
+      <button onClick={second}>second</button>
       <button onClick={edit}>{String(inTeam || onTab)}{titles[window.location.pathname]}</button>
       <Link to={Option.ROUTE_PATH.TEAM?.replace(':team', team)}>maybe</Link>
       <Link to={Option.ROUTE_PATH.HELP.replace(/:page/, page)}>help</Link>
@@ -1112,7 +1116,9 @@ export default function Home({ team, page, tab }) {
     ['/team/:team', lineOf(home, 'const open'), [], ['/team/:team#Team']],
     ['/team/:team', lineOf(home, 'const query'), [], ['/team/:team#Team']],
     ['/team/:team/edit', lineOf(home, 'const edit'), [], ['/team/:team#Team']],
+    ['/team/:team/:tab', lineOf(home, 'const second'), [], ['/team/:team#Team']],
     ['/team/:team', lineOf(home, 'TEAM?.replace'), [], ['/team/:team#Team']],
+    ['{?}', lineOf(home, 'const chained'), [], []],
     ['{?}', lineOf(home, 'HELP.replace'), [], []],
   ]);
 });

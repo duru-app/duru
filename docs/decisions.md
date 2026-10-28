@@ -709,7 +709,7 @@ are known by their name, so an app's own function named `useMatch` that moves is
 constant compared with a value that is then the address of a move (`case ROUTES.X: history.push(key)`) is no link;
 a `replace` whose first argument is not text starting with `:`, or whose result is read further
 (`.replace(…)`, `.toLowerCase()`), stays `{?}`, while a second `replace` on the address built around it
-(`` `${ROUTES.X.replace(':id', id)}/:tab`.replace(':tab', tab) `` ) still goes where the route constant with that
+(`` `${ROUTES.X.replace(':id', id)}/:tab`.replace(':tab', tab) ``) still goes where the route constant with that
 tail goes.
 
 **The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
