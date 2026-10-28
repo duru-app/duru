@@ -389,6 +389,21 @@
   #pick-list li .count { color: var(--accent); }
   .part-row { display: flex; align-items: flex-start; gap: 6px; }
   .part-row > :is(.test, .slot-text) { flex: 1; min-width: 0; }
+  .steps-toggle { flex: none; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font: inherit; font-size: 12px; line-height: 18px; background: var(--panel); color: var(--text); cursor: pointer; white-space: nowrap; }
+  .steps-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+  .test-steps { margin: 2px 0 10px 12px; padding-left: 10px; border-left: 2px solid var(--line); font-size: 12px; }
+  #center .pair-test > .test-steps { order: 2; flex-basis: 100%; }
+  .test-steps .step-projects { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+  .test-steps button.step-project { cursor: pointer; background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; }
+  .test-steps button.step-project.on { color: var(--accent); }
+  .test-steps .step-lines { margin: 4px 0; padding-left: 22px; }
+  .test-steps .step-lines li { margin: 2px 0; overflow-wrap: anywhere; }
+  .test-steps .request-line { margin-left: 18px; list-style: none; }
+  .test-steps .request-line button.open-call { padding: 0; border: none; background: none; color: var(--accent); font: inherit; text-align: left; cursor: pointer; }
+  .test-steps .request-line button.open-call:hover { text-decoration: underline; }
+  .chip.step-open { color: var(--muted); } .chip.step-press, .chip.step-write { color: var(--accent); } .chip.step-assert { color: var(--pass); }
+  .chip.status { color: var(--muted); } .chip.status-error { color: var(--more); } .chip.status-none { color: var(--muted); border-style: dashed; }
+  .test-steps .step-value { margin-left: 2px; }
   .bubble, .part-count, .talk-count { flex: none; border-radius: 10px; padding: 0 6px; font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; background: var(--panel); white-space: nowrap; }
   :is(.part-count, .talk-count) { display: inline-flex; align-items: center; gap: 4px; }
   td.depth .talk-count { margin-left: 6px; }

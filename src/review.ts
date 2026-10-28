@@ -40,6 +40,7 @@ export const PAGE_PARTS = [
   'script-header-screens.js',
   'script-story-list.js',
   'script-tests-tags-verdicts.js',
+  'script-test-steps.js',
   'script-app-pane.js',
   'script-settings-bar.js',
   'script-step-cards.js',

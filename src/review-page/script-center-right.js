@@ -50,7 +50,7 @@ function renderCenter() {
         onclick: () => selectTarget(r.target),
       },
         h('td', { class: 'depth' }, r.label, talkCount(entriesAt(r.target), r.target)),
-        h('td', {}, r.target.depth ? (r.tests.length ? r.tests.map((t) => partRow(testItem(t, { hide: [`screen:${s.id}`, `depth:${t.depth}`], chip: regressionChip(s.id, 'tag', t) }), s.id, t)) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
+        h('td', {}, r.target.depth ? (r.tests.length ? r.tests.flatMap((t) => testRow(testItem(t, { hide: [`screen:${s.id}`, `depth:${t.depth}`], chip: regressionChip(s.id, 'tag', t) }), s.id, t)) : h('span', { class: 'muted' }, '없음')) : h('span', { class: 'muted' }, `테스트 ${tests.length}개`)),
         h('td', { class: 'mark' }, markChip(markOf(r.target)) ?? h('span', { class: 'muted' }, '—')))))),
     strayJudgmentError(s),
     untaggedPairs(s.id),

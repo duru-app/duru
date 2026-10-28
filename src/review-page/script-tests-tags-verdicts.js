@@ -236,16 +236,18 @@ const bubbleButton = (target, words, name) => h('button', {
   onkeydown: (e) => e.stopPropagation(),
 }, BUBBLE());
 
-function slotRow(item, target, words, name = tagLabel(target)) {
+function slotRow(item, target, words, name = tagLabel(target), control = null) {
   pickable(target, tagLabel(target));
   const n = commentsIn(markOf(target));
   return h('div', { class: 'part-row' },
     item,
+    control,
     n ? h('button', { class: 'part-count', title: words.narrow, onclick: (e) => { e.stopPropagation(); narrowTalk(target); } }, unansweredDot(entriesAt(target)), `코멘트 ${n}`) : null,
     bubbleButton(target, words, name));
 }
 
-const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title));
+const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title), stepsButton(node, t));
+const testRow = (item, node, t) => [partRow(item, node, t), stepsFold(node, t)];
 
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
 const judgmentErrorOf = (key) => (state.judgmentError?.key === key ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null);
@@ -433,8 +435,11 @@ function untaggedPairs(node) {
   const awaiting = awaitingTagOf(node);
   const detached = detachedOf(node);
   const row = (t, ...rest) => h('div', { class: `pair-test ${byTrace(t) ? 'passer' : 'importer'}` }, ...rest, judgmentErrorOf(judgmentKey(t, node)));
-  const openRow = (via) => (t) => row(t, partRow(pairTestItem(t, regressionChip(node, via, t)), node, t), judgmentForm(t, node));
-  const judgedRow = (item, t, label) => row(t, item, judgmentMeta(t.judgment, label, t.codeChanged), undoButton(t, node));
+  const openRow = (via) => (t) => row(t, testRow(pairTestItem(t, regressionChip(node, via, t)), node, t), judgmentForm(t, node));
+  const judgedRow = (item, t, label) => {
+    const steps = stepsButton(node, t);
+    return row(t, steps ? h('div', { class: 'part-row' }, item, steps) : item, stepsFold(node, t), judgmentMeta(t.judgment, label, t.codeChanged), undoButton(t, node));
+  };
   return [
     passed.length ? h('div', { class: 'passed' },
       h('h2', {}, text.passed(passed.length)),
