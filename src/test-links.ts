@@ -8,7 +8,7 @@ import { importLinker } from './import-links.ts';
 import { readJunit } from './junit.ts';
 import { readPlaywright } from './playwright.ts';
 import { traceLinker } from './trace-links.ts';
-import type { WalkedLine } from './trace-links.ts';
+import type { Walks } from './trace-links.ts';
 import { STATUS_RANK, readVerdicts, withProjectRun } from './verdict.ts';
 import type { TestStatus } from './verdict.ts';
 import { readVitest } from './vitest.ts';
@@ -89,7 +89,7 @@ export function linkTests(config: any, map: any) {
   const passed: Record<string, any[]> = {};
   const traceNotices = [];
   const screenOrders: TracedTest[] = [];
-  const walks: Record<string, Record<string, WalkedLine[]>> = {};
+  const walks: Walks = {};
   let untracedCount = 0;
   const shownPath = (file: string) => (path.relative(config.configDir, file).startsWith('..') ? file : path.relative(config.configDir, file));
   const reportUnknown = (tag: string, t: any, testKey: string) => {

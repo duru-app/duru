@@ -189,7 +189,6 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      // 주소를 옮기는 동작의 새 주소는 그 동작이 시작할 때로 놓아, 화면을 열며 보낸 요청이 열기 뒤에 온다.
       walked.push({ at: name === 'after' && NAVIGATIONS.has(action.method) ? action.startTime : at, page: action.pageId, url: snapshot.frameUrl });
     }
     const kind = kindOf(action.method);

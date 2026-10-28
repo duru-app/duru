@@ -6,6 +6,7 @@ import type { StepInput } from './stories.ts';
 export type WalkedStep = Omit<WalkStep, 'url'> & { path?: string; screen?: string };
 export type WalkedRequest = WalkRequest & { call?: string };
 export type WalkedLine = WalkedStep | WalkedRequest;
+export type Walks = Record<string, Record<string, WalkedLine[]>>;
 
 export const PASS_LEVELS = ['visit', 'interact', 'assert'];
 
