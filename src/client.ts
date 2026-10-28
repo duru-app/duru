@@ -1210,6 +1210,35 @@ export async function extractClient(config: any) {
     return { tail: segments?.every((s) => s && !s.includes(UNREADABLE_PIECE)) ? `/${segments.join('/')}` : null, whole };
   }
 
+  // 주소와 견주기만 하는 자리: ==, switch 의 case, matchPath · useRouteMatch · useMatch 의 인자나 그 path, startsWith 같은 문자열 검사의 인자
+  function comparedOnly(at: NodePath): boolean {
+    const up = at.parentPath!;
+    if (up.isBinaryExpression() && ['===', '!==', '==', '!='].includes(up.node.operator)) return true;
+    if (up.isSwitchCase() && at.key === 'test') return true;
+    const calleeOf = (arg: NodePath) => {
+      const call = arg.parentPath!;
+      return arg.listKey === 'arguments' && (call.isCallExpression() || call.isOptionalCallExpression()) ? call.node.callee : null;
+    };
+    const matching = (arg: NodePath) => {
+      const callee = calleeOf(arg);
+      return callee?.type === 'Identifier' && ['matchPath', 'useRouteMatch', 'useMatch'].includes(callee.name);
+    };
+    if (up.isObjectProperty() && at.key === 'value' && !up.node.computed && keyName(up.node) === 'path') return matching(up.parentPath!);
+    const callee = calleeOf(at);
+    if ((callee?.type === 'MemberExpression' || callee?.type === 'OptionalMemberExpression') && !callee.computed) {
+      return ['startsWith', 'endsWith', 'includes', 'indexOf'].includes((callee.property as Identifier).name);
+    }
+    return matching(at);
+  }
+
+  // ROUTES.X.replace(':id', id) 처럼 경로 변수 하나를 값으로 채우는 호출
+  function fillsPathVariable(p: NodePath<any>) {
+    const call = p.parentPath!;
+    if (!(call.isCallExpression() || call.isOptionalCallExpression()) || call.node.callee !== p.node) return false;
+    const first = call.node.arguments[0];
+    return first?.type === 'StringLiteral' && first.value.startsWith(':');
+  }
+
   // ---------- API 모듈: 내보낸 함수마다 호출하는 endpoint ----------
 
   function extractApiModule(file: string) {
@@ -1535,16 +1564,27 @@ export async function extractClient(config: any) {
         } else if (result) {
           record('settingReads', { key: [result[1], ...chain.slice(1)].join('.') }, p);
         } else if (chain[0] === routeRoot && chain.length === routeRest.length + 2 && routeRest.every((k: string, i: number) => chain[i + 1] === k)) {
-          const { tail, whole } = routeTail(p);
-          const member = whole.parentPath!;
-          const table = whole.key === 'key' && (member.isObjectProperty() || member.isObjectMethod()) && member.node.computed ? lookupTable(member.parentPath!) : null;
-          if (table && table.exported === null) return;
-          const ref = record('routeRefs', { route: chain[chain.length - 1], tail }, p) as RouteRef;
-          if (table?.exported) exportedKeys.set(ref, { file, name: table.exported });
-          constantAt.set(whole.node, [ref]);
+          recordRouteConstant(chain[chain.length - 1], p, p);
+        } else if (chain.at(-1) === 'replace' && routeChainOf(chain.slice(0, -2)) && fillsPathVariable(p)) {
+          const call = p.parentPath! as NodePath;
+          const up = call.parentPath!;
+          if ((up.isMemberExpression() || up.isOptionalMemberExpression()) && up.node.object === call.node) return;
+          recordRouteConstant(chain.at(-2)!, call, p);
         }
       },
     });
+
+    // at 은 라우트 상수가 주소로 놓인 식이고, 뒤에 이어 붙인 것은 꼬리로 읽는다.
+    function recordRouteConstant(route: string, at: NodePath, site: NodePath) {
+      const { tail, whole } = routeTail(at);
+      if (comparedOnly(whole)) return;
+      const member = whole.parentPath!;
+      const table = whole.key === 'key' && (member.isObjectProperty() || member.isObjectMethod()) && member.node.computed ? lookupTable(member.parentPath!) : null;
+      if (table && table.exported === null) return;
+      const ref = record('routeRefs', { route, tail }, site) as RouteRef;
+      if (table?.exported) exportedKeys.set(ref, { file, name: table.exported });
+      constantAt.set(whole.node, [ref]);
+    }
 
     const routeRefAt = facts.routeRefs.map((r) => siteStart.get(r)!);
     const holdsRouteRef = (p: NodePath) => routeRefAt.some((start) => start >= p.node.start! && start < p.node.end!);

@@ -430,7 +430,7 @@ component as `via`, and the line and `file` of the place it is drawn. A conditio
 component drawn around them, is the condition of those routes (`routeGuards`) on the screens of that file and is not
 carried to the screens of a route file drawn inside them.
 
-**Links.** A screen's links come from the route constants written in its code, the `to` of react-router's `Link`,
+**Links.** A screen's links come from the route constants its code uses as an address, the `to` of react-router's `Link`,
 `NavLink`, `Redirect` and `Navigate` outside the route files, the addresses given to `push` and `replace` of a
 history react-router hands to the screen or of the one named in `history`, and the addresses given to the function
 `useNavigate()` returns. A link can also sit on the line of a call of a function in the source that moves the
