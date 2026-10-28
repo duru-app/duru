@@ -665,6 +665,16 @@ test('a menu file named in a table entry gives every screen holding it one link 
   });
 });
 
+test('the menu links are marked as the layout\'s on the item screens, which the route file holding the menu draws, and not on the screen whose own component draws the menu', async () => {
+  await withMenuCopy(async ({ configFile }) => {
+    const map = await build(configFile);
+    const layoutOf = (id: string) => [...new Set(menuRows(screen(map, id)).map((l) => l.layout ?? false))];
+    assert.deepEqual(layoutOf('/admin_console/users#Users'), [true]);
+    assert.deepEqual(layoutOf('/admin_console/about/license#License'), [true]);
+    assert.deepEqual(layoutOf('/admin_console#AdminConsole'), [false]);
+  });
+});
+
 test('without menus in the table entry the menu element gives no link for each item', async () => {
   await withMenuCopy(async ({ configFile }) => {
     const map = await build(configFile);

@@ -452,8 +452,8 @@ routes and the element it shares with them guards what it gives: it is listed un
 component as `via`, and the line and `file` of the place it is drawn. A condition around the routes, or around a
 component drawn around them, is the condition of those routes (`routeGuards`) on the screens of that file and is not
 carried to the screens of a route file drawn inside them.
-A call a screen gets only through such a component, and not through the screen's own component, has
-`"layout": true`; it stays among the screen's calls.
+A call or link a screen gets only through such a component, and not through the screen's own component, has
+`"layout": true`; it stays among the screen's calls or links.
 
 **Whole app.** With `appWideComponents` set, the map has `appWide`: the `components`, each with the `file` its `import`
 names, their `sourceFiles`, and the `apiCalls` their code reaches, written as a screen's are. Those calls are under `calls`
@@ -1066,11 +1066,13 @@ around or beside its route (`layout`) and those of `appWide` are folded below it
 columns, and stay open or folded on other screens until toggled. Choosing such a call shows, after where this screen
 calls it, 「앱 시작 때 부르는 곳」 for an `appWide` call. A screen that opens only under a role or a setting carries 「역할」 or 「설정」 next to its
 name, as its line in the flow does. Under the tables, 「화면 정보」 starts folded, with the number of links into the
-screen, links out of it and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
+screen, links out of it from its own code and settings it reads on its line. Opened, it says under 「접근 조건」 what it takes to open
 the screen, then shows the tests of each role and setting case by depth under 「관점별 테스트」, the links into it
 with their guards, the conditions inside the screen, where its route and component are, the links out of it and the
 settings it reads. The links into it and out of it also list the moves written in `moves` as 「설정에 적은 이동」 with their
-reason. Once opened it stays open on other screens until it is closed. Choosing a call, by its name or a count in
+reason. The links out of it that have `layout`, such as those of a menu drawn around the route, are folded below the
+others under 「공통 N」 and stay open or folded on other screens until toggled. Once opened 「화면 정보」 stays open on
+other screens until it is closed. Choosing a call, by its name or a count in
 the table or from a link elsewhere, opens its details under the call table and scrolls the middle pane to them: where
 its option was found, the server match, its tests, untagged tests linked to it, where this screen calls it and the
 screens that use it.

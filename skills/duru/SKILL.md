@@ -140,8 +140,10 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   A call or link can also come from a file the screen's code never imports: a menu, header or banner drawn around
   or beside the screen's route, in its own route file or in a route file outside it. Its file and line point into
   that component, and an `inheritedGuards` entry with a `file` names the place it is drawn and the condition it is
-  drawn under; test it from the screen like the screen's own. Such a call has `"layout": true` when the screen's own
-  component does not reach it; one test of it from any screen it is on covers the component that sends it. The task
+  drawn under; test it from the screen like the screen's own. Such a call or link has `"layout": true` when the
+  screen's own component does not reach it; one test of it from any screen it is on covers the component that sends
+  or draws it. The links a menu named in `routeTables` gives each item screen are such links on the screens the menu
+  is drawn around. The task
   list puts such calls of a screen after its own, under `calls of the layout around the screen`; a screen that
   sends none itself has `calls of its own: none` above them, which does not mean there is nothing to test there.
 - A call under `appWide` is sent by a component named in `appWideComponents` once for the whole app, as it starts,

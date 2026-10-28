@@ -91,7 +91,7 @@ test('in a browser, the right pane of a screen holds only the conversation above
         assert.ok(await p.locator('#center-body table.calls ~ .screen-info').count());
         assert.equal(await info.evaluate((e: HTMLDetailsElement) => e.open), false);
         const s = (await (await fetch(`${base}/api/data`)).json() as PageData).map.screens.find((x) => x.id === '/document/:id#DocumentDetail')!;
-        assert.equal(await info.locator(':scope > summary').innerText(), `화면 정보 들어오는 링크 ${s.access.links.length} · 나가는 링크 ${s.links!.length} · 읽는 설정값 ${s.settingReads!.length}`);
+        assert.equal(await info.locator(':scope > summary').innerText(), `화면 정보 들어오는 링크 ${s.access.links.length} · 나가는 링크 ${(s.links as { layout?: true }[]).filter((l) => !l.layout).length} · 읽는 설정값 ${s.settingReads!.length}`);
         await info.locator(':scope > summary').click();
         const headings = await info.locator('h2').allTextContents();
         assert.deepEqual(headings.map((t) => t.replace(/ \d+$/, '')), ['접근 조건', '들어오는 링크', '소스 위치', '나가는 링크', '읽는 설정값']);
@@ -858,6 +858,43 @@ test('in a browser, a screen lists the calls its own code sends on top and folds
       }),
     ),
   LAYOUT_REQUESTS);
+});
+
+const commonLinks = (p: Page) => p.locator('#center details.common-links');
+const linkPlaces = (list: Locator) => list.locator('li').evaluateAll((items) => items.map((li) => `${li.querySelector(':scope > code')!.textContent} ${li.querySelector(':scope > .mono')!.textContent}`));
+const ownLinkPlaces = (p: Page) => linkPlaces(p.locator('#center .screen-info h2', { hasText: '나가는 링크' }).locator('xpath=following-sibling::*[1]'));
+
+test('in a browser, the screen info lists the links a screen\'s own code gives on top and folds the links of the layout and its menu around it under 「공통」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({}, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        const menuLine = fs.readFileSync(path.join(config.srcRoot, 'components/SideMenu.js'), 'utf8').split('\n').findIndex((l) => l.includes('href: Option.ROUTE_PATH[menu]')) + 1;
+        const menuLink = `/admin/report components/SideMenu.js:${menuLine}`;
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:id")');
+        assert.match((await p.textContent('#center .screen-info > summary .counts'))!, / · 나가는 링크 1 · /);
+        await openScreenInfo(p);
+        assert.equal(await p.textContent('#center .screen-info h2:has-text("나가는 링크")'), '나가는 링크 1');
+        assert.deepEqual(await ownLinkPlaces(p), ['/help components/DocumentDetail.js:20']);
+        const summary = commonLinks(p).locator('summary');
+        assert.equal(await commonLinks(p).getAttribute('open'), null);
+        assert.equal(await summary.innerText(), '공통 1');
+        assert.equal(await summary.getAttribute('title'), '레이아웃과 메뉴가 거는 링크');
+        assert.equal(await summary.getAttribute('aria-label'), '레이아웃과 메뉴가 거는 링크 1');
+        await summary.click();
+        assert.deepEqual(await linkPlaces(commonLinks(p)), [menuLink]);
+
+        await p.click('#screen-list li:has-text("/document/:tab")');
+        assert.equal(await commonLinks(p).getAttribute('open'), '', 'the section stays open on the next screen');
+        assert.deepEqual(await ownLinkPlaces(p), ['/document/{*} components/DocumentTable.js:13']);
+        assert.deepEqual(await linkPlaces(commonLinks(p)), [menuLink]);
+
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await commonLinks(p).count(), 0);
+        assert.equal(await p.locator('#center .screen-info h2:has-text("나가는 링크") + p').innerText(), '없음');
+      }),
+    ),
+  );
 });
 
 const ME = 'GET:/api/v1/me';

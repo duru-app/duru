@@ -3245,11 +3245,23 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
   function that holds an object or a list (outline's `items` inside `useComputed` in `useSettingsConfig`). A const of
   that name holding something else, as a `for (const items of lists)` variable does, is passed over. Two that hold an
   object or a list stop the run with their number. A top-level const of the name is taken even when it holds a call,
-  and a literal wrapped in `as const` or `satisfies` is not read, inside a function or at the top. An item's field is read as a route path is, so a call of a function in the source
-  (`settingsPath("preferences")`) gives its address, as it does in a `<Route path>`.
-- Folding these links into the review page's 「공통」 section, as #461 does for layout requests, comes after #461: these
-  menus are drawn by layouts, and the page will use the `layout` mark #461 puts on what a screen gets only through
-  its layout.
+  and a literal wrapped in `as const` or `satisfies` is not read, inside a function or at the top. An item's field is
+  read as a route path is, so a call of a function in the source (`settingsPath("preferences")`) gives its address, as
+  it does in a `<Route path>`.
+- A link a screen gets only through a component around or beside its route, and not through its own component, has
+  `layout: true`, by the rule #461 uses for requests. The review page lists a screen's other links under 「나가는 링크」
+  and folds these below them under 「공통 N」 (「레이아웃과 메뉴가 거는 링크」), as it folds layout requests; the driver chose
+  this on the issue (2026-10-27). A menu's links get the mark that way, not for being a menu's: on the screen whose
+  own component draws the menu (mattermost's `/admin_console`) they stay its own. A screen whose component is not found
+  gets no mark, as for requests (outline's `/d/:documentSlug` and `{?}/recent`, 18 menu links each).
+  Against #461's branch (728cf04) with the baseline configs, each of the seven maps is the same once `layout` is taken
+  off the link rows. It is on 506 of 622 link rows in into-sign 1.5.0, 594 of 762 in 2.0.0, 5,550 of 12,435 in
+  mattermost, 1,762 of 2,892 in outline, 13,968 of 16,309 in SigNoz (`SideNav`, `TopNav`, `Private`) and none in
+  appsmith. With `menus`, 11,200 of mattermost's 11,300 menu links and 864 of outline's 900 have it.
+- The flow view is left as it is. It draws one tree from the links into each screen, which carry no `layout`, and marks
+  as jumps the screens a picked screen links to elsewhere in the tree. With mattermost's menu, one admin screen
+  (`…/edit_policy/:policy_id`) holds 99 of the other admin screens as its children, and picking any of 112 screens marks
+  50 or more jumps (median 111). Without `menus` 73 admin screens are entry screens and no screen marks more than 40.
 Measured against main 5519f30, with `menus` added to the mattermost entry and the outline entry
 `{ "route": "routes/settings.tsx", "table": { "file": "hooks/useSettingsConfig.ts", "const": "items" }, "items": "*",
 "menus": ["components/Sidebar/Settings.tsx"] }`:

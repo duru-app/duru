@@ -3048,7 +3048,7 @@ export async function extractClient(config: any) {
     const own = new Set<ApiCallSite>();
     const dispatched = new Map<string, { type: ActionType; at: Set<string> }>();
     const settingReads: (SettingRead & { file: string | null })[] = [];
-    const links: (Site & { route?: string; to: unknown; tail?: string; reaches?: number[]; tableItem?: TableItem; file: string | null; actions?: DispatchedActions })[] = [];
+    const links: (Site & { route?: string; to: unknown; tail?: string; reaches?: number[]; tableItem?: TableItem; file: string | null; layout?: true; actions?: DispatchedActions })[] = [];
     const ownLinks = new Set<FollowedSite>();
     const takeCalls = (f: string, facts: Facts) => {
       for (const c of facts.apiCalls) {
@@ -3071,12 +3071,12 @@ export async function extractClient(config: any) {
       for (const ref of linkSites(facts)) {
         if (!seen(ref) || (exportedKeys.has(ref as RouteRef) && lookedUpElsewhere(exportedKeys.get(ref as RouteRef)!))) continue;
         if ('menu' in ref) {
-          for (const link of itemLinks(ref as MenuElement)) links.push(drawnWith({ ...link, file: rel(f) }, onlyDrawn.get(ref)));
+          for (const link of itemLinks(ref as MenuElement)) links.push(drawnWith({ ...link, file: rel(f), ...layout(ref) }, onlyDrawn.get(ref)));
           continue;
         }
         ownLinks.add(ref);
         const link = screenLink(ref, index);
-        if (link) links.push(drawnWith({ ...link, file: rel(f) }, onlyDrawn.get(ref)));
+        if (link) links.push(drawnWith({ ...link, file: rel(f), ...layout(ref) }, onlyDrawn.get(ref)));
       }
     }
     // 라우트 파일 본문에서 옮기는 것은 그 파일이 그리는 화면 어디서나 일어난다.
