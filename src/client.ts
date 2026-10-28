@@ -1564,24 +1564,27 @@ export async function extractClient(config: any) {
         } else if (result) {
           record('settingReads', { key: [result[1], ...chain.slice(1)].join('.') }, p);
         } else if (chain[0] === routeRoot && chain.length === routeRest.length + 2 && routeRest.every((k: string, i: number) => chain[i + 1] === k)) {
-          const { tail, whole } = routeTail(p);
-          if (comparedOnly(whole)) return;
-          const member = whole.parentPath!;
-          const table = whole.key === 'key' && (member.isObjectProperty() || member.isObjectMethod()) && member.node.computed ? lookupTable(member.parentPath!) : null;
-          if (table && table.exported === null) return;
-          const ref = record('routeRefs', { route: chain[chain.length - 1], tail }, p) as RouteRef;
-          if (table?.exported) exportedKeys.set(ref, { file, name: table.exported });
-          constantAt.set(whole.node, [ref]);
+          recordRouteConstant(chain[chain.length - 1], p, p);
         } else if (chain.at(-1) === 'replace' && routeChainOf(chain.slice(0, -2)) && fillsPathVariable(p)) {
           const call = p.parentPath! as NodePath;
           const up = call.parentPath!;
           if ((up.isMemberExpression() || up.isOptionalMemberExpression()) && up.node.object === call.node) return;
-          const { tail, whole } = routeTail(call);
-          if (comparedOnly(whole)) return;
-          constantAt.set(whole.node, [record('routeRefs', { route: chain.at(-2)!, tail }, p) as RouteRef]);
+          recordRouteConstant(chain.at(-2)!, call, p);
         }
       },
     });
+
+    // at 은 라우트 상수가 주소로 놓인 식이고, 뒤에 이어 붙인 것은 꼬리로 읽는다.
+    function recordRouteConstant(route: string, at: NodePath, site: NodePath) {
+      const { tail, whole } = routeTail(at);
+      if (comparedOnly(whole)) return;
+      const member = whole.parentPath!;
+      const table = whole.key === 'key' && (member.isObjectProperty() || member.isObjectMethod()) && member.node.computed ? lookupTable(member.parentPath!) : null;
+      if (table && table.exported === null) return;
+      const ref = record('routeRefs', { route, tail }, site) as RouteRef;
+      if (table?.exported) exportedKeys.set(ref, { file, name: table.exported });
+      constantAt.set(whole.node, [ref]);
+    }
 
     const routeRefAt = facts.routeRefs.map((r) => siteStart.get(r)!);
     const holdsRouteRef = (p: NodePath) => routeRefAt.some((start) => start >= p.node.start! && start < p.node.end!);

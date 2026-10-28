@@ -1083,7 +1083,7 @@ test('the decision record says that a route constant a screen only compares with
   assert.match(decisions, /\*\*A route constant a screen only compares with the address gives no link\.\*\*[\s\S]*Alternatives compared \(driver's decision, 2026-10-26, in issue #469\)/);
 });
 
-test('a route constant whose path variable a replace call fills with a value is read as the route constant itself, tail and comparison alike, while a replace that does not name a path variable as text or is followed by another replace gives no route constant link', async () => {
+test('a route constant whose path variable a replace call fills with a value is read as the route constant itself, tail, comparison and lookup table key alike, while a replace that does not name a path variable as text or is followed by another replace gives no route constant link', async () => {
   const home = `import { Link, useHistory } from 'react-router-dom';
 import Option from './Option';
 
@@ -1094,11 +1094,12 @@ export default function Home({ team, page, tab }) {
   const edit = () => history.push(\`\${Option.ROUTE_PATH.TEAM.replace(':team', team)}/edit\`);
   const inTeam = window.location.pathname.startsWith(\`\${Option.ROUTE_PATH.TEAM.replace(':team', team)}/\`);
   const onTab = window.location.pathname === Option.ROUTE_PATH.TEAM.replace(':team', team).replace(':tab', tab);
+  const titles = { [Option.ROUTE_PATH.TEAM.replace(':team', team)]: 'Team' };
   return (
     <nav>
       <button onClick={open}>team</button>
       <button onClick={query}>query</button>
-      <button onClick={edit}>{String(inTeam || onTab)}</button>
+      <button onClick={edit}>{String(inTeam || onTab)}{titles[window.location.pathname]}</button>
       <Link to={Option.ROUTE_PATH.TEAM?.replace(':team', team)}>maybe</Link>
       <Link to={Option.ROUTE_PATH.HELP.replace(/:page/, page)}>help</Link>
     </nav>
