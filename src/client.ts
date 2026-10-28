@@ -1574,8 +1574,11 @@ export async function extractClient(config: any) {
           constantAt.set(whole.node, [ref]);
         } else if (chain.at(-1) === 'replace' && routeChainOf(chain.slice(0, -2)) && fillsPathVariable(p)) {
           const call = p.parentPath! as NodePath;
-          if (routeTail(call).whole !== call || comparedOnly(call)) return;
-          constantAt.set(call.node, [record('routeRefs', { route: chain.at(-2)!, tail: '' }, p) as RouteRef]);
+          const up = call.parentPath!;
+          if ((up.isMemberExpression() || up.isOptionalMemberExpression()) && up.node.object === call.node) return;
+          const { tail, whole } = routeTail(call);
+          if (comparedOnly(whole)) return;
+          constantAt.set(whole.node, [record('routeRefs', { route: chain.at(-2)!, tail }, p) as RouteRef]);
         }
       },
     });

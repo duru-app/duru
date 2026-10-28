@@ -680,8 +680,9 @@ A route constant written as one side of `===`, `!==`, `==` or `!=`, as a `case` 
 `matchPath`, `useRouteMatch` or `useMatch` or as the `path` of the object handed to them, or as the argument of a
 `startsWith`, `endsWith`, `includes` or `indexOf` call tells which screen is open and moves nowhere, so it is no
 longer a link; the same constant written as a link's address or a move still is. A route constant whose path
-variable a `replace` call fills with a value (`ROUTES.AI_ASSISTANT.replace(':conversationId', id)`) is now a link to
-that route, where it was `{?}`: without it every link into SigNoz's AI assistant conversation screen would have
+variable a `replace` call fills with a value (`ROUTES.AI_ASSISTANT.replace(':conversationId', id)`) is now read as
+the route constant itself, with what is added after it as a tail and the same comparison rule, where it was `{?}`:
+without it every link into SigNoz's AI assistant conversation screen would have
 gone, because the only one duru read came from a `matchPath` in the assistant panel.
 Alternatives compared (driver's decision, 2026-10-26, in issue #469): taking the comparison links out before the
 side menus were read, which would have cost into-sign 2.0.0 the links into its system settings screen, and keeping
@@ -689,7 +690,7 @@ them, which leaves SigNoz with moves that do not exist. Narrowing route constant
 measured as not needed: of the links that would go, only those a later side menu or error screen reading gives
 back had a move behind them.
 Measured on the seven baseline configs against main 5519f30: on SigNoz, and on its API config alike, link rows go
-16,309 → 12,579 (4,197 gone, 467 added) and pairs of screens joined by a link 3,841 → 3,577, none added. The 264
+16,309 → 12,579 (4,201 gone, 471 added) and pairs of screens joined by a link 3,841 → 3,577, none added. The 264
 pairs that go lead to the public dashboard (64), the AI assistant start screen (64), sign-up (63), the panel editor
 (44) and new alert (28) screens, and came only from comparisons in `AppRoutes/Private.tsx`,
 `container/TopNav/index.tsx`, `container/BottomStrip/AskNoz/AskNoz.tsx` and `container/AIAssistant/getAutoContexts.ts`.
@@ -706,7 +707,7 @@ ROUTES.X)`) is still a link outside route files, and so is one through a list ha
 renamed import of it (`RR.matchPath`), or of a route read by key (`pathname === ROUTE_BY_KEY[key]`); the matchers
 are known by their name, so an app's own function named `useMatch` that moves is taken as a comparison; a route
 constant compared with a value that is then the address of a move (`case ROUTES.X: history.push(key)`) is no link;
-a `replace` whose first argument is not text starting with `:`, or whose result a tail is added to, stays `{?}`.
+a `replace` whose first argument is not text starting with `:`, or that another `replace` follows, stays `{?}`.
 
 **The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
 the name.**

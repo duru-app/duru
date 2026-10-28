@@ -1083,19 +1083,22 @@ test('the decision record says that a route constant a screen only compares with
   assert.match(decisions, /\*\*A route constant a screen only compares with the address gives no link\.\*\*[\s\S]*Alternatives compared \(driver's decision, 2026-10-26, in issue #469\)/);
 });
 
-test('a route constant whose path variable a replace call fills with a value goes to the screen of that route, while a replace that does not name a path variable as text gives no route constant link', async () => {
+test('a route constant whose path variable a replace call fills with a value is read as the route constant itself, tail and comparison alike, while a replace that does not name a path variable as text or is followed by another replace gives no route constant link', async () => {
   const home = `import { Link, useHistory } from 'react-router-dom';
 import Option from './Option';
 
-export default function Home({ team, page }) {
+export default function Home({ team, page, tab }) {
   const history = useHistory();
   const open = () => history.push(Option.ROUTE_PATH.TEAM.replace(':team', team));
+  const query = () => history.push(Option.ROUTE_PATH.TEAM.replace(':team', team) + '?tab=1');
   const edit = () => history.push(\`\${Option.ROUTE_PATH.TEAM.replace(':team', team)}/edit\`);
   const inTeam = window.location.pathname.startsWith(\`\${Option.ROUTE_PATH.TEAM.replace(':team', team)}/\`);
+  const onTab = window.location.pathname === Option.ROUTE_PATH.TEAM.replace(':team', team).replace(':tab', tab);
   return (
     <nav>
       <button onClick={open}>team</button>
-      <button onClick={edit}>{String(inTeam)}</button>
+      <button onClick={query}>query</button>
+      <button onClick={edit}>{String(inTeam || onTab)}</button>
       <Link to={Option.ROUTE_PATH.TEAM?.replace(':team', team)}>maybe</Link>
       <Link to={Option.ROUTE_PATH.HELP.replace(/:page/, page)}>help</Link>
     </nav>
@@ -1104,11 +1107,13 @@ export default function Home({ team, page }) {
 `;
   const option = "export default { ROUTE_PATH: { HOME: '/home', LOGIN: '/login', HELP: '/help/:page', TEAM: '/team/:team' } };\n";
   const map = await build(withRouteConstant({ 'Home.js': home, 'Option.js': option }));
-  assert.deepEqual(linksOf(map, '/home#Home').filter(([, , , targets]) => (targets as string[]).length), [
-    ['/team/:team', lineOf(home, "push(Option.ROUTE_PATH.TEAM.replace"), [], ['/team/:team#Team']],
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/team/:team', lineOf(home, 'const open'), [], ['/team/:team#Team']],
+    ['/team/:team', lineOf(home, 'const query'), [], ['/team/:team#Team']],
+    ['/team/:team/edit', lineOf(home, 'const edit'), [], ['/team/:team#Team']],
     ['/team/:team', lineOf(home, 'TEAM?.replace'), [], ['/team/:team#Team']],
+    ['{?}', lineOf(home, 'HELP.replace'), [], []],
   ]);
-  assert.ok(!map.screens.find((s) => s.id === '/home#Home')!.links.some((l) => 'route' in l && l.route === 'HELP'));
 });
 
 test('in a class route file, a move through the props its update method takes first is a link of every screen it draws', async () => {
