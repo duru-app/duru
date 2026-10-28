@@ -146,7 +146,7 @@ type UnreadSite = { fn: string; file: string | null; line: number; url: string |
 export const readsAnAddress = (screens: { apiCalls: MapApiCall[] }[]) =>
   screens.some((s) => s.apiCalls.some((c) => (c.endpoints ?? []).some((e) => e.server.status !== 'unresolved' || e.server.reason === 'other-host')));
 
-export const sendingParts = (map: Pick<ScreenMap, 'screens' | 'appWide'>) => [...map.screens, ...(map.appWide ? [map.appWide] : [])];
+export const sendingParts = <S, A>(map: { screens: S[]; appWide?: A | null }): (S | A)[] => [...map.screens, ...(map.appWide ? [map.appWide] : [])];
 
 export const sentAtAppStart = (appWide: { apiCalls: MapApiCall[] } | null | undefined) => new Set((appWide?.apiCalls ?? []).flatMap((c) => (c.endpoints ?? []).flatMap((e) => (e.callId ? [e.callId] : []))));
 
@@ -304,7 +304,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   });
   const mapped: any[] = screens.map((s) => ({ id: screenId(s.path, s.component), ...s, apiCalls: withEndpoints(s.apiCalls) }));
   const appWideMapped = appWide && { ...appWide, apiCalls: withEndpoints(appWide.apiCalls) };
-  const unreadRequests = unreadSites([...mapped, ...(appWideMapped ? [appWideMapped] : [])], true);
+  const unreadRequests = unreadSites(sendingParts({ screens: mapped, appWide: appWideMapped }), true);
   const { access, entries, unknownEntryPaths, unknownRoleGuards, openRouteGuards, unreadRoleGuards, linkConditions, linkScreens } = screenAccess(mapped, redirects, config, guardInits, constants, guardSettings);
   mapped.forEach((s, i) => {
     s.access = access[i];
@@ -340,7 +340,7 @@ export async function buildMap(config: MapConfig): Promise<ScreenMap> {
   const hash = codeHasher(config.srcRoot);
   for (const s of mapped) s.codeHash = hash(s.sourceFiles ?? []);
   const requestFiles = new Map<string, (string | null)[]>(calls.map((c) => [c.id, c.apiFunctions.map((name: string) => apiFunctions[name]?.file ?? null)]));
-  for (const c of [...mapped.flatMap((s) => s.apiCalls), ...(appWideMapped?.apiCalls ?? [])]) if (c.direct) for (const e of c.endpoints) if (e.callId) requestFiles.get(e.callId)?.push(c.file);
+  for (const c of sendingParts({ screens: mapped, appWide: appWideMapped }).flatMap((s) => s.apiCalls)) if (c.direct) for (const e of c.endpoints) if (e.callId) requestFiles.get(e.callId)?.push(c.file);
   for (const c of calls) c.codeHash = hash(requestFiles.get(c.id)!);
 
   return {

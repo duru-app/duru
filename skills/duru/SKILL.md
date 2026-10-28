@@ -142,7 +142,8 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   that component, and an `inheritedGuards` entry with a `file` names the place it is drawn and the condition it is
   drawn under; test it from the screen like the screen's own. Such a call has `"layout": true` when the screen's own
   component does not reach it; one test of it from any screen it is on covers the component that sends it. The task
-  list puts such calls of a screen after its own, under `calls of the layout around the screen`.
+  list puts such calls of a screen after its own, under `calls of the layout around the screen`; a screen that
+  sends none itself has `calls of its own: none` above them, which does not mean there is nothing to test there.
 - A call under `appWide` is sent by a component named in `appWideComponents` once for the whole app, as it starts,
   not by any screen. Test it once, from whichever screen the app opens first, and do not write it into each screen's
   tests. The task list and the candidate lines say `sent as the app starts by <name> (<file>)` for it.

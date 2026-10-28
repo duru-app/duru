@@ -1547,10 +1547,11 @@ the rest of the list is as without it, and `tasks` does not stop. When `outDir` 
 description, its values and rules, `undecided: N` with a line for each undecided candidate, and `cases with no
 tests: N`. A candidate is any screen or call for a kind without rules, and otherwise one on the side its rules pick
 (screens or calls); it is undecided while no rule picks it and its current mark of that kind is none, or a
-`not-needed` with no note. A candidate line is `<ID> — call, sent from <screens>`, with
-`sent as the app starts by <name> (<file>), …` for a call of `appWide`, or
-`<ID> — screen, component <file>, route at <file>:<line>`, requests other than `GET` first (a request whose method
-was not read among them), then the other calls, then the screens, each group by ID. A candidate whose current mark a person left ends with
+`not-needed` with no note. A candidate line is `<ID> — screen, component <file>, route at <file>:<line>`, or for a
+call `<ID> — call, sent from <screens>`, `<ID> — call, sent as the app starts by <name> (<file>), …` for a call of
+`appWide`, or `<ID> — call, sent from <screens> and sent as the app starts by …` for one screens send too. Requests
+other than `GET` come first (a request whose method was not read among them), then the other calls, then the
+screens, each group by ID. A candidate whose current mark a person left ends with
 `— <author> marked it not-needed without a note on <date>, so only a person can decide it` (`took it out of a rule
 that no longer picks it` for a mark whose rule no longer picks it, `took back the agent's not-needed` for one a
 reviewer reverted): `case` does not change that mark. While an agent's `not-needed` waits for a reviewer on any

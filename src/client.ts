@@ -2858,8 +2858,8 @@ export async function extractClient(config: any) {
   }
   const appWideEntries = ((config.appWideComponents ?? []) as { import: string; name: string }[]).map((c, i) => ({ ...c, file: exportingFile(`appWideComponents[${i}]`, c) }));
   const besideApp = new Set([...routeFileSet, ...screenFiles, ...sourced.flatMap((x) => [...x.entryFiles, ...x.drawnUnder.map((d) => d.file)])] as string[]);
-  const appWideClosure = (f: string, cut = besideApp) => closureOf(f, (g) => screenFiles.has(g), cut);
-  const appWideFiles = [...new Set(appWideEntries.flatMap(({ file }) => appWideClosure(file, besideApp.has(file) ? new Set([...besideApp].filter((g) => g !== file)) : undefined)))];
+  const appWideClosure = (f: string) => closureOf(f, (g) => screenFiles.has(g), besideApp);
+  const appWideFiles = [...new Set(appWideEntries.flatMap(({ file }) => closureOf(file, (g) => screenFiles.has(g), new Set([...besideApp].filter((g) => g !== file)))))];
   const routedScreens = routerTargets(routeRoots);
   // 링크 주소 전체로 쓴 라우트 상수는 Routes 에서 그 주소에 맞는 화면이 나오면 문자열 주소처럼 잇되 다른 Routes 의 catch-all 은 빼고, 그 밖에는 라우트 경로에 맞춰 본다.
   const constantLink = (site: RouteRef, from: number) => {

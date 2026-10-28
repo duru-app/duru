@@ -305,7 +305,7 @@ function callLines(screen: any, tests: Record<string, TestRow[]>, resultLines: R
   const own = linesOf(screen.apiCalls.filter((c: any) => !c.layout));
   const layout = linesOf(screen.apiCalls.filter((c: any) => c.layout));
   return [
-    ...(own.length ? ['- calls:', ...own] : ['- calls: none']),
+    ...(own.length ? ['- calls:', ...own] : [layout.length ? '- calls of its own: none' : '- calls: none']),
     ...(layout.length ? ['- calls of the layout around the screen, which one test from any screen it is on covers:', ...layout] : []),
   ];
 }
@@ -605,9 +605,12 @@ const NO_TESTS_INTRO = ' Under `cases with no tests`, each screen or call a rule
 const NEW_ONLY_INTRO = ' When the user said to leave the older undecided candidates of a kind for later, run `duru undecided <config> <kind> --new` for that kind instead: it lists only the undecided candidates that the map named by `baselineMap` does not have, and exits with 0 once none of them is left, even while older ones are. Do not use `--new` for a kind added to `caseKinds` after that map was built: its candidates on that map count as older, so `--new` ends at once.';
 const UNDER_REVIEW_INTRO = ' Under `under review`, each candidate carries a `not-needed` an agent wrote with `duru case`, which waits for a reviewer to accept or revert it on the review page; until then the candidate counts as it did before, a target of a rule stays a target, and it is not undecided. Do not write it again.';
 
+const appStarts = new WeakMap<object, { ids: Set<string>; text: string }>();
+
 function sentText(call: any, map: any) {
-  const atStart = sentAtAppStart(map.appWide).has(call.id) ? `sent as the app starts by ${map.appWide.components.map((c: any) => `${c.name} (${c.file})`).join(', ')}` : null;
-  return { fromScreens: call.screens.length ? call.screens.join(', ') : null, atStart };
+  if (!appStarts.has(map)) appStarts.set(map, { ids: sentAtAppStart(map.appWide), text: `sent as the app starts by ${(map.appWide?.components ?? []).map((c: any) => `${c.name} (${c.file})`).join(', ')}` });
+  const start = appStarts.get(map)!;
+  return { fromScreens: call.screens.length ? call.screens.join(', ') : null, atStart: start.ids.has(call.id) ? start.text : null };
 }
 
 const sentFrom = ({ fromScreens, atStart }: ReturnType<typeof sentText>) => [fromScreens && `sent from ${fromScreens}`, atStart].filter(Boolean).join(' and ') || 'sent from no screen';

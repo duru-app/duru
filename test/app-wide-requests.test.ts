@@ -172,24 +172,23 @@ test('the extract summary counts the requests written in appWide sources with th
 });
 
 test('the task list and the candidate lines say a call of appWide is sent as the app starts, and list the layout calls of a screen apart from its own', () => {
-  const configFile = writeApp({}, { appWideComponents: COMPONENTS, caseKinds: { ended: '끝난 문서' } });
+  const configFile = writeApp({ 'Team.js': 'export default function Team() {\n  return <main />;\n}\n' }, { appWideComponents: COMPONENTS, caseKinds: { ended: '끝난 문서' } });
   assert.equal(extract(configFile).status, 0);
   const config = loadConfig(configFile);
-  for (const node of ['GET:/api/me', '/team#Team']) addMark(config.marksDir, { target: { node }, status: 'needs-more', note: 'test it', author: 'reviewer' });
+  for (const node of ['GET:/api/me', '/team#Team', '/home#Home']) addMark(config.marksDir, { target: { node }, status: 'needs-more', note: 'test it', author: 'reviewer' });
   const run = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args, configFile], { encoding: 'utf8' });
   const atStart = 'as the app starts by AppProvider (AppProvider.js), default (Routes.js)';
   assert.ok(run('undecided').stdout.split('\n').includes(`  GET:/api/me — call, sent ${atStart}`));
   const tasks = run('tasks').stdout.split('\n');
   assert.ok(tasks.includes(`- sent ${atStart}`), tasks.join('\n'));
-  const team = tasks.slice(tasks.indexOf('## /team#Team'));
-  assert.deepEqual(team.slice(team.indexOf('- calls:'), team.indexOf('- calls:') + 6), [
-    '- calls:',
-    '  - GET:/api/team — no tests',
-    '- calls of the layout around the screen, which one test from any screen it is on covers:',
-    '  - GET:/api/shell — no tests',
-    '  - GET:/api/menu — no tests',
-    '  - GET:/api/notices — no tests',
-  ]);
+  const callsOf = (id: string, n: number) => {
+    const lines = tasks.slice(tasks.indexOf(`## ${id}`));
+    const at = lines.findIndex((l) => l.startsWith('- calls'));
+    return lines.slice(at, at + n);
+  };
+  const layoutHead = '- calls of the layout around the screen, which one test from any screen it is on covers:';
+  assert.deepEqual(callsOf('/home#Home', 6), ['- calls:', '  - GET:/api/home — no tests', '  - GET:/api/notices — no tests', layoutHead, '  - GET:/api/shell — no tests', '  - GET:/api/menu — no tests']);
+  assert.deepEqual(callsOf('/team#Team', 5), ['- calls of its own: none', layoutHead, '  - GET:/api/shell — no tests', '  - GET:/api/menu — no tests', '  - GET:/api/notices — no tests']);
 });
 
 test('appWideComponents must name components the app exports', () => {

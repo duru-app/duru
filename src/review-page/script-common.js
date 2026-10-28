@@ -138,10 +138,11 @@ const callOf = (id) => state.data.map.calls.find((c) => c.id === id);
 const nodeWord = (id) => (callOf(id) ? '호출' : '화면');
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];
 const hasOption = (tests, key, value) => tests.filter((t) => t.options?.some((o) => o.key === key && o.value === value));
-const optionsOf = (s, callId) => s.callOptions[callId] ?? [];
-const sentAtAppStart = (id) => callIdsOf(state.data.map.appWide ?? { apiCalls: [] }).includes(id);
+const optionsOf = (s, callId) => s.callOptions[callId] ?? state.data.map.appWide?.callOptions[callId] ?? [];
+const sentAtAppStart = (id) => Boolean(state.data.map.appWide?.callOptions[id]);
 function callScreen(id) {
-  if (!sentAtAppStart(id)) return callOf(id)?.screens[0];
+  const call = callOf(id);
+  if (!call || call.screens.length || !sentAtAppStart(id)) return call?.screens[0];
   const { screens } = state.data.map;
   return screens.some((s) => s.id === state.selected) ? state.selected : screens[0]?.id;
 }

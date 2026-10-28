@@ -196,7 +196,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const settingsFile = config.app?.settingsFile ? { root: config.app.settingsFile.root, merged: config.app.settingsFile.merged, file: fileSettings?.file ?? null } : null;
   const screens = map.screens.map((s) => ({
     ...s,
-    callOptions: screenCallOptions([...s.apiCalls, ...(map.appWide?.apiCalls ?? [])], callsById),
+    callOptions: screenCallOptions(s.apiCalls, callsById),
     cases: [...screenCases(s.access), ...pickedCases(s.id)],
     access: {
       ...s.access,
@@ -205,7 +205,8 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
     },
   }));
   const calls = map.calls.map((c) => ({ ...c, cases: pickedCases(c.id) }));
-  const reviewMap = { ...map, screens, calls };
+  const appWide = map.appWide && { ...map.appWide, callOptions: screenCallOptions(map.appWide.apiCalls, callsById) };
+  const reviewMap = { ...map, screens, calls, appWide };
   return {
     map: reviewMap,
     tests,

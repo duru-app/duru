@@ -13,7 +13,8 @@ declare function load(): Promise<void>;
 declare function render(): void;
 declare function hasUnsavedMark(): boolean;
 declare function opensOnPage(id: string): boolean;
-declare const state: { target: unknown; draft: unknown; selected: string | null };
+declare function optionsOf(s: unknown, callId: string): { key: string }[];
+declare const state: { target: unknown; draft: unknown; selected: string | null; data: { map: { screens: { id: string }[] } } };
 
 test('in a browser, a screen that opens only under a role or a setting shows its tests for each case under what it needs', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -860,11 +861,14 @@ test('in a browser, a screen lists the calls its own code sends on top and folds
 });
 
 const ME = 'GET:/api/v1/me';
+const EXPORT = 'POST:/api/v1/report/export';
 const APP_START_ONLY: [string, string, string][] = [
   ...LAYOUT_REQUESTS,
   ['client/src/_ajax/AjaxFunc.js', 'export const ajaxLabExperiment', "export const ajaxMe = async () => Ajax.request({ info: { METHOD: 'GET', URL: '/api/v1/me' } });\n\nexport const ajaxLabExperiment"],
-  ['client/src/Routes.js', "import { ajaxLabExperiment } from './_ajax/AjaxFunc';", "import { ajaxLabExperiment, ajaxMe } from './_ajax/AjaxFunc';"],
-  ['client/src/Routes.js', '  ajaxLabExperiment();\n', '  ajaxLabExperiment();\n  ajaxMe();\n'],
+  ['client/src/Routes.js', "import { ajaxLabExperiment } from './_ajax/AjaxFunc';", "import { ajaxLabExperiment, ajaxMe, ajaxReportExport } from './_ajax/AjaxFunc';"],
+  ['client/src/Routes.js', '  ajaxLabExperiment();\n', "  ajaxLabExperiment();\n  ajaxMe();\n  ajaxReportExport({ format: 'csv', withAttachments: true });\n"],
+  ['client/src/components/Layout.js', "import { ajaxDocumentList, ajaxMemberList } from '../_ajax/AjaxFunc';", "import { ajaxDocumentList, ajaxMemberList, ajaxReportExport } from '../_ajax/AjaxFunc';"],
+  ['client/src/components/Layout.js', '    ajaxMemberList({ page: 1 });\n', "    ajaxMemberList({ page: 1 });\n    ajaxReportExport({ format: 'pdf' });\n"],
 ];
 
 test('in a browser, a call only the app start sends opens on the screen in view: it stays chosen with its draft when the page reloads, and the case list says it is sent at app start and opens it', { skip: browserMissing }, async () => {
@@ -876,7 +880,14 @@ test('in a browser, a call only the app start sends opens on the screen in view:
         await p.locator('#center details.common-calls summary').click();
         await p.click(`#center details.common-calls button.call-name:text-is("${ME}")`);
         assert.equal(await p.textContent('#center .call-info summary .mono'), ME);
-        assert.deepEqual((await (await fetch(`${base}/api/data`)).json() as ServedData).map.screens.find((x) => x.id === '/help#Help')!.callOptions[ME], []);
+        const served = await (await fetch(`${base}/api/data`)).json() as ServedData;
+        assert.deepEqual(served.map.appWide!.callOptions[ME], []);
+        assert.deepEqual(served.map.appWide!.callOptions[EXPORT].map((o) => o.key), ['withAttachments']);
+        assert.equal(served.map.screens.find((x) => x.id === '/help#Help')!.callOptions[EXPORT], undefined);
+        assert.deepEqual(served.map.screens.find((x) => x.id === '/home#Home')!.callOptions[EXPORT], [], 'the layout of /home sends it without the option');
+        const optionKeys = (screen: string) => p.evaluate(([at, id]) => optionsOf(state.data.map.screens.find((x) => x.id === at), id).map((o) => o.key), [screen, EXPORT]);
+        assert.deepEqual(await optionKeys('/help#Help'), ['withAttachments']);
+        assert.deepEqual(await optionKeys('/home#Home'), []);
         await p.fill('#right-dock textarea', '앱을 켤 때 한 번만 부른다');
         const kept = () => p.evaluate(() => JSON.stringify([state.target, state.draft]));
         const before = await kept();
@@ -895,6 +906,10 @@ test('in a browser, a call only the app start sends opens on the screen in view:
         await p.waitForFunction(() => location.hash.startsWith('#screens'));
         assert.equal(await p.textContent('#center .call-info summary .mono'), ME);
         assert.equal(await p.evaluate(() => state.selected), '/help#Help');
+        await p.evaluate(() => { location.hash = '#cases?kind=ended'; });
+        await p.click('#center li.case-row[data-node="GET:/api/v1/lab/experiment"] button.node-name');
+        await p.waitForFunction(() => location.hash.startsWith('#screens'));
+        assert.equal(await p.evaluate(() => state.selected), '/lab#Lab', 'a call a screen sends itself opens on that screen');
       }),
     ),
   APP_START_ONLY);
