@@ -699,18 +699,44 @@ No source file of those screens uses the constant otherwise, apart from the pane
 `replace` moves of the AI assistant, its actions and the roles settings, each in place of a `{?}` at the same move.
 into-sign 2.0.0 loses the 22 rows of `menuUtils.ts:205` and no pair. The maps of into-sign 1.5.0, mattermost,
 outline and appsmith are identical apart from the time they were written.
-The limits: a list of route constants compared with the address through a function, such as `routesToSkip` in
-`DateTimeSelectionV2/constants.ts` read by `routesToSkip.some((route) => matchPath(…))`, still links every screen
-to each route in it (4,355 rows on SigNoz); a comparison through a function of the app (`matches(pathname,
-ROUTES.X)`) is still a link outside route files, and so is one through a list handed to the matcher
-(`matchPath(pathname, { path: [ROUTES.A, ROUTES.B] })`, `useRouteMatch([ROUTES.A])`), through a namespace or a
-renamed import of it (`RR.matchPath`), or of a route read by key (`pathname === ROUTE_BY_KEY[key]`); the matchers
-are known by their name, so an app's own function named `useMatch` that moves is taken as a comparison; a route
-constant compared with a value that is then the address of a move (`case ROUTES.X: history.push(key)`) is no link;
-a `replace` whose first argument is not text starting with `:`, or whose result is read further
-(`.replace(…)`, `.toLowerCase()`), stays `{?}`, while a second `replace` on the address built around it
+The limits: a comparison through a function of the app (`matches(pathname, ROUTES.X)`) is still a link outside
+route files, and so is one through a list handed to the matcher (`matchPath(pathname, { path: [ROUTES.A,
+ROUTES.B] })`, `useRouteMatch([ROUTES.A])`), through a namespace or a renamed import of it (`RR.matchPath`), or of
+a route read by key (`pathname === ROUTE_BY_KEY[key]`); the matchers are known by their name, so an app's own
+function named `useMatch` that moves is taken as a comparison; a route constant compared with a value that is
+then the address of a move (`case ROUTES.X: history.push(key)`) is no link; a `replace` whose first argument is
+not text starting with `:`, or whose result is read further (`.replace(…)`, `.toLowerCase()`), stays `{?}`, while
+a second `replace` on the address built around it
 (`` `${ROUTES.X.replace(':id', id)}/:tab`.replace(':tab', tab) ``) still goes where the route constant with that
-tail goes.
+tail goes. A list of route constants compared the same way is no link either, since #483 (the next decision).
+
+**A list of route constants a screen only compares with the address gives no link.**
+Asked for in #483 (2026-10-28), a limit #469 left. A route constant that reaches a comparison only as an element of a list and then as the value a callback gets
+(`routesToSkip.some((route) => matchPath(pathname, { path: route, exact: true }))`,
+`routes.some((route) => route === pathname)`, `routes.includes(pathname)`) tells which screen is open and moves
+nowhere, so the rows it made are no longer links; the list is judged as a whole, so a list that stays a link
+source keeps every row of every comparison beside it. The list keeps its links when nothing compares it, as a list
+no one reads, and when any place that reads it does something other than compare: writes the value as a link's address or a move
+(`routes.map((route) => <Link to={route}>)`, `routes.forEach((route) => history.push(route))`,
+`history.push(routes[0])`), spreads it, or hands it to a function. For an exported list every file that imports
+the name has to compare only, and a reader duru cannot see — a namespace import, `export *`, a re-export of the
+name — leaves the rows as they were. `find` and `filter` count only where the value they return is used as a
+truth value, so `const route = routes.find(…)` with a move to `route` is still a link.
+Alternatives compared: judging `matchPath` where the value is
+written, which misses `routes.some((route) => route === pathname)`, and keeping the rows, which leaves SigNoz
+with 4,615 moves that do not exist.
+Measured on SigNoz and its API config against main f9439f3: link rows 12,579 → 7,964 (4,615 gone, none added),
+pairs of screens joined by a link 3,577 → 2,301 (1,276 gone, none added), API calls unchanged at 325 and 15,444.
+4,355 of the rows are the 66 elements of `routesToSkip` and the one of `routesToDisable` at
+`container/TopNav/DateTimeSelectionV2/constants.ts:142-208` and `:210`, which `container/TopNav/index.tsx:16-18`
+and `:24-26` read only through `routesToSkip.some((route) => matchPath(location.pathname, { path: route, exact:
+true }))`; the other 260 are the four elements of `routesToBeSharedWithTime` at
+`components/HeaderRightSection/ShareURLModal.tsx:21-24`, which that file compares at `:77-79` and never moves
+with. No screen loses its last way in except `/usage-explorer#UsageExplorerPage` and `/status#StatusPage`, which
+become entry screens by `no-incoming-link`, and no source file navigates to either route. In each screen's
+`access` only the list of links changes; the roles, settings and route values it carries stay as they were.
+The limits, left as they were: an array handed to the matcher, a route read by key, the app's own compare helper
+(`matches(list, pathname)`), a list compared through `map` or `forEach`, and a matcher name that moves.
 
 **The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
 the name.**
