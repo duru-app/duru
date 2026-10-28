@@ -68,7 +68,8 @@ const BOX_LOCATORS: { word: (typeof BOX_WORDS)[number]; selector: RegExp; locato
 const VALUE_WRITES = new Set(['type', 'selectOption', 'check', 'uncheck', 'setInputFiles']);
 const NAVIGATIONS = new Set(['goto', 'reload', 'goBack', 'goForward']);
 const NOT_SENT_BY_THE_TEST = /^(text\/html|application\/xhtml\+xml|text\/css|image\/|font\/|application\/(x-)?font|application\/vnd\.ms-fontobject|(text|application)\/(x-)?(javascript|ecmascript)|application\/wasm)/i;
-const STATIC_FILE = /\.(m?js|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|otf|map)$/i;
+const STATIC_FILE = /\.([mc]?js|jsx|tsx?|vue|svelte|css|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|otf|map)$/i;
+const DEV_SERVER_FILE = /^\/@(vite|id|fs|react-refresh)(\/|$)/;
 const NOT_THE_APP = /^(about|data|blob|chrome|chrome-error):/;
 const END_OF_DIRECTORY = 0x06054b50;
 const DIRECTORY_ENTRY = 0x02014b50;
@@ -114,10 +115,22 @@ function walkStepOf(action: any, kind: WalkKind, failed: boolean): Omit<WalkStep
   return { kind, method, ...written, ...(kind === 'write' && writtenOf(method, params)), ...(failed && { failed: true as const }) };
 }
 
+const withoutHash = (url: string) => url.split('#')[0];
+function documentOf(url: string) {
+  try {
+    const { origin, pathname } = new URL(url);
+    return `${origin}${pathname}`;
+  } catch {
+    return null;
+  }
+}
+
 function sentRequest({ snapshot: { _apiRequest, request, response } }: any) {
   const status = response?.status;
-  if (_apiRequest || request.method !== 'GET' || status >= 400) return true;
-  if (!(status > 0)) return !STATIC_FILE.test(pathOf(request.url) ?? '');
+  if (_apiRequest || request.method !== 'GET') return true;
+  const requested = pathOf(request.url) ?? '';
+  if (STATIC_FILE.test(requested) || DEV_SERVER_FILE.test(requested)) return false;
+  if (status >= 400 || !(status > 0)) return true;
   return !NOT_SENT_BY_THE_TEST.test(response.content?.mimeType ?? '');
 }
 
@@ -179,15 +192,22 @@ export function readTrace(file: string): TraceResult {
 
   const resources = network.filter((e) => e.type === 'resource-snapshot').sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime);
   const pageRequestAt = (url: string, from: number, to: number) => resources.find(({ snapshot: { request, _monotonicTime: at } }) =>
-    request.method === 'GET' && at >= from && at <= to && pathOf(request.url) === pathOf(url))?.snapshot._monotonicTime;
+    request.method === 'GET' && at >= from && at <= to && documentOf(request.url) === documentOf(url))?.snapshot._monotonicTime;
   const openedAt = (action: any, url: string, endTime: number) => {
     if (NAVIGATIONS.has(action.method)) return action.startTime;
-    if (url === snapshots.get(`before@${action.callId}`)?.frameUrl) return endTime;
+    const before = snapshots.get(`before@${action.callId}`)?.frameUrl;
+    if (before !== undefined && withoutHash(url) === withoutHash(before)) return endTime;
     return pageRequestAt(url, action.startTime, endTime) ?? endTime;
   };
   const ends = new Map(events.filter((e) => e.type === 'after').map((e) => [e.callId, e]));
   const timeline: TimelineEntry[] = [];
   const walked: WalkEntry[] = [];
+  const lastSeen = new Map<string, { url: string; at: number }>();
+  const arrivedAt = (page: string, url: string, at: number) => {
+    const last = lastSeen.get(page);
+    if (!last || withoutHash(last.url) === withoutHash(url)) return at;
+    return pageRequestAt(url, last.at, at) ?? at;
+  };
   for (const action of actions) {
     const end = ends.get(action.callId);
     const endTime = end?.endTime ?? action.startTime;
@@ -197,7 +217,9 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      walked.push({ at: name === 'after' ? openedAt(action, snapshot.frameUrl, endTime) : at, page: action.pageId, url: snapshot.frameUrl });
+      const opened = name === 'after' ? openedAt(action, snapshot.frameUrl, endTime) : arrivedAt(action.pageId, snapshot.frameUrl, at);
+      walked.push({ at: opened, page: action.pageId, url: snapshot.frameUrl });
+      lastSeen.set(action.pageId, { url: snapshot.frameUrl, at });
     }
     const kind = kindOf(action.method);
     if (kind === 'assert') timeline.push({ at: endTime, page: action.pageId, kind });
