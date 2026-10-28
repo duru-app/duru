@@ -489,7 +489,8 @@ it, and the on/off `options` of its request body. The server match is one of:
   client's URL with `{0}`, `{1}` for path variables, and may change once a server list is added.
 
 **Access.** Each screen's `access` says whether it opens only under a setting or a role: `restricted`, the
-`kinds` (`setting`, `role`), the blocking route guards, the links into it, `roleValues` (the role values that
+`kinds` (`setting`, `role`), the blocking route guards, the links into it (`links`, and under `menuLinks` the links a
+menu named in `routeTables` gives for its table item), `roleValues` (the role values that
 can open it, or `null` when they cannot be read) and the setting values it needs. A restricted screen with empty
 `kinds` is one whose links ask for different kinds. Entry screens are listed under `entries` with their reasons:
 `redirect`, the target of a redirect in the route files; `no-incoming-link`, a screen no link leads to;

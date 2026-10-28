@@ -728,6 +728,24 @@ test('an element drawn by a loop inside the item\'s loop does not count against 
   }, { edits });
 });
 
+test('a menu element drawn by a function inside the item\'s loop, as a render function of a message or a permission check, is found as the item\'s element', async () => {
+  for (const drawn of [
+    '<FormattedMessage key={item.url} id={item.title}>{(t) => <NavLink to={item.url}>{t}</NavLink>}</FormattedMessage>',
+    '<Can key={item.url} do="see">{() => <NavLink to={item.url}>{item.title}</NavLink>}</Can>',
+  ]) {
+    const edits: [string, string, string][] = [
+      [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { NavLink } from 'react-router-dom';\nimport { FormattedMessage } from 'react-intl';\nimport { Can } from '@casl/react';"],
+      [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", `sections.push(\n        ${drawn},\n      );`],
+    ];
+    await withMenuCopy(async ({ configFile, src }) => {
+      const line = lineIn(src, SIDEBAR, '<NavLink');
+      assert.deepEqual(menuRows(screen(await build(configFile), '/admin_console/users#Users')).filter((l) => l.tableItem).map((l) => [l.to, l.line]), [
+        ['/admin_console/about/license', line], ['/admin_console/users', line], ['/admin_console/users/site', line], ['/admin_console/users/plain', line],
+      ], drawn);
+    }, { edits });
+  }
+});
+
 test('the links a menu gives for the items do not count as links into a screen when the map decides its entry screens', async () => {
   const entriesOf = (configPatch: Record<string, unknown>) => withMenuCopy(async ({ configFile }) => (await build(configFile)).entries.map((e) => e.screen), { configPatch });
   const plain = await entriesOf({ routeTables: [ROUTE_TABLE] });

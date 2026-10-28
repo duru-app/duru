@@ -334,12 +334,11 @@ const moveItem = (end, m) => h('li', { class: 'move' }, end, ' ', movedChip(), '
 
 const MENU_LINKS_TITLE = '메뉴가 거는 링크';
 const MENU_ONLY_TITLE = '메뉴가 항목마다 거는 링크로만 들어오는 화면이라 진입 화면으로 봅니다';
-const ownIncoming = (s) => s.access.links.filter((l) => !l.tableItem);
 const menuOnlyEntry = (s) => state.data.map.entries.some((e) => e.screen === s.id && e.reasons.some((r) => r.kind === 'menu-links-only'));
 
 function accessDetails(s) {
-  const links = ownIncoming(s);
-  const menu = s.access.links.filter((l) => l.tableItem);
+  const links = s.access.links;
+  const menu = s.access.menuLinks ?? [];
   const moves = movesOf('to', s.id);
   const inScreen = inScreenGuards(s);
   return h('div', { class: 'access' },

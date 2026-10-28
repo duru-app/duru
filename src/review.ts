@@ -206,6 +206,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
       ...s.access,
       ...(s.access.settings && { settings: s.access.settings.map((source) => ({ ...source, needs: source.needs.map((need) => ({ ...need, condition: settingConditionName(need), change: settingChange(need, settingsFile, map) })) })) }),
       links: s.access.links.map((l) => ({ ...l, part: linkKey(l) })),
+      ...(s.access.menuLinks && { menuLinks: s.access.menuLinks.map((l) => ({ ...l, part: linkKey(l) })) }),
     },
   }));
   const calls = map.calls.map((c) => ({ ...c, cases: pickedCases(c.id) }));

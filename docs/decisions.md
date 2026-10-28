@@ -3279,8 +3279,10 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
 - The element is drawn in a `map`, `flatMap` or `forEach` and takes the field in an attribute other than `key`. The
   address it writes around the field is not read. Without `menus` nothing changes. A menu file that is not there, has
   no such element or has two stops the run with the entry, as the other `routeTables` errors do.
-- An element counts only when the loop function is the nearest function around it. When such elements hold one
-  another, as an `<li>` marking the open entry (`className={pathname === item.url ? 'active' : ''}`,
+- An element belongs to the nearest loop function around it, also when a function that is not a loop stands between
+  them, as a render function does in `<FormattedMessage>{(t) => <NavLink to={item.url}>{t}</NavLink>}</FormattedMessage>`
+  or `<Can>{() => <NavLink to={item.url} />}</Can>`; it counts only when it reads that loop's item. When such elements
+  hold one another, as an `<li>` marking the open entry (`className={pathname === item.url ? 'active' : ''}`,
   `data-testid={item.url}`) holds the `<NavLink to={item.url}>`, the innermost is the menu element. Only two in the
   same loop function that do not hold each other stop the run. An element in a loop inside the item's loop, as a
   submenu's `item.children.map((c) => <NavLink to={c.url} />)`, is passed over when the outer loop has such an
@@ -3301,10 +3303,14 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
   Against main (a13342e) with the baseline configs, each of the seven maps is the same once `layout` is taken off the
   link rows. It is on 506 of 622 link rows in into-sign 1.5.0, 572 of 740 in 2.0.0, 5,550 of 12,435 in mattermost,
   1,762 of 2,892 in outline, 10,790 of 12,579 in SigNoz (`SideNav`, `TopNav`, `Private`) and none in appsmith. With `menus`, 11,200 of mattermost's 11,300 menu links and 864 of outline's 900 have it.
-- The links into a screen keep the `tableItem` of a menu's link. 「들어오는 링크」 folds those under 「공통 N」
+- A menu's item links into a screen are kept apart from its other links into it, under `access.menuLinks`, with
+  their `tableItem`; `access.links` stays what it is without `menus`, so what reads it (the cases, where a condition
+  is written, the baseline, the flow) needs no filter. Keeping them in `access.links` was tried first: the cases
+  compared the settings of the links into a screen with the number of rows and lost every setting case of a screen
+  that one menu link also came into. 「들어오는 링크」 folds the menu's links under 「공통 N」
   (「메뉴가 거는 링크」) below the screen's other links into it. The incoming fold takes only the menu's item links, not every
   link drawn by a layout, so its title names the menu alone.
-- A screen whose only links in carry `tableItem` is still an entry screen, with the reason `menu-links-only` in place
+- A screen whose only links in are a menu's item links is still an entry screen, with the reason `menu-links-only` in place
   of `no-incoming-link`, so the reason does not deny the menu links listed beside it; the review page marks such a
   screen 「메뉴로만」 beside 「들어오는 링크」. The map does not count those links when it decides `entries` or which
   screens are restricted, so `restricted`, `kinds`, roles and settings are what they are without `menus`. The flow view
@@ -3312,7 +3318,8 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
   `menu link at <file>:<line> from N screens` line for each menu element, N counting the screens and not the rows, in
   place of a line for each screen that holds the menu (11,200 lines in mattermost, 882 in outline, if every screen were
   listed; 100 and 18 lines grouped). The line carries the guard around the element, or `guards differ by screen`, and
-  what every screen holding the menu needs, or `the screens holding it need different things`.
+  what every screen holding the menu needs, or `the screens holding it need different things`; a restricted screen
+  whose links ask for different kinds reads `is restricted, by kinds that differ by link`.
   Before this, mattermost's menu made one admin screen (`…/edit_policy/:policy_id`) the parent of 99 other admin
   screens, picking any of 112 screens marked 50 or more jumps (median 111), and `entries` fell from 92 to 25. With the
   rule, mattermost with `menus` has the same 92 `entries` as main (a13342e) without them, 67 of them with
@@ -3368,8 +3375,12 @@ Known limits:
 - An item field written as a call of a function that gives more than one path makes no screen.
 - A child of the link element that reads the same field, as an icon given `name={item.url}`, is the innermost and
   becomes the menu element in place of the link.
-- The guards on a menu's item links are not used when the map decides which screens are restricted: a screen reached
-  only through a menu shown to admins is not restricted by that menu's condition.
+- The guards on a menu's item links are not used when the map decides which screens are open or restricted: a screen
+  reached only through a menu shown to admins is not restricted by that menu's condition, and a screen that anyone
+  reaches through a menu without a condition is still restricted, as on main, when its other links are guarded.
+- In a grouped menu (`sections.map((section) => <div data-testid={section.url}>{section.items.map((item) =>
+  <NavLink to={item.url} />)}</div>)`) whose outer loop reads a field of the same name, the outer element is taken as
+  the menu element.
 - A map.json written before this entry has `entries` decided with the menu links counted; `rebuild` writes it again.
 - The menu side and the route side take the loop's item from different shapes: the route side does not read the item
   as the second name of a first parameter taken apart as a list (`([key, item])`), and it takes the first parameter of

@@ -14,7 +14,7 @@ export interface FlowGuard {
 export interface FlowAccess {
   restricted: boolean;
   kinds: string[];
-  links: { from: string; guards: FlowGuard[]; tableItem?: unknown }[];
+  links: { from: string; guards: FlowGuard[] }[];
   roleValues?: string[] | null;
   unreadableRoleGuards?: string[];
   settings?: SettingSource[];
@@ -116,9 +116,8 @@ export function buildFlow(map: FlowMap, tests: FlowTests): Flow {
     if (!edges.has(to)) edges.set(to, { links: [], moves: [] });
     return edges.get(to)!;
   };
-  // 라우트 테이블 메뉴가 항목마다 거는 링크는 트리에도 jumps 에도 넣지 않는다.
   for (const target of map.screens) {
-    for (const l of target.access.links) if (!l.tableItem) edgeTo(l.from, target.id).links.push(l.guards);
+    for (const l of target.access.links) edgeTo(l.from, target.id).links.push(l.guards);
   }
   for (const m of map.moves ?? []) edgeTo(m.from, m.to).moves.push(m.reason);
   // 링크마다 조건 목록 하나. 어느 한 링크의 조건만 맞아도 들어가므로 목록끼리는 「또는」이다.

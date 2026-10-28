@@ -114,6 +114,7 @@ export interface ScreenAccess {
   roleValues?: string[] | null;
   settings?: SettingSource[];
   links: unknown[];
+  menuLinks?: unknown[];
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -637,8 +638,7 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
 
   const described = screens.map((s) => describe(s.routeGuards, s.routeFile));
   const route = described.map(blocks);
-  // 메뉴가 항목마다 거는 링크는 shownIncoming 에만 넣고, 진입 화면과 접근 제한을 가를 때는 쓰지 않는다.
-  const shownIncoming: AccessLink[][] = screens.map(() => []);
+  const menuIncoming: AccessLink[][] = screens.map(() => []);
   const incoming: AccessLink[][] = screens.map(() => []);
   const outgoing: AccessLink[][] = screens.map(() => []);
   const targetsOf = linkTargets(screens);
@@ -655,8 +655,10 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
       for (const to of targets) {
         if (to === from) continue;
         const link = { from, to, file: l.file, line: l.line, guards, ...(l.tableItem && { tableItem: l.tableItem }) };
-        shownIncoming[to].push(link);
-        if (link.tableItem) continue;
+        if (link.tableItem) {
+          menuIncoming[to].push(link);
+          continue;
+        }
         incoming[to].push(link);
         outgoing[from].push(link);
       }
@@ -669,7 +671,7 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
     if (blocking(r.guards, r.file).length) continue;
     for (const i of targetsOf(r.to)) reasons[i].push({ kind: 'redirect', file: r.file, line: r.line });
   }
-  for (const i of indices) if (!incoming[i].length) reasons[i].push({ kind: shownIncoming[i].length ? 'menu-links-only' : 'no-incoming-link' });
+  for (const i of indices) if (!incoming[i].length) reasons[i].push({ kind: menuIncoming[i].length ? 'menu-links-only' : 'no-incoming-link' });
   const unknownEntryPaths: string[] = [];
   for (const p of config.entryPaths) {
     const found = targetsOf(p);
@@ -786,11 +788,12 @@ export function screenAccess(screens: AccessScreen[], redirects: AccessRedirect[
       .map((l) => ({ link: l, row: { from: screens[l.from].id, file: l.file, line: l.line, guards: l.guards, fromKinds: shownKinds[l.from], ...(l.tableItem && { tableItem: l.tableItem }) } }))
       .sort((a, b) => byPlace(a.row, b.row));
     const ways = rowsOf(incoming[i]);
-    const links = rowsOf(shownIncoming[i]).map((w) => w.row);
+    const links = ways.map((w) => w.row);
+    const menuLinks = rowsOf(menuIncoming[i]).map((w) => w.row);
     const settings = shownKinds[i].includes('setting')
       ? { settings: settingSources(route[i], onlyBlockedLinks(i) ? ways.map((w) => ({ ...w.row, settings: linkSettings(w.link) ?? settingParts(w.link.guards) })) : []) }
       : {};
-    return { restricted: restricted[i], kinds: shownKinds[i], route: route[i], links, ...roleAccess(i), ...settings };
+    return { restricted: restricted[i], kinds: shownKinds[i], route: route[i], links, ...(menuLinks.length ? { menuLinks } : {}), ...roleAccess(i), ...settings };
   });
   const entries = starts.map((i) => ({ screen: screens[i].id, reasons: reasons[i] }));
   const guarding = [...route.flat(), ...linkConditions.flat(2)];

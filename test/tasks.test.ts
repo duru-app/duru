@@ -319,7 +319,9 @@ test('the links into a first screen that a route table menu gives for its item a
     const mapFile = path.join(loadConfig(configFile).outDir, 'map.json');
     const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
     const report = map.screens.find((s: { id: string }) => s.id === '/admin/report#AdminReport');
-    for (const l of report.access.links) if (l.from.startsWith('/document/')) l.tableItem = { key: 'report', file: 'menu.js', line: 3 };
+    const menu = report.access.links.filter((l: { from: string }) => l.from.startsWith('/document/'));
+    report.access.links = report.access.links.filter((l: { from: string }) => !l.from.startsWith('/document/'));
+    report.access.menuLinks = menu.map((l: object) => ({ ...l, tableItem: { key: 'report', file: 'menu.js', line: 3 } }));
     fs.writeFileSync(mapFile, JSON.stringify(map));
     addMark(loadConfig(configFile).marksDir, { target: { story: 'read-reports' }, status: 'missing', note: 'No test.', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
     const story = cli('tasks').split('\n## read-reports\n')[1].split('\n## ')[0].split('\n');
@@ -339,20 +341,23 @@ test('a menu line counts the screens and not the links, says when the guards or 
     const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
     const report = map.screens.find((s: { id: string }) => s.id === '/admin/report#AdminReport');
     const tableItem = { key: 'report', file: 'menu.js', line: 3 };
-    const [byId, byTab, home] = ['/document/:id#DocumentDetail', '/document/:tab#DocumentList', '/home#Home'].map((id) => report.access.links.find((l: { from: string }) => l.from === id));
-    Object.assign(byId, { tableItem, fromKinds: ['setting'] });
-    Object.assign(byTab, { tableItem, guards: [] });
-    Object.assign(home, { tableItem, line: 20, fromKinds: ['role'] });
-    report.access.links.push({ ...byId, guards: [] }, { ...home, line: 30, guards: [], fromKinds: [] });
+    const [byId, byTab, home] = ['/document/:id#DocumentDetail', '/document/:tab#DocumentList', '/home#Home'].map((id) => ({ ...report.access.links.find((l: { from: string }) => l.from === id), tableItem }));
+    Object.assign(byId, { fromKinds: ['setting'] });
+    Object.assign(byTab, { guards: [] });
+    Object.assign(home, { line: 20, fromKinds: ['role'] });
+    report.access.links = [];
+    report.access.menuLinks = [byId, byTab, { ...byId, guards: [] }, home, { ...home, line: 30, guards: [], fromKinds: [] }, { ...byTab, line: 40 }];
+    Object.assign(map.screens.find((s: { id: string }) => s.id === '/document/:tab#DocumentList').access, { restricted: true, kinds: [] });
     fs.writeFileSync(mapFile, JSON.stringify(map));
     addMark(loadConfig(configFile).marksDir, { target: { story: 'read-reports' }, status: 'missing', note: 'No test.', author: 'a' }, new Date('2026-10-03T05:00:00Z'));
     const story = cli('tasks').split('\n## read-reports\n')[1].split('\n## ')[0].split('\n');
     const guards = "guard `globalSettings.SYSTEM.MAIN_MENU.ADMIN.LIST includes 'ADMIN_REPORT'` (setting); `['ADMIN', 'OWNER'].indexOf(session['member.role']) > -1` (role); `MENUS.ADMIN` (setting)";
     const at = story.indexOf('  - /admin/report#AdminReport, the first screen, needs a role and a setting; roles that open it: ADMIN, OWNER');
-    assert.deepEqual(story.slice(at + 1, at + 4), [
+    assert.deepEqual(story.slice(at + 1, at + 5), [
       '    - menu link at components/SideMenu.js:11 from 2 screens, guards differ by screen — the screens holding it need different things',
       `    - menu link at components/SideMenu.js:20 from 1 screen, ${guards} — every screen holding it needs a role`,
       '    - menu link at components/SideMenu.js:30 from 1 screen, no guard',
+      '    - menu link at components/SideMenu.js:40 from 1 screen, no guard — every screen holding it is restricted, by kinds that differ by link',
     ]);
   }, { storiesDir: 'example-stories' });
 });

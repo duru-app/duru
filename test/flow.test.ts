@@ -122,9 +122,12 @@ test('a move in the config places a screen no link reached yet under the screen 
 });
 
 test('a link a route table menu gives for an item is neither a tree edge nor a jump', () => {
-  const screen = (id: string, links: FlowAccess['links'] = []): FlowMapScreen => ({ id, path: id, component: id, apiCalls: [], access: { restricted: false, kinds: [], links } });
+  const screen = (id: string, links: FlowAccess['links'] = [], menuLinks: object[] = []): FlowMapScreen => {
+    const access = { restricted: false, kinds: [], links, menuLinks };
+    return { id, path: id, component: id, apiCalls: [], access };
+  };
   const menu = (from: string) => ({ from, guards: [], tableItem: { key: from, file: 'table.js', line: 1 } });
-  const tiny = { screens: [screen('home'), screen('a', [{ from: 'home', guards: [] }, menu('home'), menu('b')]), screen('b', [menu('home'), menu('a')])], entries: [{ screen: 'home' }, { screen: 'b' }] };
+  const tiny = { screens: [screen('home'), screen('a', [{ from: 'home', guards: [] }], [menu('home'), menu('b')]), screen('b', [], [menu('home'), menu('a')])], entries: [{ screen: 'home' }, { screen: 'b' }] };
   const built = buildFlow(tiny, { nodes: {} });
   assert.deepEqual(built.roots.flatMap((r) => outline(r)), ['home', '  a', 'b']);
   assert.deepEqual(built.unreached, []);

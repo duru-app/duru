@@ -904,7 +904,8 @@ test('in a browser, 「들어오는 링크」 lists the other links into a scree
         await p.route('**/api/data', async (route) => {
           const data = await (await route.fetch()).json() as ServedData;
           const report = data.map.screens.find((x) => x.id === '/admin/report#AdminReport')!;
-          for (const l of report.access.links) if (l.from.startsWith('/document/')) Object.assign(l, { tableItem: { key: 'report', file: 'menu.js', line: 3 } });
+          report.access.menuLinks = report.access.links.filter((l) => l.from.startsWith('/document/')).map((l) => ({ ...l, tableItem: { key: 'report', file: 'menu.js', line: 3 } }));
+          report.access.links = report.access.links.filter((l) => !l.from.startsWith('/document/'));
           await route.fulfill({ json: data });
         });
         await p.reload();
@@ -943,7 +944,8 @@ test('in a browser, a screen that is an entry screen because only menu links com
         await p.route('**/api/data', async (route) => {
           const data = await (await route.fetch()).json() as ServedData;
           const report = data.map.screens.find((x) => x.id === '/admin/report#AdminReport')!;
-          for (const l of report.access.links) Object.assign(l, { tableItem: { key: 'report', file: 'menu.js', line: 3 } });
+          report.access.menuLinks = report.access.links.map((l) => ({ ...l, tableItem: { key: 'report', file: 'menu.js', line: 3 } }));
+          report.access.links = [];
           data.map.entries.push({ screen: report.id, reasons: [{ kind: 'menu-links-only' }] });
           await route.fulfill({ json: data });
         });
