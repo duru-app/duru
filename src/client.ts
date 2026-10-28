@@ -658,7 +658,10 @@ export async function extractClient(config: any) {
     const inner: NodePath[] = [];
     traverse(ast, {
       VariableDeclarator(p) {
-        if ((p.parent as VariableDeclaration).kind === 'const' && p.get('id').isIdentifier({ name })) (p.scope.path.isProgram() ? top : inner).push(p.get('init') as NodePath);
+        if ((p.parent as VariableDeclaration).kind !== 'const' || !p.get('id').isIdentifier({ name })) return;
+        const init = p.get('init') as NodePath;
+        if (p.scope.path.isProgram()) top.push(init);
+        else if (init.isObjectExpression() || init.isArrayExpression()) inner.push(init);
       },
     });
     const [found] = top.length ? top : inner.length === 1 ? inner : [];
@@ -2384,8 +2387,9 @@ export async function extractClient(config: any) {
     return fields;
   }
 
-  // 배열을 순회하는 함수가 받은 항목에서 요소의 속성(key 제외) 값으로 쓰는 field. 항목은 첫 매개변수이거나, `([key, item])`
-  // 처럼 첫 매개변수를 배열로 풀어 받은 둘째 이름이다. 첫 매개변수를 `({ url })` 로 풀어 받았다면 그 키가 field 다.
+  // `map`, `flatMap`, `forEach` 에 넘긴 함수가 받는 항목에서, key 를 뺀 요소 속성에 값으로 넣는 field.
+  // 항목은 첫 매개변수이거나, 첫 매개변수를 `([key, item])` 처럼 배열로 풀어 받은 둘째 이름이다.
+  // 첫 매개변수를 `({ url })` 로 풀어 받았다면 그 키가 field 다.
   function itemFieldsRead(p: NodePath<JSXElement>): string[] {
     const fields = new Set<string>();
     for (const a of p.get('openingElement.attributes') as NodePath<any>[]) {
@@ -2402,7 +2406,8 @@ export async function extractClient(config: any) {
     const read = x.isMemberExpression() && !x.node.computed && x.get('object').isIdentifier() ? x.get('object') as NodePath<Identifier> : x.isIdentifier() ? x : null;
     const binding = read && x.scope.getBinding(read.node.name);
     const fn = binding?.kind === 'param' ? binding.scope.path : null;
-    if (!fn || !loopCallback(fn)) return null;
+    const method = fn && loopCallback(fn) ? (((fn.parent as CallExpression).callee as MemberExpression).property as Identifier).name : null;
+    if (!fn || !method || method === 'reduce') return null;
     const first = (fn.get('params') as NodePath[])[0];
     if (read === x) return first.isObjectPattern() && first.node.properties.some((prop) => prop.type === 'ObjectProperty' && prop.value === binding!.identifier) ? itemFields(first).get(read.node.name) ?? null : null;
     const isItem = first.node === binding!.identifier || (first.isArrayPattern() && first.node.elements[1] === binding!.identifier);

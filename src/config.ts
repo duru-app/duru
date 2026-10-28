@@ -202,7 +202,7 @@ function routeTablesOf(value: unknown, srcRoot: string, routeFiles: (string | nu
     && (t.menus === undefined || (Array.isArray(t.menus) && t.menus.every(isText)));
   if (value === undefined) return [];
   if (!Array.isArray(value) || !value.every(isTable)) {
-    throw new Error('routeTables must be a list of { "route", "table": { "file", "const" }, "items", "menus" }: a file in routesFile with a route made for each item of a table, '
+    throw new Error('routeTables must be a list of { "route", "table": { "file", "const" }, "items" } with an optional "menus": a file in routesFile with a route made for each item of a table, '
       + 'the file and const holding that table as an object or a list, the keys or places leading to its items with "*" for every key or place there, '
       + 'and optionally the files that draw a menu link for each item, as paths from srcRoot, '
       + `such as [{ "route": "components/admin_console/admin_console.tsx", "table": { "file": "components/admin_console/admin_definition.tsx", "const": "AdminDefinition" }, "items": "*.subsections.*" }], not ${JSON.stringify(value)}`);

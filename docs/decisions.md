@@ -3238,11 +3238,14 @@ not on the map at all, since the settings route itself was one `{?}#config.compo
   too.
 - An item whose path has a variable (12 in mattermost, `user_management/user/:user_id` and the like) gets no menu link:
   a menu entry cannot fill the variable from the item.
-- Without `menus` nothing changes. A menu file that is not there, has no such element or has two stops the run with
-  the entry, as the other `routeTables` errors do.
+- The element is drawn in a `map`, `flatMap` or `forEach` and takes the field in an attribute other than `key`. The
+  address it writes around the field is not read. Without `menus` nothing changes. A menu file that is not there, has
+  no such element or has two stops the run with the entry, as the other `routeTables` errors do.
 - The table const is the top-level one of its name, or, when there is none, the only const of that name inside a
-  function (outline's `items` inside `useComputed` in `useSettingsConfig`). Two such consts stop the run with their
-  number. An item's field is read as a route path is, so a call of a function in the source
+  function that holds an object or a list (outline's `items` inside `useComputed` in `useSettingsConfig`). A const of
+  that name holding something else, as a `for (const items of lists)` variable does, is passed over. Two that hold an
+  object or a list stop the run with their number. A top-level const of the name is taken even when it holds a call,
+  and a literal wrapped in `as const` or `satisfies` is not read, inside a function or at the top. An item's field is read as a route path is, so a call of a function in the source
   (`settingsPath("preferences")`) gives its address, as it does in a `<Route path>`.
 - Folding these links into the review page's 「공통」 section, as #461 does for layout requests, comes after #461: these
   menus are drawn by layouts, and the page will use the `layout` mark #461 puts on what a screen gets only through
@@ -3271,8 +3274,16 @@ Known limits:
   layout's own body, which #479 does not read; so the 28 screens outside `/settings` get the 18 menu links too, as
   they already got `Settings.tsx:40`.
 - outline's plugin settings, spliced into the list at run time, are not items.
-- An element reading the field through a name the loop function makes (`const url = item.url`) or through a nested
-  pattern (`([key, { url }])`) is not found.
+- The item is the loop function's first parameter, the second name of a first parameter taken apart as a list
+  (`([key, item])`), or a name the first parameter takes apart (`({ url })`), in `map`, `flatMap` and `forEach`; in
+  `reduce` the first parameter is what is gathered, so a menu built with `reduce` is not found. An element reading the
+  field through a name the loop function makes (`const url = item.url`) or through a nested pattern
+  (`([key, { url }])`) is not found either.
+- The hook file that holds outline's table is a table file, so its own code and imports leave every screen's sources,
+  as a table file's do. On outline it sends no request and reads no setting; the screens it leaves only lose the
+  settings scenes it imports.
+- A menu file named in two table entries whose routes read the same field gives each entry both menus' elements, so
+  the run stops with two elements found. No measured app names one file twice.
 Alternatives compared:
 - duru finding the menu by itself, when a loop's list comes from the same hook or prop as the route's: outline would
   match (`useSettingsConfig()` on both sides), but mattermost's two lists come through `connect()` in two `index.ts`

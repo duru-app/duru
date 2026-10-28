@@ -572,7 +572,7 @@ test('routeTables must be a list of entries naming a listed route file, a table 
       return () => loadConfig(configFile);
     };
     const entry = { route: 'Routes.js', table: { file: 'store/settings.js', const: 'defaults' }, items: '*' };
-    assert.throws(load({ ...entry }), /^Error: routeTables must be a list of \{ "route", "table": \{ "file", "const" \}, "items", "menus" \}/);
+    assert.throws(load({ ...entry }), /^Error: routeTables must be a list of \{ "route", "table": \{ "file", "const" \}, "items" \} with an optional "menus"/);
     assert.throws(load([{ ...entry, table: 'store/settings.js' }]), /^Error: routeTables must be a list of/);
     assert.throws(load([{ ...entry, items: 'a..b' }]), /^Error: routeTables must be a list of/);
     assert.throws(load([{ ...entry, extra: 1 }]), /^Error: routeTables must be a list of/);
@@ -719,7 +719,7 @@ test('the menu link is kept under the conditions written around its element in t
 
 test('a table declared as the only const of its name inside a function of the table file gives the same item screens and menu links', async () => {
   const edits: [string, string, string][] = [
-    [TABLE, 'const AdminDefinition = {', 'export function useAdminDefinition() {\n  const AdminDefinition = {'],
+    [TABLE, 'const AdminDefinition = {', 'function names(lists) {\n  for (const AdminDefinition of lists) console.log(AdminDefinition);\n}\n\nexport function useAdminDefinition() {\n  const AdminDefinition = {'],
     [TABLE, 'export default AdminDefinition;', '  return AdminDefinition;\n}\n\nexport default useAdminDefinition;'],
   ];
   await withMenuCopy(async ({ configFile, src }) => {
@@ -746,6 +746,12 @@ test('a menu file that is missing, has no element reading the field the route pa
   await withMenuCopy(({ configFile }) => {
     assert.match(failure(configFile), /routeTables\[0\]\.menus\[0\]: admin\/AdminSidebar\.js has no element made for each item of a list that reads the item's url, the field the route at admin\/AdminConsole\.js:\d+ reads/);
   }, { edits: [[SIDEBAR, 'name={item.url}', 'name={item.title}']] });
+  const reduced: [string, string, string][] = [[SIDEBAR, `    Object.entries(section.subsections).forEach(([subKey, item]) => {
+      sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);
+    });`, '    sections.push(...Object.values(section.subsections).reduce((url, item) => [<SidebarSection key={item.title} name={url.url} />], []));']];
+  await withMenuCopy(({ configFile }) => {
+    assert.match(failure(configFile), /routeTables\[0\]\.menus\[0\]: admin\/AdminSidebar\.js has no element made for each item of a list that reads the item's url/);
+  }, { edits: reduced });
   await withMenuCopy(({ configFile, src }) => {
     const first = lineIn(src, SIDEBAR, '<SidebarSection');
     const other = lineIn(src, SIDEBAR, '<SidebarSection', first);
@@ -763,7 +769,7 @@ test('menus in a table entry must be a list of files', () => {
       fs.writeFileSync(configFile, JSON.stringify({ ...base, routeTables: [{ route: 'Routes.js', table: { file: 'store/settings.js', const: 'defaults' }, items: '*', menus }] }));
       return () => loadConfig(configFile);
     };
-    assert.throws(load('components/SideMenu.js'), /^Error: routeTables must be a list of \{ "route", "table": \{ "file", "const" \}, "items", "menus" \}/);
+    assert.throws(load('components/SideMenu.js'), /^Error: routeTables must be a list of \{ "route", "table": \{ "file", "const" \}, "items" \} with an optional "menus"/);
     assert.throws(load([1]), /^Error: routeTables must be a list of/);
     assert.deepEqual(load(['./components/SideMenu.js'])().routeTables[0].menus, ['components/SideMenu.js']);
   } finally {
