@@ -1055,6 +1055,29 @@ export default function AppRoutes({ broken, lost }) {
   for (const id of ['/login#Login', '/help#Help', '/home#Home', '/team#Team']) assert.deepEqual(linksOf(map, id), moves);
 });
 
+test('a route constant a screen only compares with the address, by ===, a switch case, matchPath, useRouteMatch or a string test, gives no link, while the same constant written as a link\'s address does', async () => {
+  const home = `import { Link, matchPath, useLocation, useRouteMatch } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home({ item }) {
+  const { pathname } = useLocation();
+  const onLogin = pathname === Option.ROUTE_PATH.LOGIN;
+  const elsewhere = item.href !== (Option.ROUTE_PATH.HELP);
+  const onTeam = matchPath(pathname, { path: Option.ROUTE_PATH.TEAM, exact: true }) || matchPath(Option.ROUTE_PATH.TEAM, pathname);
+  const helpMatch = useRouteMatch(Option.ROUTE_PATH.HELP);
+  const inTeam = pathname.startsWith(\`\${Option.ROUTE_PATH.TEAM}/\`);
+  switch (pathname) {
+    case Option.ROUTE_PATH.HOME:
+      return null;
+    default:
+      return <Link to={Option.ROUTE_PATH.LOGIN}>{String(onLogin || elsewhere || onTeam || helpMatch || inTeam)}</Link>;
+  }
+}
+`;
+  const map = await build(withRouteConstant({ 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [['/login', lineOf(home, '<Link to'), [], ['/login#Login']]]);
+});
+
 test('in a class route file, a move through the props its update method takes first is a link of every screen it draws', async () => {
   const routes = `import { Component } from 'react';
 import { Route, Switch, withRouter } from 'react-router-dom';

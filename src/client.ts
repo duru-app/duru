@@ -1210,6 +1210,29 @@ export async function extractClient(config: any) {
     return { tail: segments?.every((s) => s && !s.includes(UNREADABLE_PIECE)) ? `/${segments.join('/')}` : null, whole };
   }
 
+  // 주소와 견주기만 하는 자리: ==, switch 의 case, matchPath · useRouteMatch · useMatch 의 인자나 그 path, startsWith 같은 문자열 검사의 인자
+  function comparedOnly(p: NodePath): boolean {
+    let at = p;
+    while (at.parentPath!.isTSAsExpression() || at.parentPath!.isTSNonNullExpression() || at.parentPath!.isTSSatisfiesExpression()) at = at.parentPath!;
+    const up = at.parentPath!;
+    if (up.isBinaryExpression() && ['===', '!==', '==', '!='].includes(up.node.operator)) return true;
+    if (up.isSwitchCase() && at.key === 'test') return true;
+    const calleeOf = (arg: NodePath) => {
+      const call = arg.parentPath!;
+      return arg.listKey === 'arguments' && (call.isCallExpression() || call.isOptionalCallExpression()) ? call.node.callee : null;
+    };
+    const matching = (arg: NodePath) => {
+      const callee = calleeOf(arg);
+      return callee?.type === 'Identifier' && ['matchPath', 'useRouteMatch', 'useMatch'].includes(callee.name);
+    };
+    if (up.isObjectProperty() && at.key === 'value' && !up.node.computed && keyName(up.node) === 'path') return matching(up.parentPath!);
+    const callee = calleeOf(at);
+    if ((callee?.type === 'MemberExpression' || callee?.type === 'OptionalMemberExpression') && !callee.computed) {
+      return ['startsWith', 'endsWith', 'includes', 'indexOf'].includes((callee.property as Identifier).name);
+    }
+    return matching(at);
+  }
+
   // ---------- API 모듈: 내보낸 함수마다 호출하는 endpoint ----------
 
   function extractApiModule(file: string) {
@@ -1536,6 +1559,7 @@ export async function extractClient(config: any) {
           record('settingReads', { key: [result[1], ...chain.slice(1)].join('.') }, p);
         } else if (chain[0] === routeRoot && chain.length === routeRest.length + 2 && routeRest.every((k: string, i: number) => chain[i + 1] === k)) {
           const { tail, whole } = routeTail(p);
+          if (comparedOnly(whole)) return;
           const member = whole.parentPath!;
           const table = whole.key === 'key' && (member.isObjectProperty() || member.isObjectMethod()) && member.node.computed ? lookupTable(member.parentPath!) : null;
           if (table && table.exported === null) return;
