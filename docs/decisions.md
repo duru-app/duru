@@ -4743,6 +4743,49 @@ every app; access changes on 16 outline and 23 mattermost screens, and mattermos
 (`/:team/integrations#Integrations` now has a link in). The maps of into-sign 1.5.0 and 2.0.0, SigNoz and SigNoz with
 its API code are the same apart from `meta`.
 
+**The requests the components around all the routes send are listed once for the app under `appWide`, from the
+components named in `appWideComponents`; a screen's request that only a component around or beside its route reaches
+is marked `layout`; the review page shows a screen's own requests on top and folds both kinds under 「공통」.**
+Chosen for #461 (2026-10-27). The requests an app sends when it starts, from the providers in its entry file and the
+component of its routes file (the current user, feature flags, the license, a login with a one-time token), were on
+no screen, or only on the few screens that happen to call them too, while the requests of a layout around every
+route made up most of each screen's list: 179 of the 183 request sites of SigNoz's `/integrations`. The driver chose
+to keep a screen's own requests on top and fold the start and layout requests into one section, with the start
+requests newly on the map and the layout ones left on their screens. The components are named in the config, read
+like `history`; duru follows the names their code reaches and does not go into the screens, the route files and the
+components drawn around or beside routes, whose requests are already on the screens. A screen's request is `layout`
+when a walk of the names from the screen's component file does not reach it and the walk from the components around
+or beside its route does; one the screen's own code sends as well stays its own. The calls of `appWide` are calls on
+the map, and the line of calls that reach no screen leaves them out.
+Compared:
+- Common as the same call site on every screen, computed on the page with no field on the map: it fits SigNoz, where
+  179 sites, 40 call IDs, are on all 65 screens, but folds nothing on into-sign, where the layout requests of
+  `BaseView` are on 23 of 45 screens (1.5.0) and those of `BaseContainer` on 22 of 44 (2.0.0), and 2 screens of each
+  send no request at all.
+- Putting the start requests on every screen: about 4.5 to 6 more rows on each into-sign screen and 6 to 27 on each
+  SigNoz screen, also on the about 11 participant and external screens the into-sign shells skip in code.
+- Finding the components from `createRoot(…).render` instead of naming them: misses SigNoz's provider and layout
+  handed over as functions (`appContext(children)`) and into-sign 2.0.0's lazily loaded `SessionLoad`.
+Known limits: a component that is not exported, such as outline's and appsmith's `App` written in the entry file,
+cannot be named; the start requests show on screens the app's shell skips by a check in code; a request body
+option found only in an `appWide` site is not among the call's options; a dead call only `appWide` sends is not
+among `deadCalls`; a request that a screen's code reaches through a shared module that loads for every screen, such
+as SigNoz's token refresh in `api/index.ts`, is the screen's own; an `App` in a routes file can reach the screen and
+layout components written in that same file, and their requests then count as the whole app's; the actions an
+`appWide` component dispatches are not followed into the sagas, and a request a saga sends for a screen is never
+`layout`; a screen with a layout gets a second walk of the names from its component file, not merged with the first.
+Measured on main 5519f30 against the branch, the components named for each app as the comparison configs give them:
+SigNoz with its API code (`AppProvider` and the `App` of `AppRoutes/index.tsx`) sends 23 calls for the whole app, and
+`GET /api/v1/features`, `GET /api/v2/users/me` and `GET /api/v4/licenses/active` leave the line of calls that reach no
+screen (85 = 77 + 8 to 82 = 77 + 5); 7,628 of its screens' request entries are `layout`, on all 65 screens, and a
+screen shows 0 to 71 call IDs of its own (median 30) with 16 to 46 under 「공통」 (`/integrations` 4 of its own and
+43 common, `*#NotFound` none of its own). into-sign 1.5.0 (`App.js`) sends the 6 calls `App.js`, `UploadSettings` and
+`ModalCreateWorkspace` make, and its line goes from 14 = 6 + 8 to 11 = 6 + 5; 207 entries on 23 screens are `layout`.
+into-sign 2.0.0 (`App.jsx`) sends 5, its line goes from 6 to 4, and 182 entries on 22 screens are `layout`. SigNoz
+without its API code and mattermost (`components/root`) send none with an address read; 167 and 409 entries are
+`layout`, none with an address. outline (17 entries on 17 screens) and appsmith (none) have no component named, as
+their `App` is not exported. Apart from `layout`, `appWide` and that line, the seven maps are the same.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

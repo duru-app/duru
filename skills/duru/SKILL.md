@@ -140,7 +140,13 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   A call or link can also come from a file the screen's code never imports: a menu, header or banner drawn around
   or beside the screen's route, in its own route file or in a route file outside it. Its file and line point into
   that component, and an `inheritedGuards` entry with a `file` names the place it is drawn and the condition it is
-  drawn under; test it from the screen like the screen's own.
+  drawn under; test it from the screen like the screen's own. Such a call has `"layout": true` when the screen's own
+  component does not reach it; one test of it from any screen it is on covers the component that sends it. The task
+  list puts such calls of a screen after its own, under `calls of the layout around the screen`; a screen that
+  sends none itself has `calls of its own: none` above them, which does not mean there is nothing to test there.
+- A call under `appWide` is sent by a component named in `appWideComponents` once for the whole app, as it starts,
+  not by any screen. Test it once, from whichever screen the app opens first, and do not write it into each screen's
+  tests. The task list and the candidate lines say `sent as the app starts by <name> (<file>)` for it.
 - A `<component> at <file>:<line> is drawn beside routes but draws its own routes in <file>, …` line names a
   component, often a header, that shows something different for each address. None of its links or calls are on
   the screens beside it; tell the user which component it is, and that its links on each screen are missing from the
@@ -195,7 +201,11 @@ such a pair or hand it over for tagging; a handed-over pair appears in the task 
   tell the user which page and addresses these are, and that tests for them can only be tagged with that one screen.
 - A `N calls reach no screen: …` line counts calls that no screen sends. The `unused by app code` ones need nothing.
   The `other` ones are where a screen may be missing a request: check them against the code that uses their API
-  functions, and tell the user which of them a screen should send.
+  functions, and tell the user which of them a screen should send. When the code sending one is a component drawn
+  around all the routes, such as a provider in the entry file that `createRoot(…).render` draws, or the component of
+  the routes file itself, add `"appWideComponents": [{ "import": "<the import as the app writes it>", "name": "<that
+  export>" }]` for it to the config yourself, run `duru rebuild` again, and tell the user which calls moved to the
+  `requests sent for the whole app` line.
 - A link whose `to` is `{?}` goes to an address duru could not read, such as one held in a variable; it goes to no
   screen, and a story step from that screen with no other link to the next screen is not judged. Do not take it as
   a missing link.

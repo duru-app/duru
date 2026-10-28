@@ -26,7 +26,7 @@ function pairsOf(t) {
   return pairs.sort((a, b) => compareText(screenLabel(a.id), screenLabel(b.id)) || compareText(a.id, b.id));
 }
 
-const opensOnPage = (id) => Boolean(screenOf(id) || callOf(id)?.screens.length);
+const opensOnPage = (id) => Boolean(screenOf(id) || callScreen(id));
 
 function pairItem({ id, entry, label, cls, noteLabel }) {
   const s = screenOf(id);

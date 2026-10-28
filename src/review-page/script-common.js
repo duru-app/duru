@@ -52,7 +52,7 @@ const STORY_FILTERS = [
   ...['untested', 'partial', 'part-pass', 'fail'].map((key) => ({ key, ...STORY_STATUS[key], status: true, keep: (st) => st.status === key })),
   { key: 'broken', label: '링크 없음', title: '이웃한 두 화면을 잇는 링크가 맵에 없는 자리가 있는 스토리', keep: (st) => st.broken },
 ];
-const state = { data: /** @type {PageData} */ (null), selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, openFlowGroups: new Set(), openFlowBranches: new Set(), ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateTalk: null, composeTalk: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, discardedOpen: false, undiscardError: null, callInfoShut: null, storyQuery: '', storyStep: null, storyGapsOpen: false, storyNeedsOpen: false, talkScope: 'here', talkFilter: 'all', reachRecord: null, storyFileOpen: false, need: null, needEdit: null, needSaved: null, fieldsEdit: null, fieldsSaved: null, stepsEdit: null, stepsSaved: null, point: null, storyApp: null, boxFinds: new Map(), caseKind: null, caseNode: null, caseDraft: null, caseFilter: null, casePicked: new Set(), caseOpen: new Set(), caseBulkError: null, reviewPicked: new Set(), reviewError: null, baselineOnlyOpen: new Set() };
+const state = { data: /** @type {PageData} */ (null), selected: null, target: null, filters: new Set(), query: '', draft: null, error: null, view: 'flow', flowPicked: false, flowFilter: 'all', flowQuery: '', zoom: 1, openFlowGroups: new Set(), openFlowBranches: new Set(), ended: false, failed: false, roleChoice: 'auto', pathValues: new Map(), settingsError: null, frameScreen: null, side: 'screens', story: null, storyFilters: new Set(), storyDraft: null, legends: { flow: { open: false, dismissed: false }, path: { open: false, dismissed: false } }, openGroups: new Set(), openLong: new Set(), rightView: null, storyOpen: new Set(), dockKey: null, historyFilter: null, judgmentError: null, untaggedTest: null, untaggedQuery: '', bulk: null, bulkBusy: false, ending: false, candidate: null, candidateTalk: null, composeTalk: null, storyEdit: null, storyError: null, storyWriting: false, compose: null, composing: false, caseSaving: false, caseError: null, screenInfoOpen: false, commonCallsOpen: false, discardedOpen: false, undiscardError: null, callInfoShut: null, storyQuery: '', storyStep: null, storyGapsOpen: false, storyNeedsOpen: false, talkScope: 'here', talkFilter: 'all', reachRecord: null, storyFileOpen: false, need: null, needEdit: null, needSaved: null, fieldsEdit: null, fieldsSaved: null, stepsEdit: null, stepsSaved: null, point: null, storyApp: null, boxFinds: new Map(), caseKind: null, caseNode: null, caseDraft: null, caseFilter: null, casePicked: new Set(), caseOpen: new Set(), caseBulkError: null, reviewPicked: new Set(), reviewError: null, baselineOnlyOpen: new Set() };
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -138,7 +138,15 @@ const callOf = (id) => state.data.map.calls.find((c) => c.id === id);
 const nodeWord = (id) => (callOf(id) ? '호출' : '화면');
 const callIdsOf = (s) => [...new Set(s.apiCalls.flatMap((c) => (c.endpoints ?? []).map((e) => e.callId)).filter(Boolean))];
 const hasOption = (tests, key, value) => tests.filter((t) => t.options?.some((o) => o.key === key && o.value === value));
-const optionsOf = (s, callId) => s.callOptions[callId] ?? [];
+const optionsOf = (s, callId) => s.callOptions[callId] ?? state.data.map.appWide?.callOptions[callId] ?? [];
+let appStartIds = new Set();
+const sentAtAppStart = (id) => appStartIds.has(id);
+function callScreen(id) {
+  const call = callOf(id);
+  if (!call || call.screens.length || !sentAtAppStart(id)) return call?.screens[0];
+  const { screens } = state.data.map;
+  return screens.some((s) => s.id === state.selected) ? state.selected : screens[0]?.id;
+}
 
 let loadsStarted = 0;
 let loadApplied = 0;
@@ -152,13 +160,14 @@ async function load() {
   if (order < loadApplied) return;
   loadApplied = order;
   state.data = data;
+  appStartIds = new Set(data.map.appWide ? callIdsOf(data.map.appWide) : []);
   const { screens } = state.data.map;
   if (!screens.some((s) => s.id === state.selected)) state.flowPicked = false;
   const screen = screens.find((s) => s.id === state.selected) ?? screens[0];
   state.selected = screen?.id ?? null;
   const t = state.target;
   const targetKept = t && screen && (t.node === screen.id
-    || (callIdsOf(screen).includes(t.node) && (!t.option || optionsOf(screen, t.node).some((o) => o.key === t.option.key))));
+    || ((callIdsOf(screen).includes(t.node) || sentAtAppStart(t.node)) && (!t.option || optionsOf(screen, t.node).some((o) => o.key === t.option.key))));
   if (!targetKept) {
     state.target = screen ? { node: screen.id } : null;
     state.draft = null;
@@ -296,7 +305,7 @@ function openScreen(id) {
 function openCall(id) {
   if (state.bulkBusy) return;
   state.side = 'screens';
-  select(callOf(id).screens[0], { node: id });
+  select(callScreen(id), { node: id });
   revealCallInfo();
 }
 

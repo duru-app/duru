@@ -112,7 +112,7 @@ function changeList() {
 
 /** @param {{ record: string, group: string | null }} pressed */
 function reachTalk(target, recordId, pressed) {
-  const screen = target.node === undefined ? null : screenOf(target.node) ? target.node : callOf(target.node)?.screens[0];
+  const screen = target.node === undefined ? null : screenOf(target.node) ? target.node : callScreen(target.node);
   if (screen === undefined) return;
   linePressed = pressed;
   state.talkScope = 'here';
