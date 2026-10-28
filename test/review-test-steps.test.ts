@@ -89,6 +89,20 @@ test('in a browser, a test that ran in two projects shows the steps of its own p
   });
 });
 
+test('in a browser, a trace that could not be read is still told when tests.json came from a duru that wrote no source or project on its notices', { skip: browserMissing }, async () => {
+  const withoutRun = changeData((data) => {
+    for (const n of data.tests.traceNotices) {
+      delete n.test.source;
+      delete n.test.project;
+    }
+  });
+  await withSteps(async (p) => {
+    const row = testLine(p, 'opens home without snapshots').first();
+    await row.locator('.steps-toggle').click();
+    assert.equal(await foldOf(row).textContent(), '이 테스트의 trace 파일을 읽지 못해 한 일을 알 수 없습니다. trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다.');
+  }, withoutRun);
+});
+
 test('in a browser, the calls a test sent come between its steps with their status, and one on the map opens that call', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
     const row = testLine(p, 'lists the documents on home');

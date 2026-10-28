@@ -398,7 +398,7 @@
   .test-steps button.step-project.on { color: var(--accent); }
   .test-steps .step-lines { margin: 4px 0; padding-left: 22px; }
   .test-steps .step-lines li { margin: 2px 0; overflow-wrap: anywhere; }
-  .test-steps .request-line { display: block; margin-left: 18px; }
+  .test-steps .step-lines li.request-line { display: block; margin-left: 18px; }
   .test-steps .request-line button.open-call { padding: 0; border: none; background: none; color: var(--accent); font: inherit; text-align: left; cursor: pointer; }
   .test-steps .request-line button.open-call:hover { text-decoration: underline; }
   .chip.step-open { color: var(--muted); } .chip.step-press, .chip.step-write { color: var(--accent); } .chip.step-assert { color: var(--pass); }

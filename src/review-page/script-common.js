@@ -109,8 +109,9 @@ const untaggedTests = () => state.data.tests.untagged ?? [];
 const untaggedListMissing = () => !state.data.tests.untagged && state.data.tests.untaggedCount > 0;
 const untaggedCount = () => state.data.tests.untagged?.length ?? state.data.tests.untaggedCount ?? 0;
 const untaggedKey = (t) => JSON.stringify([t.source, t.file, t.line, t.title]);
-const traceNoticeOf = (t) => (state.data.tests.traceNotices ?? []).find(({ test: n }) => n.source === t.source && n.file === t.file && n.line === t.line && n.title === t.title
-  && (t.projects ? Object.hasOwn(t.projects, n.project ?? '') : n.project === t.project));
+const traceNoticeOf = (t) => (state.data.tests.traceNotices ?? []).find(({ test: n }) => n.file === t.file && n.line === t.line && n.title === t.title
+  && (n.source == null || n.source === t.source)
+  && (n.project == null || (t.projects ? Object.hasOwn(t.projects, n.project) : t.project == null || n.project === t.project)));
 const markOf = (t) => state.data.marks.attached.find((m) => m.key === keyOf(t));
 const fmtDate = (iso) => new Date(iso).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 const isPick = (m) => m.target.case !== undefined;

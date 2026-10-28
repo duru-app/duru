@@ -37,6 +37,7 @@ export type PageData = {
     stories: Record<string, object[]>;
     untagged?: { title: string; ref: unknown; status: string }[];
     untaggedCount?: number;
+    traceNotices: { test: { title: string; source?: string; project?: string } }[];
   };
   stories: { list: Story[]; notices: { file: string }[]; unknownTags: { tag: string }[]; stale: string };
   storiesDir: string;
