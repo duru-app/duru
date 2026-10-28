@@ -746,6 +746,24 @@ test('a menu element drawn by a function inside the item\'s loop, as a render fu
   }
 });
 
+test('an element drawn by a function given in an attribute, as a dropdown overlay or a render prop, is not the menu element', async () => {
+  for (const drawn of [
+    '<Dropdown key={item.url} overlay={() => <Menu><Link to={item.url}>{item.title}</Link></Menu>}>\n          <NavLink to={item.url}>{item.title}</NavLink>\n        </Dropdown>',
+    '<NavLink key={item.url} to={item.url}\n          render={() => <Icon name={item.url} />} />',
+  ]) {
+    const edits: [string, string, string][] = [
+      [SIDEBAR, "import SidebarSection from './SidebarSection';", "import { Link, NavLink } from 'react-router-dom';\nimport { Dropdown, Menu, Icon } from 'antd';"],
+      [SIDEBAR, "sections.push(<SidebarSection key={key + '.' + subKey} name={item.url} title={section.sectionTitle} />);", `sections.push(\n        ${drawn},\n      );`],
+    ];
+    await withMenuCopy(async ({ configFile, src }) => {
+      const line = lineIn(src, SIDEBAR, '<NavLink');
+      assert.deepEqual(menuRows(screen(await build(configFile), '/admin_console/users#Users')).filter((l) => l.tableItem).map((l) => [l.to, l.line]), [
+        ['/admin_console/about/license', line], ['/admin_console/users', line], ['/admin_console/users/site', line], ['/admin_console/users/plain', line],
+      ], drawn);
+    }, { edits });
+  }
+});
+
 test('the links a menu gives for the items do not count as links into a screen when the map decides its entry screens', async () => {
   const entriesOf = (configPatch: Record<string, unknown>) => withMenuCopy(async ({ configFile }) => (await build(configFile)).entries.map((e) => e.screen), { configPatch });
   const plain = await entriesOf({ routeTables: [ROUTE_TABLE] });

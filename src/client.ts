@@ -2444,12 +2444,14 @@ export async function extractClient(config: any) {
   }
 
   // `map`, `flatMap`, `forEach` 에 넘긴 함수가 받는 항목에서, key 를 뺀 요소 속성에 값으로 넣는 field.
-  // 요소를 감싼 가장 가까운 반복 함수의 항목만 센다. 사이에 반복이 아닌 함수(render 함수 등)가 있어도 된다.
+  // 요소를 감싼 가장 가까운 반복 함수의 항목만 센다. 사이에 자식으로 넘긴 함수가 있어도 되지만,
+  // 요소 속성 값으로 넘긴 함수(overlay, render 등) 안의 요소는 세지 않는다.
   // 항목은 첫 매개변수이거나, 첫 매개변수를 `([key, item])` 처럼 배열로 풀어 받은 둘째 이름이다.
   // 첫 매개변수를 `({ url })` 로 풀어 받았다면 그 키가 field 다.
   function itemFieldsRead(p: NodePath<JSXElement>): string[] {
     const fields = new Set<string>();
     const loop = p.findParent(loopCallback);
+    if (loop && p.findParent((a) => a === loop || (a.isFunction() && Boolean(a.parentPath?.isJSXExpressionContainer() && a.parentPath.parentPath?.isJSXAttribute()))) !== loop) return [];
     for (const a of p.get('openingElement.attributes') as NodePath<any>[]) {
       if (!a.isJSXAttribute() || a.node.name.name === 'key' || !a.get('value').isJSXExpressionContainer()) continue;
       for (const x of piecesOf(a.get('value').get('expression') as NodePath)) {
