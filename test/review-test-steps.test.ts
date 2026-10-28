@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Locator, Page } from 'playwright-core';
-import { withRebuiltFixture, withServer, browserMissing, withPage, chooseScreen, TRACED } from './review-helpers.ts';
+import { withRebuiltFixture, withServer, browserMissing, withPage, chooseScreen, changeData, TRACED } from './review-helpers.ts';
 
 const STEPS = { tests: [...TRACED.tests, { format: 'playwright', path: 'results/playwright-steps', depth: 'ui' }] };
 
@@ -13,14 +13,19 @@ const focusedSteps = (p: Page) => p.evaluate(() => {
   return [el.className, el.closest('[data-steps]')?.getAttribute('data-steps') ?? null];
 });
 
-async function withSteps(fn: (p: Page) => Promise<void>) {
+const markers = async (p: Page) => {
+  const { nodes } = await (await p.context().newCDPSession(p)).send('Accessibility.getFullAXTree');
+  return nodes.filter((n) => n.role?.value === 'ListMarker').map((n) => String(n.name?.value).trim());
+};
+
+async function withSteps(fn: (p: Page) => Promise<void>, setup?: (page: Page) => Promise<unknown>) {
   await withRebuiltFixture(STEPS, (config) =>
     withServer(config, 'reviewer', (base) =>
       withPage(base, async (p) => {
         await p.waitForSelector('#screen-list li');
         await chooseScreen(p, '/home');
         await fn(p);
-      })));
+      }, { setup })));
 }
 
 test('in a browser, 「단계」 on a screen\'s test opens, in order, what the test opened, pressed, wrote and checked, and closes it again with the focus kept on it', { skip: browserMissing }, async () => {
@@ -92,6 +97,17 @@ test('in a browser, the calls a test sent come between its steps with their stat
     await foldOf(row).locator('.request-line button', { hasText: '/api/v1/document/list' }).click();
     assert.equal(await p.textContent('#center .call-info > summary .target-id .mono'), 'GET:/api/v1/document/list');
   });
+});
+
+test('in a browser, the calls between two steps take no number, so the steps are numbered one after another', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    const row = testLine(p, 'lists the documents on home');
+    await row.locator('.steps-toggle').click();
+    assert.deepEqual(await lines(foldOf(row)), ['열기 /home', 'GET /api/v1/document/list 404', 'GET /api/v1/member/list 404', '누르기 /home']);
+    assert.deepEqual(await markers(p), ['1.', '2.']);
+  }, changeData((data) => {
+    for (const runs of Object.values(data.testSteps)) runs.chromium?.push({ kind: 'press', method: 'click', path: '/home', screen: '/home#Home' });
+  }));
 });
 
 test('in a browser, the steps of a test that only sent a call can be opened from the call\'s list of tests that sent it', { skip: browserMissing }, async () => {
