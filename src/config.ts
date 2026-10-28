@@ -345,6 +345,11 @@ export function loadConfig(configPath: string) {
     throw new Error('history must be { "import", "name" }: the import path and name the app imports the history it made by, '
       + `as a function returning it or the history itself, such as { "import": "utils/browser_history", "name": "getHistory" }, not ${JSON.stringify(raw.history)}`);
   }
+  const appWideComponents = raw.appWideComponents ?? [];
+  if (!Array.isArray(appWideComponents) || !appWideComponents.every((c) => isImported(c, ['import', 'name']))) {
+    throw new Error('appWideComponents must be a list of { "import", "name" }: the import path and name the app imports a component by that it draws around all its routes, '
+      + `such as [{ "import": "providers/App/App", "name": "AppProvider" }], not ${JSON.stringify(raw.appWideComponents)}`);
+  }
   const linkComponents = raw.linkComponents ?? [];
   if (!Array.isArray(linkComponents) || !linkComponents.every((c) => isImported(c, ['import', 'name']))) {
     throw new Error('linkComponents must be a list of { "import", "name" }: the import path and name the app imports a link component by whose source duru does not read, '
@@ -402,6 +407,7 @@ export function loadConfig(configPath: string) {
     calledApiModules,
     requestFunction,
     history,
+    appWideComponents,
     linkComponents,
     linkFunctions,
     bodyArgKeys,

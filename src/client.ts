@@ -1324,7 +1324,7 @@ export async function extractClient(config: any) {
   });
 
   const routeFileSet = new Set((config.routeFiles as string[]).map((f) => path.join(config.srcRoot, f)));
-  const historyFile = config.history ? madeHistoryFile(config.history) : null;
+  const historyFile = config.history ? exportingFile('history', config.history) : null;
   const historyImports = new Map<string, boolean>();
   const screenLinks = screenLinkReader({
     configuredHistory(binding) {
@@ -1343,10 +1343,10 @@ export async function extractClient(config: any) {
   });
   const madeHistories = new Map<string, string>();
 
-  function madeHistoryFile({ import: from, name }: { import: string; name: string }) {
+  function exportingFile(at: string, { import: from, name }: { import: string; name: string }) {
     const file = imports.resolve(path.join(config.srcRoot, 'index.js'), from);
-    if (!file || !file.startsWith(config.srcRoot + path.sep)) throw new Error(`history.import ${from} names no file under srcRoot ${config.srcRoot}`);
-    if (!follower.declaration(file, name)) throw new Error(`history.name ${name} is not exported by ${path.relative(config.srcRoot, file)}`);
+    if (!file || !file.startsWith(config.srcRoot + path.sep)) throw new Error(`${at}.import ${from} names no file under srcRoot ${config.srcRoot}`);
+    if (!follower.declaration(file, name)) throw new Error(`${at}.name ${name} is not exported by ${path.relative(config.srcRoot, file)}`);
     return file;
   }
 
@@ -2924,6 +2924,10 @@ export async function extractClient(config: any) {
       }
     }
   }
+  const appWideEntries = ((config.appWideComponents ?? []) as { import: string; name: string }[]).map((c, i) => ({ ...c, file: exportingFile(`appWideComponents[${i}]`, c) }));
+  const besideApp = new Set([...routeFileSet, ...screenFiles, ...sourced.flatMap((x) => [...x.entryFiles, ...x.drawnUnder.map((d) => d.file)])] as string[]);
+  const appWideClosure = (f: string) => closureOf(f, (g) => screenFiles.has(g), besideApp);
+  const appWideFiles = [...new Set(appWideEntries.flatMap(({ file }) => closureOf(file, (g) => screenFiles.has(g), new Set([...besideApp].filter((g) => g !== file)))))];
   const routedScreens = routerTargets(routeRoots);
   const itemLinks = menuLinks();
 
@@ -3008,7 +3012,7 @@ export async function extractClient(config: any) {
     return handled.get(key)!;
   };
 
-  const members = typedMembers(config.tsconfig, [...new Set(sourced.flatMap((x) => x.files))], imports.resolve);
+  const members = typedMembers(config.tsconfig, [...new Set([...sourced.flatMap((x) => x.files), ...appWideFiles])], imports.resolve);
   const heldRouteFiles = new Set(sourced.flatMap((x) => x.files).filter((f) => routeFileSet.has(f)));
   const screenFollower = members ? nameFollower<FollowedSite>({ parse, resolve: imports.resolve, sitesOf, members }) : follower;
   const screens = sourced.map(({ s, entryFiles, isOtherScreen, files, drawnUnder, drawnFiles }, index) => {
@@ -3036,9 +3040,11 @@ export async function extractClient(config: any) {
       if (canEnter(requestFile)) for (const site of screenFollower.reach(from, (f) => canEnter(f) && f !== requestFile, { loaded })) outsideDrawn.add(site);
     }
     const seen = (site: FollowedSite) => reached.has(site) || onlyDrawn.has(site);
+    const byComponent = s.componentFile && (entryFiles.length > 1 || drawnUnder.length) ? screenFollower.reach([{ file: s.componentFile, name: null }], canEnter, { loaded }) : null;
+    const layout = (site: FollowedSite) => (byComponent && !byComponent.has(site) ? { layout: true as const } : null);
     const outside = canEnter(requestFile) ? { has: (site: FollowedSite) => outsideRequestFunction.has(site) || outsideDrawn.has(site) } : { has: seen };
     const drawnWith = <T extends { inheritedGuards?: InheritedGuard[] }>(item: T, unders: Required<InheritedGuard>[] | undefined): T => (unders ? { ...item, inheritedGuards: [...(item.inheritedGuards ?? []), ...unders] } : item);
-    const apiCalls: (ApiCallSite & { file: string | null })[] = [];
+    const apiCalls: (ApiCallSite & { file: string | null; layout?: true; actions?: DispatchedActions })[] = [];
     const own = new Set<ApiCallSite>();
     const dispatched = new Map<string, { type: ActionType; at: Set<string> }>();
     const settingReads: (SettingRead & { file: string | null })[] = [];
@@ -3048,7 +3054,7 @@ export async function extractClient(config: any) {
       for (const c of facts.apiCalls) {
         if (!seen(c) || !sends(c, outside)) continue;
         own.add(c);
-        apiCalls.push(drawnWith({ ...c, file: rel(f) }, onlyDrawn.get(c)));
+        apiCalls.push(drawnWith({ ...c, file: rel(f), ...layout(c) }, onlyDrawn.get(c)));
       }
     };
     for (const f of files) {
@@ -3108,8 +3114,31 @@ export async function extractClient(config: any) {
     });
     sagaLinks.sort((a, b) => compare(a.file, b.file) || a.line - b.line);
     links.push(...sagaLinks);
-    return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls: [...apiCalls, ...sagaCalls], settingReads, links };
+    const sent: typeof apiCalls = [...apiCalls, ...sagaCalls];
+    return { ...s, componentFile: rel(s.componentFile), closureSize: files.length, sourceFiles: files.map(rel).sort(), apiCalls: sent, settingReads, links };
   });
+
+  const appWide = appWideEntries.length ? appWideRequests() : null;
+  function appWideRequests() {
+    const inFiles = new Set<string | null>(appWideFiles);
+    const received = new Set<string>();
+    const canEnter = (f: string | null) => inFiles.has(f) || received.has(f!);
+    const loaded = (f: string) => inFiles.has(f);
+    const starts = appWideEntries.map(({ file, name }) => ({ file, name }));
+    let reached: Set<FollowedSite>;
+    for (;;) {
+      const missed = new Set<string>();
+      reached = screenFollower.reach(starts, canEnter, { missed, loaded });
+      const more = [...missed].flatMap((f) => appWideClosure(f)).filter((f) => !canEnter(f));
+      if (!more.length) break;
+      for (const f of more) received.add(f);
+    }
+    const outside = canEnter(requestFile) ? screenFollower.reach(starts, (f) => canEnter(f) && f !== requestFile, { loaded }) : reached;
+    const apiCalls = [...appWideFiles, ...received]
+      .flatMap((f) => fileFacts(f).apiCalls.filter((c) => reached.has(c) && sends(c, outside)).map((c) => ({ ...c, file: rel(f) })))
+      .sort((a, b) => compare(a.file, b.file) || a.line - b.line || compare(a.fn, b.fn));
+    return { components: appWideEntries.map(({ import: from, name, file }) => ({ import: from, name, file: rel(file)! })), sourceFiles: appWideFiles.map((f) => rel(f)!).sort(), apiCalls };
+  }
 
   // 화면이 보내지 않는 API 함수 가운데, API 파일 밖의 앱 소스에서 곧바로도 다른 API 함수를 거쳐서도 닿지 않는 것
   const onScreens = new Set(screens.flatMap((s) => s.apiCalls.map((c) => c.fn)));
@@ -3134,5 +3163,5 @@ export async function extractClient(config: any) {
   }
 
   const sagaRuns = sagaSources.length ? { runs: runs.map(({ file, line }) => `${rel(file)}:${line}`), watchers: [...watchesOf.values()].flat().length } : null;
-  return { screens, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)), framesPickingByAddress: [...framesPickingByAddress.values()].map((f) => ({ ...f, componentFile: rel(f.componentFile)! })).sort((a, b) => compare(a.file, b.file) || a.line - b.line) };
+  return { screens, appWide, apiFunctions, unreferencedApiFunctions, sagaRuns, unrunApiModules: called?.failedModules ?? null, outsideStandIns: called?.outsideStandIns ?? [], silentApiModules: called?.silentModules ?? [], bodyTypeNotices: called?.bodyTypeNotices.length ? called.bodyTypeNotices : null, redirects, unreadRoutePaths, unreadRoutes, guardInits, constants, guardSettings, settingsDefaults, settingsDefaultsIncomplete, settingsCallNotices, unresolvedAliasImports: imports.unresolved(), unusedListed: listedComponents.length + listedFunctions.length ? [...listedComponents, ...listedFunctions].filter((e) => !usedListed.has(e)).map((e) => `${e.key} ${e.import} ${e.name}`) : null, madeHistories: [...madeHistories].sort(([a], [b]) => compare(a, b)).map(([file, call]) => ({ file, call })), emptyRouteFiles, takingAddressesUnder: screensTakingAddressesUnder(routeRoots, sourced.map((x) => x.s.path)), framesPickingByAddress: [...framesPickingByAddress.values()].map((f) => ({ ...f, componentFile: rel(f.componentFile)! })).sort((a, b) => compare(a.file, b.file) || a.line - b.line) };
 }

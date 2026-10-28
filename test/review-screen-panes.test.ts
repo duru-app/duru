@@ -7,10 +7,14 @@ import { addMark, addReply, loadMarks } from '../src/marks.ts';
 import { taskList } from '../src/tasks.ts';
 import { withRebuiltFixture, withServer, postMark, browserMissing, toList, withPage, openScreenInfo, waitCallInfoInView, openDocumentScreenInShortViewport, insideRightPane, withLabLinks, screenBox, needTag, closeCallInfo } from './review-helpers.ts';
 import type { PageData } from './review-helpers.ts';
+import type { PageData as ServedData } from '../src/review.ts';
 
 declare function load(): Promise<void>;
 declare function render(): void;
 declare function hasUnsavedMark(): boolean;
+declare function opensOnPage(id: string): boolean;
+declare function optionsOf(s: unknown, callId: string): { key: string }[];
+declare const state: { target: unknown; draft: unknown; selected: string | null; data: { map: { screens: { id: string }[] } } };
 
 test('in a browser, a screen that opens only under a role or a setting shows its tests for each case under what it needs', { skip: browserMissing }, async () => {
   await withRebuiltFixture({}, (config) =>
@@ -813,4 +817,114 @@ test('in a browser, the output depth row comes after the other depths and takes 
       }),
     ),
   );
+});
+
+const LAYOUT_REQUESTS: [string, string, string][] = [
+  ['client/src/components/Layout.js', "import SideMenu from './SideMenu';", "import { useEffect } from 'react';\nimport { ajaxDocumentList, ajaxMemberList } from '../_ajax/AjaxFunc';\nimport SideMenu from './SideMenu';"],
+  ['client/src/components/Layout.js', '  return (', '  useEffect(() => {\n    ajaxDocumentList();\n    ajaxMemberList({ page: 1 });\n  }, []);\n  return ('],
+  ['client/src/Routes.js', "import Layout from './components/Layout';", "import Layout from './components/Layout';\nimport { ajaxLabExperiment } from './_ajax/AjaxFunc';\n\nexport function AppStart({ children }) {\n  ajaxLabExperiment();\n  return children;\n}"],
+];
+const commonRows = (p: Page) => p.locator('#center details.common-calls table.calls button.call-name').allTextContents();
+const ownRows = (p: Page) => p.locator('#center-body > table.calls button.call-name').allTextContents();
+
+test('in a browser, a screen lists the calls its own code sends on top and folds the calls of the layout around it and of the app start under 「공통」', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ appWideComponents: [{ import: './Routes', name: 'AppStart' }] }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/document/:tab")');
+        const common = p.locator('#center details.common-calls');
+        assert.equal(await common.getAttribute('open'), null);
+        assert.equal(await common.locator('summary').innerText(), '공통 3');
+        assert.equal(await common.locator('summary').getAttribute('title'), '앱 시작과 레이아웃이 보내는 요청');
+        assert.equal(await common.locator('summary').getAttribute('aria-label'), '앱 시작과 레이아웃이 보내는 요청 3');
+        assert.deepEqual(await ownRows(p), ['POST:/api/v1/archive/document']);
+        await common.locator('summary').click();
+        assert.deepEqual(await commonRows(p), ['GET:/api/v1/document/list', 'GET:/api/v1/member/list', 'GET:/api/v1/lab/experiment']);
+
+        await p.click('#screen-list li:has-text("/home")');
+        assert.equal(await common.getAttribute('open'), '');
+        assert.deepEqual(await ownRows(p), ['GET:/api/v1/document/list', 'POST:/api/v1/archive/document']);
+        assert.deepEqual(await commonRows(p), ['GET:/api/v1/member/list', 'GET:/api/v1/lab/experiment']);
+
+        await p.click('#screen-list li:has-text("/help")');
+        assert.equal(await p.locator('#center-body > h2:text-is("API 호출") + p').innerText(), '이 화면만 부르는 API 호출이 없습니다.');
+        assert.deepEqual(await commonRows(p), ['GET:/api/v1/lab/experiment']);
+        await common.locator('button.call-name').click();
+        const routesLine = fs.readFileSync(path.join(config.srcRoot, 'Routes.js'), 'utf8').split('\n').findIndex((l) => l.includes('ajaxLabExperiment();')) + 1;
+        const info = p.locator('#center .call-info');
+        assert.deepEqual(await info.locator('h2').allTextContents().then((hs) => hs.filter((t) => t.includes('부르는 곳'))), ['이 화면에서 부르는 곳', '앱 시작 때 부르는 곳']);
+        assert.equal(await info.locator('h2:text-is("앱 시작 때 부르는 곳") + ul li').innerText(), `ajaxLabExperiment Routes.js:${routesLine}`);
+      }),
+    ),
+  LAYOUT_REQUESTS);
+});
+
+const ME = 'GET:/api/v1/me';
+const EXPORT = 'POST:/api/v1/report/export';
+const APP_START_ONLY: [string, string, string][] = [
+  ...LAYOUT_REQUESTS,
+  ['client/src/_ajax/AjaxFunc.js', 'export const ajaxLabExperiment', "export const ajaxMe = async () => Ajax.request({ info: { METHOD: 'GET', URL: '/api/v1/me' } });\n\nexport const ajaxLabExperiment"],
+  ['client/src/Routes.js', "import { ajaxLabExperiment } from './_ajax/AjaxFunc';", "import { ajaxLabExperiment, ajaxMe, ajaxReportExport } from './_ajax/AjaxFunc';"],
+  ['client/src/Routes.js', '  ajaxLabExperiment();\n', "  ajaxLabExperiment();\n  ajaxMe();\n  ajaxReportExport({ format: 'csv', withAttachments: true });\n"],
+  ['client/src/components/Layout.js', "import { ajaxDocumentList, ajaxMemberList } from '../_ajax/AjaxFunc';", "import { ajaxDocumentList, ajaxMemberList, ajaxReportExport } from '../_ajax/AjaxFunc';"],
+  ['client/src/components/Layout.js', '    ajaxMemberList({ page: 1 });\n', "    ajaxMemberList({ page: 1 });\n    ajaxReportExport({ format: 'pdf' });\n"],
+];
+
+test('in a browser, a call only the app start sends opens on the screen in view: it stays chosen with its draft when the page reloads, and the case list says it is sent at app start and opens it', { skip: browserMissing }, async () => {
+  await withRebuiltFixture({ appWideComponents: [{ import: './Routes', name: 'AppStart' }], caseKinds: { ended: '끝난 문서' } }, (config) =>
+    withServer(config, 'reviewer', (base) =>
+      withPage(base, async (p) => {
+        await p.waitForSelector('#screen-list li');
+        await p.click('#screen-list li:has-text("/help")');
+        await p.locator('#center details.common-calls summary').click();
+        await p.click(`#center details.common-calls button.call-name:text-is("${ME}")`);
+        assert.equal(await p.textContent('#center .call-info summary .mono'), ME);
+        const served = await (await fetch(`${base}/api/data`)).json() as ServedData;
+        assert.deepEqual(served.map.appWide!.callOptions[ME], []);
+        assert.deepEqual(served.map.appWide!.callOptions[EXPORT].map((o) => o.key), ['withAttachments']);
+        assert.equal(served.map.screens.find((x) => x.id === '/help#Help')!.callOptions[EXPORT], undefined);
+        assert.deepEqual(served.map.screens.find((x) => x.id === '/home#Home')!.callOptions[EXPORT].map((o) => o.key), ['withAttachments'], 'the app start sends it with the option while /home is open');
+        const optionKeys = (screen: string) => p.evaluate(([at, id]) => optionsOf(state.data.map.screens.find((x) => x.id === at), id).map((o) => o.key), [screen, EXPORT]);
+        assert.deepEqual(await optionKeys('/help#Help'), ['withAttachments']);
+        assert.deepEqual(await optionKeys('/home#Home'), ['withAttachments']);
+        await p.fill('#right-dock textarea', '앱을 켤 때 한 번만 부른다');
+        const kept = () => p.evaluate(() => JSON.stringify([state.target, state.draft]));
+        const before = await kept();
+        assert.match(before, /앱을 켤 때 한 번만 부른다/);
+        await p.evaluate(() => load());
+        assert.equal(await kept(), before);
+        assert.equal(await p.textContent('#center .call-info summary .mono'), ME);
+        assert.equal(await p.inputValue('#right-dock textarea'), '앱을 켤 때 한 번만 부른다');
+        assert.equal(await p.evaluate((id) => opensOnPage(id), ME), true);
+
+        await p.fill('#right-dock textarea', '');
+        await p.evaluate(() => { location.hash = '#cases?kind=ended'; });
+        assert.equal(await p.textContent(`#center li.case-row[data-node="${ME}"] .where`), '앱 시작 때 보냄');
+        assert.equal(await p.textContent('#center li.case-row[data-node="GET:/api/v1/lab/experiment"] .where'), '보내는 화면 /lab · 앱 시작 때도 보냄');
+        await p.click(`#center li.case-row[data-node="${ME}"] button.node-name`);
+        await p.waitForFunction(() => location.hash.startsWith('#screens'));
+        assert.equal(await p.textContent('#center .call-info summary .mono'), ME);
+        assert.equal(await p.evaluate(() => state.selected), '/help#Help');
+        await p.evaluate(() => { location.hash = '#cases?kind=ended'; });
+        await p.click('#center li.case-row[data-node="GET:/api/v1/lab/experiment"] button.node-name');
+        await p.waitForFunction(() => location.hash.startsWith('#screens'));
+        assert.equal(await p.evaluate(() => state.selected), '/lab#Lab', 'a call a screen sends itself opens on that screen');
+
+        await p.click('#screen-list li:has-text("/home")');
+        await p.locator('#center details.common-calls tr.option', { hasText: 'withAttachments 켬' }).first().locator('td.cell').nth(1).click();
+        const optionTarget = await p.evaluate(() => JSON.stringify(state.target));
+        assert.match(optionTarget, /"option":\{"key":"withAttachments","value":true\}/);
+        await p.evaluate(() => load());
+        assert.equal(await p.evaluate(() => JSON.stringify(state.target)), optionTarget);
+
+        addMark(config.marksDir, { target: { node: '/home#Home' }, status: 'needs-more', note: 'test it', author: 'reviewer' });
+        const tasks = taskList(config).split('\n');
+        const homeAt = tasks.indexOf('## /home#Home');
+        const home = tasks.slice(homeAt, tasks.findIndex((l, i) => i > homeAt && l.startsWith('#'))).filter((l) => l.startsWith(`  - ${EXPORT} — `));
+        assert.equal(home.length, 1);
+        assert.match(home[0], / — options: withAttachments$/);
+      }),
+    ),
+  APP_START_ONLY);
 });

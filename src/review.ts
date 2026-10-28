@@ -107,15 +107,19 @@ function appLink(appUrl: string | null | undefined, routePath: string, given: an
   return appUrl.replace(/\/+$/, '') + asIsPath(routePath, given);
 }
 
-function screenCallOptions(screen: MapScreen, callsById: Map<string, MapCall>) {
+function screenCallOptions(apiCalls: MapScreen['apiCalls'], callsById: Map<string, MapCall>, appStart: MapScreen['apiCalls'] = []) {
   const sent = new Map<string, Set<string>>();
-  for (const c of screen.apiCalls) {
-    for (const e of c.endpoints ?? []) {
-      if (!e.callId) continue;
-      if (!sent.has(e.callId)) sent.set(e.callId, new Set());
-      for (const o of c.options ?? []) sent.get(e.callId)!.add(o.key);
+  const keysOf = (calls: MapScreen['apiCalls'], add: boolean) => {
+    for (const c of calls) {
+      for (const e of c.endpoints ?? []) {
+        if (!e.callId || (!add && !sent.has(e.callId))) continue;
+        if (!sent.has(e.callId)) sent.set(e.callId, new Set());
+        for (const o of c.options ?? []) sent.get(e.callId)!.add(o.key);
+      }
     }
-  }
+  };
+  keysOf(apiCalls, true);
+  keysOf(appStart, false);
   return Object.fromEntries([...sent].map(([id, keys]) => [id, callsById.get(id)!.options.filter((o) => keys.has(o.key) || o.sources.includes('type') || o.sources.includes('config'))]));
 }
 
@@ -196,7 +200,7 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
   const settingsFile = config.app?.settingsFile ? { root: config.app.settingsFile.root, merged: config.app.settingsFile.merged, file: fileSettings?.file ?? null } : null;
   const screens = map.screens.map((s) => ({
     ...s,
-    callOptions: screenCallOptions(s, callsById),
+    callOptions: screenCallOptions(s.apiCalls, callsById, map.appWide?.apiCalls),
     cases: [...screenCases(s.access), ...pickedCases(s.id)],
     access: {
       ...s.access,
@@ -205,7 +209,8 @@ export function reviewData(config: any, author: ReviewAuthor | null, app: AppHos
     },
   }));
   const calls = map.calls.map((c) => ({ ...c, cases: pickedCases(c.id) }));
-  const reviewMap = { ...map, screens, calls };
+  const appWide = map.appWide && { ...map.appWide, callOptions: screenCallOptions(map.appWide.apiCalls, callsById) };
+  const reviewMap = { ...map, screens, calls, appWide };
   return {
     map: reviewMap,
     tests,
