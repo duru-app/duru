@@ -2861,8 +2861,8 @@ whose picture is the one before keeps the last picture before it. A step on a pa
 first action in a popup, says 「화면 그림 없음」, as the driver asked at that check: `rebuild` writes `shot: null` on
 such a line, apart from a line that leaves the picture off because it is the one before, so the window does not show
 another page's picture there. A trace recorded without screenshots writes no `null`. It needs only `tests.json`
-and `test-shots/`, so it still works when
-the trace file is gone, and it shows only when at least one step has a picture. Chosen by the driver.
+and `test-shots/`, so it still works when the trace file is gone, and it shows only when at least one step has a
+picture. Chosen by the driver.
 Alternatives compared:
 - Adding 0.1× and 0.25× to the viewer's speeds: rewriting the bundled viewer, and the test's own timing stays, so a
   fill or a click still passes in a moment.

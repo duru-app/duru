@@ -716,9 +716,9 @@ lists each Playwright test that passed, with the trace of its passing run, as it
 line, and the screens it passed in order; an address no screen matches stays in that list as its path. A story test whose passing run left a trace
 carries the same order as `screens`. `walks` keeps what each traced test did, per project: its steps and the requests it sent, in order,
 and each entry of such a test names its walk as `steps`. A step or opened page carries `shot`, the name of its screen
-picture in `test-shots/`, when the trace was recorded with screenshots: no `shot` when its picture is the one of the
-line before, or when no line before it has one, and `null` when its page has no picture yet after a line that had one,
-as the first step in a popup. `traceFiles` names the trace file each walk was
+picture in `test-shots/`, when the trace was recorded with screenshots. A line without `shot` keeps the last `shot`
+written before it, skipping requests, which never carry one, and has no picture when none was written before it;
+`null` means that its page has no picture yet after a line that had one, as on the first step in a popup. `traceFiles` names the trace file each walk was
 read from, under the same key and project, from the config's folder when it is inside it.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or

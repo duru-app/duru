@@ -276,6 +276,7 @@ test('in a browser, 「재생」 shows a test\'s steps one at a time in a large 
 });
 
 test('in a browser, 「재생」 says there is no screen picture on a step whose page had none yet and on the lines after it that keep it, and shows a picture again on the next step that has one', { skip: browserMissing }, async () => {
+  let back = '';
   await withSteps(async (p) => {
     await testLine(p, 'shows the screen after each step').locator('button.replay').click();
     const view = p.locator('#replay-view');
@@ -288,18 +289,21 @@ test('in a browser, 「재생」 says there is no screen picture on a step whose
       await view.locator('button.next').click();
       assert.equal(await view.locator('.replay-count').textContent(), at);
       assert.ok(await view.locator('img').isHidden());
+      assert.ok(await view.locator('.no-shot').isVisible());
     }
     await view.locator('button.next').click();
     assert.ok(await view.locator('img').isVisible());
+    assert.equal(await view.locator('img').getAttribute('src'), `/test-shots/${encodeURIComponent(back)}`);
     assert.ok(await view.locator('.no-shot').isHidden());
   }, changeData((data) => {
-    for (const runs of Object.values(data.testSteps)) {
-      const lines = runs.chromium as { kind: string; shot?: string | null }[] | undefined;
-      if (!lines?.[1]?.shot || !lines[2]?.shot) continue;
-      lines[4].shot = lines[2].shot;
-      lines[1].shot = null;
-      delete lines[2].shot;
-    }
+    const keys = Object.keys(data.testSteps).filter((k) => k.includes('shows the screen after each step'));
+    assert.equal(keys.length, 1);
+    const lines = data.testSteps[keys[0]].chromium as { kind: string; shot?: string | null }[];
+    assert.deepEqual(lines.map((line) => line.kind), ['open', 'write', 'press', 'request', 'open']);
+    back = lines[2].shot!;
+    lines[4].shot = back;
+    lines[1].shot = null;
+    delete lines[2].shot;
   }));
 });
 
