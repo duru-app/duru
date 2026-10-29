@@ -1,7 +1,7 @@
 import path from 'node:path';
 import _traverse from '@babel/traverse';
 import type { Binding, NodePath } from '@babel/traverse';
-import type { CallExpression, ImportDeclaration, JSXAttribute, Node } from '@babel/types';
+import type { CallExpression, ImportDeclaration, JSXAttribute, JSXElement, Node } from '@babel/types';
 import { memberChain } from './client.ts';
 import { compare } from './config.ts';
 import { parseSource } from './parse.ts';
@@ -70,6 +70,9 @@ function isProp(p: NodePath<any>, prop: string) {
   const declarator = binding?.path;
   return Boolean(binding?.kind === 'const' && declarator?.node.type === 'VariableDeclarator' && declarator.node.id.type === 'ObjectPattern' && declarator.node.init?.type === 'Identifier' && declarator.node.init.name === 'props');
 }
+
+// 이만큼 깊은 파일에서 넘긴 속성까지 따라간다.
+const MAX_DEPTH = 3;
 
 export function screenInputReader({ srcRoot, resolve }: Reading) {
   const parsed = new Map<string, ReturnType<typeof parseSource>>();
@@ -164,40 +167,222 @@ export function screenInputReader({ srcRoot, resolve }: Reading) {
     return found;
   }
 
-  // 다른 파일의 컴포넌트가 그 속성을 부르는 곳마다 넘기는 키. 그 밖에 쓰면 null 이다.
-  function propKeys(file: string, prop: string) {
-    const keys: string[] = [];
-    let other = false;
-    const look = (p: NodePath<any>) => {
-      const call = p.parentPath!.isCallExpression() && p.key === 'callee' ? p.parentPath! : null;
-      const arg = call?.node.arguments[0];
-      // `onChange && onChange(...)` 의 앞자리는 부르는 자리가 아니다.
-      if (!call && p.parentPath!.isLogicalExpression() && p.key === 'left') return;
-      const first = arg?.type === 'ObjectExpression' ? arg.properties[0] : null;
-      const rest = first?.type === 'SpreadElement' && first.argument.type === 'Identifier' ? spreadOf(arg, first.argument.name) : null;
-      if (!rest) return void (other = true);
-      for (const item of rest) {
-        const key = item.type === 'ObjectProperty' ? propertyKey(item) : null;
-        const values = key !== null ? [key] : item.type === 'ObjectProperty' ? valuesOf(file, item.key, p) : null;
-        if (!values) return void (other = true);
-        for (const value of values) if (!keys.includes(value)) keys.push(value);
-      }
-    };
+  // 이 파일이 그 속성을 다른 파일의 컴포넌트에 그대로 넘긴 자리의 키.
+  function forwardedKeys(file: string, prop: string, depth: number, seen: string[]): string[] | null {
+    let found = false;
+    let keys: string[] | null = null;
     traverse(parse(file).ast, {
-      MemberExpression(p) {
-        if (p.node.computed || (p.node.property as { name?: string }).name !== prop || p.node.object.type !== 'Identifier' || p.node.object.name !== 'props') return;
-        look(p);
-      },
-      Identifier(p) {
-        if (p.node.name !== prop || !p.isReferencedIdentifier()) return;
-        if (p.parentPath.isMemberExpression() && p.key === 'property' && !p.parentPath.node.computed) return;
-        if (!isProp(p, prop)) return;
-        look(p);
+      Identifier(p: NodePath<any>) {
+        if (found || p.node.name !== prop || !p.isReferencedIdentifier() || !isProp(p, prop)) return;
+        const inside = p.parentPath?.isJSXExpressionContainer() && p.parentPath.node.expression === p.node ? p.parentPath.parentPath : null;
+        const attribute = inside?.isJSXAttribute() ? inside : null;
+        if (!attribute || attribute.node.name.type !== 'JSXIdentifier') return;
+        const element = attribute.parentPath as NodePath<any> | null;
+        const tag = element?.isJSXOpeningElement() && element.node.name.type === 'JSXIdentifier' ? element.node.name.name : null;
+        const owner = tag ? element!.scope.getBinding(tag) : undefined;
+        const imported = owner && importedName(owner);
+        const target = imported?.spec.startsWith('.') ? resolve(file, imported.spec) : null;
+        if (!imported || !target || depth + 1 >= MAX_DEPTH || seen.includes(target)) return;
+        found = true;
+        keys = propKeys(target, attribute.node.name.name, depth + 1, [...seen, file]);
       },
     });
-    return other || !keys.length ? null : keys;
+    return found ? keys : null;
   }
 
+  // 이 파일이 그 속성으로 넘긴 자리: 속성 attribute 에 이름 from 을 건넨 JSX 요소.
+  function jsxFor(file: string, attribute: string, from: string): NodePath<JSXElement> | null {
+    let found: NodePath<JSXElement> | null = null;
+    traverse(parse(file).ast, {
+      JSXAttribute(p: NodePath<JSXAttribute>) {
+        if (found || p.node.name.type !== 'JSXIdentifier' || p.node.name.name !== attribute) return;
+        const value = p.get('value') as NodePath<any>;
+        const expression = value?.isJSXExpressionContainer() ? (value.get('expression') as NodePath<any>) : value;
+        if (!expression?.isIdentifier() || expression.node.name !== from) return;
+        const element = p.parentPath as NodePath<any> | null;
+        if (element?.isJSXOpeningElement()) found = element.parentPath as NodePath<JSXElement>;
+      },
+    });
+    return found;
+  }
+
+  // 다른 파일의 컴포넌트가 그 속성을 부르는 곳마다 넘기는 키. 그 파일이 그 속성으로 다시 넘긴 자리도 따라간다.
+  // 키를 알 수 없는 자리가 있으면 null 이다.
+  function propKeys(file: string, prop: string, depth = 0, seen: string[] = []): string[] | null {
+    const bindings = new WeakMap<NodePath<any>, Map<string, Binding | undefined>>();
+    const functions = new Map<NodePath<any>, string | null>();
+    const bindingAt = (p: NodePath<any>, name: string) => {
+      let found = bindings.get(p);
+      if (!found) bindings.set(p, (found = new Map()));
+      if (!found.has(name)) found.set(name, p.scope.getBinding(name));
+      return found.get(name);
+    };
+    const named = (fn: NodePath<any> | null) => {
+      if (!fn) return null;
+      if (!functions.has(fn)) functions.set(fn, functionName(fn));
+      return functions.get(fn)!;
+    };
+    // `const { onChange } = props` 처럼 props 에서 꺼낸 그 속성은 그 속성 그대로다.
+    const fromProps = (binding: Binding | undefined) =>
+      binding?.kind === 'const' && binding.path.node.type === 'VariableDeclarator' && binding.path.node.id.type === 'ObjectPattern' && binding.path.node.init?.type === 'Identifier' && binding.path.node.init.name === 'props';
+    // 이 파일 밖에서 부르는 이름. 그 속성과 props 는 그 속성을, state 는 그 상태를 든다.
+    const given = (name: string) => (name === prop || name === 'props' ? 'props' : name === 'state' ? 'state' : null);
+    let unsure = false;
+    // 그 속성을 부른 자리의 첫 인자.
+    const argumentOf = (p: NodePath<any>): NodePath<any> | null => {
+      const arguments_ = (p.parentPath as NodePath<any>).get('arguments') as NodePath<any>[];
+      return arguments_[0] ?? null;
+    };
+
+    // 이 이름으로 넘긴 자리의 컴포넌트 파일을 같은 규칙으로 다시 읽는다. 없거나 깊거나 돌아오면 null 이다.
+    const forward = (name: string, attribute: string): string[] | null => {
+      const element = jsxFor(file, attribute, name);
+      const tag = element?.node.openingElement.name;
+      const owner = tag?.type === 'JSXIdentifier' ? element!.scope.getBinding(tag.name) : undefined;
+      const imported = owner && importedName(owner);
+      const target = imported?.spec.startsWith('.') ? resolve(file, imported.spec) : null;
+      if (!imported || !target || depth + 1 >= MAX_DEPTH || seen.includes(target)) return null;
+      return propKeys(target, attribute, depth + 1, [...seen, file]);
+    };
+
+    // 이 파일 밖에서 부르는 이름 name. name.k · name['k'] · x={name} 이면 그 속성으로 넘긴 자리다.
+    const through = (p: NodePath<any>, name: string): string[] | null => {
+      const parent = p.parentPath as NodePath<any> | null;
+      const member = parent?.isMemberExpression() && parent.node.object === p.node ? parent : null;
+      const key = member && (member.node.computed ? stringOf(member.node.property) : (member.node.property as { name?: string }).name);
+      const inside = parent?.isJSXExpressionContainer() && parent.node.expression === p.node ? parent.parentPath : null;
+      const attribute = inside?.isJSXAttribute() ? inside : null;
+      // x={onChange} 는 그 속성 그대로, onChange.k 는 k 라는 속성으로 넘긴다.
+      const as = attribute ? (attribute.node.name.type === 'JSXIdentifier' ? attribute.node.name.name : null) : key;
+      return as ? forward(name, as) : null;
+    };
+
+    // 이 자리에 놓인 값이 그 속성으로 넘기는 키. 키를 알 수 없거나 그 속성으로 넘긴 것이 아니면 null 이다.
+    const read = (p: NodePath<any>): string[] | null => {
+      if (p.isObjectExpression()) {
+        const found: string[] = [];
+        for (const item of p.get('properties') as NodePath<any>[]) {
+          if (item.isSpreadElement()) {
+            const argument = item.get('argument') as NodePath<any>;
+            const name = argument.isIdentifier() ? argument.node.name : null;
+            const binding = name ? bindingAt(argument, name) : undefined;
+            // 자식 자신의 props 나 상태를 펼친 것은 부모가 이미 가진 키다.
+            if ((binding?.kind === 'param' || fromProps(binding)) && !given(name!)) continue;
+            const inner = name ? model(argument, name, binding) : null;
+            if (!inner) return null;
+            for (const value of inner) if (!found.includes(value)) found.push(value);
+            continue;
+          }
+          if (!item.isObjectProperty()) return null;
+          const key = propertyKey(item.node);
+          const values = key !== null ? [key] : valuesOf(file, item.node.key, p);
+          if (!values) return null;
+          for (const value of values) if (!found.includes(value)) found.push(value);
+        }
+        return found;
+      }
+      if (!p.isIdentifier()) return null;
+      const b = bindingAt(p, p.node.name);
+      return model(p, p.node.name, b);
+    };
+
+    // 이 파일의 name 이 가리키는 값의 키.
+    const model = (p: NodePath<any>, name: string, binding: Binding | undefined): string[] | null => {
+      if (binding?.kind === 'module' || given(name) || (fromProps(binding) && name === prop)) return through(p, name);
+      if (binding && (binding.kind === 'let' || binding.kind === 'const')) return assigned(binding);
+      if (binding?.kind === 'param') return passed(binding);
+      return through(p, name);
+    };
+
+    // G 가 param 번째 매개변수로 받는 값: G 를 부른 자리마다 그 자리에 넘긴 값의 키다. 넘긴 값이 하나라도 다르면 null 이다.
+    const passed = (binding: Binding): string[] | null => {
+      const fn = binding.path.getFunctionParent();
+      const name = fn && named(fn);
+      if (!fn || !name || binding.scope !== fn.scope) return null;
+      const param = (fn.get('params') as NodePath<any>[]).findIndex((q) => q.isIdentifier() && q.node.name === (binding.identifier as { name?: string }).name);
+      if (param < 0) return null;
+      const owner = binding.path.getFunctionParent()?.parentPath;
+      const calls = callsOf(file, name).filter((call) => call.scope.getBinding(name) === owner?.scope.getBinding(name));
+      const found: string[] = [];
+      for (const call of calls) {
+        const arg = call.get('arguments')[param] as NodePath<any> | undefined;
+        const inner = arg?.node && !Array.isArray(arg) ? read(arg) : null;
+        if (!inner) return null;
+        for (const value of inner) if (!found.includes(value)) found.push(value);
+      }
+      return calls.length ? found : null;
+    };
+
+    // 같은 함수 안의 N 에 놓는 키: 처음 놓은 값과 N = {…}, 그리고 N.k = v · N['k'] = v. 그 밖의 쓰임이면 null 이다.
+    const assigned = (binding: Binding): string[] | null => {
+      const fn = binding.path.getFunctionParent();
+      if (!fn || binding.scope !== fn.scope) return null;
+      const name = binding.identifier.name;
+      const placed: NodePath<any>[] = [];
+      const found: string[] = [];
+      let other = false;
+      traverse(parse(file).ast, {
+        Identifier(p: NodePath<any>) {
+          if (p.node.name !== name || bindingAt(p, name) !== binding || !p.isReferencedIdentifier() || !fn.isAncestor(p)) return;
+          const parent = p.parentPath;
+          const assignment = parent.parentPath?.isAssignmentExpression() && p.key === 'object' && parent.parentPath.node.left === parent.node ? parent.parentPath : null;
+          // N = {…}
+          if (parent.isAssignmentExpression() && parent.node.left === p.node) {
+            placed.push(parent.get('right') as NodePath<any>);
+            return;
+          }
+          // N.k = v · N['k'] = v · N[K] = v
+          if (parent.isMemberExpression() && assignment) {
+            const key = propertyKey(parent.node);
+            const values = key !== null ? [key] : valuesOf(file, parent.node.property, p);
+            if (!values) return void (other = true);
+            for (const value of values) if (!found.includes(value)) found.push(value);
+            return;
+          }
+          // 그 속성에 N 을 넘기는 자리는 여기서 세는 자리다. 그 밖에 N 을 넘기는 자리는 키를 더할 수도 있다.
+          if (parent.isCallExpression() && parent.node.callee.type === 'Identifier' && parent.node.callee.name === prop && parent.node.arguments[0] === p.node) return;
+          other = true;
+        },
+      });
+      if (binding.path.isVariableDeclarator()) placed.unshift(binding.path.get('init') as NodePath<any>);
+      for (const value of placed) {
+        const inner = value?.node ? read(value) : null;
+        if (!inner) return null;
+        for (const one of inner) if (!found.includes(one)) found.push(one);
+      }
+      return other ? null : found;
+    };
+    // 이 파일이 그 속성을 부르는 곳마다 넘긴 키. 부르지 않거나, 키를 알 수 없는 자리가 있으면 null 이다.
+    const found: string[] = [];
+    let called = false;
+    traverse(parse(file).ast, {
+      Identifier(p: NodePath<any>) {
+        if (p.node.name !== prop || !p.isReferencedIdentifier() || !isProp(p, prop)) return;
+        if (p.parentPath.isMemberExpression() && p.key === 'property' && !p.parentPath.node.computed) return;
+        // `onChange && onChange(…)` 의 앞자리는 부르는 자리가 아니다.
+        if (!(p.parentPath as NodePath<any> | null)?.isCallExpression() || p.key !== 'callee') return;
+        called = true;
+        const arg = argumentOf(p);
+        const inner = arg?.node && !Array.isArray(arg) ? read(arg) : null;
+        if (!inner) return void (unsure = true);
+        for (const value of inner) if (!found.includes(value)) found.push(value);
+      },
+      MemberExpression(p: NodePath<any>) {
+        if (p.node.computed || p.node.object.type !== 'Identifier' || p.node.object.name !== 'props' || (p.node.property as { name?: string }).name !== prop) return;
+        if (!(p.parentPath as NodePath<any> | null)?.isCallExpression() || p.key !== 'callee') return;
+        called = true;
+        const arg = argumentOf(p);
+        const inner = arg?.node && !Array.isArray(arg) ? read(arg) : null;
+        if (!inner) return void (unsure = true);
+        for (const value of inner) if (!found.includes(value)) found.push(value);
+      },
+    });
+    // 그 속성을 다른 파일의 컴포넌트에 그대로 넘긴 자리가 있으면 그 컴포넌트가 넘기는 키도 함께다.
+    const forwarded = forwardedKeys(file, prop, depth, seen);
+    if (unsure || (forwarded === null && !found.length)) return null;
+    for (const key of forwarded ?? []) if (!found.includes(key)) found.push(key);
+    return called || found.length ? found : null;
+  }
   // 이 파일의 상태마다 그 상태의 set 함수에 쓰인 키.
   function keysIn(file: string) {
     const byState = statesIn(file);

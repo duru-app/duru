@@ -55,9 +55,13 @@ export const ajaxSpread = async ({ data }) => Ajax.request({ info: Option.REST_A
 `;
 
 // 실제 화면처럼 부모가 자식이 넘긴 키를 상태에 합치고, 저장할 때 그 상태를 API 함수에 넘긴다.
+// 자식은 키를 넘기는 세 가지 모양으로 부모의 handleChange 를 부른다.
 const SIGNER_EDIT = `import { useState } from 'react';
 import { ajaxUpdateSigner, ajaxSpread } from '_ajax/AjaxFunc';
 import SignerPki from './SignerPki';
+import SignerInfo from './SignerInfo';
+import SignerAuth from './SignerAuth';
+import SignerNotification from './SignerNotification';
 
 export default function SignerEdit({ id }) {
   const [data, setData] = useState({});
@@ -78,10 +82,52 @@ export default function SignerEdit({ id }) {
   return (
     <div>
       <SignerPki data={data} onChange={handleChange} />
+      <SignerInfo data={data} onChange={handleChange} />
+      <SignerAuth data={data} onChange={handleChange} />
+      <SignerNotification data={data} onChange={handleChange} />
       <button onClick={update}>save</button>
       <button onClick={send}>send</button>
     </div>
   );
+}
+`;
+
+// 속성으로 받은 handleChange 를 그대로 부르는 자식. 키를 이름이 아니라 객체로 넘긴다.
+const SIGNER_INFO = `export default function SignerInfo({ data, onChange }) {
+  const handleChange = (data) => {
+    onChange && onChange(data);
+  };
+
+  return <input onChange={(e) => handleChange({ 'signer.name': e.target.value })} />;
+}
+`;
+
+// 키를 매개변수로 받아 let 으로 둔 객체에 담아 넘기는 자식.
+const SIGNER_AUTH = `export default function SignerAuth({ data, onChange }) {
+  const handleChange = (type, value) => {
+    let newData = {};
+    newData[type] = value;
+    onChange && onChange(newData);
+  };
+
+  return <input onChange={(e) => handleChange('signer.email', e.target.value)} />;
+}
+`;
+
+// 속성을 그대로 손자에게 넘기는 자식.
+const SIGNER_NOTIFICATION = `import FormNotificationType from './FormNotificationType';
+
+export default function SignerNotification({ data, onChange }) {
+  return <FormNotificationType data={data} onChange={onChange} />;
+}
+`;
+
+const FORM_NOTIFICATION_TYPE = `export default function FormNotificationType({ data, onChange }) {
+  const handleChange = (type, value) => {
+    onChange({ ...data, [type]: value });
+  };
+
+  return <button onClick={() => handleChange('signer.notify.extra', true)}>extra</button>;
 }
 `;
 
@@ -99,13 +145,23 @@ const SIGNER_PKI = `export default function SignerPki({ data, onChange }) {
 }
 `;
 
-const base = { 'components/SignerEdit.js': SIGNER_EDIT, 'components/SignerPki.js': SIGNER_PKI, '_ajax/Ajax.js': AJAX, '_ajax/AjaxFunc.js': AJAX_FUNC };
+const base = {
+  'components/SignerEdit.js': SIGNER_EDIT,
+  'components/SignerPki.js': SIGNER_PKI,
+  'components/SignerInfo.js': SIGNER_INFO,
+  'components/SignerAuth.js': SIGNER_AUTH,
+  'components/SignerNotification.js': SIGNER_NOTIFICATION,
+  'components/FormNotificationType.js': FORM_NOTIFICATION_TYPE,
+  '_ajax/Ajax.js': AJAX,
+  '_ajax/AjaxFunc.js': AJAX_FUNC,
+};
 
 const checked = (map: ScreenMap, fn: string) => map.inputsToCheck!.filter((k) => k.fn === fn && k.screen.includes('SignerEdit')).map((k) => k.key);
 
 test('a key a child component writes into the parent state and that the API function does not copy is listed to check, the one it copies is not', async () => {
   const map = await build(fixtureCopy(base));
-  assert.deepEqual(checked(map, 'ajaxUpdateSigner'), ['signer.attribute.pkiSignType']);
+  // 이름과 메일은 API 함수가 그대로 옮기고, PKI 와 알림의 키는 옮기지 않는다.
+  assert.deepEqual(checked(map, 'ajaxUpdateSigner'), ['signer.attribute.pkiSignType', 'signer.notify.extra']);
   assert.deepEqual(map.unknownInputs!.filter((u) => u.fn === 'ajaxUpdateSigner'), []);
 });
 
@@ -147,6 +203,42 @@ test('a call whose argument the API function spreads whole is unknown rather tha
   assert.equal(spread.length, 1);
   assert.match(spread[0].reason, /spread/);
   assert.equal(map.inputsToCheck!.filter((k) => k.fn === 'ajaxSpread').length, 0);
+});
+
+test('a child that hands the parent state a value it computes rather than an object literal leaves that call unknown', async () => {
+  const map = await build(fixtureCopy({
+    ...base,
+    // 자식이 넘기는 값을 다른 함수가 만든다면, 그 값이 어떤 키를 더하는지 이 파일에서 알 수 없다.
+    'components/SignerInfo.js': `const compute = (x) => ({ 'signer.computed': x });
+
+export default function SignerInfo({ data, onChange }) {
+  return <input onChange={(e) => onChange(compute(e.target.value))} />;
+}
+`,
+  }));
+  const unknown = map.unknownInputs!.filter((u) => u.fn === 'ajaxUpdateSigner');
+  assert.equal(unknown.length, 1);
+  assert.match(unknown[0].reason, /spread of newData/);
+});
+
+test('a child that fills the object it hands the parent with Object.assign leaves that call unknown', async () => {
+  const map = await build(fixtureCopy({
+    ...base,
+    // Object.assign 으로 더한 키는 적힌 자리가 없어 이 파일에서 읽을 수 없다.
+    'components/SignerAuth.js': `export default function SignerAuth({ data, onChange }) {
+  const handleChange = (type, value) => {
+    let newData = {};
+    Object.assign(newData, { [type]: value });
+    onChange && onChange(newData);
+  };
+
+  return <input onChange={(e) => handleChange('signer.email', e.target.value)} />;
+}
+`,
+  }));
+  const unknown = map.unknownInputs!.filter((u) => u.fn === 'ajaxUpdateSigner');
+  assert.equal(unknown.length, 1);
+  assert.match(unknown[0].reason, /spread of newData/);
 });
 
 test('a key parameter given a variable at one call makes the keys of that state unknown, not a list to check', async () => {
