@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { FunctionInputs } from './api-calls-worker.ts';
 import { extractClient, UNKNOWN } from './client.ts';
 import { clientPath, loadServerEndpoints, matchEndpoint } from './server.ts';
 import { addressesUnderRoutes, linkTargets, screenAccess } from './access.ts';
@@ -53,6 +54,9 @@ export interface ApiFunction {
   line: number | null;
   endpoints: Endpoint[];
   error?: string;
+  // 요청에 실린 인자의 자리, 펼쳐 넘긴 인자의 자리. 알아내지 못했으면 inputsUnknown 에 그 까닭이 있다.
+  inputs?: FunctionInputs;
+  inputsUnknown?: string;
 }
 
 interface ApiFunctions {

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import _traverse from '@babel/traverse';
 import type { ClassMethod, ClassPrivateMethod, ClassProperty, TSParameterProperty } from '@babel/types';
-import type { AttemptError, FunctionLocation, SentRequest, WorkerData } from './api-calls-worker.ts';
+import type { AttemptError, FunctionInputs, FunctionLocation, SentRequest, WorkerData } from './api-calls-worker.ts';
 import type { BodyMethod, BodyTypeNotice } from './body-types.ts';
 import { UNKNOWN } from './client.ts';
 import { moduleCopier } from './constants.ts';
@@ -23,7 +23,7 @@ type WorkerMessage =
   | { type: 'failed'; unit: string; file: string; error: Failure }
   | { type: 'same'; file: string; exportName: string; as: { file: string; exportName: string } }
   | { type: 'classes'; file: string; exportName: string; locations: FunctionLocation[] }
-  | { type: 'called'; unit: string; file: string; exportName: string; member: string | null; location: FunctionLocation | null; requests: SentRequest[]; error: AttemptError | null };
+  | { type: 'called'; unit: string; file: string; exportName: string; member: string | null; location: FunctionLocation | null; requests: SentRequest[]; error: AttemptError | null; inputs?: FunctionInputs; inputsUnknown?: string };
 
 type ReportedMessage = Exclude<WorkerMessage, { type: 'end' | 'attempt' | 'begin' }>;
 
@@ -36,6 +36,8 @@ interface CalledUnit {
   location: FunctionLocation | null;
   requests: SentRequest[];
   error: Failure | null;
+  inputs?: FunctionInputs;
+  inputsUnknown?: string;
 }
 
 export interface ApiEndpoint {
@@ -50,6 +52,8 @@ export interface ApiFunction {
   line: number | null;
   endpoints: ApiEndpoint[];
   error?: string;
+  inputs?: FunctionInputs;
+  inputsUnknown?: string;
 }
 
 const traverse = _traverse.default ?? _traverse;
@@ -299,6 +303,8 @@ export async function recordApiCalls(config: any, resolve: ImportResolver['resol
         line,
         endpoints,
         ...(c.error && { error: unmarked(firstLine(copier.rename(c.error.message))) }),
+        ...(c.inputs && { inputs: c.inputs }),
+        ...(c.inputsUnknown && { inputsUnknown: c.inputsUnknown }),
       };
       exported(key, c.file, c.exportName);
       const sentBody = new Set(c.requests.filter((r) => r.body).map((r) => requestOf(r, server)).map((r) => `${r.method} ${r.url}`));

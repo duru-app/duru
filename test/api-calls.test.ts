@@ -234,6 +234,7 @@ test('a method checking that its address values are strings or numbers while it 
     file: 'contracts/api/contract.api.ts',
     line: 83,
     endpoints: [{ method: 'POST', url: '/internal/v2/workspace/{?}/contract/{?}/update', line: 83, server: { status: 'none' }, callId: 'POST:/internal/v2/workspace/{?}/contract/{?}/update' }],
+    inputs: { sent: [['0', 'workspaceId'], ['0', 'contractId']], spread: [] },
   });
 });
 
@@ -1020,4 +1021,118 @@ test('the usage guide names the line for calls that reach no screen with both of
   assert.match(decisions, /\*\*Calls that reach no screen are named in one line, split by whether any app source reaches their API functions\.\*\*[^]*?Compared:\n- The places the source calls an API function: [^]*?\n- References from app code one level deep[^]*?\n- Sorting the calls by what extract read of them/);
   assert.match(readme, /^- `N calls reach no screen: N unused by app code \(<call IDs>, …\), N other \(<call IDs>, …\)` — [^]*?\(`callsOnNoScreen`\)[^]*?`unused by app code`: [^]*?`other`: /m);
   assert.match(skill, /A `N calls reach no screen: …` line [^]*?The `other` ones are where a screen may be missing a request/);
+});
+
+// requestFunction 에 body 자리를 더한 설정. 인자가 요청에 어떻게 실렸는지 보려면 본문까지 봐야 한다.
+const WITH_BODY = { ...CALLED, requestFunction: { ...CALLED.requestFunction, body: '0.body' } };
+const inputsCopy = (module: string, keys: Record<string, unknown> = {}) =>
+  fixtureCopy({ ...WITH_BODY, calledApiModules: ['invoices/api/inputs.ts'], ...keys }, { 'invoices/api/inputs.ts': module });
+const inputsOf = async (module: string, keys?: Record<string, unknown>) =>
+  (await build(inputsCopy(module, keys))).apiFunctions['inputsApi.save'].inputs;
+
+test('the input keys a screen passes and the API function copies one by one into the body are the ones the request carries, and no other key of the same object is', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save(params: { data: Record<string, unknown> }) {',
+    "    const { data } = params;",
+    "    const body: Record<string, unknown> = {};",
+    "    ['user.name', 'user.email'].forEach((k) => { if (k in data) body[k.split('.').pop()!] = data[k]; });",
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], spread: [] });
+});
+
+test('the input key a screen passes whole as the body is the one the request carries', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save(params: { data: Record<string, unknown> }) {',
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: params.data });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data']], spread: [] });
+});
+
+test('the input key a screen passes into the address of the request is the one the request carries, and the rest of the address is not a key', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save({ params }: { params: { page: unknown; size: unknown } }) {',
+    "    return executeRequest({ endpoint: { method: 'GET', path: '/list' }, url: '/list?page=' + String(params.page) });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'params', 'page']], spread: [] });
+});
+
+test('the input key a screen passes under another name in a smaller object of the body is the one the request carries', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save({ data }: { data: Record<string, unknown> }) {',
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { profile: { nick: data['user.nickname'] } } });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  assert.deepEqual(await inputsOf(module), { sent: [['0', 'data', 'user.nickname']], spread: [] });
+});
+
+test('the input object a screen spreads into the body is reported as spread rather than as each of its keys', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save({ data }: { data: Record<string, unknown> }) {',
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { ...data } });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  assert.deepEqual(await inputsOf(module), { sent: [], spread: [['0', 'data']] });
+});
+
+test('an API function that fails only when a value it is given is itself a stand-in it cannot read says the input keys are unknown, and its addresses stay as they were', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save({ data }: { data: { kind: unknown } }) {',
+    '    const given = data.kind as { value: unknown };',
+    "    if (given.value === given) throw new Error('kind must hold a value');",
+    "    return executeRequest({ endpoint: { method: 'POST', path: '/save' }, url: '/save', body: { kind: String(given) } });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  const map = await build(inputsCopy(module));
+  const without = await build(inputsCopy(module, { requestFunction: CALLED.requestFunction }));
+  const fn = map.apiFunctions['inputsApi.save'];
+  assert.equal(fn.inputsUnknown, 'threw with tagged values: kind must hold a value');
+  assert.equal(fn.inputs, undefined);
+  assert.deepEqual(endpointsOf(map, 'inputsApi.save'), endpointsOf(without, 'inputsApi.save'));
+});
+
+test('an API function that needs a number where it reads the input it is given says the input keys are unknown rather than guessing them', async () => {
+  const module = [
+    "import { executeRequest } from '../../contracts/api/request';",
+    'export const inputsApi = {',
+    '  save({ data }: { data: { count: unknown } }) {',
+    "    if (typeof data.count !== 'number') throw new Error('count must be a number');",
+    "    return executeRequest({ endpoint: { method: 'GET', path: '/count' }, url: '/count?limit=' + data.count });",
+    '  },',
+    '};',
+    '',
+  ].join('\n');
+  const map = await build(inputsCopy(module));
+  const without = await build(inputsCopy(module, { requestFunction: CALLED.requestFunction }));
+  const fn = map.apiFunctions['inputsApi.save'];
+  assert.equal(fn.inputsUnknown, 'needs numbers');
+  assert.equal(fn.inputs, undefined);
+  assert.deepEqual(endpointsOf(map, 'inputsApi.save'), endpointsOf(without, 'inputsApi.save'));
 });
