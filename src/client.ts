@@ -431,7 +431,7 @@ export async function extractClient(config: any) {
         if (!source || imports.resolve(from, source.value) !== file) continue;
         if (!statement.isImportDeclaration()) {
           const named = statement.isExportNamedDeclaration() ? statement.node.specifiers : [];
-          if (statement.isExportAllDeclaration() || named.some((x) => x.type === 'ExportNamespaceSpecifier' || (x.type === 'ExportSpecifier' && keyName({ key: (x as ExportSpecifier).exported }) === name))) compares = false;
+          if (statement.isExportAllDeclaration() || named.some((x) => x.type === 'ExportNamespaceSpecifier' || (x.type === 'ExportSpecifier' && keyName({ key: (x as ExportSpecifier).local }) === name))) compares = false;
           continue;
         }
         for (const x of (statement as NodePath<ImportDeclaration>).get('specifiers')) {
@@ -1319,7 +1319,7 @@ export async function extractClient(config: any) {
     if (parent.isUnaryExpression({ operator: '!' })) return true;
     if ((parent.isCallExpression() || parent.isOptionalCallExpression()) && parent.node.callee.type === 'Identifier' && parent.node.callee.name === 'Boolean') return true;
     if ((parent.isIfStatement() || parent.isWhileStatement() || parent.isConditionalExpression()) && at.key === 'test') return true;
-    if (parent.isLogicalExpression()) return true;
+    if (parent.isLogicalExpression({ operator: '&&' }) && at.key === 'left') return true;
     return parent.isBinaryExpression() && ['===', '!==', '==', '!=', '>', '>=', '<', '<='].includes(parent.node.operator);
   }
 

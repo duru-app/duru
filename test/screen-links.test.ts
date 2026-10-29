@@ -1144,6 +1144,33 @@ export default function Team() {
   assert.deepEqual(linksOf(map, '/team/:team#Team'), [['{?}', lineOf(indexed, 'history.push'), [], []], ...listRows(ROUTE_LIST)]);
 });
 
+test('a list of route constants stays a link source where the route find returns is the address of a move through ?? or ||, or where a re-export under another name is written as a link’s address', async () => {
+  const listRowsOf = (map: any, id: string) => linksOf(map, id).filter((row: any) => row[1] === lineOf(ROUTE_LIST, 'export const'));
+  for (const fallback of ['??', '||']) {
+    const found = `import { useHistory, useLocation } from 'react-router-dom';
+import { routesToSkip } from './Constants';
+
+export default function Home() {
+  const history = useHistory();
+  const { pathname } = useLocation();
+  return <button onClick={() => history.push(routesToSkip.find((route) => pathname.startsWith(route)) ${fallback} '/team/x')}>go</button>;
+}
+`;
+    const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': found }));
+    assert.deepEqual(listRowsOf(map, '/home#Home'), listRows(ROUTE_LIST), fallback);
+  }
+  const barrel = `export { routesToSkip as skipList } from './Constants';\n`;
+  const help = `import { Link } from 'react-router-dom';
+import { skipList } from './Barrel';
+
+export default function Help() {
+  return <nav>{skipList.map((route) => <Link key={route} to={route}>go</Link>)}</nav>;
+}
+`;
+  const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Barrel.js': barrel, 'Home.js': listPage('Home', COMPARED_LIST), 'Help.js': help }));
+  assert.deepEqual(listRowsOf(map, '/help/:page?#Help'), listRows(ROUTE_LIST));
+});
+
 test('a list of route constants a component only compares with the address gives no link on any screen that component is drawn on', async () => {
   const page = (name: string) => `import Nav from './Nav';\n\nexport default function ${name}() {\n  return <main><Nav /></main>;\n}\n`;
   const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Nav.js': listPage('Nav', COMPARED_LIST), 'Home.js': page('Home'), 'Help.js': page('Help') }));
