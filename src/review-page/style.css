@@ -396,7 +396,7 @@
   a.replay { text-decoration: none; }
   .replay:disabled { color: var(--muted); cursor: default; }
   .test-steps button.shot-thumb { display: block; margin: 2px 0 4px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); cursor: zoom-in; }
-  .test-steps button.shot-thumb img { display: block; height: 72px; width: auto; border-radius: 3px; }
+  .test-steps button.shot-thumb img { display: block; width: min(360px, 100%); height: auto; border-radius: 3px; }
   #shot-view { max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
   #shot-view::backdrop { background: rgba(0, 0, 0, .55); }
   #shot-view img { display: block; max-width: calc(100vw - 50px); max-height: calc(100vh - 80px); }

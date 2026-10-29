@@ -202,7 +202,7 @@ test('in a browser, a step line shows a small picture of the screen after it, an
     const big = view.locator('img');
     await big.evaluate((img: HTMLImageElement) => img.decode());
     const width = (img: Locator) => img.evaluate((el: HTMLImageElement) => el.getBoundingClientRect().width);
-    assert.ok(await width(big) > 4 * await width(thumbs.nth(2)));
+    assert.ok(await width(big) > 1.5 * await width(thumbs.nth(2)));
     await p.keyboard.press('Escape');
     assert.equal(await view.evaluate((d: HTMLDialogElement) => d.open), false);
   });
