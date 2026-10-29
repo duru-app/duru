@@ -1319,7 +1319,7 @@ export async function extractClient(config: any) {
     if (parent.isUnaryExpression({ operator: '!' })) return true;
     if ((parent.isCallExpression() || parent.isOptionalCallExpression()) && parent.node.callee.type === 'Identifier' && parent.node.callee.name === 'Boolean') return true;
     if ((parent.isIfStatement() || parent.isWhileStatement() || parent.isConditionalExpression()) && at.key === 'test') return true;
-    if (parent.isLogicalExpression({ operator: '&&' }) && at.key === 'left') return true;
+    if (parent.isLogicalExpression()) return (parent.node.operator === '&&' && at.key === 'left') || comparedValue(parent);
     return parent.isBinaryExpression() && ['===', '!==', '==', '!=', '>', '>=', '<', '<='].includes(parent.node.operator);
   }
 

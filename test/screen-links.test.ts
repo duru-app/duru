@@ -1144,7 +1144,7 @@ export default function Team() {
   assert.deepEqual(linksOf(map, '/team/:team#Team'), [['{?}', lineOf(indexed, 'history.push'), [], []], ...listRows(ROUTE_LIST)]);
 });
 
-test('a list of route constants stays a link source where the route find returns is the address of a move through ?? or ||, or where a re-export under another name is written as a link’s address', async () => {
+test('a list of route constants stays a link source where the route find returns is the address of a move through ?? or ||, but not where ?? or || only feeds a test, and where a re-export under another name is written as a link’s address', async () => {
   const listRowsOf = (map: any, id: string) => linksOf(map, id).filter((row: any) => row[1] === lineOf(ROUTE_LIST, 'export const'));
   for (const fallback of ['??', '||']) {
     const found = `import { useHistory, useLocation } from 'react-router-dom';
@@ -1158,6 +1158,10 @@ export default function Home() {
 `;
     const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': found }));
     assert.deepEqual(listRowsOf(map, '/home#Home'), listRows(ROUTE_LIST), fallback);
+  }
+  for (const guard of ['pathname && routesToSkip.find((route) => route === pathname)', 'routesToSkip.find((route) => route === pathname) || pathname === "/"']) {
+    const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': listPage('Home', `(${guard}) ? 'skip' : 'show'`) }));
+    assert.deepEqual(listRowsOf(map, '/home#Home'), [], guard);
   }
   const barrel = `export { routesToSkip as skipList } from './Constants';\n`;
   const help = `import { Link } from 'react-router-dom';

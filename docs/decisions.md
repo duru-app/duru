@@ -739,7 +739,7 @@ The limits, left as they were: an array handed to the matcher, a route read by k
 (`matches(list, pathname)`), a list compared through `map` or `forEach`, and a matcher name that moves. A file
 that reads an exported list is looked at only when it is drawn on a screen, is a route file or app-wide, or holds a
 saga run, so a move through the list in a file only a saga handler reaches, or in a file that loads the list with
-`import()`, is missed and the rows go.
+`import()` or `require`, is missed and the rows go.
 
 **The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
 the name.**
