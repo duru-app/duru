@@ -1144,22 +1144,23 @@ export default function Team() {
   assert.deepEqual(linksOf(map, '/team/:team#Team'), [['{?}', lineOf(indexed, 'history.push'), [], []], ...listRows(ROUTE_LIST)]);
 });
 
-test('a list of route constants stays a link source where the route find returns is the address of a move through ?? or ||, but not where ?? or || only feeds a test, and where a re-export under another name is written as a link’s address', async () => {
+test('a list of route constants stays a link source where the route find returns is the address of a move, behind &&, ?? or || too, or where a re-export under another name is written as a link’s address, and gives no link where &&, ?? or || around find only feeds a test', async () => {
   const listRowsOf = (map: any, id: string) => linksOf(map, id).filter((row: any) => row[1] === lineOf(ROUTE_LIST, 'export const'));
-  for (const fallback of ['??', '||']) {
+  const find = 'routesToSkip.find((route) => pathname.startsWith(route))';
+  for (const address of [`${find} ?? '/team/x'`, `${find} || '/team/x'`, `pathname && ${find}`]) {
     const found = `import { useHistory, useLocation } from 'react-router-dom';
 import { routesToSkip } from './Constants';
 
 export default function Home() {
   const history = useHistory();
   const { pathname } = useLocation();
-  return <button onClick={() => history.push(routesToSkip.find((route) => pathname.startsWith(route)) ${fallback} '/team/x')}>go</button>;
+  return <button onClick={() => history.push(${address})}>go</button>;
 }
 `;
     const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': found }));
-    assert.deepEqual(listRowsOf(map, '/home#Home'), listRows(ROUTE_LIST), fallback);
+    assert.deepEqual(listRowsOf(map, '/home#Home'), listRows(ROUTE_LIST), address);
   }
-  for (const guard of ['pathname && routesToSkip.find((route) => route === pathname)', 'routesToSkip.find((route) => route === pathname) || pathname === "/"']) {
+  for (const guard of ['pathname && routesToSkip.find((route) => route === pathname)', 'routesToSkip.find((route) => route === pathname) || pathname === "/"', 'routesToSkip.find((route) => route === pathname) ?? null']) {
     const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': listPage('Home', `(${guard}) ? 'skip' : 'show'`) }));
     assert.deepEqual(listRowsOf(map, '/home#Home'), [], guard);
   }

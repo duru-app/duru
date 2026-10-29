@@ -736,10 +736,12 @@ with. No screen loses its last way in except `/usage-explorer#UsageExplorerPage`
 become entry screens by `no-incoming-link`, and no source file navigates to either route. In each screen's
 `access` only the list of links changes; the roles, settings and route values it carries stay as they were.
 The limits, left as they were: an array handed to the matcher, a route read by key, the app's own compare helper
-(`matches(list, pathname)`), a list compared through `map` or `forEach`, and a matcher name that moves. A file
-that reads an exported list is looked at only when it is drawn on a screen, is a route file or app-wide, or holds a
-saga run, so a move through the list in a file only a saga handler reaches, or in a file that loads the list with
-`import()` or `require`, is missed and the rows go.
+(`matches(list, pathname)`), a list compared through `map` or `forEach`, a matcher name that moves, and a found
+route wrapped in `!` or `as` or kept in a variable before the test, which counts as a value and keeps the rows. A
+file that reads an exported list is looked at only when it is drawn on a screen, is a route file or app-wide, or
+holds a saga run, and only through `import` and `export`, so a move through the list in a file only a saga handler
+reaches, in a file that loads the list with `import()`, or in any file that reads it with `require` is missed and
+the rows go.
 
 **The roles that pass a role guard can be written in the config (`roleGuards`), with the kind of role before
 the name.**
