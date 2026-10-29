@@ -2825,17 +2825,20 @@ address, and the last picture until then when it was first seen as an action sta
 snapshot still shows the old address: the picture after that next action is its own. A page opened by a move (`goto`,
 `reload`, `goBack`, `goForward`) takes instead the last picture of its page taken after the move ended and before the
 next step on it acts: at its `input` snapshot, at the end of a check, or else as it starts. It takes the rule above
-when there is no such picture or no next step, and when a snapshot in between shows another address, also one that
-differs only after `#`, as when the app sends `/login` on to `/home`: the trace does not say when the address
-changed, so a later picture may be the other page's. Asked for at the second screen check of #481 (2026-10-29), where
-the first 「열기」 showed a white screen: the first picture after a move is taken before the page is drawn. Measured: in
-that trace the move ends at 265.4, the picture at 268.1 is white and the one at 279.6, before the `fill` acts at
-284.1, shows the page. In the 28 into-sign traces with screenshots in `~/qa/out` (`playwright-core` 1.60.0) there are
-50 pages opened at an address: 39 had a blank first picture or a loading spinner and now show the page drawn, 7 were
-drawn and now show a picture taken later, and 4 stay blank, 2 because the only picture before the next step acts is
-the blank one and 2 because there is none; the pages reached by a click keep their pictures. Only `goto` was
-measured. A line whose picture is the one of the line before shows none, as the 「열기」 after a click that moved the
-page would.
+when there is no such picture or no next step, and when a snapshot in between shows another address, as when the app
+sends `/login` on to `/home`, or `#/login` on to `#/home` in an app that routes after `#`: the trace does not say
+when the address changed, so a later picture may be the other page's. The whole address is compared, as the step
+lines are split on it, rather than the address without what follows `#`, which put the picture of `#/home` on the
+line of `#/login`; so an anchor the app adds, as `#intro`, also brings back the first picture after the move, which
+is what the line showed before this rule. None of the into-sign traces below opens an address with `#`. Asked for at
+the second screen check of #481 (2026-10-29), where the first 「열기」 showed a white screen: the first picture after a
+move is taken before the page is drawn. Measured: in that trace the move ends at 265.4, the picture at 268.1 is white
+and the one at 279.6, before the `fill` acts at 284.1, shows the page. In the 28 into-sign traces with screenshots in
+`~/qa/out` (`playwright-core` 1.60.0) there are 50 pages opened at an address: 39 had a blank first picture or a
+loading spinner and now show the page drawn, 7 were drawn and now show a picture taken later, and 4 stay blank, 2
+because the only picture before the next step acts is the blank one and 2 because there is none; the pages reached by
+a click keep their pictures. Only `goto` was measured. A line whose picture is the one of the line before shows none,
+as the 「열기」 after a click that moved the page would.
 `rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, in place of the ones there
 before, so they show as long as the steps do, also when the traces have been moved. In that trace that is 3 of its 4
 pictures, 13.5 KB of 18.1 KB; there is no limit on the folder's size.

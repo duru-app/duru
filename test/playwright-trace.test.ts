@@ -676,7 +676,7 @@ test('a page opened at an address shows the last picture before the next step on
   ]);
 });
 
-test('a page opened at an address keeps the first picture after the move when the app moved it to another address before the next step, also after the #, and takes the last one before a check ends when a check comes next', () => {
+test('a page opened at an address keeps the first picture after the move when the app moved it to another address before the next step, and takes the last one before a check ends when a check comes next', () => {
   const act = (callId: string, method: string, startTime: number, endTime: number, params = {}) => [
     { type: 'before', callId, pageId: 'p', method, startTime, params },
     { type: 'after', callId, endTime },
@@ -686,21 +686,38 @@ test('a page opened at an address keeps the first picture after the move when th
     ...act('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/login', 20),
     ...act('2', 'fill', 30, 50, { selector: 'internal:label="메모"', value: 'a' }),
     frameSnapshot('before@2', 'http://x/home', 30), frameSnapshot('input@2', 'http://x/home', 40), frameSnapshot('after@2', 'http://x/home', 50),
-    ...act('5', 'goto', 100, 110), frameSnapshot('after@5', 'http://x/#/login', 110),
-    ...act('6', 'click', 120, 130), frameSnapshot('before@6', 'http://x/#/home', 120), frameSnapshot('input@6', 'http://x/#/home', 125), frameSnapshot('after@6', 'http://x/#/home', 130),
     ...act('3', 'goto', 60, 70), frameSnapshot('after@3', 'http://x/list', 70),
     ...act('4', 'expect', 72, 90), frameSnapshot('before@4', 'http://x/list', 72), frameSnapshot('after@4', 'http://x/list', 90),
     frame('login.jpeg', 22), frame('home.jpeg', 25), frame('filled.jpeg', 45), frame('empty.jpeg', 71), frame('rows.jpeg', 85),
-    frame('hash-login.jpeg', 112), frame('hash-home.jpeg', 115), frame('pressed.jpeg', 135),
-  ], [], { 'resources/login.jpeg': 'l', 'resources/home.jpeg': 'h', 'resources/filled.jpeg': 'f', 'resources/empty.jpeg': 'e', 'resources/rows.jpeg': 'r', 'resources/hash-login.jpeg': 'hl', 'resources/hash-home.jpeg': 'hh', 'resources/pressed.jpeg': 'p' })));
+  ], [], { 'resources/login.jpeg': 'l', 'resources/home.jpeg': 'h', 'resources/filled.jpeg': 'f', 'resources/empty.jpeg': 'e', 'resources/rows.jpeg': 'r' })));
   assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`)), [
     'open /login login.jpeg',
     'open /home home.jpeg',
     'write /home filled.jpeg',
     'open /list rows.jpeg',
     'assert /list -',
-    'open /#/login hash-login.jpeg',
-    'open /#/home hash-home.jpeg',
+  ]);
+});
+
+test('a page opened at an address whose part after # changes before the next step keeps the first picture after the move, both when the app moves to another screen and when it only adds an anchor', () => {
+  const act = (callId: string, method: string, startTime: number, endTime: number, params = {}) => [
+    { type: 'before', callId, pageId: 'p', method, startTime, params },
+    { type: 'after', callId, endTime },
+  ];
+  const frame = (name: string, timestamp: number) => ({ type: 'screencast-frame', pageId: 'p', sha1: name, timestamp });
+  const lines = inTempDir((dir) => walkOf(traceZip(dir, [
+    ...act('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/#/login', 20),
+    ...act('2', 'click', 30, 40), frameSnapshot('before@2', 'http://x/#/home', 30), frameSnapshot('input@2', 'http://x/#/home', 35), frameSnapshot('after@2', 'http://x/#/home', 40),
+    ...act('3', 'goto', 50, 60), frameSnapshot('after@3', 'http://x/docs', 60),
+    ...act('4', 'click', 70, 80), frameSnapshot('before@4', 'http://x/docs#intro', 70), frameSnapshot('input@4', 'http://x/docs#intro', 75), frameSnapshot('after@4', 'http://x/docs#intro', 80),
+    frame('login.jpeg', 22), frame('home.jpeg', 25), frame('pressed.jpeg', 45), frame('blank.jpeg', 62), frame('docs.jpeg', 65), frame('clicked.jpeg', 85),
+  ], [], { 'resources/login.jpeg': 'l', 'resources/home.jpeg': 'h', 'resources/pressed.jpeg': 'p', 'resources/blank.jpeg': 'b', 'resources/docs.jpeg': 'd', 'resources/clicked.jpeg': 'c' })));
+  assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`)), [
+    'open /#/login login.jpeg',
+    'open /#/home home.jpeg',
     'press /#/home pressed.jpeg',
+    'open /docs blank.jpeg',
+    'open /docs#intro docs.jpeg',
+    'press /docs#intro clicked.jpeg',
   ]);
 });
