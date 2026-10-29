@@ -502,6 +502,32 @@ test('a document left without an answer because another page load followed it is
   ]), ['open /home', 'press /home', 'open /next']);
 });
 
+test('a document left without an answer is not a call the test sent when a later action asks for another page', () => {
+  const page = 'page@1';
+  assert.deepEqual(inTempDir((dir) => walkLines(traceZip(dir, [
+    { type: 'before', callId: 'call@1', pageId: page, method: 'goto', startTime: 1, params: { url: 'http://x/home' } },
+    { type: 'after', callId: 'call@1', endTime: 2 },
+    frameSnapshot('after@call@1', 'http://x/home', 2),
+    { type: 'before', callId: 'call@2', pageId: page, method: 'click', startTime: 10, params: { selector: '#other' } },
+    frameSnapshot('before@call@2', 'http://x/home', 10),
+    { type: 'after', callId: 'call@2', endTime: 20 },
+    frameSnapshot('after@call@2', 'http://x/home', 20),
+    { type: 'before', callId: 'call@3', pageId: page, method: 'click', startTime: 30, params: { selector: '#next' } },
+    frameSnapshot('before@call@3', 'http://x/home', 30),
+    { type: 'after', callId: 'call@3', endTime: 40 },
+    frameSnapshot('after@call@3', 'http://x/next', 41),
+  ], [
+    { url: '/other', at: 12, status: -1, type: 'x-unknown', dest: 'document' },
+    { url: '/next', at: 35, type: 'text/html', dest: 'document' },
+  ]))), ['open /home', 'press /home', 'press /home', 'open /next']);
+});
+
+test('a document left without an answer on a path the test had open is not a call the test sent', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/home', at: 12, status: -1, type: 'x-unknown', dest: 'document' },
+  ], 'http://x/home'), ['open /home', 'press /home']);
+});
+
 test('a document the page then shows is a page load whatever it answered, and an error page stays a call after 「열기」', () => {
   assert.deepEqual(clickTrace([
     { url: '/next', at: 12, type: 'application/json', dest: 'document' },

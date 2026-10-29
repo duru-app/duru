@@ -2800,7 +2800,7 @@ another name than those above shows its own requests, and an app's own path with
 `@react-refresh` part is left out even when it failed; a download that got no answer is taken for a page load when
 any document was asked for later in the trace or when it is on the path of a page the test had open, and so is a move
 to an API address answered with a redirect, such as setting `location` to a logout address; a page load the trace
-ended before it was answered shows as a request; without `Sec-Fetch-Dest`, a fetch on the path of a page the test had
+ended before it was answered shows as a request when its path was never open and no document was asked for after it; without `Sec-Fetch-Dest`, a fetch on the path of a page the test had
 open answered with a redirect, a 304 or not at all is taken for a page load, and the address a page load was
 redirected from shows as a request unless its answer was a page, since the test never had it open; a `tests.json`
 written before the steps were kept has no result file or project on its trace notices, so such a notice is matched on
