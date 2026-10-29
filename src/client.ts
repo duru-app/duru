@@ -1294,7 +1294,6 @@ export async function extractClient(config: any) {
     return matching(at);
   }
 
-  // 목록을 some 처럼 함수에 넘겨 그 인자 값이 견주기 자리에만 닿는가, includes 로 지금 주소와 견주는가
   function compareReadOfList(ref: NodePath): boolean {
     const member = ref.parentPath!;
     if (!(member.isMemberExpression() || member.isOptionalMemberExpression()) || member.node.object !== ref.node || member.node.computed) return false;
@@ -3148,7 +3147,6 @@ export async function extractClient(config: any) {
   for (const f of [...routeFileSet, ...appWideFiles]) listReaderFiles.add(f);
   // 핸들러가 도달한 파일의 top-level 코드가 saga 를 실행해도, 그 run 에 넘긴 saga 는 탐색하지 않는다.
   const inRun = (file: string, pos: number) => runs.some((r) => r.file === file && pos >= r.span[0] && pos < r.span[1]);
-  // 견주기로만 읽히는 목록에서 온 라우트 상수
   const comparedAway = (ref: RouteRef) => comparedLists.has(ref) && listReadersCompare(comparedLists.get(ref)!);
   // saga 안에서 이동하는 주소를 읽지 못하면 화면 코드와 달리 {?} 로도 남기지 않는다.
   const readAddress = (l: RouteRef | RouterLink) => ('route' in l ? typeof routeValues[l.route] === 'string' && !comparedAway(l) : l.to !== UNKNOWN);
