@@ -289,26 +289,31 @@ function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: Re
 
 export type PageData = ReturnType<typeof pageData>;
 
-function sendFile(res: http.ServerResponse, type: string, file: string) {
+function sendFile(res: http.ServerResponse, type: string, file: string, missing = 'not found') {
   let fd: number;
   try {
     fd = fs.openSync(file, 'r');
-  } catch {
-    return send(res, 404, 'text/plain', 'not found');
+  } catch (err: any) {
+    if (err.code === 'ENOENT' || err.code === 'EISDIR') return send(res, 404, 'text/plain', missing);
+    throw err;
   }
-  res.writeHead(200, { 'content-type': type, 'content-length': fs.fstatSync(fd).size, 'cache-control': 'no-store' });
+  const stat = fs.fstatSync(fd);
+  if (!stat.isFile()) {
+    fs.closeSync(fd);
+    return send(res, 404, 'text/plain', missing);
+  }
+  res.writeHead(200, { 'content-type': type, 'content-length': stat.size, 'cache-control': 'no-store' });
   pipeline(fs.createReadStream('', { fd }), res, () => {});
 }
 
 function sendTraceViewer(res: http.ServerResponse, config: any, url: URL) {
   if (url.pathname === '/trace-viewer/test-trace') {
     const file = readTests(config).traceFiles?.[url.searchParams.get('steps') ?? '']?.[url.searchParams.get('project') ?? ''];
-    const found = typeof file === 'string' && path.resolve(config.configDir, file);
-    if (!found || !fs.existsSync(found)) return send(res, 404, 'text/plain', 'no trace file for this test');
-    return sendFile(res, 'application/zip', found);
+    if (typeof file !== 'string') return send(res, 404, 'text/plain', 'no trace file for this test');
+    return sendFile(res, 'application/zip', path.resolve(config.configDir, file), 'no trace file for this test');
   }
   const file = path.join(TRACE_VIEWER_DIR, ...url.pathname.slice('/trace-viewer/'.length).split('/'));
-  if (!file.startsWith(TRACE_VIEWER_DIR + path.sep) || !fs.statSync(file, { throwIfNoEntry: false })?.isFile()) return send(res, 404, 'text/plain', 'not found');
+  if (!file.startsWith(TRACE_VIEWER_DIR + path.sep)) return send(res, 404, 'text/plain', 'not found');
   return sendFile(res, MIME[path.extname(file)] ?? 'application/octet-stream', file);
 }
 
@@ -574,9 +579,8 @@ export async function startReviewServer(config: any, { port = 0, author = review
         try {
           name = decodeURIComponent(url.pathname.slice(SHOTS_DIR.length + 2));
         } catch {}
-        const file = path.join(config.outDir, SHOTS_DIR, name);
-        if (!SHOT_NAME.test(name) || !fs.existsSync(file)) return send(res, 404, 'text/plain', 'no such screen picture');
-        return sendFile(res, 'image/jpeg', file);
+        if (!SHOT_NAME.test(name)) return send(res, 404, 'text/plain', 'no such screen picture');
+        return sendFile(res, 'image/jpeg', path.join(config.outDir, SHOTS_DIR, name), 'no such screen picture');
       }
       if (req.method === 'GET' && url.pathname === '/api/path-values' && url.searchParams.has('screen')) {
         return await sendPathValues(res, url.searchParams.get('screen'), url.searchParams.get('role'));

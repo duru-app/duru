@@ -101,18 +101,6 @@ test('in a browser, a test that ran in two projects shows the steps of its own p
   });
 });
 
-test('in a browser, a run with no steps of its own shows and plays the run that has them', { skip: browserMissing }, async () => {
-  await withSteps(async (p) => {
-    const firefox = testLine(p, 'fills the boxes on home').nth(1);
-    assert.match((await firefox.locator('a.replay').getAttribute('href'))!, /project%3Dchromium$/);
-    await firefox.locator('.steps-toggle').click();
-    assert.equal(await foldOf(firefox).locator('.step-project.on').count(), 0);
-    assert.equal((await lines(foldOf(firefox))).length, 20);
-  }, changeData((data) => {
-    for (const runs of Object.values(data.testSteps)) delete runs.firefox;
-  }));
-});
-
 test('in a browser, a trace that could not be read is still told when tests.json came from a duru that wrote no source or project on its notices', { skip: browserMissing }, async () => {
   const withoutRun = changeData((data) => {
     for (const n of data.tests.traceNotices) {
@@ -257,5 +245,8 @@ test('the review server sends a test\'s trace and screen pictures only for what 
     assert.equal(await status('/test-shots/page@191be84288f2d906ed440904919e2f78-1793237455311.jpeg'), 200);
     assert.equal(await status('/test-shots/..%2Ftests.json'), 404);
     assert.equal(await status('/test-shots/%E0%A4%A.jpeg'), 404);
+    fs.mkdirSync(path.join(config.outDir, 'test-shots', 'page@folder-1.jpeg'));
+    assert.equal(await status('/test-shots/page@folder-1.jpeg'), 404);
+    assert.equal(await status('/trace-viewer/assets'), 404);
   }));
 });

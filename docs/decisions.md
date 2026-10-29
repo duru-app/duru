@@ -2824,7 +2824,7 @@ in between does not count as a step. A page opened takes the picture after the a
 address, and the last picture until then when it was first seen as an action started, as after a click whose last
 snapshot still shows the old address: the picture after that next action is its own. A line
 whose picture is the one of the line before shows none, as the 「열기」 after a click that moved the page would.
-`rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, emptied first, so they show as
+`rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, in place of the ones there before, so they show as
 long as the steps do, also when the traces have been moved. In that trace that is 3 of its 4 pictures, 13.5 KB of
 18.1 KB; there is no limit on the folder's size.
 `tests.json` keeps each walk's trace file as `traceFiles` for 「재생」. The review server serves `playwright-core`'s
