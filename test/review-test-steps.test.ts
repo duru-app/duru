@@ -250,5 +250,10 @@ test('the review server sends a test\'s trace and screen pictures only for what 
     assert.equal(await status('/trace-viewer/assets'), 404);
     assert.equal(await status('/trace-viewer/index.html/x'), 404);
     assert.equal(await status(`/test-shots/${'a'.repeat(300)}.jpeg`), 404);
+    if (process.getuid?.() !== 0) {
+      const locked = path.join(config.outDir, 'test-shots', 'page@191be84288f2d906ed440904919e2f78-1793237455311.jpeg');
+      fs.chmodSync(locked, 0o000);
+      assert.equal(await status('/test-shots/page@191be84288f2d906ed440904919e2f78-1793237455311.jpeg'), 500);
+    }
   }));
 });
