@@ -246,7 +246,7 @@ function slotRow(item, target, words, name = tagLabel(target), control = null) {
     bubbleButton(target, words, name));
 }
 
-const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title), [stepsButton(node, t), replayButton(t)]);
+const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title), [stepsButton(node, t), replayButton(node, t)]);
 const testRow = (item, node, t) => h('div', { class: 'test-row' }, partRow(item, node, t), stepsFold(node, t));
 
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
@@ -445,7 +445,7 @@ function untaggedPairs(node) {
   const openRow = (via) => (t) => row(t, partRow(pairTestItem(t, regressionChip(node, via, t), node), node, t), stepsFold(node, t), judgmentForm(t, node));
   const judgedRow = (item, t, label) => {
     const steps = stepsButton(node, t);
-    return row(t, steps ? h('div', { class: 'part-row' }, item, steps, replayButton(t)) : item, stepsFold(node, t), judgmentMeta(t.judgment, label, t.codeChanged), undoButton(t, node));
+    return row(t, steps ? h('div', { class: 'part-row' }, item, steps, replayButton(node, t)) : item, stepsFold(node, t), judgmentMeta(t.judgment, label, t.codeChanged), undoButton(t, node));
   };
   return [
     passed.length ? h('div', { class: 'passed' },

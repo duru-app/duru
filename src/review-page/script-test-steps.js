@@ -39,9 +39,14 @@ const shotThumb = (line) => (line.shot ? h('button', {
   onclick: (e) => { e.stopPropagation(); openShot(line.shot); },
 }, h('img', { src: shotUrl(line.shot), alt: '', loading: 'lazy' })) : null);
 
-function replayButton(t) {
+const shownProject = (node, t) => {
+  const picked = state.openSteps.get(stepsPlace(node, t));
+  return picked !== undefined && Object.hasOwn(stepsRuns(t) ?? {}, picked) ? picked : t.project ?? '';
+};
+
+function replayButton(node, t) {
   if (t.format !== 'playwright' || !t.steps) return null;
-  const project = t.project ?? '';
+  const project = shownProject(node, t);
   const kept = state.data.testTraces?.[t.steps]?.[project];
   if (kept === undefined) return null;
   if (!kept) return h('button', { class: 'replay', disabled: true, title: '이 테스트의 trace 파일이 지워져 재생할 수 없습니다. 테스트를 다시 돌리고 duru rebuild 를 실행하면 됩니다' }, '재생');

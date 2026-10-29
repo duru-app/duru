@@ -844,8 +844,8 @@ test('each walk names the trace file it was read from, under the same key and pr
   assert.deepEqual(Object.keys(stepLinks.traceFiles), Object.keys(stepLinks.walks));
   const [run] = stepsOf('fills the boxes on home @screen:/home#Home');
   assert.deepEqual(stepLinks.traceFiles[run.steps!], {
-    chromium: path.join('results/playwright-steps/test-results/steps-fills-the-boxes-on-home-chromium/trace.zip'),
-    firefox: path.join('results/playwright-steps/test-results/steps-fills-the-boxes-on-home-firefox/trace.zip'),
+    chromium: 'results/playwright-steps/test-results/steps-fills-the-boxes-on-home-chromium/trace.zip',
+    firefox: 'results/playwright-steps/test-results/steps-fills-the-boxes-on-home-firefox/trace.zip',
   });
 });
 
@@ -857,6 +857,17 @@ test('writeShots empties the folder and puts in the screen pictures the walks na
     const named = Object.values(stepLinks.walks).flatMap((runs) => Object.values(runs).flat()).flatMap((line) => ('shot' in line && line.shot ? [line.shot] : []));
     assert.equal(named.length, 3);
     assert.deepEqual(fs.readdirSync(dir).sort(), named.toSorted());
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeShots goes on past a trace that is gone and puts in the pictures of the others', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-'));
+  try {
+    const gone = { walks: { gone: { chromium: [{ kind: 'open' as const, shot: 'page@gone-1.jpeg' }] } }, traceFiles: { gone: { chromium: 'results/nowhere/trace.zip' } } };
+    writeShots(STEPS_CONFIG, { walks: { ...gone.walks, ...stepLinks.walks }, traceFiles: { ...gone.traceFiles, ...stepLinks.traceFiles } }, dir);
+    assert.equal(fs.readdirSync(dir).length, 3);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

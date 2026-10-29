@@ -74,7 +74,7 @@ test('in a browser, 「단계」 on a screen\'s test opens, in order, what the t
   });
 });
 
-test('in a browser, a test that ran in two projects shows the steps of its own project first and the other one\'s on its chip', { skip: browserMissing }, async () => {
+test('in a browser, a test that ran in two projects shows the steps of its own project first and the other one\'s on its chip, and 「재생」 plays the run whose steps are shown', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
     const [chromium, firefox] = [testLine(p, 'fills the boxes on home').first(), testLine(p, 'fills the boxes on home').nth(1)];
     await firefox.locator('.steps-toggle').click();
@@ -88,6 +88,10 @@ test('in a browser, a test that ran in two projects shows the steps of its own p
     assert.equal(await foldOf(firefox).locator('.step-project.on').textContent(), 'chromium');
     assert.equal((await lines(foldOf(firefox))).length, 20);
     assert.deepEqual(await p.evaluate(() => [document.activeElement!.textContent, document.activeElement!.getAttribute('aria-pressed')]), ['chromium', 'true']);
+    assert.match((await firefox.locator('a.replay').getAttribute('href'))!, /project%3Dchromium$/);
+    assert.match((await chromium.locator('a.replay').getAttribute('href'))!, /project%3Dchromium$/);
+    await fold.locator('.step-project', { hasText: 'firefox' }).click();
+    assert.match((await firefox.locator('a.replay').getAttribute('href'))!, /project%3Dfirefox$/);
   });
 });
 
@@ -234,5 +238,6 @@ test('the review server sends a test\'s trace and screen pictures only for what 
     assert.equal(await status('/trace-viewer/..%2F..%2Fpackage.json'), 404);
     assert.equal(await status('/test-shots/page@191be84288f2d906ed440904919e2f78-1793237455311.jpeg'), 200);
     assert.equal(await status('/test-shots/..%2Ftests.json'), 404);
+    assert.equal(await status('/test-shots/%E0%A4%A.jpeg'), 404);
   }));
 });

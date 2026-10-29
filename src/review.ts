@@ -5,9 +5,10 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { screenCases, settingConditionName } from './access.ts';
-import { SIGN_OUT_PATH, startAppHost } from './app-host.ts';
+import { MIME, SIGN_OUT_PATH, startAppHost } from './app-host.ts';
 import { baselineLabel, compareMaps, readBaseline } from './baseline.ts';
 import { compareTests, nodeIds, passedInFolder, readBaselineTests, wholeFines } from './baseline-tests.ts';
 import type { BaselineTests, TestComparison } from './baseline-tests.ts';
@@ -34,7 +35,6 @@ import type { Walks } from './trace-links.ts';
 
 const PAGE_DIR = path.join(import.meta.dirname, 'review-page');
 const TRACE_VIEWER_DIR = path.join(path.dirname(fileURLToPath(import.meta.resolve('playwright-core/package.json'))), 'lib', 'vite', 'traceViewer');
-const TRACE_VIEWER_TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.webmanifest': 'application/manifest+json' };
 export const SHOTS_DIR = 'test-shots';
 const SHOT_NAME = /^[\w@.-]+\.jpe?g$/;
 export const PAGE_PARTS = [
@@ -290,9 +290,8 @@ function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: Re
 export type PageData = ReturnType<typeof pageData>;
 
 function sendFile(res: http.ServerResponse, type: string, file: string) {
-  const body = fs.readFileSync(file);
-  res.writeHead(200, { 'content-type': type, 'content-length': body.length, 'cache-control': 'no-store' });
-  res.end(body);
+  res.writeHead(200, { 'content-type': type, 'content-length': fs.statSync(file).size, 'cache-control': 'no-store' });
+  pipeline(fs.createReadStream(file), res, () => {});
 }
 
 function sendTraceViewer(res: http.ServerResponse, config: any, url: URL) {
@@ -304,7 +303,7 @@ function sendTraceViewer(res: http.ServerResponse, config: any, url: URL) {
   }
   const file = path.join(TRACE_VIEWER_DIR, ...url.pathname.slice('/trace-viewer/'.length).split('/'));
   if (!file.startsWith(TRACE_VIEWER_DIR + path.sep) || !fs.statSync(file, { throwIfNoEntry: false })?.isFile()) return send(res, 404, 'text/plain', 'not found');
-  return sendFile(res, TRACE_VIEWER_TYPES[path.extname(file)] ?? 'application/octet-stream', file);
+  return sendFile(res, MIME[path.extname(file)] ?? 'application/octet-stream', file);
 }
 
 function send(res: http.ServerResponse, status: number, type: string, body: string) {
@@ -565,7 +564,10 @@ export async function startReviewServer(config: any, { port = 0, author = review
       const url = new URL(req.url!, 'http://host');
       if (req.method === 'GET' && url.pathname.startsWith('/trace-viewer/')) return sendTraceViewer(res, config, url);
       if (req.method === 'GET' && url.pathname.startsWith(`/${SHOTS_DIR}/`)) {
-        const name = decodeURIComponent(url.pathname.slice(SHOTS_DIR.length + 2));
+        let name = '';
+        try {
+          name = decodeURIComponent(url.pathname.slice(SHOTS_DIR.length + 2));
+        } catch {}
         const file = path.join(config.outDir, SHOTS_DIR, name);
         if (!SHOT_NAME.test(name) || !fs.existsSync(file)) return send(res, 404, 'text/plain', 'no such screen picture');
         return sendFile(res, 'image/jpeg', file);

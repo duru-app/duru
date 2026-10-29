@@ -149,7 +149,7 @@ export function linkTests(config: any, map: any) {
         const stepsKey = trace?.walk && JSON.stringify([resultPath.split(path.sep).join('/'), t.file, t.line, t.title]);
         if (stepsKey) {
           (walks[stepsKey] ??= {})[t.project ?? ''] = trace!.walk!;
-          (traceFiles[stepsKey] ??= {})[t.project ?? ''] = shownPath(t.trace);
+          (traceFiles[stepsKey] ??= {})[t.project ?? ''] = shownPath(t.trace).split(path.sep).join('/');
         }
         const steps = stepsKey ? { steps: stepsKey } : {};
         if (trace) {
@@ -207,7 +207,9 @@ export function writeShots(config: any, { walks, traceFiles }: Pick<ReturnType<t
       const names = lines.flatMap((line) => ('shot' in line && line.shot ? [line.shot] : []));
       if (!names.length) continue;
       fs.mkdirSync(dir, { recursive: true });
-      copyShots(path.resolve(config.configDir, traceFiles[key][project]), names, dir);
+      try {
+        copyShots(path.resolve(config.configDir, traceFiles[key][project]), names, dir);
+      } catch {}
     }
   }
 }

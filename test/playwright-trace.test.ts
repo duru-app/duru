@@ -45,7 +45,7 @@ function storedZip(files: Record<string, string>) {
   return Buffer.concat([...bodies, ...directory, end]);
 }
 
-function inTempDir(fn: (dir: string) => void) {
+function inTempDir<T>(fn: (dir: string) => T) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-trace-'));
   try {
     return fn(dir);
@@ -263,7 +263,7 @@ test('the walk leaves out the page, scripts, styles, pictures and fonts the brow
 
 type Sent = { method?: string; url: string; at?: number; status?: number; type: string; api?: true; dest?: string };
 
-function traceZip(dir: string, events: object[], resources: Sent[]) {
+function traceZip(dir: string, events: object[], resources: Sent[], files: Record<string, string> = {}) {
   const file = path.join(dir, 'trace.zip');
   const line = (e: object) => `${JSON.stringify(e)}\n`;
   fs.writeFileSync(file, storedZip({
@@ -272,6 +272,7 @@ function traceZip(dir: string, events: object[], resources: Sent[]) {
       type: 'resource-snapshot',
       snapshot: { _monotonicTime: at ?? i + 1, ...(api && { _apiRequest: true }), request: { method, url: url.startsWith('http') ? url : `http://x${url}`, headers: dest ? [{ name: 'Sec-Fetch-Dest', value: dest }] : [] }, response: { status, content: { mimeType: type } } },
     })).join(''),
+    ...files,
   }));
   return file;
 }
@@ -607,4 +608,25 @@ test('copyShots writes the named screen pictures of a trace into a folder and sk
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a page first seen when the next action starts shows the picture from when it was seen, and that action keeps the picture after it', () => {
+  const act = (callId: string, method: string, startTime: number, endTime: number, params = {}) => [
+    { type: 'before', callId, pageId: 'p', method, startTime, params },
+    { type: 'after', callId, endTime },
+  ];
+  const frame = (name: string, timestamp: number) => ({ type: 'screencast-frame', pageId: 'p', sha1: name, timestamp });
+  const lines = inTempDir((dir) => walkOf(traceZip(dir, [
+    ...act('1', 'goto', 10, 20), frameSnapshot('after@1', 'http://x/home', 20),
+    ...act('2', 'click', 30, 40), frameSnapshot('before@2', 'http://x/home', 30), frameSnapshot('after@2', 'http://x/home', 40),
+    ...act('3', 'fill', 50, 60, { selector: 'internal:label="메모"', value: 'a' }),
+    frameSnapshot('before@3', 'http://x/new', 50), frameSnapshot('input@3', 'http://x/new', 55), frameSnapshot('after@3', 'http://x/new', 60),
+    frame('home.jpeg', 22), frame('new.jpeg', 45), frame('filled.jpeg', 62),
+  ], [], { 'resources/home.jpeg': 'h', 'resources/new.jpeg': 'n', 'resources/filled.jpeg': 'f' })));
+  assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${line.shot ?? '-'}`)), [
+    'open /home home.jpeg',
+    'press /home new.jpeg',
+    'open /new -',
+    'write /new filled.jpeg',
+  ]);
 });

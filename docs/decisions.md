@@ -2820,7 +2820,9 @@ the trace of `steps-shows-the-screen-after-each-step` (recorded with `playwright
 ends at 332.5 and the page it moved to is pictured at 345.6, after two waits between 335.0 and 343.2. So a step takes
 the first picture of its page taken after its action ended and before the next step on that page (a press, a write,
 a check or a move to an address) ended, or, when there is none, the last picture taken before its action ended; a wait
-in between does not count as a step. A page opened takes the picture after the action that showed its address. A line
+in between does not count as a step. A page opened takes the picture after the action whose last snapshot showed its
+address, and the last picture until then when it was first seen as an action started, as after a click whose last
+snapshot still shows the old address: the picture after that next action is its own. A line
 whose picture is the one of the line before shows none, as the 「열기」 after a click that moved the page would.
 `rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, emptied first, so they show as
 long as the steps do, also when the traces have been moved. In that trace that is 3 of its 4 pictures, 13.5 KB of
@@ -2844,7 +2846,8 @@ Known limits: a step whose change was painted only after the next step ended sho
 that changed nothing on the screen shows the first picture after it, which can already show what the next step did
 when that was painted before the next step ended, as an `expect` followed by a click; a test with several pages
 shows the pictures of the step's own page only; 「재생」 is greyed out only when the trace file is gone, not when it was
-replaced by another run's trace at the same place.
+replaced by another run's trace at the same place; `rebuild` reads each trace a second time to copy its pictures, and
+the review server checks that each trace file is there every time it sends the page's data.
 
 **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
 without a value on such a kind fills no value.**
