@@ -412,6 +412,41 @@ export async function extractClient(config: any) {
     }
     return imported;
   }
+  const comparedLists = new WeakMap<RouteRef, { file: string; name: string; comparedHere: boolean }>();
+  const listReaderFiles = new Set<string>();
+  const listVerdicts = new Map<string, boolean>();
+  // 목록을 가져다 쓰는 파일마다 그 이름을 견주기로만 읽는가. 네임스페이스로 가져오거나 다시 내보내면 링크를 남긴다.
+  function listReadersCompare({ file, name, comparedHere }: { file: string; name: string; comparedHere: boolean }): boolean {
+    const key = `${file}\0${name}`;
+    if (listVerdicts.has(key)) return listVerdicts.get(key)!;
+    let compares = true;
+    let compared = comparedHere;
+    for (const from of listReaderFiles) {
+      if (from === file || !compares) continue;
+      const program = programOf(from);
+      if (!program) continue;
+      for (const statement of program.get('body')) {
+        if (!(statement.isImportDeclaration() || statement.isExportNamedDeclaration() || statement.isExportAllDeclaration())) continue;
+        const source = statement.node.source;
+        if (!source || imports.resolve(from, source.value) !== file) continue;
+        if (!statement.isImportDeclaration()) {
+          const named = statement.isExportNamedDeclaration() ? statement.node.specifiers : [];
+          if (statement.isExportAllDeclaration() || named.some((x) => x.type === 'ExportNamespaceSpecifier' || (x.type === 'ExportSpecifier' && keyName({ key: (x as ExportSpecifier).local }) === name))) compares = false;
+          continue;
+        }
+        for (const x of (statement as NodePath<ImportDeclaration>).get('specifiers')) {
+          const binding = x.scope.getBinding(x.node.local.name);
+          if (x.isImportNamespaceSpecifier()) compares = false;
+          else if (x.isImportSpecifier() && keyName({ key: x.node.imported }) === name) {
+            if (!binding?.referencePaths.every((r) => compareReadOfList(r))) compares = false;
+            else if (binding.referencePaths.length) compared = true;
+          }
+        }
+      }
+    }
+    listVerdicts.set(key, compares && compared);
+    return compares && compared;
+  }
   const movedTo = new WeakSet<RouteRef | RouterLink>();
   const linkSites = (facts: Facts): (RouteRef | RouterLink)[] => [...facts.routeRefs, ...facts.routerLinks];
   const sitesOf = (file: string) => {
@@ -1259,6 +1294,50 @@ export async function extractClient(config: any) {
     return matching(at);
   }
 
+  function compareReadOfList(ref: NodePath): boolean {
+    const member = ref.parentPath!;
+    if (!(member.isMemberExpression() || member.isOptionalMemberExpression()) || member.node.object !== ref.node || member.node.computed) return false;
+    const call = member.parentPath!;
+    if (!(call.isCallExpression() || call.isOptionalCallExpression()) || call.node.callee !== member.node) return false;
+    const method = (member.node.property as Identifier).name;
+    if (!['some', 'every', 'find', 'filter', 'findIndex', 'includes', 'indexOf', 'lastIndexOf'].includes(method)) return false;
+    if (!['some', 'every', 'find', 'filter', 'findIndex'].includes(method)) return true;
+    const fn = (call.get('arguments') as NodePath<any>[])[0];
+    if (!fn?.isFunction() || fn.node.params.length !== 1) return false;
+    const param = fn.get('params.0') as NodePath<any>;
+    const binding = param.isIdentifier() ? fn.scope.getBinding(param.node.name) : null;
+    if (!binding || !binding.referencePaths.every((r) => comparedOnly(r))) return false;
+    return !['find', 'filter'].includes(method) || comparedValue(call);
+  }
+
+  // find · filter 가 돌려준 값을 이동 주소가 아니라 참 · 거짓으로만 쓰는가
+  function comparedValue(call: NodePath): boolean {
+    const up = call.parentPath!;
+    const at = (up.isMemberExpression() || up.isOptionalMemberExpression()) && !up.node.computed && (up.node.property as Identifier).name === 'length' ? up : call;
+    const parent = at.parentPath!;
+    if (parent.isUnaryExpression({ operator: '!' })) return true;
+    if ((parent.isCallExpression() || parent.isOptionalCallExpression()) && parent.node.callee.type === 'Identifier' && parent.node.callee.name === 'Boolean') return true;
+    if ((parent.isIfStatement() || parent.isWhileStatement() || parent.isConditionalExpression()) && at.key === 'test') return true;
+    if (parent.isLogicalExpression()) return (parent.node.operator === '&&' && at.key === 'left') || comparedValue(parent);
+    return parent.isBinaryExpression() && ['===', '!==', '==', '!=', '>', '>=', '<', '<='].includes(parent.node.operator);
+  }
+
+  // 라우트 상수가 든 목록이 견주기로만 읽히는가. 내보낸 목록은 가져다 쓰는 파일까지 본다.
+  function listComparedOnly(list: NodePath): { exported: string | null; comparedHere: boolean } | null {
+    if (compareReadOfList(list)) return { exported: null, comparedHere: true };
+    const declarator = list.parentPath!;
+    if (!declarator.isVariableDeclarator() || list.key !== 'init' || declarator.node.id.type !== 'Identifier' || (declarator.parent as VariableDeclaration).kind !== 'const') return null;
+    const name = declarator.node.id.name;
+    const binding = declarator.scope.getBinding(name);
+    if (!binding) return null;
+    const exportedAs = binding.referencePaths.filter((r) => r.isExportNamedDeclaration() || r.parentPath!.isExportSpecifier());
+    if (exportedAs.some((r) => !r.isExportNamedDeclaration() && ((r.parent as ExportSpecifier).exported as Identifier).name !== name)) return null;
+    if (!binding.referencePaths.every((r) => exportedAs.includes(r) || compareReadOfList(r))) return null;
+    const comparedHere = binding.referencePaths.length > exportedAs.length;
+    if (!exportedAs.length && !comparedHere) return null;
+    return { exported: exportedAs.length ? name : null, comparedHere };
+  }
+
   // ROUTES.X.replace(':id', id) 처럼 경로 변수 하나를 값으로 채우는 호출
   function fillsPathVariable(p: NodePath<any>) {
     const call = p.parentPath!;
@@ -1606,11 +1685,14 @@ export async function extractClient(config: any) {
     function recordRouteConstant(route: string, at: NodePath, site: NodePath) {
       const { tail, whole } = routeTail(at);
       if (comparedOnly(whole)) return;
+      const list = whole.listKey === 'elements' && whole.parentPath!.isArrayExpression() ? listComparedOnly(whole.parentPath!) : null;
+      if (list && list.exported === null) return;
       const member = whole.parentPath!;
       const table = whole.key === 'key' && (member.isObjectProperty() || member.isObjectMethod()) && member.node.computed ? lookupTable(member.parentPath!) : null;
       if (table && table.exported === null) return;
       const ref = record('routeRefs', { route, tail }, site) as RouteRef;
       if (table?.exported) exportedKeys.set(ref, { file, name: table.exported });
+      if (list?.exported) comparedLists.set(ref, { file, name: list.exported, comparedHere: list.comparedHere });
       constantAt.set(whole.node, [ref]);
     }
 
@@ -3055,14 +3137,19 @@ export async function extractClient(config: any) {
   const watchesOf = new Map<string, Watch[]>();
   if (runs.length) {
     for (const site of follower.reach(runs, sagaScope)) {
+      listReaderFiles.add(siteFile.get(site)!);
       if (!('watches' in site)) continue;
       for (const w of site.watches) watchesOf.set(w.type.key, [...(watchesOf.get(w.type.key) ?? []), w]);
     }
   }
+  // 목록을 읽는 곳을 판단할 때 보는 파일: 링크가 될 수 있는 사실을 가진 파일들이다.
+  for (const { files } of sourced) for (const f of files) listReaderFiles.add(f);
+  for (const f of [...routeFileSet, ...appWideFiles]) listReaderFiles.add(f);
   // 핸들러가 도달한 파일의 top-level 코드가 saga 를 실행해도, 그 run 에 넘긴 saga 는 탐색하지 않는다.
   const inRun = (file: string, pos: number) => runs.some((r) => r.file === file && pos >= r.span[0] && pos < r.span[1]);
+  const comparedAway = (ref: RouteRef) => comparedLists.has(ref) && listReadersCompare(comparedLists.get(ref)!);
   // saga 안에서 이동하는 주소를 읽지 못하면 화면 코드와 달리 {?} 로도 남기지 않는다.
-  const readAddress = (l: RouteRef | RouterLink) => ('route' in l ? typeof routeValues[l.route] === 'string' : l.to !== UNKNOWN);
+  const readAddress = (l: RouteRef | RouterLink) => ('route' in l ? typeof routeValues[l.route] === 'string' && !comparedAway(l) : l.to !== UNKNOWN);
   const handled = new Map<string, { sent: ApiCallSite[]; moves: (RouteRef | RouterLink)[] }>();
   const byHandler = ({ file, span }: Handler) => {
     const key = `${file}\0${span.join('-')}`;
@@ -3133,7 +3220,7 @@ export async function extractClient(config: any) {
       }
       for (const r of facts.settingReads) settingReads.push(drawnWith({ ...r, file: rel(f) }, drawnFiles.get(f)));
       for (const ref of linkSites(facts)) {
-        if (!seen(ref) || (exportedKeys.has(ref as RouteRef) && lookedUpElsewhere(exportedKeys.get(ref as RouteRef)!))) continue;
+        if (!seen(ref) || ('route' in ref && comparedAway(ref)) || (exportedKeys.has(ref as RouteRef) && lookedUpElsewhere(exportedKeys.get(ref as RouteRef)!))) continue;
         if ('menu' in ref) {
           for (const link of itemLinks(ref as MenuElement)) links.push(drawnWith({ ...link, file: rel(f), ...layout(ref) }, onlyDrawn.get(ref)));
           continue;
@@ -3146,7 +3233,7 @@ export async function extractClient(config: any) {
     // 라우트 파일 본문에서 옮기는 것은 그 파일이 그리는 화면 어디서나 일어난다.
     const drawnBy = path.join(config.srcRoot, s.routeFile);
     for (const site of heldRouteFiles.has(drawnBy) ? [] : linkSites(fileFacts(drawnBy))) {
-      if (!movedTo.has(site) || ownLinks.has(site)) continue;
+      if (!movedTo.has(site) || ownLinks.has(site) || ('route' in site && comparedAway(site))) continue;
       ownLinks.add(site);
       const link = screenLink(site, index);
       if (link) links.push({ ...link, file: rel(drawnBy) });

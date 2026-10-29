@@ -1078,9 +1078,153 @@ export default function Home({ item }) {
   assert.deepEqual(linksOf(map, '/home#Home'), [['/login', lineOf(home, '<Link to'), [], ['/login#Login']]]);
 });
 
+const ROUTE_LIST = `import Option from './Option';
+
+export const routesToSkip = [Option.ROUTE_PATH.HOME, Option.ROUTE_PATH.LOGIN, Option.ROUTE_PATH.TEAM];
+`;
+const listRows = (file: string) => [
+  ['/home', lineOf(file, 'export const'), [], ['/home#Home']],
+  ['/login', lineOf(file, 'export const'), [], ['/login#Login']],
+  ['/team', lineOf(file, 'export const'), [], ['/team/:team#Team']],
+];
+const listPage = (name: string, read: string) => `import { matchPath, useLocation } from 'react-router-dom';
+import { routesToSkip } from './Constants';
+
+export default function ${name}() {
+  const { pathname } = useLocation();
+  return <main>{String(${read})}</main>;
+}
+`;
+const COMPARED_LIST = 'routesToSkip.some((route) => matchPath(pathname, { path: route, exact: true }))';
+
+test('a list of route constants a screen only compares with the address through some and matchPath gives no link', async () => {
+  const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': listPage('Home', COMPARED_LIST) }));
+  assert.deepEqual(linksOf(map, '/home#Home'), []);
+});
+
+test('a list of route constants a screen only compares with the address through includes or through a comparison of the value the callback gets gives no link', async () => {
+  for (const read of ['routesToSkip.includes(pathname)', 'routesToSkip.some((route) => route === pathname)']) {
+    const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': listPage('Home', read) }));
+    assert.deepEqual(linksOf(map, '/home#Home'), [], read);
+  }
+});
+
+test('a list of route constants a screen compares with the address stays a link source where the same list is written as a link\u2019s address or fills a move, in the same file and from another file alike', async () => {
+  const linked = `import { Link, useLocation } from 'react-router-dom';
+import { routesToSkip } from './Constants';
+
+export default function Home() {
+  const { pathname } = useLocation();
+  const skip = ${COMPARED_LIST};
+  return <nav>{routesToSkip.map((route) => <Link key={route} to={route}>{String(skip)}</Link>)}</nav>;
+}
+`;
+  const moved = `import { matchPath, useHistory, useLocation } from 'react-router-dom';
+import { routesToSkip } from './Constants';
+
+export default function Help() {
+  const history = useHistory();
+  const { pathname } = useLocation();
+  const skip = routesToSkip.some((route) => matchPath(pathname, { path: route }));
+  return <button onClick={() => routesToSkip.forEach((route) => history.push(route))}>{String(skip)}</button>;
+}
+`;
+  const indexed = `import { useHistory } from 'react-router-dom';
+import { routesToSkip } from './Constants';
+
+export default function Team() {
+  const history = useHistory();
+  return <button onClick={() => history.push(routesToSkip[0])}>go</button>;
+}
+`;
+  const one = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': linked }));
+  assert.deepEqual(linksOf(one, '/home#Home'), listRows(ROUTE_LIST));
+  const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': listPage('Home', COMPARED_LIST), 'Help.js': moved, 'Team.js': indexed }));
+  for (const id of ['/home#Home', '/help/:page?#Help']) assert.deepEqual(linksOf(map, id), listRows(ROUTE_LIST), id);
+  assert.deepEqual(linksOf(map, '/team/:team#Team'), [['{?}', lineOf(indexed, 'history.push'), [], []], ...listRows(ROUTE_LIST)]);
+});
+
+test('a list of route constants stays a link source where the route find returns is the address of a move, behind &&, ?? or || too, or where a re-export under another name is written as a link’s address, and gives no link where &&, ?? or || around find only feeds a test', async () => {
+  const listRowsOf = (map: any, id: string) => linksOf(map, id).filter((row: any) => row[1] === lineOf(ROUTE_LIST, 'export const'));
+  const find = 'routesToSkip.find((route) => pathname.startsWith(route))';
+  for (const address of [`${find} ?? '/team/x'`, `${find} || '/team/x'`, `pathname && ${find}`]) {
+    const found = `import { useHistory, useLocation } from 'react-router-dom';
+import { routesToSkip } from './Constants';
+
+export default function Home() {
+  const history = useHistory();
+  const { pathname } = useLocation();
+  return <button onClick={() => history.push(${address})}>go</button>;
+}
+`;
+    const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': found }));
+    assert.deepEqual(listRowsOf(map, '/home#Home'), listRows(ROUTE_LIST), address);
+  }
+  for (const guard of ['pathname && routesToSkip.find((route) => route === pathname)', 'routesToSkip.find((route) => route === pathname) || pathname === "/"', 'routesToSkip.find((route) => route === pathname) ?? null']) {
+    const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Home.js': listPage('Home', `(${guard}) ? 'skip' : 'show'`) }));
+    assert.deepEqual(listRowsOf(map, '/home#Home'), [], guard);
+  }
+  const barrel = `export { routesToSkip as skipList } from './Constants';\n`;
+  const help = `import { Link } from 'react-router-dom';
+import { skipList } from './Barrel';
+
+export default function Help() {
+  return <nav>{skipList.map((route) => <Link key={route} to={route}>go</Link>)}</nav>;
+}
+`;
+  const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Barrel.js': barrel, 'Home.js': listPage('Home', COMPARED_LIST), 'Help.js': help }));
+  assert.deepEqual(listRowsOf(map, '/help/:page?#Help'), listRows(ROUTE_LIST));
+});
+
+test('a list of route constants a component only compares with the address gives no link on any screen that component is drawn on', async () => {
+  const page = (name: string) => `import Nav from './Nav';\n\nexport default function ${name}() {\n  return <main><Nav /></main>;\n}\n`;
+  const map = await build(withRouteConstant({ 'Constants.js': ROUTE_LIST, 'Nav.js': listPage('Nav', COMPARED_LIST), 'Home.js': page('Home'), 'Help.js': page('Help') }));
+  for (const id of ['/home#Home', '/help/:page?#Help', '/team/:team#Team', '/login#Login']) assert.deepEqual(linksOf(map, id), [], id);
+});
+
+test('a list of route constants a screen declares and only compares with the address gives no link', async () => {
+  const home = `import { matchPath, useLocation } from 'react-router-dom';
+import Option from './Option';
+
+const routesToSkip = [Option.ROUTE_PATH.HOME, Option.ROUTE_PATH.LOGIN];
+
+export default function Home() {
+  const { pathname } = useLocation();
+  return <main>{String(${COMPARED_LIST})}</main>;
+}
+`;
+  const map = await build(withRouteConstant({ 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home'), []);
+});
+
+test('a list of route constants handed to matchPath or useRouteMatch as an array is still a link on every route in it', async () => {
+  const home = `import { matchPath, useLocation, useRouteMatch } from 'react-router-dom';
+import Option from './Option';
+
+export default function Home() {
+  const { pathname } = useLocation();
+  const on = matchPath(pathname, { path: [Option.ROUTE_PATH.HOME, Option.ROUTE_PATH.LOGIN] });
+  const matched = useRouteMatch([Option.ROUTE_PATH.TEAM, Option.ROUTE_PATH.HELP]);
+  return <main>{String(on || matched)}</main>;
+}
+`;
+  const map = await build(withRouteConstant({ 'Home.js': home }));
+  assert.deepEqual(linksOf(map, '/home#Home'), [
+    ['/home', lineOf(home, 'const on'), [], ['/home#Home']],
+    ['/login', lineOf(home, 'const on'), [], ['/login#Login']],
+    ['/team', lineOf(home, 'const matched'), [], ['/team/:team#Team']],
+    ['/help', lineOf(home, 'const matched'), [], ['/help/:page?#Help']],
+  ]);
+});
+
 test('the decision record says that a route constant a screen only compares with the address gives no link, with the alternatives compared', () => {
   const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
   assert.match(decisions, /\*\*A route constant a screen only compares with the address gives no link\.\*\*[\s\S]*Alternatives compared \(driver's decision, 2026-10-26, in issue #469\)/);
+});
+
+test('the decision record says that a list of route constants a screen only compares with the address gives no link, with the alternatives compared', () => {
+  const decisions = fs.readFileSync(path.join(import.meta.dirname, '../docs/decisions.md'), 'utf8');
+  assert.match(decisions, /\*\*A list of route constants a screen only compares with the address gives no link\.\*\*[\s\S]*Asked for in #483[\s\S]*Alternatives compared:/);
 });
 
 test('a route constant whose path variable a replace call fills with a value is read as the route constant itself, tail, comparison and lookup table key alike, while a replace that does not name a path variable as text or is followed by another replace gives no route constant link, while a replace on the address built around it does', async () => {
