@@ -1,0 +1,95 @@
+From 56a3c0e7fc9dcd4ca48419862112c1b4ac713d74 Mon Sep 17 00:00:00 2001
+From: Inte-H <86886486+Inte-H@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 09:18:28 +0900
+Subject: [PATCH] =?UTF-8?q?docs(tests):=20=EC=9D=91=EB=8B=B5=20=EC=97=86?=
+ =?UTF-8?q?=EB=8A=94=20=EB=AC=B8=EC=84=9C=20=EC=9A=94=EC=B2=AD=EC=9D=84=20?=
+ =?UTF-8?q?=ED=8E=98=EC=9D=B4=EC=A7=80=20=EC=9D=B4=EB=8F=99=EC=9C=BC?=
+ =?UTF-8?q?=EB=A1=9C=20=EB=B3=B4=EB=8A=94=20=EB=B2=94=EC=9C=84=EB=A5=BC=20?=
+ =?UTF-8?q?=EA=B2=B0=EC=A0=95=20=EA=B8=B0=EB=A1=9D=EC=97=90=20=EB=A7=9E?=
+ =?UTF-8?q?=EA=B2=8C=20=EC=A0=81=EB=8A=94=EB=8B=A4?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+응답 없는 문서 요청은 trace 의 뒤쪽 어디서든 다른 문서를 요청했으면 페이지 이동으로 본다고 적고, 그래서
+생기는 한계를 알려진 한계에 더한다. 마지막 문서 요청 시각은 시간순으로 놓인 요청을 끝에서부터 찾아 구한다.
+
+trace 테스트 53개와 결정 기록을 읽는 테스트 698개가 통과한다.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ docs/decisions.md             | 23 ++++++++++++-----------
+ src/playwright-trace.ts       |  2 +-
+ test/playwright-trace.test.ts |  2 +-
+ 3 files changed, 14 insertions(+), 13 deletions(-)
+
+diff --git a/docs/decisions.md b/docs/decisions.md
+index 5c78146..e3dc400 100644
+--- a/docs/decisions.md
++++ b/docs/decisions.md
+@@ -2754,8 +2754,8 @@ seen. The snapshots are read in the order they were taken, since actions can ove
+ page it asks for, so the page can be asked for before the click's last snapshot, which still shows the old address. A
+ page load is a GET of the same origin and path, query aside, that the browser marked as a document (`Sec-Fetch-Dest:
+ document`) and that was answered with a page or a redirect, or whose whole address, query included, the test had open
+-at some point, or that got no answer while its path was open at some point or another document was asked for after
+-it, as when a second move cancels the first; when the request carries no such header, as on plain http to another
++at some point, or that got no answer while its path was open at some point or any document was asked for later in the
++trace, as when a second move cancels the first; when the request carries no such header, as on plain http to another
+ host than localhost, it is a GET of a page the test had open answered with a page, a redirect or nothing yet. A link
+ to a file, such as a CSV export or `?format=csv` on the page's own path, is a document too, but the test never has
+ that address open and its answer is not a page, so it stays a request. In the test that follows a link, the click
+@@ -2798,15 +2798,16 @@ Known limits: a GET answered below 400 with a type not on that list (a page serv
+ does; an API call whose path ends in a static file's extension is left out when it did not fail; a dev server under
+ another name than those above shows its own requests, and an app's own path with an `@vite`, `@id`, `@fs` or
+ `@react-refresh` part is left out even when it failed; a download that got no answer is taken for a page load when
+-another document was asked for after it, and so is a move to an API address answered with a redirect, such as setting
+-`location` to a logout address; without `Sec-Fetch-Dest`, a fetch on the path of a page the test had open answered
+-with a redirect, a 304 or not at all is taken for a page load, and the address a page load was redirected from shows
+-as a request unless its answer was a page, since the test never had it open; a `tests.json` written before the steps
+-were kept has no result file or project on its trace notices, so such a notice is matched on the test's file, line
+-and title and is shown on every run of that test; an action with no address open (a blank page) shows 「앱 밖」 instead
+-of a screen; what an `expect` checked is not shown; an action the trace has no end for, as when the test ran out of
+-time during it, is not marked 「실패」; when an action changes the address without loading a page, as a router in the
+-page does, a request the new screen sends before the action ends comes before 「열기」.
++any document was asked for later in the trace or when it is on the path of a page the test had open, and so is a move
++to an API address answered with a redirect, such as setting `location` to a logout address; a page load the trace
++ended before it was answered shows as a request; without `Sec-Fetch-Dest`, a fetch on the path of a page the test had
++open answered with a redirect, a 304 or not at all is taken for a page load, and the address a page load was
++redirected from shows as a request unless its answer was a page, since the test never had it open; a `tests.json`
++written before the steps were kept has no result file or project on its trace notices, so such a notice is matched on
++the test's file, line and title and is shown on every run of that test; an action with no address open (a blank page)
++shows 「앱 밖」 instead of a screen; what an `expect` checked is not shown; an action the trace has no end for, as when
++the test ran out of time during it, is not marked 「실패」; when an action changes the address without loading a page, as
++a router in the page does, a request the new screen sends before the action ends comes before 「열기」.
+ 
+ **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
+ without a value on such a kind fills no value.**
+diff --git a/src/playwright-trace.ts b/src/playwright-trace.ts
+index 0f31f59..5e49d4d 100644
+--- a/src/playwright-trace.ts
++++ b/src/playwright-trace.ts
+@@ -215,7 +215,7 @@ export function readTrace(file: string): TraceResult {
+   const shown: Shown = {
+     addresses: new Set(frameUrls.map(withoutHash)),
+     pages: new Set(frameUrls.map(documentOf)),
+-    lastDocumentAt: Math.max(-Infinity, ...resources.filter((e) => destOf(e.snapshot.request) === 'document').map((e) => e.snapshot._monotonicTime)),
++    lastDocumentAt: resources.findLast((e) => destOf(e.snapshot.request) === 'document')?.snapshot._monotonicTime ?? -Infinity,
+   };
+   const pageRequestAt = (url: string, from: number, to: number) => {
+     const page = documentOf(url);
+diff --git a/test/playwright-trace.test.ts b/test/playwright-trace.test.ts
+index 60ddf92..c79c80e 100644
+--- a/test/playwright-trace.test.ts
++++ b/test/playwright-trace.test.ts
+@@ -487,7 +487,7 @@ test('a page load the browser marks as a document is not a call the test sent, a
+   ], 'http://x/login'), ['open /home', 'press /home', 'open /login', 'GET /api/me 200']);
+ });
+ 
+-test('a link the browser opens as a document that answers with a file, not a page, or gets no answer is a call the test sent', () => {
++test('a link the browser opens as a document that answers with a file, not a page, or gets no answer with no document asked for after it, is a call the test sent', () => {
+   assert.deepEqual(clickTrace([
+     { url: '/api/report/export', at: 12, type: 'text/csv', dest: 'document' },
+     { url: '/home?format=csv', at: 13, type: 'text/csv', dest: 'document' },
+-- 
+2.25.1
+
