@@ -19,6 +19,9 @@ export interface WorkerData {
   timeoutMs: number;
   mark: string;
   markNumber: number;
+  // 인자 자리만 알아보는 실행. 같이 넘긴 파일의 내보내기의 이름과 값을 돌린다.
+  inputsOnly?: boolean;
+  exports?: Record<string, Record<string, string>>;
 }
 
 export interface SentRequest {
@@ -69,7 +72,7 @@ export interface FunctionLocation {
 
 type Callable = Function;
 
-const { modules, skip, request, timeoutMs, mark, markNumber }: WorkerData = workerData;
+const { modules, skip, request, timeoutMs, mark, markNumber, inputsOnly, exports: exportsWanted }: WorkerData = workerData;
 const skipped = new Set(skip);
 const send = (message: object) => parentPort!.postMessage(message);
 
@@ -526,6 +529,18 @@ for (const { file, url } of modules) {
   send({ type: 'loaded', unit: loading });
   for (const [exportName, value] of Object.entries(mod)) {
     if (!value || !['object', 'function'].includes(typeof value) || isStandIn(value)) continue;
+    if (inputsOnly) {
+      // 정적 읽기는 식 이름을 부른다. 그 이름이 값으로 내보내진 이름을 대신 돌린다.
+      const valueName = exportsWanted?.[file]?.[exportName];
+      if (!valueName) continue;
+      if (valueName !== exportName) {
+        const unit = `call\n${file}\n${exportName}\n`;
+        if (skipped.has(unit)) continue;
+        const { requests, error, inputs, inputsUnknown } = await call(unit, undefined, value as Callable);
+        send({ type: 'called', unit, file, exportName, member: null, location: null, requests: requests.map((r) => ({ method: r.method, url: r.url, body: r.body })), error, ...(inputs && { inputs }), ...(inputsUnknown && { inputsUnknown }) });
+        continue;
+      }
+    }
     if (seen.has(value)) {
       send({ type: 'same', file, exportName, as: seen.get(value) });
       continue;

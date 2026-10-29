@@ -5122,6 +5122,34 @@ without its API code and mattermost (`components/root`) send none with an addres
 `layout`, none with an address. outline (17 entries on 17 screens) and appsmith (none) have no component named, as
 their `App` is not exported. Apart from `layout`, `appWide` and that line, the seven maps are the same.
 
+**Which input keys reach a request is learned by running the API function once more with values that carry their
+path.**
+When `requestFunction` is set, each file of `apiModules` is run in the same pass that records `calledApiModules`, with
+the request function replaced by a recorder, and each function the static reading found in that file is called once
+with marked values. A marked value records the place it was read from (`0.data.user.name`), so a request body built
+by copying keys out of what a screen passes (`['user.name'].forEach((k) => { if (k in data) body[k] = data[k] })`)
+says which keys of the screen's values it carries. What the run gives is added to that function as `inputs`, and a
+function that throws or times out as marked values is `inputsUnknown` with the first line of the error. The static
+reading stays the only source of the function's endpoints, file and line: the run adds no api function, changes no
+endpoint and adds no call, and a name and a file that both match are the only way a field is attached.
+Alternatives compared:
+- Reading the function body for each shape that copies keys: every shape (a `forEach` over a list, a `switch`, a
+  `reduce`, a helper that takes the key list) needs its own reader, and a shape nobody wrote a reader for passes as
+  having sent nothing, which is the wrong answer read as a good one.
+- Running only the files of `calledApiModules`: into-sign 1.6.0 then leaves 22 of its 198 calls without the keys,
+  21 of them downloads that do not go through `Ajax.axios`.
+Reason: the run already happens for the addresses of `calledApiModules`, the marked pass reads every shape that
+copies keys at once, and a key the function enumerates over, or a function that behaves differently with marked
+values, is reported as unknown instead of guessed.
+Measured: on into-sign 1.6.0 with `requestFunction` at `./_ajax/Ajax.axios` and its three API files in `apiModules`,
+the map has 198 calls, the same as without `requestFunction`, and the same 217 api functions with the same endpoints,
+files and lines; 175 get `inputs`, 18 get `inputsUnknown` (7 `threw with tagged values: Unexpected token '_',
+"__duru_fake__" is not valid JSON`, 7 `needs numbers`, 3 `threw with tagged values: __duru_fake__`, 1 `threw with
+tagged values: window.location.reload is not a function`), and the 24 the run never reaches, the downloads that send
+by moving the browser, get neither. `ajaxWorkspaceDocumentBffUpdateSigner` sends `0.data.signer.name`, `.email`,
+`.cellPhone`, and `0.data.signer.attribute.enabledAuth`, `.authType`, `.authPassword`, `.authPasswordHint`,
+`.notificationTypes`, `.notificationContexts`, and not `signer.attribute.pkiSignType`, which it never copies.
+
 ## Why this is worth building — prior art (checked 2026-09-29)
 
 Four research passes examined 84 tools, repositories, agent skills, MCP servers and papers. None

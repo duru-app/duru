@@ -187,7 +187,8 @@ client with example results and a config to start from.
   values, and their `queryOptions`, `infiniteQueryOptions` and `mutationOptions` give back what they are given. So
   a hook a listed file exports, such as one an OpenAPI generator writes around a request function, makes the
   requests of that function, and a screen that calls the hook gets them. A `constantStubs` entry for either package
-  is used in place of this.
+  is used in place of this. With `requestFunction`, the files in `apiModules` are run too, only to learn which values
+  the screens pass reach a request; their addresses are still the ones reading them gives.
   An API function that a screen's own source gives to react-query is a call of that screen, as one it calls
   directly is. The `enabled` the screen gives that query, or gives a listed file's hook under `query`
   (`useListUsers({ query: { enabled } })`), is a condition of the requests the query sends, as it is written. A call

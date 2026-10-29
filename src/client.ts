@@ -7,7 +7,7 @@ import { routerTargets } from './access.ts';
 import { addressReader, MOST_ADDRESSES, UNREADABLE_PIECE } from './address-functions.ts';
 import type { AddressFunction, LinkComponent, Read } from './address-functions.ts';
 import type { Branch, Constants, GuardInit, GuardSetting, RouteNode, Side } from './access.ts';
-import { recordApiCalls, requestFunctionFile } from './api-calls.ts';
+import { apiModuleInputs, recordApiCalls, requestFunctionFile } from './api-calls.ts';
 import { componentFileFinder } from './component-file.ts';
 import { compare, ROUTES_FILE } from './config.ts';
 import { loadConstants } from './constants.ts';
@@ -3020,10 +3020,17 @@ export async function extractClient(config: any) {
 
   const apiFunctions: Record<string, any> = {};
   const moduleExports = new Map<string, { file: string; exportName: string }[]>();
+  // apiModules 파일마다 정적 읽기가 찾은 내보낸 이름. requestFunction 이 있으면 이 파일들을 돌려 인자 자리만 얻는다.
+  const apiExports: Record<string, string[]> = {};
   for (const f of apiModuleFiles) {
     const fns = extractApiModule(f);
     Object.assign(apiFunctions, fns);
+    apiExports[path.relative(config.srcRoot, f)] = Object.keys(fns);
     for (const name of Object.keys(fns)) moduleExports.set(name, [{ file: f, exportName: name }]);
+  }
+  // 돌린 파일과 이름이 모두 정적 읽기가 찾은 자리일 때만 인자 자리를 보탠다.
+  for (const { file, exportName, found } of await apiModuleInputs(config, imports.resolve, apiExports)) {
+    if (apiFunctions[exportName]?.file === file) apiFunctions[exportName] = { ...apiFunctions[exportName], ...found };
   }
   if (calledFiles.size) called = await recordApiCalls(config, imports.resolve, new Set(Object.keys(apiFunctions)));
   Object.assign(apiFunctions, called?.functions);

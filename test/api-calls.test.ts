@@ -1136,3 +1136,45 @@ test('an API function that needs a number where it reads the input it is given s
   assert.equal(fn.inputs, undefined);
   assert.deepEqual(endpointsOf(map, 'inputsApi.save'), endpointsOf(without, 'inputsApi.save'));
 });
+
+// apiModules 파일을 돌려 인자 자리만 얻는 설정. 이 파일은 정적 읽기가 주소를 찾는 apiModules 파일이기도 하다.
+const API_FILES = ['_ajax/AjaxFunc.ts', 'invoices/api/signer.ts'];
+const MODULES = { apiModules: API_FILES, requestFunction: WITH_BODY.requestFunction };
+// 정적 읽기가 apiModules 파일에서 찾은 주소와, 그 함수를 부르는 화면의 호출.
+const NAMES = ['ajaxReportArchive', 'ajaxReportSchedule', 'signerSave'];
+const readOnly = (map: ScreenMap) => ({
+  apiFunctions: NAMES.map((k) => ({ endpoints: map.apiFunctions[k]?.endpoints, file: map.apiFunctions[k]?.file, line: map.apiFunctions[k]?.line })),
+  calls: map.calls.flatMap((c) => {
+    if (!NAMES.some((name) => c.apiFunctions.includes(name))) return [];
+    const { apiFunctions, ...rest } = c as any;
+    return [{ ...rest, apiFunctions: apiFunctions.filter((name: string) => !NAMES.includes(name)) }];
+  }),
+});
+// 내보낸 함수가 { URL, METHOD } 를 지어 정적 읽기가 주소를 찾고, 화면이 준 data 의 키를 골라 본문으로 옮긴다.
+const SIGNER = [
+  "import { executeRequest } from '../../contracts/api/request';",
+  'export const signerSave = async ({ data }: { data: Record<string, unknown> }) => {',
+  '  const body: Record<string, unknown> = {};',
+  "  ['user.name', 'user.email'].forEach((k) => { if (k in data) body[k] = data[k]; });",
+  '  const URL = "/internal/v2/workspace/signer";',
+  '  return executeRequest({ endpoint: { METHOD: "POST", URL }, url: URL, body });',
+  '};',
+  '',
+].join('\n');
+
+// requestFunction 이 없는 사본. 화면이 직접 부른 request 와 그 request 를 감싼 파일은 그때 API 함수로 읽히지 않으므로 뺀다.
+const modulesOnly = { calledApiModules: [], serverEndpoints: CALLED.serverEndpoints, apiModules: API_FILES, requestFunction: undefined };
+
+test('with requestFunction the files in apiModules are run too: only the input keys their functions pass reach are added, and the addresses and calls stay those of reading them', async () => {
+  const map = await build(fixtureCopy({ ...WITH_BODY, ...MODULES }, { 'invoices/api/signer.ts': SIGNER }));
+  const without = await build(fixtureCopy(modulesOnly, { 'invoices/api/signer.ts': SIGNER }));
+  assert.deepEqual(readOnly(map), readOnly(without));
+  assert.deepEqual(map.apiFunctions.signerSave.endpoints.map((e) => [e.method, e.url]), [['POST', '/internal/v2/workspace/signer']]);
+  assert.deepEqual(map.apiFunctions.signerSave.inputs, { sent: [['0', 'data', 'user.name'], ['0', 'data', 'user.email']], spread: [] });
+});
+
+test('without requestFunction the same files give no input keys', async () => {
+  const map = await build(fixtureCopy(modulesOnly, { 'invoices/api/signer.ts': SIGNER }));
+  assert.equal(map.apiFunctions.signerSave.inputs, undefined);
+  assert.equal(map.apiFunctions.signerSave.inputsUnknown, undefined);
+});
