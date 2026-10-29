@@ -183,6 +183,37 @@
           "file": "steps.spec.ts",
           "line": 23,
           "column": 1
+        },
+        {
+          "title": "shows the screen after each step @screen:/home#Home",
+          "ok": true,
+          "tags": [
+            "screen:/home#Home"
+          ],
+          "tests": [
+            {
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "expectedStatus": "passed",
+              "status": "expected",
+              "results": [
+                {
+                  "retry": 0,
+                  "status": "passed",
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/builds/app/test-results/steps-shows-the-screen-after-each-step-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "steps.spec.ts",
+          "line": 27,
+          "column": 1
         }
       ]
     }

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { readPlaywright } from '../src/playwright.ts';
-import { readTrace } from '../src/playwright-trace.ts';
+import { copyShots, readTrace } from '../src/playwright-trace.ts';
 
 const RESULTS = path.join(import.meta.dirname, 'fixtures/app/results/playwright-traced');
 const REPORT = path.join(RESULTS, 'visits.json');
@@ -582,4 +582,29 @@ test('a press that only changes the part after # opens when the press ends, even
   assert.deepEqual(clickTrace([
     { url: '/', at: 12, type: 'application/json' },
   ], 'http://x/#/next', 'http://x/#/home'), ['open /#/home', 'press /#/home', 'GET / 200', 'open /#/next']);
+});
+
+const SHOWN = path.join(import.meta.dirname, 'fixtures/app/results/playwright-steps/test-results/steps-shows-the-screen-after-each-step-chromium/trace.zip');
+
+test('the walk gives each step and opened page the first screen picture taken after it ended, so a click that moved the page shows the page it moved to, and leaves the picture off a line that would repeat the one before', () => {
+  const shots = walkOf(SHOWN).map((line) => (line.kind === 'request' ? `${line.method} ${line.url}` : `${line.kind} ${line.url} ${line.shot?.slice(-18) ?? '-'}`));
+  assert.deepEqual(shots, [
+    'open /home 1793237455311.jpeg',
+    'write /home 1793237455338.jpeg',
+    'press /home 1793237455389.jpeg',
+    'GET /api/v1/document/list',
+    'open /document/draft -',
+  ]);
+});
+
+test('copyShots writes the named screen pictures of a trace into a folder and skips a name the trace does not hold', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-'));
+  try {
+    const named = (readTrace(SHOWN) as Traced).walk.flatMap((line) => (line.kind !== 'request' && line.shot ? [line.shot] : []));
+    copyShots(SHOWN, [...named, 'page@none-1.jpeg'], dir);
+    assert.deepEqual(fs.readdirSync(dir).sort(), named.toSorted());
+    for (const name of named) assert.deepEqual([...fs.readFileSync(path.join(dir, name)).subarray(0, 2)], [0xff, 0xd8]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

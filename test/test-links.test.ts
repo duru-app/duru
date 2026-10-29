@@ -8,7 +8,7 @@ import type { ScreenAccess } from '../src/access.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { readPlaywright } from '../src/playwright.ts';
-import { linkTests } from '../src/test-links.ts';
+import { linkTests, writeShots } from '../src/test-links.ts';
 
 type Config = ReturnType<typeof loadConfig>;
 type Links = ReturnType<typeof linkTests>;
@@ -828,7 +828,7 @@ test('a traced test keeps its walk once, under the projects it ran in, and each 
   assert.deepEqual(walk.firefox.map((line) => line.kind), ['open', 'assert']);
   assert.deepEqual(walk.chromium[0], { kind: 'open', path: '/home', screen: '/home#Home' });
   assert.deepEqual(walk.chromium.at(-1), { kind: 'write', method: 'fill', box: { placeholder: '제목' }, value: '제목 값', path: '/document/draft', screen: '/document/:tab#DocumentList' });
-  assert.equal(Object.keys(stepLinks.walks).length, 2);
+  assert.equal(Object.keys(stepLinks.walks).length, 3);
 });
 
 test('a request in the walk carries the ID of the call on the map it matches', () => {
@@ -837,7 +837,40 @@ test('a request in the walk carries the ID of the call on the map it matches', (
     { kind: 'request', method: 'GET', url: 'http://127.0.0.1:4598/api/v1/document/list', status: 404, call: 'GET:/api/v1/document/list' },
     { kind: 'request', method: 'GET', url: 'http://127.0.0.1:4598/api/v1/member/list', status: 404, call: 'GET:/api/v1/member/list' },
   ]);
-  assert.ok(stepLinks.passed['GET:/api/v1/document/list'].every((t) => t.steps === run.steps));
+  assert.ok(stepLinks.passed['GET:/api/v1/document/list'].filter((t) => t.title === run.title).every((t) => t.steps === run.steps));
+});
+
+test('each walk names the trace file it was read from, under the same key and project, from the config\'s folder', () => {
+  assert.deepEqual(Object.keys(stepLinks.traceFiles), Object.keys(stepLinks.walks));
+  const [run] = stepsOf('fills the boxes on home @screen:/home#Home');
+  assert.deepEqual(stepLinks.traceFiles[run.steps!], {
+    chromium: path.join('results/playwright-steps/test-results/steps-fills-the-boxes-on-home-chromium/trace.zip'),
+    firefox: path.join('results/playwright-steps/test-results/steps-fills-the-boxes-on-home-firefox/trace.zip'),
+  });
+});
+
+test('writeShots empties the folder and puts in the screen pictures the walks name, read from their traces', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'page@old-1.jpeg'), 'old');
+    writeShots(STEPS_CONFIG, stepLinks, dir);
+    const named = Object.values(stepLinks.walks).flatMap((runs) => Object.values(runs).flat()).flatMap((line) => ('shot' in line && line.shot ? [line.shot] : []));
+    assert.equal(named.length, 3);
+    assert.deepEqual(fs.readdirSync(dir).sort(), named.toSorted());
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeShots leaves no folder when no walk names a picture', () => {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-')), 'test-shots');
+  try {
+    fs.mkdirSync(dir);
+    writeShots(STEPS_CONFIG, { walks: {}, traceFiles: {} }, dir);
+    assert.equal(fs.existsSync(dir), false);
+  } finally {
+    fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  }
 });
 
 test('a test without a trace, with a trace that cannot be read or that was skipped has no walk', () => {

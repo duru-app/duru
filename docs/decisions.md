@@ -2781,8 +2781,8 @@ test entry carries that key as `steps`, since a test is copied into `tests.json`
 and every screen it passed. The review server sends `walks` to the page as `testSteps`.
 Alternatives compared:
 - Reading the trace when a reviewer opens a test, through a new request to the review server: the page's data stays
-  smaller, but the page needs a loading and a failed state, `tests.json` would have to keep each trace's path, and a
-  trace moved or deleted after `rebuild` would show nothing, while the links and candidates read from it still show.
+  smaller, but the page needs a loading and a failed state, and a trace moved or deleted after `rebuild` would show
+  nothing, while the links and candidates read from it still show.
 - Keeping only requests that match a call on the map: a request the map does not know, often the one a reviewer wants
   to see, would vanish.
 - Keeping every request: the test's own requests would be lost among the page loads.
@@ -2808,6 +2808,43 @@ the test's file, line and title and is shown on every run of that test; an actio
 shows 「앱 밖」 instead of a screen; what an `expect` checked is not shown; an action the trace has no end for, as when
 the test ran out of time during it, is not marked 「실패」; when an action changes the address without loading a page, as
 a router in the page does, a request the new screen sends before the action ends comes before 「열기」.
+
+**A step of a test shows the screen picture taken after it, which `rebuild` copies out of the trace into
+`test-shots/`, and 「재생」 opens the test's trace in the trace viewer that comes with `playwright-core`, served by the
+review server.**
+Asked for in #481 (2026-10-29), at the screen check of the steps: the list alone did not show what the test saw. A
+trace recorded with screenshots has `screencast-frame` lines with the page, the picture's name in `resources/` (a
+JPEG) and a time on the actions' clock. A picture is taken when the screen changes, and comes after the change: in
+the trace of `steps-shows-the-screen-after-each-step` (recorded with `playwright-core` 1.60.0) the `fill` ends at
+286.5 and the first picture with the value in its box is at 294.8, after the next `click` started at 287.5; the click
+ends at 332.5 and the page it moved to is pictured at 345.6, after two waits between 335.0 and 343.2. So a step takes
+the first picture of its page taken after its action ended and before the next step on that page (a press, a write,
+a check or a move to an address) ended, or, when there is none, the last picture taken before its action ended; a wait
+in between does not count as a step. A page opened takes the picture after the action that showed its address. A line
+whose picture is the one of the line before shows none, as the 「열기」 after a click that moved the page would.
+`rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, emptied first, so they show as
+long as the steps do, also when the traces have been moved. In that trace that is 3 of its 4 pictures, 13.5 KB of
+18.1 KB; there is no limit on the folder's size.
+`tests.json` keeps each walk's trace file as `traceFiles` for 「재생」. The review server serves `playwright-core`'s
+`lib/vite/traceViewer/` under `/trace-viewer/`, and a trace at `/trace-viewer/test-trace?steps=<key>&project=<name>`
+only when `traceFiles` names it. The page opens `index.html?trace=test-trace?...`, which the viewer's service worker
+fetches next to its own files, as `show-trace` does with `file?path=`. Measured: served this way, the viewer lists the
+test's actions and shows the page after them, and fetches the trace in one GET without a range. Since the viewer ships
+in `playwright-core`, it is now a dependency of duru rather than a dev dependency, as chosen by the driver.
+Alternatives compared:
+- The last picture before the next action started, or before the step's own action ended: in that trace the `fill`
+  shows its box still empty and the click shows the page before it moved, since pictures come after the change.
+- Reading the pictures from the trace when the page asks for them: nothing is copied, but they vanish when the trace
+  is moved while the steps still show.
+- Running `playwright show-trace` for 「재생」: another process and port for each trace, to be stopped when the review
+  ends.
+- Opening `trace.playwright.dev`: needs the internet, and the trace has to be fetched from the review server by a page
+  on another origin.
+Known limits: a step whose change was painted only after the next step ended shows the screen from before it; a step
+that changed nothing on the screen shows the first picture after it, which can already show what the next step did
+when that was painted before the next step ended, as an `expect` followed by a click; a test with several pages
+shows the pictures of the step's own page only; 「재생」 is greyed out only when the trace file is gone, not when it was
+replaced by another run's trace at the same place.
 
 **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
 without a value on such a kind fills no value.**

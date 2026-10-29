@@ -18,3 +18,10 @@ from this folder and of `../traces/inputs.zip`, put under `test-results/` with t
 are tagged with the home screen so the review page lists them there. One test runs in two projects with different
 traces, one runs without a trace, one has a trace recorded without snapshots in one project and runs without a trace in
 another, and one is skipped.
+
+`steps-shows-the-screen-after-each-step-chromium/trace.zip` under `../results/playwright-steps/test-results/` is
+recorded with `playwright-core` 1.60.0 (`context.tracing.start({ screenshots: true, snapshots: true })`, pages
+served by `page.route` with a 404 for `/api/v1/document/list`): the test opens `/home`, fills 「메모」 with 「첫 메모」,
+presses 「go」, whose page asks for the document list and moves to `/document/draft`, waits for the heading and then
+500 ms, so that the moved page is pictured before the trace stops. To make it again, record the same calls and put the
+zip there.

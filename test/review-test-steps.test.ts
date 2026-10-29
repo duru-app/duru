@@ -1,4 +1,6 @@
 import { test } from 'node:test';
+import fs from 'node:fs';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import type { Locator, Page } from 'playwright-core';
 import { withRebuiltFixture, withServer, browserMissing, withPage, chooseScreen, changeData, TRACED } from './review-helpers.ts';
@@ -172,4 +174,65 @@ test('in a browser, each test of a screen sits on its own line, apart from the n
     assert.equal((await look(first))[1], plain);
     assert.equal(await first.locator('.steps-toggle').count(), 1);
   });
+});
+
+test('in a browser, a step line shows a small picture of the screen after it, and pressing it shows the picture large until it is closed', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    const row = testLine(p, 'shows the screen after each step');
+    await row.locator('.steps-toggle', { hasText: '단계' }).click();
+    const thumbs = foldOf(row).locator('button.shot-thumb img');
+    assert.equal(await thumbs.count(), 3);
+    await thumbs.first().evaluate((img: HTMLImageElement) => img.decode());
+    assert.ok(await thumbs.first().evaluate((img: HTMLImageElement) => img.naturalWidth) > 0);
+    assert.equal(await testLine(p, 'fills the boxes on home').first().locator('xpath=following-sibling::*[1]').locator('button.shot-thumb').count(), 0);
+
+    await foldOf(row).locator('button.shot-thumb').nth(2).click();
+    const view = p.locator('#shot-view');
+    assert.ok(await view.evaluate((d: HTMLDialogElement) => d.open));
+    const big = view.locator('img');
+    await big.evaluate((img: HTMLImageElement) => img.decode());
+    const width = (img: Locator) => img.evaluate((el: HTMLImageElement) => el.getBoundingClientRect().width);
+    assert.ok(await width(big) > 4 * await width(thumbs.nth(2)));
+    await p.keyboard.press('Escape');
+    assert.equal(await view.evaluate((d: HTMLDialogElement) => d.open), false);
+  });
+});
+
+test('in a browser, 「재생」 opens the test\'s trace in the Playwright trace viewer in a new tab, and is greyed out once the trace file is gone', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    const replay = testLine(p, 'shows the screen after each step').locator('a.replay');
+    assert.equal(await replay.textContent(), '재생');
+    assert.equal(await replay.getAttribute('target'), '_blank');
+    const [viewer] = await Promise.all([p.context().waitForEvent('page'), replay.click()]);
+    await viewer.getByText('Navigate to "/home"').waitFor();
+    await viewer.getByText('Fill "첫 메모"').waitFor();
+    assert.equal(await testLine(p, 'opens home without a trace').locator('.replay').count(), 0);
+    await viewer.close();
+  });
+  await withRebuiltFixture(STEPS, async (config, copy) => {
+    fs.rmSync(path.join(copy, 'results/playwright-steps/test-results/steps-shows-the-screen-after-each-step-chromium'), { recursive: true });
+    await withServer(config, 'reviewer', (base) => withPage(base, async (p) => {
+      await p.waitForSelector('#screen-list li');
+      await chooseScreen(p, '/home');
+      const row = testLine(p, 'shows the screen after each step');
+      assert.equal(await row.locator('a.replay').count(), 0);
+      assert.equal(await row.locator('button.replay:disabled').textContent(), '재생');
+      await row.locator('.steps-toggle', { hasText: '단계' }).click();
+      await foldOf(row).locator('button.shot-thumb img').first().evaluate((img: HTMLImageElement) => img.decode());
+    }));
+  });
+});
+
+test('the review server sends a test\'s trace and screen pictures only for what tests.json names, and no file outside the trace viewer', async () => {
+  await withRebuiltFixture(STEPS, (config) => withServer(config, 'reviewer', async (base) => {
+    const status = async (url: string) => (await fetch(`${base}${url}`)).status;
+    const [key] = Object.keys(JSON.parse(fs.readFileSync(path.join(config.outDir, 'tests.json'), 'utf8')).traceFiles).filter((k) => k.includes('shows the screen'));
+    assert.equal(await status(`/trace-viewer/test-trace?steps=${encodeURIComponent(key)}&project=chromium`), 200);
+    assert.equal(await status(`/trace-viewer/test-trace?steps=${encodeURIComponent(key)}&project=firefox`), 404);
+    assert.equal(await status('/trace-viewer/index.html'), 200);
+    assert.equal(await status('/trace-viewer/sw.bundle.js'), 200);
+    assert.equal(await status('/trace-viewer/..%2F..%2Fpackage.json'), 404);
+    assert.equal(await status('/test-shots/page@191be84288f2d906ed440904919e2f78-1793237455311.jpeg'), 200);
+    assert.equal(await status('/test-shots/..%2Ftests.json'), 404);
+  }));
 });

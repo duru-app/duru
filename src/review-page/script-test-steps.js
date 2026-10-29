@@ -25,6 +25,34 @@ function toggleSteps(place, t) {
   focusSteps(place, '.steps-toggle');
 }
 
+const shotView = /** @type {HTMLDialogElement} */ (document.getElementById('shot-view'));
+shotView.querySelector('button.close').addEventListener('click', () => shotView.close());
+const shotUrl = (name) => `/test-shots/${encodeURIComponent(name)}`;
+
+function openShot(name) {
+  /** @type {HTMLImageElement} */ (shotView.querySelector('img')).src = shotUrl(name);
+  shotView.showModal();
+}
+
+const shotThumb = (line) => (line.shot ? h('button', {
+  class: 'shot-thumb', title: '이 동작이 끝난 뒤의 화면을 크게 봅니다', 'aria-label': '화면 그림 크게 보기',
+  onclick: (e) => { e.stopPropagation(); openShot(line.shot); },
+}, h('img', { src: shotUrl(line.shot), alt: '', loading: 'lazy' })) : null);
+
+function replayButton(t) {
+  if (t.format !== 'playwright' || !t.steps) return null;
+  const project = t.project ?? '';
+  const kept = state.data.testTraces?.[t.steps]?.[project];
+  if (kept === undefined) return null;
+  if (!kept) return h('button', { class: 'replay', disabled: true, title: '이 테스트의 trace 파일이 지워져 재생할 수 없습니다. 테스트를 다시 돌리고 duru rebuild 를 실행하면 됩니다' }, '재생');
+  const trace = `test-trace?steps=${encodeURIComponent(t.steps)}&project=${encodeURIComponent(project)}`;
+  return h('a', {
+    class: 'replay', href: `/trace-viewer/index.html?trace=${encodeURIComponent(trace)}`, target: '_blank', rel: 'noopener',
+    title: '이 테스트가 돈 화면을 Playwright trace viewer 로 새 탭에서 처음부터 다시 봅니다',
+    onclick: (e) => e.stopPropagation(), onkeydown: (e) => e.stopPropagation(),
+  }, '재생');
+}
+
 function stepsButton(node, t) {
   if (t.format !== 'playwright') return null;
   const place = stepsPlace(node, t);
@@ -58,7 +86,8 @@ function testStepItem(/** @type {TestStepLine} */ line) {
     stepPlace(line),
     line.kind === 'write' ? [' ', line.box ? h('span', { class: 'step-box' }, boxWords(line.box)) : h('span', { class: 'muted step-unread', title: line.selector ?? null }, '찾은 상자를 읽지 못함')] : null,
     line.kind === 'write' && writtenValue(line) ? [' ', writtenValue(line)] : null,
-    line.failed ? [' ', h('span', { class: 'chip fail', title: '이 동작은 오류로 끝났습니다' }, '실패')] : null);
+    line.failed ? [' ', h('span', { class: 'chip fail', title: '이 동작은 오류로 끝났습니다' }, '실패')] : null,
+    shotThumb(line));
 }
 
 const answerChip = (status) => (status === null

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import zlib from 'node:zlib';
 import { pathOf } from './address-match.ts';
 import type { BOX_WORDS, StepInput } from './stories.ts';
@@ -29,6 +30,7 @@ export interface WalkStep {
   unread?: 'box';
   selector?: string;
   failed?: true;
+  shot?: string;
 }
 
 export interface WalkRequest {
@@ -50,7 +52,7 @@ interface TimelineEntry {
   fill?: StepInput | 'skipped';
 }
 
-type WalkEntry = { at: number; page?: string; url?: string; step?: Omit<WalkStep, 'url'>; request?: WalkRequest };
+type WalkEntry = { at: number; page?: string; url?: string; shot?: string; step?: Omit<WalkStep, 'url'>; request?: WalkRequest };
 
 const KNOWN_VERSIONS = [8];
 const ASSERTIONS = new Set(['expect', 'expectScreenshot']);
@@ -188,8 +190,9 @@ export function readTrace(file: string): TraceResult {
   if (!fs.existsSync(file)) return { reason: 'trace 파일이 없습니다' };
   let events: any[];
   let network: any[];
+  let entries: Map<string, () => Buffer>;
   try {
-    const entries = zipEntries(fs.readFileSync(file));
+    entries = zipEntries(fs.readFileSync(file));
     const named = (ending: string) => [...entries].filter(([name]) => name.endsWith(ending) && name !== 'test.trace').flatMap(([, read]) => jsonLines(read));
     events = named('.trace');
     network = named('.network');
@@ -223,9 +226,17 @@ export function readTrace(file: string): TraceResult {
       snapshot._monotonicTime >= from && snapshot._monotonicTime <= to && documentOf(snapshot.request.url) === page && loadsPage(snapshot, shown))?.snapshot._monotonicTime;
   };
   const ends = new Map(events.filter((e) => e.type === 'after').map((e) => [e.callId, e]));
+  const framesOn = Map.groupBy(events.filter((e) => e.type === 'screencast-frame' && entries.has(`resources/${e.sha1}`)).sort((a, b) => a.timestamp - b.timestamp), (e) => e.pageId);
+  const stepsOn = Map.groupBy(actions.filter((a) => kindOf(a.method) || NAVIGATIONS.has(a.method)).sort((a, b) => a.startTime - b.startTime), (a) => a.pageId);
+  const shotAfter = (page: string, end: number) => {
+    const next = stepsOn.get(page)?.find((a) => a.startTime > end);
+    const until = next ? ends.get(next.callId)?.endTime ?? next.startTime : Infinity;
+    const frames = framesOn.get(page) ?? [];
+    return (frames.find((f) => f.timestamp >= end && f.timestamp <= until) ?? frames.findLast((f) => f.timestamp <= end))?.sha1 as string | undefined;
+  };
   const timeline: TimelineEntry[] = [];
   const walked: WalkEntry[] = [];
-  const sightings: { at: number; page: string; from: number; url: string; navigated: boolean }[] = [];
+  const sightings: { at: number; page: string; from: number; end: number; url: string; navigated: boolean }[] = [];
   for (const action of actions) {
     const end = ends.get(action.callId);
     const endTime = end?.endTime ?? action.startTime;
@@ -235,7 +246,7 @@ export function readTrace(file: string): TraceResult {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
       if (!snapshot) continue;
       timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
-      sightings.push({ at, page: action.pageId, from: action.startTime, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
+      sightings.push({ at, page: action.pageId, from: action.startTime, end: endTime, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
     }
     const kind = kindOf(action.method);
     if (kind === 'assert') timeline.push({ at: endTime, page: action.pageId, kind });
@@ -245,7 +256,7 @@ export function readTrace(file: string): TraceResult {
     }
     if (kind) {
       const walkKind = kind === 'assert' ? 'assert' : action.method === 'fill' || VALUE_WRITES.has(action.method) ? 'write' : 'press';
-      walked.push({ at: kind === 'assert' ? endTime : input?.timestamp ?? action.startTime, page: action.pageId, step: walkStepOf(action, walkKind, Boolean(end?.error)) });
+      walked.push({ at: kind === 'assert' ? endTime : input?.timestamp ?? action.startTime, page: action.pageId, shot: shotAfter(action.pageId, endTime), step: walkStepOf(action, walkKind, Boolean(end?.error)) });
     }
   }
   const lastSeen = new Map<string, { url: string; at: number; from: number }>();
@@ -255,8 +266,8 @@ export function readTrace(file: string): TraceResult {
     const asked = pageRequestAt(url, last?.from ?? from, at);
     return asked === undefined ? at : Math.max(asked, last?.at ?? asked);
   };
-  for (const { at, page, from, url, navigated } of sightings.sort((a, b) => a.at - b.at)) {
-    walked.push({ at: navigated ? from : openedAt(page, url, at, from), page, url });
+  for (const { at, page, from, end, url, navigated } of sightings.sort((a, b) => a.at - b.at)) {
+    walked.push({ at: navigated ? from : openedAt(page, url, at, from), page, url, shot: shotAfter(page, end) });
     lastSeen.set(page, { url, at, from });
   }
   timeline.sort((a, b) => a.at - b.at || Number(Boolean(a.kind)) - Number(Boolean(b.kind)));
@@ -280,17 +291,31 @@ export function readTrace(file: string): TraceResult {
   return { steps, requests, walk: walkOf(walked) };
 }
 
+export function copyShots(file: string, names: Iterable<string>, dir: string) {
+  const entries = zipEntries(fs.readFileSync(file));
+  for (const name of names) {
+    const read = entries.get(`resources/${name}`);
+    if (read) fs.writeFileSync(path.join(dir, name), read());
+  }
+}
+
 function walkOf(walked: WalkEntry[]) {
   walked.sort((a, b) => a.at - b.at || Number(Boolean(a.step || a.request)) - Number(Boolean(b.step || b.request)));
   const current = new Map<string, string>();
   const walk: WalkLine[] = [];
-  for (const { page, url, step, request } of walked) {
+  let lastShot: string | undefined;
+  const shown = (shot: string | undefined) => {
+    if (shot === lastShot) return {};
+    lastShot = shot;
+    return shot ? { shot } : {};
+  };
+  for (const { page, url, shot, step, request } of walked) {
     if (request) walk.push(request);
-    else if (step) walk.push({ ...step, ...(current.has(page!) && { url: current.get(page!) }) });
+    else if (step) walk.push({ ...step, ...(current.has(page!) && { url: current.get(page!) }), ...shown(shot) });
     else if (NOT_THE_APP.test(url!)) current.delete(page!);
     else if (current.get(page!) !== url) {
       current.set(page!, url!);
-      walk.push({ kind: 'open', url: url! });
+      walk.push({ kind: 'open', url: url!, ...shown(shot) });
     }
   }
   return walk;
