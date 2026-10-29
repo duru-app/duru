@@ -15,7 +15,7 @@ function callDetails(call, s) {
     h('div', {}, verdictChip(call.server), ' ', call.server.path ? h('code', {}, call.server.path) : null),
     call.server.candidates ? h('ul', { class: 'plain' }, call.server.candidates.map((c) => h('li', {}, '서버에는 ', h('code', {}, c)))) : null,
     h('h2', {}, `테스트 ${tests.length}`),
-    tests.length ? h('div', {}, tests.map((t) => partRow(testItem(t, { hide: [`call:${call.id}`, ...(depth ? [`depth:${depth}`] : [])], chip: regressionChip(call.id, 'tag', t) }), call.id, t))) : h('p', { class: 'muted' }, '없음'),
+    tests.length ? h('div', {}, tests.map((t) => testRow(testItem(t, { hide: [`call:${call.id}`, ...(depth ? [`depth:${depth}`] : [])], chip: regressionChip(call.id, 'tag', t) }), call.id, t))) : h('p', { class: 'muted' }, '없음'),
     ...untaggedPairs(call.id),
     baselineOnlyHere(call.id),
     h('h2', {}, '이 화면에서 부르는 곳'),

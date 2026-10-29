@@ -17,12 +17,12 @@ import { addReply } from './marks.ts';
 import { checkNeeds } from './needs.ts';
 import { CANDIDATES } from './stories.ts';
 import { SOURCE_SYNTAX_ERROR } from './parse.ts';
-import { readCaseTargets, reviewAuthor, startReviewServer, writeCaseMark, writeCommentCandidate } from './review.ts';
+import { readCaseTargets, reviewAuthor, SHOTS_DIR, startReviewServer, writeCaseMark, writeCommentCandidate } from './review.ts';
 import type { AnnouncedMark } from './review.ts';
 import { SERVER_NOT_COMPARED } from './server.ts';
 import { checkStoryFiles } from './story-paths.ts';
 import { atTableItem, linkText, storyBrief, taskList, undecidedLines } from './tasks.ts';
-import { linkTests } from './test-links.ts';
+import { linkTests, writeShots } from './test-links.ts';
 
 const COMMANDS = ['extract', 'rebuild', 'review', 'tasks', 'story', 'reply', 'wait', 'case', 'undecided', 'candidate'];
 const DEFAULT_PORT = 4400;
@@ -394,6 +394,7 @@ if (command === 'tasks') {
     }
     const { links, judgmentNotices, judged } = readEarly || readTests();
     console.log(`wrote ${write('tests.json', links)}`);
+    writeShots(config, links, path.join(config.outDir, SHOTS_DIR));
     const { list, notices, stale, unknownTags: unknownStories } = checkStoryFiles(map, config.storiesDir, path.join(config.outDir, 'map.json'), links);
     const unknownTags = [...links.unknownTags, ...unknownStories];
     const covered = map.screens.filter((s: any) => links.nodes[s.id]).length;

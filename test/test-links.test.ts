@@ -8,7 +8,7 @@ import type { ScreenAccess } from '../src/access.ts';
 import { loadConfig } from '../src/config.ts';
 import { buildMap } from '../src/map.ts';
 import { readPlaywright } from '../src/playwright.ts';
-import { linkTests } from '../src/test-links.ts';
+import { linkTests, writeShots } from '../src/test-links.ts';
 
 type Config = ReturnType<typeof loadConfig>;
 type Links = ReturnType<typeof linkTests>;
@@ -710,7 +710,7 @@ test('an address with a value in it or a query after it is linked to the screen 
 
 test('a passed test carries its place, its result file, its project, its depth and its status', () => {
   const [t] = tracedLinks.passed['/document/:id#DocumentDetail'];
-  assert.deepEqual(t, { title: 'checks the path of a document', tags: [], file: 'visits.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/visits.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'assert' });
+  assert.deepEqual(t, { title: 'checks the path of a document', tags: [], file: 'visits.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/visits.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'assert', steps: JSON.stringify(['results/playwright-traced/visits.json', 'visits.spec.ts', t.line, 'checks the path of a document']) });
   assert.equal(typeof t.line, 'number');
 });
 
@@ -757,7 +757,7 @@ test('tests that passed through a screen leave the tests of the screens, the unt
 
 test('a trace that cannot be read is noticed with its file and the reason, and a browser test that ran without a trace is only counted', () => {
   assert.deepEqual(tracedLinks.traceNotices, [
-    { file: 'results/playwright-traced/test-results/no-snapshots-presses-the-button-without-snapshots-chromium/trace.zip', test: { title: 'presses the button without snapshots', file: 'no-snapshots.spec.ts', line: 5 }, reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' },
+    { file: 'results/playwright-traced/test-results/no-snapshots-presses-the-button-without-snapshots-chromium/trace.zip', test: { title: 'presses the button without snapshots', file: 'no-snapshots.spec.ts', line: 5, source: 'results/playwright-traced/visits.json', project: 'chromium' }, reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' },
   ]);
   const untraced = (l: Links) => l.untracedCount;
   assert.equal(untraced(tracedLinks) - untraced(links), 1);
@@ -776,7 +776,7 @@ test('a browser test is linked to each call it sent a request for, whatever valu
   assert.deepEqual(passedAt('GET:/api/v1/lab/experiment'), ['call asks for the experiment without opening a page']);
   assert.equal(passedAt('GET:/api/v1/member/list')[0], 'call turns the pages of the member list');
   const [t] = tracedLinks.passed['GET:/api/v1/document/{documentId}'];
-  assert.deepEqual(t, { title: 'reads a document from the server', tags: [], file: 'calls.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/calls.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'call' });
+  assert.deepEqual(t, { title: 'reads a document from the server', tags: [], file: 'calls.spec.ts', line: t.line, project: 'chromium', source: 'results/playwright-traced/calls.json', format: 'playwright', depth: 'ui', status: 'pass', level: 'call', steps: JSON.stringify(['results/playwright-traced/calls.json', 'calls.spec.ts', t.line, 'reads a document from the server']) });
 });
 
 test('a request with another method than the call, or for a path no call has, links the test to no call', () => {
@@ -814,3 +814,107 @@ test('the tests that passed through the screens come out in the same order every
   assert.deepEqual(Object.keys(again.passed), Object.keys(tracedLinks.passed));
 });
 
+
+const STEPS_CONFIG = { ...config, tests: [{ format: 'playwright', path: path.join(config.configDir, 'results/playwright-steps'), depth: 'ui' }] };
+const stepLinks = linkTests(STEPS_CONFIG, await buildMap(config));
+const stepsOf = (title: string) => stepLinks.nodes['/home#Home'].filter((t) => t.title === title);
+
+test('a traced test keeps its walk once, under the projects it ran in, and each of its entries points at it', () => {
+  const runs = stepsOf('fills the boxes on home @screen:/home#Home');
+  assert.deepEqual(runs.map((t) => t.project), ['chromium', 'firefox']);
+  assert.equal(runs[0].steps, runs[1].steps);
+  const walk = stepLinks.walks[runs[0].steps!];
+  assert.deepEqual(Object.keys(walk), ['chromium', 'firefox']);
+  assert.deepEqual(walk.firefox.map((line) => line.kind), ['open', 'assert']);
+  assert.deepEqual(walk.chromium[0], { kind: 'open', path: '/home', screen: '/home#Home' });
+  assert.deepEqual(walk.chromium.at(-1), { kind: 'write', method: 'fill', box: { placeholder: '제목' }, value: '제목 값', path: '/document/draft', screen: '/document/:tab#DocumentList' });
+  assert.equal(Object.keys(stepLinks.walks).length, 3);
+});
+
+test('a request in the walk carries the ID of the call on the map it matches', () => {
+  const [run] = stepsOf('lists the documents on home @screen:/home#Home');
+  assert.deepEqual(stepLinks.walks[run.steps!].chromium.filter((line) => line.kind === 'request'), [
+    { kind: 'request', method: 'GET', url: 'http://127.0.0.1:4598/api/v1/document/list', status: 404, call: 'GET:/api/v1/document/list' },
+    { kind: 'request', method: 'GET', url: 'http://127.0.0.1:4598/api/v1/member/list', status: 404, call: 'GET:/api/v1/member/list' },
+  ]);
+  assert.ok(stepLinks.passed['GET:/api/v1/document/list'].filter((t) => t.title === run.title).every((t) => t.steps === run.steps));
+});
+
+test('each walk names the trace file it was read from, under the same key and project, from the config\'s folder', () => {
+  assert.deepEqual(Object.keys(stepLinks.traceFiles), Object.keys(stepLinks.walks));
+  const [run] = stepsOf('fills the boxes on home @screen:/home#Home');
+  assert.deepEqual(stepLinks.traceFiles[run.steps!], {
+    chromium: 'results/playwright-steps/test-results/steps-fills-the-boxes-on-home-chromium/trace.zip',
+    firefox: 'results/playwright-steps/test-results/steps-fills-the-boxes-on-home-firefox/trace.zip',
+  });
+});
+
+test('writeShots empties the folder and puts in the screen pictures the walks name, read from their traces', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'page@old-1.jpeg'), 'old');
+    writeShots(STEPS_CONFIG, stepLinks, dir);
+    const named = Object.values(stepLinks.walks).flatMap((runs) => Object.values(runs).flat()).flatMap((line) => ('shot' in line && line.shot ? [line.shot] : []));
+    assert.equal(named.length, 3);
+    assert.deepEqual(fs.readdirSync(dir).sort(), named.toSorted());
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeShots goes on past a trace that is gone and puts in the pictures of the others', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-'));
+  try {
+    const gone = { walks: { gone: { chromium: [{ kind: 'open' as const, shot: 'page@gone-1.jpeg' }] } }, traceFiles: { gone: { chromium: 'results/nowhere/trace.zip' } } };
+    writeShots(STEPS_CONFIG, { walks: { ...gone.walks, ...stepLinks.walks }, traceFiles: { ...gone.traceFiles, ...stepLinks.traceFiles } }, dir);
+    assert.equal(fs.readdirSync(dir).length, 3);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeShots leaves no folder when every trace with pictures is gone', () => {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-')), 'test-shots');
+  try {
+    const gone = Object.fromEntries(Object.entries(stepLinks.traceFiles).map(([key, runs]) => [key, Object.fromEntries(Object.keys(runs).map((p) => [p, 'results/nowhere/trace.zip']))]));
+    writeShots(STEPS_CONFIG, { walks: stepLinks.walks, traceFiles: gone }, dir);
+    assert.equal(fs.existsSync(dir), false);
+  } finally {
+    fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  }
+});
+
+test('writeShots stops when it cannot write a picture', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-'));
+  try {
+    const blocked = path.join(dir, 'blocked');
+    fs.writeFileSync(blocked, 'a file where the folder would go');
+    assert.throws(() => writeShots(STEPS_CONFIG, stepLinks, path.join(blocked, 'test-shots')), (err: NodeJS.ErrnoException) => err.code === 'ENOTDIR');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeShots leaves no folder when no walk names a picture', () => {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-')), 'test-shots');
+  try {
+    fs.mkdirSync(dir);
+    writeShots(STEPS_CONFIG, { walks: {}, traceFiles: {} }, dir);
+    assert.equal(fs.existsSync(dir), false);
+  } finally {
+    fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  }
+});
+
+test('a test without a trace, with a trace that cannot be read or that was skipped has no walk', () => {
+  for (const title of ['opens home without a trace', 'opens home without snapshots', 'skips home']) {
+    assert.equal(stepsOf(`${title} @screen:/home#Home`)[0].steps, undefined, title);
+  }
+  assert.deepEqual(stepLinks.traceNotices.map((n) => n.test.title), ['opens home without snapshots @screen:/home#Home']);
+});
+
+test('a trace that cannot be read is noticed for its own run, named by its result file and project', () => {
+  const runs = stepsOf('opens home without snapshots @screen:/home#Home');
+  assert.deepEqual(runs.map((t) => t.project), ['chromium', 'firefox']);
+  assert.deepEqual(stepLinks.traceNotices.map((n) => n.test), [{ title: 'opens home without snapshots @screen:/home#Home', file: 'steps.spec.ts', line: 19, source: runs[0].source, project: 'chromium' }]);
+});

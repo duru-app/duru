@@ -2768,6 +2768,158 @@ Alternatives compared:
   screen order is offered once.
 - Reading CSS or role locators by guessing the visible words: wrong guesses would write a box the page cannot find.
 
+**`rebuild` writes what each traced test did, its steps and the requests it sent in the order they happened, into
+`tests.json` once per run, and the page shows it under a test's row on a screen or a call.**
+Asked for in #481 (2026-10-28): a reviewer asks which values a test tried and how far it went, not how many tests a
+screen has. A trace's actions (`before` and `after` lines) and its requests (`resource-snapshot` lines in `.network`)
+carry times on one clock: in the member list test the `goto` starts at 2374.7, the page's request at 2379.9 and the
+`fetch` an `evaluate` sends at 2418.5, inside that `evaluate` (2411.7 to 2421.2). So the steps and requests are
+merged by time. A step is 「열기」 when the address changes, 「넣기」 for `fill`, `type`, `selectOption`, `check`, `uncheck`
+and `setInputFiles`, 「확인」 for `expect`, and 「누르기」 for the other actions, hovering and the mouse and keyboard
+included. The new address of a `goto`, `reload`, `goBack` or `goForward` is placed when the action starts, so the
+requests the page sends while it opens come after 「열기」. When another action changes the address, or the address is
+new when the next action starts, 「열기」 is placed at the page load for the new address made since the action that last
+showed the old address started, but not before that old address was last seen, since the new page cannot have sent
+anything while the old one still showed; when there is no page load, it is placed at the time the new address was
+seen. The snapshots are read in the order they were taken, since actions can overlap. A click does not wait for the
+page it asks for, so the page can be asked for before the click's last snapshot, which still shows the old address. A
+page load is a GET of the same origin and path, query aside, that the browser marked as a document (`Sec-Fetch-Dest:
+document`) and that was answered with a page or a redirect, or whose whole address, query included, the test had open
+at some point, or that got no answer while its path was open at some point or any document was asked for later in the
+trace, as when a second move cancels the first; when the request carries no such header, as on plain http to another
+host than localhost, it is a GET of a page the test had open answered with a page, a redirect or nothing yet. A link
+to a file, such as a CSV export or `?format=csv` on the page's own path, is a document too, but the test never has
+that address open and its answer is not a page, so it stays a request. In the test that follows a link, the click
+runs from 9873.4 to 10020.9 and asks for the new page at 9986.8; a login that waits for its POST and then sets
+`location` loads the new page after the click has ended. An address that changes only after `#` loads no page. A
+write keeps its box when it was found by label, placeholder or test ID, for a check as well as a fill, and is shown
+as 「찾은 상자를 읽지 못함」 with its selector otherwise; an empty fill keeps its box and shows 「빈 값」. An action that ended in
+an error stays, marked 「실패」. The steps and candidates read from the same traces stay as they were: there such actions
+are left out and other writes are skipped.
+Requests keep their response status, or 「응답 없음」 for the -1 a request that got no response records. A trace's
+request carries no resource type, only its response's content type, so the browser's loads of pages, scripts, styles,
+pictures and fonts are told apart this way: a request that is not a GET stays whatever its response; a GET of the
+dev server's own files (`@vite`, `@id`, `@fs` and `@react-refresh` paths, webpack's `.hot-update.json`,
+`/sockjs-node`, `/__webpack_hmr`, `/_next/webpack-hmr`) and of `/favicon.ico`, which the browser asks for by itself,
+is left out; any other GET whose status is 400 or more stays; a GET whose path ends in a static file's extension
+(scripts and their sources such as `.ts`, `.tsx`, `.vue` and `.svelte`, styles, pictures, fonts, `.wasm`, video and
+`.map`) is left out whatever else it got, a 304 or no response included; a page load, as above, is left out; another
+GET is left out when its response is a page, script, style, picture or font. In the traces of duru's own tests that leaves out 89 of
+103 requests, what the app needs to show rather than what the test sent. A request the test sent through Playwright's
+`request` stays whatever its type. A request that matches a call on the map opens that call.
+The walk is kept once per run in `walks`, under the result file, test file, line and title, then the project, and each
+test entry carries that key as `steps`, since a test is copied into `tests.json` for every screen it is tagged with
+and every screen it passed. The review server sends `walks` to the page as `testSteps`.
+Alternatives compared:
+- Reading the trace when a reviewer opens a test, through a new request to the review server: the page's data stays
+  smaller, but the page needs a loading and a failed state, and a trace moved or deleted after `rebuild` would show
+  nothing, while the links and candidates read from it still show.
+- Keeping only requests that match a call on the map: a request the map does not know, often the one a reviewer wants
+  to see, would vanish.
+- Keeping every request: the test's own requests would be lost among the page loads.
+- Leaving out every request answered with a page, script, style, picture or font, whatever its method and status: a
+  login form posted and answered with a page, an Express 404 page and a Spring 500 page would vanish, though they are
+  what the test sent; a script that got no response has no type to judge by and showed, as the two scripts of the app
+  opened from a file did.
+- Leaving out a GET whose path ends in a static file's extension whatever its status: Firefox's `/favicon.ico` 404 on
+  every page would go, but so would an API call such as `/api/v1/documents/7/preview.png` that failed with 500, often
+  the request that made the test fail. Only the favicon, which the app does not ask for, is left out by name.
+Known limits: a GET answered below 400 with a type not on that list (a page served as `text/plain`, a font as
+`application/octet-stream`) shows, and so does a static file that failed with 400 or more, as an app's missing script
+does; an API call whose path ends in a static file's extension is left out when it did not fail; a dev server under
+another name than those above shows its own requests, and an app's own path with an `@vite`, `@id`, `@fs` or
+`@react-refresh` part is left out even when it failed; a download that got no answer is taken for a page load when
+any document was asked for later in the trace or when it is on the path of a page the test had open, and so is a move
+to an API address answered with a redirect, such as setting `location` to a logout address; a page load the trace
+ended before it was answered shows as a request when its path was never open and no document was asked for after it; without `Sec-Fetch-Dest`, a fetch on the path of a page the test had
+open answered with a redirect, a 304 or not at all is taken for a page load, and the address a page load was
+redirected from shows as a request unless its answer was a page, since the test never had it open; a `tests.json`
+written before the steps were kept has no result file or project on its trace notices, so such a notice is matched on
+the test's file, line and title and is shown on every run of that test; an action with no address open (a blank page)
+shows 「앱 밖」 instead of a screen; what an `expect` checked is not shown; an action the trace has no end for, as when
+the test ran out of time during it, is not marked 「실패」; when an action changes the address without loading a page, as
+a router in the page does, a request the new screen sends before the action ends comes before 「열기」.
+
+**A step of a test shows the screen picture taken after it, which `rebuild` copies out of the trace into
+`test-shots/`, and 「trace」 opens the test's trace in the trace viewer that comes with `playwright-core`, served by the
+review server.**
+Asked for in #481 (2026-10-29), at the screen check of the steps: the list alone did not show what the test saw. A
+trace recorded with screenshots has `screencast-frame` lines with the page, the picture's name in `resources/` (a
+JPEG) and a time on the actions' clock. A picture is taken when the screen changes, and comes after the change: in
+the trace of `steps-shows-the-screen-after-each-step` (recorded with `playwright-core` 1.60.0) the `fill` ends at
+286.5 and the first picture with the value in its box is at 294.8, after the next `click` started at 287.5; the click
+ends at 332.5 and the page it moved to is pictured at 345.6, after two waits between 335.0 and 343.2. So a step takes
+the first picture of its page taken after its action ended and before the next step on that page (a press, a write,
+a check or a move to an address) ended, or, when there is none, the last picture taken before its action ended; a wait
+in between does not count as a step. A page opened takes the picture after the action whose last snapshot showed its
+address, and the last picture until then when it was first seen as an action started, as after a click whose last
+snapshot still shows the old address: the picture after that next action is its own. A page opened by a move (`goto`,
+`reload`, `goBack`, `goForward`) takes instead the last picture of its page taken after the move ended and before the
+next step on it acts: at its `input` snapshot, at the end of a check, or else as it starts. It takes the rule above
+when there is no such picture or no next step, and when a snapshot in between shows another address, as when the app
+sends `/login` on to `/home`, or `#/login` on to `#/home` in an app that routes after `#`: the trace does not say
+when the address changed, so a later picture may be the other page's. The whole address is compared, as the step
+lines are split on it, rather than the address without what follows `#`, which put the picture of `#/home` on the
+line of `#/login`; so an anchor the app adds, as `#intro`, also brings back the first picture after the move, which
+is what the line showed before this rule. None of the into-sign traces below opens an address with `#`. Asked for at
+the second screen check of #481 (2026-10-29), where the first 「열기」 showed a white screen: the first picture after a
+move is taken before the page is drawn. Measured: in that trace the move ends at 265.4, the picture at 268.1 is white
+and the one at 279.6, before the `fill` acts at 284.1, shows the page. In the 28 into-sign traces with screenshots in
+`~/qa/out` (`playwright-core` 1.60.0) there are 50 pages opened at an address: 39 had a blank first picture or a
+loading spinner and now show the page drawn, 7 were drawn and now show a picture taken later, and 4 stay blank, 2
+because the only picture before the next step acts is the blank one and 2 because there is none; the pages reached by
+a click keep their pictures. Only `goto` was measured. A line whose picture is the one of the line before shows none,
+as the 「열기」 after a click that moved the page would.
+`rebuild` copies only the pictures the steps name into `test-shots/` under `outDir`, in place of the ones there
+before, so they show as long as the steps do, also when the traces have been moved. In that trace that is 3 of its 4
+pictures, 13.5 KB of 18.1 KB; there is no limit on the folder's size.
+`tests.json` keeps each walk's trace file as `traceFiles` for 「trace」. The review server serves `playwright-core`'s
+`lib/vite/traceViewer/` under `/trace-viewer/`, and a trace at `/trace-viewer/test-trace?steps=<key>&project=<name>`
+only when `traceFiles` names it. The page opens `index.html?trace=test-trace?...`, which the viewer's service worker
+fetches next to its own files, as `show-trace` does with `file?path=`. Measured: served this way, the viewer lists the
+test's actions and shows the page after them, and fetches the trace in one GET without a range. Since the viewer ships
+in `playwright-core`, it is now a dependency of duru rather than a dev dependency, as chosen by the driver.
+Alternatives compared:
+- The last picture before the next action started, or before the step's own action ended: in that trace the `fill`
+  shows its box still empty and the click shows the page before it moved, since pictures come after the change.
+- Reading the pictures from the trace when the page asks for them: nothing is copied, but they vanish when the trace
+  is moved while the steps still show.
+- Running `playwright show-trace` for 「trace」: another process and port for each trace, to be stopped when the review
+  ends.
+- Opening `trace.playwright.dev`: needs the internet, and the trace has to be fetched from the review server by a page
+  on another origin.
+Known limits: a page opened by a move still shows a blank screen when no drawn picture was taken before the next step
+on it acts, when it is the last step on its page, or when the app moved it to another address; when a check comes
+next, its picture is the screen the check waited for; when no picture comes before the next step acts, the one after
+that step can show what it did; a step whose change was painted only after the next step ended shows the screen from
+before it; a step that changed nothing on the screen shows the first picture after it, which can already show what
+the next step did
+when that was painted before the next step ended, as an `expect` followed by a click; a test with several pages
+shows the pictures of the step's own page only; a page first seen as an action started shows the last picture taken
+until then, which is still the old page when the new one was painted later, and none when its page had no picture yet,
+as on the first action in a popup; 「trace」 is greyed out only when the trace file is gone, not when it was
+replaced by another run's trace at the same place; `rebuild` reads each trace a second time to copy its pictures, and
+the review server checks that each trace file is there every time it sends the page's data.
+
+**「재생」 shows a test's steps one at a time in a window on the review page, about two seconds each with the step's
+screen picture, and the trace viewer stays under 「trace」.**
+Asked for in #481 (2026-10-29), at the second screen check: the trace viewer played the test too fast to follow, even
+at 0.5×. Measured in `playwright-core` 1.60.0: the viewer's speeds are fixed in its code as 0.5, 1 and 2, and it
+plays the test's own timing at that speed, so a test that ran in a second ends in two. The window steps through the
+lines 「단계」 lists, requests included, so what is shown is what the review page already read; a request or a line
+whose picture is the one before keeps the last picture before it. A step on a page that had no picture yet, as the
+first action in a popup, says 「화면 그림 없음」, as the driver asked at that check: `rebuild` writes `shot: null` on
+such a line, apart from a line that leaves the picture off because it is the one before, so the window does not show
+another page's picture there. A trace recorded without screenshots writes no `null`. It needs only `tests.json`
+and `test-shots/`, so it still works when the trace file is gone, and it shows only when at least one step has a
+picture. Chosen by the driver.
+Alternatives compared:
+- Adding 0.1× and 0.25× to the viewer's speeds: rewriting the bundled viewer, and the test's own timing stays, so a
+  fill or a click still passes in a moment.
+- Keeping the viewer and moving through it with its next-action button: not a replay that runs by itself.
+Known limits: two seconds a step is fixed; a step's picture is the one described above for the step lines, with the
+same limits.
+
 **A kind of case can list values, each counted as a case of its own and named with `@case:<kind>=<value>`; a tag
 without a value on such a kind fills no value.**
 Asked for in #311 (2026-10-19), the first part of #310. Some kinds are covered only once each of a few values has a

@@ -236,16 +236,18 @@ const bubbleButton = (target, words, name) => h('button', {
   onkeydown: (e) => e.stopPropagation(),
 }, BUBBLE());
 
-function slotRow(item, target, words, name = tagLabel(target)) {
+function slotRow(item, target, words, name = tagLabel(target), control = null) {
   pickable(target, tagLabel(target));
   const n = commentsIn(markOf(target));
   return h('div', { class: 'part-row' },
     item,
+    control,
     n ? h('button', { class: 'part-count', title: words.narrow, onclick: (e) => { e.stopPropagation(); narrowTalk(target); } }, unansweredDot(entriesAt(target)), `코멘트 ${n}`) : null,
     bubbleButton(target, words, name));
 }
 
-const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title));
+const partRow = (item, node, t) => slotRow(item, partTarget(node, t), SLOT_WORDS.test, bareTitle(t.title), [stepsButton(node, t), replayButton(node, t), traceButton(node, t)]);
+const testRow = (item, node, t) => h('div', { class: 'test-row' }, partRow(item, node, t), stepsFold(node, t));
 
 const judgmentKey = (t, node) => JSON.stringify([t.ref, node]);
 const judgmentErrorOf = (key) => (state.judgmentError?.key === key ? h('p', { class: 'error judgment-error' }, state.judgmentError.message) : null);
@@ -389,11 +391,18 @@ const PASS_LEVEL_TITLE = { assert: '이 화면이 열려 있을 때 확인문을
 
 const UNCONFIRMED_TITLE = '이번 실행에서는 이 테스트의 trace 를 읽지 못해 이 짝을 다시 확인하지 못했습니다. 포함한 판단은 그대로입니다';
 
-function passedItem(t, chip = null) {
+function callAnswers(t, node) {
+  const lines = stepsRuns(t)?.[t.project ?? ''] ?? [];
+  const statuses = [...new Set(lines.flatMap((l) => (l.kind === 'request' && l.call === node ? [l.status] : [])))];
+  return statuses.flatMap((status) => [' ', answerChip(status)]);
+}
+
+function passedItem(t, chip = null, node = null) {
   return h('div', { class: 'test' },
     t.unconfirmed
       ? h('span', { class: 'chip level-visit', title: UNCONFIRMED_TITLE }, '확인 못 함')
-      : h('span', { class: `chip level-${t.level}`, title: PASS_LEVEL_TITLE[t.level] }, PASS_LEVEL[t.level]), ' ',
+      : h('span', { class: `chip level-${t.level}`, title: PASS_LEVEL_TITLE[t.level] }, PASS_LEVEL[t.level]),
+    t.level === 'call' && !t.unconfirmed ? callAnswers(t, node) : null, ' ',
     h('span', { class: `chip ${t.status}` }, TEST_STATUS[t.status]), ' ', chip, titleWithTags(t), ' ',
     h('span', { class: 'muted mono' }, filePlace(t.file, t.line)),
     t.project ? h('span', { class: 'muted' }, ` · ${t.project}`) : null,
@@ -401,7 +410,7 @@ function passedItem(t, chip = null) {
 }
 
 const byTrace = (t) => Boolean(t.level || t.unconfirmed);
-const pairTestItem = (t, chip = null) => (byTrace(t) ? passedItem(t, chip) : importerItem(t, chip));
+const pairTestItem = (t, chip = null, node = null) => (byTrace(t) ? passedItem(t, chip, node) : importerItem(t, chip));
 const pairKeys = (node) => [passedOf, importersOf, discardedOf, awaitingTagOf, detachedOf].flatMap((of) => of(node)).map((t) => judgmentKey(t, node));
 
 // 화면의 짝과 고른 호출의 짝은 오류를 저마다 제 줄 아래에 보인다.
@@ -433,8 +442,11 @@ function untaggedPairs(node) {
   const awaiting = awaitingTagOf(node);
   const detached = detachedOf(node);
   const row = (t, ...rest) => h('div', { class: `pair-test ${byTrace(t) ? 'passer' : 'importer'}` }, ...rest, judgmentErrorOf(judgmentKey(t, node)));
-  const openRow = (via) => (t) => row(t, partRow(pairTestItem(t, regressionChip(node, via, t)), node, t), judgmentForm(t, node));
-  const judgedRow = (item, t, label) => row(t, item, judgmentMeta(t.judgment, label, t.codeChanged), undoButton(t, node));
+  const openRow = (via) => (t) => row(t, partRow(pairTestItem(t, regressionChip(node, via, t), node), node, t), stepsFold(node, t), judgmentForm(t, node));
+  const judgedRow = (item, t, label) => {
+    const steps = stepsButton(node, t);
+    return row(t, steps ? h('div', { class: 'part-row' }, item, steps, replayButton(node, t), traceButton(node, t)) : item, stepsFold(node, t), judgmentMeta(t.judgment, label, t.codeChanged), undoButton(t, node));
+  };
   return [
     passed.length ? h('div', { class: 'passed' },
       h('h2', {}, text.passed(passed.length)),
@@ -446,14 +458,14 @@ function untaggedPairs(node) {
       importers.map(openRow('import'))) : null,
     awaiting.length ? h('div', { class: 'awaiting-tag' },
       h('h2', {}, `태그 대기 ${awaiting.length}`),
-      awaiting.map((t) => judgedRow(pairTestItem(t, regressionChip(node, 'hand-over', t)), t, '메모'))) : null,
+      awaiting.map((t) => judgedRow(pairTestItem(t, regressionChip(node, 'hand-over', t), node), t, '메모'))) : null,
     detached.length ? h('div', { class: 'detached' },
       h('h2', {}, `떨어져 나감 ${detached.length}`),
       h('p', { class: 'muted' }, text.detachedNote),
       detached.map((t) => judgedRow(detachedItem(t), t, '메모'))) : null,
     discarded.length ? h('div', { class: 'discarded' },
       h('h2', {}, `제외한 짝 ${discarded.length}`),
-      discarded.map((t) => judgedRow(pairTestItem(t), t, '이유'))) : null,
+      discarded.map((t) => judgedRow(pairTestItem(t, null, node), t, '이유'))) : null,
   ];
 }
 

@@ -1,5 +1,7 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import zlib from 'node:zlib';
+import { pathOf } from './address-match.ts';
 import type { BOX_WORDS, StepInput } from './stories.ts';
 
 type StepKind = 'visit' | 'assert' | 'interact';
@@ -16,7 +18,31 @@ export interface TraceRequest {
   url: string;
 }
 
-export type TraceResult = { reason: string } | { steps: TraceStep[]; requests: TraceRequest[] };
+export type WalkKind = 'open' | 'press' | 'write' | 'assert';
+
+export interface WalkStep {
+  kind: WalkKind;
+  url?: string;
+  method?: string;
+  box?: StepInput['box'];
+  value?: string;
+  checked?: boolean;
+  unread?: 'box';
+  selector?: string;
+  failed?: true;
+  shot?: string | null;
+}
+
+export interface WalkRequest {
+  kind: 'request';
+  method: string;
+  url: string;
+  status: number | null;
+}
+
+export type WalkLine = WalkStep | WalkRequest;
+
+export type TraceResult = { reason: string } | { steps: TraceStep[]; requests: TraceRequest[]; walk: WalkLine[] };
 
 interface TimelineEntry {
   at: number;
@@ -25,6 +51,8 @@ interface TimelineEntry {
   kind?: 'assert' | 'interact';
   fill?: StepInput | 'skipped';
 }
+
+type WalkEntry = { at: number; page?: string; url?: string; shot?: string; step?: Omit<WalkStep, 'url'>; request?: WalkRequest };
 
 const KNOWN_VERSIONS = [8];
 const ASSERTIONS = new Set(['expect', 'expectScreenshot']);
@@ -40,25 +68,92 @@ const BOX_LOCATORS: { word: (typeof BOX_WORDS)[number]; selector: RegExp; locato
   { word: 'testId', selector: new RegExp(`^internal:testid=\\[data-testid=${QUOTED}[is]?\\](?: >> nth=(\\d+))?$`), locator: (text) => `getByTestId(${JSON.stringify(text)})` },
 ];
 const VALUE_WRITES = new Set(['type', 'selectOption', 'check', 'uncheck', 'setInputFiles']);
+const NAVIGATIONS = new Set(['goto', 'reload', 'goBack', 'goForward']);
+const NOT_SENT_BY_THE_TEST = /^(text\/html|application\/xhtml\+xml|text\/css|image\/|font\/|application\/(x-)?font|application\/vnd\.ms-fontobject|(text|application)\/(x-)?(javascript|ecmascript)|application\/wasm)/i;
+const STATIC_FILE = /\.([mc]?js|jsx|tsx?|vue|svelte|css|scss|sass|less|png|jpe?g|gif|svg|webp|avif|bmp|ico|woff2?|ttf|otf|eot|wasm|mp4|webm|map)$/i;
+const DEV_SERVER_FILE = /\/@(vite|id|fs|react-refresh)(\/|$)|\.hot-update\.json$|^\/(sockjs-node|__webpack_hmr|_next\/webpack-hmr)(\/|$)/;
+const PAGE_TYPE = /^(text\/html|application\/xhtml\+xml)/i;
 const NOT_THE_APP = /^(about|data|blob|chrome|chrome-error):/;
 const END_OF_DIRECTORY = 0x06054b50;
 const DIRECTORY_ENTRY = 0x02014b50;
 
-function fillOf(params: any): StepInput | 'skipped' {
-  const value = params?.value;
-  if (typeof value !== 'string' || !value.trim() || typeof params.selector !== 'string') return 'skipped';
-  for (const { word, selector } of BOX_LOCATORS) {
-    const found = params.selector.match(selector);
+function boxOf(selector: unknown): StepInput['box'] | null {
+  if (typeof selector !== 'string') return null;
+  for (const { word, selector: pattern } of BOX_LOCATORS) {
+    const found = selector.match(pattern);
     if (!found) continue;
     try {
       const text = JSON.parse(found[1]);
-      if (!text.trim()) return 'skipped';
-      return { box: { [word]: text, ...(found[2] !== undefined && { nth: Number(found[2]) + 1 }) }, value };
+      return text.trim() ? { [word]: text, ...(found[2] !== undefined && { nth: Number(found[2]) + 1 }) } : null;
     } catch {
-      return 'skipped';
+      return null;
     }
   }
-  return 'skipped';
+  return null;
+}
+
+function fillOf(params: any): StepInput | 'skipped' {
+  const value = params?.value;
+  if (typeof value !== 'string' || !value.trim()) return 'skipped';
+  const box = boxOf(params.selector);
+  return box ? { box, value } : 'skipped';
+}
+
+const optionText = (o: any) => o?.valueOrLabel ?? o?.label ?? o?.value ?? (typeof o?.index === 'number' ? `${o.index + 1} 번째` : null);
+
+function writtenOf(method: string, params: any): Pick<WalkStep, 'value' | 'checked'> {
+  if (method === 'fill' && typeof params?.value === 'string') return { value: params.value };
+  if (method === 'type' && typeof params?.text === 'string') return { value: params.text };
+  if (method === 'check' || method === 'uncheck') return { checked: method === 'check' };
+  const named = method === 'selectOption' ? params?.options?.map(optionText) : method === 'setInputFiles' ? [...(params?.payloads ?? []).map((f: any) => f?.name), ...(params?.localPaths ?? []).map((f: string) => f.split(/[\\/]/).at(-1))] : null;
+  const texts = (named ?? []).filter((t: unknown) => typeof t === 'string');
+  return texts.length ? { value: texts.join(', ') } : {};
+}
+
+function walkStepOf(action: any, kind: WalkKind, failed: boolean): Omit<WalkStep, 'url'> {
+  const { method, params } = action;
+  const selector = typeof params?.selector === 'string' ? params.selector : undefined;
+  const box = kind === 'write' ? boxOf(selector) : null;
+  const written = kind !== 'write' ? {} : box ? { box } : { unread: 'box' as const, ...(selector && { selector }) };
+  return { kind, method, ...written, ...(kind === 'write' && writtenOf(method, params)), ...(failed && { failed: true as const }) };
+}
+
+const withoutHash = (url: string) => url.split('#')[0];
+function documentOf(url: string) {
+  try {
+    const { origin, pathname } = new URL(url);
+    return `${origin}${pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+type Shown = { addresses: Set<string>; pages: Set<string | null>; lastDocumentAt: number };
+
+const destOf = (request: any) => request.headers?.find((h: any) => h.name.toLowerCase() === 'sec-fetch-dest')?.value;
+
+function loadsPage({ request, response, _monotonicTime: at }: any, shown: Shown) {
+  if (request.method !== 'GET') return false;
+  const dest = destOf(request);
+  if (dest !== undefined && dest !== 'document') return false;
+  const unanswered = !(response?.status > 0);
+  const redirectOrPage = !unanswered && ((response.status >= 300 && response.status < 400) || PAGE_TYPE.test(response.content?.mimeType ?? ''));
+  const pageShown = shown.pages.has(documentOf(request.url));
+  if (dest === undefined) return (unanswered || redirectOrPage) && pageShown;
+  if (unanswered) return pageShown || shown.lastDocumentAt > at;
+  return redirectOrPage || shown.addresses.has(withoutHash(request.url));
+}
+
+function sentRequest({ snapshot }: any, shown: Shown) {
+  const { _apiRequest, request, response } = snapshot;
+  const status = response?.status;
+  if (_apiRequest || request.method !== 'GET') return true;
+  const requested = pathOf(request.url) ?? '';
+  if (DEV_SERVER_FILE.test(requested) || requested === '/favicon.ico') return false;
+  if (status >= 400) return true;
+  if (STATIC_FILE.test(requested) || loadsPage(snapshot, shown)) return false;
+  if (!(status > 0)) return true;
+  return !NOT_SENT_BY_THE_TEST.test(response.content?.mimeType ?? '');
 }
 
 export function fillCode({ box, value }: StepInput) {
@@ -95,8 +190,9 @@ export function readTrace(file: string): TraceResult {
   if (!fs.existsSync(file)) return { reason: 'trace 파일이 없습니다' };
   let events: any[];
   let network: any[];
+  let entries: Map<string, () => Buffer>;
   try {
-    const entries = zipEntries(fs.readFileSync(file));
+    entries = zipEntries(fs.readFileSync(file));
     const named = (ending: string) => [...entries].filter(([name]) => name.endsWith(ending) && name !== 'test.trace').flatMap(([, read]) => jsonLines(read));
     events = named('.trace');
     network = named('.network');
@@ -117,8 +213,38 @@ export function readTrace(file: string): TraceResult {
     return { reason: 'trace 파일에 화면 스냅숏이 없어 테스트가 연 주소를 알 수 없습니다' };
   }
 
+  const resources = network.filter((e) => e.type === 'resource-snapshot').sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime);
+  const frameUrls = [...snapshots.values()].map((snapshot) => snapshot.frameUrl);
+  const shown: Shown = {
+    addresses: new Set(frameUrls.map(withoutHash)),
+    pages: new Set(frameUrls.map(documentOf)),
+    lastDocumentAt: resources.findLast((e) => destOf(e.snapshot.request) === 'document')?.snapshot._monotonicTime ?? -Infinity,
+  };
+  const pageRequestAt = (url: string, from: number, to: number) => {
+    const page = documentOf(url);
+    return resources.find(({ snapshot }) =>
+      snapshot._monotonicTime >= from && snapshot._monotonicTime <= to && documentOf(snapshot.request.url) === page && loadsPage(snapshot, shown))?.snapshot._monotonicTime;
+  };
   const ends = new Map(events.filter((e) => e.type === 'after').map((e) => [e.callId, e]));
+  const framesOn = Map.groupBy(events.filter((e) => e.type === 'screencast-frame' && entries.has(`resources/${e.sha1}`)).sort((a, b) => a.timestamp - b.timestamp), (e) => e.pageId);
+  const stepsOn = Map.groupBy(actions.filter((a) => kindOf(a.method) || NAVIGATIONS.has(a.method)).sort((a, b) => a.startTime - b.startTime), (a) => a.pageId);
+  const shotUntil = (page: string, at: number) => framesOn.get(page)?.findLast((f) => f.timestamp <= at)?.sha1 as string | undefined;
+  const shotAfter = (page: string, end: number) => {
+    const next = stepsOn.get(page)?.find((a) => a.startTime > end);
+    const until = next ? ends.get(next.callId)?.endTime ?? next.startTime : Infinity;
+    return (framesOn.get(page)?.find((f) => f.timestamp >= end && f.timestamp <= until)?.sha1 as string | undefined) ?? shotUntil(page, end);
+  };
+  const seenOn = Map.groupBy(actions.flatMap((a) => [['before', a.startTime], ['input', snapshots.get(`input@${a.callId}`)?.timestamp], ['after', ends.get(a.callId)?.endTime ?? a.startTime]]
+    .flatMap(([name, at]) => { const snapshot = snapshots.get(`${name}@${a.callId}`); return snapshot ? [{ page: a.pageId, at, url: snapshot.frameUrl }] : []; })), (e) => e.page);
+  const shotLoaded = (page: string, end: number, url: string) => {
+    const next = stepsOn.get(page)?.find((a) => a.startTime > end);
+    const touch = next && (snapshots.get(`input@${next.callId}`)?.timestamp ?? (kindOf(next.method) === 'assert' ? ends.get(next.callId)?.endTime : undefined) ?? next.startTime);
+    const moved = touch !== undefined && seenOn.get(page)?.some((e) => e.at > end && e.at <= touch && e.url !== url);
+    return (touch !== undefined && !moved && framesOn.get(page)?.findLast((f) => f.timestamp >= end && f.timestamp < touch)?.sha1 as string | undefined) || shotAfter(page, end);
+  };
   const timeline: TimelineEntry[] = [];
+  const walked: WalkEntry[] = [];
+  const sightings: { at: number; page: string; from: number; shot?: string; url: string; navigated: boolean }[] = [];
   for (const action of actions) {
     const end = ends.get(action.callId);
     const endTime = end?.endTime ?? action.startTime;
@@ -126,7 +252,10 @@ export function readTrace(file: string): TraceResult {
     const seen = [['before', action.startTime], ['input', input?.timestamp], ['after', endTime]];
     for (const [name, at] of seen) {
       const snapshot = snapshots.get(`${name}@${action.callId}`);
-      if (snapshot) timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
+      if (!snapshot) continue;
+      timeline.push({ at, page: action.pageId, url: snapshot.frameUrl });
+      const shot = name !== 'after' ? shotUntil(action.pageId, at) : NAVIGATIONS.has(action.method) ? shotLoaded(action.pageId, endTime, snapshot.frameUrl) : shotAfter(action.pageId, endTime);
+      sightings.push({ at, page: action.pageId, from: action.startTime, shot, url: snapshot.frameUrl, navigated: name === 'after' && NAVIGATIONS.has(action.method) });
     }
     const kind = kindOf(action.method);
     if (kind === 'assert') timeline.push({ at: endTime, page: action.pageId, kind });
@@ -134,6 +263,21 @@ export function readTrace(file: string): TraceResult {
       const fill = action.method === 'fill' ? fillOf(action.params) : VALUE_WRITES.has(action.method) ? 'skipped' as const : undefined;
       timeline.push({ at: input?.timestamp ?? action.startTime, page: action.pageId, kind, ...(fill && { fill }) });
     }
+    if (kind) {
+      const walkKind = kind === 'assert' ? 'assert' : action.method === 'fill' || VALUE_WRITES.has(action.method) ? 'write' : 'press';
+      walked.push({ at: kind === 'assert' ? endTime : input?.timestamp ?? action.startTime, page: action.pageId, shot: shotAfter(action.pageId, endTime), step: walkStepOf(action, walkKind, Boolean(end?.error)) });
+    }
+  }
+  const lastSeen = new Map<string, { url: string; at: number; from: number }>();
+  const openedAt = (page: string, url: string, at: number, from: number) => {
+    const last = lastSeen.get(page);
+    if (last && withoutHash(last.url) === withoutHash(url)) return at;
+    const asked = pageRequestAt(url, last?.from ?? from, at);
+    return asked === undefined ? at : Math.max(asked, last?.at ?? asked);
+  };
+  for (const { at, page, from, shot, url, navigated } of sightings.sort((a, b) => a.at - b.at)) {
+    walked.push({ at: navigated ? from : openedAt(page, url, at, from), page, url, shot });
+    lastSeen.set(page, { url, at, from });
   }
   timeline.sort((a, b) => a.at - b.at || Number(Boolean(a.kind)) - Number(Boolean(b.kind)));
   const current = new Map();
@@ -148,9 +292,53 @@ export function readTrace(file: string): TraceResult {
       steps.push({ url: url!, kind: 'visit' });
     }
   }
-  const requests = network
-    .filter((e) => e.type === 'resource-snapshot')
-    .sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime)
-    .map((e) => ({ method: e.snapshot.request.method, url: e.snapshot.request.url }));
-  return { steps, requests };
+  const requests = resources.map((e) => ({ method: e.snapshot.request.method, url: e.snapshot.request.url }));
+  for (const e of resources.filter((r) => sentRequest(r, shown))) {
+    const status = e.snapshot.response?.status;
+    walked.push({ at: e.snapshot._monotonicTime, request: { kind: 'request', method: e.snapshot.request.method, url: e.snapshot.request.url, status: typeof status === 'number' && status > 0 ? status : null } });
+  }
+  return { steps, requests, walk: walkOf(walked) };
+}
+
+export function copyShots(file: string, names: Iterable<string>, dir: string) {
+  let entries: Map<string, () => Buffer>;
+  try {
+    entries = zipEntries(fs.readFileSync(file));
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const read = entries.get(`resources/${name}`);
+    if (!read) continue;
+    let picture: Buffer;
+    try {
+      picture = read();
+    } catch {
+      continue;
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name), picture);
+  }
+}
+
+function walkOf(walked: WalkEntry[]) {
+  walked.sort((a, b) => a.at - b.at || Number(Boolean(a.step || a.request)) - Number(Boolean(b.step || b.request)));
+  const current = new Map<string, string>();
+  const walk: WalkLine[] = [];
+  let lastShot: string | undefined;
+  const shown = (shot: string | undefined) => {
+    if (shot === lastShot) return {};
+    lastShot = shot;
+    return { shot: shot ?? null };
+  };
+  for (const { page, url, shot, step, request } of walked) {
+    if (request) walk.push(request);
+    else if (step) walk.push({ ...step, ...(current.has(page!) && { url: current.get(page!) }), ...shown(shot) });
+    else if (NOT_THE_APP.test(url!)) current.delete(page!);
+    else if (current.get(page!) !== url) {
+      current.set(page!, url!);
+      walk.push({ kind: 'open', url: url!, ...shown(shot) });
+    }
+  }
+  return walk;
 }

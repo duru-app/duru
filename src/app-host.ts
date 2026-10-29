@@ -66,7 +66,7 @@ interface ServerFetchOptions {
   signal?: AbortSignal;
 }
 
-const MIME: Record<string, string> = {
+export const MIME: Record<string, string> = {
   '.html': 'text/html',
   '.js': 'application/javascript',
   '.mjs': 'application/javascript',
@@ -81,6 +81,7 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
   '.map': 'application/json',
+  '.webmanifest': 'application/manifest+json',
 };
 
 const fillIn = (template: unknown, values: Record<string, string>) =>

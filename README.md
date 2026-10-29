@@ -414,7 +414,8 @@ client with example results and a config to start from.
 
 ## The map
 
-`extract` writes `map.json`; `rebuild` writes it and `tests.json`.
+`extract` writes `map.json`; `rebuild` writes it and `tests.json`, and puts the screen pictures the steps of traced
+tests show in `test-shots/` next to them, in place of the ones there before.
 
 **Code state.** `meta` names the commit of the git repository `srcRoot` is in (`commit`, `unknown` when `srcRoot` is
 not in one), whether a file under `srcRoot` had changes not committed then (`uncommitted`, only with a commit; the folders duru
@@ -713,7 +714,12 @@ nothing on the map, and the tests with no tag as `untagged`. An untagged Playwri
 in as `projects`, each with the worst status of the test's runs in it. `traced`
 lists each Playwright test that passed, with the trace of its passing run, as its report, its title, its file and
 line, and the screens it passed in order; an address no screen matches stays in that list as its path. A story test whose passing run left a trace
-carries the same order as `screens`.
+carries the same order as `screens`. `walks` keeps what each traced test did, per project: its steps and the requests it sent, in order,
+and each entry of such a test names its walk as `steps`. A step or opened page carries `shot`, the name of its screen
+picture in `test-shots/`, when the trace was recorded with screenshots. A line without `shot` keeps the last `shot`
+written before it, skipping requests, which never carry one, and has no picture when none was written before it;
+`null` means that its page has no picture yet after a line that had one, as on the first step in a popup. `traceFiles` names the trace file each walk was
+read from, under the same key and project, from the config's folder when it is inside it.
 
 Two kinds of untagged tests are shown next to a screen without counting as its tests. A unit test (Vitest or
 Jest JSON) is listed under `importers` when its test file imports one of the screen's source files; a file that
@@ -1193,6 +1199,22 @@ code hash differs from the one saved with it shows 「코드 바뀜」 beside it
 the tables, and so does a judged pair, under 「제외한 짝」 or 「태그 대기」 and in the 「태그 없음」 tab, when the hash of
 its screen or call or of its test file differs. The mark or judgment stays as it was; whether to look again is the
 reviewer's call. A mark or judgment saved without a hash shows as it always did.
+
+**What a test did.** A Playwright test's row under a screen or a call has 「단계」. It opens, under the row, the
+test's steps in the order they ran, each with its screen: 「열기」 for an address it opened, 「누르기」, 「넣기」 with the
+box and the value, or 「찾은 상자를 읽지 못함」 in place of a box duru could not name, and 「확인」, with 「실패」 on an
+action that ended in an error. Between the steps come the requests the test sent, with their status or 「응답 없음」; a
+request that matches a call opens that call. A test that ran in several projects has a chip for each. A test without
+a trace, with a trace that could not be read, or that was skipped says so instead. When Playwright recorded the trace
+with screenshots (`screenshots` in its `trace` option), a step and an opened page show a small
+picture of the screen after it, and pressing it shows it large; a line whose picture would be the same as the one
+before it shows none. 「재생」 beside 「단계」 shows those steps one at a time in a large window, each for about two
+seconds with the picture of the screen after it, and has 「멈춤」, 「이전」 and 「다음」; the arrow keys move a step. A
+line whose picture is the one before, or a request, keeps that picture, and a step on a page that had no picture yet,
+as the first in a popup, says 「화면 그림 없음」. It shows only when at least one step has a picture.
+「trace」 opens the test's trace in Playwright's trace viewer in a new tab, served by the review page itself; it is
+greyed out when the trace file is no longer where `rebuild` read it.
+Under 「호출한 테스트」 a test shows, next to 「호출함」, the status it got for that call.
 
 **Untagged tests.** An untagged test linked to a screen by its imports or its trace has 「제외」, to discard the
 pair with a reason asked for in a window, and 「포함」, to hand it over so a coding agent adds the tag. A handed-over
