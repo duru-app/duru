@@ -610,7 +610,7 @@ test('copyShots writes the named screen pictures of a trace into a folder and sk
   }
 });
 
-test('a step on a page that has no screen picture yet, as the first action in a popup, is marked as having none, apart from a line whose picture is the one before', () => {
+test('a step on a page that has no screen picture yet, as the first action in a popup, is marked as having none, apart from a line whose picture is the one before, and the page it came from shows its picture again', () => {
   const act = (callId: string, pageId: string, method: string, startTime: number, endTime: number, params = {}) => [
     { type: 'before', callId, pageId, method, startTime, params },
     { type: 'after', callId, endTime },
@@ -620,6 +620,7 @@ test('a step on a page that has no screen picture yet, as the first action in a 
     ...act('2', 'q', 'fill', 30, 40, { selector: 'internal:label="메모"', value: 'a' }),
     frameSnapshot('before@2', 'http://x/pop', 30), frameSnapshot('after@2', 'http://x/pop', 40),
     ...act('3', 'q', 'click', 50, 60), frameSnapshot('before@3', 'http://x/pop', 50), frameSnapshot('after@3', 'http://x/pop', 60),
+    ...act('4', 'p', 'click', 70, 80), frameSnapshot('before@4', 'http://x/home', 70), frameSnapshot('after@4', 'http://x/home', 80),
     { type: 'screencast-frame', pageId: 'p', sha1: 'home.jpeg', timestamp: 22 },
   ], [], { 'resources/home.jpeg': 'h' })));
   assert.deepEqual(lines.map((line) => (line.kind === 'request' ? line.url : `${line.kind} ${line.url} ${'shot' in line ? line.shot : 'same'}`)), [
@@ -627,6 +628,7 @@ test('a step on a page that has no screen picture yet, as the first action in a 
     'open /pop null',
     'write /pop same',
     'press /pop same',
+    'press /home home.jpeg',
   ]);
 });
 

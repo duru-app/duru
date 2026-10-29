@@ -275,7 +275,7 @@ test('in a browser, 「재생」 shows a test\'s steps one at a time in a large 
   }, (page) => page.clock.install());
 });
 
-test('in a browser, 「재생」 says there is no screen picture on a step whose page had none yet, and shows the picture again on the next step that has one', { skip: browserMissing }, async () => {
+test('in a browser, 「재생」 says there is no screen picture on a step whose page had none yet and on the lines after it that keep it, and shows a picture again on the next step that has one', { skip: browserMissing }, async () => {
   await withSteps(async (p) => {
     await testLine(p, 'shows the screen after each step').locator('button.replay').click();
     const view = p.locator('#replay-view');
@@ -284,13 +284,21 @@ test('in a browser, 「재생」 says there is no screen picture on a step whose
     assert.equal(await view.locator('.replay-count').textContent(), '2/5');
     assert.ok(await view.locator('img').isHidden());
     assert.equal(await view.locator('.no-shot').textContent(), '화면 그림 없음');
+    for (const at of ['3/5', '4/5']) {
+      await view.locator('button.next').click();
+      assert.equal(await view.locator('.replay-count').textContent(), at);
+      assert.ok(await view.locator('img').isHidden());
+    }
     await view.locator('button.next').click();
     assert.ok(await view.locator('img').isVisible());
     assert.ok(await view.locator('.no-shot').isHidden());
   }, changeData((data) => {
     for (const runs of Object.values(data.testSteps)) {
-      const line = runs.chromium?.[1] as { kind: string; shot?: string | null } | undefined;
-      if (line && line.kind !== 'request' && line.shot) line.shot = null;
+      const lines = runs.chromium as { kind: string; shot?: string | null }[] | undefined;
+      if (!lines?.[1]?.shot || !lines[2]?.shot) continue;
+      lines[4].shot = lines[2].shot;
+      lines[1].shot = null;
+      delete lines[2].shot;
     }
   }));
 });

@@ -73,7 +73,7 @@ function drawReplay() {
   replayPart('.replay-count').textContent = `${at + 1}/${lines.length}`;
   fill(replayPart('.replay-line'), testStepItem(lines[at], true));
   const pause = replayControl('pause');
-  const [word, title, label] = replay.playing ? ['멈춤', '이 단계에서 멈춥니다', '멈춤'] : last ? ['처음부터', '첫 단계부터 다시 넘깁니다', '처음부터 다시'] : ['계속', '이 단계부터 다시 넘깁니다', '계속 넘기기'];
+  const [word, title, label = word] = replay.playing ? ['멈춤', '이 단계에서 멈춥니다'] : last ? ['처음부터', '첫 단계부터 다시 넘깁니다', '처음부터 다시'] : ['계속', '이 단계부터 다시 넘깁니다', '계속 넘기기'];
   pause.textContent = word;
   pause.title = title;
   pause.setAttribute('aria-label', label);
@@ -129,7 +129,7 @@ function replayButton(node, t) {
   const lines = stepsRuns(t)?.[shownProject(node, t)];
   if (!lines?.some((line) => line.kind !== 'request' && line.shot)) return null;
   return h('button', {
-    class: 'replay', title: '이 테스트의 단계를 화면 그림과 함께 한 단계씩 넘겨 봅니다', 'aria-label': '단계 재생',
+    class: 'replay', title: '이 테스트의 단계를 화면 그림과 함께 한 단계씩 넘겨 봅니다', 'aria-label': '재생 (단계별 화면)',
     onclick: (e) => { e.stopPropagation(); openReplay(lines); }, onkeydown: (e) => e.stopPropagation(),
   }, '재생');
 }
