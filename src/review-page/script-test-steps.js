@@ -41,8 +41,10 @@ const shotThumb = (line) => (line.shot ? h('button', {
 
 function shownProject(node, t) {
   const runs = stepsRuns(t);
-  const wanted = state.openSteps.get(stepsPlace(node, t)) ?? t.project ?? '';
-  return !runs || Object.hasOwn(runs, wanted) ? wanted : Object.keys(runs)[0];
+  const own = t.project ?? '';
+  const wanted = state.openSteps.get(stepsPlace(node, t)) ?? own;
+  if (!runs || Object.hasOwn(runs, wanted)) return wanted;
+  return Object.hasOwn(runs, own) ? own : Object.keys(runs)[0];
 }
 
 function replayButton(node, t) {

@@ -290,7 +290,12 @@ function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: Re
 export type PageData = ReturnType<typeof pageData>;
 
 function sendFile(res: http.ServerResponse, type: string, file: string) {
-  const fd = fs.openSync(file, 'r');
+  let fd: number;
+  try {
+    fd = fs.openSync(file, 'r');
+  } catch {
+    return send(res, 404, 'text/plain', 'not found');
+  }
   res.writeHead(200, { 'content-type': type, 'content-length': fs.fstatSync(fd).size, 'cache-control': 'no-store' });
   pipeline(fs.createReadStream('', { fd }), res, () => {});
 }

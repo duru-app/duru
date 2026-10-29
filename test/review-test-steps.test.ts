@@ -101,6 +101,18 @@ test('in a browser, a test that ran in two projects shows the steps of its own p
   });
 });
 
+test('in a browser, a run with no steps of its own shows and plays the run that has them', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    const firefox = testLine(p, 'fills the boxes on home').nth(1);
+    assert.match((await firefox.locator('a.replay').getAttribute('href'))!, /project%3Dchromium$/);
+    await firefox.locator('.steps-toggle').click();
+    assert.equal(await foldOf(firefox).locator('.step-project.on').count(), 0);
+    assert.equal((await lines(foldOf(firefox))).length, 20);
+  }, changeData((data) => {
+    for (const runs of Object.values(data.testSteps)) delete runs.firefox;
+  }));
+});
+
 test('in a browser, a trace that could not be read is still told when tests.json came from a duru that wrote no source or project on its notices', { skip: browserMissing }, async () => {
   const withoutRun = changeData((data) => {
     for (const n of data.tests.traceNotices) {

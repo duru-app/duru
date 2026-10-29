@@ -300,9 +300,11 @@ export function copyShots(file: string, names: Iterable<string>, dir: string) {
     return;
   }
   for (const name of names) {
+    const read = entries.get(`resources/${name}`);
+    if (!read) continue;
     let picture: Buffer;
     try {
-      picture = entries.get(`resources/${name}`)!();
+      picture = read();
     } catch {
       continue;
     }

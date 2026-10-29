@@ -884,6 +884,17 @@ test('writeShots leaves no folder when every trace with pictures is gone', () =>
   }
 });
 
+test('writeShots stops when it cannot write a picture', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-'));
+  try {
+    const blocked = path.join(dir, 'blocked');
+    fs.writeFileSync(blocked, 'a file where the folder would go');
+    assert.throws(() => writeShots(STEPS_CONFIG, stepLinks, path.join(blocked, 'test-shots')), (err: NodeJS.ErrnoException) => err.code === 'ENOTDIR');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('writeShots leaves no folder when no walk names a picture', () => {
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'duru-shots-')), 'test-shots');
   try {

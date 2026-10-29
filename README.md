@@ -415,7 +415,7 @@ client with example results and a config to start from.
 ## The map
 
 `extract` writes `map.json`; `rebuild` writes it and `tests.json`, and puts the screen pictures the steps of traced
-tests show in `test-shots/` next to them, emptied first.
+tests show in `test-shots/` next to them, in place of the ones there before.
 
 **Code state.** `meta` names the commit of the git repository `srcRoot` is in (`commit`, `unknown` when `srcRoot` is
 not in one), whether a file under `srcRoot` had changes not committed then (`uncommitted`, only with a commit; the folders duru
