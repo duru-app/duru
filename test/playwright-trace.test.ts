@@ -487,12 +487,19 @@ test('a page load the browser marks as a document is not a call the test sent, a
   ], 'http://x/login'), ['open /home', 'press /home', 'open /login', 'GET /api/me 200']);
 });
 
-test('a link the browser opens as a document that answers with a file, not a page, is a call the test sent, while a document left without an answer is not', () => {
+test('a link the browser opens as a document that answers with a file, not a page, or gets no answer is a call the test sent', () => {
   assert.deepEqual(clickTrace([
     { url: '/api/report/export', at: 12, type: 'text/csv', dest: 'document' },
     { url: '/home?format=csv', at: 13, type: 'text/csv', dest: 'document' },
-    { url: '/other', at: 14, status: -1, type: 'x-unknown', dest: 'document' },
-  ], 'http://x/home'), ['open /home', 'press /home', 'GET /api/report/export 200', 'GET /home?format=csv 200']);
+    { url: '/api/report/export?all', at: 14, status: -1, type: 'x-unknown', dest: 'document' },
+  ], 'http://x/home'), ['open /home', 'press /home', 'GET /api/report/export 200', 'GET /home?format=csv 200', 'GET /api/report/export?all no response']);
+});
+
+test('a document left without an answer because another page load followed it is not a call the test sent', () => {
+  assert.deepEqual(clickTrace([
+    { url: '/other', at: 12, status: -1, type: 'x-unknown', dest: 'document' },
+    { url: '/next', at: 13, type: 'text/html', dest: 'document' },
+  ]), ['open /home', 'press /home', 'open /next']);
 });
 
 test('a document the page then shows is a page load whatever it answered, and an error page stays a call after 「열기」', () => {

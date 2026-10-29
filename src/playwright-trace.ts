@@ -126,15 +126,20 @@ function documentOf(url: string) {
   }
 }
 
-type Shown = { addresses: Set<string>; pages: Set<string | null> };
+type Shown = { addresses: Set<string>; pages: Set<string | null>; lastDocumentAt: number };
 
-function loadsPage({ request, response }: any, shown: Shown) {
+const destOf = (request: any) => request.headers?.find((h: any) => h.name.toLowerCase() === 'sec-fetch-dest')?.value;
+
+function loadsPage({ request, response, _monotonicTime: at }: any, shown: Shown) {
   if (request.method !== 'GET') return false;
-  const dest = request.headers?.find((h: any) => h.name.toLowerCase() === 'sec-fetch-dest')?.value;
+  const dest = destOf(request);
   if (dest !== undefined && dest !== 'document') return false;
-  const answeredAsPage = !(response?.status > 0) || (response.status >= 300 && response.status < 400) || PAGE_TYPE.test(response.content?.mimeType ?? '');
-  if (dest !== undefined) return answeredAsPage || shown.addresses.has(withoutHash(request.url));
-  return answeredAsPage && shown.pages.has(documentOf(request.url));
+  const unanswered = !(response?.status > 0);
+  const redirectOrPage = !unanswered && ((response.status >= 300 && response.status < 400) || PAGE_TYPE.test(response.content?.mimeType ?? ''));
+  const pageShown = shown.pages.has(documentOf(request.url));
+  if (dest === undefined) return (unanswered || redirectOrPage) && pageShown;
+  if (unanswered) return pageShown || shown.lastDocumentAt > at;
+  return redirectOrPage || shown.addresses.has(withoutHash(request.url));
 }
 
 function sentRequest({ snapshot }: any, shown: Shown) {
@@ -207,7 +212,11 @@ export function readTrace(file: string): TraceResult {
 
   const resources = network.filter((e) => e.type === 'resource-snapshot').sort((a, b) => a.snapshot._monotonicTime - b.snapshot._monotonicTime);
   const frameUrls = [...snapshots.values()].map((snapshot) => snapshot.frameUrl);
-  const shown: Shown = { addresses: new Set(frameUrls.map(withoutHash)), pages: new Set(frameUrls.map(documentOf)) };
+  const shown: Shown = {
+    addresses: new Set(frameUrls.map(withoutHash)),
+    pages: new Set(frameUrls.map(documentOf)),
+    lastDocumentAt: Math.max(-Infinity, ...resources.filter((e) => destOf(e.snapshot.request) === 'document').map((e) => e.snapshot._monotonicTime)),
+  };
   const pageRequestAt = (url: string, from: number, to: number) => {
     const page = documentOf(url);
     return resources.find(({ snapshot }) =>
