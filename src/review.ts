@@ -289,20 +289,18 @@ function pageData(config: any, data: ReturnType<typeof reviewData>, baseline: Re
 
 export type PageData = ReturnType<typeof pageData>;
 
+const SERVER_FAULTS = new Set(['EACCES', 'EPERM', 'EMFILE', 'ENFILE', 'EIO']);
+
 function sendFile(res: http.ServerResponse, type: string, file: string, missing = 'not found') {
   let fd: number;
   try {
+    if (!fs.statSync(file).isFile()) return send(res, 404, 'text/plain', missing);
     fd = fs.openSync(file, 'r');
   } catch (err: any) {
-    if (err.code === 'ENOENT' || err.code === 'EISDIR') return send(res, 404, 'text/plain', missing);
-    throw err;
-  }
-  const stat = fs.fstatSync(fd);
-  if (!stat.isFile()) {
-    fs.closeSync(fd);
+    if (SERVER_FAULTS.has(err.code)) throw err;
     return send(res, 404, 'text/plain', missing);
   }
-  res.writeHead(200, { 'content-type': type, 'content-length': stat.size, 'cache-control': 'no-store' });
+  res.writeHead(200, { 'content-type': type, 'content-length': fs.fstatSync(fd).size, 'cache-control': 'no-store' });
   pipeline(fs.createReadStream('', { fd }), res, () => {});
 }
 

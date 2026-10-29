@@ -248,5 +248,7 @@ test('the review server sends a test\'s trace and screen pictures only for what 
     fs.mkdirSync(path.join(config.outDir, 'test-shots', 'page@folder-1.jpeg'));
     assert.equal(await status('/test-shots/page@folder-1.jpeg'), 404);
     assert.equal(await status('/trace-viewer/assets'), 404);
+    assert.equal(await status('/trace-viewer/index.html/x'), 404);
+    assert.equal(await status(`/test-shots/${'a'.repeat(300)}.jpeg`), 404);
   }));
 });
