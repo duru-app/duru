@@ -107,7 +107,7 @@ test('in a browser, a call shows the untagged browser tests that sent it apart f
         const headings = await p.locator('#center .call-info h2').allTextContents();
         assert.deepEqual(headings.slice(headings.indexOf('테스트 1'), headings.indexOf('테스트 1') + 2), ['테스트 1', '호출한 테스트 1']);
         assert.equal(await p.locator('#center .call-info .passed .test').count(), 1);
-        assert.match((await p.textContent('#center .call-info .passed .test'))!, /^호출함 통과 lists the documents calls\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/calls\.json$/);
+        assert.match((await p.textContent('#center .call-info .passed .test'))!, /^호출함 404 통과 lists the documents calls\.spec\.ts:\d+ · chromium결과 파일 results\/playwright-traced\/calls\.json$/);
         assert.deepEqual(await p.locator('#center .call-info .passed .judge-row button').allTextContents(), ['제외', '포함']);
 
         await row('POST:/api/v1/archive/document').locator('td.cell').first().click();
@@ -430,7 +430,7 @@ test('in a browser, a browser test that sent a call is excluded and included in 
         await p.waitForSelector('#center .call-info .discarded');
         assert.equal(await p.locator('#center .call-info .passed').count(), 0);
         assert.equal(await callRow.locator('.sent-count').count(), 0);
-        assert.match((await p.textContent('#center .call-info .discarded .pair-test'))!, /^호출함 통과 lists the documents.*only loads the page · \d/s);
+        assert.match((await p.textContent('#center .call-info .discarded .pair-test'))!, /^호출함 404 통과 lists the documents.*only loads the page · \d/s);
         assert.deepEqual(judgedBy(config), [[LIST_CALL, 'discard', 'only loads the page', 'reviewer']]);
         assert.equal(await p.locator('#center .judgment-error').count(), 0);
 

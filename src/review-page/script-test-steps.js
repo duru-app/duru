@@ -61,11 +61,12 @@ function testStepItem(/** @type {TestStepLine} */ line) {
     line.failed ? [' ', h('span', { class: 'chip fail', title: '이 동작은 오류로 끝났습니다' }, '실패')] : null);
 }
 
+const answerChip = (status) => (status === null
+  ? h('span', { class: 'chip status-none', title: '응답을 받지 못했습니다' }, '응답 없음')
+  : h('span', { class: `chip status${status >= 400 ? ' status-error' : ''}`, title: '응답 상태' }, String(status)));
+
 function testRequestItem(line) {
-  const status = line.status === null
-    ? h('span', { class: 'chip status-none', title: '응답을 받지 못했습니다' }, '응답 없음')
-    : h('span', { class: `chip status${line.status >= 400 ? ' status-error' : ''}`, title: '응답 상태' }, String(line.status));
-  const body = [h('span', { class: 'mono', title: line.url }, `${line.method} ${shownAddress(line.url)}`), ' ', status];
+  const body = [h('span', { class: 'mono', title: line.url }, `${line.method} ${shownAddress(line.url)}`), ' ', answerChip(line.status)];
   if (line.call && opensOnPage(line.call)) {
     return h('li', { class: 'request-line on-map' },
       h('button', { class: 'open-call', title: '이 호출을 부르는 화면을 열고 이 호출을 고릅니다', onclick: (e) => { e.stopPropagation(); openCall(line.call); } }, body));

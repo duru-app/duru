@@ -389,6 +389,9 @@
   #pick-list li .count { color: var(--accent); }
   .part-row { display: flex; align-items: flex-start; gap: 6px; }
   .part-row > :is(.test, .slot-text) { flex: 1; min-width: 0; }
+  .test-row, #center .pair-test { border-top: 1px solid var(--line); padding: 4px 0; }
+  .test-row:first-child, #center .pair-test:first-of-type { border-top: none; }
+  .test-row:hover, #center .pair-test:hover { background: var(--selected); }
   .steps-toggle { flex: none; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font: inherit; font-size: 12px; line-height: 18px; background: var(--panel); color: var(--text); cursor: pointer; white-space: nowrap; }
   .steps-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
   .test-steps { margin: 2px 0 10px 12px; padding-left: 10px; border-left: 2px solid var(--line); font-size: 12px; }

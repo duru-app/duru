@@ -149,3 +149,27 @@ test('in a browser, a browser test without a trace, with a trace that could not 
     assert.equal(await others.locator('.steps-toggle').count(), 0);
   });
 });
+
+test('in a browser, a test in a call\'s list of tests that sent it shows the status it got for that call next to 「호출함」', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    await p.locator('table.calls tbody tr:not(.option)', { hasText: 'GET:/api/v1/document/list' }).locator('td.cell').first().click();
+    const test = p.locator('#center .call-info .passed .test', { hasText: 'lists the documents calls.spec.ts' });
+    assert.deepEqual(await test.locator('.chip').allTextContents(), ['호출함', '404', '통과']);
+    assert.equal(await test.locator('.chip.status-error').count(), 1);
+  });
+});
+
+test('in a browser, each test of a screen sits on its own line, apart from the next one, with the line under the pointer shaded', { skip: browserMissing }, async () => {
+  await withSteps(async (p) => {
+    const rows = p.locator('#center td .test-row');
+    assert.ok(await rows.count() > 1);
+    const look = (row: Locator) => row.evaluate((el) => [getComputedStyle(el).borderTopStyle, getComputedStyle(el).backgroundColor]);
+    const [first, second] = [rows.first(), rows.nth(1)];
+    assert.equal((await look(second))[0], 'solid');
+    const plain = (await look(second))[1];
+    await second.locator('.steps-toggle').hover();
+    assert.notEqual((await look(second))[1], plain);
+    assert.equal((await look(first))[1], plain);
+    assert.equal(await first.locator('.steps-toggle').count(), 1);
+  });
+});
