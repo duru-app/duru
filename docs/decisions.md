@@ -287,6 +287,11 @@ mode turns it into `require` and `module.exports`, which the module duru runs ca
 require(…)` is let through, because transform mode drops it. Measured: the two examples, the into-sign 1.5.0 map
 and the into-sign 2.0.0 source, with its own constants files and with the stand-ins kept beside its config, give
 the same maps before and after.
+A plain JavaScript file of the app with no import or export of its own that sets `module.exports` once at its top
+level is run as an ES module whose default export is that value, because a bundler such as webpack lets an app
+import such a file by default; a file that sets it more than once, sets `exports.name` or `module.exports.name`,
+or is imported by name is copied as written and fails when it runs. Measured: into-sign 1.6.0 run through
+`calledApiModules` gave 0 calls before (its `_loader/EventManager.js` is such a file) and 176 after.
 
 **A component's name is followed further than the line that imports it only when it leads to a dynamic import;
 otherwise the component file is the file that line names.**

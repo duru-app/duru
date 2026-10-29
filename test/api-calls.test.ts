@@ -336,6 +336,19 @@ test('a listed file that calls require() for a package, reads process.env.NODE_E
   assert.deepEqual(map.unrunApiModules, [{ file: 'contracts/api/local.ts', error }]);
 });
 
+test('a file of the app that sets module.exports, imported by default from a listed file, gives that value, so the listed file runs and gives its requests', async () => {
+  const configFile = fixtureCopy(
+    { ...CALLED, calledApiModules: ['contracts/api/events.ts', ...CALLED.calledApiModules] },
+    {
+      'contracts/api/eventPaths.js': "const prefix = '/events';\n\nmodule.exports = {\n  list: prefix + '/list',\n};\n",
+      'contracts/api/events.ts': "import { executeRequest } from './request';\nimport eventPaths from './eventPaths';\n\nexport const eventApi = { load: () => executeRequest({ endpoint: { method: 'GET', path: '' }, url: eventPaths.list }) };\n",
+    },
+  );
+  const map = await build(configFile);
+  assert.deepEqual(endpointsOf(map, 'eventApi.load').map(([method, url]) => `${method} ${url}`), ['GET /events/list']);
+  assert.deepEqual(map.unrunApiModules, []);
+});
+
 const REMOTE_API = "import { executeRequest } from '../../../client/src/contracts/api/request';\nimport type * as Shapes from './shapes';\n\nexport { Shapes };\nexport class RemoteApi {\n  load() {\n    return executeRequest({ endpoint: { method: 'GET', path: '' }, url: '/remote' });\n  }\n}\n";
 const remoteCopy = (keys: Record<string, unknown>, files: Record<string, string>) => {
   const configFile = fixtureCopy({ ...CALLED, ...keys }, files);

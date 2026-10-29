@@ -146,6 +146,18 @@ function ownExports(body: Statement[]) {
   return names;
 }
 
+// import 도 export 도 없는 파일이 맨 위에서 module.exports 에 값을 한 번 넣으면 그 문장을 돌려준다. 그 값이 파일의 default export 가 된다.
+function moduleExportsSet(body: Statement[]) {
+  if (body.some((n) => n.type === 'ImportDeclaration' || n.type.startsWith('Export'))) return null;
+  const sets = body.flatMap((n) => {
+    if (n.type !== 'ExpressionStatement' || n.expression.type !== 'AssignmentExpression' || n.expression.operator !== '=') return [];
+    const { left } = n.expression;
+    const named = (node: Node, name: string) => node.type === 'Identifier' && node.name === name;
+    return left.type === 'MemberExpression' && !left.computed && named(left.object, 'module') && named(left.property, 'exports') ? [{ start: n.start, right: n.expression.right }] : [];
+  });
+  return sets.length === 1 ? sets[0] : null;
+}
+
 const APP_REQUIRE = '`require(…)` of a file of the app is CommonJS, which duru cannot run as an ES module';
 const NOTHING_SOURCE = 'const nothing = globalThis.__duruNothing;';
 
@@ -306,6 +318,8 @@ export function moduleCopier(config: ConstantsConfig, resolve: ImportResolver['r
         },
       });
     }
+    const exportsSet = moduleExportsSet(ast.program.body);
+    if (exportsSet) edits.push([exportsSet.start!, exportsSet.right.start!, `export default ${lines(exportsSet.start!, exportsSet.right.start!)}`]);
     let out = src;
     for (const [s, e, text] of edits.sort((a, b) => b[0] - a[0])) out = out.slice(0, s) + text + out.slice(e);
     if (TYPESCRIPT.test(absFile)) {
